@@ -32,3 +32,9 @@ export const quotesCollectionPath = (userId) => [
   userId,
   "cotizaciones",
 ];
+export const quoteDocPath = (userId, quoteId) => [
+  "usuarios",
+  userId,
+  "cotizaciones",
+  quoteId,
+];

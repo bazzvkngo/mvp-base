@@ -96,3 +96,45 @@ a {
   font-size: 13px;
   margin-bottom: 6px;
 }
+
+@media (max-width: 920px) {
+  .quote-bottom-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media print {
+  body {
+    background: #ffffff;
+  }
+
+  .sidebar,
+  .topbar,
+  .no-print {
+    display: none !important;
+  }
+
+  .app-shell,
+  .workspace,
+  .page-content,
+  .quote-page {
+    display: block !important;
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .quote-page > :not(:last-child) {
+    display: none !important;
+  }
+
+  .quote-page > :last-child {
+    border: 0 !important;
+    padding: 0 !important;
+  }
+
+  .quote-print {
+    border: 0 !important;
+    padding: 0 !important;
+  }
+}
