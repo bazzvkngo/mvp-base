@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import {
   createInventoryItem,
   deactivateInventoryItem,
@@ -745,3 +745,4 @@ const styles = {
 };
 
 export default InventoryManager;
+

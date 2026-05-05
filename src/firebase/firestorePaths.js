@@ -21,6 +21,12 @@ export const referencesCollectionPath = (userId) => [
   userId,
   "referencias",
 ];
+export const referenceDocPath = (userId, referenceId) => [
+  "usuarios",
+  userId,
+  "referencias",
+  referenceId,
+];
 export const quotesCollectionPath = (userId) => [
   "usuarios",
   userId,

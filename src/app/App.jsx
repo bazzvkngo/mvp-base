@@ -57,7 +57,10 @@ function AppRoutes({ usuario }) {
           path="/inventario"
           element={<InventoryPage userId={usuario?.uid} />}
         />
-        <Route path="/referencias" element={<MarketReferencesPage />} />
+        <Route
+          path="/referencias"
+          element={<MarketReferencesPage userId={usuario?.uid} />}
+        />
         <Route
           path="/valorizacion"
           element={<PricingPage userId={usuario?.uid} />}
