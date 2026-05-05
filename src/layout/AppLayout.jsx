@@ -7,7 +7,7 @@ const navItems = [
   { to: "/empresa", label: "Empresa" },
   { to: "/inventario", label: "Inventario" },
   { to: "/referencias", label: "Referencias" },
-  { to: "/valoración", label: "Valoración" },
+  { to: "/valorizacion", label: "Valoración" },
   { to: "/cotizaciones/nueva", label: "Nueva cotización" },
   { to: "/cotizaciones", label: "Historial" },
 ];

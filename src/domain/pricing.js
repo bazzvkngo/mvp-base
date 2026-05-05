@@ -5,9 +5,117 @@ const DEFAULT_CONFIG = {
   margenPremium: 0.35,
 };
 
+export const PRICING_STATUS = {
+  SIN_REFERENCIAS: "Sin referencias",
+  BAJO_MERCADO: "Bajo mercado",
+  DENTRO_DE_RANGO: "Dentro de rango",
+  SOBRE_MERCADO: "Sobre mercado",
+};
+
 function normalizarNumero(value, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function getNumericValue(value, fallback = 0) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : fallback;
+}
+
+export function calculateBasePrice(item) {
+  const costoBase = getNumericValue(item?.costoBase, 0);
+  const margenDeseado = getNumericValue(item?.margenDeseado, 0);
+  return costoBase + (costoBase * margenDeseado) / 100;
+}
+
+export function calculateReferenceAverage(references) {
+  const activeReferences = Array.isArray(references)
+    ? references.filter((reference) => (reference.estado || "activa") === "activa")
+    : [];
+
+  const prices = activeReferences
+    .map((reference) => Number(reference.precioObservado))
+    .filter((price) => Number.isFinite(price));
+
+  if (prices.length === 0) return null;
+
+  const total = prices.reduce((sum, price) => sum + price, 0);
+  return total / prices.length;
+}
+
+export function calculateSuggestedPrice(item, references) {
+  const precioBase = calculateBasePrice(item);
+  const promedioReferencias = calculateReferenceAverage(references);
+
+  if (promedioReferencias === null) {
+    return Math.round(precioBase);
+  }
+
+  return Math.round(precioBase * 0.4 + promedioReferencias * 0.6);
+}
+
+export function calculatePriceDifference(priceInternal, referenceAverage) {
+  const precioInterno = Number(priceInternal);
+  const promedio = Number(referenceAverage);
+
+  if (!Number.isFinite(precioInterno) || !Number.isFinite(promedio) || promedio === 0) {
+    return null;
+  }
+
+  return ((precioInterno - promedio) / promedio) * 100;
+}
+
+export function getPricingStatus(item, references) {
+  const promedioReferencias = calculateReferenceAverage(references);
+
+  if (promedioReferencias === null) {
+    return PRICING_STATUS.SIN_REFERENCIAS;
+  }
+
+  const diferenciaPorcentual = calculatePriceDifference(
+    item?.precioInterno,
+    promedioReferencias
+  );
+
+  if (diferenciaPorcentual === null) {
+    return PRICING_STATUS.SIN_REFERENCIAS;
+  }
+  if (diferenciaPorcentual < -10) return PRICING_STATUS.BAJO_MERCADO;
+  if (diferenciaPorcentual > 10) return PRICING_STATUS.SOBRE_MERCADO;
+  return PRICING_STATUS.DENTRO_DE_RANGO;
+}
+
+export function buildValuationForItem(item, references) {
+  const activeReferences = Array.isArray(references)
+    ? references.filter((reference) => (reference.estado || "activa") === "activa")
+    : [];
+  const precioBase = calculateBasePrice(item);
+  const promedioReferencias = calculateReferenceAverage(activeReferences);
+  const precioSugerido = calculateSuggestedPrice(item, activeReferences);
+  const diferenciaPorcentual = calculatePriceDifference(
+    item?.precioInterno,
+    promedioReferencias
+  );
+  const estadoValorizacion = getPricingStatus(item, activeReferences);
+
+  return {
+    itemId: item?.id || "",
+    item,
+    nombre: item?.nombre || "Item sin nombre",
+    tipoItem: item?.tipoItem || "",
+    categoria: item?.categoria || "",
+    unidad: item?.unidad || "",
+    costoBase: getNumericValue(item?.costoBase, 0),
+    margenDeseado: getNumericValue(item?.margenDeseado, 0),
+    precioInterno: getNumericValue(item?.precioInterno, 0),
+    precioBase,
+    promedioReferencias,
+    cantidadReferencias: activeReferences.length,
+    diferenciaPorcentual,
+    precioSugerido,
+    estadoValorizacion,
+    referencias: activeReferences,
+  };
 }
 
 function normalizarConfigNegocio(configNegocio) {
