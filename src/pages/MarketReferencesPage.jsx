@@ -1,4 +1,4 @@
-import React from "react";
+﻿import React from "react";
 
 function MarketReferencesPage() {
   return (
@@ -7,7 +7,7 @@ function MarketReferencesPage() {
         <span className="eyebrow">Preparado</span>
         <h2>Referencias de mercado</h2>
         <p>
-          Modulo reservado para registrar referencias manuales de precios. No
+          Módulo reservado para registrar referencias manuales de precios. No
           se implementa scraping en esta etapa.
         </p>
       </div>
@@ -16,3 +16,4 @@ function MarketReferencesPage() {
 }
 
 export default MarketReferencesPage;
+

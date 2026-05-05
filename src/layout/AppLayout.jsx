@@ -1,4 +1,4 @@
-import React from "react";
+﻿import React from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { logout } from "../services/authService";
 
@@ -7,8 +7,8 @@ const navItems = [
   { to: "/empresa", label: "Empresa" },
   { to: "/inventario", label: "Inventario" },
   { to: "/referencias", label: "Referencias" },
-  { to: "/valorizacion", label: "Valorizacion" },
-  { to: "/cotizaciones/nueva", label: "Nueva cotizacion" },
+  { to: "/valoración", label: "Valoración" },
+  { to: "/cotizaciones/nueva", label: "Nueva cotización" },
   { to: "/cotizaciones", label: "Historial" },
 ];
 
@@ -20,11 +20,11 @@ function AppLayout({ usuario }) {
           <span className="brand-mark">VC</span>
           <div>
             <strong>ValoraCloud</strong>
-            <span>Valorizacion y cotizaciones</span>
+            <span>Valoración y cotizaciones</span>
           </div>
         </div>
 
-        <nav className="sidebar-nav" aria-label="Navegacion principal">
+        <nav className="sidebar-nav" aria-label="Navegación principal">
           {navItems.map((item) => (
             <NavLink
               key={item.to}
@@ -42,7 +42,7 @@ function AppLayout({ usuario }) {
       <div className="workspace">
         <header className="topbar">
           <div>
-            <span className="eyebrow">MVP tesis</span>
+            <span className="eyebrow">MVP de tesis</span>
             <h1>ValoraCloud</h1>
           </div>
           <div className="topbar-user">
@@ -52,7 +52,7 @@ function AppLayout({ usuario }) {
               className="button-danger"
               onClick={() => logout()}
             >
-              Cerrar sesion
+              Cerrar sesión
             </button>
           </div>
         </header>
@@ -66,3 +66,4 @@ function AppLayout({ usuario }) {
 }
 
 export default AppLayout;
+

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+﻿import React, { useState } from "react";
 import { loginWithEmail, registerWithEmail } from "../../services/authService";
 
 const BoxIcon = () => (
@@ -35,19 +35,19 @@ function Login() {
         await registerWithEmail(email, password);
       }
     } catch (err) {
-      console.error("Error de autenticacion:", err.code, err.message);
+      console.error("Error de autenticación:", err.code, err.message);
       switch (err.code) {
         case "auth/wrong-password":
-          setError("Contrasena incorrecta.");
+          setError("Contraseña incorrecta.");
           break;
         case "auth/user-not-found":
-          setError("No se encontro un usuario con ese correo.");
+          setError("No se encontró un usuario con ese correo.");
           break;
         case "auth/email-already-in-use":
-          setError("El correo electronico ya esta en uso.");
+          setError("El correo electrónico ya está en uso.");
           break;
         case "auth/invalid-credential":
-          setError("Credenciales invalidas.");
+          setError("Credenciales inválidas.");
           break;
         default:
           setError("Error al procesar la solicitud.");
@@ -63,16 +63,16 @@ function Login() {
         </div>
 
         <h2 style={styles.title}>
-          {isLoginView ? "Iniciar sesion" : "Crear cuenta"}
+          {isLoginView ? "Iniciar sesión" : "Crear cuenta"}
         </h2>
-        <p style={styles.subtitle}>ValoraCloud · Valorizacion y cotizaciones</p>
+        <p style={styles.subtitle}>ValoraCloud · Valoración y cotizaciones</p>
 
         <form onSubmit={handleSubmit}>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="Correo electronico"
+            placeholder="Correo electrónico"
             style={styles.input}
             required
           />
@@ -80,7 +80,7 @@ function Login() {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Contrasena (min. 6 caracteres)"
+            placeholder="Contraseña (mín. 6 caracteres)"
             style={styles.input}
             minLength="6"
             required
@@ -101,8 +101,8 @@ function Login() {
           style={styles.buttonSecondary}
         >
           {isLoginView
-            ? "No tienes cuenta? Registrate"
-            : "Ya tienes cuenta? Inicia sesion"}
+            ? "¿No tienes cuenta? Regístrate"
+            : "¿Ya tienes cuenta? Inicia sesión"}
         </button>
       </div>
     </div>
@@ -185,3 +185,4 @@ const styles = {
 };
 
 export default Login;
+

@@ -65,7 +65,7 @@ export function normalizeCompanyConfig(raw = {}) {
 
 export async function getCompanyConfig(userId) {
   if (!userId) {
-    throw new Error("userId es requerido para obtener la configuracion.");
+    throw new Error("userId es requerido para obtener la configuración.");
   }
 
   const ref = doc(db, ...userConfigDocPath(userId));
@@ -81,7 +81,7 @@ export async function getCompanyConfig(userId) {
 
 export async function saveCompanyConfig(userId, configPatch) {
   if (!userId) {
-    throw new Error("userId es requerido para guardar la configuracion.");
+    throw new Error("userId es requerido para guardar la configuración.");
   }
   if (!configPatch || typeof configPatch !== "object") {
     throw new Error("configPatch debe ser un objeto.");

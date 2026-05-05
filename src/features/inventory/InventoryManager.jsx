@@ -1,261 +1,265 @@
-﻿import React, { useState, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   createInventoryItem,
-  deleteInventoryItem,
+  deactivateInventoryItem,
+  reactivateInventoryItem,
   subscribeToInventory,
   updateInventoryItem,
-  verifySupplierPrice,
 } from "../../services/inventoryService";
+import { formatCLP } from "../../utils/formatters";
 
-function obtenerTipoItem(producto) {
-  if (producto.tipoItem === "servicio" || producto.tipoItem === "producto") {
-    return producto.tipoItem;
-  }
-  const cat = (producto.categoria || "").toLowerCase();
-  const nombre = (producto.nombre || "").toLowerCase();
+const EMPTY_FORM = {
+  nombre: "",
+  tipoItem: "producto",
+  categoria: "",
+  descripcion: "",
+  unidad: "",
+  costoBase: "",
+  margenDeseado: "",
+  precioInterno: "",
+  sku: "",
+  estado: "activo",
+};
 
-  if (
-    cat.includes("servicio") ||
-    cat.includes("mano de obra") ||
-    cat.includes("instalaciÃ³n") ||
-    cat.includes("instalacion") ||
-    nombre.includes("servicio")
-  ) {
-    return "servicio";
-  }
-  return "producto";
+const tipoLabels = {
+  producto: "Producto",
+  servicio: "Servicio",
+  actividad: "Actividad",
+};
+
+function calcularPrecioInterno(costoBase, margenDeseado) {
+  const costo = Number(costoBase);
+  const margen = Number(margenDeseado);
+  if (!Number.isFinite(costo) || !Number.isFinite(margen)) return "";
+  return Math.round(costo + (costo * margen) / 100);
 }
 
 function InventoryManager({ userId }) {
-  const [productos, setProductos] = useState([]);
-  const [form, setForm] = useState({
-    nombre: "",
-    sku: "",
-    categoria: "",
-    tipoItem: "producto",
-    unidad: "",
-    url: "",
-    stock: "",
-    precio: "",
-  });
-  const [editandoId, setEditandoId] = useState(null);
-  const [loadingIA, setLoadingIA] = useState(null);
-  const [resultadoIA, setResultadoIA] = useState({});
-  const [error, setError] = useState(null);
+  const [items, setItems] = useState([]);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [editingId, setEditingId] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [tipoFiltro, setTipoFiltro] = useState("todos");
+  const [estadoFiltro, setEstadoFiltro] = useState("activos");
   const [busqueda, setBusqueda] = useState("");
-  const [filtroTipo, setFiltroTipo] = useState("todos");
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId) {
+      setLoading(false);
+      return undefined;
+    }
 
+    setLoading(true);
     const unsubscribe = subscribeToInventory(
       userId,
-      (snapshot) => {
-        setProductos(snapshot);
+      (data) => {
+        setItems(data);
+        setLoading(false);
       },
       (err) => {
-        console.error("Error al leer inventario:", err);
-        setError("Error al cargar el inventario.");
+        console.error("Error al cargar inventario:", err);
+        setError("No se pudo cargar el inventario.");
+        setLoading(false);
       }
     );
 
     return () => unsubscribe();
   }, [userId]);
 
-  const limpiarFormulario = () => {
-    setForm({
-      nombre: "",
-      sku: "",
-      categoria: "",
-      tipoItem: "producto",
-      unidad: "",
-      url: "",
-      stock: "",
-      precio: "",
-    });
-    setEditandoId(null);
-    setError(null);
-  };
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setForm((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError(null);
-
-    if (!form.nombre || !form.precio) {
-      setError("Completa al menos el nombre y el precio.");
-      return;
-    }
-
-    const tipoItem = form.tipoItem || "producto";
-
-    const stockNumber =
-      tipoItem === "servicio"
-        ? null
-        : form.stock !== ""
-        ? Number(form.stock)
-        : 0;
-
-    const datos = {
-      nombre: form.nombre.trim(),
-      sku: form.sku.trim() || null,
-      categoria: form.categoria.trim() || "",
-      tipoItem,
-      unidad:
-        form.unidad.trim() || (tipoItem === "servicio" ? "servicio" : "unidad"),
-      url: form.url.trim() || "",
-      stock: stockNumber,
-      precio: Number(form.precio),
-      actualizadoEn: new Date(),
-    };
-
-    try {
-      if (editandoId) {
-        await updateInventoryItem(userId, editandoId, datos);
-      } else {
-        await createInventoryItem(userId, {
-          ...datos,
-          creadoEn: new Date(),
-        });
-      }
-
-      limpiarFormulario();
-    } catch (err) {
-      console.error("Error al guardar producto:", err);
-      setError("No se pudo guardar el producto.");
-    }
-  };
-
-  const handleEditarClick = (producto) => {
-    const tipo = obtenerTipoItem(producto);
-    setEditandoId(producto.id);
-    setForm({
-      nombre: producto.nombre ?? "",
-      sku: producto.sku ?? "",
-      categoria: producto.categoria ?? "",
-      tipoItem: tipo,
-      unidad: producto.unidad ?? (tipo === "servicio" ? "servicio" : "unidad"),
-      url: producto.url ?? "",
-      stock:
-        tipo === "servicio" || producto.stock == null ? "" : producto.stock,
-      precio: producto.precio ?? "",
-    });
-  };
-
-  const handleCancelarEdicion = () => {
-    limpiarFormulario();
-  };
-
-  const handleEliminarProducto = async (id) => {
-    if (!window.confirm("Â¿Eliminar este producto del inventario?")) return;
-
-    try {
-      await deleteInventoryItem(userId, id);
-    } catch (err) {
-      console.error("Error al eliminar producto:", err);
-      alert("No se pudo eliminar el producto.");
-    }
-  };
-
-  const handleVerificarPrecio = async (producto) => {
-    if (!producto.url) {
-      alert("Este producto no tiene URL configurada.");
-      return;
-    }
-
-    setLoadingIA(producto.id);
-    setResultadoIA((prev) => ({
-      ...prev,
-      [producto.id]: "Analizando precio en proveedor...",
-    }));
-
-    try {
-      const data = await verifySupplierPrice(producto.id);
-      const {
-        precioProveedor,
-        diferencia,
-        diffPorcentaje,
-        estadoAlerta,
-        modo,
-      } = data;
-
-      const mensaje = `Proveedor: $${precioProveedor?.toLocaleString(
-        "es-CL"
-      )} (${modo || "?"}). Diferencia: $${diferencia?.toLocaleString(
-        "es-CL"
-      )} (${diffPorcentaje?.toFixed(1)}%). Estado: ${
-        estadoAlerta || "normal"
-      }`;
-
-      setResultadoIA((prev) => ({
-        ...prev,
-        [producto.id]: mensaje,
-      }));
-    } catch (err) {
-      console.error("Error en anÃ¡lisis de precios:", err);
-      setResultadoIA((prev) => ({
-        ...prev,
-        [producto.id]: "No se pudo analizar el precio.",
-      }));
-    } finally {
-      setLoadingIA(null);
-    }
-  };
-
-  const renderStock = (producto) => {
-    const tipo = obtenerTipoItem(producto);
-    if (tipo === "servicio") return "â€”";
-    if (producto.stock == null || Number.isNaN(Number(producto.stock)))
-      return "â€”";
-    return producto.stock;
-  };
-
-  const traducirTipo = (producto) => {
-    const tipo = obtenerTipoItem(producto);
-    return tipo === "servicio" ? "Servicio" : "Producto";
-  };
-
-  const productosFiltrados = productos.filter((producto) => {
-    const tipo = obtenerTipoItem(producto);
-    if (filtroTipo !== "todos" && tipo !== filtroTipo) return false;
-
+  const filteredItems = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
-    if (!q) return true;
 
-    const textoBuscable = `${producto.nombre || ""} ${
-      producto.categoria || ""
-    } ${producto.sku || ""}`.toLowerCase();
+    return items.filter((item) => {
+      const estado = item.estado || "activo";
+      if (estadoFiltro === "activos" && estado !== "activo") return false;
+      if (estadoFiltro === "inactivos" && estado !== "inactivo") return false;
+      if (tipoFiltro !== "todos" && item.tipoItem !== tipoFiltro) return false;
+      if (!q) return true;
 
-    return textoBuscable.includes(q);
-  });
+      const text = `${item.nombre || ""} ${item.categoria || ""} ${
+        item.descripcion || ""
+      } ${item.sku || ""}`.toLowerCase();
+      return text.includes(q);
+    });
+  }, [busqueda, estadoFiltro, items, tipoFiltro]);
+
+  const resetForm = () => {
+    setForm(EMPTY_FORM);
+    setEditingId(null);
+    setError("");
+    setSuccess("");
+  };
+
+  const handleChange = (event) => {
+    const { name, value } = event.target;
+    setForm((prev) => {
+      const next = { ...prev, [name]: value };
+      if (
+        (name === "costoBase" || name === "margenDeseado") &&
+        prev.precioInterno === ""
+      ) {
+        next.precioInterno = "";
+      }
+      return next;
+    });
+  };
+
+  const validateForm = () => {
+    if (!form.nombre.trim()) return "Ingresa el nombre del ítem.";
+    if (!form.tipoItem) return "Selecciona el tipo de ítem.";
+    if (!form.unidad.trim()) return "Ingresa la unidad.";
+    if (form.costoBase === "") return "Ingresa el costo base.";
+    if (form.margenDeseado === "") return "Ingresa el margen deseado.";
+    if (!Number.isFinite(Number(form.costoBase))) {
+      return "El costo base debe ser numérico.";
+    }
+    if (!Number.isFinite(Number(form.margenDeseado))) {
+      return "El margen deseado debe ser numérico.";
+    }
+    if (form.precioInterno !== "" && !Number.isFinite(Number(form.precioInterno))) {
+      return "El precio interno debe ser numérico.";
+    }
+    return "";
+  };
+
+  const buildPayload = () => {
+    const precioCalculado =
+      form.precioInterno === ""
+        ? calcularPrecioInterno(form.costoBase, form.margenDeseado)
+        : form.precioInterno;
+
+    return {
+      ...form,
+      nombre: form.nombre.trim(),
+      categoria: form.categoria.trim(),
+      descripcion: form.descripcion.trim(),
+      unidad: form.unidad.trim(),
+      sku: form.sku.trim(),
+      costoBase: Number(form.costoBase),
+      margenDeseado: Number(form.margenDeseado),
+      precioInterno: Number(precioCalculado),
+    };
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setError("");
+    setSuccess("");
+
+    if (!userId) {
+      setError("Debes iniciar sesión para administrar inventario.");
+      return;
+    }
+
+    const validationMessage = validateForm();
+    if (validationMessage) {
+      setError(validationMessage);
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const payload = buildPayload();
+      if (editingId) {
+        await updateInventoryItem(userId, editingId, payload);
+        setSuccess("Ítem actualizado correctamente.");
+      } else {
+        await createInventoryItem(userId, payload);
+        setSuccess("Ítem creado correctamente.");
+      }
+      setForm(EMPTY_FORM);
+      setEditingId(null);
+    } catch (err) {
+      console.error("Error al guardar ítem:", err);
+      setError(err.message || "No se pudo guardar el ítem.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEdit = (item) => {
+    setEditingId(item.id);
+    setForm({
+      nombre: item.nombre || "",
+      tipoItem: item.tipoItem || "producto",
+      categoria: item.categoria || "",
+      descripcion: item.descripcion || "",
+      unidad: item.unidad || "",
+      costoBase: item.costoBase ?? item.precio ?? "",
+      margenDeseado: item.margenDeseado ?? 0,
+      precioInterno: item.precioInterno ?? item.precio ?? "",
+      sku: item.sku || "",
+      estado: item.estado || "activo",
+    });
+    setError("");
+    setSuccess("");
+  };
+
+  const handleDeactivate = async (item) => {
+    setError("");
+    setSuccess("");
+    try {
+      await deactivateInventoryItem(userId, item.id);
+      setSuccess("Ítem desactivado. Puedes verlo con el filtro de inactivos.");
+      if (editingId === item.id) resetForm();
+    } catch (err) {
+      console.error("Error al desactivar ítem:", err);
+      setError("No se pudo desactivar el ítem.");
+    }
+  };
+
+  const handleReactivate = async (item) => {
+    setError("");
+    setSuccess("");
+    try {
+      await reactivateInventoryItem(userId, item.id);
+      setSuccess("Ítem reactivado correctamente.");
+    } catch (err) {
+      console.error("Error al reactivar ítem:", err);
+      setError("No se pudo reactivar el ítem.");
+    }
+  };
+
+  const previewPrice =
+    form.precioInterno === ""
+      ? calcularPrecioInterno(form.costoBase, form.margenDeseado)
+      : Number(form.precioInterno);
 
   return (
-    <div style={styles.container}>
-      {/* Encabezado del mÃ³dulo */}
-      <div style={styles.headerBlock}>
-        <h3 style={styles.h3}>Inventario</h3>
-        <p style={styles.subtitle}>
-          Gestiona tus productos y servicios. Esta informaciÃ³n alimenta el
-          mÃ³dulo de cotizaciones y el anÃ¡lisis de precios.
-        </p>
+    <section style={styles.wrapper}>
+      <div style={styles.header}>
+        <div>
+          <span style={styles.eyebrow}>Inventario</span>
+          <h2 style={styles.title}>Productos, servicios y actividades</h2>
+          <p style={styles.subtitle}>
+            Registra los ítems que ValoraCloud usará para valorar proyectos y
+            preparar cotizaciones.
+          </p>
+        </div>
       </div>
 
-      {/* Formulario */}
+      {!userId && (
+        <p style={styles.errorText}>Debes iniciar sesión para ver inventario.</p>
+      )}
+
       <form onSubmit={handleSubmit} style={styles.formCard}>
-        <h4 style={styles.formTitle}>
-          {editandoId ? "Editar Ã­tem de inventario" : "Agregar nuevo Ã­tem"}
-        </h4>
+        <div style={styles.formHeader}>
+          <h3 style={styles.formTitle}>
+            {editingId ? "Editar ítem" : "Nuevo ítem de inventario"}
+          </h3>
+          {editingId && (
+            <button type="button" style={styles.secondaryButton} onClick={resetForm}>
+              Cancelar edición
+            </button>
+          )}
+        </div>
 
         <div style={styles.formGrid}>
-          <div style={styles.field}>
-            <label style={styles.label}>Tipo de Ã­tem</label>
+          <label style={styles.field}>
+            <span style={styles.label}>Tipo de ítem</span>
             <select
               name="tipoItem"
               value={form.tipoItem}
@@ -264,215 +268,245 @@ function InventoryManager({ userId }) {
             >
               <option value="producto">Producto</option>
               <option value="servicio">Servicio</option>
+              <option value="actividad">Actividad</option>
             </select>
-          </div>
+          </label>
 
-          <div style={styles.field}>
-            <label style={styles.label}>Nombre</label>
+          <label style={styles.field}>
+            <span style={styles.label}>Nombre</span>
             <input
               name="nombre"
-              type="text"
-              placeholder="Ej: CÃ¡mara 1080p exterior"
               value={form.nombre}
               onChange={handleChange}
-              style={styles.input}
-              required
-            />
-          </div>
-
-          <div style={styles.field}>
-            <label style={styles.label}>SKU / CÃ³digo</label>
-            <input
-              name="sku"
-              type="text"
-              placeholder="Opcional"
-              value={form.sku}
-              onChange={handleChange}
+              placeholder="Ej: Cámara IP exterior"
               style={styles.input}
             />
-          </div>
+          </label>
 
-          <div style={styles.field}>
-            <label style={styles.label}>CategorÃ­a</label>
+          <label style={styles.field}>
+            <span style={styles.label}>Categoría</span>
             <input
               name="categoria"
-              type="text"
-              placeholder="Ej: CCTV, Redes, Servicio tÃ©cnico..."
               value={form.categoria}
               onChange={handleChange}
+              placeholder="Ej: CCTV, soporte, instalación"
               style={styles.input}
             />
-          </div>
+          </label>
 
-          <div style={styles.field}>
-            <label style={styles.label}>Unidad</label>
+          <label style={styles.field}>
+            <span style={styles.label}>Unidad</span>
             <input
               name="unidad"
-              type="text"
-              placeholder={
-                form.tipoItem === "servicio"
-                  ? "Ej: hora, visita, proyecto"
-                  : "Ej: unidad, rollo, caja"
-              }
               value={form.unidad}
               onChange={handleChange}
+              placeholder="Ej: unidad, hora, visita"
               style={styles.input}
             />
-          </div>
+          </label>
 
-          {form.tipoItem === "producto" && (
-            <div style={styles.field}>
-              <label style={styles.label}>Stock disponible</label>
-              <input
-                name="stock"
-                type="number"
-                placeholder="Ej: 10"
-                value={form.stock}
-                onChange={handleChange}
-                style={styles.input}
-                min={0}
-              />
-            </div>
-          )}
-
-          <div style={styles.field}>
-            <label style={styles.label}>Precio interno (CLP)</label>
+          <label style={styles.field}>
+            <span style={styles.label}>Costo base</span>
             <input
-              name="precio"
+              name="costoBase"
               type="number"
+              min="0"
+              value={form.costoBase}
+              onChange={handleChange}
               placeholder="Ej: 45000"
-              value={form.precio}
-              onChange={handleChange}
               style={styles.input}
-              required
-              min={0}
             />
-          </div>
+          </label>
 
-          <div style={styles.fieldFull}>
-            <label style={styles.label}>URL proveedor (opcional)</label>
+          <label style={styles.field}>
+            <span style={styles.label}>Margen deseado (%)</span>
             <input
-              name="url"
-              type="text"
-              placeholder="Ej: https://proveedor.cl/producto/123"
-              value={form.url}
+              name="margenDeseado"
+              type="number"
+              value={form.margenDeseado}
               onChange={handleChange}
+              placeholder="Ej: 30"
               style={styles.input}
             />
-          </div>
+          </label>
+
+          <label style={styles.field}>
+            <span style={styles.label}>Precio interno</span>
+            <input
+              name="precioInterno"
+              type="number"
+              min="0"
+              value={form.precioInterno}
+              onChange={handleChange}
+              placeholder={
+                previewPrice !== "" && Number.isFinite(previewPrice)
+                  ? String(previewPrice)
+                  : "Se calcula si lo dejas vacío"
+              }
+              style={styles.input}
+            />
+          </label>
+
+          <label style={styles.field}>
+            <span style={styles.label}>Código/SKU opcional</span>
+            <input
+              name="sku"
+              value={form.sku}
+              onChange={handleChange}
+              placeholder="Opcional"
+              style={styles.input}
+            />
+          </label>
+
+          <label style={styles.field}>
+            <span style={styles.label}>Estado</span>
+            <select
+              name="estado"
+              value={form.estado}
+              onChange={handleChange}
+              style={styles.input}
+            >
+              <option value="activo">Activo</option>
+              <option value="inactivo">Inactivo</option>
+            </select>
+          </label>
+
+          <label style={styles.fieldFull}>
+            <span style={styles.label}>Descripción</span>
+            <textarea
+              name="descripcion"
+              value={form.descripcion}
+              onChange={handleChange}
+              rows={3}
+              placeholder="Detalle breve del producto, servicio o actividad."
+              style={styles.textarea}
+            />
+          </label>
         </div>
+
+        {previewPrice !== "" && Number.isFinite(previewPrice) && (
+          <p style={styles.helpText}>
+            Precio interno estimado: <strong>{formatCLP(previewPrice)}</strong>
+          </p>
+        )}
 
         {error && <p style={styles.errorText}>{error}</p>}
+        {success && <p style={styles.successText}>{success}</p>}
 
-        <div style={styles.buttonGroup}>
-          <button type="submit" style={styles.buttonPrimary}>
-            {editandoId ? "Actualizar Ã­tem" : "Guardar Ã­tem"}
-          </button>
-          {editandoId && (
-            <button
-              type="button"
-              onClick={handleCancelarEdicion}
-              style={styles.buttonCancel}
-            >
-              Cancelar
-            </button>
-          )}
-        </div>
+        <button type="submit" style={styles.primaryButton} disabled={saving}>
+          {saving ? "Guardando..." : editingId ? "Actualizar ítem" : "Crear ítem"}
+        </button>
       </form>
 
-      {/* Lista */}
-      <div style={styles.listContainerCard}>
-        {/* Buscador + filtros pegados a la tabla */}
-        <div style={styles.listHeader}>
-          <h4 style={styles.listTitle}>Items en inventario</h4>
-          <div style={styles.toolbarRight}>
-            <input
-              type="text"
-              placeholder="Buscar por nombre, SKU o categorÃ­a..."
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-              style={styles.searchInput}
-            />
-            <select
-              value={filtroTipo}
-              onChange={(e) => setFiltroTipo(e.target.value)}
-              style={styles.filterSelect}
-            >
-              <option value="todos">Todos</option>
-              <option value="producto">Solo productos</option>
-              <option value="servicio">Solo servicios</option>
-            </select>
-          </div>
+      <div style={styles.listCard}>
+        <div style={styles.filters}>
+          <input
+            value={busqueda}
+            onChange={(event) => setBusqueda(event.target.value)}
+            placeholder="Buscar por nombre, categoría, descripción o SKU"
+            style={styles.searchInput}
+          />
+          <select
+            value={tipoFiltro}
+            onChange={(event) => setTipoFiltro(event.target.value)}
+            style={styles.filterSelect}
+          >
+            <option value="todos">Todos los tipos</option>
+            <option value="producto">Producto</option>
+            <option value="servicio">Servicio</option>
+            <option value="actividad">Actividad</option>
+          </select>
+          <select
+            value={estadoFiltro}
+            onChange={(event) => setEstadoFiltro(event.target.value)}
+            style={styles.filterSelect}
+          >
+            <option value="activos">Activos</option>
+            <option value="inactivos">Inactivos</option>
+            <option value="todos">Todos</option>
+          </select>
         </div>
 
-        {productosFiltrados.length === 0 ? (
-          <p style={styles.emptyText}>
-            No hay Ã­tems para mostrar con los filtros actuales.
-          </p>
+        {loading ? (
+          <p style={styles.emptyText}>Cargando inventario...</p>
+        ) : filteredItems.length === 0 ? (
+          <div style={styles.emptyState}>
+            <h3 style={styles.emptyTitle}>No hay ítems para mostrar</h3>
+            <p style={styles.emptyText}>
+              Crea tu primer producto, servicio o actividad para empezar a
+              valorar proyectos.
+            </p>
+          </div>
         ) : (
           <div style={styles.tableWrapper}>
             <table style={styles.table}>
               <thead>
                 <tr>
+                  <th style={styles.th}>Ítem</th>
                   <th style={styles.th}>Tipo</th>
-                  <th style={styles.th}>SKU</th>
-                  <th style={styles.th}>Nombre</th>
-                  <th style={styles.th}>CategorÃ­a</th>
+                  <th style={styles.th}>Categoría</th>
                   <th style={styles.th}>Unidad</th>
-                  <th style={styles.th}>Stock</th>
+                  <th style={styles.th}>Costo base</th>
+                  <th style={styles.th}>Margen</th>
                   <th style={styles.th}>Precio interno</th>
-                  <th style={styles.th}>Precios de mercado</th>
+                  <th style={styles.th}>Estado</th>
                   <th style={styles.th}>Acciones</th>
                 </tr>
               </thead>
               <tbody>
-                {productosFiltrados.map((producto) => (
-                  <tr key={producto.id}>
-                    <td style={styles.td}>{traducirTipo(producto)}</td>
-                    <td style={styles.td}>{producto.sku || "â€”"}</td>
-                    <td style={styles.td}>{producto.nombre}</td>
-                    <td style={styles.td}>{producto.categoria || "â€”"}</td>
-                    <td style={styles.td}>{producto.unidad || "â€”"}</td>
-                    <td style={styles.td}>{renderStock(producto)}</td>
+                {filteredItems.map((item) => (
+                  <tr key={item.id}>
                     <td style={styles.td}>
-                      $
-                      {Number(producto.precio || 0).toLocaleString("es-CL")}
+                      <strong>{item.nombre}</strong>
+                      <span style={styles.itemMeta}>
+                        {item.sku ? `SKU: ${item.sku}` : "Sin SKU"}
+                      </span>
+                    </td>
+                    <td style={styles.td}>{tipoLabels[item.tipoItem] || item.tipoItem}</td>
+                    <td style={styles.td}>{item.categoria || "-"}</td>
+                    <td style={styles.td}>{item.unidad}</td>
+                    <td style={styles.td}>{formatCLP(item.costoBase)}</td>
+                    <td style={styles.td}>{Number(item.margenDeseado || 0)}%</td>
+                    <td style={styles.td}>{formatCLP(item.precioInterno)}</td>
+                    <td style={styles.td}>
+                      <span
+                        style={{
+                          ...styles.statusBadge,
+                          ...(item.estado === "inactivo"
+                            ? styles.statusInactive
+                            : styles.statusActive),
+                        }}
+                      >
+                        {item.estado === "inactivo" ? "Inactivo" : "Activo"}
+                      </span>
                     </td>
                     <td style={styles.td}>
-                      {loadingIA === producto.id ? (
-                        <span style={styles.textLoading}>
-                          Analizando precio...
-                        </span>
-                      ) : (
-                        <>
+                      <div style={styles.actions}>
+                        <button
+                          type="button"
+                          style={styles.smallButton}
+                          onClick={() => handleEdit(item)}
+                        >
+                          Editar
+                        </button>
+                        {(item.estado || "activo") === "activo" ? (
                           <button
-                            onClick={() => handleVerificarPrecio(producto)}
-                            style={styles.buttonIA}
-                            disabled={!producto.url}
+                            type="button"
+                            style={styles.warningButton}
+                            onClick={() => handleDeactivate(item)}
                           >
-                            Verificar en proveedor
+                            Desactivar
                           </button>
-                          {resultadoIA[producto.id] && (
-                            <div style={styles.textResultIA}>
-                              {resultadoIA[producto.id]}
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </td>
-                    <td style={styles.td}>
-                      <button
-                        onClick={() => handleEditarClick(producto)}
-                        style={styles.buttonEdit}
-                      >
-                        Editar
-                      </button>
-                      <button
-                        onClick={() => handleEliminarProducto(producto.id)}
-                        style={styles.buttonDelete}
-                      >
-                        Eliminar
-                      </button>
+                        ) : (
+                          <button
+                            type="button"
+                            style={styles.successButton}
+                            onClick={() => handleReactivate(item)}
+                          >
+                            Reactivar
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -481,142 +515,145 @@ function InventoryManager({ userId }) {
           </div>
         )}
       </div>
-    </div>
+    </section>
   );
 }
 
 const styles = {
-  container: {
-    color: "#111827",
+  wrapper: {
+    display: "grid",
+    gap: "18px",
   },
-  headerBlock: {
-    marginBottom: "1.5rem",
+  header: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "16px",
   },
-  h3: {
-    color: "#111827",
-    fontSize: "1.4rem",
-    marginBottom: "0.25rem",
+  eyebrow: {
+    color: "#0f766e",
+    fontSize: "12px",
+    fontWeight: 800,
+    textTransform: "uppercase",
+  },
+  title: {
+    margin: "4px 0 6px",
+    fontSize: "24px",
   },
   subtitle: {
-    color: "#6b7280",
-    fontSize: "0.9rem",
-  },
-  toolbarRight: {
-    display: "flex",
-    gap: "0.5rem",
-    alignItems: "center",
-    flexWrap: "wrap",
-  },
-  searchInput: {
-    padding: "0.55rem 0.75rem",
-    borderRadius: "999px",
-    border: "1px solid #d1d5db",
-    backgroundColor: "#ffffff",
-    color: "#111827",
-    minWidth: "260px",
-  },
-  filterSelect: {
-    padding: "0.55rem 0.75rem",
-    borderRadius: "999px",
-    border: "1px solid #d1d5db",
-    backgroundColor: "#ffffff",
-    color: "#111827",
+    margin: 0,
+    color: "#64748b",
+    lineHeight: 1.5,
   },
   formCard: {
-    backgroundColor: "#ffffff",
+    background: "#ffffff",
     border: "1px solid #e5e7eb",
-    marginBottom: "1.5rem",
-    padding: "1.5rem 2rem",
-    borderRadius: "12px",
-    boxShadow: "0 8px 18px rgba(15,23,42,0.04)",
+    borderRadius: "8px",
+    padding: "20px",
+  },
+  formHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "12px",
+    marginBottom: "16px",
   },
   formTitle: {
-    fontSize: "1.05rem",
-    color: "#111827",
-    marginBottom: "1rem",
+    margin: 0,
+    fontSize: "18px",
   },
   formGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-    gap: "1rem",
+    gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+    gap: "14px",
   },
   field: {
-    display: "flex",
-    flexDirection: "column",
+    display: "grid",
+    gap: "6px",
   },
   fieldFull: {
+    display: "grid",
+    gap: "6px",
     gridColumn: "1 / -1",
-    display: "flex",
-    flexDirection: "column",
   },
   label: {
-    fontSize: "0.85rem",
-    color: "#4b5563",
-    marginBottom: "0.3rem",
+    color: "#334155",
+    fontSize: "13px",
+    fontWeight: 700,
   },
   input: {
     width: "100%",
-    padding: "0.65rem 0.75rem",
-    borderRadius: "8px",
-    border: "1px solid #d1d5db",
-    backgroundColor: "#ffffff",
+    border: "1px solid #cbd5e1",
+    borderRadius: "6px",
+    padding: "10px 11px",
     color: "#111827",
-    fontSize: "0.95rem",
+    background: "#ffffff",
   },
-  buttonGroup: {
-    marginTop: "1rem",
-    display: "flex",
-    gap: "0.5rem",
+  textarea: {
+    width: "100%",
+    border: "1px solid #cbd5e1",
+    borderRadius: "6px",
+    padding: "10px 11px",
+    color: "#111827",
+    background: "#ffffff",
+    resize: "vertical",
   },
-  buttonPrimary: {
-    backgroundColor: "#0f766e",
-    color: "white",
-    padding: "0.7rem 1.4rem",
-    border: "none",
-    borderRadius: "8px",
-    cursor: "pointer",
-    fontSize: "0.96rem",
-    fontWeight: 600,
-  },
-  buttonCancel: {
-    backgroundColor: "#e5e7eb",
-    color: "#374151",
-    padding: "0.7rem 1.2rem",
-    border: "none",
-    borderRadius: "8px",
-    cursor: "pointer",
-    fontSize: "0.96rem",
+  helpText: {
+    color: "#475569",
+    fontSize: "14px",
+    margin: "14px 0 0",
   },
   errorText: {
     color: "#b91c1c",
-    fontSize: "0.9rem",
-    marginTop: "0.5rem",
+    fontSize: "14px",
+    margin: "12px 0 0",
   },
-  listContainerCard: {
-    backgroundColor: "#ffffff",
+  successText: {
+    color: "#047857",
+    fontSize: "14px",
+    margin: "12px 0 0",
+  },
+  primaryButton: {
+    marginTop: "16px",
+    border: 0,
+    borderRadius: "6px",
+    background: "#0f766e",
+    color: "#ffffff",
+    cursor: "pointer",
+    fontWeight: 800,
+    padding: "11px 16px",
+  },
+  secondaryButton: {
+    border: "1px solid #cbd5e1",
+    borderRadius: "6px",
+    background: "#ffffff",
+    color: "#334155",
+    cursor: "pointer",
+    fontWeight: 700,
+    padding: "9px 12px",
+  },
+  listCard: {
+    background: "#ffffff",
     border: "1px solid #e5e7eb",
-    padding: "1.5rem 2rem",
-    borderRadius: "12px",
-    boxShadow: "0 8px 18px rgba(15,23,42,0.04)",
+    borderRadius: "8px",
+    padding: "18px",
   },
-  listHeader: {
+  filters: {
     display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "1rem",
-    marginBottom: "1rem",
     flexWrap: "wrap",
+    gap: "10px",
+    marginBottom: "14px",
   },
-  listTitle: {
-    fontSize: "1rem",
-    fontWeight: 600,
-    color: "#111827",
+  searchInput: {
+    flex: "1 1 280px",
+    border: "1px solid #cbd5e1",
+    borderRadius: "6px",
+    padding: "10px 11px",
   },
-  emptyText: {
-    color: "#6b7280",
-    fontStyle: "italic",
-    textAlign: "center",
-    padding: "2rem 0",
+  filterSelect: {
+    border: "1px solid #cbd5e1",
+    borderRadius: "6px",
+    padding: "10px 11px",
+    background: "#ffffff",
   },
   tableWrapper: {
     overflowX: "auto",
@@ -624,63 +661,86 @@ const styles = {
   table: {
     width: "100%",
     borderCollapse: "collapse",
-    color: "#111827",
   },
   th: {
+    background: "#f8fafc",
     borderBottom: "1px solid #e5e7eb",
-    padding: "0.7rem 0.9rem",
+    color: "#64748b",
+    fontSize: "12px",
+    padding: "10px",
     textAlign: "left",
-    backgroundColor: "#f9fafb",
-    fontSize: "0.85rem",
     textTransform: "uppercase",
-    color: "#6b7280",
   },
   td: {
-    borderBottom: "1px solid #e5e7eb",
-    padding: "0.65rem 0.9rem",
+    borderBottom: "1px solid #eef2f7",
+    fontSize: "14px",
+    padding: "12px 10px",
     verticalAlign: "top",
-    fontSize: "0.9rem",
   },
-  buttonEdit: {
-    backgroundColor: "#f59e0b",
-    color: "white",
-    padding: "4px 10px",
-    border: "none",
-    borderRadius: "4px",
+  itemMeta: {
+    color: "#64748b",
+    display: "block",
+    fontSize: "12px",
+    marginTop: "3px",
+  },
+  statusBadge: {
+    borderRadius: "999px",
+    display: "inline-block",
+    fontSize: "12px",
+    fontWeight: 800,
+    padding: "4px 9px",
+  },
+  statusActive: {
+    background: "#dcfce7",
+    color: "#166534",
+  },
+  statusInactive: {
+    background: "#fee2e2",
+    color: "#991b1b",
+  },
+  actions: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "6px",
+  },
+  smallButton: {
+    border: "1px solid #cbd5e1",
+    borderRadius: "6px",
+    background: "#ffffff",
     cursor: "pointer",
-    marginRight: "4px",
-    marginBottom: "4px",
-    fontSize: "0.85rem",
+    fontWeight: 700,
+    padding: "7px 9px",
   },
-  buttonDelete: {
-    backgroundColor: "#dc2626",
-    color: "white",
-    padding: "4px 10px",
-    border: "none",
-    borderRadius: "4px",
+  warningButton: {
+    border: 0,
+    borderRadius: "6px",
+    background: "#f59e0b",
+    color: "#ffffff",
     cursor: "pointer",
-    fontSize: "0.85rem",
+    fontWeight: 800,
+    padding: "7px 9px",
   },
-  buttonIA: {
-    backgroundColor: "#e0f2fe",
-    color: "#1d4ed8",
-    padding: "4px 10px",
-    border: "none",
-    borderRadius: "4px",
+  successButton: {
+    border: 0,
+    borderRadius: "6px",
+    background: "#059669",
+    color: "#ffffff",
     cursor: "pointer",
-    fontWeight: 600,
-    fontSize: "0.82rem",
+    fontWeight: 800,
+    padding: "7px 9px",
   },
-  textLoading: {
-    fontStyle: "italic",
-    color: "#6b7280",
-    fontSize: "0.85rem",
+  emptyState: {
+    border: "1px dashed #cbd5e1",
+    borderRadius: "8px",
+    padding: "28px",
+    textAlign: "center",
   },
-  textResultIA: {
-    fontSize: "0.8rem",
-    marginTop: "4px",
-    fontWeight: 500,
-    color: "#92400e",
+  emptyTitle: {
+    margin: "0 0 6px",
+  },
+  emptyText: {
+    color: "#64748b",
+    margin: 0,
   },
 };
 

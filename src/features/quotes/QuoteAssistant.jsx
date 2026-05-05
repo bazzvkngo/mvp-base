@@ -24,7 +24,7 @@ function QuoteAssistant({ userId }) {
   const [loadingPropuesta, setLoadingPropuesta] = useState(false);
   const [error, setError] = useState("");
 
-  // Carga inventario + configuraciÃ³n del negocio
+  // Carga inventario + configuración del negocio
   useEffect(() => {
     if (!userId) return;
 
@@ -68,14 +68,14 @@ function QuoteAssistant({ userId }) {
 
     if (!inventario || inventario.length === 0) {
       setError(
-        "Tu inventario estÃ¡ vacÃ­o. Importa productos o agrega algunos antes de cotizar."
+        "Tu inventario está vacío. Importa productos o agrega algunos antes de cotizar."
       );
       return;
     }
 
     if (!form.tipoProyecto || !form.descripcionProyecto) {
       setError(
-        "Completa al menos el tipo de proyecto y la descripciÃ³n para poder generar una propuesta."
+        "Completa al menos el tipo de proyecto y la descripción para poder generar una propuesta."
       );
       return;
     }
@@ -98,7 +98,7 @@ function QuoteAssistant({ userId }) {
       setPropuesta(propuestaGenerada);
     } catch (e) {
       console.error("Error generando propuesta:", e);
-      setError("OcurriÃ³ un problema al generar la propuesta.");
+      setError("Ocurrió un problema al generar la propuesta.");
     } finally {
       setLoadingPropuesta(false);
     }
@@ -110,7 +110,7 @@ function QuoteAssistant({ userId }) {
       <h2 style={styles.title}>Asistente de cotizaciones inteligentes</h2>
       <p style={styles.subtitle}>
         Completa los datos del cliente y describe el proyecto. El sistema
-        prepararÃ¡ una propuesta basada en tu inventario y en la configuraciÃ³n
+        preparará una propuesta basada en tu inventario y en la configuración
         de tu negocio.
       </p>
 
@@ -128,7 +128,7 @@ function QuoteAssistant({ userId }) {
                 name="nombreCliente"
                 value={form.nombreCliente}
                 onChange={handleChange}
-                placeholder="Ej: Jorge Ãlvarez"
+                placeholder="Ej: Jorge Álvarez"
                 style={styles.input}
               />
             </div>
@@ -147,7 +147,7 @@ function QuoteAssistant({ userId }) {
 
           <div style={styles.grid2}>
             <div style={styles.field}>
-              <label style={styles.label}>DirecciÃ³n del cliente</label>
+              <label style={styles.label}>Dirección del cliente</label>
               <input
                 type="text"
                 name="direccionCliente"
@@ -182,7 +182,7 @@ function QuoteAssistant({ userId }) {
               name="tipoProyecto"
               value={form.tipoProyecto}
               onChange={handleChange}
-              placeholder="Ej: InstalaciÃ³n de cÃ¡maras de seguridad para vivienda"
+              placeholder="Ej: Instalación de cámaras de seguridad para vivienda"
               style={styles.input}
             />
           </div>
@@ -196,8 +196,8 @@ function QuoteAssistant({ userId }) {
                 onChange={handleChange}
                 style={styles.select}
               >
-                <option value="economico">EconÃ³mico</option>
-                <option value="estandar">EstÃ¡ndar</option>
+                <option value="economico">Económico</option>
+                <option value="estandar">Estándar</option>
                 <option value="premium">Premium</option>
               </select>
             </div>
@@ -232,21 +232,21 @@ function QuoteAssistant({ userId }) {
           </div>
 
           <div style={styles.field}>
-            <label style={styles.label}>DescripciÃ³n del proyecto</label>
+            <label style={styles.label}>Descripción del proyecto</label>
             <textarea
               name="descripcionProyecto"
               value={form.descripcionProyecto}
               onChange={handleChange}
               rows={4}
               style={styles.textarea}
-              placeholder="Ej: Casa de 2 pisos en Alto Hospicio, 6 cÃ¡maras 1080p con acceso remoto desde el celular, DVR, instalaciÃ³n completa y puesta en marcha..."
+              placeholder="Ej: Casa de 2 pisos en Alto Hospicio, 6 cámaras 1080p con acceso remoto desde el celular, DVR, instalación completa y puesta en marcha..."
             />
           </div>
 
           {error && <p style={styles.errorText}>{error}</p>}
           {loadingData && (
             <p style={styles.infoText}>
-              Cargando inventario para cotizar. Esto puede tardar unos segundosâ€¦
+              Cargando inventario para cotizar. Esto puede tardar unos segundos...
             </p>
           )}
 
@@ -255,7 +255,7 @@ function QuoteAssistant({ userId }) {
             style={styles.primaryButton}
             disabled={loadingPropuesta || loadingData}
           >
-            {loadingPropuesta ? "Generando propuesta..." : "Generar propuesta con IA"}
+            {loadingPropuesta ? "Generando propuesta..." : "Generar propuesta"}
           </button>
         </div>
       </form>
@@ -271,14 +271,14 @@ function QuoteAssistant({ userId }) {
               <span style={styles.summaryLabel}>Cliente</span>
               <p style={styles.summaryValue}>
                 {form.nombreCliente || "Sin nombre registrado"}
-                {form.empresa ? ` Â· ${form.empresa}` : ""}
+                {form.empresa ? ` · ${form.empresa}` : ""}
               </p>
             </div>
             <div>
-              <span style={styles.summaryLabel}>UbicaciÃ³n</span>
+              <span style={styles.summaryLabel}>Ubicación</span>
               <p style={styles.summaryValue}>
-                {form.direccionCliente || "â€”"}
-                {form.ciudadCliente ? ` Â· ${form.ciudadCliente}` : ""}
+                {form.direccionCliente || "-"}
+                {form.ciudadCliente ? ` · ${form.ciudadCliente}` : ""}
               </p>
             </div>
             <div>
@@ -298,7 +298,7 @@ function QuoteAssistant({ userId }) {
               </span>
             </div>
             <div style={styles.kpiCard}>
-              <span style={styles.kpiLabel}>Precio mÃ­nimo sugerido</span>
+              <span style={styles.kpiLabel}>Precio mínimo sugerido</span>
               <span style={styles.kpiValue}>
                 ${propuesta.precioMin.toLocaleString("es-CL")}
               </span>
@@ -312,7 +312,7 @@ function QuoteAssistant({ userId }) {
               </span>
             </div>
             <div style={styles.kpiCard}>
-              <span style={styles.kpiLabel}>Precio mÃ¡ximo sugerido</span>
+              <span style={styles.kpiLabel}>Precio máximo sugerido</span>
               <span style={styles.kpiValue}>
                 ${propuesta.precioMax.toLocaleString("es-CL")}
               </span>
@@ -330,7 +330,7 @@ function QuoteAssistant({ userId }) {
           {propuesta.materialesSeleccionados.length === 0 ? (
             <p style={styles.infoText}>
               No se encontraron materiales relevantes en el inventario para esta
-              descripciÃ³n.
+              descripción.
             </p>
           ) : (
             <div style={styles.tableWrapper}>
@@ -338,7 +338,7 @@ function QuoteAssistant({ userId }) {
                 <thead>
                   <tr>
                     <th style={styles.th}>Producto</th>
-                    <th style={styles.th}>CategorÃ­a</th>
+                    <th style={styles.th}>Categoría</th>
                     <th style={styles.th}>Unidad</th>
                     <th style={styles.th}>Cantidad</th>
                     <th style={styles.th}>Precio unit.</th>
@@ -369,7 +369,7 @@ function QuoteAssistant({ userId }) {
           <h4 style={styles.sectionTitle}>Mano de obra y transporte</h4>
           <div style={styles.kpiRow}>
             <div style={styles.kpiCardSmall}>
-              <span style={styles.kpiLabel}>Horas tÃ©cnico</span>
+              <span style={styles.kpiLabel}>Horas técnico</span>
               <span style={styles.kpiValue}>
                 {propuesta.manoObra.horasTecnico} h
               </span>
@@ -401,7 +401,7 @@ function QuoteAssistant({ userId }) {
 
           <p style={styles.footerText}>
             Estrategia utilizada:{" "}
-            <strong>{propuesta.estrategia || "heurÃ­stica_local"}</strong>
+            <strong>{propuesta.estrategia || "heurística_local"}</strong>
           </p>
         </div>
       )}
@@ -603,3 +603,4 @@ const styles = {
 };
 
 export default QuoteAssistant;
+
