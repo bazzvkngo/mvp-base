@@ -1,11 +1,5 @@
-// src/components/Login.js
 import React, { useState } from "react";
-import { auth, db } from "../firebaseConfig";
-import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-} from "firebase/auth";
-import { doc, setDoc } from "firebase/firestore";
+import { loginWithEmail, registerWithEmail } from "../../services/authService";
 
 const BoxIcon = () => (
   <svg
@@ -24,9 +18,6 @@ const BoxIcon = () => (
   </svg>
 );
 
-const logoUrl =
-  "https://reqlut2.s3.sa-east-1.amazonaws.com/reqlut-images/st/logo-original.png?v=78.8";
-
 function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -39,41 +30,24 @@ function Login() {
 
     try {
       if (isLoginView) {
-        await signInWithEmailAndPassword(auth, email, password);
+        await loginWithEmail(email, password);
       } else {
-        const cred = await createUserWithEmailAndPassword(
-          auth,
-          email,
-          password
-        );
-
-        try {
-          await setDoc(
-            doc(db, "usuarios", cred.user.uid),
-            {
-              email: cred.user.email,
-              creadoEn: new Date(),
-            },
-            { merge: true }
-          );
-        } catch (e) {
-          console.error("Error creando documento de usuario:", e);
-        }
+        await registerWithEmail(email, password);
       }
     } catch (err) {
-      console.error("Error de autenticación:", err.code, err.message);
+      console.error("Error de autenticacion:", err.code, err.message);
       switch (err.code) {
         case "auth/wrong-password":
-          setError("Contraseña incorrecta.");
+          setError("Contrasena incorrecta.");
           break;
         case "auth/user-not-found":
-          setError("No se encontró un usuario con ese correo.");
+          setError("No se encontro un usuario con ese correo.");
           break;
         case "auth/email-already-in-use":
-          setError("El correo electrónico ya está en uso.");
+          setError("El correo electronico ya esta en uso.");
           break;
         case "auth/invalid-credential":
-          setError("Credenciales inválidas.");
+          setError("Credenciales invalidas.");
           break;
         default:
           setError("Error al procesar la solicitud.");
@@ -84,25 +58,21 @@ function Login() {
   return (
     <div style={styles.container}>
       <div style={styles.card}>
-        <img src={logoUrl} alt="Logo Santo Tomás" style={styles.logo} />
-
         <div style={styles.iconContainer}>
           <BoxIcon />
         </div>
 
         <h2 style={styles.title}>
-          {isLoginView ? "Iniciar sesión" : "Crear cuenta"}
+          {isLoginView ? "Iniciar sesion" : "Crear cuenta"}
         </h2>
-        <p style={styles.subtitle}>
-          CotiFlow · Gestión de inventario y cotizaciones
-        </p>
+        <p style={styles.subtitle}>ValoraCloud · Valorizacion y cotizaciones</p>
 
         <form onSubmit={handleSubmit}>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="Correo electrónico"
+            placeholder="Correo electronico"
             style={styles.input}
             required
           />
@@ -110,7 +80,7 @@ function Login() {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Contraseña (mín. 6 caracteres)"
+            placeholder="Contrasena (min. 6 caracteres)"
             style={styles.input}
             minLength="6"
             required
@@ -131,8 +101,8 @@ function Login() {
           style={styles.buttonSecondary}
         >
           {isLoginView
-            ? "¿No tienes cuenta? Regístrate"
-            : "¿Ya tienes cuenta? Inicia sesión"}
+            ? "No tienes cuenta? Registrate"
+            : "Ya tienes cuenta? Inicia sesion"}
         </button>
       </div>
     </div>
@@ -148,20 +118,17 @@ const styles = {
     fontFamily:
       "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
     backgroundColor: "#f3f4f6",
+    padding: "1rem",
   },
   card: {
     backgroundColor: "#ffffff",
-    borderRadius: "12px",
+    borderRadius: "8px",
     padding: "2.5rem 2.25rem",
     boxShadow: "0 18px 40px rgba(15,23,42,0.08)",
     maxWidth: "420px",
     width: "100%",
     textAlign: "center",
     border: "1px solid #e5e7eb",
-  },
-  logo: {
-    width: "170px",
-    marginBottom: "1rem",
   },
   iconContainer: {
     marginBottom: "0.75rem",

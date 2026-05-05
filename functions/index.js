@@ -2,6 +2,7 @@
 
 // Import de Firebase Functions v2 (callable)
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { defineSecret } = require("firebase-functions/params");
 
 // Admin SDK para acceder a Firestore
 const { initializeApp } = require("firebase-admin/app");
@@ -15,23 +16,39 @@ initializeApp();
 const db = getFirestore();
 
 /**
- * ⚠️ AQUÍ PEGAS TU API KEY DE GEMINI
- *
- * Copia tu key desde Google AI Studio y reemplaza SOLO el texto
- * "PON_AQUI_TU_API_KEY_DE_GEMINI" manteniendo las comillas.
+ * La API key de Gemini no debe guardarse en el repositorio.
+ * En Firebase Functions se configura como secret:
+ * firebase functions:secrets:set GEMINI_API_KEY
+ * Para desarrollo local tambien puede venir desde process.env.GEMINI_API_KEY.
  */
-const GEMINI_API_KEY = "AIzaSyBcHXUoZjjl8CqifxuWa3Uq5w5b-0hTFnU";
+const GEMINI_API_KEY_SECRET = defineSecret("GEMINI_API_KEY");
 
-// Instancia del modelo de Gemini (si hay API key configurada)
-let geminiModel = null;
+let cachedGeminiModel = null;
 
-if (!GEMINI_API_KEY || GEMINI_API_KEY === "PON_AQUI_TU_API_KEY_DE_GEMINI") {
-  console.warn(
-    "⚠️ GEMINI_API_KEY no configurada. La función usará solo precios simulados / regex."
-  );
-} else {
-  const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-  geminiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+function getGeminiApiKey() {
+  if (process.env.GEMINI_API_KEY) return process.env.GEMINI_API_KEY;
+
+  try {
+    return GEMINI_API_KEY_SECRET.value();
+  } catch (error) {
+    return null;
+  }
+}
+
+function getGeminiModel() {
+  if (cachedGeminiModel) return cachedGeminiModel;
+
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) {
+    console.warn(
+      "GEMINI_API_KEY no configurada. Gemini queda desactivado para esta ejecucion."
+    );
+    return null;
+  }
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+  cachedGeminiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  return cachedGeminiModel;
 }
 
 /** Utilidad: parsea el primer número entero razonable desde un texto */
@@ -48,6 +65,7 @@ function parseIntegerFromText(text) {
  * Devuelve un número entero (precio en CLP) o null si no pudo.
  */
 async function extraerPrecioConGemini(html) {
+  const geminiModel = getGeminiModel();
   if (!geminiModel) return null;
 
   const trimmedHtml = html.slice(0, 20000); // recortar por si la página es muy grande
@@ -76,6 +94,7 @@ async function extraerPrecioConGemini(html) {
  * descripción del producto + precio interno actual.
  */
 async function estimarPrecioMercadoDesdeDescripcion(producto, precioInterno) {
+  const geminiModel = getGeminiModel();
   if (!geminiModel) return null;
 
   const nombre = producto.nombre || "producto";
@@ -203,7 +222,7 @@ async function obtenerPrecioDesdeUrl(url, precioInterno) {
  * Usa URL + Gemini + patrones HTML para comparar tu precio actual
  * con el precio del proveedor.
  */
-exports.verificarPrecioProducto = onCall(async (request) => {
+exports.verificarPrecioProducto = onCall({ secrets: [GEMINI_API_KEY_SECRET] }, async (request) => {
   // 1. Seguridad: debe estar autenticado
   if (!request.auth || !request.auth.uid) {
     throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
@@ -306,7 +325,7 @@ exports.verificarPrecioProducto = onCall(async (request) => {
  * Entrega un precio de venta recomendado de mercado (cliente final),
  * para que el negocio no venda demasiado caro ni demasiado barato.
  */
-exports.estimarPrecioMercadoProducto = onCall(async (request) => {
+exports.estimarPrecioMercadoProducto = onCall({ secrets: [GEMINI_API_KEY_SECRET] }, async (request) => {
   if (!request.auth || !request.auth.uid) {
     throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
   }
@@ -346,8 +365,8 @@ exports.estimarPrecioMercadoProducto = onCall(async (request) => {
 
   if (!precioRecomendado) {
     throw new HttpsError(
-      "internal",
-      "No se pudo estimar el precio de mercado."
+      "failed-precondition",
+      "Gemini no esta configurado o no pudo estimar el precio de mercado."
     );
   }
 
@@ -389,7 +408,7 @@ exports.estimarPrecioMercadoProducto = onCall(async (request) => {
  *     2) Descripción + Gemini (mercado)
  *     3) Simulación
  */
-exports.actualizarPreciosInventario = onCall(async (request) => {
+exports.actualizarPreciosInventario = onCall({ secrets: [GEMINI_API_KEY_SECRET] }, async (request) => {
   if (!request.auth || !request.auth.uid) {
     throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
   }
@@ -495,7 +514,7 @@ exports.actualizarPreciosInventario = onCall(async (request) => {
 });
 
 // Asistente de cotizaciones: simular proyecto completo
-exports.simularCotizacionProyecto = onCall(async (request) => {
+exports.simularCotizacionProyecto = onCall({ secrets: [GEMINI_API_KEY_SECRET] }, async (request) => {
   if (!request.auth || !request.auth.uid) {
     throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
   }
@@ -623,6 +642,7 @@ exports.simularCotizacionProyecto = onCall(async (request) => {
   let fuentePlan = "heuristica_local";
 
   // 3. Intentar con Gemini
+  const geminiModel = getGeminiModel();
   if (geminiModel) {
     try {
       const result = await geminiModel.generateContent(prompt);
@@ -803,7 +823,7 @@ exports.simularCotizacionProyecto = onCall(async (request) => {
       margenPorcentaje,
     },
     origen: {
-      usoGemini: !!geminiModel,
+      usoGemini: !!getGeminiApiKey(),
       fuentePlan,
     },
     comentarios,

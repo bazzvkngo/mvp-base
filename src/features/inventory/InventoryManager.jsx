@@ -1,18 +1,11 @@
-// src/components/Inventario.js
-import React, { useState, useEffect } from "react";
-import { db, app } from "../firebaseConfig";
+﻿import React, { useState, useEffect } from "react";
 import {
-  collection,
-  onSnapshot,
-  addDoc,
-  doc,
-  updateDoc,
-  deleteDoc,
-} from "firebase/firestore";
-import { getFunctions, httpsCallable } from "firebase/functions";
-
-const functions = getFunctions(app, "us-central1");
-const verificarPrecioFn = httpsCallable(functions, "verificarPrecioProducto");
+  createInventoryItem,
+  deleteInventoryItem,
+  subscribeToInventory,
+  updateInventoryItem,
+  verifySupplierPrice,
+} from "../../services/inventoryService";
 
 function obtenerTipoItem(producto) {
   if (producto.tipoItem === "servicio" || producto.tipoItem === "producto") {
@@ -24,7 +17,7 @@ function obtenerTipoItem(producto) {
   if (
     cat.includes("servicio") ||
     cat.includes("mano de obra") ||
-    cat.includes("instalación") ||
+    cat.includes("instalaciÃ³n") ||
     cat.includes("instalacion") ||
     nombre.includes("servicio")
   ) {
@@ -33,7 +26,7 @@ function obtenerTipoItem(producto) {
   return "producto";
 }
 
-function Inventario({ userId }) {
+function InventoryManager({ userId }) {
   const [productos, setProductos] = useState([]);
   const [form, setForm] = useState({
     nombre: "",
@@ -55,16 +48,10 @@ function Inventario({ userId }) {
   useEffect(() => {
     if (!userId) return;
 
-    const collectionRef = collection(db, "usuarios", userId, "inventario");
-
-    const unsubscribe = onSnapshot(
-      collectionRef,
+    const unsubscribe = subscribeToInventory(
+      userId,
       (snapshot) => {
-        const items = snapshot.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
-        }));
-        setProductos(items);
+        setProductos(snapshot);
       },
       (err) => {
         console.error("Error al leer inventario:", err);
@@ -130,13 +117,10 @@ function Inventario({ userId }) {
     };
 
     try {
-      const collectionRef = collection(db, "usuarios", userId, "inventario");
-
       if (editandoId) {
-        const ref = doc(collectionRef, editandoId);
-        await updateDoc(ref, datos);
+        await updateInventoryItem(userId, editandoId, datos);
       } else {
-        await addDoc(collectionRef, {
+        await createInventoryItem(userId, {
           ...datos,
           creadoEn: new Date(),
         });
@@ -170,11 +154,10 @@ function Inventario({ userId }) {
   };
 
   const handleEliminarProducto = async (id) => {
-    if (!window.confirm("¿Eliminar este producto del inventario?")) return;
+    if (!window.confirm("Â¿Eliminar este producto del inventario?")) return;
 
     try {
-      const ref = doc(db, "usuarios", userId, "inventario", id);
-      await deleteDoc(ref);
+      await deleteInventoryItem(userId, id);
     } catch (err) {
       console.error("Error al eliminar producto:", err);
       alert("No se pudo eliminar el producto.");
@@ -194,11 +177,7 @@ function Inventario({ userId }) {
     }));
 
     try {
-      const resp = await verificarPrecioFn({
-        productoId: producto.id,
-      });
-
-      const data = resp.data || {};
+      const data = await verifySupplierPrice(producto.id);
       const {
         precioProveedor,
         diferencia,
@@ -220,7 +199,7 @@ function Inventario({ userId }) {
         [producto.id]: mensaje,
       }));
     } catch (err) {
-      console.error("Error en análisis de precios:", err);
+      console.error("Error en anÃ¡lisis de precios:", err);
       setResultadoIA((prev) => ({
         ...prev,
         [producto.id]: "No se pudo analizar el precio.",
@@ -232,9 +211,9 @@ function Inventario({ userId }) {
 
   const renderStock = (producto) => {
     const tipo = obtenerTipoItem(producto);
-    if (tipo === "servicio") return "—";
+    if (tipo === "servicio") return "â€”";
     if (producto.stock == null || Number.isNaN(Number(producto.stock)))
-      return "—";
+      return "â€”";
     return producto.stock;
   };
 
@@ -259,24 +238,24 @@ function Inventario({ userId }) {
 
   return (
     <div style={styles.container}>
-      {/* Encabezado del módulo */}
+      {/* Encabezado del mÃ³dulo */}
       <div style={styles.headerBlock}>
         <h3 style={styles.h3}>Inventario</h3>
         <p style={styles.subtitle}>
-          Gestiona tus productos y servicios. Esta información alimenta el
-          módulo de cotizaciones y el análisis de precios.
+          Gestiona tus productos y servicios. Esta informaciÃ³n alimenta el
+          mÃ³dulo de cotizaciones y el anÃ¡lisis de precios.
         </p>
       </div>
 
       {/* Formulario */}
       <form onSubmit={handleSubmit} style={styles.formCard}>
         <h4 style={styles.formTitle}>
-          {editandoId ? "Editar ítem de inventario" : "Agregar nuevo ítem"}
+          {editandoId ? "Editar Ã­tem de inventario" : "Agregar nuevo Ã­tem"}
         </h4>
 
         <div style={styles.formGrid}>
           <div style={styles.field}>
-            <label style={styles.label}>Tipo de ítem</label>
+            <label style={styles.label}>Tipo de Ã­tem</label>
             <select
               name="tipoItem"
               value={form.tipoItem}
@@ -293,7 +272,7 @@ function Inventario({ userId }) {
             <input
               name="nombre"
               type="text"
-              placeholder="Ej: Cámara 1080p exterior"
+              placeholder="Ej: CÃ¡mara 1080p exterior"
               value={form.nombre}
               onChange={handleChange}
               style={styles.input}
@@ -302,7 +281,7 @@ function Inventario({ userId }) {
           </div>
 
           <div style={styles.field}>
-            <label style={styles.label}>SKU / Código</label>
+            <label style={styles.label}>SKU / CÃ³digo</label>
             <input
               name="sku"
               type="text"
@@ -314,11 +293,11 @@ function Inventario({ userId }) {
           </div>
 
           <div style={styles.field}>
-            <label style={styles.label}>Categoría</label>
+            <label style={styles.label}>CategorÃ­a</label>
             <input
               name="categoria"
               type="text"
-              placeholder="Ej: CCTV, Redes, Servicio técnico..."
+              placeholder="Ej: CCTV, Redes, Servicio tÃ©cnico..."
               value={form.categoria}
               onChange={handleChange}
               style={styles.input}
@@ -387,7 +366,7 @@ function Inventario({ userId }) {
 
         <div style={styles.buttonGroup}>
           <button type="submit" style={styles.buttonPrimary}>
-            {editandoId ? "Actualizar ítem" : "Guardar ítem"}
+            {editandoId ? "Actualizar Ã­tem" : "Guardar Ã­tem"}
           </button>
           {editandoId && (
             <button
@@ -409,7 +388,7 @@ function Inventario({ userId }) {
           <div style={styles.toolbarRight}>
             <input
               type="text"
-              placeholder="Buscar por nombre, SKU o categoría..."
+              placeholder="Buscar por nombre, SKU o categorÃ­a..."
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
               style={styles.searchInput}
@@ -428,7 +407,7 @@ function Inventario({ userId }) {
 
         {productosFiltrados.length === 0 ? (
           <p style={styles.emptyText}>
-            No hay ítems para mostrar con los filtros actuales.
+            No hay Ã­tems para mostrar con los filtros actuales.
           </p>
         ) : (
           <div style={styles.tableWrapper}>
@@ -438,7 +417,7 @@ function Inventario({ userId }) {
                   <th style={styles.th}>Tipo</th>
                   <th style={styles.th}>SKU</th>
                   <th style={styles.th}>Nombre</th>
-                  <th style={styles.th}>Categoría</th>
+                  <th style={styles.th}>CategorÃ­a</th>
                   <th style={styles.th}>Unidad</th>
                   <th style={styles.th}>Stock</th>
                   <th style={styles.th}>Precio interno</th>
@@ -450,10 +429,10 @@ function Inventario({ userId }) {
                 {productosFiltrados.map((producto) => (
                   <tr key={producto.id}>
                     <td style={styles.td}>{traducirTipo(producto)}</td>
-                    <td style={styles.td}>{producto.sku || "—"}</td>
+                    <td style={styles.td}>{producto.sku || "â€”"}</td>
                     <td style={styles.td}>{producto.nombre}</td>
-                    <td style={styles.td}>{producto.categoria || "—"}</td>
-                    <td style={styles.td}>{producto.unidad || "—"}</td>
+                    <td style={styles.td}>{producto.categoria || "â€”"}</td>
+                    <td style={styles.td}>{producto.unidad || "â€”"}</td>
                     <td style={styles.td}>{renderStock(producto)}</td>
                     <td style={styles.td}>
                       $
@@ -705,4 +684,4 @@ const styles = {
   },
 };
 
-export default Inventario;
+export default InventoryManager;

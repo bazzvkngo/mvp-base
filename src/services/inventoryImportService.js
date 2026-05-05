@@ -4,8 +4,7 @@
 // Mantiene la misma idea de tu importador, pero con código simple y comentado.
 
 import * as XLSX from "xlsx";
-import { db } from "../firebaseConfig";
-import { collection, addDoc } from "firebase/firestore";
+import { importInventoryItems } from "./inventoryService";
 
 // ---- Utilidades básicas -----------------------------------------
 
@@ -155,19 +154,5 @@ export async function importarInventarioEnFirestore(userId, items) {
     return { creados: 0 };
   }
 
-  const colRef = collection(db, "usuarios", userId, "inventario");
-  let creados = 0;
-  const ahora = new Date();
-
-  for (const item of items) {
-    const payload = {
-      ...item,
-      creadoEn: ahora,
-      actualizadoEn: ahora,
-    };
-    await addDoc(colRef, payload);
-    creados += 1;
-  }
-
-  return { creados };
+  return importInventoryItems(userId, items);
 }

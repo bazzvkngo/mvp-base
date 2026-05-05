@@ -1,11 +1,10 @@
-// src/components/ImportadorInventario.jsx
-import React, { useState } from "react";
+﻿import React, { useState } from "react";
 import {
   leerArchivoInventario,
   importarInventarioEnFirestore,
-} from "../services/inventoryImportService";
+} from "../../services/inventoryImportService";
 
-function ImportadorInventario({ userId }) {
+function InventoryImporter({ userId }) {
   const [archivo, setArchivo] = useState(null);
   const [archivoNombre, setArchivoNombre] = useState("");
   const [previewItems, setPreviewItems] = useState([]);
@@ -36,13 +35,13 @@ function ImportadorInventario({ userId }) {
 
       if (filasValidas === 0) {
         setError(
-          "No se encontraron filas válidas. Revisa que la planilla tenga columnas como nombre, precio, etc."
+          "No se encontraron filas vÃ¡lidas. Revisa que la planilla tenga columnas como nombre, precio, etc."
         );
       }
     } catch (err) {
       console.error("Error leyendo archivo de inventario:", err);
       setError(
-        "No se pudo leer el archivo. Verifica el formato (Excel/CSV) e inténtalo nuevamente."
+        "No se pudo leer el archivo. Verifica el formato (Excel/CSV) e intÃ©ntalo nuevamente."
       );
     } finally {
       setCargandoLectura(false);
@@ -53,7 +52,7 @@ function ImportadorInventario({ userId }) {
     if (!userId) return;
     if (!previewItems.length) {
       setError(
-        "Primero selecciona un archivo y asegúrate de que tenga filas válidas."
+        "Primero selecciona un archivo y asegÃºrate de que tenga filas vÃ¡lidas."
       );
       return;
     }
@@ -69,11 +68,11 @@ function ImportadorInventario({ userId }) {
       );
 
       setMensajeImportacion(
-        `Importación completada. Productos creados: ${creados} de ${previewItems.length}.`
+        `ImportaciÃ³n completada. Productos creados: ${creados} de ${previewItems.length}.`
       );
     } catch (err) {
       console.error("Error importando inventario:", err);
-      setError("Ocurrió un error al importar el inventario.");
+      setError("OcurriÃ³ un error al importar el inventario.");
     } finally {
       setCargandoImportacion(false);
     }
@@ -84,10 +83,10 @@ function ImportadorInventario({ userId }) {
       <h2 style={styles.title}>Importar inventario desde Excel/CSV</h2>
       <p style={styles.subtitle}>
         Sube una planilla con productos y servicios. El sistema detecta columnas
-        como <strong>nombre</strong>, <strong>categoría</strong>,{" "}
+        como <strong>nombre</strong>, <strong>categorÃ­a</strong>,{" "}
         <strong>sku</strong>, <strong>stock</strong>, <strong>precio</strong>,{" "}
         <strong>url</strong> aunque tengan nombres distintos (producto,
-        descripción, valor, etc.).
+        descripciÃ³n, valor, etc.).
       </p>
 
       {/* Selector de archivo */}
@@ -108,12 +107,12 @@ function ImportadorInventario({ userId }) {
 
       {/* Mensajes de estado */}
       {cargandoLectura && (
-        <p style={styles.infoText}>Leyendo archivo y preparando vista previa…</p>
+        <p style={styles.infoText}>Leyendo archivo y preparando vista previaâ€¦</p>
       )}
 
       {resumenLectura && !error && (
         <p style={styles.successText}>
-          Archivo leído correctamente. Filas válidas:{" "}
+          Archivo leÃ­do correctamente. Filas vÃ¡lidas:{" "}
           <strong>{resumenLectura.filasValidas}</strong>.
         </p>
       )}
@@ -124,7 +123,7 @@ function ImportadorInventario({ userId }) {
 
       {error && <p style={styles.errorText}>{error}</p>}
 
-      {/* Botón de importar */}
+      {/* BotÃ³n de importar */}
       <button
         type="button"
         style={styles.primaryButton}
@@ -151,7 +150,7 @@ function ImportadorInventario({ userId }) {
                   <th style={styles.th}>Tipo</th>
                   <th style={styles.th}>SKU</th>
                   <th style={styles.th}>Nombre</th>
-                  <th style={styles.th}>Categoría</th>
+                  <th style={styles.th}>CategorÃ­a</th>
                   <th style={styles.th}>Unidad</th>
                   <th style={styles.th}>Stock</th>
                   <th style={styles.th}>Precio</th>
@@ -164,13 +163,13 @@ function ImportadorInventario({ userId }) {
                     <td style={styles.td}>
                       {item.tipoItem === "servicio" ? "Servicio" : "Producto"}
                     </td>
-                    <td style={styles.td}>{item.sku || "—"}</td>
+                    <td style={styles.td}>{item.sku || "â€”"}</td>
                     <td style={styles.td}>{item.nombre}</td>
-                    <td style={styles.td}>{item.categoria || "—"}</td>
-                    <td style={styles.td}>{item.unidad || "—"}</td>
+                    <td style={styles.td}>{item.categoria || "â€”"}</td>
+                    <td style={styles.td}>{item.unidad || "â€”"}</td>
                     <td style={styles.td}>
                       {item.tipoItem === "servicio" || item.stock == null
-                        ? "—"
+                        ? "â€”"
                         : item.stock}
                     </td>
                     <td style={styles.td}>
@@ -188,7 +187,7 @@ function ImportadorInventario({ userId }) {
                           Ver
                         </a>
                       ) : (
-                        "—"
+                        "â€”"
                       )}
                     </td>
                   </tr>
@@ -315,4 +314,4 @@ const styles = {
   },
 };
 
-export default ImportadorInventario;
+export default InventoryImporter;

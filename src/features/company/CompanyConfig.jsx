@@ -1,17 +1,16 @@
-// src/components/ConfigNegocio.jsx
-import React, { useEffect, useState } from "react";
+﻿import React, { useEffect, useState } from "react";
 import {
-  obtenerConfigNegocio,
-  guardarConfigNegocio,
-} from "../services/configNegocioService";
+  getCompanyConfig,
+  saveCompanyConfig,
+} from "../../services/companyService";
 
-function ConfigNegocio({ userId }) {
+function CompanyConfig({ userId }) {
   const [form, setForm] = useState({
     rubroPrincipal: "",
     rubroOtro: "",
     tipoOperacion: "mixto", // "productos" | "servicios" | "mixto"
     valorHoraBase: "",
-    // EN LA UI los márgenes se manejan como PORCENTAJE (15 = 15%)
+    // EN LA UI los mÃ¡rgenes se manejan como PORCENTAJE (15 = 15%)
     margenEcon: 15,
     margenStd: 25,
     margenPremium: 35,
@@ -24,7 +23,7 @@ function ConfigNegocio({ userId }) {
   const [mostrarMargenesAvanzados, setMostrarMargenesAvanzados] =
     useState(false);
 
-  // Cargar configuración guardada
+  // Cargar configuraciÃ³n guardada
   useEffect(() => {
     if (!userId) return;
 
@@ -32,7 +31,7 @@ function ConfigNegocio({ userId }) {
     setError("");
     setMensajeOk("");
 
-    obtenerConfigNegocio(userId)
+    getCompanyConfig(userId)
       .then((cfg) => {
         if (!cfg) {
           setCargando(false);
@@ -65,7 +64,7 @@ function ConfigNegocio({ userId }) {
       })
       .catch((err) => {
         console.error("Error cargando config de negocio:", err);
-        setError("No se pudo cargar la configuración del negocio.");
+        setError("No se pudo cargar la configuraciÃ³n del negocio.");
       })
       .finally(() => setCargando(false));
   }, [userId]);
@@ -99,7 +98,7 @@ function ConfigNegocio({ userId }) {
           ? form.rubroOtro
           : form.rubroPrincipal;
 
-      // ENVIAMOS LOS MÁRGENES EN DECIMAL (0.15) AL SERVICE
+      // ENVIAMOS LOS MÃRGENES EN DECIMAL (0.15) AL SERVICE
       const margenEconDecimal = (Number(form.margenEcon) || 0) / 100;
       const margenStdDecimal = (Number(form.margenStd) || 0) / 100;
       const margenPremiumDecimal = (Number(form.margenPremium) || 0) / 100;
@@ -114,12 +113,12 @@ function ConfigNegocio({ userId }) {
         margenPremium: margenPremiumDecimal,
       };
 
-      await guardarConfigNegocio(userId, payload);
+      await saveCompanyConfig(userId, payload);
 
-      setMensajeOk("Configuración guardada correctamente.");
+      setMensajeOk("ConfiguraciÃ³n guardada correctamente.");
     } catch (err) {
       console.error("Error guardando config de negocio:", err);
-      setError("Ocurrió un error al guardar la configuración.");
+      setError("OcurriÃ³ un error al guardar la configuraciÃ³n.");
     } finally {
       setGuardando(false);
     }
@@ -127,14 +126,14 @@ function ConfigNegocio({ userId }) {
 
   return (
     <section style={styles.card}>
-      <h2 style={styles.title}>Configuración del negocio</h2>
+      <h2 style={styles.title}>ConfiguraciÃ³n del negocio</h2>
       <p style={styles.subtitle}>
-        Aquí defines los parámetros base que usará CotiFlow al sugerir precios
+        AquÃ­ defines los parÃ¡metros base que usarÃ¡ ValoraCloud al sugerir precios
         en tus cotizaciones. Puedes modificarlos cuando tu negocio cambie.
       </p>
 
       {cargando && (
-        <p style={styles.infoText}>Cargando configuración del negocio...</p>
+        <p style={styles.infoText}>Cargando configuraciÃ³n del negocio...</p>
       )}
 
       {error && <p style={styles.errorText}>{error}</p>}
@@ -154,20 +153,20 @@ function ConfigNegocio({ userId }) {
               onChange={handleChange}
               style={styles.select}
             >
-              <option value="">Selecciona una opción</option>
+              <option value="">Selecciona una opciÃ³n</option>
               <option value="Servicios TI, soporte e instalaciones">
                 Servicios TI, soporte e instalaciones
               </option>
               <option value="Electricidad, CCTV e instalaciones en terreno">
                 Electricidad, CCTV e instalaciones en terreno
               </option>
-              <option value="Ferretería / venta de materiales">
-                Ferretería / venta de materiales
+              <option value="FerreterÃ­a / venta de materiales">
+                FerreterÃ­a / venta de materiales
               </option>
               <option value="Otro / mixto">Otro / mixto</option>
             </select>
             <p style={styles.helpText}>
-              Solo usamos este dato como contexto para sugerir márgenes y para
+              Solo usamos este dato como contexto para sugerir mÃ¡rgenes y para
               tus reportes. No limita los tipos de proyectos que puedes cotizar.
             </p>
           </div>
@@ -181,15 +180,15 @@ function ConfigNegocio({ userId }) {
                 name="rubroOtro"
                 value={form.rubroOtro}
                 onChange={handleChange}
-                placeholder="Ej: construcción, audiovisuales, mantención industrial..."
+                placeholder="Ej: construcciÃ³n, audiovisuales, mantenciÃ³n industrial..."
                 style={styles.input}
               />
             </div>
           )}
 
-          {/* Tipo de operación */}
+          {/* Tipo de operaciÃ³n */}
           <div style={styles.field}>
-            <label style={styles.label}>¿Qué vendes principalmente?</label>
+            <label style={styles.label}>Â¿QuÃ© vendes principalmente?</label>
             <div style={styles.tipoOperacionRow}>
               {[
                 { value: "productos", label: "Solo productos" },
@@ -212,7 +211,7 @@ function ConfigNegocio({ userId }) {
               ))}
             </div>
             <p style={styles.helpText}>
-              Esto ayuda a que CotiFlow priorice qué ítems del inventario
+              Esto ayuda a que ValoraCloud priorice quÃ© Ã­tems del inventario
               proponer primero en las cotizaciones.
             </p>
           </div>
@@ -240,20 +239,20 @@ function ConfigNegocio({ userId }) {
             <div style={styles.column}>
               <p style={styles.helpText}>
                 Usamos este valor para estimar el costo de mano de obra en tus
-                proyectos (instalación, soporte en terreno, etc.).{" "}
+                proyectos (instalaciÃ³n, soporte en terreno, etc.).{" "}
                 <br />
                 Ejemplo: si quieres pagar $800.000 por 160 horas al mes, tu
-                valor hora sería aprox. <strong>$5.000</strong>.
+                valor hora serÃ­a aprox. <strong>$5.000</strong>.
               </p>
             </div>
           </div>
         </div>
 
-        {/* Bloque 3: Márgenes avanzados */}
+        {/* Bloque 3: MÃ¡rgenes avanzados */}
         <div style={styles.block}>
           <div style={styles.margenesHeader}>
             <h3 style={styles.blockTitle}>
-              Estrategia de márgenes (opcional)
+              Estrategia de mÃ¡rgenes (opcional)
             </h3>
             <button
               type="button"
@@ -263,21 +262,21 @@ function ConfigNegocio({ userId }) {
               style={styles.linkButton}
             >
               {mostrarMargenesAvanzados
-                ? "Ocultar configuración avanzada"
-                : "Mostrar configuración avanzada"}
+                ? "Ocultar configuraciÃ³n avanzada"
+                : "Mostrar configuraciÃ³n avanzada"}
             </button>
           </div>
 
           <p style={styles.helpText}>
             Estos porcentajes se aplican sobre el costo base (materiales + mano
-            de obra + transporte) para sugerir precios mínimos, recomendados y
-            máximos. Si no estás seguro, puedes dejar los valores por defecto.
+            de obra + transporte) para sugerir precios mÃ­nimos, recomendados y
+            mÃ¡ximos. Si no estÃ¡s seguro, puedes dejar los valores por defecto.
           </p>
 
           {mostrarMargenesAvanzados && (
             <div style={styles.row}>
               <div style={styles.column}>
-                <label style={styles.label}>Margen económico (%)</label>
+                <label style={styles.label}>Margen econÃ³mico (%)</label>
                 <input
                   type="number"
                   name="margenEcon"
@@ -288,7 +287,7 @@ function ConfigNegocio({ userId }) {
                 />
               </div>
               <div style={styles.column}>
-                <label style={styles.label}>Margen estándar (%)</label>
+                <label style={styles.label}>Margen estÃ¡ndar (%)</label>
                 <input
                   type="number"
                   name="margenStd"
@@ -318,7 +317,7 @@ function ConfigNegocio({ userId }) {
           style={styles.primaryButton}
           disabled={guardando}
         >
-          {guardando ? "Guardando..." : "Guardar configuración"}
+          {guardando ? "Guardando..." : "Guardar configuraciÃ³n"}
         </button>
       </form>
     </section>
@@ -467,4 +466,5 @@ const styles = {
   },
 };
 
-export default ConfigNegocio;
+export default CompanyConfig;
+
