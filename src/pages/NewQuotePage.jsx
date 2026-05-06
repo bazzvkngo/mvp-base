@@ -90,8 +90,8 @@ function NewQuotePage({ userId }) {
         setLoading(false);
       },
       (err) => {
-        console.error("Error al cargar items valorizados:", err);
-        setError("No se pudieron cargar los items valorizados.");
+        console.error("Error al cargar ítems valorizados:", err);
+        setError("No se pudieron cargar los ítems valorizados.");
         setLoading(false);
       }
     );
@@ -190,7 +190,7 @@ function NewQuotePage({ userId }) {
       return "Ingresa el nombre del cliente antes de guardar.";
     }
     if (normalizedItems.length === 0) {
-      return "Agrega al menos un item valorizado a la cotizacion.";
+      return "Agrega al menos un ítem valorizado a la cotización.";
     }
     return "";
   };
@@ -226,10 +226,10 @@ function NewQuotePage({ userId }) {
         ...prev,
         estado,
       }));
-      setSuccess(`Cotizacion ${saved.numero} guardada como ${estadoLabels[estado].toLowerCase()}.`);
+      setSuccess(`Cotización ${saved.numero} guardada como ${estadoLabels[estado].toLowerCase()}.`);
     } catch (err) {
-      console.error("Error al guardar cotizacion:", err);
-      setError(err.message || "No se pudo guardar la cotizacion.");
+      console.error("Error al guardar cotización:", err);
+      setError(err.message || "No se pudo guardar la cotización.");
     } finally {
       setSaving(false);
     }
@@ -238,7 +238,7 @@ function NewQuotePage({ userId }) {
   if (!userId) {
     return (
       <section className="page-section">
-        <p style={styles.errorText}>Debes iniciar sesion para crear cotizaciones.</p>
+        <p style={styles.errorText}>Debes iniciar sesión para crear cotizaciones.</p>
       </section>
     );
   }
@@ -248,9 +248,9 @@ function NewQuotePage({ userId }) {
       <div className="no-print" style={styles.header}>
         <div>
           <span className="eyebrow">Cotizaciones</span>
-          <h2 style={styles.title}>Nueva cotizacion formal</h2>
+          <h2 style={styles.title}>Nueva cotización formal</h2>
           <p style={styles.subtitle}>
-            Arma una cotizacion editable desde items valorizados, ajusta precios
+            Arma una cotización editable desde ítems valorizados, ajusta precios
             y guarda el documento en Firestore.
           </p>
         </div>
@@ -258,7 +258,7 @@ function NewQuotePage({ userId }) {
 
       <div className="no-print" style={styles.grid}>
         <div style={styles.panel}>
-          <h3 style={styles.panelTitle}>Datos de la cotizacion</h3>
+          <h3 style={styles.panelTitle}>Datos de la cotización</h3>
           <div style={styles.formGrid}>
             <Field label="Fecha">
               <input
@@ -361,27 +361,27 @@ function NewQuotePage({ userId }) {
       <div className="no-print" style={styles.panel}>
         <div style={styles.sectionHeader}>
           <div>
-            <h3 style={styles.panelTitle}>Items valorizados</h3>
+            <h3 style={styles.panelTitle}>Ítems valorizados</h3>
             <p style={styles.helpText}>
-              Solo se muestran items activos del inventario. El precio inicial
+              Solo se muestran ítems activos del inventario. El precio inicial
               corresponde al precio sugerido.
             </p>
           </div>
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Buscar por nombre o categoria"
+            placeholder="Buscar por nombre o categoría"
             style={styles.searchInput}
           />
         </div>
 
         {loading ? (
-          <p style={styles.emptyText}>Cargando items valorizados...</p>
+          <p style={styles.emptyText}>Cargando ítems valorizados...</p>
         ) : valuations.length === 0 ? (
           <div style={styles.emptyState}>
             <h3 style={styles.emptyTitle}>No hay inventario activo valorizado</h3>
             <p style={styles.emptyText}>
-              Agrega items activos al inventario para comenzar una cotizacion.
+              Agrega ítems activos al inventario para comenzar una cotización.
             </p>
           </div>
         ) : filteredValuations.length === 0 ? (
@@ -393,7 +393,7 @@ function NewQuotePage({ userId }) {
                 <div>
                   <strong>{valuation.nombre}</strong>
                   <span style={styles.itemMeta}>
-                    {valuation.categoria || "Sin categoria"} ·{" "}
+                    {valuation.categoria || "Sin categoría"} ·{" "}
                     {tipoLabels[valuation.tipoItem] || valuation.tipoItem || "-"}
                   </span>
                 </div>
@@ -416,7 +416,7 @@ function NewQuotePage({ userId }) {
                   onClick={() => addItem(valuation)}
                   style={styles.secondaryButton}
                 >
-                  Agregar a cotizacion
+                  Agregar a cotización
                 </button>
               </div>
             ))}
@@ -425,9 +425,9 @@ function NewQuotePage({ userId }) {
       </div>
 
       <div className="no-print" style={styles.panel}>
-        <h3 style={styles.panelTitle}>Items agregados</h3>
+        <h3 style={styles.panelTitle}>Ítems agregados</h3>
         {normalizedItems.length === 0 ? (
-          <p style={styles.emptyText}>Todavia no hay items en la cotizacion.</p>
+          <p style={styles.emptyText}>Todavía no hay ítems en la cotización.</p>
         ) : (
           <div style={styles.tableWrapper}>
             <table style={styles.table}>
@@ -545,7 +545,7 @@ function NewQuotePage({ userId }) {
               Guardar como emitida
             </button>
             <button type="button" onClick={clearQuote} style={styles.clearButton}>
-              Limpiar cotizacion
+              Limpiar cotización
             </button>
           </div>
         </div>
@@ -585,14 +585,14 @@ function QuotePreview({ quote, companyConfig }) {
   const rubro =
     companyConfig?.rubroOtro ||
     companyConfig?.rubroPrincipal ||
-    "Valoracion y cotizaciones";
+    "Valorización y cotizaciones";
 
   return (
     <div style={styles.previewPanel}>
       <div className="no-print" style={styles.previewActions}>
         <h3 style={styles.panelTitle}>Vista formal imprimible</h3>
         <button type="button" onClick={() => window.print()} style={styles.printButton}>
-          Imprimir cotizacion
+          Imprimir cotización
         </button>
       </div>
 
@@ -603,7 +603,7 @@ function QuotePreview({ quote, companyConfig }) {
             <p style={styles.printMuted}>{rubro}</p>
           </div>
           <div style={styles.printMeta}>
-            <strong>Cotizacion {quote.numero}</strong>
+            <strong>Cotización {quote.numero}</strong>
             <span>Fecha: {quote.fecha || "-"}</span>
             <span>Estado: {estadoLabels[quote.estado] || quote.estado}</span>
           </div>
@@ -622,7 +622,7 @@ function QuotePreview({ quote, companyConfig }) {
         <table style={styles.printTable}>
           <thead>
             <tr>
-              <th style={styles.printTh}>Item</th>
+              <th style={styles.printTh}>Ítem</th>
               <th style={styles.printTh}>Cant.</th>
               <th style={styles.printTh}>Precio unit.</th>
               <th style={styles.printTh}>Total</th>
@@ -631,7 +631,7 @@ function QuotePreview({ quote, companyConfig }) {
           <tbody>
             {quote.items.length === 0 ? (
               <tr>
-                <td colSpan={4} style={styles.printTd}>Sin items agregados.</td>
+                <td colSpan={4} style={styles.printTd}>Sin ítems agregados.</td>
               </tr>
             ) : (
               quote.items.map((item) => (

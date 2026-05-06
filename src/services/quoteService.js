@@ -51,7 +51,7 @@ function normalizeQuote(uid, data, { isCreate = false } = {}) {
   const items = normalizeQuoteItems(data?.items);
 
   if (!clienteNombre) throw new Error("El nombre del cliente es obligatorio.");
-  if (items.length === 0) throw new Error("Agrega al menos un item a la cotizacion.");
+  if (items.length === 0) throw new Error("Agrega al menos un ítem a la cotización.");
 
   const totals = calculateQuoteTotals(items, data?.descuento);
   const estado = VALID_QUOTE_STATUS.includes(data?.estado)
@@ -133,7 +133,7 @@ export async function updateQuoteStatus(uid, quoteId, estado) {
   if (!uid) throw new Error("Usuario no autenticado.");
   if (!quoteId) throw new Error("quoteId es requerido.");
   if (!VALID_QUOTE_STATUS.includes(estado)) {
-    throw new Error("Estado de cotizacion invalido.");
+    throw new Error("Estado de cotización inválido.");
   }
 
   await updateDoc(doc(db, ...quoteDocPath(uid, quoteId)), {

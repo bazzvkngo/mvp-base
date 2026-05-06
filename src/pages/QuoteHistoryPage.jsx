@@ -142,7 +142,7 @@ function QuoteHistoryPage({ userId }) {
   if (!userId) {
     return (
       <section className="page-section">
-        <p style={styles.errorText}>Debes iniciar sesion para ver cotizaciones.</p>
+        <p style={styles.errorText}>Debes iniciar sesión para ver cotizaciones.</p>
       </section>
     );
   }
@@ -191,7 +191,7 @@ function QuoteHistoryPage({ userId }) {
           <div style={styles.emptyState}>
             <h3 style={styles.emptyTitle}>No hay cotizaciones guardadas</h3>
             <p style={styles.emptyText}>
-              Crea una cotizacion desde /cotizaciones/nueva para verla en este
+              Crea una cotización desde /cotizaciones/nueva para verla en este
               historial.
             </p>
           </div>
@@ -207,7 +207,7 @@ function QuoteHistoryPage({ userId }) {
                   <th style={styles.th}>Cliente</th>
                   <th style={styles.th}>Estado</th>
                   <th style={styles.th}>Total</th>
-                  <th style={styles.th}>Items</th>
+                  <th style={styles.th}>Ítems</th>
                   <th style={styles.th}>Actualizacion</th>
                   <th style={styles.th}>Acciones</th>
                 </tr>
@@ -277,7 +277,7 @@ function QuoteHistoryPage({ userId }) {
         quotes.length > 0 && (
           <div className="no-print" style={styles.panel}>
             <p style={styles.emptyText}>
-              Selecciona una cotizacion para revisar el detalle.
+              Selecciona una cotización para revisar el detalle.
             </p>
           </div>
         )
@@ -308,7 +308,7 @@ function QuoteDetail({ quote }) {
     <div className="history-print-area" style={styles.detailPanel}>
       <div className="no-print" style={styles.detailActions}>
         <div>
-          <h3 style={styles.panelTitle}>Detalle de cotizacion</h3>
+          <h3 style={styles.panelTitle}>Detalle de cotización</h3>
           <p style={styles.helpText}>
             Vista formal para revision e impresion desde el historial.
           </p>
@@ -326,10 +326,10 @@ function QuoteDetail({ quote }) {
         <header style={styles.printHeader}>
           <div>
             <h2 style={styles.printBrand}>ValoraCloud</h2>
-            <p style={styles.printMuted}>Valoracion y cotizaciones</p>
+            <p style={styles.printMuted}>Valorización y cotizaciones</p>
           </div>
           <div style={styles.printMeta}>
-            <strong>Cotizacion {quote.numero || "-"}</strong>
+            <strong>Cotización {quote.numero || "-"}</strong>
             <span>Fecha: {formatDate(quote.fecha)}</span>
             <span>
               Estado: {statusLabels[quote.estado] || quote.estado || "-"}
@@ -358,7 +358,7 @@ function QuoteDetail({ quote }) {
         <table style={styles.printTable}>
           <thead>
             <tr>
-              <th style={styles.printTh}>Item</th>
+              <th style={styles.printTh}>Ítem</th>
               <th style={styles.printTh}>Tipo</th>
               <th style={styles.printTh}>Cant.</th>
               <th style={styles.printTh}>Precio unit.</th>
@@ -369,14 +369,14 @@ function QuoteDetail({ quote }) {
             {items.length === 0 ? (
               <tr>
                 <td colSpan={5} style={styles.printTd}>
-                  Sin items registrados.
+                  Sin ítems registrados.
                 </td>
               </tr>
             ) : (
               items.map((item, index) => (
                 <tr key={`${item.itemId || "item"}-${index}`}>
                   <td style={styles.printTd}>
-                    <strong>{item.nombre || "Item sin nombre"}</strong>
+                    <strong>{item.nombre || "Ítem sin nombre"}</strong>
                     <span style={styles.printItemMeta}>
                       {item.descripcion || item.categoria || ""}
                     </span>

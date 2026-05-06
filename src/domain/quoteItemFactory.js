@@ -48,7 +48,7 @@ export function createQuoteItemFromValuation(valuation) {
 
   return {
     itemId: valuation?.itemId || "",
-    nombre: valuation?.nombre || "Item sin nombre",
+    nombre: valuation?.nombre || "Ítem sin nombre",
     descripcion: valuation?.item?.descripcion || valuation?.descripcion || "",
     tipoItem: valuation?.tipoItem || "",
     categoria: valuation?.categoria || "",
@@ -68,7 +68,7 @@ export function inventoryItemToQuoteItem(item, cantidad = 1) {
 
   return {
     productoId: item?.id || null,
-    nombre: item?.nombre || "Item sin nombre",
+    nombre: item?.nombre || "Ítem sin nombre",
     categoria: item?.categoria || "",
     unidad: item?.unidad || "unidad",
     cantidad: quantity,

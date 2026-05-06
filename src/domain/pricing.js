@@ -101,7 +101,7 @@ export function buildValuationForItem(item, references) {
   return {
     itemId: item?.id || "",
     item,
-    nombre: item?.nombre || "Item sin nombre",
+    nombre: item?.nombre || "Ítem sin nombre",
     tipoItem: item?.tipoItem || "",
     categoria: item?.categoria || "",
     unidad: item?.unidad || "",
@@ -226,7 +226,7 @@ export function generarPropuestaCotizacion({
 
     return {
       id: item.id || `item-${index}`,
-      nombre: item.nombre || "Item sin nombre",
+      nombre: item.nombre || "Ítem sin nombre",
       categoria: item.categoria || "",
       unidad: item.unidad || "unidad",
       cantidad,
