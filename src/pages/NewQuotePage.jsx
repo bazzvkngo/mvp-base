@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   calculateQuoteTotals,
   createQuoteItemFromValuation,
@@ -65,6 +65,8 @@ function buildInitialQuote() {
 }
 
 function NewQuotePage({ userId }) {
+  const addedItemsRef = useRef(null);
+  const highlightTimeoutRef = useRef(null);
   const [quote, setQuote] = useState(() => buildInitialQuote());
   const [valuations, setValuations] = useState([]);
   const [companyConfig, setCompanyConfig] = useState(null);
@@ -80,6 +82,7 @@ function NewQuotePage({ userId }) {
   const [assistantError, setAssistantError] = useState("");
   const [assistantSource, setAssistantSource] = useState("");
   const [assistantWarning, setAssistantWarning] = useState("");
+  const [highlightedItemId, setHighlightedItemId] = useState("");
 
   useEffect(() => {
     if (!userId) {
@@ -112,6 +115,15 @@ function NewQuotePage({ userId }) {
     return () => unsubscribe();
   }, [userId]);
 
+  useEffect(
+    () => () => {
+      if (highlightTimeoutRef.current) {
+        window.clearTimeout(highlightTimeoutRef.current);
+      }
+    },
+    []
+  );
+
   const normalizedItems = useMemo(
     () => normalizeQuoteItems(quote.items),
     [quote.items]
@@ -121,6 +133,14 @@ function NewQuotePage({ userId }) {
     () => calculateQuoteTotals(normalizedItems, quote.descuento),
     [normalizedItems, quote.descuento]
   );
+
+  const itemQuantityById = useMemo(() => {
+    const quantities = {};
+    normalizedItems.forEach((item) => {
+      quantities[item.itemId] = Number(item.cantidad || 0);
+    });
+    return quantities;
+  }, [normalizedItems]);
 
   const filteredValuations = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -139,9 +159,35 @@ function NewQuotePage({ userId }) {
     }));
   };
 
+  const showAddFeedback = (itemId, wasExisting) => {
+    setSuccess(
+      wasExisting
+        ? "Cantidad actualizada en la cotización."
+        : "Ítem agregado a la cotización."
+    );
+    setHighlightedItemId(itemId);
+
+    if (highlightTimeoutRef.current) {
+      window.clearTimeout(highlightTimeoutRef.current);
+    }
+    highlightTimeoutRef.current = window.setTimeout(() => {
+      setHighlightedItemId("");
+    }, 1800);
+
+    window.requestAnimationFrame(() => {
+      addedItemsRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  };
+
   const addItem = (valuation, quantity = 1) => {
     setSuccess("");
     setError("");
+    const wasExisting = quote.items.some((item) => item.itemId === valuation.itemId);
+    const quantityToAdd = Math.max(Number(quantity) || 1, 1);
+
     setQuote((prev) => {
       const existing = prev.items.find((item) => item.itemId === valuation.itemId);
       if (existing) {
@@ -150,7 +196,7 @@ function NewQuotePage({ userId }) {
           items: normalizeQuoteItems(
             prev.items.map((item) =>
               item.itemId === valuation.itemId
-                ? { ...item, cantidad: Number(item.cantidad || 0) + quantity }
+                ? { ...item, cantidad: Number(item.cantidad || 0) + quantityToAdd }
                 : item
             )
           ),
@@ -163,11 +209,12 @@ function NewQuotePage({ userId }) {
           ...prev.items,
           {
             ...createQuoteItemFromValuation(valuation),
-            cantidad: quantity,
+            cantidad: quantityToAdd,
           },
         ]),
       };
     });
+    showAddFeedback(valuation.itemId, wasExisting);
   };
 
   const getMatchedValuation = (suggestion) =>
@@ -231,6 +278,7 @@ function NewQuotePage({ userId }) {
     setSavedQuoteId(null);
     setError("");
     setSuccess("");
+    setHighlightedItemId("");
   };
 
   const validateQuote = () => {
@@ -457,6 +505,9 @@ function NewQuotePage({ userId }) {
           <div style={styles.suggestionGrid}>
             {assistantSuggestions.map((suggestion, index) => {
               const matchedValuation = getMatchedValuation(suggestion);
+              const quoteQuantity = matchedValuation
+                ? itemQuantityById[matchedValuation.itemId] || 0
+                : 0;
               return (
                 <article
                   key={`${suggestion.nombre}-${index}`}
@@ -483,13 +534,22 @@ function NewQuotePage({ userId }) {
                       : "No encontrado en inventario"}
                   </span>
                   {matchedValuation && (
-                    <button
-                      type="button"
-                      onClick={() => addSuggestionToQuote(suggestion)}
-                      style={styles.secondaryButton}
-                    >
-                      Agregar item valorizado
-                    </button>
+                    <>
+                      {quoteQuantity > 0 && (
+                        <span style={styles.quoteBadge}>
+                          En cotización: {quoteQuantity}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => addSuggestionToQuote(suggestion)}
+                        style={styles.secondaryButton}
+                      >
+                        {quoteQuantity > 0
+                          ? "Agregar otra vez"
+                          : "Agregar ítem valorizado"}
+                      </button>
+                    </>
                   )}
                 </article>
               );
@@ -498,74 +558,19 @@ function NewQuotePage({ userId }) {
         )}
       </div>
 
-      <div className="no-print" style={styles.panel}>
-        <div style={styles.sectionHeader}>
+      <div className="no-print" style={styles.panel} ref={addedItemsRef}>
+        <div style={styles.addedHeader}>
           <div>
-            <h3 style={styles.panelTitle}>Ítems valorizados</h3>
+            <h3 style={styles.panelTitle}>Ítems agregados</h3>
             <p style={styles.helpText}>
-              Solo se muestran ítems activos del inventario. El precio inicial
-              corresponde al precio sugerido.
+              Resumen editable de la cotización actual.
             </p>
           </div>
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Buscar por nombre o categoría"
-            style={styles.searchInput}
-          />
+          <div style={styles.addedSummary}>
+            <span>{normalizedItems.length} ítem(s)</span>
+            <strong>{formatCLP(totals.total)}</strong>
+          </div>
         </div>
-
-        {loading ? (
-          <p style={styles.emptyText}>Cargando ítems valorizados...</p>
-        ) : valuations.length === 0 ? (
-          <div style={styles.emptyState}>
-            <h3 style={styles.emptyTitle}>No hay inventario activo valorizado</h3>
-            <p style={styles.emptyText}>
-              Agrega ítems activos al inventario para comenzar una cotización.
-            </p>
-          </div>
-        ) : filteredValuations.length === 0 ? (
-          <p style={styles.emptyText}>No hay resultados para esa busqueda.</p>
-        ) : (
-          <div style={styles.valuationGrid}>
-            {filteredValuations.map((valuation) => (
-              <div key={valuation.itemId} style={styles.valuationCard}>
-                <div>
-                  <strong>{valuation.nombre}</strong>
-                  <span style={styles.itemMeta}>
-                    {valuation.categoria || "Sin categoría"} ·{" "}
-                    {tipoLabels[valuation.tipoItem] || valuation.tipoItem || "-"}
-                  </span>
-                </div>
-                <div style={styles.valuationFooter}>
-                  <div>
-                    <span style={styles.miniLabel}>Precio sugerido</span>
-                    <strong>{formatCLP(valuation.precioSugerido)}</strong>
-                  </div>
-                  <span
-                    style={{
-                      ...styles.statusBadge,
-                      ...statusStyles[valuation.estadoValorizacion],
-                    }}
-                  >
-                    {valuation.estadoValorizacion}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => addItem(valuation)}
-                  style={styles.secondaryButton}
-                >
-                  Agregar a cotización
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="no-print" style={styles.panel}>
-        <h3 style={styles.panelTitle}>Ítems agregados</h3>
         {normalizedItems.length === 0 ? (
           <p style={styles.emptyText}>Todavía no hay ítems en la cotización.</p>
         ) : (
@@ -578,13 +583,20 @@ function NewQuotePage({ userId }) {
                   <th style={styles.th}>Cantidad</th>
                   <th style={styles.th}>Precio sugerido</th>
                   <th style={styles.th}>Precio unitario</th>
-                  <th style={styles.th}>Total linea</th>
+                  <th style={styles.th}>Total línea</th>
                   <th style={styles.th}>Quitar</th>
                 </tr>
               </thead>
               <tbody>
                 {normalizedItems.map((item) => (
-                  <tr key={item.itemId}>
+                  <tr
+                    key={item.itemId}
+                    style={
+                      highlightedItemId === item.itemId
+                        ? styles.highlightedRow
+                        : undefined
+                    }
+                  >
                     <td style={styles.td}>
                       <strong>{item.nombre}</strong>
                       <span style={styles.itemMeta}>{item.unidad || "-"}</span>
@@ -636,6 +648,80 @@ function NewQuotePage({ userId }) {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+      </div>
+
+      <div className="no-print" style={styles.panel}>
+        <div style={styles.sectionHeader}>
+          <div>
+            <h3 style={styles.panelTitle}>Ítems valorizados</h3>
+            <p style={styles.helpText}>
+              Solo se muestran ítems activos del inventario. El precio inicial
+              corresponde al precio sugerido.
+            </p>
+          </div>
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Buscar por nombre o categoría"
+            style={styles.searchInput}
+          />
+        </div>
+
+        {loading ? (
+          <p style={styles.emptyText}>Cargando ítems valorizados...</p>
+        ) : valuations.length === 0 ? (
+          <div style={styles.emptyState}>
+            <h3 style={styles.emptyTitle}>No hay inventario activo valorizado</h3>
+            <p style={styles.emptyText}>
+              Agrega ítems activos al inventario para comenzar una cotización.
+            </p>
+          </div>
+        ) : filteredValuations.length === 0 ? (
+          <p style={styles.emptyText}>No hay resultados para esa busqueda.</p>
+        ) : (
+          <div style={styles.valuationGrid}>
+            {filteredValuations.map((valuation) => {
+              const quoteQuantity = itemQuantityById[valuation.itemId] || 0;
+              return (
+                <div key={valuation.itemId} style={styles.valuationCard}>
+                  <div>
+                    <strong>{valuation.nombre}</strong>
+                    <span style={styles.itemMeta}>
+                      {valuation.categoria || "Sin categoría"} ·{" "}
+                      {tipoLabels[valuation.tipoItem] || valuation.tipoItem || "-"}
+                    </span>
+                  </div>
+                  <div style={styles.valuationFooter}>
+                    <div>
+                      <span style={styles.miniLabel}>Precio sugerido</span>
+                      <strong>{formatCLP(valuation.precioSugerido)}</strong>
+                    </div>
+                    <span
+                      style={{
+                        ...styles.statusBadge,
+                        ...statusStyles[valuation.estadoValorizacion],
+                      }}
+                    >
+                      {valuation.estadoValorizacion}
+                    </span>
+                  </div>
+                  {quoteQuantity > 0 && (
+                    <span style={styles.quoteBadge}>
+                      En cotización: {quoteQuantity}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => addItem(valuation)}
+                    style={styles.secondaryButton}
+                  >
+                    {quoteQuantity > 0 ? "Agregar otra vez" : "Agregar a cotización"}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -886,6 +972,25 @@ const styles = {
     justifyContent: "space-between",
     marginBottom: "14px",
   },
+  addedHeader: {
+    alignItems: "flex-start",
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "12px",
+    justifyContent: "space-between",
+    marginBottom: "14px",
+  },
+  addedSummary: {
+    background: "#ecfdf5",
+    border: "1px solid #99f6e4",
+    borderRadius: "8px",
+    color: "#0f766e",
+    display: "grid",
+    gap: "3px",
+    minWidth: "160px",
+    padding: "10px 12px",
+    textAlign: "right",
+  },
   helpText: {
     color: "#64748b",
     margin: "-6px 0 0",
@@ -957,6 +1062,11 @@ const styles = {
     padding: "10px",
     verticalAlign: "middle",
     whiteSpace: "nowrap",
+  },
+  highlightedRow: {
+    background: "#ecfdf5",
+    outline: "2px solid #99f6e4",
+    transition: "background 0.2s ease",
   },
   numberInput: {
     border: "1px solid #cbd5e1",
@@ -1059,6 +1169,16 @@ const styles = {
   matchBadgeMissing: {
     background: "#f1f5f9",
     color: "#475569",
+  },
+  quoteBadge: {
+    background: "#e0f2fe",
+    borderRadius: "999px",
+    color: "#0369a1",
+    display: "inline-block",
+    fontSize: "12px",
+    fontWeight: 800,
+    padding: "5px 9px",
+    width: "fit-content",
   },
   primaryButton: {
     background: "#0f766e",
