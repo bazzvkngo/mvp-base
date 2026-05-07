@@ -22,6 +22,10 @@ const db = getFirestore();
  * Para desarrollo local tambien puede venir desde process.env.GEMINI_API_KEY.
  */
 const GEMINI_API_KEY_SECRET = defineSecret("GEMINI_API_KEY");
+const ALLOWED_QUOTE_ITEM_TYPES = ["producto", "servicio", "actividad"];
+const DEFAULT_FUNCTION_REGION = "us-central1";
+const LOCAL_ASSISTANT_WARNING =
+  "La IA generativa no está disponible temporalmente. Se generaron sugerencias locales basadas en reglas e inventario.";
 
 let cachedGeminiModel = null;
 
@@ -31,6 +35,7 @@ function getGeminiApiKey() {
   try {
     return GEMINI_API_KEY_SECRET.value();
   } catch (error) {
+    console.error("GEMINI_API_KEY no disponible en Secret Manager.");
     return null;
   }
 }
@@ -47,8 +52,220 @@ function getGeminiModel() {
   }
 
   const genAI = new GoogleGenerativeAI(apiKey);
-  cachedGeminiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  cachedGeminiModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
   return cachedGeminiModel;
+}
+
+function extractJsonObject(text) {
+  const raw = String(text || "")
+    .trim()
+    .replace(/^```(?:json)?/i, "")
+    .replace(/```$/i, "")
+    .trim();
+  const first = raw.indexOf("{");
+  const last = raw.lastIndexOf("}");
+  if (first === -1 || last === -1 || last <= first) return null;
+  return JSON.parse(raw.slice(first, last + 1));
+}
+
+function safeText(value, maxLength = 180) {
+  return String(value || "").trim().slice(0, maxLength);
+}
+
+function normalizeSearchText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function normalizeInventorySummary(items) {
+  if (!Array.isArray(items)) return [];
+
+  return items
+    .slice(0, 40)
+    .map((item) => ({
+      id: safeText(item.id, 80),
+      nombre: safeText(item.nombre, 120),
+      tipoItem: ALLOWED_QUOTE_ITEM_TYPES.includes(item.tipoItem)
+        ? item.tipoItem
+        : "producto",
+      categoria: safeText(item.categoria, 80),
+      unidad: safeText(item.unidad, 40),
+    }))
+    .filter((item) => item.id && item.nombre);
+}
+
+function sanitizeQuoteSuggestions(payload, inventoryItems) {
+  const inventoryById = new Map(inventoryItems.map((item) => [item.id, item]));
+  const suggestions = Array.isArray(payload && payload.suggestions)
+    ? payload.suggestions
+    : [];
+
+  return suggestions
+    .slice(0, 8)
+    .map((item) => {
+      const matchId = safeText(item.inventarioMatchId, 80);
+      const matchedInventory = matchId ? inventoryById.get(matchId) : null;
+      const tipoItem = ALLOWED_QUOTE_ITEM_TYPES.includes(item.tipoItem)
+        ? item.tipoItem
+        : "actividad";
+      const quantity = Number(item.cantidadSugerida);
+
+      return {
+        nombre: safeText(item.nombre, 120),
+        tipoItem,
+        cantidadSugerida:
+          Number.isFinite(quantity) && quantity > 0 ? Math.min(quantity, 999) : 1,
+        motivo: safeText(item.motivo, 240),
+        inventarioMatchId: matchedInventory ? matchedInventory.id : null,
+        inventarioMatchNombre: matchedInventory ? matchedInventory.nombre : null,
+      };
+    })
+    .filter((item) => item.nombre && item.motivo);
+}
+
+function findInventoryMatch(suggestionName, inventoryItems) {
+  const normalizedSuggestion = normalizeSearchText(suggestionName);
+  const suggestionTokens = normalizedSuggestion
+    .split(/\s+/)
+    .filter((token) => token.length >= 4);
+
+  if (!suggestionTokens.length) return null;
+
+  return (
+    inventoryItems.find((item) => {
+      const text = normalizeSearchText(
+        `${item.nombre || ""} ${item.categoria || ""} ${item.tipoItem || ""}`
+      );
+      return suggestionTokens.some((token) => text.includes(token));
+    }) || null
+  );
+}
+
+function buildLocalSuggestion({ nombre, tipoItem, cantidadSugerida, motivo }, inventoryItems) {
+  const match = findInventoryMatch(nombre, inventoryItems);
+  return {
+    nombre,
+    tipoItem: ALLOWED_QUOTE_ITEM_TYPES.includes(tipoItem)
+      ? tipoItem
+      : "actividad",
+    cantidadSugerida: Number(cantidadSugerida) > 0 ? Number(cantidadSugerida) : 1,
+    motivo,
+    inventarioMatchId: match ? match.id : null,
+    inventarioMatchNombre: match ? match.nombre : null,
+  };
+}
+
+function getCameraQuantity(normalizedDescription) {
+  const match = normalizedDescription.match(/(\d{1,3})\s*(camara|camaras|cctv)/);
+  if (!match) return 1;
+  const quantity = Number(match[1]);
+  return Number.isFinite(quantity) && quantity > 0 ? Math.min(quantity, 999) : 1;
+}
+
+function buildLocalQuoteSuggestions(description, inventoryItems) {
+  const text = normalizeSearchText(description);
+  const has = (...keywords) => keywords.some((keyword) => text.includes(keyword));
+  const suggestions = [];
+  const cameraQuantity = getCameraQuantity(text);
+
+  const add = (suggestion) => {
+    if (suggestions.length >= 8) return;
+    if (suggestions.some((item) => item.nombre === suggestion.nombre)) return;
+    suggestions.push(buildLocalSuggestion(suggestion, inventoryItems));
+  };
+
+  if (has("camara", "camaras", "cctv", "seguridad")) {
+    add({
+      nombre: "Cámara IP exterior",
+      tipoItem: "producto",
+      cantidadSugerida: cameraQuantity,
+      motivo: `El proyecto menciona instalación de ${cameraQuantity} cámara${cameraQuantity === 1 ? "" : "s"} de seguridad.`,
+    });
+  }
+
+  if (has("cableado", "camara", "camaras", "cctv", "terreno", "metros")) {
+    add({
+      nombre: "Cableado UTP",
+      tipoItem: "producto",
+      cantidadSugerida: 1,
+      motivo: "El proyecto requiere conexión física entre equipos o cobertura en terreno.",
+    });
+  }
+
+  if (has("canalizacion", "terreno", "metros", "cableado")) {
+    add({
+      nombre: "Canalización",
+      tipoItem: "producto",
+      cantidadSugerida: 1,
+      motivo: "La descripción menciona terreno, metros o cableado que pueden requerir canalización.",
+    });
+  }
+
+  if (has("instalacion", "instalar", "camara", "camaras", "cctv")) {
+    add({
+      nombre: "Mano de obra de instalación",
+      tipoItem: "actividad",
+      cantidadSugerida: 1,
+      motivo: "El trabajo descrito requiere ejecución técnica en terreno.",
+    });
+  }
+
+  if (has("app", "aplicacion", "movil", "configuracion", "configurar")) {
+    add({
+      nombre: "Configuración de app móvil",
+      tipoItem: "servicio",
+      cantidadSugerida: 1,
+      motivo: "El proyecto menciona configuración de aplicación móvil o acceso remoto.",
+    });
+  }
+
+  if (has("prueba", "pruebas", "funcionamiento")) {
+    add({
+      nombre: "Pruebas de funcionamiento",
+      tipoItem: "actividad",
+      cantidadSugerida: 1,
+      motivo: "La descripción considera validar el funcionamiento de la solución.",
+    });
+  }
+
+  if (has("soporte", "inicial", "postventa") || suggestions.length > 0) {
+    add({
+      nombre: "Soporte inicial",
+      tipoItem: "servicio",
+      cantidadSugerida: 1,
+      motivo: "Es recomendable considerar soporte inicial posterior a la entrega.",
+    });
+  }
+
+  if (!suggestions.length) {
+    add({
+      nombre: "Levantamiento de requerimientos",
+      tipoItem: "actividad",
+      cantidadSugerida: 1,
+      motivo: "La descripción requiere revisión profesional antes de estructurar la cotización.",
+    });
+  }
+
+  return suggestions.slice(0, 8);
+}
+
+function isGeminiFallbackError(error) {
+  const message = normalizeSearchText(
+    `${error?.message || ""} ${error?.status || ""} ${error?.code || ""}`
+  );
+  return [
+    "429",
+    "too many requests",
+    "quota",
+    "credits",
+    "prepayment credits are depleted",
+    "unavailable",
+    "timeout",
+    "deadline",
+    "resource exhausted",
+  ].some((token) => message.includes(token));
 }
 
 /** Utilidad: parsea el primer número entero razonable desde un texto */
@@ -512,6 +729,155 @@ exports.actualizarPreciosInventario = onCall({ secrets: [GEMINI_API_KEY_SECRET] 
     resumenEstados,
   };
 });
+
+/**
+ * suggestQuoteItems
+ *
+ * IA minima para sugerir estructura de una cotizacion.
+ * No calcula precios, no crea cotizaciones y no modifica inventario.
+ */
+exports.suggestQuoteItems = onCall(
+  { region: DEFAULT_FUNCTION_REGION, secrets: [GEMINI_API_KEY_SECRET] },
+  async (request) => {
+  if (!request.auth || !request.auth.uid) {
+    throw new HttpsError("unauthenticated", "Debes iniciar sesion.");
+  }
+
+  const data = request.data || {};
+  const description = safeText(data.description, 1200);
+  const inventoryItems = normalizeInventorySummary(data.inventoryItems);
+
+  if (!description) {
+    console.error("suggestQuoteItems: descripcion vacia.");
+    throw new HttpsError(
+      "invalid-argument",
+      "Describe brevemente el trabajo que necesitas cotizar."
+    );
+  }
+
+  if (String(data.description || "").length > 1200) {
+    console.error("suggestQuoteItems: descripcion excede 1200 caracteres.");
+    throw new HttpsError(
+      "invalid-argument",
+      "La descripción es demasiado larga. Usa un máximo de 1200 caracteres."
+    );
+  }
+
+  const geminiModel = getGeminiModel();
+  if (!geminiModel) {
+    console.error("suggestQuoteItems: GEMINI_API_KEY no configurada. Usando asistente local.");
+    return {
+      suggestions: buildLocalQuoteSuggestions(description, inventoryItems),
+      source: "local",
+      warning: LOCAL_ASSISTANT_WARNING,
+    };
+  }
+
+  const inventoryText = inventoryItems.length
+    ? inventoryItems
+        .map(
+          (item) =>
+            `- id: ${item.id}; nombre: ${item.nombre}; tipoItem: ${item.tipoItem}; categoria: ${item.categoria}; unidad: ${item.unidad}`
+        )
+        .join("\n")
+    : "Sin inventario activo resumido.";
+
+  const prompt =
+    "Eres un asistente acotado para estructurar cotizaciones en ValoraCloud.\n" +
+    "Tu tarea es sugerir posibles items, no precios.\n\n" +
+    "Reglas estrictas:\n" +
+    "- Devuelve maximo 8 sugerencias.\n" +
+    "- Usa solo tipoItem: producto, servicio o actividad.\n" +
+    "- No incluyas precios, subtotales, totales, descuentos ni rangos monetarios.\n" +
+    "- No prometas resultados comerciales.\n" +
+    "- No crees cotizaciones.\n" +
+    "- Si un item coincide claramente con el inventario, usa su id exacto en inventarioMatchId.\n" +
+    "- Si no hay coincidencia clara, usa null en inventarioMatchId e inventarioMatchNombre.\n" +
+    "- Responde solo JSON valido, sin markdown ni explicaciones externas.\n\n" +
+    "Formato exacto:\n" +
+    "{\n" +
+    '  "suggestions": [\n' +
+    "    {\n" +
+    '      "nombre": "Cámara IP exterior",\n' +
+    '      "tipoItem": "producto",\n' +
+    '      "cantidadSugerida": 4,\n' +
+    '      "motivo": "El proyecto menciona instalación de 4 cámaras.",\n' +
+    '      "inventarioMatchId": null,\n' +
+    '      "inventarioMatchNombre": null\n' +
+    "    }\n" +
+    "  ]\n" +
+    "}\n\n" +
+    "Descripcion del proyecto:\n" +
+    description +
+    "\n\nInventario activo disponible:\n" +
+    inventoryText;
+
+  try {
+    const result = await geminiModel.generateContent(prompt);
+    const raw = (result.response.text() || "").trim();
+    let parsed = null;
+
+    try {
+      parsed = extractJsonObject(raw);
+    } catch (parseError) {
+      console.error("suggestQuoteItems: error parseando JSON de Gemini.", {
+        message: parseError.message,
+        rawPreview: raw.slice(0, 500),
+      });
+      return {
+        suggestions: buildLocalQuoteSuggestions(description, inventoryItems),
+        source: "local",
+        warning: LOCAL_ASSISTANT_WARNING,
+      };
+    }
+
+    if (!parsed || !Array.isArray(parsed.suggestions)) {
+      console.error("suggestQuoteItems: respuesta sin suggestions array.", {
+        rawPreview: raw.slice(0, 500),
+      });
+      return {
+        suggestions: buildLocalQuoteSuggestions(description, inventoryItems),
+        source: "local",
+        warning: LOCAL_ASSISTANT_WARNING,
+      };
+    }
+
+    const suggestions = sanitizeQuoteSuggestions(parsed, inventoryItems);
+
+    if (!suggestions.length) {
+      console.error("suggestQuoteItems: sugerencias vacias tras sanitizar.", {
+        rawPreview: raw.slice(0, 500),
+      });
+      return {
+        suggestions: buildLocalQuoteSuggestions(description, inventoryItems),
+        source: "local",
+        warning: LOCAL_ASSISTANT_WARNING,
+      };
+    }
+
+    return { suggestions, source: "gemini" };
+  } catch (error) {
+    console.error("suggestQuoteItems: error llamando a Gemini.", {
+      message: error.message,
+      name: error.name,
+      stack: error.stack,
+    });
+
+    if (isGeminiFallbackError(error)) {
+      return {
+        suggestions: buildLocalQuoteSuggestions(description, inventoryItems),
+        source: "local",
+        warning: LOCAL_ASSISTANT_WARNING,
+      };
+    }
+
+    throw new HttpsError(
+      "unavailable",
+      "No se pudieron generar sugerencias en este momento."
+    );
+  }
+  }
+);
 
 // Asistente de cotizaciones: simular proyecto completo
 exports.simularCotizacionProyecto = onCall({ secrets: [GEMINI_API_KEY_SECRET] }, async (request) => {

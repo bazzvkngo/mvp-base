@@ -83,6 +83,14 @@ Esto evita que scraping, APIs externas o IA contaminen la logica central del MVP
 
 `domain/quoteItemFactory.js` prepara la transformacion de un item de inventario en un item de cotizacion. Esto permite reutilizar la misma forma de datos en valorizacion, cotizaciones y PDF.
 
+## Asistente hibrido para estructura de cotizacion
+
+La funcion callable `suggestQuoteItems` usa un asistente hibrido para sugerir posibles items a partir de una descripcion escrita por el usuario. Esta asistencia solo estructura la cotizacion: no calcula precios finales, no entrega totales, no crea cotizaciones automaticamente y no reemplaza el criterio profesional ni la valorizacion del sistema.
+
+La primera capa es local y gratuita: usa reglas, palabras clave e inventario activo para generar sugerencias sin costo de API. La segunda capa es premium/opcional: usa Gemini mediante Secret Manager (`GEMINI_API_KEY`) cuando exista disponibilidad de creditos o plan API. Si la API externa falla por cuota, creditos, timeout o disponibilidad, ValoraCloud cae automaticamente a la capa local y mantiene operativo el flujo principal.
+
+El frontend envia una descripcion y un resumen de items activos/valorizados. La respuesta se normaliza a un maximo de 8 sugerencias con tipo permitido (`producto`, `servicio` o `actividad`) y una posible coincidencia con inventario. Si existe coincidencia, el usuario puede agregar manualmente ese item usando el precio sugerido por ValoraCloud, no por la IA.
+
 ## Flujo principal del MVP
 
 1. Usuario inicia sesion o se registra con Firebase Auth.

@@ -5,6 +5,7 @@ import {
   normalizeQuoteItems,
 } from "../domain/quoteItemFactory";
 import { PRICING_STATUS } from "../domain/pricing";
+import { suggestQuoteItems } from "../services/aiQuoteService";
 import { getCompanyConfig } from "../services/companyService";
 import {
   createQuote,
@@ -73,6 +74,12 @@ function NewQuotePage({ userId }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [savedQuoteId, setSavedQuoteId] = useState(null);
+  const [assistantDescription, setAssistantDescription] = useState("");
+  const [assistantSuggestions, setAssistantSuggestions] = useState([]);
+  const [assistantLoading, setAssistantLoading] = useState(false);
+  const [assistantError, setAssistantError] = useState("");
+  const [assistantSource, setAssistantSource] = useState("");
+  const [assistantWarning, setAssistantWarning] = useState("");
 
   useEffect(() => {
     if (!userId) {
@@ -132,7 +139,7 @@ function NewQuotePage({ userId }) {
     }));
   };
 
-  const addItem = (valuation) => {
+  const addItem = (valuation, quantity = 1) => {
     setSuccess("");
     setError("");
     setQuote((prev) => {
@@ -143,7 +150,7 @@ function NewQuotePage({ userId }) {
           items: normalizeQuoteItems(
             prev.items.map((item) =>
               item.itemId === valuation.itemId
-                ? { ...item, cantidad: Number(item.cantidad || 0) + 1 }
+                ? { ...item, cantidad: Number(item.cantidad || 0) + quantity }
                 : item
             )
           ),
@@ -154,10 +161,51 @@ function NewQuotePage({ userId }) {
         ...prev,
         items: normalizeQuoteItems([
           ...prev.items,
-          createQuoteItemFromValuation(valuation),
+          {
+            ...createQuoteItemFromValuation(valuation),
+            cantidad: quantity,
+          },
         ]),
       };
     });
+  };
+
+  const getMatchedValuation = (suggestion) =>
+    valuations.find((valuation) => valuation.itemId === suggestion.inventarioMatchId);
+
+  const requestAssistantSuggestions = async () => {
+    setAssistantError("");
+    setAssistantSuggestions([]);
+    setAssistantSource("");
+    setAssistantWarning("");
+
+    try {
+      setAssistantLoading(true);
+      const result = await suggestQuoteItems({
+        description: assistantDescription,
+        valuations,
+      });
+      const suggestions = result.suggestions || [];
+      setAssistantSuggestions(suggestions);
+      setAssistantSource(result.source || "");
+      setAssistantWarning(result.warning || "");
+      if (suggestions.length === 0) {
+        setAssistantError("No se generaron sugerencias para esta descripción.");
+      }
+    } catch (err) {
+      console.error("Error al sugerir ítems de cotización:", err);
+      setAssistantError(
+        err.message || "No se pudieron generar sugerencias en este momento."
+      );
+    } finally {
+      setAssistantLoading(false);
+    }
+  };
+
+  const addSuggestionToQuote = (suggestion) => {
+    const matchedValuation = getMatchedValuation(suggestion);
+    if (!matchedValuation) return;
+    addItem(matchedValuation, Number(suggestion.cantidadSugerida) || 1);
   };
 
   const updateItem = (itemId, field, value) => {
@@ -357,6 +405,98 @@ function NewQuotePage({ userId }) {
 
       {error && <p className="no-print" style={styles.errorText}>{error}</p>}
       {success && <p className="no-print" style={styles.successText}>{success}</p>}
+
+      <div className="no-print" style={styles.panel}>
+        <div style={styles.sectionHeader}>
+          <div>
+            <h3 style={styles.panelTitle}>Asistente de estructura</h3>
+            <p style={styles.helpText}>
+              Describe brevemente el trabajo o servicio que necesitas cotizar.
+              ValoraCloud sugerirá posibles ítems, pero tú decides qué agregar
+              y el sistema mantendrá el cálculo de precios basado en inventario,
+              referencias y valorización.
+            </p>
+          </div>
+        </div>
+
+        <textarea
+          value={assistantDescription}
+          onChange={(event) => setAssistantDescription(event.target.value)}
+          rows={4}
+          maxLength={1200}
+          placeholder="Ej: Necesito cotizar instalación de 4 cámaras en terreno de 40 x 40 metros"
+          style={styles.textarea}
+        />
+        <div style={styles.assistantActions}>
+          <button
+            type="button"
+            onClick={requestAssistantSuggestions}
+            disabled={assistantLoading}
+            style={styles.primaryButton}
+          >
+            {assistantLoading ? "Sugiriendo..." : "Sugerir ítems"}
+          </button>
+          <span style={styles.assistantNote}>
+            No calcula precios ni crea cotizaciones automáticamente.
+          </span>
+        </div>
+
+        {assistantError && <p style={styles.errorText}>{assistantError}</p>}
+        {assistantSource && (
+          <p style={styles.infoText}>
+            {assistantSource === "gemini"
+              ? "Sugerencias generadas con IA generativa."
+              : "Sugerencias generadas con asistente local."}
+          </p>
+        )}
+        {assistantWarning && (
+          <p style={styles.warningText}>{assistantWarning}</p>
+        )}
+
+        {assistantSuggestions.length > 0 && (
+          <div style={styles.suggestionGrid}>
+            {assistantSuggestions.map((suggestion, index) => {
+              const matchedValuation = getMatchedValuation(suggestion);
+              return (
+                <article
+                  key={`${suggestion.nombre}-${index}`}
+                  style={styles.suggestionCard}
+                >
+                  <div>
+                    <strong>{suggestion.nombre}</strong>
+                    <span style={styles.itemMeta}>
+                      {tipoLabels[suggestion.tipoItem] || suggestion.tipoItem} ·
+                      cantidad sugerida: {suggestion.cantidadSugerida}
+                    </span>
+                  </div>
+                  <p style={styles.suggestionReason}>{suggestion.motivo}</p>
+                  <span
+                    style={{
+                      ...styles.matchBadge,
+                      ...(matchedValuation
+                        ? styles.matchBadgeFound
+                        : styles.matchBadgeMissing),
+                    }}
+                  >
+                    {matchedValuation
+                      ? `Coincide con inventario: ${matchedValuation.nombre}`
+                      : "No encontrado en inventario"}
+                  </span>
+                  {matchedValuation && (
+                    <button
+                      type="button"
+                      onClick={() => addSuggestionToQuote(suggestion)}
+                      style={styles.secondaryButton}
+                    >
+                      Agregar item valorizado
+                    </button>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       <div className="no-print" style={styles.panel}>
         <div style={styles.sectionHeader}>
@@ -874,6 +1014,52 @@ const styles = {
     gap: "9px",
     marginTop: "16px",
   },
+  assistantActions: {
+    alignItems: "center",
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "12px",
+    marginTop: "12px",
+  },
+  assistantNote: {
+    color: "#64748b",
+    fontSize: "13px",
+  },
+  suggestionGrid: {
+    display: "grid",
+    gap: "12px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+    marginTop: "14px",
+  },
+  suggestionCard: {
+    border: "1px solid #e5e7eb",
+    borderRadius: "8px",
+    display: "grid",
+    gap: "10px",
+    padding: "14px",
+  },
+  suggestionReason: {
+    color: "#475569",
+    fontSize: "13px",
+    lineHeight: 1.45,
+    margin: 0,
+  },
+  matchBadge: {
+    borderRadius: "999px",
+    display: "inline-block",
+    fontSize: "12px",
+    fontWeight: 800,
+    padding: "5px 9px",
+    width: "fit-content",
+  },
+  matchBadgeFound: {
+    background: "#dcfce7",
+    color: "#166534",
+  },
+  matchBadgeMissing: {
+    background: "#f1f5f9",
+    color: "#475569",
+  },
   primaryButton: {
     background: "#0f766e",
     border: 0,
@@ -1027,6 +1213,14 @@ const styles = {
     color: "#64748b",
     margin: 0,
   },
+  infoText: {
+    background: "#f8fafc",
+    border: "1px solid #e5e7eb",
+    borderRadius: "8px",
+    color: "#475569",
+    margin: "12px 0 0",
+    padding: "11px 13px",
+  },
   errorText: {
     background: "#fef2f2",
     border: "1px solid #fecaca",
@@ -1041,6 +1235,14 @@ const styles = {
     borderRadius: "8px",
     color: "#166534",
     margin: 0,
+    padding: "11px 13px",
+  },
+  warningText: {
+    background: "#fffbeb",
+    border: "1px solid #fde68a",
+    borderRadius: "8px",
+    color: "#92400e",
+    margin: "12px 0 0",
     padding: "11px 13px",
   },
 };
