@@ -12,6 +12,12 @@
 /build
 /dist
 
+# Firebase
+firebase-debug.log
+firebase-debug.*
+.firebaserc.local
+.runtimeconfig.json
+
 # misc
 .DS_Store
 .env

@@ -1,0 +1,46 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isAllowedReferenceTaskUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(["estado", "actualizadoEn"])
+        && request.resource.data.estado in ["resuelta", "ignorada"];
+    }
+
+    match /usuarios/{uid} {
+      allow read, create, update: if isOwner(uid);
+      allow delete: if false;
+
+      match /config/{docId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      match /inventario/{itemId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      match /referencias/{referenceId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      match /cotizaciones/{quoteId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      match /tareasReferencias/{taskId} {
+        allow read: if isOwner(uid);
+        allow update: if isOwner(uid) && isAllowedReferenceTaskUpdate();
+        allow create, delete: if false;
+      }
+    }
+  }
+}
