@@ -16,7 +16,7 @@ import {
 } from "../firebase/firestorePaths";
 
 const VALID_TYPES = ["producto", "servicio", "actividad"];
-const VALID_STATUS = ["activo", "inactivo"];
+const VALID_STATUS = ["activo", "inactivo", "eliminado"];
 
 function inventoryCollectionRef(uid) {
   return collection(db, ...inventoryCollectionPath(uid));
@@ -126,6 +126,14 @@ export async function updateInventoryItem(uid, itemId, data) {
 export async function deactivateInventoryItem(uid, itemId) {
   return updateDoc(doc(db, ...inventoryDocPath(uid, itemId)), {
     estado: "inactivo",
+    actualizadoEn: serverTimestamp(),
+  });
+}
+
+export async function softDeleteInventoryItem(uid, itemId) {
+  return updateDoc(doc(db, ...inventoryDocPath(uid, itemId)), {
+    estado: "eliminado",
+    eliminadoEn: serverTimestamp(),
     actualizadoEn: serverTimestamp(),
   });
 }

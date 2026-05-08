@@ -3,6 +3,7 @@ import {
   createInventoryItem,
   deactivateInventoryItem,
   reactivateInventoryItem,
+  softDeleteInventoryItem,
   subscribeToInventory,
   updateInventoryItem,
 } from "../../services/inventoryService";
@@ -25,6 +26,12 @@ const tipoLabels = {
   producto: "Producto",
   servicio: "Servicio",
   actividad: "Actividad",
+};
+
+const estadoLabels = {
+  activo: "Activo",
+  inactivo: "Inactivo",
+  eliminado: "Eliminado",
 };
 
 function calcularPrecioInterno(costoBase, margenDeseado) {
@@ -76,6 +83,7 @@ function InventoryManager({ userId }) {
       const estado = item.estado || "activo";
       if (estadoFiltro === "activos" && estado !== "activo") return false;
       if (estadoFiltro === "inactivos" && estado !== "inactivo") return false;
+      if (estadoFiltro === "eliminados" && estado !== "eliminado") return false;
       if (tipoFiltro !== "todos" && item.tipoItem !== tipoFiltro) return false;
       if (!q) return true;
 
@@ -220,6 +228,25 @@ function InventoryManager({ userId }) {
     } catch (err) {
       console.error("Error al reactivar ítem:", err);
       setError("No se pudo reactivar el ítem.");
+    }
+  };
+
+  const handleDelete = async (item) => {
+    const confirmed = window.confirm(
+      "¿Seguro que deseas eliminar este ítem? Ya no aparecerá en inventario activo, valorización ni nuevas cotizaciones."
+    );
+
+    if (!confirmed) return;
+
+    setError("");
+    setSuccess("");
+    try {
+      await softDeleteInventoryItem(userId, item.id);
+      setSuccess("Ítem eliminado del inventario activo. Puedes verlo con el filtro de eliminados.");
+      if (editingId === item.id) resetForm();
+    } catch (err) {
+      console.error("Error al eliminar ítem:", err);
+      setError("No se pudo eliminar el ítem.");
     }
   };
 
@@ -368,6 +395,9 @@ function InventoryManager({ userId }) {
             >
               <option value="activo">Activo</option>
               <option value="inactivo">Inactivo</option>
+              {form.estado === "eliminado" && (
+                <option value="eliminado">Eliminado</option>
+              )}
             </select>
           </label>
 
@@ -423,6 +453,7 @@ function InventoryManager({ userId }) {
           >
             <option value="activos">Activos</option>
             <option value="inactivos">Inactivos</option>
+            <option value="eliminados">Eliminados</option>
             <option value="todos">Todos</option>
           </select>
         </div>
@@ -472,38 +503,60 @@ function InventoryManager({ userId }) {
                       <span
                         style={{
                           ...styles.statusBadge,
-                          ...(item.estado === "inactivo"
-                            ? styles.statusInactive
-                            : styles.statusActive),
+                          ...(item.estado === "eliminado"
+                            ? styles.statusDeleted
+                            : item.estado === "inactivo"
+                              ? styles.statusInactive
+                              : styles.statusActive),
                         }}
                       >
-                        {item.estado === "inactivo" ? "Inactivo" : "Activo"}
+                        {estadoLabels[item.estado || "activo"] || "Activo"}
                       </span>
                     </td>
                     <td style={styles.td}>
                       <div style={styles.actions}>
-                        <button
-                          type="button"
-                          style={styles.smallButton}
-                          onClick={() => handleEdit(item)}
-                        >
-                          Editar
-                        </button>
-                        {(item.estado || "activo") === "activo" ? (
-                          <button
-                            type="button"
-                            style={styles.warningButton}
-                            onClick={() => handleDeactivate(item)}
-                          >
-                            Desactivar
-                          </button>
-                        ) : (
+                        {(item.estado || "activo") !== "eliminado" && (
+                          <>
+                            <button
+                              type="button"
+                              style={styles.smallButton}
+                              onClick={() => handleEdit(item)}
+                            >
+                              Editar
+                            </button>
+                            {(item.estado || "activo") === "activo" ? (
+                              <button
+                                type="button"
+                                style={styles.warningButton}
+                                onClick={() => handleDeactivate(item)}
+                              >
+                                Desactivar
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                style={styles.successButton}
+                                onClick={() => handleReactivate(item)}
+                              >
+                                Reactivar
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              style={styles.deleteButton}
+                              onClick={() => handleDelete(item)}
+                            >
+                              Eliminar
+                            </button>
+                          </>
+                        )}
+                        {(item.estado || "activo") === "eliminado" && (
                           <button
                             type="button"
                             style={styles.successButton}
                             onClick={() => handleReactivate(item)}
                           >
-                            Reactivar
+                            Restaurar
                           </button>
                         )}
                       </div>
@@ -698,6 +751,10 @@ const styles = {
     background: "#fee2e2",
     color: "#991b1b",
   },
+  statusDeleted: {
+    background: "#f1f5f9",
+    color: "#475569",
+  },
   actions: {
     display: "flex",
     flexWrap: "wrap",
@@ -724,6 +781,15 @@ const styles = {
     border: 0,
     borderRadius: "6px",
     background: "#059669",
+    color: "#ffffff",
+    cursor: "pointer",
+    fontWeight: 800,
+    padding: "7px 9px",
+  },
+  deleteButton: {
+    border: 0,
+    borderRadius: "6px",
+    background: "#dc2626",
     color: "#ffffff",
     cursor: "pointer",
     fontWeight: 800,
