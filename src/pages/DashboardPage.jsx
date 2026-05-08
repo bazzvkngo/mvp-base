@@ -4,6 +4,10 @@ import { PRICING_STATUS } from "../domain/pricing";
 import { getQuotes } from "../services/quoteService";
 import { subscribeToInventory } from "../services/inventoryService";
 import { subscribeToReferences } from "../services/referenceService";
+import {
+  subscribeToPendingReferenceTasks,
+  updateReferenceTaskStatus,
+} from "../services/referenceTaskService";
 import { buildValuations } from "../services/valuationService";
 import { formatCLP } from "../utils/formatters";
 
@@ -100,6 +104,7 @@ function DashboardPage({ usuario }) {
   const [inventoryLoaded, setInventoryLoaded] = useState(false);
   const [referencesLoaded, setReferencesLoaded] = useState(false);
   const [quotesLoaded, setQuotesLoaded] = useState(false);
+  const [referenceTasks, setReferenceTasks] = useState([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -144,11 +149,29 @@ function DashboardPage({ usuario }) {
       })
       .finally(() => setQuotesLoaded(true));
 
+    const unsubscribeReferenceTasks = subscribeToPendingReferenceTasks(
+      userId,
+      (items) => setReferenceTasks(items),
+      (err) => {
+        console.error("Error al cargar tareas de referencias:", err);
+      }
+    );
+
     return () => {
       unsubscribeInventory();
       unsubscribeReferences();
+      unsubscribeReferenceTasks();
     };
   }, [userId]);
+
+  const changeReferenceTaskStatus = async (taskId, status) => {
+    try {
+      await updateReferenceTaskStatus(userId, taskId, status);
+    } catch (err) {
+      console.error("Error al actualizar tarea de referencia:", err);
+      setError("No se pudo actualizar la tarea de referencia.");
+    }
+  };
 
   const activeInventory = useMemo(
     () =>
@@ -272,6 +295,55 @@ function DashboardPage({ usuario }) {
           </div>
         </>
       )}
+
+      <div style={styles.panel}>
+        <div style={styles.sectionHeader}>
+          <h3 style={styles.panelTitle}>Tareas de referencias</h3>
+          <p style={styles.helpText}>
+            Revisión nocturna para mantener actualizadas las referencias de
+            mercado. No busca precios automáticamente.
+          </p>
+        </div>
+
+        {referenceTasks.length === 0 ? (
+          <p style={styles.emptyText}>No hay tareas pendientes de referencias.</p>
+        ) : (
+          <div style={styles.taskGrid}>
+            {referenceTasks.slice(0, 6).map((task) => (
+              <article key={task.id} style={styles.taskCard}>
+                <div>
+                  <strong>{task.itemNombre}</strong>
+                  <span style={styles.taskMeta}>
+                    {task.tipoAlerta === "sin_referencias"
+                      ? "Sin referencias activas"
+                      : "Referencias desactualizadas"}
+                    {" · "}
+                    prioridad {task.prioridad || "media"}
+                  </span>
+                </div>
+                <p style={styles.taskText}>{task.mensaje}</p>
+                <p style={styles.queryText}>{task.consultaSugerida}</p>
+                <div style={styles.taskActions}>
+                  <button
+                    type="button"
+                    style={styles.secondaryButton}
+                    onClick={() => changeReferenceTaskStatus(task.id, "resuelta")}
+                  >
+                    Marcar resuelta
+                  </button>
+                  <button
+                    type="button"
+                    style={styles.clearButton}
+                    onClick={() => changeReferenceTaskStatus(task.id, "ignorada")}
+                  >
+                    Ignorar
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div style={styles.panel}>
         <div style={styles.sectionHeader}>
@@ -425,6 +497,63 @@ const styles = {
     gap: "6px",
     padding: "15px",
     textDecoration: "none",
+  },
+  taskGrid: {
+    display: "grid",
+    gap: "12px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+  },
+  taskCard: {
+    background: "#f8fafc",
+    border: "1px solid #e5e7eb",
+    borderRadius: "8px",
+    display: "grid",
+    gap: "9px",
+    padding: "14px",
+  },
+  taskMeta: {
+    color: "#64748b",
+    display: "block",
+    fontSize: "12px",
+    marginTop: "3px",
+  },
+  taskText: {
+    color: "#334155",
+    fontSize: "14px",
+    lineHeight: 1.45,
+    margin: 0,
+  },
+  queryText: {
+    background: "#ffffff",
+    border: "1px solid #e5e7eb",
+    borderRadius: "6px",
+    color: "#475569",
+    fontSize: "13px",
+    margin: 0,
+    padding: "9px",
+  },
+  taskActions: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "8px",
+  },
+  secondaryButton: {
+    background: "#ffffff",
+    border: "1px solid #0f766e",
+    borderRadius: "6px",
+    color: "#0f766e",
+    cursor: "pointer",
+    fontWeight: 800,
+    padding: "8px 10px",
+  },
+  clearButton: {
+    background: "#ffffff",
+    border: "1px solid #cbd5e1",
+    borderRadius: "6px",
+    color: "#334155",
+    cursor: "pointer",
+    fontWeight: 800,
+    padding: "8px 10px",
   },
   emptyState: {
     background: "#ffffff",

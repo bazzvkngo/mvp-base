@@ -2,6 +2,7 @@
 
 // Import de Firebase Functions v2 (callable)
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
 
 // Admin SDK para acceder a Firestore
@@ -24,6 +25,7 @@ const db = getFirestore();
 const GEMINI_API_KEY_SECRET = defineSecret("GEMINI_API_KEY");
 const ALLOWED_QUOTE_ITEM_TYPES = ["producto", "servicio", "actividad"];
 const DEFAULT_FUNCTION_REGION = "us-central1";
+const REFERENCE_REVIEW_STALE_DAYS = 30;
 const LOCAL_ASSISTANT_WARNING =
   "La IA generativa no está disponible temporalmente. Se generaron sugerencias locales basadas en reglas e inventario.";
 
@@ -166,7 +168,8 @@ function getCameraQuantity(normalizedDescription) {
 
 function buildLocalQuoteSuggestions(description, inventoryItems) {
   const text = normalizeSearchText(description);
-  const has = (...keywords) => keywords.some((keyword) => text.includes(keyword));
+  const has = (...keywords) =>
+    keywords.some((keyword) => text.includes(normalizeSearchText(keyword)));
   const suggestions = [];
   const cameraQuantity = getCameraQuantity(text);
 
@@ -176,7 +179,437 @@ function buildLocalQuoteSuggestions(description, inventoryItems) {
     suggestions.push(buildLocalSuggestion(suggestion, inventoryItems));
   };
 
-  if (has("camara", "camaras", "cctv", "seguridad")) {
+  const addSupportIfNeeded = () => {
+    if (suggestions.length > 0) {
+      add({
+        nombre: "Soporte inicial",
+        tipoItem: "servicio",
+        cantidadSugerida: 1,
+        motivo: "Es recomendable considerar soporte inicial posterior a la entrega.",
+      });
+    }
+  };
+  const cameraDetected =
+    has("camara", "camaras", "cctv") ||
+    (has("seguridad") && has("instalacion", "instalar"));
+
+  const hardwareDetected = has(
+    "pc",
+    "computador",
+    "notebook",
+    "gabinete",
+    "procesador",
+    "ram",
+    "ssd",
+    "disco duro",
+    "pasta térmica",
+    "pasta termica",
+    "limpieza",
+    "mantención",
+    "mantencion",
+    "armado",
+    "diagnóstico",
+    "diagnostico",
+    "fuente de poder",
+    "placa madre"
+  );
+
+  if (hardwareDetected) {
+    add({
+      nombre: "Diagnóstico técnico de equipo",
+      tipoItem: "actividad",
+      cantidadSugerida: 1,
+      motivo: "La descripción menciona revisión o intervención de hardware.",
+    });
+
+    if (has("limpieza", "mantención", "mantencion", "pc", "computador", "notebook")) {
+      add({
+        nombre: "Limpieza interna de computador",
+        tipoItem: "servicio",
+        cantidadSugerida: 1,
+        motivo: "El equipo puede requerir limpieza interna antes de validar su estado.",
+      });
+    }
+
+    if (has("pasta térmica", "pasta termica", "procesador", "temperatura", "sobrecalentamiento")) {
+      add({
+        nombre: "Cambio de pasta térmica",
+        tipoItem: "servicio",
+        cantidadSugerida: 1,
+        motivo: "La intervención de procesador o temperatura puede requerir cambio de pasta térmica.",
+      });
+    }
+
+    if (has("ram", "ssd", "disco duro", "procesador", "fuente de poder", "placa madre", "componente")) {
+      add({
+        nombre: "Instalación de componente",
+        tipoItem: "servicio",
+        cantidadSugerida: 1,
+        motivo: "El trabajo menciona componentes físicos que pueden requerir instalación.",
+      });
+    }
+
+    if (has("gabinete")) {
+      add({
+        nombre: "Cambio de gabinete",
+        tipoItem: "servicio",
+        cantidadSugerida: 1,
+        motivo: "La descripción menciona cambio o trabajo sobre gabinete.",
+      });
+    }
+
+    if (has("armado", "pc gamer", "computador nuevo", "placa madre")) {
+      add({
+        nombre: "Armado de computador",
+        tipoItem: "servicio",
+        cantidadSugerida: 1,
+        motivo: "El proyecto requiere montaje o armado de equipo.",
+      });
+    }
+  }
+
+  const operatingSystemDetected = has(
+    "formateo",
+    "windows",
+    "linux",
+    "sistema operativo",
+    "drivers",
+    "respaldo",
+    "migración de datos",
+    "migracion de datos",
+    "instalación de programas",
+    "instalacion de programas"
+  );
+
+  if (operatingSystemDetected) {
+    if (has("formateo", "respaldo", "migración", "migracion", "datos")) {
+      add({
+        nombre: "Respaldo de información",
+        tipoItem: "actividad",
+        cantidadSugerida: 1,
+        motivo: "Antes de intervenir el sistema operativo conviene respaldar la información del usuario.",
+      });
+    }
+
+    add({
+      nombre: "Instalación de sistema operativo",
+      tipoItem: "servicio",
+      cantidadSugerida: 1,
+      motivo: "La descripción menciona formateo, Windows, Linux o sistema operativo.",
+    });
+
+    if (has("drivers", "windows", "notebook", "pc", "computador")) {
+      add({
+        nombre: "Instalación de drivers",
+        tipoItem: "servicio",
+        cantidadSugerida: 1,
+        motivo: "El equipo puede requerir controladores para funcionar correctamente.",
+      });
+    }
+
+    if (has("programas", "software", "aplicaciones", "base")) {
+      add({
+        nombre: "Instalación de software base",
+        tipoItem: "servicio",
+        cantidadSugerida: 1,
+        motivo: "El proyecto menciona instalación de programas o software inicial.",
+      });
+    }
+
+    add({
+      nombre: "Configuración inicial de equipo",
+      tipoItem: "actividad",
+      cantidadSugerida: 1,
+      motivo: "Después de instalar el sistema se requiere configuración inicial del equipo.",
+    });
+  }
+
+  const networkDetected = has(
+    "router",
+    "wifi",
+    "red",
+    "redes",
+    "cableado",
+    "utp",
+    "punto de red",
+    "impresora de red",
+    "switch",
+    "internet",
+    "conectividad",
+    "ip"
+  );
+
+  if (networkDetected) {
+    add({
+      nombre: "Diagnóstico de red",
+      tipoItem: "actividad",
+      cantidadSugerida: 1,
+      motivo: "La descripción menciona conectividad, red o acceso a internet.",
+    });
+
+    if (has("router", "ip", "internet")) {
+      add({
+        nombre: "Configuración de router",
+        tipoItem: "servicio",
+        cantidadSugerida: 1,
+        motivo: "El proyecto puede requerir configuración de router o parámetros de red.",
+      });
+    }
+
+    if (has("wifi", "inalambrica", "inalámbrica")) {
+      add({
+        nombre: "Configuración de red WiFi",
+        tipoItem: "servicio",
+        cantidadSugerida: 1,
+        motivo: "La descripción menciona cobertura o configuración WiFi.",
+      });
+    }
+
+    if (has("punto de red", "cableado", "utp")) {
+      add({
+        nombre: "Instalación de punto de red",
+        tipoItem: "servicio",
+        cantidadSugerida: 1,
+        motivo: "El trabajo menciona cableado o puntos físicos de red.",
+      });
+    }
+
+    if (has("cableado", "utp", "punto de red")) {
+      add({
+        nombre: "Cableado UTP",
+        tipoItem: "producto",
+        cantidadSugerida: 1,
+        motivo: "El proyecto requiere conexión física de red.",
+      });
+    }
+
+    if (has("impresora de red", "impresora")) {
+      add({
+        nombre: "Configuración de impresora en red",
+        tipoItem: "servicio",
+        cantidadSugerida: 1,
+        motivo: "La descripción menciona impresora compartida o conectada a red.",
+      });
+    }
+
+    add({
+      nombre: "Pruebas de conectividad",
+      tipoItem: "actividad",
+      cantidadSugerida: 1,
+      motivo: "Es necesario validar conexión, alcance y funcionamiento de la red.",
+    });
+  }
+
+  const webDetected = has(
+    "página web",
+    "pagina web",
+    "sitio web",
+    "landing",
+    "one page",
+    "ecommerce",
+    "e-commerce",
+    "tienda online",
+    "carrito de compras",
+    "formulario",
+    "sistema web",
+    "software",
+    "crud",
+    "base de datos",
+    "login",
+    "panel administrativo"
+  );
+
+  if (webDetected) {
+    add({
+      nombre: "Levantamiento de requerimientos",
+      tipoItem: "actividad",
+      cantidadSugerida: 1,
+      motivo: "El desarrollo requiere definir alcance, funcionalidades y criterios de entrega.",
+    });
+
+    if (has("página web", "pagina web", "sitio web", "landing", "one page", "tienda online")) {
+      add({
+        nombre: "Diseño de página web",
+        tipoItem: "servicio",
+        cantidadSugerida: 1,
+        motivo: "El proyecto menciona una interfaz web visible para usuarios.",
+      });
+    }
+
+    add({
+      nombre: "Desarrollo de sitio web",
+      tipoItem: "servicio",
+      cantidadSugerida: 1,
+      motivo: "La descripción requiere implementación técnica de una solución web.",
+    });
+
+    if (has("ecommerce", "e-commerce", "tienda online", "carrito de compras")) {
+      add({
+        nombre: "Implementación de carrito de compras",
+        tipoItem: "servicio",
+        cantidadSugerida: 1,
+        motivo: "El proyecto menciona comercio electrónico o venta online.",
+      });
+    }
+
+    if (has("formulario", "contacto")) {
+      add({
+        nombre: "Configuración de formulario de contacto",
+        tipoItem: "servicio",
+        cantidadSugerida: 1,
+        motivo: "La descripción menciona captura de datos mediante formulario.",
+      });
+    }
+
+    if (has("base de datos", "crud", "login", "panel administrativo", "sistema web")) {
+      add({
+        nombre: "Diseño de base de datos",
+        tipoItem: "servicio",
+        cantidadSugerida: 1,
+        motivo: "El sistema requiere estructurar datos, usuarios o funcionalidades internas.",
+      });
+    }
+  }
+
+  const cloudDetected = has(
+    "hosting",
+    "dominio",
+    "firebase",
+    "deploy",
+    "nube",
+    "cloud",
+    "servidor",
+    "correo corporativo",
+    "ssl"
+  );
+
+  if (cloudDetected) {
+    if (has("hosting", "servidor", "nube", "cloud")) {
+      add({
+        nombre: "Configuración de hosting",
+        tipoItem: "servicio",
+        cantidadSugerida: 1,
+        motivo: "La solución requiere un entorno de publicación o alojamiento.",
+      });
+    }
+
+    if (has("dominio", "correo corporativo")) {
+      add({
+        nombre: "Configuración de dominio",
+        tipoItem: "servicio",
+        cantidadSugerida: 1,
+        motivo: "La descripción menciona dominio o servicios asociados al dominio.",
+      });
+    }
+
+    if (has("ssl", "certificado")) {
+      add({
+        nombre: "Configuración de certificado SSL",
+        tipoItem: "servicio",
+        cantidadSugerida: 1,
+        motivo: "El proyecto requiere habilitar conexión segura HTTPS.",
+      });
+    }
+
+    if (has("deploy", "despliegue", "aplicación web", "aplicacion web", "firebase", "servidor")) {
+      add({
+        nombre: "Despliegue de aplicación web",
+        tipoItem: "servicio",
+        cantidadSugerida: 1,
+        motivo: "La descripción menciona publicación o despliegue de una aplicación.",
+      });
+    }
+
+    if (has("firebase")) {
+      add({
+        nombre: "Configuración de Firebase",
+        tipoItem: "servicio",
+        cantidadSugerida: 1,
+        motivo: "El proyecto menciona Firebase como plataforma de backend o despliegue.",
+      });
+    }
+
+    add({
+      nombre: "Pruebas de publicación",
+      tipoItem: "actividad",
+      cantidadSugerida: 1,
+      motivo: "Es necesario validar que el servicio publicado funcione correctamente.",
+    });
+  }
+
+  const qualityDetected =
+    has(
+      "testing",
+      "calidad",
+      "pruebas funcionales",
+      "aseguramiento de la calidad"
+    ) || (has("pruebas") && has("software", "sistema", "web", "calidad"));
+  const securityDetected =
+    has(
+      "vulnerabilidad",
+      "hacking ético",
+      "hacking etico",
+      "owasp",
+      "respaldo",
+      "revisión",
+      "revision",
+      "auditoría",
+      "auditoria"
+    ) ||
+    qualityDetected ||
+    (has("seguridad") && !cameraDetected);
+
+  if (securityDetected) {
+    add({
+      nombre: "Revisión básica de seguridad",
+      tipoItem: "actividad",
+      cantidadSugerida: 1,
+      motivo: "La descripción menciona seguridad, revisión o posibles vulnerabilidades.",
+    });
+
+    if (has("owasp", "hacking ético", "hacking etico", "vulnerabilidad")) {
+      add({
+        nombre: "Checklist OWASP básico",
+        tipoItem: "actividad",
+        cantidadSugerida: 1,
+        motivo: "El proyecto menciona revisión de seguridad web o buenas prácticas OWASP.",
+      });
+    }
+
+    if (has("respaldo", "backup")) {
+      add({
+        nombre: "Configuración de respaldos",
+        tipoItem: "servicio",
+        cantidadSugerida: 1,
+        motivo: "La descripción menciona respaldo o continuidad de información.",
+      });
+    }
+
+    if (has("pruebas", "testing", "calidad")) {
+      add({
+        nombre: "Pruebas funcionales",
+        tipoItem: "actividad",
+        cantidadSugerida: 1,
+        motivo: "El trabajo requiere validar calidad y comportamiento funcional.",
+      });
+    }
+
+    add({
+      nombre: "Informe técnico",
+      tipoItem: "actividad",
+      cantidadSugerida: 1,
+      motivo: "Una revisión técnica debe cerrar con hallazgos y respaldo documentado.",
+    });
+
+    add({
+      nombre: "Recomendaciones de mejora",
+      tipoItem: "actividad",
+      cantidadSugerida: 1,
+      motivo: "El resultado puede incluir acciones sugeridas para mejorar la solución.",
+    });
+  }
+
+  if (cameraDetected) {
     add({
       nombre: "Cámara IP exterior",
       tipoItem: "producto",
@@ -230,13 +663,8 @@ function buildLocalQuoteSuggestions(description, inventoryItems) {
     });
   }
 
-  if (has("soporte", "inicial", "postventa") || suggestions.length > 0) {
-    add({
-      nombre: "Soporte inicial",
-      tipoItem: "servicio",
-      cantidadSugerida: 1,
-      motivo: "Es recomendable considerar soporte inicial posterior a la entrega.",
-    });
+  if (hardwareDetected || operatingSystemDetected || networkDetected || webDetected || cloudDetected || securityDetected || has("soporte", "inicial", "postventa")) {
+    addSupportIfNeeded();
   }
 
   if (!suggestions.length) {
@@ -268,6 +696,154 @@ function isGeminiFallbackError(error) {
   ].some((token) => message.includes(token));
 }
 
+function timestampToDate(value) {
+  if (!value) return null;
+  if (typeof value.toDate === "function") return value.toDate();
+  if (typeof value === "string") {
+    const parsed = new Date(`${value}T00:00:00`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  if (value instanceof Date) return value;
+  return null;
+}
+
+function getReferenceDate(reference) {
+  return (
+    timestampToDate(reference.fechaConsulta) ||
+    timestampToDate(reference.actualizadoEn) ||
+    timestampToDate(reference.creadoEn)
+  );
+}
+
+function getSuggestedReferenceQuery(item) {
+  const text = normalizeSearchText(
+    `${item.nombre || ""} ${item.categoria || ""} ${item.tipoItem || ""}`
+  );
+  const has = (...keywords) =>
+    keywords.some((keyword) => text.includes(normalizeSearchText(keyword)));
+
+  if (has("limpieza", "mantencion", "computador", "pc", "notebook")) {
+    return "precio limpieza interna computador Chile servicio técnico";
+  }
+  if (has("sistema operativo", "windows", "formateo", "drivers")) {
+    return "precio instalación sistema operativo Windows Chile";
+  }
+  if (has("router", "wifi", "red", "redes", "conectividad")) {
+    return "precio configuración router wifi Chile";
+  }
+  if (has("pagina web", "página web", "landing", "one page", "sitio web")) {
+    return "precio diseño página web one page Chile freelance";
+  }
+  if (has("carrito", "ecommerce", "e-commerce", "tienda online")) {
+    return "precio desarrollo carrito de compras web Chile";
+  }
+  if (has("base de datos", "software", "sistema web", "crud")) {
+    return "precio desarrollo sistema web base de datos Chile freelance";
+  }
+  if (has("hosting", "dominio", "firebase", "deploy", "cloud", "nube")) {
+    return "precio despliegue aplicación web hosting dominio Chile";
+  }
+  if (has("seguridad", "owasp", "vulnerabilidad", "auditoria", "auditoría")) {
+    return "precio revisión seguridad web OWASP Chile freelance";
+  }
+  if (has("cableado", "utp", "punto de red", "switch")) {
+    return "precio instalación punto de red cableado UTP Chile";
+  }
+  return `precio ${item.nombre || "servicio informático"} Chile freelance`;
+}
+
+function buildReferenceReviewTask(item, tipoAlerta) {
+  const itemNombre = item.nombre || "Ítem sin nombre";
+  const isMissingReferences = tipoAlerta === "sin_referencias";
+
+  return {
+    itemId: item.id,
+    itemNombre,
+    tipoItem: item.tipoItem || "",
+    categoria: item.categoria || "",
+    tipoAlerta,
+    mensaje: isMissingReferences
+      ? `El ítem "${itemNombre}" no tiene referencias activas de mercado.`
+      : `El ítem "${itemNombre}" tiene referencias activas con más de ${REFERENCE_REVIEW_STALE_DAYS} días.`,
+    consultaSugerida: getSuggestedReferenceQuery(item),
+    prioridad: isMissingReferences ? "alta" : "media",
+    estado: "pendiente",
+    creadoEn: FieldValue.serverTimestamp(),
+    actualizadoEn: FieldValue.serverTimestamp(),
+  };
+}
+
+async function hasPendingReferenceTask(tasksRef, itemId, tipoAlerta) {
+  const snapshot = await tasksRef.where("itemId", "==", itemId).limit(10).get();
+  return snapshot.docs.some((taskDoc) => {
+    const task = taskDoc.data();
+    return task.tipoAlerta === tipoAlerta && task.estado === "pendiente";
+  });
+}
+
+async function createReferenceReviewTaskIfNeeded(tasksRef, item, tipoAlerta) {
+  const exists = await hasPendingReferenceTask(tasksRef, item.id, tipoAlerta);
+  if (exists) return false;
+  await tasksRef.add(buildReferenceReviewTask(item, tipoAlerta));
+  return true;
+}
+
+async function reviewUserInventoryReferences(userDoc) {
+  const inventorySnapshot = await userDoc.ref.collection("inventario").get();
+  const referencesSnapshot = await userDoc.ref.collection("referencias").get();
+  const tasksRef = userDoc.ref.collection("tareasReferencias");
+  const referencesByItem = new Map();
+
+  referencesSnapshot.docs.forEach((referenceDoc) => {
+    const reference = referenceDoc.data();
+    if ((reference.estado || "activa") !== "activa") return;
+    const itemId = reference.itemId || "";
+    if (!itemId) return;
+    if (!referencesByItem.has(itemId)) {
+      referencesByItem.set(itemId, []);
+    }
+    referencesByItem.get(itemId).push(reference);
+  });
+
+  let created = 0;
+  let checked = 0;
+  const now = new Date();
+  const staleMs = REFERENCE_REVIEW_STALE_DAYS * 24 * 60 * 60 * 1000;
+
+  for (const itemDoc of inventorySnapshot.docs) {
+    const item = { id: itemDoc.id, ...itemDoc.data() };
+    if ((item.estado || "activo") !== "activo") continue;
+    checked += 1;
+
+    const activeReferences = referencesByItem.get(item.id) || [];
+    if (activeReferences.length === 0) {
+      const wasCreated = await createReferenceReviewTaskIfNeeded(
+        tasksRef,
+        item,
+        "sin_referencias"
+      );
+      if (wasCreated) created += 1;
+      continue;
+    }
+
+    const latestReferenceDate = activeReferences
+      .map(getReferenceDate)
+      .filter(Boolean)
+      .sort((a, b) => b.getTime() - a.getTime())[0];
+
+    if (!latestReferenceDate || now.getTime() - latestReferenceDate.getTime() > staleMs) {
+      const wasCreated = await createReferenceReviewTaskIfNeeded(
+        tasksRef,
+        item,
+        "referencias_desactualizadas"
+      );
+      if (wasCreated) created += 1;
+    }
+  }
+
+  return { checked, created };
+}
+
 /** Utilidad: parsea el primer número entero razonable desde un texto */
 function parseIntegerFromText(text) {
   if (!text) return null;
@@ -276,6 +852,41 @@ function parseIntegerFromText(text) {
   if (!valor || Number.isNaN(valor) || valor <= 0) return null;
   return valor;
 }
+
+exports.nightlyInventoryReferenceReview = onSchedule(
+  {
+    region: DEFAULT_FUNCTION_REGION,
+    schedule: "every day 03:15",
+    timeZone: "America/Santiago",
+  },
+  async () => {
+    const usersSnapshot = await db.collection("usuarios").get();
+    let usersChecked = 0;
+    let itemsChecked = 0;
+    let tasksCreated = 0;
+
+    for (const userDoc of usersSnapshot.docs) {
+      try {
+        const result = await reviewUserInventoryReferences(userDoc);
+        usersChecked += 1;
+        itemsChecked += result.checked;
+        tasksCreated += result.created;
+      } catch (error) {
+        console.error("Error en revision nocturna de referencias:", {
+          uid: userDoc.id,
+          message: error.message,
+          stack: error.stack,
+        });
+      }
+    }
+
+    console.log("Revision nocturna de referencias completada.", {
+      usersChecked,
+      itemsChecked,
+      tasksCreated,
+    });
+  }
+);
 
 /**
  * Usa Gemini para intentar extraer el precio principal desde el HTML.

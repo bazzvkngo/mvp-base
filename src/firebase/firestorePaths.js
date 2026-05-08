@@ -38,3 +38,14 @@ export const quoteDocPath = (userId, quoteId) => [
   "cotizaciones",
   quoteId,
 ];
+export const referenceTasksCollectionPath = (userId) => [
+  "usuarios",
+  userId,
+  "tareasReferencias",
+];
+export const referenceTaskDocPath = (userId, taskId) => [
+  "usuarios",
+  userId,
+  "tareasReferencias",
+  taskId,
+];

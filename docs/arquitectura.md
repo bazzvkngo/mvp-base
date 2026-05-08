@@ -91,6 +91,12 @@ La primera capa es local y gratuita: usa reglas, palabras clave e inventario act
 
 El frontend envia una descripcion y un resumen de items activos/valorizados. La respuesta se normaliza a un maximo de 8 sugerencias con tipo permitido (`producto`, `servicio` o `actividad`) y una posible coincidencia con inventario. Si existe coincidencia, el usuario puede agregar manualmente ese item usando el precio sugerido por ValoraCloud, no por la IA.
 
+## Revision nocturna de referencias
+
+La funcion programada `nightlyInventoryReferenceReview` se ejecuta una vez al dia en la zona horaria `America/Santiago`. Revisa inventario activo y referencias manuales para crear tareas internas en `usuarios/{uid}/tareasReferencias` cuando un item no tiene referencias activas o cuando su referencia activa mas reciente supera 30 dias.
+
+Esta revision no busca precios en internet, no usa Gemini, no hace scraping, no modifica inventario, no modifica precios y no crea referencias automaticamente. Su objetivo en el MVP es recordar al usuario que debe actualizar referencias de mercado manualmente. En una etapa premium futura se podria agregar busqueda asistida con APIs externas o IA, manteniendo controles de costo, trazabilidad y validacion humana.
+
 ## Flujo principal del MVP
 
 1. Usuario inicia sesion o se registra con Firebase Auth.
