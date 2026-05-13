@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
+import QuotePrintView from "../features/quotes/QuotePrintView";
+import { getCompanyProfile } from "../services/companyService";
 import { getQuotes, updateQuoteStatus } from "../services/quoteService";
 import { formatCLP, formatDate } from "../utils/formatters";
 
@@ -57,6 +59,7 @@ function getQuoteTimestamp(quote) {
 
 function QuoteHistoryPage({ userId }) {
   const [quotes, setQuotes] = useState([]);
+  const [companyProfile, setCompanyProfile] = useState(null);
   const [selectedQuoteId, setSelectedQuoteId] = useState("");
   const [loading, setLoading] = useState(true);
   const [savingStatus, setSavingStatus] = useState(false);
@@ -89,6 +92,14 @@ function QuoteHistoryPage({ userId }) {
       })
       .finally(() => {
         if (active) setLoading(false);
+      });
+
+    getCompanyProfile(userId)
+      .then((profile) => {
+        if (active) setCompanyProfile(profile);
+      })
+      .catch((err) => {
+        console.error("Error al cargar perfil de empresa:", err);
       });
 
     return () => {
@@ -271,7 +282,7 @@ function QuoteHistoryPage({ userId }) {
       </div>
 
       {selectedQuote ? (
-        <QuoteDetail quote={selectedQuote} />
+        <QuoteDetail quote={selectedQuote} companyProfile={companyProfile} />
       ) : (
         !loading &&
         quotes.length > 0 && (
@@ -301,14 +312,13 @@ function StatusBadge({ status }) {
   );
 }
 
-function QuoteDetail({ quote }) {
-  const items = Array.isArray(quote.items) ? quote.items : [];
+function QuoteDetail({ quote, companyProfile }) {
 
   return (
     <div className="history-print-area" style={styles.detailPanel}>
       <div className="no-print" style={styles.detailActions}>
         <div>
-          <h3 style={styles.panelTitle}>Detalle de cotización</h3>
+          <h3 style={styles.panelTitle}>Detalle de cotizacion</h3>
           <p style={styles.helpText}>
             Vista formal para revision e impresion desde el historial.
           </p>
@@ -322,105 +332,10 @@ function QuoteDetail({ quote }) {
         </button>
       </div>
 
-      <article className="quote-print" style={styles.printSheet}>
-        <header style={styles.printHeader}>
-          <div>
-            <h2 style={styles.printBrand}>ValoraCloud</h2>
-            <p style={styles.printMuted}>Valorización y cotizaciones</p>
-          </div>
-          <div style={styles.printMeta}>
-            <strong>Cotización {quote.numero || "-"}</strong>
-            <span>Fecha: {formatDate(quote.fecha)}</span>
-            <span>
-              Estado: {statusLabels[quote.estado] || quote.estado || "-"}
-            </span>
-          </div>
-        </header>
-
-        <section style={styles.clientBox}>
-          <h3 style={styles.printSectionTitle}>Cliente</h3>
-          <p style={styles.printLine}>
-            <strong>{quote.clienteNombre || "Sin cliente"}</strong>
-          </p>
-          <p style={styles.printLine}>RUT/DNI: {quote.clienteRut || "-"}</p>
-          <p style={styles.printLine}>Email: {quote.clienteEmail || "-"}</p>
-          <p style={styles.printLine}>
-            Telefono: {quote.clienteTelefono || "-"}
-          </p>
-          <p style={styles.printLine}>
-            Direccion: {quote.clienteDireccion || "-"}
-          </p>
-          <p style={styles.printLine}>
-            Condiciones: {quote.condicionesPago || "-"}
-          </p>
-        </section>
-
-        <table style={styles.printTable}>
-          <thead>
-            <tr>
-              <th style={styles.printTh}>Ítem</th>
-              <th style={styles.printTh}>Tipo</th>
-              <th style={styles.printTh}>Cant.</th>
-              <th style={styles.printTh}>Precio unit.</th>
-              <th style={styles.printTh}>Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.length === 0 ? (
-              <tr>
-                <td colSpan={5} style={styles.printTd}>
-                  Sin ítems registrados.
-                </td>
-              </tr>
-            ) : (
-              items.map((item, index) => (
-                <tr key={`${item.itemId || "item"}-${index}`}>
-                  <td style={styles.printTd}>
-                    <strong>{item.nombre || "Ítem sin nombre"}</strong>
-                    <span style={styles.printItemMeta}>
-                      {item.descripcion || item.categoria || ""}
-                    </span>
-                  </td>
-                  <td style={styles.printTd}>{item.tipoItem || "-"}</td>
-                  <td style={styles.printTd}>{item.cantidad || 0}</td>
-                  <td style={styles.printTd}>
-                    {formatCLP(item.precioUnitarioEditable)}
-                  </td>
-                  <td style={styles.printTd}>{formatCLP(item.totalLinea)}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-
-        <div style={styles.printTotals}>
-          <TotalRow label="Subtotal" value={formatCLP(quote.subtotal)} />
-          <TotalRow label="Descuento" value={formatCLP(quote.descuento)} />
-          <TotalRow label="Total" value={formatCLP(quote.total)} strong />
-        </div>
-
-        {quote.observaciones && (
-          <section style={styles.observationsBox}>
-            <h3 style={styles.printSectionTitle}>Observaciones</h3>
-            <p style={styles.printLine}>{quote.observaciones}</p>
-          </section>
-        )}
-      </article>
+      <QuotePrintView quote={quote} companyProfile={companyProfile} />
     </div>
   );
-}
 
-function TotalRow({ label, value, strong = false }) {
-  return (
-    <div style={styles.totalRow}>
-      <span style={strong ? styles.totalLabelStrong : styles.totalLabel}>
-        {label}
-      </span>
-      <strong style={strong ? styles.totalValueStrong : styles.totalValue}>
-        {value}
-      </strong>
-    </div>
-  );
 }
 
 const styles = {

@@ -21,19 +21,28 @@ service cloud.firestore {
       allow delete: if false;
 
       match /config/{docId} {
-        allow read, write: if isOwner(uid);
+        allow read, create, update: if isOwner(uid);
+        allow delete: if false;
+      }
+
+      match /empresa/{docId} {
+        allow read, create, update: if isOwner(uid);
+        allow delete: if false;
       }
 
       match /inventario/{itemId} {
-        allow read, write: if isOwner(uid);
+        allow read, create, update: if isOwner(uid);
+        allow delete: if false;
       }
 
       match /referencias/{referenceId} {
-        allow read, write: if isOwner(uid);
+        allow read, create, update: if isOwner(uid);
+        allow delete: if false;
       }
 
       match /cotizaciones/{quoteId} {
-        allow read, write: if isOwner(uid);
+        allow read, create, update: if isOwner(uid);
+        allow delete: if false;
       }
 
       match /tareasReferencias/{taskId} {

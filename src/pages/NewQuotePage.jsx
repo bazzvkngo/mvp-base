@@ -5,8 +5,9 @@ import {
   normalizeQuoteItems,
 } from "../domain/quoteItemFactory";
 import { PRICING_STATUS } from "../domain/pricing";
+import QuotePrintView from "../features/quotes/QuotePrintView";
 import { suggestQuoteItems } from "../services/aiQuoteService";
-import { getCompanyConfig } from "../services/companyService";
+import { getCompanyProfile } from "../services/companyService";
 import {
   createQuote,
   generateQuoteNumber,
@@ -56,7 +57,7 @@ function buildInitialQuote() {
     clienteEmail: "",
     clienteTelefono: "",
     clienteDireccion: "",
-    condicionesPago: "Pago contra entrega",
+    condicionesPago: "",
     estado: "borrador",
     items: [],
     descuento: 0,
@@ -69,7 +70,7 @@ function NewQuotePage({ userId }) {
   const highlightTimeoutRef = useRef(null);
   const [quote, setQuote] = useState(() => buildInitialQuote());
   const [valuations, setValuations] = useState([]);
-  const [companyConfig, setCompanyConfig] = useState(null);
+  const [companyProfile, setCompanyProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
@@ -106,10 +107,17 @@ function NewQuotePage({ userId }) {
       }
     );
 
-    getCompanyConfig(userId)
-      .then((config) => setCompanyConfig(config))
+    getCompanyProfile(userId)
+      .then((profile) => {
+        setCompanyProfile(profile);
+        setQuote((prev) => ({
+          ...prev,
+          condicionesPago:
+            prev.condicionesPago || profile.condicionesPago || "",
+        }));
+      })
       .catch((err) => {
-        console.error("Error al cargar configuracion de empresa:", err);
+        console.error("Error al cargar perfil de empresa:", err);
       });
 
     return () => unsubscribe();
@@ -307,6 +315,7 @@ function NewQuotePage({ userId }) {
       const payload = {
         ...quote,
         estado,
+        empresa: companyProfile || {},
         items: normalizedItems,
         subtotal: totals.subtotal,
         descuento: totals.descuento,
@@ -779,7 +788,7 @@ function NewQuotePage({ userId }) {
 
       <QuotePreview
         quote={{ ...quote, items: normalizedItems, ...totals }}
-        companyConfig={companyConfig}
+        companyProfile={companyProfile}
       />
     </section>
   );
@@ -807,89 +816,17 @@ function TotalRow({ label, value, strong = false }) {
   );
 }
 
-function QuotePreview({ quote, companyConfig }) {
-  const rubro =
-    companyConfig?.rubroOtro ||
-    companyConfig?.rubroPrincipal ||
-    "Valorización y cotizaciones";
-
+function QuotePreview({ quote, companyProfile }) {
   return (
     <div style={styles.previewPanel}>
       <div className="no-print" style={styles.previewActions}>
         <h3 style={styles.panelTitle}>Vista formal imprimible</h3>
         <button type="button" onClick={() => window.print()} style={styles.printButton}>
-          Imprimir cotización
+          Imprimir cotizacion
         </button>
       </div>
 
-      <article className="quote-print" style={styles.printSheet}>
-        <header style={styles.printHeader}>
-          <div>
-            <h2 style={styles.printBrand}>ValoraCloud</h2>
-            <p style={styles.printMuted}>{rubro}</p>
-          </div>
-          <div style={styles.printMeta}>
-            <strong>Cotización {quote.numero}</strong>
-            <span>Fecha: {quote.fecha || "-"}</span>
-            <span>Estado: {estadoLabels[quote.estado] || quote.estado}</span>
-          </div>
-        </header>
-
-        <section style={styles.clientBox}>
-          <h3 style={styles.printSectionTitle}>Cliente</h3>
-          <p style={styles.printLine}><strong>{quote.clienteNombre || "Sin cliente"}</strong></p>
-          <p style={styles.printLine}>RUT/DNI: {quote.clienteRut || "-"}</p>
-          <p style={styles.printLine}>Email: {quote.clienteEmail || "-"}</p>
-          <p style={styles.printLine}>Telefono: {quote.clienteTelefono || "-"}</p>
-          <p style={styles.printLine}>Direccion: {quote.clienteDireccion || "-"}</p>
-          <p style={styles.printLine}>Condiciones: {quote.condicionesPago || "-"}</p>
-        </section>
-
-        <table style={styles.printTable}>
-          <thead>
-            <tr>
-              <th style={styles.printTh}>Ítem</th>
-              <th style={styles.printTh}>Cant.</th>
-              <th style={styles.printTh}>Precio unit.</th>
-              <th style={styles.printTh}>Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {quote.items.length === 0 ? (
-              <tr>
-                <td colSpan={4} style={styles.printTd}>Sin ítems agregados.</td>
-              </tr>
-            ) : (
-              quote.items.map((item) => (
-                <tr key={item.itemId}>
-                  <td style={styles.printTd}>
-                    <strong>{item.nombre}</strong>
-                    <span style={styles.printItemMeta}>
-                      {item.descripcion || item.categoria || ""}
-                    </span>
-                  </td>
-                  <td style={styles.printTd}>{item.cantidad}</td>
-                  <td style={styles.printTd}>{formatCLP(item.precioUnitarioEditable)}</td>
-                  <td style={styles.printTd}>{formatCLP(item.totalLinea)}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-
-        <div style={styles.printTotals}>
-          <TotalRow label="Subtotal" value={formatCLP(quote.subtotal)} />
-          <TotalRow label="Descuento" value={formatCLP(quote.descuento)} />
-          <TotalRow label="Total" value={formatCLP(quote.total)} strong />
-        </div>
-
-        {quote.observaciones && (
-          <section style={styles.observationsBox}>
-            <h3 style={styles.printSectionTitle}>Observaciones</h3>
-            <p style={styles.printLine}>{quote.observaciones}</p>
-          </section>
-        )}
-      </article>
+      <QuotePrintView quote={quote} companyProfile={companyProfile} />
     </div>
   );
 }

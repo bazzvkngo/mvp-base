@@ -888,6 +888,16 @@ exports.nightlyInventoryReferenceReview = onSchedule(
   }
 );
 
+/*
+ * Funciones legacy no exportadas.
+ *
+ * Estas funciones pertenecen a una etapa anterior del prototipo: usan campos
+ * antiguos del inventario como `precio` y `url`, o la coleccion `proyectos`.
+ * El MVP vigente para tesis expone solo:
+ * - nightlyInventoryReferenceReview
+ * - suggestQuoteItems
+ */
+
 /**
  * Usa Gemini para intentar extraer el precio principal desde el HTML.
  * Devuelve un número entero (precio en CLP) o null si no pudo.
@@ -1050,7 +1060,7 @@ async function obtenerPrecioDesdeUrl(url, precioInterno) {
  * Usa URL + Gemini + patrones HTML para comparar tu precio actual
  * con el precio del proveedor.
  */
-exports.verificarPrecioProducto = onCall({ secrets: [GEMINI_API_KEY_SECRET] }, async (request) => {
+const legacyVerificarPrecioProducto = onCall({ secrets: [GEMINI_API_KEY_SECRET] }, async (request) => {
   // 1. Seguridad: debe estar autenticado
   if (!request.auth || !request.auth.uid) {
     throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
@@ -1153,7 +1163,7 @@ exports.verificarPrecioProducto = onCall({ secrets: [GEMINI_API_KEY_SECRET] }, a
  * Entrega un precio de venta recomendado de mercado (cliente final),
  * para que el negocio no venda demasiado caro ni demasiado barato.
  */
-exports.estimarPrecioMercadoProducto = onCall({ secrets: [GEMINI_API_KEY_SECRET] }, async (request) => {
+const legacyEstimarPrecioMercadoProducto = onCall({ secrets: [GEMINI_API_KEY_SECRET] }, async (request) => {
   if (!request.auth || !request.auth.uid) {
     throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
   }
@@ -1236,7 +1246,7 @@ exports.estimarPrecioMercadoProducto = onCall({ secrets: [GEMINI_API_KEY_SECRET]
  *     2) Descripción + Gemini (mercado)
  *     3) Simulación
  */
-exports.actualizarPreciosInventario = onCall({ secrets: [GEMINI_API_KEY_SECRET] }, async (request) => {
+const legacyActualizarPreciosInventario = onCall({ secrets: [GEMINI_API_KEY_SECRET] }, async (request) => {
   if (!request.auth || !request.auth.uid) {
     throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
   }
@@ -1490,8 +1500,8 @@ exports.suggestQuoteItems = onCall(
   }
 );
 
-// Asistente de cotizaciones: simular proyecto completo
-exports.simularCotizacionProyecto = onCall({ secrets: [GEMINI_API_KEY_SECRET] }, async (request) => {
+// Legacy no exportado: simulaba proyectos completos con un modelo anterior.
+const legacySimularCotizacionProyecto = onCall({ secrets: [GEMINI_API_KEY_SECRET] }, async (request) => {
   if (!request.auth || !request.auth.uid) {
     throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
   }
