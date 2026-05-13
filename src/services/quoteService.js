@@ -44,6 +44,25 @@ function safeNumber(value, fallback = 0) {
   return Number.isFinite(numberValue) ? numberValue : fallback;
 }
 
+function normalizeCompanySnapshot(value = {}) {
+  const source = value && typeof value === "object" ? value : {};
+  return {
+    nombreComercial: safeString(source.nombreComercial),
+    razonSocial: safeString(source.razonSocial),
+    rut: safeString(source.rut),
+    giro: safeString(source.giro),
+    email: safeString(source.email),
+    telefono: safeString(source.telefono),
+    direccion: safeString(source.direccion),
+    ciudad: safeString(source.ciudad),
+    sitioWeb: safeString(source.sitioWeb),
+    logoUrl: safeString(source.logoUrl),
+    condicionesPago: safeString(source.condicionesPago),
+    validezCotizacionDias: safeNumber(source.validezCotizacionDias, 15),
+    notaPieCotizacion: safeString(source.notaPieCotizacion),
+  };
+}
+
 function normalizeQuote(uid, data, { isCreate = false } = {}) {
   if (!uid) throw new Error("Usuario no autenticado.");
 
@@ -67,6 +86,7 @@ function normalizeQuote(uid, data, { isCreate = false } = {}) {
     clienteTelefono: safeString(data?.clienteTelefono),
     clienteDireccion: safeString(data?.clienteDireccion),
     condicionesPago: safeString(data?.condicionesPago),
+    empresa: normalizeCompanySnapshot(data?.empresa),
     items,
     subtotal: totals.subtotal,
     descuento: safeNumber(totals.descuento, 0),
