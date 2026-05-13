@@ -32,7 +32,7 @@ Esta separacion evita que la UI quede acoplada a Firebase y permite explicar el 
 Los servicios base son:
 
 - `authService.js`: login, registro, cierre de sesion y observador de usuario.
-- `companyService.js`: configuracion de empresa, margenes y valor hora.
+- `companyService.js`: perfil comercial de empresa, configuracion de cotizacion, margenes y valor hora.
 - `inventoryService.js`: CRUD de inventario y verificacion de precio por Cloud Function.
 - `referenceService.js`: placeholder para referencias manuales de mercado.
 - `quoteService.js`: fachada para propuesta local y futura Cloud Function de cotizacion.
@@ -42,10 +42,17 @@ Firestore usa la estructura principal:
 ```txt
 usuarios/{userId}
 usuarios/{userId}/config/negocio
+usuarios/{userId}/empresa/perfil
 usuarios/{userId}/inventario/{itemId}
 usuarios/{userId}/referencias/{referenceId}
 usuarios/{userId}/cotizaciones/{quoteId}
 ```
+
+## Perfil comercial de empresa
+
+La pagina Empresa define los datos comerciales del usuario que se muestran en cotizaciones: nombre comercial, razon social, RUT, giro, contacto, direccion, ciudad, sitio web, logo, condiciones de pago, validez y nota de pie. Estos datos se guardan en `usuarios/{userId}/empresa/perfil`.
+
+Esta configuracion mejora la presentacion formal de la cotizacion, pero no corresponde a facturacion electronica ni a un documento tributario. El logo se guarda como URL de imagen para evitar archivos pesados o base64 dentro de Firestore.
 
 ## Patron Service/Repository
 
