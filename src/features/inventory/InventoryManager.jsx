@@ -2,6 +2,7 @@
 import {
   createInventoryItem,
   deactivateInventoryItem,
+  getInventoryItems,
   reactivateInventoryItem,
   softDeleteInventoryItem,
   subscribeToInventory,
@@ -34,6 +35,35 @@ const estadoLabels = {
   eliminado: "Eliminado",
 };
 
+const OTHER_OPTION = "__otro__";
+
+const CATEGORY_OPTIONS = [
+  "Soporte técnico y hardware",
+  "Sistemas operativos",
+  "Redes y conectividad",
+  "Desarrollo web y software",
+  "Bases de datos",
+  "Cloud y despliegue",
+  "Seguridad informática",
+  "Aseguramiento de calidad",
+  "Gestión TI y consultoría",
+];
+
+const UNIT_OPTIONS = [
+  "hora",
+  "visita",
+  "servicio",
+  "proyecto",
+  "equipo",
+  "componente",
+  "paquete",
+  "usuario",
+  "punto de red",
+  "sitio web",
+  "documento",
+  "mensualidad",
+];
+
 function calcularPrecioInterno(costoBase, margenDeseado) {
   const costo = Number(costoBase);
   const margen = Number(margenDeseado);
@@ -41,7 +71,23 @@ function calcularPrecioInterno(costoBase, margenDeseado) {
   return Math.round(costo + (costo * margen) / 100);
 }
 
-function InventoryManager({ userId }) {
+function getSelectValue(value, options) {
+  if (!value) return "";
+  return options.includes(value) ? value : OTHER_OPTION;
+}
+
+function formatFirestoreDate(value) {
+  if (!value) return "-";
+  if (typeof value.toDate === "function") {
+    return value.toDate().toLocaleString("es-CL");
+  }
+  if (value instanceof Date) {
+    return value.toLocaleString("es-CL");
+  }
+  return "-";
+}
+
+function InventoryManager({ userId, refreshSignal = 0 }) {
   const [items, setItems] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
@@ -52,6 +98,11 @@ function InventoryManager({ userId }) {
   const [tipoFiltro, setTipoFiltro] = useState("todos");
   const [estadoFiltro, setEstadoFiltro] = useState("activos");
   const [busqueda, setBusqueda] = useState("");
+  const [categoriaPersonalizada, setCategoriaPersonalizada] = useState("");
+  const [unidadPersonalizada, setUnidadPersonalizada] = useState("");
+  const [categoriaOtroActiva, setCategoriaOtroActiva] = useState(false);
+  const [unidadOtroActiva, setUnidadOtroActiva] = useState(false);
+  const [detailItem, setDetailItem] = useState(null);
 
   useEffect(() => {
     if (!userId) {
@@ -76,6 +127,28 @@ function InventoryManager({ userId }) {
     return () => unsubscribe();
   }, [userId]);
 
+  useEffect(() => {
+    if (!userId || refreshSignal === 0) return;
+
+    let active = true;
+    getInventoryItems(userId)
+      .then((data) => {
+        if (active) {
+          setItems(data);
+        }
+      })
+      .catch((err) => {
+        console.error("Error al recargar inventario:", err);
+        if (active) {
+          setError("No se pudo recargar el inventario después de importar.");
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [refreshSignal, userId]);
+
   const filteredItems = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
 
@@ -97,6 +170,10 @@ function InventoryManager({ userId }) {
   const resetForm = () => {
     setForm(EMPTY_FORM);
     setEditingId(null);
+    setCategoriaPersonalizada("");
+    setUnidadPersonalizada("");
+    setCategoriaOtroActiva(false);
+    setUnidadOtroActiva(false);
     setError("");
     setSuccess("");
   };
@@ -113,6 +190,48 @@ function InventoryManager({ userId }) {
       }
       return next;
     });
+  };
+
+  const handleCategoriaChange = (event) => {
+    const value = event.target.value;
+    if (value === OTHER_OPTION) {
+      setCategoriaOtroActiva(true);
+      const customValue = categoriaPersonalizada || "";
+      setForm((prev) => ({ ...prev, categoria: customValue }));
+      return;
+    }
+
+    setCategoriaOtroActiva(false);
+    setCategoriaPersonalizada("");
+    setForm((prev) => ({ ...prev, categoria: value }));
+  };
+
+  const handleCategoriaPersonalizadaChange = (event) => {
+    const value = event.target.value;
+    setCategoriaOtroActiva(true);
+    setCategoriaPersonalizada(value);
+    setForm((prev) => ({ ...prev, categoria: value }));
+  };
+
+  const handleUnidadChange = (event) => {
+    const value = event.target.value;
+    if (value === OTHER_OPTION) {
+      setUnidadOtroActiva(true);
+      const customValue = unidadPersonalizada || "";
+      setForm((prev) => ({ ...prev, unidad: customValue }));
+      return;
+    }
+
+    setUnidadOtroActiva(false);
+    setUnidadPersonalizada("");
+    setForm((prev) => ({ ...prev, unidad: value }));
+  };
+
+  const handleUnidadPersonalizadaChange = (event) => {
+    const value = event.target.value;
+    setUnidadOtroActiva(true);
+    setUnidadPersonalizada(value);
+    setForm((prev) => ({ ...prev, unidad: value }));
   };
 
   const validateForm = () => {
@@ -180,6 +299,10 @@ function InventoryManager({ userId }) {
       }
       setForm(EMPTY_FORM);
       setEditingId(null);
+      setCategoriaPersonalizada("");
+      setUnidadPersonalizada("");
+      setCategoriaOtroActiva(false);
+      setUnidadOtroActiva(false);
     } catch (err) {
       console.error("Error al guardar ítem:", err);
       setError(err.message || "No se pudo guardar el ítem.");
@@ -189,19 +312,28 @@ function InventoryManager({ userId }) {
   };
 
   const handleEdit = (item) => {
+    const categoria = item.categoria || "";
+    const unidad = item.unidad || "";
+
     setEditingId(item.id);
     setForm({
       nombre: item.nombre || "",
       tipoItem: item.tipoItem || "producto",
-      categoria: item.categoria || "",
+      categoria,
       descripcion: item.descripcion || "",
-      unidad: item.unidad || "",
+      unidad,
       costoBase: item.costoBase ?? item.precio ?? "",
       margenDeseado: item.margenDeseado ?? 0,
       precioInterno: item.precioInterno ?? item.precio ?? "",
       sku: item.sku || "",
       estado: item.estado || "activo",
     });
+    setCategoriaPersonalizada(
+      categoria && !CATEGORY_OPTIONS.includes(categoria) ? categoria : ""
+    );
+    setUnidadPersonalizada(unidad && !UNIT_OPTIONS.includes(unidad) ? unidad : "");
+    setCategoriaOtroActiva(Boolean(categoria && !CATEGORY_OPTIONS.includes(categoria)));
+    setUnidadOtroActiva(Boolean(unidad && !UNIT_OPTIONS.includes(unidad)));
     setError("");
     setSuccess("");
   };
@@ -254,6 +386,12 @@ function InventoryManager({ userId }) {
     form.precioInterno === ""
       ? calcularPrecioInterno(form.costoBase, form.margenDeseado)
       : Number(form.precioInterno);
+  const categoriaSelectValue = categoriaOtroActiva
+    ? OTHER_OPTION
+    : getSelectValue(form.categoria, CATEGORY_OPTIONS);
+  const unidadSelectValue = unidadOtroActiva
+    ? OTHER_OPTION
+    : getSelectValue(form.unidad, UNIT_OPTIONS);
 
   return (
     <section style={styles.wrapper}>
@@ -305,32 +443,70 @@ function InventoryManager({ userId }) {
               name="nombre"
               value={form.nombre}
               onChange={handleChange}
-              placeholder="Ej: Cámara IP exterior"
+              placeholder="Ej: Instalación de sistema operativo"
               style={styles.input}
             />
           </label>
 
           <label style={styles.field}>
             <span style={styles.label}>Categoría</span>
-            <input
+            <select
               name="categoria"
-              value={form.categoria}
-              onChange={handleChange}
-              placeholder="Ej: CCTV, soporte, instalación"
+              value={categoriaSelectValue}
+              onChange={handleCategoriaChange}
               style={styles.input}
-            />
+            >
+              <option value="">Selecciona una categoría</option>
+              {CATEGORY_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+              <option value={OTHER_OPTION}>Otro</option>
+            </select>
           </label>
+
+          {categoriaSelectValue === OTHER_OPTION && (
+            <label style={styles.field}>
+              <span style={styles.label}>Categoría personalizada</span>
+              <input
+                value={categoriaPersonalizada}
+                onChange={handleCategoriaPersonalizadaChange}
+                placeholder="Ej: Automatización TI"
+                style={styles.input}
+              />
+            </label>
+          )}
 
           <label style={styles.field}>
             <span style={styles.label}>Unidad</span>
-            <input
+            <select
               name="unidad"
-              value={form.unidad}
-              onChange={handleChange}
-              placeholder="Ej: unidad, hora, visita"
+              value={unidadSelectValue}
+              onChange={handleUnidadChange}
               style={styles.input}
-            />
+            >
+              <option value="">Selecciona una unidad</option>
+              {UNIT_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+              <option value={OTHER_OPTION}>Otro</option>
+            </select>
           </label>
+
+          {unidadSelectValue === OTHER_OPTION && (
+            <label style={styles.field}>
+              <span style={styles.label}>Unidad personalizada</span>
+              <input
+                value={unidadPersonalizada}
+                onChange={handleUnidadPersonalizadaChange}
+                placeholder="Ej: ticket"
+                style={styles.input}
+              />
+            </label>
+          )}
 
           <label style={styles.field}>
             <span style={styles.label}>Costo base</span>
@@ -340,7 +516,7 @@ function InventoryManager({ userId }) {
               min="0"
               value={form.costoBase}
               onChange={handleChange}
-              placeholder="Ej: 45000"
+              placeholder="Ej: 25000"
               style={styles.input}
             />
           </label>
@@ -352,7 +528,7 @@ function InventoryManager({ userId }) {
               type="number"
               value={form.margenDeseado}
               onChange={handleChange}
-              placeholder="Ej: 30"
+              placeholder="Ej: 35"
               style={styles.input}
             />
           </label>
@@ -368,7 +544,7 @@ function InventoryManager({ userId }) {
               placeholder={
                 previewPrice !== "" && Number.isFinite(previewPrice)
                   ? String(previewPrice)
-                  : "Se calcula si lo dejas vacío"
+                  : "Opcional, se calcula si queda en 0"
               }
               style={styles.input}
             />
@@ -380,7 +556,7 @@ function InventoryManager({ userId }) {
               name="sku"
               value={form.sku}
               onChange={handleChange}
-              placeholder="Opcional"
+              placeholder="Ej: TI-001"
               style={styles.input}
             />
           </label>
@@ -408,7 +584,7 @@ function InventoryManager({ userId }) {
               value={form.descripcion}
               onChange={handleChange}
               rows={3}
-              placeholder="Detalle breve del producto, servicio o actividad."
+              placeholder="Describe el alcance, condiciones o entregables del servicio."
               style={styles.textarea}
             />
           </label>
@@ -492,13 +668,18 @@ function InventoryManager({ userId }) {
                       <span style={styles.itemMeta}>
                         {item.sku ? `SKU: ${item.sku}` : "Sin SKU"}
                       </span>
+                      {item.descripcion && (
+                        <span style={styles.itemDescription}>
+                          {item.descripcion}
+                        </span>
+                      )}
                     </td>
-                    <td style={styles.td}>{tipoLabels[item.tipoItem] || item.tipoItem}</td>
-                    <td style={styles.td}>{item.categoria || "-"}</td>
-                    <td style={styles.td}>{item.unidad}</td>
-                    <td style={styles.td}>{formatCLP(item.costoBase)}</td>
-                    <td style={styles.td}>{Number(item.margenDeseado || 0)}%</td>
-                    <td style={styles.td}>{formatCLP(item.precioInterno)}</td>
+                    <td style={styles.tdMuted}>{tipoLabels[item.tipoItem] || item.tipoItem}</td>
+                    <td style={styles.tdMuted}>{item.categoria || "-"}</td>
+                    <td style={styles.tdMuted}>{item.unidad}</td>
+                    <td style={styles.tdMuted}>{formatCLP(item.costoBase)}</td>
+                    <td style={styles.tdMuted}>{Number(item.margenDeseado || 0)}%</td>
+                    <td style={styles.tdPrice}>{formatCLP(item.precioInterno)}</td>
                     <td style={styles.td}>
                       <span
                         style={{
@@ -517,6 +698,13 @@ function InventoryManager({ userId }) {
                       <div style={styles.actions}>
                         {(item.estado || "activo") !== "eliminado" && (
                           <>
+                            <button
+                              type="button"
+                              style={styles.smallButton}
+                              onClick={() => setDetailItem(item)}
+                            >
+                              Ver detalle
+                            </button>
                             <button
                               type="button"
                               style={styles.smallButton}
@@ -551,13 +739,22 @@ function InventoryManager({ userId }) {
                           </>
                         )}
                         {(item.estado || "activo") === "eliminado" && (
-                          <button
-                            type="button"
-                            style={styles.successButton}
-                            onClick={() => handleReactivate(item)}
-                          >
-                            Restaurar
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              style={styles.smallButton}
+                              onClick={() => setDetailItem(item)}
+                            >
+                              Ver detalle
+                            </button>
+                            <button
+                              type="button"
+                              style={styles.successButton}
+                              onClick={() => handleReactivate(item)}
+                            >
+                              Restaurar
+                            </button>
+                          </>
                         )}
                       </div>
                     </td>
@@ -568,6 +765,102 @@ function InventoryManager({ userId }) {
           </div>
         )}
       </div>
+
+      {detailItem && (
+        <div style={styles.modalBackdrop} role="presentation">
+          <div style={styles.modal} role="dialog" aria-modal="true">
+            <div style={styles.modalHeader}>
+              <div>
+                <span style={styles.modalEyebrow}>Detalle de item</span>
+                <h3 style={styles.modalTitle}>{detailItem.nombre}</h3>
+                <p style={styles.modalSubtitle}>
+                  {detailItem.sku ? `SKU: ${detailItem.sku}` : "Sin SKU"}
+                </p>
+              </div>
+              <button
+                type="button"
+                style={styles.modalCloseButton}
+                onClick={() => setDetailItem(null)}
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <div style={styles.detailGrid}>
+              <div style={styles.detailField}>
+                <span style={styles.detailLabel}>Tipo</span>
+                <strong style={styles.detailValue}>
+                  {tipoLabels[detailItem.tipoItem] || detailItem.tipoItem || "-"}
+                </strong>
+              </div>
+              <div style={styles.detailField}>
+                <span style={styles.detailLabel}>Categoria</span>
+                <strong style={styles.detailValue}>{detailItem.categoria || "-"}</strong>
+              </div>
+              <div style={styles.detailField}>
+                <span style={styles.detailLabel}>Unidad</span>
+                <strong style={styles.detailValue}>{detailItem.unidad || "-"}</strong>
+              </div>
+              <div style={styles.detailField}>
+                <span style={styles.detailLabel}>Costo base</span>
+                <strong style={styles.detailValue}>
+                  {formatCLP(detailItem.costoBase)}
+                </strong>
+              </div>
+              <div style={styles.detailField}>
+                <span style={styles.detailLabel}>Margen deseado</span>
+                <strong style={styles.detailValue}>
+                  {Number(detailItem.margenDeseado || 0)}%
+                </strong>
+              </div>
+              <div style={styles.detailField}>
+                <span style={styles.detailLabel}>Precio interno</span>
+                <strong style={styles.detailPrice}>
+                  {formatCLP(detailItem.precioInterno)}
+                </strong>
+              </div>
+              <div style={styles.detailField}>
+                <span style={styles.detailLabel}>Estado</span>
+                <span
+                  style={{
+                    ...styles.statusBadge,
+                    ...(detailItem.estado === "eliminado"
+                      ? styles.statusDeleted
+                      : detailItem.estado === "inactivo"
+                        ? styles.statusInactive
+                        : styles.statusActive),
+                  }}
+                >
+                  {estadoLabels[detailItem.estado || "activo"] || "Activo"}
+                </span>
+              </div>
+              <div style={styles.detailField}>
+                <span style={styles.detailLabel}>SKU</span>
+                <strong style={styles.detailValue}>{detailItem.sku || "-"}</strong>
+              </div>
+              <div style={styles.detailField}>
+                <span style={styles.detailLabel}>Creado</span>
+                <strong style={styles.detailValue}>
+                  {formatFirestoreDate(detailItem.creadoEn)}
+                </strong>
+              </div>
+              <div style={styles.detailField}>
+                <span style={styles.detailLabel}>Actualizado</span>
+                <strong style={styles.detailValue}>
+                  {formatFirestoreDate(detailItem.actualizadoEn)}
+                </strong>
+              </div>
+            </div>
+
+            <div style={styles.descriptionBlock}>
+              <span style={styles.detailLabel}>Descripcion</span>
+              <p style={styles.descriptionText}>
+                {detailItem.descripcion || "Sin descripcion registrada."}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -688,112 +981,155 @@ const styles = {
     background: "#ffffff",
     border: "1px solid #e5e7eb",
     borderRadius: "8px",
-    padding: "18px",
+    padding: "14px",
   },
   filters: {
     display: "flex",
     flexWrap: "wrap",
     gap: "10px",
-    marginBottom: "14px",
+    marginBottom: "12px",
   },
   searchInput: {
     flex: "1 1 280px",
     border: "1px solid #cbd5e1",
     borderRadius: "6px",
-    padding: "10px 11px",
+    fontSize: "13px",
+    padding: "8px 10px",
   },
   filterSelect: {
     border: "1px solid #cbd5e1",
     borderRadius: "6px",
-    padding: "10px 11px",
+    color: "#334155",
+    fontSize: "13px",
+    padding: "8px 10px",
     background: "#ffffff",
   },
   tableWrapper: {
     overflowX: "auto",
+    border: "1px solid #e5e7eb",
+    borderRadius: "8px",
   },
   table: {
     width: "100%",
     borderCollapse: "collapse",
+    fontSize: "13px",
   },
   th: {
-    background: "#f8fafc",
+    background: "#f9fafb",
     borderBottom: "1px solid #e5e7eb",
-    color: "#64748b",
-    fontSize: "12px",
-    padding: "10px",
+    color: "#667085",
+    fontSize: "11px",
+    fontWeight: 800,
+    padding: "7px 10px",
     textAlign: "left",
     textTransform: "uppercase",
   },
   td: {
     borderBottom: "1px solid #eef2f7",
-    fontSize: "14px",
-    padding: "12px 10px",
-    verticalAlign: "top",
+    color: "#111827",
+    fontSize: "13px",
+    padding: "7px 10px",
+    verticalAlign: "middle",
+  },
+  tdMuted: {
+    borderBottom: "1px solid #eef2f7",
+    color: "#64748b",
+    fontSize: "13px",
+    padding: "7px 10px",
+    verticalAlign: "middle",
+  },
+  tdPrice: {
+    borderBottom: "1px solid #eef2f7",
+    color: "#0f172a",
+    fontSize: "13px",
+    fontWeight: 800,
+    padding: "7px 10px",
+    verticalAlign: "middle",
   },
   itemMeta: {
+    color: "#94a3b8",
+    display: "block",
+    fontSize: "11px",
+    fontWeight: 600,
+    marginTop: "2px",
+  },
+  itemDescription: {
     color: "#64748b",
     display: "block",
     fontSize: "12px",
     marginTop: "3px",
+    maxWidth: "320px",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
   },
   statusBadge: {
     borderRadius: "999px",
     display: "inline-block",
-    fontSize: "12px",
-    fontWeight: 800,
-    padding: "4px 9px",
+    fontSize: "10px",
+    fontWeight: 700,
+    lineHeight: 1,
+    padding: "4px 7px",
   },
   statusActive: {
-    background: "#dcfce7",
+    background: "#f0fdf4",
+    border: "1px solid #dcfce7",
     color: "#166534",
   },
   statusInactive: {
-    background: "#fee2e2",
-    color: "#991b1b",
+    background: "#fffbeb",
+    border: "1px solid #fde68a",
+    color: "#92400e",
   },
   statusDeleted: {
-    background: "#f1f5f9",
-    color: "#475569",
+    background: "#fef2f2",
+    border: "1px solid #fee2e2",
+    color: "#991b1b",
   },
   actions: {
     display: "flex",
     flexWrap: "wrap",
-    gap: "6px",
+    gap: "5px",
   },
   smallButton: {
-    border: "1px solid #cbd5e1",
+    border: "1px solid #d0d5dd",
     borderRadius: "6px",
     background: "#ffffff",
+    color: "#344054",
     cursor: "pointer",
-    fontWeight: 700,
-    padding: "7px 9px",
+    fontSize: "11px",
+    fontWeight: 600,
+    padding: "4px 7px",
   },
   warningButton: {
-    border: 0,
+    border: "1px solid #fde68a",
     borderRadius: "6px",
-    background: "#f59e0b",
-    color: "#ffffff",
+    background: "#fffdf5",
+    color: "#92400e",
     cursor: "pointer",
-    fontWeight: 800,
-    padding: "7px 9px",
+    fontSize: "11px",
+    fontWeight: 600,
+    padding: "4px 7px",
   },
   successButton: {
-    border: 0,
+    border: "1px solid #99f6e4",
     borderRadius: "6px",
-    background: "#059669",
-    color: "#ffffff",
+    background: "#f7fffd",
+    color: "#0f766e",
     cursor: "pointer",
-    fontWeight: 800,
-    padding: "7px 9px",
+    fontSize: "11px",
+    fontWeight: 600,
+    padding: "4px 7px",
   },
   deleteButton: {
-    border: 0,
+    border: "1px solid #fee2e2",
     borderRadius: "6px",
-    background: "#dc2626",
-    color: "#ffffff",
+    background: "#fffafa",
+    color: "#991b1b",
     cursor: "pointer",
-    fontWeight: 800,
-    padding: "7px 9px",
+    fontSize: "11px",
+    fontWeight: 600,
+    padding: "4px 7px",
   },
   emptyState: {
     border: "1px dashed #cbd5e1",
@@ -807,6 +1143,108 @@ const styles = {
   emptyText: {
     color: "#64748b",
     margin: 0,
+  },
+  modalBackdrop: {
+    alignItems: "center",
+    background: "rgba(15, 23, 42, 0.38)",
+    bottom: 0,
+    display: "flex",
+    justifyContent: "center",
+    left: 0,
+    padding: "20px",
+    position: "fixed",
+    right: 0,
+    top: 0,
+    zIndex: 50,
+  },
+  modal: {
+    background: "#ffffff",
+    border: "1px solid #e5e7eb",
+    borderRadius: "8px",
+    boxShadow: "0 20px 45px rgba(15, 23, 42, 0.18)",
+    color: "#111827",
+    maxHeight: "90vh",
+    maxWidth: "760px",
+    overflowY: "auto",
+    padding: "20px",
+    width: "100%",
+  },
+  modalHeader: {
+    alignItems: "flex-start",
+    borderBottom: "1px solid #eef2f7",
+    display: "flex",
+    gap: "14px",
+    justifyContent: "space-between",
+    marginBottom: "16px",
+    paddingBottom: "14px",
+  },
+  modalEyebrow: {
+    color: "#64748b",
+    fontSize: "11px",
+    fontWeight: 800,
+    textTransform: "uppercase",
+  },
+  modalTitle: {
+    fontSize: "20px",
+    margin: "4px 0 3px",
+  },
+  modalSubtitle: {
+    color: "#64748b",
+    fontSize: "13px",
+    margin: 0,
+  },
+  modalCloseButton: {
+    background: "#ffffff",
+    border: "1px solid #cbd5e1",
+    borderRadius: "6px",
+    color: "#334155",
+    cursor: "pointer",
+    fontSize: "12px",
+    fontWeight: 700,
+    padding: "7px 10px",
+  },
+  detailGrid: {
+    display: "grid",
+    gap: "10px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  },
+  detailField: {
+    background: "#f8fafc",
+    border: "1px solid #eef2f7",
+    borderRadius: "8px",
+    padding: "10px",
+  },
+  detailLabel: {
+    color: "#64748b",
+    display: "block",
+    fontSize: "11px",
+    fontWeight: 800,
+    marginBottom: "4px",
+    textTransform: "uppercase",
+  },
+  detailValue: {
+    color: "#111827",
+    display: "block",
+    fontSize: "13px",
+    fontWeight: 700,
+  },
+  detailPrice: {
+    color: "#0f172a",
+    display: "block",
+    fontSize: "14px",
+    fontWeight: 800,
+  },
+  descriptionBlock: {
+    borderTop: "1px solid #eef2f7",
+    marginTop: "16px",
+    paddingTop: "14px",
+  },
+  descriptionText: {
+    color: "#334155",
+    fontSize: "14px",
+    lineHeight: 1.55,
+    margin: 0,
+    whiteSpace: "pre-wrap",
   },
 };
 

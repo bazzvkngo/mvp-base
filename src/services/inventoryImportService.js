@@ -1,6 +1,14 @@
 import * as XLSX from "xlsx";
 import { importInventoryItems } from "./inventoryService";
 
+function normalizeText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
 function parseNumber(raw) {
   if (raw === null || raw === undefined || raw === "") return null;
   if (typeof raw === "number") return raw;
@@ -16,7 +24,7 @@ function parseNumber(raw) {
 }
 
 function inferTipoItem(nombre, categoria, tipoRaw) {
-  const txt = `${nombre || ""} ${categoria || ""} ${tipoRaw || ""}`.toLowerCase();
+  const txt = normalizeText(`${nombre || ""} ${categoria || ""} ${tipoRaw || ""}`);
   if (
     txt.includes("actividad") ||
     txt.includes("traslado") ||
@@ -26,9 +34,7 @@ function inferTipoItem(nombre, categoria, tipoRaw) {
   }
   if (
     txt.includes("servicio") ||
-    txt.includes("instalación") ||
     txt.includes("instalacion") ||
-    txt.includes("mantención") ||
     txt.includes("mantencion") ||
     txt.includes("soporte")
   ) {
@@ -40,7 +46,7 @@ function inferTipoItem(nombre, categoria, tipoRaw) {
 async function leerArchivoComoArrayBuffer(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = (e) => resolve(e.target.result);
+    reader.onload = (event) => resolve(event.target.result);
     reader.onerror = (err) => reject(err);
     reader.readAsArrayBuffer(file);
   });
@@ -48,7 +54,7 @@ async function leerArchivoComoArrayBuffer(file) {
 
 export async function leerArchivoInventario(file) {
   if (!file) {
-    throw new Error("No se recibió archivo de inventario.");
+    throw new Error("No se recibio archivo de inventario.");
   }
 
   const buffer = await leerArchivoComoArrayBuffer(file);
@@ -63,25 +69,24 @@ export async function leerArchivoInventario(file) {
 
   const headers = Object.keys(rows[0]).map((header) => ({
     original: header,
-    norm: String(header).toLowerCase().trim(),
+    norm: normalizeText(header),
   }));
 
   const findHeader = (...candidates) =>
     headers.find((header) =>
-      candidates.some((candidate) =>
-        header.norm.includes(candidate.toLowerCase())
-      )
+      candidates.some((candidate) => header.norm.includes(normalizeText(candidate)))
     ) || null;
 
-  const hNombre = findHeader("nombre", "producto", "item", "ítem", "descripción");
-  const hTipo = findHeader("tipo");
-  const hCategoria = findHeader("categoria", "categoría", "rubro", "familia");
-  const hDescripcion = findHeader("descripcion", "descripción", "detalle");
-  const hSku = findHeader("sku", "código", "codigo");
-  const hCosto = findHeader("costo base", "costo", "valor", "precio compra");
-  const hPrecioInterno = findHeader("precio interno", "precio venta", "precio");
-  const hMargen = findHeader("margen");
+  const hNombre = findHeader("nombre", "producto", "item", "item");
+  const hTipo = findHeader("tipoItem", "tipo item", "tipo");
+  const hCategoria = findHeader("categoria", "rubro", "familia");
+  const hDescripcion = findHeader("descripcion", "detalle");
+  const hSku = findHeader("sku", "codigo");
+  const hCosto = findHeader("costo base", "costoBase", "costo", "valor", "precio compra");
+  const hPrecioInterno = findHeader("precio interno", "precioInterno", "precio venta");
+  const hMargen = findHeader("margen", "margenDeseado", "margen deseado");
   const hUnidad = findHeader("unidad", "u.medida", "medida");
+  const hEstado = findHeader("estado");
 
   const items = [];
   let filasValidas = 0;
@@ -93,6 +98,7 @@ export async function leerArchivoInventario(file) {
     const tipoRaw = hTipo ? row[hTipo.original] : "";
     const sku = hSku ? row[hSku.original] : "";
     const unidadArchivo = hUnidad ? row[hUnidad.original] : "";
+    const estadoArchivo = hEstado ? row[hEstado.original] : "";
     const costoBase = parseNumber(hCosto ? row[hCosto.original] : "");
     const precioInternoRaw = parseNumber(
       hPrecioInterno ? row[hPrecioInterno.original] : ""
@@ -108,8 +114,9 @@ export async function leerArchivoInventario(file) {
       String(unidadArchivo || "").trim() ||
       (tipoItem === "producto" ? "unidad" : "servicio");
     const precioInterno =
-      precioInternoRaw ??
-      Math.round(costoBase + (costoBase * margenDeseado) / 100);
+      precioInternoRaw && precioInternoRaw > 0
+        ? precioInternoRaw
+        : Math.round(costoBase + (costoBase * margenDeseado) / 100);
 
     filasValidas += 1;
     items.push({
@@ -121,7 +128,7 @@ export async function leerArchivoInventario(file) {
       costoBase,
       precioInterno,
       margenDeseado,
-      estado: "activo",
+      estado: String(estadoArchivo || "").trim().toLowerCase() || "activo",
       sku: String(sku || "").trim() || null,
     });
   }
@@ -135,11 +142,19 @@ export async function leerArchivoInventario(file) {
 
 export async function importarInventarioEnFirestore(userId, items) {
   if (!userId) {
-    throw new Error("userId es requerido para importar inventario.");
+    throw new Error("No hay usuario autenticado para importar inventario.");
   }
 
   if (!Array.isArray(items) || items.length === 0) {
-    return { creados: 0 };
+    return {
+      created: 0,
+      updated: 0,
+      total: 0,
+      verifiedCount: 0,
+      importados: 0,
+      creados: 0,
+      actualizados: 0,
+    };
   }
 
   return importInventoryItems(userId, items);

@@ -2,12 +2,14 @@
   addDoc,
   collection,
   doc,
+  getDoc,
   getDocs,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
   updateDoc,
+  where,
 } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
 import {
@@ -27,16 +29,42 @@ function inventoryQuery(uid) {
 }
 
 function toNumber(value, fieldName) {
-  const numberValue = Number(value);
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      throw new Error(`${fieldName} debe ser numérico.`);
+    }
+    return value;
+  }
+
+  const normalized = String(value || "")
+    .trim()
+    .replace(/[^\d,.-]/g, "")
+    .replace(/\./g, "")
+    .replace(",", ".");
+  const numberValue = Number(normalized);
+
   if (!Number.isFinite(numberValue)) {
     throw new Error(`${fieldName} debe ser numérico.`);
   }
   return numberValue;
 }
 
+function normalizeTipoItem(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  if (VALID_TYPES.includes(normalized)) return normalized;
+  if (normalized.includes("servicio")) return "servicio";
+  if (normalized.includes("actividad")) return "actividad";
+  return "producto";
+}
+
 export function normalizeInventoryItem(uid, data, { isCreate = false } = {}) {
   const nombre = String(data.nombre || "").trim();
-  const tipoItem = String(data.tipoItem || "").trim();
+  const tipoItem = normalizeTipoItem(data.tipoItem || data.tipo);
   const unidad = String(data.unidad || "").trim();
 
   if (!nombre) throw new Error("El nombre es obligatorio.");
@@ -60,11 +88,13 @@ export function normalizeInventoryItem(uid, data, { isCreate = false } = {}) {
   const precioInterno =
     data.precioInterno === "" ||
     data.precioInterno === null ||
-    data.precioInterno === undefined
+    data.precioInterno === undefined ||
+    toNumber(data.precioInterno, "El precio interno") === 0
       ? Math.round(costoBase + (costoBase * margenDeseado) / 100)
       : toNumber(data.precioInterno, "El precio interno");
 
-  const estado = VALID_STATUS.includes(data.estado) ? data.estado : "activo";
+  const estadoRaw = String(data.estado || "").trim().toLowerCase();
+  const estado = VALID_STATUS.includes(estadoRaw) ? estadoRaw : "activo";
   const payload = {
     nombre,
     tipoItem,
@@ -146,16 +176,105 @@ export async function reactivateInventoryItem(uid, itemId) {
 }
 
 export async function importInventoryItems(uid, items) {
+  if (!uid) {
+    throw new Error("No hay usuario autenticado para importar inventario.");
+  }
+
   if (!Array.isArray(items) || items.length === 0) {
-    return { creados: 0 };
+    return {
+      created: 0,
+      updated: 0,
+      total: 0,
+      verifiedCount: 0,
+      importados: 0,
+      creados: 0,
+      actualizados: 0,
+    };
   }
 
-  let creados = 0;
-  for (const item of items) {
-    await createInventoryItem(uid, item);
-    creados += 1;
-  }
+  console.log("[IMPORT] uid:", uid);
+  console.log("[IMPORT] filas recibidas:", items.length);
+  console.log("[IMPORT] path inventario:", `usuarios/${uid}/inventario`);
 
-  return { creados };
+  try {
+    const normalizedItems = items.map((item) =>
+      normalizeInventoryItem(uid, item, { isCreate: true })
+    );
+    console.log("[IMPORT] primera fila normalizada:", normalizedItems[0]);
+    console.log("[IMPORT] iniciando escritura en Firestore");
+
+    const collectionRef = inventoryCollectionRef(uid);
+    const skuValues = normalizedItems
+      .map((item) => item.sku)
+      .filter((sku) => typeof sku === "string" && sku.trim());
+    const existingBySku = new Map();
+
+    for (const sku of [...new Set(skuValues)]) {
+      const snapshot = await getDocs(
+        query(collectionRef, where("sku", "==", sku))
+      );
+      snapshot.forEach((itemDoc) => {
+        const itemSku = itemDoc.data().sku;
+        if (itemSku && !existingBySku.has(itemSku)) {
+          existingBySku.set(itemSku, itemDoc);
+        }
+      });
+    }
+
+    let created = 0;
+    let updated = 0;
+    const affectedRefs = [];
+
+    for (const item of normalizedItems) {
+      const existingDoc = item.sku ? existingBySku.get(item.sku) : null;
+
+      if (existingDoc) {
+        await updateInventoryItem(uid, existingDoc.id, item);
+        affectedRefs.push(existingDoc.ref);
+        updated += 1;
+        continue;
+      }
+
+      const createdRef = await createInventoryItem(uid, item);
+      affectedRefs.push(createdRef);
+      created += 1;
+
+      if (item.sku) {
+        const createdSnapshot = await getDoc(createdRef);
+        existingBySku.set(item.sku, createdSnapshot);
+      }
+    }
+
+    const verifiedSnapshots = await Promise.all(
+      affectedRefs.map((itemRef) => getDoc(itemRef))
+    );
+    const verifiedCount = verifiedSnapshots.filter((snapshot) =>
+      snapshot.exists()
+    ).length;
+    const total = created + updated;
+
+    const result = {
+      created,
+      updated,
+      total,
+      verifiedCount,
+      importados: total,
+      creados: created,
+      actualizados: updated,
+    };
+
+    console.log("[IMPORT] resultado:", result);
+
+    if (total > 0 && verifiedCount < total) {
+      throw new Error(
+        `Firestore confirmo ${verifiedCount} de ${total} items importados. No se mostrara exito.`
+      );
+    }
+
+    return result;
+  } catch (error) {
+    console.error("[IMPORT] error guardando en Firestore:", error);
+    throw error;
+  }
 }
 

@@ -5,6 +5,12 @@ export const userConfigDocPath = (userId) => [
   "config",
   "negocio",
 ];
+export const companyProfileDocPath = (userId) => [
+  "usuarios",
+  userId,
+  "empresa",
+  "perfil",
+];
 export const inventoryCollectionPath = (userId) => [
   "usuarios",
   userId,
