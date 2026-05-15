@@ -313,14 +313,17 @@ function MarketReferencesManager({ userId }) {
           </label>
 
           <label style={styles.field}>
-            <span style={styles.label}>URL de la fuente</span>
+            <span style={styles.label}>URL de la fuente (opcional)</span>
             <input
               name="urlFuente"
               value={form.urlFuente}
               onChange={handleChange}
-              placeholder="https://..."
+              placeholder="Ej: https://sitio.cl/referencia o dejar vacío si es referencia manual"
               style={styles.input}
             />
+            <p style={styles.helpText}>
+              Si la referencia proviene de consulta manual, deja este campo vacío y describe el origen en la observación.
+            </p>
           </label>
 
           <label style={styles.field}>
@@ -571,6 +574,12 @@ const styles = {
     color: "#111827",
     background: "#ffffff",
     resize: "vertical",
+  },
+  helpText: {
+    color: "#475569",
+    fontSize: "13px",
+    margin: "4px 0 0",
+    lineHeight: "1.4",
   },
   errorText: {
     color: "#b91c1c",
