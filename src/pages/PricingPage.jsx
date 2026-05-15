@@ -132,6 +132,11 @@ function PricingPage({ userId }) {
             Cruza inventario activo con referencias de mercado activas para
             estimar un precio defendible antes de cotizar.
           </p>
+          <p style={styles.logicNote}>
+            El precio sugerido combina el precio interno del ítem con referencias
+            de mercado activas. Si no existen referencias, se utiliza el precio
+            interno como base.
+          </p>
         </div>
       </div>
 
@@ -209,18 +214,12 @@ function PricingPage({ userId }) {
               <thead>
                 <tr>
                   <th style={styles.th}>Ítem</th>
-                  <th style={styles.th}>Tipo</th>
-                  <th style={styles.th}>Categoría</th>
-                  <th style={styles.th}>Costo base</th>
-                  <th style={styles.th}>Margen</th>
-                  <th style={styles.th}>Precio base</th>
+                  <th style={styles.th}>Categoría / tipo</th>
                   <th style={styles.th}>Precio interno</th>
-                  <th style={styles.th}>Prom. referencias</th>
-                  <th style={styles.th}>Refs.</th>
-                  <th style={styles.th}>Diferencia</th>
+                  <th style={styles.th}>Prom. mercado</th>
                   <th style={styles.th}>Precio sugerido</th>
                   <th style={styles.th}>Estado</th>
-                  <th style={styles.th}>Detalle</th>
+                  <th style={styles.th}>Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -229,26 +228,21 @@ function PricingPage({ userId }) {
                   return (
                     <React.Fragment key={valuation.itemId}>
                       <tr>
-                        <td style={styles.td}>
+                        <td style={{ ...styles.td, ...styles.itemCell }}>
                           <strong>{valuation.nombre}</strong>
                           <span style={styles.itemMeta}>
                             Unidad: {valuation.unidad || "-"}
                           </span>
                         </td>
-                        <td style={styles.td}>
-                          {tipoLabels[valuation.tipoItem] || valuation.tipoItem || "-"}
+                        <td style={{ ...styles.td, ...styles.categoryCell }}>
+                          <strong>{valuation.categoria || "-"}</strong>
+                          <span style={styles.itemMeta}>
+                            {tipoLabels[valuation.tipoItem] || valuation.tipoItem || "-"}
+                          </span>
                         </td>
-                        <td style={styles.td}>{valuation.categoria || "-"}</td>
-                        <td style={styles.td}>{formatCLP(valuation.costoBase)}</td>
-                        <td style={styles.td}>{formatPercent(valuation.margenDeseado, 1)}</td>
-                        <td style={styles.td}>{formatCLP(valuation.precioBase)}</td>
                         <td style={styles.td}>{formatCLP(valuation.precioInterno)}</td>
                         <td style={styles.td}>
                           {formatOptionalCLP(valuation.promedioReferencias)}
-                        </td>
-                        <td style={styles.td}>{valuation.cantidadReferencias}</td>
-                        <td style={styles.td}>
-                          {formatOptionalPercent(valuation.diferenciaPorcentual)}
                         </td>
                         <td style={styles.td}>
                           <strong>{formatCLP(valuation.precioSugerido)}</strong>
@@ -277,8 +271,8 @@ function PricingPage({ userId }) {
                       </tr>
                       {isExpanded && (
                         <tr>
-                          <td colSpan={13} style={styles.detailCell}>
-                            <ReferenceDetail references={valuation.referencias} />
+                          <td colSpan={7} style={styles.detailCell}>
+                            <ReferenceDetail valuation={valuation} />
                           </td>
                         </tr>
                       )}
@@ -303,20 +297,61 @@ function MetricCard({ label, value }) {
   );
 }
 
-function ReferenceDetail({ references }) {
-  if (references.length === 0) {
-    return <p style={styles.emptyText}>Este ítem no tiene referencias activas.</p>;
-  }
-
+function ReferenceDetail({ valuation }) {
+  const references = valuation.referencias || [];
   return (
-    <div style={styles.referenceGrid}>
-      {references.map((reference) => (
-        <div key={reference.id} style={styles.referenceItem}>
-          <strong>{reference.nombreFuente || "Fuente sin nombre"}</strong>
-          <span>{formatCLP(reference.precioObservado)}</span>
-          <small>{reference.fechaConsulta || "Sin fecha"}</small>
-        </div>
-      ))}
+    <div style={styles.detailContent}>
+      <div style={styles.detailGrid}>
+        <DetailMetric label="Unidad" value={valuation.unidad || "-"} />
+        <DetailMetric label="Costo base" value={formatCLP(valuation.costoBase)} />
+        <DetailMetric
+          label="Margen"
+          value={formatPercent(valuation.margenDeseado, 1)}
+        />
+        <DetailMetric label="Precio base" value={formatCLP(valuation.precioBase)} />
+        <DetailMetric
+          label="Precio interno"
+          value={formatCLP(valuation.precioInterno)}
+        />
+        <DetailMetric
+          label="Promedio de referencias"
+          value={formatOptionalCLP(valuation.promedioReferencias)}
+        />
+        <DetailMetric
+          label="Cantidad de referencias"
+          value={valuation.cantidadReferencias}
+        />
+        <DetailMetric
+          label="Diferencia"
+          value={formatOptionalPercent(valuation.diferenciaPorcentual)}
+        />
+      </div>
+
+      <div>
+        <h4 style={styles.detailTitle}>Referencias activas usadas</h4>
+        {references.length === 0 ? (
+          <p style={styles.emptyText}>Este ítem no tiene referencias activas.</p>
+        ) : (
+          <div style={styles.referenceGrid}>
+            {references.map((reference) => (
+              <div key={reference.id} style={styles.referenceItem}>
+                <strong>{reference.nombreFuente || "Fuente sin nombre"}</strong>
+                <span>{formatCLP(reference.precioObservado)}</span>
+                <small>{reference.fechaConsulta || "Sin fecha"}</small>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DetailMetric({ label, value }) {
+  return (
+    <div style={styles.detailMetric}>
+      <span>{label}</span>
+      <strong>{value}</strong>
     </div>
   );
 }
@@ -325,6 +360,9 @@ const styles = {
   wrapper: {
     display: "grid",
     gap: "18px",
+    maxWidth: "100%",
+    minWidth: 0,
+    overflowX: "hidden",
   },
   header: {
     display: "flex",
@@ -346,10 +384,18 @@ const styles = {
     color: "#64748b",
     lineHeight: 1.5,
   },
+  logicNote: {
+    color: "#64748b",
+    fontSize: "14px",
+    lineHeight: 1.45,
+    margin: "8px 0 0",
+    maxWidth: "760px",
+  },
   summaryGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
     gap: "12px",
+    minWidth: 0,
   },
   metricCard: {
     background: "#ffffff",
@@ -378,6 +424,9 @@ const styles = {
     background: "#ffffff",
     border: "1px solid #e5e7eb",
     borderRadius: "8px",
+    maxWidth: "100%",
+    minWidth: 0,
+    overflow: "hidden",
     padding: "18px",
   },
   filters: {
@@ -399,9 +448,12 @@ const styles = {
     background: "#ffffff",
   },
   tableWrapper: {
+    maxWidth: "100%",
+    minWidth: 0,
     overflowX: "auto",
   },
   table: {
+    minWidth: "860px",
     width: "100%",
     borderCollapse: "collapse",
   },
@@ -421,6 +473,14 @@ const styles = {
     padding: "12px 10px",
     verticalAlign: "top",
     whiteSpace: "nowrap",
+  },
+  itemCell: {
+    minWidth: "220px",
+    whiteSpace: "normal",
+  },
+  categoryCell: {
+    minWidth: "180px",
+    whiteSpace: "normal",
   },
   detailCell: {
     background: "#f8fafc",
@@ -447,6 +507,29 @@ const styles = {
     cursor: "pointer",
     fontWeight: 700,
     padding: "7px 9px",
+  },
+  detailContent: {
+    display: "grid",
+    gap: "14px",
+  },
+  detailGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+    gap: "10px",
+  },
+  detailMetric: {
+    background: "#ffffff",
+    border: "1px solid #e5e7eb",
+    borderRadius: "8px",
+    display: "grid",
+    gap: "4px",
+    padding: "10px 12px",
+  },
+  detailTitle: {
+    color: "#334155",
+    fontSize: "13px",
+    margin: "0 0 10px",
+    textTransform: "uppercase",
   },
   referenceGrid: {
     display: "grid",
