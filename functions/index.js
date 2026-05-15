@@ -98,6 +98,169 @@ function normalizeInventorySummary(items) {
     .filter((item) => item.id && item.nombre);
 }
 
+const INVENTORY_MATCH_STOP_WORDS = new Set([
+  "a",
+  "al",
+  "con",
+  "de",
+  "del",
+  "e",
+  "el",
+  "en",
+  "la",
+  "las",
+  "los",
+  "o",
+  "para",
+  "por",
+  "un",
+  "una",
+  "y",
+]);
+
+const INVENTORY_MATCH_GENERIC_WORDS = new Set([
+  "actividad",
+  "computador",
+  "configuracion",
+  "equipo",
+  "inicial",
+  "instalacion",
+  "prueba",
+  "pruebas",
+  "servicio",
+  "soporte",
+  "tecnico",
+]);
+
+const INVENTORY_MATCH_ALIASES = [
+  {
+    source: "diagnostico tecnico de equipo",
+    targets: ["diagnostico tecnico de computador"],
+  },
+  {
+    source: "instalacion de sistema operativo",
+    targets: ["formateo e instalacion de windows"],
+  },
+  {
+    source: "instalacion de drivers",
+    targets: ["instalacion de drivers"],
+  },
+  {
+    source: "configuracion inicial de equipo",
+    targets: ["configuracion inicial de equipo"],
+  },
+  {
+    source: "respaldo de informacion",
+    targets: ["respaldo de informacion"],
+  },
+  {
+    source: "configuracion de respaldos",
+    targets: ["configuracion de respaldos"],
+  },
+  {
+    source: "limpieza interna de computador",
+    targets: ["limpieza interna de computador", "limpieza interna de notebook"],
+  },
+  {
+    source: "diseno de pagina web",
+    targets: ["diseno de pagina web one page"],
+  },
+  {
+    source: "desarrollo de sitio web",
+    targets: ["desarrollo de sitio web corporativo"],
+  },
+  {
+    source: "configuracion de formulario de contacto",
+    targets: ["formulario de contacto"],
+  },
+  {
+    source: "implementacion de carrito de compras",
+    targets: ["implementacion de carrito de compras basico"],
+  },
+  {
+    source: "configuracion de firebase",
+    targets: ["configuracion basica de firebase"],
+  },
+];
+
+function normalizeMatchText(value) {
+  return normalizeSearchText(value)
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function tokenizeMatchText(normalizedText) {
+  return normalizedText
+    .split(" ")
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 3)
+    .filter((token) => !INVENTORY_MATCH_STOP_WORDS.has(token));
+}
+
+function getRelevantMatchTokens(normalizedText) {
+  return [
+    ...new Set(
+      tokenizeMatchText(normalizedText).filter(
+        (token) => !INVENTORY_MATCH_GENERIC_WORDS.has(token)
+      )
+    ),
+  ];
+}
+
+function isAliasInventoryMatch(normalizedSuggestion, normalizedItemName) {
+  return INVENTORY_MATCH_ALIASES.some((alias) => {
+    if (normalizeMatchText(alias.source) !== normalizedSuggestion) return false;
+    return alias.targets
+      .map((target) => normalizeMatchText(target))
+      .includes(normalizedItemName);
+  });
+}
+
+function hasRelevantPhraseMatch(normalizedSuggestion, normalizedItemName) {
+  const suggestionTokens = getRelevantMatchTokens(normalizedSuggestion);
+  const itemTokens = getRelevantMatchTokens(normalizedItemName);
+
+  if (!suggestionTokens.length || !itemTokens.length) return false;
+
+  return (
+    normalizedSuggestion.includes(normalizedItemName) ||
+    normalizedItemName.includes(normalizedSuggestion)
+  );
+}
+
+function scoreRelevantTokenMatch(normalizedSuggestion, normalizedItemName) {
+  const suggestionTokens = getRelevantMatchTokens(normalizedSuggestion);
+  const itemTokens = getRelevantMatchTokens(normalizedItemName);
+
+  if (suggestionTokens.length < 2 || itemTokens.length < 2) return 0;
+
+  const itemTokenSet = new Set(itemTokens);
+  const sharedTokens = suggestionTokens.filter((token) => itemTokenSet.has(token));
+  const requiredSharedTokens = suggestionTokens.length >= 4 ? 3 : 2;
+
+  if (sharedTokens.length < requiredSharedTokens) return 0;
+
+  const coverage =
+    sharedTokens.length / Math.max(suggestionTokens.length, itemTokens.length);
+
+  if (coverage < 0.5) return 0;
+
+  return 70 + sharedTokens.length * 8 + Math.round(coverage * 10);
+}
+
+function scoreInventoryNameMatch(suggestionName, itemName) {
+  const normalizedSuggestion = normalizeMatchText(suggestionName);
+  const normalizedItemName = normalizeMatchText(itemName);
+
+  if (!normalizedSuggestion || !normalizedItemName) return 0;
+  if (normalizedSuggestion === normalizedItemName) return 100;
+  if (isAliasInventoryMatch(normalizedSuggestion, normalizedItemName)) return 95;
+  if (hasRelevantPhraseMatch(normalizedSuggestion, normalizedItemName)) return 90;
+
+  return scoreRelevantTokenMatch(normalizedSuggestion, normalizedItemName);
+}
+
 function sanitizeQuoteSuggestions(payload, inventoryItems) {
   const inventoryById = new Map(inventoryItems.map((item) => [item.id, item]));
   const suggestions = Array.isArray(payload && payload.suggestions)
@@ -128,21 +291,17 @@ function sanitizeQuoteSuggestions(payload, inventoryItems) {
 }
 
 function findInventoryMatch(suggestionName, inventoryItems) {
-  const normalizedSuggestion = normalizeSearchText(suggestionName);
-  const suggestionTokens = normalizedSuggestion
-    .split(/\s+/)
-    .filter((token) => token.length >= 4);
+  if (!Array.isArray(inventoryItems) || !suggestionName) return null;
 
-  if (!suggestionTokens.length) return null;
-
-  return (
-    inventoryItems.find((item) => {
-      const text = normalizeSearchText(
-        `${item.nombre || ""} ${item.categoria || ""} ${item.tipoItem || ""}`
-      );
-      return suggestionTokens.some((token) => text.includes(token));
-    }) || null
+  const bestMatch = inventoryItems.reduce(
+    (best, item) => {
+      const score = scoreInventoryNameMatch(suggestionName, item.nombre);
+      return score > best.score ? { item, score } : best;
+    },
+    { item: null, score: 0 }
   );
+
+  return bestMatch.score >= 80 ? bestMatch.item : null;
 }
 
 function buildLocalSuggestion({ nombre, tipoItem, cantidadSugerida, motivo }, inventoryItems) {
