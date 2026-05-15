@@ -308,7 +308,6 @@ function ReferenceDetail({ valuation }) {
           label="Margen"
           value={formatPercent(valuation.margenDeseado, 1)}
         />
-        <DetailMetric label="Precio base" value={formatCLP(valuation.precioBase)} />
         <DetailMetric
           label="Precio interno"
           value={formatCLP(valuation.precioInterno)}
