@@ -114,8 +114,16 @@ a {
 }
 
 @media print {
+  @page {
+    size: A4;
+    margin: 8mm;
+  }
+
+  html,
   body {
     background: #ffffff;
+    font-size: 11px;
+    line-height: 1.25;
   }
 
   .sidebar,
@@ -146,6 +154,109 @@ a {
 
   .quote-print {
     border: 0 !important;
+    box-sizing: border-box !important;
+    font-size: 11px !important;
+    line-height: 1.25 !important;
     padding: 0 !important;
+    page-break-inside: auto;
+    width: 100% !important;
+  }
+
+  .quote-print__header {
+    gap: 10px !important;
+    padding-bottom: 7px !important;
+  }
+
+  .quote-print__company {
+    gap: 9px !important;
+  }
+
+  .quote-print__logo-box {
+    height: 48px !important;
+    width: 48px !important;
+  }
+
+  .quote-print__brand {
+    font-size: 18px !important;
+    line-height: 1.1 !important;
+  }
+
+  .quote-print__muted {
+    font-size: 10.5px !important;
+    line-height: 1.2 !important;
+    margin-top: 1px !important;
+  }
+
+  .quote-print__meta {
+    gap: 2px !important;
+    font-size: 10.5px !important;
+  }
+
+  .quote-print__client {
+    border-radius: 5px !important;
+    margin: 8px 0 !important;
+    padding: 7px 8px !important;
+  }
+
+  .quote-print__section-title {
+    font-size: 12px !important;
+    margin-bottom: 4px !important;
+  }
+
+  .quote-print__line {
+    margin: 1px 0 !important;
+  }
+
+  .quote-print__th {
+    font-size: 10px !important;
+    padding: 5px 6px !important;
+  }
+
+  .quote-print__td {
+    font-size: 10.5px !important;
+    padding: 5px 6px !important;
+  }
+
+  .quote-print__item-meta {
+    font-size: 9.5px !important;
+    margin-top: 1px !important;
+  }
+
+  .quote-print__totals {
+    margin-top: 6px !important;
+    max-width: 260px !important;
+  }
+
+  .quote-print__total-row {
+    padding: 5px 0 !important;
+  }
+
+  .quote-print__total-label,
+  .quote-print__total-value {
+    font-size: 10.5px !important;
+  }
+
+  .quote-print__total-label--strong {
+    font-size: 13px !important;
+  }
+
+  .quote-print__total-value--strong {
+    font-size: 15px !important;
+  }
+
+  .quote-print__conditions {
+    margin-top: 8px !important;
+    padding-top: 7px !important;
+    page-break-inside: avoid;
+  }
+
+  .quote-print__footer-note {
+    font-size: 10px !important;
+    line-height: 1.25 !important;
+    margin-top: 5px !important;
+  }
+
+  .quote-print__empty-notice {
+    padding: 10px !important;
   }
 }

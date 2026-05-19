@@ -84,6 +84,7 @@ function NewQuotePage({ userId }) {
   const [assistantSource, setAssistantSource] = useState("");
   const [assistantWarning, setAssistantWarning] = useState("");
   const [highlightedItemId, setHighlightedItemId] = useState("");
+  const [manualCatalogOpen, setManualCatalogOpen] = useState(true);
 
   useEffect(() => {
     if (!userId) {
@@ -159,6 +160,37 @@ function NewQuotePage({ userId }) {
       return text.includes(query);
     });
   }, [search, valuations]);
+
+  const matchedAssistantSuggestions = useMemo(() => {
+    const groupsByItemId = new Map();
+
+    assistantSuggestions.forEach((suggestion) => {
+      if (!suggestion.inventarioMatchId) return;
+
+      const valuation = valuations.find(
+        (item) => item.itemId === suggestion.inventarioMatchId
+      );
+      if (!valuation) return;
+
+      const quantity = Math.max(Number(suggestion.cantidadSugerida) || 1, 1);
+      const current = groupsByItemId.get(valuation.itemId);
+
+      groupsByItemId.set(valuation.itemId, {
+        valuation,
+        quantity: (current?.quantity || 0) + quantity,
+      });
+    });
+
+    return Array.from(groupsByItemId.values());
+  }, [assistantSuggestions, valuations]);
+
+  useEffect(() => {
+    if (assistantSuggestions.length > 0) {
+      setManualCatalogOpen(false);
+    } else {
+      setManualCatalogOpen(true);
+    }
+  }, [assistantSuggestions]);
 
   const updateField = (field, value) => {
     setQuote((prev) => ({
@@ -261,6 +293,71 @@ function NewQuotePage({ userId }) {
     const matchedValuation = getMatchedValuation(suggestion);
     if (!matchedValuation) return;
     addItem(matchedValuation, Number(suggestion.cantidadSugerida) || 1);
+  };
+
+  const addMatchedSuggestionsToQuote = () => {
+    if (matchedAssistantSuggestions.length === 0) return;
+
+    setSuccess("");
+    setError("");
+
+    const existingCount = matchedAssistantSuggestions.filter(({ valuation }) =>
+      quote.items.some((item) => item.itemId === valuation.itemId)
+    ).length;
+    const firstItemId = matchedAssistantSuggestions[0].valuation.itemId;
+
+    setQuote((prev) => {
+      const pendingByItemId = new Map(
+        matchedAssistantSuggestions.map((group) => [
+          group.valuation.itemId,
+          group,
+        ])
+      );
+
+      const updatedItems = prev.items.map((item) => {
+        const group = pendingByItemId.get(item.itemId);
+        if (!group) return item;
+
+        pendingByItemId.delete(item.itemId);
+        return {
+          ...item,
+          cantidad: Number(item.cantidad || 0) + group.quantity,
+        };
+      });
+
+      const newItems = Array.from(pendingByItemId.values()).map(
+        ({ valuation, quantity }) => ({
+          ...createQuoteItemFromValuation(valuation),
+          cantidad: quantity,
+        })
+      );
+
+      return {
+        ...prev,
+        items: normalizeQuoteItems([...updatedItems, ...newItems]),
+      };
+    });
+
+    setSuccess(
+      existingCount > 0
+        ? "Sugerencias con inventario agregadas. Los ítems existentes actualizaron su cantidad."
+        : "Sugerencias con inventario agregadas a la cotización."
+    );
+    setHighlightedItemId(firstItemId);
+
+    if (highlightTimeoutRef.current) {
+      window.clearTimeout(highlightTimeoutRef.current);
+    }
+    highlightTimeoutRef.current = window.setTimeout(() => {
+      setHighlightedItemId("");
+    }, 1800);
+
+    window.requestAnimationFrame(() => {
+      addedItemsRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
   };
 
   const updateItem = (itemId, field, value) => {
@@ -373,7 +470,7 @@ function NewQuotePage({ userId }) {
                 style={styles.input}
               />
             </Field>
-            <Field label="Numero">
+            <Field label="Número">
               <input
                 type="text"
                 value={quote.numero}
@@ -436,7 +533,7 @@ function NewQuotePage({ userId }) {
                 style={styles.input}
               />
             </Field>
-            <Field label="Telefono opcional">
+            <Field label="Teléfono opcional">
               <input
                 type="text"
                 value={quote.clienteTelefono}
@@ -446,7 +543,7 @@ function NewQuotePage({ userId }) {
                 style={styles.input}
               />
             </Field>
-            <Field label="Direccion opcional" wide>
+            <Field label="Dirección opcional" wide>
               <input
                 type="text"
                 value={quote.clienteDireccion}
@@ -503,67 +600,83 @@ function NewQuotePage({ userId }) {
           <p style={styles.infoText}>
             {assistantSource === "gemini"
               ? "Sugerencias generadas con IA generativa."
-              : "Sugerencias generadas con asistente local."}
+              : "Modo asistente local activo. Las sugerencias fueron generadas con reglas e inventario del sistema. La IA generativa queda disponible como capa premium/opcional."}
           </p>
         )}
-        {assistantWarning && (
+        {assistantWarning && assistantSource === "gemini" && (
           <p style={styles.warningText}>{assistantWarning}</p>
         )}
 
         {assistantSuggestions.length > 0 && (
-          <div style={styles.suggestionGrid}>
-            {assistantSuggestions.map((suggestion, index) => {
-              const matchedValuation = getMatchedValuation(suggestion);
-              const quoteQuantity = matchedValuation
-                ? itemQuantityById[matchedValuation.itemId] || 0
-                : 0;
-              return (
-                <article
-                  key={`${suggestion.nombre}-${index}`}
-                  style={styles.suggestionCard}
+          <>
+            {matchedAssistantSuggestions.length > 0 && (
+              <div style={styles.suggestionToolbar}>
+                <button
+                  type="button"
+                  onClick={addMatchedSuggestionsToQuote}
+                  style={styles.primaryButton}
                 >
-                  <div>
-                    <strong>{suggestion.nombre}</strong>
-                    <span style={styles.itemMeta}>
-                      {tipoLabels[suggestion.tipoItem] || suggestion.tipoItem} ·
-                      cantidad sugerida: {suggestion.cantidadSugerida}
-                    </span>
-                  </div>
-                  <p style={styles.suggestionReason}>{suggestion.motivo}</p>
-                  <span
-                    style={{
-                      ...styles.matchBadge,
-                      ...(matchedValuation
-                        ? styles.matchBadgeFound
-                        : styles.matchBadgeMissing),
-                    }}
+                  Agregar sugerencias con inventario
+                </button>
+                <span style={styles.assistantNote}>
+                  Agrega las coincidencias y actualiza cantidades si ya existen.
+                </span>
+              </div>
+            )}
+            <div style={styles.suggestionGrid}>
+              {assistantSuggestions.map((suggestion, index) => {
+                const matchedValuation = getMatchedValuation(suggestion);
+                const quoteQuantity = matchedValuation
+                  ? itemQuantityById[matchedValuation.itemId] || 0
+                  : 0;
+                return (
+                  <article
+                    key={`${suggestion.nombre}-${index}`}
+                    style={styles.suggestionCard}
                   >
-                    {matchedValuation
-                      ? `Coincide con inventario: ${matchedValuation.nombre}`
-                      : "No encontrado en inventario"}
-                  </span>
-                  {matchedValuation && (
-                    <>
-                      {quoteQuantity > 0 && (
-                        <span style={styles.quoteBadge}>
-                          En cotización: {quoteQuantity}
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => addSuggestionToQuote(suggestion)}
-                        style={styles.secondaryButton}
-                      >
-                        {quoteQuantity > 0
-                          ? "Agregar otra vez"
-                          : "Agregar ítem valorizado"}
-                      </button>
-                    </>
-                  )}
-                </article>
-              );
-            })}
-          </div>
+                    <div>
+                      <strong>{suggestion.nombre}</strong>
+                      <span style={styles.itemMeta}>
+                        {tipoLabels[suggestion.tipoItem] || suggestion.tipoItem} ·
+                        cantidad sugerida: {suggestion.cantidadSugerida}
+                      </span>
+                    </div>
+                    <p style={styles.suggestionReason}>{suggestion.motivo}</p>
+                    <span
+                      style={{
+                        ...styles.matchBadge,
+                        ...(matchedValuation
+                          ? styles.matchBadgeFound
+                          : styles.matchBadgeMissing),
+                      }}
+                    >
+                      {matchedValuation
+                        ? `Coincide con inventario: ${matchedValuation.nombre}`
+                        : "No encontrado en inventario"}
+                    </span>
+                    {matchedValuation && (
+                      <>
+                        {quoteQuantity > 0 && (
+                          <span style={styles.quoteBadge}>
+                            En cotización: {quoteQuantity}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => addSuggestionToQuote(suggestion)}
+                          style={styles.secondaryButton}
+                        >
+                          {quoteQuantity > 0
+                            ? "Agregar otra vez"
+                            : "Agregar ítem valorizado"}
+                        </button>
+                      </>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
 
@@ -664,74 +777,93 @@ function NewQuotePage({ userId }) {
       <div className="no-print" style={styles.panel}>
         <div style={styles.sectionHeader}>
           <div>
-            <h3 style={styles.panelTitle}>Ítems valorizados</h3>
+            <h3 style={styles.panelTitle}>Catálogo manual de ítems valorizados</h3>
             <p style={styles.helpText}>
               Solo se muestran ítems activos del inventario. El precio inicial
               corresponde al precio sugerido.
             </p>
           </div>
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Buscar por nombre o categoría"
-            style={styles.searchInput}
-          />
+          <div style={styles.catalogActions}>
+            {assistantSuggestions.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setManualCatalogOpen((current) => !current)}
+                style={styles.secondaryButton}
+              >
+                {manualCatalogOpen ? "Ocultar catálogo" : "Mostrar catálogo"}
+              </button>
+            )}
+            {manualCatalogOpen && (
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Buscar por nombre o categoría"
+                style={styles.searchInput}
+              />
+            )}
+          </div>
         </div>
 
-        {loading ? (
-          <p style={styles.emptyText}>Cargando ítems valorizados...</p>
-        ) : valuations.length === 0 ? (
-          <div style={styles.emptyState}>
-            <h3 style={styles.emptyTitle}>No hay inventario activo valorizado</h3>
-            <p style={styles.emptyText}>
-              Agrega ítems activos al inventario para comenzar una cotización.
-            </p>
-          </div>
-        ) : filteredValuations.length === 0 ? (
-          <p style={styles.emptyText}>No hay resultados para esa busqueda.</p>
-        ) : (
-          <div style={styles.valuationGrid}>
-            {filteredValuations.map((valuation) => {
-              const quoteQuantity = itemQuantityById[valuation.itemId] || 0;
-              return (
-                <div key={valuation.itemId} style={styles.valuationCard}>
-                  <div>
-                    <strong>{valuation.nombre}</strong>
-                    <span style={styles.itemMeta}>
-                      {valuation.categoria || "Sin categoría"} ·{" "}
-                      {tipoLabels[valuation.tipoItem] || valuation.tipoItem || "-"}
-                    </span>
-                  </div>
-                  <div style={styles.valuationFooter}>
+        {manualCatalogOpen ? (
+          loading ? (
+            <p style={styles.emptyText}>Cargando ítems valorizados...</p>
+          ) : valuations.length === 0 ? (
+            <div style={styles.emptyState}>
+              <h3 style={styles.emptyTitle}>No hay inventario activo valorizado</h3>
+              <p style={styles.emptyText}>
+                Agrega ítems activos al inventario para comenzar una cotización.
+              </p>
+            </div>
+          ) : filteredValuations.length === 0 ? (
+            <p style={styles.emptyText}>No hay resultados para esa búsqueda.</p>
+          ) : (
+            <div style={styles.valuationGrid}>
+              {filteredValuations.map((valuation) => {
+                const quoteQuantity = itemQuantityById[valuation.itemId] || 0;
+                return (
+                  <div key={valuation.itemId} style={styles.valuationCard}>
                     <div>
-                      <span style={styles.miniLabel}>Precio sugerido</span>
-                      <strong>{formatCLP(valuation.precioSugerido)}</strong>
+                      <strong>{valuation.nombre}</strong>
+                      <span style={styles.itemMeta}>
+                        {valuation.categoria || "Sin categoría"} ·{" "}
+                        {tipoLabels[valuation.tipoItem] || valuation.tipoItem || "-"}
+                      </span>
                     </div>
-                    <span
-                      style={{
-                        ...styles.statusBadge,
-                        ...statusStyles[valuation.estadoValorizacion],
-                      }}
+                    <div style={styles.valuationFooter}>
+                      <div>
+                        <span style={styles.miniLabel}>Precio sugerido</span>
+                        <strong>{formatCLP(valuation.precioSugerido)}</strong>
+                      </div>
+                      <span
+                        style={{
+                          ...styles.statusBadge,
+                          ...statusStyles[valuation.estadoValorizacion],
+                        }}
+                      >
+                        {valuation.estadoValorizacion}
+                      </span>
+                    </div>
+                    {quoteQuantity > 0 && (
+                      <span style={styles.quoteBadge}>
+                        En cotización: {quoteQuantity}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => addItem(valuation)}
+                      style={styles.secondaryButton}
                     >
-                      {valuation.estadoValorizacion}
-                    </span>
+                      {quoteQuantity > 0 ? "Agregar otra vez" : "Agregar a cotización"}
+                    </button>
                   </div>
-                  {quoteQuantity > 0 && (
-                    <span style={styles.quoteBadge}>
-                      En cotización: {quoteQuantity}
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => addItem(valuation)}
-                    style={styles.secondaryButton}
-                  >
-                    {quoteQuantity > 0 ? "Agregar otra vez" : "Agregar a cotización"}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )
+        ) : (
+          <p style={styles.emptyText}>
+            Catálogo oculto para priorizar las sugerencias del asistente.
+          </p>
         )}
       </div>
 
@@ -742,7 +874,7 @@ function NewQuotePage({ userId }) {
             value={quote.observaciones}
             onChange={(event) => updateField("observaciones", event.target.value)}
             rows={5}
-            placeholder="Notas publicas para el cliente"
+            placeholder="Notas públicas para el cliente"
             style={styles.textarea}
           />
         </div>
@@ -822,7 +954,7 @@ function QuotePreview({ quote, companyProfile }) {
       <div className="no-print" style={styles.previewActions}>
         <h3 style={styles.panelTitle}>Vista formal imprimible</h3>
         <button type="button" onClick={() => window.print()} style={styles.printButton}>
-          Imprimir cotizacion
+          Imprimir cotización
         </button>
       </div>
 
@@ -932,6 +1064,13 @@ const styles = {
     color: "#64748b",
     margin: "-6px 0 0",
     fontSize: "14px",
+  },
+  catalogActions: {
+    alignItems: "center",
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "10px",
+    justifyContent: "flex-end",
   },
   searchInput: {
     border: "1px solid #cbd5e1",
@@ -1071,6 +1210,17 @@ const styles = {
   assistantNote: {
     color: "#64748b",
     fontSize: "13px",
+  },
+  suggestionToolbar: {
+    alignItems: "center",
+    background: "#f8fafc",
+    border: "1px solid #e5e7eb",
+    borderRadius: "8px",
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "12px",
+    marginTop: "14px",
+    padding: "12px",
   },
   suggestionGrid: {
     display: "grid",

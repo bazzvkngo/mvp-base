@@ -49,9 +49,9 @@ function QuotePrintView({ quote, companyProfile }) {
 
   return (
     <article className="quote-print" style={styles.printSheet}>
-      <header style={styles.printHeader}>
-        <div style={styles.companyBlock}>
-          <div style={styles.logoBox}>
+      <header className="quote-print__header" style={styles.printHeader}>
+        <div className="quote-print__company" style={styles.companyBlock}>
+          <div className="quote-print__logo-box" style={styles.logoBox}>
             {company.logoUrl ? (
               <img
                 src={company.logoUrl}
@@ -63,90 +63,130 @@ function QuotePrintView({ quote, companyProfile }) {
             )}
           </div>
           <div>
-            <h2 style={styles.printBrand}>{brand}</h2>
+            <h2 className="quote-print__brand" style={styles.printBrand}>{brand}</h2>
             {company.razonSocial && (
-              <p style={styles.printMuted}>{company.razonSocial}</p>
+              <p className="quote-print__muted" style={styles.printMuted}>
+                {company.razonSocial}
+              </p>
             )}
-            {company.rut && <p style={styles.printMuted}>RUT: {company.rut}</p>}
-            {company.giro && <p style={styles.printMuted}>Giro: {company.giro}</p>}
-            {contact && <p style={styles.printMuted}>{contact}</p>}
-            {address && <p style={styles.printMuted}>{address}</p>}
+            {company.rut && (
+              <p className="quote-print__muted" style={styles.printMuted}>
+                RUT: {company.rut}
+              </p>
+            )}
+            {company.giro && (
+              <p className="quote-print__muted" style={styles.printMuted}>
+                Giro: {company.giro}
+              </p>
+            )}
+            {contact && (
+              <p className="quote-print__muted" style={styles.printMuted}>{contact}</p>
+            )}
+            {address && (
+              <p className="quote-print__muted" style={styles.printMuted}>{address}</p>
+            )}
             {company.sitioWeb && (
-              <p style={styles.printMuted}>{company.sitioWeb}</p>
+              <p className="quote-print__muted" style={styles.printMuted}>
+                {company.sitioWeb}
+              </p>
             )}
           </div>
         </div>
-        <div style={styles.printMeta}>
-          <strong>Cotizacion {quote?.numero || "-"}</strong>
+        <div className="quote-print__meta" style={styles.printMeta}>
+          <strong>Cotización {quote?.numero || "-"}</strong>
           <span>Fecha: {formatDate(quote?.fecha)}</span>
           <span>Estado: {statusLabels[quote?.estado] || quote?.estado || "-"}</span>
         </div>
       </header>
 
-      <section style={styles.clientBox}>
-        <h3 style={styles.printSectionTitle}>Cliente</h3>
-        <p style={styles.printLine}>
+      <section className="quote-print__client" style={styles.clientBox}>
+        <h3 className="quote-print__section-title" style={styles.printSectionTitle}>
+          Cliente
+        </h3>
+        <p className="quote-print__line" style={styles.printLine}>
           <strong>{quote?.clienteNombre || "Sin cliente"}</strong>
         </p>
-        <p style={styles.printLine}>RUT/DNI: {quote?.clienteRut || "-"}</p>
-        <p style={styles.printLine}>Email: {quote?.clienteEmail || "-"}</p>
-        <p style={styles.printLine}>Telefono: {quote?.clienteTelefono || "-"}</p>
-        <p style={styles.printLine}>Direccion: {quote?.clienteDireccion || "-"}</p>
+        <p className="quote-print__line" style={styles.printLine}>
+          RUT/DNI: {quote?.clienteRut || "-"}
+        </p>
+        <p className="quote-print__line" style={styles.printLine}>
+          Email: {quote?.clienteEmail || "-"}
+        </p>
+        <p className="quote-print__line" style={styles.printLine}>
+          Teléfono: {quote?.clienteTelefono || "-"}
+        </p>
+        <p className="quote-print__line" style={styles.printLine}>
+          Dirección: {quote?.clienteDireccion || "-"}
+        </p>
       </section>
 
-      <table style={styles.printTable}>
-        <thead>
-          <tr>
-            <th style={styles.printTh}>Item</th>
-            <th style={styles.printTh}>Cant.</th>
-            <th style={styles.printTh}>Precio unit.</th>
-            <th style={styles.printTh}>Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.length === 0 ? (
-            <tr>
-              <td colSpan={4} style={styles.printTd}>
-                Sin items registrados.
-              </td>
-            </tr>
-          ) : (
-            items.map((item, index) => (
-              <tr key={`${item.itemId || "item"}-${index}`}>
-                <td style={styles.printTd}>
-                  <strong>{item.nombre || "Item sin nombre"}</strong>
-                  <span style={styles.printItemMeta}>
-                    {item.descripcion || item.categoria || item.tipoItem || ""}
-                  </span>
-                </td>
-                <td style={styles.printTd}>{item.cantidad || 0}</td>
-                <td style={styles.printTd}>
-                  {formatCLP(item.precioUnitarioEditable)}
-                </td>
-                <td style={styles.printTd}>{formatCLP(item.totalLinea)}</td>
+      {items.length === 0 ? (
+        <div className="quote-print__empty-notice" style={styles.printEmptyNotice}>
+          Agrega ítems a la cotización para visualizar el documento formal.
+        </div>
+      ) : (
+        <>
+          <table className="quote-print__table" style={styles.printTable}>
+            <thead>
+              <tr>
+                <th className="quote-print__th" style={styles.printTh}>Ítem</th>
+                <th className="quote-print__th" style={styles.printTh}>Cant.</th>
+                <th className="quote-print__th" style={styles.printTh}>
+                  Precio unit.
+                </th>
+                <th className="quote-print__th" style={styles.printTh}>Total</th>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              {items.map((item, index) => (
+                <tr key={`${item.itemId || "item"}-${index}`}>
+                  <td className="quote-print__td" style={styles.printTd}>
+                    <strong>{item.nombre || "Ítem sin nombre"}</strong>
+                    <span className="quote-print__item-meta" style={styles.printItemMeta}>
+                      {item.descripcion || item.categoria || item.tipoItem || ""}
+                    </span>
+                  </td>
+                  <td className="quote-print__td" style={styles.printTd}>
+                    {item.cantidad || 0}
+                  </td>
+                  <td className="quote-print__td" style={styles.printTd}>
+                    {formatCLP(item.precioUnitarioEditable)}
+                  </td>
+                  <td className="quote-print__td" style={styles.printTd}>
+                    {formatCLP(item.totalLinea)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
 
-      <div style={styles.printTotals}>
-        <TotalRow label="Subtotal" value={formatCLP(quote?.subtotal)} />
-        <TotalRow label="Descuento" value={formatCLP(quote?.descuento)} />
-        <TotalRow label="Total" value={formatCLP(quote?.total)} strong />
-      </div>
+          <div className="quote-print__totals" style={styles.printTotals}>
+            <TotalRow label="Subtotal" value={formatCLP(quote?.subtotal)} />
+            <TotalRow label="Descuento" value={formatCLP(quote?.descuento)} />
+            <TotalRow label="Total" value={formatCLP(quote?.total)} strong />
+          </div>
+        </>
+      )}
 
-      <section style={styles.conditionsBox}>
-        <h3 style={styles.printSectionTitle}>Condiciones comerciales</h3>
-        <p style={styles.printLine}>Pago: {condicionesPago}</p>
-        <p style={styles.printLine}>
-          Validez: {company.validezCotizacionDias || 15} dias
+      <section className="quote-print__conditions" style={styles.conditionsBox}>
+        <h3 className="quote-print__section-title" style={styles.printSectionTitle}>
+          Condiciones comerciales
+        </h3>
+        <p className="quote-print__line" style={styles.printLine}>
+          Pago: {condicionesPago}
+        </p>
+        <p className="quote-print__line" style={styles.printLine}>
+          Validez: {company.validezCotizacionDias || 15} días
         </p>
         {quote?.observaciones && (
-          <p style={styles.printLine}>Observaciones: {quote.observaciones}</p>
+          <p className="quote-print__line" style={styles.printLine}>
+            Observaciones: {quote.observaciones}
+          </p>
         )}
         {company.notaPieCotizacion && (
-          <p style={styles.footerNote}>{company.notaPieCotizacion}</p>
+          <p className="quote-print__footer-note" style={styles.footerNote}>
+            {company.notaPieCotizacion}
+          </p>
         )}
       </section>
     </article>
@@ -155,11 +195,21 @@ function QuotePrintView({ quote, companyProfile }) {
 
 function TotalRow({ label, value, strong = false }) {
   return (
-    <div style={styles.totalRow}>
-      <span style={strong ? styles.totalLabelStrong : styles.totalLabel}>
+    <div className="quote-print__total-row" style={styles.totalRow}>
+      <span
+        className={
+          strong ? "quote-print__total-label--strong" : "quote-print__total-label"
+        }
+        style={strong ? styles.totalLabelStrong : styles.totalLabel}
+      >
         {label}
       </span>
-      <strong style={strong ? styles.totalValueStrong : styles.totalValue}>
+      <strong
+        className={
+          strong ? "quote-print__total-value--strong" : "quote-print__total-value"
+        }
+        style={strong ? styles.totalValueStrong : styles.totalValue}
+      >
         {value}
       </strong>
     </div>
@@ -237,6 +287,15 @@ const styles = {
   printTable: {
     borderCollapse: "collapse",
     width: "100%",
+  },
+  printEmptyNotice: {
+    background: "#f8fafc",
+    border: "1px dashed #cbd5e1",
+    borderRadius: "8px",
+    color: "#475569",
+    fontWeight: 700,
+    padding: "18px",
+    textAlign: "center",
   },
   printTh: {
     background: "#111827",
