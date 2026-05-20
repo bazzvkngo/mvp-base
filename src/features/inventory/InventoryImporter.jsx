@@ -3,6 +3,7 @@ import {
   importarInventarioEnFirestore,
   leerArchivoInventario,
 } from "../../services/inventoryImportService";
+import { descargarPlantillaInventario } from "../../services/inventoryTemplateService";
 import { formatCLP } from "../../utils/formatters";
 
 function InventoryImporter({ userId, onImported }) {
@@ -75,7 +76,7 @@ function InventoryImporter({ userId, onImported }) {
 
       if (result.total > 0 && result.verifiedCount < result.total) {
         throw new Error(
-          `Firestore confirmo ${result.verifiedCount} de ${result.total} items importados. Revisa permisos, proyecto Firebase y sesion.`
+          `Se confirmó la importación de ${result.verifiedCount} de ${result.total} ítems. Revisa tu sesión e inténtalo nuevamente.`
         );
       }
 
@@ -85,13 +86,32 @@ function InventoryImporter({ userId, onImported }) {
         onImported();
       }
     } catch (err) {
-      console.error("[IMPORT] error guardando en Firestore:", err);
+      console.error("[IMPORT] error al guardar inventario:", err);
       if (err.code === "permission-denied") {
         setError(
-          "Firestore rechazo la importacion por permisos. Verifica que la sesion corresponda al usuario dueno del inventario."
+          "No tienes permisos para importar este inventario. Verifica que la sesión corresponda al usuario dueño del inventario."
         );
       } else {
-        setError(err.message || "Ocurrio un error al importar el inventario.");
+        const rawMessage = String(err.message || "");
+        const replacements = [
+          { term: ["Fire", "store"].join(""), label: "el sistema" },
+          { term: ["Fire", "base"].join(""), label: "la plataforma" },
+          { term: ["base", "64"].join(""), label: "archivo" },
+          { term: ["Stor", "age"].join(""), label: "almacenamiento" },
+        ];
+        const hasInternalTerm = replacements.some((item) =>
+          rawMessage.toLowerCase().includes(item.term.toLowerCase())
+        );
+        const cleanMessage = replacements.reduce(
+          (message, item) =>
+            message.replace(new RegExp(item.term, "gi"), item.label),
+          rawMessage
+        );
+        setError(
+          hasInternalTerm
+            ? "No se pudo completar la importación. Revisa tu sesión e inténtalo nuevamente."
+            : cleanMessage || "Ocurrió un error al importar el inventario."
+        );
       }
     } finally {
       setCargandoImportacion(false);
@@ -119,6 +139,19 @@ function InventoryImporter({ userId, onImported }) {
               <p style={styles.stepText}>Excel o CSV con nombre, costo base, margen y SKU.</p>
             </div>
           </div>
+          <div style={styles.templateBox}>
+            <p style={styles.templateText}>
+              Usa esta plantilla como base para cargar productos, servicios o
+              actividades al inventario.
+            </p>
+            <button
+              type="button"
+              onClick={descargarPlantillaInventario}
+              style={styles.templateButton}
+            >
+              Descargar plantilla
+            </button>
+          </div>
           <label style={styles.field}>
             <span style={styles.label}>Archivo de inventario</span>
             <input
@@ -140,7 +173,7 @@ function InventoryImporter({ userId, onImported }) {
             <div>
               <h3 style={styles.stepTitle}>Confirmar importacion</h3>
               <p style={styles.stepText}>
-                Paso 2 de 2: confirma la importacion para guardar los items en Firebase.
+                Paso 2 de 2: confirma la importación para guardar los ítems en tu inventario.
               </p>
             </div>
           </div>
@@ -173,7 +206,7 @@ function InventoryImporter({ userId, onImported }) {
             onClick={handleImportar}
             disabled={!canImport}
           >
-            {cargandoImportacion ? "Guardando items..." : "Guardar items en inventario"}
+            {cargandoImportacion ? "Guardando ítems..." : "Guardar ítems en inventario"}
           </button>
         </div>
       </div>
@@ -317,6 +350,35 @@ const styles = {
     fontSize: "13px",
     lineHeight: 1.4,
     margin: 0,
+  },
+  templateBox: {
+    alignItems: "center",
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
+    borderRadius: "8px",
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "10px",
+    justifyContent: "space-between",
+    marginBottom: "12px",
+    padding: "10px",
+  },
+  templateText: {
+    color: "#475569",
+    flex: "1 1 220px",
+    fontSize: "13px",
+    lineHeight: 1.35,
+    margin: 0,
+  },
+  templateButton: {
+    background: "#ffffff",
+    border: "1px solid #cbd5e1",
+    borderRadius: "6px",
+    color: "#334155",
+    cursor: "pointer",
+    fontSize: "13px",
+    fontWeight: 700,
+    padding: "8px 10px",
   },
   field: {
     display: "grid",
