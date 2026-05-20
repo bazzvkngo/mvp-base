@@ -4,19 +4,28 @@ import { getCompanyProfile } from "../services/companyService";
 import { getQuotes, updateQuoteStatus } from "../services/quoteService";
 import { formatCLP, formatDate } from "../utils/formatters";
 
-const STATUS_OPTIONS = ["borrador", "emitida", "aceptada", "rechazada"];
+const STATUS_OPTIONS = [
+  "borrador",
+  "emitida",
+  "aceptada",
+  "rechazada",
+  "vencida",
+  "archivada",
+];
 
 const statusLabels = {
   borrador: "Borrador",
   emitida: "Emitida",
   aceptada: "Aceptada",
   rechazada: "Rechazada",
+  vencida: "Vencida",
+  archivada: "Archivada",
 };
 
 const statusStyles = {
   borrador: {
-    background: "#f1f5f9",
-    color: "#475569",
+    background: "#e0f2fe",
+    color: "#0369a1",
   },
   emitida: {
     background: "#dbeafe",
@@ -29,6 +38,14 @@ const statusStyles = {
   rechazada: {
     background: "#fee2e2",
     color: "#991b1b",
+  },
+  vencida: {
+    background: "#fef3c7",
+    color: "#92400e",
+  },
+  archivada: {
+    background: "#e5e7eb",
+    color: "#374151",
   },
 };
 
@@ -111,7 +128,13 @@ function QuoteHistoryPage({ userId }) {
     const query = search.trim().toLowerCase();
 
     return quotes.filter((quote) => {
-      if (statusFilter !== "todos" && quote.estado !== statusFilter) {
+      const estado = quote.estado || "borrador";
+
+      if (statusFilter === "todos" && estado === "archivada") {
+        return false;
+      }
+
+      if (statusFilter !== "todos" && estado !== statusFilter) {
         return false;
       }
 
@@ -127,26 +150,86 @@ function QuoteHistoryPage({ userId }) {
     [quotes, selectedQuoteId]
   );
 
-  const handleChangeStatus = async (quoteId, estado) => {
+  useEffect(() => {
+    if (filteredQuotes.length === 0) {
+      setSelectedQuoteId("");
+      return;
+    }
+
+    if (!filteredQuotes.some((quote) => quote.id === selectedQuoteId)) {
+      setSelectedQuoteId(filteredQuotes[0].id);
+    }
+  }, [filteredQuotes, selectedQuoteId]);
+
+  const handleChangeStatus = async (quoteId, estado, options = {}) => {
+    const { confirm = true, estadoAnterior } = options;
+
+    if (confirm) {
+      const confirmed = window.confirm(
+        "¿Seguro que deseas cambiar el estado de esta cotización?"
+      );
+
+      if (!confirmed) return false;
+    }
+
     setSavingStatus(true);
     setError("");
     setSuccess("");
 
     try {
-      await updateQuoteStatus(userId, quoteId, estado);
+      await updateQuoteStatus(userId, quoteId, estado, { estadoAnterior });
       setQuotes((prev) =>
         prev.map((quote) =>
           quote.id === quoteId
-            ? { ...quote, estado, actualizadoEn: new Date() }
+            ? {
+                ...quote,
+                estado,
+                ...(estadoAnterior ? { estadoAnterior } : {}),
+                actualizadoEn: new Date(),
+              }
             : quote
         )
       );
       setSuccess(`Estado actualizado a ${statusLabels[estado].toLowerCase()}.`);
+      return true;
     } catch (err) {
       console.error("Error al actualizar estado:", err);
       setError(err.message || "No se pudo actualizar el estado.");
+      return false;
     } finally {
       setSavingStatus(false);
+    }
+  };
+
+  const handleArchiveQuote = async (quote) => {
+    const confirmed = window.confirm(
+      "¿Seguro que deseas archivar esta cotización? Se ocultará del historial principal y podrás restaurarla más adelante."
+    );
+
+    if (!confirmed) return;
+
+    const estadoActual = quote.estado || "borrador";
+    const updated = await handleChangeStatus(quote.id, "archivada", {
+      confirm: false,
+      estadoAnterior: estadoActual,
+    });
+    if (updated) {
+      setSuccess("Cotización archivada. Puedes restaurarla desde el filtro Archivada.");
+    }
+  };
+
+  const handleRestoreQuote = async (quote) => {
+    const canRestorePreviousState =
+      statusLabels[quote.estadoAnterior] && quote.estadoAnterior !== "archivada";
+    const estadoRestaurado = canRestorePreviousState
+      ? quote.estadoAnterior
+      : "emitida";
+    const updated = await handleChangeStatus(quote.id, estadoRestaurado);
+
+    if (updated) {
+      setSuccess(
+        `Cotización restaurada a ${statusLabels[estadoRestaurado].toLowerCase()}.`
+      );
     }
   };
 
@@ -166,7 +249,7 @@ function QuoteHistoryPage({ userId }) {
           <h2 style={styles.title}>Historial de cotizaciones</h2>
           <p style={styles.subtitle}>
             Consulta documentos guardados, revisa su detalle y actualiza el
-            estado comercial basico.
+            estado comercial básico.
           </p>
         </div>
       </div>
@@ -179,7 +262,7 @@ function QuoteHistoryPage({ userId }) {
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Buscar por numero o cliente"
+            placeholder="Buscar por número o cliente"
             style={styles.searchInput}
           />
           <select
@@ -187,7 +270,7 @@ function QuoteHistoryPage({ userId }) {
             onChange={(event) => setStatusFilter(event.target.value)}
             style={styles.select}
           >
-            <option value="todos">Todos los estados</option>
+            <option value="todos">Todas excepto archivadas</option>
             {STATUS_OPTIONS.map((status) => (
               <option key={status} value={status}>
                 {statusLabels[status]}
@@ -213,13 +296,13 @@ function QuoteHistoryPage({ userId }) {
             <table style={styles.table}>
               <thead>
                 <tr>
-                  <th style={styles.th}>Numero</th>
+                  <th style={styles.th}>Número</th>
                   <th style={styles.th}>Fecha</th>
                   <th style={styles.th}>Cliente</th>
                   <th style={styles.th}>Estado</th>
                   <th style={styles.th}>Total</th>
                   <th style={styles.th}>Ítems</th>
-                  <th style={styles.th}>Actualizacion</th>
+                  <th style={styles.th}>Actualización</th>
                   <th style={styles.th}>Acciones</th>
                 </tr>
               </thead>
@@ -257,20 +340,13 @@ function QuoteHistoryPage({ userId }) {
                         >
                           Ver detalle
                         </button>
-                        <select
-                          value={quote.estado || "borrador"}
-                          onChange={(event) =>
-                            handleChangeStatus(quote.id, event.target.value)
-                          }
+                        <QuoteActions
+                          quote={quote}
                           disabled={savingStatus}
-                          style={styles.smallSelect}
-                        >
-                          {STATUS_OPTIONS.map((status) => (
-                            <option key={status} value={status}>
-                              {statusLabels[status]}
-                            </option>
-                          ))}
-                        </select>
+                          onChangeStatus={handleChangeStatus}
+                          onArchive={handleArchiveQuote}
+                          onRestore={handleRestoreQuote}
+                        />
                       </div>
                     </td>
                   </tr>
@@ -312,15 +388,138 @@ function StatusBadge({ status }) {
   );
 }
 
+function QuoteActions({
+  quote,
+  disabled,
+  onChangeStatus,
+  onArchive,
+  onRestore,
+}) {
+  const estado = quote.estado || "borrador";
+
+  if (estado === "borrador") {
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => onChangeStatus(quote.id, "emitida")}
+          disabled={disabled}
+          style={styles.secondaryButton}
+        >
+          Marcar emitida
+        </button>
+        <button
+          type="button"
+          onClick={() => onArchive(quote)}
+          disabled={disabled}
+          style={styles.archiveButton}
+        >
+          Archivar
+        </button>
+      </>
+    );
+  }
+
+  if (estado === "emitida") {
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => onChangeStatus(quote.id, "aceptada")}
+          disabled={disabled}
+          style={styles.acceptButton}
+        >
+          Aceptada
+        </button>
+        <button
+          type="button"
+          onClick={() => onChangeStatus(quote.id, "rechazada")}
+          disabled={disabled}
+          style={styles.rejectButton}
+        >
+          Rechazada
+        </button>
+        <button
+          type="button"
+          onClick={() => onChangeStatus(quote.id, "vencida")}
+          disabled={disabled}
+          style={styles.expireButton}
+        >
+          Vencida
+        </button>
+        <button
+          type="button"
+          onClick={() => onArchive(quote)}
+          disabled={disabled}
+          style={styles.archiveButton}
+        >
+          Archivar
+        </button>
+      </>
+    );
+  }
+
+  if (estado === "aceptada") {
+    return (
+      <button
+        type="button"
+        onClick={() => onChangeStatus(quote.id, "emitida")}
+        disabled={disabled}
+        style={styles.secondaryButton}
+      >
+        Corregir a emitida
+      </button>
+    );
+  }
+
+  if (estado === "rechazada" || estado === "vencida") {
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => onChangeStatus(quote.id, "emitida")}
+          disabled={disabled}
+          style={styles.secondaryButton}
+        >
+          Reabrir como emitida
+        </button>
+        <button
+          type="button"
+          onClick={() => onArchive(quote)}
+          disabled={disabled}
+          style={styles.archiveButton}
+        >
+          Archivar
+        </button>
+      </>
+    );
+  }
+
+  if (estado === "archivada") {
+    return (
+      <button
+        type="button"
+        onClick={() => onRestore(quote)}
+        disabled={disabled}
+        style={styles.secondaryButton}
+      >
+        Restaurar
+      </button>
+    );
+  }
+
+  return null;
+}
+
 function QuoteDetail({ quote, companyProfile }) {
 
   return (
     <div className="history-print-area" style={styles.detailPanel}>
       <div className="no-print" style={styles.detailActions}>
         <div>
-          <h3 style={styles.panelTitle}>Detalle de cotizacion</h3>
+          <h3 style={styles.panelTitle}>Detalle de cotización</h3>
           <p style={styles.helpText}>
-            Vista formal para revision e impresion desde el historial.
+            Vista formal para revisión e impresión desde el historial.
           </p>
         </div>
         <button
@@ -430,12 +629,48 @@ const styles = {
     gap: "8px",
   },
   secondaryButton: {
-    background: "#ffffff",
-    border: "1px solid #0f766e",
+    background: "#f8fafc",
+    border: "1px solid #cbd5e1",
     borderRadius: "6px",
-    color: "#0f766e",
+    color: "#334155",
     cursor: "pointer",
-    fontWeight: 800,
+    fontWeight: 700,
+    padding: "8px 10px",
+  },
+  acceptButton: {
+    background: "#f0fdf4",
+    border: "1px solid #bbf7d0",
+    borderRadius: "6px",
+    color: "#166534",
+    cursor: "pointer",
+    fontWeight: 700,
+    padding: "8px 10px",
+  },
+  rejectButton: {
+    background: "#fef2f2",
+    border: "1px solid #fecaca",
+    borderRadius: "6px",
+    color: "#991b1b",
+    cursor: "pointer",
+    fontWeight: 700,
+    padding: "8px 10px",
+  },
+  expireButton: {
+    background: "#fffbeb",
+    border: "1px solid #fde68a",
+    borderRadius: "6px",
+    color: "#92400e",
+    cursor: "pointer",
+    fontWeight: 700,
+    padding: "8px 10px",
+  },
+  archiveButton: {
+    background: "#f8fafc",
+    border: "1px solid #d1d5db",
+    borderRadius: "6px",
+    color: "#4b5563",
+    cursor: "pointer",
+    fontWeight: 700,
     padding: "8px 10px",
   },
   printButton: {

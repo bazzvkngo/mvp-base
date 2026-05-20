@@ -453,7 +453,7 @@ function NewQuotePage({ userId }) {
           <h2 style={styles.title}>Nueva cotización formal</h2>
           <p style={styles.subtitle}>
             Arma una cotización editable desde ítems valorizados, ajusta precios
-            y guarda el documento en Firestore.
+            y genera un documento formal.
           </p>
         </div>
       </div>
