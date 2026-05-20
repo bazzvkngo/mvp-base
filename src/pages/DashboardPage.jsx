@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import { PRICING_STATUS } from "../domain/pricing";
 import { getQuotes } from "../services/quoteService";
 import { subscribeToInventory } from "../services/inventoryService";
@@ -11,42 +10,23 @@ import {
 import { buildValuations } from "../services/valuationService";
 import { formatCLP } from "../utils/formatters";
 
-const quoteStates = ["borrador", "emitida", "aceptada", "rechazada"];
+const quoteStates = [
+  "borrador",
+  "emitida",
+  "aceptada",
+  "rechazada",
+  "vencida",
+  "archivada",
+];
 
 const stateLabels = {
   borrador: "Borrador",
   emitida: "Emitida",
   aceptada: "Aceptada",
   rechazada: "Rechazada",
+  vencida: "Vencida",
+  archivada: "Archivada",
 };
-
-const quickActions = [
-  {
-    to: "/inventario",
-    title: "Crear ítem",
-    description: "Agregar productos, servicios o actividades al inventario.",
-  },
-  {
-    to: "/referencias",
-    title: "Registrar referencia",
-    description: "Guardar precios observados para comparar mercado.",
-  },
-  {
-    to: "/valorizacion",
-    title: "Ver valorización",
-    description: "Revisar precios sugeridos y estado de mercado.",
-  },
-  {
-    to: "/cotizaciones/nueva",
-    title: "Nueva cotización",
-    description: "Crear una cotización formal desde ítems valorizados.",
-  },
-  {
-    to: "/cotizaciones",
-    title: "Ver historial",
-    description: "Consultar cotizaciones guardadas y cambiar estados.",
-  },
-];
 
 function getValuationSummary(valuations) {
   return valuations.reduce(
@@ -78,19 +58,25 @@ function getQuoteSummary(quotes) {
   return quotes.reduce(
     (summary, quote) => {
       const estado = quote.estado || "borrador";
-      summary.totalCotizado += Number(quote.total || 0);
+      if (estado !== "archivada") {
+        summary.totalVigente += Number(quote.total || 0);
+        summary.cotizacionesVigentes += 1;
+      }
       if (summary.porEstado[estado] !== undefined) {
         summary.porEstado[estado] += 1;
       }
       return summary;
     },
     {
-      totalCotizado: 0,
+      totalVigente: 0,
+      cotizacionesVigentes: 0,
       porEstado: {
         borrador: 0,
         emitida: 0,
         aceptada: 0,
         rechazada: 0,
+        vencida: 0,
+        archivada: 0,
       },
     }
   );
@@ -198,6 +184,7 @@ function DashboardPage({ usuario }) {
   );
 
   const quoteSummary = useMemo(() => getQuoteSummary(quotes), [quotes]);
+  const visibleReferenceTasks = referenceTasks.slice(0, 6);
 
   const loading = !inventoryLoaded || !referencesLoaded || !quotesLoaded;
   const hasNoData =
@@ -213,13 +200,9 @@ function DashboardPage({ usuario }) {
           <span className="eyebrow">Inicio</span>
           <h2 style={styles.title}>Dashboard ValoraCloud</h2>
           <p style={styles.subtitle}>
-            Resumen operativo del inventario, referencias de mercado,
-            valorización y cotizaciones guardadas.
+            Resumen operativo del inventario, referencias, valorización y
+            cotizaciones.
           </p>
-        </div>
-        <div style={styles.userBox}>
-          <span style={styles.userLabel}>Sesión</span>
-          <strong>{usuario?.email || "Usuario autenticado"}</strong>
         </div>
       </div>
 
@@ -244,10 +227,15 @@ function DashboardPage({ usuario }) {
           <div style={styles.metricGrid}>
             <MetricCard label="Ítems activos" value={activeInventory.length} />
             <MetricCard label="Referencias activas" value={activeReferences.length} />
-            <MetricCard label="Cotizaciones totales" value={quotes.length} />
             <MetricCard
-              label="Total cotizado acumulado"
-              value={formatCLP(quoteSummary.totalCotizado)}
+              label="Cotizaciones vigentes"
+              value={quoteSummary.cotizacionesVigentes}
+              note="Excluye archivadas"
+            />
+            <MetricCard
+              label="Total cotizado vigente"
+              value={formatCLP(quoteSummary.totalVigente)}
+              note="Excluye archivadas"
               highlight
             />
           </div>
@@ -255,6 +243,9 @@ function DashboardPage({ usuario }) {
           <div style={styles.twoColumnGrid}>
             <div style={styles.panel}>
               <h3 style={styles.panelTitle}>Cotizaciones por estado</h3>
+              <p style={styles.helpText}>
+                Las métricas principales excluyen cotizaciones archivadas.
+              </p>
               <div style={styles.statusGrid}>
                 {quoteStates.map((state) => (
                   <MetricCard
@@ -300,72 +291,83 @@ function DashboardPage({ usuario }) {
         <div style={styles.sectionHeader}>
           <h3 style={styles.panelTitle}>Tareas de referencias</h3>
           <p style={styles.helpText}>
-            Revisión nocturna para mantener actualizadas las referencias de
-            mercado. No busca precios automáticamente.
+            Revisión nocturna para detectar ítems sin referencias o referencias
+            desactualizadas.
           </p>
         </div>
 
         {referenceTasks.length === 0 ? (
           <p style={styles.emptyText}>No hay tareas pendientes de referencias.</p>
         ) : (
-          <div style={styles.taskGrid}>
-            {referenceTasks.slice(0, 6).map((task) => (
-              <article key={task.id} style={styles.taskCard}>
-                <div>
-                  <strong>{task.itemNombre}</strong>
-                  <span style={styles.taskMeta}>
-                    {task.tipoAlerta === "sin_referencias"
-                      ? "Sin referencias activas"
-                      : "Referencias desactualizadas"}
-                    {" · "}
-                    prioridad {task.prioridad || "media"}
-                  </span>
-                </div>
-                <p style={styles.taskText}>{task.mensaje}</p>
-                <p style={styles.queryText}>{task.consultaSugerida}</p>
-                <div style={styles.taskActions}>
-                  <button
-                    type="button"
-                    style={styles.secondaryButton}
-                    onClick={() => changeReferenceTaskStatus(task.id, "resuelta")}
-                  >
-                    Marcar resuelta
-                  </button>
-                  <button
-                    type="button"
-                    style={styles.clearButton}
-                    onClick={() => changeReferenceTaskStatus(task.id, "ignorada")}
-                  >
-                    Ignorar
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
+          <>
+            <div style={styles.tableWrapper}>
+              <table style={styles.taskTable}>
+                <thead>
+                  <tr>
+                    <th style={styles.th}>Ítem</th>
+                    <th style={styles.th}>Motivo</th>
+                    <th style={styles.th}>Consulta sugerida</th>
+                    <th style={styles.th}>Prioridad</th>
+                    <th style={styles.th}>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleReferenceTasks.map((task) => (
+                    <tr key={task.id}>
+                      <td style={styles.td}>
+                        <strong>{task.itemNombre}</strong>
+                      </td>
+                      <td style={styles.td}>
+                        {task.tipoAlerta === "sin_referencias"
+                          ? "Sin referencias activas"
+                          : "Referencias desactualizadas"}
+                      </td>
+                      <td style={styles.tdWrap}>{task.consultaSugerida}</td>
+                      <td style={styles.td}>{task.prioridad || "media"}</td>
+                      <td style={styles.td}>
+                        <div style={styles.taskActions}>
+                          <button
+                            type="button"
+                            style={styles.secondaryButton}
+                            onClick={() =>
+                              changeReferenceTaskStatus(task.id, "resuelta")
+                            }
+                          >
+                            Marcar resuelta
+                          </button>
+                          <button
+                            type="button"
+                            style={styles.clearButton}
+                            onClick={() =>
+                              changeReferenceTaskStatus(task.id, "ignorada")
+                            }
+                          >
+                            Ignorar
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {referenceTasks.length > visibleReferenceTasks.length && (
+              <p style={styles.tableNote}>Mostrando las tareas más recientes.</p>
+            )}
+          </>
         )}
-      </div>
-
-      <div style={styles.panel}>
-        <div style={styles.sectionHeader}>
-          <h3 style={styles.panelTitle}>Accesos rápidos</h3>
-          <p style={styles.helpText}>
-            Atajos al flujo principal del MVP para presentar el caso completo.
-          </p>
-        </div>
-        <div style={styles.quickGrid}>
-          {quickActions.map((action) => (
-            <Link key={action.to} to={action.to} style={styles.quickCard}>
-              <strong>{action.title}</strong>
-              <span>{action.description}</span>
-            </Link>
-          ))}
-        </div>
       </div>
     </section>
   );
 }
 
-function MetricCard({ label, value, highlight = false, compact = false }) {
+function MetricCard({
+  label,
+  value,
+  highlight = false,
+  compact = false,
+  note = "",
+}) {
   return (
     <article
       style={{
@@ -378,6 +380,7 @@ function MetricCard({ label, value, highlight = false, compact = false }) {
       <strong style={highlight ? styles.metricValueHighlight : styles.metricValue}>
         {value}
       </strong>
+      {note && <span style={styles.metricNote}>{note}</span>}
     </article>
   );
 }
@@ -385,7 +388,7 @@ function MetricCard({ label, value, highlight = false, compact = false }) {
 const styles = {
   wrapper: {
     display: "grid",
-    gap: "18px",
+    gap: "14px",
   },
   hero: {
     alignItems: "flex-start",
@@ -393,66 +396,53 @@ const styles = {
     border: "1px solid #e5e7eb",
     borderRadius: "8px",
     display: "flex",
-    gap: "18px",
+    gap: "14px",
     justifyContent: "space-between",
-    padding: "24px",
+    padding: "18px",
   },
   title: {
-    fontSize: "24px",
-    margin: "4px 0 8px",
+    fontSize: "22px",
+    margin: "4px 0 6px",
   },
   subtitle: {
     color: "#64748b",
-    lineHeight: 1.5,
+    fontSize: "14px",
+    lineHeight: 1.45,
     margin: 0,
     maxWidth: "760px",
   },
-  userBox: {
-    background: "#f8fafc",
-    border: "1px solid #e5e7eb",
-    borderRadius: "8px",
-    display: "grid",
-    gap: "4px",
-    minWidth: "240px",
-    padding: "14px",
-  },
-  userLabel: {
-    color: "#64748b",
-    fontSize: "12px",
-    fontWeight: 800,
-    textTransform: "uppercase",
-  },
   metricGrid: {
     display: "grid",
-    gap: "12px",
-    gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+    gap: "10px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
   },
   twoColumnGrid: {
     display: "grid",
-    gap: "16px",
+    gap: "14px",
     gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
   },
   statusGrid: {
     display: "grid",
-    gap: "10px",
-    gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+    gap: "8px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+    marginTop: "10px",
   },
   panel: {
     background: "#ffffff",
     border: "1px solid #e5e7eb",
     borderRadius: "8px",
-    padding: "18px",
+    padding: "14px",
   },
   sectionHeader: {
-    marginBottom: "12px",
+    marginBottom: "10px",
   },
   panelTitle: {
-    fontSize: "17px",
-    margin: "0 0 6px",
+    fontSize: "15px",
+    margin: "0 0 5px",
   },
   helpText: {
     color: "#64748b",
-    fontSize: "14px",
+    fontSize: "13px",
     margin: 0,
   },
   metricCard: {
@@ -460,77 +450,65 @@ const styles = {
     border: "1px solid #e5e7eb",
     borderRadius: "8px",
     display: "grid",
-    gap: "8px",
-    padding: "16px",
+    gap: "5px",
+    padding: "12px",
   },
   metricCardHighlight: {
     background: "#ecfdf5",
     borderColor: "#99f6e4",
   },
   metricCardCompact: {
-    padding: "14px",
+    padding: "10px",
   },
   metricLabel: {
     color: "#64748b",
-    fontSize: "13px",
+    fontSize: "12px",
     fontWeight: 700,
   },
   metricValue: {
     color: "#111827",
-    fontSize: "26px",
+    fontSize: "22px",
   },
   metricValueHighlight: {
     color: "#0f766e",
-    fontSize: "26px",
+    fontSize: "22px",
   },
-  quickGrid: {
-    display: "grid",
-    gap: "12px",
-    gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
-  },
-  quickCard: {
-    background: "#f8fafc",
-    border: "1px solid #e5e7eb",
-    borderRadius: "8px",
-    color: "#111827",
-    display: "grid",
-    gap: "6px",
-    padding: "15px",
-    textDecoration: "none",
-  },
-  taskGrid: {
-    display: "grid",
-    gap: "12px",
-    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-  },
-  taskCard: {
-    background: "#f8fafc",
-    border: "1px solid #e5e7eb",
-    borderRadius: "8px",
-    display: "grid",
-    gap: "9px",
-    padding: "14px",
-  },
-  taskMeta: {
+  metricNote: {
     color: "#64748b",
-    display: "block",
-    fontSize: "12px",
-    marginTop: "3px",
+    fontSize: "11px",
   },
-  taskText: {
-    color: "#334155",
-    fontSize: "14px",
-    lineHeight: 1.45,
-    margin: 0,
+  tableWrapper: {
+    overflowX: "auto",
   },
-  queryText: {
-    background: "#ffffff",
-    border: "1px solid #e5e7eb",
-    borderRadius: "6px",
+  taskTable: {
+    borderCollapse: "collapse",
+    width: "100%",
+  },
+  th: {
+    background: "#f8fafc",
+    borderBottom: "1px solid #e5e7eb",
+    color: "#64748b",
+    fontSize: "11px",
+    padding: "8px",
+    textAlign: "left",
+    textTransform: "uppercase",
+    whiteSpace: "nowrap",
+  },
+  td: {
+    borderBottom: "1px solid #eef2f7",
+    fontSize: "13px",
+    padding: "8px",
+    verticalAlign: "middle",
+    whiteSpace: "nowrap",
+  },
+  tdWrap: {
+    borderBottom: "1px solid #eef2f7",
     color: "#475569",
     fontSize: "13px",
-    margin: 0,
-    padding: "9px",
+    lineHeight: 1.35,
+    maxWidth: "360px",
+    padding: "8px",
+    verticalAlign: "middle",
   },
   taskActions: {
     display: "flex",
@@ -538,13 +516,14 @@ const styles = {
     gap: "8px",
   },
   secondaryButton: {
-    background: "#ffffff",
-    border: "1px solid #0f766e",
+    background: "#f8fafc",
+    border: "1px solid #cbd5e1",
     borderRadius: "6px",
-    color: "#0f766e",
+    color: "#334155",
     cursor: "pointer",
-    fontWeight: 800,
-    padding: "8px 10px",
+    fontSize: "12px",
+    fontWeight: 700,
+    padding: "7px 9px",
   },
   clearButton: {
     background: "#ffffff",
@@ -552,14 +531,20 @@ const styles = {
     borderRadius: "6px",
     color: "#334155",
     cursor: "pointer",
-    fontWeight: 800,
-    padding: "8px 10px",
+    fontSize: "12px",
+    fontWeight: 700,
+    padding: "7px 9px",
+  },
+  tableNote: {
+    color: "#64748b",
+    fontSize: "12px",
+    margin: "10px 0 0",
   },
   emptyState: {
     background: "#ffffff",
     border: "1px dashed #cbd5e1",
     borderRadius: "8px",
-    padding: "28px",
+    padding: "22px",
     textAlign: "center",
   },
   emptyTitle: {
