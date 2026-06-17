@@ -8,11 +8,11 @@ import {
   subscribeToInventory,
   updateInventoryItem,
 } from "../../services/inventoryService";
-import { formatCLP } from "../../utils/formatters";
+import { formatCLP, formatPercent } from "../../utils/formatters";
 
 const EMPTY_FORM = {
   nombre: "",
-  tipoItem: "producto",
+  tipoItem: "",
   categoria: "",
   descripcion: "",
   unidad: "",
@@ -36,6 +36,12 @@ const estadoLabels = {
 };
 
 const OTHER_OPTION = "__otro__";
+const MANUAL_PRICE_FLAGS = [
+  "precioManual",
+  "ajusteManual",
+  "usarPrecioManual",
+  "precioPersonalizado",
+];
 
 const CATEGORY_OPTIONS = [
   "Soporte técnico y hardware",
@@ -50,18 +56,16 @@ const CATEGORY_OPTIONS = [
 ];
 
 const UNIT_OPTIONS = [
-  "hora",
-  "visita",
-  "servicio",
-  "proyecto",
-  "equipo",
-  "componente",
-  "paquete",
-  "usuario",
-  "punto de red",
-  "sitio web",
-  "documento",
-  "mensualidad",
+  { value: "servicio", label: "Servicio" },
+  { value: "hora", label: "Hora" },
+  { value: "equipo", label: "Equipo" },
+  { value: "visita", label: "Visita" },
+  { value: "punto", label: "Punto" },
+  { value: "metro", label: "Metro" },
+  { value: "unidad", label: "Unidad" },
+  { value: "proyecto", label: "Proyecto" },
+  { value: "mes", label: "Mes" },
+  { value: "cuenta", label: "Cuenta" },
 ];
 
 function calcularPrecioInterno(costoBase, margenDeseado) {
@@ -71,9 +75,75 @@ function calcularPrecioInterno(costoBase, margenDeseado) {
   return Math.round(costo + (costo * margen) / 100);
 }
 
+function calculateGrossProfitability(costoBase, precioInternoEfectivo) {
+  const costo = Number(costoBase);
+  const precio = Number(precioInternoEfectivo);
+
+  if (
+    !Number.isFinite(costo) ||
+    !Number.isFinite(precio) ||
+    costo <= 0 ||
+    precio <= 0
+  ) {
+    return null;
+  }
+
+  const gananciaBruta = precio - costo;
+  const margenBrutoEstimado = (gananciaBruta / precio) * 100;
+
+  if (!Number.isFinite(margenBrutoEstimado)) return null;
+
+  return {
+    gananciaBruta,
+    margenBrutoEstimado,
+  };
+}
+
+function getProfitabilityStyle(gananciaBruta) {
+  if (gananciaBruta > 0) return styles.profitabilityPositive;
+  if (gananciaBruta < 0) return styles.profitabilityNegative;
+  return styles.profitabilityNeutral;
+}
+
+function formatSignedCLP(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return formatCLP(0);
+  if (amount < 0) return `-${formatCLP(Math.abs(amount))}`;
+  return formatCLP(amount);
+}
+
 function getSelectValue(value, options) {
   if (!value) return "";
   return options.includes(value) ? value : OTHER_OPTION;
+}
+
+function normalizeOptionText(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function findStandardUnit(value) {
+  const normalized = normalizeOptionText(value);
+  if (!normalized) return null;
+  return (
+    UNIT_OPTIONS.find(
+      (option) =>
+        normalizeOptionText(option.value) === normalized ||
+        normalizeOptionText(option.label) === normalized
+    ) || null
+  );
+}
+
+function getUnitSelectValue(value) {
+  if (!value) return "";
+  return findStandardUnit(value)?.value || OTHER_OPTION;
+}
+
+function hasManualPriceOverride(item) {
+  return MANUAL_PRICE_FLAGS.some((flag) => item?.[flag] === true);
 }
 
 function formatFirestoreDate(value) {
@@ -237,6 +307,7 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
   const validateForm = () => {
     if (!form.nombre.trim()) return "Ingresa el nombre del ítem.";
     if (!form.tipoItem) return "Selecciona el tipo de ítem.";
+    if (!form.categoria.trim()) return "Selecciona una categoría.";
     if (!form.unidad.trim()) return "Ingresa la unidad.";
     if (form.costoBase === "") return "Ingresa el costo base.";
     if (form.margenDeseado === "") return "Ingresa el margen deseado.";
@@ -253,10 +324,15 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
   };
 
   const buildPayload = () => {
+    const manualPrice = Number(form.precioInterno);
+    const hasManualPrice =
+      String(form.precioInterno ?? "").trim() !== "" &&
+      Number.isFinite(manualPrice) &&
+      manualPrice > 0;
     const precioCalculado =
-      form.precioInterno === ""
-        ? calcularPrecioInterno(form.costoBase, form.margenDeseado)
-        : form.precioInterno;
+      hasManualPrice
+        ? form.precioInterno
+        : calcularPrecioInterno(form.costoBase, form.margenDeseado);
 
     return {
       ...form,
@@ -268,6 +344,7 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
       costoBase: Number(form.costoBase),
       margenDeseado: Number(form.margenDeseado),
       precioInterno: Number(precioCalculado),
+      precioManual: hasManualPrice,
     };
   };
 
@@ -314,26 +391,27 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
   const handleEdit = (item) => {
     const categoria = item.categoria || "";
     const unidad = item.unidad || "";
+    const manualPriceActive = hasManualPriceOverride(item);
 
     setEditingId(item.id);
     setForm({
       nombre: item.nombre || "",
-      tipoItem: item.tipoItem || "producto",
+      tipoItem: item.tipoItem || "",
       categoria,
       descripcion: item.descripcion || "",
       unidad,
       costoBase: item.costoBase ?? item.precio ?? "",
       margenDeseado: item.margenDeseado ?? 0,
-      precioInterno: item.precioInterno ?? item.precio ?? "",
+      precioInterno: manualPriceActive ? item.precioInterno ?? item.precio ?? "" : "",
       sku: item.sku || "",
       estado: item.estado || "activo",
     });
     setCategoriaPersonalizada(
       categoria && !CATEGORY_OPTIONS.includes(categoria) ? categoria : ""
     );
-    setUnidadPersonalizada(unidad && !UNIT_OPTIONS.includes(unidad) ? unidad : "");
+    setUnidadPersonalizada(unidad && !findStandardUnit(unidad) ? unidad : "");
     setCategoriaOtroActiva(Boolean(categoria && !CATEGORY_OPTIONS.includes(categoria)));
-    setUnidadOtroActiva(Boolean(unidad && !UNIT_OPTIONS.includes(unidad)));
+    setUnidadOtroActiva(Boolean(unidad && !findStandardUnit(unidad)));
     setError("");
     setSuccess("");
   };
@@ -382,19 +460,70 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
     }
   };
 
-  const previewPrice =
-    form.precioInterno === ""
-      ? calcularPrecioInterno(form.costoBase, form.margenDeseado)
-      : Number(form.precioInterno);
+  const manualPriceValue = Number(form.precioInterno);
+  const hasValidManualPrice =
+    String(form.precioInterno ?? "").trim() !== "" &&
+    Number.isFinite(manualPriceValue) &&
+    manualPriceValue > 0;
+  const previewPrice = hasValidManualPrice
+    ? manualPriceValue
+    : calcularPrecioInterno(form.costoBase, form.margenDeseado);
+  const grossProfitability = hasValidManualPrice
+    ? calculateGrossProfitability(form.costoBase, manualPriceValue)
+    : null;
+  const grossProfitabilityStyle = grossProfitability
+    ? getProfitabilityStyle(grossProfitability.gananciaBruta)
+    : null;
   const categoriaSelectValue = categoriaOtroActiva
     ? OTHER_OPTION
     : getSelectValue(form.categoria, CATEGORY_OPTIONS);
   const unidadSelectValue = unidadOtroActiva
     ? OTHER_OPTION
-    : getSelectValue(form.unidad, UNIT_OPTIONS);
+    : getUnitSelectValue(form.unidad);
 
   return (
     <section style={styles.wrapper}>
+      <style>
+        {`
+          .inventory-basic-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .inventory-valuation-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+
+          .inventory-form-field--full {
+            grid-column: 1 / -1;
+          }
+
+          @media (max-width: 1100px) {
+            .inventory-valuation-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .inventory-valuation-result {
+              grid-column: 1 / -1;
+            }
+          }
+
+          @media (max-width: 640px) {
+            .inventory-basic-grid,
+            .inventory-valuation-grid {
+              grid-template-columns: minmax(0, 1fr);
+            }
+
+            .inventory-form-field--full,
+            .inventory-valuation-result {
+              grid-column: 1 / -1;
+            }
+
+            .inventory-form-submit {
+              width: 100%;
+            }
+          }
+        `}
+      </style>
       <div style={styles.header}>
         <div>
           <span style={styles.eyebrow}>Inventario</span>
@@ -412,9 +541,11 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
 
       <form onSubmit={handleSubmit} style={styles.formCard}>
         <div style={styles.formHeader}>
-          <h3 style={styles.formTitle}>
-            {editingId ? "Editar ítem" : "Nuevo ítem de inventario"}
-          </h3>
+          <div>
+            <h3 style={styles.formTitle}>
+              {editingId ? "Editar ítem" : "Crear ítem"}
+            </h3>
+          </div>
           {editingId && (
             <button type="button" style={styles.secondaryButton} onClick={resetForm}>
               Cancelar edición
@@ -422,185 +553,248 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
           )}
         </div>
 
-        <div style={styles.formGrid}>
-          <label style={styles.field}>
-            <span style={styles.label}>Tipo de ítem</span>
-            <select
-              name="tipoItem"
-              value={form.tipoItem}
-              onChange={handleChange}
-              style={styles.input}
-            >
-              <option value="producto">Producto</option>
-              <option value="servicio">Servicio</option>
-              <option value="actividad">Actividad</option>
-            </select>
-          </label>
+        <div style={styles.formSections}>
+          <section style={styles.formSection}>
+            <div style={styles.sectionHeader}>
+              <h4 style={styles.sectionTitle}>Datos del ítem</h4>
+            </div>
 
-          <label style={styles.field}>
-            <span style={styles.label}>Nombre</span>
-            <input
-              name="nombre"
-              value={form.nombre}
-              onChange={handleChange}
-              placeholder="Ej: Instalación de sistema operativo"
-              style={styles.input}
-            />
-          </label>
+            <div className="inventory-basic-grid" style={styles.formGrid}>
+              <label className="inventory-form-field--full" style={styles.field}>
+                <span style={styles.label}>Nombre</span>
+                <input
+                  name="nombre"
+                  value={form.nombre}
+                  onChange={handleChange}
+                  placeholder="Escribe el nombre del producto, servicio o actividad"
+                  style={styles.input}
+                />
+              </label>
 
-          <label style={styles.field}>
-            <span style={styles.label}>Categoría</span>
-            <select
-              name="categoria"
-              value={categoriaSelectValue}
-              onChange={handleCategoriaChange}
-              style={styles.input}
-            >
-              <option value="">Selecciona una categoría</option>
-              {CATEGORY_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-              <option value={OTHER_OPTION}>Otro</option>
-            </select>
-          </label>
+              <label style={styles.field}>
+                <span style={styles.label}>Tipo de ítem</span>
+                <select
+                  name="tipoItem"
+                  value={form.tipoItem}
+                  onChange={handleChange}
+                  style={styles.input}
+                >
+                  <option value="" disabled>
+                    Selecciona un tipo
+                  </option>
+                  <option value="producto">Producto</option>
+                  <option value="servicio">Servicio</option>
+                  <option value="actividad">Actividad</option>
+                </select>
+              </label>
 
-          {categoriaSelectValue === OTHER_OPTION && (
-            <label style={styles.field}>
-              <span style={styles.label}>Categoría personalizada</span>
-              <input
-                value={categoriaPersonalizada}
-                onChange={handleCategoriaPersonalizadaChange}
-                placeholder="Ej: Automatización TI"
-                style={styles.input}
-              />
-            </label>
-          )}
+              <label style={styles.field}>
+                <span style={styles.label}>Categoría</span>
+                <select
+                  name="categoria"
+                  value={categoriaSelectValue}
+                  onChange={handleCategoriaChange}
+                  style={styles.input}
+                >
+                  <option value="" disabled>
+                    Selecciona una categoría
+                  </option>
+                  {CATEGORY_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                  <option value={OTHER_OPTION}>Otro</option>
+                </select>
+              </label>
 
-          <label style={styles.field}>
-            <span style={styles.label}>Unidad</span>
-            <select
-              name="unidad"
-              value={unidadSelectValue}
-              onChange={handleUnidadChange}
-              style={styles.input}
-            >
-              <option value="">Selecciona una unidad</option>
-              {UNIT_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-              <option value={OTHER_OPTION}>Otro</option>
-            </select>
-          </label>
-
-          {unidadSelectValue === OTHER_OPTION && (
-            <label style={styles.field}>
-              <span style={styles.label}>Unidad personalizada</span>
-              <input
-                value={unidadPersonalizada}
-                onChange={handleUnidadPersonalizadaChange}
-                placeholder="Ej: ticket"
-                style={styles.input}
-              />
-            </label>
-          )}
-
-          <label style={styles.field}>
-            <span style={styles.label}>Costo base</span>
-            <input
-              name="costoBase"
-              type="number"
-              min="0"
-              value={form.costoBase}
-              onChange={handleChange}
-              placeholder="Ej: 25000"
-              style={styles.input}
-            />
-          </label>
-
-          <label style={styles.field}>
-            <span style={styles.label}>Margen deseado (%)</span>
-            <input
-              name="margenDeseado"
-              type="number"
-              value={form.margenDeseado}
-              onChange={handleChange}
-              placeholder="Ej: 35"
-              style={styles.input}
-            />
-          </label>
-
-          <label style={styles.field}>
-            <span style={styles.label}>Precio interno</span>
-            <input
-              name="precioInterno"
-              type="number"
-              min="0"
-              value={form.precioInterno}
-              onChange={handleChange}
-              placeholder={
-                previewPrice !== "" && Number.isFinite(previewPrice)
-                  ? String(previewPrice)
-                  : "Opcional, se calcula si queda en 0"
-              }
-              style={styles.input}
-            />
-          </label>
-
-          <label style={styles.field}>
-            <span style={styles.label}>Código/SKU opcional</span>
-            <input
-              name="sku"
-              value={form.sku}
-              onChange={handleChange}
-              placeholder="Ej: TI-001"
-              style={styles.input}
-            />
-          </label>
-
-          <label style={styles.field}>
-            <span style={styles.label}>Estado</span>
-            <select
-              name="estado"
-              value={form.estado}
-              onChange={handleChange}
-              style={styles.input}
-            >
-              <option value="activo">Activo</option>
-              <option value="inactivo">Inactivo</option>
-              {form.estado === "eliminado" && (
-                <option value="eliminado">Eliminado</option>
+              {categoriaSelectValue === OTHER_OPTION && (
+                <label className="inventory-form-field--full" style={styles.field}>
+                  <span style={styles.label}>Categoría personalizada</span>
+                  <input
+                    value={categoriaPersonalizada}
+                    onChange={handleCategoriaPersonalizadaChange}
+                    placeholder="Escribe una categoría personalizada"
+                    style={styles.input}
+                  />
+                </label>
               )}
-            </select>
-          </label>
 
-          <label style={styles.fieldFull}>
-            <span style={styles.label}>Descripción</span>
-            <textarea
-              name="descripcion"
-              value={form.descripcion}
-              onChange={handleChange}
-              rows={3}
-              placeholder="Describe el alcance, condiciones o entregables del servicio."
-              style={styles.textarea}
-            />
-          </label>
+              <label style={styles.field}>
+                <span style={styles.label}>Unidad</span>
+                <select
+                  name="unidad"
+                  value={unidadSelectValue}
+                  onChange={handleUnidadChange}
+                  style={styles.input}
+                >
+                  <option value="" disabled>
+                    Selecciona una unidad
+                  </option>
+                  {UNIT_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                  <option value={OTHER_OPTION}>Otro</option>
+                </select>
+              </label>
+
+              <label style={styles.field}>
+                <span style={styles.labelRow}>
+                  <span style={styles.label}>Código/SKU</span>
+                  <span style={styles.fieldMeta}>(opcional)</span>
+                </span>
+                <input
+                  name="sku"
+                  value={form.sku}
+                  onChange={handleChange}
+                  placeholder="Escribe un código interno o SKU"
+                  style={styles.input}
+                />
+              </label>
+
+              {unidadSelectValue === OTHER_OPTION && (
+                <label className="inventory-form-field--full" style={styles.field}>
+                  <span style={styles.label}>Unidad personalizada</span>
+                  <input
+                    value={unidadPersonalizada}
+                    onChange={handleUnidadPersonalizadaChange}
+                    placeholder="Escribe una unidad personalizada"
+                    style={styles.input}
+                  />
+                </label>
+              )}
+
+              {editingId && (
+                <label style={styles.field}>
+                  <span style={styles.label}>Estado</span>
+                  <select
+                    name="estado"
+                    value={form.estado}
+                    onChange={handleChange}
+                    style={styles.input}
+                  >
+                    <option value="activo">Activo</option>
+                    <option value="inactivo">Inactivo</option>
+                    {form.estado === "eliminado" && (
+                      <option value="eliminado">Eliminado</option>
+                    )}
+                  </select>
+                </label>
+              )}
+            </div>
+          </section>
+
+          <section style={styles.formSection}>
+            <div style={styles.sectionHeader}>
+              <h4 style={styles.sectionTitle}>Precio</h4>
+            </div>
+
+            <div
+              className="inventory-valuation-grid"
+              style={{ ...styles.formGrid, ...styles.priceGrid }}
+            >
+              <label style={{ ...styles.field, ...styles.priceField }}>
+                <span style={styles.label}>Costo base unitario (CLP)</span>
+                <input
+                  name="costoBase"
+                  type="number"
+                  min="0"
+                  value={form.costoBase}
+                  onChange={handleChange}
+                  placeholder="Escribe el costo base en CLP"
+                  style={styles.input}
+                />
+              </label>
+
+              <label style={{ ...styles.field, ...styles.priceField }}>
+                <span style={styles.label}>Margen deseado (%)</span>
+                <input
+                  name="margenDeseado"
+                  type="number"
+                  value={form.margenDeseado}
+                  onChange={handleChange}
+                  placeholder="Escribe el porcentaje de margen"
+                  style={styles.input}
+                />
+              </label>
+
+              <div
+                className="inventory-valuation-result"
+                style={styles.calculatedPriceBox}
+              >
+                <span style={styles.label}>Precio interno estimado</span>
+                <strong style={styles.calculatedPrice}>
+                  {previewPrice !== "" && Number.isFinite(previewPrice)
+                    ? formatCLP(previewPrice)
+                    : formatCLP(0)}
+                </strong>
+                <label style={styles.overrideField}>
+                  <span style={styles.overrideLabel}>Ajuste manual opcional</span>
+                  <input
+                    name="precioInterno"
+                    type="number"
+                    min="0"
+                    value={form.precioInterno}
+                    onChange={handleChange}
+                    placeholder="Deja vacío para calcular"
+                    style={styles.input}
+                  />
+                </label>
+                {grossProfitability && (
+                  <div
+                    style={{
+                      ...styles.profitabilityBlock,
+                      ...grossProfitabilityStyle,
+                    }}
+                  >
+                    <span style={styles.profitabilityMain}>
+                      Margen bruto estimado:{" "}
+                      {formatPercent(grossProfitability.margenBrutoEstimado, 1)}
+                    </span>
+                    <span style={styles.profitabilitySecondary}>
+                      Ganancia bruta estimada:{" "}
+                      {formatSignedCLP(grossProfitability.gananciaBruta)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section style={styles.formSection}>
+            <div style={styles.sectionHeader}>
+              <h4 style={styles.sectionTitle}>Descripción</h4>
+            </div>
+
+            <label style={styles.field}>
+              <textarea
+                name="descripcion"
+                value={form.descripcion}
+                onChange={handleChange}
+                rows={3}
+                placeholder="Describe las características, alcance o condiciones del ítem"
+                style={styles.textarea}
+              />
+            </label>
+          </section>
         </div>
-
-        {previewPrice !== "" && Number.isFinite(previewPrice) && (
-          <p style={styles.helpText}>
-            Precio interno estimado: <strong>{formatCLP(previewPrice)}</strong>
-          </p>
-        )}
 
         {error && <p style={styles.errorText}>{error}</p>}
         {success && <p style={styles.successText}>{success}</p>}
 
-        <button type="submit" style={styles.primaryButton} disabled={saving}>
-          {saving ? "Guardando..." : editingId ? "Actualizar ítem" : "Crear ítem"}
+        <button
+          type="submit"
+          className="inventory-form-submit"
+          style={styles.primaryButton}
+          disabled={saving}
+        >
+          {saving
+            ? "Guardando..."
+            : editingId
+              ? "Actualizar ítem"
+              : "Guardar ítem"}
         </button>
       </form>
 
@@ -907,26 +1101,65 @@ const styles = {
     margin: 0,
     fontSize: "18px",
   },
+  formSections: {
+    display: "grid",
+    gap: "22px",
+  },
+  formSection: {
+    display: "grid",
+    gap: "12px",
+    minWidth: 0,
+  },
+  sectionHeader: {
+    display: "grid",
+    gap: "4px",
+  },
+  sectionTitle: {
+    color: "#0f172a",
+    fontSize: "14px",
+    fontWeight: 800,
+    margin: 0,
+  },
   formGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
     gap: "14px",
+  },
+  priceGrid: {
+    alignItems: "start",
   },
   field: {
     display: "grid",
     gap: "6px",
+    minWidth: 0,
+  },
+  priceField: {
+    alignSelf: "start",
   },
   fieldFull: {
     display: "grid",
     gap: "6px",
     gridColumn: "1 / -1",
+    minWidth: 0,
   },
   label: {
     color: "#334155",
     fontSize: "13px",
     fontWeight: 700,
   },
+  labelRow: {
+    alignItems: "center",
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "6px",
+  },
+  fieldMeta: {
+    color: "#64748b",
+    fontSize: "12px",
+    fontWeight: 600,
+  },
   input: {
+    boxSizing: "border-box",
+    maxWidth: "100%",
     width: "100%",
     border: "1px solid #cbd5e1",
     borderRadius: "6px",
@@ -935,6 +1168,8 @@ const styles = {
     background: "#ffffff",
   },
   textarea: {
+    boxSizing: "border-box",
+    maxWidth: "100%",
     width: "100%",
     border: "1px solid #cbd5e1",
     borderRadius: "6px",
@@ -942,6 +1177,67 @@ const styles = {
     color: "#111827",
     background: "#ffffff",
     resize: "vertical",
+  },
+  calculatedPriceBox: {
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
+    borderRadius: "8px",
+    boxSizing: "border-box",
+    display: "grid",
+    gap: "4px",
+    maxWidth: "100%",
+    minWidth: 0,
+    padding: "9px 10px",
+    width: "100%",
+  },
+  calculatedPrice: {
+    color: "#0f172a",
+    fontSize: "18px",
+    lineHeight: 1.2,
+  },
+  overrideField: {
+    display: "grid",
+    gap: "4px",
+    marginTop: "4px",
+  },
+  overrideLabel: {
+    color: "#64748b",
+    fontSize: "11px",
+    fontWeight: 800,
+    textTransform: "uppercase",
+  },
+  profitabilityBlock: {
+    borderRadius: "6px",
+    display: "grid",
+    gap: "2px",
+    marginTop: "2px",
+    padding: "5px 6px",
+  },
+  profitabilityMain: {
+    fontSize: "11px",
+    fontWeight: 800,
+    lineHeight: 1.3,
+  },
+  profitabilitySecondary: {
+    fontSize: "10px",
+    fontWeight: 700,
+    lineHeight: 1.25,
+    opacity: 0.86,
+  },
+  profitabilityPositive: {
+    background: "#ecfdf5",
+    border: "1px solid #bbf7d0",
+    color: "#047857",
+  },
+  profitabilityNegative: {
+    background: "#fef2f2",
+    border: "1px solid #fecaca",
+    color: "#b91c1c",
+  },
+  profitabilityNeutral: {
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
+    color: "#475569",
   },
   helpText: {
     color: "#475569",

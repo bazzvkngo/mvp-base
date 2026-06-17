@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import InventoryImporter from "../features/inventory/InventoryImporter";
+import InventoryAiImporter from "../features/inventory/InventoryAiImporter";
 import InventoryManager from "../features/inventory/InventoryManager";
 
 function InventoryPage({ userId }) {
@@ -7,7 +7,7 @@ function InventoryPage({ userId }) {
 
   return (
     <>
-      <InventoryImporter
+      <InventoryAiImporter
         userId={userId}
         onImported={() => setRefreshSignal((value) => value + 1)}
       />

@@ -1,5 +1,6 @@
 ﻿import React, { useEffect, useMemo, useState } from "react";
 import { subscribeToInventory } from "../../services/inventoryService";
+import { useSearchParams } from "react-router-dom";
 import {
   createReference,
   deactivateReference,
@@ -19,11 +20,28 @@ const EMPTY_FORM = {
   estado: "activa",
 };
 
-function todayInputValue() {
-  return new Date().toISOString().slice(0, 10);
+const CHILE_TIME_ZONE = "America/Santiago";
+const chileDateFormatter = new Intl.DateTimeFormat("en-CA", {
+  day: "2-digit",
+  month: "2-digit",
+  timeZone: CHILE_TIME_ZONE,
+  year: "numeric",
+});
+
+function todayInputValue(date = new Date()) {
+  const parts = chileDateFormatter.formatToParts(date).reduce((result, part) => {
+    if (part.type !== "literal") {
+      result[part.type] = part.value;
+    }
+    return result;
+  }, {});
+
+  return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
 function MarketReferencesManager({ userId }) {
+  const [searchParams] = useSearchParams();
+  const selectedItemFromUrl = searchParams.get("itemId") || "";
   const [inventoryItems, setInventoryItems] = useState([]);
   const [references, setReferences] = useState([]);
   const [form, setForm] = useState({
@@ -84,6 +102,19 @@ function MarketReferencesManager({ userId }) {
       unsubscribeReferences();
     };
   }, [userId]);
+
+  useEffect(() => {
+    if (!selectedItemFromUrl || inventoryItems.length === 0) return;
+    const itemExists = inventoryItems.some((item) => item.id === selectedItemFromUrl);
+    if (!itemExists) return;
+
+    setForm((prev) =>
+      prev.itemId === selectedItemFromUrl
+        ? prev
+        : { ...prev, itemId: selectedItemFromUrl }
+    );
+    setItemFiltro(selectedItemFromUrl);
+  }, [inventoryItems, selectedItemFromUrl]);
 
   const selectedItem = useMemo(
     () => inventoryItems.find((item) => item.id === form.itemId) || null,
@@ -164,14 +195,15 @@ function MarketReferencesManager({ userId }) {
     try {
       setSaving(true);
       const payload = buildPayload();
+      let successMessage = "Referencia guardada correctamente.";
       if (editingId) {
         await updateReference(userId, editingId, payload);
-        setSuccess("Referencia actualizada correctamente.");
+        successMessage = "Referencia actualizada correctamente.";
       } else {
         await createReference(userId, payload);
-        setSuccess("Referencia creada correctamente.");
       }
       resetForm();
+      setSuccess(successMessage);
     } catch (err) {
       console.error("Error al guardar referencia:", err);
       setError(err.message || "No se pudo guardar la referencia.");
@@ -224,6 +256,31 @@ function MarketReferencesManager({ userId }) {
 
   return (
     <section style={styles.wrapper}>
+      <style>
+        {`
+          .market-reference-data-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .market-reference-field-full {
+            grid-column: 1 / -1;
+          }
+
+          @media (max-width: 640px) {
+            .market-reference-data-grid {
+              grid-template-columns: minmax(0, 1fr);
+            }
+
+            .market-reference-field-full {
+              grid-column: 1 / -1;
+            }
+
+            .market-reference-submit {
+              width: 100%;
+            }
+          }
+        `}
+      </style>
       <div style={styles.header}>
         <div>
           <span style={styles.eyebrow}>Referencias</span>
@@ -249,7 +306,7 @@ function MarketReferencesManager({ userId }) {
       <form onSubmit={handleSubmit} style={styles.formCard}>
         <div style={styles.formHeader}>
           <h3 style={styles.formTitle}>
-            {editingId ? "Editar referencia" : "Nueva referencia"}
+            {editingId ? "Editar referencia" : "Crear referencia"}
           </h3>
           {editingId && (
             <button type="button" style={styles.secondaryButton} onClick={resetForm}>
@@ -258,104 +315,122 @@ function MarketReferencesManager({ userId }) {
           )}
         </div>
 
-        <div style={styles.formGrid}>
-          <label style={styles.field}>
-            <span style={styles.label}>Ítem del inventario</span>
-            <select
-              name="itemId"
-              value={form.itemId}
-              onChange={handleChange}
-              style={styles.input}
-              disabled={inventoryItems.length === 0}
-            >
-              <option value="">Selecciona un ítem</option>
-              {inventoryItems.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.nombre}
-                </option>
-              ))}
-            </select>
-          </label>
+        <div style={styles.formSections}>
+          <section style={styles.formSection}>
+            <h4 style={styles.sectionTitle}>Datos de la referencia</h4>
+            <div className="market-reference-data-grid" style={styles.formGrid}>
+              <label
+                className="market-reference-field-full"
+                style={styles.field}
+              >
+                <span style={styles.label}>Ítem del inventario</span>
+                <select
+                  name="itemId"
+                  value={form.itemId}
+                  onChange={handleChange}
+                  style={styles.input}
+                  disabled={inventoryItems.length === 0}
+                >
+                  <option value="">Selecciona un ítem</option>
+                  {inventoryItems.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.nombre}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-          <label style={styles.field}>
-            <span style={styles.label}>Nombre de la fuente</span>
-            <input
-              name="nombreFuente"
-              value={form.nombreFuente}
-              onChange={handleChange}
-              placeholder="Ej: Proveedor local, tienda online"
-              style={styles.input}
-            />
-          </label>
+              <label style={styles.field}>
+                <span style={styles.label}>Nombre de la fuente</span>
+                <input
+                  name="nombreFuente"
+                  value={form.nombreFuente}
+                  onChange={handleChange}
+                  placeholder="Escribe el nombre de la fuente"
+                  style={styles.input}
+                />
+              </label>
 
-          <label style={styles.field}>
-            <span style={styles.label}>Precio observado</span>
-            <input
-              name="precioObservado"
-              type="number"
-              min="0"
-              value={form.precioObservado}
-              onChange={handleChange}
-              placeholder="Ej: 69990"
-              style={styles.input}
-            />
-          </label>
+              <label style={styles.field}>
+                <span style={styles.label}>Precio observado</span>
+                <input
+                  name="precioObservado"
+                  type="number"
+                  min="0"
+                  value={form.precioObservado}
+                  onChange={handleChange}
+                  placeholder="Escribe el precio observado"
+                  style={styles.input}
+                />
+              </label>
 
-          <label style={styles.field}>
-            <span style={styles.label}>Fecha de consulta</span>
-            <input
-              name="fechaConsulta"
-              type="date"
-              value={form.fechaConsulta}
-              onChange={handleChange}
-              style={styles.input}
-            />
-          </label>
+              <label style={styles.field}>
+                <span style={styles.label}>Fecha de consulta</span>
+                <input
+                  name="fechaConsulta"
+                  type="date"
+                  value={form.fechaConsulta}
+                  onChange={handleChange}
+                  style={styles.input}
+                />
+              </label>
 
-          <label style={styles.field}>
-            <span style={styles.label}>URL de la fuente (opcional)</span>
-            <input
-              name="urlFuente"
-              value={form.urlFuente}
-              onChange={handleChange}
-              placeholder="Ej: https://sitio.cl/referencia o dejar vacío si es referencia manual"
-              style={styles.input}
-            />
-            <p style={styles.helpText}>
-              Si la referencia proviene de consulta manual, deja este campo vacío y describe el origen en la observación.
-            </p>
-          </label>
+              <label style={styles.field}>
+                <span style={styles.label}>Estado</span>
+                <select
+                  name="estado"
+                  value={form.estado}
+                  onChange={handleChange}
+                  style={styles.input}
+                >
+                  <option value="activa">Activa</option>
+                  <option value="inactiva">Inactiva</option>
+                </select>
+              </label>
 
-          <label style={styles.field}>
-            <span style={styles.label}>Estado</span>
-            <select
-              name="estado"
-              value={form.estado}
-              onChange={handleChange}
-              style={styles.input}
-            >
-              <option value="activa">Activa</option>
-              <option value="inactiva">Inactiva</option>
-            </select>
-          </label>
+              <label
+                className="market-reference-field-full"
+                style={styles.field}
+              >
+                <span style={styles.labelRow}>
+                  <span style={styles.label}>URL de la fuente</span>
+                  <span style={styles.fieldMeta}>(opcional)</span>
+                </span>
+                <input
+                  name="urlFuente"
+                  value={form.urlFuente}
+                  onChange={handleChange}
+                  placeholder="Pega la URL de la fuente"
+                  style={styles.input}
+                />
+                <p style={styles.helpText}>
+                  Déjala vacía si la fuente no tiene enlace.
+                </p>
+              </label>
+            </div>
+          </section>
 
-          <label style={styles.fieldFull}>
-            <span style={styles.label}>Observación</span>
-            <textarea
-              name="observacion"
-              value={form.observacion}
-              onChange={handleChange}
-              rows={3}
-              placeholder="Comentario breve sobre la referencia."
-              style={styles.textarea}
-            />
-          </label>
+          <section style={styles.formSection}>
+            <h4 style={styles.sectionTitle}>Observación</h4>
+            <label style={styles.fieldFull}>
+              <span style={styles.srOnly}>Observación</span>
+              <textarea
+                name="observacion"
+                value={form.observacion}
+                onChange={handleChange}
+                rows={3}
+                placeholder="Agrega un comentario sobre la referencia"
+                style={styles.textarea}
+              />
+            </label>
+          </section>
         </div>
 
         {error && <p style={styles.errorText}>{error}</p>}
         {success && <p style={styles.successText}>{success}</p>}
 
         <button
+          className="market-reference-submit"
           type="submit"
           style={styles.primaryButton}
           disabled={saving || inventoryItems.length === 0}
@@ -364,7 +439,7 @@ function MarketReferencesManager({ userId }) {
             ? "Guardando..."
             : editingId
             ? "Actualizar referencia"
-            : "Crear referencia"}
+            : "Guardar referencia"}
         </button>
       </form>
 
@@ -526,6 +601,7 @@ const styles = {
     background: "#ffffff",
     border: "1px solid #e5e7eb",
     borderRadius: "8px",
+    boxSizing: "border-box",
     padding: "20px",
   },
   formHeader: {
@@ -539,26 +615,57 @@ const styles = {
     margin: 0,
     fontSize: "18px",
   },
+  formSections: {
+    display: "grid",
+    gap: "22px",
+  },
+  formSection: {
+    display: "grid",
+    gap: "12px",
+    minWidth: 0,
+  },
+  sectionTitle: {
+    color: "#0f172a",
+    fontSize: "14px",
+    fontWeight: 800,
+    margin: 0,
+  },
   formGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
     gap: "14px",
+    minWidth: 0,
   },
   field: {
     display: "grid",
     gap: "6px",
+    minWidth: 0,
   },
   fieldFull: {
     display: "grid",
     gap: "6px",
     gridColumn: "1 / -1",
+    minWidth: 0,
   },
   label: {
     color: "#334155",
     fontSize: "13px",
     fontWeight: 700,
   },
+  labelRow: {
+    alignItems: "center",
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "6px",
+    minWidth: 0,
+  },
+  fieldMeta: {
+    color: "#64748b",
+    fontSize: "12px",
+    fontWeight: 600,
+  },
   input: {
+    boxSizing: "border-box",
+    maxWidth: "100%",
     width: "100%",
     border: "1px solid #cbd5e1",
     borderRadius: "6px",
@@ -567,6 +674,8 @@ const styles = {
     background: "#ffffff",
   },
   textarea: {
+    boxSizing: "border-box",
+    maxWidth: "100%",
     width: "100%",
     border: "1px solid #cbd5e1",
     borderRadius: "6px",
@@ -574,6 +683,17 @@ const styles = {
     color: "#111827",
     background: "#ffffff",
     resize: "vertical",
+  },
+  srOnly: {
+    border: 0,
+    clip: "rect(0 0 0 0)",
+    height: "1px",
+    margin: "-1px",
+    overflow: "hidden",
+    padding: 0,
+    position: "absolute",
+    whiteSpace: "nowrap",
+    width: "1px",
   },
   helpText: {
     color: "#475569",
@@ -724,4 +844,3 @@ const styles = {
 };
 
 export default MarketReferencesManager;
-

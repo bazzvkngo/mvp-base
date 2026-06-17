@@ -1,11 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { PRICING_STATUS } from "../domain/pricing";
 import { getQuotes } from "../services/quoteService";
 import { subscribeToInventory } from "../services/inventoryService";
 import { subscribeToReferences } from "../services/referenceService";
 import {
-  subscribeToPendingReferenceTasks,
-  updateReferenceTaskStatus,
+  isActivePendingReferenceTask,
+  postponeReferenceTask,
+  sortReferenceTasks,
+  subscribeToReferenceTasks,
 } from "../services/referenceTaskService";
 import { buildValuations } from "../services/valuationService";
 import { formatCLP } from "../utils/formatters";
@@ -82,7 +85,28 @@ function getQuoteSummary(quotes) {
   );
 }
 
+function getTaskReason(task) {
+  if (task.motivo) return task.motivo;
+  return task.tipoAlerta === "sin_referencias"
+    ? "Sin referencias de mercado"
+    : "Referencias desactualizadas";
+}
+
+function getTaskActionLabel(task) {
+  if (task.accionPrincipal) return task.accionPrincipal;
+  return task.tipoAlerta === "sin_referencias"
+    ? "Agregar referencia"
+    : "Actualizar referencias";
+}
+
+function getPriorityBadgeStyle(priority) {
+  if (priority === "alta") return styles.priorityHigh;
+  if (priority === "media") return styles.priorityMedium;
+  return styles.priorityLow;
+}
+
 function DashboardPage({ usuario }) {
+  const navigate = useNavigate();
   const userId = usuario?.uid;
   const [inventoryItems, setInventoryItems] = useState([]);
   const [references, setReferences] = useState([]);
@@ -91,6 +115,7 @@ function DashboardPage({ usuario }) {
   const [referencesLoaded, setReferencesLoaded] = useState(false);
   const [quotesLoaded, setQuotesLoaded] = useState(false);
   const [referenceTasks, setReferenceTasks] = useState([]);
+  const [postponeDaysByTask, setPostponeDaysByTask] = useState({});
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -135,7 +160,7 @@ function DashboardPage({ usuario }) {
       })
       .finally(() => setQuotesLoaded(true));
 
-    const unsubscribeReferenceTasks = subscribeToPendingReferenceTasks(
+    const unsubscribeReferenceTasks = subscribeToReferenceTasks(
       userId,
       (items) => setReferenceTasks(items),
       (err) => {
@@ -150,13 +175,22 @@ function DashboardPage({ usuario }) {
     };
   }, [userId]);
 
-  const changeReferenceTaskStatus = async (taskId, status) => {
+  const openReferenceAction = (task) => {
+    if (!task.itemId) return;
+    navigate(`/referencias?itemId=${encodeURIComponent(task.itemId)}`);
+  };
+
+  const postponeTask = async (taskId) => {
     try {
-      await updateReferenceTaskStatus(userId, taskId, status);
+      await postponeReferenceTask(userId, taskId, postponeDaysByTask[taskId] || 7);
     } catch (err) {
-      console.error("Error al actualizar tarea de referencia:", err);
-      setError("No se pudo actualizar la tarea de referencia.");
+      console.error("Error al aplazar tarea de referencia:", err);
+      setError("No se pudo aplazar la tarea de referencia.");
     }
+  };
+
+  const changePostponeDays = (taskId, days) => {
+    setPostponeDaysByTask((prev) => ({ ...prev, [taskId]: Number(days) }));
   };
 
   const activeInventory = useMemo(
@@ -184,7 +218,16 @@ function DashboardPage({ usuario }) {
   );
 
   const quoteSummary = useMemo(() => getQuoteSummary(quotes), [quotes]);
-  const visibleReferenceTasks = referenceTasks.slice(0, 6);
+
+  const activeReferenceTasks = useMemo(
+    () =>
+      sortReferenceTasks(
+        referenceTasks.filter((task) => isActivePendingReferenceTask(task))
+      ),
+    [referenceTasks]
+  );
+
+  const visibleReferenceTasks = activeReferenceTasks.slice(0, 6);
 
   const loading = !inventoryLoaded || !referencesLoaded || !quotesLoaded;
   const hasNoData =
@@ -195,6 +238,25 @@ function DashboardPage({ usuario }) {
 
   return (
     <section style={styles.wrapper}>
+      <style>
+        {`
+          .reference-task-actions {
+            grid-template-columns: minmax(140px, auto) 82px 72px;
+          }
+
+          @media (max-width: 760px) {
+            .reference-task-actions {
+              grid-template-columns: 82px 72px;
+            }
+
+            .reference-task-primary {
+              grid-column: 1 / -1;
+              width: 100%;
+            }
+
+          }
+        `}
+      </style>
       <div style={styles.hero}>
         <div>
           <span className="eyebrow">Inicio</span>
@@ -289,75 +351,127 @@ function DashboardPage({ usuario }) {
 
       <div style={styles.panel}>
         <div style={styles.sectionHeader}>
-          <h3 style={styles.panelTitle}>Tareas de referencias</h3>
-          <p style={styles.helpText}>
-            Revisión nocturna para detectar ítems sin referencias o referencias
-            desactualizadas.
-          </p>
+          <div>
+            <h3 style={styles.panelTitle}>Tareas de referencias</h3>
+            <p style={styles.helpText}>
+              Prioriza referencias desactualizadas y permite aplazar tareas con
+              trazabilidad.
+            </p>
+          </div>
+          {referenceTasks.length > 0 && (
+            <button
+              type="button"
+              style={styles.secondaryButton}
+              onClick={() => navigate("/tareas-referencias")}
+            >
+              Ver todas las tareas
+            </button>
+          )}
         </div>
 
-        {referenceTasks.length === 0 ? (
+        {activeReferenceTasks.length === 0 ? (
           <p style={styles.emptyText}>No hay tareas pendientes de referencias.</p>
         ) : (
           <>
-            <div style={styles.tableWrapper}>
-              <table style={styles.taskTable}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>Ítem</th>
-                    <th style={styles.th}>Motivo</th>
-                    <th style={styles.th}>Consulta sugerida</th>
-                    <th style={styles.th}>Prioridad</th>
-                    <th style={styles.th}>Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleReferenceTasks.map((task) => (
-                    <tr key={task.id}>
-                      <td style={styles.td}>
-                        <strong>{task.itemNombre}</strong>
-                      </td>
-                      <td style={styles.td}>
-                        {task.tipoAlerta === "sin_referencias"
-                          ? "Sin referencias activas"
-                          : "Referencias desactualizadas"}
-                      </td>
-                      <td style={styles.tdWrap}>{task.consultaSugerida}</td>
-                      <td style={styles.td}>{task.prioridad || "media"}</td>
-                      <td style={styles.td}>
-                        <div style={styles.taskActions}>
-                          <button
-                            type="button"
-                            style={styles.secondaryButton}
-                            onClick={() =>
-                              changeReferenceTaskStatus(task.id, "resuelta")
-                            }
-                          >
-                            Marcar resuelta
-                          </button>
-                          <button
-                            type="button"
-                            style={styles.clearButton}
-                            onClick={() =>
-                              changeReferenceTaskStatus(task.id, "ignorada")
-                            }
-                          >
-                            Ignorar
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {referenceTasks.length > visibleReferenceTasks.length && (
-              <p style={styles.tableNote}>Mostrando las tareas más recientes.</p>
-            )}
+            <ReferenceTaskTable
+              tasks={visibleReferenceTasks}
+              postponeDaysByTask={postponeDaysByTask}
+              onAction={openReferenceAction}
+              onPostpone={postponeTask}
+              onPostponeDaysChange={changePostponeDays}
+            />
+            <p style={styles.tableNote}>
+              Mostrando {visibleReferenceTasks.length} de{" "}
+              {activeReferenceTasks.length} tareas pendientes.
+            </p>
           </>
         )}
       </div>
     </section>
+  );
+}
+
+function ReferenceTaskTable({
+  tasks,
+  postponeDaysByTask,
+  onAction,
+  onPostpone,
+  onPostponeDaysChange,
+}) {
+  return (
+    <div style={styles.tableWrapper}>
+      <table style={styles.taskTable}>
+        <thead>
+          <tr>
+            <th style={styles.th}>Prioridad</th>
+            <th style={styles.th}>Ítem</th>
+            <th style={styles.th}>Motivo</th>
+            <th style={styles.th}>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tasks.map((task) => {
+            const isResolved = task.estado === "resuelta";
+            const priority = task.prioridad || "media";
+            return (
+              <tr key={task.id}>
+                <td style={styles.td}>
+                  <span
+                    style={{
+                      ...styles.priorityBadge,
+                      ...getPriorityBadgeStyle(priority),
+                    }}
+                  >
+                    {priority}
+                  </span>
+                </td>
+                <td style={styles.td}>
+                  <strong>{task.itemNombre}</strong>
+                </td>
+                <td style={styles.td}>{getTaskReason(task)}</td>
+                <td style={styles.td}>
+                  {isResolved ? (
+                    <span style={styles.doneText}>Resuelta automáticamente</span>
+                  ) : (
+                    <div
+                      className="reference-task-actions"
+                      style={styles.taskActions}
+                    >
+                      <button
+                        className="reference-task-primary"
+                        type="button"
+                        style={styles.primarySmallButton}
+                        onClick={() => onAction(task)}
+                      >
+                        {getTaskActionLabel(task)}
+                      </button>
+                      <select
+                        value={postponeDaysByTask[task.id] || 7}
+                        onChange={(event) =>
+                          onPostponeDaysChange(task.id, event.target.value)
+                        }
+                        style={styles.postponeSelect}
+                      >
+                        <option value={7}>7 días</option>
+                        <option value={15}>15 días</option>
+                        <option value={30}>30 días</option>
+                      </select>
+                      <button
+                        type="button"
+                        style={styles.postponeButton}
+                        onClick={() => onPostpone(task.id)}
+                      >
+                        Aplazar
+                      </button>
+                    </div>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -434,6 +548,10 @@ const styles = {
     padding: "14px",
   },
   sectionHeader: {
+    alignItems: "flex-start",
+    display: "flex",
+    gap: "12px",
+    justifyContent: "space-between",
     marginBottom: "10px",
   },
   panelTitle: {
@@ -501,31 +619,25 @@ const styles = {
     verticalAlign: "middle",
     whiteSpace: "nowrap",
   },
-  tdWrap: {
-    borderBottom: "1px solid #eef2f7",
-    color: "#475569",
-    fontSize: "13px",
-    lineHeight: 1.35,
-    maxWidth: "360px",
-    padding: "8px",
-    verticalAlign: "middle",
-  },
   taskActions: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: "8px",
+    alignItems: "center",
+    display: "grid",
+    gap: "6px",
   },
-  secondaryButton: {
-    background: "#f8fafc",
-    border: "1px solid #cbd5e1",
+  primarySmallButton: {
+    background: "#0f766e",
+    border: 0,
     borderRadius: "6px",
-    color: "#334155",
+    boxSizing: "border-box",
+    color: "#ffffff",
     cursor: "pointer",
     fontSize: "12px",
-    fontWeight: 700,
+    fontWeight: 800,
+    minWidth: "140px",
     padding: "7px 9px",
+    whiteSpace: "nowrap",
   },
-  clearButton: {
+  secondaryButton: {
     background: "#ffffff",
     border: "1px solid #cbd5e1",
     borderRadius: "6px",
@@ -534,6 +646,58 @@ const styles = {
     fontSize: "12px",
     fontWeight: 700,
     padding: "7px 9px",
+    whiteSpace: "nowrap",
+  },
+  postponeSelect: {
+    background: "#ffffff",
+    border: "1px solid #cbd5e1",
+    borderRadius: "6px",
+    boxSizing: "border-box",
+    color: "#334155",
+    fontSize: "12px",
+    padding: "7px 8px",
+    width: "82px",
+  },
+  postponeButton: {
+    background: "#ffffff",
+    border: "1px solid #cbd5e1",
+    borderRadius: "6px",
+    boxSizing: "border-box",
+    color: "#334155",
+    cursor: "pointer",
+    fontSize: "12px",
+    fontWeight: 700,
+    padding: "7px 9px",
+    textAlign: "center",
+    whiteSpace: "nowrap",
+    width: "72px",
+  },
+  priorityBadge: {
+    borderRadius: "999px",
+    display: "inline-block",
+    fontSize: "12px",
+    fontWeight: 800,
+    lineHeight: 1,
+    minWidth: "44px",
+    padding: "5px 8px",
+    textAlign: "center",
+  },
+  priorityHigh: {
+    background: "#fee2e2",
+    color: "#991b1b",
+  },
+  priorityMedium: {
+    background: "#fef3c7",
+    color: "#92400e",
+  },
+  priorityLow: {
+    background: "#ecfdf5",
+    color: "#166534",
+  },
+  doneText: {
+    color: "#047857",
+    fontSize: "12px",
+    fontWeight: 700,
   },
   tableNote: {
     color: "#64748b",

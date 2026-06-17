@@ -12,6 +12,13 @@ export const PRICING_STATUS = {
   SOBRE_MERCADO: "Sobre mercado",
 };
 
+const MANUAL_PRICE_FLAGS = [
+  "precioManual",
+  "ajusteManual",
+  "usarPrecioManual",
+  "precioPersonalizado",
+];
+
 function normalizarNumero(value, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
@@ -26,6 +33,24 @@ export function calculateBasePrice(item) {
   const costoBase = getNumericValue(item?.costoBase, 0);
   const margenDeseado = getNumericValue(item?.margenDeseado, 0);
   return costoBase + (costoBase * margenDeseado) / 100;
+}
+
+function getManualPrice(item) {
+  const manualPrice = Number(item?.precioInterno);
+  const hasManualFlag = MANUAL_PRICE_FLAGS.some((flag) => item?.[flag] === true);
+
+  return hasManualFlag && Number.isFinite(manualPrice) && manualPrice > 0
+    ? manualPrice
+    : null;
+}
+
+export function hasManualPriceOverride(item) {
+  return getManualPrice(item) !== null;
+}
+
+export function calculateEffectiveInternalPrice(item) {
+  const manualPrice = getManualPrice(item);
+  return manualPrice ?? calculateBasePrice(item);
 }
 
 export function calculateReferenceAverage(references) {
@@ -44,14 +69,14 @@ export function calculateReferenceAverage(references) {
 }
 
 export function calculateSuggestedPrice(item, references) {
-  const precioBase = calculateBasePrice(item);
+  const precioInternoEfectivo = calculateEffectiveInternalPrice(item);
   const promedioReferencias = calculateReferenceAverage(references);
 
   if (promedioReferencias === null) {
-    return Math.round(precioBase);
+    return Math.round(precioInternoEfectivo);
   }
 
-  return Math.round(precioBase * 0.4 + promedioReferencias * 0.6);
+  return Math.round(precioInternoEfectivo * 0.4 + promedioReferencias * 0.6);
 }
 
 export function calculatePriceDifference(priceInternal, referenceAverage) {
@@ -73,7 +98,7 @@ export function getPricingStatus(item, references) {
   }
 
   const diferenciaPorcentual = calculatePriceDifference(
-    item?.precioInterno,
+    calculateEffectiveInternalPrice(item),
     promedioReferencias
   );
 
@@ -90,10 +115,12 @@ export function buildValuationForItem(item, references) {
     ? references.filter((reference) => (reference.estado || "activa") === "activa")
     : [];
   const precioBase = calculateBasePrice(item);
+  const precioInternoEfectivo = calculateEffectiveInternalPrice(item);
+  const precioManual = hasManualPriceOverride(item);
   const promedioReferencias = calculateReferenceAverage(activeReferences);
   const precioSugerido = calculateSuggestedPrice(item, activeReferences);
   const diferenciaPorcentual = calculatePriceDifference(
-    item?.precioInterno,
+    precioInternoEfectivo,
     promedioReferencias
   );
   const estadoValorizacion = getPricingStatus(item, activeReferences);
@@ -107,7 +134,9 @@ export function buildValuationForItem(item, references) {
     unidad: item?.unidad || "",
     costoBase: getNumericValue(item?.costoBase, 0),
     margenDeseado: getNumericValue(item?.margenDeseado, 0),
-    precioInterno: getNumericValue(item?.precioInterno, 0),
+    precioInterno: precioInternoEfectivo,
+    precioInternoEfectivo,
+    precioManual,
     precioBase,
     promedioReferencias,
     cantidadReferencias: activeReferences.length,

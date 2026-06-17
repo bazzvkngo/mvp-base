@@ -1,9 +1,8 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { CubeIcon } from "../../components/BrandLogo";
 import {
   MAX_COMPANY_LOGO_SIZE_BYTES,
-  getCompanyConfig,
   getCompanyProfile,
-  saveCompanyConfig,
   saveCompanyProfile,
   uploadCompanyLogo,
 } from "../../services/companyService";
@@ -25,14 +24,25 @@ const DEFAULT_FORM = {
   validezCotizacionDias: "15",
   notaPieCotizacion:
     "Los valores pueden variar segun alcance final y disponibilidad de insumos.",
-  rubroPrincipal: "",
-  rubroOtro: "",
-  tipoOperacion: "mixto",
-  valorHoraBase: "",
-  margenEcon: 15,
-  margenStd: 25,
-  margenPremium: 35,
 };
+
+const COMPANY_PROFILE_FIELDS = [
+  "nombreComercial",
+  "razonSocial",
+  "rut",
+  "giro",
+  "email",
+  "telefono",
+  "direccion",
+  "ciudad",
+  "sitioWeb",
+  "logoUrl",
+  "logoPath",
+  "logoNombreOriginal",
+  "condicionesPago",
+  "validezCotizacionDias",
+  "notaPieCotizacion",
+];
 
 function isValidOptionalUrl(value) {
   if (!value.trim()) return true;
@@ -52,36 +62,56 @@ function isFirebaseStorageUrl(value) {
   );
 }
 
-function isProfileConfigured(form) {
-  const hasName = String(form.nombreComercial || "").trim();
-  const hasContact =
-    String(form.email || "").trim() || String(form.telefono || "").trim();
-  return Boolean(hasName && hasContact);
+function normalizeFormSnapshot(form) {
+  return COMPANY_PROFILE_FIELDS.reduce((snapshot, field) => {
+    snapshot[field] =
+      field === "validezCotizacionDias"
+        ? String(form[field] || 15)
+        : String(form[field] || "");
+    return snapshot;
+  }, {});
 }
 
-function getInitials(name) {
-  const source = String(name || "ValoraCloud").trim();
-  const parts = source.split(/\s+/).filter(Boolean);
-  return parts
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase();
+function hasFormChanges(form, savedForm) {
+  if (!savedForm) return false;
+  const current = normalizeFormSnapshot(form);
+  return COMPANY_PROFILE_FIELDS.some(
+    (field) => current[field] !== savedForm[field]
+  );
+}
+
+function getMissingProfileRequirements(form) {
+  const missing = [];
+
+  if (!String(form.nombreComercial || "").trim()) {
+    missing.push("Nombre comercial");
+  }
+
+  if (
+    !String(form.email || "").trim() &&
+    !String(form.telefono || "").trim()
+  ) {
+    missing.push("Email o teléfono");
+  }
+
+  return missing;
 }
 
 function validateLogoFile(file) {
   if (!file) return "Selecciona una imagen antes de subir el logo.";
   if (!String(file.type || "").startsWith("image/")) {
-    return "El archivo seleccionado debe ser una imagen.";
+    return "Usa una imagen PNG, JPG o WebP.";
   }
   if (file.size > MAX_COMPANY_LOGO_SIZE_BYTES) {
-    return "El logo no puede pesar más de 2 MB.";
+    return "El archivo supera el maximo permitido de 2 MB.";
   }
   return "";
 }
 
 function CompanyConfig({ userId }) {
+  const logoFileInputRef = useRef(null);
   const [form, setForm] = useState(DEFAULT_FORM);
+  const [savedForm, setSavedForm] = useState(null);
   const [cargando, setCargando] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
@@ -90,27 +120,32 @@ function CompanyConfig({ userId }) {
   const [logoFile, setLogoFile] = useState(null);
   const [logoError, setLogoError] = useState("");
   const [logoInputKey, setLogoInputKey] = useState(0);
+  const [logoPreviewLocal, setLogoPreviewLocal] = useState("");
+  const [arrastrandoLogo, setArrastrandoLogo] = useState(false);
   const [subiendoLogo, setSubiendoLogo] = useState(false);
   const [mostrarLogoUrlManual, setMostrarLogoUrlManual] = useState(false);
-  const [mostrarParametros, setMostrarParametros] = useState(false);
-  const [mostrarMargenesAvanzados, setMostrarMargenesAvanzados] =
-    useState(false);
 
   const logoPreviewValido = useMemo(
     () => isValidOptionalUrl(form.logoUrl) && form.logoUrl.trim(),
     [form.logoUrl]
   );
+  const logoPreviewSrc = logoPreviewLocal || logoPreviewValido || "";
 
-  const perfilConfigurado = useMemo(() => isProfileConfigured(form), [form]);
+  const requisitosPendientes = useMemo(
+    () => getMissingProfileRequirements(form),
+    [form]
+  );
+  const perfilConfigurado = requisitosPendientes.length === 0;
   const logoDesdeStorage = useMemo(
     () => Boolean(form.logoPath || isFirebaseStorageUrl(form.logoUrl)),
     [form.logoPath, form.logoUrl]
   );
-  const mostrarCampoLogoUrl = !logoDesdeStorage || mostrarLogoUrlManual;
-  const logoInitials = useMemo(
-    () => getInitials(form.nombreComercial || form.razonSocial),
-    [form.nombreComercial, form.razonSocial]
+  const mostrarCampoLogoUrl = mostrarLogoUrlManual;
+  const hayCambiosFormulario = useMemo(
+    () => hasFormChanges(form, savedForm),
+    [form, savedForm]
   );
+  const hayAccionLogoPendiente = Boolean(logoFile);
 
   useEffect(() => {
     if (!userId) return;
@@ -121,37 +156,31 @@ function CompanyConfig({ userId }) {
     setMensajeOk("");
     setMensajeInfo("");
 
-    Promise.all([getCompanyProfile(userId), getCompanyConfig(userId)])
-      .then(([profile, cfg]) => {
+    getCompanyProfile(userId)
+      .then((profile) => {
         if (!active) return;
-        setForm((prev) => ({
-          ...prev,
+        const nextForm = {
+          ...DEFAULT_FORM,
           ...profile,
           validezCotizacionDias: String(profile.validezCotizacionDias || 15),
-          rubroPrincipal: cfg.rubroPrincipal || "",
-          rubroOtro: cfg.rubroOtro || "",
-          tipoOperacion: cfg.tipoOperacion || "mixto",
-          valorHoraBase:
-            cfg.valorHoraBase !== undefined && cfg.valorHoraBase !== null
-              ? String(cfg.valorHoraBase)
-              : "",
-          margenEcon:
-            cfg.margenEcon !== undefined && cfg.margenEcon !== null
-              ? Math.round(cfg.margenEcon * 100)
-              : 15,
-          margenStd:
-            cfg.margenStd !== undefined && cfg.margenStd !== null
-              ? Math.round(cfg.margenStd * 100)
-              : 25,
-          margenPremium:
-            cfg.margenPremium !== undefined && cfg.margenPremium !== null
-              ? Math.round(cfg.margenPremium * 100)
-              : 35,
+        };
+        setForm((prev) => ({
+          ...prev,
+          ...nextForm,
         }));
+        setSavedForm(normalizeFormSnapshot(nextForm));
+        setMostrarLogoUrlManual(
+          Boolean(
+            nextForm.logoUrl &&
+              !nextForm.logoPath &&
+              !isFirebaseStorageUrl(nextForm.logoUrl)
+          )
+        );
       })
       .catch((err) => {
         console.error("Error cargando empresa:", err);
         if (active) {
+          setSavedForm(normalizeFormSnapshot(DEFAULT_FORM));
           setMensajeInfo(
             "No se pudo confirmar si ya existe un perfil comercial. Puedes completar los datos y guardar nuevamente."
           );
@@ -166,6 +195,20 @@ function CompanyConfig({ userId }) {
     };
   }, [userId]);
 
+  useEffect(() => {
+    if (!logoFile) {
+      setLogoPreviewLocal("");
+      return undefined;
+    }
+
+    const objectUrl = URL.createObjectURL(logoFile);
+    setLogoPreviewLocal(objectUrl);
+
+    return () => {
+      URL.revokeObjectURL(objectUrl);
+    };
+  }, [logoFile]);
+
   const handleChange = (event) => {
     const { name, value } = event.target;
     setForm((prev) => ({
@@ -177,16 +220,47 @@ function CompanyConfig({ userId }) {
     }));
   };
 
-  const handleLogoFileChange = (event) => {
-    const file = event.target.files?.[0] || null;
+  const processLogoFile = (file) => {
     const validationError = file ? validateLogoFile(file) : "";
 
     setLogoFile(validationError ? null : file);
     setLogoError(validationError);
+    setMensajeOk("");
+    setMensajeInfo("");
+    if (file && !validationError) {
+      setError("");
+    }
+    return validationError;
+  };
+
+  const handleLogoFileChange = (event) => {
+    const file = event.target.files?.[0] || null;
+    const validationError = processLogoFile(file);
+
     if (validationError) {
       event.target.value = "";
       setLogoInputKey((prev) => prev + 1);
     }
+  };
+
+  const handleLogoDragOver = (event) => {
+    event.preventDefault();
+    if (!subiendoLogo) setArrastrandoLogo(true);
+  };
+
+  const handleLogoDragLeave = (event) => {
+    event.preventDefault();
+    setArrastrandoLogo(false);
+  };
+
+  const handleLogoDrop = (event) => {
+    event.preventDefault();
+    setArrastrandoLogo(false);
+    if (subiendoLogo) return;
+
+    const file = event.dataTransfer.files?.[0] || null;
+    processLogoFile(file);
+    setLogoInputKey((prev) => prev + 1);
   };
 
   const handleUploadLogo = async () => {
@@ -204,19 +278,32 @@ function CompanyConfig({ userId }) {
 
     try {
       const uploadedLogo = await uploadCompanyLogo(userId, logoFile);
-      setForm((prev) => ({
-        ...prev,
+      const logoPatch = {
         logoUrl: uploadedLogo.logoUrl,
         logoPath: uploadedLogo.logoPath,
         logoNombreOriginal: uploadedLogo.logoNombreOriginal,
+      };
+      setForm((prev) => ({
+        ...prev,
+        ...logoPatch,
       }));
+      setSavedForm((prev) =>
+        prev
+          ? {
+              ...prev,
+              logoUrl: String(logoPatch.logoUrl || ""),
+              logoPath: String(logoPatch.logoPath || ""),
+              logoNombreOriginal: String(logoPatch.logoNombreOriginal || ""),
+            }
+          : prev
+      );
       setLogoFile(null);
       setLogoInputKey((prev) => prev + 1);
       setMostrarLogoUrlManual(false);
-      setMensajeOk("Logo de empresa subido correctamente.");
+      setMensajeOk("Logo subido correctamente.");
     } catch (err) {
       console.error("Error subiendo logo de empresa:", err);
-      setLogoError(err.message || "No se pudo subir el logo de empresa.");
+      setLogoError("No pudimos subir el logo. Intentalo nuevamente.");
     } finally {
       setSubiendoLogo(false);
     }
@@ -246,45 +333,38 @@ function CompanyConfig({ userId }) {
     setMensajeInfo("");
 
     try {
-      const rubroFinal =
-        form.rubroPrincipal === "Otro / mixto" && form.rubroOtro
-          ? form.rubroOtro
-          : form.rubroPrincipal;
+      const payload = {
+        nombreComercial: form.nombreComercial,
+        razonSocial: form.razonSocial,
+        rut: form.rut,
+        giro: form.giro,
+        email: form.email,
+        telefono: form.telefono,
+        direccion: form.direccion,
+        ciudad: form.ciudad,
+        sitioWeb: form.sitioWeb,
+        logoUrl: form.logoUrl,
+        logoPath: form.logoPath,
+        logoNombreOriginal: form.logoNombreOriginal,
+        condicionesPago: form.condicionesPago,
+        validezCotizacionDias: form.validezCotizacionDias || 15,
+        notaPieCotizacion: form.notaPieCotizacion,
+      };
+      const savedProfile = await saveCompanyProfile(userId, payload);
+      const nextForm = {
+        ...form,
+        ...savedProfile,
+        validezCotizacionDias: String(
+          savedProfile.validezCotizacionDias || form.validezCotizacionDias || 15
+        ),
+      };
 
-      await Promise.all([
-        saveCompanyProfile(userId, {
-          nombreComercial: form.nombreComercial,
-          razonSocial: form.razonSocial,
-          rut: form.rut,
-          giro: form.giro,
-          email: form.email,
-          telefono: form.telefono,
-          direccion: form.direccion,
-          ciudad: form.ciudad,
-          sitioWeb: form.sitioWeb,
-          logoUrl: form.logoUrl,
-          logoPath: form.logoPath,
-          logoNombreOriginal: form.logoNombreOriginal,
-          condicionesPago: form.condicionesPago,
-          validezCotizacionDias: form.validezCotizacionDias || 15,
-          notaPieCotizacion: form.notaPieCotizacion,
-        }),
-        saveCompanyConfig(userId, {
-          rubroPrincipal: rubroFinal,
-          rubroOtro:
-            form.rubroPrincipal === "Otro / mixto" ? form.rubroOtro : "",
-          tipoOperacion: form.tipoOperacion,
-          valorHoraBase: Number(form.valorHoraBase) || 0,
-          margenEcon: (Number(form.margenEcon) || 0) / 100,
-          margenStd: (Number(form.margenStd) || 0) / 100,
-          margenPremium: (Number(form.margenPremium) || 0) / 100,
-        }),
-      ]);
-
-      setMensajeOk("Datos de empresa guardados correctamente.");
+      setForm(nextForm);
+      setSavedForm(normalizeFormSnapshot(nextForm));
+      setMensajeOk("Cambios guardados correctamente.");
     } catch (err) {
       console.error("Error guardando empresa:", err);
-      setError("Ocurrio un error al guardar los datos de empresa.");
+      setError("No pudimos guardar la informacion de la empresa.");
     } finally {
       setGuardando(false);
     }
@@ -298,6 +378,20 @@ function CompanyConfig({ userId }) {
     );
   }
 
+  const saveStatusText = guardando
+    ? "Guardando cambios..."
+    : error
+    ? "No se pudieron guardar los cambios. Intentalo nuevamente."
+    : hayCambiosFormulario && hayAccionLogoPendiente
+    ? "Tienes cambios sin guardar y un logo pendiente de subir."
+    : hayCambiosFormulario
+    ? "Tienes cambios sin guardar"
+    : hayAccionLogoPendiente
+    ? "Logo seleccionado. Usa Subir logo para cargarlo."
+    : mensajeOk
+    ? mensajeOk
+    : "Sin cambios pendientes";
+
   return (
     <section style={styles.wrapper}>
       <style>{companyPageCss}</style>
@@ -310,25 +404,39 @@ function CompanyConfig({ userId }) {
           </p>
         </div>
         <div className="company-profile-header-aside" style={styles.headerAside}>
-          <div className="company-profile-header-badge" style={styles.headerBadge}>
+          <div
+            className="company-profile-header-badge"
+            style={{
+              ...styles.headerBadge,
+              ...(perfilConfigurado
+                ? styles.headerBadgeComplete
+                : styles.headerBadgeIncomplete),
+            }}
+          >
             <span style={styles.headerBadgeLabel}>Estado</span>
             <strong>
-              {perfilConfigurado ? "Perfil configurado" : "Perfil incompleto"}
+              {perfilConfigurado
+                ? "Perfil comercial completo"
+                : "Perfil incompleto"}
             </strong>
-            {!perfilConfigurado && (
+            {perfilConfigurado ? (
               <span style={styles.headerBadgeHint}>
-                Faltan datos mínimos: nombre comercial y un medio de contacto.
+                Tu información está lista para aparecer en las cotizaciones.
               </span>
+            ) : (
+              <>
+                <span style={styles.headerBadgeHint}>
+                  Completa estos datos para usar tu información en las
+                  cotizaciones:
+                </span>
+                <ul style={styles.headerBadgeList}>
+                  {requisitosPendientes.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </>
             )}
           </div>
-          <button
-            type="submit"
-            form="company-profile-form"
-            style={styles.headerSaveButton}
-            disabled={guardando || cargando}
-          >
-            {guardando ? "Guardando..." : "Guardar cambios"}
-          </button>
         </div>
       </header>
 
@@ -340,9 +448,21 @@ function CompanyConfig({ userId }) {
           necesites.
         </p>
       )}
-      {mensajeInfo && <p style={styles.infoText}>{mensajeInfo}</p>}
-      {error && <p style={styles.errorText}>{error}</p>}
-      {mensajeOk && <p style={styles.successText}>{mensajeOk}</p>}
+      {mensajeInfo && (
+        <p style={styles.infoText} role="status" aria-live="polite">
+          {mensajeInfo}
+        </p>
+      )}
+      {error && (
+        <p style={styles.errorText} role="alert">
+          {error}
+        </p>
+      )}
+      {mensajeOk && (
+        <p style={styles.successText} role="status" aria-live="polite">
+          {mensajeOk}
+        </p>
+      )}
 
       <form
         id="company-profile-form"
@@ -353,89 +473,102 @@ function CompanyConfig({ userId }) {
           <div style={styles.columnStack}>
             <FormSection
               title="Identidad comercial"
-              description="Datos base que identifican al emisor de la cotizacion."
+              description="¿Cómo aparecerá tu empresa en la cotización?"
             >
-              <Field label="Nombre comercial">
+              <Field label="Nombre comercial *">
                 <input
                   name="nombreComercial"
                   value={form.nombreComercial}
                   onChange={handleChange}
-                  placeholder="Ej: Servicios TI Iquique"
+                  placeholder="Escribe el nombre con el que cotizas"
                   style={styles.input}
                 />
               </Field>
-              <Field label="Razon social">
+              <Field label="Razón social" meta="(opcional)">
                 <input
                   name="razonSocial"
                   value={form.razonSocial}
                   onChange={handleChange}
-                  placeholder="Ej: Servicios Informáticos SpA"
+                  placeholder="Escribe la razón social de tu empresa"
                   style={styles.input}
                 />
               </Field>
-              <Field label="RUT o identificador">
+              <Field label="RUT de la empresa" meta="(opcional)">
                 <input
                   name="rut"
                   value={form.rut}
                   onChange={handleChange}
-                  placeholder="Ej: 12.345.678-9"
+                  placeholder="Escribe el RUT con puntos y guion"
                   style={styles.input}
                 />
               </Field>
-              <Field label="Giro o actividad">
+              <Field label="Giro o actividad" meta="(opcional)">
                 <input
                   name="giro"
                   value={form.giro}
                   onChange={handleChange}
-                  placeholder="Ej: Servicios informáticos y soporte técnico"
+                  placeholder="Escribe el giro principal de tu empresa"
                   style={styles.input}
                 />
               </Field>
             </FormSection>
 
-            <FormSection title="Contacto">
-              <Field label="Email">
+            <FormSection
+              title="Contacto"
+              description="¿Cómo puede contactarte el cliente?"
+            >
+              <p style={styles.requirementText}>
+                Ingresa al menos un email o un teléfono. *
+              </p>
+              <Field
+                label="Email"
+                helpText="Puedes usar un correo de contacto comercial."
+              >
                 <input
                   type="email"
                   name="email"
                   value={form.email}
                   onChange={handleChange}
+                  placeholder="Escribe un correo de contacto"
                   style={styles.input}
                 />
               </Field>
-              <Field label="Telefono">
+              <Field
+                label="Teléfono"
+                helpText="Puedes ingresar un número móvil o fijo."
+              >
                 <input
                   name="telefono"
                   value={form.telefono}
                   onChange={handleChange}
-                  placeholder="Ej: +56 9 1234 5678"
+                  placeholder="Escribe un teléfono de contacto"
                   style={styles.input}
                 />
               </Field>
-              <Field label="Direccion">
+              <Field label="Dirección" meta="(opcional)">
                 <input
                   name="direccion"
                   value={form.direccion}
                   onChange={handleChange}
-                  placeholder="Ej: Av. Arturo Prat 1234, Iquique"
+                  placeholder="Escribe la dirección comercial"
                   style={styles.input}
                 />
               </Field>
-              <Field label="Ciudad">
+              <Field label="Ciudad" meta="(opcional)">
                 <input
                   name="ciudad"
                   value={form.ciudad}
                   onChange={handleChange}
-                  placeholder="Ej: Iquique"
+                  placeholder="Escribe la ciudad"
                   style={styles.input}
                 />
               </Field>
-              <Field label="Sitio web" wide>
+              <Field label="Sitio web" meta="(opcional)" wide>
                 <input
                   name="sitioWeb"
                   value={form.sitioWeb}
                   onChange={handleChange}
-                  placeholder="Ej: https://miservicioti.cl"
+                  placeholder="Escribe la dirección de tu sitio web"
                   style={styles.input}
                 />
               </Field>
@@ -445,30 +578,24 @@ function CompanyConfig({ userId }) {
           <div style={styles.columnStack}>
             <FormSection
               title="Imagen corporativa"
-              description="Se usara como encabezado visual de la cotizacion."
+              description="¿Qué logo aparecerá en tus cotizaciones?"
               compact
             >
               <div className="company-profile-logo-panel" style={styles.logoPanel}>
                 <div style={styles.logoPreview}>
-                  {logoPreviewValido ? (
+                  {logoPreviewSrc ? (
                     <img
-                      src={form.logoUrl}
-                      alt="Logo de empresa"
+                      src={logoPreviewSrc}
+                      alt="Vista previa del logo de la empresa"
                       style={styles.logoImage}
                     />
                   ) : (
-                    <span style={styles.logoPlaceholder}>{logoInitials}</span>
+                    <CubeIcon size={42} strokeWidth={1.6} />
                   )}
                 </div>
                 <div style={styles.logoCopy}>
                   <strong>{form.nombreComercial || "Tu empresa"}</strong>
-                  <span>
-                    {logoPreviewValido
-                      ? logoDesdeStorage
-                        ? "Logo cargado desde archivo. Se usará en tus cotizaciones formales."
-                        : "Logo configurado mediante URL externa."
-                      : "Sube un logo desde tu equipo para personalizar tus cotizaciones."}
-                  </span>
+                  <span>Este encabezado aparecerá en tus cotizaciones.</span>
                 </div>
               </div>
 
@@ -482,23 +609,43 @@ function CompanyConfig({ userId }) {
                 </div>
               )}
 
-              <div style={styles.logoUploadPanel}>
+              <div
+                style={{
+                  ...styles.logoUploadPanel,
+                  ...(arrastrandoLogo ? styles.logoUploadPanelActive : {}),
+                }}
+                onDragOver={handleLogoDragOver}
+                onDragLeave={handleLogoDragLeave}
+                onDrop={handleLogoDrop}
+              >
                 <div style={styles.logoUploadHeader}>
                   <strong>
-                    {logoPreviewValido ? "Reemplazar logo" : "Subir logo desde archivo"}
+                    {logoPreviewSrc ? "Reemplazar logo" : "Subir logo"}
                   </strong>
                   <span style={styles.helpText}>
-                    Imagen JPG, PNG, WebP o similar. Máximo 2 MB.
+                    Arrastra tu logo aqui o selecciona un archivo.
                   </span>
+                  <span style={styles.helpText}>PNG, JPG o WebP - Maximo 2 MB</span>
                 </div>
                 <input
                   key={logoInputKey}
+                  ref={logoFileInputRef}
+                  id="company-logo-file"
                   type="file"
-                  accept="image/*"
+                  accept="image/png,image/jpeg,image/webp"
                   onChange={handleLogoFileChange}
                   style={styles.fileInput}
                   disabled={subiendoLogo}
+                  tabIndex={-1}
                 />
+                <button
+                  type="button"
+                  onClick={() => logoFileInputRef.current?.click()}
+                  style={styles.logoSelectButton}
+                  disabled={subiendoLogo}
+                >
+                  Seleccionar archivo
+                </button>
                 {logoFile && (
                   <span style={styles.fileName}>
                     Archivo seleccionado: {logoFile.name}
@@ -513,70 +660,91 @@ function CompanyConfig({ userId }) {
                   style={styles.logoUploadButton}
                   disabled={!logoFile || subiendoLogo}
                 >
-                  {subiendoLogo
-                    ? "Subiendo..."
-                    : logoPreviewValido
-                    ? "Reemplazar logo"
-                    : "Subir logo"}
+                  {subiendoLogo ? "Subiendo..." : "Subir logo"}
                 </button>
               </div>
 
-              {logoDesdeStorage && (
+              {!mostrarCampoLogoUrl && (
                 <button
                   type="button"
-                  onClick={() => setMostrarLogoUrlManual((prev) => !prev)}
+                  onClick={() => setMostrarLogoUrlManual(true)}
                   style={styles.logoAdvancedButton}
                 >
-                  {mostrarLogoUrlManual
-                    ? "Ocultar URL externa"
-                    : "Usar URL externa"}
+                  Usar una URL en su lugar
                 </button>
               )}
 
               {mostrarCampoLogoUrl && (
-                <Field label="URL del logo" wide>
-                  <input
-                    name="logoUrl"
-                    value={form.logoUrl}
-                    onChange={handleChange}
-                    placeholder="https://..."
-                    style={styles.input}
-                  />
-                  <span style={styles.helpText}>
-                    Puedes usar una URL pública como alternativa si el logo ya
-                    está alojado en otro sitio.
-                  </span>
-                </Field>
+                <div style={styles.logoUrlPanel}>
+                  <Field
+                    label="URL del logo"
+                    meta="(opcional)"
+                    helpText="Usa esta opción solo si tu logo ya está publicado en internet."
+                    wide
+                  >
+                    <input
+                      name="logoUrl"
+                      value={form.logoUrl}
+                      onChange={handleChange}
+                      placeholder="Pega aquí la URL pública del logo"
+                      style={styles.input}
+                    />
+                  </Field>
+                  <button
+                    type="button"
+                    onClick={() => setMostrarLogoUrlManual(false)}
+                    style={styles.logoAdvancedButton}
+                  >
+                    Subir un archivo en su lugar
+                  </button>
+                </div>
               )}
             </FormSection>
 
             <FormSection
-              title="Configuracion de cotizacion"
-              description="Valores por defecto para documentos nuevos."
+              title="Configuración de cotización"
+              description="¿Cómo se pagará y por cuántos días será válida?"
             >
-              <Field label="Condiciones de pago por defecto" wide>
-                <input
+              <Field
+                label="Condiciones de pago"
+                badge="Predeterminado"
+                helpText="Se usarán al crear nuevas cotizaciones y podrás cambiarlas en cada caso."
+                wide
+              >
+                <textarea
                   name="condicionesPago"
                   value={form.condicionesPago}
                   onChange={handleChange}
-                  style={styles.input}
+                  placeholder="Describe cómo se realizará el pago"
+                  rows={2}
+                  style={styles.compactTextarea}
                 />
               </Field>
-              <Field label="Validez en dias">
+              <Field
+                label="Validez de la cotización"
+                helpText="Después de este plazo, los precios pueden necesitar revisión."
+              >
                 <input
                   type="number"
                   min="1"
                   name="validezCotizacionDias"
                   value={form.validezCotizacionDias}
                   onChange={handleChange}
+                  placeholder="Días de validez"
                   style={styles.input}
                 />
               </Field>
-              <Field label="Nota de pie" wide>
+              <Field
+                label="Nota de pie"
+                meta="(opcional)"
+                helpText="Este texto aparecerá al final de todas las cotizaciones."
+                wide
+              >
                 <textarea
                   name="notaPieCotizacion"
                   value={form.notaPieCotizacion}
                   onChange={handleChange}
+                  placeholder="Escribe un mensaje final para tus cotizaciones"
                   rows={3}
                   style={styles.textarea}
                 />
@@ -585,141 +753,18 @@ function CompanyConfig({ userId }) {
           </div>
         </div>
 
-        <section style={styles.advancedCard}>
-          <div
-            className="company-profile-advanced-summary"
-            style={styles.advancedSummary}
+        <div
+          className="company-profile-save-bar"
+          style={styles.actions}
+        >
+          <span style={styles.saveStatusText} role="status" aria-live="polite">
+            {saveStatusText}
+          </span>
+          <button
+            type="submit"
+            style={styles.primaryButton}
+            disabled={guardando || cargando || !hayCambiosFormulario}
           >
-            <span style={styles.advancedCopy}>
-              <strong>Configuración avanzada de valorización</strong>
-              <small>
-                Parámetros opcionales usados como referencia interna para
-                futuras valorizaciones.
-              </small>
-            </span>
-            <button
-              type="button"
-              onClick={() => setMostrarParametros((prev) => !prev)}
-              style={styles.secondaryButton}
-            >
-              {mostrarParametros ? "Ocultar" : "Mostrar"}
-            </button>
-          </div>
-
-          {mostrarParametros && (
-            <div
-              className="company-profile-advanced-grid"
-              style={styles.advancedContent}
-            >
-              <Field label="Rubro principal">
-                <select
-                  name="rubroPrincipal"
-                  value={form.rubroPrincipal}
-                  onChange={handleChange}
-                  style={styles.input}
-                >
-                  <option value="">Selecciona una opción</option>
-                  <option value="Servicios TI, soporte e instalaciones">
-                    Servicios TI, soporte e instalaciones
-                  </option>
-                  <option value="Electricidad, CCTV e instalaciones en terreno">
-                    Electricidad, CCTV e instalaciones en terreno
-                  </option>
-                  <option value="Ferreteria / venta de materiales">
-                    Ferretería / venta de materiales
-                  </option>
-                  <option value="Otro / mixto">Otro / mixto</option>
-                </select>
-              </Field>
-              {form.rubroPrincipal === "Otro / mixto" && (
-                <Field label="Describe tu rubro">
-                  <input
-                    name="rubroOtro"
-                    value={form.rubroOtro}
-                    onChange={handleChange}
-                    style={styles.input}
-                  />
-                </Field>
-              )}
-              <Field label="Tipo de oferta principal">
-                <select
-                  name="tipoOperacion"
-                  value={form.tipoOperacion}
-                  onChange={handleChange}
-                  style={styles.input}
-                >
-                  <option value="productos">Solo productos</option>
-                  <option value="servicios">Solo servicios</option>
-                  <option value="mixto">Productos y servicios</option>
-                </select>
-              </Field>
-              <Field label="Valor hora en terreno (CLP)">
-                <input
-                  type="number"
-                  min="0"
-                  name="valorHoraBase"
-                  value={form.valorHoraBase}
-                  onChange={handleChange}
-                  style={styles.input}
-                />
-              </Field>
-
-              <div style={styles.marginHeader}>
-                <span style={styles.helpText}>
-                  Margenes internos para escenarios economico, estandar y
-                  premium.
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setMostrarMargenesAvanzados((prev) => !prev)}
-                  style={styles.linkButton}
-                >
-                  {mostrarMargenesAvanzados
-                    ? "Ocultar margenes"
-                    : "Editar margenes"}
-                </button>
-              </div>
-
-              {mostrarMargenesAvanzados && (
-                <>
-                  <Field label="Margen economico (%)">
-                    <input
-                      type="number"
-                      min="0"
-                      name="margenEcon"
-                      value={form.margenEcon}
-                      onChange={handleChange}
-                      style={styles.input}
-                    />
-                  </Field>
-                  <Field label="Margen estandar (%)">
-                    <input
-                      type="number"
-                      min="0"
-                      name="margenStd"
-                      value={form.margenStd}
-                      onChange={handleChange}
-                      style={styles.input}
-                    />
-                  </Field>
-                  <Field label="Margen premium (%)">
-                    <input
-                      type="number"
-                      min="0"
-                      name="margenPremium"
-                      value={form.margenPremium}
-                      onChange={handleChange}
-                      style={styles.input}
-                    />
-                  </Field>
-                </>
-              )}
-            </div>
-          )}
-        </section>
-
-        <div style={styles.actions}>
-          <button type="submit" style={styles.primaryButton} disabled={guardando}>
             {guardando ? "Guardando..." : "Guardar cambios"}
           </button>
         </div>
@@ -742,11 +787,16 @@ function FormSection({ title, description, compact = false, children }) {
   );
 }
 
-function Field({ label, wide = false, children }) {
+function Field({ label, meta, badge, helpText, wide = false, children }) {
   return (
     <label style={{ ...styles.field, ...(wide ? styles.wideField : {}) }}>
-      <span style={styles.label}>{label}</span>
+      <span style={styles.labelRow}>
+        <span style={styles.label}>{label}</span>
+        {meta && <span style={styles.fieldMeta}>{meta}</span>}
+        {badge && <span style={styles.fieldBadge}>{badge}</span>}
+      </span>
       {children}
+      {helpText && <span style={styles.helpText}>{helpText}</span>}
     </label>
   );
 }
@@ -787,9 +837,17 @@ const styles = {
     color: "#111827",
     display: "grid",
     gap: "2px",
-    minWidth: "138px",
+    maxWidth: "320px",
+    minWidth: "260px",
     padding: "10px 12px",
-    textAlign: "right",
+    textAlign: "left",
+  },
+  headerBadgeComplete: {
+    background: "#f0fdf4",
+    borderColor: "#bbf7d0",
+  },
+  headerBadgeIncomplete: {
+    background: "#ffffff",
   },
   headerBadgeLabel: {
     color: "#64748b",
@@ -799,28 +857,27 @@ const styles = {
   },
   headerBadgeHint: {
     color: "#64748b",
-    fontSize: "11px",
+    fontSize: "12px",
     lineHeight: 1.35,
   },
-  headerSaveButton: {
-    background: "#0f766e",
-    border: 0,
-    borderRadius: "6px",
-    color: "#ffffff",
-    cursor: "pointer",
-    fontSize: "13px",
-    fontWeight: 800,
-    padding: "9px 12px",
-    width: "100%",
+  headerBadgeList: {
+    color: "#475569",
+    fontSize: "12px",
+    lineHeight: 1.45,
+    listStylePosition: "inside",
+    margin: "4px 0 0",
+    padding: 0,
   },
   form: {
     display: "grid",
     gap: "14px",
+    paddingBottom: "120px",
   },
   mainGrid: {
     display: "grid",
     gap: "16px",
     gridTemplateColumns: "minmax(0, 1.2fr) minmax(340px, 0.8fr)",
+    paddingBottom: "104px",
   },
   columnStack: {
     display: "grid",
@@ -867,6 +924,35 @@ const styles = {
     fontSize: "12px",
     fontWeight: 800,
   },
+  labelRow: {
+    alignItems: "center",
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "6px",
+  },
+  fieldMeta: {
+    color: "#64748b",
+    fontSize: "12px",
+    fontWeight: 600,
+  },
+  fieldBadge: {
+    background: "#f0fdfa",
+    border: "1px solid #99f6e4",
+    borderRadius: "999px",
+    color: "#0f766e",
+    fontSize: "11px",
+    fontWeight: 800,
+    lineHeight: 1.2,
+    padding: "3px 7px",
+  },
+  requirementText: {
+    color: "#475569",
+    fontSize: "13px",
+    fontWeight: 700,
+    gridColumn: "1 / -1",
+    lineHeight: 1.4,
+    margin: "0 0 2px",
+  },
   input: {
     background: "#ffffff",
     border: "1px solid #cbd5e1",
@@ -881,6 +967,16 @@ const styles = {
     borderRadius: "6px",
     minHeight: "86px",
     padding: "10px",
+    resize: "vertical",
+    width: "100%",
+  },
+  compactTextarea: {
+    border: "1px solid #cbd5e1",
+    borderRadius: "6px",
+    color: "#111827",
+    lineHeight: 1.45,
+    minHeight: "64px",
+    padding: "9px 10px",
     resize: "vertical",
     width: "100%",
   },
@@ -911,11 +1007,6 @@ const styles = {
     objectFit: "contain",
     padding: "8px",
   },
-  logoPlaceholder: {
-    color: "#334155",
-    fontSize: "24px",
-    fontWeight: 900,
-  },
   logoCopy: {
     display: "grid",
     gap: "4px",
@@ -937,24 +1028,30 @@ const styles = {
     lineHeight: 1.4,
   },
   logoUploadPanel: {
+    alignItems: "center",
     background: "#ffffff",
     border: "1px dashed #cbd5e1",
     borderRadius: "8px",
     display: "grid",
     gap: "9px",
     gridColumn: "1 / -1",
+    justifyItems: "start",
     padding: "12px",
+  },
+  logoUploadPanelActive: {
+    background: "#f0fdfa",
+    borderColor: "#0f766e",
   },
   logoUploadHeader: {
     display: "grid",
     gap: "3px",
   },
   fileInput: {
-    border: "1px solid #cbd5e1",
-    borderRadius: "6px",
-    color: "#334155",
-    padding: "8px",
-    width: "100%",
+    height: "1px",
+    opacity: 0,
+    overflow: "hidden",
+    position: "absolute",
+    width: "1px",
   },
   fileName: {
     color: "#475569",
@@ -976,6 +1073,16 @@ const styles = {
     justifySelf: "start",
     padding: "9px 12px",
   },
+  logoSelectButton: {
+    background: "#ffffff",
+    border: "1px solid #cbd5e1",
+    borderRadius: "6px",
+    color: "#0f766e",
+    cursor: "pointer",
+    fontSize: "13px",
+    fontWeight: 800,
+    padding: "9px 12px",
+  },
   logoAdvancedButton: {
     background: "none",
     border: 0,
@@ -987,62 +1094,25 @@ const styles = {
     justifySelf: "start",
     padding: 0,
   },
-  advancedCard: {
-    background: "#fbfdff",
-    border: "1px solid #e2e8f0",
-    borderRadius: "8px",
-    overflow: "hidden",
-  },
-  advancedSummary: {
-    alignItems: "center",
-    background: "#f8fafc",
-    display: "flex",
-    gap: "14px",
-    justifyContent: "space-between",
-    padding: "14px 16px",
-  },
-  advancedCopy: {
-    color: "#334155",
+  logoUrlPanel: {
     display: "grid",
-    gap: "3px",
-    minWidth: 0,
-  },
-  secondaryButton: {
-    background: "#ffffff",
-    border: "1px solid #cbd5e1",
-    borderRadius: "6px",
-    color: "#0f766e",
-    cursor: "pointer",
-    fontSize: "12px",
-    fontWeight: 800,
-    minWidth: "78px",
-    padding: "8px 10px",
-  },
-  advancedContent: {
-    display: "grid",
-    gap: "12px",
-    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-    padding: "16px",
-  },
-  marginHeader: {
-    alignItems: "center",
-    display: "flex",
-    gap: "12px",
+    gap: "8px",
     gridColumn: "1 / -1",
-    justifyContent: "space-between",
-  },
-  linkButton: {
-    background: "none",
-    border: 0,
-    color: "#0f766e",
-    cursor: "pointer",
-    fontSize: "13px",
-    fontWeight: 800,
-    padding: 0,
   },
   actions: {
+    alignItems: "center",
+    background: "#ffffff",
+    border: "1px solid #e5e7eb",
+    borderRadius: "8px",
+    bottom: "12px",
+    boxShadow: "0 10px 25px rgba(15, 23, 42, 0.08)",
     display: "flex",
-    justifyContent: "flex-end",
+    gap: "12px",
+    justifyContent: "space-between",
+    marginTop: "4px",
+    padding: "12px",
+    position: "sticky",
+    zIndex: 5,
   },
   primaryButton: {
     background: "#0f766e",
@@ -1052,6 +1122,11 @@ const styles = {
     cursor: "pointer",
     fontWeight: 800,
     padding: "11px 16px",
+  },
+  saveStatusText: {
+    color: "#475569",
+    fontSize: "13px",
+    lineHeight: 1.4,
   },
   infoText: {
     background: "#f8fafc",
@@ -1084,15 +1159,10 @@ const companyPageCss = `
   .company-profile-main-grid {
     grid-template-columns: 1fr !important;
   }
-
-  .company-profile-advanced-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  }
 }
 
 @media (max-width: 640px) {
-  .company-profile-header,
-  .company-profile-advanced-summary {
+  .company-profile-header {
     align-items: stretch !important;
     flex-direction: column !important;
   }
@@ -1106,9 +1176,17 @@ const companyPageCss = `
     text-align: left !important;
   }
 
-  .company-profile-form-grid,
-  .company-profile-advanced-grid {
+  .company-profile-form-grid {
     grid-template-columns: 1fr !important;
+  }
+
+  .company-profile-save-bar {
+    align-items: stretch !important;
+    flex-direction: column !important;
+  }
+
+  .company-profile-save-bar button {
+    width: 100% !important;
   }
 }
 

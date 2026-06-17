@@ -14,8 +14,11 @@ function summarizeInventoryItem(valuation) {
   };
 }
 
-export async function suggestQuoteItems({ description, valuations }) {
+export async function suggestQuoteItems({ description, valuations, assistantMode }) {
   const cleanDescription = String(description || "").trim();
+  const requestedMode = ["local", "gemini"].includes(assistantMode)
+    ? assistantMode
+    : "auto";
 
   if (!cleanDescription) {
     throw new Error("Describe brevemente el trabajo que necesitas cotizar.");
@@ -34,6 +37,7 @@ export async function suggestQuoteItems({ description, valuations }) {
   const response = await callable({
     description: cleanDescription,
     inventoryItems,
+    assistantMode: requestedMode,
   });
 
   return {
@@ -41,6 +45,8 @@ export async function suggestQuoteItems({ description, valuations }) {
       ? response.data.suggestions
       : [],
     source: response.data?.source || "local",
+    mode: response.data?.mode || requestedMode,
+    model: response.data?.model || "",
     warning: response.data?.warning || "",
   };
 }

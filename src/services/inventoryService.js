@@ -19,6 +19,12 @@ import {
 
 const VALID_TYPES = ["producto", "servicio", "actividad"];
 const VALID_STATUS = ["activo", "inactivo", "eliminado"];
+const MANUAL_PRICE_FLAGS = [
+  "precioManual",
+  "ajusteManual",
+  "usarPrecioManual",
+  "precioPersonalizado",
+];
 
 function inventoryCollectionRef(uid) {
   return collection(db, ...inventoryCollectionPath(uid));
@@ -92,6 +98,7 @@ export function normalizeInventoryItem(uid, data, { isCreate = false } = {}) {
     toNumber(data.precioInterno, "El precio interno") === 0
       ? Math.round(costoBase + (costoBase * margenDeseado) / 100)
       : toNumber(data.precioInterno, "El precio interno");
+  const precioManual = MANUAL_PRICE_FLAGS.some((flag) => data[flag] === true);
 
   const estadoRaw = String(data.estado || "").trim().toLowerCase();
   const estado = VALID_STATUS.includes(estadoRaw) ? estadoRaw : "activo";
@@ -103,6 +110,7 @@ export function normalizeInventoryItem(uid, data, { isCreate = false } = {}) {
     unidad,
     costoBase,
     precioInterno,
+    precioManual,
     margenDeseado,
     estado,
     sku: String(data.sku || "").trim() || null,
@@ -113,6 +121,27 @@ export function normalizeInventoryItem(uid, data, { isCreate = false } = {}) {
     uidUsuario: uid,
     actualizadoEn: serverTimestamp(),
   };
+
+  if (data.origen) {
+    payload.origen = String(data.origen).trim();
+  }
+
+  if (data.creadoDesdeCotizacion === true) {
+    payload.creadoDesdeCotizacion = true;
+    payload.fechaCreacion = serverTimestamp();
+  }
+
+  if (data.justificacionSugerencia) {
+    payload.justificacionSugerencia = String(data.justificacionSugerencia).trim();
+  }
+
+  if (data.confianzaPrecio) {
+    payload.confianzaPrecio = String(data.confianzaPrecio).trim();
+  }
+
+  if (data.justificacionPrecio) {
+    payload.justificacionPrecio = String(data.justificacionPrecio).trim();
+  }
 
   if (isCreate) {
     payload.creadoEn = serverTimestamp();

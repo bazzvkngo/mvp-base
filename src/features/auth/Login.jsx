@@ -1,73 +1,192 @@
 ﻿import React, { useState } from "react";
-import { loginWithEmail, registerWithEmail } from "../../services/authService";
+import {
+  loginWithEmail,
+  registerWithEmail,
+  resetPassword,
+} from "../../services/authService";
+import BrandLogo from "../../components/BrandLogo";
 
-const BoxIcon = () => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    fill="none"
-    viewBox="0 0 24 24"
-    strokeWidth={1.5}
-    stroke="currentColor"
-    style={{ width: "42px", height: "42px", color: "#0f766e" }}
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9"
-    />
-  </svg>
-);
+const VERIFICATION_NOTICE_KEY = "valoracloud.verificationNotice";
+
+function getAuthErrorMessage(code) {
+  switch (code) {
+    case "auth/wrong-password":
+      return "Contraseña incorrecta.";
+    case "auth/user-not-found":
+      return "No se encontró un usuario con ese correo.";
+    case "auth/email-already-in-use":
+      return "El correo electrónico ya está en uso.";
+    case "auth/invalid-email":
+      return "Ingresa un correo electrónico válido.";
+    case "auth/weak-password":
+      return "La contraseña debe tener al menos 6 caracteres.";
+    case "auth/invalid-credential":
+      return "Credenciales inválidas.";
+    case "auth/too-many-requests":
+      return "Demasiados intentos. Espera unos minutos e inténtalo nuevamente.";
+    case "auth/network-request-failed":
+      return "No se pudo conectar con Firebase. Revisa tu conexión.";
+    default:
+      return "Error al procesar la solicitud.";
+  }
+}
 
 function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState(null);
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [isLoginView, setIsLoginView] = useState(true);
+  const [isResetView, setIsResetView] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError(null);
+    if (isSubmitting) return;
+
+    setError("");
+    setSuccess("");
+
+    if (!email.trim()) {
+      setError("Ingresa un correo electrónico.");
+      return;
+    }
+
+    if (!password) {
+      setError("Ingresa una contraseña.");
+      return;
+    }
+
+    if (password.length < 6) {
+      setError("La contraseña debe tener al menos 6 caracteres.");
+      return;
+    }
+
+    if (!isLoginView) {
+      if (!confirmPassword) {
+        setError("Repite la contraseña.");
+        return;
+      }
+
+      if (password !== confirmPassword) {
+        setError("Las contraseñas no coinciden.");
+        return;
+      }
+    }
+
+    setIsSubmitting(true);
 
     try {
       if (isLoginView) {
         await loginWithEmail(email, password);
       } else {
         await registerWithEmail(email, password);
+        const message =
+          "Cuenta creada. Te enviamos un correo de verificación. Revisa tu bandeja de entrada antes de continuar.";
+        setSuccess(message);
+        window.sessionStorage.setItem(VERIFICATION_NOTICE_KEY, message);
       }
     } catch (err) {
       console.error("Error de autenticación:", err.code, err.message);
-      switch (err.code) {
-        case "auth/wrong-password":
-          setError("Contraseña incorrecta.");
-          break;
-        case "auth/user-not-found":
-          setError("No se encontró un usuario con ese correo.");
-          break;
-        case "auth/email-already-in-use":
-          setError("El correo electrónico ya está en uso.");
-          break;
-        case "auth/invalid-credential":
-          setError("Credenciales inválidas.");
-          break;
-        default:
-          setError("Error al procesar la solicitud.");
-      }
+      setError(getAuthErrorMessage(err.code));
+    } finally {
+      setIsSubmitting(false);
     }
   };
+
+  const handlePasswordReset = async (e) => {
+    e.preventDefault();
+    if (isResetting) return;
+
+    setError("");
+    setSuccess("");
+
+    if (!email.trim()) {
+      setError("Ingresa tu correo electrónico para restablecer la contraseña.");
+      return;
+    }
+
+    setIsResetting(true);
+
+    try {
+      await resetPassword(email);
+      setSuccess(
+        "Si el correo está registrado, recibirás un enlace para restablecer tu contraseña."
+      );
+      setIsResetView(false);
+    } catch (err) {
+      if (err.code !== "auth/user-not-found") {
+        console.error(
+          "Error al solicitar recuperación de contraseña:",
+          err.code,
+          err.message
+        );
+      }
+
+      if (err.code === "auth/user-not-found") {
+        setSuccess(
+          "Si el correo está registrado, recibirás un enlace para restablecer tu contraseña."
+        );
+        setIsResetView(false);
+      } else if (err.code === "auth/invalid-email") {
+        setError("Ingresa un correo electrónico válido.");
+      } else if (err.message === "auth/email-required") {
+        setError("Ingresa tu correo electrónico para restablecer la contraseña.");
+      } else if (err.code === "auth/too-many-requests") {
+        setError("Demasiados intentos. Espera unos minutos e inténtalo nuevamente.");
+      } else {
+        setError("No se pudo enviar el enlace. Inténtalo nuevamente en unos minutos.");
+      }
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
+  const toggleAuthView = () => {
+    setIsLoginView((current) => !current);
+    setIsResetView(false);
+    setConfirmPassword("");
+    setError("");
+    setSuccess("");
+  };
+
+  const showPasswordField = !isResetView;
+  const showConfirmPasswordField = !isResetView && !isLoginView;
+  const primaryDisabled = isResetView ? isResetting : isSubmitting;
+  const primaryLabel = isResetView
+    ? isResetting
+      ? "Enviando enlace..."
+      : "Enviar enlace"
+    : isSubmitting
+    ? "Procesando..."
+    : isLoginView
+    ? "Ingresar"
+    : "Registrarse";
 
   return (
     <div style={styles.container}>
       <div style={styles.card}>
-        <div style={styles.iconContainer}>
-          <BoxIcon />
-        </div>
+        <BrandLogo variant="auth" showText={false} />
 
         <h2 style={styles.title}>
-          {isLoginView ? "Iniciar sesión" : "Crear cuenta"}
+          {isResetView
+            ? "Recuperar contraseña"
+            : isLoginView
+            ? "Iniciar sesión"
+            : "Crear cuenta"}
         </h2>
-        <p style={styles.subtitle}>ValoraCloud · Valoración y cotizaciones</p>
+        <p style={styles.subtitle}>
+          {isResetView
+            ? "Ingresa tu correo y enviaremos las instrucciones."
+            : "ValoraCloud · Valorización y cotizaciones TI"}
+        </p>
 
-        <form onSubmit={handleSubmit}>
+        <form
+          onSubmit={isResetView ? handlePasswordReset : handleSubmit}
+          noValidate
+        >
           <input
             type="email"
             value={email}
@@ -76,29 +195,76 @@ function Login() {
             style={styles.input}
             required
           />
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Contraseña (mín. 6 caracteres)"
-            style={styles.input}
-            minLength="6"
-            required
-          />
+          {showPasswordField && (
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Contraseña (mín. 6 caracteres)"
+              style={styles.input}
+              minLength="6"
+              required
+            />
+          )}
+          {showConfirmPasswordField && (
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Repetir contraseña"
+              style={styles.input}
+              minLength="6"
+              required
+            />
+          )}
 
           {error && <p style={styles.errorText}>{error}</p>}
+          {success && <p style={styles.successText}>{success}</p>}
 
-          <button type="submit" style={styles.buttonPrimary}>
-            {isLoginView ? "Ingresar" : "Registrarse"}
+          <button
+            type="submit"
+            style={{
+              ...styles.buttonPrimary,
+              ...(primaryDisabled ? styles.buttonDisabled : {}),
+            }}
+            disabled={primaryDisabled}
+          >
+            {primaryLabel}
           </button>
         </form>
 
+        {isLoginView && !isResetView && (
+          <button
+            type="button"
+            onClick={() => {
+              setIsResetView(true);
+              setError("");
+              setSuccess("");
+            }}
+            style={styles.linkButton}
+          >
+            ¿Olvidaste tu contraseña?
+          </button>
+        )}
+
+        {isResetView && (
+          <button
+            type="button"
+            onClick={() => {
+              setIsResetView(false);
+              setError("");
+            }}
+            style={styles.linkButton}
+          >
+            Volver al inicio de sesión
+          </button>
+        )}
+
         <button
-          onClick={() => {
-            setIsLoginView(!isLoginView);
-            setError(null);
-          }}
+          type="button"
+          onClick={toggleAuthView}
           style={styles.buttonSecondary}
+          disabled={isSubmitting || isResetting}
         >
           {isLoginView
             ? "¿No tienes cuenta? Regístrate"
@@ -129,9 +295,6 @@ const styles = {
     width: "100%",
     textAlign: "center",
     border: "1px solid #e5e7eb",
-  },
-  iconContainer: {
-    marginBottom: "0.75rem",
   },
   title: {
     fontSize: "1.6rem",
@@ -166,6 +329,10 @@ const styles = {
     fontWeight: 600,
     marginTop: "0.4rem",
   },
+  buttonDisabled: {
+    cursor: "not-allowed",
+    opacity: 0.68,
+  },
   buttonSecondary: {
     width: "100%",
     backgroundColor: "transparent",
@@ -176,9 +343,28 @@ const styles = {
     fontSize: "0.9rem",
     marginTop: "0.5rem",
   },
+  linkButton: {
+    width: "100%",
+    backgroundColor: "transparent",
+    color: "#0f766e",
+    border: "none",
+    padding: "0.45rem",
+    cursor: "pointer",
+    fontSize: "0.88rem",
+    marginTop: "0.35rem",
+    textDecoration: "underline",
+    textUnderlineOffset: "3px",
+  },
   errorText: {
     color: "#b91c1c",
     fontSize: "0.88rem",
+    marginTop: "0.1rem",
+    marginBottom: "0.5rem",
+  },
+  successText: {
+    color: "#047857",
+    fontSize: "0.88rem",
+    lineHeight: 1.45,
     marginTop: "0.1rem",
     marginBottom: "0.5rem",
   },

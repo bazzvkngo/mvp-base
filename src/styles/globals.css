@@ -256,6 +256,12 @@ a {
     margin-top: 5px !important;
   }
 
+  .quote-print__powered-by {
+    font-size: 9px !important;
+    line-height: 1.2 !important;
+    margin-top: 6px !important;
+  }
+
   .quote-print__empty-notice {
     padding: 10px !important;
   }

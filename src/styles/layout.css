@@ -5,43 +5,68 @@
 }
 
 .sidebar {
+  align-self: flex-start;
   background: #ffffff;
   border-right: 1px solid #e5e7eb;
+  height: 100vh;
   min-width: 0;
+  overflow-y: auto;
   padding: 20px 16px;
+  position: sticky;
+  top: 0;
 }
 
-.brand {
+.brand-logo {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 6px 6px 22px;
 }
 
-.brand-mark {
-  display: grid;
-  place-items: center;
-  width: 40px;
+.brand-logo--sidebar {
+  min-height: 64px;
+  padding: 6px 6px 18px;
+}
+
+.brand-logo--auth {
+  justify-content: center;
+  margin-bottom: 0.75rem;
+}
+
+.brand-logo__icon {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  height: 42px;
+  justify-content: center;
+  width: 42px;
+}
+
+.brand-logo--sidebar .brand-logo__icon {
   height: 40px;
-  border-radius: 8px;
-  background: #0f766e;
-  color: #ffffff;
-  font-weight: 800;
+  width: 40px;
 }
 
-.brand strong,
-.brand span {
-  display: block;
+.brand-logo__text {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
 }
 
-.brand strong {
+.brand-logo__name {
+  color: #111827;
   font-size: 16px;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0;
 }
 
-.brand div span {
+.brand-logo__subtitle {
   color: #64748b;
-  font-size: 12px;
-  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.25;
+  margin-top: 3px;
+  white-space: nowrap;
 }
 
 .sidebar-nav {
@@ -137,6 +162,8 @@
 
   .sidebar {
     position: static;
+    height: auto;
+    overflow-y: visible;
     border-right: 0;
     border-bottom: 1px solid #e5e7eb;
   }

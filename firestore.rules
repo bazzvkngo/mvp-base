@@ -12,8 +12,8 @@ service cloud.firestore {
 
     function isAllowedReferenceTaskUpdate() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(["estado", "actualizadoEn"])
-        && request.resource.data.estado in ["resuelta", "ignorada"];
+        .hasOnly(["estado", "actualizadoEn", "aplazadaHasta", "resueltaEn"])
+        && request.resource.data.estado in ["resuelta", "aplazada"];
     }
 
     match /usuarios/{uid} {
@@ -41,6 +41,11 @@ service cloud.firestore {
       }
 
       match /cotizaciones/{quoteId} {
+        allow read, create, update: if isOwner(uid);
+        allow delete: if false;
+      }
+
+      match /contadores/{counterId} {
         allow read, create, update: if isOwner(uid);
         allow delete: if false;
       }

@@ -15,6 +15,7 @@ import {
   referenceDocPath,
   referencesCollectionPath,
 } from "../firebase/firestorePaths";
+import { resolveReferenceTasksForSavedReference } from "./referenceTaskService";
 
 const VALID_STATUS = ["activa", "inactiva"];
 
@@ -151,6 +152,7 @@ export async function createReference(uid, data) {
     path: referenceDocDebugPath(uid, docRef.id),
     id: docRef.id,
   });
+  await resolveReferenceTasksForSavedReference(uid, payload);
   return docRef;
 }
 
@@ -159,6 +161,7 @@ export async function updateReference(uid, referenceId, data) {
   const path = referenceDocDebugPath(uid, referenceId);
   debugReferenceWrite("update:start", { uid, path, id: referenceId });
   await updateDoc(doc(db, ...referenceDocPath(uid, referenceId)), payload);
+  await resolveReferenceTasksForSavedReference(uid, payload);
   debugReferenceWrite("update:success", { uid, path, id: referenceId });
 }
 

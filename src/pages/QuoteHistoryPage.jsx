@@ -1,7 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import QuotePrintView from "../features/quotes/QuotePrintView";
+import SendQuoteEmailModal from "../features/quotes/SendQuoteEmailModal";
 import { getCompanyProfile } from "../services/companyService";
-import { getQuotes, updateQuoteStatus } from "../services/quoteService";
+import {
+  getQuoteDisplayNumber,
+  getQuotes,
+  updateQuoteStatus,
+} from "../services/quoteService";
 import { formatCLP, formatDate } from "../utils/formatters";
 
 const STATUS_OPTIONS = [
@@ -84,6 +89,7 @@ function QuoteHistoryPage({ userId }) {
   const [statusFilter, setStatusFilter] = useState("todos");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [emailModalQuote, setEmailModalQuote] = useState(null);
 
   useEffect(() => {
     if (!userId) {
@@ -140,7 +146,9 @@ function QuoteHistoryPage({ userId }) {
 
       if (!query) return true;
 
-      const text = `${quote.numero || ""} ${quote.clienteNombre || ""}`.toLowerCase();
+      const text = `${getQuoteDisplayNumber(quote, quote.id || "")} ${
+        quote.clienteNombre || ""
+      }`.toLowerCase();
       return text.includes(query);
     });
   }, [quotes, search, statusFilter]);
@@ -233,6 +241,29 @@ function QuoteHistoryPage({ userId }) {
     }
   };
 
+  const handleEmailSent = (quoteId, emailPatch, result) => {
+    setQuotes((prev) =>
+      prev.map((quote) =>
+        quote.id === quoteId
+          ? {
+              ...quote,
+              ...emailPatch,
+              actualizadoEn: new Date(),
+            }
+          : quote
+      )
+    );
+
+    if (result?.success) {
+      setSuccess("Cotizacion enviada correctamente al correo del cliente.");
+    } else {
+      setError(
+        result?.error ||
+          "No se pudo enviar automaticamente. Puedes usar el respaldo manual."
+      );
+    }
+  };
+
   if (!userId) {
     return (
       <section className="page-section">
@@ -300,6 +331,7 @@ function QuoteHistoryPage({ userId }) {
                   <th style={styles.th}>Fecha</th>
                   <th style={styles.th}>Cliente</th>
                   <th style={styles.th}>Estado</th>
+                  <th style={styles.th}>Correo</th>
                   <th style={styles.th}>Total</th>
                   <th style={styles.th}>Ítems</th>
                   <th style={styles.th}>Actualización</th>
@@ -317,12 +349,15 @@ function QuoteHistoryPage({ userId }) {
                     }
                   >
                     <td style={styles.td}>
-                      <strong>{quote.numero || "-"}</strong>
+                      <strong>{getQuoteDisplayNumber(quote, quote.id || "-")}</strong>
                     </td>
                     <td style={styles.td}>{formatDate(quote.fecha)}</td>
                     <td style={styles.td}>{quote.clienteNombre || "-"}</td>
                     <td style={styles.td}>
                       <StatusBadge status={quote.estado} />
+                    </td>
+                    <td style={styles.td}>
+                      <EmailStatusBadge quote={quote} />
                     </td>
                     <td style={styles.td}>
                       <strong>{formatCLP(quote.total)}</strong>
@@ -358,7 +393,11 @@ function QuoteHistoryPage({ userId }) {
       </div>
 
       {selectedQuote ? (
-        <QuoteDetail quote={selectedQuote} companyProfile={companyProfile} />
+        <QuoteDetail
+          quote={selectedQuote}
+          companyProfile={companyProfile}
+          onOpenEmail={() => setEmailModalQuote(selectedQuote)}
+        />
       ) : (
         !loading &&
         quotes.length > 0 && (
@@ -369,6 +408,17 @@ function QuoteHistoryPage({ userId }) {
           </div>
         )
       )}
+
+      <SendQuoteEmailModal
+        open={Boolean(emailModalQuote)}
+        quote={emailModalQuote}
+        quoteId={emailModalQuote?.id}
+        companyProfile={companyProfile}
+        onClose={() => setEmailModalQuote(null)}
+        onSent={(emailPatch, result) =>
+          handleEmailSent(emailModalQuote?.id, emailPatch, result)
+        }
+      />
     </section>
   );
 }
@@ -386,6 +436,28 @@ function StatusBadge({ status }) {
       {statusLabels[normalizedStatus] || normalizedStatus}
     </span>
   );
+}
+
+function EmailStatusBadge({ quote }) {
+  const status = quote.estadoEnvioCorreo || "";
+
+  if (status === "enviado") {
+    return (
+      <span style={{ ...styles.emailBadge, ...styles.emailSent }}>
+        Enviado
+      </span>
+    );
+  }
+
+  if (status === "error") {
+    return (
+      <span style={{ ...styles.emailBadge, ...styles.emailError }}>
+        Error
+      </span>
+    );
+  }
+
+  return <span style={styles.emailMuted}>Sin envío</span>;
 }
 
 function QuoteActions({
@@ -511,7 +583,7 @@ function QuoteActions({
   return null;
 }
 
-function QuoteDetail({ quote, companyProfile }) {
+function QuoteDetail({ quote, companyProfile, onOpenEmail }) {
 
   return (
     <div className="history-print-area" style={styles.detailPanel}>
@@ -521,20 +593,47 @@ function QuoteDetail({ quote, companyProfile }) {
           <p style={styles.helpText}>
             Vista formal para revisión e impresión desde el historial.
           </p>
+          <EmailStatusLine quote={quote} />
         </div>
-        <button
-          type="button"
-          onClick={() => window.print()}
-          style={styles.printButton}
-        >
-          Imprimir detalle
-        </button>
+        <div style={styles.detailButtonGroup}>
+          <button
+            type="button"
+            onClick={onOpenEmail}
+            style={styles.emailButton}
+          >
+            Enviar por correo
+          </button>
+          <button
+            type="button"
+            onClick={() => window.print()}
+            style={styles.printButton}
+          >
+            Imprimir detalle
+          </button>
+        </div>
       </div>
 
       <QuotePrintView quote={quote} companyProfile={companyProfile} />
     </div>
   );
 
+}
+
+function EmailStatusLine({ quote }) {
+  if (!quote.estadoEnvioCorreo || quote.estadoEnvioCorreo === "simulado") {
+    return null;
+  }
+
+  return (
+    <p style={styles.emailStatusLine}>
+      Correo: <strong>{quote.estadoEnvioCorreo}</strong>
+      {quote.emailClienteDestino ? ` a ${quote.emailClienteDestino}` : ""}
+      {quote.fechaEnvioCorreo
+        ? ` · ultimo intento ${formatTimestamp(quote.fechaEnvioCorreo)}`
+        : ""}
+      {quote.ultimoErrorEnvio ? ` · ${quote.ultimoErrorEnvio}` : ""}
+    </p>
+  );
 }
 
 const styles = {
@@ -690,6 +789,31 @@ const styles = {
     padding: "4px 9px",
     whiteSpace: "nowrap",
   },
+  emailBadge: {
+    borderRadius: "999px",
+    display: "inline-block",
+    fontSize: "11px",
+    fontWeight: 800,
+    padding: "4px 8px",
+    whiteSpace: "nowrap",
+  },
+  emailSent: {
+    background: "#dcfce7",
+    color: "#166534",
+  },
+  emailSimulated: {
+    background: "#fffbeb",
+    color: "#92400e",
+  },
+  emailError: {
+    background: "#fee2e2",
+    color: "#991b1b",
+  },
+  emailMuted: {
+    color: "#94a3b8",
+    fontSize: "12px",
+    whiteSpace: "nowrap",
+  },
   detailPanel: {
     background: "#ffffff",
     border: "1px solid #e5e7eb",
@@ -702,6 +826,27 @@ const styles = {
     justifyContent: "space-between",
     gap: "12px",
     marginBottom: "14px",
+  },
+  detailButtonGroup: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "10px",
+    justifyContent: "flex-end",
+  },
+  emailButton: {
+    background: "#0f766e",
+    border: 0,
+    borderRadius: "6px",
+    color: "#ffffff",
+    cursor: "pointer",
+    fontWeight: 800,
+    padding: "10px 12px",
+  },
+  emailStatusLine: {
+    color: "#64748b",
+    fontSize: "13px",
+    lineHeight: 1.4,
+    margin: "8px 0 0",
   },
   printSheet: {
     background: "#ffffff",

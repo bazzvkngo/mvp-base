@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { PRICING_STATUS } from "../domain/pricing";
 import { subscribeToValuations } from "../services/valuationService";
-import { formatCLP, formatPercent } from "../utils/formatters";
+import { formatCLP, formatDate, formatPercent } from "../utils/formatters";
 
 const tipoLabels = {
   producto: "Producto",
@@ -25,6 +25,24 @@ const statusStyles = {
   [PRICING_STATUS.SOBRE_MERCADO]: {
     background: "#fee2e2",
     color: "#991b1b",
+  },
+};
+
+const differenceMetricStyles = {
+  [PRICING_STATUS.BAJO_MERCADO]: {
+    background: "#ecfdf5",
+    border: "1px solid #bbf7d0",
+    color: "#047857",
+  },
+  [PRICING_STATUS.DENTRO_DE_RANGO]: {
+    background: "#fffbeb",
+    border: "1px solid #fde68a",
+    color: "#92400e",
+  },
+  [PRICING_STATUS.SOBRE_MERCADO]: {
+    background: "#fef2f2",
+    border: "1px solid #fecaca",
+    color: "#b91c1c",
   },
 };
 
@@ -62,6 +80,32 @@ function formatOptionalCLP(value) {
 
 function formatOptionalPercent(value) {
   return value === null || value === undefined ? "-" : formatPercent(value, 1);
+}
+
+const unitLabels = {
+  cuenta: "Cuenta",
+  equipo: "Equipo",
+  hora: "Hora",
+  mes: "Mes",
+  metro: "Metro",
+  proyecto: "Proyecto",
+  punto: "Punto",
+  servicio: "Servicio",
+  unidad: "Unidad",
+  visita: "Visita",
+};
+
+function formatDisplayUnit(value) {
+  const unit = String(value || "").trim();
+  if (!unit) return "-";
+
+  const normalized = unit.toLowerCase();
+  return unitLabels[normalized] || `${unit.charAt(0).toUpperCase()}${unit.slice(1)}`;
+}
+
+function formatReferenceDate(value) {
+  const date = formatDate(value);
+  return date === "-" ? "Sin fecha" : date;
 }
 
 function PricingPage({ userId }) {
@@ -156,7 +200,7 @@ function PricingPage({ userId }) {
       {!loading && valuations.length > 0 && !hasAnyReference && (
         <div style={styles.notice}>
           Hay inventario activo, pero todavía no existen referencias activas.
-          El precio sugerido usa solo costo base y margen deseado.
+          El precio sugerido usa solo el precio interno efectivo del ítem.
         </div>
       )}
 
@@ -216,7 +260,7 @@ function PricingPage({ userId }) {
                   <th style={styles.th}>Ítem</th>
                   <th style={styles.th}>Categoría / tipo</th>
                   <th style={styles.th}>Precio interno</th>
-                  <th style={styles.th}>Prom. mercado</th>
+                  <th style={styles.th}>Promedio mercado</th>
                   <th style={styles.th}>Precio sugerido</th>
                   <th style={styles.th}>Estado</th>
                   <th style={styles.th}>Acciones</th>
@@ -231,7 +275,7 @@ function PricingPage({ userId }) {
                         <td style={{ ...styles.td, ...styles.itemCell }}>
                           <strong>{valuation.nombre}</strong>
                           <span style={styles.itemMeta}>
-                            Unidad: {valuation.unidad || "-"}
+                            Unidad: {formatDisplayUnit(valuation.unidad)}
                           </span>
                         </td>
                         <td style={{ ...styles.td, ...styles.categoryCell }}>
@@ -302,10 +346,10 @@ function ReferenceDetail({ valuation }) {
   return (
     <div style={styles.detailContent}>
       <div style={styles.detailGrid}>
-        <DetailMetric label="Unidad" value={valuation.unidad || "-"} />
+        <DetailMetric label="Unidad" value={formatDisplayUnit(valuation.unidad)} />
         <DetailMetric label="Costo base" value={formatCLP(valuation.costoBase)} />
         <DetailMetric
-          label="Margen"
+          label={valuation.precioManual ? "Margen base" : "Margen"}
           value={formatPercent(valuation.margenDeseado, 1)}
         />
         <DetailMetric
@@ -323,6 +367,7 @@ function ReferenceDetail({ valuation }) {
         <DetailMetric
           label="Diferencia"
           value={formatOptionalPercent(valuation.diferenciaPorcentual)}
+          style={differenceMetricStyles[valuation.estadoValorizacion]}
         />
       </div>
 
@@ -336,7 +381,7 @@ function ReferenceDetail({ valuation }) {
               <div key={reference.id} style={styles.referenceItem}>
                 <strong>{reference.nombreFuente || "Fuente sin nombre"}</strong>
                 <span>{formatCLP(reference.precioObservado)}</span>
-                <small>{reference.fechaConsulta || "Sin fecha"}</small>
+                <small>{formatReferenceDate(reference.fechaConsulta)}</small>
               </div>
             ))}
           </div>
@@ -346,9 +391,9 @@ function ReferenceDetail({ valuation }) {
   );
 }
 
-function DetailMetric({ label, value }) {
+function DetailMetric({ label, value, style }) {
   return (
-    <div style={styles.detailMetric}>
+    <div style={{ ...styles.detailMetric, ...style }}>
       <span>{label}</span>
       <strong>{value}</strong>
     </div>

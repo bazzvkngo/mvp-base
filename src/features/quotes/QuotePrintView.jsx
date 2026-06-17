@@ -1,11 +1,18 @@
 import React from "react";
 import { formatCLP, formatDate } from "../../utils/formatters";
+import { CubeIcon } from "../../components/BrandLogo";
+import {
+  DRAFT_QUOTE_NUMBER_LABEL,
+  getQuoteDisplayNumber,
+} from "../../services/quoteService";
 
 const statusLabels = {
   borrador: "Borrador",
   emitida: "Emitida",
   aceptada: "Aceptada",
   rechazada: "Rechazada",
+  vencida: "Vencida",
+  archivada: "Archivada",
 };
 
 function hasText(value) {
@@ -41,11 +48,17 @@ function joinParts(parts) {
 function QuotePrintView({ quote, companyProfile }) {
   const items = Array.isArray(quote?.items) ? quote.items : [];
   const company = getCompanyData(quote, companyProfile);
-  const brand = company.nombreComercial || "ValoraCloud";
+  const brand = company.nombreComercial || company.razonSocial || "Tu empresa";
+  const showRazonSocial =
+    hasText(company.razonSocial) && company.razonSocial !== brand;
   const address = joinParts([company.direccion, company.ciudad]);
   const contact = joinParts([company.email, company.telefono]);
-  const condicionesPago =
-    quote?.condicionesPago || company.condicionesPago || "-";
+  const quoteNumber = getQuoteDisplayNumber(quote);
+  const condicionesPago = hasText(quote?.condicionesPago)
+    ? quote.condicionesPago
+    : quote?.id
+    ? "-"
+    : company.condicionesPago || "-";
 
   return (
     <article className="quote-print" style={styles.printSheet}>
@@ -59,12 +72,12 @@ function QuotePrintView({ quote, companyProfile }) {
                 style={styles.logo}
               />
             ) : (
-              <span style={styles.logoPlaceholder}>VC</span>
+              <CubeIcon size={42} strokeWidth={1.6} />
             )}
           </div>
           <div>
             <h2 className="quote-print__brand" style={styles.printBrand}>{brand}</h2>
-            {company.razonSocial && (
+            {showRazonSocial && (
               <p className="quote-print__muted" style={styles.printMuted}>
                 {company.razonSocial}
               </p>
@@ -93,7 +106,14 @@ function QuotePrintView({ quote, companyProfile }) {
           </div>
         </div>
         <div className="quote-print__meta" style={styles.printMeta}>
-          <strong>Cotización {quote?.numero || "-"}</strong>
+          <strong>
+            {quoteNumber === DRAFT_QUOTE_NUMBER_LABEL
+              ? "Cotización"
+              : `Cotización N.° ${quoteNumber}`}
+          </strong>
+          {quoteNumber === DRAFT_QUOTE_NUMBER_LABEL && (
+            <span>{DRAFT_QUOTE_NUMBER_LABEL}</span>
+          )}
           <span>Fecha: {formatDate(quote?.fecha)}</span>
           <span>Estado: {statusLabels[quote?.estado] || quote?.estado || "-"}</span>
         </div>
@@ -189,6 +209,9 @@ function QuotePrintView({ quote, companyProfile }) {
           </p>
         )}
       </section>
+      <p className="quote-print__powered-by" style={styles.poweredBy}>
+        Documento generado con ValoraCloud
+      </p>
     </article>
   );
 }
@@ -219,13 +242,15 @@ function TotalRow({ label, value, strong = false }) {
 const styles = {
   printSheet: {
     background: "#ffffff",
-    border: "1px solid #e5e7eb",
+    border: "1px solid #dbe3ef",
+    borderRadius: "8px",
     color: "#111827",
+    lineHeight: 1.45,
     padding: "28px",
   },
   printHeader: {
     alignItems: "flex-start",
-    borderBottom: "2px solid #111827",
+    borderBottom: "2px solid #0f766e",
     display: "flex",
     justifyContent: "space-between",
     gap: "20px",
@@ -253,11 +278,8 @@ const styles = {
     objectFit: "contain",
     padding: "7px",
   },
-  logoPlaceholder: {
-    color: "#64748b",
-    fontWeight: 900,
-  },
   printBrand: {
+    color: "#0f172a",
     margin: 0,
     fontSize: "26px",
   },
@@ -266,18 +288,24 @@ const styles = {
     margin: "3px 0 0",
   },
   printMeta: {
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
+    borderRadius: "8px",
     display: "grid",
     gap: "4px",
+    minWidth: "190px",
+    padding: "12px",
     textAlign: "right",
   },
   clientBox: {
     background: "#f8fafc",
-    border: "1px solid #e5e7eb",
+    border: "1px solid #e2e8f0",
     borderRadius: "8px",
     margin: "18px 0",
-    padding: "14px",
+    padding: "16px",
   },
   printSectionTitle: {
+    color: "#0f172a",
     fontSize: "15px",
     margin: "0 0 8px",
   },
@@ -298,16 +326,16 @@ const styles = {
     textAlign: "center",
   },
   printTh: {
-    background: "#111827",
+    background: "#0f172a",
     color: "#ffffff",
     fontSize: "12px",
-    padding: "10px",
+    padding: "11px",
     textAlign: "left",
     textTransform: "uppercase",
   },
   printTd: {
     borderBottom: "1px solid #e5e7eb",
-    padding: "10px",
+    padding: "11px",
     verticalAlign: "top",
   },
   printItemMeta: {
@@ -346,15 +374,24 @@ const styles = {
     fontSize: "22px",
   },
   conditionsBox: {
-    borderTop: "1px solid #e5e7eb",
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
+    borderRadius: "8px",
     marginTop: "20px",
-    paddingTop: "14px",
+    padding: "14px",
   },
   footerNote: {
     color: "#475569",
     fontSize: "13px",
     lineHeight: 1.45,
     margin: "10px 0 0",
+  },
+  poweredBy: {
+    color: "#94a3b8",
+    fontSize: "11px",
+    lineHeight: 1.35,
+    margin: "12px 0 0",
+    textAlign: "center",
   },
 };
 

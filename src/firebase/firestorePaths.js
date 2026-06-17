@@ -44,6 +44,12 @@ export const quoteDocPath = (userId, quoteId) => [
   "cotizaciones",
   quoteId,
 ];
+export const quoteCounterDocPath = (userId, year) => [
+  "usuarios",
+  userId,
+  "contadores",
+  `cotizaciones_${year}`,
+];
 export const referenceTasksCollectionPath = (userId) => [
   "usuarios",
   userId,

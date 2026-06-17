@@ -34,4 +34,4 @@ firebase-debug.*
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-vite-dev*.log
+vite-dev*.logvite-codex*.log

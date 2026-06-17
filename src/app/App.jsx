@@ -16,6 +16,7 @@ import MarketReferencesPage from "../pages/MarketReferencesPage";
 import NewQuotePage from "../pages/NewQuotePage";
 import PricingPage from "../pages/PricingPage";
 import QuoteHistoryPage from "../pages/QuoteHistoryPage";
+import ReferenceTasksPage from "../pages/ReferenceTasksPage";
 import { subscribeToAuth } from "../services/authService";
 
 function LoadingScreen() {
@@ -60,6 +61,10 @@ function AppRoutes({ usuario }) {
         <Route
           path="/referencias"
           element={<MarketReferencesPage userId={usuario?.uid} />}
+        />
+        <Route
+          path="/tareas-referencias"
+          element={<ReferenceTasksPage userId={usuario?.uid} />}
         />
         <Route
           path="/valorizacion"
