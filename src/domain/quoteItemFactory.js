@@ -30,15 +30,28 @@ export function calculateQuoteTotals(items, descuento = 0) {
 
 export function normalizeQuoteItems(items) {
   return Array.isArray(items)
-    ? items.map((item) => ({
-        ...item,
-        cantidad: Math.max(toSafeNumber(item.cantidad, 1), 0),
-        precioUnitarioEditable: Math.max(
-          toSafeNumber(item.precioUnitarioEditable, 0),
+    ? items.map((item) => {
+        const precioUnitarioEditable = Math.max(
+          toSafeNumber(
+            item.precioUnitarioEditable ??
+              item.precioUnitario ??
+              item.precio ??
+              item.precioSugerido,
+            0
+          ),
           0
-        ),
-        totalLinea: calculateQuoteLineTotal(item),
-      }))
+        );
+
+        return {
+          ...item,
+          cantidad: Math.max(toSafeNumber(item.cantidad, 1), 0),
+          precioUnitarioEditable,
+          totalLinea: calculateQuoteLineTotal({
+            ...item,
+            precioUnitarioEditable,
+          }),
+        };
+      })
     : [];
 }
 

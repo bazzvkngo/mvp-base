@@ -78,6 +78,10 @@ function AppRoutes({ usuario }) {
           path="/cotizaciones/nueva"
           element={<NewQuotePage userId={usuario?.uid} />}
         />
+        <Route
+          path="/cotizaciones/:quoteId/editar"
+          element={<NewQuotePage userId={usuario?.uid} />}
+        />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>

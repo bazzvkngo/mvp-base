@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useParams } from "react-router-dom";
 import {
   calculateQuoteTotals,
   createQuoteItemFromValuation,
@@ -10,8 +11,10 @@ import SendQuoteEmailModal from "../features/quotes/SendQuoteEmailModal";
 import { suggestQuoteItems } from "../services/aiQuoteService";
 import { getCompanyProfile } from "../services/companyService";
 import { createInventoryItem } from "../services/inventoryService";
+import { isQuoteEmailSendable } from "../services/quoteEmailService";
 import {
   createQuote,
+  getQuoteById,
   getQuoteDisplayNumber,
   updateQuote,
 } from "../services/quoteService";
@@ -19,6 +22,8 @@ import { subscribeToValuations } from "../services/valuationService";
 import { formatCLP, formatDate } from "../utils/formatters";
 
 const ASSISTANT_DESCRIPTION_MAX_LENGTH = 1200;
+const MANUAL_CATALOG_PAGE_SIZE = 12;
+const ITEM_FEEDBACK_HIDE_DELAY = 3500;
 
 const estadoLabels = {
   borrador: "Borrador",
@@ -206,23 +211,85 @@ function buildInitialQuote() {
   };
 }
 
+function normalizeStoredQuoteItems(items) {
+  return normalizeQuoteItems(
+    Array.isArray(items)
+      ? items.map((item) => {
+          const storedUnitPrice =
+            item?.precioUnitarioEditable ??
+            item?.precioUnitario ??
+            item?.precio ??
+            item?.precioSugerido ??
+            0;
+
+          return {
+            ...item,
+            itemId: item?.itemId || item?.productoId || "",
+            nombre: item?.nombre || "Ítem sin nombre",
+            descripcion: item?.descripcion || "",
+            tipoItem: item?.tipoItem || "",
+            categoria: item?.categoria || "",
+            unidad: item?.unidad || "unidad",
+            precioSugerido:
+              item?.precioSugerido !== undefined
+                ? item.precioSugerido
+                : storedUnitPrice,
+            precioUnitarioEditable: storedUnitPrice,
+          };
+        })
+      : []
+  );
+}
+
+function buildQuoteFromSavedQuote(savedQuote = {}) {
+  return {
+    ...buildInitialQuote(),
+    ...savedQuote,
+    numero:
+      savedQuote.numero ||
+      savedQuote.numeroCotizacion ||
+      savedQuote.quoteNumber ||
+      "",
+    fecha: savedQuote.fecha || "",
+    estado: savedQuote.estado || "borrador",
+    clienteNombre: savedQuote.clienteNombre || "",
+    clienteRut: savedQuote.clienteRut || "",
+    clienteEmail: savedQuote.clienteEmail || "",
+    clienteTelefono: savedQuote.clienteTelefono || "",
+    clienteDireccion: savedQuote.clienteDireccion || "",
+    condicionesPago: savedQuote.condicionesPago || "",
+    items: normalizeStoredQuoteItems(savedQuote.items),
+    descuento: Number(savedQuote.descuento || 0),
+    observaciones: savedQuote.observaciones || "",
+    empresa: savedQuote.empresa || {},
+  };
+}
+
 function NewQuotePage({ userId }) {
+  const { quoteId: editQuoteId = "" } = useParams();
   const addedItemsRef = useRef(null);
   const assistantDescriptionRef = useRef("");
   const dictationBaseTextRef = useRef("");
   const dictationFinalTextRef = useRef("");
   const dictationInterimTextRef = useRef("");
+  const itemFeedbackTimeoutRef = useRef(null);
   const highlightTimeoutRef = useRef(null);
   const speechRecognitionRef = useRef(null);
+  const isEditMode = Boolean(editQuoteId);
   const assistantRequestMode = useMemo(() => getAssistantModeFromQuery(), []);
   const [quote, setQuote] = useState(() => buildInitialQuote());
   const [valuations, setValuations] = useState([]);
   const [companyProfile, setCompanyProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [editLoading, setEditLoading] = useState(Boolean(editQuoteId));
+  const [editLoadError, setEditLoadError] = useState("");
+  const [editLockedMessage, setEditLockedMessage] = useState("");
+  const [loadedDraftQuote, setLoadedDraftQuote] = useState(null);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [itemFeedback, setItemFeedback] = useState("");
   const [savedQuoteId, setSavedQuoteId] = useState(null);
   const [assistantDescription, setAssistantDescription] = useState("");
   const [assistantSuggestions, setAssistantSuggestions] = useState([]);
@@ -241,7 +308,10 @@ function NewQuotePage({ userId }) {
   const [suggestedItemSaving, setSuggestedItemSaving] = useState(false);
   const [suggestedItemError, setSuggestedItemError] = useState("");
   const [highlightedItemId, setHighlightedItemId] = useState("");
-  const [manualCatalogOpen, setManualCatalogOpen] = useState(true);
+  const [manualCatalogOpen, setManualCatalogOpen] = useState(false);
+  const [manualCatalogVisibleCount, setManualCatalogVisibleCount] = useState(
+    MANUAL_CATALOG_PAGE_SIZE
+  );
   const [emailModalOpen, setEmailModalOpen] = useState(false);
 
   useEffect(() => {
@@ -269,6 +339,7 @@ function NewQuotePage({ userId }) {
     getCompanyProfile(userId)
       .then((profile) => {
         setCompanyProfile(profile);
+        if (isEditMode) return;
         setQuote((prev) => ({
           ...prev,
           condicionesPago:
@@ -280,12 +351,15 @@ function NewQuotePage({ userId }) {
       });
 
     return () => unsubscribe();
-  }, [userId]);
+  }, [isEditMode, userId]);
 
   useEffect(
     () => () => {
       if (highlightTimeoutRef.current) {
         window.clearTimeout(highlightTimeoutRef.current);
+      }
+      if (itemFeedbackTimeoutRef.current) {
+        window.clearTimeout(itemFeedbackTimeoutRef.current);
       }
     },
     []
@@ -312,6 +386,63 @@ function NewQuotePage({ userId }) {
     assistantDescriptionRef.current = assistantDescription;
   }, [assistantDescription]);
 
+  useEffect(() => {
+    if (!isEditMode) {
+      setEditLoading(false);
+      setEditLoadError("");
+      setEditLockedMessage("");
+      setLoadedDraftQuote(null);
+      return;
+    }
+
+    if (!userId) {
+      setEditLoading(false);
+      return;
+    }
+
+    let active = true;
+    setEditLoading(true);
+    setEditLoadError("");
+    setEditLockedMessage("");
+    setLoadedDraftQuote(null);
+    setSavedQuoteId(null);
+
+    getQuoteById(userId, editQuoteId)
+      .then((savedQuote) => {
+        if (!active) return;
+
+        if (!savedQuote) {
+          setEditLoadError("No encontramos la cotización solicitada.");
+          return;
+        }
+
+        if ((savedQuote.estado || "borrador") !== "borrador") {
+          setEditLoadError(
+            "Esta cotización ya no puede editarse porque fue emitida o cerrada."
+          );
+          return;
+        }
+
+        const editableQuote = buildQuoteFromSavedQuote(savedQuote);
+        setQuote(editableQuote);
+        setLoadedDraftQuote(editableQuote);
+        setSavedQuoteId(savedQuote.id);
+      })
+      .catch((err) => {
+        console.error("Error al cargar cotización para edición:", err);
+        if (active) {
+          setEditLoadError("No se pudo cargar la cotización solicitada.");
+        }
+      })
+      .finally(() => {
+        if (active) setEditLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [editQuoteId, isEditMode, userId]);
+
   const normalizedItems = useMemo(
     () => normalizeQuoteItems(quote.items),
     [quote.items]
@@ -326,7 +457,7 @@ function NewQuotePage({ userId }) {
     () => ({
       id: savedQuoteId,
       ...quote,
-      empresa: companyProfile || {},
+      empresa: quote.empresa || companyProfile || {},
       items: normalizedItems,
       subtotal: totals.subtotal,
       descuento: totals.descuento,
@@ -353,6 +484,17 @@ function NewQuotePage({ userId }) {
     });
   }, [search, valuations]);
 
+  const hasActiveCatalogSearch = search.trim().length > 0;
+  const visibleCatalogValuations = hasActiveCatalogSearch
+    ? filteredValuations
+    : filteredValuations.slice(0, manualCatalogVisibleCount);
+  const catalogHasMoreItems =
+    !hasActiveCatalogSearch && manualCatalogVisibleCount < filteredValuations.length;
+  const catalogShowingAllItems =
+    !hasActiveCatalogSearch &&
+    filteredValuations.length > MANUAL_CATALOG_PAGE_SIZE &&
+    manualCatalogVisibleCount >= filteredValuations.length;
+
   const matchedAssistantSuggestions = useMemo(() => {
     const groupsByItemId = new Map();
 
@@ -376,14 +518,6 @@ function NewQuotePage({ userId }) {
     return Array.from(groupsByItemId.values());
   }, [assistantSuggestions, valuations]);
 
-  useEffect(() => {
-    if (assistantSuggestions.length > 0) {
-      setManualCatalogOpen(false);
-    } else {
-      setManualCatalogOpen(true);
-    }
-  }, [assistantSuggestions]);
-
   const dictationStateLabel = dictationListening
     ? "Escuchando"
     : dictationStatus.type === "unsupported"
@@ -401,8 +535,21 @@ function NewQuotePage({ userId }) {
     }));
   };
 
+  const showItemFeedback = (message) => {
+    setItemFeedback(message);
+
+    if (itemFeedbackTimeoutRef.current) {
+      window.clearTimeout(itemFeedbackTimeoutRef.current);
+    }
+
+    itemFeedbackTimeoutRef.current = window.setTimeout(() => {
+      setItemFeedback("");
+      itemFeedbackTimeoutRef.current = null;
+    }, ITEM_FEEDBACK_HIDE_DELAY);
+  };
+
   const showAddFeedback = (itemId, wasExisting) => {
-    setSuccess(
+    showItemFeedback(
       wasExisting
         ? "Cantidad actualizada en la cotización."
         : "Ítem agregado a la cotización."
@@ -457,6 +604,25 @@ function NewQuotePage({ userId }) {
       };
     });
     showAddFeedback(valuation.itemId, wasExisting);
+  };
+
+  const handleCatalogSearchChange = (event) => {
+    const nextSearch = event.target.value;
+    setSearch(nextSearch);
+
+    if (!nextSearch.trim()) {
+      setManualCatalogVisibleCount(MANUAL_CATALOG_PAGE_SIZE);
+    }
+  };
+
+  const showMoreCatalogItems = () => {
+    setManualCatalogVisibleCount((current) =>
+      Math.min(current + MANUAL_CATALOG_PAGE_SIZE, filteredValuations.length)
+    );
+  };
+
+  const showLessCatalogItems = () => {
+    setManualCatalogVisibleCount(MANUAL_CATALOG_PAGE_SIZE);
   };
 
   const getMatchedValuation = (suggestion) =>
@@ -832,7 +998,7 @@ function NewQuotePage({ userId }) {
       setValuations((prev) => [createdValuation, ...prev]);
       setSuggestedItemDraft(null);
       addItem(createdValuation, suggestedItemDraft.cantidadSugerida);
-      setSuccess("Ítem sugerido creado en inventario y agregado a la cotización.");
+      showItemFeedback("Ítem sugerido creado en inventario y agregado a la cotización.");
     } catch (err) {
       console.error("Error creando ítem sugerido:", err);
       setSuggestedItemError(
@@ -886,7 +1052,7 @@ function NewQuotePage({ userId }) {
       };
     });
 
-    setSuccess(
+    showItemFeedback(
       existingCount > 0
         ? "Sugerencias con inventario agregadas. Los ítems existentes actualizaron su cantidad."
         : "Sugerencias con inventario agregadas a la cotización."
@@ -917,6 +1083,10 @@ function NewQuotePage({ userId }) {
         )
       ),
     }));
+
+    if (field === "cantidad") {
+      showItemFeedback("Cantidad actualizada en la cotización.");
+    }
   };
 
   const removeItem = (itemId) => {
@@ -924,13 +1094,25 @@ function NewQuotePage({ userId }) {
       ...prev,
       items: prev.items.filter((item) => item.itemId !== itemId),
     }));
+    showItemFeedback("Ítem eliminado de la cotización.");
   };
 
   const clearQuote = () => {
+    if (isEditMode && loadedDraftQuote) {
+      setQuote(loadedDraftQuote);
+      setSavedQuoteId(editQuoteId);
+      setError("");
+      setSuccess("");
+      setItemFeedback("");
+      setHighlightedItemId("");
+      return;
+    }
+
     setQuote(buildInitialQuote());
     setSavedQuoteId(null);
     setError("");
     setSuccess("");
+    setItemFeedback("");
     setHighlightedItemId("");
   };
 
@@ -945,6 +1127,11 @@ function NewQuotePage({ userId }) {
   };
 
   const saveQuote = async (estado) => {
+    if (isEditMode && editLockedMessage) {
+      setError(editLockedMessage);
+      return;
+    }
+
     const validationError = validateQuote();
     if (validationError) {
       setError(validationError);
@@ -960,7 +1147,7 @@ function NewQuotePage({ userId }) {
       const payload = {
         ...quote,
         estado,
-        empresa: companyProfile || {},
+        empresa: quote.empresa || companyProfile || {},
         items: normalizedItems,
         subtotal: totals.subtotal,
         descuento: totals.descuento,
@@ -978,11 +1165,23 @@ function NewQuotePage({ userId }) {
         fecha: saved.fecha,
         estado,
       }));
-      setSuccess(
-        `Cotización ${getQuoteDisplayNumber(saved)} guardada como ${estadoLabels[
-          estado
-        ].toLowerCase()}.`
-      );
+      if (isEditMode && estado === "borrador") {
+        const nextDraft = buildQuoteFromSavedQuote(saved);
+        setLoadedDraftQuote(nextDraft);
+        setSuccess("Borrador actualizado correctamente.");
+      } else {
+        setSuccess(
+          `Cotización ${getQuoteDisplayNumber(saved)} guardada como ${estadoLabels[
+            estado
+          ].toLowerCase()}.`
+        );
+      }
+
+      if (isEditMode && estado !== "borrador") {
+        setEditLockedMessage(
+          "Esta cotización ya no puede editarse porque fue emitida o cerrada."
+        );
+      }
     } catch (err) {
       console.error("Error al guardar cotización:", err);
       setError(err.message || "No se pudo guardar la cotización.");
@@ -998,11 +1197,13 @@ function NewQuotePage({ userId }) {
     }));
 
     if (result?.success) {
-      setSuccess("Cotizacion enviada correctamente al correo del cliente.");
+      setSuccess(
+        `Cotización enviada correctamente a ${emailPatch?.emailClienteDestino || "cliente"}.`
+      );
     } else {
       setError(
         result?.error ||
-          "No se pudo enviar automaticamente. Puedes usar el respaldo manual."
+          "No fue posible enviar la cotización. Puedes utilizar el respaldo manual."
       );
     }
   };
@@ -1015,9 +1216,46 @@ function NewQuotePage({ userId }) {
     );
   }
 
+  if (isEditMode && editLoading) {
+    return (
+      <section className="quote-page" style={styles.wrapper}>
+        <div className="no-print" style={styles.panel}>
+          <h3 style={styles.panelTitle}>Cargando borrador</h3>
+          <p style={styles.helpText}>Estamos obteniendo la cotización guardada.</p>
+        </div>
+      </section>
+    );
+  }
+
+  if (isEditMode && (editLoadError || editLockedMessage)) {
+    return (
+      <section className="quote-page" style={styles.wrapper}>
+        <div className="no-print" style={styles.panel}>
+          <h3 style={styles.panelTitle}>Edición no disponible</h3>
+          <p style={styles.errorText}>{editLoadError || editLockedMessage}</p>
+          <Link to="/cotizaciones" style={styles.secondaryLinkButton}>
+            Volver a Historial
+          </Link>
+        </div>
+      </section>
+    );
+  }
+
   const defaultPaymentTerms = String(companyProfile?.condicionesPago || "");
   const showRestorePaymentTerms =
     Boolean(defaultPaymentTerms) && quote.condicionesPago !== defaultPaymentTerms;
+  const canSendCurrentQuote = isQuoteEmailSendable(currentSavedQuote, savedQuoteId);
+  const emailDisabled = saving || !canSendCurrentQuote;
+  const emailHint = !canSendCurrentQuote
+    ? "Emite la cotización antes de enviarla al cliente."
+    : "";
+  const openEmailModal = () => {
+    if (!canSendCurrentQuote) {
+      setError("Emite la cotización antes de enviarla al cliente.");
+      return;
+    }
+    setEmailModalOpen(true);
+  };
 
   return (
     <section className="quote-page" style={styles.wrapper}>
@@ -1025,10 +1263,13 @@ function NewQuotePage({ userId }) {
       <div className="no-print" style={styles.header}>
         <div>
           <span className="eyebrow">Cotizaciones</span>
-          <h2 style={styles.title}>Nueva cotización formal</h2>
+          <h2 style={styles.title}>
+            {isEditMode ? "Editar cotización en borrador" : "Nueva cotización formal"}
+          </h2>
           <p style={styles.subtitle}>
-            Arma una cotización editable desde ítems valorizados, ajusta precios
-            y genera un documento formal.
+            {isEditMode
+              ? `Actualiza el borrador ${getQuoteDisplayNumber(quote)} sin cambiar su número original.`
+              : "Arma una cotización editable desde ítems valorizados, ajusta precios y genera un documento formal."}
           </p>
         </div>
       </div>
@@ -1103,7 +1344,7 @@ function NewQuotePage({ userId }) {
                 onChange={(event) =>
                   updateField("clienteNombre", event.target.value)
                 }
-                placeholder="Ej: Maria Gonzalez"
+                placeholder="Escribe el nombre del cliente"
                 style={styles.input}
               />
             </Field>
@@ -1112,6 +1353,7 @@ function NewQuotePage({ userId }) {
                 type="text"
                 value={quote.clienteRut}
                 onChange={(event) => updateField("clienteRut", event.target.value)}
+                placeholder="Escribe el RUT o DNI"
                 style={styles.input}
               />
             </Field>
@@ -1122,6 +1364,7 @@ function NewQuotePage({ userId }) {
                 onChange={(event) =>
                   updateField("clienteEmail", event.target.value)
                 }
+                placeholder="Escribe el correo del cliente"
                 style={styles.input}
               />
             </Field>
@@ -1132,6 +1375,7 @@ function NewQuotePage({ userId }) {
                 onChange={(event) =>
                   updateField("clienteTelefono", event.target.value)
                 }
+                placeholder="Escribe un teléfono de contacto"
                 style={styles.input}
               />
             </Field>
@@ -1142,6 +1386,7 @@ function NewQuotePage({ userId }) {
                 onChange={(event) =>
                   updateField("clienteDireccion", event.target.value)
                 }
+                placeholder="Escribe la dirección del cliente"
                 style={styles.input}
               />
             </Field>
@@ -1175,7 +1420,7 @@ function NewQuotePage({ userId }) {
           onChange={handleAssistantDescriptionChange}
           rows={4}
           maxLength={ASSISTANT_DESCRIPTION_MAX_LENGTH}
-          placeholder="Ej: Necesito cotizar instalación de 4 cámaras en terreno de 40 x 40 metros"
+          placeholder="Describe el trabajo, servicio o solución que necesitas cotizar"
           style={{ ...styles.textarea, ...styles.assistantTextarea }}
         />
         <div style={styles.dictationRow}>
@@ -1222,7 +1467,7 @@ function NewQuotePage({ userId }) {
             </span>
           </div>
           <span style={styles.assistantNote}>
-            Puedes escribir o dictar el requerimiento antes de sugerir ítems.
+            Escribe o dicta el requerimiento para obtener sugerencias.
           </span>
         </div>
         {dictationStatus.text && (
@@ -1247,7 +1492,7 @@ function NewQuotePage({ userId }) {
             {assistantLoading ? "Sugiriendo..." : "Sugerir ítems"}
           </button>
           <span style={styles.assistantNote}>
-            No calcula precios ni crea cotizaciones automáticamente.
+            Las sugerencias no modifican precios ni crean la cotización automáticamente.
           </span>
         </div>
 
@@ -1361,6 +1606,131 @@ function NewQuotePage({ userId }) {
         )}
       </div>
 
+      <div className="no-print" style={styles.panel}>
+        <div style={{ ...styles.sectionHeader, ...styles.catalogHeader }}>
+          <div>
+            <h3 style={{ ...styles.panelTitle, ...styles.compactPanelTitle }}>
+              Catálogo manual · {valuations.length} ítems
+            </h3>
+            <p style={styles.helpText}>
+              {manualCatalogOpen
+                ? "Solo se muestran ítems activos del inventario."
+                : "Busca y agrega productos, servicios o actividades del inventario."}
+            </p>
+          </div>
+          <div style={styles.catalogActions}>
+            <button
+              type="button"
+              onClick={() => setManualCatalogOpen((current) => !current)}
+              aria-expanded={manualCatalogOpen}
+              aria-controls="manual-catalog-content"
+              style={styles.secondaryButton}
+            >
+              {manualCatalogOpen ? "Ocultar catálogo" : "Mostrar catálogo"}
+            </button>
+            {manualCatalogOpen && (
+              <input
+                value={search}
+                onChange={handleCatalogSearchChange}
+                placeholder="Buscar por nombre o categoría"
+                style={styles.searchInput}
+              />
+            )}
+          </div>
+        </div>
+
+        <div id="manual-catalog-content" hidden={!manualCatalogOpen}>
+          {loading ? (
+            <div style={styles.emptyState}>
+              <h3 style={styles.emptyTitle}>Cargando inventario valorizado</h3>
+              <p style={styles.emptyText}>
+                Estamos preparando los ítems activos para agregarlos a la cotización.
+              </p>
+            </div>
+          ) : valuations.length === 0 ? (
+            <div style={styles.emptyState}>
+              <h3 style={styles.emptyTitle}>No hay inventario activo valorizado</h3>
+              <p style={styles.emptyText}>
+                Agrega ítems activos al inventario para comenzar una cotización.
+              </p>
+            </div>
+          ) : filteredValuations.length === 0 ? (
+            <div style={styles.emptyState}>
+              <h3 style={styles.emptyTitle}>No hay resultados para esa búsqueda</h3>
+              <p style={styles.emptyText}>
+                Ajusta el texto de búsqueda o agrega el ítem desde el asistente.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div style={styles.valuationGrid}>
+                {visibleCatalogValuations.map((valuation) => {
+                  const quoteQuantity = itemQuantityById[valuation.itemId] || 0;
+                  return (
+                    <div key={valuation.itemId} style={styles.valuationCard}>
+                      <div>
+                        <strong>{valuation.nombre}</strong>
+                        <span style={styles.itemMeta}>
+                          {valuation.categoria || "Sin categoría"} ·{" "}
+                          {tipoLabels[valuation.tipoItem] || valuation.tipoItem || "-"}
+                        </span>
+                      </div>
+                      <div style={styles.valuationFooter}>
+                        <div>
+                          <span style={styles.miniLabel}>Precio sugerido</span>
+                          <strong>{formatCLP(valuation.precioSugerido)}</strong>
+                        </div>
+                        <span
+                          style={{
+                            ...styles.statusBadge,
+                            ...statusStyles[valuation.estadoValorizacion],
+                          }}
+                        >
+                          {valuation.estadoValorizacion}
+                        </span>
+                      </div>
+                      {quoteQuantity > 0 && (
+                        <span style={styles.quoteBadge}>
+                          En cotización: {quoteQuantity}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => addItem(valuation)}
+                        style={{ ...styles.secondaryButton, ...styles.compactItemButton }}
+                      >
+                        {quoteQuantity > 0 ? "Agregar otra vez" : "Agregar a cotización"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              {(catalogHasMoreItems || catalogShowingAllItems) && (
+                <div style={styles.catalogPagination}>
+                  {catalogHasMoreItems ? (
+                    <button
+                      type="button"
+                      onClick={showMoreCatalogItems}
+                      style={styles.secondaryButton}
+                    >
+                      Mostrar más
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={showLessCatalogItems}
+                      style={styles.secondaryButton}
+                    >
+                      Mostrar menos
+                    </button>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
       <div className="no-print" style={styles.panel} ref={addedItemsRef}>
         <div style={styles.addedHeader}>
           <div>
@@ -1374,6 +1744,15 @@ function NewQuotePage({ userId }) {
             <strong>{formatCLP(totals.total)}</strong>
           </div>
         </div>
+        {itemFeedback && (
+          <p
+            className="no-print"
+            aria-live="polite"
+            style={styles.itemFeedbackText}
+          >
+            {itemFeedback}
+          </p>
+        )}
         {normalizedItems.length === 0 ? (
           <div style={styles.emptyState}>
             <h3 style={styles.emptyTitle}>Todavía no hay ítems en la cotización</h3>
@@ -1460,113 +1839,9 @@ function NewQuotePage({ userId }) {
         )}
       </div>
 
-      <div className="no-print" style={styles.panel}>
-        <div style={styles.sectionHeader}>
-          <div>
-            <h3 style={styles.panelTitle}>Catálogo manual de ítems valorizados</h3>
-            <p style={styles.helpText}>
-              Solo se muestran ítems activos del inventario. El precio inicial
-              corresponde al precio sugerido.
-            </p>
-          </div>
-          <div style={styles.catalogActions}>
-            {assistantSuggestions.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setManualCatalogOpen((current) => !current)}
-                style={styles.secondaryButton}
-              >
-                {manualCatalogOpen ? "Ocultar catálogo" : "Mostrar catálogo"}
-              </button>
-            )}
-            {manualCatalogOpen && (
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Buscar por nombre o categoría"
-                style={styles.searchInput}
-              />
-            )}
-          </div>
-        </div>
-
-        {manualCatalogOpen ? (
-          loading ? (
-            <div style={styles.emptyState}>
-              <h3 style={styles.emptyTitle}>Cargando inventario valorizado</h3>
-              <p style={styles.emptyText}>
-                Estamos preparando los ítems activos para agregarlos a la cotización.
-              </p>
-            </div>
-          ) : valuations.length === 0 ? (
-            <div style={styles.emptyState}>
-              <h3 style={styles.emptyTitle}>No hay inventario activo valorizado</h3>
-              <p style={styles.emptyText}>
-                Agrega ítems activos al inventario para comenzar una cotización.
-              </p>
-            </div>
-          ) : filteredValuations.length === 0 ? (
-            <div style={styles.emptyState}>
-              <h3 style={styles.emptyTitle}>No hay resultados para esa búsqueda</h3>
-              <p style={styles.emptyText}>
-                Ajusta el texto de búsqueda o agrega el ítem desde el asistente.
-              </p>
-            </div>
-          ) : (
-            <div style={styles.valuationGrid}>
-              {filteredValuations.map((valuation) => {
-                const quoteQuantity = itemQuantityById[valuation.itemId] || 0;
-                return (
-                  <div key={valuation.itemId} style={styles.valuationCard}>
-                    <div>
-                      <strong>{valuation.nombre}</strong>
-                      <span style={styles.itemMeta}>
-                        {valuation.categoria || "Sin categoría"} ·{" "}
-                        {tipoLabels[valuation.tipoItem] || valuation.tipoItem || "-"}
-                      </span>
-                    </div>
-                    <div style={styles.valuationFooter}>
-                      <div>
-                        <span style={styles.miniLabel}>Precio sugerido</span>
-                        <strong>{formatCLP(valuation.precioSugerido)}</strong>
-                      </div>
-                      <span
-                        style={{
-                          ...styles.statusBadge,
-                          ...statusStyles[valuation.estadoValorizacion],
-                        }}
-                      >
-                        {valuation.estadoValorizacion}
-                      </span>
-                    </div>
-                    {quoteQuantity > 0 && (
-                      <span style={styles.quoteBadge}>
-                        En cotización: {quoteQuantity}
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => addItem(valuation)}
-                      style={styles.secondaryButton}
-                    >
-                      {quoteQuantity > 0 ? "Agregar otra vez" : "Agregar a cotización"}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )
-        ) : (
-          <div style={styles.emptyState}>
-            <h3 style={styles.emptyTitle}>Catálogo oculto temporalmente</h3>
-            <p style={styles.emptyText}>
-              Se priorizan las sugerencias del asistente. Puedes volver a mostrarlo cuando quieras.
-            </p>
-          </div>
-        )}
-      </div>
-
-      <div className="quote-bottom-grid no-print" style={styles.bottomGrid}>
+      <section className="no-print" style={styles.closingSection}>
+        <h3 style={styles.closingTitle}>Cierre de la cotización</h3>
+        <div className="quote-bottom-grid" style={styles.bottomGrid}>
         <div style={{ ...styles.panel, ...styles.observationsPanel }}>
           <h3 style={styles.panelTitle}>Observaciones</h3>
           <p style={styles.helpText}>
@@ -1577,7 +1852,7 @@ function NewQuotePage({ userId }) {
             onChange={(event) => updateField("observaciones", event.target.value)}
             rows={5}
             placeholder="Notas públicas para el cliente"
-            style={styles.textarea}
+            style={styles.observationsTextarea}
           />
         </div>
 
@@ -1594,10 +1869,11 @@ function NewQuotePage({ userId }) {
           <div style={styles.totalsBox}>
             <TotalRow label="Subtotal" value={formatCLP(totals.subtotal)} />
             <div style={styles.discountRow}>
-              <label style={styles.totalLabel}>Descuento</label>
+              <label style={styles.totalLabel}>Descuento (CLP)</label>
               <input
                 type="number"
                 min="0"
+                placeholder="0"
                 value={quote.descuento}
                 onChange={(event) => updateField("descuento", event.target.value)}
                 style={styles.discountInput}
@@ -1625,18 +1901,18 @@ function NewQuotePage({ userId }) {
             </button>
             <button
               type="button"
-              onClick={() => setEmailModalOpen(true)}
-              disabled={!savedQuoteId || saving}
+              onClick={openEmailModal}
+              disabled={emailDisabled}
               style={{
                 ...styles.emailButton,
-                ...(!savedQuoteId || saving ? styles.disabledButton : {}),
+                ...(emailDisabled ? styles.disabledButton : {}),
               }}
             >
               Enviar por correo
             </button>
-            {!savedQuoteId && (
+            {emailHint && (
               <p style={styles.actionHint}>
-                Guarda la cotización antes de enviarla al cliente.
+                {emailHint}
               </p>
             )}
             <button type="button" onClick={clearQuote} style={styles.clearButton}>
@@ -1644,7 +1920,8 @@ function NewQuotePage({ userId }) {
             </button>
           </div>
         </div>
-      </div>
+        </div>
+      </section>
 
       {suggestedItemDraft && (
         <div className="no-print" style={styles.modalOverlay}>
@@ -1912,6 +2189,10 @@ const quotePageCss = `
     grid-template-columns: 1fr !important;
   }
 
+  .quote-bottom-grid {
+    grid-template-columns: 1fr !important;
+  }
+
   .quote-payment-header {
     align-items: flex-start !important;
     flex-direction: column !important;
@@ -1950,9 +2231,20 @@ const styles = {
     gap: "18px",
   },
   bottomGrid: {
+    alignItems: "start",
     display: "grid",
     gridTemplateColumns: "minmax(0, 1fr) minmax(310px, 380px)",
     gap: "18px",
+  },
+  closingSection: {
+    display: "grid",
+    gap: "12px",
+  },
+  closingTitle: {
+    color: "#0f172a",
+    fontSize: "20px",
+    fontWeight: 900,
+    margin: 0,
   },
   panel: {
     background: "#ffffff",
@@ -1966,6 +2258,9 @@ const styles = {
     margin: "0 0 12px",
     fontSize: "18px",
     fontWeight: 900,
+  },
+  compactPanelTitle: {
+    marginBottom: "6px",
   },
   formGrid: {
     display: "grid",
@@ -2059,6 +2354,17 @@ const styles = {
     resize: "vertical",
     width: "100%",
   },
+  observationsTextarea: {
+    background: "#ffffff",
+    border: "1px solid #cbd5e1",
+    borderRadius: "6px",
+    color: "#0f172a",
+    height: "130px",
+    lineHeight: 1.5,
+    padding: "11px",
+    resize: "vertical",
+    width: "100%",
+  },
   assistantPanel: {
     background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
     border: "1px solid #b6e4df",
@@ -2114,6 +2420,10 @@ const styles = {
     gap: "10px",
     justifyContent: "flex-end",
   },
+  catalogHeader: {
+    alignItems: "center",
+    marginBottom: "12px",
+  },
   searchInput: {
     border: "1px solid #cbd5e1",
     borderRadius: "6px",
@@ -2122,15 +2432,18 @@ const styles = {
   },
   valuationGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-    gap: "12px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
+    gap: "10px",
   },
   valuationCard: {
     border: "1px solid #e5e7eb",
     borderRadius: "8px",
-    display: "grid",
-    gap: "12px",
-    padding: "14px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "9px",
+    height: "100%",
+    minHeight: "168px",
+    padding: "12px",
   },
   valuationFooter: {
     alignItems: "center",
@@ -2148,6 +2461,11 @@ const styles = {
     display: "block",
     fontSize: "12px",
     marginTop: "3px",
+  },
+  catalogPagination: {
+    display: "flex",
+    justifyContent: "center",
+    marginTop: "12px",
   },
   statusBadge: {
     borderRadius: "999px",
@@ -2239,7 +2557,7 @@ const styles = {
   },
   observationsPanel: {
     display: "grid",
-    gap: "12px",
+    gap: "8px",
   },
   totalsPanel: {
     alignSelf: "start",
@@ -2447,6 +2765,26 @@ const styles = {
     fontWeight: 800,
     lineHeight: 1.2,
     padding: "9px 11px",
+  },
+  secondaryLinkButton: {
+    alignItems: "center",
+    background: "#ffffff",
+    border: "1px solid #0f766e",
+    borderRadius: "6px",
+    color: "#0f766e",
+    display: "inline-flex",
+    fontWeight: 800,
+    justifyContent: "center",
+    lineHeight: 1.2,
+    marginTop: "12px",
+    padding: "9px 11px",
+    textDecoration: "none",
+    width: "fit-content",
+  },
+  compactItemButton: {
+    marginTop: "auto",
+    minHeight: "34px",
+    padding: "8px 10px",
   },
   restoreDefaultButton: {
     background: "none",
@@ -2718,6 +3056,15 @@ const styles = {
     color: "#166534",
     margin: 0,
     padding: "11px 13px",
+  },
+  itemFeedbackText: {
+    background: "#ecfdf5",
+    border: "1px solid #bbf7d0",
+    borderRadius: "6px",
+    color: "#166534",
+    fontSize: "13px",
+    margin: "0 0 10px",
+    padding: "8px 10px",
   },
   warningText: {
     background: "#fffbeb",

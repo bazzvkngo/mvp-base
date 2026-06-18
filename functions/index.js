@@ -1695,6 +1695,53 @@ function formatCurrencyClp(value) {
   });
 }
 
+function sanitizeAttachmentFileName(value) {
+  const cleaned = safeText(value, 140)
+    .replace(/[\\/:*?"<>|]+/g, "_")
+    .replace(/\s+/g, "_");
+  return cleaned.endsWith(".pdf") ? cleaned : `${cleaned || "Cotizacion"}.pdf`;
+}
+
+function normalizePdfAttachment(value) {
+  if (!value || typeof value !== "object") return null;
+
+  const nested =
+    value.pdfAttachment && typeof value.pdfAttachment === "object"
+      ? value.pdfAttachment
+      : {};
+  const source = {
+    ...nested,
+    ...value,
+  };
+  const contentBase64 = safeText(
+    source.pdfBase64 || source.contentBase64 || source.content,
+    15000000
+  )
+    .replace(/^data:application\/pdf;base64,/i, "")
+    .replace(/\s+/g, "");
+  if (!contentBase64) return null;
+  if (!/^[A-Za-z0-9+/=]+$/.test(contentBase64)) {
+    throw new HttpsError("invalid-argument", "El PDF adjunto no tiene un formato valido.");
+  }
+  const mimeType = safeText(source.pdfMimeType || source.contentType, 80) || "application/pdf";
+  if (mimeType !== "application/pdf") {
+    throw new HttpsError("invalid-argument", "El PDF adjunto debe ser application/pdf.");
+  }
+
+  const contentBuffer = Buffer.from(contentBase64, "base64");
+  if (!contentBuffer.length || contentBuffer.subarray(0, 4).toString("latin1") !== "%PDF") {
+    throw new HttpsError("invalid-argument", "El PDF adjunto no tiene un formato valido.");
+  }
+
+  return {
+    filename: sanitizeAttachmentFileName(
+      source.pdfFilename || source.fileName || source.filename
+    ),
+    content: contentBase64,
+    contentType: "application/pdf",
+  };
+}
+
 function formatQuoteDate(value) {
   if (!value) return "-";
 
@@ -1718,59 +1765,32 @@ function joinNonEmpty(parts, separator = " / ") {
   return parts.filter((part) => String(part || "").trim()).join(separator);
 }
 
-function buildPlainQuoteEmail({ quote, asunto, mensaje }) {
+function buildPlainQuoteEmail({ quote, mensaje }) {
   const company = quote.empresa || {};
-  const companyName =
-    company.nombreComercial || company.razonSocial || "ValoraCloud";
+  const companyName = "Bagner";
   const companyContact = joinNonEmpty([
     company.email,
     company.telefono,
     company.sitioWeb,
   ]);
   const companyAddress = joinNonEmpty([company.direccion, company.ciudad]);
-  const items = Array.isArray(quote.items) ? quote.items : [];
+  const validityDays = company.validezCotizacionDias || 15;
 
   const lines = [
-    asunto,
-    "",
     companyName,
-    company.razonSocial && company.razonSocial !== companyName
-      ? company.razonSocial
-      : "",
-    company.rut ? `RUT: ${company.rut}` : "",
-    company.giro ? `Giro: ${company.giro}` : "",
-    companyContact,
-    companyAddress,
     "",
     mensaje,
     "",
     `Cotizacion: ${quote.numero || quote.id || "-"}`,
     `Fecha: ${formatQuoteDate(quote.fecha)}`,
-    `Cliente: ${quote.clienteNombre || "-"}`,
-    quote.clienteRut ? `RUT/DNI cliente: ${quote.clienteRut}` : "",
-    quote.clienteEmail ? `Email cliente: ${quote.clienteEmail}` : "",
-    quote.clienteTelefono ? `Telefono cliente: ${quote.clienteTelefono}` : "",
-    quote.clienteDireccion ? `Direccion cliente: ${quote.clienteDireccion}` : "",
-    "",
-    "Items:",
-    ...items.map(
-      (item) =>
-        `- ${item.nombre || "Item"} | cantidad ${item.cantidad || 0} | unitario ${formatCurrencyClp(
-          item.precioUnitarioEditable
-        )} | subtotal ${formatCurrencyClp(item.totalLinea)}`
-    ),
-    "",
-    `Subtotal: ${formatCurrencyClp(quote.subtotal)}`,
-    Number(quote.descuento || 0) > 0
-      ? `Descuento: ${formatCurrencyClp(quote.descuento)}`
-      : "",
     `Total: ${formatCurrencyClp(quote.total)}`,
+    `Validez: ${validityDays} dias`,
     "",
-    `Condiciones comerciales: ${
-      quote.condicionesPago || company.condicionesPago || "-"
-    }`,
-    quote.observaciones ? `Observaciones: ${quote.observaciones}` : "",
-    company.notaPieCotizacion || "",
+    "El detalle de los productos, servicios, condiciones comerciales y observaciones se encuentra en el documento PDF adjunto.",
+    "",
+    companyContact || companyAddress ? "Contacto Bagner:" : "",
+    companyContact,
+    companyAddress,
     "",
     "Este correo fue generado desde ValoraCloud.",
   ];
@@ -1778,109 +1798,47 @@ function buildPlainQuoteEmail({ quote, asunto, mensaje }) {
   return lines.filter((line) => line !== "").join("\n");
 }
 
-function buildQuoteEmailHtml({ quote, asunto, mensaje }) {
+function buildQuoteEmailHtml({ quote, mensaje }) {
   const company = quote.empresa || {};
-  const brand = company.nombreComercial || company.razonSocial || "ValoraCloud";
+  const brand = "Bagner";
   const companyContact = joinNonEmpty([
     company.email,
     company.telefono,
     company.sitioWeb,
   ]);
   const companyAddress = joinNonEmpty([company.direccion, company.ciudad]);
-  const items = Array.isArray(quote.items) ? quote.items : [];
-  const itemRows = items.length
-    ? items
-        .map(
-          (item) =>
-            `<tr>
-              <td style="padding:8px;border-bottom:1px solid #e5e7eb;">
-                <strong>${escapeHtml(item.nombre || "Item")}</strong>
-                <br><span style="color:#64748b;font-size:12px;">${escapeHtml(
-                  item.descripcion || item.categoria || item.tipoItem || ""
-                )}</span>
-              </td>
-              <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;">${escapeHtml(
-                item.cantidad || 0
-              )}</td>
-              <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;">${escapeHtml(
-                formatCurrencyClp(item.precioUnitarioEditable)
-              )}</td>
-              <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700;">${escapeHtml(
-                formatCurrencyClp(item.totalLinea)
-              )}</td>
-            </tr>`
-        )
-        .join("")
-    : `<tr><td colspan="4" style="padding:12px;color:#64748b;">Sin items registrados.</td></tr>`;
+  const validityDays = company.validezCotizacionDias || 15;
 
   return `<!doctype html>
   <html>
     <body style="margin:0;background:#f8fafc;font-family:Arial,sans-serif;color:#111827;">
-      <div style="max-width:760px;margin:0 auto;padding:24px;">
-        <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;padding:22px;">
-          <h1 style="margin:0 0 4px;font-size:22px;">${escapeHtml(brand)}</h1>
-          <p style="margin:0;color:#64748b;">${escapeHtml(
-            joinNonEmpty([company.razonSocial, company.rut ? `RUT: ${company.rut}` : ""])
-          )}</p>
-          <p style="margin:3px 0 18px;color:#64748b;">${escapeHtml(
-            joinNonEmpty([company.giro, companyContact, companyAddress])
-          )}</p>
-          <h2 style="font-size:20px;margin:0 0 4px;">Cotizaci&oacute;n</h2>
-          <p style="margin:0 0 14px;color:#475569;">${escapeHtml(asunto)}</p>
-          <p style="line-height:1.55;white-space:pre-wrap;">${escapeHtml(mensaje)}</p>
-          <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin:18px 0;">
-            <strong>Cotizacion ${escapeHtml(quote.numero || "-")}</strong><br>
-            Fecha: ${escapeHtml(formatQuoteDate(quote.fecha))}
+      <div style="max-width:640px;margin:0 auto;padding:24px;">
+        <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;padding:24px;">
+          <h1 style="margin:0 0 6px;font-size:24px;line-height:1.2;">${escapeHtml(brand)}</h1>
+          <h2 style="font-size:20px;line-height:1.3;margin:0 0 18px;color:#111827;">Cotizaci&oacute;n</h2>
+          <p style="line-height:1.6;white-space:pre-wrap;margin:0 0 18px;color:#1f2937;">${escapeHtml(mensaje)}</p>
+          <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:14px;margin:18px 0;">
+            <p style="margin:0 0 8px;font-size:16px;"><strong>Cotizaci&oacute;n ${escapeHtml(
+              quote.numero || quote.id || "-"
+            )}</strong></p>
+            <p style="margin:0 0 6px;color:#475569;">Fecha: ${escapeHtml(formatQuoteDate(quote.fecha))}</p>
+            <p style="margin:0 0 6px;color:#475569;">Total: <strong style="color:#111827;">${escapeHtml(
+              formatCurrencyClp(quote.total)
+            )}</strong></p>
+            <p style="margin:0;color:#475569;">Validez: ${escapeHtml(validityDays)} d&iacute;as</p>
           </div>
-          <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin:18px 0;">
-            <strong>Cliente</strong><br>
-            ${escapeHtml(quote.clienteNombre || "-")}<br>
-            ${quote.clienteRut ? `RUT/DNI: ${escapeHtml(quote.clienteRut)}<br>` : ""}
-            ${quote.clienteEmail ? `Email: ${escapeHtml(quote.clienteEmail)}<br>` : ""}
-            ${quote.clienteTelefono ? `Telefono: ${escapeHtml(quote.clienteTelefono)}<br>` : ""}
-            ${quote.clienteDireccion ? `Direccion: ${escapeHtml(quote.clienteDireccion)}` : ""}
+          <div style="background:#eef6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px;margin:18px 0;color:#1e3a8a;">
+            El detalle de los productos, servicios, condiciones comerciales y observaciones se encuentra en el documento PDF adjunto.
           </div>
-          <table style="border-collapse:collapse;width:100%;font-size:14px;">
-            <thead>
-              <tr>
-                <th style="background:#111827;color:#ffffff;text-align:left;padding:9px;">Item</th>
-                <th style="background:#111827;color:#ffffff;text-align:right;padding:9px;">Cant.</th>
-                <th style="background:#111827;color:#ffffff;text-align:right;padding:9px;">Precio unit.</th>
-                <th style="background:#111827;color:#ffffff;text-align:right;padding:9px;">Total</th>
-              </tr>
-            </thead>
-            <tbody>${itemRows}</tbody>
-          </table>
-          <div style="margin-left:auto;margin-top:16px;max-width:300px;">
-            <p style="display:flex;justify-content:space-between;border-bottom:1px solid #e5e7eb;padding:7px 0;margin:0;">
-              <span>Subtotal</span><strong>${escapeHtml(formatCurrencyClp(quote.subtotal))}</strong>
-            </p>
-            ${
-              Number(quote.descuento || 0) > 0
-                ? `<p style="display:flex;justify-content:space-between;border-bottom:1px solid #e5e7eb;padding:7px 0;margin:0;">
-                    <span>Descuento</span><strong>${escapeHtml(formatCurrencyClp(quote.descuento))}</strong>
-                  </p>`
-                : ""
-            }
-            <p style="display:flex;justify-content:space-between;padding:9px 0;margin:0;font-size:18px;">
-              <span>Total</span><strong>${escapeHtml(formatCurrencyClp(quote.total))}</strong>
-            </p>
-          </div>
-          <div style="border-top:1px solid #e5e7eb;margin-top:18px;padding-top:14px;color:#475569;">
-            <p><strong>Condiciones comerciales:</strong> ${escapeHtml(
-              quote.condicionesPago || company.condicionesPago || "-"
-            )}</p>
-            ${
-              quote.observaciones
-                ? `<p><strong>Observaciones:</strong> ${escapeHtml(quote.observaciones)}</p>`
-                : ""
-            }
-            ${
-              company.notaPieCotizacion
-                ? `<p style="font-size:12px;">${escapeHtml(company.notaPieCotizacion)}</p>`
-                : ""
-            }
-          </div>
+          ${
+            companyContact || companyAddress
+              ? `<div style="border-top:1px solid #e5e7eb;margin-top:18px;padding-top:14px;color:#475569;">
+                  <strong style="color:#334155;">Contacto Bagner</strong>
+                  ${companyContact ? `<p style="margin:6px 0 0;">${escapeHtml(companyContact)}</p>` : ""}
+                  ${companyAddress ? `<p style="margin:4px 0 0;">${escapeHtml(companyAddress)}</p>` : ""}
+                </div>`
+              : ""
+          }
           <p style="border-top:1px solid #e5e7eb;color:#64748b;font-size:12px;margin:18px 0 0;padding-top:12px;">
             Este correo fue generado desde ValoraCloud.
           </p>
@@ -1890,7 +1848,15 @@ function buildQuoteEmailHtml({ quote, asunto, mensaje }) {
   </html>`;
 }
 
-async function sendQuoteEmailWithResend({ apiKey, from, to, subject, html, text }) {
+async function sendQuoteEmailWithResend({
+  apiKey,
+  from,
+  to,
+  subject,
+  html,
+  text,
+  attachments = [],
+}) {
   const resend = new Resend(apiKey);
   const { data, error } = await resend.emails.send({
     from,
@@ -1898,6 +1864,7 @@ async function sendQuoteEmailWithResend({ apiKey, from, to, subject, html, text 
     subject,
     html,
     text,
+    attachments,
   });
 
   if (error) {
@@ -1927,6 +1894,7 @@ exports.sendQuoteEmail = onCall(
     const emailCliente = safeText(data.emailCliente || data.emailClienteDestino, 180);
     const asunto = safeText(data.asunto, 180);
     const mensaje = safeText(data.mensaje, 2000);
+    const pdfAttachment = normalizePdfAttachment(data);
 
     if (!quoteId) {
       throw new HttpsError("invalid-argument", "quoteId es requerido.");
@@ -1942,6 +1910,9 @@ exports.sendQuoteEmail = onCall(
     }
     if (!mensaje) {
       throw new HttpsError("invalid-argument", "El mensaje es obligatorio.");
+    }
+    if (!pdfAttachment) {
+      throw new HttpsError("invalid-argument", "El PDF adjunto es obligatorio.");
     }
 
     const quoteRef = db
@@ -1959,6 +1930,16 @@ exports.sendQuoteEmail = onCall(
       id: quoteSnapshot.id,
       ...quoteSnapshot.data(),
     };
+    if (quote.uidUsuario && quote.uidUsuario !== uid) {
+      throw new HttpsError("permission-denied", "No puedes enviar esta cotizacion.");
+    }
+    if ((quote.estado || "").toLowerCase() !== "emitida") {
+      throw new HttpsError(
+        "failed-precondition",
+        "Solo se pueden enviar cotizaciones emitidas."
+      );
+    }
+
     quote.empresa = await getCompanyProfileForQuote(uid, quote);
     const html = buildQuoteEmailHtml({ quote, asunto, mensaje });
     const text = buildPlainQuoteEmail({ quote, asunto, mensaje });
@@ -1970,12 +1951,13 @@ exports.sendQuoteEmail = onCall(
       fechaEnvioCorreo: FieldValue.serverTimestamp(),
       asuntoCorreo: asunto,
       mensajeCorreo: mensaje,
+      archivoAdjuntoCorreo: pdfAttachment.filename,
       actualizadoEn: FieldValue.serverTimestamp(),
     };
 
     if (!apiKey || !from) {
       const configurationError =
-        "El envio automatico de correo no esta configurado. Puedes usar el respaldo manual.";
+        "No fue posible enviar la cotizacion. Puedes utilizar el respaldo manual.";
       const patch = {
         ...baseEmailPatch,
         enviadoPorCorreo: false,
@@ -1992,6 +1974,7 @@ exports.sendQuoteEmail = onCall(
           emailClienteDestino: emailCliente,
           asuntoCorreo: asunto,
           mensajeCorreo: mensaje,
+          archivoAdjuntoCorreo: pdfAttachment.filename,
           enviadoPorCorreo: false,
           estadoEnvioCorreo: "error",
           proveedorCorreo: "resend",
@@ -2009,6 +1992,7 @@ exports.sendQuoteEmail = onCall(
         subject: asunto,
         html,
         text,
+        attachments: [pdfAttachment],
       });
       const patch = {
         ...baseEmailPatch,
@@ -2017,6 +2001,7 @@ exports.sendQuoteEmail = onCall(
         ultimoErrorEnvio: "",
         proveedorCorreo: "resend",
         idEnvioCorreoProveedor: safeText(providerResponse.id, 120),
+        archivoAdjuntoCorreo: pdfAttachment.filename,
       };
       await quoteRef.update(patch);
       return {
@@ -2031,6 +2016,7 @@ exports.sendQuoteEmail = onCall(
           ultimoErrorEnvio: "",
           proveedorCorreo: "resend",
           idEnvioCorreoProveedor: safeText(providerResponse.id, 120),
+          archivoAdjuntoCorreo: pdfAttachment.filename,
           fechaEnvioCorreo: attemptedAt.toISOString(),
         },
       };
@@ -2040,13 +2026,14 @@ exports.sendQuoteEmail = onCall(
         name: error.name,
       });
       const providerError =
-        "No se pudo enviar automaticamente. Puedes usar el respaldo manual.";
+        "No fue posible enviar la cotizacion. Puedes utilizar el respaldo manual.";
       const patch = {
         ...baseEmailPatch,
         enviadoPorCorreo: false,
         estadoEnvioCorreo: "error",
         ultimoErrorEnvio: providerError,
         proveedorCorreo: "resend",
+        archivoAdjuntoCorreo: pdfAttachment.filename,
       };
       await quoteRef.update(patch);
       return {
@@ -2061,6 +2048,7 @@ exports.sendQuoteEmail = onCall(
           estadoEnvioCorreo: "error",
           ultimoErrorEnvio: patch.ultimoErrorEnvio,
           proveedorCorreo: "resend",
+          archivoAdjuntoCorreo: pdfAttachment.filename,
           fechaEnvioCorreo: attemptedAt.toISOString(),
         },
       };

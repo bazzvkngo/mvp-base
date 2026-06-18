@@ -1,6 +1,6 @@
 // src/utils/pdfCotizacion.js
-import jsPDF from "jspdf";
-import "jspdf-autotable";
+import { jsPDF } from "jspdf";
+import { autoTable } from "jspdf-autotable";
 
 /**
  * Formatea un número como CLP (ej: $1.070.000)
@@ -116,7 +116,7 @@ export function generarPdfCotizacion({ negocio, cliente, propuesta }) {
 
   const startY = y + 10;
 
-  doc.autoTable({
+  autoTable(doc, {
     startY,
     head,
     body,
@@ -142,7 +142,7 @@ export function generarPdfCotizacion({ negocio, cliente, propuesta }) {
   // ---------------------------------------------------------------------------
   // 4) Totales
   // ---------------------------------------------------------------------------
-  const finalY = doc.lastAutoTable.finalY || startY + 10;
+  const finalY = doc.lastAutoTable?.finalY || startY + 10;
 
   const subtotalMateriales = materiales.reduce(
     (acc, m) => acc + (m.subtotal || 0),

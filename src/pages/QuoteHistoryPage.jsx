@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import QuotePrintView from "../features/quotes/QuotePrintView";
 import SendQuoteEmailModal from "../features/quotes/SendQuoteEmailModal";
 import { getCompanyProfile } from "../services/companyService";
@@ -7,6 +8,7 @@ import {
   getQuotes,
   updateQuoteStatus,
 } from "../services/quoteService";
+import { isQuoteEmailSendable } from "../services/quoteEmailService";
 import { formatCLP, formatDate } from "../utils/formatters";
 
 const STATUS_OPTIONS = [
@@ -80,6 +82,7 @@ function getQuoteTimestamp(quote) {
 }
 
 function QuoteHistoryPage({ userId }) {
+  const navigate = useNavigate();
   const [quotes, setQuotes] = useState([]);
   const [companyProfile, setCompanyProfile] = useState(null);
   const [selectedQuoteId, setSelectedQuoteId] = useState("");
@@ -241,6 +244,10 @@ function QuoteHistoryPage({ userId }) {
     }
   };
 
+  const handleEditDraft = (quoteId) => {
+    navigate(`/cotizaciones/${quoteId}/editar`);
+  };
+
   const handleEmailSent = (quoteId, emailPatch, result) => {
     setQuotes((prev) =>
       prev.map((quote) =>
@@ -255,11 +262,13 @@ function QuoteHistoryPage({ userId }) {
     );
 
     if (result?.success) {
-      setSuccess("Cotizacion enviada correctamente al correo del cliente.");
+      setSuccess(
+        `Cotización enviada correctamente a ${emailPatch?.emailClienteDestino || "cliente"}.`
+      );
     } else {
       setError(
         result?.error ||
-          "No se pudo enviar automaticamente. Puedes usar el respaldo manual."
+          "No fue posible enviar la cotización. Puedes utilizar el respaldo manual."
       );
     }
   };
@@ -381,6 +390,7 @@ function QuoteHistoryPage({ userId }) {
                           onChangeStatus={handleChangeStatus}
                           onArchive={handleArchiveQuote}
                           onRestore={handleRestoreQuote}
+                          onEditDraft={handleEditDraft}
                         />
                       </div>
                     </td>
@@ -396,7 +406,11 @@ function QuoteHistoryPage({ userId }) {
         <QuoteDetail
           quote={selectedQuote}
           companyProfile={companyProfile}
-          onOpenEmail={() => setEmailModalQuote(selectedQuote)}
+          onOpenEmail={() => {
+            if (isQuoteEmailSendable(selectedQuote, selectedQuote.id)) {
+              setEmailModalQuote(selectedQuote);
+            }
+          }}
         />
       ) : (
         !loading &&
@@ -466,12 +480,21 @@ function QuoteActions({
   onChangeStatus,
   onArchive,
   onRestore,
+  onEditDraft,
 }) {
   const estado = quote.estado || "borrador";
 
   if (estado === "borrador") {
     return (
       <>
+        <button
+          type="button"
+          onClick={() => onEditDraft(quote.id)}
+          disabled={disabled}
+          style={styles.secondaryButton}
+        >
+          Editar borrador
+        </button>
         <button
           type="button"
           onClick={() => onChangeStatus(quote.id, "emitida")}
@@ -584,6 +607,7 @@ function QuoteActions({
 }
 
 function QuoteDetail({ quote, companyProfile, onOpenEmail }) {
+  const canSendEmail = isQuoteEmailSendable(quote, quote.id);
 
   return (
     <div className="history-print-area" style={styles.detailPanel}>
@@ -599,7 +623,11 @@ function QuoteDetail({ quote, companyProfile, onOpenEmail }) {
           <button
             type="button"
             onClick={onOpenEmail}
-            style={styles.emailButton}
+            disabled={!canSendEmail}
+            style={{
+              ...styles.emailButton,
+              ...(!canSendEmail ? styles.disabledButton : {}),
+            }}
           >
             Enviar por correo
           </button>
@@ -611,6 +639,11 @@ function QuoteDetail({ quote, companyProfile, onOpenEmail }) {
             Imprimir detalle
           </button>
         </div>
+        {!canSendEmail && (
+          <p className="no-print" style={styles.actionHint}>
+            Emite la cotización antes de enviarla al cliente.
+          </p>
+        )}
       </div>
 
       <QuotePrintView quote={quote} companyProfile={companyProfile} />
@@ -841,6 +874,18 @@ const styles = {
     cursor: "pointer",
     fontWeight: 800,
     padding: "10px 12px",
+  },
+  disabledButton: {
+    background: "#f1f5f9",
+    border: "1px solid #cbd5e1",
+    color: "#64748b",
+    cursor: "not-allowed",
+  },
+  actionHint: {
+    color: "#64748b",
+    flexBasis: "100%",
+    fontSize: "13px",
+    margin: "4px 0 0",
   },
   emailStatusLine: {
     color: "#64748b",

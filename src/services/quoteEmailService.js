@@ -1,6 +1,6 @@
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { app } from "../firebase/firebaseConfig";
-import { getQuoteDisplayNumber } from "./quoteService";
+import { DRAFT_QUOTE_NUMBER_LABEL, getQuoteDisplayNumber } from "./quoteService";
 
 const FUNCTIONS_REGION = "us-central1";
 
@@ -19,25 +19,55 @@ export function buildDefaultQuoteEmail({ quote, companyProfile }) {
   return {
     emailCliente: quote?.clienteEmail || "",
     asunto: quoteNumber
-      ? `Cotizacion ${quoteNumber} - ${companyName}`
-      : `Cotizacion - ${companyName}`,
+      ? `Cotización ${quoteNumber} - ${companyName}`
+      : `Cotización - ${companyName}`,
     mensaje:
-      `Hola ${quote?.clienteNombre || ""},\n\n` +
-      "Adjunto el detalle de la cotizacion preparada en ValoraCloud. " +
-      "Quedo atento a tus comentarios o confirmacion.\n\n" +
-      "Saludos.",
+      "Estimado/a cliente:\n\n" +
+      `Adjuntamos la cotización ${quoteNumber || ""} preparada por ${companyName} para su revisión.\n\n` +
+      "Quedamos atentos a sus comentarios.\n\n" +
+      "Saludos,\n" +
+      companyName,
   };
 }
 
-export function buildMailtoUrl({ emailCliente, asunto, mensaje }) {
-  const params = new URLSearchParams({
-    subject: asunto || "",
-    body: mensaje || "",
-  });
-  return `mailto:${encodeURIComponent(emailCliente || "")}?${params.toString()}`;
+export function buildManualQuoteEmail({ quote }) {
+  const quoteNumber = getQuoteDisplayNumber(quote, "");
+
+  return (
+    "Estimado/a cliente:\n\n" +
+    `Comparto la cotización ${quoteNumber || ""} preparada por Bagner para su revisión.\n\n` +
+    "Antes de enviar este mensaje, adjuntaré manualmente el archivo PDF de la cotización.\n\n" +
+    "Quedamos atentos a sus comentarios.\n\n" +
+    "Saludos,\n" +
+    "Bagner"
+  );
 }
 
-export async function sendQuoteEmail({ quoteId, emailCliente, asunto, mensaje }) {
+export function isQuoteEmailSendable(quote, quoteId = quote?.id) {
+  const quoteNumber = getQuoteDisplayNumber(quote, "");
+  return Boolean(
+    quoteId &&
+      quoteNumber &&
+      quoteNumber !== DRAFT_QUOTE_NUMBER_LABEL &&
+      quote?.fecha &&
+      (quote?.estado || "").toLowerCase() === "emitida"
+  );
+}
+
+export function buildMailtoUrl({ emailCliente, asunto, mensaje }) {
+  const recipient = encodeURIComponent(String(emailCliente || "").trim());
+  const subject = encodeURIComponent(asunto || "");
+  const body = encodeURIComponent(mensaje || "");
+  return `mailto:${recipient}?subject=${subject}&body=${body}`;
+}
+
+export async function sendQuoteEmail({
+  quoteId,
+  emailCliente,
+  asunto,
+  mensaje,
+  pdfAttachment,
+}) {
   if (!quoteId) {
     throw new Error("Guarda la cotizacion antes de enviarla por correo.");
   }
@@ -53,11 +83,18 @@ export async function sendQuoteEmail({ quoteId, emailCliente, asunto, mensaje })
 
   const functions = getFunctions(app, FUNCTIONS_REGION);
   const callable = httpsCallable(functions, "sendQuoteEmail");
+  const pdfBase64 = String(pdfAttachment?.contentBase64 || "").replace(
+    /^data:application\/pdf;base64,/i,
+    ""
+  );
   const response = await callable({
     quoteId,
     emailCliente: String(emailCliente).trim(),
     asunto: String(asunto).trim(),
     mensaje: String(mensaje).trim(),
+    pdfBase64,
+    pdfFilename: pdfAttachment?.fileName || "",
+    pdfMimeType: pdfAttachment?.contentType || "application/pdf",
   });
 
   return {

@@ -2,10 +2,13 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   buildDefaultQuoteEmail,
   buildMailtoUrl,
+  buildManualQuoteEmail,
+  isQuoteEmailSendable,
   isValidEmail,
   sendQuoteEmail,
 } from "../../services/quoteEmailService";
 import { getQuoteDisplayNumber } from "../../services/quoteService";
+import { buildQuotePdfAttachment, getQuotePdfFileName } from "../../utils/quotePdf";
 import { formatCLP } from "../../utils/formatters";
 
 function SendQuoteEmailModal({
@@ -20,12 +23,20 @@ function SendQuoteEmailModal({
     () => buildDefaultQuoteEmail({ quote, companyProfile }),
     [companyProfile, quote]
   );
+  const manualMessage = useMemo(
+    () => buildManualQuoteEmail({ quote }),
+    [quote]
+  );
+  const canSendQuote = isQuoteEmailSendable(quote, quoteId);
+  const pdfFileName = useMemo(() => getQuotePdfFileName(quote), [quote]);
   const [emailCliente, setEmailCliente] = useState(defaults.emailCliente);
   const [asunto, setAsunto] = useState(defaults.asunto);
   const [mensaje, setMensaje] = useState(defaults.mensaje);
   const [sending, setSending] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [pdfReady, setPdfReady] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -34,11 +45,76 @@ function SendQuoteEmailModal({
     setMensaje(defaults.mensaje);
     setError("");
     setSuccess("");
+    setPdfReady(false);
   }, [defaults, open]);
+
+  useEffect(() => {
+    if (!open || !quote || !canSendQuote) {
+      setPdfReady(false);
+      return undefined;
+    }
+
+    let active = true;
+    setPdfReady(false);
+    buildQuotePdfAttachment({ quote, companyProfile })
+      .then((attachment) => {
+        if (active) {
+          setPdfReady(Boolean(attachment?.contentBase64));
+        }
+      })
+      .catch((err) => {
+        console.error("No se pudo preparar la vista previa del PDF.", err);
+        if (active) setPdfReady(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [canSendQuote, companyProfile, open, quote]);
 
   if (!open || !quote) return null;
 
-  const mailtoUrl = buildMailtoUrl({ emailCliente, asunto, mensaje });
+  const mailtoUrl = buildMailtoUrl({
+    emailCliente,
+    asunto,
+    mensaje: manualMessage,
+  });
+
+  const handleDownloadPdf = async () => {
+    setError("");
+    setSuccess("");
+    setDownloadingPdf(true);
+
+    try {
+      const attachment = await buildQuotePdfAttachment({ quote, companyProfile });
+      if (!attachment?.contentBase64) {
+        throw new Error("PDF de cotización vacío o inválido.");
+      }
+
+      const binary = window.atob(attachment.contentBase64);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+      }
+
+      const blob = new Blob([bytes], {
+        type: attachment.contentType || "application/pdf",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = attachment.fileName || pdfFileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (err) {
+      console.error("Error descargando PDF de cotización:", err);
+      setError("No fue posible descargar el PDF de la cotización.");
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
 
   const handleSubmit = async () => {
     setError("");
@@ -46,6 +122,10 @@ function SendQuoteEmailModal({
 
     if (!quoteId) {
       setError("Guarda la cotizacion antes de enviarla por correo.");
+      return;
+    }
+    if (!canSendQuote) {
+      setError("Emite la cotización antes de enviarla al cliente.");
       return;
     }
     if (!isValidEmail(emailCliente)) {
@@ -61,13 +141,31 @@ function SendQuoteEmailModal({
       return;
     }
 
+    let pdfAttachment = null;
+    setSending(true);
     try {
-      setSending(true);
+      pdfAttachment = await buildQuotePdfAttachment({ quote, companyProfile });
+    } catch (err) {
+      console.error("Error generando PDF de cotización:", err);
+      setError("No fue posible adjuntar el PDF de la cotización. Intenta nuevamente.");
+      setSending(false);
+      return;
+    }
+
+    if (!pdfAttachment?.contentBase64) {
+      console.error("PDF de cotización vacío o inválido.");
+      setError("No fue posible adjuntar el PDF de la cotización. Intenta nuevamente.");
+      setSending(false);
+      return;
+    }
+
+    try {
       const result = await sendQuoteEmail({
         quoteId,
         emailCliente,
         asunto,
         mensaje,
+        pdfAttachment,
       });
 
       if (onSent) {
@@ -77,17 +175,20 @@ function SendQuoteEmailModal({
       if (!result.success) {
         setError(
           result.error ||
-            "No se pudo enviar automaticamente. Puedes usar el respaldo manual."
+            "No fue posible enviar la cotización. Puedes utilizar el respaldo manual."
         );
         return;
       }
 
-      setSuccess("Cotizacion enviada correctamente al correo del cliente.");
+      setSuccess(`Cotización enviada correctamente a ${emailCliente}.`);
     } catch (err) {
       console.error("Error enviando cotizacion por correo:", err);
+      const errorMessage = String(err?.message || "");
       setError(
-        err.message ||
-          "No se pudo enviar automaticamente. Puedes usar el respaldo manual."
+        /PDF adjunto|application\/pdf|formato valido/i.test(errorMessage)
+          ? "No fue posible adjuntar el PDF de la cotización. Intenta nuevamente."
+          : errorMessage ||
+          "No fue posible enviar la cotización. Puedes utilizar el respaldo manual."
       );
     } finally {
       setSending(false);
@@ -130,7 +231,6 @@ function SendQuoteEmailModal({
             <label style={styles.field}>
               <span style={styles.label}>Mensaje editable</span>
               <textarea
-                rows={7}
                 value={mensaje}
                 onChange={(event) => setMensaje(event.target.value)}
                 style={styles.textarea}
@@ -139,9 +239,9 @@ function SendQuoteEmailModal({
           </section>
 
           <aside style={styles.summary}>
-            <h4 style={styles.summaryTitle}>Resumen de cotizacion</h4>
+            <h4 style={styles.summaryTitle}>Resumen de cotización</h4>
             <div style={styles.summaryLine}>
-              <span>Numero</span>
+              <span>Número</span>
               <strong>{getQuoteDisplayNumber(quote, quote.id || "-")}</strong>
             </div>
             <div style={styles.summaryLine}>
@@ -149,15 +249,27 @@ function SendQuoteEmailModal({
               <strong>{quote.clienteNombre || "-"}</strong>
             </div>
             <div style={styles.summaryLine}>
-              <span>Items</span>
+              <span>Ítems</span>
               <strong>{quote.items?.length || 0}</strong>
+            </div>
+            <div style={styles.summaryLine}>
+              <span>PDF adjunto</span>
+              <span style={styles.fileInfo}>
+                <strong>{pdfFileName}</strong>
+                {pdfReady && (
+                  <small style={styles.readyBadge}>Listo para enviar</small>
+                )}
+              </span>
             </div>
             <div style={styles.totalLine}>
               <span>Total</span>
               <strong>{formatCLP(quote.total)}</strong>
             </div>
             {quote.observaciones && (
-              <p style={styles.observations}>{quote.observaciones}</p>
+              <div style={styles.observationsBlock}>
+                <strong style={styles.observationsTitle}>Observaciones</strong>
+                <p style={styles.observations}>{quote.observaciones}</p>
+              </div>
             )}
             <p style={styles.disclaimer}>
               El envio ocurre solo al confirmar y queda registrado en el historial de la
@@ -167,16 +279,27 @@ function SendQuoteEmailModal({
         </div>
 
         {error && <p style={styles.errorText}>{error}</p>}
-        {error && (
-          <div style={styles.warningBox}>
-            <p style={styles.warningText}>
-              Puedes usar el respaldo manual para abrir tu cliente de correo.
-            </p>
+        <div style={styles.warningBox}>
+          <p style={styles.warningText}>
+            El respaldo manual abre tu cliente de correo, pero no puede adjuntar archivos automáticamente. Descarga el PDF y adjúntalo antes de enviar.
+          </p>
+          <div style={styles.manualActions}>
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={downloadingPdf}
+              style={{
+                ...styles.manualButton,
+                ...(downloadingPdf ? styles.disabledManualButton : {}),
+              }}
+            >
+              {downloadingPdf ? "Descargando..." : "Descargar PDF"}
+            </button>
             <a href={mailtoUrl} style={styles.mailtoLink}>
-              Abrir correo manual
+              Abrir cliente de correo
             </a>
           </div>
-        )}
+        </div>
         {success && <p style={styles.successText}>{success}</p>}
 
         <div style={styles.actions}>
@@ -186,8 +309,11 @@ function SendQuoteEmailModal({
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={sending}
-            style={styles.primaryButton}
+            disabled={sending || !canSendQuote}
+            style={{
+              ...styles.primaryButton,
+              ...(sending || !canSendQuote ? styles.disabledButton : {}),
+            }}
           >
             {sending ? "Enviando..." : "Confirmar envio"}
           </button>
@@ -274,6 +400,7 @@ const styles = {
   textarea: {
     border: "1px solid #cbd5e1",
     borderRadius: "6px",
+    minHeight: "180px",
     padding: "11px",
     resize: "vertical",
     width: "100%",
@@ -296,6 +423,22 @@ const styles = {
     gap: "10px",
     justifyContent: "space-between",
   },
+  fileInfo: {
+    display: "grid",
+    gap: "4px",
+    justifyItems: "end",
+    minWidth: 0,
+    textAlign: "right",
+  },
+  readyBadge: {
+    background: "#dcfce7",
+    borderRadius: "999px",
+    color: "#166534",
+    fontSize: "11px",
+    fontWeight: 800,
+    padding: "3px 7px",
+    width: "fit-content",
+  },
   totalLine: {
     borderTop: "1px solid #e2e8f0",
     color: "#111827",
@@ -310,6 +453,14 @@ const styles = {
     fontSize: "13px",
     lineHeight: 1.45,
     margin: 0,
+  },
+  observationsBlock: {
+    display: "grid",
+    gap: "4px",
+  },
+  observationsTitle: {
+    color: "#334155",
+    fontSize: "13px",
   },
   disclaimer: {
     color: "#64748b",
@@ -331,6 +482,11 @@ const styles = {
     cursor: "pointer",
     fontWeight: 800,
     padding: "10px 14px",
+  },
+  disabledButton: {
+    background: "#f1f5f9",
+    color: "#64748b",
+    cursor: "not-allowed",
   },
   secondaryButton: {
     background: "#ffffff",
@@ -373,10 +529,38 @@ const styles = {
     fontSize: "13px",
     margin: 0,
   },
-  mailtoLink: {
-    color: "#0f766e",
+  manualActions: {
+    alignItems: "center",
+    display: "flex",
+    flex: "0 1 auto",
+    flexWrap: "wrap",
+    gap: "8px",
+    justifyContent: "flex-end",
+  },
+  manualButton: {
+    background: "#ffffff",
+    border: "1px solid #f59e0b",
+    borderRadius: "6px",
+    color: "#92400e",
+    cursor: "pointer",
     fontSize: "13px",
     fontWeight: 800,
+    padding: "8px 10px",
+  },
+  disabledManualButton: {
+    background: "#fef3c7",
+    color: "#a16207",
+    cursor: "not-allowed",
+  },
+  mailtoLink: {
+    background: "#0f766e",
+    borderRadius: "6px",
+    color: "#ffffff",
+    display: "inline-block",
+    fontSize: "13px",
+    fontWeight: 800,
+    padding: "8px 10px",
+    textDecoration: "none",
   },
 };
 
