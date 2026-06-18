@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  getReferencesByItem,
+} from "../services/referenceService";
+import {
   isActivePendingReferenceTask,
   postponeReferenceTask,
   sortReferenceTasks,
@@ -54,6 +57,18 @@ function getPriorityBadgeStyle(priority) {
   return styles.priorityLow;
 }
 
+function getReferenceDateTime(reference) {
+  if (!reference?.fechaConsulta) return 0;
+  const date = new Date(`${reference.fechaConsulta}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
+function getLatestActiveReference(references) {
+  return [...references]
+    .filter((reference) => (reference.estado || "activa") === "activa")
+    .sort((a, b) => getReferenceDateTime(b) - getReferenceDateTime(a))[0];
+}
+
 function ReferenceTasksPage({ userId }) {
   const navigate = useNavigate();
   const [referenceTasks, setReferenceTasks] = useState([]);
@@ -61,6 +76,7 @@ function ReferenceTasksPage({ userId }) {
   const [reasonFilter, setReasonFilter] = useState("todos");
   const [searchText, setSearchText] = useState("");
   const [postponeDaysByTask, setPostponeDaysByTask] = useState({});
+  const [resolvingTaskId, setResolvingTaskId] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -109,9 +125,39 @@ function ReferenceTasksPage({ userId }) {
     );
   }, [referenceTasks, reasonFilter, searchText, statusFilter]);
 
-  const openReferenceAction = (task) => {
+  const openReferenceAction = async (task) => {
     if (!task.itemId) return;
-    navigate(`/referencias?itemId=${encodeURIComponent(task.itemId)}`);
+
+    const params = new URLSearchParams({ itemId: task.itemId });
+
+    if (task.tipoAlerta !== "referencias_desactualizadas") {
+      navigate(`/referencias?${params.toString()}`);
+      return;
+    }
+
+    if (task.referenceId) {
+      params.set("referenceId", task.referenceId);
+      navigate(`/referencias?${params.toString()}`);
+      return;
+    }
+
+    try {
+      setResolvingTaskId(task.id);
+      setError("");
+      const itemReferences = await getReferencesByItem(userId, task.itemId);
+      const latestActiveReference = getLatestActiveReference(itemReferences);
+      if (latestActiveReference?.id) {
+        params.set("referenceId", latestActiveReference.id);
+      } else {
+        params.set("referenceUnavailable", "1");
+      }
+      navigate(`/referencias?${params.toString()}`);
+    } catch (err) {
+      console.error("Error al buscar referencia activa para la tarea:", err);
+      setError("No se pudo abrir la referencia asociada a la tarea.");
+    } finally {
+      setResolvingTaskId("");
+    }
   };
 
   const postponeTask = async (taskId) => {
@@ -229,6 +275,7 @@ function ReferenceTasksPage({ userId }) {
           <ReferenceTasksTable
             tasks={filteredTasks}
             postponeDaysByTask={postponeDaysByTask}
+            resolvingTaskId={resolvingTaskId}
             onAction={openReferenceAction}
             onPostpone={postponeTask}
             onPostponeDaysChange={changePostponeDays}
@@ -242,6 +289,7 @@ function ReferenceTasksPage({ userId }) {
 function ReferenceTasksTable({
   tasks,
   postponeDaysByTask,
+  resolvingTaskId,
   onAction,
   onPostpone,
   onPostponeDaysChange,
@@ -300,9 +348,12 @@ function ReferenceTasksTable({
                         className="reference-task-full-primary"
                         type="button"
                         style={styles.primarySmallButton}
+                        disabled={resolvingTaskId === task.id}
                         onClick={() => onAction(task)}
                       >
-                        {getTaskActionLabel(task)}
+                        {resolvingTaskId === task.id
+                          ? "Abriendo..."
+                          : getTaskActionLabel(task)}
                       </button>
                       <select
                         value={postponeDaysByTask[task.id] || 7}

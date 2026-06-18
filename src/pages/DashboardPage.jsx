@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import DashboardDonutChart from "../components/DashboardDonutChart";
 import { PRICING_STATUS } from "../domain/pricing";
 import { getQuotes } from "../services/quoteService";
 import { subscribeToInventory } from "../services/inventoryService";
@@ -29,6 +30,22 @@ const stateLabels = {
   rechazada: "Rechazada",
   vencida: "Vencida",
   archivada: "Archivada",
+};
+
+const quoteStateColors = {
+  borrador: "#94a3b8",
+  emitida: "#38bdf8",
+  aceptada: "#22c55e",
+  rechazada: "#f87171",
+  vencida: "#f59e0b",
+  archivada: "#a78bfa",
+};
+
+const valuationColors = {
+  sinReferencias: "#94a3b8",
+  bajoMercado: "#38bdf8",
+  dentroRango: "#22c55e",
+  sobreMercado: "#f87171",
 };
 
 function getValuationSummary(valuations) {
@@ -105,6 +122,18 @@ function getPriorityBadgeStyle(priority) {
   return styles.priorityLow;
 }
 
+function getReferenceDateTime(reference) {
+  if (!reference?.fechaConsulta) return 0;
+  const date = new Date(`${reference.fechaConsulta}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
+function getLatestActiveReference(references) {
+  return [...references]
+    .filter((reference) => (reference.estado || "activa") === "activa")
+    .sort((a, b) => getReferenceDateTime(b) - getReferenceDateTime(a))[0];
+}
+
 function DashboardPage({ usuario }) {
   const navigate = useNavigate();
   const userId = usuario?.uid;
@@ -177,7 +206,24 @@ function DashboardPage({ usuario }) {
 
   const openReferenceAction = (task) => {
     if (!task.itemId) return;
-    navigate(`/referencias?itemId=${encodeURIComponent(task.itemId)}`);
+    const params = new URLSearchParams({ itemId: task.itemId });
+
+    if (task.tipoAlerta === "referencias_desactualizadas") {
+      if (task.referenceId) {
+        params.set("referenceId", task.referenceId);
+      } else {
+        const latestActiveReference = getLatestActiveReference(
+          references.filter((reference) => reference.itemId === task.itemId)
+        );
+        if (latestActiveReference?.id) {
+          params.set("referenceId", latestActiveReference.id);
+        } else {
+          params.set("referenceUnavailable", "1");
+        }
+      }
+    }
+
+    navigate(`/referencias?${params.toString()}`);
   };
 
   const postponeTask = async (taskId) => {
@@ -218,6 +264,42 @@ function DashboardPage({ usuario }) {
   );
 
   const quoteSummary = useMemo(() => getQuoteSummary(quotes), [quotes]);
+
+  const quoteStateChartItems = useMemo(
+    () =>
+      quoteStates.map((state) => ({
+        label: stateLabels[state],
+        value: quoteSummary.porEstado[state],
+        color: quoteStateColors[state],
+      })),
+    [quoteSummary]
+  );
+
+  const valuationChartItems = useMemo(
+    () => [
+      {
+        label: "Ítems sin referencias",
+        value: valuationSummary.sinReferencias,
+        color: valuationColors.sinReferencias,
+      },
+      {
+        label: "Ítems bajo mercado",
+        value: valuationSummary.bajoMercado,
+        color: valuationColors.bajoMercado,
+      },
+      {
+        label: "Ítems dentro de rango",
+        value: valuationSummary.dentroRango,
+        color: valuationColors.dentroRango,
+      },
+      {
+        label: "Ítems sobre mercado",
+        value: valuationSummary.sobreMercado,
+        color: valuationColors.sobreMercado,
+      },
+    ],
+    [valuationSummary]
+  );
 
   const activeReferenceTasks = useMemo(
     () =>
@@ -305,45 +387,23 @@ function DashboardPage({ usuario }) {
           <div style={styles.twoColumnGrid}>
             <div style={styles.panel}>
               <h3 style={styles.panelTitle}>Cotizaciones por estado</h3>
+              <DashboardDonutChart
+                ariaLabel="Distribución de cotizaciones por estado"
+                emptyMessage="Sin cotizaciones registradas"
+                items={quoteStateChartItems}
+              />
               <p style={styles.helpText}>
                 Las métricas principales excluyen cotizaciones archivadas.
               </p>
-              <div style={styles.statusGrid}>
-                {quoteStates.map((state) => (
-                  <MetricCard
-                    key={state}
-                    label={stateLabels[state]}
-                    value={quoteSummary.porEstado[state]}
-                    compact
-                  />
-                ))}
-              </div>
             </div>
 
             <div style={styles.panel}>
               <h3 style={styles.panelTitle}>Estado de valorización</h3>
-              <div style={styles.statusGrid}>
-                <MetricCard
-                  label="Ítems sin referencias"
-                  value={valuationSummary.sinReferencias}
-                  compact
-                />
-                <MetricCard
-                  label="Ítems bajo mercado"
-                  value={valuationSummary.bajoMercado}
-                  compact
-                />
-                <MetricCard
-                  label="Ítems dentro de rango"
-                  value={valuationSummary.dentroRango}
-                  compact
-                />
-                <MetricCard
-                  label="Ítems sobre mercado"
-                  value={valuationSummary.sobreMercado}
-                  compact
-                />
-              </div>
+              <DashboardDonutChart
+                ariaLabel="Distribución del estado de valorización"
+                emptyMessage="Sin ítems analizados"
+                items={valuationChartItems}
+              />
             </div>
           </div>
         </>

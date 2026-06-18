@@ -39,9 +39,24 @@ function todayInputValue(date = new Date()) {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
+function buildFormFromReference(reference) {
+  return {
+    itemId: reference.itemId || "",
+    nombreFuente: reference.nombreFuente || "",
+    urlFuente: reference.urlFuente || "",
+    precioObservado: reference.precioObservado ?? "",
+    fechaConsulta: reference.fechaConsulta || todayInputValue(),
+    observacion: reference.observacion || "",
+    estado: reference.estado || "activa",
+  };
+}
+
 function MarketReferencesManager({ userId }) {
   const [searchParams] = useSearchParams();
   const selectedItemFromUrl = searchParams.get("itemId") || "";
+  const selectedReferenceFromUrl = searchParams.get("referenceId") || "";
+  const referenceUnavailableFromUrl =
+    searchParams.get("referenceUnavailable") === "1";
   const [inventoryItems, setInventoryItems] = useState([]);
   const [references, setReferences] = useState([]);
   const [form, setForm] = useState({
@@ -54,8 +69,10 @@ function MarketReferencesManager({ userId }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [infoMessage, setInfoMessage] = useState("");
   const [itemFiltro, setItemFiltro] = useState("todos");
   const [estadoFiltro, setEstadoFiltro] = useState("activas");
+  const [handledReferenceLink, setHandledReferenceLink] = useState("");
 
   useEffect(() => {
     if (!userId) {
@@ -116,6 +133,65 @@ function MarketReferencesManager({ userId }) {
     setItemFiltro(selectedItemFromUrl);
   }, [inventoryItems, selectedItemFromUrl]);
 
+  useEffect(() => {
+    const linkKey = `${selectedItemFromUrl}|${selectedReferenceFromUrl}|${
+      referenceUnavailableFromUrl ? "unavailable" : "available"
+    }`;
+    if (handledReferenceLink === linkKey) return;
+    if (loadingInventory || loadingReferences) return;
+    if (!selectedReferenceFromUrl && !referenceUnavailableFromUrl) return;
+
+    const fallbackToCreate = () => {
+      setEditingId(null);
+      setForm({
+        ...EMPTY_FORM,
+        itemId: selectedItemFromUrl,
+        fechaConsulta: todayInputValue(),
+      });
+      setError("");
+      setSuccess("");
+      setInfoMessage(
+        "La referencia original ya no está disponible. Puedes registrar una nueva referencia."
+      );
+      if (selectedItemFromUrl) setItemFiltro(selectedItemFromUrl);
+      setHandledReferenceLink(linkKey);
+    };
+
+    if (referenceUnavailableFromUrl) {
+      fallbackToCreate();
+      return;
+    }
+
+    const reference = references.find(
+      (item) =>
+        item.id === selectedReferenceFromUrl &&
+        (item.estado || "activa") === "activa" &&
+        (!selectedItemFromUrl || item.itemId === selectedItemFromUrl)
+    );
+
+    if (!reference) {
+      fallbackToCreate();
+      return;
+    }
+
+    setEditingId(reference.id);
+    setForm(buildFormFromReference(reference));
+    setError("");
+    setSuccess("");
+    setInfoMessage("");
+    if (reference.itemId) setItemFiltro(reference.itemId);
+    setHandledReferenceLink(linkKey);
+  }, [
+    handledReferenceLink,
+    inventoryItems,
+    loadingInventory,
+    loadingReferences,
+    referenceUnavailableFromUrl,
+    references,
+    selectedItemFromUrl,
+    selectedReferenceFromUrl,
+  ]);
+
   const selectedItem = useMemo(
     () => inventoryItems.find((item) => item.id === form.itemId) || null,
     [form.itemId, inventoryItems]
@@ -136,6 +212,7 @@ function MarketReferencesManager({ userId }) {
     setEditingId(null);
     setError("");
     setSuccess("");
+    setInfoMessage("");
   };
 
   const handleChange = (event) => {
@@ -214,17 +291,10 @@ function MarketReferencesManager({ userId }) {
 
   const handleEdit = (reference) => {
     setEditingId(reference.id);
-    setForm({
-      itemId: reference.itemId || "",
-      nombreFuente: reference.nombreFuente || "",
-      urlFuente: reference.urlFuente || "",
-      precioObservado: reference.precioObservado ?? "",
-      fechaConsulta: reference.fechaConsulta || todayInputValue(),
-      observacion: reference.observacion || "",
-      estado: reference.estado || "activa",
-    });
+    setForm(buildFormFromReference(reference));
     setError("");
     setSuccess("");
+    setInfoMessage("");
   };
 
   const handleDeactivate = async (reference) => {
@@ -427,6 +497,7 @@ function MarketReferencesManager({ userId }) {
         </div>
 
         {error && <p style={styles.errorText}>{error}</p>}
+        {infoMessage && <p style={styles.infoText}>{infoMessage}</p>}
         {success && <p style={styles.successText}>{success}</p>}
 
         <button
@@ -708,6 +779,11 @@ const styles = {
   },
   successText: {
     color: "#047857",
+    fontSize: "14px",
+    margin: "12px 0 0",
+  },
+  infoText: {
+    color: "#0f766e",
     fontSize: "14px",
     margin: "12px 0 0",
   },
