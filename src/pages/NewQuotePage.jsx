@@ -48,7 +48,12 @@ const DEFAULT_UNIT_BY_TYPE = {
   actividad: "hora",
 };
 
+const PRICE_CONFIDENCE_UNAVAILABLE = "no_disponible";
+const DEFAULT_PRICE_JUSTIFICATION =
+  "Sin estimación automática. Ingresa un costo base o consulta una referencia de mercado.";
+
 const confidenceLabels = {
+  [PRICE_CONFIDENCE_UNAVAILABLE]: "no disponible",
   baja: "baja",
   media: "media",
   alta: "alta",
@@ -69,110 +74,115 @@ function getAssistantModeFromQuery() {
   return ["local", "gemini"].includes(mode) ? mode : "auto";
 }
 
-function normalizeMatchText(value) {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
-function getSuggestionTokens(suggestion) {
-  const fromKeywords = Array.isArray(suggestion?.palabrasClave)
-    ? suggestion.palabrasClave.join(" ")
-    : "";
-  return [
-    ...new Set(
-      normalizeMatchText(`${suggestion?.nombre || ""} ${fromKeywords}`)
-        .split(" ")
-        .filter((token) => token.length >= 3)
-    ),
-  ];
-}
-
-function getValuationTokens(valuation) {
-  return normalizeMatchText(
-    `${valuation?.nombre || ""} ${valuation?.categoria || ""} ${
-      valuation?.tipoItem || ""
-    }`
-  ).split(" ");
-}
-
-function findSimilarValuations(suggestion, valuations) {
-  const suggestionTokens = getSuggestionTokens(suggestion);
-  if (!suggestionTokens.length) return [];
-
-  return (Array.isArray(valuations) ? valuations : [])
-    .map((valuation) => {
-      const valuationTokens = new Set(getValuationTokens(valuation));
-      const shared = suggestionTokens.filter((token) =>
-        valuationTokens.has(token)
-      ).length;
-      const sameType = valuation.tipoItem === suggestion.tipoItem ? 2 : 0;
-      return {
-        valuation,
-        score: shared + sameType,
-      };
-    })
-    .filter(({ valuation, score }) => score > 0 && Number(valuation.precioSugerido || valuation.precioInterno) > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 5)
-    .map(({ valuation }) => valuation);
-}
-
-function average(numbers) {
-  const values = numbers.filter((number) => Number.isFinite(number) && number > 0);
-  if (!values.length) return 0;
-  return values.reduce((sum, number) => sum + number, 0) / values.length;
-}
-
-function estimateSuggestedItemPricing(suggestion, valuations, description) {
-  const similar = findSimilarValuations(suggestion, valuations);
+function getSuggestedItemPricingDefaults(suggestion) {
   const tipoItem = ["producto", "servicio", "actividad"].includes(suggestion?.tipoItem)
     ? suggestion.tipoItem
     : "actividad";
-  const margenSugerido =
-    Math.round(
-      average(similar.map((item) => Number(item.margenDeseado || 0)))
-    ) || DEFAULT_MARGIN_BY_TYPE[tipoItem];
-
-  if (!similar.length) {
-    return {
-      costoBaseSugerido: "",
-      precioSugerido: "",
-      margenSugerido,
-      justificacionPrecio:
-        "No hay datos suficientes para sugerir precio. Ingrese valor manualmente.",
-      confianzaPrecio: "baja",
-    };
-  }
-
-  const basePrice = average(
-    similar.map((item) => Number(item.precioSugerido || item.precioInterno || 0))
-  );
-  const complexityText = normalizeMatchText(description);
-  const complexityFactor =
-    complexityText.length > 280 ||
-    ["urgente", "terreno", "integracion", "integración", "complejo"].some((token) =>
-      complexityText.includes(normalizeMatchText(token))
-    )
-      ? 1.12
-      : 1;
-  const precioSugerido = Math.round(basePrice * complexityFactor);
-  const costoBaseSugerido = Math.round(
-    precioSugerido / (1 + margenSugerido / 100)
-  );
 
   return {
-    costoBaseSugerido,
-    precioSugerido,
-    margenSugerido,
-    justificacionPrecio: `Estimación local basada en ${similar.length} ítem${
-      similar.length === 1 ? "" : "s"
-    } similar${similar.length === 1 ? "" : "es"} del inventario y complejidad del requerimiento.`,
-    confianzaPrecio: similar.length >= 3 ? "alta" : "media",
+    costoBaseSugerido: "",
+    precioSugerido: "",
+    margenSugerido: DEFAULT_MARGIN_BY_TYPE[tipoItem],
+    justificacionPrecio: DEFAULT_PRICE_JUSTIFICATION,
+    confianzaPrecio: PRICE_CONFIDENCE_UNAVAILABLE,
   };
+}
+
+function parseDraftNumber(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+
+  const numberValue = Number(text);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
+function calculateSuggestedInternalPrice(costoBase, margenDeseado) {
+  const costo = parseDraftNumber(costoBase);
+  const margen = parseDraftNumber(margenDeseado);
+
+  if (
+    costo === null ||
+    costo <= 0 ||
+    margen === null ||
+    margen < 0
+  ) {
+    return "";
+  }
+
+  return Math.round(costo + (costo * margen) / 100);
+}
+
+function buildManualPriceJustification(margenDeseado) {
+  const margen = parseDraftNumber(margenDeseado);
+  if (margen === null || margen < 0) return DEFAULT_PRICE_JUSTIFICATION;
+
+  return `Precio calculado a partir del costo base ingresado por el usuario y un margen de ${margen} %.`;
+}
+
+function getSuggestedItemValidation(draft) {
+  if (!draft) return { messages: {}, isValid: false };
+
+  const categoria = String(draft.categoria || "").trim();
+  const costoBase = parseDraftNumber(draft.costoBase);
+  const cantidadSugerida = parseDraftNumber(draft.cantidadSugerida);
+  const margenDeseado = parseDraftNumber(draft.margenDeseado);
+  const messages = {};
+
+  if (!categoria) {
+    messages.categoria = "Ingresa una categoría.";
+  }
+
+  if (costoBase === null || costoBase <= 0) {
+    messages.costoBase = "Ingresa un costo mayor a cero.";
+  }
+
+  if (cantidadSugerida === null || cantidadSugerida <= 0) {
+    messages.cantidadSugerida = "Ingresa una cantidad mayor a cero.";
+  }
+
+  if (margenDeseado === null || margenDeseado < 0) {
+    messages.margenDeseado = "Ingresa un margen de cero o mayor.";
+  }
+
+  return {
+    messages,
+    isValid: Object.keys(messages).length === 0,
+  };
+}
+
+function buildSuggestedItemDescription(suggestion, tipoItem) {
+  const nombre = String(suggestion?.nombre || "").trim();
+  const typeLabel = tipoLabels[tipoItem] || "Ítem";
+  return nombre ? `${typeLabel} sugerido: ${nombre}.` : "";
+}
+
+function normalizeConfidence(value, fallback = "media") {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) return fallback;
+
+  if (["baja", "media", "alta", PRICE_CONFIDENCE_UNAVAILABLE].includes(normalized)) {
+    return normalized;
+  }
+
+  const numericConfidence = Number(normalized);
+  if (Number.isFinite(numericConfidence)) {
+    if (numericConfidence >= 80) return "alta";
+    if (numericConfidence >= 50) return "media";
+    return "baja";
+  }
+
+  return fallback;
+}
+
+function hasSameDraftText(first, second) {
+  const normalize = (value) =>
+    String(value || "")
+      .trim()
+      .replace(/\s+/g, " ")
+      .toLowerCase();
+  const firstText = normalize(first);
+  const secondText = normalize(second);
+  return Boolean(firstText && secondText && firstText === secondText);
 }
 
 const statusStyles = {
@@ -305,6 +315,7 @@ function NewQuotePage({ userId }) {
     text: "",
   });
   const [suggestedItemDraft, setSuggestedItemDraft] = useState(null);
+  const [suggestedItemTouched, setSuggestedItemTouched] = useState({});
   const [suggestedItemSaving, setSuggestedItemSaving] = useState(false);
   const [suggestedItemError, setSuggestedItemError] = useState("");
   const [highlightedItemId, setHighlightedItemId] = useState("");
@@ -473,6 +484,11 @@ function NewQuotePage({ userId }) {
     });
     return quantities;
   }, [normalizedItems]);
+
+  const suggestedItemValidation = useMemo(
+    () => getSuggestedItemValidation(suggestedItemDraft),
+    [suggestedItemDraft]
+  );
 
   const filteredValuations = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -880,11 +896,7 @@ function NewQuotePage({ userId }) {
   };
 
   const openSuggestedItemDraft = (suggestion) => {
-    const pricing = estimateSuggestedItemPricing(
-      suggestion,
-      valuations,
-      assistantDescription
-    );
+    const pricing = getSuggestedItemPricingDefaults(suggestion);
     const tipoItem = ["producto", "servicio", "actividad"].includes(
       suggestion.tipoItem
     )
@@ -892,31 +904,66 @@ function NewQuotePage({ userId }) {
       : "actividad";
 
     setSuggestedItemError("");
+    setSuggestedItemTouched({});
     setSuggestedItemDraft({
       nombre: suggestion.nombre || "",
       tipoItem,
       categoria: "",
-      descripcion: suggestion.motivo || "",
+      descripcion: buildSuggestedItemDescription(suggestion, tipoItem),
       unidad: DEFAULT_UNIT_BY_TYPE[tipoItem],
       cantidadSugerida: Math.max(Number(suggestion.cantidadSugerida) || 1, 1),
       costoBase: pricing.costoBaseSugerido,
       precioInterno: pricing.precioSugerido,
       margenDeseado: pricing.margenSugerido,
       justificacionSugerencia: suggestion.motivo || "",
+      confianzaSugerencia: normalizeConfidence(
+        suggestion.confianzaSugerencia ?? suggestion.confianza,
+        "media"
+      ),
       justificacionPrecio: pricing.justificacionPrecio,
       confianzaPrecio: pricing.confianzaPrecio,
     });
   };
 
+  const closeSuggestedItemDraft = () => {
+    setSuggestedItemDraft(null);
+    setSuggestedItemTouched({});
+    setSuggestedItemError("");
+  };
+
+  const markSuggestedItemFieldTouched = (field) => {
+    setSuggestedItemTouched((current) => ({
+      ...current,
+      [field]: true,
+    }));
+  };
+
   const updateSuggestedItemDraft = (field, value) => {
-    setSuggestedItemDraft((prev) =>
-      prev
-        ? {
-            ...prev,
-            [field]: value,
-          }
-        : prev
-    );
+    setSuggestedItemError("");
+    setSuggestedItemDraft((prev) => {
+      if (!prev) return prev;
+
+      const next = {
+        ...prev,
+        [field]: value,
+      };
+
+      if (field === "costoBase" || field === "margenDeseado") {
+        const calculatedPrice = calculateSuggestedInternalPrice(
+          next.costoBase,
+          next.margenDeseado
+        );
+        next.precioInterno = calculatedPrice;
+        next.confianzaPrecio = calculatedPrice
+          ? "baja"
+          : PRICE_CONFIDENCE_UNAVAILABLE;
+        next.justificacionPrecio = calculatedPrice
+          ? buildManualPriceJustification(next.margenDeseado)
+          : DEFAULT_PRICE_JUSTIFICATION;
+      }
+
+      return next;
+    });
   };
 
   const createSuggestedItem = async () => {
@@ -924,14 +971,20 @@ function NewQuotePage({ userId }) {
 
     const nombre = String(suggestedItemDraft.nombre || "").trim();
     const tipoItem = String(suggestedItemDraft.tipoItem || "").trim();
-    const precioInterno = Number(suggestedItemDraft.precioInterno);
-    const margenDeseado =
-      Number(suggestedItemDraft.margenDeseado) ||
-      DEFAULT_MARGIN_BY_TYPE[tipoItem] ||
-      30;
-    const costoBase =
-      Number(suggestedItemDraft.costoBase) ||
-      Math.round(precioInterno / (1 + margenDeseado / 100));
+    const categoria = String(suggestedItemDraft.categoria || "").trim();
+    const descripcion = String(suggestedItemDraft.descripcion || "").trim();
+    const unidad = String(suggestedItemDraft.unidad || "").trim();
+    const justificacionSugerencia = String(
+      suggestedItemDraft.justificacionSugerencia || ""
+    ).trim();
+    const costoBase = parseDraftNumber(suggestedItemDraft.costoBase);
+    const margenDeseado = parseDraftNumber(suggestedItemDraft.margenDeseado);
+    const precioInterno = calculateSuggestedInternalPrice(
+      suggestedItemDraft.costoBase,
+      suggestedItemDraft.margenDeseado
+    );
+    const cantidadSugerida = parseDraftNumber(suggestedItemDraft.cantidadSugerida);
+    const validation = getSuggestedItemValidation(suggestedItemDraft);
 
     if (!nombre) {
       setSuggestedItemError("Ingresa el nombre del ítem sugerido.");
@@ -941,12 +994,24 @@ function NewQuotePage({ userId }) {
       setSuggestedItemError("Selecciona un tipo de ítem válido.");
       return;
     }
-    if (!Number.isFinite(precioInterno) || precioInterno <= 0) {
-      setSuggestedItemError("Ingresa un precio interno mayor a cero.");
+    if (!unidad) {
+      setSuggestedItemError("Ingresa la unidad del ítem sugerido.");
       return;
     }
-    if (!Number.isFinite(costoBase) || costoBase <= 0) {
-      setSuggestedItemError("Ingresa un costo base mayor a cero.");
+    if (hasSameDraftText(descripcion, justificacionSugerencia)) {
+      setSuggestedItemError(
+        "La descripción y la justificación no deben ser una copia exacta."
+      );
+      return;
+    }
+    if (!validation.isValid) {
+      setSuggestedItemError("Revisa los campos marcados antes de crear el ítem.");
+      return;
+    }
+    if (!Number.isFinite(precioInterno) || precioInterno <= 0) {
+      setSuggestedItemError(
+        "El precio interno queda pendiente hasta ingresar costo base y margen válidos."
+      );
       return;
     }
 
@@ -958,18 +1023,19 @@ function NewQuotePage({ userId }) {
       const payload = {
         nombre,
         tipoItem,
-        categoria: suggestedItemDraft.categoria,
-        descripcion: suggestedItemDraft.descripcion,
-        unidad: suggestedItemDraft.unidad || DEFAULT_UNIT_BY_TYPE[tipoItem],
+        categoria,
+        descripcion,
+        unidad,
         costoBase,
         precioInterno,
         margenDeseado,
         estado: "activo",
         origen: "sugerencia_ia",
         creadoDesdeCotizacion: true,
-        justificacionSugerencia: suggestedItemDraft.justificacionSugerencia,
-        justificacionPrecio: suggestedItemDraft.justificacionPrecio,
-        confianzaPrecio: suggestedItemDraft.confianzaPrecio,
+        justificacionSugerencia,
+        justificacionPrecio: buildManualPriceJustification(margenDeseado),
+        confianzaSugerencia: suggestedItemDraft.confianzaSugerencia,
+        confianzaPrecio: "baja",
       };
       const createdRef = await createInventoryItem(userId, payload);
       const createdItem = {
@@ -996,8 +1062,8 @@ function NewQuotePage({ userId }) {
       };
 
       setValuations((prev) => [createdValuation, ...prev]);
-      setSuggestedItemDraft(null);
-      addItem(createdValuation, suggestedItemDraft.cantidadSugerida);
+      closeSuggestedItemDraft();
+      addItem(createdValuation, cantidadSugerida);
       showItemFeedback("Ítem sugerido creado en inventario y agregado a la cotización.");
     } catch (err) {
       console.error("Error creando ítem sugerido:", err);
@@ -1930,13 +1996,13 @@ function NewQuotePage({ userId }) {
               <div>
                 <h3 style={styles.panelTitle}>Crear ítem sugerido</h3>
                 <p style={styles.helpText}>
-                  Precio sugerido experimental. Debe ser validado por el usuario
-                  antes de cotizar.
+                  Completa la categoría y el costo base antes de agregarlo a la
+                  cotización.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => setSuggestedItemDraft(null)}
+                onClick={closeSuggestedItemDraft}
                 style={styles.clearButton}
                 disabled={suggestedItemSaving}
               >
@@ -1944,172 +2010,222 @@ function NewQuotePage({ userId }) {
               </button>
             </div>
 
-            <div style={styles.warningText}>
-              Precio sugerido experimental. Debe ser validado por el usuario
-              antes de cotizar.
+            <div style={styles.modalBody}>
+              <section style={styles.modalSection}>
+                <h4 style={styles.modalSectionTitle}>Datos del ítem</h4>
+                <div style={styles.modalThreeColumnGrid}>
+                  <Field label="Nombre">
+                    <input
+                      type="text"
+                      value={suggestedItemDraft.nombre}
+                      onChange={(event) =>
+                        updateSuggestedItemDraft("nombre", event.target.value)
+                      }
+                      style={styles.input}
+                    />
+                  </Field>
+                  <Field label="Tipo">
+                    <select
+                      value={suggestedItemDraft.tipoItem}
+                      onChange={(event) =>
+                        updateSuggestedItemDraft("tipoItem", event.target.value)
+                      }
+                      style={styles.input}
+                    >
+                      <option value="producto">Producto</option>
+                      <option value="servicio">Servicio</option>
+                      <option value="actividad">Actividad</option>
+                    </select>
+                  </Field>
+                  <Field
+                    label="Categoría"
+                    helpText={
+                      suggestedItemTouched.categoria
+                        ? suggestedItemValidation.messages.categoria
+                        : ""
+                    }
+                    helpTone="error"
+                  >
+                    <input
+                      type="text"
+                      value={suggestedItemDraft.categoria}
+                      onBlur={() => markSuggestedItemFieldTouched("categoria")}
+                      onChange={(event) =>
+                        updateSuggestedItemDraft("categoria", event.target.value)
+                      }
+                      placeholder="Selecciona o ingresa una categoría"
+                      style={styles.input}
+                    />
+                  </Field>
+                </div>
+              </section>
+
+              <section style={styles.modalSection}>
+                <h4 style={styles.modalSectionTitle}>Valores para cotización</h4>
+                <div style={styles.modalThreeColumnGrid}>
+                  <Field label="Unidad">
+                    <input
+                      type="text"
+                      value={suggestedItemDraft.unidad}
+                      onChange={(event) =>
+                        updateSuggestedItemDraft("unidad", event.target.value)
+                      }
+                      style={styles.input}
+                    />
+                  </Field>
+                  <Field
+                    label="Cantidad sugerida"
+                    helpText={
+                      suggestedItemTouched.cantidadSugerida
+                        ? suggestedItemValidation.messages.cantidadSugerida
+                        : ""
+                    }
+                    helpTone="error"
+                  >
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={suggestedItemDraft.cantidadSugerida}
+                      onBlur={() =>
+                        markSuggestedItemFieldTouched("cantidadSugerida")
+                      }
+                      onChange={(event) =>
+                        updateSuggestedItemDraft(
+                          "cantidadSugerida",
+                          event.target.value
+                        )
+                      }
+                      style={styles.input}
+                    />
+                  </Field>
+                  <Field
+                    label="Costo base"
+                    helpText={
+                      suggestedItemTouched.costoBase
+                        ? suggestedItemValidation.messages.costoBase
+                        : ""
+                    }
+                    helpTone="error"
+                  >
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={suggestedItemDraft.costoBase}
+                      onBlur={() => markSuggestedItemFieldTouched("costoBase")}
+                      onChange={(event) =>
+                        updateSuggestedItemDraft("costoBase", event.target.value)
+                      }
+                      placeholder="Ingresa costo base"
+                      style={styles.input}
+                    />
+                  </Field>
+                </div>
+                <div style={styles.modalThreeColumnGrid}>
+                  <Field
+                    label="Margen deseado"
+                    helpText={
+                      suggestedItemTouched.margenDeseado
+                        ? suggestedItemValidation.messages.margenDeseado
+                        : ""
+                    }
+                    helpTone="error"
+                  >
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={suggestedItemDraft.margenDeseado}
+                      onBlur={() =>
+                        markSuggestedItemFieldTouched("margenDeseado")
+                      }
+                      onChange={(event) =>
+                        updateSuggestedItemDraft("margenDeseado", event.target.value)
+                      }
+                      style={styles.input}
+                    />
+                  </Field>
+                  <Field label="Precio interno calculado">
+                    <div style={styles.readOnlyValue}>
+                      {suggestedItemDraft.precioInterno
+                        ? formatCLP(suggestedItemDraft.precioInterno)
+                        : "Pendiente"}
+                    </div>
+                  </Field>
+                  <Field label="Confianza del precio">
+                    <div style={styles.readOnlyValue}>
+                      {confidenceLabels[suggestedItemDraft.confianzaPrecio] ||
+                        suggestedItemDraft.confianzaPrecio}
+                    </div>
+                  </Field>
+                </div>
+              </section>
+
+              <section style={styles.modalSection}>
+                <h4 style={styles.modalSectionTitle}>
+                  Información de la sugerencia
+                </h4>
+                <div style={styles.modalThreeColumnGrid}>
+                  <Field label="Confianza de la sugerencia">
+                    <select
+                      value={suggestedItemDraft.confianzaSugerencia}
+                      onChange={(event) =>
+                        updateSuggestedItemDraft(
+                          "confianzaSugerencia",
+                          event.target.value
+                        )
+                      }
+                      style={styles.input}
+                    >
+                      <option value="baja">Baja</option>
+                      <option value="media">Media</option>
+                      <option value="alta">Alta</option>
+                    </select>
+                  </Field>
+                </div>
+                <div style={styles.modalTextGrid}>
+                  <Field label="Descripción">
+                    <textarea
+                      rows={3}
+                      value={suggestedItemDraft.descripcion}
+                      onChange={(event) =>
+                        updateSuggestedItemDraft("descripcion", event.target.value)
+                      }
+                      style={{ ...styles.textarea, ...styles.compactModalTextarea }}
+                    />
+                  </Field>
+                  <Field label="Justificación de la sugerencia">
+                    <textarea
+                      rows={3}
+                      value={suggestedItemDraft.justificacionSugerencia}
+                      onChange={(event) =>
+                        updateSuggestedItemDraft(
+                          "justificacionSugerencia",
+                          event.target.value
+                        )
+                      }
+                      style={{ ...styles.textarea, ...styles.compactModalTextarea }}
+                    />
+                  </Field>
+                </div>
+                <Field label="Justificación de precio" wide>
+                  <div style={styles.priceTraceBox}>
+                    {suggestedItemDraft.justificacionPrecio ||
+                      DEFAULT_PRICE_JUSTIFICATION}
+                  </div>
+                </Field>
+              </section>
+
+              {suggestedItemError && (
+                <p style={styles.errorText}>{suggestedItemError}</p>
+              )}
             </div>
-
-            <div style={styles.formGrid}>
-              <Field label="Nombre">
-                <input
-                  type="text"
-                  value={suggestedItemDraft.nombre}
-                  onChange={(event) =>
-                    updateSuggestedItemDraft("nombre", event.target.value)
-                  }
-                  style={styles.input}
-                />
-              </Field>
-              <Field label="Tipo">
-                <select
-                  value={suggestedItemDraft.tipoItem}
-                  onChange={(event) =>
-                    updateSuggestedItemDraft("tipoItem", event.target.value)
-                  }
-                  style={styles.input}
-                >
-                  <option value="producto">Producto</option>
-                  <option value="servicio">Servicio</option>
-                  <option value="actividad">Actividad</option>
-                </select>
-              </Field>
-              <Field label="Categoría">
-                <input
-                  type="text"
-                  value={suggestedItemDraft.categoria}
-                  onChange={(event) =>
-                    updateSuggestedItemDraft("categoria", event.target.value)
-                  }
-                  style={styles.input}
-                />
-              </Field>
-              <Field label="Unidad">
-                <input
-                  type="text"
-                  value={suggestedItemDraft.unidad}
-                  onChange={(event) =>
-                    updateSuggestedItemDraft("unidad", event.target.value)
-                  }
-                  style={styles.input}
-                />
-              </Field>
-              <Field label="Cantidad sugerida">
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={suggestedItemDraft.cantidadSugerida}
-                  onChange={(event) =>
-                    updateSuggestedItemDraft(
-                      "cantidadSugerida",
-                      event.target.value
-                    )
-                  }
-                  style={styles.input}
-                />
-              </Field>
-              <Field label="Costo base sugerido">
-                <input
-                  type="number"
-                  min="0"
-                  value={suggestedItemDraft.costoBase}
-                  onChange={(event) =>
-                    updateSuggestedItemDraft("costoBase", event.target.value)
-                  }
-                  placeholder="Ingrese costo base"
-                  style={styles.input}
-                />
-              </Field>
-              <Field label="Precio interno sugerido">
-                <input
-                  type="number"
-                  min="0"
-                  value={suggestedItemDraft.precioInterno}
-                  onChange={(event) =>
-                    updateSuggestedItemDraft("precioInterno", event.target.value)
-                  }
-                  placeholder="Ingrese precio interno"
-                  style={styles.input}
-                />
-              </Field>
-              <Field label="Margen deseado sugerido">
-                <input
-                  type="number"
-                  min="0"
-                  value={suggestedItemDraft.margenDeseado}
-                  onChange={(event) =>
-                    updateSuggestedItemDraft("margenDeseado", event.target.value)
-                  }
-                  style={styles.input}
-                />
-              </Field>
-              <Field label="Nivel de confianza">
-                <select
-                  value={suggestedItemDraft.confianzaPrecio}
-                  onChange={(event) =>
-                    updateSuggestedItemDraft("confianzaPrecio", event.target.value)
-                  }
-                  style={styles.input}
-                >
-                  <option value="baja">Baja</option>
-                  <option value="media">Media</option>
-                  <option value="alta">Alta</option>
-                </select>
-              </Field>
-              <Field label="Descripción" wide>
-                <textarea
-                  rows={3}
-                  value={suggestedItemDraft.descripcion}
-                  onChange={(event) =>
-                    updateSuggestedItemDraft("descripcion", event.target.value)
-                  }
-                  style={styles.textarea}
-                />
-              </Field>
-              <Field label="Justificación de la sugerencia" wide>
-                <textarea
-                  rows={3}
-                  value={suggestedItemDraft.justificacionSugerencia}
-                  onChange={(event) =>
-                    updateSuggestedItemDraft(
-                      "justificacionSugerencia",
-                      event.target.value
-                    )
-                  }
-                  style={styles.textarea}
-                />
-              </Field>
-              <Field label="Justificación de precio" wide>
-                <textarea
-                  rows={3}
-                  value={suggestedItemDraft.justificacionPrecio}
-                  onChange={(event) =>
-                    updateSuggestedItemDraft(
-                      "justificacionPrecio",
-                      event.target.value
-                    )
-                  }
-                  style={styles.textarea}
-                />
-              </Field>
-            </div>
-
-            <p style={styles.helpText}>
-              Confianza de precio:{" "}
-              <strong>
-                {confidenceLabels[suggestedItemDraft.confianzaPrecio] ||
-                  suggestedItemDraft.confianzaPrecio}
-              </strong>
-            </p>
-
-            {suggestedItemError && (
-              <p style={styles.errorText}>{suggestedItemError}</p>
-            )}
 
             <div style={styles.modalActions}>
               <button
                 type="button"
-                onClick={() => setSuggestedItemDraft(null)}
+                onClick={closeSuggestedItemDraft}
                 style={styles.clearButton}
                 disabled={suggestedItemSaving}
               >
@@ -2119,7 +2235,7 @@ function NewQuotePage({ userId }) {
                 type="button"
                 onClick={createSuggestedItem}
                 style={styles.primaryButton}
-                disabled={suggestedItemSaving}
+                disabled={suggestedItemSaving || !suggestedItemValidation.isValid}
               >
                 {suggestedItemSaving ? "Creando..." : "Crear y agregar"}
               </button>
@@ -2145,11 +2261,20 @@ function NewQuotePage({ userId }) {
   );
 }
 
-function Field({ label, helpText, wide = false, children }) {
+function Field({ label, helpText, helpTone = "default", wide = false, children }) {
   return (
     <label style={{ ...styles.field, ...(wide ? styles.wideField : {}) }}>
       <span style={styles.label}>{label}</span>
-      {helpText && <span style={styles.fieldHelpText}>{helpText}</span>}
+      {helpText && (
+        <span
+          style={{
+            ...styles.fieldHelpText,
+            ...(helpTone === "error" ? styles.fieldErrorText : {}),
+          }}
+        >
+          {helpText}
+        </span>
+      )}
       {children}
     </label>
   );
@@ -2313,6 +2438,10 @@ const styles = {
     fontSize: "12px",
     lineHeight: 1.4,
   },
+  fieldErrorText: {
+    color: "#b91c1c",
+    fontWeight: 700,
+  },
   input: {
     background: "#ffffff",
     border: "1px solid #cbd5e1",
@@ -2353,6 +2482,9 @@ const styles = {
     padding: "11px",
     resize: "vertical",
     width: "100%",
+  },
+  compactModalTextarea: {
+    minHeight: "84px",
   },
   observationsTextarea: {
     background: "#ffffff",
@@ -2925,7 +3057,10 @@ const styles = {
     boxShadow: "0 20px 50px rgba(15, 23, 42, 0.22)",
     display: "grid",
     gap: "14px",
+    gridTemplateRows: "auto minmax(0, 1fr) auto",
+    maxHeight: "85vh",
     maxWidth: "860px",
+    overflow: "hidden",
     padding: "18px",
     width: "100%",
   },
@@ -2935,11 +3070,53 @@ const styles = {
     gap: "12px",
     justifyContent: "space-between",
   },
+  modalBody: {
+    display: "grid",
+    gap: "10px",
+    minHeight: 0,
+    overflowY: "auto",
+    paddingRight: "4px",
+  },
+  modalSection: {
+    display: "grid",
+    gap: "10px",
+  },
+  modalSectionTitle: {
+    color: "#334155",
+    fontSize: "13px",
+    fontWeight: 900,
+    margin: "0 0 -2px",
+  },
+  modalThreeColumnGrid: {
+    display: "grid",
+    gap: "12px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 210px), 1fr))",
+  },
+  modalTextGrid: {
+    display: "grid",
+    gap: "12px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
+  },
   modalActions: {
+    background: "#ffffff",
+    borderTop: "1px solid #e2e8f0",
+    bottom: 0,
     display: "flex",
     flexWrap: "wrap",
     gap: "10px",
     justifyContent: "flex-end",
+    margin: "0 -18px -18px",
+    padding: "12px 18px",
+    position: "sticky",
+  },
+  priceTraceBox: {
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
+    borderRadius: "6px",
+    color: "#334155",
+    fontSize: "13px",
+    lineHeight: 1.45,
+    padding: "10px 11px",
   },
   printSheet: {
     background: "#ffffff",

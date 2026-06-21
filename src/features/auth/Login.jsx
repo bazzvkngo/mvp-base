@@ -42,6 +42,25 @@ function Login() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
 
+  const clearPasswordState = () => {
+    setPassword("");
+    setConfirmPassword("");
+  };
+
+  const openResetView = () => {
+    clearPasswordState();
+    setIsResetView(true);
+    setError("");
+    setSuccess("");
+  };
+
+  const returnToLoginView = () => {
+    clearPasswordState();
+    setIsResetView(false);
+    setIsLoginView(true);
+    setError("");
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (isSubmitting) return;
@@ -112,6 +131,7 @@ function Login() {
 
     try {
       await resetPassword(email);
+      clearPasswordState();
       setSuccess(
         "Si el correo está registrado, recibirás un enlace para restablecer tu contraseña."
       );
@@ -126,6 +146,7 @@ function Login() {
       }
 
       if (err.code === "auth/user-not-found") {
+        clearPasswordState();
         setSuccess(
           "Si el correo está registrado, recibirás un enlace para restablecer tu contraseña."
         );
@@ -147,7 +168,7 @@ function Login() {
   const toggleAuthView = () => {
     setIsLoginView((current) => !current);
     setIsResetView(false);
-    setConfirmPassword("");
+    clearPasswordState();
     setError("");
     setSuccess("");
   };
@@ -189,6 +210,8 @@ function Login() {
         >
           <input
             type="email"
+            name={isResetView ? "email" : "username"}
+            autoComplete={isResetView ? "email" : "username"}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="Correo electrónico"
@@ -197,7 +220,10 @@ function Login() {
           />
           {showPasswordField && (
             <input
+              key={isLoginView ? "login-password" : "register-password"}
               type="password"
+              name={isLoginView ? "password" : "new-password"}
+              autoComplete={isLoginView ? "current-password" : "new-password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Contraseña (mín. 6 caracteres)"
@@ -209,6 +235,8 @@ function Login() {
           {showConfirmPasswordField && (
             <input
               type="password"
+              name="confirm-password"
+              autoComplete="new-password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="Repetir contraseña"
@@ -236,11 +264,7 @@ function Login() {
         {isLoginView && !isResetView && (
           <button
             type="button"
-            onClick={() => {
-              setIsResetView(true);
-              setError("");
-              setSuccess("");
-            }}
+            onClick={openResetView}
             style={styles.linkButton}
           >
             ¿Olvidaste tu contraseña?
@@ -250,10 +274,7 @@ function Login() {
         {isResetView && (
           <button
             type="button"
-            onClick={() => {
-              setIsResetView(false);
-              setError("");
-            }}
+            onClick={returnToLoginView}
             style={styles.linkButton}
           >
             Volver al inicio de sesión

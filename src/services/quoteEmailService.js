@@ -45,12 +45,14 @@ export function buildManualQuoteEmail({ quote }) {
 
 export function isQuoteEmailSendable(quote, quoteId = quote?.id) {
   const quoteNumber = getQuoteDisplayNumber(quote, "");
+  const sendableStatuses = ["emitida", "aceptada", "rechazada", "vencida"];
+
   return Boolean(
     quoteId &&
       quoteNumber &&
       quoteNumber !== DRAFT_QUOTE_NUMBER_LABEL &&
       quote?.fecha &&
-      (quote?.estado || "").toLowerCase() === "emitida"
+      sendableStatuses.includes((quote?.estado || "").toLowerCase())
   );
 }
 

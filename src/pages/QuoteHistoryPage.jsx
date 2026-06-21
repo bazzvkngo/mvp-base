@@ -81,6 +81,20 @@ function getQuoteTimestamp(quote) {
   return quote?.actualizadoEn || quote?.creadoEn || null;
 }
 
+function getEmailActionHint(quote) {
+  const estado = quote?.estado || "borrador";
+
+  if (estado === "archivada") {
+    return "Restaura la cotización antes de enviarla nuevamente.";
+  }
+
+  if (estado === "borrador") {
+    return "Emite la cotización antes de enviarla al cliente.";
+  }
+
+  return "";
+}
+
 function QuoteHistoryPage({ userId }) {
   const navigate = useNavigate();
   const [quotes, setQuotes] = useState([]);
@@ -93,6 +107,16 @@ function QuoteHistoryPage({ userId }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [emailModalQuote, setEmailModalQuote] = useState(null);
+  const [detailExpanded, setDetailExpanded] = useState(false);
+  const detailCloseTimer = React.useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (detailCloseTimer.current) {
+        window.clearTimeout(detailCloseTimer.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!userId) {
@@ -108,7 +132,6 @@ function QuoteHistoryPage({ userId }) {
       .then((items) => {
         if (!active) return;
         setQuotes(items);
-        setSelectedQuoteId((current) => current || items[0]?.id || "");
       })
       .catch((err) => {
         console.error("Error al cargar cotizaciones:", err);
@@ -162,15 +185,43 @@ function QuoteHistoryPage({ userId }) {
   );
 
   useEffect(() => {
-    if (filteredQuotes.length === 0) {
+    if (
+      selectedQuoteId &&
+      !filteredQuotes.some((quote) => quote.id === selectedQuoteId)
+    ) {
+      setDetailExpanded(false);
       setSelectedQuoteId("");
+    }
+  }, [filteredQuotes, selectedQuoteId]);
+
+  const handleToggleDetail = (quoteId) => {
+    if (selectedQuoteId === quoteId) {
+      handleCloseDetail(quoteId);
       return;
     }
 
-    if (!filteredQuotes.some((quote) => quote.id === selectedQuoteId)) {
-      setSelectedQuoteId(filteredQuotes[0].id);
+    if (detailCloseTimer.current) {
+      window.clearTimeout(detailCloseTimer.current);
     }
-  }, [filteredQuotes, selectedQuoteId]);
+
+    setDetailExpanded(false);
+    setSelectedQuoteId(quoteId);
+    window.requestAnimationFrame(() => {
+      setDetailExpanded(true);
+    });
+  };
+
+  const handleCloseDetail = (quoteId = selectedQuoteId) => {
+    setDetailExpanded(false);
+
+    if (detailCloseTimer.current) {
+      window.clearTimeout(detailCloseTimer.current);
+    }
+
+    detailCloseTimer.current = window.setTimeout(() => {
+      setSelectedQuoteId((current) => (current === quoteId ? "" : current));
+    }, 180);
+  };
 
   const handleChangeStatus = async (quoteId, estado, options = {}) => {
     const { confirm = true, estadoAnterior } = options;
@@ -225,7 +276,7 @@ function QuoteHistoryPage({ userId }) {
       estadoAnterior: estadoActual,
     });
     if (updated) {
-      setSuccess("Cotización archivada. Puedes restaurarla desde el filtro Archivada.");
+      setSuccess("Cotización archivada correctamente.");
     }
   };
 
@@ -234,13 +285,11 @@ function QuoteHistoryPage({ userId }) {
       statusLabels[quote.estadoAnterior] && quote.estadoAnterior !== "archivada";
     const estadoRestaurado = canRestorePreviousState
       ? quote.estadoAnterior
-      : "emitida";
+      : "borrador";
     const updated = await handleChangeStatus(quote.id, estadoRestaurado);
 
     if (updated) {
-      setSuccess(
-        `Cotización restaurada a ${statusLabels[estadoRestaurado].toLowerCase()}.`
-      );
+      setSuccess("Cotización restaurada correctamente.");
     }
   };
 
@@ -379,7 +428,7 @@ function QuoteHistoryPage({ userId }) {
                       <div style={styles.rowActions}>
                         <button
                           type="button"
-                          onClick={() => setSelectedQuoteId(quote.id)}
+                          onClick={() => handleToggleDetail(quote.id)}
                           style={styles.secondaryButton}
                         >
                           Ver detalle
@@ -403,15 +452,25 @@ function QuoteHistoryPage({ userId }) {
       </div>
 
       {selectedQuote ? (
-        <QuoteDetail
-          quote={selectedQuote}
-          companyProfile={companyProfile}
-          onOpenEmail={() => {
-            if (isQuoteEmailSendable(selectedQuote, selectedQuote.id)) {
-              setEmailModalQuote(selectedQuote);
-            }
+        <div
+          style={{
+            ...styles.detailReveal,
+            ...(detailExpanded ? styles.detailRevealOpen : styles.detailRevealClosed),
           }}
-        />
+        >
+          <div style={styles.detailRevealInner}>
+            <QuoteDetail
+              quote={selectedQuote}
+              companyProfile={companyProfile}
+              onClose={() => handleCloseDetail(selectedQuote.id)}
+              onOpenEmail={() => {
+                if (isQuoteEmailSendable(selectedQuote, selectedQuote.id)) {
+                  setEmailModalQuote(selectedQuote);
+                }
+              }}
+            />
+          </div>
+        </div>
       ) : (
         !loading &&
         quotes.length > 0 && (
@@ -556,14 +615,24 @@ function QuoteActions({
 
   if (estado === "aceptada") {
     return (
-      <button
-        type="button"
-        onClick={() => onChangeStatus(quote.id, "emitida")}
-        disabled={disabled}
-        style={styles.secondaryButton}
-      >
-        Corregir a emitida
-      </button>
+      <>
+        <button
+          type="button"
+          onClick={() => onChangeStatus(quote.id, "emitida")}
+          disabled={disabled}
+          style={styles.secondaryButton}
+        >
+          Corregir a emitida
+        </button>
+        <button
+          type="button"
+          onClick={() => onArchive(quote)}
+          disabled={disabled}
+          style={styles.archiveButton}
+        >
+          Archivar
+        </button>
+      </>
     );
   }
 
@@ -606,13 +675,14 @@ function QuoteActions({
   return null;
 }
 
-function QuoteDetail({ quote, companyProfile, onOpenEmail }) {
+function QuoteDetail({ quote, companyProfile, onClose, onOpenEmail }) {
   const canSendEmail = isQuoteEmailSendable(quote, quote.id);
+  const emailActionHint = getEmailActionHint(quote);
 
   return (
     <div className="history-print-area" style={styles.detailPanel}>
       <div className="no-print" style={styles.detailActions}>
-        <div>
+        <div style={styles.detailHeading}>
           <h3 style={styles.panelTitle}>Detalle de cotización</h3>
           <p style={styles.helpText}>
             Vista formal para revisión e impresión desde el historial.
@@ -620,6 +690,14 @@ function QuoteDetail({ quote, companyProfile, onOpenEmail }) {
           <EmailStatusLine quote={quote} />
         </div>
         <div style={styles.detailButtonGroup}>
+          <button
+            type="button"
+            onClick={onClose}
+            style={styles.collapseButton}
+            aria-label="Ocultar detalle de la cotización"
+          >
+            ^ Ocultar detalle
+          </button>
           <button
             type="button"
             onClick={onOpenEmail}
@@ -639,9 +717,9 @@ function QuoteDetail({ quote, companyProfile, onOpenEmail }) {
             Imprimir detalle
           </button>
         </div>
-        {!canSendEmail && (
+        {!canSendEmail && emailActionHint && (
           <p className="no-print" style={styles.actionHint}>
-            Emite la cotización antes de enviarla al cliente.
+            {emailActionHint}
           </p>
         )}
       </div>
@@ -813,6 +891,7 @@ const styles = {
     cursor: "pointer",
     fontWeight: 800,
     padding: "10px 12px",
+    whiteSpace: "nowrap",
   },
   statusBadge: {
     borderRadius: "999px",
@@ -852,19 +931,54 @@ const styles = {
     border: "1px solid #e5e7eb",
     borderRadius: "8px",
     padding: "18px",
+    minWidth: 0,
+  },
+  detailReveal: {
+    display: "grid",
+    overflow: "hidden",
+    transition: "grid-template-rows 180ms ease, opacity 180ms ease",
+  },
+  detailRevealOpen: {
+    gridTemplateRows: "1fr",
+    opacity: 1,
+  },
+  detailRevealClosed: {
+    gridTemplateRows: "0fr",
+    opacity: 0,
+  },
+  detailRevealInner: {
+    minHeight: 0,
+    minWidth: 0,
   },
   detailActions: {
     alignItems: "center",
     display: "flex",
+    flexWrap: "wrap",
     justifyContent: "space-between",
     gap: "12px",
     marginBottom: "14px",
   },
+  detailHeading: {
+    flex: "1 1 280px",
+    minWidth: 0,
+  },
   detailButtonGroup: {
+    alignItems: "center",
     display: "flex",
+    flex: "0 0 auto",
     flexWrap: "wrap",
     gap: "10px",
     justifyContent: "flex-end",
+  },
+  collapseButton: {
+    background: "#ffffff",
+    border: "1px solid #cbd5e1",
+    borderRadius: "6px",
+    color: "#475569",
+    cursor: "pointer",
+    fontWeight: 700,
+    padding: "10px 12px",
+    whiteSpace: "nowrap",
   },
   emailButton: {
     background: "#0f766e",
@@ -874,6 +988,7 @@ const styles = {
     cursor: "pointer",
     fontWeight: 800,
     padding: "10px 12px",
+    whiteSpace: "nowrap",
   },
   disabledButton: {
     background: "#f1f5f9",
