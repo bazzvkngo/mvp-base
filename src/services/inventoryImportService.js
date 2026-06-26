@@ -1,6 +1,10 @@
 import * as XLSX from "xlsx";
 import { importInventoryItems } from "./inventoryService";
 
+const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+const MAX_FILE_ROWS = 500;
+const ALLOWED_FILE_EXTENSION = /\.(csv|xls|xlsx)$/i;
+
 function normalizeText(value) {
   return String(value || "")
     .toLowerCase()
@@ -56,12 +60,21 @@ export async function leerArchivoInventario(file) {
   if (!file) {
     throw new Error("No se recibio archivo de inventario.");
   }
+  if (!ALLOWED_FILE_EXTENSION.test(String(file.name || ""))) {
+    throw new Error("Usa un archivo CSV, XLS o XLSX.");
+  }
+  if (Number(file.size || 0) > MAX_FILE_SIZE_BYTES) {
+    throw new Error("El archivo no puede superar 5 MB.");
+  }
 
   const buffer = await leerArchivoComoArrayBuffer(file);
   const workbook = XLSX.read(buffer, { type: "array" });
   const sheetName = workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];
   const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+  if (rows.length > MAX_FILE_ROWS) {
+    throw new Error("El archivo no puede contener mas de 500 filas.");
+  }
 
   if (!rows.length) {
     return { items: [], totalFilas: 0, filasValidas: 0 };

@@ -42,6 +42,11 @@ export const DEFAULT_COMPANY_PROFILE = {
 };
 
 export const MAX_COMPANY_LOGO_SIZE_BYTES = 2 * 1024 * 1024;
+export const ALLOWED_COMPANY_LOGO_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+];
 
 function isValidNumber(value) {
   return typeof value === "number" && !Number.isNaN(value);
@@ -86,20 +91,8 @@ function getLogoExtension(file) {
     "image/jpeg": "jpg",
     "image/png": "png",
     "image/webp": "webp",
-    "image/gif": "gif",
-    "image/svg+xml": "svg",
   };
-  const nameExtension = String(file?.name || "")
-    .split(".")
-    .pop()
-    ?.toLowerCase()
-    .replace(/[^a-z0-9]/g, "");
-
-  if (nameExtension && nameExtension !== String(file?.name || "").toLowerCase()) {
-    return nameExtension;
-  }
-
-  return typeExtensions[file?.type] || "png";
+  return typeExtensions[file?.type] || "";
 }
 
 export function normalizeCompanyConfig(raw = {}) {
@@ -263,14 +256,17 @@ export async function uploadCompanyLogo(userId, file) {
   if (!file) {
     throw new Error("Selecciona una imagen antes de subir el logo.");
   }
-  if (!String(file.type || "").startsWith("image/")) {
-    throw new Error("El archivo seleccionado debe ser una imagen.");
+  if (!ALLOWED_COMPANY_LOGO_TYPES.includes(file.type)) {
+    throw new Error("El logo debe ser PNG, JPG o WebP.");
   }
   if (file.size > MAX_COMPANY_LOGO_SIZE_BYTES) {
     throw new Error("El logo no puede pesar mas de 2 MB.");
   }
 
   const extension = getLogoExtension(file);
+  if (!extension) {
+    throw new Error("No fue posible identificar el formato del logo.");
+  }
   const logoPath = `usuarios/${userId}/empresa/logo/logo-empresa.${extension}`;
   const ref = storageRef(storage, logoPath);
 

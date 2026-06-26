@@ -23,20 +23,6 @@ function referencesCollectionRef(uid) {
   return collection(db, ...referencesCollectionPath(uid));
 }
 
-function referencesCollectionDebugPath(uid) {
-  return referencesCollectionPath(uid).join("/");
-}
-
-function referenceDocDebugPath(uid, referenceId) {
-  return referenceDocPath(uid, referenceId).join("/");
-}
-
-function debugReferenceWrite(action, details) {
-  if (import.meta.env.DEV) {
-    console.debug(`[referenceService] ${action}`, details);
-  }
-}
-
 function referencesQuery(uid) {
   return query(referencesCollectionRef(uid), orderBy("actualizadoEn", "desc"));
 }
@@ -141,47 +127,28 @@ export function subscribeToReferences(uid, onReferences, onError) {
 
 export async function createReference(uid, data) {
   const payload = normalizeReference(uid, data, { isCreate: true });
-  debugReferenceWrite("create:start", {
-    uid,
-    path: referencesCollectionDebugPath(uid),
-    itemId: payload.itemId,
-  });
   const docRef = await addDoc(referencesCollectionRef(uid), payload);
-  debugReferenceWrite("create:success", {
-    uid,
-    path: referenceDocDebugPath(uid, docRef.id),
-    id: docRef.id,
-  });
   await resolveReferenceTasksForSavedReference(uid, payload);
   return docRef;
 }
 
 export async function updateReference(uid, referenceId, data) {
   const payload = normalizeReference(uid, data);
-  const path = referenceDocDebugPath(uid, referenceId);
-  debugReferenceWrite("update:start", { uid, path, id: referenceId });
   await updateDoc(doc(db, ...referenceDocPath(uid, referenceId)), payload);
   await resolveReferenceTasksForSavedReference(uid, payload);
-  debugReferenceWrite("update:success", { uid, path, id: referenceId });
 }
 
 export async function deactivateReference(uid, referenceId) {
-  const path = referenceDocDebugPath(uid, referenceId);
-  debugReferenceWrite("deactivate:start", { uid, path, id: referenceId });
   await updateDoc(doc(db, ...referenceDocPath(uid, referenceId)), {
     estado: "inactiva",
     actualizadoEn: serverTimestamp(),
   });
-  debugReferenceWrite("deactivate:success", { uid, path, id: referenceId });
 }
 
 export async function reactivateReference(uid, referenceId) {
-  const path = referenceDocDebugPath(uid, referenceId);
-  debugReferenceWrite("reactivate:start", { uid, path, id: referenceId });
   await updateDoc(doc(db, ...referenceDocPath(uid, referenceId)), {
     estado: "activa",
     actualizadoEn: serverTimestamp(),
   });
-  debugReferenceWrite("reactivate:success", { uid, path, id: referenceId });
 }
 

@@ -10,10 +10,57 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
+    function hasValidDocumentOwner(uid) {
+      return !request.resource.data.keys().hasAny(["uidUsuario"])
+        || request.resource.data.uidUsuario == uid;
+    }
+
     function isAllowedReferenceTaskUpdate() {
-      return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(["estado", "actualizadoEn", "aplazadaHasta", "resueltaEn"])
-        && request.resource.data.estado in ["resuelta", "aplazada"];
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return (
+        request.resource.data.estado == "resuelta"
+        && changed.hasOnly(["estado", "actualizadoEn", "resueltaEn"])
+      ) || (
+        request.resource.data.estado == "aplazada"
+        && changed.hasOnly(["estado", "actualizadoEn", "aplazadaHasta"])
+      );
+    }
+
+    function hasValidQuoteStatus() {
+      return request.resource.data.estado in [
+        "borrador",
+        "emitida",
+        "aceptada",
+        "rechazada",
+        "vencida",
+        "archivada"
+      ];
+    }
+
+    function quoteEmailFieldsAreServerOnly() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        "emailClienteDestino",
+        "fechaEnvioCorreo",
+        "asuntoCorreo",
+        "mensajeCorreo",
+        "archivoAdjuntoCorreo",
+        "enviadoPorCorreo",
+        "estadoEnvioCorreo",
+        "proveedorCorreo",
+        "ultimoErrorEnvio",
+        "idEnvioCorreoProveedor"
+      ]);
+    }
+
+    function isAllowedQuoteUpdate(uid) {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return hasValidDocumentOwner(uid)
+        && hasValidQuoteStatus()
+        && quoteEmailFieldsAreServerOnly()
+        && (
+          resource.data.estado == "borrador"
+          || changed.hasOnly(["estado", "estadoAnterior", "actualizadoEn"])
+        );
     }
 
     match /usuarios/{uid} {
@@ -26,22 +73,41 @@ service cloud.firestore {
       }
 
       match /empresa/{docId} {
-        allow read, create, update: if isOwner(uid);
+        allow read: if isOwner(uid);
+        allow create, update: if isOwner(uid) && hasValidDocumentOwner(uid);
         allow delete: if false;
       }
 
       match /inventario/{itemId} {
-        allow read, create, update: if isOwner(uid);
+        allow read: if isOwner(uid);
+        allow create, update: if isOwner(uid) && hasValidDocumentOwner(uid);
         allow delete: if false;
       }
 
       match /referencias/{referenceId} {
-        allow read, create, update: if isOwner(uid);
+        allow read: if isOwner(uid);
+        allow create, update: if isOwner(uid) && hasValidDocumentOwner(uid);
         allow delete: if false;
       }
 
       match /cotizaciones/{quoteId} {
-        allow read, create, update: if isOwner(uid);
+        allow read: if isOwner(uid);
+        allow create: if isOwner(uid)
+          && hasValidDocumentOwner(uid)
+          && hasValidQuoteStatus()
+          && !request.resource.data.keys().hasAny([
+            "emailClienteDestino",
+            "fechaEnvioCorreo",
+            "asuntoCorreo",
+            "mensajeCorreo",
+            "archivoAdjuntoCorreo",
+            "enviadoPorCorreo",
+            "estadoEnvioCorreo",
+            "proveedorCorreo",
+            "ultimoErrorEnvio",
+            "idEnvioCorreoProveedor"
+          ]);
+        allow update: if isOwner(uid) && isAllowedQuoteUpdate(uid);
         allow delete: if false;
       }
 

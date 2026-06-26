@@ -79,8 +79,17 @@ export async function sendQuoteEmail({
   if (!String(asunto || "").trim()) {
     throw new Error("Ingresa el asunto del correo.");
   }
+  if (String(asunto).length > 180) {
+    throw new Error("El asunto debe tener 180 caracteres o menos.");
+  }
+  if (/[\r\n]/.test(String(asunto))) {
+    throw new Error("El asunto no puede contener saltos de linea.");
+  }
   if (!String(mensaje || "").trim()) {
     throw new Error("Ingresa el mensaje del correo.");
+  }
+  if (String(mensaje).length > 2000) {
+    throw new Error("El mensaje debe tener 2000 caracteres o menos.");
   }
 
   const functions = getFunctions(app, FUNCTIONS_REGION);

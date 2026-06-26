@@ -221,16 +221,10 @@ export async function importInventoryItems(uid, items) {
     };
   }
 
-  console.log("[IMPORT] uid:", uid);
-  console.log("[IMPORT] filas recibidas:", items.length);
-  console.log("[IMPORT] path inventario:", `usuarios/${uid}/inventario`);
-
   try {
     const normalizedItems = items.map((item) =>
       normalizeInventoryItem(uid, item, { isCreate: true })
     );
-    console.log("[IMPORT] primera fila normalizada:", normalizedItems[0]);
-    console.log("[IMPORT] iniciando escritura en Firestore");
 
     const collectionRef = inventoryCollectionRef(uid);
     const skuValues = normalizedItems
@@ -291,8 +285,6 @@ export async function importInventoryItems(uid, items) {
       creados: created,
       actualizados: updated,
     };
-
-    console.log("[IMPORT] resultado:", result);
 
     if (total > 0 && verifiedCount < total) {
       throw new Error(

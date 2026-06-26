@@ -12,9 +12,19 @@
 /build
 /dist
 
+# local tooling and editors
+/.agents
+/.codex
+/.idea
+/.vscode
+
 # Firebase
 firebase-debug.log
 firebase-debug.*
+firestore-debug.log
+firestore-debug.*
+ui-debug.log
+ui-debug.*
 .firebaserc.local
 .runtimeconfig.json
 
@@ -34,4 +44,5 @@ firebase-debug.*
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-vite-dev*.logvite-codex*.log
+vite-dev*.log
+vite-codex*.log

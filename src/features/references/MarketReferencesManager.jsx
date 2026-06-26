@@ -81,13 +81,6 @@ function MarketReferencesManager({ userId }) {
       return undefined;
     }
 
-    if (import.meta.env.DEV) {
-      console.debug("[MarketReferencesManager] usuario autenticado", {
-        uid: userId,
-        collectionPath: `usuarios/${userId}/referencias`,
-      });
-    }
-
     const unsubscribeInventory = subscribeToInventory(
       userId,
       (items) => {
@@ -576,7 +569,7 @@ function MarketReferencesManager({ userId }) {
                         <a
                           href={reference.urlFuente}
                           target="_blank"
-                          rel="noreferrer"
+                          rel="noopener noreferrer"
                           style={styles.link}
                         >
                           Ver fuente

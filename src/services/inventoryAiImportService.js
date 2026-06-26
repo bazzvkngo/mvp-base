@@ -4,6 +4,20 @@ import { app } from "../firebase/firebaseConfig";
 
 const FUNCTIONS_REGION = "us-central1";
 const MAX_FILE_SHEETS = 8;
+const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+const MAX_FILE_ROWS = 500;
+const MAX_FILE_COLUMNS = 40;
+const MAX_CELL_LENGTH = 500;
+const ALLOWED_FILE_EXTENSION = /\.(csv|xls|xlsx)$/i;
+
+function validateInventoryFile(file) {
+  if (!ALLOWED_FILE_EXTENSION.test(String(file?.name || ""))) {
+    throw new Error("Usa un archivo CSV, XLS o XLSX.");
+  }
+  if (Number(file?.size || 0) > MAX_FILE_SIZE_BYTES) {
+    throw new Error("El archivo no puede superar 5 MB.");
+  }
+}
 
 async function readFileAsArrayBuffer(file) {
   return new Promise((resolve, reject) => {
@@ -24,6 +38,7 @@ export async function readInventoryWorkbook(file) {
   if (!file) {
     throw new Error("Selecciona un archivo de inventario.");
   }
+  validateInventoryFile(file);
 
   const buffer = await readFileAsArrayBuffer(file);
   const workbook = XLSX.read(buffer, {
@@ -31,7 +46,12 @@ export async function readInventoryWorkbook(file) {
     type: "array",
   });
 
-  const hojas = workbook.SheetNames.slice(0, MAX_FILE_SHEETS).map((sheetName) => {
+  if (workbook.SheetNames.length > MAX_FILE_SHEETS) {
+    throw new Error("El archivo no puede contener mas de 8 hojas.");
+  }
+
+  let totalRows = 0;
+  const hojas = workbook.SheetNames.map((sheetName) => {
     const sheet = workbook.Sheets[sheetName];
     const rows = XLSX.utils.sheet_to_json(sheet, {
       blankrows: false,
@@ -40,11 +60,24 @@ export async function readInventoryWorkbook(file) {
       raw: true,
     });
 
+    const normalizedRows = rows
+      .map((row) =>
+        Array.isArray(row)
+          ? row
+              .slice(0, MAX_FILE_COLUMNS)
+              .map((cell) => normalizeCell(cell).slice(0, MAX_CELL_LENGTH))
+          : []
+      )
+      .filter((row) => row.some((cell) => String(cell || "").trim()));
+
+    totalRows += normalizedRows.length;
+    if (totalRows > MAX_FILE_ROWS) {
+      throw new Error("El archivo no puede contener mas de 500 filas.");
+    }
+
     return {
       nombreHoja: sheetName,
-      filas: rows
-        .map((row) => (Array.isArray(row) ? row.map(normalizeCell) : []))
-        .filter((row) => row.some((cell) => String(cell || "").trim())),
+      filas: normalizedRows,
     };
   }).filter((sheet) => sheet.filas.length > 0);
 

@@ -30,18 +30,19 @@ const ALLOWED_QUOTE_ITEM_TYPES = ["producto", "servicio", "actividad"];
 const DEFAULT_FUNCTION_REGION = "us-central1";
 const REFERENCE_REVIEW_STALE_DAYS = 30;
 const PRIMARY_QUOTE_GEMINI_MODEL = "gemini-2.5-flash-lite";
-const FALLBACK_QUOTE_GEMINI_MODEL = "gemini-1.5-flash";
-const QUOTE_GEMINI_MODELS = [
-  PRIMARY_QUOTE_GEMINI_MODEL,
-  FALLBACK_QUOTE_GEMINI_MODEL,
-];
+const QUOTE_GEMINI_MODELS = [PRIMARY_QUOTE_GEMINI_MODEL];
 const LOCAL_ASSISTANT_WARNING =
   "La IA generativa no está disponible temporalmente. Se generaron sugerencias locales basadas en reglas e inventario.";
 
 const INVENTORY_AI_IMPORT_WARNING =
   "Los valores detectados son estimaciones y deben ser revisados antes de guardar.";
 const MAX_INVENTORY_IMPORT_TEXT_LENGTH = 5000;
+const MAX_INVENTORY_IMPORT_SHEETS = 8;
+const MAX_INVENTORY_IMPORT_ROWS = 500;
+const MAX_INVENTORY_IMPORT_COLUMNS = 40;
+const MAX_INVENTORY_IMPORT_CELL_LENGTH = 500;
 const DEFAULT_INVENTORY_IMPORT_MARGIN = 25;
+const MAX_QUOTE_PDF_BYTES = 8 * 1024 * 1024;
 
 const cachedGeminiModels = new Map();
 
@@ -1111,9 +1112,12 @@ function parseIntegerFromText(text) {
 
 exports.nightlyInventoryReferenceReview = onSchedule(
   {
+    maxInstances: 1,
+    memory: "256MiB",
     region: DEFAULT_FUNCTION_REGION,
     schedule: "every day 03:15",
     timeZone: "America/Santiago",
+    timeoutSeconds: 540,
   },
   async () => {
     const usersSnapshot = await db.collection("usuarios").get();
@@ -1121,6 +1125,7 @@ exports.nightlyInventoryReferenceReview = onSchedule(
     let itemsChecked = 0;
     let tasksCreated = 0;
     let tasksUpdated = 0;
+    let usersFailed = 0;
 
     for (const userDoc of usersSnapshot.docs) {
       try {
@@ -1130,10 +1135,10 @@ exports.nightlyInventoryReferenceReview = onSchedule(
         tasksCreated += result.created;
         tasksUpdated += result.updated;
       } catch (error) {
+        usersFailed += 1;
         console.error("Error en revision nocturna de referencias:", {
-          uid: userDoc.id,
           message: error.message,
-          stack: error.stack,
+          name: error.name,
         });
       }
     }
@@ -1143,6 +1148,7 @@ exports.nightlyInventoryReferenceReview = onSchedule(
       itemsChecked,
       tasksCreated,
       tasksUpdated,
+      usersFailed,
     });
   }
 );
@@ -1279,7 +1285,7 @@ async function obtenerPrecioDesdeUrl(url, precioInterno) {
     // 2) patrones típicos
     if (!precioProveedor) {
       const match = html.match(
-        /(?:itemprop="price"[^>]*content="|data-price="|data-precio="|\"price\":\s*\")([\d.]+)/i
+        /(?:itemprop="price"[^>]*content="|data-price="|data-precio="|"price":\s*")([\d.]+)/i
       );
       if (match && match[1]) {
         const valor = parseIntegerFromText(match[1]);
@@ -1713,13 +1719,19 @@ function normalizePdfAttachment(value) {
     ...nested,
     ...value,
   };
-  const contentBase64 = safeText(
-    source.pdfBase64 || source.contentBase64 || source.content,
-    15000000
+  const contentBase64 = String(
+    source.pdfBase64 || source.contentBase64 || source.content || ""
   )
+    .trim()
     .replace(/^data:application\/pdf;base64,/i, "")
     .replace(/\s+/g, "");
   if (!contentBase64) return null;
+  if (contentBase64.length > Math.ceil((MAX_QUOTE_PDF_BYTES * 4) / 3) + 4) {
+    throw new HttpsError(
+      "resource-exhausted",
+      "El PDF adjunto no puede superar 8 MB."
+    );
+  }
   if (!/^[A-Za-z0-9+/=]+$/.test(contentBase64)) {
     throw new HttpsError("invalid-argument", "El PDF adjunto no tiene un formato valido.");
   }
@@ -1729,6 +1741,12 @@ function normalizePdfAttachment(value) {
   }
 
   const contentBuffer = Buffer.from(contentBase64, "base64");
+  if (contentBuffer.length > MAX_QUOTE_PDF_BYTES) {
+    throw new HttpsError(
+      "resource-exhausted",
+      "El PDF adjunto no puede superar 8 MB."
+    );
+  }
   if (!contentBuffer.length || contentBuffer.subarray(0, 4).toString("latin1") !== "%PDF") {
     throw new HttpsError("invalid-argument", "El PDF adjunto no tiene un formato valido.");
   }
@@ -1880,8 +1898,11 @@ async function sendQuoteEmailWithResend({
 
 exports.sendQuoteEmail = onCall(
   {
+    maxInstances: 10,
+    memory: "256MiB",
     region: DEFAULT_FUNCTION_REGION,
     secrets: [RESEND_API_KEY_SECRET, RESEND_FROM_EMAIL_SECRET],
+    timeoutSeconds: 60,
   },
   async (request) => {
     if (!request.auth || !request.auth.uid) {
@@ -1890,10 +1911,15 @@ exports.sendQuoteEmail = onCall(
 
     const uid = request.auth.uid;
     const data = request.data || {};
+    const rawEmailCliente = String(
+      data.emailCliente || data.emailClienteDestino || ""
+    );
+    const rawAsunto = String(data.asunto || "");
+    const rawMensaje = String(data.mensaje || "");
     const quoteId = safeText(data.quoteId, 100);
-    const emailCliente = safeText(data.emailCliente || data.emailClienteDestino, 180);
-    const asunto = safeText(data.asunto, 180);
-    const mensaje = safeText(data.mensaje, 2000);
+    const emailCliente = safeText(rawEmailCliente, 180);
+    const asunto = safeText(rawAsunto, 180);
+    const mensaje = safeText(rawMensaje, 2000);
     const pdfAttachment = normalizePdfAttachment(data);
 
     if (!quoteId) {
@@ -1905,11 +1931,35 @@ exports.sendQuoteEmail = onCall(
         "Ingresa un correo de cliente valido."
       );
     }
+    if (rawEmailCliente.length > 180) {
+      throw new HttpsError(
+        "invalid-argument",
+        "El correo de destino es demasiado largo."
+      );
+    }
     if (!asunto) {
       throw new HttpsError("invalid-argument", "El asunto es obligatorio.");
     }
+    if (rawAsunto.length > 180) {
+      throw new HttpsError(
+        "invalid-argument",
+        "El asunto debe tener 180 caracteres o menos."
+      );
+    }
+    if (/[\r\n]/.test(asunto)) {
+      throw new HttpsError(
+        "invalid-argument",
+        "El asunto no puede contener saltos de linea."
+      );
+    }
     if (!mensaje) {
       throw new HttpsError("invalid-argument", "El mensaje es obligatorio.");
+    }
+    if (rawMensaje.length > 2000) {
+      throw new HttpsError(
+        "invalid-argument",
+        "El mensaje debe tener 2000 caracteres o menos."
+      );
     }
     if (!pdfAttachment) {
       throw new HttpsError("invalid-argument", "El PDF adjunto es obligatorio.");
@@ -1933,10 +1983,11 @@ exports.sendQuoteEmail = onCall(
     if (quote.uidUsuario && quote.uidUsuario !== uid) {
       throw new HttpsError("permission-denied", "No puedes enviar esta cotizacion.");
     }
-    if ((quote.estado || "").toLowerCase() !== "emitida") {
+    const sendableStatuses = ["emitida", "aceptada", "rechazada", "vencida"];
+    if (!sendableStatuses.includes((quote.estado || "").toLowerCase())) {
       throw new HttpsError(
         "failed-precondition",
-        "Solo se pueden enviar cotizaciones emitidas."
+        "La cotizacion debe estar emitida o cerrada antes de enviarse."
       );
     }
 
@@ -2396,6 +2447,57 @@ function getFileRows(fileData) {
   );
 }
 
+function validateInventoryFileData(fileData) {
+  if (!fileData || !Array.isArray(fileData.hojas)) {
+    throw new HttpsError(
+      "invalid-argument",
+      "El archivo no contiene hojas legibles."
+    );
+  }
+  if (fileData.hojas.length === 0 || fileData.hojas.length > MAX_INVENTORY_IMPORT_SHEETS) {
+    throw new HttpsError(
+      "invalid-argument",
+      "El archivo debe contener entre 1 y 8 hojas."
+    );
+  }
+
+  let totalRows = 0;
+  fileData.hojas.forEach((sheet) => {
+    if (!Array.isArray(sheet?.filas)) {
+      throw new HttpsError(
+        "invalid-argument",
+        "El archivo contiene una hoja invalida."
+      );
+    }
+    totalRows += sheet.filas.length;
+    sheet.filas.forEach((row) => {
+      if (!Array.isArray(row) || row.length > MAX_INVENTORY_IMPORT_COLUMNS) {
+        throw new HttpsError(
+          "invalid-argument",
+          "El archivo contiene una fila invalida o demasiado extensa."
+        );
+      }
+      if (
+        row.some(
+          (cell) => String(cell ?? "").length > MAX_INVENTORY_IMPORT_CELL_LENGTH
+        )
+      ) {
+        throw new HttpsError(
+          "invalid-argument",
+          "El archivo contiene celdas demasiado extensas."
+        );
+      }
+    });
+  });
+
+  if (totalRows === 0 || totalRows > MAX_INVENTORY_IMPORT_ROWS) {
+    throw new HttpsError(
+      "invalid-argument",
+      "El archivo debe contener entre 1 y 500 filas."
+    );
+  }
+}
+
 function fileDataToText(fileData) {
   const rows = getFileRows(fileData);
   const lines = [
@@ -2827,7 +2929,13 @@ function buildInventoryImportPrompt(text, deterministicItems = []) {
 }
 
 exports.normalizeInventoryItems = onCall(
-  { region: DEFAULT_FUNCTION_REGION, secrets: [GEMINI_API_KEY_SECRET] },
+  {
+    maxInstances: 5,
+    memory: "512MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    secrets: [GEMINI_API_KEY_SECRET],
+    timeoutSeconds: 120,
+  },
   async (request) => {
     if (!request.auth || !request.auth.uid) {
       throw new HttpsError("unauthenticated", "Debes iniciar sesion.");
@@ -2836,6 +2944,9 @@ exports.normalizeInventoryItems = onCall(
     const data = request.data || {};
     const fileData =
       data.fileData && typeof data.fileData === "object" ? data.fileData : null;
+    if (fileData) {
+      validateInventoryFileData(fileData);
+    }
     const rawText = fileData
       ? fileDataToText(fileData)
       : String(data.text || data.content || "");
@@ -2897,7 +3008,6 @@ exports.normalizeInventoryItems = onCall(
           console.error("normalizeInventoryItems: invalid Gemini JSON.", {
             model: modelName,
             message: parseError.message,
-            rawPreview: raw.slice(0, 500),
           });
           return useLocalFallback();
         }
@@ -2909,7 +3019,6 @@ exports.normalizeInventoryItems = onCall(
         if (!items.length) {
           console.error("normalizeInventoryItems: empty normalized items.", {
             model: modelName,
-            rawPreview: raw.slice(0, 500),
           });
           return useLocalFallback();
         }
@@ -2950,7 +3059,13 @@ exports.normalizeInventoryItems = onCall(
  * No calcula precios, no crea cotizaciones y no modifica inventario.
  */
 exports.suggestQuoteItems = onCall(
-  { region: DEFAULT_FUNCTION_REGION, secrets: [GEMINI_API_KEY_SECRET] },
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    secrets: [GEMINI_API_KEY_SECRET],
+    timeoutSeconds: 60,
+  },
   async (request) => {
   if (!request.auth || !request.auth.uid) {
     throw new HttpsError("unauthenticated", "Debes iniciar sesion.");
@@ -3071,7 +3186,6 @@ exports.suggestQuoteItems = onCall(
         console.error("suggestQuoteItems: error parseando JSON de Gemini.", {
           model: modelName,
           message: parseError.message,
-          rawPreview: raw.slice(0, 500),
         });
         return useLocalFallback();
       }
@@ -3079,7 +3193,6 @@ exports.suggestQuoteItems = onCall(
       if (!parsed || !Array.isArray(parsed.suggestions)) {
         console.error("suggestQuoteItems: respuesta sin suggestions array.", {
           model: modelName,
-          rawPreview: raw.slice(0, 500),
         });
         return useLocalFallback();
       }
@@ -3089,7 +3202,6 @@ exports.suggestQuoteItems = onCall(
       if (!suggestions.length) {
         console.error("suggestQuoteItems: sugerencias vacias tras sanitizar.", {
           model: modelName,
-          rawPreview: raw.slice(0, 500),
         });
         return useLocalFallback();
       }
@@ -3105,7 +3217,6 @@ exports.suggestQuoteItems = onCall(
         model: modelName,
         message: error.message,
         name: error.name,
-        stack: error.stack,
       });
 
       if (
@@ -3261,7 +3372,6 @@ const legacySimularCotizacionProyecto = onCall({ secrets: [GEMINI_API_KEY_SECRET
     try {
       const result = await geminiModel.generateContent(prompt);
       const raw = (result.response.text() || "").trim();
-      console.log("Gemini cotizacion raw:", raw);
 
       // Intentar extraer JSON del texto
       const first = raw.indexOf("{");

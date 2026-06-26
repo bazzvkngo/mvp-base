@@ -1,124 +1,204 @@
-# Arquitectura ValoraCloud MVP
+# Arquitectura de ValoraCloud
 
-ValoraCloud usa una arquitectura por capas simple para que el MVP sea facil de mantener, explicar y extender durante la tesis.
+## Propósito
 
-## Estructura de carpetas
+ValoraCloud es un MVP web para apoyar la valorización y preparación de
+cotizaciones TI de Bagner. Su arquitectura separa interfaz, reglas de negocio,
+acceso a Firebase e integraciones externas. La IA es opcional y no determina
+precios finales.
 
-```txt
+## Componentes
+
+```text
+Navegador
+  React + Vite
+    Firebase Authentication
+    Cloud Firestore
+    Firebase Storage
+    Cloud Functions 2nd Gen
+      Gemini API
+      Resend
+      Cloud Scheduler
+```
+
+El frontend se comunica directamente con Firestore y Storage bajo reglas de
+seguridad. Las operaciones que requieren secretos o privilegios administrativos
+se ejecutan en Cloud Functions.
+
+## Organización del frontend
+
+```text
 src/
-  app/        Configuracion principal de rutas y proteccion de sesion.
-  firebase/   Inicializacion Firebase y rutas Firestore centralizadas.
-  layout/     Estructura visual comun: sidebar, topbar y contenedor.
-  pages/      Pantallas de ruta. Orquestan features, no contienen logica pesada.
-  features/   UI funcional agrupada por modulo del negocio.
-  services/   Acceso a Firebase, Auth, Firestore y Cloud Functions.
-  domain/     Reglas puras del negocio, sin dependencia de Firebase ni React.
-  utils/      Formateadores, validadores y utilidades compartidas.
-  styles/     Estilos globales y layout base.
+  app/          Configuración de rutas y protección de sesión.
+  components/   Marca y gráficos reutilizables.
+  domain/       Cálculos de valorización y normalización de ítems.
+  features/     Formularios y módulos del negocio.
+  firebase/     SDK cliente y construcción centralizada de rutas.
+  layout/       Navegación y estructura visual común.
+  pages/        Pantallas de cada ruta.
+  services/     Firestore, Storage, Authentication y Functions.
+  styles/       Estilos globales y layout.
+  utils/        Formateadores y PDF.
 ```
 
-## Capas y responsabilidades
+`pages` orquesta cada pantalla; `features` implementa la interacción; `services`
+encapsula infraestructura; `domain` mantiene reglas sin dependencia de React o
+Firebase.
 
-- `pages`: representan rutas del sistema, por ejemplo inventario o nueva cotizacion.
-- `features`: contienen componentes React de cada modulo, por ejemplo `InventoryManager` o `QuoteAssistant`.
-- `services`: encapsulan infraestructura. Los componentes no deberian importar Firestore/Auth directamente.
-- `domain`: contiene reglas testeables del negocio, especialmente calculo de precios y transformacion de items.
-- `firebase`: concentra configuracion y paths para evitar strings de colecciones repartidos por la app.
+## Autenticación y rutas
 
-Esta separacion evita que la UI quede acoplada a Firebase y permite explicar el MVP como un sistema con responsabilidades claras.
+Firebase Authentication gestiona registro, login, cierre de sesión, correo de
+verificación y recuperación de contraseña. `RequireAuth` impide acceder a rutas
+privadas sin una sesión autenticada.
 
-## Servicios Firebase
+La versión actual muestra el estado de verificación de correo, pero no exige
+`email_verified` en rutas ni reglas. Si Bagner requiere bloqueo obligatorio,
+debe implementarse y probarse como una decisión funcional explícita.
 
-Los servicios base son:
+## Modelo de datos
 
-- `authService.js`: login, registro, cierre de sesion y observador de usuario.
-- `companyService.js`: perfil comercial de empresa, configuracion de cotizacion, margenes y valor hora.
-- `inventoryService.js`: CRUD de inventario y verificacion de precio por Cloud Function.
-- `referenceService.js`: placeholder para referencias manuales de mercado.
-- `quoteService.js`: fachada para propuesta local y futura Cloud Function de cotizacion.
-
-Firestore usa la estructura principal:
-
-```txt
-usuarios/{userId}
-usuarios/{userId}/config/negocio
-usuarios/{userId}/empresa/perfil
-usuarios/{userId}/inventario/{itemId}
-usuarios/{userId}/referencias/{referenceId}
-usuarios/{userId}/cotizaciones/{quoteId}
+```text
+usuarios/{uid}
+usuarios/{uid}/config/negocio
+usuarios/{uid}/empresa/perfil
+usuarios/{uid}/inventario/{itemId}
+usuarios/{uid}/referencias/{referenceId}
+usuarios/{uid}/cotizaciones/{quoteId}
+usuarios/{uid}/contadores/{counterId}
+usuarios/{uid}/tareasReferencias/{taskId}
 ```
 
-## Perfil comercial de empresa
+Los documentos de negocio se ubican bajo el `uid` propietario. Las reglas
+deniegan rutas no declaradas y evitan lectura o escritura entre usuarios.
 
-La pagina Empresa define los datos comerciales del usuario que se muestran en cotizaciones: nombre comercial, razon social, RUT, giro, contacto, direccion, ciudad, sitio web, logo, condiciones de pago, validez y nota de pie. Estos datos se guardan en `usuarios/{userId}/empresa/perfil`.
+### Empresa
 
-Esta configuracion mejora la presentacion formal de la cotizacion, pero no corresponde a facturacion electronica ni a un documento tributario. El logo se guarda como URL de imagen para evitar archivos pesados o base64 dentro de Firestore.
+El perfil guarda identificación comercial, contacto, dirección, logo,
+condiciones de pago, validez y nota de pie. El logo se almacena en
+`usuarios/{uid}/empresa/logo/`, admite PNG, JPG o WebP y un máximo de 2 MB.
 
-## Patron Service/Repository
+### Inventario y referencias
 
-Los archivos en `services/` funcionan como una capa Service/Repository ligera. Su objetivo es esconder detalles de Firebase:
+El inventario maneja productos, servicios y actividades. Las eliminaciones son
+lógicas mediante estados. Las referencias de mercado son manuales y se asocian
+a un ítem de inventario.
 
-- como se construye una ruta de Firestore,
-- como se suscribe una tabla en tiempo real,
-- como se crea, actualiza o elimina un documento,
-- como se llama una Cloud Function.
+### Valorización
 
-Esto mantiene los componentes enfocados en estado de UI, formularios y eventos del usuario.
+`domain/pricing.js` calcula precio base desde costo y margen, promedio de
+referencias, precio sugerido y estado de valorización. La ponderación vigente
+combina precio interno y promedio de referencias. El usuario mantiene la
+decisión final.
 
-## Strategy para precios
+### Cotizaciones
 
-El calculo de precio sugerido vive en `domain/pricing.js`. Se preparo una estrategia inicial llamada `margen_simple`, basada en:
+Las cotizaciones guardan una copia de los datos comerciales, datos del cliente,
+ítems, totales y estado. La numeración comercial se asigna por transacción con
+un contador anual.
 
-- costo de materiales,
-- mano de obra,
-- transporte,
-- margen por nivel de calidad.
+Los estados comerciales son independientes de los estados de correo. Las reglas
+reservan al backend los campos de envío y evitan editar el contenido de una
+cotización que ya no está en borrador; el frontend conserva acciones de cambio
+de estado.
 
-La funcion `getPricingStrategy()` permite reemplazar o agregar estrategias sin reescribir la UI. Para el MVP basta con una estrategia simple y defendible.
+## Cloud Functions
 
-## Adapter para fuentes externas
+Todas usan API v2 y región `us-central1`. El runtime es Node.js 22.
 
-Las referencias de mercado manuales seran el primer origen de datos. Si luego se agregan fuentes externas, deben entrar como adapters, por ejemplo:
+### `suggestQuoteItems`
 
-```txt
-externalReferenceAdapter -> referencia normalizada -> referenceService
-```
+- Requiere autenticación.
+- Acepta hasta 1200 caracteres y un resumen máximo de 40 ítems.
+- Devuelve hasta ocho sugerencias de tipo producto, servicio o actividad.
+- No devuelve precios, totales ni crea cotizaciones.
+- Usa Gemini cuando está disponible y fallback local en caso contrario.
 
-Esto evita que scraping, APIs externas o IA contaminen la logica central del MVP.
+### `normalizeInventoryItems`
 
-## Factory/helper de items
+- Requiere autenticación.
+- Acepta hasta 8 hojas, 500 filas, 40 columnas por fila y 500 caracteres por
+  celda.
+- El frontend limita el archivo a 5 MB.
+- Normaliza de forma conservadora y mantiene costo cero cuando no existe
+  contexto monetario confiable.
+- Devuelve una vista previa; la persistencia requiere confirmación del usuario.
 
-`domain/quoteItemFactory.js` prepara la transformacion de un item de inventario en un item de cotizacion. Esto permite reutilizar la misma forma de datos en valorizacion, cotizaciones y PDF.
+### `sendQuoteEmail`
 
-## Asistente hibrido para estructura de cotizacion
+- Requiere autenticación y busca la cotización bajo el `uid` de la sesión.
+- Valida estado comercial, destinatario, asunto, mensaje y PDF.
+- El PDF es obligatorio, debe ser `application/pdf` y no superar 8 MB.
+- Escapa contenido HTML y utiliza Resend desde el backend.
+- Registra el resultado en campos separados del estado comercial.
 
-La funcion callable `suggestQuoteItems` usa un asistente hibrido para sugerir posibles items a partir de una descripcion escrita por el usuario. Esta asistencia solo estructura la cotizacion: no calcula precios finales, no entrega totales, no crea cotizaciones automaticamente y no reemplaza el criterio profesional ni la valorizacion del sistema.
+La interfaz reduce duplicados deshabilitando la acción mientras existe una
+solicitud, pero no hay una clave de idempotencia distribuida. Un reintento
+concurrente extremo podría duplicar un envío y debe considerarse una limitación.
 
-La primera capa es local y gratuita: usa reglas, palabras clave e inventario activo para generar sugerencias sin costo de API. La segunda capa es premium/opcional: usa Gemini mediante Secret Manager (`GEMINI_API_KEY`) cuando exista disponibilidad de creditos o plan API. Si la API externa falla por cuota, creditos, timeout o disponibilidad, ValoraCloud cae automaticamente a la capa local y mantiene operativo el flujo principal.
+### `nightlyInventoryReferenceReview`
 
-El frontend envia una descripcion y un resumen de items activos/valorizados. La respuesta se normaliza a un maximo de 8 sugerencias con tipo permitido (`producto`, `servicio` o `actividad`) y una posible coincidencia con inventario. Si existe coincidencia, el usuario puede agregar manualmente ese item usando el precio sugerido por ValoraCloud, no por la IA.
+- Se ejecuta diariamente a las 03:15 en `America/Santiago`.
+- Revisa inventario activo y referencias activas.
+- Crea o actualiza tareas por falta de referencias o antigüedad superior a 30
+  días.
+- Evita duplicar tareas pendientes o aplazadas del mismo tipo.
+- No consulta internet, no usa Gemini y no modifica precios.
 
-## Revision nocturna de referencias
+## Integraciones externas
 
-La funcion programada `nightlyInventoryReferenceReview` se ejecuta una vez al dia en la zona horaria `America/Santiago`. Revisa inventario activo y referencias manuales para crear tareas internas en `usuarios/{uid}/tareasReferencias` cuando un item no tiene referencias activas o cuando su referencia activa mas reciente supera 30 dias.
+### Gemini
 
-Esta revision no busca precios en internet, no usa Gemini, no hace scraping, no modifica inventario, no modifica precios y no crea referencias automaticamente. Su objetivo en el MVP es recordar al usuario que debe actualizar referencias de mercado manualmente. En una etapa premium futura se podria agregar busqueda asistida con APIs externas o IA, manteniendo controles de costo, trazabilidad y validacion humana.
+La clave `GEMINI_API_KEY` se obtiene desde Secret Manager. El modelo principal
+configurado es `gemini-2.5-flash-lite`. Google anunció su cierre para el 16 de
+octubre de 2026. Si el modelo no responde, el sistema usa el fallback local.
+El SDK `@google/generative-ai` está obsoleto; su migración requiere una prueba
+real de integración y no se realizó de forma automática durante el cierre.
 
-## Flujo principal del MVP
+### Resend
 
-1. Usuario inicia sesion o se registra con Firebase Auth.
-2. Configura datos base de empresa: rubro, valor hora y margenes.
-3. Crea o importa inventario de productos y servicios.
-4. Registra referencias manuales de mercado.
-5. Valora un proyecto usando inventario, costos internos y margenes.
-6. Genera una cotizacion editable.
-7. Guarda historial y emite vista formal imprimible/PDF.
-8. El asistente IA queda como apoyo minimo, no como dependencia critica del flujo.
+`RESEND_API_KEY` y `RESEND_FROM_EMAIL` solo se usan en Functions. El frontend no
+recibe estas credenciales.
 
-## Decisiones tecnicas defendibles
+## Seguridad
 
-- React + Vite reduce complejidad frente a Create React App.
-- Firebase acelera autenticacion, persistencia y despliegue para un MVP de un mes.
-- La IA no es obligatoria para que el sistema funcione; el calculo base es transparente.
-- No se implementa scraping en esta etapa porque aumenta riesgo tecnico y legal.
-- La arquitectura evita sobreingenieria: servicios, dominio y features son suficientes para explicar crecimiento futuro.
+- Firestore y Storage separan datos por propietario.
+- Las rutas no previstas quedan denegadas.
+- Los campos de envío de correo son de escritura exclusiva del backend.
+- Las cotizaciones no borrador solo admiten cambios controlados de estado desde
+  el cliente.
+- Los enlaces externos de referencias usan `noopener noreferrer`.
+- No se usa `dangerouslySetInnerHTML`.
+- La configuración pública del SDK de Firebase no sustituye secretos privados.
+
+Las reglas no validan exhaustivamente todos los tipos y rangos de cada
+colección. Esa ampliación debe realizarse junto con pruebas de Emulator Suite
+para no romper documentos existentes.
+
+## Privacidad técnica
+
+El sistema puede almacenar correo de usuario, datos de empresa, RUT, teléfonos,
+direcciones, inventario, referencias y datos de contacto de clientes. Los PDF y
+correos contienen datos comerciales y del cliente.
+
+Gemini recibe descripciones y datos resumidos necesarios para asistencia.
+Resend recibe el destinatario, mensaje y PDF. El dictado depende del servicio de
+reconocimiento del navegador y ValoraCloud no guarda audio.
+
+No existe en el repositorio una política jurídica definitiva, período de
+retención, procedimiento formal de respaldo, exportación, eliminación física o
+rectificación. Estos puntos requieren definición organizacional y revisión
+profesional antes de operar con datos reales.
+
+## Despliegue y operación
+
+Los archivos de configuración son:
+
+- `.firebaserc`
+- `firebase.json`
+- `firestore.rules`
+- `storage.rules`
+- `functions/package.json`
+
+El despliegue se realiza con Firebase CLI después de `npm ci`, lint, build y
+pruebas controladas. El código local no confirma por sí solo el estado real de
+Functions, reglas, Scheduler o secretos desplegados.

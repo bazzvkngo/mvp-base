@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { CubeIcon } from "../../components/BrandLogo";
 import {
+  ALLOWED_COMPANY_LOGO_TYPES,
   MAX_COMPANY_LOGO_SIZE_BYTES,
   getCompanyProfile,
   saveCompanyProfile,
@@ -99,7 +100,7 @@ function getMissingProfileRequirements(form) {
 
 function validateLogoFile(file) {
   if (!file) return "Selecciona una imagen antes de subir el logo.";
-  if (!String(file.type || "").startsWith("image/")) {
+  if (!ALLOWED_COMPANY_LOGO_TYPES.includes(file.type)) {
     return "Usa una imagen PNG, JPG o WebP.";
   }
   if (file.size > MAX_COMPANY_LOGO_SIZE_BYTES) {
