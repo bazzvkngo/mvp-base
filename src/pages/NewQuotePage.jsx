@@ -68,6 +68,40 @@ const assistantModeLabels = {
   "gemini-forced-fallback": "Gemini forzado con fallback local",
 };
 
+const ASSISTANT_LOCAL_FALLBACK_WARNING =
+  "El servicio inteligente no estaba disponible. Se generaron sugerencias mediante el análisis local para que puedas revisarlas.";
+
+const RELEVANT_ASSISTANT_WARNING_MARKERS = [
+  "no hay inventario activo",
+  "no se encontraron sugerencias controladas",
+];
+
+function normalizeAssistantWarningText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function getVisibleAssistantWarning({ source, mode, warning }) {
+  const cleanWarning = String(warning || "").trim();
+  if (!cleanWarning) return "";
+
+  const normalizedWarning = normalizeAssistantWarningText(cleanWarning);
+  const isRelevantWarning = RELEVANT_ASSISTANT_WARNING_MARKERS.some((marker) =>
+    normalizedWarning.includes(marker)
+  );
+  if (isRelevantWarning) return cleanWarning;
+  if (mode === "local-forced") return "";
+  if (
+    source === "local" &&
+    ["auto", "gemini-forced-fallback"].includes(mode)
+  ) {
+    return ASSISTANT_LOCAL_FALLBACK_WARNING;
+  }
+  return cleanWarning;
+}
+
 function getAssistantModeFromQuery() {
   if (typeof window === "undefined") return "auto";
   const mode = new URLSearchParams(window.location.search).get("assistantMode");
@@ -489,6 +523,11 @@ function NewQuotePage({ userId }) {
     () => getSuggestedItemValidation(suggestedItemDraft),
     [suggestedItemDraft]
   );
+  const visibleAssistantWarning = getVisibleAssistantWarning({
+    source: assistantSource,
+    mode: assistantModeUsed,
+    warning: assistantWarning,
+  });
 
   const filteredValuations = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -1476,9 +1515,6 @@ function NewQuotePage({ userId }) {
               referencias y valorización.
             </p>
           </div>
-          <span style={styles.modeBadge}>
-            Modo: {assistantModeLabels[assistantRequestMode] || "automático"}
-          </span>
         </div>
 
         <textarea
@@ -1563,21 +1599,8 @@ function NewQuotePage({ userId }) {
         </div>
 
         {assistantError && <p style={styles.errorText}>{assistantError}</p>}
-        {assistantSource && (
-          <p style={styles.infoText}>
-            {assistantSource === "gemini"
-              ? `Sugerencias generadas con IA generativa${
-                  assistantModel ? ` (${assistantModel})` : ""
-                }. Modo usado: ${
-                  assistantModeLabels[assistantModeUsed] || "automático"
-                }.`
-              : `Modo asistente local activo. Modo usado: ${
-                  assistantModeLabels[assistantModeUsed] || "automático"
-                }. Las sugerencias fueron generadas con reglas e inventario del sistema.`}
-          </p>
-        )}
-        {assistantWarning && (
-          <p style={styles.warningText}>{assistantWarning}</p>
+        {visibleAssistantWarning && (
+          <p style={styles.warningText}>{visibleAssistantWarning}</p>
         )}
 
         {assistantSuggestions.length > 0 && (
