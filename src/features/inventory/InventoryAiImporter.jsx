@@ -1,13 +1,22 @@
 import React, { useMemo, useRef, useState } from "react";
 import { getInventoryItems } from "../../services/inventoryService";
 import {
-  normalizeInventoryItemsWithAi,
-  readInventoryWorkbook,
+  ACCEPTED_INVENTORY_FILE_TYPES,
+  normalizeInventorySourceWithAi,
+  readInventorySourceFile,
+  stripInventoryDocumentPayload,
 } from "../../services/inventoryAiImportService";
 import { importarInventarioEnFirestore } from "../../services/inventoryImportService";
 import { formatCLP } from "../../utils/formatters";
 
 const TYPE_OPTIONS = ["producto", "servicio", "actividad"];
+const DEFAULT_MARGIN_PERCENT = 25;
+const DEFAULT_MARGIN_WARNING =
+  "Se aplicó el margen predeterminado del sistema. Puedes modificarlo antes de guardar.";
+const DOCUMENT_USAGE_LIMIT_MESSAGE =
+  "El servicio inteligente alcanzó el límite de uso disponible. Intenta nuevamente más tarde. El archivo no fue almacenado y ningún registro fue incorporado al inventario.";
+const TEMPORARY_DOCUMENT_UNAVAILABLE_MESSAGE =
+  "El servicio inteligente está temporalmente ocupado. Espera unos segundos e intenta nuevamente. El archivo no fue almacenado y ningún registro fue incorporado al inventario.";
 
 function normalizeKey(value) {
   return String(value || "")
@@ -16,6 +25,42 @@ function normalizeKey(value) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/\s+/g, " ");
+}
+
+function normalizeErrorCode(value) {
+  return normalizeKey(value).replace(/[^a-z0-9_-]/g, "-");
+}
+
+function getCallableErrorCode(error) {
+  return normalizeErrorCode(
+    [
+      error?.code,
+      error?.details?.code,
+      error?.details?.internalCode,
+      error?.customData?.code,
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
+}
+
+function getSafeAnalysisErrorMessage(error) {
+  const code = getCallableErrorCode(error);
+  const message = String(error?.message || "").trim();
+
+  if (code.includes("resource-exhausted") || code.includes("daily_quota")) {
+    return DOCUMENT_USAGE_LIMIT_MESSAGE;
+  }
+
+  if (code.includes("unavailable") && normalizeKey(message).includes("temporalmente ocupado")) {
+    return TEMPORARY_DOCUMENT_UNAVAILABLE_MESSAGE;
+  }
+
+  if (code.includes("invalid-argument")) {
+    return message || "El archivo no pudo validarse.";
+  }
+
+  return message || "No se pudo analizar el archivo.";
 }
 
 function normalizeTypeValue(value) {
@@ -33,80 +78,240 @@ function toNumber(value) {
   return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : 0;
 }
 
-function calculatePrice(costoBase, margenDeseado) {
-  const cost = toNumber(costoBase);
-  const margin = normalizeMarginPercent(margenDeseado);
-  if (!Number.isFinite(margin)) return cost;
-  return Math.round(cost + (cost * margin) / 100);
-}
-
-function normalizeMarginPercent(value) {
-  if (value === "" || value === null || value === undefined) return 0;
+function toDecimal(value) {
+  if (value === "" || value === null || value === undefined) return null;
   const normalized = String(value)
     .replace(/[^\d,.-]/g, "")
     .replace(/\.(?=\d{3}(?:\D|$))/g, "")
     .replace(",", ".");
   const parsed = Number(normalized);
-  if (!Number.isFinite(parsed)) return 0;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function calculatePrice(costoBase, margenDeseado) {
+  const cost = toNumber(costoBase);
+  const margin = normalizeMarginPercent(margenDeseado);
+  if (margin === null) return cost;
+  return Math.round(cost + (cost * margin) / 100);
+}
+
+function normalizeMarginPercent(value) {
+  const parsed = toDecimal(value);
+  if (parsed === null) return null;
   if (parsed > 1000 && parsed % 100 === 0) return parsed / 100;
-  if (parsed > 1000) return Math.round(parsed / 100);
-  return Math.max(0, parsed);
+  if (parsed > 1000) return Math.round((parsed / 100) * 100) / 100;
+  return Math.round(parsed * 100) / 100;
 }
 
 function formatMarginValue(value) {
   const margin = normalizeMarginPercent(value);
+  if (margin === null) return "";
   return Number.isInteger(margin) ? String(margin) : String(Math.round(margin * 100) / 100);
 }
 
+function calculateMarginFromPrice(costoBase, precioVenta) {
+  const cost = toNumber(costoBase);
+  const price = toNumber(precioVenta);
+  if (cost <= 0 || price <= 0) return null;
+  return Math.round(((price - cost) / cost) * 10000) / 100;
+}
+
+function normalizeQuantity(value) {
+  const parsed = toDecimal(value);
+  return parsed && parsed > 0 ? Math.round(parsed * 100) / 100 : 1;
+}
+
+function normalizeConfidencePercent(value) {
+  const parsed = toDecimal(value);
+  if (parsed === null) return null;
+  if (parsed >= 0 && parsed <= 1) return Math.round(parsed * 10000) / 100;
+  if (parsed > 1 && parsed <= 100) return Math.round(parsed * 100) / 100;
+  return null;
+}
+
+function formatPercentValue(value) {
+  if (value === null || value === undefined) return "";
+  return Number.isInteger(value) ? String(value) : String(Math.round(value * 100) / 100);
+}
+
+function hasValue(value) {
+  return value !== null && value !== undefined && value !== "";
+}
+
+function normalizeWarningKey(value) {
+  return normalizeKey(value).replace(/\s+/g, " ");
+}
+
+function dedupeWarnings(warnings) {
+  const seen = new Set();
+  return (Array.isArray(warnings) ? warnings : warnings ? [warnings] : [])
+    .map((warning) => String(warning || "").trim().replace(/\s+/g, " "))
+    .filter(Boolean)
+    .filter((warning) => {
+      const key = normalizeWarningKey(warning);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function formatFileSize(bytes) {
+  const size = Number(bytes || 0);
+  if (!Number.isFinite(size) || size <= 0) return "0 KB";
+  if (size >= 1024 * 1024) return `${Math.round((size / (1024 * 1024)) * 10) / 10} MB`;
+  return `${Math.max(1, Math.round(size / 1024))} KB`;
+}
+
+function getFileFormatLabel(fileData) {
+  const extension = String(fileData?.extension || "").toUpperCase();
+  if (extension) return extension;
+  return fileData?.kind === "document" ? "Documento" : "Planilla";
+}
+
+function getAnalysisTypeLabel(fileData) {
+  if (fileData?.kind === "document") return "Documental multimodal";
+  return "Planilla tabular";
+}
+
 function getConfidenceLevel(value) {
-  const confidence = toNumber(value);
-  if (confidence >= 80) return { label: "Alta", styleKey: "confidenceHigh" };
-  if (confidence >= 50) return { label: "Media", styleKey: "confidenceMedium" };
-  return { label: "Baja", styleKey: "confidenceLow" };
+  const confidence = normalizeConfidencePercent(value);
+  if (confidence === null) {
+    return {
+      label: "Requiere revisión",
+      styleKey: "confidenceLow",
+      text: "Requiere revisión",
+      value: null,
+    };
+  }
+  if (confidence >= 80) {
+    return {
+      label: "Alta",
+      styleKey: "confidenceHigh",
+      text: `Alta - ${formatPercentValue(confidence)}%`,
+      value: confidence,
+    };
+  }
+  if (confidence >= 50) {
+    return {
+      label: "Media",
+      styleKey: "confidenceMedium",
+      text: `Media - ${formatPercentValue(confidence)}%`,
+      value: confidence,
+    };
+  }
+  return {
+    label: "Baja",
+    styleKey: "confidenceLow",
+    text: `Baja - ${formatPercentValue(confidence)}%`,
+    value: confidence,
+  };
 }
 
 function defaultUnit(tipoItem) {
   if (tipoItem === "servicio") return "servicio";
-  if (tipoItem === "actividad") return "hora";
+  if (tipoItem === "actividad") return "servicio";
   return "unidad";
 }
 
-function buildPreviewItem(raw, index) {
+function getConfidenceText(confidence) {
+  if (confidence.text) return confidence.text;
+  return `${confidence.label} - ${formatPercentValue(confidence.value)}%`;
+}
+
+function getAnalysisWarnings(analysisMeta) {
+  if (!analysisMeta) return [];
+  return dedupeWarnings([
+    analysisMeta.warning,
+    ...(Array.isArray(analysisMeta.warnings) ? analysisMeta.warnings : []),
+  ]);
+}
+
+function getItemDisplayMessages(item) {
+  return dedupeWarnings([
+    item.observacion,
+    ...(Array.isArray(item.advertencias) ? item.advertencias : []),
+  ]);
+}
+
+function getReviewBadgeText(item, confidence, itemMessages) {
+  if (!item.revisionRequerida) return "";
+  const confidenceValue = confidence.value;
+  const onlyCommercialDefaults =
+    confidenceValue !== null &&
+    confidenceValue >= 50 &&
+    itemMessages.length > 0 &&
+    itemMessages.every(
+      (message) => normalizeWarningKey(message) === normalizeWarningKey(DEFAULT_MARGIN_WARNING)
+    );
+
+  return onlyCommercialDefaults ? "Revisión comercial" : "Requiere revisión";
+}
+
+function buildPreviewItem(raw, index, analysisMeta) {
+  const isDocument = analysisMeta?.sourceKind === "document" || raw.origenAnalisis === "documento";
   const tipoItem = normalizeTypeValue(raw.tipoItem || raw.tipo) || "producto";
   const costoBase = toNumber(raw.costoBase);
-  const margenDeseado =
-    raw.margenDeseado ?? raw.margen ?? raw.margenSugerido ?? 25;
-  const margenNormalizado = normalizeMarginPercent(margenDeseado);
+  const rawMargin = raw.margenDeseado ?? raw.margen ?? raw.margenSugerido;
+  const rawInternalPrice = raw.precioInterno ?? raw.precioInternoSugerido;
+  let margenNormalizado = hasValue(rawMargin)
+    ? normalizeMarginPercent(rawMargin)
+    : null;
+  if (margenNormalizado === null && hasValue(rawInternalPrice)) {
+    margenNormalizado = calculateMarginFromPrice(costoBase, rawInternalPrice);
+  }
+  const appliedDefaultMargin = margenNormalizado === null;
+  if (appliedDefaultMargin) {
+    margenNormalizado = DEFAULT_MARGIN_PERCENT;
+  }
   const precioInterno = calculatePrice(costoBase, margenNormalizado);
+  const advertencias = dedupeWarnings([
+    ...(Array.isArray(raw.advertencias) ? raw.advertencias : []),
+    ...(appliedDefaultMargin ? [DEFAULT_MARGIN_WARNING] : []),
+  ]);
+  const confidence = normalizeConfidencePercent(raw.confianza ?? raw.nivelConfianza);
+  const observacion = String(raw.observacion || raw.justificacion || "").trim();
+  const unidad = String(raw.unidad || "").trim() || defaultUnit(tipoItem);
+  const cantidadSugerida = normalizeQuantity(
+    raw.cantidadSugerida ?? raw.cantidadOrigen ?? raw.cantidad
+  );
 
   return {
     id: `${raw.id || "archivo"}-${index}-${Date.now()}`,
     nombre: raw.nombre || "",
     tipoItem,
-    categoria: raw.categoria || "General",
+    categoria: raw.categoria || (isDocument ? "" : "General"),
     descripcion: raw.descripcion || "",
-    unidad: raw.unidad || defaultUnit(tipoItem),
-    cantidadSugerida:
-      raw.cantidadSugerida === null || raw.cantidadSugerida === undefined
-        ? ""
-        : String(raw.cantidadSugerida),
+    unidad,
+    cantidadSugerida: String(cantidadSugerida),
     costoBase: String(costoBase),
-    margenDeseado: formatMarginValue(margenNormalizado || 25),
-    precioInterno: String(precioInterno),
+    margenDeseado: formatMarginValue(margenNormalizado),
+    precioInterno: precioInterno > 0 ? String(precioInterno) : "",
     precioManual: false,
     sku: raw.sku || raw.codigo || "",
-    observacion: raw.observacion || raw.justificacion || "",
-    confianza:
-      raw.confianza === null || raw.confianza === undefined
-        ? ""
-        : String(raw.confianza),
+    observacion,
+    advertencias,
+    evidenciaOrigen: raw.evidenciaOrigen || "",
+    pagina: raw.pagina === null || raw.pagina === undefined ? "" : String(raw.pagina),
+    itemSourceKind: isDocument ? "document" : "spreadsheet",
+    revisionRequerida:
+      raw.revisionRequerida === true ||
+      confidence === null ||
+      confidence < 50 ||
+      costoBase <= 0 ||
+      advertencias.length > 0,
+    confianza: confidence === null ? "" : String(confidence),
   };
+}
+
+function shouldAutoSelectItem(item) {
+  if (item.itemSourceKind !== "document") return true;
+  return !item.revisionRequerida && toNumber(item.confianza) >= 50;
 }
 
 function buildPayloadForSave(item) {
   const tipoItem = normalizeTypeValue(item.tipoItem) || "producto";
   const costoBase = toNumber(item.costoBase);
-  const margenDeseado = normalizeMarginPercent(item.margenDeseado);
+  const margenDeseado = normalizeMarginPercent(item.margenDeseado) ?? DEFAULT_MARGIN_PERCENT;
   const precioInterno = item.precioInterno
     ? toNumber(item.precioInterno)
     : calculatePrice(costoBase, margenDeseado);
@@ -115,23 +320,31 @@ function buildPayloadForSave(item) {
   return {
     nombre: item.nombre.trim(),
     tipoItem,
-    categoria: item.categoria.trim() || "General",
+    categoria: item.categoria.trim() || (item.itemSourceKind === "document" ? "" : "General"),
     descripcion: item.descripcion.trim(),
     unidad: item.unidad.trim() || defaultUnit(tipoItem),
     costoBase,
     margenDeseado: Number.isFinite(margenDeseado) ? margenDeseado : 0,
     precioInterno,
     sku: item.sku.trim() || null,
-    stock: cantidad > 0 ? cantidad : null,
+    stock: item.itemSourceKind === "document" ? null : cantidad > 0 ? cantidad : 1,
     estado: "activo",
-    origen: "importacion_inteligente_archivo",
-    justificacionSugerencia: item.observacion,
+    origen:
+      item.itemSourceKind === "document"
+        ? "importacion_documental_multiformato"
+        : "importacion_inteligente_archivo",
+    justificacionSugerencia:
+      item.itemSourceKind === "document"
+        ? "Normalizado desde documento comercial y confirmado en vista previa."
+        : item.observacion,
     confianzaPrecio: item.confianza,
   };
 }
 
 function InventoryAiImporter({ userId, onImported }) {
   const fileInputRef = useRef(null);
+  const analysisInFlightRef = useRef(false);
+  const latestAnalysisRequestRef = useRef(0);
   const [fileData, setFileData] = useState(null);
   const [fileName, setFileName] = useState("");
   const [dragActive, setDragActive] = useState(false);
@@ -144,10 +357,15 @@ function InventoryAiImporter({ userId, onImported }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [processingStatus, setProcessingStatus] = useState("");
 
   const selectedItems = useMemo(
     () => previewItems.filter((item) => selectedIds.has(item.id)),
     [previewItems, selectedIds]
+  );
+  const analysisWarnings = useMemo(
+    () => getAnalysisWarnings(analysisMeta),
+    [analysisMeta]
   );
 
   const duplicateReasonsById = useMemo(() => {
@@ -172,12 +390,12 @@ function InventoryAiImporter({ userId, onImported }) {
       const skuKey = normalizeKey(item.sku);
 
       if (nameKey && existingNames.has(nameKey)) reasons.push("nombre ya existe");
-      if (skuKey && existingSkus.has(skuKey)) reasons.push("SKU/codigo ya existe");
+      if (skuKey && existingSkus.has(skuKey)) reasons.push("SKU/código ya existe");
       if (selectedIds.has(item.id) && selectedNameCounts.get(nameKey) > 1) {
         reasons.push("nombre repetido en vista previa");
       }
       if (selectedIds.has(item.id) && skuKey && selectedSkuCounts.get(skuKey) > 1) {
-        reasons.push("SKU/codigo repetido en vista previa");
+        reasons.push("SKU/código repetido en vista previa");
       }
       if (reasons.length) result.set(item.id, reasons.join(", "));
     });
@@ -185,16 +403,22 @@ function InventoryAiImporter({ userId, onImported }) {
     return result;
   }, [existingItems, previewItems, selectedIds, selectedItems]);
 
-  const canAnalyze = Boolean(fileData) && !readingFile && !loadingAnalysis;
+  const hasTemporaryDocumentPayload =
+    fileData?.kind !== "document" || Boolean(fileData?.base64);
+  const canAnalyze =
+    Boolean(fileData) && hasTemporaryDocumentPayload && !readingFile && !loadingAnalysis;
   const canSave = selectedItems.length > 0 && !saving && !loadingAnalysis;
 
   const resetAnalysis = () => {
+    latestAnalysisRequestRef.current += 1;
+    analysisInFlightRef.current = false;
     setPreviewItems([]);
     setSelectedIds(new Set());
     setExistingItems([]);
     setAnalysisMeta(null);
     setError("");
     setSuccess("");
+    setProcessingStatus("");
   };
 
   const resetFile = () => {
@@ -207,19 +431,23 @@ function InventoryAiImporter({ userId, onImported }) {
   };
 
   const handleFile = async (file) => {
+    if (analysisInFlightRef.current) return;
     resetAnalysis();
     if (!file) return;
 
     try {
       setReadingFile(true);
+      setProcessingStatus("Validando documento.");
       setError("");
-      const workbookData = await readInventoryWorkbook(file);
-      setFileData(workbookData);
+      const sourceData = await readInventorySourceFile(file);
+      setFileData(sourceData);
       setFileName(file.name);
+      setProcessingStatus("Archivo seleccionado.");
     } catch (err) {
       console.error("Error leyendo archivo de inventario:", err);
       setFileData(null);
       setFileName("");
+      setProcessingStatus("");
       setError(err.message || "No se pudo leer el archivo.");
     } finally {
       setReadingFile(false);
@@ -227,8 +455,9 @@ function InventoryAiImporter({ userId, onImported }) {
   };
 
   const handleAnalyze = async (assistantMode = "auto") => {
+    if (analysisInFlightRef.current) return;
     if (!userId) {
-      setError("Debes iniciar sesion para importar inventario.");
+      setError("Debes iniciar sesión para importar inventario.");
       return;
     }
     if (!fileData) {
@@ -236,33 +465,52 @@ function InventoryAiImporter({ userId, onImported }) {
       return;
     }
 
+    analysisInFlightRef.current = true;
+    const requestId = latestAnalysisRequestRef.current + 1;
+    latestAnalysisRequestRef.current = requestId;
     setLoadingAnalysis(true);
     setError("");
     setSuccess("");
     setAnalysisMeta(null);
     setPreviewItems([]);
     setSelectedIds(new Set());
+    setProcessingStatus("Analizando documento...");
 
     try {
       const [analysis, currentInventory] = await Promise.all([
-        normalizeInventoryItemsWithAi({ fileData, assistantMode }),
+        normalizeInventorySourceWithAi({ fileData, assistantMode }),
         getInventoryItems(userId),
       ]);
-      const items = analysis.items.map(buildPreviewItem);
+      if (latestAnalysisRequestRef.current !== requestId) return;
+      setProcessingStatus("Preparando vista previa.");
+      const items = analysis.items.map((item, index) =>
+        buildPreviewItem(item, index, analysis)
+      );
 
       setExistingItems(currentInventory);
       setPreviewItems(items);
-      setSelectedIds(new Set(items.map((item) => item.id)));
+      setSelectedIds(new Set(items.filter(shouldAutoSelectItem).map((item) => item.id)));
       setAnalysisMeta(analysis);
+      if (fileData.kind === "document") {
+        setFileData(stripInventoryDocumentPayload(fileData));
+      }
+      setProcessingStatus(
+        items.length ? "Documento procesado." : "No se identificaron items suficientes."
+      );
 
       if (!items.length) {
-        setError("No se detectaron items claros. Revisa el archivo e intentalo nuevamente.");
+        setError("No se detectaron items claros. Revisa el archivo e inténtalo nuevamente.");
       }
     } catch (err) {
+      if (latestAnalysisRequestRef.current !== requestId) return;
       console.error("Error normalizando inventario desde archivo:", err);
-      setError(err.message || "No se pudo analizar el archivo.");
+      setProcessingStatus("Error de análisis.");
+      setError(getSafeAnalysisErrorMessage(err));
     } finally {
-      setLoadingAnalysis(false);
+      if (latestAnalysisRequestRef.current === requestId) {
+        analysisInFlightRef.current = false;
+        setLoadingAnalysis(false);
+      }
     }
   };
 
@@ -312,7 +560,7 @@ function InventoryAiImporter({ userId, onImported }) {
 
   const handleSave = async () => {
     if (!userId) {
-      setError("Debes iniciar sesion para guardar inventario.");
+      setError("Debes iniciar sesión para guardar inventario.");
       return;
     }
     if (!selectedItems.length) {
@@ -323,6 +571,11 @@ function InventoryAiImporter({ userId, onImported }) {
     const unnamed = selectedItems.find((item) => !item.nombre.trim());
     if (unnamed) {
       setError("No se pueden guardar items sin nombre.");
+      return;
+    }
+    const missingUnit = selectedItems.find((item) => !item.unidad.trim());
+    if (missingUnit) {
+      setError("Completa la unidad de los items seleccionados antes de guardar.");
       return;
     }
 
@@ -360,9 +613,9 @@ function InventoryAiImporter({ userId, onImported }) {
           <span style={styles.eyebrow}>Importacion inteligente</span>
           <h2 style={styles.title}>Importador inteligente de inventario</h2>
           <p style={styles.subtitle}>
-            Carga una factura, cotizacion de proveedor, lista de precios o
-            inventario en Excel/CSV. ValoraCloud analizara el archivo,
-            normalizara los items y te permitira revisarlos antes de guardarlos.
+            Carga facturas, cotizaciones, listas de precios o inventarios con
+            estructuras diferentes. Los resultados deben revisarse antes de
+            guardar.
           </p>
         </div>
       </div>
@@ -393,7 +646,12 @@ function InventoryAiImporter({ userId, onImported }) {
         <div>
           <strong>Selecciona o arrastra un archivo</strong>
           <p style={styles.dropzoneText}>
-            Formatos aceptados: .xlsx, .xls, .csv. No necesita usar plantilla.
+            Formatos admitidos: CSV, XLS, XLSX, PDF, JPG, PNG y WebP.
+          </p>
+          <p style={styles.dropzoneText}>
+            El sistema puede analizar facturas, cotizaciones, listas de precios
+            e inventarios con estructuras diferentes. Los resultados deben
+            revisarse antes de guardar.
           </p>
           {fileName && (
             <p style={styles.fileName}>
@@ -402,8 +660,14 @@ function InventoryAiImporter({ userId, onImported }) {
           )}
           {fileData && (
             <p style={styles.fileMeta}>
-              {fileData.hojas.length} hoja(s) legible(s),{" "}
-              {fileData.hojas.reduce((total, sheet) => total + sheet.filas.length, 0)} filas.
+              Formato: {getFileFormatLabel(fileData)} - Tamaño:{" "}
+              {formatFileSize(fileData.tamanoBytes)} - Análisis:{" "}
+              {getAnalysisTypeLabel(fileData)}
+              {fileData.kind === "spreadsheet" &&
+                ` - ${fileData.hojas.length} hoja(s), ${fileData.hojas.reduce(
+                  (total, sheet) => total + sheet.filas.length,
+                  0
+                )} filas.`}
             </p>
           )}
         </div>
@@ -411,14 +675,19 @@ function InventoryAiImporter({ userId, onImported }) {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".xlsx,.xls,.csv"
+            accept={ACCEPTED_INVENTORY_FILE_TYPES}
             onChange={(event) => handleFile(event.target.files?.[0])}
+            disabled={loadingAnalysis}
             style={styles.hiddenInput}
           />
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            style={styles.secondaryButton}
+            style={{
+              ...styles.secondaryButton,
+              ...(loadingAnalysis ? styles.disabledButton : {}),
+            }}
+            disabled={loadingAnalysis}
           >
             Seleccionar archivo
           </button>
@@ -426,7 +695,8 @@ function InventoryAiImporter({ userId, onImported }) {
       </div>
 
       <p style={styles.warningText}>
-        Los valores detectados son estimaciones y deben ser revisados antes de guardar.
+        El documento se procesa temporalmente para generar una vista previa y no
+        se incorpora al inventario hasta que el usuario confirma los registros.
       </p>
 
       <div style={styles.actions}>
@@ -439,37 +709,60 @@ function InventoryAiImporter({ userId, onImported }) {
           onClick={() => handleAnalyze("auto")}
           disabled={!canAnalyze}
         >
-          {loadingAnalysis ? "Analizando..." : "Analizar con IA"}
-        </button>
-        <button
-          type="button"
-          style={styles.secondaryButton}
-          onClick={() => handleAnalyze("local")}
-          disabled={!fileData || loadingAnalysis}
-        >
-          Analizar sin IA externa
+          {loadingAnalysis ? "Analizando..." : "Analizar documento"}
         </button>
         {(fileData || previewItems.length > 0) && (
-          <button type="button" style={styles.clearButton} onClick={resetFile}>
+          <button
+            type="button"
+            style={{
+              ...styles.clearButton,
+              ...(loadingAnalysis ? styles.disabledButton : {}),
+            }}
+            onClick={resetFile}
+            disabled={loadingAnalysis}
+          >
             Cambiar archivo
           </button>
         )}
       </div>
 
       {readingFile && <p style={styles.infoText}>Leyendo archivo...</p>}
+      {processingStatus && (
+        <p style={styles.infoText} aria-live="polite">
+          Estado: {processingStatus}
+        </p>
+      )}
 
       {analysisMeta && (
         <div style={styles.analysisMeta}>
           <strong>
-            Fuente: {analysisMeta.source === "gemini" ? "Gemini" : "analisis local"}
+            Tipo de análisis:{" "}
+            {analysisMeta.sourceKind === "document"
+              ? "documental multimodal"
+              : analysisMeta.source === "gemini"
+                ? "planilla asistida"
+                : "Análisis local"}
           </strong>
-          {analysisMeta.model && <span>Modelo: {analysisMeta.model}</span>}
-          {analysisMeta.warning && <span>{analysisMeta.warning}</span>}
+          {analysisMeta.documentType && (
+            <span>Tipo de documento: {analysisMeta.documentType}</span>
+          )}
+          <span>Items detectados: {previewItems.length}</span>
+          {analysisWarnings.map((warning) => (
+            <span key={warning}>{warning}</span>
+          ))}
         </div>
       )}
 
-      {error && <p style={styles.errorText}>{error}</p>}
-      {success && <p style={styles.successText}>{success}</p>}
+      {error && (
+        <p style={styles.errorText} aria-live="assertive">
+          {error}
+        </p>
+      )}
+      {success && (
+        <p style={styles.successText} aria-live="polite">
+          {success}
+        </p>
+      )}
 
       {previewItems.length > 0 && (
         <div style={styles.previewBlock}>
@@ -482,8 +775,9 @@ function InventoryAiImporter({ userId, onImported }) {
                 la vista previa.
               </p>
               <p style={styles.previewNote}>
-                Los costos y margenes fueron detectados automaticamente. El
-                precio interno se calcula desde el costo base y el margen.
+                Revisa nombre, unidad, costo, margen y advertencias antes de
+                confirmar. Los candidatos con baja confianza no quedan incluidos
+                automáticamente.
               </p>
             </div>
             <div style={styles.previewActions}>
@@ -508,7 +802,14 @@ function InventoryAiImporter({ userId, onImported }) {
             {previewItems.map((item) => {
               const duplicateReason = duplicateReasonsById.get(item.id);
               const confidence = getConfidenceLevel(item.confianza);
-              const costWarning = toNumber(item.costoBase) <= 0 ? item.observacion : "";
+              const itemMessages = getItemDisplayMessages(item);
+              const reviewBadgeText = getReviewBadgeText(item, confidence, itemMessages);
+              const originText = [
+                item.pagina ? `Página ${item.pagina}` : "",
+                item.evidenciaOrigen ? item.evidenciaOrigen : "",
+              ]
+                .filter(Boolean)
+                .join(" - ");
               return (
                 <article key={item.id} style={styles.previewCard}>
                   <div style={styles.itemCardHeader}>
@@ -533,8 +834,11 @@ function InventoryAiImporter({ userId, onImported }) {
                         ...styles[confidence.styleKey],
                       }}
                     >
-                      {confidence.label} · {toNumber(item.confianza)}%
+                      {getConfidenceText(confidence)}
                     </span>
+                    {reviewBadgeText && (
+                      <span style={styles.reviewBadge}>{reviewBadgeText}</span>
+                    )}
                     <button
                       type="button"
                       style={styles.removeButton}
@@ -556,7 +860,7 @@ function InventoryAiImporter({ userId, onImported }) {
                       />
                     </label>
                     <label style={styles.cardField}>
-                      <span style={styles.cardLabel}>SKU / codigo opcional</span>
+                      <span style={styles.cardLabel}>SKU / código opcional</span>
                       <input
                         value={item.sku}
                         onChange={(event) =>
@@ -566,7 +870,7 @@ function InventoryAiImporter({ userId, onImported }) {
                       />
                     </label>
                     <label style={styles.cardFieldFull}>
-                      <span style={styles.cardLabel}>Descripcion</span>
+                      <span style={styles.cardLabel}>Descripción</span>
                       <textarea
                         value={item.descripcion}
                         onChange={(event) =>
@@ -596,7 +900,7 @@ function InventoryAiImporter({ userId, onImported }) {
                       </select>
                     </label>
                     <label style={styles.cardField}>
-                      <span style={styles.cardLabel}>Categoria</span>
+                      <span style={styles.cardLabel}>Categoría</span>
                       <input
                         value={item.categoria}
                         onChange={(event) =>
@@ -668,7 +972,7 @@ function InventoryAiImporter({ userId, onImported }) {
                         <span style={styles.priceHint}>
                           {item.precioManual
                             ? "Ajuste manual activo"
-                            : "Calculado automaticamente"}
+                            : "Calculado automáticamente"}
                         </span>
                         <label style={styles.manualPriceToggle}>
                           <input
@@ -688,10 +992,17 @@ function InventoryAiImporter({ userId, onImported }) {
                     </div>
                   </div>
 
-                  {(costWarning || duplicateReason) && (
+                  {(itemMessages.length > 0 || duplicateReason || originText) && (
                     <div style={styles.itemNotes}>
-                      {costWarning && (
-                        <span style={styles.observationText}>{costWarning}</span>
+                      {itemMessages.map((message) => (
+                        <span key={message} style={styles.observationText}>
+                          {message}
+                        </span>
+                      ))}
+                      {originText && (
+                        <span style={styles.observationText}>
+                          Información detectada en el documento: {originText}
+                        </span>
                       )}
                       {duplicateReason && (
                         <span style={styles.duplicateText}>{duplicateReason}</span>
@@ -1087,6 +1398,17 @@ const styles = {
   confidenceLow: {
     background: "#fee2e2",
     color: "#991b1b",
+  },
+  reviewBadge: {
+    background: "#fef3c7",
+    border: "1px solid #f59e0b",
+    borderRadius: "999px",
+    color: "#92400e",
+    display: "inline-flex",
+    fontSize: "12px",
+    fontWeight: 800,
+    padding: "5px 9px",
+    width: "fit-content",
   },
   confidencePercent: {
     color: "#64748b",

@@ -46,3 +46,4 @@ yarn-debug.log*
 yarn-error.log*
 vite-dev*.log
 vite-codex*.log
+.local-logs/

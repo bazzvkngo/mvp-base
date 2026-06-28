@@ -16,6 +16,8 @@ finales ni reemplaza la revisión humana.
 - Perfil comercial y logo de empresa.
 - Inventario de productos, servicios y actividades.
 - Importación local o asistida de archivos CSV, XLS y XLSX, con vista previa.
+- Importación documental de PDF, JPG, PNG y WebP mediante análisis multimodal
+  desde backend y revisión humana.
 - Referencias manuales de mercado y valorización.
 - Creación, emisión, historial y estados comerciales de cotizaciones.
 - Generación de PDF y envío mediante Resend.
@@ -31,7 +33,7 @@ finales ni reemplaza la revisión humana.
 - Resend para correo transaccional.
 - jsPDF para PDF.
 - Chart.js para visualizaciones.
-- SheetJS CE 0.20.3 para importación de planillas.
+- SheetJS CE 0.20.3 para importacion de planillas.
 
 ## Requisitos
 
@@ -80,6 +82,7 @@ functions/
   index.js      Cloud Functions 2nd Gen.
 docs/
   arquitectura.md
+  importador-documental.md
 ```
 
 ## Configuración de Firebase
@@ -112,6 +115,9 @@ firebase functions:secrets:set RESEND_FROM_EMAIL
 - `suggestQuoteItems`: sugiere hasta ocho ítems y nunca entrega precios.
 - `normalizeInventoryItems`: normaliza un archivo con límites de tamaño y
   fallback local; no persiste automáticamente.
+- `normalizeInventoryDocument`: analiza temporalmente PDF e imagenes
+  comerciales en memoria, devuelve candidatos sanitizados y no guarda el
+  documento fuente.
 - `sendQuoteEmail`: valida propiedad, estado, correo y PDF antes de usar Resend.
 - `nightlyInventoryReferenceReview`: se ejecuta a las 03:15 en
   `America/Santiago` y crea o actualiza tareas, sin modificar precios.
@@ -152,7 +158,9 @@ antes de desplegarse. Este repositorio no autoriza despliegues automáticos.
 - Los datos se separan por `usuarios/{uid}`.
 - Los estados de envío de correo solo pueden ser escritos por el backend.
 - Los logos admiten PNG, JPG o WebP y un máximo de 2 MB.
-- Las importaciones admiten hasta 5 MB, 8 hojas y 500 filas.
+- Las importaciones admiten hasta 5 MB. Las planillas admiten hasta 8 hojas y
+  500 filas. Los documentos PDF o imagenes se procesan temporalmente para vista
+  previa y no se almacenan en Firestore ni Storage.
 - Los secretos no deben guardarse en frontend, documentación ni historial Git.
 - El dictado usa la API de reconocimiento del navegador; ValoraCloud no
   persiste audio.
@@ -172,7 +180,12 @@ responsabilidades entre las partes.
 - No existe eliminación física de datos desde la interfaz; inventario y
   referencias usan estados lógicos.
 - La tarea nocturna no consulta precios externos ni crea referencias.
-- Si Gemini no está disponible, se usa análisis local y revisión humana.
+- Si Gemini no está disponible, las planillas pueden usar análisis local y
+  revisión humana. Los PDF e imágenes no tienen fallback OCR local; deben
+  reintentarse o convertirse temporalmente a una planilla compatible.
+- La importación documental valida extensión, MIME, firma binaria y tamaño, pero
+  la calidad final de PDF escaneados o fotografías depende de legibilidad,
+  encuadre y calidad visual del documento.
 - `gemini-2.5-flash-lite` tiene una fecha de cierre anunciada por Google para el
   16 de octubre de 2026.
 - El SDK `@google/generative-ai` está deprecado y debe migrarse en una versión

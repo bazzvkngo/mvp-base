@@ -12,6 +12,10 @@ const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 // Gemini SDK
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { Resend } = require("resend");
+const {
+  classifyGeminiServiceError,
+  normalizeInventoryDocumentHandler,
+} = require("./inventoryDocumentImport");
 
 // Inicializar Admin SDK (una sola vez)
 initializeApp();
@@ -36,6 +40,10 @@ const LOCAL_ASSISTANT_WARNING =
 
 const INVENTORY_AI_IMPORT_WARNING =
   "Los valores detectados son estimaciones y deben ser revisados antes de guardar.";
+const INVENTORY_LOCAL_FALLBACK_WARNING =
+  "El servicio inteligente no se encuentra disponible temporalmente. Se aplicó el análisis local del archivo.";
+const DEFAULT_MARGIN_WARNING =
+  "Se aplicó el margen predeterminado del sistema. Puedes modificarlo antes de guardar.";
 const MAX_INVENTORY_IMPORT_TEXT_LENGTH = 5000;
 const MAX_INVENTORY_IMPORT_SHEETS = 8;
 const MAX_INVENTORY_IMPORT_ROWS = 500;
@@ -931,6 +939,17 @@ function isGeminiModelFallbackError(error) {
     "unavailable",
     "unsupported model",
   ].some((token) => message.includes(token));
+}
+
+function getSafeGeminiLogCategory(category) {
+  return [
+    "daily_quota",
+    "transient_rate_limit",
+    "unavailable",
+    "validation",
+  ].includes(category)
+    ? category
+    : "unavailable";
 }
 
 function timestampToDate(value) {
@@ -1906,7 +1925,7 @@ exports.sendQuoteEmail = onCall(
   },
   async (request) => {
     if (!request.auth || !request.auth.uid) {
-      throw new HttpsError("unauthenticated", "Debes iniciar sesion.");
+      throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
     }
 
     const uid = request.auth.uid;
@@ -2167,6 +2186,65 @@ function parseOptionalPositiveNumber(value) {
   return parsed === null ? null : parsed;
 }
 
+function parseOptionalPositiveDecimal(value) {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "number") {
+    return Number.isFinite(value) && value >= 0
+      ? Math.round(value * 100) / 100
+      : null;
+  }
+
+  const clean = String(value)
+    .replace(/[^\d,.-]/g, "")
+    .replace(/\.(?=\d{3}(?:\D|$))/g, "")
+    .replace(",", ".");
+  const parsed = Number(clean);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return Math.round(parsed * 100) / 100;
+}
+
+function normalizeImportQuantity(value) {
+  const parsed = parseOptionalPositiveDecimal(value);
+  return parsed && parsed > 0 ? parsed : 1;
+}
+
+function calculateImportMarginFromPrice(costoBase, precioVenta) {
+  if (
+    !Number.isFinite(costoBase) ||
+    costoBase <= 0 ||
+    !Number.isFinite(precioVenta) ||
+    precioVenta <= 0
+  ) {
+    return null;
+  }
+  return Math.round(((precioVenta - costoBase) / costoBase) * 10000) / 100;
+}
+
+function normalizeImportConfidence(value) {
+  const parsed = parseOptionalPositiveDecimal(value);
+  if (parsed === null) return null;
+  if (parsed >= 0 && parsed <= 1) return Math.round(parsed * 10000) / 100;
+  if (parsed > 1 && parsed <= 100) return parsed;
+  return null;
+}
+
+function normalizeWarningKey(value) {
+  return normalizeSearchText(value).replace(/\s+/g, " ");
+}
+
+function dedupeImportWarnings(warnings) {
+  const seen = new Set();
+  return (Array.isArray(warnings) ? warnings : warnings ? [warnings] : [])
+    .map((warning) => safeText(warning, 180))
+    .filter(Boolean)
+    .filter((warning) => {
+      const key = normalizeWarningKey(warning);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
 function normalizeInventoryImportType(value, fallbackText = "") {
   const explicit = normalizeDirectHeaderKey(value);
   if (ALLOWED_QUOTE_ITEM_TYPES.includes(explicit)) return explicit;
@@ -2199,7 +2277,7 @@ function defaultUnitForInventoryImport(tipoItem, text = "") {
   if (normalized.includes("metro")) return "metro";
   if (normalized.includes("visita")) return "visita";
   if (tipoItem === "servicio") return "servicio";
-  if (tipoItem === "actividad") return "hora";
+  if (tipoItem === "actividad") return "servicio";
   return "unidad";
 }
 
@@ -2256,20 +2334,34 @@ function normalizeInventoryImportItem(rawItem, index = 0) {
         rawItem?.costoUnitario ??
         rawItem?.precioCompra
     ) ?? 0;
-  const margenDeseado =
-    parseOptionalPositiveNumber(
-      rawItem?.margenDeseado ??
-        rawItem?.margenSugerido ??
-        rawItem?.margenPorDefecto
-    ) ?? DEFAULT_INVENTORY_IMPORT_MARGIN;
-  const cantidadSugerida = parseOptionalPositiveNumber(
+  const precioVentaExplicito = parseOptionalPositiveNumber(
+    rawItem?.precioInterno ??
+      rawItem?.precioInternoSugerido ??
+      rawItem?.precioVenta ??
+      rawItem?.precioSugerido
+  );
+  const margenExplicito = parseOptionalPositiveDecimal(
+    rawItem?.margenDeseado ??
+      rawItem?.margenSugerido ??
+      rawItem?.margenPorDefecto
+  );
+  let margenDeseado = margenExplicito;
+  const advertencias = dedupeImportWarnings(rawItem?.advertencias || rawItem?.warnings);
+
+  if (margenDeseado === null) {
+    margenDeseado = calculateImportMarginFromPrice(costoBase, precioVentaExplicito);
+  }
+  if (margenDeseado === null) {
+    margenDeseado = DEFAULT_INVENTORY_IMPORT_MARGIN;
+    advertencias.push(DEFAULT_MARGIN_WARNING);
+  }
+
+  const cantidadSugerida = normalizeImportQuantity(
     rawItem?.cantidadSugerida ?? rawItem?.cantidad
   );
-  const confianzaRaw = parseOptionalPositiveNumber(
+  const confianzaBase = normalizeImportConfidence(
     rawItem?.confianza ?? rawItem?.nivelConfianza
   );
-  const confianzaBase =
-    confianzaRaw === null ? 60 : Math.max(0, Math.min(100, confianzaRaw));
   const observacion = safeText(
     rawItem?.observacion || rawItem?.justificacion || rawItem?.nota,
     280
@@ -2281,7 +2373,10 @@ function normalizeInventoryImportItem(rawItem, index = 0) {
   const hasReliableCost = costoBase > 0;
   const confianza = hasReliableCost
     ? confianzaBase
-    : Math.min(confianzaBase, 45);
+    : confianzaBase === null
+      ? null
+      : Math.min(confianzaBase, 45);
+  const itemWarnings = dedupeImportWarnings(advertencias);
 
   return {
     id: safeText(rawItem?.id, 80) || `normalizado-${index + 1}`,
@@ -2301,6 +2396,7 @@ function normalizeInventoryImportItem(rawItem, index = 0) {
       (hasReliableCost
         ? "Dato normalizado desde el texto ingresado."
         : "No se detecto costo confiable. Revisa este valor antes de guardar."),
+    advertencias: itemWarnings,
     confianza,
   };
 }
@@ -2597,9 +2693,19 @@ function buildDirectInventoryImportItemsFromFile(fileData) {
       const costoBase =
         parseOptionalPositiveNumber(getMappedCell(cells, headerMap, "costo_base")) ??
         0;
-      const margenDeseado =
-        parseOptionalPositiveNumber(getMappedCell(cells, headerMap, "margen")) ??
-        DEFAULT_INVENTORY_IMPORT_MARGIN;
+      const precioInternoExplicito = parseOptionalPositiveNumber(
+        getMappedCell(cells, headerMap, "precio_interno")
+      );
+      const margenExplicito = parseOptionalPositiveDecimal(
+        getMappedCell(cells, headerMap, "margen")
+      );
+      let margenDeseado =
+        margenExplicito ?? calculateImportMarginFromPrice(costoBase, precioInternoExplicito);
+      const advertencias = [];
+      if (margenDeseado === null) {
+        margenDeseado = DEFAULT_INVENTORY_IMPORT_MARGIN;
+        advertencias.push(DEFAULT_MARGIN_WARNING);
+      }
       const tipoItem = normalizeExplicitInventoryType(
         getMappedCell(cells, headerMap, "tipo"),
         sourceText
@@ -2626,11 +2732,12 @@ function buildDirectInventoryImportItemsFromFile(fileData) {
           1000
         ),
         unidad: unidad || defaultUnitForInventoryImport(tipoItem, sourceText),
-        cantidadSugerida: null,
+        cantidadSugerida: 1,
         costoBase,
         margenDeseado,
         precioInterno: calculateInventoryImportPrice(costoBase, margenDeseado),
         observacion,
+        advertencias,
         confianza: 95,
       };
     })
@@ -2822,7 +2929,7 @@ function buildLocalInventoryImportFallbackFromFile(fileData, options = {}) {
     mode: options.mode || "local-file-fallback",
     warning:
       options.warning ||
-      "Se uso analisis local del archivo. Revisa valores y posibles duplicados antes de guardar.",
+      INVENTORY_LOCAL_FALLBACK_WARNING,
   };
 }
 
@@ -2873,7 +2980,7 @@ function buildLocalInventoryImportFallback(input, options = {}) {
     mode: options.mode || "local-fallback",
     warning:
       options.warning ||
-      "Gemini no esta disponible o no devolvio datos validos. Se uso fallback local.",
+      INVENTORY_LOCAL_FALLBACK_WARNING,
   };
 }
 
@@ -2900,7 +3007,7 @@ function buildInventoryImportPrompt(text, deterministicItems = []) {
     "- Si no existe categoria clara, usa General.\n" +
     "- No reemplaces categorias, tipos, unidades, costos ni margenes que vengan explicitamente en columnas reconocidas.\n" +
     "- No inventes datos con seguridad; deja valores editables y baja confianza.\n" +
-    "- margenSugerido debe ser porcentaje entero, usa 25 si no hay dato claro.\n" +
+    "- margenSugerido debe ser porcentaje y puede tener hasta dos decimales; usa 25 si no hay dato claro.\n" +
     "- precioInternoSugerido debe ser costoBase + margen si hay costo; si no, 0.\n" +
     "- confianza debe ser un numero de 0 a 100.\n" +
     "- Responde solo JSON valido, sin markdown ni explicaciones externas.\n\n" +
@@ -2938,7 +3045,7 @@ exports.normalizeInventoryItems = onCall(
   },
   async (request) => {
     if (!request.auth || !request.auth.uid) {
-      throw new HttpsError("unauthenticated", "Debes iniciar sesion.");
+      throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
     }
 
     const data = request.data || {};
@@ -2955,6 +3062,7 @@ exports.normalizeInventoryItems = onCall(
     const deterministicResult = fileData
       ? buildDirectInventoryImportItemsFromFile(fileData)
       : null;
+    const startedAt = Date.now();
 
     if (!text) {
       throw new HttpsError(
@@ -2966,7 +3074,7 @@ exports.normalizeInventoryItems = onCall(
     if (!fileData && rawText.length > MAX_INVENTORY_IMPORT_TEXT_LENGTH) {
       throw new HttpsError(
         "invalid-argument",
-        "El texto es demasiado largo. Usa un maximo de 5000 caracteres."
+        "El texto es demasiado largo. Usa un máximo de 5000 caracteres."
       );
     }
 
@@ -2981,12 +3089,17 @@ exports.normalizeInventoryItems = onCall(
       return buildLocalInventoryImportFallback(fileData || text, {
         mode: "local-forced",
         warning:
-          "Analisis local forzado para prueba. Se generaron items con reglas basicas.",
+          "Análisis local forzado para prueba. Se generaron items con reglas básicas.",
       });
     }
 
     const useLocalFallback = () =>
-      deterministicResult || buildLocalInventoryImportFallback(fileData || text);
+      deterministicResult
+        ? {
+            ...deterministicResult,
+            warning: INVENTORY_LOCAL_FALLBACK_WARNING,
+          }
+        : buildLocalInventoryImportFallback(fileData || text);
 
     for (let index = 0; index < QUOTE_GEMINI_MODELS.length; index += 1) {
       const modelName = QUOTE_GEMINI_MODELS[index];
@@ -3031,10 +3144,14 @@ exports.normalizeInventoryItems = onCall(
           warning: INVENTORY_AI_IMPORT_WARNING,
         };
       } catch (error) {
+        const geminiClassification = classifyGeminiServiceError(error);
         console.error("normalizeInventoryItems: Gemini error.", {
-          model: modelName,
-          message: error.message,
-          name: error.name,
+          documentFormat: fileData?.extension || "text",
+          sizeBytes: Number(fileData?.tamanoBytes || 0),
+          statusOriginal: geminiClassification.originalStatus || "unknown",
+          category: getSafeGeminiLogCategory(geminiClassification.category),
+          attempts: index + 1,
+          durationMs: Date.now() - startedAt,
         });
 
         if (
@@ -3050,6 +3167,21 @@ exports.normalizeInventoryItems = onCall(
 
     return useLocalFallback();
   }
+);
+
+exports.normalizeInventoryDocument = onCall(
+  {
+    maxInstances: 3,
+    memory: "1GiB",
+    region: DEFAULT_FUNCTION_REGION,
+    secrets: [GEMINI_API_KEY_SECRET],
+    timeoutSeconds: 180,
+  },
+  async (request) =>
+    normalizeInventoryDocumentHandler(request, {
+      getGeminiModel,
+      HttpsError,
+    })
 );
 
 /**

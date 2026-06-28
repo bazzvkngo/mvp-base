@@ -21,7 +21,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test:rules": "firebase emulators:exec --only auth,firestore,storage \"node scripts/rules-smoke.mjs\""
+    "test:rules": "firebase emulators:exec --only auth,firestore,storage \"node scripts/rules-smoke.mjs\"",
+    "test:inventory-docs": "node scripts/inventory-document-import-smoke.mjs",
+    "test:inventory-sheets": "node scripts/inventory-spreadsheet-smoke.mjs"
   },
   "browserslist": {
     "production": [

@@ -123,6 +123,21 @@ Todas usan API v2 y región `us-central1`. El runtime es Node.js 22.
   contexto monetario confiable.
 - Devuelve una vista previa; la persistencia requiere confirmación del usuario.
 
+### `normalizeInventoryDocument`
+
+- Requiere autenticación.
+- Acepta PDF, JPG, JPEG, PNG y WebP de hasta 5 MB.
+- Valida extensión, MIME declarado, firma binaria real, tamaño y casos básicos
+  de corrupción antes de invocar Gemini.
+- Procesa el archivo temporalmente en memoria mediante Base64 dentro del
+  callable; no escribe el documento fuente en Firestore ni Firebase Storage.
+- Usa análisis multimodal para interpretar estructura visual, tablas, filas,
+  columnas, precios unitarios, cantidades y totales de línea.
+- Devuelve solo candidatos sanitizados, advertencias y metadatos necesarios para
+  la vista previa editable. La persistencia requiere confirmación del usuario.
+- No implementa OCR local ni fallback heurístico para imágenes o PDF escaneados.
+  Si Gemini no está disponible, informa el error y no inventa candidatos.
+
 ### `sendQuoteEmail`
 
 - Requiere autenticación y busca la cotización bajo el `uid` de la sesión.
@@ -154,6 +169,11 @@ octubre de 2026. Si el modelo no responde, el sistema usa el fallback local.
 El SDK `@google/generative-ai` está obsoleto; su migración requiere una prueba
 real de integración y no se realizó de forma automática durante el cierre.
 
+El flujo documental usa `gemini-2.5-flash` de forma aislada para PDF e imagenes,
+sin cambiar el modelo del asistente de cotizaciones ni el importador tabular.
+La separacion evita que un ajuste del procesamiento multimodal altere el
+fallback local de planillas.
+
 ### Resend
 
 `RESEND_API_KEY` y `RESEND_FROM_EMAIL` solo se usan en Functions. El frontend no
@@ -180,7 +200,10 @@ El sistema puede almacenar correo de usuario, datos de empresa, RUT, teléfonos,
 direcciones, inventario, referencias y datos de contacto de clientes. Los PDF y
 correos contienen datos comerciales y del cliente.
 
-Gemini recibe descripciones y datos resumidos necesarios para asistencia.
+Gemini recibe descripciones y datos resumidos necesarios para asistencia. En el
+flujo documental recibe el archivo comercial solo durante la ejecucion de la
+Function para generar una vista previa; el repositorio no lo guarda como fixture
+ni la aplicacion lo persiste en Firestore o Storage.
 Resend recibe el destinatario, mensaje y PDF. El dictado depende del servicio de
 reconocimiento del navegador y ValoraCloud no guarda audio.
 
