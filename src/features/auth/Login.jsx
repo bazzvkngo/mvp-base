@@ -1,10 +1,12 @@
-﻿import React, { useState } from "react";
+import React, { useState } from "react";
+import BrandLogo from "../../components/BrandLogo";
+import Button from "../../components/ui/Button";
+import SkipLink from "../../components/ui/SkipLink";
 import {
   loginWithEmail,
   registerWithEmail,
   resetPassword,
 } from "../../services/authService";
-import BrandLogo from "../../components/BrandLogo";
 
 const VERIFICATION_NOTICE_KEY = "valoracloud.verificationNotice";
 
@@ -185,211 +187,175 @@ function Login() {
     : isLoginView
     ? "Ingresar"
     : "Registrarse";
+  const feedbackId = error || success ? "auth-feedback" : undefined;
 
   return (
-    <div style={styles.container}>
-      <div style={styles.card}>
-        <BrandLogo variant="auth" showText={false} />
+    <>
+      <SkipLink targetId="auth-main-content" />
+      <main id="auth-main-content" className="auth-screen" tabIndex="-1">
+        <section className="auth-card" aria-labelledby="auth-title">
+          <header className="auth-card__header">
+            <BrandLogo variant="auth" showText />
+            <h1 id="auth-title" className="auth-card__title">
+              {isResetView
+                ? "Recuperar contraseña"
+                : isLoginView
+                ? "Iniciar sesión"
+                : "Crear cuenta"}
+            </h1>
+            <p className="auth-card__subtitle">
+              {isResetView
+                ? "Ingresa tu correo y enviaremos las instrucciones."
+                : "Acceso al sistema de valorización y cotizaciones TI."}
+            </p>
+          </header>
 
-        <h2 style={styles.title}>
-          {isResetView
-            ? "Recuperar contraseña"
-            : isLoginView
-            ? "Iniciar sesión"
-            : "Crear cuenta"}
-        </h2>
-        <p style={styles.subtitle}>
-          {isResetView
-            ? "Ingresa tu correo y enviaremos las instrucciones."
-            : "ValoraCloud · Valorización y cotizaciones TI"}
-        </p>
-
-        <form
-          onSubmit={isResetView ? handlePasswordReset : handleSubmit}
-          noValidate
-        >
-          <input
-            type="email"
-            name={isResetView ? "email" : "username"}
-            autoComplete={isResetView ? "email" : "username"}
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="Correo electrónico"
-            style={styles.input}
-            required
-          />
-          {showPasswordField && (
-            <input
-              key={isLoginView ? "login-password" : "register-password"}
-              type="password"
-              name={isLoginView ? "password" : "new-password"}
-              autoComplete={isLoginView ? "current-password" : "new-password"}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Contraseña (mín. 6 caracteres)"
-              style={styles.input}
-              minLength="6"
-              required
-            />
-          )}
-          {showConfirmPasswordField && (
-            <input
-              type="password"
-              name="confirm-password"
-              autoComplete="new-password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Repetir contraseña"
-              style={styles.input}
-              minLength="6"
-              required
-            />
-          )}
-
-          {error && <p style={styles.errorText}>{error}</p>}
-          {success && <p style={styles.successText}>{success}</p>}
-
-          <button
-            type="submit"
-            style={{
-              ...styles.buttonPrimary,
-              ...(primaryDisabled ? styles.buttonDisabled : {}),
-            }}
-            disabled={primaryDisabled}
+          <form
+            className="auth-form"
+            onSubmit={isResetView ? handlePasswordReset : handleSubmit}
+            noValidate
+            aria-busy={primaryDisabled}
           >
-            {primaryLabel}
-          </button>
-        </form>
+            <div className="auth-field">
+              <label className="auth-field__label" htmlFor="auth-email">
+                Correo electrónico
+              </label>
+              <input
+                id="auth-email"
+                className="auth-input"
+                type="email"
+                name={isResetView ? "email" : "username"}
+                autoComplete={isResetView ? "email" : "username"}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="nombre@empresa.cl"
+                aria-invalid={Boolean(error)}
+                aria-describedby={feedbackId}
+                required
+              />
+            </div>
 
-        {isLoginView && !isResetView && (
-          <button
-            type="button"
-            onClick={openResetView}
-            style={styles.linkButton}
-          >
-            ¿Olvidaste tu contraseña?
-          </button>
-        )}
+            {showPasswordField && (
+              <div className="auth-field">
+                <label className="auth-field__label" htmlFor="auth-password">
+                  Contraseña
+                </label>
+                <input
+                  key={isLoginView ? "login-password" : "register-password"}
+                  id="auth-password"
+                  className="auth-input"
+                  type="password"
+                  name={isLoginView ? "password" : "new-password"}
+                  autoComplete={isLoginView ? "current-password" : "new-password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  aria-invalid={Boolean(error)}
+                  aria-describedby={
+                    [!isLoginView && "auth-password-hint", feedbackId]
+                      .filter(Boolean)
+                      .join(" ") || undefined
+                  }
+                  minLength="6"
+                  required
+                />
+                {!isLoginView && (
+                  <p id="auth-password-hint" className="auth-field__hint">
+                    Mínimo 6 caracteres.
+                  </p>
+                )}
+              </div>
+            )}
 
-        {isResetView && (
-          <button
-            type="button"
-            onClick={returnToLoginView}
-            style={styles.linkButton}
-          >
-            Volver al inicio de sesión
-          </button>
-        )}
+            {showConfirmPasswordField && (
+              <div className="auth-field">
+                <label
+                  className="auth-field__label"
+                  htmlFor="auth-confirm-password"
+                >
+                  Repetir contraseña
+                </label>
+                <input
+                  id="auth-confirm-password"
+                  className="auth-input"
+                  type="password"
+                  name="confirm-password"
+                  autoComplete="new-password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  aria-invalid={Boolean(error)}
+                  aria-describedby={feedbackId}
+                  minLength="6"
+                  required
+                />
+              </div>
+            )}
 
-        <button
-          type="button"
-          onClick={toggleAuthView}
-          style={styles.buttonSecondary}
-          disabled={isSubmitting || isResetting}
-        >
-          {isLoginView
-            ? "¿No tienes cuenta? Regístrate"
-            : "¿Ya tienes cuenta? Inicia sesión"}
-        </button>
-      </div>
-    </div>
+            {error && (
+              <p
+                id="auth-feedback"
+                className="auth-feedback auth-feedback--error"
+                role="alert"
+              >
+                {error}
+              </p>
+            )}
+            {success && (
+              <p
+                id="auth-feedback"
+                className="auth-feedback auth-feedback--success"
+                role="status"
+              >
+                {success}
+              </p>
+            )}
+
+            <Button
+              type="submit"
+              className="auth-submit"
+              disabled={primaryDisabled}
+            >
+              {primaryLabel}
+            </Button>
+          </form>
+
+          <div className="auth-actions">
+            {isLoginView && !isResetView && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="auth-link"
+                onClick={openResetView}
+              >
+                ¿Olvidaste tu contraseña?
+              </Button>
+            )}
+
+            {isResetView && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="auth-link"
+                onClick={returnToLoginView}
+              >
+                Volver al inicio de sesión
+              </Button>
+            )}
+
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={toggleAuthView}
+              disabled={isSubmitting || isResetting}
+            >
+              {isLoginView
+                ? "¿No tienes cuenta? Regístrate"
+                : "¿Ya tienes cuenta? Inicia sesión"}
+            </Button>
+          </div>
+        </section>
+      </main>
+    </>
   );
 }
 
-const styles = {
-  container: {
-    minHeight: "100vh",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontFamily:
-      "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-    backgroundColor: "#f3f4f6",
-    padding: "1rem",
-  },
-  card: {
-    backgroundColor: "#ffffff",
-    borderRadius: "8px",
-    padding: "2.5rem 2.25rem",
-    boxShadow: "0 18px 40px rgba(15,23,42,0.08)",
-    maxWidth: "420px",
-    width: "100%",
-    textAlign: "center",
-    border: "1px solid #e5e7eb",
-  },
-  title: {
-    fontSize: "1.6rem",
-    fontWeight: 600,
-    color: "#111827",
-    margin: 0,
-  },
-  subtitle: {
-    fontSize: "0.95rem",
-    color: "#6b7280",
-    marginTop: "0.35rem",
-    marginBottom: "1.5rem",
-  },
-  input: {
-    width: "100%",
-    padding: "0.8rem 0.9rem",
-    borderRadius: "8px",
-    border: "1px solid #d1d5db",
-    fontSize: "0.95rem",
-    marginBottom: "0.9rem",
-    outline: "none",
-  },
-  buttonPrimary: {
-    width: "100%",
-    backgroundColor: "#0f766e",
-    color: "#ffffff",
-    border: "none",
-    padding: "0.85rem",
-    borderRadius: "8px",
-    cursor: "pointer",
-    fontSize: "0.98rem",
-    fontWeight: 600,
-    marginTop: "0.4rem",
-  },
-  buttonDisabled: {
-    cursor: "not-allowed",
-    opacity: 0.68,
-  },
-  buttonSecondary: {
-    width: "100%",
-    backgroundColor: "transparent",
-    color: "#0f766e",
-    border: "none",
-    padding: "0.7rem",
-    cursor: "pointer",
-    fontSize: "0.9rem",
-    marginTop: "0.5rem",
-  },
-  linkButton: {
-    width: "100%",
-    backgroundColor: "transparent",
-    color: "#0f766e",
-    border: "none",
-    padding: "0.45rem",
-    cursor: "pointer",
-    fontSize: "0.88rem",
-    marginTop: "0.35rem",
-    textDecoration: "underline",
-    textUnderlineOffset: "3px",
-  },
-  errorText: {
-    color: "#b91c1c",
-    fontSize: "0.88rem",
-    marginTop: "0.1rem",
-    marginBottom: "0.5rem",
-  },
-  successText: {
-    color: "#047857",
-    fontSize: "0.88rem",
-    lineHeight: 1.45,
-    marginTop: "0.1rem",
-    marginBottom: "0.5rem",
-  },
-};
-
 export default Login;
-

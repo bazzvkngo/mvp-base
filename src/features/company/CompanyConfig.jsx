@@ -811,6 +811,7 @@ const styles = {
   header: {
     alignItems: "flex-start",
     display: "flex",
+    flexWrap: "wrap",
     gap: "16px",
     justifyContent: "space-between",
   },
@@ -839,7 +840,7 @@ const styles = {
     display: "grid",
     gap: "2px",
     maxWidth: "320px",
-    minWidth: "260px",
+    minWidth: 0,
     padding: "10px 12px",
     textAlign: "left",
   },
@@ -877,7 +878,8 @@ const styles = {
   mainGrid: {
     display: "grid",
     gap: "16px",
-    gridTemplateColumns: "minmax(0, 1.2fr) minmax(340px, 0.8fr)",
+    gridTemplateColumns:
+      "repeat(auto-fit, minmax(min(100%, 340px), 1fr))",
     paddingBottom: "104px",
   },
   columnStack: {
@@ -910,7 +912,7 @@ const styles = {
   formGrid: {
     display: "grid",
     gap: "12px",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
   },
   field: {
     display: "grid",

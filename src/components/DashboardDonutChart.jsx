@@ -42,10 +42,10 @@ function createCenterTextPlugin(total) {
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillStyle = "#111827";
-      ctx.font = "700 24px Arial, sans-serif";
+      ctx.font = '700 24px "Segoe UI", sans-serif';
       ctx.fillText(String(total), centerX, centerY - 5);
       ctx.fillStyle = "#64748b";
-      ctx.font = "700 11px Arial, sans-serif";
+      ctx.font = '650 13px "Segoe UI", sans-serif';
       ctx.fillText("Total", centerX, centerY + 17);
       ctx.restore();
     },
@@ -56,6 +56,7 @@ function DashboardDonutChart({ items, emptyMessage, ariaLabel }) {
   const prefersReducedMotion = usePrefersReducedMotion();
   const total = items.reduce((sum, item) => sum + Number(item.value || 0), 0);
   const activeItems = items.filter((item) => Number(item.value || 0) > 0);
+  const visibleLegendItems = total > 0 ? activeItems : items;
 
   const chartData = useMemo(
     () => ({
@@ -78,6 +79,8 @@ function DashboardDonutChart({ items, emptyMessage, ariaLabel }) {
       animation: prefersReducedMotion ? false : { duration: 450 },
       cutout: "68%",
       maintainAspectRatio: false,
+      responsive: true,
+      resizeDelay: 80,
       plugins: {
         legend: {
           display: false,
@@ -104,23 +107,14 @@ function DashboardDonutChart({ items, emptyMessage, ariaLabel }) {
     .join(". ")}.`;
 
   return (
-    <div style={styles.wrapper} aria-label={description} role="img">
-      <style>
-        {`
-          @media (max-width: 680px) {
-            .dashboard-donut-layout {
-              grid-template-columns: minmax(0, 1fr);
-              justify-items: center;
-            }
-
-            .dashboard-donut-legend {
-              width: 100%;
-            }
-          }
-        `}
-      </style>
+    <div
+      className="dashboard-donut"
+      style={styles.wrapper}
+      aria-label={description}
+      role="img"
+    >
       <div className="dashboard-donut-layout" style={styles.layout}>
-        <div style={styles.chartBox}>
+        <div className="dashboard-donut-chart" style={styles.chartBox}>
           {total > 0 ? (
             <Doughnut
               data={chartData}
@@ -136,7 +130,7 @@ function DashboardDonutChart({ items, emptyMessage, ariaLabel }) {
         </div>
 
         <div className="dashboard-donut-legend" style={styles.legend}>
-          {items.map((item) => (
+          {visibleLegendItems.map((item) => (
             <div key={item.label} style={styles.legendRow}>
               <span
                 aria-hidden="true"
@@ -155,20 +149,22 @@ function DashboardDonutChart({ items, emptyMessage, ariaLabel }) {
 
 const styles = {
   wrapper: {
+    containerType: "inline-size",
     minWidth: 0,
   },
   layout: {
     alignItems: "center",
     display: "grid",
     gap: "14px",
-    gridTemplateColumns: "150px minmax(0, 1fr)",
+    gridTemplateColumns: "minmax(140px, 170px) minmax(0, 1fr)",
     marginTop: "12px",
     minWidth: 0,
   },
   chartBox: {
-    height: "150px",
+    height: "clamp(150px, 42cqi, 176px)",
+    maxWidth: "176px",
     position: "relative",
-    width: "150px",
+    width: "100%",
   },
   emptyDonut: {
     alignItems: "center",
@@ -188,7 +184,7 @@ const styles = {
   },
   emptyTotalLabel: {
     color: "#64748b",
-    fontSize: "11px",
+    fontSize: "13px",
     fontWeight: 700,
     marginTop: "5px",
   },
@@ -196,12 +192,15 @@ const styles = {
     display: "grid",
     gap: "7px",
     minWidth: 0,
+    width: "100%",
   },
   legendRow: {
     alignItems: "center",
     display: "grid",
     gap: "8px",
     gridTemplateColumns: "10px minmax(0, 1fr) max-content",
+    minWidth: 0,
+    width: "100%",
   },
   legendDot: {
     borderRadius: "999px",
@@ -220,7 +219,7 @@ const styles = {
   },
   emptyMessage: {
     color: "#64748b",
-    fontSize: "12px",
+    fontSize: "13px",
     margin: "3px 0 0",
   },
 };

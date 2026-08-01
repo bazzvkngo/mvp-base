@@ -7,6 +7,7 @@
     "firebase": "^12.15.0",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
+    "lucide-react": "^1.28.0",
     "react": "^19.2.0",
     "react-chartjs-2": "^5.3.1",
     "react-dom": "^19.2.0",
@@ -22,6 +23,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test:rules": "firebase emulators:exec --only auth,firestore,storage \"node scripts/rules-smoke.mjs\"",
+    "test:ai-rate-limits": "node scripts/ai-rate-limiter-smoke.mjs",
     "test:inventory-docs": "node scripts/inventory-document-import-smoke.mjs",
     "test:inventory-sheets": "node scripts/inventory-spreadsheet-smoke.mjs"
   },

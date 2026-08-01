@@ -1,6 +1,7 @@
-const { SchemaType } = require("@google/generative-ai");
+const { Type } = require("@google/genai");
+const { AI_MODELS } = require("./aiConfig");
 
-const DOCUMENT_GEMINI_MODEL = "gemini-2.5-flash";
+const DOCUMENT_GEMINI_MODEL = AI_MODELS.DOCUMENT_IMPORT;
 const MAX_DOCUMENT_IMPORT_BYTES = 5 * 1024 * 1024;
 const MAX_DOCUMENT_IMPORT_BASE64_LENGTH =
   Math.ceil(MAX_DOCUMENT_IMPORT_BYTES / 3) * 4 + 4;
@@ -13,9 +14,7 @@ const DOCUMENT_USAGE_LIMIT_MESSAGE =
 const DEFAULT_DOCUMENT_IMPORT_MARGIN = 25;
 const DEFAULT_MARGIN_WARNING =
   "Se aplicó el margen predeterminado del sistema. Puedes modificarlo antes de guardar.";
-const DOCUMENT_GEMINI_RETRY_DELAYS_MS = [2000, 5000];
-const MAX_DOCUMENT_GEMINI_RETRIES = 2;
-const MAX_SAFE_RETRY_DELAY_MS = 10000;
+const MAX_SAFE_RETRY_DELAY_MS = 24 * 60 * 60 * 1000;
 const GEMINI_ERROR_CATEGORIES = {
   DAILY_QUOTA: "daily_quota",
   TRANSIENT_RATE_LIMIT: "transient_rate_limit",
@@ -52,30 +51,30 @@ class DocumentImportError extends Error {
 }
 
 const nullableString = () => ({
-  type: SchemaType.STRING,
+  type: Type.STRING,
   nullable: true,
 });
 
 const nullableNumber = () => ({
-  type: SchemaType.NUMBER,
+  type: Type.NUMBER,
   nullable: true,
 });
 
 const INVENTORY_DOCUMENT_RESPONSE_SCHEMA = {
-  type: SchemaType.OBJECT,
+  type: Type.OBJECT,
   properties: {
     documentType: {
-      type: SchemaType.STRING,
+      type: Type.STRING,
       enum: DOCUMENT_TYPES,
     },
     items: {
-      type: SchemaType.ARRAY,
+      type: Type.ARRAY,
       items: {
-        type: SchemaType.OBJECT,
+        type: Type.OBJECT,
         properties: {
           nombre: nullableString(),
           tipoItem: {
-            type: SchemaType.STRING,
+            type: Type.STRING,
             nullable: true,
             enum: INVENTORY_ITEM_TYPES,
           },
@@ -92,13 +91,13 @@ const INVENTORY_DOCUMENT_RESPONSE_SCHEMA = {
           evidenciaOrigen: nullableString(),
           pagina: nullableNumber(),
           valorCalculado: {
-            type: SchemaType.BOOLEAN,
+            type: Type.BOOLEAN,
             nullable: true,
           },
           advertencias: {
-            type: SchemaType.ARRAY,
+            type: Type.ARRAY,
             items: {
-              type: SchemaType.STRING,
+              type: Type.STRING,
             },
           },
         },
@@ -106,9 +105,9 @@ const INVENTORY_DOCUMENT_RESPONSE_SCHEMA = {
       },
     },
     warnings: {
-      type: SchemaType.ARRAY,
+      type: Type.ARRAY,
       items: {
-        type: SchemaType.STRING,
+        type: Type.STRING,
       },
     },
   },
@@ -632,10 +631,6 @@ function toHttpsError(error, HttpsError) {
   return new HttpsError("internal", "No se pudo procesar el documento.");
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function coerceStatusCode(value) {
   if (value === null || value === undefined || value === "") return null;
   const numeric = Number(value);
@@ -745,9 +740,45 @@ function extractRetryDelayMs(error) {
   const match =
     text.match(/retrydelay[^0-9]{0,40}(\d+(?:\.\d+)?)\s*s\b/) ||
     text.match(/retry delay[^0-9]{0,40}(\d+(?:\.\d+)?)\s*s\b/);
-  if (!match) return null;
+  const visited = new Set();
+  const findRetryDelay = (value, depth = 0, parentKey = "") => {
+    if (value === null || value === undefined || depth > 8) return null;
+    if (typeof value !== "object") {
+      return parentKey === "retrydelay" ? String(value) : null;
+    }
+    if (visited.has(value)) return null;
+    visited.add(value);
 
-  const delayMs = Math.round(Number(match[1]) * 1000);
+    for (const [key, child] of Object.entries(value)) {
+      const normalizedKey = normalizeSearchText(key).replace(/[^a-z0-9]/g, "");
+      if (normalizedKey === "retrydelay") {
+        if (typeof child === "string" || typeof child === "number") {
+          return String(child);
+        }
+        if (child && typeof child === "object" && child.seconds !== undefined) {
+          return `${child.seconds}s`;
+        }
+      }
+      if (
+        ["details", "error", "cause", "response", "body"].includes(
+          normalizedKey
+        ) ||
+        ["details", "error", "cause", "response", "body"].includes(parentKey)
+      ) {
+        const nested = findRetryDelay(child, depth + 1, normalizedKey);
+        if (nested !== null) return nested;
+      }
+    }
+    return null;
+  };
+  const structuredRetryDelay = findRetryDelay(error);
+  const structuredMatch = structuredRetryDelay?.match(
+    /^(\d+(?:\.\d+)?)\s*s$/i
+  );
+  const delayValue = match?.[1] || structuredMatch?.[1];
+  if (!delayValue) return null;
+
+  const delayMs = Math.round(Number(delayValue) * 1000);
   if (
     !Number.isFinite(delayMs) ||
     delayMs < 0 ||
@@ -824,10 +855,6 @@ function classifyGeminiServiceError(error) {
   };
 }
 
-function isTemporaryGeminiError(error) {
-  return classifyGeminiServiceError(error).retryable;
-}
-
 function decorateGeminiError(error, classification, attempts) {
   if (!error || typeof error !== "object") return;
   error.documentImportErrorCategory = classification.category;
@@ -861,78 +888,43 @@ function logDocumentAnalysisFailure(documentPayload, startedAt, classification, 
   });
 }
 
-async function generateDocumentContentWithRetries(
-  geminiModel,
-  documentPayload,
-  {
-    retryDelaysMs = DOCUMENT_GEMINI_RETRY_DELAYS_MS,
-    sleepFn = sleep,
-    randomFn = Math.random,
-  } = {}
-) {
-  let lastError = null;
-  const maxRetries = Math.min(retryDelaysMs.length, MAX_DOCUMENT_GEMINI_RETRIES);
-
-  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
-    try {
-      const result = await geminiModel.generateContent({
-        contents: [
-          {
-            role: "user",
-            parts: [
-              { text: buildInventoryDocumentPrompt() },
-              {
-                inlineData: {
-                  mimeType: documentPayload.detectedMime,
-                  data: documentPayload.base64,
-                },
+async function generateDocumentContent(generateGeminiContent, documentPayload) {
+  try {
+    return await generateGeminiContent({
+      model: DOCUMENT_GEMINI_MODEL,
+      functionName: "normalizeInventoryDocument",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: buildInventoryDocumentPrompt() },
+            {
+              inlineData: {
+                mimeType: documentPayload.detectedMime,
+                data: documentPayload.base64,
               },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.1,
-          responseMimeType: "application/json",
-          responseSchema: INVENTORY_DOCUMENT_RESPONSE_SCHEMA,
+            },
+          ],
         },
-      });
-      return {
-        attempts: attempt + 1,
-        result,
-      };
-    } catch (error) {
-      lastError = error;
-      const classification = classifyGeminiServiceError(error);
-      decorateGeminiError(error, classification, attempt + 1);
-
-      if (!classification.retryable || attempt >= maxRetries) {
-        break;
-      }
-
-      const configuredDelay = Number(retryDelaysMs[attempt] || 0);
-      const baseDelay =
-        classification.retryDelayMs !== null
-          ? classification.retryDelayMs
-          : configuredDelay;
-      const jitter = Math.round(baseDelay * 0.25 * Number(randomFn() || 0));
-      await sleepFn(baseDelay + jitter);
-    }
+      ],
+      config: {
+        temperature: 0.1,
+        responseMimeType: "application/json",
+        responseSchema: INVENTORY_DOCUMENT_RESPONSE_SCHEMA,
+      },
+    });
+  } catch (error) {
+    const classification = classifyGeminiServiceError(error);
+    decorateGeminiError(error, classification, 1);
+    throw error;
   }
-
-  if (lastError && isTemporaryGeminiError(lastError)) {
-    lastError.temporaryGeminiError = true;
-  }
-  throw lastError;
 }
 
 async function normalizeInventoryDocumentHandler(
   request,
   {
-    getGeminiModel,
+    generateGeminiContent,
     HttpsError,
-    retryDelaysMs = DOCUMENT_GEMINI_RETRY_DELAYS_MS,
-    sleepFn = sleep,
-    randomFn = Math.random,
   }
 ) {
   if (!request.auth || !request.auth.uid) {
@@ -947,22 +939,16 @@ async function normalizeInventoryDocumentHandler(
   }
 
   const startedAt = Date.now();
-  const geminiModel = getGeminiModel(DOCUMENT_GEMINI_MODEL);
-  if (!geminiModel) {
+  if (typeof generateGeminiContent !== "function") {
     throw new HttpsError("unavailable", DOCUMENT_UNAVAILABLE_MESSAGE);
   }
 
   try {
-    const { result } = await generateDocumentContentWithRetries(
-      geminiModel,
-      documentPayload,
-      {
-        retryDelaysMs,
-        sleepFn,
-        randomFn,
-      }
+    const { response, aiRateLimit } = await generateDocumentContent(
+      generateGeminiContent,
+      documentPayload
     );
-    const parsed = extractJsonObject(result.response.text());
+    const parsed = extractJsonObject(response.text);
     const normalized = sanitizeInventoryDocumentResult(parsed);
 
     return {
@@ -972,11 +958,14 @@ async function normalizeInventoryDocumentHandler(
       model: DOCUMENT_GEMINI_MODEL,
       documentType: normalized.documentType,
       warnings: normalized.warnings,
+      aiRateLimit,
       warning:
         normalized.warnings[0] ||
         "Documento procesado. Revisa los candidatos antes de guardar.",
     };
   } catch (error) {
+    if (error?.details?.reason) throw error;
+
     const baseClassification = classifyGeminiServiceError(error);
     const classification = {
       ...baseClassification,
@@ -1019,8 +1008,7 @@ module.exports = {
   TEMPORARY_DOCUMENT_UNAVAILABLE_MESSAGE,
   classifyGeminiServiceError,
   detectMimeFromMagic,
-  generateDocumentContentWithRetries,
-  isTemporaryGeminiError,
+  generateDocumentContent,
   normalizeInventoryDocumentHandler,
   sanitizeInventoryDocumentResult,
   validateInventoryDocumentPayload,

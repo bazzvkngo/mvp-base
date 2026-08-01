@@ -406,7 +406,6 @@ const styles = {
     gap: "18px",
     maxWidth: "100%",
     minWidth: 0,
-    overflowX: "hidden",
   },
   header: {
     display: "flex",

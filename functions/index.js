@@ -10,8 +10,10 @@ const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 
 // Gemini SDK
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { GoogleGenAI } = require("@google/genai");
 const { Resend } = require("resend");
+const { AI_MODELS } = require("./aiConfig");
+const { createAiRateLimiter } = require("./aiRateLimiter");
 const {
   classifyGeminiServiceError,
   normalizeInventoryDocumentHandler,
@@ -33,7 +35,7 @@ const RESEND_FROM_EMAIL_SECRET = defineSecret("RESEND_FROM_EMAIL");
 const ALLOWED_QUOTE_ITEM_TYPES = ["producto", "servicio", "actividad"];
 const DEFAULT_FUNCTION_REGION = "us-central1";
 const REFERENCE_REVIEW_STALE_DAYS = 30;
-const PRIMARY_QUOTE_GEMINI_MODEL = "gemini-2.5-flash-lite";
+const PRIMARY_QUOTE_GEMINI_MODEL = AI_MODELS.QUOTE_SUGGESTIONS;
 const QUOTE_GEMINI_MODELS = [PRIMARY_QUOTE_GEMINI_MODEL];
 const LOCAL_ASSISTANT_WARNING =
   "La IA generativa no está disponible temporalmente. Se generaron sugerencias locales basadas en reglas e inventario.";
@@ -52,7 +54,8 @@ const MAX_INVENTORY_IMPORT_CELL_LENGTH = 500;
 const DEFAULT_INVENTORY_IMPORT_MARGIN = 25;
 const MAX_QUOTE_PDF_BYTES = 8 * 1024 * 1024;
 
-const cachedGeminiModels = new Map();
+let cachedGeminiClient = null;
+const aiRateLimiter = createAiRateLimiter({ db });
 
 function getGeminiApiKey() {
   if (process.env.GEMINI_API_KEY) return process.env.GEMINI_API_KEY;
@@ -65,11 +68,8 @@ function getGeminiApiKey() {
   }
 }
 
-function getGeminiModel(modelName = PRIMARY_QUOTE_GEMINI_MODEL) {
-  if (cachedGeminiModels.has(modelName)) {
-    return cachedGeminiModels.get(modelName);
-  }
-
+function getGeminiClient() {
+  if (cachedGeminiClient) return cachedGeminiClient;
   const apiKey = getGeminiApiKey();
   if (!apiKey) {
     console.warn(
@@ -78,10 +78,146 @@ function getGeminiModel(modelName = PRIMARY_QUOTE_GEMINI_MODEL) {
     return null;
   }
 
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: modelName });
-  cachedGeminiModels.set(modelName, model);
-  return model;
+  cachedGeminiClient = new GoogleGenAI({ apiKey });
+  return cachedGeminiClient;
+}
+
+function getAiControlMessage(reason) {
+  if (reason === "cooldown") {
+    return "Espera antes de realizar otra solicitud de IA.";
+  }
+  if (reason === "in_progress") {
+    return "Ya existe una solicitud de IA en curso.";
+  }
+  if (reason === "daily_limit") {
+    return "Se alcanzo el limite protegido de IA por hoy.";
+  }
+  if (reason === "provider_rate_limit") {
+    return "El servicio de IA alcanzo temporalmente un limite del proveedor.";
+  }
+  return "El servicio de IA no pudo completar la solicitud.";
+}
+
+function createAiHttpsError(details) {
+  const reason = details?.reason || "provider_error";
+  const code = reason === "in_progress"
+    ? "aborted"
+    : ["cooldown", "daily_limit", "provider_rate_limit"].includes(reason)
+      ? "resource-exhausted"
+      : "unavailable";
+  return new HttpsError(code, details?.message || getAiControlMessage(reason), {
+    allowed: false,
+    reason,
+    retryAt: details?.retryAt || null,
+    retryAfterSeconds: Number(details?.retryAfterSeconds || 0),
+    model: details?.model || null,
+    message: details?.message || getAiControlMessage(reason),
+  });
+}
+
+async function generateGeminiContent({ model, functionName, contents, config }) {
+  const client = getGeminiClient();
+  if (!client) {
+    throw createAiHttpsError({
+      allowed: false,
+      reason: "provider_error",
+      retryAt: null,
+      model,
+      message: "El servicio de IA no esta configurado temporalmente.",
+    });
+  }
+
+  let reservation;
+  try {
+    reservation = await aiRateLimiter.reserve(model, functionName);
+  } catch (error) {
+    console.error("Gemini rate-limit reservation failed", {
+      model,
+      functionName,
+      code: error?.code || "unknown",
+    });
+    throw createAiHttpsError({
+      allowed: false,
+      reason: "provider_error",
+      retryAt: null,
+      model,
+      message: "No fue posible comprobar la disponibilidad de IA.",
+    });
+  }
+  if (!reservation.allowed) {
+    throw createAiHttpsError(reservation);
+  }
+
+  try {
+    const response = await client.models.generateContent({
+      model,
+      contents,
+      ...(config ? { config } : {}),
+    });
+    let completedStatus = reservation;
+    try {
+      completedStatus = await aiRateLimiter.complete(model, reservation.requestId);
+    } catch (completionError) {
+      console.error("Gemini rate-limit completion persistence failed", {
+        model,
+        functionName,
+        code: completionError?.code || "unknown",
+      });
+    }
+    return {
+      response,
+      aiRateLimit: {
+        ...completedStatus,
+        allowed: false,
+        reason: "cooldown",
+        retryAt: reservation.retryAt,
+        retryAfterSeconds: reservation.retryAfterSeconds,
+      },
+    };
+  } catch (error) {
+    if (error instanceof HttpsError && error.details?.reason) throw error;
+
+    const classification = classifyGeminiServiceError(error);
+    let details = {
+      allowed: false,
+      reason: ["daily_quota", "transient_rate_limit"].includes(
+        classification.category
+      )
+        ? "provider_rate_limit"
+        : "provider_error",
+      retryAt: reservation.retryAt || null,
+      retryAfterSeconds: reservation.retryAfterSeconds || 0,
+      model,
+      message: getAiControlMessage(
+        ["daily_quota", "transient_rate_limit"].includes(classification.category)
+          ? "provider_rate_limit"
+          : "provider_error"
+      ),
+    };
+
+    try {
+      details = await aiRateLimiter.fail(
+        model,
+        reservation.requestId,
+        classification
+      );
+    } catch (persistenceError) {
+      console.error("Gemini rate-limit failure persistence failed", {
+        model,
+        functionName,
+        code: persistenceError?.code || "unknown",
+      });
+    }
+
+    console.error("Gemini provider request failed", {
+      model,
+      functionName,
+      occurredAt: new Date().toISOString(),
+      category: getSafeGeminiLogCategory(classification.category),
+      code: classification.originalStatus || "unknown",
+    });
+    throw createAiHttpsError(details);
+  }
 }
 
 function extractJsonObject(text) {
@@ -1187,8 +1323,7 @@ exports.nightlyInventoryReferenceReview = onSchedule(
  * Devuelve un número entero (precio en CLP) o null si no pudo.
  */
 async function extraerPrecioConGemini(html) {
-  const geminiModel = getGeminiModel();
-  if (!geminiModel) return null;
+  if (!getGeminiClient()) return null;
 
   const trimmedHtml = html.slice(0, 20000); // recortar por si la página es muy grande
 
@@ -1202,11 +1337,20 @@ async function extraerPrecioConGemini(html) {
     trimmedHtml;
 
   try {
-    const result = await geminiModel.generateContent(prompt);
-    const text = (result.response.text() || "").trim();
+    const { response } = await generateGeminiContent({
+      model: PRIMARY_QUOTE_GEMINI_MODEL,
+      functionName: "legacyExtraerPrecioConGemini",
+      contents: prompt,
+    });
+    const text = (response.text || "").trim();
     return parseIntegerFromText(text);
   } catch (error) {
-    console.error("Error llamando a Gemini con HTML:", error);
+    console.error("Legacy Gemini HTML extraction failed", {
+      model: PRIMARY_QUOTE_GEMINI_MODEL,
+      functionName: "legacyExtraerPrecioConGemini",
+      code: error?.code || "unknown",
+      reason: error?.details?.reason || "unknown",
+    });
     return null;
   }
 }
@@ -1216,8 +1360,7 @@ async function extraerPrecioConGemini(html) {
  * descripción del producto + precio interno actual.
  */
 async function estimarPrecioMercadoDesdeDescripcion(producto, precioInterno) {
-  const geminiModel = getGeminiModel();
-  if (!geminiModel) return null;
+  if (!getGeminiClient()) return null;
 
   const nombre = producto.nombre || "producto";
   const categoria = producto.categoria || "";
@@ -1237,8 +1380,12 @@ async function estimarPrecioMercadoDesdeDescripcion(producto, precioInterno) {
     `Precio actual del negocio: ${precioInterno} CLP.\n`;
 
   try {
-    const result = await geminiModel.generateContent(prompt);
-    const text = (result.response.text() || "").trim();
+    const { response } = await generateGeminiContent({
+      model: PRIMARY_QUOTE_GEMINI_MODEL,
+      functionName: "legacyEstimarPrecioMercado",
+      contents: prompt,
+    });
+    const text = (response.text || "").trim();
     let precioRecomendado = parseIntegerFromText(text);
 
     if (!precioRecomendado) return null;
@@ -1257,7 +1404,12 @@ async function estimarPrecioMercadoDesdeDescripcion(producto, precioInterno) {
 
     return precioRecomendado;
   } catch (error) {
-    console.error("Error en estimarPrecioMercadoDesdeDescripcion:", error);
+    console.error("Legacy Gemini market estimate failed", {
+      model: PRIMARY_QUOTE_GEMINI_MODEL,
+      functionName: "legacyEstimarPrecioMercado",
+      code: error?.code || "unknown",
+      reason: error?.details?.reason || "unknown",
+    });
     return null;
   }
 }
@@ -3035,6 +3187,46 @@ function buildInventoryImportPrompt(text, deterministicItems = []) {
   );
 }
 
+exports.getAiRateLimitStatus = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) => {
+    if (!request.auth || !request.auth.uid) {
+      throw new HttpsError("unauthenticated", "Debes iniciar sesion.");
+    }
+
+    const requestedModel = safeText(request.data?.model, 80);
+    const allowedModels = Object.values(AI_MODELS);
+    if (requestedModel && !allowedModels.includes(requestedModel)) {
+      throw new HttpsError("invalid-argument", "Modelo de IA no valido.");
+    }
+
+    try {
+      if (requestedModel) {
+        return await aiRateLimiter.getStatus(requestedModel);
+      }
+      return { statuses: await aiRateLimiter.getAllStatuses() };
+    } catch (error) {
+      console.error("Gemini rate-limit status lookup failed", {
+        model: requestedModel || "all",
+        functionName: "getAiRateLimitStatus",
+        code: error?.code || "unknown",
+      });
+      throw createAiHttpsError({
+        allowed: false,
+        reason: "provider_error",
+        retryAt: null,
+        model: requestedModel || null,
+        message: "No fue posible comprobar la disponibilidad de IA.",
+      });
+    }
+  }
+);
+
 exports.normalizeInventoryItems = onCall(
   {
     maxInstances: 5,
@@ -3103,16 +3295,18 @@ exports.normalizeInventoryItems = onCall(
 
     for (let index = 0; index < QUOTE_GEMINI_MODELS.length; index += 1) {
       const modelName = QUOTE_GEMINI_MODELS[index];
-      const geminiModel = getGeminiModel(modelName);
-
-      if (!geminiModel) return useLocalFallback();
 
       try {
         console.info(`normalizeInventoryItems: using Gemini model ${modelName}`);
-        const result = await geminiModel.generateContent(
-          buildInventoryImportPrompt(text, deterministicResult?.items || [])
-        );
-        const raw = (result.response.text() || "").trim();
+        const { response, aiRateLimit } = await generateGeminiContent({
+          model: modelName,
+          functionName: "normalizeInventoryItems",
+          contents: buildInventoryImportPrompt(
+            text,
+            deterministicResult?.items || []
+          ),
+        });
+        const raw = (response.text || "").trim();
         let parsed = null;
 
         try {
@@ -3142,8 +3336,11 @@ exports.normalizeInventoryItems = onCall(
           mode: assistantMode === "gemini" ? "gemini-forced" : "auto",
           model: modelName,
           warning: INVENTORY_AI_IMPORT_WARNING,
+          aiRateLimit,
         };
       } catch (error) {
+        if (error?.details?.reason) throw error;
+
         const geminiClassification = classifyGeminiServiceError(error);
         console.error("normalizeInventoryItems: Gemini error.", {
           documentFormat: fileData?.extension || "text",
@@ -3179,7 +3376,7 @@ exports.normalizeInventoryDocument = onCall(
   },
   async (request) =>
     normalizeInventoryDocumentHandler(request, {
-      getGeminiModel,
+      generateGeminiContent,
       HttpsError,
     })
 );
@@ -3289,27 +3486,15 @@ exports.suggestQuoteItems = onCall(
 
   for (let index = 0; index < QUOTE_GEMINI_MODELS.length; index += 1) {
     const modelName = QUOTE_GEMINI_MODELS[index];
-    let geminiModel = null;
-
-    try {
-      geminiModel = getGeminiModel(modelName);
-    } catch (error) {
-      console.error("suggestQuoteItems: error inicializando Gemini.", {
-        model: modelName,
-        message: error.message,
-        name: error.name,
-      });
-      return useLocalFallback();
-    }
-
-    if (!geminiModel) {
-      return useLocalFallback();
-    }
 
     try {
       console.info(`suggestQuoteItems: using Gemini model ${modelName}`);
-      const result = await geminiModel.generateContent(prompt);
-      const raw = (result.response.text() || "").trim();
+      const { response, aiRateLimit } = await generateGeminiContent({
+        model: modelName,
+        functionName: "suggestQuoteItems",
+        contents: prompt,
+      });
+      const raw = (response.text || "").trim();
       let parsed = null;
 
       try {
@@ -3343,8 +3528,11 @@ exports.suggestQuoteItems = onCall(
         source: "gemini",
         mode: assistantMode === "gemini" ? "gemini-forced" : "auto",
         model: modelName,
+        aiRateLimit,
       };
     } catch (error) {
+      if (error?.details?.reason) throw error;
+
       console.error("suggestQuoteItems: error llamando a Gemini.", {
         model: modelName,
         message: error.message,
@@ -3499,11 +3687,14 @@ const legacySimularCotizacionProyecto = onCall({ secrets: [GEMINI_API_KEY_SECRET
   let fuentePlan = "heuristica_local";
 
   // 3. Intentar con Gemini
-  const geminiModel = getGeminiModel();
-  if (geminiModel) {
+  if (getGeminiClient()) {
     try {
-      const result = await geminiModel.generateContent(prompt);
-      const raw = (result.response.text() || "").trim();
+      const { response } = await generateGeminiContent({
+        model: PRIMARY_QUOTE_GEMINI_MODEL,
+        functionName: "legacySimularCotizacionProyecto",
+        contents: prompt,
+      });
+      const raw = (response.text || "").trim();
 
       // Intentar extraer JSON del texto
       const first = raw.indexOf("{");
@@ -3516,7 +3707,12 @@ const legacySimularCotizacionProyecto = onCall({ secrets: [GEMINI_API_KEY_SECRET
         console.warn("No se encontró JSON claro en la respuesta de Gemini.");
       }
     } catch (error) {
-      console.error("Error llamando a Gemini para cotización:", error);
+      console.error("Legacy Gemini quote simulation failed", {
+        model: PRIMARY_QUOTE_GEMINI_MODEL,
+        functionName: "legacySimularCotizacionProyecto",
+        code: error?.code || "unknown",
+        reason: error?.details?.reason || "unknown",
+      });
     }
   }
 

@@ -188,8 +188,8 @@ responsabilidades entre las partes.
   encuadre y calidad visual del documento.
 - `gemini-2.5-flash-lite` tiene una fecha de cierre anunciada por Google para el
   16 de octubre de 2026.
-- El SDK `@google/generative-ai` está deprecado y debe migrarse en una versión
-  posterior con pruebas de integración.
+- Las llamadas de Functions usan `@google/genai` y un control global persistente
+  por modelo. Los límites protegidos se reservan antes de contactar al proveedor.
 - No hay una suite automatizada que demuestre por sí sola los 35 casos de prueba
   descritos en la tesis; esos casos requieren evidencia externa.
 

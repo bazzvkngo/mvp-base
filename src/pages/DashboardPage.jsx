@@ -319,47 +319,28 @@ function DashboardPage({ usuario }) {
     quotes.length === 0;
 
   return (
-    <section style={styles.wrapper}>
-      <style>
-        {`
-          .reference-task-actions {
-            grid-template-columns: minmax(140px, auto) 82px 72px;
-          }
-
-          @media (max-width: 760px) {
-            .reference-task-actions {
-              grid-template-columns: 82px 72px;
-            }
-
-            .reference-task-primary {
-              grid-column: 1 / -1;
-              width: 100%;
-            }
-
-          }
-        `}
-      </style>
-      <div style={styles.hero}>
-        <div>
-          <span className="eyebrow">Inicio</span>
-          <h2 style={styles.title}>Dashboard ValoraCloud</h2>
-          <p style={styles.subtitle}>
-            Resumen operativo del inventario, referencias, valorización y
-            cotizaciones.
-          </p>
-        </div>
+    <section className="erp-page dashboard-page" style={styles.wrapper}>
+      <div className="erp-page-intro">
+        <p>
+          Resumen operativo del inventario, referencias, valorización y
+          cotizaciones.
+        </p>
       </div>
 
-      {error && <p style={styles.errorText}>{error}</p>}
+      {error && (
+        <p style={styles.errorText} role="alert">
+          {error}
+        </p>
+      )}
 
       {loading ? (
-        <div style={styles.panel}>
+        <div className="erp-panel" style={styles.panel}>
           <p style={styles.emptyText}>Cargando métricas del sistema...</p>
         </div>
       ) : (
         <>
           {hasNoData && (
-            <div style={styles.emptyState}>
+            <div className="erp-empty-state" style={styles.emptyState}>
               <h3 style={styles.emptyTitle}>Aún no hay datos operativos</h3>
               <p style={styles.emptyText}>
                 Comienza creando ítems de inventario. Luego registra referencias
@@ -368,7 +349,7 @@ function DashboardPage({ usuario }) {
             </div>
           )}
 
-          <div style={styles.metricGrid}>
+          <div className="erp-metric-grid" style={styles.metricGrid}>
             <MetricCard label="Ítems activos" value={activeInventory.length} />
             <MetricCard label="Referencias activas" value={activeReferences.length} />
             <MetricCard
@@ -384,9 +365,11 @@ function DashboardPage({ usuario }) {
             />
           </div>
 
-          <div style={styles.twoColumnGrid}>
-            <div style={styles.panel}>
-              <h3 style={styles.panelTitle}>Cotizaciones por estado</h3>
+          <div className="dashboard-chart-grid" style={styles.twoColumnGrid}>
+            <div className="erp-panel" style={styles.panel}>
+              <h3 className="erp-panel-title" style={styles.panelTitle}>
+                Cotizaciones por estado
+              </h3>
               <DashboardDonutChart
                 ariaLabel="Distribución de cotizaciones por estado"
                 emptyMessage="Sin cotizaciones registradas"
@@ -397,8 +380,10 @@ function DashboardPage({ usuario }) {
               </p>
             </div>
 
-            <div style={styles.panel}>
-              <h3 style={styles.panelTitle}>Estado de valorización</h3>
+            <div className="erp-panel" style={styles.panel}>
+              <h3 className="erp-panel-title" style={styles.panelTitle}>
+                Estado de valorización
+              </h3>
               <DashboardDonutChart
                 ariaLabel="Distribución del estado de valorización"
                 emptyMessage="Sin ítems analizados"
@@ -409,10 +394,12 @@ function DashboardPage({ usuario }) {
         </>
       )}
 
-      <div style={styles.panel}>
-        <div style={styles.sectionHeader}>
+      <div className="erp-panel" style={styles.panel}>
+        <div className="erp-panel-header" style={styles.sectionHeader}>
           <div>
-            <h3 style={styles.panelTitle}>Tareas de referencias</h3>
+            <h3 className="erp-panel-title" style={styles.panelTitle}>
+              Tareas de referencias
+            </h3>
             <p style={styles.helpText}>
               Prioriza referencias desactualizadas y permite aplazar tareas con
               trazabilidad.
@@ -459,8 +446,12 @@ function ReferenceTaskTable({
   onPostponeDaysChange,
 }) {
   return (
-    <div style={styles.tableWrapper}>
-      <table style={styles.taskTable}>
+    <>
+      <div
+        className="erp-table-region erp-desktop-only"
+        style={styles.tableWrapper}
+      >
+        <table className="erp-table" style={styles.taskTable}>
         <thead>
           <tr>
             <th style={styles.th}>Prioridad</th>
@@ -493,44 +484,107 @@ function ReferenceTaskTable({
                   {isResolved ? (
                     <span style={styles.doneText}>Resuelta automáticamente</span>
                   ) : (
-                    <div
-                      className="reference-task-actions"
-                      style={styles.taskActions}
-                    >
-                      <button
-                        className="reference-task-primary"
-                        type="button"
-                        style={styles.primarySmallButton}
-                        onClick={() => onAction(task)}
-                      >
-                        {getTaskActionLabel(task)}
-                      </button>
-                      <select
-                        value={postponeDaysByTask[task.id] || 7}
-                        onChange={(event) =>
-                          onPostponeDaysChange(task.id, event.target.value)
-                        }
-                        style={styles.postponeSelect}
-                      >
-                        <option value={7}>7 días</option>
-                        <option value={15}>15 días</option>
-                        <option value={30}>30 días</option>
-                      </select>
-                      <button
-                        type="button"
-                        style={styles.postponeButton}
-                        onClick={() => onPostpone(task.id)}
-                      >
-                        Aplazar
-                      </button>
-                    </div>
+                    <ReferenceTaskActions
+                      task={task}
+                      postponeDays={postponeDaysByTask[task.id] || 7}
+                      onAction={onAction}
+                      onPostpone={onPostpone}
+                      onPostponeDaysChange={onPostponeDaysChange}
+                    />
                   )}
                 </td>
               </tr>
             );
           })}
         </tbody>
-      </table>
+        </table>
+      </div>
+      <div className="erp-card-list">
+        {tasks.map((task) => {
+          const priority = task.prioridad || "media";
+          return (
+            <article className="erp-record-card" key={task.id}>
+              <div className="erp-record-card__header">
+                <div>
+                  <h4 className="erp-record-card__title">{task.itemNombre}</h4>
+                  <p className="erp-record-card__subtitle">
+                    {getTaskReason(task)}
+                  </p>
+                </div>
+                <span
+                  style={{
+                    ...styles.priorityBadge,
+                    ...getPriorityBadgeStyle(priority),
+                  }}
+                >
+                  {priority}
+                </span>
+              </div>
+              <ReferenceTaskActions
+                compact
+                task={task}
+                postponeDays={postponeDaysByTask[task.id] || 7}
+                onAction={onAction}
+                onPostpone={onPostpone}
+                onPostponeDaysChange={onPostponeDaysChange}
+              />
+            </article>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+function ReferenceTaskActions({
+  compact = false,
+  task,
+  postponeDays,
+  onAction,
+  onPostpone,
+  onPostponeDaysChange,
+}) {
+  return (
+    <div
+      className={compact ? "reference-task-card-actions" : "reference-task-actions"}
+      style={{
+        ...styles.taskActions,
+        ...(compact ? styles.taskActionsCompact : {}),
+      }}
+    >
+      <button
+        className={compact ? "reference-task-card-primary" : undefined}
+        type="button"
+        style={styles.primarySmallButton}
+        onClick={() => onAction(task)}
+      >
+        {getTaskActionLabel(task)}
+      </button>
+      <label
+        className="sr-only"
+        htmlFor={`dashboard-postpone-${compact ? "mobile" : "desktop"}-${task.id}`}
+      >
+        Plazo de aplazamiento para {task.itemNombre}
+      </label>
+      <select
+        id={`dashboard-postpone-${compact ? "mobile" : "desktop"}-${task.id}`}
+        value={postponeDays}
+        onChange={(event) =>
+          onPostponeDaysChange(task.id, event.target.value)
+        }
+        style={styles.postponeSelect}
+      >
+        <option value={7}>7 días</option>
+        <option value={15}>15 días</option>
+        <option value={30}>30 días</option>
+      </select>
+      <button
+        type="button"
+        style={styles.postponeButton}
+        onClick={() => onPostpone(task.id)}
+      >
+        Aplazar
+      </button>
     </div>
   );
 }
@@ -544,14 +598,20 @@ function MetricCard({
 }) {
   return (
     <article
+      className="erp-metric-card"
       style={{
         ...styles.metricCard,
         ...(highlight ? styles.metricCardHighlight : {}),
         ...(compact ? styles.metricCardCompact : {}),
       }}
     >
-      <span style={styles.metricLabel}>{label}</span>
-      <strong style={highlight ? styles.metricValueHighlight : styles.metricValue}>
+      <span className="erp-metric-card__label" style={styles.metricLabel}>
+        {label}
+      </span>
+      <strong
+        className="erp-metric-card__value"
+        style={highlight ? styles.metricValueHighlight : styles.metricValue}
+      >
         {value}
       </strong>
       {note && <span style={styles.metricNote}>{note}</span>}
@@ -563,27 +623,7 @@ const styles = {
   wrapper: {
     display: "grid",
     gap: "14px",
-  },
-  hero: {
-    alignItems: "flex-start",
-    background: "#ffffff",
-    border: "1px solid #e5e7eb",
-    borderRadius: "8px",
-    display: "flex",
-    gap: "14px",
-    justifyContent: "space-between",
-    padding: "18px",
-  },
-  title: {
-    fontSize: "22px",
-    margin: "4px 0 6px",
-  },
-  subtitle: {
-    color: "#64748b",
-    fontSize: "14px",
-    lineHeight: 1.45,
-    margin: 0,
-    maxWidth: "760px",
+    minWidth: 0,
   },
   metricGrid: {
     display: "grid",
@@ -593,7 +633,7 @@ const styles = {
   twoColumnGrid: {
     display: "grid",
     gap: "14px",
-    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
   },
   statusGrid: {
     display: "grid",
@@ -603,8 +643,9 @@ const styles = {
   },
   panel: {
     background: "#ffffff",
-    border: "1px solid #e5e7eb",
-    borderRadius: "8px",
+    border: "1px solid var(--color-border-subtle)",
+    borderRadius: "var(--radius-md)",
+    minWidth: 0,
     padding: "14px",
   },
   sectionHeader: {
@@ -615,7 +656,7 @@ const styles = {
     marginBottom: "10px",
   },
   panelTitle: {
-    fontSize: "15px",
+    fontSize: "16px",
     margin: "0 0 5px",
   },
   helpText: {
@@ -626,7 +667,7 @@ const styles = {
   metricCard: {
     background: "#ffffff",
     border: "1px solid #e5e7eb",
-    borderRadius: "8px",
+    borderRadius: "4px",
     display: "grid",
     gap: "5px",
     padding: "12px",
@@ -640,7 +681,7 @@ const styles = {
   },
   metricLabel: {
     color: "#64748b",
-    fontSize: "12px",
+    fontSize: "13px",
     fontWeight: 700,
   },
   metricValue: {
@@ -653,20 +694,23 @@ const styles = {
   },
   metricNote: {
     color: "#64748b",
-    fontSize: "11px",
+    fontSize: "13px",
   },
   tableWrapper: {
+    maxWidth: "100%",
+    minWidth: 0,
     overflowX: "auto",
   },
   taskTable: {
     borderCollapse: "collapse",
+    minWidth: "820px",
     width: "100%",
   },
   th: {
     background: "#f8fafc",
     borderBottom: "1px solid #e5e7eb",
     color: "#64748b",
-    fontSize: "11px",
+    fontSize: "13px",
     padding: "8px",
     textAlign: "left",
     textTransform: "uppercase",
@@ -683,27 +727,33 @@ const styles = {
     alignItems: "center",
     display: "grid",
     gap: "6px",
+    gridTemplateColumns: "minmax(140px, 1fr) 86px 76px",
+    minWidth: 0,
+  },
+  taskActionsCompact: {
+    gridTemplateColumns: "minmax(0, 1fr) auto",
   },
   primarySmallButton: {
     background: "#0f766e",
     border: 0,
-    borderRadius: "6px",
+    borderRadius: "4px",
     boxSizing: "border-box",
     color: "#ffffff",
     cursor: "pointer",
-    fontSize: "12px",
+    fontSize: "13px",
     fontWeight: 800,
     minWidth: "140px",
+    minHeight: "38px",
     padding: "7px 9px",
     whiteSpace: "nowrap",
   },
   secondaryButton: {
     background: "#ffffff",
     border: "1px solid #cbd5e1",
-    borderRadius: "6px",
+    borderRadius: "4px",
     color: "#334155",
     cursor: "pointer",
-    fontSize: "12px",
+    fontSize: "13px",
     fontWeight: 700,
     padding: "7px 9px",
     whiteSpace: "nowrap",
@@ -711,31 +761,33 @@ const styles = {
   postponeSelect: {
     background: "#ffffff",
     border: "1px solid #cbd5e1",
-    borderRadius: "6px",
+    borderRadius: "4px",
     boxSizing: "border-box",
     color: "#334155",
-    fontSize: "12px",
+    fontSize: "13px",
     padding: "7px 8px",
-    width: "82px",
+    minHeight: "38px",
+    width: "86px",
   },
   postponeButton: {
     background: "#ffffff",
     border: "1px solid #cbd5e1",
-    borderRadius: "6px",
+    borderRadius: "4px",
     boxSizing: "border-box",
     color: "#334155",
     cursor: "pointer",
-    fontSize: "12px",
+    fontSize: "13px",
     fontWeight: 700,
     padding: "7px 9px",
     textAlign: "center",
     whiteSpace: "nowrap",
-    width: "72px",
+    minHeight: "38px",
+    width: "76px",
   },
   priorityBadge: {
     borderRadius: "999px",
     display: "inline-block",
-    fontSize: "12px",
+    fontSize: "13px",
     fontWeight: 800,
     lineHeight: 1,
     minWidth: "44px",
@@ -756,18 +808,18 @@ const styles = {
   },
   doneText: {
     color: "#047857",
-    fontSize: "12px",
+    fontSize: "13px",
     fontWeight: 700,
   },
   tableNote: {
     color: "#64748b",
-    fontSize: "12px",
+    fontSize: "13px",
     margin: "10px 0 0",
   },
   emptyState: {
     background: "#ffffff",
     border: "1px dashed #cbd5e1",
-    borderRadius: "8px",
+    borderRadius: "4px",
     padding: "22px",
     textAlign: "center",
   },
@@ -781,7 +833,7 @@ const styles = {
   errorText: {
     background: "#fef2f2",
     border: "1px solid #fecaca",
-    borderRadius: "8px",
+    borderRadius: "4px",
     color: "#b91c1c",
     margin: 0,
     padding: "11px 13px",

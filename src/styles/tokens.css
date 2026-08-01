@@ -1,0 +1,97 @@
+:root {
+  color-scheme: light;
+
+  /* Brand */
+  --color-brand-50: #edf8f7;
+  --color-brand-100: #d5efec;
+  --color-brand-200: #acdeda;
+  --color-brand-500: #13877e;
+  --color-brand-600: #0f766e;
+  --color-brand-700: #0b5f59;
+  --color-brand-800: #104d49;
+
+  /* Surfaces */
+  --color-surface-canvas: #f3f5f7;
+  --color-surface-panel: #ffffff;
+  --color-surface-subtle: #f8fafc;
+  --color-surface-raised: #ffffff;
+  --color-surface-hover: #edf6f5;
+  --color-surface-selected: #e0f1ef;
+
+  /* Text and borders */
+  --color-text-strong: #0f172a;
+  --color-text-default: #334155;
+  --color-text-muted: #64748b;
+  --color-text-inverse: #ffffff;
+  --color-border-subtle: #d7dee7;
+  --color-border-default: #c5ced9;
+  --color-border-control: #7c899b;
+
+  /* Semantic status */
+  --color-success-50: #ecfdf5;
+  --color-success-700: #047857;
+  --color-warning-50: #fffbeb;
+  --color-warning-200: #fde68a;
+  --color-warning-800: #92400e;
+  --color-danger-50: #fef2f2;
+  --color-danger-600: #dc2626;
+  --color-danger-700: #b91c1c;
+  --color-info-50: #eff6ff;
+  --color-info-700: #1d4ed8;
+
+  /* Typography */
+  --font-family-sans: "Segoe UI Variable Text", "Segoe UI Variable", Inter,
+    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  --font-family-mono: "Cascadia Code", "SFMono-Regular", Consolas,
+    "Liberation Mono", monospace;
+  --font-size-xs: 0.8125rem;
+  --font-size-sm: 0.875rem;
+  --font-size-md: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.375rem;
+  --font-size-2xl: 1.75rem;
+  --line-height-tight: 1.25;
+  --line-height-default: 1.5;
+  --font-weight-medium: 550;
+  --font-weight-semibold: 650;
+  --font-weight-bold: 700;
+
+  /* Spacing */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+
+  /* Shape and elevation */
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-pill: 999px;
+  --shadow-sm: 0 1px 2px rgb(15 23 42 / 0.06);
+  --shadow-md: 0 8px 24px rgb(15 23 42 / 0.1);
+
+  /* Shell */
+  --shell-sidebar-width: 248px;
+  --shell-topbar-height: 68px;
+  --shell-content-max: 1600px;
+  --z-sticky: 20;
+  --z-overlay: 80;
+  --z-drawer: 90;
+  --z-dialog: 110;
+
+  /* Breakpoint reference tokens (media queries use their literal equivalents). */
+  --breakpoint-wide: 1200px;
+  --breakpoint-shell: 960px;
+  --breakpoint-compact: 640px;
+  --breakpoint-narrow: 380px;
+
+  /* Interaction */
+  --focus-outline: 2px solid #0b5f59;
+  --focus-offset: 2px;
+  --focus-ring: 0 0 0 3px rgb(19 135 126 / 0.24);
+
+}

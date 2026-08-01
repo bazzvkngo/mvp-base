@@ -164,10 +164,10 @@ concurrente extremo podría duplicar un envío y debe considerarse una limitaci�
 ### Gemini
 
 La clave `GEMINI_API_KEY` se obtiene desde Secret Manager. El modelo principal
-configurado es `gemini-2.5-flash-lite`. Google anunció su cierre para el 16 de
-octubre de 2026. Si el modelo no responde, el sistema usa el fallback local.
-El SDK `@google/generative-ai` está obsoleto; su migración requiere una prueba
-real de integración y no se realizó de forma automática durante el cierre.
+configurado es `gemini-2.5-flash-lite`. Las Functions usan `@google/genai` y
+reservan cada llamada mediante una transacción en `aiRateLimits/{modelo}` antes
+de contactar al proveedor. El control global aplica cooldown, bloqueo en curso
+con vencimiento y límite diario protegido.
 
 El flujo documental usa `gemini-2.5-flash` de forma aislada para PDF e imagenes,
 sin cambiar el modelo del asistente de cotizaciones ni el importador tabular.

@@ -174,54 +174,8 @@ function ReferenceTasksPage({ userId }) {
   };
 
   return (
-    <section style={styles.wrapper}>
-      <style>
-        {`
-          .reference-task-full-actions {
-            grid-template-columns: minmax(140px, auto) 82px 72px;
-          }
-
-          @media (max-width: 900px) {
-            .reference-task-filters {
-              grid-template-columns: minmax(0, 1fr);
-            }
-
-            .reference-task-full-table,
-            .reference-task-full-table thead,
-            .reference-task-full-table tbody,
-            .reference-task-full-table tr,
-            .reference-task-full-table th,
-            .reference-task-full-table td {
-              display: block;
-            }
-
-            .reference-task-full-table thead {
-              display: none;
-            }
-
-            .reference-task-full-table tr {
-              border-bottom: 1px solid #eef2f7;
-              padding: 8px 0;
-            }
-
-            .reference-task-full-table td {
-              border-bottom: 0 !important;
-              white-space: normal !important;
-            }
-
-            .reference-task-full-actions {
-              grid-template-columns: 82px 72px;
-            }
-
-            .reference-task-full-primary {
-              grid-column: 1 / -1;
-              width: 100%;
-            }
-          }
-        `}
-      </style>
-
-      <div style={styles.header}>
+    <section className="erp-page" style={styles.wrapper}>
+      <div className="erp-page-header" style={styles.header}>
         <div>
           <span className="eyebrow">Referencias</span>
           <h2 style={styles.title}>Tareas de referencias</h2>
@@ -239,47 +193,69 @@ function ReferenceTasksPage({ userId }) {
         </button>
       </div>
 
-      {error && <p style={styles.errorText}>{error}</p>}
+      {error && <p role="alert" style={styles.errorText}>{error}</p>}
 
-      <div style={styles.panel}>
-        <div className="reference-task-filters" style={styles.filters}>
-          <select
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value)}
-            style={styles.filterSelect}
-          >
-            <option value="pendientes">Pendientes</option>
-            <option value="aplazadas">Aplazadas</option>
-            <option value="resueltas">Resueltas</option>
-          </select>
-          <select
-            value={reasonFilter}
-            onChange={(event) => setReasonFilter(event.target.value)}
-            style={styles.filterSelect}
-          >
-            <option value="todos">Todos los motivos</option>
-            <option value="sin_referencias">Sin referencias</option>
-            <option value="referencias_desactualizadas">Desactualizadas</option>
-          </select>
-          <input
-            value={searchText}
-            onChange={(event) => setSearchText(event.target.value)}
-            placeholder="Buscar ítem"
-            style={styles.searchInput}
-          />
+      <div className="erp-panel" style={styles.panel}>
+        <div className="erp-filters" style={styles.filters}>
+          <label className="erp-field">
+            <span>Estado</span>
+            <select
+              className="erp-control"
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              style={styles.filterSelect}
+            >
+              <option value="pendientes">Pendientes</option>
+              <option value="aplazadas">Aplazadas</option>
+              <option value="resueltas">Resueltas</option>
+            </select>
+          </label>
+          <label className="erp-field">
+            <span>Motivo</span>
+            <select
+              className="erp-control"
+              value={reasonFilter}
+              onChange={(event) => setReasonFilter(event.target.value)}
+              style={styles.filterSelect}
+            >
+              <option value="todos">Todos los motivos</option>
+              <option value="sin_referencias">Sin referencias</option>
+              <option value="referencias_desactualizadas">Desactualizadas</option>
+            </select>
+          </label>
+          <label className="erp-field">
+            <span>Buscar ítem</span>
+            <input
+              className="erp-control"
+              value={searchText}
+              onChange={(event) => setSearchText(event.target.value)}
+              placeholder="Nombre del ítem"
+              style={styles.searchInput}
+            />
+          </label>
         </div>
 
         {filteredTasks.length === 0 ? (
-          <p style={styles.emptyText}>No hay tareas para este filtro.</p>
+          <p className="erp-empty-state" style={styles.emptyText}>No hay tareas para este filtro.</p>
         ) : (
-          <ReferenceTasksTable
-            tasks={filteredTasks}
-            postponeDaysByTask={postponeDaysByTask}
-            resolvingTaskId={resolvingTaskId}
-            onAction={openReferenceAction}
-            onPostpone={postponeTask}
-            onPostponeDaysChange={changePostponeDays}
-          />
+          <>
+            <ReferenceTasksTable
+              tasks={filteredTasks}
+              postponeDaysByTask={postponeDaysByTask}
+              resolvingTaskId={resolvingTaskId}
+              onAction={openReferenceAction}
+              onPostpone={postponeTask}
+              onPostponeDaysChange={changePostponeDays}
+            />
+            <ReferenceTaskCards
+              tasks={filteredTasks}
+              postponeDaysByTask={postponeDaysByTask}
+              resolvingTaskId={resolvingTaskId}
+              onAction={openReferenceAction}
+              onPostpone={postponeTask}
+              onPostponeDaysChange={changePostponeDays}
+            />
+          </>
         )}
       </div>
     </section>
@@ -295,8 +271,8 @@ function ReferenceTasksTable({
   onPostponeDaysChange,
 }) {
   return (
-    <div style={styles.tableWrapper}>
-      <table className="reference-task-full-table" style={styles.taskTable}>
+    <div className="erp-table-region erp-desktop-only" style={styles.tableWrapper}>
+      <table className="erp-table" style={styles.taskTable}>
         <colgroup>
           <col style={styles.statusColumn} />
           <col style={styles.priorityColumn} />
@@ -339,44 +315,16 @@ function ReferenceTasksTable({
                 </td>
                 <td style={styles.td}>{getTaskReason(task)}</td>
                 <td style={styles.td}>
-                  {isPending ? (
-                    <div
-                      className="reference-task-full-actions"
-                      style={styles.taskActions}
-                    >
-                      <button
-                        className="reference-task-full-primary"
-                        type="button"
-                        style={styles.primarySmallButton}
-                        disabled={resolvingTaskId === task.id}
-                        onClick={() => onAction(task)}
-                      >
-                        {resolvingTaskId === task.id
-                          ? "Abriendo..."
-                          : getTaskActionLabel(task)}
-                      </button>
-                      <select
-                        value={postponeDaysByTask[task.id] || 7}
-                        onChange={(event) =>
-                          onPostponeDaysChange(task.id, event.target.value)
-                        }
-                        style={styles.postponeSelect}
-                      >
-                        <option value={7}>7 días</option>
-                        <option value={15}>15 días</option>
-                        <option value={30}>30 días</option>
-                      </select>
-                      <button
-                        type="button"
-                        style={styles.postponeButton}
-                        onClick={() => onPostpone(task.id)}
-                      >
-                        Aplazar
-                      </button>
-                    </div>
-                  ) : (
-                    <span style={styles.mutedText}>Sin acciones</span>
-                  )}
+                  <ReferenceTaskActions
+                    task={task}
+                    isPending={isPending}
+                    postponeDays={postponeDaysByTask[task.id] || 7}
+                    resolving={resolvingTaskId === task.id}
+                    onAction={onAction}
+                    onPostpone={onPostpone}
+                    onPostponeDaysChange={onPostponeDaysChange}
+                    idPrefix="table"
+                  />
                 </td>
               </tr>
             );
@@ -387,16 +335,107 @@ function ReferenceTasksTable({
   );
 }
 
+function ReferenceTaskCards(props) {
+  return (
+    <div className="erp-card-list erp-mobile-only" aria-label="Tareas de referencias">
+      {props.tasks.map((task) => {
+        const isPending = isActivePendingReferenceTask(task);
+        const priority = task.prioridad || "media";
+        const traceLine = getTraceLine(task);
+        return (
+          <article className="erp-record-card" key={task.id}>
+            <div className="erp-record-card__header">
+              <div>
+                <h3 className="erp-record-card__title">{task.itemNombre || "Ítem sin nombre"}</h3>
+                <p className="erp-record-card__subtitle">
+                  {getStatusLabel(task)}{traceLine ? ` · ${traceLine}` : ""}
+                </p>
+              </div>
+              <span style={{ ...styles.priorityBadge, ...getPriorityBadgeStyle(priority) }}>
+                {priority}
+              </span>
+            </div>
+            <dl className="erp-meta-grid">
+              <div className="erp-meta erp-meta--wide">
+                <dt className="erp-meta__label">Motivo</dt>
+                <dd className="erp-meta__value">{getTaskReason(task)}</dd>
+              </div>
+            </dl>
+            <ReferenceTaskActions
+              task={task}
+              isPending={isPending}
+              postponeDays={props.postponeDaysByTask[task.id] || 7}
+              resolving={props.resolvingTaskId === task.id}
+              onAction={props.onAction}
+              onPostpone={props.onPostpone}
+              onPostponeDaysChange={props.onPostponeDaysChange}
+              idPrefix="card"
+              compact
+            />
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function ReferenceTaskActions({
+  task,
+  isPending,
+  postponeDays,
+  resolving,
+  onAction,
+  onPostpone,
+  onPostponeDaysChange,
+  idPrefix,
+  compact = false,
+}) {
+  if (!isPending) return <span style={styles.mutedText}>Sin acciones pendientes</span>;
+
+  const selectId = `${idPrefix}-postpone-${task.id}`;
+  return (
+    <div
+      className={compact ? "reference-task-card-actions" : undefined}
+      style={{ ...styles.taskActions, ...(compact ? styles.compactTaskActions : {}) }}
+    >
+      <button
+        type="button"
+        style={styles.primarySmallButton}
+        disabled={resolving}
+        onClick={() => onAction(task)}
+      >
+        {resolving ? "Abriendo..." : getTaskActionLabel(task)}
+      </button>
+      <label className="sr-only" htmlFor={selectId}>Plazo para aplazar</label>
+      <select
+        id={selectId}
+        aria-label="Plazo para aplazar"
+        value={postponeDays}
+        onChange={(event) => onPostponeDaysChange(task.id, event.target.value)}
+        style={styles.postponeSelect}
+      >
+        <option value={7}>7 días</option>
+        <option value={15}>15 días</option>
+        <option value={30}>30 días</option>
+      </select>
+      <button type="button" style={styles.postponeButton} onClick={() => onPostpone(task.id)}>
+        Aplazar
+      </button>
+    </div>
+  );
+}
+
 const styles = {
   wrapper: {
     display: "grid",
     gap: "14px",
+    minWidth: 0,
   },
   header: {
     alignItems: "flex-start",
     background: "#ffffff",
     border: "1px solid #e5e7eb",
-    borderRadius: "8px",
+    borderRadius: "4px",
     display: "flex",
     gap: "14px",
     justifyContent: "space-between",
@@ -416,36 +455,41 @@ const styles = {
   panel: {
     background: "#ffffff",
     border: "1px solid #e5e7eb",
-    borderRadius: "8px",
+    borderRadius: "4px",
+    minWidth: 0,
     padding: "14px",
   },
   filters: {
     display: "grid",
     gap: "10px",
-    gridTemplateColumns: "repeat(3, minmax(150px, max-content))",
+    gridTemplateColumns: "repeat(3, minmax(180px, 1fr))",
     marginBottom: "12px",
   },
   filterSelect: {
     background: "#ffffff",
     border: "1px solid #cbd5e1",
-    borderRadius: "6px",
+    borderRadius: "4px",
+    fontSize: "13px",
     boxSizing: "border-box",
     padding: "9px 10px",
   },
   searchInput: {
     background: "#ffffff",
     border: "1px solid #cbd5e1",
-    borderRadius: "6px",
+    borderRadius: "4px",
     boxSizing: "border-box",
-    minWidth: "220px",
+    fontSize: "13px",
+    minWidth: 0,
     padding: "9px 10px",
   },
   tableWrapper: {
-    overflowX: "visible",
+    overflowX: "auto",
+    minWidth: 0,
   },
   taskTable: {
     borderCollapse: "collapse",
     tableLayout: "fixed",
+    minWidth: "950px",
     width: "100%",
   },
   statusColumn: {
@@ -467,7 +511,7 @@ const styles = {
     background: "#f8fafc",
     borderBottom: "1px solid #e5e7eb",
     color: "#64748b",
-    fontSize: "11px",
+    fontSize: "13px",
     padding: "8px",
     textAlign: "left",
     textTransform: "uppercase",
@@ -486,7 +530,7 @@ const styles = {
   traceText: {
     color: "#64748b",
     display: "block",
-    fontSize: "12px",
+    fontSize: "13px",
     lineHeight: 1.3,
     marginTop: "3px",
   },
@@ -494,27 +538,33 @@ const styles = {
     alignItems: "center",
     display: "grid",
     gap: "6px",
+    gridTemplateColumns: "minmax(140px, auto) 88px 76px",
+  },
+  compactTaskActions: {
+    gridTemplateColumns: "minmax(0, 1fr) 88px",
+    width: "100%",
   },
   primarySmallButton: {
     background: "#0f766e",
     border: 0,
-    borderRadius: "6px",
+    borderRadius: "4px",
     boxSizing: "border-box",
     color: "#ffffff",
     cursor: "pointer",
-    fontSize: "12px",
+    fontSize: "13px",
     fontWeight: 800,
     minWidth: "140px",
+    minHeight: "38px",
     padding: "7px 9px",
     whiteSpace: "nowrap",
   },
   secondaryButton: {
     background: "#ffffff",
     border: "1px solid #cbd5e1",
-    borderRadius: "6px",
+    borderRadius: "4px",
     color: "#334155",
     cursor: "pointer",
-    fontSize: "12px",
+    fontSize: "13px",
     fontWeight: 700,
     padding: "7px 9px",
     whiteSpace: "nowrap",
@@ -522,22 +572,24 @@ const styles = {
   postponeSelect: {
     background: "#ffffff",
     border: "1px solid #cbd5e1",
-    borderRadius: "6px",
+    borderRadius: "4px",
     boxSizing: "border-box",
     color: "#334155",
-    fontSize: "12px",
+    fontSize: "13px",
+    minHeight: "38px",
     padding: "7px 8px",
     width: "82px",
   },
   postponeButton: {
     background: "#ffffff",
     border: "1px solid #cbd5e1",
-    borderRadius: "6px",
+    borderRadius: "4px",
     boxSizing: "border-box",
     color: "#334155",
     cursor: "pointer",
-    fontSize: "12px",
+    fontSize: "13px",
     fontWeight: 700,
+    minHeight: "38px",
     padding: "7px 9px",
     textAlign: "center",
     whiteSpace: "nowrap",
@@ -546,7 +598,7 @@ const styles = {
   priorityBadge: {
     borderRadius: "999px",
     display: "inline-block",
-    fontSize: "12px",
+    fontSize: "13px",
     fontWeight: 800,
     lineHeight: 1,
     minWidth: "44px",
@@ -567,7 +619,7 @@ const styles = {
   },
   mutedText: {
     color: "#64748b",
-    fontSize: "12px",
+    fontSize: "13px",
     fontWeight: 700,
   },
   emptyText: {
@@ -577,7 +629,7 @@ const styles = {
   errorText: {
     background: "#fef2f2",
     border: "1px solid #fecaca",
-    borderRadius: "8px",
+    borderRadius: "4px",
     color: "#b91c1c",
     margin: 0,
     padding: "11px 13px",

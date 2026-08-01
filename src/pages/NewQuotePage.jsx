@@ -1,11 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import AiAvailabilityStatus from "../components/ai/AiAvailabilityStatus";
+import { AI_MODELS } from "../config/aiModels";
 import {
   calculateQuoteTotals,
   createQuoteItemFromValuation,
   normalizeQuoteItems,
 } from "../domain/quoteItemFactory";
 import { PRICING_STATUS } from "../domain/pricing";
+import useAiRateLimit from "../hooks/useAiRateLimit";
 import QuotePrintView from "../features/quotes/QuotePrintView";
 import SendQuoteEmailModal from "../features/quotes/SendQuoteEmailModal";
 import { suggestQuoteItems } from "../services/aiQuoteService";
@@ -319,8 +322,13 @@ function NewQuotePage({ userId }) {
   const itemFeedbackTimeoutRef = useRef(null);
   const highlightTimeoutRef = useRef(null);
   const speechRecognitionRef = useRef(null);
+  const assistantRequestInFlightRef = useRef(false);
   const isEditMode = Boolean(editQuoteId);
   const assistantRequestMode = useMemo(() => getAssistantModeFromQuery(), []);
+  const assistantUsesGemini = assistantRequestMode !== "local";
+  const aiAvailability = useAiRateLimit(AI_MODELS.quoteSuggestions, {
+    enabled: Boolean(userId) && assistantUsesGemini,
+  });
   const [quote, setQuote] = useState(() => buildInitialQuote());
   const [valuations, setValuations] = useState([]);
   const [companyProfile, setCompanyProfile] = useState(null);
@@ -890,12 +898,11 @@ function NewQuotePage({ userId }) {
   };
 
   const requestAssistantSuggestions = async () => {
+    if (assistantRequestInFlightRef.current) return;
+    if (assistantUsesGemini && !aiAvailability.begin()) return;
+
+    assistantRequestInFlightRef.current = true;
     setAssistantError("");
-    setAssistantSuggestions([]);
-    setAssistantSource("");
-    setAssistantWarning("");
-    setAssistantModeUsed("");
-    setAssistantModel("");
     console.info(
       `ValoraCloud assistant mode: ${
         assistantModeLabels[assistantRequestMode] || "automático"
@@ -915,15 +922,18 @@ function NewQuotePage({ userId }) {
       setAssistantWarning(result.warning || "");
       setAssistantModeUsed(result.mode || assistantRequestMode);
       setAssistantModel(result.model || "");
+      aiAvailability.applySuccess(result.aiRateLimit);
       if (suggestions.length === 0) {
         setAssistantError("No se generaron sugerencias para esta descripción.");
       }
     } catch (err) {
+      aiAvailability.applyError(err);
       console.error("Error al sugerir ítems de cotización:", err);
       setAssistantError(
         err.message || "No se pudieron generar sugerencias en este momento."
       );
     } finally {
+      assistantRequestInFlightRef.current = false;
       setAssistantLoading(false);
     }
   };
@@ -1588,7 +1598,7 @@ function NewQuotePage({ userId }) {
           <button
             type="button"
             onClick={requestAssistantSuggestions}
-            disabled={assistantLoading}
+            disabled={assistantLoading || aiAvailability.isBlocked}
             style={styles.primaryButton}
           >
             {assistantLoading ? "Sugiriendo..." : "Sugerir ítems"}
@@ -1597,6 +1607,12 @@ function NewQuotePage({ userId }) {
             Las sugerencias no modifican precios ni crean la cotización automáticamente.
           </span>
         </div>
+
+        <AiAvailabilityStatus
+          status={aiAvailability.status}
+          remainingSeconds={aiAvailability.remainingSeconds}
+          actionLabel="solicitar nuevas sugerencias"
+        />
 
         {assistantError && <p style={styles.errorText}>{assistantError}</p>}
         {visibleAssistantWarning && (
@@ -2352,11 +2368,13 @@ const styles = {
   wrapper: {
     display: "grid",
     gap: "22px",
+    minWidth: 0,
   },
   header: {
     alignItems: "flex-start",
     borderBottom: "1px solid #e2e8f0",
     display: "flex",
+    flexWrap: "wrap",
     justifyContent: "space-between",
     gap: "16px",
     paddingBottom: "14px",
@@ -2375,7 +2393,7 @@ const styles = {
   },
   grid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
     gap: "18px",
   },
   bottomGrid: {
@@ -2582,7 +2600,7 @@ const styles = {
   searchInput: {
     border: "1px solid #cbd5e1",
     borderRadius: "6px",
-    minWidth: "260px",
+    minWidth: "min(100%, 260px)",
     padding: "10px 11px",
   },
   valuationGrid: {
@@ -2806,7 +2824,7 @@ const styles = {
   suggestionGrid: {
     display: "grid",
     gap: "12px",
-    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))",
     marginTop: "14px",
   },
   suggestionCard: {

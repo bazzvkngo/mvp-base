@@ -1,5 +1,6 @@
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { app } from "../firebase/firebaseConfig";
+import { normalizeAiRateLimitStatus } from "./aiRateLimitService";
 
 const MAX_DESCRIPTION_LENGTH = 1200;
 const FUNCTIONS_REGION = "us-central1";
@@ -48,5 +49,8 @@ export async function suggestQuoteItems({ description, valuations, assistantMode
     mode: response.data?.mode || requestedMode,
     model: response.data?.model || "",
     warning: response.data?.warning || "",
+    aiRateLimit: response.data?.aiRateLimit
+      ? normalizeAiRateLimitStatus(response.data.aiRateLimit)
+      : null,
   };
 }

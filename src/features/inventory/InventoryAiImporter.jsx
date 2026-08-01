@@ -1,4 +1,7 @@
 import React, { useMemo, useRef, useState } from "react";
+import AiAvailabilityStatus from "../../components/ai/AiAvailabilityStatus";
+import { AI_MODELS } from "../../config/aiModels";
+import useAiRateLimit from "../../hooks/useAiRateLimit";
 import { getInventoryItems } from "../../services/inventoryService";
 import {
   ACCEPTED_INVENTORY_FILE_TYPES,
@@ -358,6 +361,13 @@ function InventoryAiImporter({ userId, onImported }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [processingStatus, setProcessingStatus] = useState("");
+  const rateLimitModel =
+    fileData?.kind === "spreadsheet"
+      ? AI_MODELS.quoteSuggestions
+      : AI_MODELS.documentImport;
+  const aiAvailability = useAiRateLimit(rateLimitModel, {
+    enabled: Boolean(userId),
+  });
 
   const selectedItems = useMemo(
     () => previewItems.filter((item) => selectedIds.has(item.id)),
@@ -406,7 +416,11 @@ function InventoryAiImporter({ userId, onImported }) {
   const hasTemporaryDocumentPayload =
     fileData?.kind !== "document" || Boolean(fileData?.base64);
   const canAnalyze =
-    Boolean(fileData) && hasTemporaryDocumentPayload && !readingFile && !loadingAnalysis;
+    Boolean(fileData) &&
+    hasTemporaryDocumentPayload &&
+    !readingFile &&
+    !loadingAnalysis &&
+    !aiAvailability.isBlocked;
   const canSave = selectedItems.length > 0 && !saving && !loadingAnalysis;
 
   const resetAnalysis = () => {
@@ -464,6 +478,8 @@ function InventoryAiImporter({ userId, onImported }) {
       setError("Selecciona un archivo antes de analizar.");
       return;
     }
+    const usesGemini = assistantMode !== "local";
+    if (usesGemini && !aiAvailability.begin()) return;
 
     analysisInFlightRef.current = true;
     const requestId = latestAnalysisRequestRef.current + 1;
@@ -471,9 +487,6 @@ function InventoryAiImporter({ userId, onImported }) {
     setLoadingAnalysis(true);
     setError("");
     setSuccess("");
-    setAnalysisMeta(null);
-    setPreviewItems([]);
-    setSelectedIds(new Set());
     setProcessingStatus("Analizando documento...");
 
     try {
@@ -491,6 +504,7 @@ function InventoryAiImporter({ userId, onImported }) {
       setPreviewItems(items);
       setSelectedIds(new Set(items.filter(shouldAutoSelectItem).map((item) => item.id)));
       setAnalysisMeta(analysis);
+      aiAvailability.applySuccess(analysis.aiRateLimit);
       if (fileData.kind === "document") {
         setFileData(stripInventoryDocumentPayload(fileData));
       }
@@ -504,6 +518,7 @@ function InventoryAiImporter({ userId, onImported }) {
     } catch (err) {
       if (latestAnalysisRequestRef.current !== requestId) return;
       console.error("Error normalizando inventario desde archivo:", err);
+      aiAvailability.applyError(err);
       setProcessingStatus("Error de análisis.");
       setError(getSafeAnalysisErrorMessage(err));
     } finally {
@@ -725,6 +740,12 @@ function InventoryAiImporter({ userId, onImported }) {
           </button>
         )}
       </div>
+
+      <AiAvailabilityStatus
+        status={aiAvailability.status}
+        remainingSeconds={aiAvailability.remainingSeconds}
+        actionLabel="analizar otro documento"
+      />
 
       {readingFile && <p style={styles.infoText}>Leyendo archivo...</p>}
       {processingStatus && (
@@ -1274,12 +1295,13 @@ const styles = {
   cardMainFields: {
     display: "grid",
     gap: "10px",
-    gridTemplateColumns: "minmax(220px, 2fr) minmax(180px, 1fr)",
+    gridTemplateColumns:
+      "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
   },
   cardFieldsGrid: {
     display: "grid",
     gap: "10px",
-    gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 160px), 1fr))",
   },
   cardField: {
     display: "grid",

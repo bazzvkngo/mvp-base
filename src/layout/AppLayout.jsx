@@ -1,26 +1,67 @@
-﻿import React from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import React from "react";
+import { LogOut, MailCheck, MailWarning, Menu, UserRound, X } from "lucide-react";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
+import BrandLogo from "../components/BrandLogo";
+import AppIcon from "../components/ui/AppIcon";
+import Button from "../components/ui/Button";
+import PageHeader from "../components/ui/PageHeader";
+import ResponsiveDialog from "../components/ui/ResponsiveDialog";
+import SkipLink from "../components/ui/SkipLink";
+import StatusBadge from "../components/ui/StatusBadge";
+import { getRouteMeta, navigationSections } from "../app/navigation";
 import {
   logout,
   refreshCurrentUser,
   sendVerificationEmail,
 } from "../services/authService";
-import BrandLogo from "../components/BrandLogo";
 
 const VERIFICATION_NOTICE_KEY = "valoracloud.verificationNotice";
 const RESEND_COOLDOWN_SECONDS = 60;
 
-const navItems = [
-  { to: "/dashboard", label: "Dashboard", end: true },
-  { to: "/empresa", label: "Empresa", end: true },
-  { to: "/inventario", label: "Inventario", end: true },
-  { to: "/referencias", label: "Referencias", end: true },
-  { to: "/valorizacion", label: "Valoración", end: true },
-  { to: "/cotizaciones/nueva", label: "Nueva cotización", end: true },
-  { to: "/cotizaciones", label: "Historial", end: true },
-];
+function PrimaryNavigation({ idPrefix, pathname, onNavigate }) {
+  return (
+    <nav className="sidebar-nav" aria-label="Navegación principal">
+      {navigationSections.map((section, sectionIndex) => {
+        const sectionTitleId = `${idPrefix}-nav-section-${sectionIndex}`;
+
+        return (
+          <div
+            className="nav-section"
+            key={section.label}
+            role="group"
+            aria-labelledby={sectionTitleId}
+          >
+            <span id={sectionTitleId} className="nav-section__title">
+              {section.label}
+            </span>
+            {section.items.map((item) => {
+              const isActive = item.activeWhen
+                ? item.activeWhen(pathname)
+                : pathname === item.to;
+
+              return (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end
+                  aria-current={isActive ? "page" : undefined}
+                  className={isActive ? "nav-link nav-link-active" : "nav-link"}
+                  onClick={onNavigate}
+                >
+                  <AppIcon icon={item.icon} size={18} />
+                  <span className="nav-link__label">{item.label}</span>
+                </NavLink>
+              );
+            })}
+          </div>
+        );
+      })}
+    </nav>
+  );
+}
 
 function AppLayout({ usuario }) {
+  const location = useLocation();
   const [emailVerified, setEmailVerified] = React.useState(
     usuario?.emailVerified ?? true
   );
@@ -31,6 +72,11 @@ function AppLayout({ usuario }) {
   const [resendingVerification, setResendingVerification] = React.useState(false);
   const [refreshingVerification, setRefreshingVerification] = React.useState(false);
   const [resendCooldown, setResendCooldown] = React.useState(0);
+  const [mobileNavigationOpen, setMobileNavigationOpen] = React.useState(false);
+  const [mobileAccountOpen, setMobileAccountOpen] = React.useState(false);
+  const menuButtonRef = React.useRef(null);
+  const drawerRef = React.useRef(null);
+  const closeButtonRef = React.useRef(null);
 
   React.useEffect(() => {
     setEmailVerified(usuario?.emailVerified ?? true);
@@ -69,6 +115,82 @@ function AppLayout({ usuario }) {
 
     return () => window.clearTimeout(timerId);
   }, [checkMessage, emailVerified]);
+
+  React.useEffect(() => {
+    if (!mobileNavigationOpen) return undefined;
+
+    const originalBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    closeButtonRef.current?.focus();
+
+    const handleDrawerKeyDown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMobileNavigationOpen(false);
+        return;
+      }
+
+      if (event.key !== "Tab" || !drawerRef.current) return;
+
+      const focusableElements = Array.from(
+        drawerRef.current.querySelectorAll(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+      );
+
+      if (focusableElements.length === 0) {
+        event.preventDefault();
+        return;
+      }
+
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+
+      if (event.shiftKey && document.activeElement === firstElement) {
+        event.preventDefault();
+        lastElement.focus();
+      } else if (!event.shiftKey && document.activeElement === lastElement) {
+        event.preventDefault();
+        firstElement.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleDrawerKeyDown);
+
+    return () => {
+      document.body.style.overflow = originalBodyOverflow;
+      document.removeEventListener("keydown", handleDrawerKeyDown);
+      window.requestAnimationFrame(() => menuButtonRef.current?.focus());
+    };
+  }, [mobileNavigationOpen]);
+
+  React.useEffect(() => {
+    const desktopMediaQuery = window.matchMedia("(min-width: 960px)");
+    const closeDrawerOnDesktop = (event) => {
+      if (event.matches) setMobileNavigationOpen(false);
+    };
+
+    desktopMediaQuery.addEventListener("change", closeDrawerOnDesktop);
+    return () =>
+      desktopMediaQuery.removeEventListener("change", closeDrawerOnDesktop);
+  }, []);
+
+  React.useEffect(() => {
+    const expandedTopbarMediaQuery = window.matchMedia("(min-width: 641px)");
+    const closeAccountOnExpandedTopbar = (event) => {
+      if (event.matches) setMobileAccountOpen(false);
+    };
+
+    expandedTopbarMediaQuery.addEventListener(
+      "change",
+      closeAccountOnExpandedTopbar
+    );
+    return () =>
+      expandedTopbarMediaQuery.removeEventListener(
+        "change",
+        closeAccountOnExpandedTopbar
+      );
+  }, []);
 
   const logAuthError = (message, error) => {
     if (import.meta.env.DEV) {
@@ -144,243 +266,230 @@ function AppLayout({ usuario }) {
     : resendCooldown > 0
     ? `Reenviar en ${resendCooldown} s`
     : "Reenviar verificación";
-  const verificationBadge = emailVerified
-    ? {
-        label: "✓ Verificado",
-        title: "Correo electrónico verificado",
-        style: styles.verifiedBadge,
-      }
-    : {
-        label: "Pendiente",
-        title: "Correo electrónico pendiente de verificación",
-        style: styles.pendingBadge,
-      };
+  const routeMeta = getRouteMeta(location.pathname);
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <BrandLogo variant="sidebar" showText />
+      <SkipLink />
 
-        <nav className="sidebar-nav" aria-label="Navegación principal">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
-              className={({ isActive }) =>
-                isActive ? "nav-link nav-link-active" : "nav-link"
-              }
-            >
-              {item.label}
-            </NavLink>
-          ))}
-        </nav>
+      <aside className="sidebar sidebar--desktop">
+        <BrandLogo variant="sidebar" showText />
+        <PrimaryNavigation idPrefix="desktop" pathname={location.pathname} />
       </aside>
 
       <div className="workspace">
         <header className="topbar">
-          <div>
-            <span className="eyebrow">Sistema de valorización y cotizaciones</span>
-            <h1>ValoraCloud</h1>
-          </div>
-          <div className="topbar-user">
-            <div style={styles.userIdentity}>
-              <span style={styles.userEmail}>{usuario?.email}</span>
-              <span
-                aria-label={verificationBadge.title}
-                title={verificationBadge.title}
-                style={{
-                  ...styles.verificationBadge,
-                  ...verificationBadge.style,
-                }}
+          <button
+            ref={menuButtonRef}
+            type="button"
+            className="topbar-menu-button no-print"
+            aria-label="Abrir menú de navegación"
+            aria-controls="mobile-navigation"
+            aria-expanded={mobileNavigationOpen}
+            onClick={() => setMobileNavigationOpen(true)}
+          >
+            <AppIcon icon={Menu} size={21} />
+          </button>
+
+          <PageHeader eyebrow="Módulo activo" title={routeMeta.title} />
+
+          <div className="topbar-user topbar-user--desktop">
+            <div className="topbar-identity" title={usuario?.email || undefined}>
+              <span className="sr-only">Usuario:</span>
+              <span className="topbar-user-email">{usuario?.email}</span>
+              <StatusBadge
+                variant={emailVerified ? "success" : "warning"}
+                title={
+                  emailVerified
+                    ? "Correo electrónico verificado"
+                    : "Correo electrónico pendiente de verificación"
+                }
               >
-                {verificationBadge.label}
-              </span>
+                <AppIcon
+                  icon={emailVerified ? MailCheck : MailWarning}
+                  size={14}
+                />
+                {emailVerified ? "Verificado" : "Pendiente"}
+              </StatusBadge>
             </div>
-            <button
+            <Button
               type="button"
-              className="button-danger"
+              variant="ghost-danger"
+              icon={LogOut}
               onClick={() => logout()}
             >
-              Cerrar sesión
-            </button>
+              Salir
+            </Button>
           </div>
+
+          <button
+            type="button"
+            className="topbar-account-button no-print"
+            aria-label="Abrir cuenta de usuario"
+            aria-haspopup="dialog"
+            aria-expanded={mobileAccountOpen}
+            onClick={() => setMobileAccountOpen(true)}
+          >
+            <AppIcon icon={UserRound} size={20} />
+          </button>
         </header>
 
         {showVerifiedNotice && (
-          <section className="no-print" style={styles.verifiedNotice}>
+          <section
+            className="verification-notice no-print"
+            role="status"
+            aria-live="polite"
+          >
             {checkMessage}
           </section>
         )}
 
         {showVerificationBanner && (
-          <section className="no-print" style={styles.verificationBanner}>
-            <div>
-              <strong style={styles.verificationTitle}>
+          <section
+            className="verification-banner no-print"
+            aria-labelledby="verification-banner-title"
+          >
+            <div className="verification-banner__content">
+              <strong
+                id="verification-banner-title"
+                className="verification-banner__title"
+              >
                 Correo pendiente de verificación
               </strong>
-              <p style={styles.verificationText}>
-                Tu correo aún no está verificado. Revisa tu correo o reenvía la verificación.
+              <p className="verification-banner__text">
+                Tu correo aún no está verificado. Revisa tu correo o reenvía la
+                verificación.
               </p>
               {resendMessage && (
-                <p style={styles.verificationSuccess}>{resendMessage}</p>
+                <p
+                  className="verification-message verification-message--success"
+                  role="status"
+                >
+                  {resendMessage}
+                </p>
               )}
               {resendError && (
-                <p style={styles.verificationError}>{resendError}</p>
+                <p
+                  className="verification-message verification-message--error"
+                  role="alert"
+                >
+                  {resendError}
+                </p>
               )}
               {checkMessage && (
-                <p style={styles.verificationWarning}>{checkMessage}</p>
+                <p className="verification-message" role="status">
+                  {checkMessage}
+                </p>
               )}
               {checkError && (
-                <p style={styles.verificationError}>{checkError}</p>
+                <p
+                  className="verification-message verification-message--error"
+                  role="alert"
+                >
+                  {checkError}
+                </p>
               )}
             </div>
-            <div style={styles.verificationActions}>
-              <button
+            <div className="verification-banner__actions">
+              <Button
                 type="button"
-                style={{
-                  ...styles.secondaryButton,
-                  ...(refreshingVerification || resendingVerification
-                    ? styles.buttonDisabled
-                    : {}),
-                }}
+                variant="secondary"
                 onClick={handleRefreshVerification}
                 disabled={refreshingVerification || resendingVerification}
               >
                 {refreshingVerification ? "Verificando..." : "Ya verifiqué"}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                style={{
-                  ...styles.primaryButton,
-                  ...(resendButtonDisabled ? styles.buttonDisabled : {}),
-                }}
                 onClick={handleResendVerification}
                 disabled={resendButtonDisabled}
               >
                 {resendButtonLabel}
-              </button>
+              </Button>
             </div>
           </section>
         )}
 
-        <main className="page-content">
+        <main id="main-content" className="page-content" tabIndex="-1">
           <Outlet />
         </main>
       </div>
+
+      <ResponsiveDialog
+        open={mobileAccountOpen}
+        onClose={() => setMobileAccountOpen(false)}
+        title="Cuenta de usuario"
+        eyebrow="ValoraCloud"
+        size="small"
+      >
+        <div className="account-dialog-content">
+          <div className="account-dialog-identity">
+            <span className="account-dialog-label">Correo</span>
+            <strong className="account-dialog-email">{usuario?.email}</strong>
+          </div>
+          <div className="account-dialog-status">
+            <span className="account-dialog-label">Estado de verificación</span>
+            <StatusBadge variant={emailVerified ? "success" : "warning"}>
+              <AppIcon
+                icon={emailVerified ? MailCheck : MailWarning}
+                size={14}
+              />
+              {emailVerified ? "Verificado" : "Pendiente"}
+            </StatusBadge>
+          </div>
+          <Button
+            type="button"
+            variant="ghost-danger"
+            icon={LogOut}
+            onClick={() => {
+              setMobileAccountOpen(false);
+              logout();
+            }}
+          >
+            Cerrar sesión
+          </Button>
+        </div>
+      </ResponsiveDialog>
+
+      {mobileNavigationOpen && (
+        <div className="mobile-nav-layer no-print">
+          <div
+            className="mobile-nav-overlay"
+            aria-hidden="true"
+            onClick={() => setMobileNavigationOpen(false)}
+          />
+          <aside
+            ref={drawerRef}
+            id="mobile-navigation"
+            className="sidebar mobile-nav-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mobile-navigation-title"
+          >
+            <div className="mobile-nav-drawer__header">
+              <div id="mobile-navigation-title">
+                <BrandLogo variant="sidebar" showText />
+              </div>
+              <button
+                ref={closeButtonRef}
+                type="button"
+                className="mobile-nav-close"
+                aria-label="Cerrar menú de navegación"
+                onClick={() => setMobileNavigationOpen(false)}
+              >
+                <AppIcon icon={X} size={21} />
+              </button>
+            </div>
+            <PrimaryNavigation
+              idPrefix="mobile"
+              pathname={location.pathname}
+              onNavigate={() => setMobileNavigationOpen(false)}
+            />
+          </aside>
+        </div>
+      )}
     </div>
   );
 }
 
-const styles = {
-  verificationBanner: {
-    alignItems: "center",
-    background: "#fffbeb",
-    borderBottom: "1px solid #fde68a",
-    color: "#92400e",
-    display: "flex",
-    gap: "16px",
-    justifyContent: "space-between",
-    padding: "12px 28px",
-  },
-  verificationTitle: {
-    display: "block",
-    fontSize: "0.92rem",
-    marginBottom: "2px",
-  },
-  verificationText: {
-    fontSize: "0.88rem",
-    lineHeight: 1.45,
-    margin: 0,
-  },
-  verificationError: {
-    color: "#b91c1c",
-    fontSize: "0.84rem",
-    margin: "4px 0 0",
-  },
-  verificationSuccess: {
-    color: "#047857",
-    fontSize: "0.84rem",
-    margin: "4px 0 0",
-  },
-  verificationWarning: {
-    color: "#92400e",
-    fontSize: "0.84rem",
-    fontWeight: 600,
-    margin: "4px 0 0",
-  },
-  verificationActions: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: "8px",
-    justifyContent: "flex-end",
-  },
-  primaryButton: {
-    background: "#0f766e",
-    border: 0,
-    borderRadius: "6px",
-    color: "#ffffff",
-    cursor: "pointer",
-    fontWeight: 700,
-    padding: "8px 11px",
-    whiteSpace: "nowrap",
-  },
-  secondaryButton: {
-    background: "#ffffff",
-    border: "1px solid #f59e0b",
-    borderRadius: "6px",
-    color: "#92400e",
-    cursor: "pointer",
-    fontWeight: 700,
-    padding: "8px 11px",
-    whiteSpace: "nowrap",
-  },
-  buttonDisabled: {
-    cursor: "not-allowed",
-    opacity: 0.68,
-  },
-  userIdentity: {
-    alignItems: "center",
-    display: "flex",
-    flexWrap: "wrap",
-    gap: "6px",
-    minWidth: 0,
-  },
-  userEmail: {
-    minWidth: 0,
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  },
-  verificationBadge: {
-    borderRadius: "999px",
-    display: "inline-flex",
-    flexShrink: 0,
-    fontSize: "0.72rem",
-    fontWeight: 700,
-    lineHeight: 1,
-    padding: "4px 7px",
-    whiteSpace: "nowrap",
-  },
-  verifiedBadge: {
-    background: "#dcfce7",
-    border: "1px solid #bbf7d0",
-    color: "#166534",
-  },
-  pendingBadge: {
-    background: "#fef3c7",
-    border: "1px solid #fde68a",
-    color: "#92400e",
-  },
-  verifiedNotice: {
-    background: "#ecfdf5",
-    borderBottom: "1px solid #a7f3d0",
-    color: "#047857",
-    fontSize: "0.88rem",
-    fontWeight: 700,
-    padding: "10px 28px",
-  },
-};
-
 export default AppLayout;
-

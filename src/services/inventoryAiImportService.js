@@ -3,6 +3,7 @@ import {
   getFunctions,
   httpsCallable,
 } from "firebase/functions";
+import { normalizeAiRateLimitStatus } from "./aiRateLimitService";
 import * as XLSX from "xlsx";
 import { app } from "../firebase/firebaseConfig";
 
@@ -308,6 +309,9 @@ export async function normalizeInventoryItemsWithAi({
     warning:
       response.data?.warning ||
       "Los valores detectados son estimaciones y deben ser revisados antes de guardar.",
+    aiRateLimit: response.data?.aiRateLimit
+      ? normalizeAiRateLimitStatus(response.data.aiRateLimit)
+      : null,
   };
 }
 
@@ -339,6 +343,9 @@ export async function normalizeInventoryDocumentWithAi({ fileData }) {
     warning:
       response.data?.warning ||
       "Documento procesado. Revisa los candidatos antes de guardar.",
+    aiRateLimit: response.data?.aiRateLimit
+      ? normalizeAiRateLimitStatus(response.data.aiRateLimit)
+      : null,
   };
 }
 

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import QuotePrintView from "../features/quotes/QuotePrintView";
 import SendQuoteEmailModal from "../features/quotes/SendQuoteEmailModal";
+import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import { getCompanyProfile } from "../services/companyService";
 import {
   getQuoteDisplayNumber,
@@ -107,16 +108,7 @@ function QuoteHistoryPage({ userId }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [emailModalQuote, setEmailModalQuote] = useState(null);
-  const [detailExpanded, setDetailExpanded] = useState(false);
-  const detailCloseTimer = React.useRef(null);
-
-  useEffect(() => {
-    return () => {
-      if (detailCloseTimer.current) {
-        window.clearTimeout(detailCloseTimer.current);
-      }
-    };
-  }, []);
+  const [restoreDetailFocus, setRestoreDetailFocus] = useState(true);
 
   useEffect(() => {
     if (!userId) {
@@ -189,39 +181,16 @@ function QuoteHistoryPage({ userId }) {
       selectedQuoteId &&
       !filteredQuotes.some((quote) => quote.id === selectedQuoteId)
     ) {
-      setDetailExpanded(false);
       setSelectedQuoteId("");
     }
   }, [filteredQuotes, selectedQuoteId]);
 
   const handleToggleDetail = (quoteId) => {
-    if (selectedQuoteId === quoteId) {
-      handleCloseDetail(quoteId);
-      return;
-    }
-
-    if (detailCloseTimer.current) {
-      window.clearTimeout(detailCloseTimer.current);
-    }
-
-    setDetailExpanded(false);
-    setSelectedQuoteId(quoteId);
-    window.requestAnimationFrame(() => {
-      setDetailExpanded(true);
-    });
+    setRestoreDetailFocus(true);
+    setSelectedQuoteId((current) => (current === quoteId ? "" : quoteId));
   };
 
-  const handleCloseDetail = (quoteId = selectedQuoteId) => {
-    setDetailExpanded(false);
-
-    if (detailCloseTimer.current) {
-      window.clearTimeout(detailCloseTimer.current);
-    }
-
-    detailCloseTimer.current = window.setTimeout(() => {
-      setSelectedQuoteId((current) => (current === quoteId ? "" : current));
-    }, 180);
-  };
+  const handleCloseDetail = () => setSelectedQuoteId("");
 
   const handleChangeStatus = async (quoteId, estado, options = {}) => {
     const { confirm = true, estadoAnterior } = options;
@@ -331,9 +300,9 @@ function QuoteHistoryPage({ userId }) {
   }
 
   return (
-    <section className="quote-history-page" style={styles.wrapper}>
-      <div className="no-print" style={styles.header}>
-        <div>
+    <section className="quote-history-page erp-page" style={styles.wrapper}>
+      <div className="no-print erp-page-header" style={styles.header}>
+        <div className="erp-page-header__content">
           <span className="eyebrow">Cotizaciones</span>
           <h2 style={styles.title}>Historial de cotizaciones</h2>
           <p style={styles.subtitle}>
@@ -343,29 +312,37 @@ function QuoteHistoryPage({ userId }) {
         </div>
       </div>
 
-      {error && <p className="no-print" style={styles.errorText}>{error}</p>}
-      {success && <p className="no-print" style={styles.successText}>{success}</p>}
+      {error && <p className="no-print" role="alert" style={styles.errorText}>{error}</p>}
+      {success && <p className="no-print" role="status" style={styles.successText}>{success}</p>}
 
-      <div className="no-print" style={styles.panel}>
-        <div style={styles.filters}>
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Buscar por número o cliente"
-            style={styles.searchInput}
-          />
-          <select
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value)}
-            style={styles.select}
-          >
-            <option value="todos">Todas excepto archivadas</option>
-            {STATUS_OPTIONS.map((status) => (
-              <option key={status} value={status}>
-                {statusLabels[status]}
-              </option>
-            ))}
-          </select>
+      <div className="no-print erp-panel" style={styles.panel}>
+        <div className="erp-filters" style={styles.filters}>
+          <label className="erp-field">
+            <span>Buscar cotización</span>
+            <input
+              className="erp-control"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Número o cliente"
+              style={styles.searchInput}
+            />
+          </label>
+          <label className="erp-field">
+            <span>Estado</span>
+            <select
+              className="erp-control"
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              style={styles.select}
+            >
+              <option value="todos">Todas excepto archivadas</option>
+              {STATUS_OPTIONS.map((status) => (
+                <option key={status} value={status}>
+                  {statusLabels[status]}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
         {loading ? (
@@ -381,8 +358,9 @@ function QuoteHistoryPage({ userId }) {
         ) : filteredQuotes.length === 0 ? (
           <p style={styles.emptyText}>No hay cotizaciones con esos filtros.</p>
         ) : (
-          <div style={styles.tableWrapper}>
-            <table style={styles.table}>
+          <>
+          <div className="erp-table-region erp-desktop-only" style={styles.tableWrapper}>
+            <table className="erp-table" style={styles.table}>
               <thead>
                 <tr>
                   <th style={styles.th}>Número</th>
@@ -428,6 +406,7 @@ function QuoteHistoryPage({ userId }) {
                       <div style={styles.rowActions}>
                         <button
                           type="button"
+                          aria-haspopup="dialog"
                           onClick={() => handleToggleDetail(quote.id)}
                           style={styles.secondaryButton}
                         >
@@ -448,39 +427,51 @@ function QuoteHistoryPage({ userId }) {
               </tbody>
             </table>
           </div>
+          <QuoteCards
+            quotes={filteredQuotes}
+            selectedQuoteId={selectedQuoteId}
+            onViewDetail={handleToggleDetail}
+          />
+          </>
         )}
       </div>
 
-      {selectedQuote ? (
-        <div
-          style={{
-            ...styles.detailReveal,
-            ...(detailExpanded ? styles.detailRevealOpen : styles.detailRevealClosed),
-          }}
-        >
-          <div style={styles.detailRevealInner}>
-            <QuoteDetail
+      <ResponsiveDialog
+        open={Boolean(selectedQuote)}
+        onClose={handleCloseDetail}
+        portal={false}
+        restoreFocus={restoreDetailFocus}
+        size="large"
+        eyebrow="Cotizaciones"
+        title={selectedQuote ? `Cotización ${getQuoteDisplayNumber(selectedQuote, selectedQuote.id || "-")}` : "Detalle de cotización"}
+        description="Revisa el documento formal y administra su estado comercial."
+        footer={selectedQuote ? (
+          <div className="erp-actions" style={styles.dialogActions}>
+            <QuoteActions
               quote={selectedQuote}
-              companyProfile={companyProfile}
-              onClose={() => handleCloseDetail(selectedQuote.id)}
-              onOpenEmail={() => {
-                if (isQuoteEmailSendable(selectedQuote, selectedQuote.id)) {
-                  setEmailModalQuote(selectedQuote);
-                }
-              }}
+              disabled={savingStatus}
+              onChangeStatus={handleChangeStatus}
+              onArchive={handleArchiveQuote}
+              onRestore={handleRestoreQuote}
+              onEditDraft={handleEditDraft}
             />
           </div>
-        </div>
-      ) : (
-        !loading &&
-        quotes.length > 0 && (
-          <div className="no-print" style={styles.panel}>
-            <p style={styles.emptyText}>
-              Selecciona una cotización para revisar el detalle.
-            </p>
-          </div>
-        )
-      )}
+        ) : null}
+      >
+        {selectedQuote && (
+          <QuoteDetail
+            quote={selectedQuote}
+            companyProfile={companyProfile}
+            onOpenEmail={() => {
+              if (isQuoteEmailSendable(selectedQuote, selectedQuote.id)) {
+                setRestoreDetailFocus(false);
+                setEmailModalQuote(selectedQuote);
+                setSelectedQuoteId("");
+              }
+            }}
+          />
+        )}
+      </ResponsiveDialog>
 
       <SendQuoteEmailModal
         open={Boolean(emailModalQuote)}
@@ -531,6 +522,55 @@ function EmailStatusBadge({ quote }) {
   }
 
   return <span style={styles.emailMuted}>Sin envío</span>;
+}
+
+function QuoteCards({ quotes, selectedQuoteId, onViewDetail }) {
+  return (
+    <div className="erp-card-list erp-mobile-only" aria-label="Cotizaciones">
+      {quotes.map((quote) => (
+        <article className="erp-record-card" key={quote.id}>
+          <div className="erp-record-card__header">
+            <div>
+              <h3 className="erp-record-card__title">
+                {getQuoteDisplayNumber(quote, quote.id || "-")}
+              </h3>
+              <p className="erp-record-card__subtitle">
+                {quote.clienteNombre || "Cliente sin nombre"}
+              </p>
+            </div>
+            <StatusBadge status={quote.estado} />
+          </div>
+          <dl className="erp-meta-grid">
+            <div className="erp-meta">
+              <dt className="erp-meta__label">Fecha</dt>
+              <dd className="erp-meta__value">{formatDate(quote.fecha)}</dd>
+            </div>
+            <div className="erp-meta">
+              <dt className="erp-meta__label">Total</dt>
+              <dd className="erp-meta__value"><strong>{formatCLP(quote.total)}</strong></dd>
+            </div>
+            <div className="erp-meta">
+              <dt className="erp-meta__label">Correo</dt>
+              <dd className="erp-meta__value"><EmailStatusBadge quote={quote} /></dd>
+            </div>
+            <div className="erp-meta">
+              <dt className="erp-meta__label">Ítems</dt>
+              <dd className="erp-meta__value">{quote.items?.length || 0}</dd>
+            </div>
+          </dl>
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            aria-expanded={selectedQuoteId === quote.id}
+            onClick={() => onViewDetail(quote.id)}
+            style={styles.cardPrimaryButton}
+          >
+            Ver detalle
+          </button>
+        </article>
+      ))}
+    </div>
+  );
 }
 
 function QuoteActions({
@@ -675,7 +715,7 @@ function QuoteActions({
   return null;
 }
 
-function QuoteDetail({ quote, companyProfile, onClose, onOpenEmail }) {
+function QuoteDetail({ quote, companyProfile, onOpenEmail }) {
   const canSendEmail = isQuoteEmailSendable(quote, quote.id);
   const emailActionHint = getEmailActionHint(quote);
 
@@ -690,14 +730,6 @@ function QuoteDetail({ quote, companyProfile, onClose, onOpenEmail }) {
           <EmailStatusLine quote={quote} />
         </div>
         <div style={styles.detailButtonGroup}>
-          <button
-            type="button"
-            onClick={onClose}
-            style={styles.collapseButton}
-            aria-label="Ocultar detalle de la cotización"
-          >
-            ^ Ocultar detalle
-          </button>
           <button
             type="button"
             onClick={onOpenEmail}
@@ -724,7 +756,9 @@ function QuoteDetail({ quote, companyProfile, onClose, onOpenEmail }) {
         )}
       </div>
 
-      <QuotePrintView quote={quote} companyProfile={companyProfile} />
+      <div style={styles.detailDocument}>
+        <QuotePrintView quote={quote} companyProfile={companyProfile} />
+      </div>
     </div>
   );
 
@@ -751,6 +785,7 @@ const styles = {
   wrapper: {
     display: "grid",
     gap: "18px",
+    minWidth: 0,
   },
   header: {
     display: "flex",
@@ -769,7 +804,8 @@ const styles = {
   panel: {
     background: "#ffffff",
     border: "1px solid #e5e7eb",
-    borderRadius: "8px",
+    borderRadius: "4px",
+    minWidth: 0,
     padding: "18px",
   },
   panelTitle: {
@@ -782,41 +818,38 @@ const styles = {
     fontSize: "14px",
   },
   filters: {
-    display: "flex",
-    flexWrap: "wrap",
+    display: "grid",
     gap: "10px",
     marginBottom: "14px",
   },
   searchInput: {
     border: "1px solid #cbd5e1",
-    borderRadius: "6px",
-    flex: "1 1 260px",
+    borderRadius: "4px",
+    fontSize: "13px",
+    minWidth: 0,
     padding: "10px 11px",
   },
   select: {
     background: "#ffffff",
     border: "1px solid #cbd5e1",
-    borderRadius: "6px",
+    borderRadius: "4px",
+    fontSize: "13px",
     padding: "10px 11px",
-  },
-  smallSelect: {
-    background: "#ffffff",
-    border: "1px solid #cbd5e1",
-    borderRadius: "6px",
-    padding: "8px 9px",
   },
   tableWrapper: {
     overflowX: "auto",
+    minWidth: 0,
   },
   table: {
     borderCollapse: "collapse",
+    minWidth: "1180px",
     width: "100%",
   },
   th: {
     background: "#f8fafc",
     borderBottom: "1px solid #e5e7eb",
     color: "#64748b",
-    fontSize: "12px",
+    fontSize: "13px",
     padding: "10px",
     textAlign: "left",
     textTransform: "uppercase",
@@ -841,62 +874,74 @@ const styles = {
   secondaryButton: {
     background: "#f8fafc",
     border: "1px solid #cbd5e1",
-    borderRadius: "6px",
+    borderRadius: "4px",
     color: "#334155",
     cursor: "pointer",
+    fontSize: "13px",
     fontWeight: 700,
+    minHeight: "38px",
     padding: "8px 10px",
   },
   acceptButton: {
     background: "#f0fdf4",
     border: "1px solid #bbf7d0",
-    borderRadius: "6px",
+    borderRadius: "4px",
     color: "#166534",
     cursor: "pointer",
+    fontSize: "13px",
     fontWeight: 700,
+    minHeight: "38px",
     padding: "8px 10px",
   },
   rejectButton: {
     background: "#fef2f2",
     border: "1px solid #fecaca",
-    borderRadius: "6px",
+    borderRadius: "4px",
     color: "#991b1b",
     cursor: "pointer",
+    fontSize: "13px",
     fontWeight: 700,
+    minHeight: "38px",
     padding: "8px 10px",
   },
   expireButton: {
     background: "#fffbeb",
     border: "1px solid #fde68a",
-    borderRadius: "6px",
+    borderRadius: "4px",
     color: "#92400e",
     cursor: "pointer",
+    fontSize: "13px",
     fontWeight: 700,
+    minHeight: "38px",
     padding: "8px 10px",
   },
   archiveButton: {
     background: "#f8fafc",
     border: "1px solid #d1d5db",
-    borderRadius: "6px",
+    borderRadius: "4px",
     color: "#4b5563",
     cursor: "pointer",
+    fontSize: "13px",
     fontWeight: 700,
+    minHeight: "38px",
     padding: "8px 10px",
   },
   printButton: {
     background: "#111827",
     border: 0,
-    borderRadius: "6px",
+    borderRadius: "4px",
     color: "#ffffff",
     cursor: "pointer",
+    fontSize: "13px",
     fontWeight: 800,
+    minHeight: "40px",
     padding: "10px 12px",
     whiteSpace: "nowrap",
   },
   statusBadge: {
     borderRadius: "999px",
     display: "inline-block",
-    fontSize: "12px",
+    fontSize: "13px",
     fontWeight: 800,
     padding: "4px 9px",
     whiteSpace: "nowrap",
@@ -904,7 +949,7 @@ const styles = {
   emailBadge: {
     borderRadius: "999px",
     display: "inline-block",
-    fontSize: "11px",
+    fontSize: "13px",
     fontWeight: 800,
     padding: "4px 8px",
     whiteSpace: "nowrap",
@@ -922,32 +967,12 @@ const styles = {
     color: "#991b1b",
   },
   emailMuted: {
-    color: "#94a3b8",
-    fontSize: "12px",
+    color: "#475569",
+    fontSize: "13px",
     whiteSpace: "nowrap",
   },
   detailPanel: {
     background: "#ffffff",
-    border: "1px solid #e5e7eb",
-    borderRadius: "8px",
-    padding: "18px",
-    minWidth: 0,
-  },
-  detailReveal: {
-    display: "grid",
-    overflow: "hidden",
-    transition: "grid-template-rows 180ms ease, opacity 180ms ease",
-  },
-  detailRevealOpen: {
-    gridTemplateRows: "1fr",
-    opacity: 1,
-  },
-  detailRevealClosed: {
-    gridTemplateRows: "0fr",
-    opacity: 0,
-  },
-  detailRevealInner: {
-    minHeight: 0,
     minWidth: 0,
   },
   detailActions: {
@@ -970,23 +995,15 @@ const styles = {
     gap: "10px",
     justifyContent: "flex-end",
   },
-  collapseButton: {
-    background: "#ffffff",
-    border: "1px solid #cbd5e1",
-    borderRadius: "6px",
-    color: "#475569",
-    cursor: "pointer",
-    fontWeight: 700,
-    padding: "10px 12px",
-    whiteSpace: "nowrap",
-  },
   emailButton: {
     background: "#0f766e",
     border: 0,
-    borderRadius: "6px",
+    borderRadius: "4px",
     color: "#ffffff",
     cursor: "pointer",
+    fontSize: "13px",
     fontWeight: 800,
+    minHeight: "40px",
     padding: "10px 12px",
     whiteSpace: "nowrap",
   },
@@ -1007,6 +1024,27 @@ const styles = {
     fontSize: "13px",
     lineHeight: 1.4,
     margin: "8px 0 0",
+  },
+  detailDocument: {
+    maxWidth: "100%",
+    minWidth: 0,
+    overflowX: "auto",
+  },
+  dialogActions: {
+    justifyContent: "flex-end",
+    width: "100%",
+  },
+  cardPrimaryButton: {
+    background: "#0f766e",
+    border: 0,
+    borderRadius: "4px",
+    color: "#ffffff",
+    cursor: "pointer",
+    fontSize: "13px",
+    fontWeight: 800,
+    minHeight: "40px",
+    padding: "9px 12px",
+    width: "100%",
   },
   printSheet: {
     background: "#ffffff",
@@ -1108,7 +1146,7 @@ const styles = {
   },
   emptyState: {
     border: "1px dashed #cbd5e1",
-    borderRadius: "8px",
+    borderRadius: "4px",
     padding: "26px",
     textAlign: "center",
   },
@@ -1122,7 +1160,7 @@ const styles = {
   errorText: {
     background: "#fef2f2",
     border: "1px solid #fecaca",
-    borderRadius: "8px",
+    borderRadius: "4px",
     color: "#b91c1c",
     margin: 0,
     padding: "11px 13px",
@@ -1130,7 +1168,7 @@ const styles = {
   successText: {
     background: "#ecfdf5",
     border: "1px solid #bbf7d0",
-    borderRadius: "8px",
+    borderRadius: "4px",
     color: "#166534",
     margin: 0,
     padding: "11px 13px",

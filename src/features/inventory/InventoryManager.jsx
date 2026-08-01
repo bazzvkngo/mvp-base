@@ -1,4 +1,7 @@
 ﻿import React, { useEffect, useMemo, useState } from "react";
+import { PackageOpen } from "lucide-react";
+import AppIcon from "../../components/ui/AppIcon";
+import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import {
   createInventoryItem,
   deactivateInventoryItem,
@@ -482,7 +485,7 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
     : getUnitSelectValue(form.unidad);
 
   return (
-    <section style={styles.wrapper}>
+    <section className="erp-page" style={styles.wrapper}>
       <style>
         {`
           .inventory-basic-grid {
@@ -524,8 +527,8 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
           }
         `}
       </style>
-      <div style={styles.header}>
-        <div>
+      <div className="erp-page-header" style={styles.header}>
+        <div className="erp-page-header__content">
           <span style={styles.eyebrow}>Inventario</span>
           <h2 style={styles.title}>Productos, servicios y actividades</h2>
           <p style={styles.subtitle}>
@@ -536,10 +539,10 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
       </div>
 
       {!userId && (
-        <p style={styles.errorText}>Debes iniciar sesión para ver inventario.</p>
+        <p role="alert" style={styles.errorText}>Debes iniciar sesión para ver inventario.</p>
       )}
 
-      <form onSubmit={handleSubmit} style={styles.formCard}>
+      <form className="erp-panel" onSubmit={handleSubmit} style={styles.formCard}>
         <div style={styles.formHeader}>
           <div>
             <h3 style={styles.formTitle}>
@@ -770,6 +773,7 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
 
             <label style={styles.field}>
               <textarea
+                aria-label="Descripción del ítem"
                 name="descripcion"
                 value={form.descripcion}
                 onChange={handleChange}
@@ -781,8 +785,8 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
           </section>
         </div>
 
-        {error && <p style={styles.errorText}>{error}</p>}
-        {success && <p style={styles.successText}>{success}</p>}
+        {error && <p role="alert" style={styles.errorText}>{error}</p>}
+        {success && <p role="status" style={styles.successText}>{success}</p>}
 
         <button
           type="submit"
@@ -798,34 +802,46 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
         </button>
       </form>
 
-      <div style={styles.listCard}>
-        <div style={styles.filters}>
-          <input
-            value={busqueda}
-            onChange={(event) => setBusqueda(event.target.value)}
-            placeholder="Buscar por nombre, categoría, descripción o SKU"
-            style={styles.searchInput}
-          />
-          <select
-            value={tipoFiltro}
-            onChange={(event) => setTipoFiltro(event.target.value)}
-            style={styles.filterSelect}
-          >
-            <option value="todos">Todos los tipos</option>
-            <option value="producto">Producto</option>
-            <option value="servicio">Servicio</option>
-            <option value="actividad">Actividad</option>
-          </select>
-          <select
-            value={estadoFiltro}
-            onChange={(event) => setEstadoFiltro(event.target.value)}
-            style={styles.filterSelect}
-          >
-            <option value="activos">Activos</option>
-            <option value="inactivos">Inactivos</option>
-            <option value="eliminados">Eliminados</option>
-            <option value="todos">Todos</option>
-          </select>
+      <div className="erp-panel" style={styles.listCard}>
+        <div className="erp-filters" style={styles.filters}>
+          <label className="erp-field">
+            <span>Buscar ítem</span>
+            <input
+              className="erp-control"
+              value={busqueda}
+              onChange={(event) => setBusqueda(event.target.value)}
+              placeholder="Nombre, categoría, descripción o SKU"
+              style={styles.searchInput}
+            />
+          </label>
+          <label className="erp-field">
+            <span>Tipo</span>
+            <select
+              className="erp-control"
+              value={tipoFiltro}
+              onChange={(event) => setTipoFiltro(event.target.value)}
+              style={styles.filterSelect}
+            >
+              <option value="todos">Todos los tipos</option>
+              <option value="producto">Producto</option>
+              <option value="servicio">Servicio</option>
+              <option value="actividad">Actividad</option>
+            </select>
+          </label>
+          <label className="erp-field">
+            <span>Estado</span>
+            <select
+              className="erp-control"
+              value={estadoFiltro}
+              onChange={(event) => setEstadoFiltro(event.target.value)}
+              style={styles.filterSelect}
+            >
+              <option value="activos">Activos</option>
+              <option value="inactivos">Inactivos</option>
+              <option value="eliminados">Eliminados</option>
+              <option value="todos">Todos</option>
+            </select>
+          </label>
         </div>
 
         {loading ? (
@@ -839,8 +855,9 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
             </p>
           </div>
         ) : (
-          <div style={styles.tableWrapper}>
-            <table style={styles.table}>
+          <>
+          <div className="erp-table-region erp-desktop-only" style={styles.tableWrapper}>
+            <table className="erp-table" style={styles.table}>
               <thead>
                 <tr>
                   <th style={styles.th}>Ítem</th>
@@ -889,97 +906,56 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
                       </span>
                     </td>
                     <td style={styles.td}>
-                      <div style={styles.actions}>
-                        {(item.estado || "activo") !== "eliminado" && (
-                          <>
-                            <button
-                              type="button"
-                              style={styles.smallButton}
-                              onClick={() => setDetailItem(item)}
-                            >
-                              Ver detalle
-                            </button>
-                            <button
-                              type="button"
-                              style={styles.smallButton}
-                              onClick={() => handleEdit(item)}
-                            >
-                              Editar
-                            </button>
-                            {(item.estado || "activo") === "activo" ? (
-                              <button
-                                type="button"
-                                style={styles.warningButton}
-                                onClick={() => handleDeactivate(item)}
-                              >
-                                Desactivar
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                style={styles.successButton}
-                                onClick={() => handleReactivate(item)}
-                              >
-                                Reactivar
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              style={styles.deleteButton}
-                              onClick={() => handleDelete(item)}
-                            >
-                              Eliminar
-                            </button>
-                          </>
-                        )}
-                        {(item.estado || "activo") === "eliminado" && (
-                          <>
-                            <button
-                              type="button"
-                              style={styles.smallButton}
-                              onClick={() => setDetailItem(item)}
-                            >
-                              Ver detalle
-                            </button>
-                            <button
-                              type="button"
-                              style={styles.successButton}
-                              onClick={() => handleReactivate(item)}
-                            >
-                              Restaurar
-                            </button>
-                          </>
-                        )}
-                      </div>
+                      <InventoryItemActions
+                        item={item}
+                        onView={() => setDetailItem(item)}
+                        onEdit={handleEdit}
+                        onDeactivate={handleDeactivate}
+                        onReactivate={handleReactivate}
+                        onDelete={handleDelete}
+                      />
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          <InventoryCards items={filteredItems} onView={setDetailItem} />
+          </>
         )}
       </div>
 
-      {detailItem && (
-        <div style={styles.modalBackdrop} role="presentation">
-          <div style={styles.modal} role="dialog" aria-modal="true">
-            <div style={styles.modalHeader}>
-              <div>
-                <span style={styles.modalEyebrow}>Detalle de item</span>
-                <h3 style={styles.modalTitle}>{detailItem.nombre}</h3>
-                <p style={styles.modalSubtitle}>
-                  {detailItem.sku ? `SKU: ${detailItem.sku}` : "Sin SKU"}
-                </p>
-              </div>
-              <button
-                type="button"
-                style={styles.modalCloseButton}
-                onClick={() => setDetailItem(null)}
-              >
-                Cerrar
-              </button>
-            </div>
-
+      <ResponsiveDialog
+        open={Boolean(detailItem)}
+        onClose={() => setDetailItem(null)}
+        eyebrow="Inventario"
+        title={detailItem?.nombre || "Detalle de ítem"}
+        description={detailItem?.sku ? `SKU: ${detailItem.sku}` : "Sin SKU registrado"}
+        footer={detailItem ? (
+          <InventoryItemActions
+            item={detailItem}
+            hideView
+            onEdit={(item) => {
+              setDetailItem(null);
+              handleEdit(item);
+            }}
+            onDeactivate={(item) => {
+              setDetailItem(null);
+              handleDeactivate(item);
+            }}
+            onReactivate={(item) => {
+              setDetailItem(null);
+              handleReactivate(item);
+            }}
+            onDelete={(item) => {
+              setDetailItem(null);
+              handleDelete(item);
+            }}
+          />
+        ) : null}
+      >
+        {detailItem && (
+          <>
             <div style={styles.detailGrid}>
               <div style={styles.detailField}>
                 <span style={styles.detailLabel}>Tipo</span>
@@ -1052,10 +1028,118 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
                 {detailItem.descripcion || "Sin descripcion registrada."}
               </p>
             </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </ResponsiveDialog>
     </section>
+  );
+}
+
+function InventoryCards({ items, onView }) {
+  return (
+    <div className="erp-card-list erp-mobile-only" aria-label="Ítems de inventario">
+      {items.map((item) => (
+        <article className="erp-record-card" key={item.id}>
+          <div className="inventory-card-header" style={styles.inventoryCardHeader}>
+            <div style={styles.imagePlaceholder} aria-label="Sin imagen disponible">
+              <AppIcon icon={PackageOpen} size={22} />
+              <span>Sin imagen</span>
+            </div>
+            <div style={styles.inventoryCardHeading}>
+              <h3 className="erp-record-card__title">{item.nombre || "Ítem sin nombre"}</h3>
+              <p className="erp-record-card__subtitle">
+                {item.sku ? `SKU: ${item.sku}` : "Sin SKU"}
+              </p>
+            </div>
+            <InventoryStatusBadge item={item} />
+          </div>
+          <dl className="erp-meta-grid">
+            <div className="erp-meta">
+              <dt className="erp-meta__label">Tipo</dt>
+              <dd className="erp-meta__value">{tipoLabels[item.tipoItem] || item.tipoItem || "-"}</dd>
+            </div>
+            <div className="erp-meta">
+              <dt className="erp-meta__label">Categoría</dt>
+              <dd className="erp-meta__value">{item.categoria || "-"}</dd>
+            </div>
+            <div className="erp-meta erp-meta--wide">
+              <dt className="erp-meta__label">Precio interno</dt>
+              <dd className="erp-meta__value"><strong>{formatCLP(item.precioInterno)}</strong></dd>
+            </div>
+          </dl>
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            style={styles.mobilePrimaryButton}
+            onClick={() => onView(item)}
+          >
+            Ver detalle
+          </button>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function InventoryStatusBadge({ item }) {
+  return (
+    <span
+      style={{
+        ...styles.statusBadge,
+        ...(item.estado === "eliminado"
+          ? styles.statusDeleted
+          : item.estado === "inactivo"
+            ? styles.statusInactive
+            : styles.statusActive),
+      }}
+    >
+      {estadoLabels[item.estado || "activo"] || "Activo"}
+    </span>
+  );
+}
+
+function InventoryItemActions({
+  item,
+  hideView = false,
+  onView,
+  onEdit,
+  onDeactivate,
+  onReactivate,
+  onDelete,
+}) {
+  const estado = item.estado || "activo";
+
+  return (
+    <div className="erp-actions" style={styles.actions}>
+      {!hideView && (
+        <button type="button" aria-haspopup="dialog" style={styles.smallButton} onClick={onView}>
+          Ver detalle
+        </button>
+      )}
+      {estado !== "eliminado" ? (
+        <>
+          <button type="button" style={styles.smallButton} onClick={() => onEdit(item)}>
+            Editar
+          </button>
+          {estado === "activo" ? (
+            <button type="button" style={styles.warningButton} onClick={() => onDeactivate(item)}>
+              Desactivar
+            </button>
+          ) : (
+            <button type="button" style={styles.successButton} onClick={() => onReactivate(item)}>
+              Reactivar
+            </button>
+          )}
+          <button type="button" style={styles.deleteButton} onClick={() => onDelete(item)}>
+            Eliminar
+          </button>
+        </>
+      ) : (
+        <button type="button" style={styles.successButton} onClick={() => onReactivate(item)}>
+          Restaurar
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -1063,6 +1147,7 @@ const styles = {
   wrapper: {
     display: "grid",
     gap: "18px",
+    minWidth: 0,
   },
   header: {
     display: "flex",
@@ -1071,7 +1156,7 @@ const styles = {
   },
   eyebrow: {
     color: "#0f766e",
-    fontSize: "12px",
+    fontSize: "13px",
     fontWeight: 800,
     textTransform: "uppercase",
   },
@@ -1087,7 +1172,8 @@ const styles = {
   formCard: {
     background: "#ffffff",
     border: "1px solid #e5e7eb",
-    borderRadius: "8px",
+    borderRadius: "4px",
+    minWidth: 0,
     padding: "20px",
   },
   formHeader: {
@@ -1154,7 +1240,7 @@ const styles = {
   },
   fieldMeta: {
     color: "#64748b",
-    fontSize: "12px",
+    fontSize: "13px",
     fontWeight: 600,
   },
   input: {
@@ -1162,7 +1248,9 @@ const styles = {
     maxWidth: "100%",
     width: "100%",
     border: "1px solid #cbd5e1",
-    borderRadius: "6px",
+    borderRadius: "4px",
+    fontSize: "13px",
+    minHeight: "40px",
     padding: "10px 11px",
     color: "#111827",
     background: "#ffffff",
@@ -1172,7 +1260,8 @@ const styles = {
     maxWidth: "100%",
     width: "100%",
     border: "1px solid #cbd5e1",
-    borderRadius: "6px",
+    borderRadius: "4px",
+    fontSize: "13px",
     padding: "10px 11px",
     color: "#111827",
     background: "#ffffff",
@@ -1181,7 +1270,7 @@ const styles = {
   calculatedPriceBox: {
     background: "#f8fafc",
     border: "1px solid #e2e8f0",
-    borderRadius: "8px",
+    borderRadius: "4px",
     boxSizing: "border-box",
     display: "grid",
     gap: "4px",
@@ -1202,24 +1291,24 @@ const styles = {
   },
   overrideLabel: {
     color: "#64748b",
-    fontSize: "11px",
+    fontSize: "13px",
     fontWeight: 800,
     textTransform: "uppercase",
   },
   profitabilityBlock: {
-    borderRadius: "6px",
+    borderRadius: "4px",
     display: "grid",
     gap: "2px",
     marginTop: "2px",
     padding: "5px 6px",
   },
   profitabilityMain: {
-    fontSize: "11px",
+    fontSize: "13px",
     fontWeight: 800,
     lineHeight: 1.3,
   },
   profitabilitySecondary: {
-    fontSize: "10px",
+    fontSize: "13px",
     fontWeight: 700,
     lineHeight: 1.25,
     opacity: 0.86,
@@ -1257,44 +1346,48 @@ const styles = {
   primaryButton: {
     marginTop: "16px",
     border: 0,
-    borderRadius: "6px",
+    borderRadius: "4px",
     background: "#0f766e",
     color: "#ffffff",
     cursor: "pointer",
+    fontSize: "13px",
     fontWeight: 800,
+    minHeight: "40px",
     padding: "11px 16px",
   },
   secondaryButton: {
     border: "1px solid #cbd5e1",
-    borderRadius: "6px",
+    borderRadius: "4px",
     background: "#ffffff",
     color: "#334155",
     cursor: "pointer",
+    fontSize: "13px",
     fontWeight: 700,
+    minHeight: "40px",
     padding: "9px 12px",
   },
   listCard: {
     background: "#ffffff",
     border: "1px solid #e5e7eb",
-    borderRadius: "8px",
+    borderRadius: "4px",
+    minWidth: 0,
     padding: "14px",
   },
   filters: {
-    display: "flex",
-    flexWrap: "wrap",
+    display: "grid",
     gap: "10px",
     marginBottom: "12px",
   },
   searchInput: {
-    flex: "1 1 280px",
     border: "1px solid #cbd5e1",
-    borderRadius: "6px",
+    borderRadius: "4px",
     fontSize: "13px",
+    minWidth: 0,
     padding: "8px 10px",
   },
   filterSelect: {
     border: "1px solid #cbd5e1",
-    borderRadius: "6px",
+    borderRadius: "4px",
     color: "#334155",
     fontSize: "13px",
     padding: "8px 10px",
@@ -1303,18 +1396,20 @@ const styles = {
   tableWrapper: {
     overflowX: "auto",
     border: "1px solid #e5e7eb",
-    borderRadius: "8px",
+    borderRadius: "4px",
+    minWidth: 0,
   },
   table: {
     width: "100%",
     borderCollapse: "collapse",
     fontSize: "13px",
+    minWidth: "1120px",
   },
   th: {
     background: "#f9fafb",
     borderBottom: "1px solid #e5e7eb",
     color: "#667085",
-    fontSize: "11px",
+    fontSize: "13px",
     fontWeight: 800,
     padding: "7px 10px",
     textAlign: "left",
@@ -1343,16 +1438,16 @@ const styles = {
     verticalAlign: "middle",
   },
   itemMeta: {
-    color: "#94a3b8",
+    color: "#475569",
     display: "block",
-    fontSize: "11px",
+    fontSize: "13px",
     fontWeight: 600,
     marginTop: "2px",
   },
   itemDescription: {
     color: "#64748b",
     display: "block",
-    fontSize: "12px",
+    fontSize: "13px",
     marginTop: "3px",
     maxWidth: "320px",
     overflow: "hidden",
@@ -1362,7 +1457,7 @@ const styles = {
   statusBadge: {
     borderRadius: "999px",
     display: "inline-block",
-    fontSize: "10px",
+    fontSize: "13px",
     fontWeight: 700,
     lineHeight: 1,
     padding: "4px 7px",
@@ -1389,47 +1484,51 @@ const styles = {
   },
   smallButton: {
     border: "1px solid #d0d5dd",
-    borderRadius: "6px",
+    borderRadius: "4px",
     background: "#ffffff",
     color: "#344054",
     cursor: "pointer",
-    fontSize: "11px",
+    fontSize: "13px",
     fontWeight: 600,
-    padding: "4px 7px",
+    minHeight: "36px",
+    padding: "6px 8px",
   },
   warningButton: {
     border: "1px solid #fde68a",
-    borderRadius: "6px",
+    borderRadius: "4px",
     background: "#fffdf5",
     color: "#92400e",
     cursor: "pointer",
-    fontSize: "11px",
+    fontSize: "13px",
     fontWeight: 600,
-    padding: "4px 7px",
+    minHeight: "36px",
+    padding: "6px 8px",
   },
   successButton: {
     border: "1px solid #99f6e4",
-    borderRadius: "6px",
+    borderRadius: "4px",
     background: "#f7fffd",
     color: "#0f766e",
     cursor: "pointer",
-    fontSize: "11px",
+    fontSize: "13px",
     fontWeight: 600,
-    padding: "4px 7px",
+    minHeight: "36px",
+    padding: "6px 8px",
   },
   deleteButton: {
     border: "1px solid #fee2e2",
-    borderRadius: "6px",
+    borderRadius: "4px",
     background: "#fffafa",
     color: "#991b1b",
     cursor: "pointer",
-    fontSize: "11px",
+    fontSize: "13px",
     fontWeight: 600,
-    padding: "4px 7px",
+    minHeight: "36px",
+    padding: "6px 8px",
   },
   emptyState: {
     border: "1px dashed #cbd5e1",
-    borderRadius: "8px",
+    borderRadius: "4px",
     padding: "28px",
     textAlign: "center",
   },
@@ -1440,64 +1539,42 @@ const styles = {
     color: "#64748b",
     margin: 0,
   },
-  modalBackdrop: {
-    alignItems: "center",
-    background: "rgba(15, 23, 42, 0.38)",
-    bottom: 0,
-    display: "flex",
-    justifyContent: "center",
-    left: 0,
-    padding: "20px",
-    position: "fixed",
-    right: 0,
-    top: 0,
-    zIndex: 50,
-  },
-  modal: {
-    background: "#ffffff",
-    border: "1px solid #e5e7eb",
-    borderRadius: "8px",
-    boxShadow: "0 20px 45px rgba(15, 23, 42, 0.18)",
-    color: "#111827",
-    maxHeight: "90vh",
-    maxWidth: "760px",
-    overflowY: "auto",
-    padding: "20px",
-    width: "100%",
-  },
-  modalHeader: {
+  inventoryCardHeader: {
     alignItems: "flex-start",
-    borderBottom: "1px solid #eef2f7",
+    display: "grid",
+    gap: "10px",
+    gridTemplateColumns: "58px minmax(0, 1fr) auto",
+    minWidth: 0,
+  },
+  inventoryCardHeading: {
+    minWidth: 0,
+  },
+  imagePlaceholder: {
+    alignItems: "center",
+    aspectRatio: "1",
+    background: "#f1f5f9",
+    border: "1px solid #e2e8f0",
+    borderRadius: "4px",
+    color: "#64748b",
     display: "flex",
-    gap: "14px",
-    justifyContent: "space-between",
-    marginBottom: "16px",
-    paddingBottom: "14px",
-  },
-  modalEyebrow: {
-    color: "#64748b",
-    fontSize: "11px",
-    fontWeight: 800,
-    textTransform: "uppercase",
-  },
-  modalTitle: {
-    fontSize: "20px",
-    margin: "4px 0 3px",
-  },
-  modalSubtitle: {
-    color: "#64748b",
+    flexDirection: "column",
     fontSize: "13px",
-    margin: 0,
+    gap: "2px",
+    justifyContent: "center",
+    lineHeight: 1,
+    textAlign: "center",
   },
-  modalCloseButton: {
-    background: "#ffffff",
-    border: "1px solid #cbd5e1",
-    borderRadius: "6px",
-    color: "#334155",
+  mobilePrimaryButton: {
+    background: "#0f766e",
+    border: 0,
+    borderRadius: "4px",
+    color: "#ffffff",
     cursor: "pointer",
-    fontSize: "12px",
-    fontWeight: 700,
-    padding: "7px 10px",
+    fontSize: "13px",
+    fontWeight: 800,
+    minHeight: "40px",
+    padding: "9px 12px",
+    width: "100%",
   },
   detailGrid: {
     display: "grid",
@@ -1507,13 +1584,13 @@ const styles = {
   detailField: {
     background: "#f8fafc",
     border: "1px solid #eef2f7",
-    borderRadius: "8px",
+    borderRadius: "4px",
     padding: "10px",
   },
   detailLabel: {
     color: "#64748b",
     display: "block",
-    fontSize: "11px",
+    fontSize: "13px",
     fontWeight: 800,
     marginBottom: "4px",
     textTransform: "uppercase",

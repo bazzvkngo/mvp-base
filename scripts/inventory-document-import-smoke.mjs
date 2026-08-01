@@ -23,7 +23,12 @@ class FakeHttpsError extends Error {
 function makeGeminiJsonResult(payload) {
   return {
     response: {
-      text: () => JSON.stringify(payload),
+      text: JSON.stringify(payload),
+    },
+    aiRateLimit: {
+      allowed: false,
+      reason: "cooldown",
+      retryAt: new Date(Date.now() + 20000).toISOString(),
     },
   };
 }
@@ -278,7 +283,7 @@ console.log("OK reglas: margen decimal, margen por defecto, unidad, cantidad, co
 try {
   await normalizeInventoryDocumentHandler(
     { auth: null, data: payloadFor(validPdf, "factura.pdf", "application/pdf") },
-    { getGeminiModel: () => null, HttpsError: FakeHttpsError }
+    { generateGeminiContent: async () => null, HttpsError: FakeHttpsError }
   );
   throw new Error("Se esperaba rechazo por usuario no autenticado.");
 } catch (error) {
@@ -297,7 +302,6 @@ const dailyQuotaError = makeGeminiServiceError({
 assert.equal(classifyGeminiServiceError(dailyQuotaError).category, "daily_quota");
 
 let dailyQuotaAttempts = 0;
-let dailyQuotaSleeps = 0;
 try {
   await normalizeInventoryDocumentHandler(
     {
@@ -305,18 +309,11 @@ try {
       data: payloadFor(validPdf, "factura.pdf", "application/pdf"),
     },
     {
-      getGeminiModel: () => ({
-        generateContent: async () => {
-          dailyQuotaAttempts += 1;
-          throw dailyQuotaError;
-        },
-      }),
-      HttpsError: FakeHttpsError,
-      retryDelaysMs: [0, 0],
-      sleepFn: async () => {
-        dailyQuotaSleeps += 1;
+      generateGeminiContent: async () => {
+        dailyQuotaAttempts += 1;
+        throw dailyQuotaError;
       },
-      randomFn: () => 0,
+      HttpsError: FakeHttpsError,
     }
   );
   throw new Error("Se esperaba error de cuota diaria.");
@@ -325,91 +322,10 @@ try {
   assert.equal(error.message, DOCUMENT_USAGE_LIMIT_MESSAGE);
   assert.deepEqual(error.details, { internalCode: "daily_quota" });
   assert.equal(dailyQuotaAttempts, 1);
-  assert.equal(dailyQuotaSleeps, 0);
   console.log("OK cuota diaria: 429 PerDay no reintenta y devuelve resource-exhausted");
 }
 
 let retryAttempts429 = 0;
-const retrySleeps429 = [];
-const retryResult429 = await normalizeInventoryDocumentHandler(
-  {
-    auth: { uid: "usuario-prueba" },
-    data: payloadFor(validPdf, "factura.pdf", "application/pdf"),
-  },
-  {
-    getGeminiModel: () => ({
-      generateContent: async () => {
-        retryAttempts429 += 1;
-        if (retryAttempts429 === 1) {
-          throw makeGeminiServiceError({
-            code: 429,
-            status: "RESOURCE_EXHAUSTED",
-            message: "synthetic transient rate limit",
-            retryDelay: "2s",
-          });
-        }
-        return makeGeminiJsonResult({
-          documentType: "factura",
-          items: [
-            {
-              nombre: "Servicio recuperado",
-              tipoItem: "servicio",
-              costoBase: 1000,
-              confianza: 90,
-            },
-          ],
-          warnings: [],
-        });
-      },
-    }),
-    HttpsError: FakeHttpsError,
-    retryDelaysMs: [0, 0],
-    sleepFn: async (ms) => {
-      retrySleeps429.push(ms);
-    },
-    randomFn: () => 0,
-  }
-);
-assert.equal(retryAttempts429, 2);
-assert.deepEqual(retrySleeps429, [2000]);
-assert.equal(retryResult429.items.length, 1);
-console.log("OK reintentos: 429 temporal usa retryDelay y recupera");
-
-let retryAttempts503 = 0;
-await normalizeInventoryDocumentHandler(
-  {
-    auth: { uid: "usuario-prueba" },
-    data: payloadFor(validPdf, "factura.pdf", "application/pdf"),
-  },
-  {
-    getGeminiModel: () => ({
-      generateContent: async () => {
-        retryAttempts503 += 1;
-        if (retryAttempts503 < 3) throw makeTemporaryError(503, "UNAVAILABLE");
-        return makeGeminiJsonResult({
-          documentType: "factura",
-          items: [
-            {
-              nombre: "Producto recuperado",
-              tipoItem: "producto",
-              costoBase: 1000,
-              confianza: 90,
-            },
-          ],
-          warnings: [],
-        });
-      },
-    }),
-    HttpsError: FakeHttpsError,
-    retryDelaysMs: [0, 0],
-    sleepFn: async () => {},
-    randomFn: () => 0,
-  }
-);
-assert.equal(retryAttempts503, 3);
-console.log("OK reintentos: 503 temporal respeta dos reintentos");
-
-let retryAttemptsMax = 0;
 try {
   await normalizeInventoryDocumentHandler(
     {
@@ -417,25 +333,73 @@ try {
       data: payloadFor(validPdf, "factura.pdf", "application/pdf"),
     },
     {
-      getGeminiModel: () => ({
-        generateContent: async () => {
-          retryAttemptsMax += 1;
-          throw makeTemporaryError(429, "RESOURCE_EXHAUSTED");
-        },
-      }),
+      generateGeminiContent: async () => {
+        retryAttempts429 += 1;
+        throw makeGeminiServiceError({
+          code: 429,
+          status: "RESOURCE_EXHAUSTED",
+          message: "synthetic transient rate limit",
+          retryDelay: "2s",
+        });
+      },
       HttpsError: FakeHttpsError,
-      retryDelaysMs: [0, 0],
-      sleepFn: async () => {},
-      randomFn: () => 0,
     }
   );
-  throw new Error("Se esperaba error temporal agotado.");
+  throw new Error("Se esperaba error temporal de Gemini.");
 } catch (error) {
   assert.equal(error.code, "unavailable");
-  assert.equal(error.message, TEMPORARY_DOCUMENT_UNAVAILABLE_MESSAGE);
-  assert.equal(retryAttemptsMax, 3);
-  console.log("OK reintentos: máximo de intentos respetado");
+  assert.equal(retryAttempts429, 1);
+  console.log("OK protección: 429 temporal no ejecuta reintentos automáticos");
 }
+
+let retryAttempts503 = 0;
+try {
+  await normalizeInventoryDocumentHandler(
+    {
+      auth: { uid: "usuario-prueba" },
+      data: payloadFor(validPdf, "factura.pdf", "application/pdf"),
+    },
+    {
+      generateGeminiContent: async () => {
+        retryAttempts503 += 1;
+        throw makeTemporaryError(503, "UNAVAILABLE");
+      },
+      HttpsError: FakeHttpsError,
+    }
+  );
+  throw new Error("Se esperaba error temporal del proveedor.");
+} catch (error) {
+  assert.equal(error.code, "unavailable");
+  assert.equal(retryAttempts503, 1);
+  console.log("OK protección: 503 no ejecuta reintentos automáticos");
+}
+
+const migratedSdkResult = await normalizeInventoryDocumentHandler(
+  {
+    auth: { uid: "usuario-prueba" },
+    data: payloadFor(validPdf, "factura.pdf", "application/pdf"),
+  },
+  {
+    generateGeminiContent: async () =>
+      makeGeminiJsonResult({
+        items: [
+          {
+            nombre: "Producto de prueba",
+            tipoItem: "producto",
+            cantidadOrigen: 2,
+            unidad: "unidad",
+            costoBase: 1500,
+            confianza: 90,
+          },
+        ],
+      }),
+    HttpsError: FakeHttpsError,
+  }
+);
+assert.equal(migratedSdkResult.items.length, 1);
+assert.equal(migratedSdkResult.items[0].nombre, "Producto de prueba");
+assert.equal(migratedSdkResult.aiRateLimit.reason, "cooldown");
+console.log("OK SDK migrado: consume response.text y conserva metadatos del limitador");
 
 let validationGeminiCalls = 0;
 try {
@@ -452,20 +416,18 @@ try {
       },
     },
     {
-      getGeminiModel: () => {
+      generateGeminiContent: async () => {
         validationGeminiCalls += 1;
         return null;
       },
       HttpsError: FakeHttpsError,
-      retryDelaysMs: [0, 0],
-      sleepFn: async () => {},
     }
   );
   throw new Error("Se esperaba error de validación.");
 } catch (error) {
   assert.equal(error.code, "invalid-argument");
   assert.equal(validationGeminiCalls, 0);
-  console.log("OK reintentos: validación inválida no reintenta Gemini");
+  console.log("OK validación: una entrada inválida no invoca Gemini");
 }
 
 console.log("INVENTORY_DOCUMENT_IMPORT_SMOKE_OK");
