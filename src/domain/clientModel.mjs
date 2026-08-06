@@ -5,6 +5,21 @@ export const CLIENT_STATUSES = Object.freeze(["activo", "archivado"]);
 
 const CLIENT_TYPE_SET = new Set(CLIENT_TYPES);
 const CLIENT_STATUS_SET = new Set(CLIENT_STATUSES);
+const CLIENT_TEXT_FIELDS = Object.freeze({
+  tipoCliente: {maxLength: 20, label: "tipo de cliente"},
+  rut: {maxLength: 20, label: "RUT"},
+  nombreRazonSocial: {maxLength: 240, label: "nombre o razón social"},
+  giro: {maxLength: 240, label: "giro"},
+  email: {maxLength: 240, label: "correo"},
+  telefono: {maxLength: 100, label: "teléfono"},
+  direccion: {maxLength: 300, label: "dirección"},
+  regionCodigo: {maxLength: 20, label: "código de región"},
+  regionNombre: {maxLength: 160, label: "región"},
+  comunaCodigo: {maxLength: 20, label: "código de comuna"},
+  comunaNombre: {maxLength: 160, label: "comuna"},
+  personaContacto: {maxLength: 200, label: "persona de contacto"},
+  notas: {maxLength: 4000, label: "notas"},
+});
 
 export function normalizeClientText(
   value,
@@ -72,31 +87,40 @@ function isValidEmail(value) {
 
 export function getClientFieldErrors(raw = {}) {
   const errors = {};
-  const tipoCliente = normalizeClientText(
-    raw.tipoCliente,
-    20,
-    "tipo de cliente"
-  ).toLowerCase();
-  const rut = normalizeChileanRut(normalizeClientText(raw.rut, 20, "RUT"));
-  const nombreRazonSocial = normalizeClientText(
-    raw.nombreRazonSocial,
-    240,
-    "nombre o razón social"
-  );
-  const email = normalizeClientText(raw.email, 240, "correo").toLowerCase();
+  const normalized = {};
 
-  if (!CLIENT_TYPE_SET.has(tipoCliente)) {
+  Object.entries(CLIENT_TEXT_FIELDS).forEach(
+    ([field, {maxLength, label}]) => {
+      try {
+        normalized[field] = normalizeClientText(
+          raw?.[field],
+          maxLength,
+          label
+        );
+      } catch (error) {
+        errors[field] = error.message;
+        normalized[field] = "";
+      }
+    }
+  );
+
+  const tipoCliente = normalized.tipoCliente.toLowerCase();
+  const rut = normalizeChileanRut(normalized.rut);
+  const nombreRazonSocial = normalized.nombreRazonSocial;
+  const email = normalized.email.toLowerCase();
+
+  if (!errors.tipoCliente && !CLIENT_TYPE_SET.has(tipoCliente)) {
     errors.tipoCliente = "Selecciona si el cliente es persona o empresa.";
   }
-  if (!rut) {
+  if (!errors.rut && !rut) {
     errors.rut = "Ingresa el RUT del cliente.";
-  } else if (!isValidChileanRut(rut)) {
+  } else if (!errors.rut && !isValidChileanRut(rut)) {
     errors.rut = "Ingresa un RUT chileno válido.";
   }
-  if (!nombreRazonSocial) {
+  if (!errors.nombreRazonSocial && !nombreRazonSocial) {
     errors.nombreRazonSocial = "Ingresa el nombre o razón social.";
   }
-  if (email && !isValidEmail(email)) {
+  if (!errors.email && email && !isValidEmail(email)) {
     errors.email = "Ingresa un correo válido.";
   }
 
@@ -189,7 +213,11 @@ export function adaptStoredClient(raw = {}) {
 }
 
 function normalizeSearchText(value) {
-  return normalizeClientText(value, 500)
+  const safeValue = typeof value === "string" ? value : "";
+  return safeValue
+    .slice(0, 500)
+    .trim()
+    .replace(/\s+/g, " ")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLocaleLowerCase("es-CL");

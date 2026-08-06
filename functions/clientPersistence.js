@@ -1,3 +1,5 @@
+const businessCatalog = require("./businessCatalog.json");
+
 const CLIENT_MODEL_VERSION = 1;
 const CLIENT_TYPES = new Set(["persona", "empresa"]);
 const ACTIVE_STATUS = "activo";
@@ -33,6 +35,9 @@ const CLIENT_FIELD_LABELS = {
   personaContacto: "persona de contacto",
   notas: "notas",
 };
+const REGIONS_BY_CODE = new Map(
+  businessCatalog.regions.map((region) => [region.code, region])
+);
 
 function normalizeTextField(raw, field, maxLength, HttpsError) {
   const value = raw?.[field];
@@ -97,6 +102,71 @@ function fail(HttpsError, code, message, details = undefined) {
   throw new HttpsError(code, message, details);
 }
 
+function normalizeTerritory(raw, HttpsError) {
+  const regionCodigo = normalizeTextField(
+    raw,
+    "regionCodigo",
+    20,
+    HttpsError
+  );
+  const comunaCodigo = normalizeTextField(
+    raw,
+    "comunaCodigo",
+    20,
+    HttpsError
+  );
+
+  // Los nombres se validan como texto, pero nunca son autoritativos.
+  normalizeTextField(raw, "regionNombre", 160, HttpsError);
+  normalizeTextField(raw, "comunaNombre", 160, HttpsError);
+
+  if (!regionCodigo) {
+    if (comunaCodigo) {
+      fail(
+        HttpsError,
+        "invalid-argument",
+        "Selecciona una región válida para la comuna."
+      );
+    }
+    return {
+      regionCodigo: "",
+      regionNombre: "",
+      comunaCodigo: "",
+      comunaNombre: "",
+    };
+  }
+
+  const region = REGIONS_BY_CODE.get(regionCodigo);
+  if (!region) {
+    fail(HttpsError, "invalid-argument", "Selecciona una región válida.");
+  }
+
+  if (!comunaCodigo) {
+    return {
+      regionCodigo: region.code,
+      regionNombre: region.name,
+      comunaCodigo: "",
+      comunaNombre: "",
+    };
+  }
+
+  const commune = region.communes.find((item) => item.code === comunaCodigo);
+  if (!commune) {
+    fail(
+      HttpsError,
+      "invalid-argument",
+      "Selecciona una comuna que pertenezca a la región indicada."
+    );
+  }
+
+  return {
+    regionCodigo: region.code,
+    regionNombre: region.name,
+    comunaCodigo: commune.code,
+    comunaNombre: commune.name,
+  };
+}
+
 function normalizeClientInput(raw = {}, HttpsError) {
   if (raw == null) raw = {};
   if (typeof raw !== "object" || Array.isArray(raw)) {
@@ -133,6 +203,7 @@ function normalizeClientInput(raw = {}, HttpsError) {
     HttpsError
   );
   const email = normalizeTextField(raw, "email", 240, HttpsError).toLowerCase();
+  const territory = normalizeTerritory(raw, HttpsError);
 
   if (!CLIENT_TYPES.has(tipoCliente)) {
     fail(
@@ -161,10 +232,7 @@ function normalizeClientInput(raw = {}, HttpsError) {
     email,
     telefono: normalizeTextField(raw, "telefono", 100, HttpsError),
     direccion: normalizeTextField(raw, "direccion", 300, HttpsError),
-    regionCodigo: normalizeTextField(raw, "regionCodigo", 20, HttpsError),
-    regionNombre: normalizeTextField(raw, "regionNombre", 160, HttpsError),
-    comunaCodigo: normalizeTextField(raw, "comunaCodigo", 20, HttpsError),
-    comunaNombre: normalizeTextField(raw, "comunaNombre", 160, HttpsError),
+    ...territory,
     personaContacto: normalizeTextField(
       raw,
       "personaContacto",

@@ -190,6 +190,8 @@ try {
   );
   assert.equal(Object.hasOwn(ownerData, "modeloClienteVersion"), false);
   assert.equal(Object.hasOwn(ownerData, "rutNormalizado"), false);
+  ownerData.regionNombre = "Nombre de región manipulado";
+  ownerData.comunaNombre = "Nombre de comuna manipulado";
   const ownerCreate = await callable(owner, "crearCliente")({
     businessId,
     cliente: ownerData,
@@ -203,6 +205,13 @@ try {
   ).get()).data();
   assert.equal(storedOwnerClient.clienteId, ownerClientId);
   assert.equal(Object.hasOwn(storedOwnerClient, "clientId"), false);
+  assert.equal(storedOwnerClient.regionNombre, "Metropolitana de Santiago");
+  assert.equal(storedOwnerClient.comunaNombre, "Santiago");
+  assert.equal(
+    ownerCreate.data.cliente.regionNombre,
+    "Metropolitana de Santiago"
+  );
+  assert.equal(ownerCreate.data.cliente.comunaNombre, "Santiago");
   console.log("OK creación: OWNER crea cliente");
 
   const adminData = clientPayload({
@@ -316,6 +325,55 @@ try {
     );
   }
   console.log("OK validación: no trunca ni persiste campos inválidos");
+
+  const invalidTerritoryCases = [
+    {
+      label: "código de región inexistente",
+      rut: "15.000.000-9",
+      patch: {regionCodigo: "99", comunaCodigo: ""},
+      messagePattern: /región válida/i,
+    },
+    {
+      label: "comuna que no pertenece a la región",
+      rut: "15.000.001-7",
+      patch: {regionCodigo: "01", comunaCodigo: "13101"},
+      messagePattern: /pertenezca a la región/i,
+    },
+    {
+      label: "comuna sin región",
+      rut: "15.000.002-5",
+      patch: {
+        regionCodigo: "",
+        regionNombre: "",
+        comunaCodigo: "13101",
+      },
+      messagePattern: /región válida/i,
+    },
+  ];
+  for (const invalidCase of invalidTerritoryCases) {
+    await expectCallableError(
+      invalidCase.label,
+      () =>
+        callable(owner, "crearCliente")({
+          businessId,
+          cliente: {
+            ...clientPayload({
+              rut: invalidCase.rut,
+              nombre: `Territorio inválido ${invalidCase.rut}`,
+            }),
+            ...invalidCase.patch,
+          },
+        }),
+      ["invalid-argument"],
+      invalidCase.messagePattern
+    );
+    await assertClientInputWasNotPersisted(
+      adminDb,
+      businessId,
+      invalidCase.rut
+    );
+  }
+  console.log("OK territorio: valida códigos y deriva nombres autoritativos");
 
   const ownerClientPath = `negocios/${businessId}/clientes/${ownerClientId}`;
   assert.ok((await getDoc(doc(member.db, ownerClientPath))).exists());

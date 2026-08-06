@@ -127,6 +127,13 @@ assert.throws(
   (error) =>
     error.code === "client/invalid-data" && /4000 caracteres/i.test(error.message)
 );
+const lengthErrors = getClientFieldErrors({
+  tipoCliente: "empresa",
+  rut: "12.345.678-5",
+  nombreRazonSocial: "Cliente inválido",
+  notas: "x".repeat(4001),
+});
+assert.match(lengthErrors.notas, /4000 caracteres/i);
 console.log("OK cliente: rechaza tipos no textuales y excesos sin truncar");
 
 const adapted = adaptStoredClient({
@@ -142,6 +149,14 @@ assert.equal(adapted.estado, "archivado");
 assert.equal(matchesClientSearch(adapted, "maria"), true);
 assert.equal(matchesClientSearch(adapted, "6000000k"), true);
 assert.equal(matchesClientSearch(adapted, "empresa inexistente"), false);
+const longSearchResult = matchesClientSearch(adapted, "x".repeat(501));
+assert.equal(typeof longSearchResult, "boolean");
+assert.doesNotThrow(() => matchesClientSearch(adapted, "x".repeat(800)));
+assert.doesNotThrow(() => matchesClientSearch(adapted, null));
+assert.doesNotThrow(() => matchesClientSearch(adapted, undefined));
+assert.equal(matchesClientSearch(adapted, null), true);
+assert.equal(matchesClientSearch(adapted, undefined), true);
 console.log("OK compatibilidad: clientId solo se lee como alias y la búsqueda usa nombre/RUT");
+console.log("OK búsqueda: entradas extensas, null y undefined son toleradas");
 
 console.log("CLIENT_MODEL_SMOKE_OK");

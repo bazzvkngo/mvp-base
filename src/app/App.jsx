@@ -9,6 +9,7 @@ import {
 import AppLayout from "../layout/AppLayout";
 import EnvironmentNotice from "../components/EnvironmentNotice";
 import CompanyPage from "../pages/CompanyPage";
+import ClientsPage from "../pages/ClientsPage";
 import AccountPage from "../pages/AccountPage";
 import DashboardPage from "../pages/DashboardPage";
 import FinancePage from "../pages/FinancePage";
@@ -189,6 +190,16 @@ function AppRoutes({
         <Route
           path="/valorizacion"
           element={<PricingPage key={businessId} userId={businessId} />}
+        />
+        <Route
+          path="/clientes"
+          element={
+            <ClientsPage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
+            />
+          }
         />
         <Route
           path="/cotizaciones"

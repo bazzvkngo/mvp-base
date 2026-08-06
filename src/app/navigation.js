@@ -9,6 +9,7 @@ import {
   History,
   LayoutDashboard,
   UserRound,
+  UsersRound,
   WalletCards,
 } from "lucide-react";
 
@@ -68,6 +69,12 @@ export const navigationSections = [
   {
     label: "Comercial",
     items: [
+      {
+        to: "/clientes",
+        label: "Clientes",
+        title: "Clientes",
+        icon: UsersRound,
+      },
       {
         to: "/valorizacion",
         label: "Valorización",
