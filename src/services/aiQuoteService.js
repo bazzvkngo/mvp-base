@@ -1,5 +1,6 @@
-import { getFunctions, httpsCallable } from "firebase/functions";
-import { app } from "../firebase/firebaseConfig";
+import { httpsCallable } from "firebase/functions";
+import { assertCloudFunctionAllowed } from "../config/firebaseEnvironment.mjs";
+import { getFirebaseFunctions } from "../firebase/firebaseConfig";
 import { normalizeAiRateLimitStatus } from "./aiRateLimitService";
 
 const MAX_DESCRIPTION_LENGTH = 1200;
@@ -16,6 +17,7 @@ function summarizeInventoryItem(valuation) {
 }
 
 export async function suggestQuoteItems({ description, valuations, assistantMode }) {
+  assertCloudFunctionAllowed("las sugerencias de cotización");
   const cleanDescription = String(description || "").trim();
   const requestedMode = ["local", "gemini"].includes(assistantMode)
     ? assistantMode
@@ -33,7 +35,7 @@ export async function suggestQuoteItems({ description, valuations, assistantMode
     ? valuations.map(summarizeInventoryItem).filter((item) => item.id && item.nombre)
     : [];
 
-  const functions = getFunctions(app, FUNCTIONS_REGION);
+  const functions = getFirebaseFunctions(FUNCTIONS_REGION);
   const callable = httpsCallable(functions, "suggestQuoteItems");
   const response = await callable({
     description: cleanDescription,

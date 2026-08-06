@@ -1,0 +1,955 @@
+const { createHash } = require("node:crypto");
+
+const INVENTORY_MODEL_VERSION = 2;
+const MAX_INVENTORY_IMPORT_BATCH_SIZE = 200;
+const INVENTORY_TYPES = Object.freeze(["producto", "servicio", "actividad"]);
+const INTERNAL_CODE_PREFIXES = Object.freeze({
+  producto: "PR",
+  servicio: "SV",
+  actividad: "AC",
+});
+const INITIAL_INVENTORY_AREAS = Object.freeze([
+  Object.freeze({ id: "area_informatica", nombre: "Informática" }),
+  Object.freeze({
+    id: "area_sistemas_seguridad",
+    nombre: "Sistemas de seguridad",
+  }),
+  Object.freeze({ id: "area_electricidad", nombre: "Electricidad" }),
+  Object.freeze({ id: "area_obra_civil", nombre: "Obra civil" }),
+]);
+const INITIAL_INVENTORY_CATEGORIES = Object.freeze([
+  Object.freeze({
+    id: "cat_soporte_tecnico_hardware",
+    areaId: "area_informatica",
+    nombre: "Soporte técnico y hardware",
+  }),
+  Object.freeze({
+    id: "cat_sistemas_operativos",
+    areaId: "area_informatica",
+    nombre: "Sistemas operativos",
+  }),
+  Object.freeze({
+    id: "cat_redes_conectividad",
+    areaId: "area_informatica",
+    nombre: "Redes y conectividad",
+  }),
+  Object.freeze({
+    id: "cat_desarrollo_web_software",
+    areaId: "area_informatica",
+    nombre: "Desarrollo web y software",
+  }),
+  Object.freeze({
+    id: "cat_bases_datos",
+    areaId: "area_informatica",
+    nombre: "Bases de datos",
+  }),
+  Object.freeze({
+    id: "cat_cloud_despliegue",
+    areaId: "area_informatica",
+    nombre: "Cloud y despliegue",
+  }),
+  Object.freeze({
+    id: "cat_seguridad_informatica",
+    areaId: "area_informatica",
+    nombre: "Seguridad informática",
+  }),
+  Object.freeze({
+    id: "cat_aseguramiento_calidad",
+    areaId: "area_informatica",
+    nombre: "Aseguramiento de calidad",
+  }),
+  Object.freeze({
+    id: "cat_gestion_ti_consultoria",
+    areaId: "area_informatica",
+    nombre: "Gestión TI y consultoría",
+  }),
+]);
+
+function normalizeCatalogName(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function safeText(value, maxLength = 180) {
+  return String(value || "").trim().replace(/\s+/g, " ").slice(0, maxLength);
+}
+
+function toFiniteNumber(
+  value,
+  fieldLabel,
+  HttpsError,
+  { allowNegative = false } = {}
+) {
+  if (value === "" || value === null || value === undefined) {
+    throw new HttpsError("invalid-argument", `${fieldLabel} es obligatorio.`);
+  }
+  const number = Number(value);
+  if (!Number.isFinite(number) || (!allowNegative && number < 0)) {
+    throw new HttpsError(
+      "invalid-argument",
+      `${fieldLabel} debe ser un número mayor o igual a cero.`
+    );
+  }
+  return number;
+}
+
+function requireText(value, fieldLabel, maxLength, HttpsError) {
+  const normalized = safeText(value, maxLength);
+  if (!normalized) {
+    throw new HttpsError("invalid-argument", `${fieldLabel} es obligatorio.`);
+  }
+  return normalized;
+}
+
+function formatInternalCode(tipoItem, sequence) {
+  const prefix = INTERNAL_CODE_PREFIXES[tipoItem];
+  const number = Number(sequence);
+  if (!prefix || !Number.isSafeInteger(number) || number <= 0) {
+    throw new Error("No se pudo construir el código interno de inventario.");
+  }
+  return `${prefix}-${String(number).padStart(4, "0")}`;
+}
+
+function catalogKeyId(kind, scope, normalizedName) {
+  const raw = `${kind}|${scope || "root"}|${normalizedName}`;
+  return Buffer.from(raw, "utf8").toString("base64url");
+}
+
+function validateCatalogName(value, HttpsError) {
+  const nombre = requireText(value, "El nombre", 80, HttpsError);
+  const nombreNormalizado = normalizeCatalogName(nombre);
+  if (nombreNormalizado.length < 2) {
+    throw new HttpsError(
+      "invalid-argument",
+      "El nombre debe contener al menos dos caracteres."
+    );
+  }
+  return { nombre, nombreNormalizado };
+}
+
+function normalizeCatalogStatus(value) {
+  return value === "inactivo" ? "inactivo" : "activo";
+}
+
+async function readDocumentSnapshot(db, reference) {
+  if (typeof reference.get === "function") return reference.get();
+  return db.runTransaction((transaction) => transaction.get(reference));
+}
+
+function getInventoryTaxFields(item, rawSettings = {}) {
+  if (item.tipoItem !== "producto") return {};
+  const options = {
+    IVA_GENERAL: { impuestoId: "IVA_GENERAL", impuestoTasa: 19 },
+    IVA_EXENTO: { impuestoId: "IVA_EXENTO", impuestoTasa: 0 },
+    SIN_IMPUESTO: { impuestoId: "SIN_IMPUESTO", impuestoTasa: 0 },
+  };
+  return options[rawSettings.impuestoPredeterminadoId] || options.IVA_GENERAL;
+}
+
+function validateInventoryItemInput(
+  data,
+  HttpsError,
+  { allowNegativeStock = false } = {}
+) {
+  const source = data && typeof data === "object" ? data : {};
+  const tipoItem = safeText(source.tipoItem, 20).toLowerCase();
+  if (!INVENTORY_TYPES.includes(tipoItem)) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Selecciona un tipo de ítem válido."
+    );
+  }
+
+  const areaId = requireText(source.areaId, "El área", 120, HttpsError);
+  const categoriaId = requireText(
+    source.categoriaId,
+    "La categoría",
+    120,
+    HttpsError
+  );
+  const nombre = requireText(source.nombre, "El nombre", 140, HttpsError);
+  const unidad = requireText(source.unidad, "La unidad", 40, HttpsError);
+  const costoBase = toFiniteNumber(source.costoBase, "El costo base", HttpsError);
+  const margenDeseado = toFiniteNumber(
+    source.margenDeseado,
+    "El margen deseado",
+    HttpsError
+  );
+  const calculatedPrice = Math.round(
+    costoBase + (costoBase * margenDeseado) / 100
+  );
+  const precioInterno =
+    source.precioInterno === "" ||
+    source.precioInterno === null ||
+    source.precioInterno === undefined
+      ? calculatedPrice
+      : toFiniteNumber(source.precioInterno, "El precio interno", HttpsError);
+
+  const result = {
+    areaId,
+    categoriaId,
+    nombre,
+    tipoItem,
+    descripcion: safeText(source.descripcion, 1200),
+    unidad,
+    costoBase,
+    margenDeseado,
+    precioInterno,
+    precioManual: source.precioManual === true,
+    estado: source.estado === "inactivo" ? "inactivo" : "activo",
+  };
+
+  if (tipoItem === "producto") {
+    result.marca = requireText(source.marca, "La marca", 100, HttpsError);
+    result.modelo = requireText(source.modelo, "El modelo", 100, HttpsError);
+    result.stock = toFiniteNumber(source.stock ?? 0, "El stock actual", HttpsError, {
+      allowNegative: allowNegativeStock,
+    });
+    result.stockMinimo = toFiniteNumber(
+      source.stockMinimo ?? 0,
+      "El stock mínimo",
+      HttpsError
+    );
+    const codigoBarras = safeText(source.codigoBarras, 120);
+    if (codigoBarras) result.codigoBarras = codigoBarras;
+  }
+
+  const origen = safeText(source.origen, 80);
+  if (
+    [
+      "importacion_documental_multiformato",
+      "importacion_inteligente_archivo",
+    ].includes(origen)
+  ) {
+    result.origen = origen;
+  }
+  const justificacionSugerencia = safeText(
+    source.justificacionSugerencia,
+    500
+  );
+  if (justificacionSugerencia) {
+    result.justificacionSugerencia = justificacionSugerencia;
+  }
+  if (
+    source.confianzaPrecio !== "" &&
+    source.confianzaPrecio !== null &&
+    source.confianzaPrecio !== undefined
+  ) {
+    const confianzaPrecio = Number(source.confianzaPrecio);
+    if (
+      !Number.isFinite(confianzaPrecio) ||
+      confianzaPrecio < 0 ||
+      confianzaPrecio > 100
+    ) {
+      throw new HttpsError(
+        "invalid-argument",
+        "La confianza informada debe estar entre 0 y 100."
+      );
+    }
+    result.confianzaPrecio = confianzaPrecio;
+  }
+
+  return result;
+}
+
+function validateRequestId(value, HttpsError) {
+  const requestId = safeText(value, 120);
+  if (!/^[a-zA-Z0-9_-]{8,120}$/.test(requestId)) {
+    throw new HttpsError(
+      "invalid-argument",
+      "No se pudo validar la solicitud de creación."
+    );
+  }
+  return requestId;
+}
+
+async function resolveBusinessContext(
+  request,
+  { db, HttpsError, requireBusinessAccess }
+) {
+  if (typeof requireBusinessAccess === "function") {
+    return requireBusinessAccess(request, { db, HttpsError });
+  }
+  const uid = request?.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
+  }
+  return {
+    uid,
+    businessId: uid,
+    businessRef: db.collection("usuarios").doc(uid),
+  };
+}
+
+function validateImportRowId(value, HttpsError) {
+  const rowId = safeText(value, 120);
+  if (!/^[a-zA-Z0-9_.:-]{1,120}$/.test(rowId)) {
+    throw new HttpsError(
+      "invalid-argument",
+      "No se pudo relacionar una fila de la importación."
+    );
+  }
+  return rowId;
+}
+
+function getImportRequestFingerprint(rows) {
+  return createHash("sha256").update(JSON.stringify(rows)).digest("hex");
+}
+
+function normalizeInventoryImportRows(
+  rawRows,
+  HttpsError,
+  { allowNegativeStock = false } = {}
+) {
+  if (!Array.isArray(rawRows) || rawRows.length === 0) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Selecciona al menos una fila válida para guardar.",
+      { internalCode: "inventory_import_empty_batch" }
+    );
+  }
+  if (rawRows.length > MAX_INVENTORY_IMPORT_BATCH_SIZE) {
+    throw new HttpsError(
+      "invalid-argument",
+      `La confirmación admite un máximo de ${MAX_INVENTORY_IMPORT_BATCH_SIZE} filas por lote. Excluye filas o divídelas en otra importación.`,
+      { internalCode: "inventory_import_batch_too_large" }
+    );
+  }
+
+  const seenRowIds = new Set();
+  return rawRows.map((rawRow, index) => {
+    const rowId = validateImportRowId(rawRow?.rowId, HttpsError);
+    if (seenRowIds.has(rowId)) {
+      throw new HttpsError(
+        "invalid-argument",
+        "Cada fila del lote debe tener un identificador independiente.",
+        { internalCode: "inventory_import_duplicate_row", rowId }
+      );
+    }
+    seenRowIds.add(rowId);
+
+    const rawItem = rawRow?.item;
+    if (!rawItem || typeof rawItem !== "object" || Array.isArray(rawItem)) {
+      throw new HttpsError(
+        "invalid-argument",
+        `La fila ${index + 1} está incompleta.`,
+        { internalCode: "inventory_import_invalid_row", rowId }
+      );
+    }
+    if (
+      [
+        "codigoInterno",
+        "negocioId",
+        "uidUsuario",
+        "modeloInventarioVersion",
+        "creadoEn",
+        "actualizadoEn",
+      ].some((field) => Object.prototype.hasOwnProperty.call(rawItem, field))
+    ) {
+      throw new HttpsError(
+        "invalid-argument",
+        `La fila ${index + 1} contiene campos administrados por el servidor.`,
+        { internalCode: "inventory_import_server_fields", rowId }
+      );
+    }
+
+    try {
+      return {
+        rowId,
+        item: validateInventoryItemInput(rawItem, HttpsError, {
+          allowNegativeStock,
+        }),
+      };
+    } catch (error) {
+      throw new HttpsError(
+        error?.code || "invalid-argument",
+        `Fila ${index + 1}: ${error?.message || "datos incompletos"}`,
+        { internalCode: "inventory_import_invalid_row", rowId }
+      );
+    }
+  });
+}
+
+async function initializeInventoryCatalogHandler(
+  request,
+  { db, HttpsError, FieldValue, requireBusinessAccess }
+) {
+  const { uid, businessId, businessRef: userRef } =
+    await resolveBusinessContext(request, { db, HttpsError, requireBusinessAccess });
+  const areasRef = userRef.collection("areas");
+  const categoriesRef = userRef.collection("categoriasInventario");
+  const keysRef = userRef.collection("inventoryCatalogKeys");
+
+  const [existingAreasSnapshot, existingCategoriesSnapshot] = await Promise.all([
+    areasRef.get(),
+    categoriesRef.get(),
+  ]);
+  const existingAreasByName = new Map(
+    existingAreasSnapshot.docs.map((areaDoc) => {
+      const data = areaDoc.data() || {};
+      return [
+        normalizeCatalogName(data.nombreNormalizado || data.nombre),
+        { id: areaDoc.id, data },
+      ];
+    })
+  );
+  const resolvedAreaIds = new Map(
+    INITIAL_INVENTORY_AREAS.map((area) => [
+      area.id,
+      existingAreasByName.get(normalizeCatalogName(area.nombre))?.id || area.id,
+    ])
+  );
+  const existingCategoriesByScope = new Map(
+    existingCategoriesSnapshot.docs.map((categoryDoc) => {
+      const data = categoryDoc.data() || {};
+      return [
+        `${data.areaId || ""}|${normalizeCatalogName(
+          data.nombreNormalizado || data.nombre
+        )}`,
+        { id: categoryDoc.id, data },
+      ];
+    })
+  );
+
+  await db.runTransaction(async (transaction) => {
+    const areaEntries = INITIAL_INVENTORY_AREAS.map((area) => {
+      const normalizedName = normalizeCatalogName(area.nombre);
+      const existing = existingAreasByName.get(normalizedName);
+      const resolvedId = existing?.id || area.id;
+      return {
+        area,
+        existing,
+        areaRef: areasRef.doc(resolvedId),
+        keyRef: keysRef.doc(catalogKeyId("area", "root", normalizedName)),
+        normalizedName,
+      };
+    });
+    const categoryEntries = INITIAL_INVENTORY_CATEGORIES.map((category) => {
+      const areaId = resolvedAreaIds.get(category.areaId) || category.areaId;
+      const normalizedName = normalizeCatalogName(category.nombre);
+      const existing = existingCategoriesByScope.get(
+        `${areaId}|${normalizedName}`
+      );
+      return {
+        category,
+        areaId,
+        existing,
+        categoryRef: categoriesRef.doc(existing?.id || category.id),
+        keyRef: keysRef.doc(
+          catalogKeyId("categoria", areaId, normalizedName)
+        ),
+        normalizedName,
+      };
+    });
+    const snapshots = await Promise.all(
+      [...areaEntries, ...categoryEntries].flatMap((entry) => [
+          transaction.get(entry.areaRef || entry.categoryRef),
+          transaction.get(entry.keyRef),
+        ])
+    );
+
+    areaEntries.forEach((entry, index) => {
+      const areaSnapshot = snapshots[index * 2];
+      const keySnapshot = snapshots[index * 2 + 1];
+      if (!entry.existing && !areaSnapshot.exists && !keySnapshot.exists) {
+        transaction.set(entry.areaRef, {
+          nombre: entry.area.nombre,
+          nombreNormalizado: entry.normalizedName,
+          estado: "activo",
+          negocioId: businessId,
+          uidUsuario: uid,
+          creadoEn: FieldValue.serverTimestamp(),
+          actualizadoEn: FieldValue.serverTimestamp(),
+        });
+      }
+      if (!keySnapshot.exists) {
+        transaction.set(entry.keyRef, {
+          tipo: "area",
+          objetivoId: entry.areaRef.id,
+          negocioId: businessId,
+          uidUsuario: uid,
+        });
+      }
+    });
+
+    const categoryOffset = areaEntries.length * 2;
+    categoryEntries.forEach((entry, index) => {
+      const categorySnapshot = snapshots[categoryOffset + index * 2];
+      const keySnapshot = snapshots[categoryOffset + index * 2 + 1];
+      if (!entry.existing && !categorySnapshot.exists && !keySnapshot.exists) {
+        transaction.set(entry.categoryRef, {
+          areaId: entry.areaId,
+          nombre: entry.category.nombre,
+          nombreNormalizado: entry.normalizedName,
+          estado: "activo",
+          negocioId: businessId,
+          uidUsuario: uid,
+          creadoEn: FieldValue.serverTimestamp(),
+          actualizadoEn: FieldValue.serverTimestamp(),
+        });
+      }
+      if (!keySnapshot.exists) {
+        transaction.set(entry.keyRef, {
+          tipo: "categoria",
+          objetivoId: entry.categoryRef.id,
+          negocioId: businessId,
+          uidUsuario: uid,
+        });
+      }
+    });
+  });
+
+  return { initialized: true };
+}
+
+async function saveInventoryAreaHandler(
+  request,
+  { db, HttpsError, FieldValue, requireBusinessAccess }
+) {
+  const { uid, businessId, businessRef: userRef } =
+    await resolveBusinessContext(request, { db, HttpsError, requireBusinessAccess });
+  const { nombre, nombreNormalizado } = validateCatalogName(
+    request.data?.nombre,
+    HttpsError
+  );
+  const areaId = safeText(request.data?.areaId, 120);
+  const estado = normalizeCatalogStatus(request.data?.estado);
+  const areaRef = areaId
+    ? userRef.collection("areas").doc(areaId)
+    : userRef.collection("areas").doc();
+  const keyRef = userRef
+    .collection("inventoryCatalogKeys")
+    .doc(catalogKeyId("area", "root", nombreNormalizado));
+
+  await db.runTransaction(async (transaction) => {
+    const [areaSnapshot, keySnapshot] = await Promise.all([
+      areaId ? transaction.get(areaRef) : Promise.resolve(null),
+      transaction.get(keyRef),
+    ]);
+    if (areaId && !areaSnapshot.exists) {
+      throw new HttpsError("not-found", "El área ya no existe.");
+    }
+    if (keySnapshot.exists && keySnapshot.data()?.objetivoId !== areaRef.id) {
+      throw new HttpsError("already-exists", "Ya existe un área con ese nombre.");
+    }
+
+    const previousNormalizedName = areaSnapshot?.data()?.nombreNormalizado || "";
+    if (previousNormalizedName && previousNormalizedName !== nombreNormalizado) {
+      const previousKeyRef = userRef
+        .collection("inventoryCatalogKeys")
+        .doc(catalogKeyId("area", "root", previousNormalizedName));
+      transaction.delete(previousKeyRef);
+    }
+    transaction.set(
+      areaRef,
+      {
+        nombre,
+        nombreNormalizado,
+        estado,
+        negocioId: businessId,
+        uidUsuario: uid,
+        ...(areaId ? {} : { creadoEn: FieldValue.serverTimestamp() }),
+        actualizadoEn: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+    transaction.set(keyRef, {
+      tipo: "area",
+      objetivoId: areaRef.id,
+      negocioId: businessId,
+      uidUsuario: uid,
+    });
+  });
+
+  return { areaId: areaRef.id };
+}
+
+async function saveInventoryCategoryHandler(
+  request,
+  { db, HttpsError, FieldValue, requireBusinessAccess }
+) {
+  const { uid, businessId, businessRef: userRef } =
+    await resolveBusinessContext(request, { db, HttpsError, requireBusinessAccess });
+  const { nombre, nombreNormalizado } = validateCatalogName(
+    request.data?.nombre,
+    HttpsError
+  );
+  const categoriaId = safeText(request.data?.categoriaId, 120);
+  const areaId = requireText(request.data?.areaId, "El área", 120, HttpsError);
+  const estado = normalizeCatalogStatus(request.data?.estado);
+  const areaRef = userRef.collection("areas").doc(areaId);
+  const categoryRef = categoriaId
+    ? userRef.collection("categoriasInventario").doc(categoriaId)
+    : userRef.collection("categoriasInventario").doc();
+  const keyRef = userRef
+    .collection("inventoryCatalogKeys")
+    .doc(catalogKeyId("categoria", areaId, nombreNormalizado));
+
+  await db.runTransaction(async (transaction) => {
+    const [areaSnapshot, categorySnapshot, keySnapshot] = await Promise.all([
+      transaction.get(areaRef),
+      categoriaId ? transaction.get(categoryRef) : Promise.resolve(null),
+      transaction.get(keyRef),
+    ]);
+    if (!areaSnapshot.exists || areaSnapshot.data()?.estado !== "activo") {
+      throw new HttpsError(
+        "failed-precondition",
+        "Selecciona un área activa."
+      );
+    }
+    if (categoriaId && !categorySnapshot.exists) {
+      throw new HttpsError("not-found", "La categoría ya no existe.");
+    }
+    if (
+      categoriaId &&
+      categorySnapshot.data()?.areaId &&
+      categorySnapshot.data().areaId !== areaId
+    ) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Una categoría existente no puede moverse a otra área. Crea una categoría nueva."
+      );
+    }
+    if (keySnapshot.exists && keySnapshot.data()?.objetivoId !== categoryRef.id) {
+      throw new HttpsError(
+        "already-exists",
+        "Ya existe una categoría con ese nombre dentro del área."
+      );
+    }
+
+    const previous = categorySnapshot?.data() || {};
+    if (
+      previous.nombreNormalizado &&
+      (previous.nombreNormalizado !== nombreNormalizado || previous.areaId !== areaId)
+    ) {
+      const previousKeyRef = userRef
+        .collection("inventoryCatalogKeys")
+        .doc(
+          catalogKeyId(
+            "categoria",
+            previous.areaId,
+            previous.nombreNormalizado
+          )
+        );
+      transaction.delete(previousKeyRef);
+    }
+    transaction.set(
+      categoryRef,
+      {
+        areaId,
+        nombre,
+        nombreNormalizado,
+        estado,
+        negocioId: businessId,
+        uidUsuario: uid,
+        ...(categoriaId ? {} : { creadoEn: FieldValue.serverTimestamp() }),
+        actualizadoEn: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+    transaction.set(keyRef, {
+      tipo: "categoria",
+      objetivoId: categoryRef.id,
+      areaId,
+      negocioId: businessId,
+      uidUsuario: uid,
+    });
+  });
+
+  return { categoriaId: categoryRef.id };
+}
+
+async function createInventoryItemWithCodeHandler(
+  request,
+  { db, HttpsError, FieldValue, requireBusinessAccess }
+) {
+  const { uid, businessId, businessRef: userRef } =
+    await resolveBusinessContext(request, { db, HttpsError, requireBusinessAccess });
+  const requestId = validateRequestId(request.data?.requestId, HttpsError);
+  const [inventorySettingsSnapshot, taxSettingsSnapshot] = await Promise.all([
+    readDocumentSnapshot(
+      db,
+      userRef.collection("configuracion").doc("inventario")
+    ),
+    readDocumentSnapshot(
+      db,
+      userRef.collection("configuracion").doc("impuestos")
+    ),
+  ]);
+  const item = validateInventoryItemInput(request.data?.item, HttpsError, {
+    allowNegativeStock:
+      inventorySettingsSnapshot.data()?.permitirStockNegativo === true,
+  });
+  const requestRef = userRef.collection("inventoryCreateRequests").doc(requestId);
+  const counterRef = userRef
+    .collection("inventarioContadores")
+    .doc(item.tipoItem);
+  const areaRef = userRef.collection("areas").doc(item.areaId);
+  const categoryRef = userRef
+    .collection("categoriasInventario")
+    .doc(item.categoriaId);
+  const itemRef = userRef.collection("inventario").doc();
+
+  return db.runTransaction(async (transaction) => {
+    const [requestSnapshot, counterSnapshot, areaSnapshot, categorySnapshot] =
+      await Promise.all([
+        transaction.get(requestRef),
+        transaction.get(counterRef),
+        transaction.get(areaRef),
+        transaction.get(categoryRef),
+      ]);
+
+    if (requestSnapshot.exists) {
+      return {
+        itemId: requestSnapshot.data().itemId,
+        codigoInterno: requestSnapshot.data().codigoInterno,
+        idempotent: true,
+      };
+    }
+    if (!areaSnapshot.exists || areaSnapshot.data()?.estado !== "activo") {
+      throw new HttpsError("failed-precondition", "Selecciona un área activa.");
+    }
+    if (
+      !categorySnapshot.exists ||
+      categorySnapshot.data()?.estado !== "activo" ||
+      categorySnapshot.data()?.areaId !== item.areaId
+    ) {
+      throw new HttpsError(
+        "failed-precondition",
+        "La categoría debe estar activa y pertenecer al área seleccionada."
+      );
+    }
+
+    const lastNumber = Number(counterSnapshot.data()?.ultimoNumero || 0);
+    const nextNumber = Number.isSafeInteger(lastNumber) ? lastNumber + 1 : 1;
+    const codigoInterno = formatInternalCode(item.tipoItem, nextNumber);
+    const timestamp = FieldValue.serverTimestamp();
+
+    transaction.set(counterRef, {
+      tipoItem: item.tipoItem,
+      ultimoNumero: nextNumber,
+      negocioId: businessId,
+      uidUsuario: uid,
+      actualizadoEn: timestamp,
+    });
+    transaction.set(itemRef, {
+      ...item,
+      ...getInventoryTaxFields(item, taxSettingsSnapshot.data() || {}),
+      categoria: categorySnapshot.data().nombre,
+      codigoInterno,
+      modeloInventarioVersion: INVENTORY_MODEL_VERSION,
+      negocioId: businessId,
+      uidUsuario: uid,
+      creadoEn: timestamp,
+      actualizadoEn: timestamp,
+    });
+    transaction.set(requestRef, {
+      itemId: itemRef.id,
+      codigoInterno,
+      tipoItem: item.tipoItem,
+      negocioId: businessId,
+      uidUsuario: uid,
+      creadoEn: timestamp,
+    });
+
+    return { itemId: itemRef.id, codigoInterno, idempotent: false };
+  });
+}
+
+async function confirmInventoryImportV2Handler(
+  request,
+  { db, HttpsError, FieldValue, requireBusinessAccess }
+) {
+  const { uid, businessId, businessRef: userRef } =
+    await resolveBusinessContext(request, { db, HttpsError, requireBusinessAccess });
+  const requestId = validateRequestId(request.data?.requestId, HttpsError);
+  const [inventorySettingsSnapshot, taxSettingsSnapshot] = await Promise.all([
+    readDocumentSnapshot(
+      db,
+      userRef.collection("configuracion").doc("inventario")
+    ),
+    readDocumentSnapshot(
+      db,
+      userRef.collection("configuracion").doc("impuestos")
+    ),
+  ]);
+  const rows = normalizeInventoryImportRows(request.data?.rows, HttpsError, {
+    allowNegativeStock:
+      inventorySettingsSnapshot.data()?.permitirStockNegativo === true,
+  });
+  const fingerprint = getImportRequestFingerprint(rows);
+  const importRequestRef = userRef
+    .collection("inventoryImportRequests")
+    .doc(requestId);
+  const counterRefs = new Map(
+    [...new Set(rows.map((row) => row.item.tipoItem))].map((tipoItem) => [
+      tipoItem,
+      userRef.collection("inventarioContadores").doc(tipoItem),
+    ])
+  );
+  const areaRefs = new Map(
+    [...new Set(rows.map((row) => row.item.areaId))].map((areaId) => [
+      areaId,
+      userRef.collection("areas").doc(areaId),
+    ])
+  );
+  const categoryRefs = new Map(
+    [...new Set(rows.map((row) => row.item.categoriaId))].map((categoriaId) => [
+      categoriaId,
+      userRef.collection("categoriasInventario").doc(categoriaId),
+    ])
+  );
+  const itemRefs = rows.map(() => userRef.collection("inventario").doc());
+
+  return db.runTransaction(async (transaction) => {
+    const existingRequest = await transaction.get(importRequestRef);
+    if (existingRequest.exists) {
+      const previous = existingRequest.data() || {};
+      if (previous.fingerprint !== fingerprint) {
+        throw new HttpsError(
+          "failed-precondition",
+          "La solicitud ya fue utilizada con un contenido diferente. Vuelve a preparar la importación.",
+          { internalCode: "inventory_import_request_conflict" }
+        );
+      }
+      return {
+        requestId,
+        results: Array.isArray(previous.results) ? previous.results : [],
+        total: Number(previous.total || 0),
+        idempotent: true,
+      };
+    }
+
+    const [counterSnapshots, areaSnapshots, categorySnapshots] =
+      await Promise.all([
+        Promise.all(
+          [...counterRefs.entries()].map(async ([key, reference]) => [
+            key,
+            await transaction.get(reference),
+          ])
+        ),
+        Promise.all(
+          [...areaRefs.entries()].map(async ([key, reference]) => [
+            key,
+            await transaction.get(reference),
+          ])
+        ),
+        Promise.all(
+          [...categoryRefs.entries()].map(async ([key, reference]) => [
+            key,
+            await transaction.get(reference),
+          ])
+        ),
+      ]);
+    const countersByType = new Map(counterSnapshots);
+    const areasById = new Map(areaSnapshots);
+    const categoriesById = new Map(categorySnapshots);
+
+    rows.forEach((row, index) => {
+      const areaSnapshot = areasById.get(row.item.areaId);
+      const categorySnapshot = categoriesById.get(row.item.categoriaId);
+      if (!areaSnapshot?.exists || areaSnapshot.data()?.estado !== "activo") {
+        throw new HttpsError(
+          "failed-precondition",
+          `La fila ${index + 1} utiliza un Área que ya no está activa. Actualiza la previsualización.`,
+          {
+            internalCode: "inventory_import_catalog_changed",
+            rowId: row.rowId,
+          }
+        );
+      }
+      if (
+        !categorySnapshot?.exists ||
+        categorySnapshot.data()?.estado !== "activo" ||
+        categorySnapshot.data()?.areaId !== row.item.areaId
+      ) {
+        throw new HttpsError(
+          "failed-precondition",
+          `La fila ${index + 1} utiliza una Categoría que cambió o ya no está activa. Actualiza la previsualización.`,
+          {
+            internalCode: "inventory_import_catalog_changed",
+            rowId: row.rowId,
+          }
+        );
+      }
+    });
+
+    const nextNumberByType = new Map(
+      [...countersByType.entries()].map(([tipoItem, snapshot]) => {
+        const current = Number(snapshot.data()?.ultimoNumero || 0);
+        return [tipoItem, Number.isSafeInteger(current) && current >= 0 ? current : 0];
+      })
+    );
+    const timestamp = FieldValue.serverTimestamp();
+    const results = rows.map((row, index) => {
+      const nextNumber = (nextNumberByType.get(row.item.tipoItem) || 0) + 1;
+      nextNumberByType.set(row.item.tipoItem, nextNumber);
+      const codigoInterno = formatInternalCode(row.item.tipoItem, nextNumber);
+      const categorySnapshot = categoriesById.get(row.item.categoriaId);
+      const itemRef = itemRefs[index];
+
+      transaction.set(itemRef, {
+        ...row.item,
+        ...getInventoryTaxFields(row.item, taxSettingsSnapshot.data() || {}),
+        categoria: categorySnapshot.data().nombre,
+        codigoInterno,
+        modeloInventarioVersion: INVENTORY_MODEL_VERSION,
+        negocioId: businessId,
+        uidUsuario: uid,
+        creadoEn: timestamp,
+        actualizadoEn: timestamp,
+      });
+      return {
+        rowId: row.rowId,
+        itemId: itemRef.id,
+        codigoInterno,
+      };
+    });
+
+    nextNumberByType.forEach((ultimoNumero, tipoItem) => {
+      transaction.set(counterRefs.get(tipoItem), {
+        tipoItem,
+        ultimoNumero,
+        negocioId: businessId,
+        uidUsuario: uid,
+        actualizadoEn: timestamp,
+      });
+    });
+    transaction.set(importRequestRef, {
+      fingerprint,
+      results,
+      total: results.length,
+      negocioId: businessId,
+      uidUsuario: uid,
+      creadoEn: timestamp,
+    });
+
+    return {
+      requestId,
+      results,
+      total: results.length,
+      idempotent: false,
+    };
+  });
+}
+
+module.exports = {
+  INITIAL_INVENTORY_AREAS,
+  INITIAL_INVENTORY_CATEGORIES,
+  INTERNAL_CODE_PREFIXES,
+  INVENTORY_MODEL_VERSION,
+  INVENTORY_TYPES,
+  MAX_INVENTORY_IMPORT_BATCH_SIZE,
+  confirmInventoryImportV2Handler,
+  createInventoryItemWithCodeHandler,
+  formatInternalCode,
+  initializeInventoryCatalogHandler,
+  normalizeCatalogName,
+  saveInventoryAreaHandler,
+  saveInventoryCategoryHandler,
+  validateInventoryItemInput,
+};

@@ -1,91 +1,83 @@
-function toSafeNumber(value, fallback = 0) {
+import {
+  calculateQuoteLineTotal,
+  calculateQuoteTotals,
+  normalizeQuoteItem,
+  normalizeQuoteItems,
+} from "./quoteModel.mjs";
+
+export {
+  calculateQuoteLineTotal,
+  calculateQuoteTotals,
+  normalizeQuoteItem,
+  normalizeQuoteItems,
+};
+
+function finiteNumber(value, fallback = 0) {
   const numberValue = Number(value);
   return Number.isFinite(numberValue) ? numberValue : fallback;
 }
 
-export function calculateQuoteLineTotal(item) {
-  const cantidad = Math.max(toSafeNumber(item?.cantidad, 0), 0);
+export function createQuoteItemFromValuation(valuation) {
+  const inventoryItem = valuation?.item || {};
   const precioUnitarioEditable = Math.max(
-    toSafeNumber(item?.precioUnitarioEditable, 0),
+    finiteNumber(valuation?.precioSugerido, valuation?.precioInterno || 0),
     0
   );
-  return Math.round(cantidad * precioUnitarioEditable);
-}
+  const itemId = valuation?.itemId || inventoryItem.id || "";
+  const cantidad = Math.max(finiteNumber(valuation?.cantidad, 1), 0) || 1;
 
-export function calculateQuoteTotals(items, descuento = 0) {
-  const subtotal = Array.isArray(items)
-    ? items.reduce((sum, item) => sum + calculateQuoteLineTotal(item), 0)
-    : 0;
-  const descuentoSeguro = Math.min(
-    Math.max(toSafeNumber(descuento, 0), 0),
-    subtotal
+  return normalizeQuoteItem(
+    {
+      lineaId: `linea-${itemId || "manual"}-${Date.now()}`,
+      itemId,
+      productoId: itemId,
+      codigo:
+        inventoryItem.codigoInterno ||
+        inventoryItem.codigo ||
+        inventoryItem.sku ||
+        "",
+      nombre: valuation?.nombre || inventoryItem.nombre || "Ítem sin nombre",
+      descripcionComercial:
+        inventoryItem.descripcion || valuation?.descripcion || "",
+      tipoItem: valuation?.tipoItem || inventoryItem.tipoItem || "producto",
+      categoria: valuation?.categoria || inventoryItem.categoria || "",
+      unidad: valuation?.unidad || inventoryItem.unidad || "unidad",
+      cantidad,
+      precioSugerido: precioUnitarioEditable,
+      precioUnitarioEditable,
+      descuentoPorcentaje: 0,
+      inventarioSnapshot: {
+        inventarioId: itemId,
+        codigoInterno:
+          inventoryItem.codigoInterno ||
+          inventoryItem.codigo ||
+          inventoryItem.sku ||
+          "",
+        nombre: valuation?.nombre || inventoryItem.nombre || "Ítem sin nombre",
+        descripcion: inventoryItem.descripcion || valuation?.descripcion || "",
+        tipoItem: valuation?.tipoItem || inventoryItem.tipoItem || "producto",
+        areaId: inventoryItem.areaId || "",
+        areaNombre: inventoryItem.areaNombre || "",
+        categoriaId: inventoryItem.categoriaId || "",
+        categoria: valuation?.categoria || inventoryItem.categoria || "",
+        unidad: valuation?.unidad || inventoryItem.unidad || "unidad",
+        modeloInventarioVersion: inventoryItem.modeloInventarioVersion || null,
+      },
+    },
+    0,
+    { strict: true }
   );
-
-  return {
-    subtotal,
-    descuento: descuentoSeguro,
-    total: Math.max(subtotal - descuentoSeguro, 0),
-  };
-}
-
-export function normalizeQuoteItems(items) {
-  return Array.isArray(items)
-    ? items.map((item) => {
-        const precioUnitarioEditable = Math.max(
-          toSafeNumber(
-            item.precioUnitarioEditable ??
-              item.precioUnitario ??
-              item.precio ??
-              item.precioSugerido,
-            0
-          ),
-          0
-        );
-
-        return {
-          ...item,
-          cantidad: Math.max(toSafeNumber(item.cantidad, 1), 0),
-          precioUnitarioEditable,
-          totalLinea: calculateQuoteLineTotal({
-            ...item,
-            precioUnitarioEditable,
-          }),
-        };
-      })
-    : [];
-}
-
-export function createQuoteItemFromValuation(valuation) {
-  const cantidad = 1;
-  const precioUnitarioEditable = toSafeNumber(valuation?.precioSugerido, 0);
-
-  return {
-    itemId: valuation?.itemId || "",
-    nombre: valuation?.nombre || "Ítem sin nombre",
-    descripcion: valuation?.item?.descripcion || valuation?.descripcion || "",
-    tipoItem: valuation?.tipoItem || "",
-    categoria: valuation?.categoria || "",
-    unidad: valuation?.unidad || "unidad",
-    cantidad,
-    costoBase: toSafeNumber(valuation?.costoBase, 0),
-    precioBase: toSafeNumber(valuation?.precioBase, 0),
-    precioSugerido: toSafeNumber(valuation?.precioSugerido, 0),
-    precioUnitarioEditable,
-    totalLinea: cantidad * precioUnitarioEditable,
-  };
 }
 
 export function inventoryItemToQuoteItem(item, cantidad = 1) {
-  const precioUnitario = Number(item?.precio ?? item?.precioInterno ?? 0);
-  const quantity = Number(cantidad) || 1;
-
-  return {
-    productoId: item?.id || null,
-    nombre: item?.nombre || "Ítem sin nombre",
-    categoria: item?.categoria || "",
-    unidad: item?.unidad || "unidad",
-    cantidad: quantity,
-    precioUnitario,
-    subtotal: quantity * precioUnitario,
-  };
+  return createQuoteItemFromValuation({
+    itemId: item?.id || "",
+    item,
+    nombre: item?.nombre,
+    tipoItem: item?.tipoItem,
+    categoria: item?.categoria,
+    unidad: item?.unidad,
+    cantidad,
+    precioSugerido: item?.precioInterno ?? item?.precio ?? 0,
+  });
 }

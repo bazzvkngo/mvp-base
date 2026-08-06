@@ -25,6 +25,7 @@ function BrandLogo({
   showText = true,
   className = "",
   iconSize,
+  subtitle = BRAND_SUBTITLE,
 }) {
   const isAuth = variant === "auth";
   const rootClassName = ["brand-logo", `brand-logo--${variant}`, className]
@@ -44,7 +45,7 @@ function BrandLogo({
       {showText && (
         <div className="brand-logo__text">
           <strong className="brand-logo__name">{BRAND_NAME}</strong>
-          <span className="brand-logo__subtitle">{BRAND_SUBTITLE}</span>
+          <span className="brand-logo__subtitle">{subtitle}</span>
         </div>
       )}
     </div>

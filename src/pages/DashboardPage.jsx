@@ -1,7 +1,28 @@
 import React, { useEffect, useMemo, useState } from "react";
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  Boxes,
+  FilePlus2,
+  Landmark,
+  Plus,
+  ReceiptText,
+} from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import DashboardDonutChart from "../components/DashboardDonutChart";
+import FinancialMetricCard from "../components/finance/FinancialMetricCard";
+import FinancialMovementDialog from "../components/finance/FinancialMovementDialog";
+import FinancialPeriodSelector from "../components/finance/FinancialPeriodSelector";
+import Button from "../components/ui/Button";
+import {
+  getFinancialPeriodRange,
+} from "../domain/financialMovement.mjs";
 import { PRICING_STATUS } from "../domain/pricing";
+import useFinancialMovements from "../hooks/useFinancialMovements";
+import {
+  getCompanyProfile,
+  getCompanyProfileCompletion,
+} from "../services/companyService";
 import { getQuotes } from "../services/quoteService";
 import { subscribeToInventory } from "../services/inventoryService";
 import { subscribeToReferences } from "../services/referenceService";
@@ -12,7 +33,8 @@ import {
   subscribeToReferenceTasks,
 } from "../services/referenceTaskService";
 import { buildValuations } from "../services/valuationService";
-import { formatCLP } from "../utils/formatters";
+import { createFinancialMovement } from "../services/financialService";
+import { formatCLP, formatDate } from "../utils/formatters";
 
 const quoteStates = [
   "borrador",
@@ -38,7 +60,7 @@ const quoteStateColors = {
   aceptada: "#22c55e",
   rechazada: "#f87171",
   vencida: "#f59e0b",
-  archivada: "#a78bfa",
+  archivada: "#64748b",
 };
 
 const valuationColors = {
@@ -134,9 +156,9 @@ function getLatestActiveReference(references) {
     .sort((a, b) => getReferenceDateTime(b) - getReferenceDateTime(a))[0];
 }
 
-function DashboardPage({ usuario }) {
+function DashboardPage({ usuario, businessId, role }) {
   const navigate = useNavigate();
-  const userId = usuario?.uid;
+  const userId = businessId;
   const [inventoryItems, setInventoryItems] = useState([]);
   const [references, setReferences] = useState([]);
   const [quotes, setQuotes] = useState([]);
@@ -146,6 +168,23 @@ function DashboardPage({ usuario }) {
   const [referenceTasks, setReferenceTasks] = useState([]);
   const [postponeDaysByTask, setPostponeDaysByTask] = useState({});
   const [error, setError] = useState("");
+  const [companyProfilePending, setCompanyProfilePending] = useState(false);
+  const [period, setPeriod] = useState("month");
+  const [customPeriod, setCustomPeriod] = useState(() => {
+    const current = getFinancialPeriodRange("month");
+    return { start: current.start, end: current.end };
+  });
+  const [movementDialog, setMovementDialog] = useState({
+    open: false,
+    type: "income",
+  });
+  const [financialFeedback, setFinancialFeedback] = useState("");
+  const financialRange = useMemo(
+    () => getFinancialPeriodRange(period, customPeriod),
+    [customPeriod, period]
+  );
+  const financialState = useFinancialMovements(businessId, financialRange);
+  const canManage = role === "OWNER" || role === "ADMIN";
 
   useEffect(() => {
     if (!userId) return undefined;
@@ -204,6 +243,29 @@ function DashboardPage({ usuario }) {
     };
   }, [userId]);
 
+  useEffect(() => {
+    if (!userId) return undefined;
+    let active = true;
+    setCompanyProfilePending(false);
+    getCompanyProfile(userId)
+      .then((profile) => {
+        if (active) {
+          const completion = getCompanyProfileCompletion(profile);
+          setCompanyProfilePending(
+            !completion.minimumComplete || !completion.recommendedComplete
+          );
+        }
+      })
+      .catch((err) => {
+        if (import.meta.env.DEV) {
+          console.error("Error al revisar el perfil de empresa:", err);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [userId]);
+
   const openReferenceAction = (task) => {
     if (!task.itemId) return;
     const params = new URLSearchParams({ itemId: task.itemId });
@@ -251,6 +313,16 @@ function DashboardPage({ usuario }) {
         (reference) => (reference.estado || "activa") === "activa"
       ),
     [references]
+  );
+
+  const lowStockProducts = useMemo(
+    () =>
+      activeInventory.filter(
+        (item) =>
+          item.tipoItem === "producto" &&
+          Number(item.stock || 0) <= Number(item.stockMinimo || 0)
+      ),
+    [activeInventory]
   );
 
   const valuations = useMemo(
@@ -311,6 +383,13 @@ function DashboardPage({ usuario }) {
 
   const visibleReferenceTasks = activeReferenceTasks.slice(0, 6);
 
+  const saveQuickMovement = async (payload) => {
+    await createFinancialMovement(businessId, payload);
+    setFinancialFeedback(
+      "Movimiento registrado. Resumen y Finanzas ya están actualizados."
+    );
+  };
+
   const loading = !inventoryLoaded || !referencesLoaded || !quotesLoaded;
   const hasNoData =
     !loading &&
@@ -322,16 +401,221 @@ function DashboardPage({ usuario }) {
     <section className="erp-page dashboard-page" style={styles.wrapper}>
       <div className="erp-page-intro">
         <p>
-          Resumen operativo del inventario, referencias, valorización y
-          cotizaciones.
+          Una vista breve del estado financiero y operativo del negocio activo.
         </p>
       </div>
+
+      <div className="summary-toolbar">
+        <FinancialPeriodSelector
+          period={period}
+          customStart={customPeriod.start}
+          customEnd={customPeriod.end}
+          onPeriodChange={setPeriod}
+          onCustomStartChange={(start) =>
+            setCustomPeriod((current) => ({ ...current, start }))
+          }
+          onCustomEndChange={(end) =>
+            setCustomPeriod((current) => ({ ...current, end }))
+          }
+          idPrefix="summary-period"
+        />
+        <span className="summary-toolbar__timezone">
+          Periodo comercial · America/Santiago
+        </span>
+      </div>
+
+      {financialFeedback && (
+        <div className="financial-feedback" role="status">
+          {financialFeedback}
+        </div>
+      )}
+      {financialState.error && (
+        <div className="financial-feedback financial-feedback--error" role="alert">
+          {financialState.error}
+        </div>
+      )}
+
+      <section
+        className="financial-metric-grid summary-financial-grid"
+        aria-label="Resumen financiero del periodo"
+      >
+        <FinancialMetricCard
+          icon={ArrowDownLeft}
+          label="Ingresos"
+          value={financialState.summary.paidIncome}
+          tone="income"
+          note="Pagados en el periodo"
+        />
+        <FinancialMetricCard
+          icon={ArrowUpRight}
+          label="Egresos"
+          value={financialState.summary.paidExpense}
+          tone="expense"
+          note="Pagados en el periodo"
+        />
+        <FinancialMetricCard
+          icon={Landmark}
+          label="Resultado neto"
+          value={financialState.summary.netResult}
+          tone={financialState.summary.netResult < 0 ? "expense" : "net"}
+          note="Ingresos − egresos pagados"
+        />
+        <FinancialMetricCard
+          icon={ReceiptText}
+          label="Por cobrar"
+          value={financialState.summary.receivable}
+          tone="pending"
+          note="Ingresos pendientes"
+        />
+      </section>
+
+      {financialState.loading ? (
+        <div className="financial-inline-loading" role="status">
+          Actualizando el resumen financiero...
+        </div>
+      ) : financialState.items.length === 0 ? (
+        <div className="erp-empty-state summary-financial-empty">
+          <ReceiptText size={27} aria-hidden="true" />
+          <h3>Aún no existen movimientos en este periodo</h3>
+          <p>
+            {canManage
+              ? "Registra tu primer ingreso o egreso para comenzar a ver el resultado del negocio."
+              : "Cuando OWNER o ADMIN registren movimientos, aparecerán aquí."}
+          </p>
+        </div>
+      ) : null}
+
+      <section
+        className="erp-panel summary-quick-actions"
+        aria-labelledby="summary-actions-title"
+      >
+        <div>
+          <h3 id="summary-actions-title" className="erp-panel-title">
+            Acciones rápidas
+          </h3>
+          <p>Atajos a las tareas más frecuentes del negocio.</p>
+        </div>
+        <div className="summary-quick-actions__buttons">
+          {canManage && (
+            <Button
+              icon={ArrowDownLeft}
+              onClick={() => setMovementDialog({ open: true, type: "income" })}
+            >
+              Registrar ingreso
+            </Button>
+          )}
+          {canManage && (
+            <Button
+              variant="secondary"
+              icon={ArrowUpRight}
+              onClick={() => setMovementDialog({ open: true, type: "expense" })}
+            >
+              Registrar egreso
+            </Button>
+          )}
+          {canManage && (
+            <Button
+              variant="secondary"
+              icon={FilePlus2}
+              onClick={() => navigate("/cotizaciones/nueva")}
+            >
+              Crear cotización
+            </Button>
+          )}
+          <Button
+            variant="secondary"
+            icon={Boxes}
+            onClick={() => navigate("/inventario")}
+          >
+            Ver inventario
+          </Button>
+          {canManage && (
+            <Button
+              variant="secondary"
+              icon={Plus}
+              onClick={() => navigate("/inventario?new=1")}
+            >
+              Agregar producto
+            </Button>
+          )}
+        </div>
+      </section>
+
+      <section className="erp-panel summary-recent-activity" aria-labelledby="summary-recent-title">
+        <div className="erp-panel-header">
+          <div>
+            <h3 id="summary-recent-title" className="erp-panel-title">
+              Actividad financiera reciente
+            </h3>
+            <p className="erp-secondary-text">
+              Últimos movimientos incluidos en el periodo seleccionado.
+            </p>
+          </div>
+          <Button variant="secondary" onClick={() => navigate("/finanzas")}>
+            Ver Finanzas
+          </Button>
+        </div>
+        {financialState.items.length === 0 ? (
+          <p className="erp-secondary-text">
+            Aún no existen movimientos en este periodo.
+          </p>
+        ) : (
+          <div className="summary-activity-list">
+            {financialState.items.slice(0, 5).map((movement) => (
+              <div className="summary-activity-row" key={movement.id}>
+                <span
+                  className={`summary-activity-row__marker summary-activity-row__marker--${movement.type}`}
+                  aria-hidden="true"
+                />
+                <div>
+                  <strong>{movement.concept}</strong>
+                  <span>
+                    {formatDate(movement.date)} · {movement.status === "paid" ? "Pagado" : "Pendiente"}
+                  </span>
+                </div>
+                <strong className={`financial-amount financial-amount--${movement.type}`}>
+                  {movement.type === "income" ? "+" : "−"}
+                  {formatCLP(movement.amount)}
+                </strong>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {companyProfilePending && (
+        <aside style={styles.companyCompletionCard} aria-labelledby="company-completion-title">
+          <div style={styles.companyCompletionCopy}>
+            <h3 id="company-completion-title" style={styles.companyCompletionTitle}>
+              Completa la información de tu empresa
+            </h3>
+            <p style={styles.companyCompletionText}>
+              Agrega los datos comerciales y de contacto para aprovechar todas
+              las funciones de ValoraCloud.
+            </p>
+          </div>
+          <button
+            type="button"
+            style={styles.companyCompletionButton}
+            onClick={() => navigate("/empresa")}
+          >
+            Completar información
+          </button>
+        </aside>
+      )}
 
       {error && (
         <p style={styles.errorText} role="alert">
           {error}
         </p>
       )}
+
+      <div className="summary-section-heading">
+        <h2>Operación comercial e inventario</h2>
+        <p>
+          Indicadores existentes de cotizaciones, valorización y referencias.
+        </p>
+      </div>
 
       {loading ? (
         <div className="erp-panel" style={styles.panel}>
@@ -349,13 +633,22 @@ function DashboardPage({ usuario }) {
             </div>
           )}
 
-          <div className="erp-metric-grid" style={styles.metricGrid}>
+          <section
+            className="dashboard-metric-panel"
+            style={styles.metricGrid}
+            aria-label="Indicadores principales"
+          >
             <MetricCard label="Ítems activos" value={activeInventory.length} />
             <MetricCard label="Referencias activas" value={activeReferences.length} />
             <MetricCard
+              label="Productos con stock bajo"
+              value={lowStockProducts.length}
+              note={lowStockProducts.length ? "Requieren revisión" : "Sin alertas de inventario"}
+            />
+            <MetricCard
               label="Cotizaciones vigentes"
               value={quoteSummary.cotizacionesVigentes}
-              note="Excluye archivadas"
+              note={`${quotes.length} totales, incluidas archivadas`}
             />
             <MetricCard
               label="Total cotizado vigente"
@@ -363,27 +656,30 @@ function DashboardPage({ usuario }) {
               note="Excluye archivadas"
               highlight
             />
-          </div>
+          </section>
 
           <div className="dashboard-chart-grid" style={styles.twoColumnGrid}>
-            <div className="erp-panel" style={styles.panel}>
-              <h3 className="erp-panel-title" style={styles.panelTitle}>
-                Cotizaciones por estado
-              </h3>
+            <div className="erp-panel dashboard-chart-panel" style={styles.panel}>
+              <div style={styles.chartHeader}>
+                <h3 className="erp-panel-title" style={styles.panelTitle}>
+                  Cotizaciones por estado
+                </h3>
+                <p style={styles.helpText}>Total histórico, incluidas archivadas.</p>
+              </div>
               <DashboardDonutChart
                 ariaLabel="Distribución de cotizaciones por estado"
                 emptyMessage="Sin cotizaciones registradas"
                 items={quoteStateChartItems}
               />
-              <p style={styles.helpText}>
-                Las métricas principales excluyen cotizaciones archivadas.
-              </p>
             </div>
 
-            <div className="erp-panel" style={styles.panel}>
-              <h3 className="erp-panel-title" style={styles.panelTitle}>
-                Estado de valorización
-              </h3>
+            <div className="erp-panel dashboard-chart-panel" style={styles.panel}>
+              <div style={styles.chartHeader}>
+                <h3 className="erp-panel-title" style={styles.panelTitle}>
+                  Estado de valorización
+                </h3>
+                <p style={styles.helpText}>Distribución de ítems activos analizados.</p>
+              </div>
               <DashboardDonutChart
                 ariaLabel="Distribución del estado de valorización"
                 emptyMessage="Sin ítems analizados"
@@ -434,6 +730,15 @@ function DashboardPage({ usuario }) {
           </>
         )}
       </div>
+
+      <FinancialMovementDialog
+        open={movementDialog.open}
+        preferredType={movementDialog.type}
+        onClose={() =>
+          setMovementDialog((current) => ({ ...current, open: false }))
+        }
+        onSave={saveQuickMovement}
+      />
     </section>
   );
 }
@@ -566,43 +871,38 @@ function ReferenceTaskActions({
       >
         Plazo de aplazamiento para {task.itemNombre}
       </label>
-      <select
-        id={`dashboard-postpone-${compact ? "mobile" : "desktop"}-${task.id}`}
-        value={postponeDays}
-        onChange={(event) =>
-          onPostponeDaysChange(task.id, event.target.value)
-        }
-        style={styles.postponeSelect}
-      >
-        <option value={7}>7 días</option>
-        <option value={15}>15 días</option>
-        <option value={30}>30 días</option>
-      </select>
-      <button
-        type="button"
-        style={styles.postponeButton}
-        onClick={() => onPostpone(task.id)}
-      >
-        Aplazar
-      </button>
+      <div className="reference-task-postpone-group" style={styles.postponeGroup}>
+        <select
+          id={`dashboard-postpone-${compact ? "mobile" : "desktop"}-${task.id}`}
+          value={postponeDays}
+          onChange={(event) =>
+            onPostponeDaysChange(task.id, event.target.value)
+          }
+          style={styles.postponeSelect}
+        >
+          <option value={7}>7 días</option>
+          <option value={15}>15 días</option>
+          <option value={30}>30 días</option>
+        </select>
+        <button
+          type="button"
+          style={styles.postponeButton}
+          onClick={() => onPostpone(task.id)}
+        >
+          Aplazar
+        </button>
+      </div>
     </div>
   );
 }
 
-function MetricCard({
-  label,
-  value,
-  highlight = false,
-  compact = false,
-  note = "",
-}) {
+function MetricCard({ label, value, highlight = false, note = "" }) {
   return (
     <article
       className="erp-metric-card"
       style={{
         ...styles.metricCard,
         ...(highlight ? styles.metricCardHighlight : {}),
-        ...(compact ? styles.metricCardCompact : {}),
       }}
     >
       <span className="erp-metric-card__label" style={styles.metricLabel}>
@@ -625,26 +925,64 @@ const styles = {
     gap: "14px",
     minWidth: 0,
   },
+  companyCompletionCard: {
+    alignItems: "center",
+    background: "#f0fdfa",
+    border: "1px solid #99f6e4",
+    borderRadius: "var(--radius-md)",
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "14px",
+    justifyContent: "space-between",
+    minWidth: 0,
+    padding: "14px 16px",
+  },
+  companyCompletionCopy: {
+    flex: "1 1 320px",
+    minWidth: 0,
+  },
+  companyCompletionTitle: {
+    color: "#134e4a",
+    fontSize: "15px",
+    margin: "0 0 4px",
+  },
+  companyCompletionText: {
+    color: "#475569",
+    fontSize: "13px",
+    lineHeight: 1.45,
+    margin: 0,
+  },
+  companyCompletionButton: {
+    background: "#0f766e",
+    border: 0,
+    borderRadius: "6px",
+    color: "#ffffff",
+    cursor: "pointer",
+    fontSize: "13px",
+    fontWeight: 800,
+    minHeight: "40px",
+    padding: "9px 12px",
+  },
   metricGrid: {
+    background: "var(--color-surface-panel)",
+    border: "1px solid var(--color-border-subtle)",
+    borderRadius: "var(--radius-md)",
     display: "grid",
-    gap: "10px",
-    gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+    gap: 0,
+    gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+    minWidth: 0,
+    overflow: "hidden",
   },
   twoColumnGrid: {
     display: "grid",
     gap: "14px",
     gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
   },
-  statusGrid: {
-    display: "grid",
-    gap: "8px",
-    gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
-    marginTop: "10px",
-  },
   panel: {
     background: "#ffffff",
     border: "1px solid var(--color-border-subtle)",
     borderRadius: "var(--radius-md)",
+    boxShadow: "none",
     minWidth: 0,
     padding: "14px",
   },
@@ -659,25 +997,26 @@ const styles = {
     fontSize: "16px",
     margin: "0 0 5px",
   },
+  chartHeader: {
+    borderBottom: "1px solid var(--color-border-subtle)",
+    paddingBottom: "10px",
+  },
   helpText: {
     color: "#64748b",
     fontSize: "13px",
     margin: 0,
   },
   metricCard: {
-    background: "#ffffff",
-    border: "1px solid #e5e7eb",
-    borderRadius: "4px",
+    background: "transparent",
+    border: 0,
+    borderRadius: 0,
     display: "grid",
     gap: "5px",
-    padding: "12px",
+    minWidth: 0,
+    padding: "14px 16px",
   },
   metricCardHighlight: {
-    background: "#ecfdf5",
-    borderColor: "#99f6e4",
-  },
-  metricCardCompact: {
-    padding: "10px",
+    background: "#f7fcfb",
   },
   metricLabel: {
     color: "#64748b",
@@ -703,7 +1042,7 @@ const styles = {
   },
   taskTable: {
     borderCollapse: "collapse",
-    minWidth: "820px",
+    minWidth: "760px",
     width: "100%",
   },
   th: {
@@ -719,7 +1058,7 @@ const styles = {
   td: {
     borderBottom: "1px solid #eef2f7",
     fontSize: "13px",
-    padding: "8px",
+    padding: "5px 8px",
     verticalAlign: "middle",
     whiteSpace: "nowrap",
   },
@@ -727,11 +1066,11 @@ const styles = {
     alignItems: "center",
     display: "grid",
     gap: "6px",
-    gridTemplateColumns: "minmax(140px, 1fr) 86px 76px",
+    gridTemplateColumns: "minmax(132px, 1fr) max-content",
     minWidth: 0,
   },
   taskActionsCompact: {
-    gridTemplateColumns: "minmax(0, 1fr) auto",
+    gridTemplateColumns: "minmax(0, 1fr)",
   },
   primarySmallButton: {
     background: "#0f766e",
@@ -742,9 +1081,9 @@ const styles = {
     cursor: "pointer",
     fontSize: "13px",
     fontWeight: 800,
-    minWidth: "140px",
-    minHeight: "38px",
-    padding: "7px 9px",
+    minWidth: "132px",
+    minHeight: "34px",
+    padding: "5px 9px",
     whiteSpace: "nowrap",
   },
   secondaryButton: {
@@ -761,27 +1100,33 @@ const styles = {
   postponeSelect: {
     background: "#ffffff",
     border: "1px solid #cbd5e1",
-    borderRadius: "4px",
+    borderRadius: "4px 0 0 4px",
     boxSizing: "border-box",
     color: "#334155",
     fontSize: "13px",
-    padding: "7px 8px",
-    minHeight: "38px",
+    padding: "5px 8px",
+    minHeight: "34px",
     width: "86px",
+  },
+  postponeGroup: {
+    alignItems: "center",
+    display: "flex",
+    minWidth: 0,
   },
   postponeButton: {
     background: "#ffffff",
     border: "1px solid #cbd5e1",
-    borderRadius: "4px",
+    borderRadius: "0 4px 4px 0",
     boxSizing: "border-box",
     color: "#334155",
     cursor: "pointer",
     fontSize: "13px",
     fontWeight: 700,
-    padding: "7px 9px",
+    marginLeft: "-1px",
+    padding: "5px 9px",
     textAlign: "center",
     whiteSpace: "nowrap",
-    minHeight: "38px",
+    minHeight: "34px",
     width: "76px",
   },
   priorityBadge: {

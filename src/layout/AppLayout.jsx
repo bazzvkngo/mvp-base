@@ -1,7 +1,9 @@
 import React from "react";
 import { LogOut, MailCheck, MailWarning, Menu, UserRound, X } from "lucide-react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import AdditionalBusinessDrawer from "../components/AdditionalBusinessDrawer";
 import BrandLogo from "../components/BrandLogo";
+import BusinessSwitcher from "../components/BusinessSwitcher";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import PageHeader from "../components/ui/PageHeader";
@@ -60,8 +62,16 @@ function PrimaryNavigation({ idPrefix, pathname, onNavigate }) {
   );
 }
 
-function AppLayout({ usuario }) {
+function AppLayout({
+  usuario,
+  businessChanging,
+  businessSession,
+  negocioActivo,
+  onBusinessChanged,
+  onBusinessCreated,
+}) {
   const location = useLocation();
+  const navigate = useNavigate();
   const [emailVerified, setEmailVerified] = React.useState(
     usuario?.emailVerified ?? true
   );
@@ -74,6 +84,9 @@ function AppLayout({ usuario }) {
   const [resendCooldown, setResendCooldown] = React.useState(0);
   const [mobileNavigationOpen, setMobileNavigationOpen] = React.useState(false);
   const [mobileAccountOpen, setMobileAccountOpen] = React.useState(false);
+  const [businessDrawerOpen, setBusinessDrawerOpen] = React.useState(false);
+  const [businessLimitOpen, setBusinessLimitOpen] = React.useState(false);
+  const [businessNotice, setBusinessNotice] = React.useState("");
   const menuButtonRef = React.useRef(null);
   const drawerRef = React.useRef(null);
   const closeButtonRef = React.useRef(null);
@@ -176,6 +189,12 @@ function AppLayout({ usuario }) {
   }, []);
 
   React.useEffect(() => {
+    if (!businessNotice) return undefined;
+    const timerId = window.setTimeout(() => setBusinessNotice(""), 4500);
+    return () => window.clearTimeout(timerId);
+  }, [businessNotice]);
+
+  React.useEffect(() => {
     const expandedTopbarMediaQuery = window.matchMedia("(min-width: 641px)");
     const closeAccountOnExpandedTopbar = (event) => {
       if (event.matches) setMobileAccountOpen(false);
@@ -267,6 +286,43 @@ function AppLayout({ usuario }) {
     ? `Reenviar en ${resendCooldown} s`
     : "Reenviar verificación";
   const routeMeta = getRouteMeta(location.pathname);
+  const ownerBusinessLimit = businessSession?.plan?.ownerBusinessLimit;
+
+  const handleOpenBusinessDrawer = () => {
+    if (businessSession?.plan?.canCreateBusiness === false) {
+      setBusinessLimitOpen(true);
+      return;
+    }
+    if (mobileNavigationOpen) {
+      setMobileNavigationOpen(false);
+      window.requestAnimationFrame(() => setBusinessDrawerOpen(true));
+      return;
+    }
+    setBusinessDrawerOpen(true);
+  };
+
+  const handleBusinessChanged = async (business) => {
+    await onBusinessChanged(business.id);
+    setMobileNavigationOpen(false);
+    setBusinessNotice(
+      `Ahora estás trabajando en ${business.nombreComercial}`
+    );
+  };
+
+  const handleBusinessCreated = async (business) => {
+    await onBusinessCreated();
+    navigate("/dashboard");
+    setBusinessNotice(`${business.nombreComercial} fue creado correctamente`);
+  };
+
+  const businessSwitcher = (
+    <BusinessSwitcher
+      activeBusiness={negocioActivo}
+      businesses={businessSession?.businesses || []}
+      onAddBusiness={handleOpenBusinessDrawer}
+      onBusinessChanged={handleBusinessChanged}
+    />
+  );
 
   return (
     <div className="app-shell">
@@ -274,6 +330,7 @@ function AppLayout({ usuario }) {
 
       <aside className="sidebar sidebar--desktop">
         <BrandLogo variant="sidebar" showText />
+        {businessSwitcher}
         <PrimaryNavigation idPrefix="desktop" pathname={location.pathname} />
       </aside>
 
@@ -291,7 +348,10 @@ function AppLayout({ usuario }) {
             <AppIcon icon={Menu} size={21} />
           </button>
 
-          <PageHeader eyebrow="Módulo activo" title={routeMeta.title} />
+          <PageHeader
+            eyebrow={negocioActivo?.nombreComercial || "Módulo activo"}
+            title={routeMeta.title}
+          />
 
           <div className="topbar-user topbar-user--desktop">
             <div className="topbar-identity" title={usuario?.email || undefined}>
@@ -342,6 +402,12 @@ function AppLayout({ usuario }) {
           >
             {checkMessage}
           </section>
+        )}
+
+        {businessNotice && (
+          <div className="business-toast no-print" role="status" aria-live="polite">
+            {businessNotice}
+          </div>
         )}
 
         {showVerificationBanner && (
@@ -410,8 +476,18 @@ function AppLayout({ usuario }) {
           </section>
         )}
 
-        <main id="main-content" className="page-content" tabIndex="-1">
-          <Outlet />
+        <main
+          id="main-content"
+          className={businessChanging ? "page-content is-business-changing" : "page-content"}
+          tabIndex="-1"
+          aria-busy={businessChanging}
+        >
+          {businessChanging && (
+            <div className="business-change-status" role="status">
+              Cambiando de negocio...
+            </div>
+          )}
+          {!businessChanging && <Outlet />}
         </main>
       </div>
 
@@ -427,6 +503,14 @@ function AppLayout({ usuario }) {
             <span className="account-dialog-label">Correo</span>
             <strong className="account-dialog-email">{usuario?.email}</strong>
           </div>
+          {negocioActivo?.nombreComercial && (
+            <div className="account-dialog-identity">
+              <span className="account-dialog-label">Negocio activo</span>
+              <strong className="account-dialog-email">
+                {negocioActivo.nombreComercial}
+              </strong>
+            </div>
+          )}
           <div className="account-dialog-status">
             <span className="account-dialog-label">Estado de verificación</span>
             <StatusBadge variant={emailVerified ? "success" : "warning"}>
@@ -437,6 +521,17 @@ function AppLayout({ usuario }) {
               {emailVerified ? "Verificado" : "Pendiente"}
             </StatusBadge>
           </div>
+          <Button
+            type="button"
+            variant="secondary"
+            icon={UserRound}
+            onClick={() => {
+              setMobileAccountOpen(false);
+              navigate("/cuenta");
+            }}
+          >
+            Editar perfil
+          </Button>
           <Button
             type="button"
             variant="ghost-danger"
@@ -480,6 +575,7 @@ function AppLayout({ usuario }) {
                 <AppIcon icon={X} size={21} />
               </button>
             </div>
+            {businessSwitcher}
             <PrimaryNavigation
               idPrefix="mobile"
               pathname={location.pathname}
@@ -488,6 +584,31 @@ function AppLayout({ usuario }) {
           </aside>
         </div>
       )}
+
+      <AdditionalBusinessDrawer
+        open={businessDrawerOpen}
+        usuario={usuario}
+        onClose={() => setBusinessDrawerOpen(false)}
+        onCreated={handleBusinessCreated}
+        onLimitReached={() => setBusinessLimitOpen(true)}
+      />
+
+      <ResponsiveDialog
+        open={businessLimitOpen}
+        onClose={() => setBusinessLimitOpen(false)}
+        title="Alcanzaste el límite de negocios"
+        size="small"
+        footer={
+          <Button type="button" onClick={() => setBusinessLimitOpen(false)}>
+            Entendido
+          </Button>
+        }
+      >
+        <p className="business-limit-message">
+          Tu plan actual permite administrar hasta {ownerBusinessLimit} negocios
+          como propietario.
+        </p>
+      </ResponsiveDialog>
     </div>
   );
 }

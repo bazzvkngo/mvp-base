@@ -11,6 +11,7 @@ import {
 } from "../services/quoteService";
 import { isQuoteEmailSendable } from "../services/quoteEmailService";
 import { formatCLP, formatDate } from "../utils/formatters";
+import { downloadQuotePdf, shareQuotePdf } from "../utils/quotePdf";
 
 const STATUS_OPTIONS = [
   "borrador",
@@ -474,6 +475,7 @@ function QuoteHistoryPage({ userId }) {
       </ResponsiveDialog>
 
       <SendQuoteEmailModal
+        businessId={userId}
         open={Boolean(emailModalQuote)}
         quote={emailModalQuote}
         quoteId={emailModalQuote?.id}
@@ -718,6 +720,26 @@ function QuoteActions({
 function QuoteDetail({ quote, companyProfile, onOpenEmail }) {
   const canSendEmail = isQuoteEmailSendable(quote, quote.id);
   const emailActionHint = getEmailActionHint(quote);
+  const [pdfAction, setPdfAction] = useState("");
+  const [pdfError, setPdfError] = useState("");
+
+  const runPdfAction = async (action) => {
+    setPdfAction(action);
+    setPdfError("");
+    try {
+      if (action === "download") {
+        await downloadQuotePdf({ quote, companyProfile });
+      } else {
+        await shareQuotePdf({ quote, companyProfile });
+      }
+    } catch (error) {
+      if (error?.name !== "AbortError") {
+        setPdfError(error?.message || "No fue posible preparar el PDF.");
+      }
+    } finally {
+      setPdfAction("");
+    }
+  };
 
   return (
     <div className="history-print-area" style={styles.detailPanel}>
@@ -743,10 +765,19 @@ function QuoteDetail({ quote, companyProfile, onOpenEmail }) {
           </button>
           <button
             type="button"
-            onClick={() => window.print()}
+            onClick={() => runPdfAction("download")}
+            disabled={Boolean(pdfAction)}
             style={styles.printButton}
           >
-            Imprimir detalle
+            {pdfAction === "download" ? "Generando..." : "Descargar PDF"}
+          </button>
+          <button
+            type="button"
+            onClick={() => runPdfAction("share")}
+            disabled={Boolean(pdfAction)}
+            style={styles.printButton}
+          >
+            {pdfAction === "share" ? "Preparando..." : "Compartir PDF"}
           </button>
         </div>
         {!canSendEmail && emailActionHint && (
@@ -754,6 +785,7 @@ function QuoteDetail({ quote, companyProfile, onOpenEmail }) {
             {emailActionHint}
           </p>
         )}
+        {pdfError && <p style={styles.actionHint}>{pdfError}</p>}
       </div>
 
       <div style={styles.detailDocument}>

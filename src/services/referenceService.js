@@ -10,6 +10,7 @@
   updateDoc,
   where,
 } from "firebase/firestore";
+import { assertClientWriteAllowed } from "../config/firebaseEnvironment.mjs";
 import { db } from "../firebase/firebaseConfig";
 import {
   referenceDocPath,
@@ -72,7 +73,7 @@ export function normalizeReference(uid, data, { isCreate = false } = {}) {
     fechaConsulta,
     observacion: String(data.observacion || "").trim(),
     estado,
-    uidUsuario: uid,
+    negocioId: uid,
     actualizadoEn: serverTimestamp(),
   };
 
@@ -126,6 +127,7 @@ export function subscribeToReferences(uid, onReferences, onError) {
 }
 
 export async function createReference(uid, data) {
+  assertClientWriteAllowed("crear referencias");
   const payload = normalizeReference(uid, data, { isCreate: true });
   const docRef = await addDoc(referencesCollectionRef(uid), payload);
   await resolveReferenceTasksForSavedReference(uid, payload);
@@ -133,12 +135,14 @@ export async function createReference(uid, data) {
 }
 
 export async function updateReference(uid, referenceId, data) {
+  assertClientWriteAllowed("editar referencias");
   const payload = normalizeReference(uid, data);
   await updateDoc(doc(db, ...referenceDocPath(uid, referenceId)), payload);
   await resolveReferenceTasksForSavedReference(uid, payload);
 }
 
 export async function deactivateReference(uid, referenceId) {
+  assertClientWriteAllowed("desactivar referencias");
   await updateDoc(doc(db, ...referenceDocPath(uid, referenceId)), {
     estado: "inactiva",
     actualizadoEn: serverTimestamp(),
@@ -146,6 +150,7 @@ export async function deactivateReference(uid, referenceId) {
 }
 
 export async function reactivateReference(uid, referenceId) {
+  assertClientWriteAllowed("reactivar referencias");
   await updateDoc(doc(db, ...referenceDocPath(uid, referenceId)), {
     estado: "activa",
     actualizadoEn: serverTimestamp(),

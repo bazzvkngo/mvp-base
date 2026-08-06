@@ -19,13 +19,33 @@
     "vite": "^7.3.6"
   },
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
+    "dev": "vite --mode existing",
+    "dev:existing": "vite --mode existing",
+    "dev:emulator": "vite --mode emulator",
+    "emulators:start": "node scripts/firebase-emulators-start.mjs",
+    "build": "vite build --mode production",
     "preview": "vite preview",
     "test:rules": "firebase emulators:exec --only auth,firestore,storage \"node scripts/rules-smoke.mjs\"",
     "test:ai-rate-limits": "node scripts/ai-rate-limiter-smoke.mjs",
     "test:inventory-docs": "node scripts/inventory-document-import-smoke.mjs",
-    "test:inventory-sheets": "node scripts/inventory-spreadsheet-smoke.mjs"
+    "test:inventory-sheets": "node scripts/inventory-spreadsheet-smoke.mjs",
+    "test:inventory-model": "node scripts/inventory-model-smoke.mjs",
+    "test:inventory-service": "node scripts/inventory-service-smoke.mjs",
+    "test:inventory-import-v2": "node scripts/inventory-import-v2-smoke.mjs",
+    "test:inventory-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/inventory-integrated-local.mjs\"",
+    "test:firebase-environment": "node scripts/firebase-environment-smoke.mjs",
+    "test:quotes": "node scripts/quote-model-smoke.mjs",
+    "test:quotes-integrated": "node scripts/quote-integrated-local.mjs",
+    "test:business-catalog": "node scripts/business-catalog-smoke.mjs",
+    "test:business-category-selector": "node scripts/business-category-selector-smoke.mjs",
+    "test:business-quick-flow": "node scripts/business-quick-flow-smoke.mjs",
+    "test:business-settings": "node scripts/business-settings-smoke.mjs",
+    "test:business-onboarding": "firebase emulators:exec --only auth,firestore,functions \"node scripts/business-onboarding-integrated.mjs\"",
+    "test:business-multi": "firebase emulators:exec --only auth,firestore,functions \"node scripts/business-multi-integrated.mjs\"",
+    "test:finance": "node scripts/financial-model-smoke.mjs",
+    "test:statistics": "node scripts/financial-model-smoke.mjs",
+    "test:summary": "node scripts/financial-model-smoke.mjs",
+    "seed:business-catalogs:emulator": "node scripts/seed-business-catalogs.mjs --emulator"
   },
   "browserslist": {
     "production": [

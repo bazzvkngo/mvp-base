@@ -1,5 +1,6 @@
-import { getFunctions, httpsCallable } from "firebase/functions";
-import { app } from "../firebase/firebaseConfig";
+import { httpsCallable } from "firebase/functions";
+import { assertCloudFunctionAllowed } from "../config/firebaseEnvironment.mjs";
+import { getFirebaseFunctions } from "../firebase/firebaseConfig";
 
 const FUNCTIONS_REGION = "us-central1";
 
@@ -35,7 +36,8 @@ export function getAiRateLimitErrorDetails(error, model = "") {
 }
 
 export async function getAiRateLimitStatus(model) {
-  const functions = getFunctions(app, FUNCTIONS_REGION);
+  assertCloudFunctionAllowed("la consulta de disponibilidad de IA");
+  const functions = getFirebaseFunctions(FUNCTIONS_REGION);
   const callable = httpsCallable(functions, "getAiRateLimitStatus");
   const response = await callable({ model });
   return normalizeAiRateLimitStatus(response.data, model);

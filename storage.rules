@@ -2,16 +2,70 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
+    function businessMembership(businessId) {
+      return firestore.get(
+        /databases/(default)/documents/membresias/$(businessId + "__" + request.auth.uid)
+      );
+    }
+
+    function hasBusinessMembership(businessId) {
+      return request.auth != null
+        && firestore.exists(
+          /databases/(default)/documents/membresias/$(businessId + "__" + request.auth.uid)
+        );
+    }
+
+    function activeBusiness(businessId) {
+      return firestore.get(
+        /databases/(default)/documents/negocios/$(businessId)
+      );
+    }
+
+    function hasActiveBusinessDocument(businessId) {
+      return firestore.exists(
+        /databases/(default)/documents/negocios/$(businessId)
+      );
+    }
+
+    function canAccessBusiness(businessId) {
+      return hasBusinessMembership(businessId)
+        && hasActiveBusinessDocument(businessId)
+        && businessMembership(businessId).data.uid == request.auth.uid
+        && businessMembership(businessId).data.negocioId == businessId
+        && businessMembership(businessId).data.estado == "activo"
+        && activeBusiness(businessId).data.estado == "activo";
+    }
+
+    function canManageBusiness(businessId) {
+      return canAccessBusiness(businessId)
+        && businessMembership(businessId).data.rol in ["OWNER", "ADMIN"];
+    }
+
     match /usuarios/{uid}/empresa/logo/{fileName} {
       allow read: if request.auth != null
         && request.auth.uid == uid;
 
-      allow write: if request.auth != null
+      allow create, update: if request.auth != null
         && request.auth.uid == uid
         && request.resource.size <= 2 * 1024 * 1024
         && request.resource.contentType.matches(
           'image/(jpeg|png|webp)'
         );
+
+      allow delete: if request.auth != null
+        && request.auth.uid == uid;
+    }
+
+    match /negocios/{businessId}/empresa/logo/{fileName} {
+      allow read: if canAccessBusiness(businessId);
+
+      allow create, update: if canManageBusiness(businessId)
+        && request.resource.size <= 2 * 1024 * 1024
+        && request.resource.contentType.matches(
+          'image/(jpeg|png|webp)'
+        );
+
+      allow delete: if canManageBusiness(businessId);
     }
   }
 }

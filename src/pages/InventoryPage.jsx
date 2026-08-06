@@ -7,11 +7,14 @@ function InventoryPage({ userId }) {
 
   return (
     <>
+      <InventoryManager
+        userId={userId}
+        refreshSignal={refreshSignal}
+      />
       <InventoryAiImporter
         userId={userId}
         onImported={() => setRefreshSignal((value) => value + 1)}
       />
-      <InventoryManager userId={userId} refreshSignal={refreshSignal} />
     </>
   );
 }

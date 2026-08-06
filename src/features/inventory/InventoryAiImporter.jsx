@@ -2,24 +2,41 @@ import React, { useMemo, useRef, useState } from "react";
 import AiAvailabilityStatus from "../../components/ai/AiAvailabilityStatus";
 import { AI_MODELS } from "../../config/aiModels";
 import useAiRateLimit from "../../hooks/useAiRateLimit";
-import { getInventoryItems } from "../../services/inventoryService";
+import {
+  getInventoryAreas,
+  getInventoryCategories,
+  getInventoryItems,
+} from "../../services/inventoryService";
 import {
   ACCEPTED_INVENTORY_FILE_TYPES,
+  confirmInventoryImportV2,
+  getInventoryImportAiRateLimitStatus,
   normalizeInventorySourceWithAi,
   readInventorySourceFile,
   stripInventoryDocumentPayload,
 } from "../../services/inventoryAiImportService";
-import { importarInventarioEnFirestore } from "../../services/inventoryImportService";
+import {
+  createMissingAiRateLimitStatusError,
+  getAiAvailabilityErrorStatus,
+  getSafeInventoryAiLogDetails,
+  runInventoryAnalysisSingleFlight,
+  translateInventoryAiError,
+} from "../../services/inventoryAiClient.mjs";
+import {
+  MAX_INVENTORY_IMPORT_BATCH_SIZE,
+  getInventoryImportCategoriesForArea,
+  keepInventoryImportCategoryForArea,
+  normalizeInventoryImportType,
+  resolveInventoryImportCatalog,
+  stripProductFieldsForInventoryImport,
+  validateInventoryImportPreviewRow,
+} from "../../domain/inventoryImportV2.mjs";
 import { formatCLP } from "../../utils/formatters";
 
 const TYPE_OPTIONS = ["producto", "servicio", "actividad"];
 const DEFAULT_MARGIN_PERCENT = 25;
 const DEFAULT_MARGIN_WARNING =
   "Se aplicó el margen predeterminado del sistema. Puedes modificarlo antes de guardar.";
-const DOCUMENT_USAGE_LIMIT_MESSAGE =
-  "El servicio inteligente alcanzó el límite de uso disponible. Intenta nuevamente más tarde. El archivo no fue almacenado y ningún registro fue incorporado al inventario.";
-const TEMPORARY_DOCUMENT_UNAVAILABLE_MESSAGE =
-  "El servicio inteligente está temporalmente ocupado. Espera unos segundos e intenta nuevamente. El archivo no fue almacenado y ningún registro fue incorporado al inventario.";
 
 function normalizeKey(value) {
   return String(value || "")
@@ -30,45 +47,29 @@ function normalizeKey(value) {
     .replace(/\s+/g, " ");
 }
 
-function normalizeErrorCode(value) {
-  return normalizeKey(value).replace(/[^a-z0-9_-]/g, "-");
-}
-
-function getCallableErrorCode(error) {
-  return normalizeErrorCode(
-    [
-      error?.code,
-      error?.details?.code,
-      error?.details?.internalCode,
-      error?.customData?.code,
-    ]
-      .filter(Boolean)
-      .join(" ")
+function getSourceRowCount(fileData) {
+  if (!Array.isArray(fileData?.hojas)) return 0;
+  return fileData.hojas.reduce(
+    (total, sheet) => total + (Array.isArray(sheet?.filas) ? sheet.filas.length : 0),
+    0
   );
 }
 
-function getSafeAnalysisErrorMessage(error) {
-  const code = getCallableErrorCode(error);
-  const message = String(error?.message || "").trim();
-
-  if (code.includes("resource-exhausted") || code.includes("daily_quota")) {
-    return DOCUMENT_USAGE_LIMIT_MESSAGE;
-  }
-
-  if (code.includes("unavailable") && normalizeKey(message).includes("temporalmente ocupado")) {
-    return TEMPORARY_DOCUMENT_UNAVAILABLE_MESSAGE;
-  }
-
-  if (code.includes("invalid-argument")) {
-    return message || "El archivo no pudo validarse.";
-  }
-
-  return message || "No se pudo analizar el archivo.";
+function normalizeTypeValue(value) {
+  return normalizeInventoryImportType(value);
 }
 
-function normalizeTypeValue(value) {
-  const normalized = normalizeKey(value);
-  return TYPE_OPTIONS.includes(normalized) ? normalized : "";
+function createImportRequestId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+function formatOptionalNumber(value) {
+  if (value === "" || value === null || value === undefined) return "";
+  const parsed = toDecimal(value);
+  return parsed === null ? "" : String(parsed);
 }
 
 function toNumber(value) {
@@ -250,9 +251,9 @@ function getReviewBadgeText(item, confidence, itemMessages) {
   return onlyCommercialDefaults ? "Revisión comercial" : "Requiere revisión";
 }
 
-function buildPreviewItem(raw, index, analysisMeta) {
+function buildPreviewItem(raw, index, analysisMeta, areas, categories) {
   const isDocument = analysisMeta?.sourceKind === "document" || raw.origenAnalisis === "documento";
-  const tipoItem = normalizeTypeValue(raw.tipoItem || raw.tipo) || "producto";
+  const tipoItem = normalizeTypeValue(raw.tipoItem || raw.tipo);
   const costoBase = toNumber(raw.costoBase);
   const rawMargin = raw.margenDeseado ?? raw.margen ?? raw.margenSugerido;
   const rawInternalPrice = raw.precioInterno ?? raw.precioInternoSugerido;
@@ -277,12 +278,30 @@ function buildPreviewItem(raw, index, analysisMeta) {
   const cantidadSugerida = normalizeQuantity(
     raw.cantidadSugerida ?? raw.cantidadOrigen ?? raw.cantidad
   );
+  const catalogResolution = resolveInventoryImportCatalog(raw, areas, categories);
+  const rowId = `fila-${Date.now()}-${index + 1}`;
+  const productFields =
+    tipoItem === "producto"
+      ? {
+          marca: String(raw.marca || "").trim(),
+          modelo: String(raw.modelo || "").trim(),
+          stock: formatOptionalNumber(
+            raw.stock ?? raw.stockActual ?? raw.cantidadSugerida ?? raw.cantidadOrigen
+          ),
+          stockMinimo: formatOptionalNumber(
+            raw.stockMinimo ?? raw.stockMin
+          ),
+          codigoBarras: String(
+            raw.codigoBarras || raw.ean || raw.upc || ""
+          ).trim(),
+        }
+      : {};
 
   return {
-    id: `${raw.id || "archivo"}-${index}-${Date.now()}`,
+    id: rowId,
     nombre: raw.nombre || "",
     tipoItem,
-    categoria: raw.categoria || (isDocument ? "" : "General"),
+    ...catalogResolution,
     descripcion: raw.descripcion || "",
     unidad,
     cantidadSugerida: String(cantidadSugerida),
@@ -290,7 +309,6 @@ function buildPreviewItem(raw, index, analysisMeta) {
     margenDeseado: formatMarginValue(margenNormalizado),
     precioInterno: precioInterno > 0 ? String(precioInterno) : "",
     precioManual: false,
-    sku: raw.sku || raw.codigo || "",
     observacion,
     advertencias,
     evidenciaOrigen: raw.evidenciaOrigen || "",
@@ -303,6 +321,7 @@ function buildPreviewItem(raw, index, analysisMeta) {
       costoBase <= 0 ||
       advertencias.length > 0,
     confianza: confidence === null ? "" : String(confidence),
+    ...productFields,
   };
 }
 
@@ -312,25 +331,22 @@ function shouldAutoSelectItem(item) {
 }
 
 function buildPayloadForSave(item) {
-  const tipoItem = normalizeTypeValue(item.tipoItem) || "producto";
+  const tipoItem = normalizeTypeValue(item.tipoItem);
   const costoBase = toNumber(item.costoBase);
   const margenDeseado = normalizeMarginPercent(item.margenDeseado) ?? DEFAULT_MARGIN_PERCENT;
   const precioInterno = item.precioInterno
     ? toNumber(item.precioInterno)
     : calculatePrice(costoBase, margenDeseado);
-  const cantidad = toNumber(item.cantidadSugerida);
-
-  return {
+  const payload = {
     nombre: item.nombre.trim(),
     tipoItem,
-    categoria: item.categoria.trim() || (item.itemSourceKind === "document" ? "" : "General"),
+    areaId: item.areaId,
+    categoriaId: item.categoriaId,
     descripcion: item.descripcion.trim(),
     unidad: item.unidad.trim() || defaultUnit(tipoItem),
     costoBase,
     margenDeseado: Number.isFinite(margenDeseado) ? margenDeseado : 0,
     precioInterno,
-    sku: item.sku.trim() || null,
-    stock: item.itemSourceKind === "document" ? null : cantidad > 0 ? cantidad : 1,
     estado: "activo",
     origen:
       item.itemSourceKind === "document"
@@ -342,11 +358,22 @@ function buildPayloadForSave(item) {
         : item.observacion,
     confianzaPrecio: item.confianza,
   };
+  if (tipoItem === "producto") {
+    payload.marca = item.marca.trim();
+    payload.modelo = item.modelo.trim();
+    payload.stock = Number(item.stock);
+    payload.stockMinimo = Number(item.stockMinimo);
+    const codigoBarras = item.codigoBarras.trim();
+    if (codigoBarras) payload.codigoBarras = codigoBarras;
+  }
+  return payload;
 }
 
 function InventoryAiImporter({ userId, onImported }) {
   const fileInputRef = useRef(null);
   const analysisInFlightRef = useRef(false);
+  const saveInFlightRef = useRef(false);
+  const saveRequestIdRef = useRef("");
   const latestAnalysisRequestRef = useRef(0);
   const [fileData, setFileData] = useState(null);
   const [fileName, setFileName] = useState("");
@@ -354,10 +381,14 @@ function InventoryAiImporter({ userId, onImported }) {
   const [previewItems, setPreviewItems] = useState([]);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [existingItems, setExistingItems] = useState([]);
+  const [areas, setAreas] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [catalogError, setCatalogError] = useState("");
   const [analysisMeta, setAnalysisMeta] = useState(null);
   const [readingFile, setReadingFile] = useState(false);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveBackendCompatible, setSaveBackendCompatible] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [processingStatus, setProcessingStatus] = useState("");
@@ -367,6 +398,8 @@ function InventoryAiImporter({ userId, onImported }) {
       : AI_MODELS.documentImport;
   const aiAvailability = useAiRateLimit(rateLimitModel, {
     enabled: Boolean(userId),
+    getErrorStatus: getAiAvailabilityErrorStatus,
+    getStatus: getInventoryImportAiRateLimitStatus,
   });
 
   const selectedItems = useMemo(
@@ -377,35 +410,40 @@ function InventoryAiImporter({ userId, onImported }) {
     () => getAnalysisWarnings(analysisMeta),
     [analysisMeta]
   );
+  const rowErrorsById = useMemo(() => {
+    const result = new Map();
+    previewItems.forEach((item) => {
+      const errors = validateInventoryImportPreviewRow(item, areas, categories);
+      if (errors.length) result.set(item.id, errors);
+    });
+    return result;
+  }, [areas, categories, previewItems]);
+  const invalidSelectedItems = useMemo(
+    () => selectedItems.filter((item) => rowErrorsById.has(item.id)),
+    [rowErrorsById, selectedItems]
+  );
+  const activeAreas = useMemo(
+    () => areas.filter((area) => (area.estado || "activo") === "activo"),
+    [areas]
+  );
 
   const duplicateReasonsById = useMemo(() => {
     const existingNames = new Set(existingItems.map((item) => normalizeKey(item.nombre)));
-    const existingSkus = new Set(
-      existingItems.map((item) => normalizeKey(item.sku)).filter(Boolean)
-    );
     const selectedNameCounts = new Map();
-    const selectedSkuCounts = new Map();
 
     selectedItems.forEach((item) => {
       const nameKey = normalizeKey(item.nombre);
-      const skuKey = normalizeKey(item.sku);
       if (nameKey) selectedNameCounts.set(nameKey, (selectedNameCounts.get(nameKey) || 0) + 1);
-      if (skuKey) selectedSkuCounts.set(skuKey, (selectedSkuCounts.get(skuKey) || 0) + 1);
     });
 
     const result = new Map();
     previewItems.forEach((item) => {
       const reasons = [];
       const nameKey = normalizeKey(item.nombre);
-      const skuKey = normalizeKey(item.sku);
 
       if (nameKey && existingNames.has(nameKey)) reasons.push("nombre ya existe");
-      if (skuKey && existingSkus.has(skuKey)) reasons.push("SKU/código ya existe");
       if (selectedIds.has(item.id) && selectedNameCounts.get(nameKey) > 1) {
         reasons.push("nombre repetido en vista previa");
-      }
-      if (selectedIds.has(item.id) && skuKey && selectedSkuCounts.get(skuKey) > 1) {
-        reasons.push("SKU/código repetido en vista previa");
       }
       if (reasons.length) result.set(item.id, reasons.join(", "));
     });
@@ -421,7 +459,14 @@ function InventoryAiImporter({ userId, onImported }) {
     !readingFile &&
     !loadingAnalysis &&
     !aiAvailability.isBlocked;
-  const canSave = selectedItems.length > 0 && !saving && !loadingAnalysis;
+  const canSave =
+    selectedItems.length > 0 &&
+    invalidSelectedItems.length === 0 &&
+    selectedItems.length <= MAX_INVENTORY_IMPORT_BATCH_SIZE &&
+    !catalogError &&
+    saveBackendCompatible &&
+    !saving &&
+    !loadingAnalysis;
 
   const resetAnalysis = () => {
     latestAnalysisRequestRef.current += 1;
@@ -429,10 +474,14 @@ function InventoryAiImporter({ userId, onImported }) {
     setPreviewItems([]);
     setSelectedIds(new Set());
     setExistingItems([]);
+    setAreas([]);
+    setCategories([]);
+    setCatalogError("");
     setAnalysisMeta(null);
     setError("");
     setSuccess("");
     setProcessingStatus("");
+    saveRequestIdRef.current = "";
   };
 
   const resetFile = () => {
@@ -449,6 +498,8 @@ function InventoryAiImporter({ userId, onImported }) {
     resetAnalysis();
     if (!file) return;
 
+    const startedAt = Date.now();
+
     try {
       setReadingFile(true);
       setProcessingStatus("Validando documento.");
@@ -458,11 +509,17 @@ function InventoryAiImporter({ userId, onImported }) {
       setFileName(file.name);
       setProcessingStatus("Archivo seleccionado.");
     } catch (err) {
-      console.error("Error leyendo archivo de inventario:", err);
+      console.error(
+        "Inventory import file read failed",
+        getSafeInventoryAiLogDetails(err, {
+          stage: "read_file",
+          durationMs: Date.now() - startedAt,
+        })
+      );
       setFileData(null);
       setFileName("");
       setProcessingStatus("");
-      setError(err.message || "No se pudo leer el archivo.");
+      setError(translateInventoryAiError(err).message);
     } finally {
       setReadingFile(false);
     }
@@ -481,63 +538,185 @@ function InventoryAiImporter({ userId, onImported }) {
     const usesGemini = assistantMode !== "local";
     if (usesGemini && !aiAvailability.begin()) return;
 
-    analysisInFlightRef.current = true;
     const requestId = latestAnalysisRequestRef.current + 1;
     latestAnalysisRequestRef.current = requestId;
-    setLoadingAnalysis(true);
-    setError("");
-    setSuccess("");
-    setProcessingStatus("Analizando documento...");
+    const startedAt = Date.now();
+    const rowCount = getSourceRowCount(fileData);
 
-    try {
-      const [analysis, currentInventory] = await Promise.all([
-        normalizeInventorySourceWithAi({ fileData, assistantMode }),
-        getInventoryItems(userId),
-      ]);
-      if (latestAnalysisRequestRef.current !== requestId) return;
-      setProcessingStatus("Preparando vista previa.");
-      const items = analysis.items.map((item, index) =>
-        buildPreviewItem(item, index, analysis)
-      );
+    await runInventoryAnalysisSingleFlight(
+      analysisInFlightRef,
+      async () => {
+        try {
+          setProcessingStatus("Validando catálogo y sesión.");
+          let currentInventory;
+          let currentAreas;
+          let currentCategories;
+          try {
+            [currentInventory, currentAreas, currentCategories] = await Promise.all([
+              getInventoryItems(userId),
+              getInventoryAreas(userId),
+              getInventoryCategories(userId),
+            ]);
+          } catch (catalogLoadError) {
+            const catalogUnavailableError = new Error(
+              "No fue posible cargar el catálogo de Áreas y Categorías."
+            );
+            catalogUnavailableError.code = catalogLoadError?.code || "unavailable";
+            catalogUnavailableError.details = {
+              internalCode: "inventory_import_catalog_unavailable",
+            };
+            throw catalogUnavailableError;
+          }
+          if (currentAreas.length === 0 || currentCategories.length === 0) {
+            const catalogUnavailableError = new Error(
+              "El catálogo de Áreas y Categorías no está disponible. Inicialízalo y agrega al menos una Categoría antes de analizar."
+            );
+            catalogUnavailableError.code =
+              "inventory-import/catalog-unavailable";
+            catalogUnavailableError.details = {
+              internalCode: "inventory_import_catalog_unavailable",
+            };
+            throw catalogUnavailableError;
+          }
+          setCatalogError("");
+          setProcessingStatus("Analizando documento...");
+          const analysis = await normalizeInventorySourceWithAi({
+            fileData,
+            assistantMode,
+          });
+          if (latestAnalysisRequestRef.current !== requestId) return;
+          setProcessingStatus("Preparando vista previa.");
+          const items = analysis.items.map((item, index) =>
+            buildPreviewItem(
+              item,
+              index,
+              analysis,
+              currentAreas,
+              currentCategories
+            )
+          );
 
-      setExistingItems(currentInventory);
-      setPreviewItems(items);
-      setSelectedIds(new Set(items.filter(shouldAutoSelectItem).map((item) => item.id)));
-      setAnalysisMeta(analysis);
-      aiAvailability.applySuccess(analysis.aiRateLimit);
-      if (fileData.kind === "document") {
-        setFileData(stripInventoryDocumentPayload(fileData));
-      }
-      setProcessingStatus(
-        items.length ? "Documento procesado." : "No se identificaron items suficientes."
-      );
+          setExistingItems(currentInventory);
+          setAreas(currentAreas);
+          setCategories(currentCategories);
+          setPreviewItems(items);
+          setSelectedIds(
+            new Set(items.filter(shouldAutoSelectItem).map((item) => item.id))
+          );
+          setAnalysisMeta(analysis);
+          if (analysis.aiRateLimit) {
+            aiAvailability.applySuccess(analysis.aiRateLimit);
+          } else {
+            aiAvailability.applyError(createMissingAiRateLimitStatusError());
+          }
+          if (fileData.kind === "document") {
+            setFileData(stripInventoryDocumentPayload(fileData));
+          }
+          setProcessingStatus(
+            items.length
+              ? "Documento procesado."
+              : "No se identificaron items suficientes."
+          );
 
-      if (!items.length) {
-        setError("No se detectaron items claros. Revisa el archivo e inténtalo nuevamente.");
+          if (!items.length) {
+            setError(
+              "No se detectaron items claros. Revisa el archivo e inténtalo nuevamente."
+            );
+          }
+        } catch (err) {
+          if (latestAnalysisRequestRef.current !== requestId) return;
+          console.error(
+            "Inventory AI analysis failed",
+            getSafeInventoryAiLogDetails(err, {
+              stage: "analyze_callable",
+              rowCount,
+              durationMs: Date.now() - startedAt,
+            })
+          );
+          const isCatalogFailure =
+            err?.details?.internalCode ===
+              "inventory_import_catalog_unavailable" ||
+            String(err?.code || "").includes("catalog-unavailable");
+          if (!isCatalogFailure) aiAvailability.applyError(err);
+          setProcessingStatus("Error de análisis.");
+          if (isCatalogFailure) {
+            const catalogMessage = err.message;
+            setCatalogError(catalogMessage);
+            setError(catalogMessage);
+          } else {
+            setError(translateInventoryAiError(err).message);
+          }
+        }
+      },
+      {
+        onStart: () => {
+          setLoadingAnalysis(true);
+          setPreviewItems([]);
+          setSelectedIds(new Set());
+          setAnalysisMeta(null);
+          setAreas([]);
+          setCategories([]);
+          setCatalogError("");
+          saveRequestIdRef.current = "";
+          setError("");
+          setSuccess("");
+          setProcessingStatus("Analizando documento...");
+        },
+        onFinish: () => {
+          if (latestAnalysisRequestRef.current === requestId) {
+            setLoadingAnalysis(false);
+          }
+        },
       }
-    } catch (err) {
-      if (latestAnalysisRequestRef.current !== requestId) return;
-      console.error("Error normalizando inventario desde archivo:", err);
-      aiAvailability.applyError(err);
-      setProcessingStatus("Error de análisis.");
-      setError(getSafeAnalysisErrorMessage(err));
-    } finally {
-      if (latestAnalysisRequestRef.current === requestId) {
-        analysisInFlightRef.current = false;
-        setLoadingAnalysis(false);
-      }
-    }
+    );
   };
 
   const handleItemChange = (id, field, value) => {
+    saveRequestIdRef.current = "";
     setPreviewItems((items) =>
       items.map((item) => {
         if (item.id !== id) return item;
 
-        const next = {
+        let next = {
           ...item,
           [field]: field === "margenDeseado" ? formatMarginValue(value) : value,
         };
+        if (field === "areaId") {
+          const area = areas.find((entry) => entry.id === value);
+          const compatibleCategoryId = keepInventoryImportCategoryForArea(
+            categories,
+            value,
+            item.categoriaId
+          );
+          next.areaPropuesta = area?.nombre || "";
+          next.areaResolutionStatus = value ? "resolved" : "missing";
+          next.categoriaId = compatibleCategoryId;
+          next.categoriaPropuesta = compatibleCategoryId
+            ? categories.find((entry) => entry.id === compatibleCategoryId)?.nombre || ""
+            : "";
+          next.categoryResolutionStatus = compatibleCategoryId
+            ? "resolved"
+            : "missing";
+        }
+        if (field === "categoriaId") {
+          const category = categories.find((entry) => entry.id === value);
+          next.categoriaPropuesta = category?.nombre || "";
+          next.categoryResolutionStatus = value ? "resolved" : "missing";
+        }
+        if (field === "tipoItem") {
+          if (value === "producto") {
+            next = {
+              ...next,
+              marca: next.marca || "",
+              modelo: next.modelo || "",
+              stock: next.stock ?? "",
+              stockMinimo: next.stockMinimo ?? "",
+              codigoBarras: next.codigoBarras || "",
+            };
+          } else {
+            next = stripProductFieldsForInventoryImport(next);
+          }
+        }
         if (field === "tipoItem" && !next.unidad) {
           next.unidad = defaultUnit(value);
         }
@@ -556,6 +735,7 @@ function InventoryAiImporter({ userId, onImported }) {
   };
 
   const toggleSelected = (id) => {
+    saveRequestIdRef.current = "";
     setSelectedIds((current) => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
@@ -565,6 +745,7 @@ function InventoryAiImporter({ userId, onImported }) {
   };
 
   const removeItem = (id) => {
+    saveRequestIdRef.current = "";
     setPreviewItems((items) => items.filter((item) => item.id !== id));
     setSelectedIds((current) => {
       const next = new Set(current);
@@ -574,6 +755,7 @@ function InventoryAiImporter({ userId, onImported }) {
   };
 
   const handleSave = async () => {
+    if (saveInFlightRef.current) return;
     if (!userId) {
       setError("Debes iniciar sesión para guardar inventario.");
       return;
@@ -583,40 +765,69 @@ function InventoryAiImporter({ userId, onImported }) {
       return;
     }
 
-    const unnamed = selectedItems.find((item) => !item.nombre.trim());
-    if (unnamed) {
-      setError("No se pueden guardar items sin nombre.");
+    if (selectedItems.length > MAX_INVENTORY_IMPORT_BATCH_SIZE) {
+      setError(
+        `La confirmación admite un máximo de ${MAX_INVENTORY_IMPORT_BATCH_SIZE} filas por lote. Excluye filas o divídelas en otra importación.`
+      );
       return;
     }
-    const missingUnit = selectedItems.find((item) => !item.unidad.trim());
-    if (missingUnit) {
-      setError("Completa la unidad de los items seleccionados antes de guardar.");
+    if (invalidSelectedItems.length > 0) {
+      setError(
+        `Corrige ${invalidSelectedItems.length} fila(s) incompleta(s) antes de guardar.`
+      );
       return;
     }
 
     try {
+      saveInFlightRef.current = true;
       setSaving(true);
       setError("");
       setSuccess("");
 
-      const payload = selectedItems.map(buildPayloadForSave);
-      const result = await importarInventarioEnFirestore(userId, payload);
-
-      if (result.total > 0 && result.verifiedCount < result.total) {
-        throw new Error(
-          `Se confirmo la importacion de ${result.verifiedCount} de ${result.total} items.`
-        );
+      if (!saveRequestIdRef.current) {
+        saveRequestIdRef.current = createImportRequestId();
       }
-
-      setSuccess(`Se guardaron ${result.total} items normalizados en inventario.`);
+      const rows = selectedItems.map((item) => ({
+        rowId: item.id,
+        item: buildPayloadForSave(item),
+      }));
+      const result = await confirmInventoryImportV2({
+        businessId: userId,
+        requestId: saveRequestIdRef.current,
+        rows,
+      });
+      const codes = result.results.map((entry) => entry.codigoInterno);
+      setSaveBackendCompatible(true);
+      const codeSummary =
+        codes.length <= 6
+          ? codes.join(", ")
+          : `${codes.slice(0, 6).join(", ")} y ${codes.length - 6} más`;
+      setSuccess(
+        `Se guardaron ${result.total} ítems v2. Códigos asignados: ${codeSummary}.`
+      );
       setPreviewItems([]);
       setSelectedIds(new Set());
       setAnalysisMeta(null);
+      saveRequestIdRef.current = "";
       if (onImported) onImported();
     } catch (err) {
-      console.error("Error guardando importacion inteligente:", err);
-      setError(err.message || "No se pudieron guardar los items.");
+      console.error(
+        "Inventory import confirmation failed",
+        getSafeInventoryAiLogDetails(err, {
+          operation: "inventory_import_confirmation",
+          stage: "confirm_callable",
+          rowCount: selectedItems.length,
+        })
+      );
+      const translatedError = translateInventoryAiError(err, {
+        operation: "save",
+      });
+      if (translatedError.kind === "service_mismatch") {
+        setSaveBackendCompatible(false);
+      }
+      setError(translatedError.message);
     } finally {
+      saveInFlightRef.current = false;
       setSaving(false);
     }
   };
@@ -785,6 +996,26 @@ function InventoryAiImporter({ userId, onImported }) {
         </p>
       )}
 
+      {previewItems.length > 0 && invalidSelectedItems.length > 0 && (
+        <p style={styles.validationSummary} role="alert">
+          Hay {invalidSelectedItems.length} fila(s) incluida(s) con errores
+          bloqueantes. Corrígelas o exclúyelas antes de guardar.
+        </p>
+      )}
+      {selectedItems.length > MAX_INVENTORY_IMPORT_BATCH_SIZE && (
+        <p style={styles.validationSummary} role="alert">
+          El guardado atómico admite hasta {MAX_INVENTORY_IMPORT_BATCH_SIZE}
+          filas. Actualmente hay {selectedItems.length} incluidas.
+        </p>
+      )}
+      {!saveBackendCompatible && previewItems.length > 0 && (
+        <p style={styles.validationSummary} role="alert">
+          La Function compatible para confirmar importaciones v2 no está
+          disponible. El guardado permanece deshabilitado y no se utilizará el
+          flujo legacy.
+        </p>
+      )}
+
       {previewItems.length > 0 && (
         <div style={styles.previewBlock}>
           <div style={styles.previewHeader}>
@@ -796,13 +1027,17 @@ function InventoryAiImporter({ userId, onImported }) {
                 la vista previa.
               </p>
               <p style={styles.previewNote}>
-                Revisa nombre, unidad, costo, margen y advertencias antes de
-                confirmar. Los candidatos con baja confianza no quedan incluidos
-                automáticamente.
+                Revisa Tipo, Área, Categoría y los campos propios de cada ítem.
+                El código interno se asignará únicamente al confirmar.
               </p>
             </div>
             <div style={styles.previewActions}>
-              <button type="button" style={styles.clearButton} onClick={resetAnalysis}>
+              <button
+                type="button"
+                style={styles.clearButton}
+                onClick={resetAnalysis}
+                disabled={saving}
+              >
                 Cancelar
               </button>
               <button
@@ -822,6 +1057,11 @@ function InventoryAiImporter({ userId, onImported }) {
           <div style={styles.previewCards}>
             {previewItems.map((item) => {
               const duplicateReason = duplicateReasonsById.get(item.id);
+              const rowErrors = rowErrorsById.get(item.id) || [];
+              const availableCategories = getInventoryImportCategoriesForArea(
+                categories,
+                item.areaId
+              );
               const confidence = getConfidenceLevel(item.confianza);
               const itemMessages = getItemDisplayMessages(item);
               const reviewBadgeText = getReviewBadgeText(item, confidence, itemMessages);
@@ -839,6 +1079,7 @@ function InventoryAiImporter({ userId, onImported }) {
                         type="checkbox"
                         checked={selectedIds.has(item.id)}
                         onChange={() => toggleSelected(item.id)}
+                        disabled={saving}
                       />
                       Incluir
                     </label>
@@ -846,9 +1087,18 @@ function InventoryAiImporter({ userId, onImported }) {
                       <strong style={styles.itemTitle}>
                         {item.nombre || "Item sin nombre"}
                       </strong>
-                      {item.sku && <span style={styles.itemSku}>SKU: {item.sku}</span>}
+                      <span style={styles.itemSku}>
+                        Código interno: se asignará al confirmar
+                      </span>
                     </div>
-                    <span style={styles.typeBadge}>{item.tipoItem}</span>
+                    <span style={styles.typeBadge}>
+                      {item.tipoItem || "Tipo pendiente"}
+                    </span>
+                    <span
+                      style={rowErrors.length ? styles.invalidBadge : styles.validBadge}
+                    >
+                      {rowErrors.length ? "Fila incompleta" : "Lista para guardar"}
+                    </span>
                     <span
                       style={{
                         ...styles.confidenceBadge,
@@ -864,6 +1114,7 @@ function InventoryAiImporter({ userId, onImported }) {
                       type="button"
                       style={styles.removeButton}
                       onClick={() => removeItem(item.id)}
+                      disabled={saving}
                     >
                       Quitar
                     </button>
@@ -878,16 +1129,10 @@ function InventoryAiImporter({ userId, onImported }) {
                           handleItemChange(item.id, "nombre", event.target.value)
                         }
                         style={styles.tableInput}
-                      />
-                    </label>
-                    <label style={styles.cardField}>
-                      <span style={styles.cardLabel}>SKU / código opcional</span>
-                      <input
-                        value={item.sku}
-                        onChange={(event) =>
-                          handleItemChange(item.id, "sku", event.target.value)
-                        }
-                        style={styles.tableInput}
+                        disabled={saving}
+                        aria-invalid={rowErrors.some((message) =>
+                          message.includes("Nombre")
+                        )}
                       />
                     </label>
                     <label style={styles.cardFieldFull}>
@@ -899,6 +1144,7 @@ function InventoryAiImporter({ userId, onImported }) {
                         }
                         rows={2}
                         style={styles.tableTextarea}
+                        disabled={saving}
                       />
                     </label>
                   </div>
@@ -912,7 +1158,10 @@ function InventoryAiImporter({ userId, onImported }) {
                           handleItemChange(item.id, "tipoItem", event.target.value)
                         }
                         style={styles.tableInput}
+                        disabled={saving}
+                        aria-invalid={!item.tipoItem}
                       >
+                        <option value="">Selecciona un tipo</option>
                         {TYPE_OPTIONS.map((option) => (
                           <option key={option} value={option}>
                             {option}
@@ -921,14 +1170,54 @@ function InventoryAiImporter({ userId, onImported }) {
                       </select>
                     </label>
                     <label style={styles.cardField}>
-                      <span style={styles.cardLabel}>Categoría</span>
-                      <input
-                        value={item.categoria}
+                      <span style={styles.cardLabel}>Área</span>
+                      <select
+                        value={item.areaId}
                         onChange={(event) =>
-                          handleItemChange(item.id, "categoria", event.target.value)
+                          handleItemChange(item.id, "areaId", event.target.value)
                         }
                         style={styles.tableInput}
-                      />
+                        disabled={saving}
+                        aria-invalid={!item.areaId}
+                      >
+                        <option value="">
+                          {item.areaPropuesta
+                            ? `Corregir: ${item.areaPropuesta}`
+                            : "Selecciona un Área"}
+                        </option>
+                        {activeAreas.map((area) => (
+                          <option key={area.id} value={area.id}>
+                            {area.nombre}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label style={styles.cardField}>
+                      <span style={styles.cardLabel}>Categoría</span>
+                      <select
+                        value={item.categoriaId}
+                        onChange={(event) =>
+                          handleItemChange(
+                            item.id,
+                            "categoriaId",
+                            event.target.value
+                          )
+                        }
+                        style={styles.tableInput}
+                        disabled={saving || !item.areaId}
+                        aria-invalid={!item.categoriaId}
+                      >
+                        <option value="">
+                          {item.categoriaPropuesta
+                            ? `Corregir: ${item.categoriaPropuesta}`
+                            : "Selecciona una Categoría"}
+                        </option>
+                        {availableCategories.map((category) => (
+                          <option key={category.id} value={category.id}>
+                            {category.nombre}
+                          </option>
+                        ))}
+                      </select>
                     </label>
                     <label style={styles.cardField}>
                       <span style={styles.cardLabel}>Unidad</span>
@@ -938,18 +1227,86 @@ function InventoryAiImporter({ userId, onImported }) {
                           handleItemChange(item.id, "unidad", event.target.value)
                         }
                         style={styles.tableInput}
+                        disabled={saving}
                       />
                     </label>
-                    <label style={styles.cardField}>
-                      <span style={styles.cardLabel}>Cantidad</span>
-                      <input
-                        value={item.cantidadSugerida}
-                        onChange={(event) =>
-                          handleItemChange(item.id, "cantidadSugerida", event.target.value)
-                        }
-                        style={styles.tableInput}
-                      />
-                    </label>
+                    {item.tipoItem === "producto" && (
+                      <>
+                        <label style={styles.cardField}>
+                          <span style={styles.cardLabel}>Marca</span>
+                          <input
+                            value={item.marca}
+                            onChange={(event) =>
+                              handleItemChange(item.id, "marca", event.target.value)
+                            }
+                            style={styles.tableInput}
+                            disabled={saving}
+                            aria-invalid={!item.marca.trim()}
+                          />
+                        </label>
+                        <label style={styles.cardField}>
+                          <span style={styles.cardLabel}>Modelo</span>
+                          <input
+                            value={item.modelo}
+                            onChange={(event) =>
+                              handleItemChange(item.id, "modelo", event.target.value)
+                            }
+                            style={styles.tableInput}
+                            disabled={saving}
+                            aria-invalid={!item.modelo.trim()}
+                          />
+                        </label>
+                        <label style={styles.cardField}>
+                          <span style={styles.cardLabel}>Stock actual</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            value={item.stock}
+                            onChange={(event) =>
+                              handleItemChange(item.id, "stock", event.target.value)
+                            }
+                            style={styles.tableInput}
+                            disabled={saving}
+                          />
+                        </label>
+                        <label style={styles.cardField}>
+                          <span style={styles.cardLabel}>Stock mínimo</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            value={item.stockMinimo}
+                            onChange={(event) =>
+                              handleItemChange(
+                                item.id,
+                                "stockMinimo",
+                                event.target.value
+                              )
+                            }
+                            style={styles.tableInput}
+                            disabled={saving}
+                          />
+                        </label>
+                        <label style={styles.cardField}>
+                          <span style={styles.cardLabel}>
+                            Código de barras (opcional)
+                          </span>
+                          <input
+                            value={item.codigoBarras}
+                            onChange={(event) =>
+                              handleItemChange(
+                                item.id,
+                                "codigoBarras",
+                                event.target.value
+                              )
+                            }
+                            style={styles.tableInput}
+                            disabled={saving}
+                          />
+                        </label>
+                      </>
+                    )}
                     <label style={styles.cardField}>
                       <span style={styles.cardLabel}>Costo base</span>
                       <input
@@ -958,6 +1315,7 @@ function InventoryAiImporter({ userId, onImported }) {
                           handleItemChange(item.id, "costoBase", event.target.value)
                         }
                         style={styles.tableInput}
+                        disabled={saving}
                       />
                     </label>
                     <label style={styles.cardField}>
@@ -968,6 +1326,7 @@ function InventoryAiImporter({ userId, onImported }) {
                           handleItemChange(item.id, "margenDeseado", event.target.value)
                         }
                         style={styles.tableInput}
+                        disabled={saving}
                       />
                     </label>
                     <div style={styles.cardField}>
@@ -984,6 +1343,7 @@ function InventoryAiImporter({ userId, onImported }) {
                               )
                             }
                             style={styles.tableInput}
+                            disabled={saving}
                           />
                         ) : (
                           <strong style={styles.calculatedPriceValue}>
@@ -1006,6 +1366,7 @@ function InventoryAiImporter({ userId, onImported }) {
                                 event.target.checked
                               )
                             }
+                            disabled={saving}
                           />
                           Ajustar precio manualmente
                         </label>
@@ -1013,8 +1374,16 @@ function InventoryAiImporter({ userId, onImported }) {
                     </div>
                   </div>
 
-                  {(itemMessages.length > 0 || duplicateReason || originText) && (
+                  {(rowErrors.length > 0 ||
+                    itemMessages.length > 0 ||
+                    duplicateReason ||
+                    originText) && (
                     <div style={styles.itemNotes}>
+                      {rowErrors.map((message) => (
+                        <span key={message} style={styles.rowErrorText} role="alert">
+                          {message}
+                        </span>
+                      ))}
                       {itemMessages.map((message) => (
                         <span key={message} style={styles.observationText}>
                           {message}
@@ -1026,7 +1395,10 @@ function InventoryAiImporter({ userId, onImported }) {
                         </span>
                       )}
                       {duplicateReason && (
-                        <span style={styles.duplicateText}>{duplicateReason}</span>
+                        <span style={styles.duplicateText}>
+                          Advertencia informativa: {duplicateReason}. No impide
+                          guardar esta fila.
+                        </span>
                       )}
                     </div>
                   )}
@@ -1036,7 +1408,12 @@ function InventoryAiImporter({ userId, onImported }) {
           </div>
 
           <div style={styles.previewFooterActions}>
-            <button type="button" style={styles.clearButton} onClick={resetAnalysis}>
+            <button
+              type="button"
+              style={styles.clearButton}
+              onClick={resetAnalysis}
+              disabled={saving}
+            >
               Cancelar
             </button>
             <button
@@ -1204,6 +1581,16 @@ const styles = {
     fontSize: "14px",
     margin: "10px 0 0",
   },
+  validationSummary: {
+    background: "#fef2f2",
+    border: "1px solid #fecaca",
+    borderRadius: "4px",
+    color: "#991b1b",
+    fontSize: "13px",
+    lineHeight: 1.5,
+    margin: "12px 0 0",
+    padding: "10px 12px",
+  },
   previewBlock: {
     display: "grid",
     gap: "12px",
@@ -1292,6 +1679,24 @@ const styles = {
     fontWeight: 800,
     padding: "5px 9px",
   },
+  invalidBadge: {
+    background: "#fef2f2",
+    border: "1px solid #fecaca",
+    borderRadius: "4px",
+    color: "#991b1b",
+    fontSize: "12px",
+    fontWeight: 800,
+    padding: "5px 8px",
+  },
+  validBadge: {
+    background: "#ecfdf5",
+    border: "1px solid #a7f3d0",
+    borderRadius: "4px",
+    color: "#047857",
+    fontSize: "12px",
+    fontWeight: 800,
+    padding: "5px 8px",
+  },
   cardMainFields: {
     display: "grid",
     gap: "10px",
@@ -1341,15 +1746,18 @@ const styles = {
   tableInput: {
     border: "1px solid #cbd5e1",
     borderRadius: "6px",
+    boxSizing: "border-box",
     color: "#111827",
     fontSize: "12px",
     minHeight: "34px",
+    minWidth: 0,
     padding: "7px 8px",
     width: "100%",
   },
   tableTextarea: {
     border: "1px solid #cbd5e1",
     borderRadius: "6px",
+    boxSizing: "border-box",
     color: "#111827",
     fontSize: "12px",
     padding: "7px 8px",
@@ -1357,11 +1765,19 @@ const styles = {
     width: "100%",
   },
   duplicateText: {
-    color: "#b91c1c",
+    color: "#92400e",
     display: "block",
     fontSize: "11px",
     fontWeight: 700,
     marginTop: "4px",
+  },
+  rowErrorText: {
+    color: "#b91c1c",
+    display: "block",
+    fontSize: "12px",
+    minWidth: 0,
+    fontWeight: 700,
+    lineHeight: 1.4,
   },
   observationText: {
     color: "#64748b",

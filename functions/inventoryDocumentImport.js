@@ -78,7 +78,8 @@ const INVENTORY_DOCUMENT_RESPONSE_SCHEMA = {
             nullable: true,
             enum: INVENTORY_ITEM_TYPES,
           },
-          categoria: nullableString(),
+          areaPropuesta: nullableString(),
+          categoriaPropuesta: nullableString(),
           descripcion: nullableString(),
           unidad: nullableString(),
           sku: nullableString(),
@@ -87,6 +88,11 @@ const INVENTORY_DOCUMENT_RESPONSE_SCHEMA = {
           totalLinea: nullableNumber(),
           costoBase: nullableNumber(),
           margenDeseado: nullableNumber(),
+          marca: nullableString(),
+          modelo: nullableString(),
+          stock: nullableNumber(),
+          stockMinimo: nullableNumber(),
+          codigoBarras: nullableString(),
           confianza: nullableNumber(),
           evidenciaOrigen: nullableString(),
           pagina: nullableNumber(),
@@ -520,6 +526,23 @@ function normalizeInventoryDocumentItem(rawItem, index) {
   const revisionRequerida =
     confianza === null || confianza < 50 || costoBase <= 0 || advertencias.length > 0;
   const itemWarnings = dedupeWarnings(advertencias);
+  const productFields =
+    tipoItem === "producto"
+      ? {
+          marca: safeText(rawItem?.marca, 100),
+          modelo: safeText(rawItem?.modelo, 100),
+          stock: parsePositiveDecimal(
+            rawItem?.stock ?? rawItem?.stockActual ?? cantidadOrigen
+          ),
+          stockMinimo: parsePositiveDecimal(
+            rawItem?.stockMinimo ?? rawItem?.stockMin
+          ),
+          codigoBarras: safeText(
+            rawItem?.codigoBarras || rawItem?.ean || rawItem?.upc,
+            120
+          ),
+        }
+      : {};
 
   return {
     id: `documento-${index + 1}`,
@@ -527,7 +550,14 @@ function normalizeInventoryDocumentItem(rawItem, index) {
     sku: safeText(rawItem?.sku || rawItem?.codigo, 80) || "",
     codigo: safeText(rawItem?.codigo || rawItem?.sku, 80) || "",
     tipoItem,
-    categoria: safeText(rawItem?.categoria, 90),
+    areaPropuesta: safeText(
+      rawItem?.areaPropuesta || rawItem?.areaNombre || rawItem?.area,
+      90
+    ),
+    categoriaPropuesta: safeText(
+      rawItem?.categoriaPropuesta || rawItem?.categoriaNombre || rawItem?.categoria,
+      90
+    ),
     descripcion: safeText(rawItem?.descripcion, 300),
     unidad,
     cantidadSugerida: cantidadOrigen,
@@ -543,6 +573,7 @@ function normalizeInventoryDocumentItem(rawItem, index) {
     confianza,
     origenAnalisis: "documento",
     revisionRequerida,
+    ...productFields,
   };
 }
 
@@ -607,7 +638,7 @@ function buildInventoryDocumentPrompt() {
     "Analiza el documento completo como archivo visual, no solo como texto plano. Considera tablas, columnas, filas, encabezados, paginas repetidas, cantidades, precios unitarios y totales de linea.\n\n" +
     "Debes identificar solo lineas comerciales que puedan ser productos, servicios o actividades. Excluye razon social, RUT, direcciones, telefonos, correos, folios, numeros de factura, fechas, forma de pago, datos bancarios, subtotal, IVA, impuestos, descuentos generales, despacho, recargos, total final, observaciones comerciales, condiciones de venta y numeros de pagina.\n\n" +
     "Reglas estrictas:\n" +
-    "- No inventes SKU, costos, margenes, categorias, cantidades ni tipos.\n" +
+    "- No inventes SKU, costos, margenes, cantidades, tipos ni identificadores persistentes.\n" +
     "- Usa null cuando un dato no este disponible.\n" +
     "- SKU o codigo solo si aparece explicitamente junto al item.\n" +
     "- Distingue precio unitario, cantidad y total de linea.\n" +
@@ -615,12 +646,15 @@ function buildInventoryDocumentPrompt() {
     "- Si hay cantidad y total de linea pero no precio unitario, calcula costoBase como totalLinea / cantidad y marca valorCalculado true.\n" +
     "- Si no sabes si el precio incluye impuestos, agrega advertencia.\n" +
     "- No asumas margen. margenDeseado debe ser null salvo que exista en el documento.\n" +
-    "- No asumas categoria. categoria debe ser null salvo que exista o sea evidente en la linea.\n" +
+    "- areaPropuesta y categoriaPropuesta solo pueden contener nombres; nunca areaId ni categoriaId.\n" +
+    "- No asumas Área o Categoría. Usa null salvo que estén explícitas o sean evidentes en la línea.\n" +
+    "- Para Producto extrae marca, modelo, stock, stockMinimo y codigoBarras cuando aparezcan.\n" +
+    "- Para Servicio o Actividad no devuelvas campos exclusivos de Producto.\n" +
     "- Conserva todas las paginas y evita duplicar encabezados repetidos.\n" +
     "- Mantiene el orden original de las lineas comerciales.\n" +
     "- Trabaja en espanol aunque existan terminos tecnicos en ingles.\n" +
     "- Devuelve exclusivamente JSON valido siguiendo el schema solicitado.\n\n" +
-    "Campos esperados por item: nombre, tipoItem, categoria, descripcion, unidad, sku, cantidadOrigen, precioUnitario, totalLinea, costoBase, margenDeseado, confianza, evidenciaOrigen, pagina, valorCalculado y advertencias."
+    "Campos esperados por item: nombre, tipoItem, areaPropuesta, categoriaPropuesta, descripcion, unidad, sku, cantidadOrigen, precioUnitario, totalLinea, costoBase, margenDeseado, marca, modelo, stock, stockMinimo, codigoBarras, confianza, evidenciaOrigen, pagina, valorCalculado y advertencias."
   );
 }
 

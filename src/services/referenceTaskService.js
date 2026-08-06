@@ -9,6 +9,7 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
+import { assertClientWriteAllowed } from "../config/firebaseEnvironment.mjs";
 import { db } from "../firebase/firebaseConfig";
 import {
   referenceTaskDocPath,
@@ -102,6 +103,7 @@ export function subscribeToPendingReferenceTasks(uid, onTasks, onError) {
 }
 
 export async function postponeReferenceTask(uid, taskId, days) {
+  assertClientWriteAllowed("aplazar tareas de referencias");
   const postponeDays = Number(days);
   if (!VALID_POSTPONE_DAYS.includes(postponeDays)) {
     throw new Error("Plazo de aplazamiento no permitido.");
@@ -118,6 +120,7 @@ export async function postponeReferenceTask(uid, taskId, days) {
 }
 
 export async function updateReferenceTaskStatus(uid, taskId, estado) {
+  assertClientWriteAllowed("actualizar tareas de referencias");
   if (!["resuelta"].includes(estado)) {
     throw new Error("Estado de tarea no permitido.");
   }
@@ -130,6 +133,7 @@ export async function updateReferenceTaskStatus(uid, taskId, estado) {
 }
 
 export async function resolveReferenceTasksForSavedReference(uid, reference) {
+  assertClientWriteAllowed("resolver tareas de referencias");
   if (!uid || !reference?.itemId || (reference.estado || "activa") !== "activa") {
     return;
   }

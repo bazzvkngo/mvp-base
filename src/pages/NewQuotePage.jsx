@@ -3,26 +3,39 @@ import { Link, useParams } from "react-router-dom";
 import AiAvailabilityStatus from "../components/ai/AiAvailabilityStatus";
 import { AI_MODELS } from "../config/aiModels";
 import {
-  calculateQuoteTotals,
   createQuoteItemFromValuation,
   normalizeQuoteItems,
 } from "../domain/quoteItemFactory";
+import {
+  calculateQuoteLineAmounts,
+  DEFAULT_QUOTE_CONDITIONS,
+  tryCalculateQuoteTotals,
+  validateQuoteDraft,
+} from "../domain/quoteModel.mjs";
+import { getCategoriesForArea } from "../domain/inventoryCatalog.mjs";
 import { PRICING_STATUS } from "../domain/pricing";
 import useAiRateLimit from "../hooks/useAiRateLimit";
 import QuotePrintView from "../features/quotes/QuotePrintView";
 import SendQuoteEmailModal from "../features/quotes/SendQuoteEmailModal";
 import { suggestQuoteItems } from "../services/aiQuoteService";
 import { getCompanyProfile } from "../services/companyService";
-import { createInventoryItem } from "../services/inventoryService";
+import {
+  createManagedInventoryItem,
+  subscribeToInventoryAreas,
+  subscribeToInventoryCategories,
+} from "../services/inventoryService";
 import { isQuoteEmailSendable } from "../services/quoteEmailService";
 import {
   createQuote,
+  createQuoteRequestId,
+  getQuoteClientSuggestions,
   getQuoteById,
   getQuoteDisplayNumber,
   updateQuote,
 } from "../services/quoteService";
 import { subscribeToValuations } from "../services/valuationService";
 import { formatCLP, formatDate } from "../utils/formatters";
+import { downloadQuotePdf } from "../utils/quotePdf";
 
 const ASSISTANT_DESCRIPTION_MAX_LENGTH = 1200;
 const MANUAL_CATALOG_PAGE_SIZE = 12;
@@ -159,14 +172,20 @@ function buildManualPriceJustification(margenDeseado) {
 function getSuggestedItemValidation(draft) {
   if (!draft) return { messages: {}, isValid: false };
 
-  const categoria = String(draft.categoria || "").trim();
+  const areaId = String(draft.areaId || "").trim();
+  const categoriaId = String(draft.categoriaId || "").trim();
   const costoBase = parseDraftNumber(draft.costoBase);
   const cantidadSugerida = parseDraftNumber(draft.cantidadSugerida);
   const margenDeseado = parseDraftNumber(draft.margenDeseado);
   const messages = {};
 
-  if (!categoria) {
-    messages.categoria = "Ingresa una categoría.";
+  if (!areaId) messages.areaId = "Selecciona un área.";
+  if (!categoriaId) messages.categoriaId = "Selecciona una categoría válida.";
+  if (draft.tipoItem === "producto" && !String(draft.marca || "").trim()) {
+    messages.marca = "Ingresa la marca del producto.";
+  }
+  if (draft.tipoItem === "producto" && !String(draft.modelo || "").trim()) {
+    messages.modelo = "Ingresa el modelo del producto.";
   }
 
   if (costoBase === null || costoBase <= 0) {
@@ -247,12 +266,23 @@ function buildInitialQuote() {
     fecha: "",
     clienteNombre: "",
     clienteRut: "",
+    clienteContacto: "",
     clienteEmail: "",
     clienteTelefono: "",
     clienteDireccion: "",
+    clienteCiudad: "",
+    proyectoNombre: "",
     condicionesPago: "",
+    condiciones: { ...DEFAULT_QUOTE_CONDITIONS },
+    validezDias: 15,
+    afectaIva: true,
     estado: "borrador",
     items: [],
+    seccionesAlcance: [],
+    aceptacion: {
+      habilitada: false,
+      texto: "Acepto los términos y condiciones de esta cotización.",
+    },
     descuento: 0,
     observaciones: "",
   };
@@ -301,13 +331,29 @@ function buildQuoteFromSavedQuote(savedQuote = {}) {
     estado: savedQuote.estado || "borrador",
     clienteNombre: savedQuote.clienteNombre || "",
     clienteRut: savedQuote.clienteRut || "",
+    clienteContacto: savedQuote.clienteContacto || "",
     clienteEmail: savedQuote.clienteEmail || "",
     clienteTelefono: savedQuote.clienteTelefono || "",
     clienteDireccion: savedQuote.clienteDireccion || "",
+    clienteCiudad: savedQuote.clienteCiudad || "",
+    proyectoNombre: savedQuote.proyectoNombre || "",
     condicionesPago: savedQuote.condicionesPago || "",
+    condiciones: {
+      ...DEFAULT_QUOTE_CONDITIONS,
+      ...(savedQuote.condiciones || {}),
+    },
+    validezDias: Number(savedQuote.validezDias || 15),
+    afectaIva: savedQuote.afectaIva !== false,
     items: normalizeStoredQuoteItems(savedQuote.items),
     descuento: Number(savedQuote.descuento || 0),
     observaciones: savedQuote.observaciones || "",
+    seccionesAlcance: Array.isArray(savedQuote.seccionesAlcance)
+      ? savedQuote.seccionesAlcance
+      : [],
+    aceptacion: savedQuote.aceptacion || {
+      habilitada: false,
+      texto: "Acepto los términos y condiciones de esta cotización.",
+    },
     empresa: savedQuote.empresa || {},
   };
 }
@@ -315,6 +361,8 @@ function buildQuoteFromSavedQuote(savedQuote = {}) {
 function NewQuotePage({ userId }) {
   const { quoteId: editQuoteId = "" } = useParams();
   const addedItemsRef = useRef(null);
+  const previewRef = useRef(null);
+  const createRequestIdRef = useRef("");
   const assistantDescriptionRef = useRef("");
   const dictationBaseTextRef = useRef("");
   const dictationFinalTextRef = useRef("");
@@ -366,6 +414,11 @@ function NewQuotePage({ userId }) {
     MANUAL_CATALOG_PAGE_SIZE
   );
   const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const [clientSuggestions, setClientSuggestions] = useState([]);
+  const [inventoryAreas, setInventoryAreas] = useState([]);
+  const [inventoryCategories, setInventoryCategories] = useState([]);
+  const [dirty, setDirty] = useState(false);
+  const [pdfActionLoading, setPdfActionLoading] = useState(false);
 
   useEffect(() => {
     if (!userId) {
@@ -395,8 +448,35 @@ function NewQuotePage({ userId }) {
         if (isEditMode) return;
         setQuote((prev) => ({
           ...prev,
+          afectaIva: profile.impuestoPredeterminadoId === "IVA_GENERAL",
           condicionesPago:
             prev.condicionesPago || profile.condicionesPago || "",
+          validezDias:
+            prev.validezDias || profile.validezCotizacionDias || 15,
+          condiciones: {
+            ...prev.condiciones,
+            formaPago:
+              prev.condiciones?.formaPago || profile.condicionesPago || "",
+            plazoEntrega: prev.condiciones?.plazoEntrega || "",
+            alcanceGeografico: prev.condiciones?.alcanceGeografico || "",
+            garantia: prev.condiciones?.garantia || "",
+            exclusiones: prev.condiciones?.exclusiones || "",
+            terminosAdicionales:
+              prev.condiciones?.terminosAdicionales ||
+              profile.terminosCotizacion ||
+              "",
+            observaciones:
+              prev.condiciones?.observaciones ||
+              profile.notaFinalCotizacion ||
+              "",
+          },
+          aceptacion: {
+            habilitada: profile.aceptacionCotizacionHabilitada === true,
+            texto:
+              profile.textoAceptacionCotizacion ||
+              prev.aceptacion?.texto ||
+              "Acepto los términos y condiciones de esta cotización.",
+          },
         }));
       })
       .catch((err) => {
@@ -405,6 +485,37 @@ function NewQuotePage({ userId }) {
 
     return () => unsubscribe();
   }, [isEditMode, userId]);
+
+  useEffect(() => {
+    if (!userId) return undefined;
+    getQuoteClientSuggestions(userId)
+      .then(setClientSuggestions)
+      .catch((err) => console.warn("No se pudieron cargar clientes históricos.", err));
+    const unsubscribeAreas = subscribeToInventoryAreas(
+      userId,
+      setInventoryAreas,
+      (err) => console.warn("No se pudieron cargar las áreas de inventario.", err)
+    );
+    const unsubscribeCategories = subscribeToInventoryCategories(
+      userId,
+      setInventoryCategories,
+      (err) => console.warn("No se pudieron cargar las categorías de inventario.", err)
+    );
+    return () => {
+      unsubscribeAreas();
+      unsubscribeCategories();
+    };
+  }, [userId]);
+
+  useEffect(() => {
+    if (!dirty) return undefined;
+    const warnBeforeExit = (event) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeExit);
+    return () => window.removeEventListener("beforeunload", warnBeforeExit);
+  }, [dirty]);
 
   useEffect(
     () => () => {
@@ -480,6 +591,7 @@ function NewQuotePage({ userId }) {
         setQuote(editableQuote);
         setLoadedDraftQuote(editableQuote);
         setSavedQuoteId(savedQuote.id);
+        setDirty(false);
       })
       .catch((err) => {
         console.error("Error al cargar cotización para edición:", err);
@@ -497,14 +609,35 @@ function NewQuotePage({ userId }) {
   }, [editQuoteId, isEditMode, userId]);
 
   const normalizedItems = useMemo(
-    () => normalizeQuoteItems(quote.items),
+    () =>
+      (Array.isArray(quote.items) ? quote.items : []).map((item, index) => {
+        try {
+          const amounts = calculateQuoteLineAmounts(item, index);
+          return {
+            ...item,
+            precioUnitarioEditable: item.precioUnitarioEditable,
+            cantidad: item.cantidad,
+            descuentoPorcentaje: item.descuentoPorcentaje ?? 0,
+            subtotalLinea: amounts.bruto,
+            descuentoLinea: amounts.descuentoLinea,
+            totalLinea: amounts.totalLinea,
+          };
+        } catch {
+          return { ...item, totalLinea: 0 };
+        }
+      }),
     [quote.items]
   );
 
-  const totals = useMemo(
-    () => calculateQuoteTotals(normalizedItems, quote.descuento),
-    [normalizedItems, quote.descuento]
+  const totalsResult = useMemo(
+    () =>
+      tryCalculateQuoteTotals(quote.items, quote.descuento, {
+        afectaIva: quote.afectaIva !== false,
+      }),
+    [quote.afectaIva, quote.descuento, quote.items]
   );
+  const totals = totalsResult.totals;
+  const quoteValidation = useMemo(() => validateQuoteDraft(quote), [quote]);
 
   const currentSavedQuote = useMemo(
     () => ({
@@ -514,6 +647,9 @@ function NewQuotePage({ userId }) {
       items: normalizedItems,
       subtotal: totals.subtotal,
       descuento: totals.descuento,
+      descuentoTotal: totals.descuentoTotal,
+      neto: totals.neto,
+      iva: totals.iva,
       total: totals.total,
     }),
     [companyProfile, normalizedItems, quote, savedQuoteId, totals]
@@ -531,6 +667,14 @@ function NewQuotePage({ userId }) {
     () => getSuggestedItemValidation(suggestedItemDraft),
     [suggestedItemDraft]
   );
+  const suggestedItemCategories = useMemo(
+    () =>
+      getCategoriesForArea(
+        inventoryCategories,
+        suggestedItemDraft?.areaId || ""
+      ),
+    [inventoryCategories, suggestedItemDraft?.areaId]
+  );
   const visibleAssistantWarning = getVisibleAssistantWarning({
     source: assistantSource,
     mode: assistantModeUsed,
@@ -542,7 +686,20 @@ function NewQuotePage({ userId }) {
     if (!query) return valuations;
 
     return valuations.filter((valuation) => {
-      const text = `${valuation.nombre || ""} ${valuation.categoria || ""}`.toLowerCase();
+      const inventoryItem = valuation.item || {};
+      const text = [
+        valuation.nombre,
+        valuation.categoria,
+        valuation.codigoInterno,
+        valuation.codigo,
+        valuation.sku,
+        inventoryItem.codigoInterno,
+        inventoryItem.codigo,
+        inventoryItem.sku,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
       return text.includes(query);
     });
   }, [search, valuations]);
@@ -592,10 +749,106 @@ function NewQuotePage({ userId }) {
           : "Listo para dictar";
 
   const updateField = (field, value) => {
+    setDirty(true);
     setQuote((prev) => ({
       ...prev,
       [field]: value,
+      ...(field === "condicionesPago"
+        ? { condiciones: { ...prev.condiciones, formaPago: value } }
+        : {}),
     }));
+  };
+
+  const updateCondition = (field, value) => {
+    setDirty(true);
+    setQuote((prev) => ({
+      ...prev,
+      condiciones: { ...prev.condiciones, [field]: value },
+      ...(field === "formaPago" ? { condicionesPago: value } : {}),
+      ...(field === "observaciones" ? { observaciones: value } : {}),
+    }));
+  };
+
+  const restoreDefaultConditions = () => {
+    if (!companyProfile) return;
+    setDirty(true);
+    const defaults = {
+      ...DEFAULT_QUOTE_CONDITIONS,
+      formaPago: companyProfile.condicionesPago || "",
+      plazoEntrega: "",
+      alcanceGeografico: "",
+      garantia: "",
+      exclusiones: "",
+      terminosAdicionales: companyProfile.terminosCotizacion || "",
+      observaciones: companyProfile.notaFinalCotizacion || "",
+    };
+    setQuote((prev) => ({
+      ...prev,
+      condiciones: defaults,
+      condicionesPago: defaults.formaPago,
+      observaciones: defaults.observaciones,
+    }));
+  };
+
+  const applyClientSuggestion = (companyName) => {
+    const match = clientSuggestions.find(
+      (client) => client.empresa.toLocaleLowerCase("es-CL") ===
+        String(companyName || "").trim().toLocaleLowerCase("es-CL")
+    );
+    if (!match) return;
+    setDirty(true);
+    setQuote((prev) => ({
+      ...prev,
+      clienteId: match.clienteId || "",
+      clienteNombre: match.empresa,
+      clienteRut: match.rut,
+      clienteContacto: match.contacto,
+      clienteEmail: match.email,
+      clienteTelefono: match.telefono,
+      clienteDireccion: match.direccion,
+      clienteCiudad: match.ciudad,
+      proyectoNombre: match.proyecto,
+    }));
+  };
+
+  const addScopeSection = () => {
+    setDirty(true);
+    setQuote((prev) => ({
+      ...prev,
+      seccionesAlcance: [
+        ...prev.seccionesAlcance,
+        { id: `alcance-${Date.now()}`, titulo: "", lineas: [""] },
+      ],
+    }));
+  };
+
+  const updateScopeSection = (id, patch) => {
+    setDirty(true);
+    setQuote((prev) => ({
+      ...prev,
+      seccionesAlcance: prev.seccionesAlcance.map((section) =>
+        section.id === id ? { ...section, ...patch } : section
+      ),
+    }));
+  };
+
+  const removeScopeSection = (id) => {
+    setDirty(true);
+    setQuote((prev) => ({
+      ...prev,
+      seccionesAlcance: prev.seccionesAlcance.filter((section) => section.id !== id),
+    }));
+  };
+
+  const moveScopeSection = (index, direction) => {
+    setDirty(true);
+    setQuote((prev) => {
+      const nextIndex = index + direction;
+      if (nextIndex < 0 || nextIndex >= prev.seccionesAlcance.length) return prev;
+      const sections = [...prev.seccionesAlcance];
+      [sections[index], sections[nextIndex]] = [sections[nextIndex], sections[index]];
+      return { ...prev, seccionesAlcance: sections };
+    });
   };
 
   const showItemFeedback = (message) => {
@@ -635,6 +888,7 @@ function NewQuotePage({ userId }) {
   };
 
   const addItem = (valuation, quantity = 1) => {
+    setDirty(true);
     setSuccess("");
     setError("");
     const wasExisting = quote.items.some((item) => item.itemId === valuation.itemId);
@@ -957,7 +1211,13 @@ function NewQuotePage({ userId }) {
     setSuggestedItemDraft({
       nombre: suggestion.nombre || "",
       tipoItem,
+      areaId: "",
+      categoriaId: "",
       categoria: "",
+      marca: "",
+      modelo: "",
+      stock: 0,
+      stockMinimo: 0,
       descripcion: buildSuggestedItemDescription(suggestion, tipoItem),
       unidad: DEFAULT_UNIT_BY_TYPE[tipoItem],
       cantidadSugerida: Math.max(Number(suggestion.cantidadSugerida) || 1, 1),
@@ -997,6 +1257,15 @@ function NewQuotePage({ userId }) {
         [field]: value,
       };
 
+      if (field === "areaId") {
+        next.categoriaId = "";
+        next.categoria = "";
+      }
+      if (field === "categoriaId") {
+        next.categoria =
+          inventoryCategories.find((category) => category.id === value)?.nombre || "";
+      }
+
       if (field === "costoBase" || field === "margenDeseado") {
         const calculatedPrice = calculateSuggestedInternalPrice(
           next.costoBase,
@@ -1020,6 +1289,8 @@ function NewQuotePage({ userId }) {
 
     const nombre = String(suggestedItemDraft.nombre || "").trim();
     const tipoItem = String(suggestedItemDraft.tipoItem || "").trim();
+    const areaId = String(suggestedItemDraft.areaId || "").trim();
+    const categoriaId = String(suggestedItemDraft.categoriaId || "").trim();
     const categoria = String(suggestedItemDraft.categoria || "").trim();
     const descripcion = String(suggestedItemDraft.descripcion || "").trim();
     const unidad = String(suggestedItemDraft.unidad || "").trim();
@@ -1073,6 +1344,8 @@ function NewQuotePage({ userId }) {
         nombre,
         tipoItem,
         categoria,
+        areaId,
+        categoriaId,
         descripcion,
         unidad,
         costoBase,
@@ -1085,14 +1358,31 @@ function NewQuotePage({ userId }) {
         justificacionPrecio: buildManualPriceJustification(margenDeseado),
         confianzaSugerencia: suggestedItemDraft.confianzaSugerencia,
         confianzaPrecio: "baja",
+        ...(tipoItem === "producto"
+          ? {
+              marca: String(suggestedItemDraft.marca || "").trim(),
+              modelo: String(suggestedItemDraft.modelo || "").trim(),
+              stock: Number(suggestedItemDraft.stock || 0),
+              stockMinimo: Number(suggestedItemDraft.stockMinimo || 0),
+            }
+          : {}),
       };
-      const createdRef = await createInventoryItem(userId, payload);
+      const requestId = `quote-inventory-${
+        globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`
+      }`;
+      const createdResult = await createManagedInventoryItem(
+        userId,
+        payload,
+        requestId
+      );
       const createdItem = {
-        id: createdRef.id,
+        id: createdResult.itemId,
+        codigoInterno: createdResult.codigoInterno,
+        modeloInventarioVersion: 2,
         ...payload,
       };
       const createdValuation = {
-        itemId: createdRef.id,
+        itemId: createdResult.itemId,
         item: createdItem,
         nombre: createdItem.nombre,
         tipoItem: createdItem.tipoItem,
@@ -1190,12 +1480,11 @@ function NewQuotePage({ userId }) {
   };
 
   const updateItem = (itemId, field, value) => {
+    setDirty(true);
     setQuote((prev) => ({
       ...prev,
-      items: normalizeQuoteItems(
-        prev.items.map((item) =>
-          item.itemId === itemId ? { ...item, [field]: value } : item
-        )
+      items: prev.items.map((item) =>
+        (item.lineaId || item.itemId) === itemId ? { ...item, [field]: value } : item
       ),
     }));
 
@@ -1205,11 +1494,23 @@ function NewQuotePage({ userId }) {
   };
 
   const removeItem = (itemId) => {
+    setDirty(true);
     setQuote((prev) => ({
       ...prev,
-      items: prev.items.filter((item) => item.itemId !== itemId),
+      items: prev.items.filter((item) => (item.lineaId || item.itemId) !== itemId),
     }));
     showItemFeedback("Ítem eliminado de la cotización.");
+  };
+
+  const moveItem = (index, direction) => {
+    setDirty(true);
+    setQuote((prev) => {
+      const nextIndex = index + direction;
+      if (nextIndex < 0 || nextIndex >= prev.items.length) return prev;
+      const items = [...prev.items];
+      [items[index], items[nextIndex]] = [items[nextIndex], items[index]];
+      return { ...prev, items };
+    });
   };
 
   const clearQuote = () => {
@@ -1220,6 +1521,7 @@ function NewQuotePage({ userId }) {
       setSuccess("");
       setItemFeedback("");
       setHighlightedItemId("");
+      setDirty(false);
       return;
     }
 
@@ -1229,19 +1531,19 @@ function NewQuotePage({ userId }) {
     setSuccess("");
     setItemFeedback("");
     setHighlightedItemId("");
+    createRequestIdRef.current = "";
+    setDirty(false);
   };
 
   const validateQuote = () => {
-    if (!quote.clienteNombre.trim()) {
-      return "Ingresa el nombre del cliente antes de guardar.";
+    if (!quoteValidation.isValid) {
+      return Object.values(quoteValidation.fieldErrors)[0];
     }
-    if (normalizedItems.length === 0) {
-      return "Agrega al menos un ítem valorizado a la cotización.";
-    }
-    return "";
+    return totalsResult.error?.message || "";
   };
 
   const saveQuote = async (estado) => {
+    if (saving) return;
     if (isEditMode && editLockedMessage) {
       setError(editLockedMessage);
       return;
@@ -1263,23 +1565,29 @@ function NewQuotePage({ userId }) {
         ...quote,
         estado,
         empresa: quote.empresa || companyProfile || {},
-        items: normalizedItems,
+        items: quote.items,
         subtotal: totals.subtotal,
         descuento: totals.descuento,
+        descuentoTotal: totals.descuentoTotal,
+        neto: totals.neto,
+        iva: totals.iva,
         total: totals.total,
       };
+      if (!savedQuoteId && !createRequestIdRef.current) {
+        createRequestIdRef.current = createQuoteRequestId();
+      }
       const saved = savedQuoteId
         ? await updateQuote(userId, savedQuoteId, payload)
-        : await createQuote(userId, payload);
+        : await createQuote(userId, payload, {
+            requestId: createRequestIdRef.current,
+          });
       if (!savedQuoteId) {
         setSavedQuoteId(saved.id);
       }
       setQuote((prev) => ({
-        ...prev,
-        numero: saved.numero,
-        fecha: saved.fecha,
-        estado,
+        ...buildQuoteFromSavedQuote(saved),
       }));
+      setDirty(false);
       if (isEditMode && estado === "borrador") {
         const nextDraft = buildQuoteFromSavedQuote(saved);
         setLoadedDraftQuote(nextDraft);
@@ -1356,9 +1664,6 @@ function NewQuotePage({ userId }) {
     );
   }
 
-  const defaultPaymentTerms = String(companyProfile?.condicionesPago || "");
-  const showRestorePaymentTerms =
-    Boolean(defaultPaymentTerms) && quote.condicionesPago !== defaultPaymentTerms;
   const canSendCurrentQuote = isQuoteEmailSendable(currentSavedQuote, savedQuoteId);
   const emailDisabled = saving || !canSendCurrentQuote;
   const emailHint = !canSendCurrentQuote
@@ -1370,6 +1675,37 @@ function NewQuotePage({ userId }) {
       return;
     }
     setEmailModalOpen(true);
+  };
+  const previewQuote = {
+    ...quote,
+    items: normalizedItems,
+    ...totals,
+    empresa: quote.empresa || companyProfile || {},
+  };
+  const handlePreview = () => {
+    setError(totalsResult.error?.message || "");
+    if (totalsResult.error) return;
+    previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  const handleDownloadCurrentPdf = async () => {
+    const validationError = validateQuote();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    setPdfActionLoading(true);
+    setError("");
+    try {
+      const fileName = await downloadQuotePdf({
+        quote: previewQuote,
+        companyProfile,
+      });
+      setSuccess(`PDF ${fileName} generado correctamente.`);
+    } catch (err) {
+      setError(err.message || "No fue posible generar el PDF.");
+    } finally {
+      setPdfActionLoading(false);
+    }
   };
 
   return (
@@ -1391,7 +1727,7 @@ function NewQuotePage({ userId }) {
 
       <div className="no-print" style={styles.grid}>
         <div style={styles.panel}>
-          <h3 style={styles.panelTitle}>Datos de la cotización</h3>
+          <h3 style={styles.panelTitle}>1. Datos generales</h3>
           <div className="quote-data-grid" style={styles.quoteDataGrid}>
             <Field label="Fecha">
               <div style={styles.readOnlyValue}>
@@ -1413,55 +1749,55 @@ function NewQuotePage({ userId }) {
                 <option value="emitida">Emitida</option>
               </select>
             </Field>
-            <div style={{ ...styles.field, ...styles.wideField }}>
-              <div className="quote-payment-header" style={styles.fieldHeader}>
-                <span style={styles.labelRow}>
-                  <label htmlFor="quote-payment-terms" style={styles.label}>
-                    Condiciones de pago
-                  </label>
-                  <span style={styles.fieldBadge}>Esta cotización</span>
-                </span>
-                {showRestorePaymentTerms && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      updateField("condicionesPago", defaultPaymentTerms)
-                    }
-                    style={styles.restoreDefaultButton}
-                  >
-                    Usar valor predeterminado
-                  </button>
-                )}
-              </div>
-              <textarea
-                id="quote-payment-terms"
-                value={quote.condicionesPago}
-                onChange={(event) =>
-                  updateField("condicionesPago", event.target.value)
-                }
-                rows={2}
-                style={styles.compactTextarea}
+            <Field label="Vigencia (días)">
+              <input
+                type="number"
+                min="1"
+                max="3650"
+                value={quote.validezDias}
+                onChange={(event) => updateField("validezDias", event.target.value)}
+                style={styles.input}
               />
-              <span style={styles.fieldHelpText}>
-                Puedes modificarlas sin cambiar la configuración de Empresa.
-              </span>
-            </div>
+            </Field>
+            <Field label="Tratamiento tributario">
+              <select
+                value={quote.afectaIva === false ? "exenta" : "afecta"}
+                onChange={(event) =>
+                  updateField("afectaIva", event.target.value === "afecta")
+                }
+                style={styles.input}
+              >
+                <option value="afecta">Afecta a IVA (19%)</option>
+                <option value="exenta">Exenta de IVA</option>
+              </select>
+            </Field>
           </div>
         </div>
 
         <div style={styles.panel}>
-          <h3 style={styles.panelTitle}>Datos del cliente</h3>
+          <h3 style={styles.panelTitle}>2. Cliente</h3>
           <div style={styles.formGrid}>
-            <Field label="Nombre cliente">
+            <Field
+              label="Empresa o razón social"
+              helpText={quoteValidation.fieldErrors.clienteNombre}
+              helpTone="error"
+            >
               <input
                 type="text"
+                list="quote-client-suggestions"
                 value={quote.clienteNombre}
                 onChange={(event) =>
                   updateField("clienteNombre", event.target.value)
                 }
+                onBlur={(event) => applyClientSuggestion(event.target.value)}
                 placeholder="Escribe el nombre del cliente"
                 style={styles.input}
               />
+              <datalist id="quote-client-suggestions">
+                {clientSuggestions.map((client) => (
+                  <option key={client.rut || client.empresa} value={client.empresa} />
+                ))}
+              </datalist>
             </Field>
             <Field label="RUT/DNI opcional">
               <input
@@ -1469,6 +1805,15 @@ function NewQuotePage({ userId }) {
                 value={quote.clienteRut}
                 onChange={(event) => updateField("clienteRut", event.target.value)}
                 placeholder="Escribe el RUT o DNI"
+                style={styles.input}
+              />
+            </Field>
+            <Field label="Persona de contacto opcional">
+              <input
+                type="text"
+                value={quote.clienteContacto}
+                onChange={(event) => updateField("clienteContacto", event.target.value)}
+                placeholder="Nombre del contacto"
                 style={styles.input}
               />
             </Field>
@@ -1502,6 +1847,24 @@ function NewQuotePage({ userId }) {
                   updateField("clienteDireccion", event.target.value)
                 }
                 placeholder="Escribe la dirección del cliente"
+                style={styles.input}
+              />
+            </Field>
+            <Field label="Ciudad opcional">
+              <input
+                type="text"
+                value={quote.clienteCiudad}
+                onChange={(event) => updateField("clienteCiudad", event.target.value)}
+                placeholder="Ciudad"
+                style={styles.input}
+              />
+            </Field>
+            <Field label="Proyecto o trabajo" wide>
+              <input
+                type="text"
+                value={quote.proyectoNombre}
+                onChange={(event) => updateField("proyectoNombre", event.target.value)}
+                placeholder="Ej. Escalera zona de estanque"
                 style={styles.input}
               />
             </Field>
@@ -1839,7 +2202,7 @@ function NewQuotePage({ userId }) {
       <div className="no-print" style={styles.panel} ref={addedItemsRef}>
         <div style={styles.addedHeader}>
           <div>
-            <h3 style={styles.panelTitle}>Ítems agregados</h3>
+            <h3 style={styles.panelTitle}>3. Ítems valorizados</h3>
             <p style={styles.helpText}>
               Resumen editable de la cotización actual.
             </p>
@@ -1870,19 +2233,22 @@ function NewQuotePage({ userId }) {
             <table style={styles.table}>
               <thead>
                 <tr>
-                  <th style={styles.th}>Nombre</th>
-                  <th style={styles.th}>Tipo</th>
+                  <th style={styles.th}>Código / nombre</th>
+                  <th style={styles.th}>Descripción comercial</th>
+                  <th style={styles.th}>Unidad</th>
                   <th style={styles.th}>Cantidad</th>
-                  <th style={styles.th}>Precio sugerido</th>
                   <th style={styles.th}>Precio unitario</th>
+                  <th style={styles.th}>Desc. %</th>
                   <th style={styles.th}>Total línea</th>
-                  <th style={styles.th}>Quitar</th>
+                  <th style={styles.th}>Orden / quitar</th>
                 </tr>
               </thead>
               <tbody>
-                {normalizedItems.map((item) => (
+                {normalizedItems.map((item, index) => {
+                  const lineId = item.lineaId || item.itemId;
+                  return (
                   <tr
-                    key={item.itemId}
+                    key={lineId}
                     style={
                       highlightedItemId === item.itemId
                         ? styles.highlightedRow
@@ -1891,10 +2257,26 @@ function NewQuotePage({ userId }) {
                   >
                     <td style={styles.td}>
                       <strong>{item.nombre}</strong>
-                      <span style={styles.itemMeta}>{item.unidad || "-"}</span>
+                      <span style={styles.itemMeta}>
+                        {item.codigo || item.inventarioSnapshot?.codigoInterno || `Ítem ${index + 1}`} · {tipoLabels[item.tipoItem] || item.tipoItem || "-"}
+                      </span>
                     </td>
                     <td style={styles.td}>
-                      {tipoLabels[item.tipoItem] || item.tipoItem || "-"}
+                      <textarea
+                        rows={3}
+                        value={item.descripcionComercial ?? item.descripcion ?? ""}
+                        onChange={(event) =>
+                          updateItem(lineId, "descripcionComercial", event.target.value)
+                        }
+                        style={styles.lineDescriptionInput}
+                      />
+                    </td>
+                    <td style={styles.td}>
+                      <input
+                        value={item.unidad || ""}
+                        onChange={(event) => updateItem(lineId, "unidad", event.target.value)}
+                        style={styles.unitInput}
+                      />
                     </td>
                     <td style={styles.td}>
                       <input
@@ -1903,12 +2285,11 @@ function NewQuotePage({ userId }) {
                         step="0.01"
                         value={item.cantidad}
                         onChange={(event) =>
-                          updateItem(item.itemId, "cantidad", event.target.value)
+                          updateItem(lineId, "cantidad", event.target.value)
                         }
                         style={styles.numberInput}
                       />
                     </td>
-                    <td style={styles.td}>{formatCLP(item.precioSugerido)}</td>
                     <td style={styles.td}>
                       <input
                         type="number"
@@ -1916,7 +2297,7 @@ function NewQuotePage({ userId }) {
                         value={item.precioUnitarioEditable}
                         onChange={(event) =>
                           updateItem(
-                            item.itemId,
+                            lineId,
                             "precioUnitarioEditable",
                             event.target.value
                           )
@@ -1925,21 +2306,114 @@ function NewQuotePage({ userId }) {
                       />
                     </td>
                     <td style={styles.td}>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        value={item.descuentoPorcentaje ?? 0}
+                        onChange={(event) =>
+                          updateItem(lineId, "descuentoPorcentaje", event.target.value)
+                        }
+                        style={styles.discountPercentInput}
+                      />
+                    </td>
+                    <td style={styles.td}>
                       <strong>{formatCLP(item.totalLinea)}</strong>
                     </td>
                     <td style={styles.td}>
                       <button
                         type="button"
-                        onClick={() => removeItem(item.itemId)}
+                        onClick={() => moveItem(index, -1)}
+                        disabled={index === 0}
+                        style={styles.orderButton}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveItem(index, 1)}
+                        disabled={index === normalizedItems.length - 1}
+                        style={styles.orderButton}
+                      >
+                        ↓
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeItem(lineId)}
                         style={styles.removeButton}
                       >
                         Quitar
                       </button>
                     </td>
                   </tr>
-                ))}
+                );})}
               </tbody>
             </table>
+          </div>
+        )}
+        {(quoteValidation.fieldErrors.items || quoteValidation.fieldErrors.numericos) && (
+          <p style={styles.errorText}>
+            {quoteValidation.fieldErrors.items || quoteValidation.fieldErrors.numericos}
+          </p>
+        )}
+      </div>
+
+      <div className="no-print" style={styles.panel}>
+        <div style={styles.sectionHeader}>
+          <div>
+            <h3 style={styles.panelTitle}>4. Alcance del trabajo</h3>
+            <p style={styles.helpText}>
+              Agrega secciones descriptivas no valorizadas. Las secciones vacías no aparecerán en el PDF.
+            </p>
+          </div>
+          <button type="button" onClick={addScopeSection} style={styles.secondaryButton}>
+            Agregar sección
+          </button>
+        </div>
+        {quote.seccionesAlcance.length === 0 ? (
+          <div style={styles.compactEmptyState}>
+            Puedes agregar Servicios, Materiales, Gastos de operación, Entregables o cualquier otro título.
+          </div>
+        ) : (
+          <div style={styles.scopeList}>
+            {quote.seccionesAlcance.map((section, index) => (
+              <article key={section.id} style={styles.scopeCard}>
+                <div style={styles.scopeHeader}>
+                  <input
+                    value={section.titulo}
+                    onChange={(event) =>
+                      updateScopeSection(section.id, { titulo: event.target.value })
+                    }
+                    placeholder="Título de la sección"
+                    style={styles.input}
+                  />
+                  <div style={styles.scopeActions}>
+                    <button type="button" disabled={index === 0} onClick={() => moveScopeSection(index, -1)} style={styles.orderButton}>↑</button>
+                    <button type="button" disabled={index === quote.seccionesAlcance.length - 1} onClick={() => moveScopeSection(index, 1)} style={styles.orderButton}>↓</button>
+                    <button type="button" onClick={() => removeScopeSection(section.id)} style={styles.removeButton}>Eliminar</button>
+                  </div>
+                </div>
+                <textarea
+                  rows={4}
+                  value={(section.lineas || []).join("\n")}
+                  onChange={(event) =>
+                    updateScopeSection(section.id, {
+                      lineas: event.target.value.split(/\r?\n/),
+                    })
+                  }
+                  placeholder="Una línea descriptiva por renglón"
+                  style={styles.textarea}
+                />
+                {(quoteValidation.fieldErrors[`alcance.${index}.titulo`] ||
+                  quoteValidation.fieldErrors[`alcance.${index}.lineas`]) && (
+                  <span style={styles.fieldErrorText}>
+                    {quoteValidation.fieldErrors[`alcance.${index}.titulo`] ||
+                      quoteValidation.fieldErrors[`alcance.${index}.lineas`]}
+                  </span>
+                )}
+              </article>
+            ))}
           </div>
         )}
       </div>
@@ -1948,23 +2422,64 @@ function NewQuotePage({ userId }) {
         <h3 style={styles.closingTitle}>Cierre de la cotización</h3>
         <div className="quote-bottom-grid" style={styles.bottomGrid}>
         <div style={{ ...styles.panel, ...styles.observationsPanel }}>
-          <h3 style={styles.panelTitle}>Observaciones</h3>
+          <h3 style={styles.panelTitle}>5. Condiciones comerciales</h3>
           <p style={styles.helpText}>
-            Agrega notas visibles para el cliente en el documento formal.
+            Estos valores son editables para esta cotización y no modifican la configuración de Empresa.
           </p>
-          <textarea
-            value={quote.observaciones}
-            onChange={(event) => updateField("observaciones", event.target.value)}
-            rows={5}
-            placeholder="Notas públicas para el cliente"
-            style={styles.observationsTextarea}
-          />
+          <button type="button" onClick={restoreDefaultConditions} style={styles.restoreDefaultButton}>
+            Restaurar condiciones predeterminadas
+          </button>
+          <div style={styles.conditionsGrid}>
+            <Field label="Plazo de ejecución o entrega">
+              <input value={quote.condiciones.plazoEntrega} onChange={(event) => updateCondition("plazoEntrega", event.target.value)} style={styles.input} />
+            </Field>
+            <Field label="Forma de pago">
+              <input value={quote.condiciones.formaPago} onChange={(event) => updateCondition("formaPago", event.target.value)} style={styles.input} />
+            </Field>
+            <Field label="Alcance geográfico">
+              <input value={quote.condiciones.alcanceGeografico} onChange={(event) => updateCondition("alcanceGeografico", event.target.value)} style={styles.input} />
+            </Field>
+            <Field label="Garantía">
+              <input value={quote.condiciones.garantia} onChange={(event) => updateCondition("garantia", event.target.value)} style={styles.input} />
+            </Field>
+            <Field label="Observaciones" wide>
+              <textarea rows={3} value={quote.condiciones.observaciones} onChange={(event) => updateCondition("observaciones", event.target.value)} style={styles.textarea} />
+            </Field>
+            <Field label="Exclusiones" wide>
+              <textarea rows={3} value={quote.condiciones.exclusiones} onChange={(event) => updateCondition("exclusiones", event.target.value)} style={styles.textarea} />
+            </Field>
+            <Field label="Términos y condiciones adicionales" wide>
+              <textarea rows={4} value={quote.condiciones.terminosAdicionales} onChange={(event) => updateCondition("terminosAdicionales", event.target.value)} style={styles.textarea} />
+            </Field>
+          </div>
+          <label style={styles.acceptanceToggle}>
+            <input
+              type="checkbox"
+              checked={quote.aceptacion.habilitada}
+              onChange={(event) => {
+                setDirty(true);
+                setQuote((prev) => ({ ...prev, aceptacion: { ...prev.aceptacion, habilitada: event.target.checked } }));
+              }}
+            />
+            Incluir bloque de aceptación manual
+          </label>
+          {quote.aceptacion.habilitada && (
+            <textarea
+              rows={2}
+              value={quote.aceptacion.texto}
+              onChange={(event) => {
+                setDirty(true);
+                setQuote((prev) => ({ ...prev, aceptacion: { ...prev.aceptacion, texto: event.target.value } }));
+              }}
+              style={styles.textarea}
+            />
+          )}
         </div>
 
         <div style={{ ...styles.panel, ...styles.totalsPanel }}>
           <div style={styles.totalsHeader}>
             <div>
-              <h3 style={styles.panelTitle}>Totales</h3>
+              <h3 style={styles.panelTitle}>6. Totales</h3>
               <p style={styles.helpText}>Revisa montos antes de guardar o enviar.</p>
             </div>
             <span style={styles.quoteStatusBadge}>
@@ -1984,7 +2499,18 @@ function NewQuotePage({ userId }) {
                 style={styles.discountInput}
               />
             </div>
+            {totals.descuentoItems > 0 && (
+              <TotalRow label="Descuentos por línea" value={`-${formatCLP(totals.descuentoItems)}`} />
+            )}
+            <TotalRow label="Subtotal neto" value={formatCLP(totals.neto)} />
+            <TotalRow
+              label={quote.afectaIva === false ? "IVA (exenta)" : "IVA 19%"}
+              value={formatCLP(totals.iva)}
+            />
             <TotalRow label="Total" value={formatCLP(totals.total)} strong />
+            {totalsResult.error && (
+              <p style={styles.totalErrorText}>{totalsResult.error.message}</p>
+            )}
           </div>
 
           <div style={styles.actions}>
@@ -1995,6 +2521,22 @@ function NewQuotePage({ userId }) {
               style={styles.primaryButton}
             >
               {saving ? "Guardando..." : "Guardar borrador"}
+            </button>
+            <button
+              type="button"
+              onClick={handlePreview}
+              disabled={saving}
+              style={styles.secondaryButton}
+            >
+              Previsualizar
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadCurrentPdf}
+              disabled={saving || pdfActionLoading}
+              style={styles.pdfButton}
+            >
+              {pdfActionLoading ? "Generando PDF..." : "Generar PDF"}
             </button>
             <button
               type="button"
@@ -2077,26 +2619,83 @@ function NewQuotePage({ userId }) {
                     </select>
                   </Field>
                   <Field
-                    label="Categoría"
+                    label="Área"
                     helpText={
-                      suggestedItemTouched.categoria
-                        ? suggestedItemValidation.messages.categoria
+                      suggestedItemTouched.areaId
+                        ? suggestedItemValidation.messages.areaId
                         : ""
                     }
                     helpTone="error"
                   >
-                    <input
-                      type="text"
-                      value={suggestedItemDraft.categoria}
-                      onBlur={() => markSuggestedItemFieldTouched("categoria")}
+                    <select
+                      value={suggestedItemDraft.areaId}
+                      onBlur={() => markSuggestedItemFieldTouched("areaId")}
                       onChange={(event) =>
-                        updateSuggestedItemDraft("categoria", event.target.value)
+                        updateSuggestedItemDraft("areaId", event.target.value)
                       }
-                      placeholder="Selecciona o ingresa una categoría"
                       style={styles.input}
-                    />
+                    >
+                      <option value="">Selecciona un área</option>
+                      {inventoryAreas
+                        .filter((area) => (area.estado || "activo") === "activo")
+                        .map((area) => (
+                          <option key={area.id} value={area.id}>{area.nombre}</option>
+                        ))}
+                    </select>
+                  </Field>
+                  <Field
+                    label="Categoría"
+                    helpText={
+                      suggestedItemTouched.categoriaId
+                        ? suggestedItemValidation.messages.categoriaId
+                        : ""
+                    }
+                    helpTone="error"
+                  >
+                    <select
+                      value={suggestedItemDraft.categoriaId}
+                      onBlur={() => markSuggestedItemFieldTouched("categoriaId")}
+                      onChange={(event) =>
+                        updateSuggestedItemDraft("categoriaId", event.target.value)
+                      }
+                      disabled={!suggestedItemDraft.areaId}
+                      style={styles.input}
+                    >
+                      <option value="">Selecciona una categoría</option>
+                      {suggestedItemCategories.map((category) => (
+                        <option key={category.id} value={category.id}>{category.nombre}</option>
+                      ))}
+                    </select>
                   </Field>
                 </div>
+                {suggestedItemDraft.tipoItem === "producto" && (
+                  <div style={styles.modalThreeColumnGrid}>
+                    <Field
+                      label="Marca"
+                      helpText={suggestedItemTouched.marca ? suggestedItemValidation.messages.marca : ""}
+                      helpTone="error"
+                    >
+                      <input
+                        value={suggestedItemDraft.marca}
+                        onBlur={() => markSuggestedItemFieldTouched("marca")}
+                        onChange={(event) => updateSuggestedItemDraft("marca", event.target.value)}
+                        style={styles.input}
+                      />
+                    </Field>
+                    <Field
+                      label="Modelo"
+                      helpText={suggestedItemTouched.modelo ? suggestedItemValidation.messages.modelo : ""}
+                      helpTone="error"
+                    >
+                      <input
+                        value={suggestedItemDraft.modelo}
+                        onBlur={() => markSuggestedItemFieldTouched("modelo")}
+                        onChange={(event) => updateSuggestedItemDraft("modelo", event.target.value)}
+                        style={styles.input}
+                      />
+                    </Field>
+                  </div>
+                )}
               </section>
 
               <section style={styles.modalSection}>
@@ -2284,6 +2883,7 @@ function NewQuotePage({ userId }) {
       )}
 
       <SendQuoteEmailModal
+        businessId={userId}
         open={emailModalOpen}
         quote={currentSavedQuote}
         quoteId={savedQuoteId}
@@ -2292,10 +2892,9 @@ function NewQuotePage({ userId }) {
         onSent={handleEmailSent}
       />
 
-      <QuotePreview
-        quote={{ ...quote, items: normalizedItems, ...totals }}
-        companyProfile={companyProfile}
-      />
+      <div ref={previewRef}>
+        <QuotePreview quote={previewQuote} companyProfile={companyProfile} />
+      </div>
     </section>
   );
 }
@@ -2336,7 +2935,7 @@ function QuotePreview({ quote, companyProfile }) {
   return (
     <div style={styles.previewPanel}>
       <div className="no-print" style={styles.previewActions}>
-        <h3 style={styles.panelTitle}>Vista formal imprimible</h3>
+        <h3 style={styles.panelTitle}>7. Vista previa y acciones</h3>
         <button type="button" onClick={() => window.print()} style={styles.printButton}>
           Imprimir cotización
         </button>
@@ -3291,6 +3890,100 @@ const styles = {
     color: "#92400e",
     margin: "12px 0 0",
     padding: "11px 13px",
+  },
+  lineDescriptionInput: {
+    border: "1px solid #cbd5e1",
+    borderRadius: "5px",
+    boxSizing: "border-box",
+    font: "inherit",
+    minWidth: "220px",
+    padding: "8px",
+    resize: "vertical",
+    width: "100%",
+  },
+  unitInput: {
+    border: "1px solid #cbd5e1",
+    borderRadius: "5px",
+    maxWidth: "90px",
+    padding: "8px",
+  },
+  discountPercentInput: {
+    border: "1px solid #cbd5e1",
+    borderRadius: "5px",
+    maxWidth: "76px",
+    padding: "8px",
+    textAlign: "right",
+  },
+  orderButton: {
+    background: "#f8fafc",
+    border: "1px solid #cbd5e1",
+    borderRadius: "5px",
+    color: "#334155",
+    cursor: "pointer",
+    marginRight: "4px",
+    minHeight: "32px",
+    minWidth: "32px",
+  },
+  pdfButton: {
+    background: "#07285d",
+    border: "1px solid #07285d",
+    borderRadius: "6px",
+    color: "#ffffff",
+    cursor: "pointer",
+    fontWeight: 800,
+    padding: "10px 13px",
+  },
+  compactEmptyState: {
+    background: "#f8fafc",
+    border: "1px dashed #cbd5e1",
+    borderRadius: "7px",
+    color: "#64748b",
+    marginTop: "12px",
+    padding: "16px",
+  },
+  scopeList: {
+    display: "grid",
+    gap: "12px",
+    marginTop: "14px",
+  },
+  scopeCard: {
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
+    borderRadius: "7px",
+    display: "grid",
+    gap: "10px",
+    padding: "14px",
+  },
+  scopeHeader: {
+    alignItems: "center",
+    display: "grid",
+    gap: "10px",
+    gridTemplateColumns: "minmax(0, 1fr) auto",
+  },
+  scopeActions: {
+    alignItems: "center",
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "4px",
+  },
+  conditionsGrid: {
+    display: "grid",
+    gap: "12px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+    marginTop: "14px",
+  },
+  acceptanceToggle: {
+    alignItems: "center",
+    color: "#334155",
+    display: "flex",
+    fontWeight: 700,
+    gap: "9px",
+    margin: "16px 0 10px",
+  },
+  totalErrorText: {
+    color: "#b91c1c",
+    fontSize: "12px",
+    margin: "8px 0 0",
   },
 };
 

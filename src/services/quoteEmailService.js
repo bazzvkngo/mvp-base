@@ -1,5 +1,6 @@
-import { getFunctions, httpsCallable } from "firebase/functions";
-import { app } from "../firebase/firebaseConfig";
+import { httpsCallable } from "firebase/functions";
+import { assertCloudFunctionAllowed } from "../config/firebaseEnvironment.mjs";
+import { getFirebaseFunctions } from "../firebase/firebaseConfig";
 import { DRAFT_QUOTE_NUMBER_LABEL, getQuoteDisplayNumber } from "./quoteService";
 
 const FUNCTIONS_REGION = "us-central1";
@@ -32,14 +33,18 @@ export function buildDefaultQuoteEmail({ quote, companyProfile }) {
 
 export function buildManualQuoteEmail({ quote }) {
   const quoteNumber = getQuoteDisplayNumber(quote, "");
+  const companyName =
+    quote?.empresa?.nombreComercial ||
+    quote?.empresa?.razonSocial ||
+    "la empresa emisora";
 
   return (
     "Estimado/a cliente:\n\n" +
-    `Comparto la cotización ${quoteNumber || ""} preparada por Bagner para su revisión.\n\n` +
+    `Comparto la cotización ${quoteNumber || ""} preparada por ${companyName} para su revisión.\n\n` +
     "Antes de enviar este mensaje, adjuntaré manualmente el archivo PDF de la cotización.\n\n" +
     "Quedamos atentos a sus comentarios.\n\n" +
     "Saludos,\n" +
-    "Bagner"
+    companyName
   );
 }
 
@@ -64,17 +69,19 @@ export function buildMailtoUrl({ emailCliente, asunto, mensaje }) {
 }
 
 export async function sendQuoteEmail({
+  businessId,
   quoteId,
   emailCliente,
   asunto,
   mensaje,
   pdfAttachment,
 }) {
+  assertCloudFunctionAllowed("el envío de cotizaciones por correo");
   if (!quoteId) {
-    throw new Error("Guarda la cotizacion antes de enviarla por correo.");
+    throw new Error("Guarda la cotización antes de enviarla por correo.");
   }
   if (!isValidEmail(emailCliente)) {
-    throw new Error("Ingresa un correo de cliente valido.");
+    throw new Error("Ingresa un correo de cliente válido.");
   }
   if (!String(asunto || "").trim()) {
     throw new Error("Ingresa el asunto del correo.");
@@ -92,13 +99,14 @@ export async function sendQuoteEmail({
     throw new Error("El mensaje debe tener 2000 caracteres o menos.");
   }
 
-  const functions = getFunctions(app, FUNCTIONS_REGION);
+  const functions = getFirebaseFunctions(FUNCTIONS_REGION);
   const callable = httpsCallable(functions, "sendQuoteEmail");
   const pdfBase64 = String(pdfAttachment?.contentBase64 || "").replace(
     /^data:application\/pdf;base64,/i,
     ""
   );
   const response = await callable({
+    businessId,
     quoteId,
     emailCliente: String(emailCliente).trim(),
     asunto: String(asunto).trim(),

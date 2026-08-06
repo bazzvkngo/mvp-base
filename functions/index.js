@@ -18,6 +18,31 @@ const {
   classifyGeminiServiceError,
   normalizeInventoryDocumentHandler,
 } = require("./inventoryDocumentImport");
+const {
+  confirmInventoryImportV2Handler,
+  createInventoryItemWithCodeHandler,
+  initializeInventoryCatalogHandler,
+  saveInventoryAreaHandler,
+  saveInventoryCategoryHandler,
+} = require("./inventoryModel");
+const {
+  createQuoteWithNumberHandler,
+  updateQuoteDraftHandler,
+} = require("./quotePersistence");
+const {
+  createAdditionalBusinessHandler,
+  createFirstBusinessHandler,
+  getBusinessSessionHandler,
+  requireBusinessAccess,
+  setActiveBusinessHandler,
+  updateBusinessProfileHandler,
+  validateBusinessProfileInput,
+} = require("./businessOnboarding");
+const {
+  updateBusinessInformationHandler,
+  updateBusinessSettingsHandler,
+  updatePersonalProfileHandler,
+} = require("./businessSettings");
 
 // Inicializar Admin SDK (una sola vez)
 initializeApp();
@@ -1195,10 +1220,10 @@ async function upsertReferenceReviewTask(tasksRef, item, tipoAlerta, now) {
   return { created: false, updated: false };
 }
 
-async function reviewUserInventoryReferences(userDoc) {
-  const inventorySnapshot = await userDoc.ref.collection("inventario").get();
-  const referencesSnapshot = await userDoc.ref.collection("referencias").get();
-  const tasksRef = userDoc.ref.collection("tareasReferencias");
+async function reviewBusinessInventoryReferences(businessDoc) {
+  const inventorySnapshot = await businessDoc.ref.collection("inventario").get();
+  const referencesSnapshot = await businessDoc.ref.collection("referencias").get();
+  const tasksRef = businessDoc.ref.collection("tareasReferencias");
   const referencesByItem = new Map();
 
   referencesSnapshot.docs.forEach((referenceDoc) => {
@@ -1275,22 +1300,26 @@ exports.nightlyInventoryReferenceReview = onSchedule(
     timeoutSeconds: 540,
   },
   async () => {
-    const usersSnapshot = await db.collection("usuarios").get();
-    let usersChecked = 0;
+    const businessesSnapshot = await db
+      .collection("negocios")
+      .where("estado", "==", "activo")
+      .get();
+    let businessesChecked = 0;
     let itemsChecked = 0;
     let tasksCreated = 0;
     let tasksUpdated = 0;
-    let usersFailed = 0;
+    let businessesFailed = 0;
 
-    for (const userDoc of usersSnapshot.docs) {
+    for (const businessDoc of businessesSnapshot.docs) {
+      if (businessDoc.data()?.eliminadoEn) continue;
       try {
-        const result = await reviewUserInventoryReferences(userDoc);
-        usersChecked += 1;
+        const result = await reviewBusinessInventoryReferences(businessDoc);
+        businessesChecked += 1;
         itemsChecked += result.checked;
         tasksCreated += result.created;
         tasksUpdated += result.updated;
       } catch (error) {
-        usersFailed += 1;
+        businessesFailed += 1;
         console.error("Error en revision nocturna de referencias:", {
           message: error.message,
           name: error.name,
@@ -1299,11 +1328,11 @@ exports.nightlyInventoryReferenceReview = onSchedule(
     }
 
     console.log("Revision nocturna de referencias completada.", {
-      usersChecked,
+      businessesChecked,
       itemsChecked,
       tasksCreated,
       tasksUpdated,
-      usersFailed,
+      businessesFailed,
     });
   }
 );
@@ -1836,14 +1865,46 @@ function hasCompanyEmailData(company) {
   );
 }
 
-async function getCompanyProfileForQuote(uid, quote) {
+exports.createQuoteWithNumber = onCall(
+  {
+    maxInstances: 20,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    createQuoteWithNumberHandler({
+      request,
+      db,
+      FieldValue,
+      HttpsError,
+      requireBusinessAccess,
+    })
+);
+
+exports.updateQuoteDraft = onCall(
+  {
+    maxInstances: 20,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    updateQuoteDraftHandler({
+      request,
+      db,
+      FieldValue,
+      HttpsError,
+      requireBusinessAccess,
+    })
+);
+
+async function getCompanyProfileForQuote(businessRef, quote) {
   if (hasCompanyEmailData(quote.empresa)) {
     return quote.empresa;
   }
 
-  const snapshot = await db
-    .collection("usuarios")
-    .doc(uid)
+  const snapshot = await businessRef
     .collection("empresa")
     .doc("perfil")
     .get();
@@ -1956,14 +2017,14 @@ function joinNonEmpty(parts, separator = " / ") {
 
 function buildPlainQuoteEmail({ quote, mensaje }) {
   const company = quote.empresa || {};
-  const companyName = "Bagner";
+  const companyName = company.nombreComercial || company.razonSocial || "Bagner";
   const companyContact = joinNonEmpty([
     company.email,
     company.telefono,
     company.sitioWeb,
   ]);
   const companyAddress = joinNonEmpty([company.direccion, company.ciudad]);
-  const validityDays = company.validezCotizacionDias || 15;
+  const validityDays = quote.validezDias || company.validezCotizacionDias || 15;
 
   const lines = [
     companyName,
@@ -1977,7 +2038,7 @@ function buildPlainQuoteEmail({ quote, mensaje }) {
     "",
     "El detalle de los productos, servicios, condiciones comerciales y observaciones se encuentra en el documento PDF adjunto.",
     "",
-    companyContact || companyAddress ? "Contacto Bagner:" : "",
+    companyContact || companyAddress ? `Contacto ${companyName}:` : "",
     companyContact,
     companyAddress,
     "",
@@ -1989,14 +2050,14 @@ function buildPlainQuoteEmail({ quote, mensaje }) {
 
 function buildQuoteEmailHtml({ quote, mensaje }) {
   const company = quote.empresa || {};
-  const brand = "Bagner";
+  const brand = company.nombreComercial || company.razonSocial || "Bagner";
   const companyContact = joinNonEmpty([
     company.email,
     company.telefono,
     company.sitioWeb,
   ]);
   const companyAddress = joinNonEmpty([company.direccion, company.ciudad]);
-  const validityDays = company.validezCotizacionDias || 15;
+  const validityDays = quote.validezDias || company.validezCotizacionDias || 15;
 
   return `<!doctype html>
   <html>
@@ -2022,7 +2083,7 @@ function buildQuoteEmailHtml({ quote, mensaje }) {
           ${
             companyContact || companyAddress
               ? `<div style="border-top:1px solid #e5e7eb;margin-top:18px;padding-top:14px;color:#475569;">
-                  <strong style="color:#334155;">Contacto Bagner</strong>
+                  <strong style="color:#334155;">Contacto ${escapeHtml(brand)}</strong>
                   ${companyContact ? `<p style="margin:6px 0 0;">${escapeHtml(companyContact)}</p>` : ""}
                   ${companyAddress ? `<p style="margin:4px 0 0;">${escapeHtml(companyAddress)}</p>` : ""}
                 </div>`
@@ -2080,7 +2141,10 @@ exports.sendQuoteEmail = onCall(
       throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
     }
 
-    const uid = request.auth.uid;
+    const { businessId, businessRef } = await requireBusinessAccess(
+      request,
+      businessOnboardingDependencies
+    );
     const data = request.data || {};
     const rawEmailCliente = String(
       data.emailCliente || data.emailClienteDestino || ""
@@ -2136,11 +2200,7 @@ exports.sendQuoteEmail = onCall(
       throw new HttpsError("invalid-argument", "El PDF adjunto es obligatorio.");
     }
 
-    const quoteRef = db
-      .collection("usuarios")
-      .doc(uid)
-      .collection("cotizaciones")
-      .doc(quoteId);
+    const quoteRef = businessRef.collection("cotizaciones").doc(quoteId);
     const quoteSnapshot = await quoteRef.get();
 
     if (!quoteSnapshot.exists) {
@@ -2151,7 +2211,7 @@ exports.sendQuoteEmail = onCall(
       id: quoteSnapshot.id,
       ...quoteSnapshot.data(),
     };
-    if (quote.uidUsuario && quote.uidUsuario !== uid) {
+    if (quote.negocioId && quote.negocioId !== businessId) {
       throw new HttpsError("permission-denied", "No puedes enviar esta cotizacion.");
     }
     const sendableStatuses = ["emitida", "aceptada", "rechazada", "vencida"];
@@ -2162,7 +2222,7 @@ exports.sendQuoteEmail = onCall(
       );
     }
 
-    quote.empresa = await getCompanyProfileForQuote(uid, quote);
+    quote.empresa = await getCompanyProfileForQuote(businessRef, quote);
     const html = buildQuoteEmailHtml({ quote, asunto, mensaje });
     const text = buildPlainQuoteEmail({ quote, asunto, mensaje });
     const apiKey = getResendApiKey();
@@ -2433,36 +2493,6 @@ function defaultUnitForInventoryImport(tipoItem, text = "") {
   return "unidad";
 }
 
-function inferInventoryImportCategory(text = "") {
-  const normalized = normalizeSearchText(text);
-  if (
-    normalized.includes("notebook") ||
-    normalized.includes("mouse") ||
-    normalized.includes("teclado") ||
-    normalized.includes("monitor") ||
-    normalized.includes("equipo")
-  ) {
-    return "Soporte tecnico y hardware";
-  }
-  if (
-    normalized.includes("cable") ||
-    normalized.includes("red") ||
-    normalized.includes("cat6") ||
-    normalized.includes("router") ||
-    normalized.includes("switch")
-  ) {
-    return "Redes y conectividad";
-  }
-  if (
-    normalized.includes("instalacion") ||
-    normalized.includes("configuracion") ||
-    normalized.includes("soporte")
-  ) {
-    return "Servicios TI";
-  }
-  return "General";
-}
-
 function calculateInventoryImportPrice(costoBase, margenDeseado) {
   const cost = Number(costoBase || 0);
   const margin = Number(margenDeseado || 0);
@@ -2529,6 +2559,31 @@ function normalizeInventoryImportItem(rawItem, index = 0) {
       ? null
       : Math.min(confianzaBase, 45);
   const itemWarnings = dedupeImportWarnings(advertencias);
+  const areaPropuesta = safeText(
+    rawItem?.areaPropuesta || rawItem?.areaNombre || rawItem?.area,
+    90
+  );
+  const categoriaPropuesta = safeText(
+    rawItem?.categoriaPropuesta || rawItem?.categoriaNombre || rawItem?.categoria,
+    90
+  );
+  const productFields =
+    tipoItem === "producto"
+      ? {
+          marca: safeText(rawItem?.marca, 100),
+          modelo: safeText(rawItem?.modelo, 100),
+          stock: parseOptionalPositiveDecimal(
+            rawItem?.stock ?? rawItem?.stockActual ?? rawItem?.cantidadSugerida
+          ),
+          stockMinimo: parseOptionalPositiveDecimal(
+            rawItem?.stockMinimo ?? rawItem?.stockMin
+          ),
+          codigoBarras: safeText(
+            rawItem?.codigoBarras || rawItem?.ean || rawItem?.upc,
+            120
+          ),
+        }
+      : {};
 
   return {
     id: safeText(rawItem?.id, 80) || `normalizado-${index + 1}`,
@@ -2536,7 +2591,8 @@ function normalizeInventoryImportItem(rawItem, index = 0) {
     sku: safeText(rawItem?.sku || rawItem?.codigo, 80),
     codigo: safeText(rawItem?.codigo || rawItem?.sku, 80),
     tipoItem,
-    categoria: safeText(rawItem?.categoria, 90) || inferInventoryImportCategory(sourceText),
+    areaPropuesta,
+    categoriaPropuesta,
     descripcion: safeText(rawItem?.descripcion, 300),
     unidad,
     cantidadSugerida,
@@ -2550,6 +2606,7 @@ function normalizeInventoryImportItem(rawItem, index = 0) {
         : "No se detecto costo confiable. Revisa este valor antes de guardar."),
     advertencias: itemWarnings,
     confianza,
+    ...productFields,
   };
 }
 
@@ -2622,6 +2679,7 @@ const INVENTORY_DIRECT_HEADER_ALIASES = {
   sku: ["sku", "codigo", "codigo_sku"],
   nombre: ["nombre", "item", "producto", "servicio", "nombre_item"],
   tipo: ["tipo", "tipo_item", "clase"],
+  area: ["area", "area_inventario"],
   categoria: ["categoria", "rubro"],
   descripcion: ["descripcion", "detalle"],
   unidad: ["unidad", "unidad_medida", "medida"],
@@ -2629,6 +2687,11 @@ const INVENTORY_DIRECT_HEADER_ALIASES = {
   margen: ["margen", "margen_porcentaje", "margen_%"],
   precio_interno: ["precio_interno", "precio", "precio_venta", "valor"],
   observacion: ["observacion", "notas", "nota"],
+  marca: ["marca", "fabricante"],
+  modelo: ["modelo", "modelo_producto"],
+  stock: ["stock", "stock_actual", "existencia"],
+  stock_minimo: ["stock_minimo", "stock_min", "minimo"],
+  codigo_barras: ["codigo_barras", "ean", "upc"],
 };
 
 const INVENTORY_DIRECT_ALIAS_TO_FIELD = Object.entries(
@@ -2665,6 +2728,7 @@ function hasDirectInventoryHeaders(headerMap) {
       [
         "sku",
         "tipo",
+        "area",
         "categoria",
         "descripcion",
         "unidad",
@@ -2672,6 +2736,11 @@ function hasDirectInventoryHeaders(headerMap) {
         "margen",
         "precio_interno",
         "observacion",
+        "marca",
+        "modelo",
+        "stock",
+        "stock_minimo",
+        "codigo_barras",
       ].some((field) => headerMap[field] !== undefined)
   );
 }
@@ -2878,7 +2947,11 @@ function buildDirectInventoryImportItemsFromFile(fileData) {
         sku: safeText(getMappedCell(cells, headerMap, "sku"), 80),
         codigo: safeText(getMappedCell(cells, headerMap, "sku"), 80),
         tipoItem,
-        categoria: categoria || inferInventoryImportCategory(sourceText),
+        areaPropuesta: safeText(
+          getMappedCell(cells, headerMap, "area"),
+          90
+        ),
+        categoriaPropuesta: categoria,
         descripcion: safeText(
           getMappedCell(cells, headerMap, "descripcion"),
           1000
@@ -2891,6 +2964,22 @@ function buildDirectInventoryImportItemsFromFile(fileData) {
         observacion,
         advertencias,
         confianza: 95,
+        ...(tipoItem === "producto"
+          ? {
+              marca: safeText(getMappedCell(cells, headerMap, "marca"), 100),
+              modelo: safeText(getMappedCell(cells, headerMap, "modelo"), 100),
+              stock: parseOptionalPositiveDecimal(
+                getMappedCell(cells, headerMap, "stock")
+              ),
+              stockMinimo: parseOptionalPositiveDecimal(
+                getMappedCell(cells, headerMap, "stock_minimo")
+              ),
+              codigoBarras: safeText(
+                getMappedCell(cells, headerMap, "codigo_barras"),
+                120
+              ),
+            }
+          : {}),
       };
     })
     .filter(Boolean);
@@ -2936,7 +3025,13 @@ function mergeInventoryImportItems(baseItems, suggestedItems) {
 
     const merged = {
       ...baseItem,
-      categoria: baseItem.categoria || suggestion.categoria || "",
+      areaPropuesta:
+        baseItem.areaPropuesta || suggestion.areaPropuesta || suggestion.area || "",
+      categoriaPropuesta:
+        baseItem.categoriaPropuesta ||
+        suggestion.categoriaPropuesta ||
+        suggestion.categoria ||
+        "",
       descripcion: baseItem.descripcion || suggestion.descripcion || "",
       unidad: baseItem.unidad || suggestion.unidad || "",
       observacion: baseItem.observacion || suggestion.observacion || "",
@@ -2947,6 +3042,22 @@ function mergeInventoryImportItems(baseItems, suggestedItems) {
         Number(suggestion.confianza || 0)
       ),
     };
+
+    if (merged.tipoItem === "producto") {
+      merged.marca = baseItem.marca || suggestion.marca || "";
+      merged.modelo = baseItem.modelo || suggestion.modelo || "";
+      merged.stock = baseItem.stock ?? suggestion.stock ?? null;
+      merged.stockMinimo =
+        baseItem.stockMinimo ?? suggestion.stockMinimo ?? null;
+      merged.codigoBarras =
+        baseItem.codigoBarras || suggestion.codigoBarras || "";
+    } else {
+      delete merged.marca;
+      delete merged.modelo;
+      delete merged.stock;
+      delete merged.stockMinimo;
+      delete merged.codigoBarras;
+    }
 
     if (!baseItem.tipoItem && suggestion.tipoItem) {
       merged.tipoItem = suggestion.tipoItem;
@@ -3056,7 +3167,8 @@ function buildLocalInventoryImportFallbackFromFile(fileData, options = {}) {
           nombre: safeText(inferredName, 140),
           sku: getCell(cells, skuIndex),
           tipoItem,
-          categoria: inferInventoryImportCategory(inferredName || line),
+          areaPropuesta: "",
+          categoriaPropuesta: "",
           descripcion: headerIndex >= 0 ? "" : safeText(line, 220),
           unidad: getCell(cells, unitIndex) || defaultUnitForInventoryImport(tipoItem, line),
           cantidadSugerida: cantidad,
@@ -3109,7 +3221,8 @@ function buildLocalInventoryImportFallback(input, options = {}) {
           id: `local-${index + 1}`,
           nombre,
           tipoItem,
-          categoria: inferInventoryImportCategory(line),
+          areaPropuesta: "",
+          categoriaPropuesta: "",
           descripcion: "",
           unidad: defaultUnitForInventoryImport(tipoItem, line),
           cantidadSugerida,
@@ -3138,7 +3251,7 @@ function buildLocalInventoryImportFallback(input, options = {}) {
 
 function buildInventoryImportPrompt(text, deterministicItems = []) {
   const deterministicBlock = deterministicItems.length
-    ? `\n\nBase deterministica ya detectada desde encabezados. Debes conservar la misma cantidad de filas y no modificar SKU, nombre, tipoItem, categoria, descripcion, unidad, costoBase ni margenDeseado cuando ya tengan valor:\n${JSON.stringify(
+    ? `\n\nBase deterministica ya detectada desde encabezados. Debes conservar la misma cantidad de filas y no modificar SKU, nombre, tipoItem, areaPropuesta, categoriaPropuesta, descripcion, unidad, costoBase, margenDeseado ni campos explícitos de Producto cuando ya tengan valor:\n${JSON.stringify(
         { items: deterministicItems },
         null,
         2
@@ -3156,7 +3269,10 @@ function buildInventoryImportPrompt(text, deterministicItems = []) {
     "- Si hay total y cantidad, calcula costoBase como total / cantidad.\n" +
     "- Si hay SKU o codigo, devuelvelo en sku.\n" +
     "- Si no existe costo claro, usa 0 y explica en observacion.\n" +
-    "- Si no existe categoria clara, usa General.\n" +
+    "- Propón areaPropuesta y categoriaPropuesta solo por nombre cuando estén explícitas o sean claras; nunca inventes IDs persistentes.\n" +
+    "- Si Área o Categoría no están claras, usa una cadena vacía para que el usuario las corrija.\n" +
+    "- Para Producto incluye marca, modelo, stock y stockMinimo cuando estén disponibles; codigoBarras es opcional.\n" +
+    "- Para Servicio o Actividad no devuelvas marca, modelo, stock, stockMinimo ni codigoBarras.\n" +
     "- No reemplaces categorias, tipos, unidades, costos ni margenes que vengan explicitamente en columnas reconocidas.\n" +
     "- No inventes datos con seguridad; deja valores editables y baja confianza.\n" +
     "- margenSugerido debe ser porcentaje y puede tener hasta dos decimales; usa 25 si no hay dato claro.\n" +
@@ -3169,9 +3285,15 @@ function buildInventoryImportPrompt(text, deterministicItems = []) {
     "    {\n" +
     '      "nombre": "Notebook Lenovo ThinkPad E14",\n' +
     '      "tipoItem": "producto",\n' +
-    '      "categoria": "Soporte tecnico y hardware",\n' +
+    '      "areaPropuesta": "Informática",\n' +
+    '      "categoriaPropuesta": "Hardware",\n' +
     '      "descripcion": "",\n' +
     '      "unidad": "unidad",\n' +
+    '      "marca": "Lenovo",\n' +
+    '      "modelo": "ThinkPad E14",\n' +
+    '      "stock": 2,\n' +
+    '      "stockMinimo": 1,\n' +
+    '      "codigoBarras": null,\n' +
     '      "cantidadSugerida": 2,\n' +
     '      "costoBase": 650000,\n' +
     '      "margenSugerido": 25,\n' +
@@ -3186,6 +3308,164 @@ function buildInventoryImportPrompt(text, deterministicItems = []) {
     deterministicBlock
   );
 }
+
+const inventoryModelDependencies = {
+  db,
+  HttpsError,
+  FieldValue,
+  requireBusinessAccess,
+};
+const businessOnboardingDependencies = { db, HttpsError, FieldValue };
+const businessSettingsDependencies = {
+  db,
+  HttpsError,
+  FieldValue,
+  requireBusinessAccess,
+  validateBusinessProfileInput,
+};
+
+exports.getBusinessSession = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    getBusinessSessionHandler(request, businessOnboardingDependencies)
+);
+
+exports.createFirstBusiness = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    createFirstBusinessHandler(request, businessOnboardingDependencies)
+);
+
+exports.createAdditionalBusiness = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    createAdditionalBusinessHandler(request, businessOnboardingDependencies)
+);
+
+exports.setActiveBusiness = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    setActiveBusinessHandler(request, businessOnboardingDependencies)
+);
+
+exports.updateBusinessProfile = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    updateBusinessProfileHandler(request, businessOnboardingDependencies)
+);
+
+exports.updateBusinessInformation = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    updateBusinessInformationHandler(request, businessSettingsDependencies)
+);
+
+exports.updateBusinessSettings = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    updateBusinessSettingsHandler(request, businessSettingsDependencies)
+);
+
+exports.updatePersonalProfile = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    updatePersonalProfileHandler(request, businessSettingsDependencies)
+);
+
+exports.initializeInventoryCatalog = onCall(
+  {
+    maxInstances: 5,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    initializeInventoryCatalogHandler(request, inventoryModelDependencies)
+);
+
+exports.saveInventoryArea = onCall(
+  {
+    maxInstances: 5,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    saveInventoryAreaHandler(request, inventoryModelDependencies)
+);
+
+exports.saveInventoryCategory = onCall(
+  {
+    maxInstances: 5,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    saveInventoryCategoryHandler(request, inventoryModelDependencies)
+);
+
+exports.createInventoryItemWithCode = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 60,
+  },
+  async (request) =>
+    createInventoryItemWithCodeHandler(request, inventoryModelDependencies)
+);
+
+exports.confirmInventoryImportV2 = onCall(
+  {
+    maxInstances: 10,
+    memory: "512MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 120,
+  },
+  async (request) =>
+    confirmInventoryImportV2Handler(request, inventoryModelDependencies)
+);
 
 exports.getAiRateLimitStatus = onCall(
   {
@@ -3227,6 +3507,42 @@ exports.getAiRateLimitStatus = onCall(
   }
 );
 
+function getInventoryImportRequestRowCount(request) {
+  const sheets = Array.isArray(request?.data?.fileData?.hojas)
+    ? request.data.fileData.hojas
+    : [];
+  return sheets.reduce(
+    (total, sheet) =>
+      total + (Array.isArray(sheet?.filas) ? sheet.filas.length : 0),
+    0
+  );
+}
+
+function withSafeInventoryImportErrors(functionName, handler) {
+  return async (request) => {
+    const startedAt = Date.now();
+    try {
+      return await handler(request);
+    } catch (error) {
+      if (error instanceof HttpsError) throw error;
+
+      console.error("Inventory AI callable failed", {
+        operation: functionName,
+        stage: "handler",
+        code: safeText(error?.code || error?.name || "unknown", 80),
+        rowCount: getInventoryImportRequestRowCount(request),
+        durationMs: Date.now() - startedAt,
+        status: "failed",
+      });
+      throw new HttpsError(
+        "internal",
+        "No pudimos analizar el archivo por un problema interno del servicio.",
+        { internalCode: "inventory_import_internal" }
+      );
+    }
+  };
+}
+
 exports.normalizeInventoryItems = onCall(
   {
     maxInstances: 5,
@@ -3235,7 +3551,7 @@ exports.normalizeInventoryItems = onCall(
     secrets: [GEMINI_API_KEY_SECRET],
     timeoutSeconds: 120,
   },
-  async (request) => {
+  withSafeInventoryImportErrors("normalizeInventoryItems", async (request) => {
     if (!request.auth || !request.auth.uid) {
       throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
     }
@@ -3363,7 +3679,7 @@ exports.normalizeInventoryItems = onCall(
     }
 
     return useLocalFallback();
-  }
+  })
 );
 
 exports.normalizeInventoryDocument = onCall(

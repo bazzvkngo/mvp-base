@@ -1,21 +1,12 @@
-import {
-  connectFunctionsEmulator,
-  getFunctions,
-  httpsCallable,
-} from "firebase/functions";
+import { httpsCallable } from "firebase/functions";
+import { assertCloudFunctionAllowed } from "../config/firebaseEnvironment.mjs";
 import { normalizeAiRateLimitStatus } from "./aiRateLimitService";
+import { normalizeInventoryAiResponse } from "./inventoryAiClient.mjs";
 import * as XLSX from "xlsx";
-import { app } from "../firebase/firebaseConfig";
+import { getFirebaseFunctions } from "../firebase/firebaseConfig";
+import { MAX_INVENTORY_IMPORT_BATCH_SIZE } from "../domain/inventoryImportV2.mjs";
 
 const FUNCTIONS_REGION = "us-central1";
-const USE_FUNCTIONS_EMULATOR =
-  import.meta.env.DEV &&
-  String(import.meta.env.VITE_USE_FIREBASE_FUNCTIONS_EMULATOR || "").toLowerCase() === "true";
-const FUNCTIONS_EMULATOR_HOST =
-  import.meta.env.VITE_FIREBASE_FUNCTIONS_EMULATOR_HOST || "127.0.0.1";
-const FUNCTIONS_EMULATOR_PORT = Number(
-  import.meta.env.VITE_FIREBASE_FUNCTIONS_EMULATOR_PORT || 5001
-);
 const MAX_FILE_SHEETS = 8;
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 const MAX_FILE_ROWS = 500;
@@ -34,31 +25,46 @@ const MIME_BY_EXTENSION = {
 export const ACCEPTED_INVENTORY_FILE_TYPES =
   ".csv,.xls,.xlsx,.pdf,.jpg,.jpeg,.png,.webp";
 
-function getEmulatorRegistry() {
-  if (typeof globalThis === "undefined") return null;
-  if (!globalThis.__valoracloudFirebaseEmulators) {
-    globalThis.__valoracloudFirebaseEmulators = {};
+function normalizeInventoryCallableError(error, functionName) {
+  const code = String(error?.code || "").toLowerCase();
+  const message = String(error?.message || "").trim().toLowerCase();
+  const hasStructuredDetails =
+    error?.details && typeof error.details === "object";
+
+  if (
+    import.meta.env.DEV &&
+    code === "functions/internal" &&
+    message === "internal" &&
+    !hasStructuredDetails
+  ) {
+    const emulatorError = new Error("Firebase Functions emulator unavailable");
+    emulatorError.code = "functions/emulator-unavailable";
+    emulatorError.details = {
+      internalCode: "emulator_unavailable",
+      functionName,
+    };
+    return emulatorError;
   }
-  return globalThis.__valoracloudFirebaseEmulators;
+
+  return error;
 }
 
-function getInventoryImportFunctions() {
-  const functions = getFunctions(app, FUNCTIONS_REGION);
-  if (!USE_FUNCTIONS_EMULATOR) return functions;
-
-  const registry = getEmulatorRegistry();
-  const emulatorKey = `functions:${FUNCTIONS_REGION}`;
-  if (!registry?.[emulatorKey]) {
-    connectFunctionsEmulator(
-      functions,
-      FUNCTIONS_EMULATOR_HOST,
-      Number.isFinite(FUNCTIONS_EMULATOR_PORT) && FUNCTIONS_EMULATOR_PORT > 0
-        ? FUNCTIONS_EMULATOR_PORT
-        : 5001
-    );
-    if (registry) registry[emulatorKey] = true;
+async function invokeInventoryCallable(functionName, payload) {
+  assertCloudFunctionAllowed(`la Function ${functionName}`);
+  const functions = getFirebaseFunctions(FUNCTIONS_REGION);
+  const callable = httpsCallable(functions, functionName);
+  try {
+    return await callable(payload);
+  } catch (error) {
+    throw normalizeInventoryCallableError(error, functionName);
   }
-  return functions;
+}
+
+export async function getInventoryImportAiRateLimitStatus(model) {
+  const response = await invokeInventoryCallable("getAiRateLimitStatus", {
+    model,
+  });
+  return normalizeAiRateLimitStatus(response.data, model);
 }
 
 function getFileExtension(fileName) {
@@ -293,24 +299,23 @@ export async function normalizeInventoryItemsWithAi({
     throw new Error("El archivo no contiene hojas o filas legibles.");
   }
 
-  const functions = getInventoryImportFunctions();
-  const callable = httpsCallable(functions, "normalizeInventoryItems");
-  const response = await callable({
+  const response = await invokeInventoryCallable("normalizeInventoryItems", {
     fileData,
     assistantMode: mode,
   });
+  const data = normalizeInventoryAiResponse(response.data);
 
   return {
-    items: Array.isArray(response.data?.items) ? response.data.items : [],
-    source: response.data?.source || "local",
+    items: data.items,
+    source: data.source || "local",
     sourceKind: "spreadsheet",
-    mode: response.data?.mode || mode,
-    model: response.data?.model || "",
+    mode: data.mode || mode,
+    model: data.model || "",
     warning:
-      response.data?.warning ||
+      data.warning ||
       "Los valores detectados son estimaciones y deben ser revisados antes de guardar.",
-    aiRateLimit: response.data?.aiRateLimit
-      ? normalizeAiRateLimitStatus(response.data.aiRateLimit)
+    aiRateLimit: data.aiRateLimit
+      ? normalizeAiRateLimitStatus(data.aiRateLimit)
       : null,
   };
 }
@@ -320,9 +325,7 @@ export async function normalizeInventoryDocumentWithAi({ fileData }) {
     throw new Error("Selecciona un documento antes de analizar.");
   }
 
-  const functions = getInventoryImportFunctions();
-  const callable = httpsCallable(functions, "normalizeInventoryDocument");
-  const response = await callable({
+  const response = await invokeInventoryCallable("normalizeInventoryDocument", {
     document: {
       nombreArchivo: fileData.nombreArchivo,
       tipoArchivo: fileData.tipoArchivo,
@@ -331,20 +334,21 @@ export async function normalizeInventoryDocumentWithAi({ fileData }) {
       base64: fileData.base64,
     },
   });
+  const data = normalizeInventoryAiResponse(response.data);
 
   return {
-    items: Array.isArray(response.data?.items) ? response.data.items : [],
-    source: response.data?.source || "gemini-document",
+    items: data.items,
+    source: data.source || "gemini-document",
     sourceKind: "document",
-    mode: response.data?.mode || "document-multimodal",
-    model: response.data?.model || "",
-    documentType: response.data?.documentType || "otro",
-    warnings: Array.isArray(response.data?.warnings) ? response.data.warnings : [],
+    mode: data.mode || "document-multimodal",
+    model: data.model || "",
+    documentType: data.documentType || "otro",
+    warnings: Array.isArray(data.warnings) ? data.warnings : [],
     warning:
-      response.data?.warning ||
+      data.warning ||
       "Documento procesado. Revisa los candidatos antes de guardar.",
-    aiRateLimit: response.data?.aiRateLimit
-      ? normalizeAiRateLimitStatus(response.data.aiRateLimit)
+    aiRateLimit: data.aiRateLimit
+      ? normalizeAiRateLimitStatus(data.aiRateLimit)
       : null,
   };
 }
@@ -357,4 +361,46 @@ export async function normalizeInventorySourceWithAi({
     return normalizeInventoryDocumentWithAi({ fileData });
   }
   return normalizeInventoryItemsWithAi({ fileData, assistantMode });
+}
+
+export async function confirmInventoryImportV2({ businessId, requestId, rows }) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw new Error("Selecciona al menos una fila válida para guardar.");
+  }
+  if (rows.length > MAX_INVENTORY_IMPORT_BATCH_SIZE) {
+    const error = new Error(
+      `La confirmación admite un máximo de ${MAX_INVENTORY_IMPORT_BATCH_SIZE} filas por lote.`
+    );
+    error.code = "inventory-import/batch-too-large";
+    error.details = { internalCode: "inventory_import_batch_too_large" };
+    throw error;
+  }
+
+  const response = await invokeInventoryCallable("confirmInventoryImportV2", {
+    businessId,
+    requestId,
+    rows,
+  });
+  const data = response?.data;
+  if (
+    !data ||
+    !Array.isArray(data.results) ||
+    !Number.isSafeInteger(Number(data.total)) ||
+    data.results.length !== Number(data.total)
+  ) {
+    const error = new Error("Respuesta incompatible al confirmar la importación.");
+    error.code = "functions/incompatible-contract";
+    error.details = { internalCode: "incompatible_contract" };
+    throw error;
+  }
+  return {
+    requestId: String(data.requestId || requestId),
+    results: data.results.map((result) => ({
+      rowId: String(result?.rowId || ""),
+      itemId: String(result?.itemId || ""),
+      codigoInterno: String(result?.codigoInterno || ""),
+    })),
+    total: Number(data.total),
+    idempotent: data.idempotent === true,
+  };
 }

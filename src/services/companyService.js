@@ -1,14 +1,29 @@
-import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import {
+  deleteField,
+  doc,
+  getDoc,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+} from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
 import {
   getDownloadURL,
+  deleteObject,
   ref as storageRef,
   uploadBytes,
 } from "firebase/storage";
-import { db, storage } from "../firebase/firebaseConfig";
+import { assertClientWriteAllowed } from "../config/firebaseEnvironment.mjs";
+import { db, getFirebaseFunctions, storage } from "../firebase/firebaseConfig";
 import {
+  businessDocPath,
+  businessSettingsDocPath,
   companyProfileDocPath,
+  personalProfileDocPath,
   userConfigDocPath,
 } from "../firebase/firestorePaths";
+
+const functions = getFirebaseFunctions("us-central1");
 
 export const DEFAULT_COMPANY_CONFIG = {
   rubroPrincipal: "",
@@ -23,6 +38,17 @@ export const DEFAULT_COMPANY_CONFIG = {
 
 export const DEFAULT_COMPANY_PROFILE = {
   nombreComercial: "",
+  rubroCodigo: "",
+  rubroNombre: "",
+  rubroOtro: "",
+  paisCodigo: "CL",
+  paisNombre: "Chile",
+  monedaCodigo: "CLP",
+  monedaNombre: "Peso chileno",
+  regionCodigo: "",
+  regionNombre: "",
+  comunaCodigo: "",
+  comunaNombre: "",
   razonSocial: "",
   rut: "",
   giro: "",
@@ -30,15 +56,61 @@ export const DEFAULT_COMPANY_PROFILE = {
   telefono: "",
   direccion: "",
   ciudad: "",
+  region: "",
+  responsable: "",
+  cargoResponsable: "",
   sitioWeb: "",
   logoUrl: "",
   logoPath: "",
   logoNombreOriginal: "",
   logoActualizadoEn: null,
   condicionesPago: "50% al iniciar y 50% contra entrega",
+  plazoEntregaCotizacion: "",
+  alcanceGeograficoCotizacion: "",
+  garantiaCotizacion: "",
+  exclusionesCotizacion: "",
+  terminosCotizacion: "",
   validezCotizacionDias: 15,
+  aceptacionCotizacionHabilitada: false,
+  textoAceptacionCotizacion:
+    "Acepto los términos y condiciones de esta cotización.",
   notaPieCotizacion:
     "Los valores pueden variar segun alcance final y disponibilidad de insumos.",
+  notaFinalCotizacion: "",
+  impuestoPredeterminadoId: "IVA_GENERAL",
+  impuestoPredeterminadoNombre: "IVA general",
+  impuestoPredeterminadoTasa: 19,
+};
+
+export const DEFAULT_TAX_SETTINGS = {
+  impuestoPredeterminadoId: "IVA_GENERAL",
+  impuestoPredeterminadoNombre: "IVA general",
+  impuestoPredeterminadoTasa: 19,
+};
+
+export const DEFAULT_INVENTORY_SETTINGS = {
+  alertasStockBajo: true,
+  umbralStockBajo: 5,
+  permitirStockNegativo: false,
+};
+
+export const DEFAULT_QUOTE_SETTINGS = {
+  condicionesPago: DEFAULT_COMPANY_PROFILE.condicionesPago,
+  validezCotizacionDias: DEFAULT_COMPANY_PROFILE.validezCotizacionDias,
+  notaFinalCotizacion: "",
+  terminosCotizacion: "",
+  notaPieCotizacion: DEFAULT_COMPANY_PROFILE.notaPieCotizacion,
+  aceptacionCotizacionHabilitada: false,
+  textoAceptacionCotizacion:
+    DEFAULT_COMPANY_PROFILE.textoAceptacionCotizacion,
+};
+
+export const DEFAULT_PERSONAL_PROFILE = {
+  nombres: "",
+  apellidos: "",
+  tipoDocumento: "",
+  numeroDocumento: "",
+  telefonoPersonal: "",
 };
 
 export const MAX_COMPANY_LOGO_SIZE_BYTES = 2 * 1024 * 1024;
@@ -80,10 +152,6 @@ function normalizeDays(value) {
   return Number.isFinite(days) && days > 0
     ? Math.round(days)
     : DEFAULT_COMPANY_PROFILE.validezCotizacionDias;
-}
-
-function hasOwn(object, field) {
-  return Object.prototype.hasOwnProperty.call(object, field);
 }
 
 function getLogoExtension(file) {
@@ -137,6 +205,17 @@ export function normalizeCompanyConfig(raw = {}) {
 export function normalizeCompanyProfile(raw = {}) {
   return {
     nombreComercial: safeString(raw.nombreComercial),
+    rubroCodigo: safeString(raw.rubroCodigo),
+    rubroNombre: safeString(raw.rubroNombre),
+    rubroOtro: safeString(raw.rubroOtro),
+    paisCodigo: safeString(raw.paisCodigo) || "CL",
+    paisNombre: safeString(raw.paisNombre) || "Chile",
+    monedaCodigo: safeString(raw.monedaCodigo) || "CLP",
+    monedaNombre: safeString(raw.monedaNombre) || "Peso chileno",
+    regionCodigo: safeString(raw.regionCodigo),
+    regionNombre: safeString(raw.regionNombre || raw.region),
+    comunaCodigo: safeString(raw.comunaCodigo),
+    comunaNombre: safeString(raw.comunaNombre || raw.ciudad),
     razonSocial: safeString(raw.razonSocial),
     rut: safeString(raw.rut),
     giro: safeString(raw.giro),
@@ -144,6 +223,9 @@ export function normalizeCompanyProfile(raw = {}) {
     telefono: safeString(raw.telefono),
     direccion: safeString(raw.direccion),
     ciudad: safeString(raw.ciudad),
+    region: safeString(raw.region),
+    responsable: safeString(raw.responsable),
+    cargoResponsable: safeString(raw.cargoResponsable),
     sitioWeb: normalizeUrl(raw.sitioWeb),
     logoUrl: normalizeUrl(raw.logoUrl),
     logoPath: safeString(raw.logoPath),
@@ -152,11 +234,110 @@ export function normalizeCompanyProfile(raw = {}) {
     condicionesPago:
       safeString(raw.condicionesPago) ||
       DEFAULT_COMPANY_PROFILE.condicionesPago,
+    plazoEntregaCotizacion: safeString(raw.plazoEntregaCotizacion),
+    alcanceGeograficoCotizacion: safeString(raw.alcanceGeograficoCotizacion),
+    garantiaCotizacion: safeString(raw.garantiaCotizacion),
+    exclusionesCotizacion: safeString(raw.exclusionesCotizacion),
+    terminosCotizacion: safeString(raw.terminosCotizacion),
     validezCotizacionDias: normalizeDays(raw.validezCotizacionDias),
+    aceptacionCotizacionHabilitada:
+      raw.aceptacionCotizacionHabilitada === true,
+    textoAceptacionCotizacion:
+      safeString(raw.textoAceptacionCotizacion) ||
+      DEFAULT_COMPANY_PROFILE.textoAceptacionCotizacion,
     notaPieCotizacion:
       safeString(raw.notaPieCotizacion) ||
       DEFAULT_COMPANY_PROFILE.notaPieCotizacion,
+    notaFinalCotizacion: safeString(raw.notaFinalCotizacion),
+    ...normalizeTaxSettings(raw),
     uidUsuario: safeString(raw.uidUsuario),
+  };
+}
+
+export function normalizeTaxSettings(raw = {}) {
+  const selected = ["IVA_GENERAL", "IVA_EXENTO", "SIN_IMPUESTO"].includes(
+    raw.impuestoPredeterminadoId
+  )
+    ? raw.impuestoPredeterminadoId
+    : DEFAULT_TAX_SETTINGS.impuestoPredeterminadoId;
+  const rates = { IVA_GENERAL: 19, IVA_EXENTO: 0, SIN_IMPUESTO: 0 };
+  const names = {
+    IVA_GENERAL: "IVA general",
+    IVA_EXENTO: "IVA exento",
+    SIN_IMPUESTO: "Sin impuesto",
+  };
+  return {
+    impuestoPredeterminadoId: selected,
+    impuestoPredeterminadoNombre: names[selected],
+    impuestoPredeterminadoTasa: rates[selected],
+  };
+}
+
+export function normalizeInventorySettings(raw = {}) {
+  const threshold = Number(raw.umbralStockBajo);
+  return {
+    alertasStockBajo: raw.alertasStockBajo !== false,
+    umbralStockBajo:
+      Number.isInteger(threshold) && threshold >= 0
+        ? threshold
+        : DEFAULT_INVENTORY_SETTINGS.umbralStockBajo,
+    permitirStockNegativo: raw.permitirStockNegativo === true,
+  };
+}
+
+export function normalizeQuoteSettings(raw = {}) {
+  return {
+    condicionesPago:
+      safeString(raw.condicionesPago) || DEFAULT_QUOTE_SETTINGS.condicionesPago,
+    validezCotizacionDias: normalizeDays(raw.validezCotizacionDias),
+    notaFinalCotizacion: safeString(raw.notaFinalCotizacion),
+    terminosCotizacion: safeString(raw.terminosCotizacion),
+    notaPieCotizacion:
+      safeString(raw.notaPieCotizacion) || DEFAULT_QUOTE_SETTINGS.notaPieCotizacion,
+    aceptacionCotizacionHabilitada:
+      raw.aceptacionCotizacionHabilitada === true,
+    textoAceptacionCotizacion:
+      safeString(raw.textoAceptacionCotizacion) ||
+      DEFAULT_QUOTE_SETTINGS.textoAceptacionCotizacion,
+  };
+}
+
+export function normalizePersonalProfile(raw = {}) {
+  return {
+    nombres: safeString(raw.nombres),
+    apellidos: safeString(raw.apellidos),
+    tipoDocumento: safeString(raw.tipoDocumento).toUpperCase(),
+    numeroDocumento: safeString(raw.numeroDocumento),
+    telefonoPersonal: safeString(raw.telefonoPersonal),
+  };
+}
+
+export function getCompanyProfileCompletion(profile = {}) {
+  const missingMinimum = [];
+  const missingRecommended = [];
+
+  if (!safeString(profile.nombreComercial)) missingMinimum.push("Nombre comercial");
+  if (!safeString(profile.rubroCodigo || profile.rubroNombre)) {
+    missingMinimum.push("Rubro principal");
+  }
+  if (!safeString(profile.regionCodigo)) missingMinimum.push("Región");
+  if (!safeString(profile.paisCodigo)) missingMinimum.push("País");
+  if (!safeString(profile.monedaCodigo)) missingMinimum.push("Moneda");
+
+  if (!safeString(profile.rut)) missingRecommended.push("RUT");
+  if (!safeString(profile.comunaCodigo || profile.ciudad)) {
+    missingRecommended.push("Comuna");
+  }
+  if (!safeString(profile.direccion)) missingRecommended.push("Dirección");
+  if (!safeString(profile.telefono) && !safeString(profile.email)) {
+    missingRecommended.push("Teléfono o correo comercial");
+  }
+
+  return {
+    minimumComplete: missingMinimum.length === 0,
+    recommendedComplete: missingRecommended.length === 0,
+    missingMinimum,
+    missingRecommended,
   };
 }
 
@@ -169,7 +350,6 @@ export async function getCompanyConfig(userId) {
   const snap = await getDoc(ref);
 
   if (!snap.exists()) {
-    await setDoc(ref, DEFAULT_COMPANY_CONFIG, { merge: true });
     return { ...DEFAULT_COMPANY_CONFIG };
   }
 
@@ -177,6 +357,7 @@ export async function getCompanyConfig(userId) {
 }
 
 export async function saveCompanyConfig(userId, configPatch) {
+  assertClientWriteAllowed("guardar la configuración de empresa");
   if (!userId) {
     throw new Error("userId es requerido para guardar la configuración.");
   }
@@ -189,7 +370,11 @@ export async function saveCompanyConfig(userId, configPatch) {
     ...configPatch,
   });
 
-  await setDoc(doc(db, ...userConfigDocPath(userId)), payload, { merge: true });
+  await setDoc(
+    doc(db, ...userConfigDocPath(userId)),
+    { ...payload, negocioId: userId },
+    { merge: true }
+  );
   return payload;
 }
 
@@ -198,22 +383,100 @@ export async function getCompanyProfile(userId) {
     throw new Error("userId es requerido para obtener el perfil de empresa.");
   }
 
-  const snap = await getDoc(doc(db, ...companyProfileDocPath(userId)));
-  if (!snap.exists()) {
-    return {
-      ...DEFAULT_COMPANY_PROFILE,
-      uidUsuario: userId,
-    };
-  }
+  const [
+    businessSnapshot,
+    profileSnapshot,
+    quoteSettingsSnapshot,
+    taxSettingsSnapshot,
+  ] = await Promise.all([
+    getDoc(doc(db, ...businessDocPath(userId))),
+    getDoc(doc(db, ...companyProfileDocPath(userId))),
+    getDoc(doc(db, ...businessSettingsDocPath(userId, "cotizaciones"))),
+    getDoc(doc(db, ...businessSettingsDocPath(userId, "impuestos"))),
+  ]);
+  const business = businessSnapshot.data() || {};
+  const profile = profileSnapshot.data() || {};
+  const quoteSettings = quoteSettingsSnapshot.exists()
+    ? normalizeQuoteSettings(quoteSettingsSnapshot.data() || {})
+    : {};
+  const taxSettings = normalizeTaxSettings(taxSettingsSnapshot.data() || {});
 
   return normalizeCompanyProfile({
     ...DEFAULT_COMPANY_PROFILE,
-    ...snap.data(),
-    uidUsuario: userId,
+    ...business,
+    ...profile,
+    nombreComercial:
+      profile.nombreComercial || business.nombreComercial || "",
+    rubroCodigo: profile.rubroCodigo || business.rubroCodigo || "",
+    rubroNombre: profile.rubroNombre || business.rubroNombre || "",
+    rubroOtro: profile.rubroOtro || business.rubroOtro || "",
+    paisCodigo: profile.paisCodigo || business.paisCodigo || "CL",
+    paisNombre: profile.paisNombre || business.paisNombre || "Chile",
+    monedaCodigo: profile.monedaCodigo || business.monedaCodigo || "CLP",
+    monedaNombre:
+      profile.monedaNombre || business.monedaNombre || "Peso chileno",
+    regionCodigo: profile.regionCodigo || business.regionCodigo || "",
+    regionNombre:
+      profile.regionNombre || profile.region || business.regionNombre || "",
+    comunaCodigo: profile.comunaCodigo || business.comunaCodigo || "",
+    comunaNombre:
+      profile.comunaNombre || profile.ciudad || business.comunaNombre || "",
+    ...quoteSettings,
+    ...taxSettings,
+    negocioId: userId,
   });
 }
 
+export async function getBusinessSettings(businessId, section) {
+  if (!businessId) throw new Error("businessId es requerido para cargar ajustes.");
+  const snapshot = await getDoc(
+    doc(db, ...businessSettingsDocPath(businessId, section))
+  );
+  const raw = snapshot.data() || {};
+  if (section === "impuestos") return normalizeTaxSettings(raw);
+  if (section === "inventario") return normalizeInventorySettings(raw);
+  if (section === "cotizaciones") {
+    if (snapshot.exists()) return normalizeQuoteSettings(raw);
+    const legacyProfile = await getDoc(doc(db, ...companyProfileDocPath(businessId)));
+    return normalizeQuoteSettings(legacyProfile.data() || {});
+  }
+  throw new Error("La sección de configuración no es válida.");
+}
+
+export async function saveBusinessInformation(businessId, profile) {
+  assertClientWriteAllowed("guardar la información de empresa");
+  const callable = httpsCallable(functions, "updateBusinessInformation");
+  const response = await callable({ businessId, profile });
+  return normalizeCompanyProfile(response.data?.profile || {});
+}
+
+export async function saveBusinessSettings(businessId, section, settings) {
+  assertClientWriteAllowed("guardar la configuración de empresa");
+  const callable = httpsCallable(functions, "updateBusinessSettings");
+  const response = await callable({ businessId, section, settings });
+  if (section === "impuestos") return normalizeTaxSettings(response.data?.settings);
+  if (section === "inventario") {
+    return normalizeInventorySettings(response.data?.settings);
+  }
+  return normalizeQuoteSettings(response.data?.settings);
+}
+
+export async function getPersonalProfile(userId) {
+  if (!userId) throw new Error("userId es requerido para cargar la cuenta.");
+  const snapshot = await getDoc(doc(db, ...personalProfileDocPath(userId)));
+  return normalizePersonalProfile(snapshot.data() || {});
+}
+
+export async function savePersonalProfile(userId, profile) {
+  assertClientWriteAllowed("guardar el perfil personal");
+  if (!userId) throw new Error("userId es requerido para guardar la cuenta.");
+  const callable = httpsCallable(functions, "updatePersonalProfile");
+  const response = await callable({ profile });
+  return normalizePersonalProfile(response.data?.profile || profile);
+}
+
 export async function saveCompanyProfile(userId, profilePatch) {
+  assertClientWriteAllowed("guardar el perfil de empresa");
   if (!userId) {
     throw new Error("userId es requerido para guardar el perfil de empresa.");
   }
@@ -224,32 +487,24 @@ export async function saveCompanyProfile(userId, profilePatch) {
   const payload = normalizeCompanyProfile({
     ...DEFAULT_COMPANY_PROFILE,
     ...profilePatch,
-    uidUsuario: userId,
+    negocioId: userId,
   });
-
-  ["logoPath", "logoNombreOriginal", "logoActualizadoEn"].forEach((field) => {
-    if (!hasOwn(profilePatch, field)) {
-      delete payload[field];
-    }
-  });
-
-  await setDoc(
-    doc(db, ...companyProfileDocPath(userId)),
-    {
-      ...payload,
-      actualizadoEn: serverTimestamp(),
-      uidUsuario: userId,
-    },
-    { merge: true }
+  delete payload.uidUsuario;
+  ["logoUrl", "logoPath", "logoNombreOriginal", "logoActualizadoEn"].forEach(
+    (field) => delete payload[field]
   );
 
-  return {
-    ...payload,
-    uidUsuario: userId,
-  };
+  const callable = httpsCallable(functions, "updateBusinessProfile");
+  const response = await callable({ businessId: userId, profile: payload });
+  return normalizeCompanyProfile({
+    ...profilePatch,
+    ...response.data?.profile,
+    negocioId: userId,
+  });
 }
 
 export async function uploadCompanyLogo(userId, file) {
+  assertClientWriteAllowed("subir archivos a Storage");
   if (!userId) {
     throw new Error("userId es requerido para subir el logo de empresa.");
   }
@@ -263,11 +518,15 @@ export async function uploadCompanyLogo(userId, file) {
     throw new Error("El logo no puede pesar mas de 2 MB.");
   }
 
+  const currentProfileSnapshot = await getDoc(
+    doc(db, ...companyProfileDocPath(userId))
+  );
+  const previousLogoPath = safeString(currentProfileSnapshot.data()?.logoPath);
   const extension = getLogoExtension(file);
   if (!extension) {
     throw new Error("No fue posible identificar el formato del logo.");
   }
-  const logoPath = `usuarios/${userId}/empresa/logo/logo-empresa.${extension}`;
+  const logoPath = `negocios/${userId}/empresa/logo/logo-empresa.${extension}`;
   const ref = storageRef(storage, logoPath);
 
   await uploadBytes(ref, file, {
@@ -281,18 +540,48 @@ export async function uploadCompanyLogo(userId, file) {
     logoNombreOriginal: safeString(file.name),
     logoActualizadoEn: serverTimestamp(),
     actualizadoEn: serverTimestamp(),
-    uidUsuario: userId,
+    negocioId: userId,
   };
 
   await setDoc(doc(db, ...companyProfileDocPath(userId)), payload, {
     merge: true,
   });
 
+  if (previousLogoPath && previousLogoPath !== logoPath) {
+    try {
+      await deleteObject(storageRef(storage, previousLogoPath));
+    } catch (error) {
+      if (error?.code !== "storage/object-not-found" && import.meta.env.DEV) {
+        console.warn("No fue posible retirar el logo anterior:", error);
+      }
+    }
+  }
+
   return {
     logoUrl,
     logoPath,
     logoNombreOriginal: payload.logoNombreOriginal,
   };
+}
+
+export async function deleteCompanyLogo(userId, logoPath) {
+  assertClientWriteAllowed("eliminar el logo de empresa");
+  if (!userId) throw new Error("userId es requerido para eliminar el logo.");
+  const normalizedPath = safeString(logoPath);
+  if (normalizedPath) {
+    try {
+      await deleteObject(storageRef(storage, normalizedPath));
+    } catch (error) {
+      if (error?.code !== "storage/object-not-found") throw error;
+    }
+  }
+  await updateDoc(doc(db, ...companyProfileDocPath(userId)), {
+    logoUrl: deleteField(),
+    logoPath: deleteField(),
+    logoNombreOriginal: deleteField(),
+    logoActualizadoEn: deleteField(),
+    actualizadoEn: serverTimestamp(),
+  });
 }
 
 export const obtenerConfigNegocio = getCompanyConfig;

@@ -11,7 +11,14 @@ function getRetryMilliseconds(status) {
   return Number.isFinite(value) ? value : 0;
 }
 
-export default function useAiRateLimit(model, { enabled = true } = {}) {
+export default function useAiRateLimit(
+  model,
+  {
+    enabled = true,
+    getErrorStatus = null,
+    getStatus = getAiRateLimitStatus,
+  } = {}
+) {
   const [status, setStatus] = useState(() => ({
     allowed: !enabled,
     reason: enabled ? "loading" : "available",
@@ -23,10 +30,22 @@ export default function useAiRateLimit(model, { enabled = true } = {}) {
   }));
   const [nowMs, setNowMs] = useState(Date.now());
   const statusRef = useRef(status);
+  const refreshInFlightRef = useRef(null);
+  const refreshSequenceRef = useRef(0);
   statusRef.current = status;
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(() => {
     if (!enabled) {
+      refreshSequenceRef.current += 1;
+      refreshInFlightRef.current = null;
+      const availableStatus = {
+        ...statusRef.current,
+        allowed: true,
+        reason: "available",
+        model,
+        retryAt: null,
+      };
+      statusRef.current = availableStatus;
       setStatus((current) => ({
         ...current,
         allowed: true,
@@ -34,24 +53,61 @@ export default function useAiRateLimit(model, { enabled = true } = {}) {
         model,
         retryAt: null,
       }));
-      return;
+      return Promise.resolve(availableStatus);
     }
 
-    setStatus((current) => ({ ...current, allowed: false, reason: "loading", model }));
-    try {
-      setStatus(await getAiRateLimitStatus(model));
-    } catch (error) {
-      setStatus({
-        allowed: true,
-        reason: "status_error",
-        model,
-        retryAt: null,
-        retryAfterSeconds: 0,
-        nextResetAt: null,
-        message: "No fue posible comprobar la disponibilidad de IA.",
-      });
-    }
-  }, [enabled, model]);
+    const currentRequest = refreshInFlightRef.current;
+    if (currentRequest?.model === model) return currentRequest.promise;
+
+    const requestId = refreshSequenceRef.current + 1;
+    refreshSequenceRef.current = requestId;
+    const loadingStatus = {
+      ...statusRef.current,
+      allowed: false,
+      reason: "loading",
+      model,
+    };
+    statusRef.current = loadingStatus;
+    setStatus(loadingStatus);
+
+    let requestPromise;
+    requestPromise = (async () => {
+      try {
+        const nextStatus = await getStatus(model);
+        if (refreshSequenceRef.current === requestId) {
+          statusRef.current = nextStatus;
+          setStatus(nextStatus);
+        }
+        return nextStatus;
+      } catch (error) {
+        const failureStatus = getErrorStatus
+          ? getErrorStatus(error, model)
+          : {
+              allowed: true,
+              reason: "status_error",
+              model,
+              retryAt: null,
+              retryAfterSeconds: 0,
+              nextResetAt: null,
+              message: "No fue posible comprobar la disponibilidad de IA.",
+            };
+        if (refreshSequenceRef.current === requestId) {
+          statusRef.current = failureStatus;
+          setStatus(failureStatus);
+        }
+        return failureStatus;
+      } finally {
+        if (refreshInFlightRef.current?.promise === requestPromise) {
+          refreshInFlightRef.current = null;
+        }
+      }
+    })();
+    refreshInFlightRef.current = {
+      model,
+      promise: requestPromise,
+    };
+    return requestPromise;
+  }, [enabled, getErrorStatus, getStatus, model]);
 
   useEffect(() => {
     refresh();
@@ -123,16 +179,20 @@ export default function useAiRateLimit(model, { enabled = true } = {}) {
   const applySuccess = useCallback(
     (nextStatus) => {
       if (!enabled || !nextStatus) {
-        setStatus((current) => ({
-          ...current,
+        const availableStatus = {
+          ...statusRef.current,
           allowed: true,
           reason: "available",
           retryAt: null,
-        }));
+        };
+        statusRef.current = availableStatus;
+        setStatus(availableStatus);
         return;
       }
       setNowMs(Date.now());
-      setStatus(normalizeAiRateLimitStatus(nextStatus, model));
+      const normalizedStatus = normalizeAiRateLimitStatus(nextStatus, model);
+      statusRef.current = normalizedStatus;
+      setStatus(normalizedStatus);
     },
     [enabled, model]
   );
@@ -140,21 +200,26 @@ export default function useAiRateLimit(model, { enabled = true } = {}) {
   const applyError = useCallback(
     (error) => {
       const details = getAiRateLimitErrorDetails(error, model);
+      const failureStatus =
+        details ||
+        (getErrorStatus
+          ? getErrorStatus(error, model)
+          : {
+              allowed: true,
+              reason: "provider_error",
+              model,
+              retryAt: null,
+              retryAfterSeconds: 0,
+              nextResetAt: null,
+              message:
+                error?.message || "No se pudo completar la solicitud de IA.",
+            });
       setNowMs(Date.now());
-      setStatus(
-        details || {
-          allowed: true,
-          reason: "provider_error",
-          model,
-          retryAt: null,
-          retryAfterSeconds: 0,
-          nextResetAt: null,
-          message: error?.message || "No se pudo completar la solicitud de IA.",
-        }
-      );
+      statusRef.current = failureStatus;
+      setStatus(failureStatus);
       return details;
     },
-    [model]
+    [getErrorStatus, model]
   );
 
   return {

@@ -201,6 +201,9 @@ const sanitized = sanitizeInventoryDocumentResult({
       totalLinea: 50000,
       confianza: 82,
       unidad: "servicio",
+      marca: "No debe persistir",
+      modelo: "No debe persistir",
+      stock: 2,
     },
     { nombre: "IVA 19%", costoBase: 9500, confianza: 90 },
     { nombre: "Subtotal", costoBase: 50000, confianza: 90 },
@@ -210,6 +213,13 @@ const sanitized = sanitizeInventoryDocumentResult({
       tipoItem: "producto",
       confianza: 42,
       unidad: "metro",
+      areaPropuesta: "Informática",
+      categoriaPropuesta: "Redes",
+      marca: "Furukawa",
+      modelo: "Cat6",
+      stock: 20,
+      stockMinimo: 5,
+      codigoBarras: "780000000123",
     },
   ],
   warnings: [],
@@ -221,6 +231,12 @@ assert.equal(sanitized.items[0].costoBase, 25000);
 assert.equal(sanitized.items[0].valorCalculado, true);
 assert.equal(sanitized.items[1].costoBase, 0);
 assert.equal(sanitized.items[1].revisionRequerida, true);
+assert.equal("marca" in sanitized.items[0], false);
+assert.equal("stock" in sanitized.items[0], false);
+assert.equal(sanitized.items[1].areaPropuesta, "Informática");
+assert.equal(sanitized.items[1].categoriaPropuesta, "Redes");
+assert.equal(sanitized.items[1].marca, "Furukawa");
+assert.equal(sanitized.items[1].stockMinimo, 5);
 assert.ok(!sanitized.items.some((item) => /iva|subtotal|total/i.test(item.nombre)));
 console.log("OK sanitización: IVA, subtotal y total no se importan como items");
 
@@ -390,6 +406,12 @@ const migratedSdkResult = await normalizeInventoryDocumentHandler(
             unidad: "unidad",
             costoBase: 1500,
             confianza: 90,
+            areaPropuesta: "Informática",
+            categoriaPropuesta: "Hardware",
+            marca: "Marca prueba",
+            modelo: "Modelo prueba",
+            stock: 2,
+            stockMinimo: 0,
           },
         ],
       }),
@@ -398,6 +420,8 @@ const migratedSdkResult = await normalizeInventoryDocumentHandler(
 );
 assert.equal(migratedSdkResult.items.length, 1);
 assert.equal(migratedSdkResult.items[0].nombre, "Producto de prueba");
+assert.equal(migratedSdkResult.items[0].areaPropuesta, "Informática");
+assert.equal(migratedSdkResult.items[0].marca, "Marca prueba");
 assert.equal(migratedSdkResult.aiRateLimit.reason, "cooldown");
 console.log("OK SDK migrado: consume response.text y conserva metadatos del limitador");
 

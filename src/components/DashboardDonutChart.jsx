@@ -42,10 +42,10 @@ function createCenterTextPlugin(total) {
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillStyle = "#111827";
-      ctx.font = '700 24px "Segoe UI", sans-serif';
+      ctx.font = '700 24px Inter, "Segoe UI", sans-serif';
       ctx.fillText(String(total), centerX, centerY - 5);
       ctx.fillStyle = "#64748b";
-      ctx.font = '650 13px "Segoe UI", sans-serif';
+      ctx.font = '650 13px Inter, "Segoe UI", sans-serif';
       ctx.fillText("Total", centerX, centerY + 17);
       ctx.restore();
     },
@@ -155,9 +155,9 @@ const styles = {
   layout: {
     alignItems: "center",
     display: "grid",
-    gap: "14px",
-    gridTemplateColumns: "minmax(140px, 170px) minmax(0, 1fr)",
-    marginTop: "12px",
+    gap: "18px",
+    gridTemplateColumns: "minmax(150px, 176px) minmax(0, 1fr)",
+    marginTop: "14px",
     minWidth: 0,
   },
   chartBox: {
@@ -190,7 +190,7 @@ const styles = {
   },
   legend: {
     display: "grid",
-    gap: "7px",
+    gap: 0,
     minWidth: 0,
     width: "100%",
   },
@@ -200,6 +200,7 @@ const styles = {
     gap: "8px",
     gridTemplateColumns: "10px minmax(0, 1fr) max-content",
     minWidth: 0,
+    padding: "7px 0",
     width: "100%",
   },
   legendDot: {

@@ -8,10 +8,15 @@ import {
   sendQuoteEmail,
 } from "../../services/quoteEmailService";
 import { getQuoteDisplayNumber } from "../../services/quoteService";
-import { buildQuotePdfAttachment, getQuotePdfFileName } from "../../utils/quotePdf";
+import {
+  buildQuotePdfAttachment,
+  downloadQuotePdf,
+  getQuotePdfFileName,
+} from "../../utils/quotePdf";
 import { formatCLP } from "../../utils/formatters";
 
 function SendQuoteEmailModal({
+  businessId,
   open,
   quote,
   quoteId,
@@ -86,28 +91,7 @@ function SendQuoteEmailModal({
     setDownloadingPdf(true);
 
     try {
-      const attachment = await buildQuotePdfAttachment({ quote, companyProfile });
-      if (!attachment?.contentBase64) {
-        throw new Error("PDF de cotización vacío o inválido.");
-      }
-
-      const binary = window.atob(attachment.contentBase64);
-      const bytes = new Uint8Array(binary.length);
-      for (let index = 0; index < binary.length; index += 1) {
-        bytes[index] = binary.charCodeAt(index);
-      }
-
-      const blob = new Blob([bytes], {
-        type: attachment.contentType || "application/pdf",
-      });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = attachment.fileName || pdfFileName;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      await downloadQuotePdf({ quote, companyProfile });
     } catch (err) {
       console.error("Error descargando PDF de cotización:", err);
       setError("No fue posible descargar el PDF de la cotización.");
@@ -161,6 +145,7 @@ function SendQuoteEmailModal({
 
     try {
       const result = await sendQuoteEmail({
+        businessId,
         quoteId,
         emailCliente,
         asunto,

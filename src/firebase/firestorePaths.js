@@ -1,62 +1,96 @@
 export const userDocPath = (userId) => ["usuarios", userId];
+export const businessDocPath = (businessId) => ["negocios", businessId];
 export const userConfigDocPath = (userId) => [
-  "usuarios",
+  "negocios",
   userId,
   "config",
   "negocio",
 ];
 export const companyProfileDocPath = (userId) => [
-  "usuarios",
+  "negocios",
   userId,
   "empresa",
   "perfil",
 ];
-export const inventoryCollectionPath = (userId) => [
+export const businessSettingsDocPath = (businessId, section) => [
+  "negocios",
+  businessId,
+  "configuracion",
+  section,
+];
+export const personalProfileDocPath = (userId) => [
   "usuarios",
+  userId,
+  "cuenta",
+  "perfil",
+];
+export const inventoryCollectionPath = (userId) => [
+  "negocios",
   userId,
   "inventario",
 ];
 export const inventoryDocPath = (userId, itemId) => [
-  "usuarios",
+  "negocios",
   userId,
   "inventario",
   itemId,
 ];
+export const inventoryAreasCollectionPath = (userId) => [
+  "negocios",
+  userId,
+  "areas",
+];
+export const inventoryCategoriesCollectionPath = (userId) => [
+  "negocios",
+  userId,
+  "categoriasInventario",
+];
 export const referencesCollectionPath = (userId) => [
-  "usuarios",
+  "negocios",
   userId,
   "referencias",
 ];
 export const referenceDocPath = (userId, referenceId) => [
-  "usuarios",
+  "negocios",
   userId,
   "referencias",
   referenceId,
 ];
 export const quotesCollectionPath = (userId) => [
-  "usuarios",
+  "negocios",
   userId,
   "cotizaciones",
 ];
 export const quoteDocPath = (userId, quoteId) => [
-  "usuarios",
+  "negocios",
   userId,
   "cotizaciones",
   quoteId,
 ];
 export const quoteCounterDocPath = (userId, year) => [
-  "usuarios",
+  "negocios",
   userId,
   "contadores",
   `cotizaciones_${year}`,
 ];
+export const financialMovementsCollectionPath = (businessId) => [
+  "negocios",
+  businessId,
+  "financialMovements",
+];
+export const financialMovementDocPath = (businessId, movementId) => [
+  "negocios",
+  businessId,
+  "financialMovements",
+  movementId,
+];
 export const referenceTasksCollectionPath = (userId) => [
-  "usuarios",
+  "negocios",
   userId,
   "tareasReferencias",
 ];
 export const referenceTaskDocPath = (userId, taskId) => [
-  "usuarios",
+  "negocios",
   userId,
   "tareasReferencias",
   taskId,

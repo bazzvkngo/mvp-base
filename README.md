@@ -14,6 +14,8 @@ finales ni reemplaza la revisión humana.
 - Registro, inicio de sesión, verificación de correo y recuperación de
   contraseña mediante Firebase Authentication.
 - Perfil comercial y logo de empresa.
+- Selector multiempresa, cambio seguro de negocio activo y creación de negocios
+  adicionales con límite configurable por plan.
 - Inventario de productos, servicios y actividades.
 - Importación local o asistida de archivos CSV, XLS y XLSX, con vista previa.
 - Importación documental de PDF, JPG, PNG y WebP mediante análisis multimodal
@@ -155,7 +157,13 @@ antes de desplegarse. Este repositorio no autoriza despliegues automáticos.
 
 ## Seguridad y privacidad
 
-- Los datos se separan por `usuarios/{uid}`.
+- La creación rápida de negocios solicita nombre, rubro y región; Chile y CLP
+  se asignan en servidor. La ficha completa se administra después desde
+  `Empresa` mediante una operación autorizada para `OWNER` y `ADMIN`.
+- Los datos empresariales activos se separan por
+  `negocios/{businessId}/...` y se autorizan mediante membresías. Las rutas
+  históricas por usuario permanecen disponibles únicamente como compatibilidad
+  mientras se defina una migración remota explícita.
 - Los estados de envío de correo solo pueden ser escritos por el backend.
 - Los logos admiten PNG, JPG o WebP y un máximo de 2 MB.
 - Las importaciones admiten hasta 5 MB. Las planillas admiten hasta 8 hojas y

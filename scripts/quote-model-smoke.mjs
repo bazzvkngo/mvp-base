@@ -1,0 +1,306 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import {
+  adaptStoredQuote,
+  buildQuotePayload,
+  calculateQuoteExpiryDate,
+  calculateQuoteLineTotal,
+  calculateQuoteTotals,
+  getQuotePdfFileName,
+  normalizeQuoteItem,
+  normalizeScopeSections,
+} from "../src/domain/quoteModel.mjs";
+import { buildQuotePdfDocument } from "../src/domain/quoteDocument.mjs";
+
+const company = {
+  nombreComercial: "BAGNER Servicios Integrales",
+  razonSocial: "Bagner Servicios Integrales SpA",
+  rut: "77.091.679-8",
+  direccion: "Tamarugal 2985",
+  ciudad: "Iquique",
+  region: "I Región",
+  responsable: "Bruno Pairumani Altieri",
+  telefono: "+56 9 8247 0752",
+  email: "bruno.pairumani@bagner.cl",
+  condicionesPago: "50% al inicio y 50% al finalizar el trabajo",
+  validezCotizacionDias: 10,
+};
+
+function item(index, overrides = {}) {
+  return {
+    lineaId: `linea-${index}`,
+    itemId: `inventario-${index}`,
+    codigo: `SRV-${String(index).padStart(4, "0")}`,
+    nombre: `Servicio ${index}`,
+    descripcionComercial: "Fabricación, instalación y terminaciones según alcance acordado.",
+    tipoItem: "servicio",
+    unidad: "servicio",
+    cantidad: 1,
+    precioUnitarioEditable: 1000,
+    descuentoPorcentaje: 0,
+    inventarioSnapshot: {
+      inventarioId: `inventario-${index}`,
+      codigoInterno: `SRV-${String(index).padStart(4, "0")}`,
+      nombre: `Servicio ${index}`,
+      tipoItem: "servicio",
+      areaId: "area-servicios",
+      categoriaId: "categoria-fabricacion",
+      categoria: "Fabricación",
+      unidad: "servicio",
+      modeloInventarioVersion: 2,
+    },
+    ...overrides,
+  };
+}
+
+function quoteFixture(overrides = {}) {
+  return buildQuotePayload(
+    "test-user",
+    {
+      numero: "COT-2026-0114",
+      fecha: "2026-06-25",
+      estado: "emitida",
+      validezDias: 10,
+      afectaIva: true,
+      clienteNombre: "Abastible",
+      clienteRut: "76.123.456-7",
+      clienteContacto: "Pablo Acuña",
+      clienteEmail: "pablo@example.cl",
+      clienteTelefono: "+56 9 1111 2222",
+      clienteDireccion: "Zona industrial",
+      clienteCiudad: "Iquique",
+      proyectoNombre: "Escalera zona de estanque",
+      empresa: company,
+      items: [item(1, { precioUnitarioEditable: 350000 })],
+      descuento: 0,
+      seccionesAlcance: [
+        {
+          id: "servicios",
+          titulo: "Servicios",
+          lineas: [
+            "Fabricación de escalera de dos peldaños con estructura de 1,40 m.",
+            "Aplicación de anticorrosivo y pintura amarilla.",
+          ],
+        },
+        {
+          id: "materiales",
+          titulo: "Materiales",
+          lineas: ["Perfil 40x40, ángulo 40x40, pintura y anticorrosivo."],
+        },
+      ],
+      condiciones: {
+        plazoEntrega: "3 días hábiles",
+        formaPago: company.condicionesPago,
+        alcanceGeografico: "Iquique y Alto Hospicio",
+        garantia: "Garantía de 6 meses por fabricación.",
+        observaciones: "Coordinación previa para ingreso a planta.",
+        exclusiones: "No incluye obras civiles adicionales.",
+        terminosAdicionales: "Los trabajos adicionales requieren aprobación escrita.",
+      },
+      aceptacion: {
+        habilitada: true,
+        texto: "Acepto los términos y condiciones de esta cotización.",
+      },
+      ...overrides,
+    },
+    { issueDate: "2026-06-25" }
+  );
+}
+
+assert.equal(quoteFixture().cliente.empresa, "Abastible");
+assert.notEqual(quoteFixture().cliente.empresa, "[object Object]");
+
+assert.equal(calculateQuoteLineTotal(item(1, { cantidad: 2, precioUnitarioEditable: 1000 })), 2000);
+console.log("OK cálculo: una línea por cantidad y precio");
+
+const multipleTotals = calculateQuoteTotals([
+  item(1, { cantidad: 2, precioUnitarioEditable: 1000 }),
+  item(2, { cantidad: 3, precioUnitarioEditable: 500 }),
+]);
+assert.equal(multipleTotals.subtotal, 3500);
+assert.equal(multipleTotals.iva, 665);
+assert.equal(multipleTotals.total, 4165);
+console.log("OK cálculo: varias líneas, subtotal, IVA y total");
+
+const discountTotals = calculateQuoteTotals(
+  [item(1, { cantidad: 2, precioUnitarioEditable: 1000, descuentoPorcentaje: 10 })],
+  100
+);
+assert.deepEqual(
+  {
+    subtotal: discountTotals.subtotal,
+    descuentoTotal: discountTotals.descuentoTotal,
+    neto: discountTotals.neto,
+    iva: discountTotals.iva,
+    total: discountTotals.total,
+  },
+  { subtotal: 2000, descuentoTotal: 300, neto: 1700, iva: 323, total: 2023 }
+);
+console.log("OK cálculo: descuentos por línea y general");
+
+const exemptTotals = calculateQuoteTotals([item(1)], 0, { afectaIva: false });
+assert.equal(exemptTotals.iva, 0);
+assert.equal(exemptTotals.total, 1000);
+assert.equal(calculateQuoteTotals([item(1, { cantidad: 1.5 })]).total, 1785);
+assert.equal(
+  new Intl.NumberFormat("es-CL", {
+    style: "currency",
+    currency: "CLP",
+    maximumFractionDigits: 0,
+  }).format(416500),
+  "$416.500"
+);
+console.log("OK cálculo: exenta, decimales y formato CLP");
+
+assert.throws(() => calculateQuoteLineTotal(item(1, { cantidad: -1 })), /no puede|mayor/);
+assert.throws(() => calculateQuoteLineTotal(item(1, { cantidad: "NaN" })), /número válido/);
+assert.throws(
+  () => calculateQuoteLineTotal(item(1, { precioUnitarioEditable: -10 })),
+  /no puede/
+);
+assert.throws(() => calculateQuoteTotals([item(1)], 2000), /no puede superar/);
+console.log("OK validación: cantidades, precios, NaN y descuentos inválidos rechazados");
+
+assert.equal(calculateQuoteExpiryDate("2026-06-25", 10), "2026-07-05");
+console.log("OK fecha: vencimiento calculado");
+
+const longDescription = "Descripción técnica con áéíóú, ñ y alcance detallado. ".repeat(30);
+const normalizedLong = normalizeQuoteItem(
+  item(1, { descripcionComercial: longDescription }),
+  0,
+  { strict: true }
+);
+assert.equal(normalizedLong.descripcionComercial, longDescription.trim());
+assert.deepEqual(normalizeScopeSections([{ titulo: "", lineas: [""] }]), []);
+assert.equal(
+  normalizeScopeSections([{ id: "x", titulo: "Entregables", lineas: ["Informe"] }])[0]
+    .lineas[0],
+  "Informe"
+);
+console.log("OK contenido: descripciones extensas y alcance vacío/poblado");
+
+const inventorySource = item(1);
+const snapshotted = normalizeQuoteItem(inventorySource, 0, { strict: true });
+inventorySource.nombre = "Nombre modificado después";
+inventorySource.inventarioSnapshot.nombre = "Snapshot externo modificado";
+assert.equal(snapshotted.nombre, "Servicio 1");
+assert.equal(snapshotted.inventarioSnapshot.nombre, "Servicio 1");
+console.log("OK persistencia: snapshot histórico independiente del inventario");
+
+const legacy = adaptStoredQuote({
+  id: "legacy",
+  numeroCotizacion: "026-001",
+  fecha: "2025-01-10",
+  clienteNombre: "Cliente histórico",
+  items: [{ nombre: "Servicio legacy", cantidad: 1, precioUnitario: 350000 }],
+  subtotal: 350000,
+  descuento: 0,
+  total: 350000,
+  empresa: company,
+});
+assert.equal(legacy.legacyIvaNoDefinido, true);
+assert.equal(legacy.afectaIva, false);
+assert.equal(legacy.total, 350000);
+console.log("OK compatibilidad: cotización legacy preservada sin inferir IVA");
+
+const unsafeName = getQuotePdfFileName({
+  numero: "026/114:*?",
+  clienteNombre: "Compañía / Ñandú Ltda.",
+});
+assert.match(unsafeName, /^Cotizacion_[A-Za-z0-9_-]+_[A-Za-z0-9_-]+\.pdf$/);
+assert.doesNotMatch(unsafeName, /[\\/:*?"<>|]/);
+console.log("OK archivo: nombre descriptivo y seguro");
+
+const sourceNewQuote = fs.readFileSync("src/pages/NewQuotePage.jsx", "utf8");
+const sourcePdf = fs.readFileSync("src/utils/quotePdf.js", "utf8");
+const sourceEmail = fs.readFileSync("src/features/quotes/SendQuoteEmailModal.jsx", "utf8");
+const sourceHistory = fs.readFileSync("src/pages/QuoteHistoryPage.jsx", "utf8");
+assert.match(sourceNewQuote, /createManagedInventoryItem/);
+assert.doesNotMatch(sourceNewQuote, /\bcreateInventoryItem\b/);
+assert.match(sourceNewQuote, /areaId/);
+assert.match(sourceNewQuote, /categoriaId/);
+assert.match(sourcePdf, /buildQuotePdfBase64/);
+assert.match(sourceEmail, /buildQuotePdfAttachment/);
+assert.match(sourceHistory, /downloadQuotePdf/);
+assert.match(sourceHistory, /shareQuotePdf/);
+console.log("OK integración: inventario v2 y PDF único para descarga, correo y compartir");
+
+const outputDir = path.resolve("output/pdf/quote-validation");
+fs.mkdirSync(outputDir, { recursive: true });
+const logoPath = path.resolve("tmp/pdfs/reference/bagner-logo.png");
+const logoDataUrl = fs.existsSync(logoPath)
+  ? `data:image/png;base64,${fs.readFileSync(logoPath).toString("base64")}`
+  : "";
+
+const scenarios = [
+  [
+    "01-simple",
+    quoteFixture({
+      seccionesAlcance: [],
+      condiciones: { formaPago: company.condicionesPago },
+      aceptacion: { habilitada: false, texto: "" },
+    }),
+  ],
+  [
+    "02-multiple-items",
+    quoteFixture({
+      items: Array.from({ length: 9 }, (_, index) =>
+        item(index + 1, { precioUnitarioEditable: 45000 + index * 12500 })
+      ),
+    }),
+  ],
+  [
+    "03-multipage",
+    quoteFixture({
+      items: Array.from({ length: 55 }, (_, index) =>
+        item(index + 1, {
+          descripcionComercial: `Actividad ${index + 1} con detalle técnico, control de calidad y entrega documentada.`,
+          precioUnitarioEditable: 10000 + index * 500,
+        })
+      ),
+      seccionesAlcance: Array.from({ length: 8 }, (_, index) => ({
+        id: `seccion-${index}`,
+        titulo: `Sección de alcance ${index + 1}`,
+        lineas: Array.from({ length: 5 }, (_, line) =>
+          `Línea ${line + 1}: descripción extensa del alcance comprometido para la etapa ${index + 1}.`
+        ),
+      })),
+    }),
+  ],
+  [
+    "04-long-descriptions",
+    quoteFixture({
+      items: Array.from({ length: 6 }, (_, index) =>
+        item(index + 1, { descripcionComercial: longDescription })
+      ),
+    }),
+  ],
+  [
+    "05-empty-optionals",
+    quoteFixture({
+      empresa: { ...company, condicionesPago: "" },
+      clienteRut: "",
+      clienteContacto: "",
+      clienteEmail: "",
+      clienteTelefono: "",
+      clienteDireccion: "",
+      clienteCiudad: "",
+      proyectoNombre: "",
+      seccionesAlcance: [],
+      condiciones: {},
+      aceptacion: { habilitada: false, texto: "" },
+    }),
+  ],
+];
+
+for (const [name, quote] of scenarios) {
+  const result = buildQuotePdfDocument({ quote, logoDataUrl });
+  const file = path.join(outputDir, `${name}.pdf`);
+  fs.writeFileSync(file, Buffer.from(result.doc.output("arraybuffer")));
+  assert.equal(result.quote.total, quote.total);
+  if (name === "03-multipage") assert.ok(result.doc.getNumberOfPages() >= 2);
+  console.log(`PDF_VALIDATION ${name} pages=${result.doc.getNumberOfPages()} file=${file}`);
+}
+
+console.log("QUOTE_MODEL_SMOKE_OK");

@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
+import loginBackground from "../../assets/valoracloud-login-background.png";
 import BrandLogo from "../../components/BrandLogo";
 import Button from "../../components/ui/Button";
 import SkipLink from "../../components/ui/SkipLink";
@@ -43,10 +45,14 @@ function Login() {
   const [isResetView, setIsResetView] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const clearPasswordState = () => {
     setPassword("");
     setConfirmPassword("");
+    setShowPassword(false);
+    setShowConfirmPassword(false);
   };
 
   const openResetView = () => {
@@ -193,164 +199,238 @@ function Login() {
     <>
       <SkipLink targetId="auth-main-content" />
       <main id="auth-main-content" className="auth-screen" tabIndex="-1">
-        <section className="auth-card" aria-labelledby="auth-title">
-          <header className="auth-card__header">
-            <BrandLogo variant="auth" showText />
-            <h1 id="auth-title" className="auth-card__title">
-              {isResetView
-                ? "Recuperar contraseña"
-                : isLoginView
-                ? "Iniciar sesión"
-                : "Crear cuenta"}
-            </h1>
-            <p className="auth-card__subtitle">
-              {isResetView
-                ? "Ingresa tu correo y enviaremos las instrucciones."
-                : "Acceso al sistema de valorización y cotizaciones TI."}
-            </p>
-          </header>
+        <section className="auth-visual" aria-label="ValoraCloud para tu negocio">
+          <img
+            className="auth-visual__image"
+            src={loginBackground}
+            alt=""
+            aria-hidden="true"
+            width="1706"
+            height="922"
+          />
+          <div className="auth-visual__overlay" aria-hidden="true" />
+          <p className="auth-visual__message">
+            Gestiona, compara y valora tu negocio en un solo lugar.
+          </p>
+        </section>
 
-          <form
-            className="auth-form"
-            onSubmit={isResetView ? handlePasswordReset : handleSubmit}
-            noValidate
-            aria-busy={primaryDisabled}
-          >
-            <div className="auth-field">
-              <label className="auth-field__label" htmlFor="auth-email">
-                Correo electrónico
-              </label>
-              <input
-                id="auth-email"
-                className="auth-input"
-                type="email"
-                name={isResetView ? "email" : "username"}
-                autoComplete={isResetView ? "email" : "username"}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="nombre@empresa.cl"
-                aria-invalid={Boolean(error)}
-                aria-describedby={feedbackId}
-                required
+        <section className="auth-panel" aria-labelledby="auth-title">
+          <div className="auth-card">
+            <header className="auth-card__header">
+              <BrandLogo
+                variant="auth"
+                showText
+                iconSize={50}
+                subtitle="Gestiona, compara y valora tu negocio"
               />
-            </div>
+              <h1 id="auth-title" className="auth-card__title">
+                {isResetView
+                  ? "Recuperar contraseña"
+                  : isLoginView
+                  ? "Bienvenido de vuelta"
+                  : "Crea tu cuenta"}
+              </h1>
+              <p className="auth-card__subtitle">
+                {isResetView
+                  ? "Ingresa tu correo y te enviaremos las instrucciones."
+                  : isLoginView
+                  ? "Accede y continúa gestionando tu negocio en un solo lugar."
+                  : "Regístrate para comenzar a gestionar tu negocio."}
+              </p>
+            </header>
 
-            {showPasswordField && (
+            <form
+              className="auth-form"
+              onSubmit={isResetView ? handlePasswordReset : handleSubmit}
+              noValidate
+              aria-busy={primaryDisabled}
+            >
               <div className="auth-field">
-                <label className="auth-field__label" htmlFor="auth-password">
-                  Contraseña
+                <label className="auth-field__label" htmlFor="auth-email">
+                  Correo electrónico
                 </label>
                 <input
-                  key={isLoginView ? "login-password" : "register-password"}
-                  id="auth-password"
                   className="auth-input"
-                  type="password"
-                  name={isLoginView ? "password" : "new-password"}
-                  autoComplete={isLoginView ? "current-password" : "new-password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  aria-invalid={Boolean(error)}
-                  aria-describedby={
-                    [!isLoginView && "auth-password-hint", feedbackId]
-                      .filter(Boolean)
-                      .join(" ") || undefined
-                  }
-                  minLength="6"
-                  required
-                />
-                {!isLoginView && (
-                  <p id="auth-password-hint" className="auth-field__hint">
-                    Mínimo 6 caracteres.
-                  </p>
-                )}
-              </div>
-            )}
-
-            {showConfirmPasswordField && (
-              <div className="auth-field">
-                <label
-                  className="auth-field__label"
-                  htmlFor="auth-confirm-password"
-                >
-                  Repetir contraseña
-                </label>
-                <input
-                  id="auth-confirm-password"
-                  className="auth-input"
-                  type="password"
-                  name="confirm-password"
-                  autoComplete="new-password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  id="auth-email"
+                  type="email"
+                  name={isResetView ? "email" : "username"}
+                  autoComplete={isResetView ? "email" : "username"}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="nombre@empresa.cl"
                   aria-invalid={Boolean(error)}
                   aria-describedby={feedbackId}
-                  minLength="6"
                   required
                 />
               </div>
-            )}
 
-            {error && (
-              <p
-                id="auth-feedback"
-                className="auth-feedback auth-feedback--error"
-                role="alert"
+              {showPasswordField && (
+                <div className="auth-field">
+                  <label className="auth-field__label" htmlFor="auth-password">
+                    Contraseña
+                  </label>
+                  <div className="auth-password-control">
+                    <input
+                      key={isLoginView ? "login-password" : "register-password"}
+                      id="auth-password"
+                      className="auth-input auth-input--password"
+                      type={showPassword ? "text" : "password"}
+                      name={isLoginView ? "password" : "new-password"}
+                      autoComplete={
+                        isLoginView ? "current-password" : "new-password"
+                      }
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      aria-invalid={Boolean(error)}
+                      aria-describedby={
+                        [!isLoginView && "auth-password-hint", feedbackId]
+                          .filter(Boolean)
+                          .join(" ") || undefined
+                      }
+                      minLength="6"
+                      required
+                    />
+                    <button
+                      type="button"
+                      className="auth-password-toggle"
+                      onClick={() => setShowPassword((current) => !current)}
+                      aria-label={
+                        showPassword ? "Ocultar contraseña" : "Mostrar contraseña"
+                      }
+                      aria-pressed={showPassword}
+                    >
+                      {showPassword ? (
+                        <EyeOff size={19} aria-hidden="true" />
+                      ) : (
+                        <Eye size={19} aria-hidden="true" />
+                      )}
+                    </button>
+                  </div>
+                  {!isLoginView && (
+                    <p id="auth-password-hint" className="auth-field__hint">
+                      Mínimo 6 caracteres.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {showConfirmPasswordField && (
+                <div className="auth-field">
+                  <label
+                    className="auth-field__label"
+                    htmlFor="auth-confirm-password"
+                  >
+                    Repetir contraseña
+                  </label>
+                  <div className="auth-password-control">
+                    <input
+                      id="auth-confirm-password"
+                      className="auth-input auth-input--password"
+                      type={showConfirmPassword ? "text" : "password"}
+                      name="confirm-password"
+                      autoComplete="new-password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      aria-invalid={Boolean(error)}
+                      aria-describedby={feedbackId}
+                      minLength="6"
+                      required
+                    />
+                    <button
+                      type="button"
+                      className="auth-password-toggle"
+                      onClick={() =>
+                        setShowConfirmPassword((current) => !current)
+                      }
+                      aria-label={
+                        showConfirmPassword
+                          ? "Ocultar confirmación de contraseña"
+                          : "Mostrar confirmación de contraseña"
+                      }
+                      aria-pressed={showConfirmPassword}
+                    >
+                      {showConfirmPassword ? (
+                        <EyeOff size={19} aria-hidden="true" />
+                      ) : (
+                        <Eye size={19} aria-hidden="true" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {isLoginView && !isResetView && (
+                <div className="auth-form__utility">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="auth-link"
+                    onClick={openResetView}
+                  >
+                    ¿Olvidaste tu contraseña?
+                  </Button>
+                </div>
+              )}
+
+              {error && (
+                <p
+                  id="auth-feedback"
+                  className="auth-feedback auth-feedback--error"
+                  role="alert"
+                >
+                  {error}
+                </p>
+              )}
+              {success && (
+                <p
+                  id="auth-feedback"
+                  className="auth-feedback auth-feedback--success"
+                  role="status"
+                >
+                  {success}
+                </p>
+              )}
+
+              <Button
+                type="submit"
+                className="auth-submit"
+                disabled={primaryDisabled}
+                aria-busy={primaryDisabled}
               >
-                {error}
-              </p>
-            )}
-            {success && (
-              <p
-                id="auth-feedback"
-                className="auth-feedback auth-feedback--success"
-                role="status"
-              >
-                {success}
-              </p>
-            )}
+                {primaryLabel}
+              </Button>
+            </form>
 
-            <Button
-              type="submit"
-              className="auth-submit"
-              disabled={primaryDisabled}
-            >
-              {primaryLabel}
-            </Button>
-          </form>
+            <div className="auth-actions">
+              {isResetView && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="auth-link"
+                  onClick={returnToLoginView}
+                >
+                  Volver al inicio de sesión
+                </Button>
+              )}
 
-          <div className="auth-actions">
-            {isLoginView && !isResetView && (
+              {!isResetView && (
+                <p className="auth-actions__prompt">
+                  {isLoginView
+                    ? "¿No tienes una cuenta?"
+                    : "¿Ya tienes una cuenta?"}
+                </p>
+              )}
+
               <Button
                 type="button"
                 variant="ghost"
                 className="auth-link"
-                onClick={openResetView}
+                onClick={toggleAuthView}
+                disabled={isSubmitting || isResetting}
               >
-                ¿Olvidaste tu contraseña?
+                {isLoginView ? "Crear una cuenta" : "Iniciar sesión"}
               </Button>
-            )}
-
-            {isResetView && (
-              <Button
-                type="button"
-                variant="ghost"
-                className="auth-link"
-                onClick={returnToLoginView}
-              >
-                Volver al inicio de sesión
-              </Button>
-            )}
-
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={toggleAuthView}
-              disabled={isSubmitting || isResetting}
-            >
-              {isLoginView
-                ? "¿No tienes cuenta? Regístrate"
-                : "¿Ya tienes cuenta? Inicia sesión"}
-            </Button>
+            </div>
           </div>
         </section>
       </main>

@@ -1,5 +1,6 @@
 import {
   BadgeDollarSign,
+  BarChart3,
   BookOpenCheck,
   Boxes,
   Building2,
@@ -7,17 +8,31 @@ import {
   FilePlus2,
   History,
   LayoutDashboard,
+  UserRound,
+  WalletCards,
 } from "lucide-react";
 
 export const navigationSections = [
   {
-    label: "General",
+    label: "Operación",
     items: [
       {
         to: "/dashboard",
-        label: "Dashboard",
-        title: "Dashboard",
+        label: "Resumen",
+        title: "Resumen",
         icon: LayoutDashboard,
+      },
+      {
+        to: "/finanzas",
+        label: "Finanzas",
+        title: "Finanzas",
+        icon: WalletCards,
+      },
+      {
+        to: "/estadisticas",
+        label: "Estadísticas",
+        title: "Estadísticas",
+        icon: BarChart3,
       },
     ],
   },
@@ -27,7 +42,7 @@ export const navigationSections = [
       {
         to: "/empresa",
         label: "Empresa",
-        title: "Configuración de empresa",
+        title: "Empresa",
         icon: Building2,
       },
       {
@@ -70,9 +85,20 @@ export const navigationSections = [
       },
       {
         to: "/cotizaciones",
-        label: "Historial",
-        title: "Historial de cotizaciones",
+        label: "Cotizaciones",
+        title: "Cotizaciones",
         icon: History,
+      },
+    ],
+  },
+  {
+    label: "Cuenta",
+    items: [
+      {
+        to: "/cuenta",
+        label: "Mi cuenta",
+        title: "Cuenta",
+        icon: UserRound,
       },
     ],
   },
@@ -81,6 +107,9 @@ export const navigationSections = [
 const navigationItems = navigationSections.flatMap((section) => section.items);
 
 export function getRouteMeta(pathname) {
+  if (pathname === "/resumen") {
+    return { title: "Resumen" };
+  }
   if (/^\/cotizaciones\/[^/]+\/editar$/.test(pathname)) {
     return { title: "Editar cotización" };
   }

@@ -2,27 +2,49 @@
 import { PackageOpen } from "lucide-react";
 import AppIcon from "../../components/ui/AppIcon";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
+import InventoryCatalogManager from "./InventoryCatalogManager";
 import {
-  createInventoryItem,
+  buildNewCategoryPayload,
+  getCategoriesForArea,
+  getInventoryAreaLabel,
+  getInventoryCategoryLabel,
+  isDuplicateCategoryName,
+  keepCompatibleCategoryId,
+  OTHER_CATEGORY_OPTION,
+} from "../../domain/inventoryCatalog.mjs";
+import {
+  createManagedInventoryItem,
   deactivateInventoryItem,
   getInventoryItems,
   reactivateInventoryItem,
-  softDeleteInventoryItem,
+  saveInventoryCategory,
+  subscribeToInventoryAreas,
+  subscribeToInventoryCategories,
   subscribeToInventory,
-  updateInventoryItem,
+  updateManagedInventoryItem,
 } from "../../services/inventoryService";
 import { formatCLP, formatPercent } from "../../utils/formatters";
+import {
+  DEFAULT_INVENTORY_SETTINGS,
+  getBusinessSettings,
+} from "../../services/companyService";
 
 const EMPTY_FORM = {
-  nombre: "",
   tipoItem: "",
+  areaId: "",
+  categoriaId: "",
   categoria: "",
+  nombre: "",
   descripcion: "",
   unidad: "",
   costoBase: "",
   margenDeseado: "",
   precioInterno: "",
-  sku: "",
+  marca: "",
+  modelo: "",
+  stock: "0",
+  stockMinimo: "0",
+  codigoBarras: "",
   estado: "activo",
 };
 
@@ -44,18 +66,6 @@ const MANUAL_PRICE_FLAGS = [
   "ajusteManual",
   "usarPrecioManual",
   "precioPersonalizado",
-];
-
-const CATEGORY_OPTIONS = [
-  "Soporte técnico y hardware",
-  "Sistemas operativos",
-  "Redes y conectividad",
-  "Desarrollo web y software",
-  "Bases de datos",
-  "Cloud y despliegue",
-  "Seguridad informática",
-  "Aseguramiento de calidad",
-  "Gestión TI y consultoría",
 ];
 
 const UNIT_OPTIONS = [
@@ -115,11 +125,6 @@ function formatSignedCLP(value) {
   return formatCLP(amount);
 }
 
-function getSelectValue(value, options) {
-  if (!value) return "";
-  return options.includes(value) ? value : OTHER_OPTION;
-}
-
 function normalizeOptionText(value) {
   return String(value || "")
     .trim()
@@ -160,22 +165,60 @@ function formatFirestoreDate(value) {
   return "-";
 }
 
-function InventoryManager({ userId, refreshSignal = 0 }) {
+function createInventoryRequestId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+function getCatalogLoadErrorMessage(scope, error) {
+  const label = scope === "areas" ? "las áreas" : "las categorías";
+  const code = String(error?.code || "");
+  if (code.includes("permission-denied")) {
+    return `No fue posible acceder a ${label}. Revisa la sesión y la configuración local.`;
+  }
+  if (code.includes("unavailable") || code.includes("network")) {
+    return `No fue posible conectar con ${label}. Comprueba los emuladores locales.`;
+  }
+  return `No se pudieron cargar ${label}.`;
+}
+
+function InventoryManager({ userId, refreshSignal = 0, readOnly = false }) {
   const [items, setItems] = useState([]);
+  const [areas, setAreas] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [inventorySettings, setInventorySettings] = useState(
+    DEFAULT_INVENTORY_SETTINGS
+  );
   const [tipoFiltro, setTipoFiltro] = useState("todos");
+  const [areaFiltro, setAreaFiltro] = useState("todas");
+  const [categoriaFiltro, setCategoriaFiltro] = useState("todas");
   const [estadoFiltro, setEstadoFiltro] = useState("activos");
   const [busqueda, setBusqueda] = useState("");
-  const [categoriaPersonalizada, setCategoriaPersonalizada] = useState("");
   const [unidadPersonalizada, setUnidadPersonalizada] = useState("");
-  const [categoriaOtroActiva, setCategoriaOtroActiva] = useState(false);
   const [unidadOtroActiva, setUnidadOtroActiva] = useState(false);
   const [detailItem, setDetailItem] = useState(null);
+  const [catalogDialogOpen, setCatalogDialogOpen] = useState(false);
+  const [customCategoryActive, setCustomCategoryActive] = useState(false);
+  const [customCategoryName, setCustomCategoryName] = useState("");
+  const [catalogRetrySignal, setCatalogRetrySignal] = useState(0);
+  const [catalogLoading, setCatalogLoading] = useState({
+    areas: Boolean(userId),
+    categories: Boolean(userId),
+  });
+  const [catalogLoadErrors, setCatalogLoadErrors] = useState({
+    areas: "",
+    categories: "",
+  });
+  const createRequestIdRef = React.useRef("");
+  const saveInFlightRef = React.useRef(false);
 
   useEffect(() => {
     if (!userId) {
@@ -201,6 +244,84 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
   }, [userId]);
 
   useEffect(() => {
+    if (!userId) return undefined;
+    let active = true;
+    getBusinessSettings(userId, "inventario")
+      .then((settings) => active && setInventorySettings(settings))
+      .catch((settingsError) => {
+        if (import.meta.env.DEV) {
+          console.error(
+            "No se pudieron cargar las preferencias de inventario:",
+            settingsError
+          );
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) {
+      setCatalogLoading({ areas: false, categories: false });
+      return undefined;
+    }
+
+    setCatalogLoading({ areas: true, categories: true });
+    setCatalogLoadErrors({ areas: "", categories: "" });
+
+    const unsubscribeAreas = subscribeToInventoryAreas(
+      userId,
+      (data) => {
+        setAreas(data);
+        setCatalogLoading((current) => ({ ...current, areas: false }));
+        setCatalogLoadErrors((current) => ({ ...current, areas: "" }));
+      },
+      (catalogError) => {
+        console.error("Error al cargar áreas de inventario:", {
+          code: catalogError?.code || "unknown",
+          message: catalogError?.message || "unknown",
+        });
+        setCatalogLoading((current) => ({ ...current, areas: false }));
+        setCatalogLoadErrors((current) => ({
+          ...current,
+          areas: getCatalogLoadErrorMessage("areas", catalogError),
+        }));
+      }
+    );
+    const unsubscribeCategories = subscribeToInventoryCategories(
+      userId,
+      (data) => {
+        setCategories(data);
+        setCatalogLoading((current) => ({ ...current, categories: false }));
+        setCatalogLoadErrors((current) => ({ ...current, categories: "" }));
+      },
+      (catalogError) => {
+        console.error("Error al cargar categorías de inventario:", {
+          code: catalogError?.code || "unknown",
+          message: catalogError?.message || "unknown",
+        });
+        setCatalogLoading((current) => ({ ...current, categories: false }));
+        setCatalogLoadErrors((current) => ({
+          ...current,
+          categories: getCatalogLoadErrorMessage("categories", catalogError),
+        }));
+      }
+    );
+
+    return () => {
+      unsubscribeAreas();
+      unsubscribeCategories();
+    };
+  }, [catalogRetrySignal, userId]);
+
+  const catalogIsLoading = catalogLoading.areas || catalogLoading.categories;
+  const catalogHasLoadError = Boolean(
+    catalogLoadErrors.areas || catalogLoadErrors.categories
+  );
+  const catalogReady = !catalogIsLoading && !catalogHasLoadError;
+
+  useEffect(() => {
     if (!userId || refreshSignal === 0) return;
 
     let active = true;
@@ -222,6 +343,22 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
     };
   }, [refreshSignal, userId]);
 
+  const activeAreas = useMemo(
+    () => areas.filter((area) => (area.estado || "activo") === "activo"),
+    [areas]
+  );
+  const formCategories = useMemo(
+    () => getCategoriesForArea(categories, form.areaId),
+    [categories, form.areaId]
+  );
+  const filterCategories = useMemo(
+    () =>
+      areaFiltro === "todas" || areaFiltro === "pendientes"
+        ? []
+        : getCategoriesForArea(categories, areaFiltro, { activeOnly: false }),
+    [areaFiltro, categories]
+  );
+
   const filteredItems = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
 
@@ -231,22 +368,62 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
       if (estadoFiltro === "inactivos" && estado !== "inactivo") return false;
       if (estadoFiltro === "eliminados" && estado !== "eliminado") return false;
       if (tipoFiltro !== "todos" && item.tipoItem !== tipoFiltro) return false;
+      if (areaFiltro === "pendientes" && item.areaId) return false;
+      if (
+        areaFiltro !== "todas" &&
+        areaFiltro !== "pendientes" &&
+        item.areaId !== areaFiltro
+      ) {
+        return false;
+      }
+      if (categoriaFiltro !== "todas" && item.categoriaId !== categoriaFiltro) {
+        return false;
+      }
       if (!q) return true;
 
-      const text = `${item.nombre || ""} ${item.categoria || ""} ${
+      const text = `${item.codigoInterno || ""} ${item.sku || ""} ${
+        item.nombre || ""
+      } ${item.marca || ""} ${item.modelo || ""} ${getInventoryAreaLabel(
+        item,
+        areas
+      )} ${getInventoryCategoryLabel(item, categories)} ${
         item.descripcion || ""
-      } ${item.sku || ""}`.toLowerCase();
+      }`.toLowerCase();
       return text.includes(q);
     });
-  }, [busqueda, estadoFiltro, items, tipoFiltro]);
+  }, [
+    areaFiltro,
+    areas,
+    busqueda,
+    categoriaFiltro,
+    categories,
+    estadoFiltro,
+    items,
+    tipoFiltro,
+  ]);
+
+  const lowStockCount = useMemo(() => {
+    if (!inventorySettings.alertasStockBajo) return 0;
+    return items.filter((item) => {
+      if (item.tipoItem !== "producto" || (item.estado || "activo") !== "activo") {
+        return false;
+      }
+      const threshold = Math.max(
+        Number(item.stockMinimo || 0),
+        Number(inventorySettings.umbralStockBajo || 0)
+      );
+      return Number(item.stock || 0) <= threshold;
+    }).length;
+  }, [inventorySettings, items]);
 
   const resetForm = () => {
     setForm(EMPTY_FORM);
     setEditingId(null);
-    setCategoriaPersonalizada("");
     setUnidadPersonalizada("");
-    setCategoriaOtroActiva(false);
     setUnidadOtroActiva(false);
+    setCustomCategoryActive(false);
+    setCustomCategoryName("");
+    createRequestIdRef.current = "";
     setError("");
     setSuccess("");
   };
@@ -265,25 +442,51 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
     });
   };
 
-  const handleCategoriaChange = (event) => {
-    const value = event.target.value;
-    if (value === OTHER_OPTION) {
-      setCategoriaOtroActiva(true);
-      const customValue = categoriaPersonalizada || "";
-      setForm((prev) => ({ ...prev, categoria: customValue }));
-      return;
-    }
-
-    setCategoriaOtroActiva(false);
-    setCategoriaPersonalizada("");
-    setForm((prev) => ({ ...prev, categoria: value }));
+  const handleAreaChange = (event) => {
+    const areaId = event.target.value;
+    setCustomCategoryActive(false);
+    setCustomCategoryName("");
+    setForm((current) => {
+      const categoriaId = keepCompatibleCategoryId(
+        categories,
+        areaId,
+        current.categoriaId
+      );
+      const category = categories.find((item) => item.id === categoriaId);
+      return {
+        ...current,
+        areaId,
+        categoriaId,
+        categoria: category?.nombre || "",
+      };
+    });
   };
 
-  const handleCategoriaPersonalizadaChange = (event) => {
-    const value = event.target.value;
-    setCategoriaOtroActiva(true);
-    setCategoriaPersonalizada(value);
-    setForm((prev) => ({ ...prev, categoria: value }));
+  const handleCategoryChange = (event) => {
+    const categoriaId = event.target.value;
+    if (categoriaId === OTHER_CATEGORY_OPTION) {
+      setCustomCategoryActive(true);
+      setCustomCategoryName("");
+      setForm((current) => ({
+        ...current,
+        categoriaId: "",
+        categoria: "",
+      }));
+      return;
+    }
+    setCustomCategoryActive(false);
+    setCustomCategoryName("");
+    const category = categories.find((item) => item.id === categoriaId);
+    setForm((current) => ({
+      ...current,
+      categoriaId,
+      categoria: category?.nombre || "",
+    }));
+  };
+
+  const handleAreaFilterChange = (event) => {
+    setAreaFiltro(event.target.value);
+    setCategoriaFiltro("todas");
   };
 
   const handleUnidadChange = (event) => {
@@ -308,9 +511,29 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
   };
 
   const validateForm = () => {
-    if (!form.nombre.trim()) return "Ingresa el nombre del ítem.";
+    if (!catalogReady) {
+      return "No es posible validar Área y Categoría hasta recuperar el catálogo.";
+    }
     if (!form.tipoItem) return "Selecciona el tipo de ítem.";
-    if (!form.categoria.trim()) return "Selecciona una categoría.";
+    if (!form.areaId) return "Selecciona un área.";
+    if (customCategoryActive) {
+      try {
+        buildNewCategoryPayload(form.areaId, customCategoryName);
+      } catch (categoryError) {
+        return categoryError.message;
+      }
+      if (
+        isDuplicateCategoryName(categories, form.areaId, customCategoryName)
+      ) {
+        return "Ya existe una categoría con ese nombre dentro del área.";
+      }
+    } else {
+      if (!form.categoriaId) return "Selecciona una categoría.";
+      if (!formCategories.some((category) => category.id === form.categoriaId)) {
+        return "La categoría debe estar activa y pertenecer al área seleccionada.";
+      }
+    }
+    if (!form.nombre.trim()) return "Ingresa el nombre del ítem.";
     if (!form.unidad.trim()) return "Ingresa la unidad.";
     if (form.costoBase === "") return "Ingresa el costo base.";
     if (form.margenDeseado === "") return "Ingresa el margen deseado.";
@@ -323,10 +546,25 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
     if (form.precioInterno !== "" && !Number.isFinite(Number(form.precioInterno))) {
       return "El precio interno debe ser numérico.";
     }
+    if (form.tipoItem === "producto") {
+      if (!form.marca.trim()) return "La marca es obligatoria para productos.";
+      if (!form.modelo.trim()) return "El modelo es obligatorio para productos.";
+      if (
+        !Number.isFinite(Number(form.stock)) ||
+        (!inventorySettings.permitirStockNegativo && Number(form.stock) < 0)
+      ) {
+        return inventorySettings.permitirStockNegativo
+          ? "El stock actual debe ser numérico."
+          : "El stock actual debe ser un número mayor o igual a cero.";
+      }
+      if (!Number.isFinite(Number(form.stockMinimo)) || Number(form.stockMinimo) < 0) {
+        return "El stock mínimo debe ser un número mayor o igual a cero.";
+      }
+    }
     return "";
   };
 
-  const buildPayload = () => {
+  const buildPayload = (resolvedCategory = null) => {
     const manualPrice = Number(form.precioInterno);
     const hasManualPrice =
       String(form.precioInterno ?? "").trim() !== "" &&
@@ -337,22 +575,36 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
         ? form.precioInterno
         : calcularPrecioInterno(form.costoBase, form.margenDeseado);
 
-    return {
-      ...form,
+    const category =
+      resolvedCategory ||
+      categories.find((item) => item.id === form.categoriaId);
+    const payload = {
+      tipoItem: form.tipoItem,
+      areaId: form.areaId,
+      categoriaId: category?.id || form.categoriaId,
+      categoria: category?.nombre || form.categoria.trim(),
       nombre: form.nombre.trim(),
-      categoria: form.categoria.trim(),
       descripcion: form.descripcion.trim(),
       unidad: form.unidad.trim(),
-      sku: form.sku.trim(),
       costoBase: Number(form.costoBase),
       margenDeseado: Number(form.margenDeseado),
       precioInterno: Number(precioCalculado),
       precioManual: hasManualPrice,
+      estado: form.estado,
     };
+    if (form.tipoItem === "producto") {
+      payload.marca = form.marca.trim();
+      payload.modelo = form.modelo.trim();
+      payload.stock = Number(form.stock);
+      payload.stockMinimo = Number(form.stockMinimo);
+      payload.codigoBarras = form.codigoBarras.trim();
+    }
+    return payload;
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (saveInFlightRef.current) return;
     setError("");
     setSuccess("");
 
@@ -368,53 +620,112 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
     }
 
     try {
+      saveInFlightRef.current = true;
       setSaving(true);
-      const payload = buildPayload();
+      const originalItem = editingId
+        ? items.find((item) => item.id === editingId)
+        : null;
+      if (
+        originalItem?.tipoItem === "producto" &&
+        form.tipoItem !== "producto" &&
+        !window.confirm(
+          "Al guardar como Servicio o Actividad se eliminarán marca, modelo y datos de stock de este ítem. ¿Deseas continuar?"
+        )
+      ) {
+        return;
+      }
+      let resolvedCategory = null;
+      if (customCategoryActive) {
+        const categoryPayload = buildNewCategoryPayload(
+          form.areaId,
+          customCategoryName
+        );
+        const result = await saveInventoryCategory(userId, categoryPayload);
+        resolvedCategory = {
+          id: result.categoriaId,
+          nombre: categoryPayload.nombre,
+        };
+        setForm((current) => ({
+          ...current,
+          categoriaId: result.categoriaId,
+          categoria: categoryPayload.nombre,
+        }));
+        setCustomCategoryActive(false);
+        setCustomCategoryName("");
+      }
+      const payload = buildPayload(resolvedCategory);
+
+      let successMessage;
       if (editingId) {
-        await updateInventoryItem(userId, editingId, payload);
-        setSuccess("Ítem actualizado correctamente.");
+        await updateManagedInventoryItem(userId, editingId, payload, {
+          preserveLegacyModel:
+            originalItem?.modeloInventarioVersion !== 2 ||
+            !originalItem?.codigoInterno,
+          allowNegativeStock: inventorySettings.permitirStockNegativo,
+        });
+        successMessage = "Ítem actualizado correctamente.";
       } else {
-        await createInventoryItem(userId, payload);
-        setSuccess("Ítem creado correctamente.");
+        if (!createRequestIdRef.current) {
+          createRequestIdRef.current = createInventoryRequestId();
+        }
+        const result = await createManagedInventoryItem(
+          userId,
+          payload,
+          createRequestIdRef.current
+        );
+        successMessage = `Ítem creado con código ${result.codigoInterno}.`;
       }
       setForm(EMPTY_FORM);
       setEditingId(null);
-      setCategoriaPersonalizada("");
       setUnidadPersonalizada("");
-      setCategoriaOtroActiva(false);
       setUnidadOtroActiva(false);
+      setCustomCategoryActive(false);
+      setCustomCategoryName("");
+      createRequestIdRef.current = "";
+      setSuccess(successMessage);
     } catch (err) {
       console.error("Error al guardar ítem:", err);
       setError(err.message || "No se pudo guardar el ítem.");
     } finally {
+      saveInFlightRef.current = false;
       setSaving(false);
     }
   };
 
   const handleEdit = (item) => {
-    const categoria = item.categoria || "";
     const unidad = item.unidad || "";
     const manualPriceActive = hasManualPriceOverride(item);
+    const compatibleCategoryId = keepCompatibleCategoryId(
+      categories,
+      item.areaId,
+      item.categoriaId
+    );
 
     setEditingId(item.id);
     setForm({
+      ...EMPTY_FORM,
       nombre: item.nombre || "",
       tipoItem: item.tipoItem || "",
-      categoria,
+      areaId: item.areaId || "",
+      categoriaId: compatibleCategoryId,
+      categoria: item.categoria || "",
       descripcion: item.descripcion || "",
       unidad,
       costoBase: item.costoBase ?? item.precio ?? "",
       margenDeseado: item.margenDeseado ?? 0,
       precioInterno: manualPriceActive ? item.precioInterno ?? item.precio ?? "" : "",
-      sku: item.sku || "",
+      marca: item.marca || "",
+      modelo: item.modelo || "",
+      stock: item.stock ?? "0",
+      stockMinimo: item.stockMinimo ?? "0",
+      codigoBarras: item.codigoBarras || "",
       estado: item.estado || "activo",
     });
-    setCategoriaPersonalizada(
-      categoria && !CATEGORY_OPTIONS.includes(categoria) ? categoria : ""
-    );
     setUnidadPersonalizada(unidad && !findStandardUnit(unidad) ? unidad : "");
-    setCategoriaOtroActiva(Boolean(categoria && !CATEGORY_OPTIONS.includes(categoria)));
     setUnidadOtroActiva(Boolean(unidad && !findStandardUnit(unidad)));
+    setCustomCategoryActive(false);
+    setCustomCategoryName("");
+    createRequestIdRef.current = "";
     setError("");
     setSuccess("");
   };
@@ -444,25 +755,6 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
     }
   };
 
-  const handleDelete = async (item) => {
-    const confirmed = window.confirm(
-      "¿Seguro que deseas eliminar este ítem? Ya no aparecerá en inventario activo, valorización ni nuevas cotizaciones."
-    );
-
-    if (!confirmed) return;
-
-    setError("");
-    setSuccess("");
-    try {
-      await softDeleteInventoryItem(userId, item.id);
-      setSuccess("Ítem eliminado del inventario activo. Puedes verlo con el filtro de eliminados.");
-      if (editingId === item.id) resetForm();
-    } catch (err) {
-      console.error("Error al eliminar ítem:", err);
-      setError("No se pudo eliminar el ítem.");
-    }
-  };
-
   const manualPriceValue = Number(form.precioInterno);
   const hasValidManualPrice =
     String(form.precioInterno ?? "").trim() !== "" &&
@@ -477,9 +769,6 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
   const grossProfitabilityStyle = grossProfitability
     ? getProfitabilityStyle(grossProfitability.gananciaBruta)
     : null;
-  const categoriaSelectValue = categoriaOtroActiva
-    ? OTHER_OPTION
-    : getSelectValue(form.categoria, CATEGORY_OPTIONS);
   const unidadSelectValue = unidadOtroActiva
     ? OTHER_OPTION
     : getUnitSelectValue(form.unidad);
@@ -492,6 +781,10 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
             grid-template-columns: repeat(2, minmax(0, 1fr));
           }
 
+          .inventory-product-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+
           .inventory-valuation-grid {
             grid-template-columns: repeat(3, minmax(0, 1fr));
           }
@@ -500,7 +793,13 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
             grid-column: 1 / -1;
           }
 
+          .inventory-catalog-item > :first-child {
+            min-width: 0;
+            overflow-wrap: anywhere;
+          }
+
           @media (max-width: 1100px) {
+            .inventory-product-grid,
             .inventory-valuation-grid {
               grid-template-columns: repeat(2, minmax(0, 1fr));
             }
@@ -512,6 +811,7 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
 
           @media (max-width: 640px) {
             .inventory-basic-grid,
+            .inventory-product-grid,
             .inventory-valuation-grid {
               grid-template-columns: minmax(0, 1fr);
             }
@@ -522,6 +822,19 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
             }
 
             .inventory-form-submit {
+              width: 100%;
+            }
+
+            .inventory-catalog-item {
+              align-items: flex-start !important;
+              flex-direction: column;
+            }
+
+            .inventory-catalog-item-actions {
+              width: 100%;
+            }
+
+            .inventory-catalog-manage-button {
               width: 100%;
             }
           }
@@ -538,10 +851,63 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
         </div>
       </div>
 
+      {inventorySettings.alertasStockBajo && (
+        <p style={styles.stockNotice} role="status">
+          {lowStockCount === 0
+            ? "No hay productos con stock bajo."
+            : `${lowStockCount} producto${lowStockCount === 1 ? "" : "s"} requiere${lowStockCount === 1 ? "" : "n"} atención por stock bajo.`}
+        </p>
+      )}
+
       {!userId && (
         <p role="alert" style={styles.errorText}>Debes iniciar sesión para ver inventario.</p>
       )}
 
+      {userId && !readOnly && (
+        <div className="erp-panel" style={styles.catalogToolbar}>
+          <div style={styles.catalogToolbarText}>
+            <strong>Catálogo de clasificación</strong>
+            <span>
+              {areas.length} áreas · {categories.length} categorías
+            </span>
+          </div>
+          <button
+            type="button"
+            className="inventory-catalog-manage-button"
+            style={styles.secondaryButton}
+            onClick={() => setCatalogDialogOpen(true)}
+          >
+            Administrar áreas y categorías
+          </button>
+        </div>
+      )}
+
+      {readOnly && (
+        <p style={styles.readOnlyNotice} role="status">
+          Puedes buscar, filtrar y consultar el detalle. Las operaciones de
+          escritura están bloqueadas en este modo.
+        </p>
+      )}
+
+      <ResponsiveDialog
+        open={catalogDialogOpen}
+        onClose={() => setCatalogDialogOpen(false)}
+        eyebrow="Inventario"
+        title="Administrar áreas y categorías"
+        description="Crea y mantiene el catálogo sin ocupar espacio permanente en Inventario."
+        size="large"
+      >
+        <InventoryCatalogManager
+          areas={areas}
+          businessId={userId}
+          categories={categories}
+          loadErrors={catalogLoadErrors}
+          loading={catalogIsLoading}
+          onRetry={() => setCatalogRetrySignal((value) => value + 1)}
+        />
+      </ResponsiveDialog>
+
+      {!readOnly && (
       <form className="erp-panel" onSubmit={handleSubmit} style={styles.formCard}>
         <div style={styles.formHeader}>
           <div>
@@ -563,23 +929,13 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
             </div>
 
             <div className="inventory-basic-grid" style={styles.formGrid}>
-              <label className="inventory-form-field--full" style={styles.field}>
-                <span style={styles.label}>Nombre</span>
-                <input
-                  name="nombre"
-                  value={form.nombre}
-                  onChange={handleChange}
-                  placeholder="Escribe el nombre del producto, servicio o actividad"
-                  style={styles.input}
-                />
-              </label>
-
               <label style={styles.field}>
                 <span style={styles.label}>Tipo de ítem</span>
                 <select
                   name="tipoItem"
                   value={form.tipoItem}
                   onChange={handleChange}
+                  required
                   style={styles.input}
                 >
                   <option value="" disabled>
@@ -592,36 +948,82 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
               </label>
 
               <label style={styles.field}>
-                <span style={styles.label}>Categoría</span>
+                <span style={styles.label}>Área</span>
                 <select
-                  name="categoria"
-                  value={categoriaSelectValue}
-                  onChange={handleCategoriaChange}
+                  name="areaId"
+                  value={form.areaId}
+                  onChange={handleAreaChange}
+                  required
                   style={styles.input}
                 >
                   <option value="" disabled>
-                    Selecciona una categoría
+                    Selecciona un área
                   </option>
-                  {CATEGORY_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
+                  {activeAreas.map((area) => (
+                    <option key={area.id} value={area.id}>
+                      {area.nombre}
                     </option>
                   ))}
-                  <option value={OTHER_OPTION}>Otro</option>
                 </select>
               </label>
 
-              {categoriaSelectValue === OTHER_OPTION && (
-                <label className="inventory-form-field--full" style={styles.field}>
-                  <span style={styles.label}>Categoría personalizada</span>
+              <label style={styles.field}>
+                <span style={styles.label}>Categoría</span>
+                <select
+                  name="categoriaId"
+                  value={
+                    customCategoryActive
+                      ? OTHER_CATEGORY_OPTION
+                      : form.categoriaId
+                  }
+                  onChange={handleCategoryChange}
+                  disabled={!form.areaId}
+                  required
+                  style={styles.input}
+                >
+                  <option value="" disabled>
+                    {form.areaId
+                      ? "Selecciona una categoría"
+                      : "Selecciona primero un área"}
+                  </option>
+                  {formCategories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.nombre}
+                    </option>
+                  ))}
+                  <option value={OTHER_CATEGORY_OPTION}>Otra categoría…</option>
+                </select>
+              </label>
+
+              {customCategoryActive && (
+                <label style={styles.field}>
+                  <span style={styles.label}>Nueva categoría</span>
                   <input
-                    value={categoriaPersonalizada}
-                    onChange={handleCategoriaPersonalizadaChange}
-                    placeholder="Escribe una categoría personalizada"
+                    value={customCategoryName}
+                    onChange={(event) => setCustomCategoryName(event.target.value)}
+                    required
+                    maxLength={80}
+                    placeholder="Escribe el nombre real"
                     style={styles.input}
                   />
+                  <span style={styles.fieldHint}>
+                    Se creará dentro del Área seleccionada y quedará disponible
+                    para usos posteriores.
+                  </span>
                 </label>
               )}
+
+              <label className="inventory-form-field--full" style={styles.field}>
+                <span style={styles.label}>Nombre</span>
+                <input
+                  name="nombre"
+                  value={form.nombre}
+                  onChange={handleChange}
+                  required
+                  placeholder="Escribe el nombre del producto, servicio o actividad"
+                  style={styles.input}
+                />
+              </label>
 
               <label style={styles.field}>
                 <span style={styles.label}>Unidad</span>
@@ -629,6 +1031,7 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
                   name="unidad"
                   value={unidadSelectValue}
                   onChange={handleUnidadChange}
+                  required
                   style={styles.input}
                 >
                   <option value="" disabled>
@@ -643,19 +1046,16 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
                 </select>
               </label>
 
-              <label style={styles.field}>
-                <span style={styles.labelRow}>
-                  <span style={styles.label}>Código/SKU</span>
-                  <span style={styles.fieldMeta}>(opcional)</span>
-                </span>
-                <input
-                  name="sku"
-                  value={form.sku}
-                  onChange={handleChange}
-                  placeholder="Escribe un código interno o SKU"
-                  style={styles.input}
-                />
-              </label>
+              <div style={styles.codeField} role="status" aria-live="polite">
+                <span style={styles.label}>Código interno</span>
+                <strong style={styles.codeValue}>
+                  {editingId
+                    ? items.find((item) => item.id === editingId)?.codigoInterno ||
+                      items.find((item) => item.id === editingId)?.sku ||
+                      "Registro heredado sin código"
+                    : "Se asignará al guardar"}
+                </strong>
+              </div>
 
               {unidadSelectValue === OTHER_OPTION && (
                 <label className="inventory-form-field--full" style={styles.field}>
@@ -663,6 +1063,7 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
                   <input
                     value={unidadPersonalizada}
                     onChange={handleUnidadPersonalizadaChange}
+                    required
                     placeholder="Escribe una unidad personalizada"
                     style={styles.input}
                   />
@@ -686,8 +1087,83 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
                   </select>
                 </label>
               )}
+
+              {editingId && (!form.areaId || !form.categoriaId) && (
+                <p className="inventory-form-field--full" style={styles.legacyNotice}>
+                  Este registro heredado conserva su categoría anterior. Selecciona un
+                  área y una categoría activas para incorporarlo al nuevo modelo.
+                </p>
+              )}
             </div>
           </section>
+
+          {form.tipoItem === "producto" && (
+            <section style={styles.formSection}>
+              <div style={styles.sectionHeader}>
+                <h4 style={styles.sectionTitle}>Datos del producto</h4>
+              </div>
+              <div className="inventory-product-grid" style={styles.formGrid}>
+                <label style={styles.field}>
+                  <span style={styles.label}>Marca</span>
+                  <input
+                    name="marca"
+                    value={form.marca}
+                    onChange={handleChange}
+                    required
+                    placeholder="Ej.: Hikvision"
+                    style={styles.input}
+                  />
+                </label>
+                <label style={styles.field}>
+                  <span style={styles.label}>Modelo</span>
+                  <input
+                    name="modelo"
+                    value={form.modelo}
+                    onChange={handleChange}
+                    required
+                    placeholder="Ej.: DS-2CD1043G2"
+                    style={styles.input}
+                  />
+                </label>
+                <label style={styles.field}>
+                  <span style={styles.label}>Código de barras</span>
+                  <input
+                    name="codigoBarras"
+                    value={form.codigoBarras}
+                    onChange={handleChange}
+                    placeholder="Opcional"
+                    style={styles.input}
+                  />
+                </label>
+                <label style={styles.field}>
+                  <span style={styles.label}>Stock actual</span>
+                  <input
+                    name="stock"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={form.stock}
+                    onChange={handleChange}
+                    required
+                    style={styles.input}
+                  />
+                </label>
+                <label style={styles.field}>
+                  <span style={styles.label}>Stock mínimo</span>
+                  <input
+                    name="stockMinimo"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={form.stockMinimo}
+                    onChange={handleChange}
+                    required
+                    style={styles.input}
+                  />
+                </label>
+              </div>
+            </section>
+          )}
 
           <section style={styles.formSection}>
             <div style={styles.sectionHeader}>
@@ -706,6 +1182,7 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
                   min="0"
                   value={form.costoBase}
                   onChange={handleChange}
+                  required
                   placeholder="Escribe el costo base en CLP"
                   style={styles.input}
                 />
@@ -718,6 +1195,7 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
                   type="number"
                   value={form.margenDeseado}
                   onChange={handleChange}
+                  required
                   placeholder="Escribe el porcentaje de margen"
                   style={styles.input}
                 />
@@ -792,7 +1270,7 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
           type="submit"
           className="inventory-form-submit"
           style={styles.primaryButton}
-          disabled={saving}
+          disabled={saving || !catalogReady}
         >
           {saving
             ? "Guardando..."
@@ -801,6 +1279,7 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
               : "Guardar ítem"}
         </button>
       </form>
+      )}
 
       <div className="erp-panel" style={styles.listCard}>
         <div className="erp-filters" style={styles.filters}>
@@ -810,7 +1289,7 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
               className="erp-control"
               value={busqueda}
               onChange={(event) => setBusqueda(event.target.value)}
-              placeholder="Nombre, categoría, descripción o SKU"
+              placeholder="Código, nombre, marca, modelo, área o categoría"
               style={styles.searchInput}
             />
           </label>
@@ -826,6 +1305,44 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
               <option value="producto">Producto</option>
               <option value="servicio">Servicio</option>
               <option value="actividad">Actividad</option>
+            </select>
+          </label>
+          <label className="erp-field">
+            <span>Área</span>
+            <select
+              className="erp-control"
+              value={areaFiltro}
+              onChange={handleAreaFilterChange}
+              style={styles.filterSelect}
+            >
+              <option value="todas">Todas las áreas</option>
+              <option value="pendientes">Área pendiente (heredados)</option>
+              {areas.map((area) => (
+                <option key={area.id} value={area.id}>
+                  {area.nombre}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="erp-field">
+            <span>Categoría</span>
+            <select
+              className="erp-control"
+              value={categoriaFiltro}
+              onChange={(event) => setCategoriaFiltro(event.target.value)}
+              disabled={areaFiltro === "todas" || areaFiltro === "pendientes"}
+              style={styles.filterSelect}
+            >
+              <option value="todas">
+                {areaFiltro === "todas" || areaFiltro === "pendientes"
+                  ? "Selecciona un área"
+                  : "Todas las categorías"}
+              </option>
+              {filterCategories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.nombre}
+                </option>
+              ))}
             </select>
           </label>
           <label className="erp-field">
@@ -860,13 +1377,13 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
             <table className="erp-table" style={styles.table}>
               <thead>
                 <tr>
-                  <th style={styles.th}>Ítem</th>
+                  <th style={styles.th}>Código</th>
                   <th style={styles.th}>Tipo</th>
+                  <th style={styles.th}>Área</th>
                   <th style={styles.th}>Categoría</th>
-                  <th style={styles.th}>Unidad</th>
-                  <th style={styles.th}>Costo base</th>
-                  <th style={styles.th}>Margen</th>
-                  <th style={styles.th}>Precio interno</th>
+                  <th style={styles.th}>Ítem</th>
+                  <th style={styles.th}>Marca / modelo</th>
+                  <th style={styles.th}>Stock</th>
                   <th style={styles.th}>Estado</th>
                   <th style={styles.th}>Acciones</th>
                 </tr>
@@ -874,23 +1391,32 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
               <tbody>
                 {filteredItems.map((item) => (
                   <tr key={item.id}>
+                    <td style={styles.tdCode}>
+                      {item.codigoInterno || item.sku || "—"}
+                    </td>
+                    <td style={styles.tdMuted}>{tipoLabels[item.tipoItem] || item.tipoItem}</td>
+                    <td style={styles.tdMuted}>
+                      {getInventoryAreaLabel(item, areas)}
+                    </td>
+                    <td style={styles.tdMuted}>
+                      {getInventoryCategoryLabel(item, categories)}
+                    </td>
                     <td style={styles.td}>
                       <strong>{item.nombre}</strong>
-                      <span style={styles.itemMeta}>
-                        {item.sku ? `SKU: ${item.sku}` : "Sin SKU"}
-                      </span>
                       {item.descripcion && (
                         <span style={styles.itemDescription}>
                           {item.descripcion}
                         </span>
                       )}
                     </td>
-                    <td style={styles.tdMuted}>{tipoLabels[item.tipoItem] || item.tipoItem}</td>
-                    <td style={styles.tdMuted}>{item.categoria || "-"}</td>
-                    <td style={styles.tdMuted}>{item.unidad}</td>
-                    <td style={styles.tdMuted}>{formatCLP(item.costoBase)}</td>
-                    <td style={styles.tdMuted}>{Number(item.margenDeseado || 0)}%</td>
-                    <td style={styles.tdPrice}>{formatCLP(item.precioInterno)}</td>
+                    <td style={styles.tdMuted}>
+                      {item.tipoItem === "producto"
+                        ? [item.marca, item.modelo].filter(Boolean).join(" / ") || "—"
+                        : "No aplica"}
+                    </td>
+                    <td style={styles.tdMuted}>
+                      {item.tipoItem === "producto" ? Number(item.stock || 0) : "No aplica"}
+                    </td>
                     <td style={styles.td}>
                       <span
                         style={{
@@ -908,11 +1434,11 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
                     <td style={styles.td}>
                       <InventoryItemActions
                         item={item}
+                        readOnly={readOnly}
                         onView={() => setDetailItem(item)}
                         onEdit={handleEdit}
                         onDeactivate={handleDeactivate}
                         onReactivate={handleReactivate}
-                        onDelete={handleDelete}
                       />
                     </td>
                   </tr>
@@ -920,7 +1446,12 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
               </tbody>
             </table>
           </div>
-          <InventoryCards items={filteredItems} onView={setDetailItem} />
+          <InventoryCards
+            items={filteredItems}
+            areas={areas}
+            categories={categories}
+            onView={setDetailItem}
+          />
           </>
         )}
       </div>
@@ -930,11 +1461,16 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
         onClose={() => setDetailItem(null)}
         eyebrow="Inventario"
         title={detailItem?.nombre || "Detalle de ítem"}
-        description={detailItem?.sku ? `SKU: ${detailItem.sku}` : "Sin SKU registrado"}
+        description={
+          detailItem?.codigoInterno ||
+          detailItem?.sku ||
+          "Registro heredado sin código interno"
+        }
         footer={detailItem ? (
           <InventoryItemActions
             item={detailItem}
             hideView
+            readOnly={readOnly}
             onEdit={(item) => {
               setDetailItem(null);
               handleEdit(item);
@@ -946,10 +1482,6 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
             onReactivate={(item) => {
               setDetailItem(null);
               handleReactivate(item);
-            }}
-            onDelete={(item) => {
-              setDetailItem(null);
-              handleDelete(item);
             }}
           />
         ) : null}
@@ -964,8 +1496,16 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
                 </strong>
               </div>
               <div style={styles.detailField}>
-                <span style={styles.detailLabel}>Categoria</span>
-                <strong style={styles.detailValue}>{detailItem.categoria || "-"}</strong>
+                <span style={styles.detailLabel}>Área</span>
+                <strong style={styles.detailValue}>
+                  {getInventoryAreaLabel(detailItem, areas)}
+                </strong>
+              </div>
+              <div style={styles.detailField}>
+                <span style={styles.detailLabel}>Categoría</span>
+                <strong style={styles.detailValue}>
+                  {getInventoryCategoryLabel(detailItem, categories)}
+                </strong>
               </div>
               <div style={styles.detailField}>
                 <span style={styles.detailLabel}>Unidad</span>
@@ -1005,9 +1545,35 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
                 </span>
               </div>
               <div style={styles.detailField}>
-                <span style={styles.detailLabel}>SKU</span>
-                <strong style={styles.detailValue}>{detailItem.sku || "-"}</strong>
+                <span style={styles.detailLabel}>Código interno</span>
+                <strong style={styles.detailCode}>
+                  {detailItem.codigoInterno || detailItem.sku || "—"}
+                </strong>
               </div>
+              {detailItem.tipoItem === "producto" && (
+                <>
+                  <div style={styles.detailField}>
+                    <span style={styles.detailLabel}>Marca / modelo</span>
+                    <strong style={styles.detailValue}>
+                      {[detailItem.marca, detailItem.modelo]
+                        .filter(Boolean)
+                        .join(" / ") || "—"}
+                    </strong>
+                  </div>
+                  <div style={styles.detailField}>
+                    <span style={styles.detailLabel}>Stock actual / mínimo</span>
+                    <strong style={styles.detailValue}>
+                      {Number(detailItem.stock || 0)} / {Number(detailItem.stockMinimo || 0)}
+                    </strong>
+                  </div>
+                  <div style={styles.detailField}>
+                    <span style={styles.detailLabel}>Código de barras</span>
+                    <strong style={styles.detailCode}>
+                      {detailItem.codigoBarras || "—"}
+                    </strong>
+                  </div>
+                </>
+              )}
               <div style={styles.detailField}>
                 <span style={styles.detailLabel}>Creado</span>
                 <strong style={styles.detailValue}>
@@ -1035,7 +1601,7 @@ function InventoryManager({ userId, refreshSignal = 0 }) {
   );
 }
 
-function InventoryCards({ items, onView }) {
+function InventoryCards({ items, areas, categories, onView }) {
   return (
     <div className="erp-card-list erp-mobile-only" aria-label="Ítems de inventario">
       {items.map((item) => (
@@ -1048,7 +1614,7 @@ function InventoryCards({ items, onView }) {
             <div style={styles.inventoryCardHeading}>
               <h3 className="erp-record-card__title">{item.nombre || "Ítem sin nombre"}</h3>
               <p className="erp-record-card__subtitle">
-                {item.sku ? `SKU: ${item.sku}` : "Sin SKU"}
+                {item.codigoInterno || item.sku || "Registro heredado sin código"}
               </p>
             </div>
             <InventoryStatusBadge item={item} />
@@ -1059,13 +1625,31 @@ function InventoryCards({ items, onView }) {
               <dd className="erp-meta__value">{tipoLabels[item.tipoItem] || item.tipoItem || "-"}</dd>
             </div>
             <div className="erp-meta">
+              <dt className="erp-meta__label">Área</dt>
+              <dd className="erp-meta__value">
+                {getInventoryAreaLabel(item, areas)}
+              </dd>
+            </div>
+            <div className="erp-meta">
               <dt className="erp-meta__label">Categoría</dt>
-              <dd className="erp-meta__value">{item.categoria || "-"}</dd>
+              <dd className="erp-meta__value">
+                {getInventoryCategoryLabel(item, categories)}
+              </dd>
             </div>
-            <div className="erp-meta erp-meta--wide">
-              <dt className="erp-meta__label">Precio interno</dt>
-              <dd className="erp-meta__value"><strong>{formatCLP(item.precioInterno)}</strong></dd>
-            </div>
+            {item.tipoItem === "producto" && (
+              <>
+                <div className="erp-meta">
+                  <dt className="erp-meta__label">Marca / modelo</dt>
+                  <dd className="erp-meta__value">
+                    {[item.marca, item.modelo].filter(Boolean).join(" / ") || "—"}
+                  </dd>
+                </div>
+                <div className="erp-meta">
+                  <dt className="erp-meta__label">Stock</dt>
+                  <dd className="erp-meta__value">{Number(item.stock || 0)}</dd>
+                </div>
+              </>
+            )}
           </dl>
           <button
             type="button"
@@ -1101,11 +1685,11 @@ function InventoryStatusBadge({ item }) {
 function InventoryItemActions({
   item,
   hideView = false,
+  readOnly = false,
   onView,
   onEdit,
   onDeactivate,
   onReactivate,
-  onDelete,
 }) {
   const estado = item.estado || "activo";
 
@@ -1116,29 +1700,20 @@ function InventoryItemActions({
           Ver detalle
         </button>
       )}
-      {estado !== "eliminado" ? (
-        <>
+      {!readOnly && estado !== "eliminado" && (
           <button type="button" style={styles.smallButton} onClick={() => onEdit(item)}>
             Editar
           </button>
-          {estado === "activo" ? (
-            <button type="button" style={styles.warningButton} onClick={() => onDeactivate(item)}>
-              Desactivar
-            </button>
-          ) : (
-            <button type="button" style={styles.successButton} onClick={() => onReactivate(item)}>
-              Reactivar
-            </button>
-          )}
-          <button type="button" style={styles.deleteButton} onClick={() => onDelete(item)}>
-            Eliminar
-          </button>
-        </>
+      )}
+      {!readOnly && (estado === "activo" ? (
+        <button type="button" style={styles.warningButton} onClick={() => onDeactivate(item)}>
+          Desactivar
+        </button>
       ) : (
         <button type="button" style={styles.successButton} onClick={() => onReactivate(item)}>
-          Restaurar
+          Reactivar
         </button>
-      )}
+      ))}
     </div>
   );
 }
@@ -1168,6 +1743,40 @@ const styles = {
     margin: 0,
     color: "#64748b",
     lineHeight: 1.5,
+  },
+  catalogToolbar: {
+    alignItems: "center",
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "12px",
+    justifyContent: "space-between",
+    padding: "12px 14px",
+  },
+  catalogToolbarText: {
+    color: "#334155",
+    display: "grid",
+    fontSize: "13px",
+    gap: "2px",
+  },
+  readOnlyNotice: {
+    background: "#fffbeb",
+    border: "1px solid #fde68a",
+    borderRadius: "4px",
+    color: "#78350f",
+    fontSize: "13px",
+    lineHeight: 1.45,
+    margin: 0,
+    padding: "10px 12px",
+  },
+  stockNotice: {
+    background: "#f0fdfa",
+    border: "1px solid #99f6e4",
+    borderRadius: "4px",
+    color: "#115e59",
+    fontSize: "13px",
+    lineHeight: 1.45,
+    margin: 0,
+    padding: "10px 12px",
   },
   formCard: {
     background: "#ffffff",
@@ -1242,6 +1851,36 @@ const styles = {
     color: "#64748b",
     fontSize: "13px",
     fontWeight: 600,
+  },
+  fieldHint: {
+    color: "#64748b",
+    fontSize: "12px",
+    lineHeight: 1.4,
+  },
+  codeField: {
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
+    borderRadius: "4px",
+    display: "grid",
+    gap: "6px",
+    minHeight: "40px",
+    padding: "9px 11px",
+  },
+  codeValue: {
+    color: "#0f172a",
+    fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
+    fontSize: "13px",
+    overflowWrap: "anywhere",
+  },
+  legacyNotice: {
+    background: "#fffbeb",
+    border: "1px solid #fde68a",
+    borderRadius: "4px",
+    color: "#78350f",
+    fontSize: "13px",
+    lineHeight: 1.45,
+    margin: 0,
+    padding: "9px 11px",
   },
   input: {
     boxSizing: "border-box",
@@ -1403,7 +2042,7 @@ const styles = {
     width: "100%",
     borderCollapse: "collapse",
     fontSize: "13px",
-    minWidth: "1120px",
+    minWidth: "1160px",
   },
   th: {
     background: "#f9fafb",
@@ -1436,6 +2075,16 @@ const styles = {
     fontWeight: 800,
     padding: "7px 10px",
     verticalAlign: "middle",
+  },
+  tdCode: {
+    borderBottom: "1px solid #eef2f7",
+    color: "#0f172a",
+    fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
+    fontSize: "13px",
+    fontWeight: 700,
+    padding: "7px 10px",
+    verticalAlign: "middle",
+    whiteSpace: "nowrap",
   },
   itemMeta: {
     color: "#475569",
@@ -1509,17 +2158,6 @@ const styles = {
     borderRadius: "4px",
     background: "#f7fffd",
     color: "#0f766e",
-    cursor: "pointer",
-    fontSize: "13px",
-    fontWeight: 600,
-    minHeight: "36px",
-    padding: "6px 8px",
-  },
-  deleteButton: {
-    border: "1px solid #fee2e2",
-    borderRadius: "4px",
-    background: "#fffafa",
-    color: "#991b1b",
     cursor: "pointer",
     fontSize: "13px",
     fontWeight: 600,
@@ -1600,6 +2238,14 @@ const styles = {
     display: "block",
     fontSize: "13px",
     fontWeight: 700,
+  },
+  detailCode: {
+    color: "#111827",
+    display: "block",
+    fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
+    fontSize: "13px",
+    fontWeight: 700,
+    overflowWrap: "anywhere",
   },
   detailPrice: {
     color: "#0f172a",

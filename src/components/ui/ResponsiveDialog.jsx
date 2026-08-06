@@ -12,12 +12,16 @@ const FOCUSABLE_SELECTOR = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(", ");
 
+const openDialogStack = [];
+
 function ResponsiveDialog({
   children,
   className = "",
   description,
   eyebrow,
   footer,
+  initialFocusRef,
+  layerClassName = "",
   onClose,
   open,
   portal = true,
@@ -31,6 +35,7 @@ function ResponsiveDialog({
   const closeButtonRef = React.useRef(null);
   const onCloseRef = React.useRef(onClose);
   const restoreFocusRef = React.useRef(restoreFocus);
+  const dialogStackIdRef = React.useRef(Symbol("responsive-dialog"));
 
   onCloseRef.current = onClose;
   restoreFocusRef.current = restoreFocus;
@@ -43,17 +48,22 @@ function ResponsiveDialog({
   React.useEffect(() => {
     if (!open) return undefined;
 
+    const dialogStackId = dialogStackIdRef.current;
+    openDialogStack.push(dialogStackId);
     const returnFocusTarget = document.activeElement;
     const originalBodyOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
     const focusFrame = window.requestAnimationFrame(() => {
-      closeButtonRef.current?.focus();
+      (initialFocusRef?.current || closeButtonRef.current)?.focus();
     });
 
     const handleKeyDown = (event) => {
+      if (openDialogStack.at(-1) !== dialogStackId) return;
+
       if (event.key === "Escape") {
         event.preventDefault();
+        event.stopPropagation();
         onCloseRef.current?.();
         return;
       }
@@ -88,17 +98,23 @@ function ResponsiveDialog({
       window.cancelAnimationFrame(focusFrame);
       document.body.style.overflow = originalBodyOverflow;
       document.removeEventListener("keydown", handleKeyDown);
+      const stackIndex = openDialogStack.lastIndexOf(dialogStackId);
+      if (stackIndex >= 0) openDialogStack.splice(stackIndex, 1);
 
       if (restoreFocusRef.current && returnFocusTarget instanceof HTMLElement) {
         window.requestAnimationFrame(() => returnFocusTarget.focus());
       }
     };
-  }, [open]);
+  }, [initialFocusRef, open]);
 
   if (!open) return null;
 
   const dialog = (
-    <div className="responsive-dialog-layer">
+    <div
+      className={["responsive-dialog-layer", layerClassName]
+        .filter(Boolean)
+        .join(" ")}
+    >
       <div
         className="responsive-dialog-overlay"
         aria-hidden="true"
