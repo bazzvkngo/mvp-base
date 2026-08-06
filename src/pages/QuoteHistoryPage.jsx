@@ -749,6 +749,11 @@ function QuoteDetail({ quote, companyProfile, onOpenEmail }) {
           <p style={styles.helpText}>
             Vista formal para revisión e impresión desde el historial.
           </p>
+          {quote.clienteHistoricoNoVinculado && (
+            <p className="quote-legacy-client-note">
+              Cliente histórico no vinculado a un registro actual.
+            </p>
+          )}
           <EmailStatusLine quote={quote} />
         </div>
         <div style={styles.detailButtonGroup}>

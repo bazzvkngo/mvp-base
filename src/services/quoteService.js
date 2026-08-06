@@ -18,7 +18,7 @@ import "../firebase/firebaseConfig";
 import {
   adaptStoredQuote,
   buildClientSuggestions,
-  buildQuotePayload,
+  buildQuoteMutationPayload,
   DRAFT_QUOTE_NUMBER_LABEL,
   getQuoteDisplayNumber,
 } from "../domain/quoteModel.mjs";
@@ -40,7 +40,7 @@ function normalizeQuoteCallableError(error, functionName, fallbackMessage) {
   const code = String(error?.code || "");
   const message = String(error?.message || "");
   if (
-    code === "functions/not-found" ||
+    (code === "functions/not-found" && /^(not[- ]found|internal)$/i.test(message)) ||
     (code === "functions/internal" && /^internal$/i.test(message))
   ) {
     return new Error(
@@ -49,8 +49,14 @@ function normalizeQuoteCallableError(error, functionName, fallbackMessage) {
         : `La Function ${functionName} no está disponible en Firebase real. Debe desplegarse antes de usar esta acción.`
     );
   }
+  if (["functions/unavailable", "functions/deadline-exceeded"].includes(code)) {
+    return new Error("No pudimos conectar con el servicio. Inténtalo nuevamente.");
+  }
+  if (code === "functions/internal") return new Error(fallbackMessage);
   return new Error(message || fallbackMessage);
 }
+
+export {buildQuoteMutationPayload};
 
 function quotesCollectionRef(uid) {
   return collection(db, ...quotesCollectionPath(uid));
@@ -96,9 +102,12 @@ export async function createQuote(uid, data, { requestId } = {}) {
   assertCloudFunctionAllowed("crear cotizaciones");
   if (!uid) throw new Error("Usuario no autenticado.");
   const stableRequestId = requestId || createQuoteRequestId();
-  const payload = buildQuotePayload(uid, data, {
+  const payload = buildQuoteMutationPayload(uid, data, {
     issueDate: data?.fecha || getChileDateInputValue(new Date()),
   });
+  if (!payload.clienteId) {
+    throw new Error("Selecciona un cliente activo registrado.");
+  }
   try {
     const callable = httpsCallable(
       getFirebaseFunctions(FUNCTIONS_REGION),
@@ -145,7 +154,7 @@ export async function updateQuote(uid, quoteId, data) {
   assertCloudFunctionAllowed("editar cotizaciones");
   if (!uid) throw new Error("Usuario no autenticado.");
   if (!quoteId) throw new Error("quoteId es requerido.");
-  const payload = buildQuotePayload(uid, {
+  const payload = buildQuoteMutationPayload(uid, {
     ...data,
     fecha: data?.fecha || getChileDateInputValue(new Date()),
   });

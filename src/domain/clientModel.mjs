@@ -233,3 +233,15 @@ export function matchesClientSearch(client, search) {
   ).replace(/[^a-z0-9k]/g, "");
   return searchable.includes(query);
 }
+
+export function filterSelectableClients(clients, businessId, search = "") {
+  if (!Array.isArray(clients) || typeof businessId !== "string") return [];
+  const normalizedBusinessId = businessId.trim();
+  if (!normalizedBusinessId) return [];
+  return clients.filter(
+    (client) =>
+      client?.negocioId === normalizedBusinessId &&
+      client?.estado === "activo" &&
+      matchesClientSearch(client, search)
+  );
+}

@@ -373,23 +373,67 @@ export function normalizeCompanySnapshot(value = {}) {
 export function normalizeClientSnapshot(raw = {}) {
   const hasNestedClient = raw?.cliente && typeof raw.cliente === "object";
   const source = hasNestedClient ? raw.cliente : {};
-  return {
-    clienteId: safeQuoteText(source.clienteId || raw.clienteId, 160),
-    empresa: safeQuoteText(
+  const nombreRazonSocial = safeQuoteText(
+    source.nombreRazonSocial ||
       source.empresa ||
-        source.razonSocial ||
-        raw.clienteNombre ||
-        (!hasNestedClient && typeof raw.empresa === "string" ? raw.empresa : ""),
-      240
+      source.razonSocial ||
+      raw.clienteNombre ||
+      (!hasNestedClient && typeof raw.empresa === "string" ? raw.empresa : ""),
+    240
+  );
+  const personaContacto = safeQuoteText(
+    source.personaContacto || source.contacto || raw.clienteContacto,
+    200
+  );
+  const comunaNombre = safeQuoteText(
+    source.comunaNombre || source.ciudad || raw.clienteCiudad,
+    160
+  );
+  return {
+    clienteId: safeQuoteText(
+      source.clienteId || raw.clienteId || source.clientId || raw.clientId,
+      160
     ),
+    tipoCliente: safeQuoteText(source.tipoCliente, 20),
     rut: safeQuoteText(source.rut || raw.clienteRut, 40),
-    contacto: safeQuoteText(source.contacto || raw.clienteContacto, 200),
-    direccion: safeQuoteText(source.direccion || raw.clienteDireccion, 300),
-    ciudad: safeQuoteText(source.ciudad || raw.clienteCiudad, 160),
-    telefono: safeQuoteText(source.telefono || raw.clienteTelefono, 100),
+    nombreRazonSocial,
+    giro: safeQuoteText(source.giro, 240),
     email: safeQuoteText(source.email || raw.clienteEmail, 240),
-    proyecto: safeQuoteText(source.proyecto || raw.proyectoNombre, 300),
+    telefono: safeQuoteText(source.telefono || raw.clienteTelefono, 100),
+    direccion: safeQuoteText(source.direccion || raw.clienteDireccion, 300),
+    regionCodigo: safeQuoteText(source.regionCodigo, 20),
+    regionNombre: safeQuoteText(source.regionNombre, 160),
+    comunaCodigo: safeQuoteText(source.comunaCodigo, 20),
+    comunaNombre,
+    personaContacto,
+    empresa: nombreRazonSocial,
+    contacto: personaContacto,
+    ciudad: comunaNombre,
+    proyecto: safeQuoteText(raw.proyectoNombre || source.proyecto, 300),
   };
+}
+
+export function resolveQuoteClientSelectionSnapshot(
+  selectedClient,
+  {originalClienteId = "", originalClientSnapshot = null} = {}
+) {
+  const selectedSnapshot = normalizeClientSnapshot({cliente: selectedClient});
+  const normalizedOriginalId = safeQuoteText(originalClienteId, 160);
+
+  if (
+    normalizedOriginalId &&
+    selectedSnapshot.clienteId === normalizedOriginalId &&
+    originalClientSnapshot
+  ) {
+    return normalizeClientSnapshot({
+      cliente: {
+        ...originalClientSnapshot,
+        clienteId: normalizedOriginalId,
+      },
+    });
+  }
+
+  return selectedSnapshot;
 }
 
 export function normalizeValidityDays(value, fallback = DEFAULT_QUOTE_VALIDITY_DAYS) {
@@ -502,10 +546,32 @@ export function buildQuotePayload(uid, raw = {}, { issueDate } = {}) {
   };
 }
 
+export function buildQuoteMutationPayload(uid, raw = {}, options = {}) {
+  const payload = buildQuotePayload(uid, raw, options);
+  if (!payload.clienteId) return payload;
+
+  const mutationPayload = {...payload};
+  [
+    "cliente",
+    "clienteNombre",
+    "clienteRut",
+    "clienteContacto",
+    "clienteEmail",
+    "clienteTelefono",
+    "clienteDireccion",
+    "clienteCiudad",
+  ].forEach((field) => delete mutationPayload[field]);
+  return mutationPayload;
+}
+
 export function adaptStoredQuote(raw = {}) {
+  const { clientId: legacyClientId, ...stored } = raw;
   const isCurrent = Number(raw.modeloCotizacionVersion) >= QUOTE_MODEL_VERSION;
   const company = normalizeCompanySnapshot(raw.empresa || {});
-  const client = normalizeClientSnapshot(raw);
+  const client = normalizeClientSnapshot({
+    ...raw,
+    clienteId: raw.clienteId || legacyClientId,
+  });
   const items = normalizeQuoteItems(raw.items, { strict: false });
   const legacyTaxUndefined = !isCurrent && !hasOwn(raw, "afectaIva");
   const afectaIva = legacyTaxUndefined ? false : raw.afectaIva !== false;
@@ -519,7 +585,7 @@ export function adaptStoredQuote(raw = {}) {
   const storedTotal = Number(raw.total);
 
   return {
-    ...raw,
+    ...stored,
     modeloCotizacionVersion: isCurrent
       ? Number(raw.modeloCotizacionVersion)
       : 1,
@@ -536,6 +602,9 @@ export function adaptStoredQuote(raw = {}) {
     legacyIvaNoDefinido: legacyTaxUndefined,
     empresa: company,
     cliente: client,
+    clienteId: client.clienteId,
+    clienteHistoricoNoVinculado:
+      !client.clienteId && Boolean(client.empresa || client.rut),
     clienteNombre: client.empresa,
     clienteRut: client.rut,
     clienteContacto: client.contacto,

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import AiAvailabilityStatus from "../components/ai/AiAvailabilityStatus";
 import { AI_MODELS } from "../config/aiModels";
@@ -9,12 +9,14 @@ import {
 import {
   calculateQuoteLineAmounts,
   DEFAULT_QUOTE_CONDITIONS,
+  resolveQuoteClientSelectionSnapshot,
   tryCalculateQuoteTotals,
   validateQuoteDraft,
 } from "../domain/quoteModel.mjs";
 import { getCategoriesForArea } from "../domain/inventoryCatalog.mjs";
 import { PRICING_STATUS } from "../domain/pricing";
 import useAiRateLimit from "../hooks/useAiRateLimit";
+import ClientSelector from "../features/clients/ClientSelector";
 import QuotePrintView from "../features/quotes/QuotePrintView";
 import SendQuoteEmailModal from "../features/quotes/SendQuoteEmailModal";
 import { suggestQuoteItems } from "../services/aiQuoteService";
@@ -28,7 +30,6 @@ import { isQuoteEmailSendable } from "../services/quoteEmailService";
 import {
   createQuote,
   createQuoteRequestId,
-  getQuoteClientSuggestions,
   getQuoteById,
   getQuoteDisplayNumber,
   updateQuote,
@@ -264,6 +265,8 @@ function buildInitialQuote() {
   return {
     numero: "",
     fecha: "",
+    clienteId: "",
+    cliente: null,
     clienteNombre: "",
     clienteRut: "",
     clienteContacto: "",
@@ -329,6 +332,8 @@ function buildQuoteFromSavedQuote(savedQuote = {}) {
       "",
     fecha: savedQuote.fecha || "",
     estado: savedQuote.estado || "borrador",
+    clienteId: savedQuote.clienteId || "",
+    cliente: savedQuote.cliente || null,
     clienteNombre: savedQuote.clienteNombre || "",
     clienteRut: savedQuote.clienteRut || "",
     clienteContacto: savedQuote.clienteContacto || "",
@@ -363,6 +368,11 @@ function NewQuotePage({ userId }) {
   const addedItemsRef = useRef(null);
   const previewRef = useRef(null);
   const createRequestIdRef = useRef("");
+  const originalLinkedClientRef = useRef({
+    clienteId: "",
+    snapshot: null,
+  });
+  const currentClienteIdRef = useRef("");
   const assistantDescriptionRef = useRef("");
   const dictationBaseTextRef = useRef("");
   const dictationFinalTextRef = useRef("");
@@ -414,11 +424,19 @@ function NewQuotePage({ userId }) {
     MANUAL_CATALOG_PAGE_SIZE
   );
   const [emailModalOpen, setEmailModalOpen] = useState(false);
-  const [clientSuggestions, setClientSuggestions] = useState([]);
+  const [clientAvailability, setClientAvailability] = useState({
+    error: "",
+    hasActiveClients: false,
+    loading: Boolean(userId),
+  });
   const [inventoryAreas, setInventoryAreas] = useState([]);
   const [inventoryCategories, setInventoryCategories] = useState([]);
   const [dirty, setDirty] = useState(false);
   const [pdfActionLoading, setPdfActionLoading] = useState(false);
+
+  useEffect(() => {
+    currentClienteIdRef.current = quote.clienteId;
+  }, [quote.clienteId]);
 
   useEffect(() => {
     if (!userId) {
@@ -488,9 +506,6 @@ function NewQuotePage({ userId }) {
 
   useEffect(() => {
     if (!userId) return undefined;
-    getQuoteClientSuggestions(userId)
-      .then(setClientSuggestions)
-      .catch((err) => console.warn("No se pudieron cargar clientes históricos.", err));
     const unsubscribeAreas = subscribeToInventoryAreas(
       userId,
       setInventoryAreas,
@@ -552,6 +567,7 @@ function NewQuotePage({ userId }) {
 
   useEffect(() => {
     if (!isEditMode) {
+      originalLinkedClientRef.current = {clienteId: "", snapshot: null};
       setEditLoading(false);
       setEditLoadError("");
       setEditLockedMessage("");
@@ -570,6 +586,7 @@ function NewQuotePage({ userId }) {
     setEditLockedMessage("");
     setLoadedDraftQuote(null);
     setSavedQuoteId(null);
+    originalLinkedClientRef.current = {clienteId: "", snapshot: null};
 
     getQuoteById(userId, editQuoteId)
       .then((savedQuote) => {
@@ -588,6 +605,11 @@ function NewQuotePage({ userId }) {
         }
 
         const editableQuote = buildQuoteFromSavedQuote(savedQuote);
+        originalLinkedClientRef.current = {
+          clienteId: editableQuote.clienteId,
+          snapshot: editableQuote.cliente,
+        };
+        currentClienteIdRef.current = editableQuote.clienteId;
         setQuote(editableQuote);
         setLoadedDraftQuote(editableQuote);
         setSavedQuoteId(savedQuote.id);
@@ -790,26 +812,45 @@ function NewQuotePage({ userId }) {
     }));
   };
 
-  const applyClientSuggestion = (companyName) => {
-    const match = clientSuggestions.find(
-      (client) => client.empresa.toLocaleLowerCase("es-CL") ===
-        String(companyName || "").trim().toLocaleLowerCase("es-CL")
-    );
-    if (!match) return;
+  const handleClientChange = useCallback((client) => {
+    if (!client) {
+      currentClienteIdRef.current = "";
+      setDirty(true);
+      setQuote((prev) => ({
+        ...prev,
+        clienteId: "",
+        cliente: null,
+        clienteNombre: "",
+        clienteRut: "",
+        clienteContacto: "",
+        clienteEmail: "",
+        clienteTelefono: "",
+        clienteDireccion: "",
+        clienteCiudad: "",
+      }));
+      return;
+    }
+    if (client.clienteId === currentClienteIdRef.current) return;
+
+    const snapshot = resolveQuoteClientSelectionSnapshot(client, {
+      originalClienteId: originalLinkedClientRef.current.clienteId,
+      originalClientSnapshot: originalLinkedClientRef.current.snapshot,
+    });
+    currentClienteIdRef.current = snapshot.clienteId;
     setDirty(true);
     setQuote((prev) => ({
       ...prev,
-      clienteId: match.clienteId || "",
-      clienteNombre: match.empresa,
-      clienteRut: match.rut,
-      clienteContacto: match.contacto,
-      clienteEmail: match.email,
-      clienteTelefono: match.telefono,
-      clienteDireccion: match.direccion,
-      clienteCiudad: match.ciudad,
-      proyectoNombre: match.proyecto,
+      clienteId: client.clienteId,
+      cliente: snapshot,
+      clienteNombre: snapshot.nombreRazonSocial,
+      clienteRut: snapshot.rut,
+      clienteContacto: snapshot.personaContacto,
+      clienteEmail: snapshot.email,
+      clienteTelefono: snapshot.telefono,
+      clienteDireccion: snapshot.direccion,
+      clienteCiudad: snapshot.comunaNombre,
     }));
-  };
+  }, []);
 
   const addScopeSection = () => {
     setDirty(true);
@@ -1526,6 +1567,8 @@ function NewQuotePage({ userId }) {
     }
 
     setQuote(buildInitialQuote());
+    originalLinkedClientRef.current = {clienteId: "", snapshot: null};
+    currentClienteIdRef.current = "";
     setSavedQuoteId(null);
     setError("");
     setSuccess("");
@@ -1536,11 +1579,21 @@ function NewQuotePage({ userId }) {
   };
 
   const validateQuote = () => {
+    if (!isEditMode && !quote.clienteId) {
+      return "Selecciona un cliente activo registrado.";
+    }
     if (!quoteValidation.isValid) {
       return Object.values(quoteValidation.fieldErrors)[0];
     }
     return totalsResult.error?.message || "";
   };
+
+  const saveBlockedByClient = !isEditMode && (
+    clientAvailability.loading ||
+    Boolean(clientAvailability.error) ||
+    !clientAvailability.hasActiveClients ||
+    !quote.clienteId
+  );
 
   const saveQuote = async (estado) => {
     if (saving) return;
@@ -1584,13 +1637,16 @@ function NewQuotePage({ userId }) {
       if (!savedQuoteId) {
         setSavedQuoteId(saved.id);
       }
-      setQuote((prev) => ({
-        ...buildQuoteFromSavedQuote(saved),
-      }));
+      const nextSavedQuote = buildQuoteFromSavedQuote(saved);
+      originalLinkedClientRef.current = {
+        clienteId: nextSavedQuote.clienteId,
+        snapshot: nextSavedQuote.cliente,
+      };
+      currentClienteIdRef.current = nextSavedQuote.clienteId;
+      setQuote(nextSavedQuote);
       setDirty(false);
       if (isEditMode && estado === "borrador") {
-        const nextDraft = buildQuoteFromSavedQuote(saved);
-        setLoadedDraftQuote(nextDraft);
+        setLoadedDraftQuote(nextSavedQuote);
         setSuccess("Borrador actualizado correctamente.");
       } else {
         setSuccess(
@@ -1776,89 +1832,14 @@ function NewQuotePage({ userId }) {
 
         <div style={styles.panel}>
           <h3 style={styles.panelTitle}>2. Cliente</h3>
+          <ClientSelector
+            businessId={userId}
+            value={quote.clienteId}
+            snapshot={quote.cliente}
+            onChange={handleClientChange}
+            onAvailabilityChange={setClientAvailability}
+          />
           <div style={styles.formGrid}>
-            <Field
-              label="Empresa o razón social"
-              helpText={quoteValidation.fieldErrors.clienteNombre}
-              helpTone="error"
-            >
-              <input
-                type="text"
-                list="quote-client-suggestions"
-                value={quote.clienteNombre}
-                onChange={(event) =>
-                  updateField("clienteNombre", event.target.value)
-                }
-                onBlur={(event) => applyClientSuggestion(event.target.value)}
-                placeholder="Escribe el nombre del cliente"
-                style={styles.input}
-              />
-              <datalist id="quote-client-suggestions">
-                {clientSuggestions.map((client) => (
-                  <option key={client.rut || client.empresa} value={client.empresa} />
-                ))}
-              </datalist>
-            </Field>
-            <Field label="RUT/DNI opcional">
-              <input
-                type="text"
-                value={quote.clienteRut}
-                onChange={(event) => updateField("clienteRut", event.target.value)}
-                placeholder="Escribe el RUT o DNI"
-                style={styles.input}
-              />
-            </Field>
-            <Field label="Persona de contacto opcional">
-              <input
-                type="text"
-                value={quote.clienteContacto}
-                onChange={(event) => updateField("clienteContacto", event.target.value)}
-                placeholder="Nombre del contacto"
-                style={styles.input}
-              />
-            </Field>
-            <Field label="Email opcional">
-              <input
-                type="email"
-                value={quote.clienteEmail}
-                onChange={(event) =>
-                  updateField("clienteEmail", event.target.value)
-                }
-                placeholder="Escribe el correo del cliente"
-                style={styles.input}
-              />
-            </Field>
-            <Field label="Teléfono opcional">
-              <input
-                type="text"
-                value={quote.clienteTelefono}
-                onChange={(event) =>
-                  updateField("clienteTelefono", event.target.value)
-                }
-                placeholder="Escribe un teléfono de contacto"
-                style={styles.input}
-              />
-            </Field>
-            <Field label="Dirección opcional" wide>
-              <input
-                type="text"
-                value={quote.clienteDireccion}
-                onChange={(event) =>
-                  updateField("clienteDireccion", event.target.value)
-                }
-                placeholder="Escribe la dirección del cliente"
-                style={styles.input}
-              />
-            </Field>
-            <Field label="Ciudad opcional">
-              <input
-                type="text"
-                value={quote.clienteCiudad}
-                onChange={(event) => updateField("clienteCiudad", event.target.value)}
-                placeholder="Ciudad"
-                style={styles.input}
-              />
-            </Field>
             <Field label="Proyecto o trabajo" wide>
               <input
                 type="text"
@@ -2517,7 +2498,7 @@ function NewQuotePage({ userId }) {
             <button
               type="button"
               onClick={() => saveQuote("borrador")}
-              disabled={saving}
+              disabled={saving || saveBlockedByClient}
               style={styles.primaryButton}
             >
               {saving ? "Guardando..." : "Guardar borrador"}
@@ -2541,7 +2522,7 @@ function NewQuotePage({ userId }) {
             <button
               type="button"
               onClick={() => saveQuote("emitida")}
-              disabled={saving}
+              disabled={saving || saveBlockedByClient}
               style={styles.emitButton}
             >
               Guardar como emitida

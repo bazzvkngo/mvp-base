@@ -36,6 +36,8 @@
     "test:firebase-environment": "node scripts/firebase-environment-smoke.mjs",
     "test:quotes": "node scripts/quote-model-smoke.mjs",
     "test:quotes-integrated": "node scripts/quote-integrated-local.mjs",
+    "test:quote-model": "node scripts/quote-model-smoke.mjs",
+    "test:quote-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/quote-integrated-local.mjs\"",
     "test:clients-model": "node scripts/client-model-smoke.mjs",
     "test:clients-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/clients-integrated-local.mjs\"",
     "test:business-catalog": "node scripts/business-catalog-smoke.mjs",

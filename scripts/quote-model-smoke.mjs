@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   adaptStoredQuote,
+  buildQuoteMutationPayload,
   buildQuotePayload,
   calculateQuoteExpiryDate,
   calculateQuoteLineTotal,
@@ -10,7 +11,9 @@ import {
   getQuotePdfFileName,
   normalizeQuoteItem,
   normalizeScopeSections,
+  resolveQuoteClientSelectionSnapshot,
 } from "../src/domain/quoteModel.mjs";
+import {filterSelectableClients} from "../src/domain/clientModel.mjs";
 import { buildQuotePdfDocument } from "../src/domain/quoteDocument.mjs";
 
 const company = {
@@ -111,6 +114,123 @@ function quoteFixture(overrides = {}) {
 assert.equal(quoteFixture().cliente.empresa, "Abastible");
 assert.notEqual(quoteFixture().cliente.empresa, "[object Object]");
 
+const registeredClient = {
+  clienteId: "cliente-principal",
+  negocioId: "negocio-principal",
+  estado: "activo",
+  tipoCliente: "empresa",
+  rut: "12.345.678-5",
+  nombreRazonSocial: "Cliente registrado SpA",
+  giro: "Servicios",
+  email: "contacto@registrado.test",
+  telefono: "+56 9 2222 3333",
+  direccion: "Avenida Uno 123",
+  regionCodigo: "13",
+  regionNombre: "Metropolitana de Santiago",
+  comunaCodigo: "13101",
+  comunaNombre: "Santiago",
+  personaContacto: "Ana Pérez",
+};
+const linkedMutation = buildQuoteMutationPayload("test-user", {
+  ...quoteFixture(),
+  clienteId: registeredClient.clienteId,
+  cliente: registeredClient,
+});
+assert.equal(linkedMutation.clienteId, registeredClient.clienteId);
+assert.equal("clientId" in linkedMutation, false);
+assert.equal("cliente" in linkedMutation, false);
+assert.equal("clienteNombre" in linkedMutation, false);
+assert.equal("clienteRut" in linkedMutation, false);
+console.log("OK contrato: mutación vinculada envía clienteId sin snapshot autoritativo");
+
+const originalClientASnapshot = {
+  ...registeredClient,
+  nombreRazonSocial: "Cliente A histórico SpA",
+  email: "historico-a@example.test",
+  direccion: "Dirección histórica 100",
+};
+const liveClientA = {
+  ...registeredClient,
+  nombreRazonSocial: "Cliente A actualizado SpA",
+  email: "actual-a@example.test",
+  direccion: "Dirección actual 999",
+};
+const liveClientB = {
+  ...registeredClient,
+  clienteId: "cliente-b",
+  nombreRazonSocial: "Cliente B SpA",
+  email: "cliente-b@example.test",
+};
+const originalSelection = {
+  originalClienteId: registeredClient.clienteId,
+  originalClientSnapshot: originalClientASnapshot,
+};
+
+const selectedB = resolveQuoteClientSelectionSnapshot(
+  liveClientB,
+  originalSelection
+);
+assert.equal(selectedB.clienteId, liveClientB.clienteId);
+assert.equal(selectedB.nombreRazonSocial, liveClientB.nombreRazonSocial);
+assert.equal(selectedB.email, liveClientB.email);
+
+const returnedToA = resolveQuoteClientSelectionSnapshot(
+  liveClientA,
+  originalSelection
+);
+assert.equal(returnedToA.clienteId, registeredClient.clienteId);
+assert.equal(returnedToA.nombreRazonSocial, originalClientASnapshot.nombreRazonSocial);
+assert.equal(returnedToA.email, originalClientASnapshot.email);
+assert.equal(returnedToA.direccion, originalClientASnapshot.direccion);
+
+const directlySelectedA = resolveQuoteClientSelectionSnapshot(
+  liveClientA,
+  originalSelection
+);
+assert.deepEqual(directlySelectedA, returnedToA);
+
+const newQuoteSelection = resolveQuoteClientSelectionSnapshot(liveClientA);
+assert.equal(newQuoteSelection.nombreRazonSocial, liveClientA.nombreRazonSocial);
+assert.equal(newQuoteSelection.email, liveClientA.email);
+
+const legacySelection = resolveQuoteClientSelectionSnapshot(liveClientA, {
+  originalClienteId: "",
+  originalClientSnapshot: {
+    nombreRazonSocial: "Cliente histórico sin vínculo",
+  },
+});
+assert.equal(legacySelection.clienteId, liveClientA.clienteId);
+assert.equal(legacySelection.nombreRazonSocial, liveClientA.nombreRazonSocial);
+
+const restoredMutation = buildQuoteMutationPayload("test-user", {
+  ...quoteFixture(),
+  clienteId: returnedToA.clienteId,
+  cliente: returnedToA,
+});
+assert.equal(restoredMutation.clienteId, registeredClient.clienteId);
+assert.equal("cliente" in restoredMutation, false);
+assert.equal("clienteNombre" in restoredMutation, false);
+assert.equal("clienteRut" in restoredMutation, false);
+console.log("OK edición: restaura A histórico, muestra B vivo y permite vínculo nuevo/legacy");
+
+const selectableClients = [
+  registeredClient,
+  {...registeredClient, clienteId: "archivado", estado: "archivado"},
+  {...registeredClient, clienteId: "externo", negocioId: "negocio-externo"},
+];
+assert.deepEqual(
+  filterSelectableClients(selectableClients, "negocio-principal", "registrado")
+    .map((client) => client.clienteId),
+  ["cliente-principal"]
+);
+assert.equal(
+  filterSelectableClients(selectableClients, "negocio-principal", "123456785").length,
+  1
+);
+assert.equal(filterSelectableClients(selectableClients, "negocio-externo").length, 1);
+assert.equal(filterSelectableClients(selectableClients, "").length, 0);
+console.log("OK selector: busca nombre/RUT, excluye archivados y aísla por negocio");
+
 assert.equal(calculateQuoteLineTotal(item(1, { cantidad: 2, precioUnitarioEditable: 1000 })), 2000);
 console.log("OK cálculo: una línea por cantidad y precio");
 
@@ -202,7 +322,18 @@ const legacy = adaptStoredQuote({
 assert.equal(legacy.legacyIvaNoDefinido, true);
 assert.equal(legacy.afectaIva, false);
 assert.equal(legacy.total, 350000);
+assert.equal(legacy.clienteId, "");
+assert.equal(legacy.clienteHistoricoNoVinculado, true);
 console.log("OK compatibilidad: cotización legacy preservada sin inferir IVA");
+
+const legacyClientId = adaptStoredQuote({
+  ...legacy,
+  clienteId: undefined,
+  clientId: "cliente-legado",
+});
+assert.equal(legacyClientId.clienteId, "cliente-legado");
+assert.equal("clientId" in legacyClientId, false);
+console.log("OK compatibilidad: clientId legacy se adapta solo a clienteId canónico");
 
 const unsafeName = getQuotePdfFileName({
   numero: "026/114:*?",
@@ -213,11 +344,24 @@ assert.doesNotMatch(unsafeName, /[\\/:*?"<>|]/);
 console.log("OK archivo: nombre descriptivo y seguro");
 
 const sourceNewQuote = fs.readFileSync("src/pages/NewQuotePage.jsx", "utf8");
+const sourceClientSelector = fs.readFileSync(
+  "src/features/clients/ClientSelector.jsx",
+  "utf8"
+);
 const sourcePdf = fs.readFileSync("src/utils/quotePdf.js", "utf8");
 const sourceEmail = fs.readFileSync("src/features/quotes/SendQuoteEmailModal.jsx", "utf8");
 const sourceHistory = fs.readFileSync("src/pages/QuoteHistoryPage.jsx", "utf8");
 assert.match(sourceNewQuote, /createManagedInventoryItem/);
 assert.doesNotMatch(sourceNewQuote, /\bcreateInventoryItem\b/);
+assert.match(sourceNewQuote, /<ClientSelector/);
+assert.doesNotMatch(sourceNewQuote, /quote-client-suggestions/);
+assert.match(
+  sourceNewQuote,
+  /if \(client\.clienteId === currentClienteIdRef\.current\) return;/
+);
+assert.match(sourceClientSelector, /listarClientes\(businessId\)/);
+assert.match(sourceClientSelector, /if \(!businessId\)/);
+assert.doesNotMatch(sourceClientSelector, /clientRutKeys/);
 assert.match(sourceNewQuote, /areaId/);
 assert.match(sourceNewQuote, /categoriaId/);
 assert.match(sourcePdf, /buildQuotePdfBase64/);

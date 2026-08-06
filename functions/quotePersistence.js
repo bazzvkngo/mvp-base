@@ -9,6 +9,7 @@ const VALID_STATUS = new Set([
   "archivada",
 ]);
 const VALID_ITEM_TYPES = new Set(["producto", "servicio", "actividad"]);
+const VALID_CLIENT_TYPES = new Set(["persona", "empresa"]);
 
 function safeText(value, maxLength = 2000) {
   return String(value ?? "").trim().slice(0, maxLength);
@@ -122,6 +123,148 @@ function normalizeClient(source = {}, HttpsError) {
   ]);
   if (!client.empresa) fail(HttpsError, "La empresa o razón social del cliente es obligatoria.");
   return client;
+}
+
+function validateClienteId(value, HttpsError, {required = true} = {}) {
+  if (value == null || value === "") {
+    if (!required) return "";
+    throw new HttpsError(
+      "invalid-argument",
+      "Selecciona un cliente activo registrado."
+    );
+  }
+  if (typeof value !== "string") {
+    throw new HttpsError("invalid-argument", "Selecciona un cliente válido.");
+  }
+  const clienteId = value.trim();
+  if (!/^[a-zA-Z0-9_-]{1,160}$/.test(clienteId)) {
+    throw new HttpsError("invalid-argument", "Selecciona un cliente válido.");
+  }
+  return clienteId;
+}
+
+function registeredClientQuoteFields(
+  clientSnapshot,
+  {businessId, clienteId},
+  HttpsError
+) {
+  if (!clientSnapshot.exists) {
+    throw new HttpsError("not-found", "No se encontró el cliente seleccionado.");
+  }
+  const stored = clientSnapshot.data() || {};
+  if (stored.negocioId !== businessId || stored.clienteId !== clienteId) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Los datos del cliente seleccionado son inconsistentes."
+    );
+  }
+  if (stored.estado === "archivado") {
+    throw new HttpsError(
+      "failed-precondition",
+      "El cliente seleccionado está archivado. Reactívalo antes de usarlo."
+    );
+  }
+  if (stored.estado !== "activo") {
+    throw new HttpsError(
+      "failed-precondition",
+      "El cliente seleccionado no está activo."
+    );
+  }
+
+  const tipoCliente = safeText(stored.tipoCliente, 20).toLowerCase();
+  const snapshot = {
+    clienteId,
+    tipoCliente,
+    rut: safeText(stored.rut, 40),
+    nombreRazonSocial: safeText(stored.nombreRazonSocial, 240),
+    giro: safeText(stored.giro, 240),
+    email: safeText(stored.email, 240),
+    telefono: safeText(stored.telefono, 100),
+    direccion: safeText(stored.direccion, 300),
+    regionCodigo: safeText(stored.regionCodigo, 20),
+    regionNombre: safeText(stored.regionNombre, 160),
+    comunaCodigo: safeText(stored.comunaCodigo, 20),
+    comunaNombre: safeText(stored.comunaNombre, 160),
+    personaContacto: safeText(stored.personaContacto, 200),
+  };
+  if (
+    !VALID_CLIENT_TYPES.has(tipoCliente) ||
+    !snapshot.rut ||
+    !snapshot.nombreRazonSocial
+  ) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Los datos del cliente seleccionado están incompletos."
+    );
+  }
+
+  return {
+    cliente: snapshot,
+    clienteId,
+    clienteNombre: snapshot.nombreRazonSocial,
+    clienteRut: snapshot.rut,
+    clienteContacto: snapshot.personaContacto,
+    clienteEmail: snapshot.email,
+    clienteTelefono: snapshot.telefono,
+    clienteDireccion: snapshot.direccion,
+    clienteCiudad: snapshot.comunaNombre,
+  };
+}
+
+function legacyClientQuoteFields(raw, HttpsError) {
+  const client = normalizeClient(raw.cliente || {
+    empresa: raw.clienteNombre,
+    rut: raw.clienteRut,
+    contacto: raw.clienteContacto,
+    direccion: raw.clienteDireccion,
+    ciudad: raw.clienteCiudad,
+    telefono: raw.clienteTelefono,
+    email: raw.clienteEmail,
+    proyecto: raw.proyectoNombre,
+  }, HttpsError);
+  return {
+    cliente: client,
+    clienteId: client.clienteId,
+    clienteNombre: client.empresa,
+    clienteRut: client.rut,
+    clienteContacto: client.contacto,
+    clienteEmail: client.email,
+    clienteTelefono: client.telefono,
+    clienteDireccion: client.direccion,
+    clienteCiudad: client.ciudad,
+  };
+}
+
+function preservedClientQuoteFields(existing = {}) {
+  return {
+    cliente: existing.cliente || {
+      empresa: safeText(existing.clienteNombre, 240),
+      rut: safeText(existing.clienteRut, 40),
+      contacto: safeText(existing.clienteContacto, 200),
+      email: safeText(existing.clienteEmail, 240),
+      telefono: safeText(existing.clienteTelefono, 100),
+      direccion: safeText(existing.clienteDireccion, 300),
+      ciudad: safeText(existing.clienteCiudad, 160),
+    },
+    clienteId: getStoredClienteId(existing),
+    clienteNombre: safeText(existing.clienteNombre, 240),
+    clienteRut: safeText(existing.clienteRut, 40),
+    clienteContacto: safeText(existing.clienteContacto, 200),
+    clienteEmail: safeText(existing.clienteEmail, 240),
+    clienteTelefono: safeText(existing.clienteTelefono, 100),
+    clienteDireccion: safeText(existing.clienteDireccion, 300),
+    clienteCiudad: safeText(existing.clienteCiudad, 160),
+  };
+}
+
+function getStoredClienteId(existing = {}) {
+  return safeText(
+    existing.clienteId ||
+      existing.clientId ||
+      existing.cliente?.clienteId ||
+      existing.cliente?.clientId,
+    160
+  );
 }
 
 function normalizeInventorySnapshot(source = {}) {
@@ -251,18 +394,16 @@ function normalizeConditions(source = {}) {
   ]);
 }
 
-function normalizeQuoteInput(uid, raw = {}, issueDate, HttpsError) {
+function normalizeQuoteInput(
+  uid,
+  raw = {},
+  issueDate,
+  HttpsError,
+  {clientFields = null} = {}
+) {
   const company = normalizeCompany(raw.empresa || {});
-  const client = normalizeClient(raw.cliente || {
-    empresa: raw.clienteNombre,
-    rut: raw.clienteRut,
-    contacto: raw.clienteContacto,
-    direccion: raw.clienteDireccion,
-    ciudad: raw.clienteCiudad,
-    telefono: raw.clienteTelefono,
-    email: raw.clienteEmail,
-    proyecto: raw.proyectoNombre,
-  }, HttpsError);
+  const resolvedClientFields =
+    clientFields || legacyClientQuoteFields(raw, HttpsError);
   const items = normalizeItems(raw.items, HttpsError);
   const affectsVat = raw.afectaIva !== false;
   const totals = calculateTotals(items, raw.descuento, affectsVat, HttpsError);
@@ -288,16 +429,11 @@ function normalizeQuoteInput(uid, raw = {}, issueDate, HttpsError) {
     afectaIva: affectsVat,
     tipoIva: affectsVat ? "afecta" : "exenta",
     tasaIva: affectsVat ? VAT_RATE : 0,
-    cliente: client,
-    clienteId: client.clienteId,
-    clienteNombre: client.empresa,
-    clienteRut: client.rut,
-    clienteContacto: client.contacto,
-    clienteEmail: client.email,
-    clienteTelefono: client.telefono,
-    clienteDireccion: client.direccion,
-    clienteCiudad: client.ciudad,
-    proyectoNombre: client.proyecto,
+    ...resolvedClientFields,
+    proyectoNombre: safeText(
+      raw.proyectoNombre || raw.cliente?.proyecto,
+      300
+    ),
     empresa: company,
     items,
     seccionesAlcance: normalizeScopeSections(raw.seccionesAlcance),
@@ -342,9 +478,11 @@ async function createQuoteWithNumberHandler({
   const requestId = validateRequestId(request?.data?.requestId, HttpsError);
   const dateParts = getChileDateParts(now);
   const issueDate = getChileDateValue(now);
-  const quote = normalizeQuoteInput(uid, request?.data?.quote || {}, issueDate, HttpsError);
+  const rawQuote = request?.data?.quote || {};
+  const clienteId = validateClienteId(rawQuote.clienteId, HttpsError);
   const userRef = authorizedBusinessRef;
   const quoteRef = userRef.collection("cotizaciones").doc();
+  const clientRef = userRef.collection("clientes").doc(clienteId);
   const counterRef = userRef.collection("contadores").doc(`cotizaciones_${dateParts.year}`);
   const requestRef = userRef.collection("quoteCreateRequests").doc(requestId);
 
@@ -368,7 +506,20 @@ async function createQuoteWithNumberHandler({
       };
     }
 
+    const clientSnapshot = await transaction.get(clientRef);
     const counterSnapshot = await transaction.get(counterRef);
+    const clientFields = registeredClientQuoteFields(
+      clientSnapshot,
+      {businessId, clienteId},
+      HttpsError
+    );
+    const quote = normalizeQuoteInput(
+      uid,
+      rawQuote,
+      issueDate,
+      HttpsError,
+      {clientFields}
+    );
     const current = Number(counterSnapshot.data()?.lastNumber || 0);
     const nextNumber = Number.isSafeInteger(current) && current >= 0 ? current + 1 : 1;
     const numero = formatCommercialQuoteNumber(dateParts.year, nextNumber);
@@ -436,6 +587,12 @@ async function updateQuoteDraftHandler({
   if (!/^[a-zA-Z0-9_-]{1,160}$/.test(quoteId)) {
     fail(HttpsError, "No se pudo validar la cotizaciÃ³n a editar.");
   }
+  const rawQuote = request?.data?.quote || {};
+  const requestedClienteId = validateClienteId(
+    rawQuote.clienteId,
+    HttpsError,
+    {required: false}
+  );
   const quoteRef = businessRef.collection("cotizaciones").doc(quoteId);
 
   const persistUpdate = () => db.runTransaction(async (transaction) => {
@@ -454,12 +611,30 @@ async function updateQuoteDraftHandler({
       );
     }
 
+    const existingClienteId = getStoredClienteId(existing);
+    let clientFields;
+    if (requestedClienteId && requestedClienteId !== existingClienteId) {
+      const clientSnapshot = await transaction.get(
+        businessRef.collection("clientes").doc(requestedClienteId)
+      );
+      clientFields = registeredClientQuoteFields(
+        clientSnapshot,
+        {businessId, clienteId: requestedClienteId},
+        HttpsError
+      );
+    } else if (existingClienteId) {
+      clientFields = preservedClientQuoteFields(existing);
+    } else {
+      clientFields = legacyClientQuoteFields(rawQuote, HttpsError);
+    }
+
     const issueDate = safeText(existing.fecha, 40) || getChileDateValue(now);
     const normalized = normalizeQuoteInput(
       uid,
-      request?.data?.quote || {},
+      rawQuote,
       issueDate,
-      HttpsError
+      HttpsError,
+      {clientFields}
     );
     const timestamp = FieldValue.serverTimestamp();
     const storedQuote = {
