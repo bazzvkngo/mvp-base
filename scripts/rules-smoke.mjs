@@ -6,14 +6,19 @@ import {
   signInAnonymously,
 } from "firebase/auth";
 import {
+  collection,
+  collectionGroup,
   connectFirestoreEmulator,
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
   getFirestore,
+  query,
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
 } from "firebase/firestore";
 import {
   connectStorageEmulator,
@@ -87,8 +92,10 @@ async function main() {
   try {
     const ownerCredential = await signInAnonymously(ownerClient.auth);
     const otherCredential = await signInAnonymously(otherClient.auth);
+    const guestCredential = await signInAnonymously(guestClient.auth);
     const ownerUid = ownerCredential.user.uid;
     const otherUid = otherCredential.user.uid;
+    const guestUid = guestCredential.user.uid;
     const inventoryPath = `usuarios/${ownerUid}/inventario/item-smoke`;
     const areaPath = `usuarios/${ownerUid}/areas/area-smoke`;
     const categoryPath =
@@ -347,6 +354,183 @@ async function main() {
       getDoc(doc(otherClient.db, businessProfilePath))
     );
 
+    const businessClientPath =
+      `negocios/${businessId}/clientes/client-rules-smoke`;
+    const businessClientRutKeyPath =
+      `negocios/${businessId}/clientRutKeys/123456785`;
+    const unknownBusinessPath =
+      `negocios/${businessId}/coleccionNoDeclarada/documento-smoke`;
+    const foreignBusinessId = `rules-foreign-${guestUid}`;
+    const foreignClientPath =
+      `negocios/${foreignBusinessId}/clientes/foreign-client-smoke`;
+    await Promise.all([
+      adminDb.doc(businessClientPath).set({
+        clienteId: "client-rules-smoke",
+        negocioId: businessId,
+        modeloClienteVersion: 1,
+        tipoCliente: "empresa",
+        rut: "12.345.678-5",
+        rutNormalizado: "12345678-5",
+        nombreRazonSocial: "Cliente de reglas",
+        estado: "activo",
+      }),
+      adminDb.doc(businessClientRutKeyPath).set({
+        clienteId: "client-rules-smoke",
+        negocioId: businessId,
+        rutNormalizado: "12345678-5",
+        estadoCliente: "activo",
+      }),
+      adminDb.doc(unknownBusinessPath).set({
+        negocioId: businessId,
+        contenido: "no debe ser legible desde el SDK cliente",
+      }),
+      adminDb.doc(`negocios/${foreignBusinessId}`).set({
+        nombreComercial: "Empresa externa de reglas",
+        estado: "activo",
+      }),
+      adminDb.doc(`membresias/${foreignBusinessId}__${guestUid}`).set({
+        negocioId: foreignBusinessId,
+        uid: guestUid,
+        rol: "OWNER",
+        estado: "activo",
+      }),
+      adminDb.doc(foreignClientPath).set({
+        clienteId: "foreign-client-smoke",
+        negocioId: foreignBusinessId,
+        modeloClienteVersion: 1,
+        tipoCliente: "empresa",
+        rut: "11.111.111-1",
+        rutNormalizado: "11111111-1",
+        nombreRazonSocial: "Cliente externo",
+        estado: "activo",
+      }),
+    ]);
+    if (!(await getDoc(doc(ownerClient.db, businessClientPath))).exists()) {
+      throw new Error("El miembro OWNER no pudo leer clientes del negocio.");
+    }
+    console.log("OK permitido: miembro activo lee clientes del negocio");
+    await expectDenied("usuario sin membresía lee clientes", () =>
+      getDoc(doc(guestClient.db, businessClientPath))
+    );
+    const businessClientsCollection = collection(
+      ownerClient.db,
+      "negocios",
+      businessId,
+      "clientes"
+    );
+    const filteredClientsSnapshot = await getDocs(
+      query(
+        businessClientsCollection,
+        where("negocioId", "==", businessId)
+      )
+    );
+    if (filteredClientsSnapshot.size !== 1) {
+      throw new Error("La consulta filtrada no devolvió el cliente esperado.");
+    }
+    console.log("OK permitido: consulta clientes filtrada por negocioId");
+    await expectDenied("consulta clientes sin filtro de negocioId", () =>
+      getDocs(businessClientsCollection)
+    );
+    await expectDenied("consulta cruzada de clientes de otro negocio", () =>
+      getDocs(
+        query(
+          collection(
+            ownerClient.db,
+            "negocios",
+            foreignBusinessId,
+            "clientes"
+          ),
+          where("negocioId", "==", foreignBusinessId)
+        )
+      )
+    );
+    await expectDenied("miembro de otro negocio consulta clientes", () =>
+      getDocs(
+        query(
+          collection(
+            guestClient.db,
+            "negocios",
+            businessId,
+            "clientes"
+          ),
+          where("negocioId", "==", businessId)
+        )
+      )
+    );
+    await expectDenied("lectura de subcolección desconocida", () =>
+      getDoc(doc(ownerClient.db, unknownBusinessPath))
+    );
+    await expectDenied("OWNER crea cliente directamente", () =>
+      setDoc(
+        doc(
+          ownerClient.db,
+          `negocios/${businessId}/clientes/client-direct-create`
+        ),
+        {
+          clienteId: "client-direct-create",
+          negocioId: businessId,
+          tipoCliente: "empresa",
+          rut: "11.111.111-1",
+          rutNormalizado: "11111111-1",
+          nombreRazonSocial: "Creación directa",
+          estado: "activo",
+        }
+      )
+    );
+    await expectDenied("OWNER edita cliente directamente", () =>
+      updateDoc(doc(ownerClient.db, businessClientPath), {
+        nombreRazonSocial: "Edición directa",
+      })
+    );
+    await expectDenied("OWNER elimina cliente directamente", () =>
+      deleteDoc(doc(ownerClient.db, businessClientPath))
+    );
+    await expectDenied("clientRutKeys bloquea lectura directa", () =>
+      getDoc(doc(ownerClient.db, businessClientRutKeyPath))
+    );
+    const clientRutKeysCollection = collection(
+      ownerClient.db,
+      "negocios",
+      businessId,
+      "clientRutKeys"
+    );
+    await expectDenied("clientRutKeys bloquea listado", () =>
+      getDocs(clientRutKeysCollection)
+    );
+    await expectDenied("clientRutKeys bloquea consulta", () =>
+      getDocs(
+        query(
+          clientRutKeysCollection,
+          where("estadoCliente", "==", "activo")
+        )
+      )
+    );
+    await expectDenied("clientRutKeys bloquea collectionGroup", () =>
+      getDocs(collectionGroup(ownerClient.db, "clientRutKeys"))
+    );
+    await expectDenied("clientRutKeys bloquea creación directa", () =>
+      setDoc(
+        doc(
+          ownerClient.db,
+          `negocios/${businessId}/clientRutKeys/111111111`
+        ),
+        {
+          clienteId: "forged",
+          negocioId: businessId,
+          rutNormalizado: "11111111-1",
+          estadoCliente: "activo",
+        }
+      )
+    );
+    await expectDenied("clientRutKeys bloquea actualización directa", () =>
+      updateDoc(doc(ownerClient.db, businessClientRutKeyPath), {
+        clienteId: "forged",
+      })
+    );
+    await expectDenied("clientRutKeys bloquea eliminación directa", () =>
+      deleteDoc(doc(ownerClient.db, businessClientRutKeyPath))
+    );
+
     const businessSettingsPath =
       `negocios/${businessId}/configuracion/inventario`;
     await adminDb.doc(businessSettingsPath).set({
@@ -448,6 +632,10 @@ async function main() {
     if (!(await getDoc(doc(otherClient.db, businessSettingsPath))).exists()) {
       throw new Error("El miembro no pudo consultar la configuración del negocio.");
     }
+    if (!(await getDoc(doc(otherClient.db, businessClientPath))).exists()) {
+      throw new Error("El MEMBER no pudo consultar clientes del negocio.");
+    }
+    console.log("OK permitido: MEMBER lee clientes del negocio");
     await expectDenied("miembro escribe ajustes directamente", () =>
       updateDoc(doc(otherClient.db, businessSettingsPath), {
         umbralStockBajo: 7,

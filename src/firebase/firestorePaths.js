@@ -73,6 +73,17 @@ export const quoteCounterDocPath = (userId, year) => [
   "contadores",
   `cotizaciones_${year}`,
 ];
+export const clientsCollectionPath = (businessId) => [
+  "negocios",
+  businessId,
+  "clientes",
+];
+export const clientDocPath = (businessId, clienteId) => [
+  "negocios",
+  businessId,
+  "clientes",
+  clienteId,
+];
 export const financialMovementsCollectionPath = (businessId) => [
   "negocios",
   businessId,

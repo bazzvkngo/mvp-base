@@ -30,6 +30,12 @@ const {
   updateQuoteDraftHandler,
 } = require("./quotePersistence");
 const {
+  actualizarClienteHandler,
+  archivarClienteHandler,
+  crearClienteHandler,
+  reactivarClienteHandler,
+} = require("./clientPersistence");
+const {
   createAdditionalBusinessHandler,
   createFirstBusinessHandler,
   getBusinessSessionHandler,
@@ -1897,6 +1903,57 @@ exports.updateQuoteDraft = onCall(
       HttpsError,
       requireBusinessAccess,
     })
+);
+
+const clientPersistenceDependencies = {
+  db,
+  HttpsError,
+  FieldValue,
+  requireBusinessAccess,
+};
+
+exports.crearCliente = onCall(
+  {
+    maxInstances: 20,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    crearClienteHandler(request, clientPersistenceDependencies)
+);
+
+exports.actualizarCliente = onCall(
+  {
+    maxInstances: 20,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    actualizarClienteHandler(request, clientPersistenceDependencies)
+);
+
+exports.archivarCliente = onCall(
+  {
+    maxInstances: 20,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    archivarClienteHandler(request, clientPersistenceDependencies)
+);
+
+exports.reactivarCliente = onCall(
+  {
+    maxInstances: 20,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    reactivarClienteHandler(request, clientPersistenceDependencies)
 );
 
 async function getCompanyProfileForQuote(businessRef, quote) {

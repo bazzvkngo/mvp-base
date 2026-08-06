@@ -665,6 +665,16 @@ service cloud.firestore {
         allow delete: if false;
       }
 
+      match /clientes/{clienteId} {
+        allow read: if canAccessBusiness(businessId)
+          && resource.data.negocioId == businessId;
+        allow create, update, delete: if false;
+      }
+
+      match /clientRutKeys/{rutKey} {
+        allow read, create, update, delete: if false;
+      }
+
       match /financialMovements/{movementId} {
         allow read: if canAccessBusiness(businessId);
         allow create: if hasBusinessRole(businessId, ["OWNER", "ADMIN"])
@@ -692,8 +702,7 @@ service cloud.firestore {
       }
 
       match /{document=**} {
-        allow read: if canAccessBusiness(businessId);
-        allow create, update, delete: if false;
+        allow read, create, update, delete: if false;
       }
     }
 
