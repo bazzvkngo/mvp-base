@@ -173,7 +173,13 @@ function AppRoutes({
         />
         <Route
           path="/inventario"
-          element={<InventoryPage key={businessId} userId={businessId} />}
+          element={
+            <InventoryPage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
+            />
+          }
         />
         <Route
           path="/referencias"

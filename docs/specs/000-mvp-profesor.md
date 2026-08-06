@@ -41,6 +41,11 @@ El código de IA existente se conserva, pero no forma parte del flujo principal 
 8. Auditoría productiva.
 9. Fase IA.
 
+# Avance real
+
+- Clientes e integración con Cotizaciones: terminados según las especificaciones 001 y 002.
+- Inventario manual e importación local desde Excel/CSV: renovados según la especificación 003; pendientes de aceptación manual final en emuladores y anchos objetivo.
+
 # Criterio general de terminado
 
 Un módulo no está terminado solo porque tenga interfaz. Debe incluir:

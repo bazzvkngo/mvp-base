@@ -6,6 +6,7 @@ const require = createRequire(import.meta.url);
 const {
   INITIAL_INVENTORY_AREAS,
   INITIAL_INVENTORY_CATEGORIES,
+  confirmInventoryImportV2Handler,
   createInventoryItemWithCodeHandler,
   formatInternalCode,
   initializeInventoryCatalogHandler,
@@ -68,6 +69,7 @@ class FakeCollectionReference {
   }
 
   async get() {
+    await this.db.beforeCollectionGet?.(this.path);
     const prefix = `${this.path}/`;
     const docs = [...this.db.documents.entries()]
       .filter(([path]) => {
@@ -86,6 +88,7 @@ class FakeFirestore {
   constructor() {
     this.documents = new Map();
     this.autoId = 0;
+    this.beforeCollectionGet = null;
     this.queue = Promise.resolve();
   }
 
@@ -358,6 +361,112 @@ async function main() {
     "Un doble envío con la misma clave debe crear como máximo un ítem."
   );
 
+  db.seed(`usuarios/${uid}/inventario/occupied-internal-code`, {
+    codigoInterno: "  occupied internal 001  ",
+  });
+  await expectCode("already-exists", () =>
+    createInventoryItemWithCodeHandler(
+      request(uid, {
+        requestId: "request_occupied_internal_0001",
+        item: item({ codigoSolicitado: "OCCUPIED-INTERNAL-001" }),
+      }),
+      deps
+    )
+  );
+
+  db.seed(`usuarios/${uid}/inventario/occupied-legacy-sku`, {
+    sku: "  legacy sku 042  ",
+  });
+  await expectCode("already-exists", () =>
+    confirmInventoryImportV2Handler(
+      request(uid, {
+        requestId: "import_occupied_legacy_0001",
+        rows: [{
+          rowId: "legacy-sku-row",
+          item: item({ codigoSolicitado: "LEGACY-SKU-042" }),
+        }],
+      }),
+      deps
+    )
+  );
+
+  db.seed("usuarios/inventory-other-business/inventario/foreign-code", {
+    codigoInterno: "OTHER-BUSINESS-001",
+    sku: "OTHER-BUSINESS-LEGACY-001",
+  });
+  const crossBusinessAllowed = await createInventoryItemWithCodeHandler(
+    request(uid, {
+      requestId: "request_cross_business_0001",
+      item: item({ codigoSolicitado: "OTHER-BUSINESS-001" }),
+    }),
+    deps
+  );
+  assert.equal(crossBusinessAllowed.codigoInterno, "OTHER-BUSINESS-001");
+
+  const freeImportRequest = request(uid, {
+    requestId: "import_free_code_0001",
+    rows: [{
+      rowId: "free-code-row",
+      item: item({ codigoSolicitado: "FREE-CODE-001" }),
+    }],
+  });
+  const freeImport = await confirmInventoryImportV2Handler(
+    freeImportRequest,
+    deps
+  );
+  assert.equal(freeImport.results[0].codigoInterno, "FREE-CODE-001");
+  const freeImportRetry = await confirmInventoryImportV2Handler(
+    freeImportRequest,
+    deps
+  );
+  assert.equal(freeImportRetry.idempotent, true);
+  assert.deepEqual(freeImportRetry.results, freeImport.results);
+
+  let concurrentScans = 0;
+  let releaseConcurrentScans;
+  const concurrentScanBarrier = new Promise((resolve) => {
+    releaseConcurrentScans = resolve;
+  });
+  db.beforeCollectionGet = async (path) => {
+    if (path !== `usuarios/${uid}/inventario`) return;
+    concurrentScans += 1;
+    if (concurrentScans === 2) releaseConcurrentScans();
+    await concurrentScanBarrier;
+  };
+  const concurrentCustomCode = await Promise.allSettled([
+    createInventoryItemWithCodeHandler(
+      request(uid, {
+        requestId: "request_code_race_0001",
+        item: item({ codigoSolicitado: "RACE-CODE-001" }),
+      }),
+      deps
+    ),
+    createInventoryItemWithCodeHandler(
+      request(uid, {
+        requestId: "request_code_race_0002",
+        item: item({ codigoSolicitado: "RACE-CODE-001" }),
+      }),
+      deps
+    ),
+  ]);
+  db.beforeCollectionGet = null;
+  assert.equal(
+    concurrentCustomCode.filter(({ status }) => status === "fulfilled").length,
+    1
+  );
+  const rejectedConcurrentCode = concurrentCustomCode.find(
+    ({ status }) => status === "rejected"
+  );
+  assert.equal(rejectedConcurrentCode?.reason?.code, "already-exists");
+  assert.match(rejectedConcurrentCode?.reason?.message || "", /reservado/);
+  assert.equal(
+    db.matching(`usuarios/${uid}/inventario/`).filter(([, data]) =>
+      data.codigoInterno === "RACE-CODE-001"
+    ).length,
+    1,
+    "inventoryCodeKeys debe resolver la carrera después del preflight."
+  );
+
   const service = await createInventoryItemWithCodeHandler(
     request(uid, {
       requestId: "request_service_0001",
@@ -388,37 +497,24 @@ async function main() {
   const productCounterBeforeInvalid = db.read(
     `usuarios/${uid}/inventarioContadores/producto`
   ).ultimoNumero;
-  await expectCode("invalid-argument", () =>
-    createInventoryItemWithCodeHandler(
-      request(uid, {
-        requestId: "request_missing_area_0001",
-        item: item({ areaId: "" }),
-      }),
-      deps
-    )
+  const unclassified = await createInventoryItemWithCodeHandler(
+    request(uid, {
+      requestId: "request_unclassified_0001",
+      item: item({ areaId: "", categoriaId: "", marca: "", modelo: "" }),
+    }),
+    deps
   );
-  await expectCode("invalid-argument", () =>
-    createInventoryItemWithCodeHandler(
-      request(uid, {
-        requestId: "request_missing_category_0001",
-        item: item({ categoriaId: "" }),
-      }),
-      deps
-    )
+  const unclassifiedData = db.read(
+    `usuarios/${uid}/inventario/${unclassified.itemId}`
   );
-  await expectCode("invalid-argument", () =>
-    createInventoryItemWithCodeHandler(
-      request(uid, {
-        requestId: "request_invalid_0001",
-        item: item({ marca: "" }),
-      }),
-      deps
-    )
-  );
+  assert.equal("areaId" in unclassifiedData, false);
+  assert.equal("categoriaId" in unclassifiedData, false);
+  assert.equal(unclassifiedData.categoria, "");
+  assert.equal("marca" in unclassifiedData, false);
   assert.equal(
     db.read(`usuarios/${uid}/inventarioContadores/producto`).ultimoNumero,
-    productCounterBeforeInvalid,
-    "Validar o cancelar un alta no debe reservar números."
+    productCounterBeforeInvalid + 1,
+    "Crear sin clasificación debe consumir un único correlativo seguro."
   );
 
   await expectCode("failed-precondition", () =>
@@ -470,24 +566,20 @@ async function main() {
     new URL("../src/features/inventory/InventoryManager.jsx", import.meta.url),
     "utf8"
   );
-  assert.match(managerSource, /Se asignará al guardar/);
+  assert.match(managerSource, /asignará.*guardar/i);
   assert.doesNotMatch(managerSource, /name=["']sku["']/);
   assert.match(managerSource, /preserveLegacyModel/);
-  assert.match(managerSource, /Otra categoría…/);
-  assert.match(managerSource, /buildNewCategoryPayload/);
-  assert.match(managerSource, /Administrar áreas y categorías/);
+  assert.match(
+    managerSource,
+    /authorizedStatus:\s*adaptInventoryItem\(editingItem\)\.estado/,
+    "Guardar una edición debe conservar el estado autorizado del ítem."
+  );
+  assert.match(managerSource, /Sin área/);
+  assert.match(managerSource, /Áreas y categorías/);
   assert.match(managerSource, /readOnly/);
-  const catalogSubscriptionEffect = managerSource.slice(
-    managerSource.indexOf("const unsubscribeAreas"),
-    managerSource.indexOf("const catalogIsLoading")
-  );
-  assert.doesNotMatch(
-    catalogSubscriptionEffect,
-    /initializeInventoryCatalog\s*\(/,
-    "Abrir Inventario solo debe suscribirse; inicializar el catálogo requiere acción explícita."
-  );
-  assert.match(managerSource, /window\.confirm\s*\(/);
-  assert.match(managerSource, /disabled=\{saving \|\| !catalogReady\}/);
+  assert.doesNotMatch(managerSource, /initializeInventoryCatalog\s*\(/);
+  assert.match(managerSource, /ResponsiveDialog/);
+  assert.match(managerSource, /Importar Excel/);
   assert.doesNotMatch(managerSource, /softDeleteInventoryItem|>\s*Eliminar\s*</);
 
   const catalogManagerSource = await readFile(
@@ -509,13 +601,12 @@ async function main() {
   assert.match(firebaseConfigSource, /connectFirestoreEmulator/);
   assert.match(firebaseConfigSource, /connectStorageEmulator/);
 
-  const importerSource = await readFile(
-    new URL("../src/features/inventory/InventoryAiImporter.jsx", import.meta.url),
+  const inventoryPageSource = await readFile(
+    new URL("../src/pages/InventoryPage.jsx", import.meta.url),
     "utf8"
   );
-  assert.doesNotMatch(importerSource, /INVENTORY_MODEL_IMPORT_PENDING|Etapa 2C-1B/);
-  assert.match(importerSource, /confirmInventoryImportV2/);
-  assert.match(importerSource, /validateInventoryImportPreviewRow/);
+  assert.doesNotMatch(inventoryPageSource, /InventoryAiImporter|Gemini/);
+  assert.match(inventoryPageSource, /InventoryManager/);
 
   console.log("INVENTORY_MODEL_SMOKE_OK");
 }

@@ -83,8 +83,8 @@ export function keepCompatibleCategoryId(categories, areaId, categoryId) {
 }
 
 export function getInventoryAreaLabel(item, areas) {
-  if (!item?.areaId) return "Área pendiente";
-  return areas.find((area) => area.id === item.areaId)?.nombre || "Área pendiente";
+  if (!item?.areaId) return "Sin área";
+  return areas.find((area) => area.id === item.areaId)?.nombre || "Sin área";
 }
 
 export function getInventoryCategoryLabel(item, categories) {
@@ -94,5 +94,5 @@ export function getInventoryCategoryLabel(item, categories) {
     )?.nombre;
     if (catalogName) return catalogName;
   }
-  return String(item?.categoria || "").trim() || "Categoría pendiente";
+  return String(item?.categoria || "").trim() || "Sin categoría";
 }

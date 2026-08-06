@@ -1,174 +1,298 @@
 import * as XLSX from "xlsx";
-import { importInventoryItems } from "./inventoryService";
+import {
+  buildInventoryPayload,
+  getDefaultUnitForType,
+  normalizeInventoryText,
+  parseInventoryNumber,
+  validateInventoryDraft,
+} from "../domain/inventoryMvp.mjs";
+import { confirmManagedInventoryImport } from "./inventoryService.js";
 
+export const MAX_LOCAL_INVENTORY_ROWS = 500;
+export const INVENTORY_IMPORT_ACCEPT = ".xlsx,.xls,.csv";
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
-const MAX_FILE_ROWS = 500;
 const ALLOWED_FILE_EXTENSION = /\.(csv|xls|xlsx)$/i;
+const SAVE_BATCH_SIZE = 200;
 
-function normalizeText(value) {
-  return String(value || "")
-    .toLowerCase()
-    .trim()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
+export const INVENTORY_TEMPLATE_COLUMNS = Object.freeze([
+  "tipo", "nombre", "codigo", "area", "categoria", "unidad", "costo_base",
+  "margen", "precio_manual", "stock", "stock_minimo", "descripcion",
+]);
+
+const HEADER_ALIASES = Object.freeze({
+  tipoItem: ["tipo", "tipo item", "tipo de item"],
+  nombre: ["nombre", "item", "producto", "servicio"],
+  codigoSolicitado: ["codigo", "sku"],
+  areaPropuesta: ["area"],
+  categoriaPropuesta: ["categoria"],
+  unidad: ["unidad", "medida"],
+  costoBase: ["costo", "costo base", "costo_base"],
+  margenDeseado: ["margen", "margen %", "margen deseado"],
+  precioManual: ["precio", "precio venta", "precio_manual"],
+  stock: ["stock", "cantidad"],
+  stockMinimo: ["stock minimo", "stock_minimo", "minimo"],
+  descripcion: ["descripcion", "detalle"],
+});
+
+export function createInventoryImportRequestIdBase(prefix = "inventory_local") {
+  const random = globalThis.crypto?.randomUUID?.() || `${Date.now()}_${Math.random()}`;
+  return `${prefix}_${String(random).replace(/[^a-zA-Z0-9_-]/g, "")}`.slice(0, 100);
 }
 
-function parseNumber(raw) {
-  if (raw === null || raw === undefined || raw === "") return null;
-  if (typeof raw === "number") return raw;
-
-  const clean = String(raw)
-    .replace(/[^\d,.-]/g, "")
-    .replace(/\./g, "")
-    .replace(",", ".");
-
-  const num = Number(clean);
-  if (!Number.isFinite(num)) return null;
-  return Math.round(num);
-}
-
-function inferTipoItem(nombre, categoria, tipoRaw) {
-  const txt = normalizeText(`${nombre || ""} ${categoria || ""} ${tipoRaw || ""}`);
-  if (
-    txt.includes("actividad") ||
-    txt.includes("traslado") ||
-    txt.includes("visita")
-  ) {
-    return "actividad";
+export function buildInventoryImportBatchRequestId(requestIdBase, offset) {
+  const base = String(requestIdBase || "").trim();
+  const batchOffset = Number(offset);
+  if (!/^[a-zA-Z0-9_-]{1,100}$/.test(base)) {
+    throw new Error("Falta un identificador válido para la importación.");
   }
-  if (
-    txt.includes("servicio") ||
-    txt.includes("instalacion") ||
-    txt.includes("mantencion") ||
-    txt.includes("soporte")
-  ) {
-    return "servicio";
+  if (!Number.isSafeInteger(batchOffset) || batchOffset < 0) {
+    throw new Error("El desplazamiento del lote no es válido.");
   }
-  return "producto";
+  return `${base}_${batchOffset}`;
 }
 
-async function leerArchivoComoArrayBuffer(file) {
+function readFileAsArrayBuffer(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (event) => resolve(event.target.result);
-    reader.onerror = (err) => reject(err);
+    reader.onerror = () => reject(new Error("No se pudo leer el archivo."));
     reader.readAsArrayBuffer(file);
   });
 }
 
-export async function leerArchivoInventario(file) {
-  if (!file) {
-    throw new Error("No se recibio archivo de inventario.");
-  }
-  if (!ALLOWED_FILE_EXTENSION.test(String(file.name || ""))) {
-    throw new Error("Usa un archivo CSV, XLS o XLSX.");
-  }
-  if (Number(file.size || 0) > MAX_FILE_SIZE_BYTES) {
-    throw new Error("El archivo no puede superar 5 MB.");
-  }
+function normalizeHeader(value) {
+  return normalizeInventoryText(value).replace(/[_-]+/g, " ");
+}
 
-  const buffer = await leerArchivoComoArrayBuffer(file);
-  const workbook = XLSX.read(buffer, { type: "array" });
-  const sheetName = workbook.SheetNames[0];
-  const sheet = workbook.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-  if (rows.length > MAX_FILE_ROWS) {
-    throw new Error("El archivo no puede contener mas de 500 filas.");
-  }
-
-  if (!rows.length) {
-    return { items: [], totalFilas: 0, filasValidas: 0 };
-  }
-
-  const headers = Object.keys(rows[0]).map((header) => ({
-    original: header,
-    norm: normalizeText(header),
+export function mapInventoryHeaders(headers) {
+  const normalizedHeaders = (headers || []).map((header, index) => ({
+    index,
+    normalized: normalizeHeader(header),
   }));
-
-  const findHeader = (...candidates) =>
-    headers.find((header) =>
-      candidates.some((candidate) => header.norm.includes(normalizeText(candidate)))
-    ) || null;
-
-  const hNombre = findHeader("nombre", "producto", "item", "item");
-  const hTipo = findHeader("tipoItem", "tipo item", "tipo");
-  const hCategoria = findHeader("categoria", "rubro", "familia");
-  const hDescripcion = findHeader("descripcion", "detalle");
-  const hSku = findHeader("sku", "codigo");
-  const hCosto = findHeader("costo base", "costoBase", "costo", "valor", "precio compra");
-  const hPrecioInterno = findHeader("precio interno", "precioInterno", "precio venta");
-  const hMargen = findHeader("margen", "margenDeseado", "margen deseado");
-  const hUnidad = findHeader("unidad", "u.medida", "medida");
-  const hEstado = findHeader("estado");
-
-  const items = [];
-  let filasValidas = 0;
-
-  for (const row of rows) {
-    const nombre = hNombre ? row[hNombre.original] : "";
-    const categoria = hCategoria ? row[hCategoria.original] : "";
-    const descripcion = hDescripcion ? row[hDescripcion.original] : "";
-    const tipoRaw = hTipo ? row[hTipo.original] : "";
-    const sku = hSku ? row[hSku.original] : "";
-    const unidadArchivo = hUnidad ? row[hUnidad.original] : "";
-    const estadoArchivo = hEstado ? row[hEstado.original] : "";
-    const costoBase = parseNumber(hCosto ? row[hCosto.original] : "");
-    const precioInternoRaw = parseNumber(
-      hPrecioInterno ? row[hPrecioInterno.original] : ""
+  return Object.fromEntries(Object.entries(HEADER_ALIASES).map(([field, aliases]) => {
+    const match = normalizedHeaders.find(({ normalized }) =>
+      aliases.some((alias) => normalized === normalizeHeader(alias))
     );
-    const margenDeseado = parseNumber(hMargen ? row[hMargen.original] : "") ?? 0;
+    return [field, match?.index ?? -1];
+  }));
+}
 
-    if (!nombre || costoBase === null) {
-      continue;
-    }
+function cell(row, index) {
+  if (index < 0) return "";
+  const value = row[index];
+  if (value === null || value === undefined) return "";
+  return typeof value === "string" ? value.trim() : value;
+}
 
-    const tipoItem = inferTipoItem(nombre, categoria, tipoRaw);
-    const unidad =
-      String(unidadArchivo || "").trim() ||
-      (tipoItem === "producto" ? "unidad" : "servicio");
-    const precioInterno =
-      precioInternoRaw && precioInternoRaw > 0
-        ? precioInternoRaw
-        : Math.round(costoBase + (costoBase * margenDeseado) / 100);
+function resolveCatalogValue(name, entries, areaId = "") {
+  const normalized = normalizeInventoryText(name);
+  if (!normalized) return "";
+  return entries.find((entry) =>
+    (entry.estado || "activo") === "activo" &&
+    (!areaId || entry.areaId === areaId) &&
+    normalizeInventoryText(entry.nombre) === normalized
+  )?.id || "";
+}
 
-    filasValidas += 1;
-    items.push({
-      nombre: String(nombre).trim(),
-      tipoItem,
-      categoria: String(categoria || "").trim(),
-      descripcion: String(descripcion || "").trim(),
-      unidad,
-      costoBase,
-      precioInterno,
-      margenDeseado,
-      estado: String(estadoArchivo || "").trim().toLowerCase() || "activo",
-      sku: String(sku || "").trim() || null,
-    });
+export function normalizeRequestedCode(value) {
+  const code = String(value || "").trim().toUpperCase().replace(/\s+/g, "-");
+  return /^[A-Z0-9][A-Z0-9._-]{1,39}$/.test(code) &&
+    !/^(PR|SV|AC)-\d+$/.test(code)
+    ? code
+    : "";
+}
+
+function requestedCodeError(value) {
+  const code = String(value || "").trim().toUpperCase().replace(/\s+/g, "-");
+  if (/^(PR|SV|AC)-\d+$/.test(code)) {
+    return "Los prefijos PR, SV y AC están reservados para códigos automáticos.";
   }
+  return "El código contiene caracteres no permitidos.";
+}
 
+export function transformInventorySpreadsheetRows(
+  matrix,
+  { areas = [], categories = [], existingItems = [] } = {}
+) {
+  if (!Array.isArray(matrix) || matrix.length < 2) return [];
+  const headers = mapInventoryHeaders(matrix[0]);
+  const existingCodes = new Set(existingItems.flatMap((item) =>
+    [item.codigoInterno, item.sku].map(normalizeRequestedCode).filter(Boolean)
+  ));
+  const fileCodes = new Set();
+
+  return matrix.slice(1).filter((row) => row.some((value) => String(value ?? "").trim())).map((row, index) => {
+    const rawType = normalizeInventoryText(cell(row, headers.tipoItem));
+    const tipoItem = ["producto", "servicio", "actividad"].includes(rawType) ? rawType : "";
+    const areaPropuesta = String(cell(row, headers.areaPropuesta) || "").trim();
+    const areaId = resolveCatalogValue(areaPropuesta, areas);
+    const categoriaPropuesta = String(cell(row, headers.categoriaPropuesta) || "").trim();
+    const categoriaId = resolveCatalogValue(categoriaPropuesta, categories, areaId);
+    const rawCode = String(cell(row, headers.codigoSolicitado) || "").trim();
+    const codigoSolicitado = normalizeRequestedCode(rawCode);
+    const draft = {
+      tipoItem,
+      nombre: String(cell(row, headers.nombre) || "").trim(),
+      codigoSolicitado,
+      areaId,
+      categoriaId,
+      areaPropuesta,
+      categoriaPropuesta,
+      unidad: String(cell(row, headers.unidad) || getDefaultUnitForType(tipoItem)).trim(),
+      costoBase: cell(row, headers.costoBase),
+      margenDeseado: cell(row, headers.margenDeseado) === "" ? 0 : cell(row, headers.margenDeseado),
+      precioManual: cell(row, headers.precioManual),
+      stock: tipoItem === "producto" ? (cell(row, headers.stock) === "" ? 0 : cell(row, headers.stock)) : 0,
+      stockMinimo: tipoItem === "producto" ? (cell(row, headers.stockMinimo) === "" ? 0 : cell(row, headers.stockMinimo)) : 0,
+      descripcion: String(cell(row, headers.descripcion) || "").trim(),
+    };
+    const fieldErrors = validateInventoryDraft(draft);
+    if (rawCode && !codigoSolicitado) fieldErrors.codigoSolicitado = requestedCodeError(rawCode);
+    if (codigoSolicitado && existingCodes.has(codigoSolicitado)) fieldErrors.codigoSolicitado = "El código ya existe en el inventario.";
+    if (codigoSolicitado && fileCodes.has(codigoSolicitado)) fieldErrors.codigoSolicitado = "El código está repetido en el archivo.";
+    if (codigoSolicitado) fileCodes.add(codigoSolicitado);
+    const warnings = [];
+    if (areaPropuesta && !areaId) warnings.push("Área no reconocida; se guardará sin área.");
+    if (categoriaPropuesta && !categoriaId) warnings.push("Categoría no reconocida; se guardará sin categoría.");
+    if (tipoItem && tipoItem !== "producto" && (cell(row, headers.stock) !== "" || cell(row, headers.stockMinimo) !== "")) {
+      warnings.push("El stock se ignorará porque no corresponde a este tipo.");
+    }
+    return {
+      rowId: `row_${index + 2}`,
+      sourceRow: index + 2,
+      included: true,
+      draft,
+      fieldErrors,
+      warnings,
+    };
+  });
+}
+
+export async function readLocalInventoryWorkbook(file, context = {}) {
+  if (!file) throw new Error("Selecciona un archivo de inventario.");
+  if (!ALLOWED_FILE_EXTENSION.test(String(file.name || ""))) throw new Error("Usa un archivo XLSX, XLS o CSV.");
+  if (Number(file.size || 0) > MAX_FILE_SIZE_BYTES) throw new Error("El archivo no puede superar 5 MB.");
+  const buffer = await readFileAsArrayBuffer(file);
+  const workbook = XLSX.read(buffer, { cellDates: true, type: "array" });
+  let usefulMatrix = null;
+  let usefulSheetName = "";
+  for (const sheetName of workbook.SheetNames) {
+    const matrix = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
+      blankrows: false,
+      defval: "",
+      header: 1,
+      raw: true,
+    }).filter((row) => Array.isArray(row) && row.some((value) => String(value ?? "").trim()));
+    if (matrix.length > 1) {
+      usefulMatrix = matrix;
+      usefulSheetName = sheetName;
+      break;
+    }
+  }
+  if (!usefulMatrix) throw new Error("No se encontró una hoja con encabezados y datos.");
+  const dataRows = usefulMatrix.length - 1;
+  if (dataRows > MAX_LOCAL_INVENTORY_ROWS) throw new Error("El archivo no puede contener más de 500 filas de datos.");
   return {
-    items,
-    totalFilas: rows.length,
-    filasValidas,
+    sheetName: usefulSheetName,
+    rows: revalidateInventoryImportCodes(
+      transformInventorySpreadsheetRows(usefulMatrix, context),
+      context.existingItems
+    ),
   };
 }
 
-export async function importarInventarioEnFirestore(userId, items) {
-  if (!userId) {
-    throw new Error("No hay usuario autenticado para importar inventario.");
+export function updateInventoryImportRow(row, field, value, context = {}) {
+  const draft = { ...row.draft, [field]: value };
+  if (field === "tipoItem" && value !== "producto") {
+    draft.stock = 0;
+    draft.stockMinimo = 0;
   }
-
-  if (!Array.isArray(items) || items.length === 0) {
-    return {
-      created: 0,
-      updated: 0,
-      total: 0,
-      verifiedCount: 0,
-      importados: 0,
-      creados: 0,
-      actualizados: 0,
-    };
+  if (field === "areaId") draft.categoriaId = "";
+  const fieldErrors = validateInventoryDraft(draft);
+  const rawCode = String(draft.codigoSolicitado || "").trim();
+  const normalizedCode = normalizeRequestedCode(rawCode);
+  draft.codigoSolicitado = normalizedCode || rawCode.toUpperCase();
+  if (rawCode && !normalizedCode) {
+    fieldErrors.codigoSolicitado = requestedCodeError(rawCode);
   }
-
-  return importInventoryItems(userId, items);
+  return { ...row, draft, fieldErrors };
 }
+
+export function revalidateInventoryImportCodes(rows, existingItems = []) {
+  const existing = new Set(existingItems.flatMap((item) =>
+    [item.codigoInterno, item.sku].map(normalizeRequestedCode).filter(Boolean)
+  ));
+  const counts = new Map();
+  rows.filter((row) => row.included).forEach((row) => {
+    const code = normalizeRequestedCode(row.draft.codigoSolicitado);
+    if (code) counts.set(code, (counts.get(code) || 0) + 1);
+  });
+  return rows.map((row) => {
+    const code = normalizeRequestedCode(row.draft.codigoSolicitado);
+    const fieldErrors = { ...row.fieldErrors };
+    if (fieldErrors.codigoSolicitado?.includes("ya existe") || fieldErrors.codigoSolicitado?.includes("repetido")) {
+      delete fieldErrors.codigoSolicitado;
+    }
+    if (row.included && code && existing.has(code)) fieldErrors.codigoSolicitado = "El código ya existe en el inventario.";
+    else if (row.included && code && counts.get(code) > 1) fieldErrors.codigoSolicitado = "El código está repetido en el archivo.";
+    return { ...row, fieldErrors };
+  });
+}
+
+export function getInventoryImportSummary(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  return {
+    total: list.length,
+    included: list.filter((row) => row.included).length,
+    valid: list.filter((row) => row.included && Object.keys(row.fieldErrors || {}).length === 0).length,
+    invalid: list.filter((row) => row.included && Object.keys(row.fieldErrors || {}).length > 0).length,
+    excluded: list.filter((row) => !row.included).length,
+  };
+}
+
+export async function confirmLocalInventoryImport({
+  businessId,
+  rows,
+  categories = [],
+  requestIdBase,
+  confirmBatch = confirmManagedInventoryImport,
+}) {
+  const selected = rows.filter((row) => row.included && Object.keys(row.fieldErrors || {}).length === 0);
+  if (!selected.length) throw new Error("No hay filas válidas incluidas para guardar.");
+  const resolvedRequestIdBase = requestIdBase;
+  const results = [];
+  for (let offset = 0; offset < selected.length; offset += SAVE_BATCH_SIZE) {
+    const chunk = selected.slice(offset, offset + SAVE_BATCH_SIZE);
+    try {
+      const response = await confirmBatch(businessId, {
+        requestId: buildInventoryImportBatchRequestId(resolvedRequestIdBase, offset),
+        rows: chunk.map((row) => {
+          const item = buildInventoryPayload(row.draft, categories);
+          if (row.draft.codigoSolicitado) item.codigoSolicitado = row.draft.codigoSolicitado;
+          item.origen = "importacion_excel_local";
+          return { rowId: row.rowId, item };
+        }),
+      });
+      results.push(...(response.results || []));
+    } catch (error) {
+      error.partialCreated = results.length;
+      error.remaining = selected.length - results.length;
+      throw error;
+    }
+  }
+  return { created: results.length, skipped: rows.length - selected.length, results };
+}
+
+export function downloadInventoryTemplate() {
+  const example = [
+    "producto", "Taladro inalámbrico", "", "", "", "unidad", 45000, 30, "", 8, 2,
+    "Ejemplo: elimina esta fila antes de importar tus datos.",
+  ];
+  const worksheet = XLSX.utils.aoa_to_sheet([INVENTORY_TEMPLATE_COLUMNS, example]);
+  worksheet["!cols"] = INVENTORY_TEMPLATE_COLUMNS.map((column) => ({ wch: Math.max(column.length + 2, 14) }));
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Inventario");
+  XLSX.writeFile(workbook, "plantilla-inventario-valoracloud.xlsx");
+}
+
+export { parseInventoryNumber };

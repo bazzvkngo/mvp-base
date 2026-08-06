@@ -114,9 +114,63 @@ function formatInternalCode(tipoItem, sequence) {
   return `${prefix}-${String(number).padStart(4, "0")}`;
 }
 
+function normalizeRequestedInventoryCode(value, HttpsError) {
+  const raw = safeText(value, 40).toUpperCase().replace(/\s+/g, "-");
+  if (!raw) return "";
+  if (!/^[A-Z0-9][A-Z0-9._-]{1,39}$/.test(raw)) {
+    throw new HttpsError(
+      "invalid-argument",
+      "El código debe contener entre 2 y 40 letras, números, puntos, guiones o guiones bajos."
+    );
+  }
+  if (/^(PR|SV|AC)-\d+$/.test(raw)) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Los prefijos PR, SV y AC están reservados para códigos automáticos."
+    );
+  }
+  return raw;
+}
+
 function catalogKeyId(kind, scope, normalizedName) {
   const raw = `${kind}|${scope || "root"}|${normalizedName}`;
   return Buffer.from(raw, "utf8").toString("base64url");
+}
+
+function inventoryCodeKeyId(code) {
+  return Buffer.from(String(code || "").toUpperCase(), "utf8").toString("base64url");
+}
+
+function normalizeInventoryCodeForComparison(value) {
+  return String(value || "").trim().toUpperCase().replace(/\s+/g, "-");
+}
+
+function inventoryPersistenceData(item) {
+  const { codigoSolicitado, ...data } = item;
+  if (!data.areaId) delete data.areaId;
+  if (!data.categoriaId) delete data.categoriaId;
+  return data;
+}
+
+async function assertRequestedCodesAvailable(userRef, codes, HttpsError) {
+  const requestedCodes = new Set(
+    codes.map(normalizeInventoryCodeForComparison).filter(Boolean)
+  );
+  if (!requestedCodes.size) return;
+
+  const inventorySnapshot = await userRef.collection("inventario").get();
+  for (const documentSnapshot of inventorySnapshot.docs) {
+    const existingItem = documentSnapshot.data() || {};
+    const occupiedCode = [existingItem.codigoInterno, existingItem.sku]
+      .map(normalizeInventoryCodeForComparison)
+      .find((code) => requestedCodes.has(code));
+    if (occupiedCode) {
+      throw new HttpsError(
+        "already-exists",
+        `El código ${occupiedCode} ya existe en el inventario.`
+      );
+    }
+  }
 }
 
 function validateCatalogName(value, HttpsError) {
@@ -164,13 +218,14 @@ function validateInventoryItemInput(
     );
   }
 
-  const areaId = requireText(source.areaId, "El área", 120, HttpsError);
-  const categoriaId = requireText(
-    source.categoriaId,
-    "La categoría",
-    120,
-    HttpsError
-  );
+  const areaId = safeText(source.areaId, 120);
+  const categoriaId = safeText(source.categoriaId, 120);
+  if (categoriaId && !areaId) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Una categoría debe pertenecer a un área."
+    );
+  }
   const nombre = requireText(source.nombre, "El nombre", 140, HttpsError);
   const unidad = requireText(source.unidad, "La unidad", 40, HttpsError);
   const costoBase = toFiniteNumber(source.costoBase, "El costo base", HttpsError);
@@ -179,15 +234,19 @@ function validateInventoryItemInput(
     "El margen deseado",
     HttpsError
   );
+  if (margenDeseado > 1000) {
+    throw new HttpsError(
+      "invalid-argument",
+      "El margen deseado no puede superar 1000%."
+    );
+  }
   const calculatedPrice = Math.round(
     costoBase + (costoBase * margenDeseado) / 100
   );
-  const precioInterno =
-    source.precioInterno === "" ||
-    source.precioInterno === null ||
-    source.precioInterno === undefined
-      ? calculatedPrice
-      : toFiniteNumber(source.precioInterno, "El precio interno", HttpsError);
+  const precioManual = source.precioManual === true;
+  const precioInterno = precioManual
+    ? toFiniteNumber(source.precioInterno, "El precio interno", HttpsError)
+    : calculatedPrice;
 
   const result = {
     areaId,
@@ -199,13 +258,21 @@ function validateInventoryItemInput(
     costoBase,
     margenDeseado,
     precioInterno,
-    precioManual: source.precioManual === true,
-    estado: source.estado === "inactivo" ? "inactivo" : "activo",
+    precioManual,
+    estado: "activo",
   };
 
+  const codigoSolicitado = normalizeRequestedInventoryCode(
+    source.codigoSolicitado,
+    HttpsError
+  );
+  if (codigoSolicitado) result.codigoSolicitado = codigoSolicitado;
+
   if (tipoItem === "producto") {
-    result.marca = requireText(source.marca, "La marca", 100, HttpsError);
-    result.modelo = requireText(source.modelo, "El modelo", 100, HttpsError);
+    const marca = safeText(source.marca, 100);
+    const modelo = safeText(source.modelo, 100);
+    if (marca) result.marca = marca;
+    if (modelo) result.modelo = modelo;
     result.stock = toFiniteNumber(source.stock ?? 0, "El stock actual", HttpsError, {
       allowNegative: allowNegativeStock,
     });
@@ -214,6 +281,8 @@ function validateInventoryItemInput(
       "El stock mínimo",
       HttpsError
     );
+    const unidadStock = safeText(source.unidadStock, 40);
+    if (unidadStock) result.unidadStock = unidadStock;
     const codigoBarras = safeText(source.codigoBarras, 120);
     if (codigoBarras) result.codigoBarras = codigoBarras;
   }
@@ -223,6 +292,7 @@ function validateInventoryItemInput(
     [
       "importacion_documental_multiformato",
       "importacion_inteligente_archivo",
+      "importacion_excel_local",
     ].includes(origen)
   ) {
     result.origen = origen;
@@ -272,7 +342,11 @@ async function resolveBusinessContext(
   { db, HttpsError, requireBusinessAccess }
 ) {
   if (typeof requireBusinessAccess === "function") {
-    return requireBusinessAccess(request, { db, HttpsError });
+    return requireBusinessAccess(
+      request,
+      { db, HttpsError },
+      { roles: ["OWNER", "ADMIN"] }
+    );
   }
   const uid = request?.auth?.uid;
   if (!uid) {
@@ -685,22 +759,46 @@ async function createInventoryItemWithCodeHandler(
       inventorySettingsSnapshot.data()?.permitirStockNegativo === true,
   });
   const requestRef = userRef.collection("inventoryCreateRequests").doc(requestId);
+  const previousRequest = await readDocumentSnapshot(db, requestRef);
+  if (previousRequest.exists) {
+    return {
+      itemId: previousRequest.data().itemId,
+      codigoInterno: previousRequest.data().codigoInterno,
+      idempotent: true,
+    };
+  }
+  await assertRequestedCodesAvailable(
+    userRef,
+    [item.codigoSolicitado],
+    HttpsError
+  );
   const counterRef = userRef
     .collection("inventarioContadores")
     .doc(item.tipoItem);
-  const areaRef = userRef.collection("areas").doc(item.areaId);
-  const categoryRef = userRef
-    .collection("categoriasInventario")
-    .doc(item.categoriaId);
+  const areaRef = item.areaId
+    ? userRef.collection("areas").doc(item.areaId)
+    : null;
+  const categoryRef = item.categoriaId
+    ? userRef.collection("categoriasInventario").doc(item.categoriaId)
+    : null;
+  const requestedCodeKeyRef = item.codigoSolicitado
+    ? userRef.collection("inventoryCodeKeys").doc(
+      inventoryCodeKeyId(item.codigoSolicitado)
+    )
+    : null;
   const itemRef = userRef.collection("inventario").doc();
 
   return db.runTransaction(async (transaction) => {
-    const [requestSnapshot, counterSnapshot, areaSnapshot, categorySnapshot] =
+    const [requestSnapshot, counterSnapshot, areaSnapshot, categorySnapshot,
+      requestedCodeKeySnapshot] =
       await Promise.all([
         transaction.get(requestRef),
         transaction.get(counterRef),
-        transaction.get(areaRef),
-        transaction.get(categoryRef),
+        areaRef ? transaction.get(areaRef) : Promise.resolve(null),
+        categoryRef ? transaction.get(categoryRef) : Promise.resolve(null),
+        requestedCodeKeyRef
+          ? transaction.get(requestedCodeKeyRef)
+          : Promise.resolve(null),
       ]);
 
     if (requestSnapshot.exists) {
@@ -710,13 +808,14 @@ async function createInventoryItemWithCodeHandler(
         idempotent: true,
       };
     }
-    if (!areaSnapshot.exists || areaSnapshot.data()?.estado !== "activo") {
+    if (areaRef && (!areaSnapshot?.exists || areaSnapshot.data()?.estado !== "activo")) {
       throw new HttpsError("failed-precondition", "Selecciona un área activa.");
     }
     if (
-      !categorySnapshot.exists ||
+      categoryRef && (
+      !categorySnapshot?.exists ||
       categorySnapshot.data()?.estado !== "activo" ||
-      categorySnapshot.data()?.areaId !== item.areaId
+      categorySnapshot.data()?.areaId !== item.areaId)
     ) {
       throw new HttpsError(
         "failed-precondition",
@@ -724,22 +823,32 @@ async function createInventoryItemWithCodeHandler(
       );
     }
 
+    if (requestedCodeKeySnapshot?.exists) {
+      throw new HttpsError(
+        "already-exists",
+        `El código ${item.codigoSolicitado} ya está reservado.`
+      );
+    }
+
     const lastNumber = Number(counterSnapshot.data()?.ultimoNumero || 0);
     const nextNumber = Number.isSafeInteger(lastNumber) ? lastNumber + 1 : 1;
-    const codigoInterno = formatInternalCode(item.tipoItem, nextNumber);
+    const codigoInterno = item.codigoSolicitado ||
+      formatInternalCode(item.tipoItem, nextNumber);
     const timestamp = FieldValue.serverTimestamp();
 
-    transaction.set(counterRef, {
-      tipoItem: item.tipoItem,
-      ultimoNumero: nextNumber,
-      negocioId: businessId,
-      uidUsuario: uid,
-      actualizadoEn: timestamp,
-    });
+    if (!item.codigoSolicitado) {
+      transaction.set(counterRef, {
+        tipoItem: item.tipoItem,
+        ultimoNumero: nextNumber,
+        negocioId: businessId,
+        uidUsuario: uid,
+        actualizadoEn: timestamp,
+      });
+    }
     transaction.set(itemRef, {
-      ...item,
+      ...inventoryPersistenceData(item),
       ...getInventoryTaxFields(item, taxSettingsSnapshot.data() || {}),
-      categoria: categorySnapshot.data().nombre,
+      categoria: categorySnapshot?.data()?.nombre || "",
       codigoInterno,
       modeloInventarioVersion: INVENTORY_MODEL_VERSION,
       negocioId: businessId,
@@ -747,6 +856,15 @@ async function createInventoryItemWithCodeHandler(
       creadoEn: timestamp,
       actualizadoEn: timestamp,
     });
+    if (requestedCodeKeyRef) {
+      transaction.set(requestedCodeKeyRef, {
+        codigoInterno,
+        itemId: itemRef.id,
+        negocioId: businessId,
+        uidUsuario: uid,
+        creadoEn: timestamp,
+      });
+    }
     transaction.set(requestRef, {
       itemId: itemRef.id,
       codigoInterno,
@@ -781,26 +899,61 @@ async function confirmInventoryImportV2Handler(
     allowNegativeStock:
       inventorySettingsSnapshot.data()?.permitirStockNegativo === true,
   });
+  const requestedCodes = rows
+    .map((row) => row.item.codigoSolicitado)
+    .filter(Boolean);
+  if (new Set(requestedCodes).size !== requestedCodes.length) {
+    throw new HttpsError(
+      "invalid-argument",
+      "El archivo contiene códigos internos repetidos.",
+      { internalCode: "inventory_import_duplicate_code" }
+    );
+  }
   const fingerprint = getImportRequestFingerprint(rows);
   const importRequestRef = userRef
     .collection("inventoryImportRequests")
     .doc(requestId);
+  const previousRequest = await readDocumentSnapshot(db, importRequestRef);
+  if (previousRequest.exists) {
+    const previous = previousRequest.data() || {};
+    if (previous.fingerprint !== fingerprint) {
+      throw new HttpsError(
+        "failed-precondition",
+        "La solicitud ya fue utilizada con un contenido diferente. Vuelve a preparar la importación.",
+        { internalCode: "inventory_import_request_conflict" }
+      );
+    }
+    return {
+      requestId,
+      results: Array.isArray(previous.results) ? previous.results : [],
+      total: Number(previous.total || 0),
+      idempotent: true,
+    };
+  }
+  await assertRequestedCodesAvailable(userRef, requestedCodes, HttpsError);
   const counterRefs = new Map(
-    [...new Set(rows.map((row) => row.item.tipoItem))].map((tipoItem) => [
+    [...new Set(rows.filter((row) => !row.item.codigoSolicitado)
+      .map((row) => row.item.tipoItem))].map((tipoItem) => [
       tipoItem,
       userRef.collection("inventarioContadores").doc(tipoItem),
     ])
   );
   const areaRefs = new Map(
-    [...new Set(rows.map((row) => row.item.areaId))].map((areaId) => [
+    [...new Set(rows.map((row) => row.item.areaId).filter(Boolean))].map((areaId) => [
       areaId,
       userRef.collection("areas").doc(areaId),
     ])
   );
   const categoryRefs = new Map(
-    [...new Set(rows.map((row) => row.item.categoriaId))].map((categoriaId) => [
+    [...new Set(rows.map((row) => row.item.categoriaId).filter(Boolean))].map((categoriaId) => [
       categoriaId,
       userRef.collection("categoriasInventario").doc(categoriaId),
+    ])
+  );
+  const codeKeyRefs = new Map(
+    requestedCodes.map((code) => [
+      code,
+      userRef.collection("inventoryCodeKeys").doc(inventoryCodeKeyId(code)),
     ])
   );
   const itemRefs = rows.map(() => userRef.collection("inventario").doc());
@@ -824,7 +977,7 @@ async function confirmInventoryImportV2Handler(
       };
     }
 
-    const [counterSnapshots, areaSnapshots, categorySnapshots] =
+    const [counterSnapshots, areaSnapshots, categorySnapshots, codeKeySnapshots] =
       await Promise.all([
         Promise.all(
           [...counterRefs.entries()].map(async ([key, reference]) => [
@@ -844,15 +997,22 @@ async function confirmInventoryImportV2Handler(
             await transaction.get(reference),
           ])
         ),
+        Promise.all(
+          [...codeKeyRefs.entries()].map(async ([key, reference]) => [
+            key,
+            await transaction.get(reference),
+          ])
+        ),
       ]);
     const countersByType = new Map(counterSnapshots);
     const areasById = new Map(areaSnapshots);
     const categoriesById = new Map(categorySnapshots);
+    const codeKeysByCode = new Map(codeKeySnapshots);
 
     rows.forEach((row, index) => {
       const areaSnapshot = areasById.get(row.item.areaId);
       const categorySnapshot = categoriesById.get(row.item.categoriaId);
-      if (!areaSnapshot?.exists || areaSnapshot.data()?.estado !== "activo") {
+      if (row.item.areaId && (!areaSnapshot?.exists || areaSnapshot.data()?.estado !== "activo")) {
         throw new HttpsError(
           "failed-precondition",
           `La fila ${index + 1} utiliza un Área que ya no está activa. Actualiza la previsualización.`,
@@ -863,9 +1023,10 @@ async function confirmInventoryImportV2Handler(
         );
       }
       if (
+        row.item.categoriaId && (
         !categorySnapshot?.exists ||
         categorySnapshot.data()?.estado !== "activo" ||
-        categorySnapshot.data()?.areaId !== row.item.areaId
+        categorySnapshot.data()?.areaId !== row.item.areaId)
       ) {
         throw new HttpsError(
           "failed-precondition",
@@ -874,6 +1035,13 @@ async function confirmInventoryImportV2Handler(
             internalCode: "inventory_import_catalog_changed",
             rowId: row.rowId,
           }
+        );
+      }
+      if (row.item.codigoSolicitado && codeKeysByCode.get(row.item.codigoSolicitado)?.exists) {
+        throw new HttpsError(
+          "already-exists",
+          `La fila ${index + 1} utiliza un código que ya está reservado.`,
+          { internalCode: "inventory_import_duplicate_code", rowId: row.rowId }
         );
       }
     });
@@ -886,16 +1054,19 @@ async function confirmInventoryImportV2Handler(
     );
     const timestamp = FieldValue.serverTimestamp();
     const results = rows.map((row, index) => {
-      const nextNumber = (nextNumberByType.get(row.item.tipoItem) || 0) + 1;
-      nextNumberByType.set(row.item.tipoItem, nextNumber);
-      const codigoInterno = formatInternalCode(row.item.tipoItem, nextNumber);
+      const nextNumber = row.item.codigoSolicitado
+        ? null
+        : (nextNumberByType.get(row.item.tipoItem) || 0) + 1;
+      if (nextNumber !== null) nextNumberByType.set(row.item.tipoItem, nextNumber);
+      const codigoInterno = row.item.codigoSolicitado ||
+        formatInternalCode(row.item.tipoItem, nextNumber);
       const categorySnapshot = categoriesById.get(row.item.categoriaId);
       const itemRef = itemRefs[index];
 
       transaction.set(itemRef, {
-        ...row.item,
+        ...inventoryPersistenceData(row.item),
         ...getInventoryTaxFields(row.item, taxSettingsSnapshot.data() || {}),
-        categoria: categorySnapshot.data().nombre,
+        categoria: categorySnapshot?.data()?.nombre || "",
         codigoInterno,
         modeloInventarioVersion: INVENTORY_MODEL_VERSION,
         negocioId: businessId,
@@ -903,6 +1074,15 @@ async function confirmInventoryImportV2Handler(
         creadoEn: timestamp,
         actualizadoEn: timestamp,
       });
+      if (row.item.codigoSolicitado) {
+        transaction.set(codeKeyRefs.get(row.item.codigoSolicitado), {
+          codigoInterno,
+          itemId: itemRef.id,
+          negocioId: businessId,
+          uidUsuario: uid,
+          creadoEn: timestamp,
+        });
+      }
       return {
         rowId: row.rowId,
         itemId: itemRef.id,

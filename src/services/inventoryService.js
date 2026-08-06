@@ -18,13 +18,13 @@ import {
   assertCloudFunctionAllowed,
   firebaseEnvironment,
 } from "../config/firebaseEnvironment.mjs";
-import { db, getFirebaseFunctions } from "../firebase/firebaseConfig";
+import { db, getFirebaseFunctions } from "../firebase/firebaseConfig.js";
 import {
   inventoryAreasCollectionPath,
   inventoryCategoriesCollectionPath,
   inventoryCollectionPath,
   inventoryDocPath,
-} from "../firebase/firestorePaths";
+} from "../firebase/firestorePaths.js";
 import { sortInventoryItems } from "../domain/inventoryCompatibility.mjs";
 
 const VALID_TYPES = ["producto", "servicio", "actividad"];
@@ -156,6 +156,18 @@ export async function createManagedInventoryItem(businessId, data, requestId) {
   return response.data;
 }
 
+export async function confirmManagedInventoryImport(
+  businessId,
+  { requestId, rows }
+) {
+  const response = await invokeInventoryModelCallable("confirmInventoryImportV2", {
+    businessId,
+    requestId,
+    rows,
+  });
+  return response.data;
+}
+
 function toNumber(value, fieldName) {
   if (typeof value === "number") {
     if (!Number.isFinite(value)) {
@@ -213,14 +225,14 @@ export function normalizeInventoryItem(uid, data, { isCreate = false } = {}) {
 
   const costoBase = toNumber(data.costoBase, "El costo base");
   const margenDeseado = toNumber(data.margenDeseado, "El margen deseado");
-  const precioInterno =
-    data.precioInterno === "" ||
-    data.precioInterno === null ||
-    data.precioInterno === undefined ||
-    toNumber(data.precioInterno, "El precio interno") === 0
-      ? Math.round(costoBase + (costoBase * margenDeseado) / 100)
-      : toNumber(data.precioInterno, "El precio interno");
   const precioManual = MANUAL_PRICE_FLAGS.some((flag) => data[flag] === true);
+  if (costoBase < 0 || margenDeseado < 0 || margenDeseado > 1000) {
+    throw new Error("Costo y margen deben estar dentro del rango permitido.");
+  }
+  const precioInterno = precioManual
+    ? toNumber(data.precioInterno, "El precio interno")
+    : Math.round(costoBase + (costoBase * margenDeseado) / 100);
+  if (precioInterno < 0) throw new Error("El precio interno no puede ser negativo.");
 
   const estadoRaw = String(data.estado || "").trim().toLowerCase();
   const estado = VALID_STATUS.includes(estadoRaw) ? estadoRaw : "activo";
@@ -280,8 +292,9 @@ export function normalizeManagedInventoryUpdate(
   const areaId = String(data.areaId || "").trim();
   const categoriaId = String(data.categoriaId || "").trim();
   const categoria = String(data.categoria || "").trim();
-  if (!areaId) throw new Error("Selecciona un área.");
-  if (!categoriaId || !categoria) throw new Error("Selecciona una categoría.");
+  if (categoriaId && !areaId) {
+    throw new Error("Una categoría debe pertenecer a un área.");
+  }
 
   const payload = normalizeInventoryItem(uid, {
     ...data,
@@ -290,8 +303,8 @@ export function normalizeManagedInventoryUpdate(
   });
   delete payload.sku;
   delete payload.stock;
-  payload.areaId = areaId;
-  payload.categoriaId = categoriaId;
+  payload.areaId = areaId || deleteField();
+  payload.categoriaId = categoriaId || deleteField();
   payload.categoria = categoria;
   if (!preserveLegacyModel) {
     payload.modeloInventarioVersion = INVENTORY_MODEL_VERSION;
@@ -300,8 +313,6 @@ export function normalizeManagedInventoryUpdate(
   if (payload.tipoItem === "producto") {
     const marca = String(data.marca || "").trim();
     const modelo = String(data.modelo || "").trim();
-    if (!marca) throw new Error("La marca es obligatoria para productos.");
-    if (!modelo) throw new Error("El modelo es obligatorio para productos.");
     const stock = toNumber(data.stock ?? 0, "El stock actual");
     const stockMinimo = toNumber(data.stockMinimo ?? 0, "El stock mínimo");
     if ((!allowNegativeStock && stock < 0) || stockMinimo < 0) {
@@ -311,17 +322,19 @@ export function normalizeManagedInventoryUpdate(
           : "El stock actual y mínimo no pueden ser negativos."
       );
     }
-    payload.marca = marca;
-    payload.modelo = modelo;
+    payload.marca = marca || deleteField();
+    payload.modelo = modelo || deleteField();
     payload.stock = stock;
     payload.stockMinimo = stockMinimo;
     payload.codigoBarras = String(data.codigoBarras || "").trim() || deleteField();
+    payload.unidadStock = String(data.unidadStock || data.unidad || "").trim();
   } else {
     payload.marca = deleteField();
     payload.modelo = deleteField();
     payload.stock = deleteField();
     payload.stockMinimo = deleteField();
     payload.codigoBarras = deleteField();
+    payload.unidadStock = deleteField();
   }
 
   return payload;

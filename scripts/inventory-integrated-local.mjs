@@ -523,6 +523,123 @@ async function main() {
     assert.equal("marca" in importedService, false);
     assert.equal("stock" in importedService, false);
 
+    const unclassifiedProduct = await call("createInventoryItemWithCode", {
+      requestId: "integrated_unclassified_product_0001",
+      item: {
+        tipoItem: "producto",
+        areaId: "",
+        categoriaId: "",
+        nombre: "Producto sin clasificación",
+        descripcion: "Creación básica sin barreras de catálogo",
+        unidad: "unidad",
+        unidadStock: "unidad",
+        costoBase: 1500,
+        margenDeseado: 20,
+        precioInterno: 999999,
+        precioManual: false,
+        stock: 2,
+        stockMinimo: 1,
+      },
+    });
+    const unclassifiedData = (
+      await getDoc(doc(db, "negocios", businessId, "inventario", unclassifiedProduct.data.itemId))
+    ).data();
+    assert.equal("areaId" in unclassifiedData, false);
+    assert.equal("categoriaId" in unclassifiedData, false);
+    assert.equal(unclassifiedData.precioInterno, 1800);
+    assert.equal("marca" in unclassifiedData, false);
+
+    await expectCallableCode("already-exists", () =>
+      call("confirmInventoryImportV2", {
+        requestId: "integrated_legacy_sku_collision_0001",
+        rows: [{
+          rowId: "legacy-sku-collision-row",
+          item: {
+            tipoItem: "servicio",
+            nombre: "Servicio con código legacy ocupado",
+            unidad: "servicio",
+            costoBase: 1000,
+            margenDeseado: 10,
+            precioInterno: 1100,
+            precioManual: false,
+            codigoSolicitado: "legacy-042",
+          },
+        }],
+      })
+    );
+    assert.equal(
+      (
+        await adminDb.doc(
+          `negocios/${businessId}/inventoryCodeKeys/${Buffer.from("LEGACY-042").toString("base64url")}`
+        ).get()
+      ).exists,
+      false,
+      "Validar un SKU legacy no debe crearle una clave interna."
+    );
+
+    const foreignBusinessId = "inventory-foreign-business";
+    await adminDb.doc(
+      `negocios/${foreignBusinessId}/inventario/foreign-legacy-code`
+    ).set({
+      sku: "FOREIGN-LEGACY-001",
+      negocioId: foreignBusinessId,
+    });
+    const crossBusinessCodePayload = {
+      requestId: "integrated_cross_business_code_0001",
+      item: {
+        tipoItem: "servicio",
+        nombre: "Servicio con código libre en este negocio",
+        unidad: "servicio",
+        costoBase: 1000,
+        margenDeseado: 10,
+        precioInterno: 1100,
+        precioManual: false,
+        codigoSolicitado: "foreign-legacy-001",
+      },
+    };
+    const crossBusinessCode = await call(
+      "createInventoryItemWithCode",
+      crossBusinessCodePayload
+    );
+    assert.equal(crossBusinessCode.data.codigoInterno, "FOREIGN-LEGACY-001");
+    const crossBusinessCodeRetry = await call(
+      "createInventoryItemWithCode",
+      crossBusinessCodePayload
+    );
+    assert.equal(crossBusinessCodeRetry.data.idempotent, true);
+    assert.equal(crossBusinessCodeRetry.data.itemId, crossBusinessCode.data.itemId);
+
+    const customCodePayload = {
+      requestId: "integrated_custom_code_0001",
+      rows: [{
+        rowId: "custom-code-row",
+        item: {
+          tipoItem: "servicio",
+          areaId: "",
+          categoriaId: "",
+          nombre: "Servicio con código de planilla",
+          unidad: "servicio",
+          costoBase: 1000,
+          margenDeseado: 10,
+          precioInterno: 1100,
+          precioManual: false,
+          codigoSolicitado: "CUSTOM-001",
+          origen: "importacion_excel_local",
+        },
+      }],
+    };
+    const customCodeResult = await call("confirmInventoryImportV2", customCodePayload);
+    assert.equal(customCodeResult.data.results[0].codigoInterno, "CUSTOM-001");
+    const customCodeRetry = await call("confirmInventoryImportV2", customCodePayload);
+    assert.equal(customCodeRetry.data.idempotent, true);
+    assert.deepEqual(customCodeRetry.data.results, customCodeResult.data.results);
+    await expectCallableCode("already-exists", () =>
+      call("confirmInventoryImportV2", {
+        ...customCodePayload,
+        requestId: "integrated_custom_code_0002",
+      })
+    );
+
     await assert.rejects(
       setDoc(
         doc(db, "negocios", businessId, "inventoryImportRequests", "client-write"),
@@ -538,7 +655,22 @@ async function main() {
     const finalItems = await getDocs(
       query(collectionRef(db, uid, "inventario"), orderBy("actualizadoEn", "desc"))
     );
-    assert.equal(finalItems.size, 8);
+    assert.equal(finalItems.size, 11);
+
+    await signOut(auth);
+    const memberCredential = await signInAnonymously(auth);
+    await adminDb.doc(`membresias/${businessId}__${memberCredential.user.uid}`).set({
+      uid: memberCredential.user.uid,
+      negocioId: businessId,
+      rol: "MEMBER",
+      estado: "activo",
+    });
+    await expectCallableCode("permission-denied", () =>
+      call("createInventoryItemWithCode", {
+        requestId: "member_cannot_create_0001",
+        item: commonItem,
+      })
+    );
 
     console.log(
       "INVENTORY_INTEGRATED_LOCAL_OK",

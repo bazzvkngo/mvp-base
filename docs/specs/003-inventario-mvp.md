@@ -1,0 +1,129 @@
+# Inventario MVP
+
+## Objetivo
+
+Ofrecer una vista empresarial de consulta y administración para productos, servicios y actividades, con creación manual enfocada, importación local desde planillas y persistencia autoritativa multiempresa.
+
+## Flujo principal
+
+La ruta `/inventario` abre el listado. El encabezado permite crear un ítem, importar Excel y administrar áreas y categorías. El formulario completo no se monta en la vista principal.
+
+La vista incluye indicadores derivados de los documentos del negocio activo, búsqueda por código o nombre, filtros por tipo, área, categoría y estado, tabla en escritorio y tarjetas en móvil. El estado vacío ofrece creación e importación sin mostrar un formulario permanente.
+
+## Modelo vigente
+
+Los documentos operacionales viven en:
+
+```text
+negocios/{businessId}/inventario/{itemId}
+```
+
+Campos canónicos nuevos:
+
+- `modeloInventarioVersion`;
+- `codigoInterno`;
+- `negocioId`;
+- `tipoItem`;
+- `nombre`;
+- `descripcion`;
+- `unidad`;
+- `costoBase`;
+- `margenDeseado`;
+- `precioInterno`;
+- `precioManual`;
+- `estado`;
+- `areaId` y `categoriaId`, solo cuando se seleccionan;
+- `categoria`, como etiqueta compatible con consumidores actuales;
+- `stock`, `stockMinimo` y `unidadStock`, solo para productos;
+- campos de auditoría autoritativos.
+
+Las reservas y solicitudes internas no son accesibles mediante el SDK cliente:
+
+```text
+negocios/{businessId}/inventarioContadores/{tipoItem}
+negocios/{businessId}/inventoryCreateRequests/{requestId}
+negocios/{businessId}/inventoryImportRequests/{requestId}
+negocios/{businessId}/inventoryCodeKeys/{codeKeyId}
+```
+
+## Tipos de ítem
+
+- Producto: ítem físico. Incluye stock disponible, stock mínimo, unidad de stock e indicador de stock bajo.
+- Servicio: prestación valorizada. No persiste campos de stock.
+- Actividad: trabajo o tarea valorizada. No persiste campos de stock.
+
+Los campos comunes son nombre, unidad, costo base unitario, margen deseado, precio interno calculado, ajuste manual opcional, descripción y estado activo. Área y categoría son opcionales. Una categoría seleccionada siempre debe pertenecer a un área activa.
+
+## Cálculo de precio
+
+El precio calculado reutiliza `calculateBasePrice` y el precio efectivo reutiliza `calculateEffectiveInternalPrice` desde el dominio de valorización. La fórmula vigente es:
+
+```text
+precio calculado = costo base + (costo base × margen deseado / 100)
+```
+
+Un ajuste manual positivo reemplaza el precio calculado únicamente para el ítem. El backend vuelve a validar números finitos, rangos no negativos y margen máximo de 1000%.
+
+## Unidades
+
+El catálogo incluye unidades generales, peso, volumen, longitud, superficie y volumen. El selector usa la etiqueta “Buscar unidad”, es operable con teclado, cierra con Escape y no realiza conversiones.
+
+## Importación local
+
+La acción se denomina “Importar desde Excel” y admite XLSX, XLS y CSV de hasta 5 MB y 500 filas de datos. El navegador:
+
+1. lee la primera hoja con encabezados y datos;
+2. normaliza tildes y alias de encabezados;
+3. transforma cada fila sin inferencias de IA;
+4. muestra una vista previa editable;
+5. marca errores por campo y advertencias por fila;
+6. permite excluir filas;
+7. envía únicamente filas incluidas y válidas después de la confirmación.
+
+Las fórmulas no se ejecutan: la biblioteca consume el valor almacenado de la celda. El archivo no se sube a Storage, Gemini ni Functions. Las filas confirmadas se envían en lotes autoritativos de hasta 200 para respetar límites transaccionales; un archivo puede contener hasta 500 filas.
+
+La plantilla descargable contiene:
+
+```text
+tipo,nombre,codigo,area,categoria,unidad,costo_base,margen,precio_manual,stock,stock_minimo,descripcion
+```
+
+`nombre` y `tipo` son obligatorios. Si falta el tipo, la fila queda pendiente de revisión. Un código vacío se genera con el correlativo seguro. Un código aportado se normaliza, no puede usar los prefijos automáticos `PR`, `SV` o `AC`, y se verifica en backend para impedir duplicados.
+
+## Backend y seguridad multiempresa
+
+`createInventoryItemWithCode` y `confirmInventoryImportV2`:
+
+- exigen autenticación;
+- leen `businessId` desde la solicitud y validan una membresía activa;
+- restringen escritura a `OWNER` y `ADMIN`;
+- verifican que el negocio esté activo;
+- vuelven a validar todos los campos;
+- ignoran estado, identidad del usuario, negocio y timestamps enviados como autoridad;
+- generan códigos y timestamps en servidor;
+- usan transacciones e idempotencia por `requestId`;
+- validan áreas y categorías dentro del mismo negocio cuando se informan.
+
+Las Rules permiten lectura a miembros activos, bloquean colecciones internas y restringen escrituras operacionales de inventario a `OWNER` y `ADMIN`. No se permite eliminación física.
+
+## Compatibilidad legacy
+
+La lectura adapta valores faltantes sin migrar documentos al abrir la ruta. Se admiten `sku`, `precio`, fechas legacy y ausencia de clasificación. Los documentos existentes siguen visibles mediante el filtro de estado correspondiente. Cotizaciones y Valorización continúan consumiendo `nombre`, `tipoItem`, `unidad`, `costoBase`, `margenDeseado`, `precioInterno` y las banderas de precio manual existentes.
+
+## Criterios de aceptación
+
+- Inventario abre como consulta y no como formulario largo.
+- Los indicadores usan exclusivamente datos reales del negocio activo.
+- Producto, servicio y actividad muestran campos pertinentes.
+- Área y categoría no bloquean una creación básica.
+- El código se asigna de forma segura al guardar.
+- La lista funciona en escritorio y como tarjetas a 390 px.
+- Crear, editar, archivar y reactivar son accesibles según rol.
+- La importación no usa IA, OCR, PDF, imágenes ni Storage.
+- Ninguna fila se guarda antes de confirmar.
+- Backend y Rules impiden acceso cruzado entre empresas.
+- Los consumidores actuales continúan leyendo registros legacy y nuevos.
+
+## Fuera de alcance
+
+Variantes, tallas, colores, medidas configurables, imágenes, catálogo público, códigos de barras o cámara, proveedores, compras, ventas, movimientos históricos de stock, conversiones de unidades, IA, Gemini, PDF, OCR y migraciones masivas.

@@ -103,19 +103,28 @@ service cloud.firestore {
     }
 
     function hasValidBusinessInventoryCatalogRelation(businessId) {
-      let areaId = request.resource.data.areaId;
-      let categoriaId = request.resource.data.categoriaId;
+      let areaId = request.resource.data.get("areaId", "");
+      let categoriaId = request.resource.data.get("categoriaId", "");
       let areaPath = /databases/$(database)/documents/negocios/$(businessId)/areas/$(areaId);
       let categoryPath = /databases/$(database)/documents/negocios/$(businessId)/categoriasInventario/$(categoriaId);
       return areaId is string
-        && areaId.size() > 0
         && categoriaId is string
-        && categoriaId.size() > 0
-        && exists(areaPath)
-        && exists(categoryPath)
-        && get(areaPath).data.estado == "activo"
-        && get(categoryPath).data.estado == "activo"
-        && get(categoryPath).data.areaId == areaId;
+        && (
+          (areaId.size() == 0 && categoriaId.size() == 0)
+          || (
+            areaId.size() > 0
+            && exists(areaPath)
+            && get(areaPath).data.estado == "activo"
+            && (
+              categoriaId.size() == 0
+              || (
+                exists(categoryPath)
+                && get(categoryPath).data.estado == "activo"
+                && get(categoryPath).data.areaId == areaId
+              )
+            )
+          )
+        );
     }
 
     function hasValidProductFields() {
@@ -140,14 +149,22 @@ service cloud.firestore {
     }
 
     function hasValidBusinessProductFields(businessId) {
-      return request.resource.data.marca is string
-        && request.resource.data.marca.size() > 0
-        && request.resource.data.modelo is string
-        && request.resource.data.modelo.size() > 0
-        && request.resource.data.stock is number
+      return request.resource.data.stock is number
         && (request.resource.data.stock >= 0 || businessAllowsNegativeStock(businessId))
         && request.resource.data.stockMinimo is number
         && request.resource.data.stockMinimo >= 0
+        && (
+          !request.resource.data.keys().hasAny(["marca"])
+          || request.resource.data.marca is string
+        )
+        && (
+          !request.resource.data.keys().hasAny(["modelo"])
+          || request.resource.data.modelo is string
+        )
+        && (
+          !request.resource.data.keys().hasAny(["unidadStock"])
+          || request.resource.data.unidadStock is string
+        )
         && (
           !request.resource.data.keys().hasAny(["codigoBarras"])
           || request.resource.data.codigoBarras is string
@@ -160,7 +177,8 @@ service cloud.firestore {
         "modelo",
         "stock",
         "stockMinimo",
-        "codigoBarras"
+        "codigoBarras",
+        "unidadStock"
       ]);
     }
 
@@ -203,7 +221,7 @@ service cloud.firestore {
         && request.resource.data.nombre is string
         && request.resource.data.nombre.size() > 0
         && request.resource.data.categoria is string
-        && request.resource.data.categoria.size() > 0
+        && request.resource.data.categoria.size() >= 0
         && request.resource.data.unidad is string
         && request.resource.data.unidad.size() > 0
         && request.resource.data.costoBase is number
@@ -238,7 +256,7 @@ service cloud.firestore {
         && request.resource.data.nombre is string
         && request.resource.data.nombre.size() > 0
         && request.resource.data.categoria is string
-        && request.resource.data.categoria.size() > 0
+        && request.resource.data.categoria.size() >= 0
         && request.resource.data.unidad is string
         && request.resource.data.unidad.size() > 0
         && request.resource.data.costoBase is number
@@ -551,6 +569,10 @@ service cloud.firestore {
         allow read, create, update, delete: if false;
       }
 
+      match /inventoryCodeKeys/{codeKeyId} {
+        allow read, create, update, delete: if false;
+      }
+
       match /referencias/{referenceId} {
         allow read: if isOwner(uid);
         allow create, update: if isOwner(uid) && hasValidDocumentOwner(uid);
@@ -610,10 +632,10 @@ service cloud.firestore {
 
       match /inventario/{itemId} {
         allow read: if canAccessBusiness(businessId);
-        allow create: if canAccessBusiness(businessId)
+        allow create: if hasBusinessRole(businessId, ["OWNER", "ADMIN"])
           && hasValidBusinessDocument(businessId)
           && isAllowedLegacyInventoryCreate();
-        allow update: if canAccessBusiness(businessId)
+        allow update: if hasBusinessRole(businessId, ["OWNER", "ADMIN"])
           && hasValidBusinessDocument(businessId)
           && inventoryCodesAreImmutable()
           && (
@@ -647,6 +669,10 @@ service cloud.firestore {
       }
 
       match /inventoryImportRequests/{requestId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /inventoryCodeKeys/{codeKeyId} {
         allow read, create, update, delete: if false;
       }
 

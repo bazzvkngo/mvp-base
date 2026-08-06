@@ -1,2271 +1,320 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
-import { PackageOpen } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Archive, Boxes, FileSpreadsheet, PackagePlus, RotateCcw, Settings2 } from "lucide-react";
 import AppIcon from "../../components/ui/AppIcon";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
-import InventoryCatalogManager from "./InventoryCatalogManager";
 import {
-  buildNewCategoryPayload,
-  getCategoriesForArea,
-  getInventoryAreaLabel,
-  getInventoryCategoryLabel,
-  isDuplicateCategoryName,
-  keepCompatibleCategoryId,
-  OTHER_CATEGORY_OPTION,
-} from "../../domain/inventoryCatalog.mjs";
+  INVENTORY_TYPES,
+  adaptInventoryItem,
+  buildInventoryPayload,
+  filterInventoryItems,
+  getDefaultUnitForType,
+  getInventoryTypeLabel,
+  parseInventoryNumber,
+  summarizeInventory,
+  validateInventoryDraft,
+} from "../../domain/inventoryMvp.mjs";
+import { getCategoriesForArea, getInventoryAreaLabel, getInventoryCategoryLabel } from "../../domain/inventoryCatalog.mjs";
+import { calculateBasePrice, calculateEffectiveInternalPrice } from "../../domain/pricing.js";
 import {
   createManagedInventoryItem,
   deactivateInventoryItem,
-  getInventoryItems,
   reactivateInventoryItem,
-  saveInventoryCategory,
+  subscribeToInventory,
   subscribeToInventoryAreas,
   subscribeToInventoryCategories,
-  subscribeToInventory,
   updateManagedInventoryItem,
 } from "../../services/inventoryService";
-import { formatCLP, formatPercent } from "../../utils/formatters";
-import {
-  DEFAULT_INVENTORY_SETTINGS,
-  getBusinessSettings,
-} from "../../services/companyService";
+import { DEFAULT_INVENTORY_SETTINGS, getBusinessSettings } from "../../services/companyService";
+import { formatCLP } from "../../utils/formatters";
+import InventoryCatalogManager from "./InventoryCatalogManager";
+import InventoryImportDialog from "./InventoryImportDialog";
+import UnitSelector from "./UnitSelector";
+import "./inventory.css";
 
-const EMPTY_FORM = {
+const EMPTY_DRAFT = Object.freeze({
   tipoItem: "",
+  nombre: "",
   areaId: "",
   categoriaId: "",
-  categoria: "",
-  nombre: "",
-  descripcion: "",
   unidad: "",
   costoBase: "",
   margenDeseado: "",
-  precioInterno: "",
-  marca: "",
-  modelo: "",
+  precioManual: "",
   stock: "0",
   stockMinimo: "0",
-  codigoBarras: "",
-  estado: "activo",
-};
+  unidadStock: "unidad",
+  descripcion: "",
+});
 
-const tipoLabels = {
-  producto: "Producto",
-  servicio: "Servicio",
-  actividad: "Actividad",
-};
-
-const estadoLabels = {
-  activo: "Activo",
-  inactivo: "Inactivo",
-  eliminado: "Eliminado",
-};
-
-const OTHER_OPTION = "__otro__";
-const MANUAL_PRICE_FLAGS = [
-  "precioManual",
-  "ajusteManual",
-  "usarPrecioManual",
-  "precioPersonalizado",
-];
-
-const UNIT_OPTIONS = [
-  { value: "servicio", label: "Servicio" },
-  { value: "hora", label: "Hora" },
-  { value: "equipo", label: "Equipo" },
-  { value: "visita", label: "Visita" },
-  { value: "punto", label: "Punto" },
-  { value: "metro", label: "Metro" },
-  { value: "unidad", label: "Unidad" },
-  { value: "proyecto", label: "Proyecto" },
-  { value: "mes", label: "Mes" },
-  { value: "cuenta", label: "Cuenta" },
-];
-
-function calcularPrecioInterno(costoBase, margenDeseado) {
-  const costo = Number(costoBase);
-  const margen = Number(margenDeseado);
-  if (!Number.isFinite(costo) || !Number.isFinite(margen)) return "";
-  return Math.round(costo + (costo * margen) / 100);
+function requestId() {
+  const id = globalThis.crypto?.randomUUID?.() || `${Date.now()}_${Math.random()}`;
+  return `inventory_${String(id).replace(/[^a-zA-Z0-9_-]/g, "")}`.slice(0, 120);
 }
 
-function calculateGrossProfitability(costoBase, precioInternoEfectivo) {
-  const costo = Number(costoBase);
-  const precio = Number(precioInternoEfectivo);
-
-  if (
-    !Number.isFinite(costo) ||
-    !Number.isFinite(precio) ||
-    costo <= 0 ||
-    precio <= 0
-  ) {
-    return null;
-  }
-
-  const gananciaBruta = precio - costo;
-  const margenBrutoEstimado = (gananciaBruta / precio) * 100;
-
-  if (!Number.isFinite(margenBrutoEstimado)) return null;
-
-  return {
-    gananciaBruta,
-    margenBrutoEstimado,
-  };
-}
-
-function getProfitabilityStyle(gananciaBruta) {
-  if (gananciaBruta > 0) return styles.profitabilityPositive;
-  if (gananciaBruta < 0) return styles.profitabilityNegative;
-  return styles.profitabilityNeutral;
-}
-
-function formatSignedCLP(value) {
-  const amount = Number(value);
-  if (!Number.isFinite(amount)) return formatCLP(0);
-  if (amount < 0) return `-${formatCLP(Math.abs(amount))}`;
-  return formatCLP(amount);
-}
-
-function normalizeOptionText(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-}
-
-function findStandardUnit(value) {
-  const normalized = normalizeOptionText(value);
-  if (!normalized) return null;
-  return (
-    UNIT_OPTIONS.find(
-      (option) =>
-        normalizeOptionText(option.value) === normalized ||
-        normalizeOptionText(option.label) === normalized
-    ) || null
-  );
-}
-
-function getUnitSelectValue(value) {
-  if (!value) return "";
-  return findStandardUnit(value)?.value || OTHER_OPTION;
-}
-
-function hasManualPriceOverride(item) {
-  return MANUAL_PRICE_FLAGS.some((flag) => item?.[flag] === true);
-}
-
-function formatFirestoreDate(value) {
-  if (!value) return "-";
-  if (typeof value.toDate === "function") {
-    return value.toDate().toLocaleString("es-CL");
-  }
-  if (value instanceof Date) {
-    return value.toLocaleString("es-CL");
-  }
-  return "-";
-}
-
-function createInventoryRequestId() {
-  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
-  const bytes = new Uint8Array(16);
-  globalThis.crypto.getRandomValues(bytes);
-  return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
-}
-
-function getCatalogLoadErrorMessage(scope, error) {
-  const label = scope === "areas" ? "las áreas" : "las categorías";
-  const code = String(error?.code || "");
-  if (code.includes("permission-denied")) {
-    return `No fue posible acceder a ${label}. Revisa la sesión y la configuración local.`;
-  }
-  if (code.includes("unavailable") || code.includes("network")) {
-    return `No fue posible conectar con ${label}. Comprueba los emuladores locales.`;
-  }
-  return `No se pudieron cargar ${label}.`;
-}
-
-function InventoryManager({ userId, refreshSignal = 0, readOnly = false }) {
+function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
+  const cannotWrite = readOnly || role === "MEMBER";
   const [items, setItems] = useState([]);
   const [areas, setAreas] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [editingId, setEditingId] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-  const [inventorySettings, setInventorySettings] = useState(
-    DEFAULT_INVENTORY_SETTINGS
-  );
-  const [tipoFiltro, setTipoFiltro] = useState("todos");
-  const [areaFiltro, setAreaFiltro] = useState("todas");
-  const [categoriaFiltro, setCategoriaFiltro] = useState("todas");
-  const [estadoFiltro, setEstadoFiltro] = useState("activos");
-  const [busqueda, setBusqueda] = useState("");
-  const [unidadPersonalizada, setUnidadPersonalizada] = useState("");
-  const [unidadOtroActiva, setUnidadOtroActiva] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [feedback, setFeedback] = useState({ type: "", message: "" });
+  const [settings, setSettings] = useState(DEFAULT_INVENTORY_SETTINGS);
+  const [filters, setFilters] = useState({ query: "", type: "todos", areaId: "todas", categoryId: "todas", status: "activo" });
+  const [formOpen, setFormOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [catalogOpen, setCatalogOpen] = useState(false);
   const [detailItem, setDetailItem] = useState(null);
-  const [catalogDialogOpen, setCatalogDialogOpen] = useState(false);
-  const [customCategoryActive, setCustomCategoryActive] = useState(false);
-  const [customCategoryName, setCustomCategoryName] = useState("");
-  const [catalogRetrySignal, setCatalogRetrySignal] = useState(0);
-  const [catalogLoading, setCatalogLoading] = useState({
-    areas: Boolean(userId),
-    categories: Boolean(userId),
-  });
-  const [catalogLoadErrors, setCatalogLoadErrors] = useState({
-    areas: "",
-    categories: "",
-  });
-  const createRequestIdRef = React.useRef("");
-  const saveInFlightRef = React.useRef(false);
+  const [editingItem, setEditingItem] = useState(null);
+  const [draft, setDraft] = useState({ ...EMPTY_DRAFT });
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [catalogState, setCatalogState] = useState({ loading: true, errors: { areas: "", categories: "" }, retry: 0 });
+  const createRequestRef = useRef("");
 
   useEffect(() => {
-    if (!userId) {
+    if (!businessId) {
       setLoading(false);
       return undefined;
     }
-
     setLoading(true);
-    const unsubscribe = subscribeToInventory(
-      userId,
-      (data) => {
-        setItems(data);
-        setLoading(false);
-      },
-      (err) => {
-        console.error("Error al cargar inventario:", err);
-        setError("No se pudo cargar el inventario.");
-        setLoading(false);
-      }
-    );
-
-    return () => unsubscribe();
-  }, [userId]);
-
-  useEffect(() => {
-    if (!userId) return undefined;
-    let active = true;
-    getBusinessSettings(userId, "inventario")
-      .then((settings) => active && setInventorySettings(settings))
-      .catch((settingsError) => {
-        if (import.meta.env.DEV) {
-          console.error(
-            "No se pudieron cargar las preferencias de inventario:",
-            settingsError
-          );
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [userId]);
-
-  useEffect(() => {
-    if (!userId) {
-      setCatalogLoading({ areas: false, categories: false });
-      return undefined;
-    }
-
-    setCatalogLoading({ areas: true, categories: true });
-    setCatalogLoadErrors({ areas: "", categories: "" });
-
-    const unsubscribeAreas = subscribeToInventoryAreas(
-      userId,
-      (data) => {
-        setAreas(data);
-        setCatalogLoading((current) => ({ ...current, areas: false }));
-        setCatalogLoadErrors((current) => ({ ...current, areas: "" }));
-      },
-      (catalogError) => {
-        console.error("Error al cargar áreas de inventario:", {
-          code: catalogError?.code || "unknown",
-          message: catalogError?.message || "unknown",
-        });
-        setCatalogLoading((current) => ({ ...current, areas: false }));
-        setCatalogLoadErrors((current) => ({
-          ...current,
-          areas: getCatalogLoadErrorMessage("areas", catalogError),
-        }));
-      }
-    );
-    const unsubscribeCategories = subscribeToInventoryCategories(
-      userId,
-      (data) => {
-        setCategories(data);
-        setCatalogLoading((current) => ({ ...current, categories: false }));
-        setCatalogLoadErrors((current) => ({ ...current, categories: "" }));
-      },
-      (catalogError) => {
-        console.error("Error al cargar categorías de inventario:", {
-          code: catalogError?.code || "unknown",
-          message: catalogError?.message || "unknown",
-        });
-        setCatalogLoading((current) => ({ ...current, categories: false }));
-        setCatalogLoadErrors((current) => ({
-          ...current,
-          categories: getCatalogLoadErrorMessage("categories", catalogError),
-        }));
-      }
-    );
-
-    return () => {
-      unsubscribeAreas();
-      unsubscribeCategories();
-    };
-  }, [catalogRetrySignal, userId]);
-
-  const catalogIsLoading = catalogLoading.areas || catalogLoading.categories;
-  const catalogHasLoadError = Boolean(
-    catalogLoadErrors.areas || catalogLoadErrors.categories
-  );
-  const catalogReady = !catalogIsLoading && !catalogHasLoadError;
-
-  useEffect(() => {
-    if (!userId || refreshSignal === 0) return;
-
-    let active = true;
-    getInventoryItems(userId)
-      .then((data) => {
-        if (active) {
-          setItems(data);
-        }
-      })
-      .catch((err) => {
-        console.error("Error al recargar inventario:", err);
-        if (active) {
-          setError("No se pudo recargar el inventario después de importar.");
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [refreshSignal, userId]);
-
-  const activeAreas = useMemo(
-    () => areas.filter((area) => (area.estado || "activo") === "activo"),
-    [areas]
-  );
-  const formCategories = useMemo(
-    () => getCategoriesForArea(categories, form.areaId),
-    [categories, form.areaId]
-  );
-  const filterCategories = useMemo(
-    () =>
-      areaFiltro === "todas" || areaFiltro === "pendientes"
-        ? []
-        : getCategoriesForArea(categories, areaFiltro, { activeOnly: false }),
-    [areaFiltro, categories]
-  );
-
-  const filteredItems = useMemo(() => {
-    const q = busqueda.trim().toLowerCase();
-
-    return items.filter((item) => {
-      const estado = item.estado || "activo";
-      if (estadoFiltro === "activos" && estado !== "activo") return false;
-      if (estadoFiltro === "inactivos" && estado !== "inactivo") return false;
-      if (estadoFiltro === "eliminados" && estado !== "eliminado") return false;
-      if (tipoFiltro !== "todos" && item.tipoItem !== tipoFiltro) return false;
-      if (areaFiltro === "pendientes" && item.areaId) return false;
-      if (
-        areaFiltro !== "todas" &&
-        areaFiltro !== "pendientes" &&
-        item.areaId !== areaFiltro
-      ) {
-        return false;
-      }
-      if (categoriaFiltro !== "todas" && item.categoriaId !== categoriaFiltro) {
-        return false;
-      }
-      if (!q) return true;
-
-      const text = `${item.codigoInterno || ""} ${item.sku || ""} ${
-        item.nombre || ""
-      } ${item.marca || ""} ${item.modelo || ""} ${getInventoryAreaLabel(
-        item,
-        areas
-      )} ${getInventoryCategoryLabel(item, categories)} ${
-        item.descripcion || ""
-      }`.toLowerCase();
-      return text.includes(q);
+    return subscribeToInventory(businessId, (records) => {
+      setItems(records);
+      setLoading(false);
+      setLoadError("");
+    }, (error) => {
+      console.error("Error al cargar inventario:", error);
+      setLoading(false);
+      setLoadError("No se pudo cargar el inventario del negocio.");
     });
-  }, [
-    areaFiltro,
-    areas,
-    busqueda,
-    categoriaFiltro,
-    categories,
-    estadoFiltro,
-    items,
-    tipoFiltro,
-  ]);
+  }, [businessId]);
 
-  const lowStockCount = useMemo(() => {
-    if (!inventorySettings.alertasStockBajo) return 0;
-    return items.filter((item) => {
-      if (item.tipoItem !== "producto" || (item.estado || "activo") !== "activo") {
-        return false;
-      }
-      const threshold = Math.max(
-        Number(item.stockMinimo || 0),
-        Number(inventorySettings.umbralStockBajo || 0)
-      );
-      return Number(item.stock || 0) <= threshold;
-    }).length;
-  }, [inventorySettings, items]);
+  useEffect(() => {
+    if (!businessId) return undefined;
+    const stops = [];
+    setCatalogState((current) => ({ ...current, loading: true, errors: { areas: "", categories: "" } }));
+    stops.push(subscribeToInventoryAreas(businessId, (records) => {
+      setAreas(records);
+      setCatalogState((current) => ({ ...current, loading: false, errors: { ...current.errors, areas: "" } }));
+    }, () => setCatalogState((current) => ({ ...current, loading: false, errors: { ...current.errors, areas: "No se pudieron cargar las áreas." } }))));
+    stops.push(subscribeToInventoryCategories(businessId, (records) => {
+      setCategories(records);
+      setCatalogState((current) => ({ ...current, loading: false, errors: { ...current.errors, categories: "" } }));
+    }, () => setCatalogState((current) => ({ ...current, loading: false, errors: { ...current.errors, categories: "No se pudieron cargar las categorías." } }))));
+    return () => stops.forEach((stop) => stop());
+  }, [businessId, catalogState.retry]);
 
-  const resetForm = () => {
-    setForm(EMPTY_FORM);
-    setEditingId(null);
-    setUnidadPersonalizada("");
-    setUnidadOtroActiva(false);
-    setCustomCategoryActive(false);
-    setCustomCategoryName("");
-    createRequestIdRef.current = "";
-    setError("");
-    setSuccess("");
+  useEffect(() => {
+    if (!businessId) return undefined;
+    let active = true;
+    getBusinessSettings(businessId, "inventario").then((value) => active && setSettings(value)).catch(() => {});
+    return () => { active = false; };
+  }, [businessId]);
+
+  const summary = useMemo(() => summarizeInventory(items, { lowStockThreshold: settings.umbralStockBajo }), [items, settings.umbralStockBajo]);
+  const visibleItems = useMemo(() => filterInventoryItems(items, filters), [filters, items]);
+  const activeAreas = useMemo(() => areas.filter((area) => (area.estado || "activo") === "activo"), [areas]);
+  const formCategories = useMemo(() => getCategoriesForArea(categories, draft.areaId), [categories, draft.areaId]);
+  const filterCategories = useMemo(() => getCategoriesForArea(categories, filters.areaId, { activeOnly: false }), [categories, filters.areaId]);
+
+  const setFilter = (field, value) => setFilters((current) => ({
+    ...current,
+    [field]: value,
+    ...(field === "areaId" ? { categoryId: "todas" } : {}),
+  }));
+
+  const openNewItem = () => {
+    setEditingItem(null);
+    setDraft({ ...EMPTY_DRAFT });
+    setFieldErrors({});
+    createRequestRef.current = "";
+    setFormOpen(true);
   };
 
-  const handleChange = (event) => {
-    const { name, value } = event.target;
-    setForm((prev) => {
-      const next = { ...prev, [name]: value };
-      if (
-        (name === "costoBase" || name === "margenDeseado") &&
-        prev.precioInterno === ""
-      ) {
-        next.precioInterno = "";
+  const openEditItem = (rawItem) => {
+    const item = adaptInventoryItem(rawItem);
+    setEditingItem(rawItem);
+    setDraft({
+      ...EMPTY_DRAFT,
+      tipoItem: item.tipoItem,
+      nombre: item.nombre,
+      areaId: item.areaId || "",
+      categoriaId: item.categoriaId || "",
+      unidad: item.unidad,
+      costoBase: String(item.costoBase),
+      margenDeseado: String(item.margenDeseado),
+      precioManual: item.precioManual === true ? String(item.precioInterno ?? "") : "",
+      stock: String(item.stock ?? 0),
+      stockMinimo: String(item.stockMinimo ?? 0),
+      unidadStock: item.unidadStock || item.unidad || "unidad",
+      descripcion: item.descripcion || "",
+    });
+    setFieldErrors({});
+    setDetailItem(null);
+    setFormOpen(true);
+  };
+
+  const updateDraft = (field, value) => {
+    setDraft((current) => {
+      const next = { ...current, [field]: value };
+      if (field === "tipoItem" && value) {
+        next.unidad = current.unidad || getDefaultUnitForType(value);
+        if (value !== "producto") {
+          next.stock = "0";
+          next.stockMinimo = "0";
+        }
       }
+      if (field === "areaId") next.categoriaId = "";
       return next;
     });
+    setFieldErrors((current) => ({ ...current, [field]: "" }));
   };
 
-  const handleAreaChange = (event) => {
-    const areaId = event.target.value;
-    setCustomCategoryActive(false);
-    setCustomCategoryName("");
-    setForm((current) => {
-      const categoriaId = keepCompatibleCategoryId(
-        categories,
-        areaId,
-        current.categoriaId
-      );
-      const category = categories.find((item) => item.id === categoriaId);
-      return {
-        ...current,
-        areaId,
-        categoriaId,
-        categoria: category?.nombre || "",
-      };
-    });
+  const closeForm = () => {
+    if (saving) return;
+    setFormOpen(false);
+    setEditingItem(null);
+    setFieldErrors({});
   };
 
-  const handleCategoryChange = (event) => {
-    const categoriaId = event.target.value;
-    if (categoriaId === OTHER_CATEGORY_OPTION) {
-      setCustomCategoryActive(true);
-      setCustomCategoryName("");
-      setForm((current) => ({
-        ...current,
-        categoriaId: "",
-        categoria: "",
-      }));
-      return;
-    }
-    setCustomCategoryActive(false);
-    setCustomCategoryName("");
-    const category = categories.find((item) => item.id === categoriaId);
-    setForm((current) => ({
-      ...current,
-      categoriaId,
-      categoria: category?.nombre || "",
-    }));
-  };
-
-  const handleAreaFilterChange = (event) => {
-    setAreaFiltro(event.target.value);
-    setCategoriaFiltro("todas");
-  };
-
-  const handleUnidadChange = (event) => {
-    const value = event.target.value;
-    if (value === OTHER_OPTION) {
-      setUnidadOtroActiva(true);
-      const customValue = unidadPersonalizada || "";
-      setForm((prev) => ({ ...prev, unidad: customValue }));
-      return;
-    }
-
-    setUnidadOtroActiva(false);
-    setUnidadPersonalizada("");
-    setForm((prev) => ({ ...prev, unidad: value }));
-  };
-
-  const handleUnidadPersonalizadaChange = (event) => {
-    const value = event.target.value;
-    setUnidadOtroActiva(true);
-    setUnidadPersonalizada(value);
-    setForm((prev) => ({ ...prev, unidad: value }));
-  };
-
-  const validateForm = () => {
-    if (!catalogReady) {
-      return "No es posible validar Área y Categoría hasta recuperar el catálogo.";
-    }
-    if (!form.tipoItem) return "Selecciona el tipo de ítem.";
-    if (!form.areaId) return "Selecciona un área.";
-    if (customCategoryActive) {
-      try {
-        buildNewCategoryPayload(form.areaId, customCategoryName);
-      } catch (categoryError) {
-        return categoryError.message;
-      }
-      if (
-        isDuplicateCategoryName(categories, form.areaId, customCategoryName)
-      ) {
-        return "Ya existe una categoría con ese nombre dentro del área.";
-      }
-    } else {
-      if (!form.categoriaId) return "Selecciona una categoría.";
-      if (!formCategories.some((category) => category.id === form.categoriaId)) {
-        return "La categoría debe estar activa y pertenecer al área seleccionada.";
-      }
-    }
-    if (!form.nombre.trim()) return "Ingresa el nombre del ítem.";
-    if (!form.unidad.trim()) return "Ingresa la unidad.";
-    if (form.costoBase === "") return "Ingresa el costo base.";
-    if (form.margenDeseado === "") return "Ingresa el margen deseado.";
-    if (!Number.isFinite(Number(form.costoBase))) {
-      return "El costo base debe ser numérico.";
-    }
-    if (!Number.isFinite(Number(form.margenDeseado))) {
-      return "El margen deseado debe ser numérico.";
-    }
-    if (form.precioInterno !== "" && !Number.isFinite(Number(form.precioInterno))) {
-      return "El precio interno debe ser numérico.";
-    }
-    if (form.tipoItem === "producto") {
-      if (!form.marca.trim()) return "La marca es obligatoria para productos.";
-      if (!form.modelo.trim()) return "El modelo es obligatorio para productos.";
-      if (
-        !Number.isFinite(Number(form.stock)) ||
-        (!inventorySettings.permitirStockNegativo && Number(form.stock) < 0)
-      ) {
-        return inventorySettings.permitirStockNegativo
-          ? "El stock actual debe ser numérico."
-          : "El stock actual debe ser un número mayor o igual a cero.";
-      }
-      if (!Number.isFinite(Number(form.stockMinimo)) || Number(form.stockMinimo) < 0) {
-        return "El stock mínimo debe ser un número mayor o igual a cero.";
-      }
-    }
-    return "";
-  };
-
-  const buildPayload = (resolvedCategory = null) => {
-    const manualPrice = Number(form.precioInterno);
-    const hasManualPrice =
-      String(form.precioInterno ?? "").trim() !== "" &&
-      Number.isFinite(manualPrice) &&
-      manualPrice > 0;
-    const precioCalculado =
-      hasManualPrice
-        ? form.precioInterno
-        : calcularPrecioInterno(form.costoBase, form.margenDeseado);
-
-    const category =
-      resolvedCategory ||
-      categories.find((item) => item.id === form.categoriaId);
-    const payload = {
-      tipoItem: form.tipoItem,
-      areaId: form.areaId,
-      categoriaId: category?.id || form.categoriaId,
-      categoria: category?.nombre || form.categoria.trim(),
-      nombre: form.nombre.trim(),
-      descripcion: form.descripcion.trim(),
-      unidad: form.unidad.trim(),
-      costoBase: Number(form.costoBase),
-      margenDeseado: Number(form.margenDeseado),
-      precioInterno: Number(precioCalculado),
-      precioManual: hasManualPrice,
-      estado: form.estado,
-    };
-    if (form.tipoItem === "producto") {
-      payload.marca = form.marca.trim();
-      payload.modelo = form.modelo.trim();
-      payload.stock = Number(form.stock);
-      payload.stockMinimo = Number(form.stockMinimo);
-      payload.codigoBarras = form.codigoBarras.trim();
-    }
-    return payload;
-  };
-
-  const handleSubmit = async (event) => {
+  const saveItem = async (event) => {
     event.preventDefault();
-    if (saveInFlightRef.current) return;
-    setError("");
-    setSuccess("");
-
-    if (!userId) {
-      setError("Debes iniciar sesión para administrar inventario.");
-      return;
-    }
-
-    const validationMessage = validateForm();
-    if (validationMessage) {
-      setError(validationMessage);
-      return;
-    }
-
+    const errors = validateInventoryDraft(draft);
+    setFieldErrors(errors);
+    if (Object.keys(errors).length) return;
+    setSaving(true);
+    setFeedback({ type: "", message: "" });
     try {
-      saveInFlightRef.current = true;
-      setSaving(true);
-      const originalItem = editingId
-        ? items.find((item) => item.id === editingId)
-        : null;
-      if (
-        originalItem?.tipoItem === "producto" &&
-        form.tipoItem !== "producto" &&
-        !window.confirm(
-          "Al guardar como Servicio o Actividad se eliminarán marca, modelo y datos de stock de este ítem. ¿Deseas continuar?"
-        )
-      ) {
-        return;
-      }
-      let resolvedCategory = null;
-      if (customCategoryActive) {
-        const categoryPayload = buildNewCategoryPayload(
-          form.areaId,
-          customCategoryName
-        );
-        const result = await saveInventoryCategory(userId, categoryPayload);
-        resolvedCategory = {
-          id: result.categoriaId,
-          nombre: categoryPayload.nombre,
-        };
-        setForm((current) => ({
-          ...current,
-          categoriaId: result.categoriaId,
-          categoria: categoryPayload.nombre,
-        }));
-        setCustomCategoryActive(false);
-        setCustomCategoryName("");
-      }
-      const payload = buildPayload(resolvedCategory);
-
-      let successMessage;
-      if (editingId) {
-        await updateManagedInventoryItem(userId, editingId, payload, {
-          preserveLegacyModel:
-            originalItem?.modeloInventarioVersion !== 2 ||
-            !originalItem?.codigoInterno,
-          allowNegativeStock: inventorySettings.permitirStockNegativo,
+      const payload = buildInventoryPayload(
+        draft,
+        categories,
+        editingItem
+          ? { authorizedStatus: adaptInventoryItem(editingItem).estado }
+          : undefined
+      );
+      if (editingItem) {
+        await updateManagedInventoryItem(businessId, editingItem.id, payload, {
+          preserveLegacyModel: editingItem.modeloInventarioVersion !== 2 || !editingItem.codigoInterno,
+          allowNegativeStock: false,
         });
-        successMessage = "Ítem actualizado correctamente.";
+        setFeedback({ type: "success", message: "Ítem actualizado correctamente." });
       } else {
-        if (!createRequestIdRef.current) {
-          createRequestIdRef.current = createInventoryRequestId();
-        }
-        const result = await createManagedInventoryItem(
-          userId,
-          payload,
-          createRequestIdRef.current
-        );
-        successMessage = `Ítem creado con código ${result.codigoInterno}.`;
+        if (!createRequestRef.current) createRequestRef.current = requestId();
+        const created = await createManagedInventoryItem(businessId, payload, createRequestRef.current);
+        setFeedback({ type: "success", message: `Ítem creado con código ${created.codigoInterno}.` });
       }
-      setForm(EMPTY_FORM);
-      setEditingId(null);
-      setUnidadPersonalizada("");
-      setUnidadOtroActiva(false);
-      setCustomCategoryActive(false);
-      setCustomCategoryName("");
-      createRequestIdRef.current = "";
-      setSuccess(successMessage);
-    } catch (err) {
-      console.error("Error al guardar ítem:", err);
-      setError(err.message || "No se pudo guardar el ítem.");
+      setFormOpen(false);
+      setEditingItem(null);
+      setFieldErrors({});
+    } catch (error) {
+      setFeedback({ type: "error", message: error.message || "No se pudo guardar el ítem." });
     } finally {
-      saveInFlightRef.current = false;
       setSaving(false);
     }
   };
 
-  const handleEdit = (item) => {
-    const unidad = item.unidad || "";
-    const manualPriceActive = hasManualPriceOverride(item);
-    const compatibleCategoryId = keepCompatibleCategoryId(
-      categories,
-      item.areaId,
-      item.categoriaId
-    );
-
-    setEditingId(item.id);
-    setForm({
-      ...EMPTY_FORM,
-      nombre: item.nombre || "",
-      tipoItem: item.tipoItem || "",
-      areaId: item.areaId || "",
-      categoriaId: compatibleCategoryId,
-      categoria: item.categoria || "",
-      descripcion: item.descripcion || "",
-      unidad,
-      costoBase: item.costoBase ?? item.precio ?? "",
-      margenDeseado: item.margenDeseado ?? 0,
-      precioInterno: manualPriceActive ? item.precioInterno ?? item.precio ?? "" : "",
-      marca: item.marca || "",
-      modelo: item.modelo || "",
-      stock: item.stock ?? "0",
-      stockMinimo: item.stockMinimo ?? "0",
-      codigoBarras: item.codigoBarras || "",
-      estado: item.estado || "activo",
-    });
-    setUnidadPersonalizada(unidad && !findStandardUnit(unidad) ? unidad : "");
-    setUnidadOtroActiva(Boolean(unidad && !findStandardUnit(unidad)));
-    setCustomCategoryActive(false);
-    setCustomCategoryName("");
-    createRequestIdRef.current = "";
-    setError("");
-    setSuccess("");
-  };
-
-  const handleDeactivate = async (item) => {
-    setError("");
-    setSuccess("");
+  const changeStatus = async (item, nextStatus) => {
+    setFeedback({ type: "", message: "" });
     try {
-      await deactivateInventoryItem(userId, item.id);
-      setSuccess("Ítem desactivado. Puedes verlo con el filtro de inactivos.");
-      if (editingId === item.id) resetForm();
-    } catch (err) {
-      console.error("Error al desactivar ítem:", err);
-      setError("No se pudo desactivar el ítem.");
+      if (nextStatus === "activo") await reactivateInventoryItem(businessId, item.id);
+      else await deactivateInventoryItem(businessId, item.id);
+      setFeedback({ type: "success", message: nextStatus === "activo" ? "Ítem reactivado." : "Ítem archivado; sus referencias se conservan." });
+      setDetailItem(null);
+    } catch (error) {
+      setFeedback({ type: "error", message: error.message || "No se pudo cambiar el estado." });
     }
   };
 
-  const handleReactivate = async (item) => {
-    setError("");
-    setSuccess("");
-    try {
-      await reactivateInventoryItem(userId, item.id);
-      setSuccess("Ítem reactivado correctamente.");
-    } catch (err) {
-      console.error("Error al reactivar ítem:", err);
-      setError("No se pudo reactivar el ítem.");
-    }
-  };
-
-  const manualPriceValue = Number(form.precioInterno);
-  const hasValidManualPrice =
-    String(form.precioInterno ?? "").trim() !== "" &&
-    Number.isFinite(manualPriceValue) &&
-    manualPriceValue > 0;
-  const previewPrice = hasValidManualPrice
-    ? manualPriceValue
-    : calcularPrecioInterno(form.costoBase, form.margenDeseado);
-  const grossProfitability = hasValidManualPrice
-    ? calculateGrossProfitability(form.costoBase, manualPriceValue)
-    : null;
-  const grossProfitabilityStyle = grossProfitability
-    ? getProfitabilityStyle(grossProfitability.gananciaBruta)
-    : null;
-  const unidadSelectValue = unidadOtroActiva
-    ? OTHER_OPTION
-    : getUnitSelectValue(form.unidad);
+  const selectType = (type) => updateDraft("tipoItem", type);
+  const calculatedPrice = Math.round(calculateBasePrice({ costoBase: parseInventoryNumber(draft.costoBase) || 0, margenDeseado: parseInventoryNumber(draft.margenDeseado) || 0 }));
+  const effectivePrice = Math.round(calculateEffectiveInternalPrice({ costoBase: parseInventoryNumber(draft.costoBase) || 0, margenDeseado: parseInventoryNumber(draft.margenDeseado) || 0, precioInterno: parseInventoryNumber(draft.precioManual), precioManual: String(draft.precioManual).trim() !== "" }));
 
   return (
-    <section className="erp-page" style={styles.wrapper}>
-      <style>
-        {`
-          .inventory-basic-grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-          }
-
-          .inventory-product-grid {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-          }
-
-          .inventory-valuation-grid {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-          }
-
-          .inventory-form-field--full {
-            grid-column: 1 / -1;
-          }
-
-          .inventory-catalog-item > :first-child {
-            min-width: 0;
-            overflow-wrap: anywhere;
-          }
-
-          @media (max-width: 1100px) {
-            .inventory-product-grid,
-            .inventory-valuation-grid {
-              grid-template-columns: repeat(2, minmax(0, 1fr));
-            }
-
-            .inventory-valuation-result {
-              grid-column: 1 / -1;
-            }
-          }
-
-          @media (max-width: 640px) {
-            .inventory-basic-grid,
-            .inventory-product-grid,
-            .inventory-valuation-grid {
-              grid-template-columns: minmax(0, 1fr);
-            }
-
-            .inventory-form-field--full,
-            .inventory-valuation-result {
-              grid-column: 1 / -1;
-            }
-
-            .inventory-form-submit {
-              width: 100%;
-            }
-
-            .inventory-catalog-item {
-              align-items: flex-start !important;
-              flex-direction: column;
-            }
-
-            .inventory-catalog-item-actions {
-              width: 100%;
-            }
-
-            .inventory-catalog-manage-button {
-              width: 100%;
-            }
-          }
-        `}
-      </style>
-      <div className="erp-page-header" style={styles.header}>
+    <section className="erp-page inventory-page">
+      <header className="erp-page-header inventory-page-header">
         <div className="erp-page-header__content">
-          <span style={styles.eyebrow}>Inventario</span>
-          <h2 style={styles.title}>Productos, servicios y actividades</h2>
-          <p style={styles.subtitle}>
-            Registra los ítems que ValoraCloud usará para valorar proyectos y
-            preparar cotizaciones.
-          </p>
+          <span className="inventory-eyebrow">Operación</span>
+          <h1 className="erp-page-header__title">Inventario</h1>
+          <p className="erp-page-header__description">Consulta y administra productos, servicios y actividades del negocio activo.</p>
         </div>
+        {!cannotWrite && <div className="inventory-header-actions">
+          <button type="button" className="inventory-button inventory-button--secondary" onClick={() => setImportOpen(true)}><AppIcon icon={FileSpreadsheet} size={18} />Importar Excel</button>
+          <button type="button" className="inventory-button inventory-button--primary" onClick={openNewItem}><AppIcon icon={PackagePlus} size={18} />Nuevo ítem</button>
+        </div>}
+      </header>
+
+      {cannotWrite && <p className="inventory-feedback inventory-feedback--notice">Puedes consultar el inventario. La creación y edición requieren rol Propietario o Administrador.</p>}
+      {feedback.message && <p className={`inventory-feedback inventory-feedback--${feedback.type}`} role={feedback.type === "error" ? "alert" : "status"}>{feedback.message}</p>}
+      {loadError && <p className="inventory-feedback inventory-feedback--error" role="alert">{loadError}</p>}
+
+      <div className="erp-metric-grid inventory-summary" aria-label="Resumen del inventario">
+        <Metric label="Ítems activos" value={summary.total} />
+        <Metric label="Productos" value={summary.products} />
+        <Metric label="Servicios y actividades" value={summary.servicesAndActivities} />
+        <Metric label="Stock bajo" value={summary.lowStock} tone={summary.lowStock ? "warning" : ""} />
+        <Metric label="Costo del inventario" value={formatCLP(summary.inventoryCost)} />
       </div>
 
-      {inventorySettings.alertasStockBajo && (
-        <p style={styles.stockNotice} role="status">
-          {lowStockCount === 0
-            ? "No hay productos con stock bajo."
-            : `${lowStockCount} producto${lowStockCount === 1 ? "" : "s"} requiere${lowStockCount === 1 ? "" : "n"} atención por stock bajo.`}
-        </p>
-      )}
-
-      {!userId && (
-        <p role="alert" style={styles.errorText}>Debes iniciar sesión para ver inventario.</p>
-      )}
-
-      {userId && !readOnly && (
-        <div className="erp-panel" style={styles.catalogToolbar}>
-          <div style={styles.catalogToolbarText}>
-            <strong>Catálogo de clasificación</strong>
-            <span>
-              {areas.length} áreas · {categories.length} categorías
-            </span>
-          </div>
-          <button
-            type="button"
-            className="inventory-catalog-manage-button"
-            style={styles.secondaryButton}
-            onClick={() => setCatalogDialogOpen(true)}
-          >
-            Administrar áreas y categorías
-          </button>
+      <section className="erp-panel inventory-list-panel" aria-labelledby="inventory-list-title">
+        <div className="erp-panel-header">
+          <div><h2 id="inventory-list-title" className="erp-panel-title">Ítems del inventario</h2><p className="erp-secondary-text">{visibleItems.length} registro{visibleItems.length === 1 ? "" : "s"} según los filtros actuales.</p></div>
+          {!cannotWrite && <button type="button" className="inventory-button inventory-button--ghost" onClick={() => setCatalogOpen(true)}><AppIcon icon={Settings2} size={18} />Áreas y categorías</button>}
         </div>
-      )}
+        <div className="erp-filters inventory-filters">
+          <label className="erp-field inventory-search"><span className="erp-field__label">Buscar por código o nombre</span><input className="erp-control" value={filters.query} onChange={(event) => setFilter("query", event.target.value)} placeholder="Ej. PR-0004 o cable" /></label>
+          <Filter label="Tipo" value={filters.type} onChange={(value) => setFilter("type", value)}><option value="todos">Todos</option>{INVENTORY_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</Filter>
+          <Filter label="Área" value={filters.areaId} onChange={(value) => setFilter("areaId", value)}><option value="todas">Todas</option><option value="sin_area">Sin área</option>{areas.map((area) => <option key={area.id} value={area.id}>{area.nombre}</option>)}</Filter>
+          <Filter label="Categoría" value={filters.categoryId} onChange={(value) => setFilter("categoryId", value)} disabled={!filters.areaId || filters.areaId === "todas" || filters.areaId === "sin_area"}><option value="todas">Todas</option><option value="sin_categoria">Sin categoría</option>{filterCategories.map((category) => <option key={category.id} value={category.id}>{category.nombre}</option>)}</Filter>
+          <Filter label="Estado" value={filters.status} onChange={(value) => setFilter("status", value)}><option value="activo">Activos</option><option value="inactivo">Archivados</option><option value="todos">Todos</option></Filter>
+        </div>
 
-      {readOnly && (
-        <p style={styles.readOnlyNotice} role="status">
-          Puedes buscar, filtrar y consultar el detalle. Las operaciones de
-          escritura están bloqueadas en este modo.
-        </p>
-      )}
+        {loading ? <div className="erp-empty-state">Cargando inventario…</div> : visibleItems.length === 0 ? (
+          <div className="erp-empty-state inventory-empty-state"><AppIcon icon={Boxes} size={34} /><h3>{items.length ? "No hay resultados" : "Tu inventario está listo para comenzar"}</h3><p>{items.length ? "Prueba cambiando la búsqueda o los filtros." : "Crea manualmente tu primer ítem o importa una planilla existente."}</p>{!cannotWrite && <div><button type="button" className="inventory-button inventory-button--primary" onClick={openNewItem}>Crear primer ítem</button><button type="button" className="inventory-button inventory-button--secondary" onClick={() => setImportOpen(true)}>Importar desde Excel</button></div>}</div>
+        ) : <InventoryList items={visibleItems} areas={areas} categories={categories} cannotWrite={cannotWrite} onArchive={(item) => changeStatus(item, "inactivo")} onEdit={openEditItem} onReactivate={(item) => changeStatus(item, "activo")} onView={setDetailItem} />}
+      </section>
 
-      <ResponsiveDialog
-        open={catalogDialogOpen}
-        onClose={() => setCatalogDialogOpen(false)}
-        eyebrow="Inventario"
-        title="Administrar áreas y categorías"
-        description="Crea y mantiene el catálogo sin ocupar espacio permanente en Inventario."
-        size="large"
-      >
-        <InventoryCatalogManager
-          areas={areas}
-          businessId={userId}
-          categories={categories}
-          loadErrors={catalogLoadErrors}
-          loading={catalogIsLoading}
-          onRetry={() => setCatalogRetrySignal((value) => value + 1)}
-        />
+      <ResponsiveDialog open={formOpen} onClose={closeForm} size="large" eyebrow="Inventario" title={editingItem ? "Editar ítem" : "Nuevo ítem"} description={editingItem ? `Código ${editingItem.codigoInterno || editingItem.sku || "heredado"}` : "El código interno se asignará de forma segura al guardar."}>
+        <form className="inventory-item-form" onSubmit={saveItem}>
+          {!draft.tipoItem ? <div className="inventory-type-step"><h3>¿Qué necesitas registrar?</h3><div>{INVENTORY_TYPES.map((type) => <button key={type.value} type="button" onClick={() => selectType(type.value)}><strong>{type.label}</strong><span>{type.description}</span></button>)}</div></div> : <>
+            {!editingItem && <button type="button" className="inventory-link-button" onClick={() => selectType("")}>← Cambiar tipo</button>}
+            <div className="inventory-form-section"><div><h3>Datos principales</h3><p>{getInventoryTypeLabel(draft.tipoItem)} · El código se asignará al guardar.</p></div><div className="inventory-form-grid">
+              <Field label="Nombre" required error={fieldErrors.nombre}><input autoFocus className="erp-control" value={draft.nombre} onChange={(event) => updateDraft("nombre", event.target.value)} maxLength={140} /></Field>
+              <UnitSelector type={draft.tipoItem} value={draft.unidad} error={fieldErrors.unidad} onChange={(value) => updateDraft("unidad", value)} />
+              <Field label="Área (opcional)"><select className="erp-control" value={draft.areaId} onChange={(event) => updateDraft("areaId", event.target.value)}><option value="">Sin área</option>{activeAreas.map((area) => <option key={area.id} value={area.id}>{area.nombre}</option>)}</select></Field>
+              <Field label="Categoría (opcional)" error={fieldErrors.categoriaId}><select className="erp-control" value={draft.categoriaId} disabled={!draft.areaId} onChange={(event) => updateDraft("categoriaId", event.target.value)}><option value="">Sin categoría</option>{formCategories.map((category) => <option key={category.id} value={category.id}>{category.nombre}</option>)}</select></Field>
+            </div><button type="button" className="inventory-link-button" onClick={() => setCatalogOpen(true)}>Administrar áreas y categorías sin perder estos datos</button></div>
+            {draft.tipoItem === "producto" && <div className="inventory-form-section"><div><h3>Control de stock</h3><p>Solo los productos físicos participan en alertas y costo de inventario.</p></div><div className="inventory-form-grid inventory-form-grid--three"><Field label="Stock disponible" error={fieldErrors.stock}><input className="erp-control" type="number" min="0" step="any" value={draft.stock} onChange={(event) => updateDraft("stock", event.target.value)} /></Field><Field label="Stock mínimo" error={fieldErrors.stockMinimo}><input className="erp-control" type="number" min="0" step="any" value={draft.stockMinimo} onChange={(event) => updateDraft("stockMinimo", event.target.value)} /></Field><Field label="Unidad de stock"><select className="erp-control" value={draft.unidadStock} onChange={(event) => updateDraft("unidadStock", event.target.value)}><option value={draft.unidad}>{draft.unidad || "Unidad seleccionada"}</option><option value="unidad">Unidad</option></select></Field></div></div>}
+            <div className="inventory-form-section"><div><h3>Precio interno</h3><p>ValoraCloud usa las funciones de dominio para mantener una sola regla de cálculo.</p></div><div className="inventory-price-grid"><Field label="Costo base unitario" required error={fieldErrors.costoBase}><input className="erp-control" type="number" min="0" step="any" value={draft.costoBase} onChange={(event) => updateDraft("costoBase", event.target.value)} /></Field><Field label="Margen deseado (%)" required error={fieldErrors.margenDeseado}><input className="erp-control" type="number" min="0" max="1000" step="any" value={draft.margenDeseado} onChange={(event) => updateDraft("margenDeseado", event.target.value)} /></Field><div className="inventory-price-result"><span>Precio calculado</span><strong>{formatCLP(calculatedPrice)}</strong></div><Field label="Ajuste manual opcional" error={fieldErrors.precioManual} hint="Reemplaza el precio calculado solo para este ítem."><input className="erp-control" type="number" min="0" step="any" value={draft.precioManual} onChange={(event) => updateDraft("precioManual", event.target.value)} placeholder="Sin ajuste" /></Field><div className="inventory-effective-price"><span>Precio efectivo en ValoraCloud</span><strong>{formatCLP(effectivePrice)}</strong></div></div></div>
+            <div className="inventory-form-section"><div><h3>Descripción</h3></div><Field label="Descripción (opcional)"><textarea className="erp-control inventory-textarea" rows="4" maxLength={1200} value={draft.descripcion} onChange={(event) => updateDraft("descripcion", event.target.value)} /></Field></div>
+            {feedback.type === "error" && <p className="inventory-feedback inventory-feedback--error" role="alert">{feedback.message}</p>}
+            <div className="inventory-form-actions"><button type="button" className="inventory-button inventory-button--secondary" onClick={closeForm}>Cancelar</button><button type="submit" className="inventory-button inventory-button--primary" disabled={saving}>{saving ? "Guardando…" : editingItem ? "Guardar cambios" : "Crear ítem"}</button></div>
+          </>}
+        </form>
       </ResponsiveDialog>
 
-      {!readOnly && (
-      <form className="erp-panel" onSubmit={handleSubmit} style={styles.formCard}>
-        <div style={styles.formHeader}>
-          <div>
-            <h3 style={styles.formTitle}>
-              {editingId ? "Editar ítem" : "Crear ítem"}
-            </h3>
-          </div>
-          {editingId && (
-            <button type="button" style={styles.secondaryButton} onClick={resetForm}>
-              Cancelar edición
-            </button>
-          )}
-        </div>
-
-        <div style={styles.formSections}>
-          <section style={styles.formSection}>
-            <div style={styles.sectionHeader}>
-              <h4 style={styles.sectionTitle}>Datos del ítem</h4>
-            </div>
-
-            <div className="inventory-basic-grid" style={styles.formGrid}>
-              <label style={styles.field}>
-                <span style={styles.label}>Tipo de ítem</span>
-                <select
-                  name="tipoItem"
-                  value={form.tipoItem}
-                  onChange={handleChange}
-                  required
-                  style={styles.input}
-                >
-                  <option value="" disabled>
-                    Selecciona un tipo
-                  </option>
-                  <option value="producto">Producto</option>
-                  <option value="servicio">Servicio</option>
-                  <option value="actividad">Actividad</option>
-                </select>
-              </label>
-
-              <label style={styles.field}>
-                <span style={styles.label}>Área</span>
-                <select
-                  name="areaId"
-                  value={form.areaId}
-                  onChange={handleAreaChange}
-                  required
-                  style={styles.input}
-                >
-                  <option value="" disabled>
-                    Selecciona un área
-                  </option>
-                  {activeAreas.map((area) => (
-                    <option key={area.id} value={area.id}>
-                      {area.nombre}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label style={styles.field}>
-                <span style={styles.label}>Categoría</span>
-                <select
-                  name="categoriaId"
-                  value={
-                    customCategoryActive
-                      ? OTHER_CATEGORY_OPTION
-                      : form.categoriaId
-                  }
-                  onChange={handleCategoryChange}
-                  disabled={!form.areaId}
-                  required
-                  style={styles.input}
-                >
-                  <option value="" disabled>
-                    {form.areaId
-                      ? "Selecciona una categoría"
-                      : "Selecciona primero un área"}
-                  </option>
-                  {formCategories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.nombre}
-                    </option>
-                  ))}
-                  <option value={OTHER_CATEGORY_OPTION}>Otra categoría…</option>
-                </select>
-              </label>
-
-              {customCategoryActive && (
-                <label style={styles.field}>
-                  <span style={styles.label}>Nueva categoría</span>
-                  <input
-                    value={customCategoryName}
-                    onChange={(event) => setCustomCategoryName(event.target.value)}
-                    required
-                    maxLength={80}
-                    placeholder="Escribe el nombre real"
-                    style={styles.input}
-                  />
-                  <span style={styles.fieldHint}>
-                    Se creará dentro del Área seleccionada y quedará disponible
-                    para usos posteriores.
-                  </span>
-                </label>
-              )}
-
-              <label className="inventory-form-field--full" style={styles.field}>
-                <span style={styles.label}>Nombre</span>
-                <input
-                  name="nombre"
-                  value={form.nombre}
-                  onChange={handleChange}
-                  required
-                  placeholder="Escribe el nombre del producto, servicio o actividad"
-                  style={styles.input}
-                />
-              </label>
-
-              <label style={styles.field}>
-                <span style={styles.label}>Unidad</span>
-                <select
-                  name="unidad"
-                  value={unidadSelectValue}
-                  onChange={handleUnidadChange}
-                  required
-                  style={styles.input}
-                >
-                  <option value="" disabled>
-                    Selecciona una unidad
-                  </option>
-                  {UNIT_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                  <option value={OTHER_OPTION}>Otro</option>
-                </select>
-              </label>
-
-              <div style={styles.codeField} role="status" aria-live="polite">
-                <span style={styles.label}>Código interno</span>
-                <strong style={styles.codeValue}>
-                  {editingId
-                    ? items.find((item) => item.id === editingId)?.codigoInterno ||
-                      items.find((item) => item.id === editingId)?.sku ||
-                      "Registro heredado sin código"
-                    : "Se asignará al guardar"}
-                </strong>
-              </div>
-
-              {unidadSelectValue === OTHER_OPTION && (
-                <label className="inventory-form-field--full" style={styles.field}>
-                  <span style={styles.label}>Unidad personalizada</span>
-                  <input
-                    value={unidadPersonalizada}
-                    onChange={handleUnidadPersonalizadaChange}
-                    required
-                    placeholder="Escribe una unidad personalizada"
-                    style={styles.input}
-                  />
-                </label>
-              )}
-
-              {editingId && (
-                <label style={styles.field}>
-                  <span style={styles.label}>Estado</span>
-                  <select
-                    name="estado"
-                    value={form.estado}
-                    onChange={handleChange}
-                    style={styles.input}
-                  >
-                    <option value="activo">Activo</option>
-                    <option value="inactivo">Inactivo</option>
-                    {form.estado === "eliminado" && (
-                      <option value="eliminado">Eliminado</option>
-                    )}
-                  </select>
-                </label>
-              )}
-
-              {editingId && (!form.areaId || !form.categoriaId) && (
-                <p className="inventory-form-field--full" style={styles.legacyNotice}>
-                  Este registro heredado conserva su categoría anterior. Selecciona un
-                  área y una categoría activas para incorporarlo al nuevo modelo.
-                </p>
-              )}
-            </div>
-          </section>
-
-          {form.tipoItem === "producto" && (
-            <section style={styles.formSection}>
-              <div style={styles.sectionHeader}>
-                <h4 style={styles.sectionTitle}>Datos del producto</h4>
-              </div>
-              <div className="inventory-product-grid" style={styles.formGrid}>
-                <label style={styles.field}>
-                  <span style={styles.label}>Marca</span>
-                  <input
-                    name="marca"
-                    value={form.marca}
-                    onChange={handleChange}
-                    required
-                    placeholder="Ej.: Hikvision"
-                    style={styles.input}
-                  />
-                </label>
-                <label style={styles.field}>
-                  <span style={styles.label}>Modelo</span>
-                  <input
-                    name="modelo"
-                    value={form.modelo}
-                    onChange={handleChange}
-                    required
-                    placeholder="Ej.: DS-2CD1043G2"
-                    style={styles.input}
-                  />
-                </label>
-                <label style={styles.field}>
-                  <span style={styles.label}>Código de barras</span>
-                  <input
-                    name="codigoBarras"
-                    value={form.codigoBarras}
-                    onChange={handleChange}
-                    placeholder="Opcional"
-                    style={styles.input}
-                  />
-                </label>
-                <label style={styles.field}>
-                  <span style={styles.label}>Stock actual</span>
-                  <input
-                    name="stock"
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={form.stock}
-                    onChange={handleChange}
-                    required
-                    style={styles.input}
-                  />
-                </label>
-                <label style={styles.field}>
-                  <span style={styles.label}>Stock mínimo</span>
-                  <input
-                    name="stockMinimo"
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={form.stockMinimo}
-                    onChange={handleChange}
-                    required
-                    style={styles.input}
-                  />
-                </label>
-              </div>
-            </section>
-          )}
-
-          <section style={styles.formSection}>
-            <div style={styles.sectionHeader}>
-              <h4 style={styles.sectionTitle}>Precio</h4>
-            </div>
-
-            <div
-              className="inventory-valuation-grid"
-              style={{ ...styles.formGrid, ...styles.priceGrid }}
-            >
-              <label style={{ ...styles.field, ...styles.priceField }}>
-                <span style={styles.label}>Costo base unitario (CLP)</span>
-                <input
-                  name="costoBase"
-                  type="number"
-                  min="0"
-                  value={form.costoBase}
-                  onChange={handleChange}
-                  required
-                  placeholder="Escribe el costo base en CLP"
-                  style={styles.input}
-                />
-              </label>
-
-              <label style={{ ...styles.field, ...styles.priceField }}>
-                <span style={styles.label}>Margen deseado (%)</span>
-                <input
-                  name="margenDeseado"
-                  type="number"
-                  value={form.margenDeseado}
-                  onChange={handleChange}
-                  required
-                  placeholder="Escribe el porcentaje de margen"
-                  style={styles.input}
-                />
-              </label>
-
-              <div
-                className="inventory-valuation-result"
-                style={styles.calculatedPriceBox}
-              >
-                <span style={styles.label}>Precio interno estimado</span>
-                <strong style={styles.calculatedPrice}>
-                  {previewPrice !== "" && Number.isFinite(previewPrice)
-                    ? formatCLP(previewPrice)
-                    : formatCLP(0)}
-                </strong>
-                <label style={styles.overrideField}>
-                  <span style={styles.overrideLabel}>Ajuste manual opcional</span>
-                  <input
-                    name="precioInterno"
-                    type="number"
-                    min="0"
-                    value={form.precioInterno}
-                    onChange={handleChange}
-                    placeholder="Deja vacío para calcular"
-                    style={styles.input}
-                  />
-                </label>
-                {grossProfitability && (
-                  <div
-                    style={{
-                      ...styles.profitabilityBlock,
-                      ...grossProfitabilityStyle,
-                    }}
-                  >
-                    <span style={styles.profitabilityMain}>
-                      Margen bruto estimado:{" "}
-                      {formatPercent(grossProfitability.margenBrutoEstimado, 1)}
-                    </span>
-                    <span style={styles.profitabilitySecondary}>
-                      Ganancia bruta estimada:{" "}
-                      {formatSignedCLP(grossProfitability.gananciaBruta)}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </section>
-
-          <section style={styles.formSection}>
-            <div style={styles.sectionHeader}>
-              <h4 style={styles.sectionTitle}>Descripción</h4>
-            </div>
-
-            <label style={styles.field}>
-              <textarea
-                aria-label="Descripción del ítem"
-                name="descripcion"
-                value={form.descripcion}
-                onChange={handleChange}
-                rows={3}
-                placeholder="Describe las características, alcance o condiciones del ítem"
-                style={styles.textarea}
-              />
-            </label>
-          </section>
-        </div>
-
-        {error && <p role="alert" style={styles.errorText}>{error}</p>}
-        {success && <p role="status" style={styles.successText}>{success}</p>}
-
-        <button
-          type="submit"
-          className="inventory-form-submit"
-          style={styles.primaryButton}
-          disabled={saving || !catalogReady}
-        >
-          {saving
-            ? "Guardando..."
-            : editingId
-              ? "Actualizar ítem"
-              : "Guardar ítem"}
-        </button>
-      </form>
-      )}
-
-      <div className="erp-panel" style={styles.listCard}>
-        <div className="erp-filters" style={styles.filters}>
-          <label className="erp-field">
-            <span>Buscar ítem</span>
-            <input
-              className="erp-control"
-              value={busqueda}
-              onChange={(event) => setBusqueda(event.target.value)}
-              placeholder="Código, nombre, marca, modelo, área o categoría"
-              style={styles.searchInput}
-            />
-          </label>
-          <label className="erp-field">
-            <span>Tipo</span>
-            <select
-              className="erp-control"
-              value={tipoFiltro}
-              onChange={(event) => setTipoFiltro(event.target.value)}
-              style={styles.filterSelect}
-            >
-              <option value="todos">Todos los tipos</option>
-              <option value="producto">Producto</option>
-              <option value="servicio">Servicio</option>
-              <option value="actividad">Actividad</option>
-            </select>
-          </label>
-          <label className="erp-field">
-            <span>Área</span>
-            <select
-              className="erp-control"
-              value={areaFiltro}
-              onChange={handleAreaFilterChange}
-              style={styles.filterSelect}
-            >
-              <option value="todas">Todas las áreas</option>
-              <option value="pendientes">Área pendiente (heredados)</option>
-              {areas.map((area) => (
-                <option key={area.id} value={area.id}>
-                  {area.nombre}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="erp-field">
-            <span>Categoría</span>
-            <select
-              className="erp-control"
-              value={categoriaFiltro}
-              onChange={(event) => setCategoriaFiltro(event.target.value)}
-              disabled={areaFiltro === "todas" || areaFiltro === "pendientes"}
-              style={styles.filterSelect}
-            >
-              <option value="todas">
-                {areaFiltro === "todas" || areaFiltro === "pendientes"
-                  ? "Selecciona un área"
-                  : "Todas las categorías"}
-              </option>
-              {filterCategories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.nombre}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="erp-field">
-            <span>Estado</span>
-            <select
-              className="erp-control"
-              value={estadoFiltro}
-              onChange={(event) => setEstadoFiltro(event.target.value)}
-              style={styles.filterSelect}
-            >
-              <option value="activos">Activos</option>
-              <option value="inactivos">Inactivos</option>
-              <option value="eliminados">Eliminados</option>
-              <option value="todos">Todos</option>
-            </select>
-          </label>
-        </div>
-
-        {loading ? (
-          <p style={styles.emptyText}>Cargando inventario...</p>
-        ) : filteredItems.length === 0 ? (
-          <div style={styles.emptyState}>
-            <h3 style={styles.emptyTitle}>No hay ítems para mostrar</h3>
-            <p style={styles.emptyText}>
-              Crea tu primer producto, servicio o actividad para empezar a
-              valorar proyectos.
-            </p>
-          </div>
-        ) : (
-          <>
-          <div className="erp-table-region erp-desktop-only" style={styles.tableWrapper}>
-            <table className="erp-table" style={styles.table}>
-              <thead>
-                <tr>
-                  <th style={styles.th}>Código</th>
-                  <th style={styles.th}>Tipo</th>
-                  <th style={styles.th}>Área</th>
-                  <th style={styles.th}>Categoría</th>
-                  <th style={styles.th}>Ítem</th>
-                  <th style={styles.th}>Marca / modelo</th>
-                  <th style={styles.th}>Stock</th>
-                  <th style={styles.th}>Estado</th>
-                  <th style={styles.th}>Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredItems.map((item) => (
-                  <tr key={item.id}>
-                    <td style={styles.tdCode}>
-                      {item.codigoInterno || item.sku || "—"}
-                    </td>
-                    <td style={styles.tdMuted}>{tipoLabels[item.tipoItem] || item.tipoItem}</td>
-                    <td style={styles.tdMuted}>
-                      {getInventoryAreaLabel(item, areas)}
-                    </td>
-                    <td style={styles.tdMuted}>
-                      {getInventoryCategoryLabel(item, categories)}
-                    </td>
-                    <td style={styles.td}>
-                      <strong>{item.nombre}</strong>
-                      {item.descripcion && (
-                        <span style={styles.itemDescription}>
-                          {item.descripcion}
-                        </span>
-                      )}
-                    </td>
-                    <td style={styles.tdMuted}>
-                      {item.tipoItem === "producto"
-                        ? [item.marca, item.modelo].filter(Boolean).join(" / ") || "—"
-                        : "No aplica"}
-                    </td>
-                    <td style={styles.tdMuted}>
-                      {item.tipoItem === "producto" ? Number(item.stock || 0) : "No aplica"}
-                    </td>
-                    <td style={styles.td}>
-                      <span
-                        style={{
-                          ...styles.statusBadge,
-                          ...(item.estado === "eliminado"
-                            ? styles.statusDeleted
-                            : item.estado === "inactivo"
-                              ? styles.statusInactive
-                              : styles.statusActive),
-                        }}
-                      >
-                        {estadoLabels[item.estado || "activo"] || "Activo"}
-                      </span>
-                    </td>
-                    <td style={styles.td}>
-                      <InventoryItemActions
-                        item={item}
-                        readOnly={readOnly}
-                        onView={() => setDetailItem(item)}
-                        onEdit={handleEdit}
-                        onDeactivate={handleDeactivate}
-                        onReactivate={handleReactivate}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <InventoryCards
-            items={filteredItems}
-            areas={areas}
-            categories={categories}
-            onView={setDetailItem}
-          />
-          </>
-        )}
-      </div>
-
-      <ResponsiveDialog
-        open={Boolean(detailItem)}
-        onClose={() => setDetailItem(null)}
-        eyebrow="Inventario"
-        title={detailItem?.nombre || "Detalle de ítem"}
-        description={
-          detailItem?.codigoInterno ||
-          detailItem?.sku ||
-          "Registro heredado sin código interno"
-        }
-        footer={detailItem ? (
-          <InventoryItemActions
-            item={detailItem}
-            hideView
-            readOnly={readOnly}
-            onEdit={(item) => {
-              setDetailItem(null);
-              handleEdit(item);
-            }}
-            onDeactivate={(item) => {
-              setDetailItem(null);
-              handleDeactivate(item);
-            }}
-            onReactivate={(item) => {
-              setDetailItem(null);
-              handleReactivate(item);
-            }}
-          />
-        ) : null}
-      >
-        {detailItem && (
-          <>
-            <div style={styles.detailGrid}>
-              <div style={styles.detailField}>
-                <span style={styles.detailLabel}>Tipo</span>
-                <strong style={styles.detailValue}>
-                  {tipoLabels[detailItem.tipoItem] || detailItem.tipoItem || "-"}
-                </strong>
-              </div>
-              <div style={styles.detailField}>
-                <span style={styles.detailLabel}>Área</span>
-                <strong style={styles.detailValue}>
-                  {getInventoryAreaLabel(detailItem, areas)}
-                </strong>
-              </div>
-              <div style={styles.detailField}>
-                <span style={styles.detailLabel}>Categoría</span>
-                <strong style={styles.detailValue}>
-                  {getInventoryCategoryLabel(detailItem, categories)}
-                </strong>
-              </div>
-              <div style={styles.detailField}>
-                <span style={styles.detailLabel}>Unidad</span>
-                <strong style={styles.detailValue}>{detailItem.unidad || "-"}</strong>
-              </div>
-              <div style={styles.detailField}>
-                <span style={styles.detailLabel}>Costo base</span>
-                <strong style={styles.detailValue}>
-                  {formatCLP(detailItem.costoBase)}
-                </strong>
-              </div>
-              <div style={styles.detailField}>
-                <span style={styles.detailLabel}>Margen deseado</span>
-                <strong style={styles.detailValue}>
-                  {Number(detailItem.margenDeseado || 0)}%
-                </strong>
-              </div>
-              <div style={styles.detailField}>
-                <span style={styles.detailLabel}>Precio interno</span>
-                <strong style={styles.detailPrice}>
-                  {formatCLP(detailItem.precioInterno)}
-                </strong>
-              </div>
-              <div style={styles.detailField}>
-                <span style={styles.detailLabel}>Estado</span>
-                <span
-                  style={{
-                    ...styles.statusBadge,
-                    ...(detailItem.estado === "eliminado"
-                      ? styles.statusDeleted
-                      : detailItem.estado === "inactivo"
-                        ? styles.statusInactive
-                        : styles.statusActive),
-                  }}
-                >
-                  {estadoLabels[detailItem.estado || "activo"] || "Activo"}
-                </span>
-              </div>
-              <div style={styles.detailField}>
-                <span style={styles.detailLabel}>Código interno</span>
-                <strong style={styles.detailCode}>
-                  {detailItem.codigoInterno || detailItem.sku || "—"}
-                </strong>
-              </div>
-              {detailItem.tipoItem === "producto" && (
-                <>
-                  <div style={styles.detailField}>
-                    <span style={styles.detailLabel}>Marca / modelo</span>
-                    <strong style={styles.detailValue}>
-                      {[detailItem.marca, detailItem.modelo]
-                        .filter(Boolean)
-                        .join(" / ") || "—"}
-                    </strong>
-                  </div>
-                  <div style={styles.detailField}>
-                    <span style={styles.detailLabel}>Stock actual / mínimo</span>
-                    <strong style={styles.detailValue}>
-                      {Number(detailItem.stock || 0)} / {Number(detailItem.stockMinimo || 0)}
-                    </strong>
-                  </div>
-                  <div style={styles.detailField}>
-                    <span style={styles.detailLabel}>Código de barras</span>
-                    <strong style={styles.detailCode}>
-                      {detailItem.codigoBarras || "—"}
-                    </strong>
-                  </div>
-                </>
-              )}
-              <div style={styles.detailField}>
-                <span style={styles.detailLabel}>Creado</span>
-                <strong style={styles.detailValue}>
-                  {formatFirestoreDate(detailItem.creadoEn)}
-                </strong>
-              </div>
-              <div style={styles.detailField}>
-                <span style={styles.detailLabel}>Actualizado</span>
-                <strong style={styles.detailValue}>
-                  {formatFirestoreDate(detailItem.actualizadoEn)}
-                </strong>
-              </div>
-            </div>
-
-            <div style={styles.descriptionBlock}>
-              <span style={styles.detailLabel}>Descripcion</span>
-              <p style={styles.descriptionText}>
-                {detailItem.descripcion || "Sin descripcion registrada."}
-              </p>
-            </div>
-          </>
-        )}
-      </ResponsiveDialog>
+      <ResponsiveDialog open={catalogOpen} onClose={() => setCatalogOpen(false)} size="large" eyebrow="Inventario" title="Áreas y categorías" description="Organiza el catálogo cuando lo necesites; la clasificación no bloquea la creación."><InventoryCatalogManager areas={areas} businessId={businessId} categories={categories} loadErrors={catalogState.errors} loading={catalogState.loading} onRetry={() => setCatalogState((current) => ({ ...current, retry: current.retry + 1 }))} /></ResponsiveDialog>
+      <InventoryImportDialog open={importOpen} onClose={() => setImportOpen(false)} onImported={(info) => setFeedback(info?.partial ? { type: "notice", message: "La importación quedó parcial; revisa el resumen antes de continuar." } : { type: "success", message: "Importación confirmada correctamente." })} businessId={businessId} areas={areas} categories={categories} existingItems={items} />
+      <ItemDetail item={detailItem} areas={areas} categories={categories} cannotWrite={cannotWrite} onClose={() => setDetailItem(null)} onEdit={openEditItem} onArchive={(item) => changeStatus(item, "inactivo")} onReactivate={(item) => changeStatus(item, "activo")} />
     </section>
   );
 }
 
-function InventoryCards({ items, areas, categories, onView }) {
-  return (
-    <div className="erp-card-list erp-mobile-only" aria-label="Ítems de inventario">
-      {items.map((item) => (
-        <article className="erp-record-card" key={item.id}>
-          <div className="inventory-card-header" style={styles.inventoryCardHeader}>
-            <div style={styles.imagePlaceholder} aria-label="Sin imagen disponible">
-              <AppIcon icon={PackageOpen} size={22} />
-              <span>Sin imagen</span>
-            </div>
-            <div style={styles.inventoryCardHeading}>
-              <h3 className="erp-record-card__title">{item.nombre || "Ítem sin nombre"}</h3>
-              <p className="erp-record-card__subtitle">
-                {item.codigoInterno || item.sku || "Registro heredado sin código"}
-              </p>
-            </div>
-            <InventoryStatusBadge item={item} />
-          </div>
-          <dl className="erp-meta-grid">
-            <div className="erp-meta">
-              <dt className="erp-meta__label">Tipo</dt>
-              <dd className="erp-meta__value">{tipoLabels[item.tipoItem] || item.tipoItem || "-"}</dd>
-            </div>
-            <div className="erp-meta">
-              <dt className="erp-meta__label">Área</dt>
-              <dd className="erp-meta__value">
-                {getInventoryAreaLabel(item, areas)}
-              </dd>
-            </div>
-            <div className="erp-meta">
-              <dt className="erp-meta__label">Categoría</dt>
-              <dd className="erp-meta__value">
-                {getInventoryCategoryLabel(item, categories)}
-              </dd>
-            </div>
-            {item.tipoItem === "producto" && (
-              <>
-                <div className="erp-meta">
-                  <dt className="erp-meta__label">Marca / modelo</dt>
-                  <dd className="erp-meta__value">
-                    {[item.marca, item.modelo].filter(Boolean).join(" / ") || "—"}
-                  </dd>
-                </div>
-                <div className="erp-meta">
-                  <dt className="erp-meta__label">Stock</dt>
-                  <dd className="erp-meta__value">{Number(item.stock || 0)}</dd>
-                </div>
-              </>
-            )}
-          </dl>
-          <button
-            type="button"
-            aria-haspopup="dialog"
-            style={styles.mobilePrimaryButton}
-            onClick={() => onView(item)}
-          >
-            Ver detalle
-          </button>
-        </article>
-      ))}
-    </div>
-  );
+function Metric({ label, tone, value }) { return <article className={`erp-metric-card${tone ? ` inventory-metric--${tone}` : ""}`}><span className="erp-metric-card__label">{label}</span><strong className="erp-metric-card__value">{value}</strong></article>; }
+function Filter({ children, disabled, label, onChange, value }) { return <label className="erp-field"><span className="erp-field__label">{label}</span><select className="erp-control" disabled={disabled} value={value} onChange={(event) => onChange(event.target.value)}>{children}</select></label>; }
+function Field({ children, error, hint, label, required }) { return <label className="erp-field"><span className="erp-field__label">{label}{required ? " *" : ""}</span>{children}{hint && <small className="inventory-field-hint">{hint}</small>}{error && <small className="inventory-field-error">{error}</small>}</label>; }
+
+function InventoryList({ areas, cannotWrite, categories, items, onArchive, onEdit, onReactivate, onView }) {
+  return <><div className="erp-table-region erp-desktop-only"><table className="erp-table inventory-table"><thead><tr><th>Código</th><th>Ítem</th><th>Tipo</th><th>Área / categoría</th><th>Unidad</th><th>Costo</th><th>Precio</th><th>Stock</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td className="inventory-code">{item.codigoInterno || item.sku || "—"}</td><td><button className="inventory-item-link" type="button" onClick={() => onView(item)}>{item.nombre}</button></td><td>{getInventoryTypeLabel(item.tipoItem)}</td><td>{getInventoryAreaLabel(item, areas)}<small>{getInventoryCategoryLabel(item, categories)}</small></td><td>{item.unidad}</td><td>{formatCLP(item.costoBase)}</td><td><strong>{formatCLP(item.precioEfectivo)}</strong></td><td>{item.tipoItem === "producto" ? <span className={item.stock <= item.stockMinimo ? "inventory-stock-low" : ""}>{item.stock}</span> : "—"}</td><td><Status item={item} /></td><td><Actions item={item} cannotWrite={cannotWrite} onArchive={onArchive} onEdit={onEdit} onReactivate={onReactivate} /></td></tr>)}</tbody></table></div><div className="erp-card-list erp-mobile-only">{items.map((item) => <article className="erp-record-card inventory-mobile-card" key={item.id}><header className="erp-record-card__header"><div><span className="inventory-code">{item.codigoInterno || item.sku || "Sin código"}</span><h3 className="erp-record-card__title">{item.nombre}</h3><p className="erp-record-card__subtitle">{getInventoryTypeLabel(item.tipoItem)} · {item.unidad}</p></div><Status item={item} /></header><dl className="erp-meta-grid"><div className="erp-meta"><dt className="erp-meta__label">Clasificación</dt><dd className="erp-meta__value">{getInventoryAreaLabel(item, areas)} / {getInventoryCategoryLabel(item, categories)}</dd></div><div className="erp-meta"><dt className="erp-meta__label">Costo / precio</dt><dd className="erp-meta__value">{formatCLP(item.costoBase)} / {formatCLP(item.precioEfectivo)}</dd></div>{item.tipoItem === "producto" && <div className="erp-meta"><dt className="erp-meta__label">Stock</dt><dd className="erp-meta__value">{item.stock} (mín. {item.stockMinimo})</dd></div>}</dl><button type="button" className="inventory-button inventory-button--secondary" onClick={() => onView(item)}>Ver detalle</button><Actions item={item} cannotWrite={cannotWrite} onArchive={onArchive} onEdit={onEdit} onReactivate={onReactivate} /></article>)}</div></>;
 }
 
-function InventoryStatusBadge({ item }) {
-  return (
-    <span
-      style={{
-        ...styles.statusBadge,
-        ...(item.estado === "eliminado"
-          ? styles.statusDeleted
-          : item.estado === "inactivo"
-            ? styles.statusInactive
-            : styles.statusActive),
-      }}
-    >
-      {estadoLabels[item.estado || "activo"] || "Activo"}
-    </span>
-  );
+function Status({ item }) { return <span className={`inventory-status inventory-status--${item.estado === "activo" ? "active" : "archived"}`}>{item.estado === "activo" ? "Activo" : "Archivado"}</span>; }
+function Actions({ cannotWrite, item, onArchive, onEdit, onReactivate }) { if (cannotWrite) return null; return <div className="inventory-row-actions"><button type="button" onClick={() => onEdit(item)}>Editar</button>{item.estado === "activo" ? <button type="button" onClick={() => onArchive(item)}><AppIcon icon={Archive} size={15} />Archivar</button> : <button type="button" onClick={() => onReactivate(item)}><AppIcon icon={RotateCcw} size={15} />Reactivar</button>}</div>; }
+
+function ItemDetail({ areas, cannotWrite, categories, item, onArchive, onClose, onEdit, onReactivate }) {
+  if (!item) return null;
+  const adapted = adaptInventoryItem(item);
+  return <ResponsiveDialog open onClose={onClose} eyebrow="Inventario" title={adapted.nombre} description={adapted.codigoInterno || adapted.sku || "Registro heredado sin código"} footer={!cannotWrite ? <Actions item={adapted} onEdit={onEdit} onArchive={onArchive} onReactivate={onReactivate} /> : null}><dl className="inventory-detail-grid"><Detail label="Tipo" value={getInventoryTypeLabel(adapted.tipoItem)} /><Detail label="Área" value={getInventoryAreaLabel(adapted, areas)} /><Detail label="Categoría" value={getInventoryCategoryLabel(adapted, categories)} /><Detail label="Unidad" value={adapted.unidad} /><Detail label="Costo base" value={formatCLP(adapted.costoBase)} /><Detail label="Margen" value={`${adapted.margenDeseado}%`} /><Detail label="Precio calculado" value={formatCLP(adapted.precioCalculado)} /><Detail label="Precio efectivo" value={formatCLP(adapted.precioEfectivo)} />{adapted.tipoItem === "producto" && <><Detail label="Stock disponible" value={adapted.stock} /><Detail label="Stock mínimo" value={adapted.stockMinimo} /></>}</dl>{adapted.descripcion && <div className="inventory-detail-description"><strong>Descripción</strong><p>{adapted.descripcion}</p></div>}</ResponsiveDialog>;
 }
-
-function InventoryItemActions({
-  item,
-  hideView = false,
-  readOnly = false,
-  onView,
-  onEdit,
-  onDeactivate,
-  onReactivate,
-}) {
-  const estado = item.estado || "activo";
-
-  return (
-    <div className="erp-actions" style={styles.actions}>
-      {!hideView && (
-        <button type="button" aria-haspopup="dialog" style={styles.smallButton} onClick={onView}>
-          Ver detalle
-        </button>
-      )}
-      {!readOnly && estado !== "eliminado" && (
-          <button type="button" style={styles.smallButton} onClick={() => onEdit(item)}>
-            Editar
-          </button>
-      )}
-      {!readOnly && (estado === "activo" ? (
-        <button type="button" style={styles.warningButton} onClick={() => onDeactivate(item)}>
-          Desactivar
-        </button>
-      ) : (
-        <button type="button" style={styles.successButton} onClick={() => onReactivate(item)}>
-          Reactivar
-        </button>
-      ))}
-    </div>
-  );
-}
-
-const styles = {
-  wrapper: {
-    display: "grid",
-    gap: "18px",
-    minWidth: 0,
-  },
-  header: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: "16px",
-  },
-  eyebrow: {
-    color: "#0f766e",
-    fontSize: "13px",
-    fontWeight: 800,
-    textTransform: "uppercase",
-  },
-  title: {
-    margin: "4px 0 6px",
-    fontSize: "24px",
-  },
-  subtitle: {
-    margin: 0,
-    color: "#64748b",
-    lineHeight: 1.5,
-  },
-  catalogToolbar: {
-    alignItems: "center",
-    display: "flex",
-    flexWrap: "wrap",
-    gap: "12px",
-    justifyContent: "space-between",
-    padding: "12px 14px",
-  },
-  catalogToolbarText: {
-    color: "#334155",
-    display: "grid",
-    fontSize: "13px",
-    gap: "2px",
-  },
-  readOnlyNotice: {
-    background: "#fffbeb",
-    border: "1px solid #fde68a",
-    borderRadius: "4px",
-    color: "#78350f",
-    fontSize: "13px",
-    lineHeight: 1.45,
-    margin: 0,
-    padding: "10px 12px",
-  },
-  stockNotice: {
-    background: "#f0fdfa",
-    border: "1px solid #99f6e4",
-    borderRadius: "4px",
-    color: "#115e59",
-    fontSize: "13px",
-    lineHeight: 1.45,
-    margin: 0,
-    padding: "10px 12px",
-  },
-  formCard: {
-    background: "#ffffff",
-    border: "1px solid #e5e7eb",
-    borderRadius: "4px",
-    minWidth: 0,
-    padding: "20px",
-  },
-  formHeader: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: "12px",
-    marginBottom: "16px",
-  },
-  formTitle: {
-    margin: 0,
-    fontSize: "18px",
-  },
-  formSections: {
-    display: "grid",
-    gap: "22px",
-  },
-  formSection: {
-    display: "grid",
-    gap: "12px",
-    minWidth: 0,
-  },
-  sectionHeader: {
-    display: "grid",
-    gap: "4px",
-  },
-  sectionTitle: {
-    color: "#0f172a",
-    fontSize: "14px",
-    fontWeight: 800,
-    margin: 0,
-  },
-  formGrid: {
-    display: "grid",
-    gap: "14px",
-  },
-  priceGrid: {
-    alignItems: "start",
-  },
-  field: {
-    display: "grid",
-    gap: "6px",
-    minWidth: 0,
-  },
-  priceField: {
-    alignSelf: "start",
-  },
-  fieldFull: {
-    display: "grid",
-    gap: "6px",
-    gridColumn: "1 / -1",
-    minWidth: 0,
-  },
-  label: {
-    color: "#334155",
-    fontSize: "13px",
-    fontWeight: 700,
-  },
-  labelRow: {
-    alignItems: "center",
-    display: "flex",
-    flexWrap: "wrap",
-    gap: "6px",
-  },
-  fieldMeta: {
-    color: "#64748b",
-    fontSize: "13px",
-    fontWeight: 600,
-  },
-  fieldHint: {
-    color: "#64748b",
-    fontSize: "12px",
-    lineHeight: 1.4,
-  },
-  codeField: {
-    background: "#f8fafc",
-    border: "1px solid #e2e8f0",
-    borderRadius: "4px",
-    display: "grid",
-    gap: "6px",
-    minHeight: "40px",
-    padding: "9px 11px",
-  },
-  codeValue: {
-    color: "#0f172a",
-    fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
-    fontSize: "13px",
-    overflowWrap: "anywhere",
-  },
-  legacyNotice: {
-    background: "#fffbeb",
-    border: "1px solid #fde68a",
-    borderRadius: "4px",
-    color: "#78350f",
-    fontSize: "13px",
-    lineHeight: 1.45,
-    margin: 0,
-    padding: "9px 11px",
-  },
-  input: {
-    boxSizing: "border-box",
-    maxWidth: "100%",
-    width: "100%",
-    border: "1px solid #cbd5e1",
-    borderRadius: "4px",
-    fontSize: "13px",
-    minHeight: "40px",
-    padding: "10px 11px",
-    color: "#111827",
-    background: "#ffffff",
-  },
-  textarea: {
-    boxSizing: "border-box",
-    maxWidth: "100%",
-    width: "100%",
-    border: "1px solid #cbd5e1",
-    borderRadius: "4px",
-    fontSize: "13px",
-    padding: "10px 11px",
-    color: "#111827",
-    background: "#ffffff",
-    resize: "vertical",
-  },
-  calculatedPriceBox: {
-    background: "#f8fafc",
-    border: "1px solid #e2e8f0",
-    borderRadius: "4px",
-    boxSizing: "border-box",
-    display: "grid",
-    gap: "4px",
-    maxWidth: "100%",
-    minWidth: 0,
-    padding: "9px 10px",
-    width: "100%",
-  },
-  calculatedPrice: {
-    color: "#0f172a",
-    fontSize: "18px",
-    lineHeight: 1.2,
-  },
-  overrideField: {
-    display: "grid",
-    gap: "4px",
-    marginTop: "4px",
-  },
-  overrideLabel: {
-    color: "#64748b",
-    fontSize: "13px",
-    fontWeight: 800,
-    textTransform: "uppercase",
-  },
-  profitabilityBlock: {
-    borderRadius: "4px",
-    display: "grid",
-    gap: "2px",
-    marginTop: "2px",
-    padding: "5px 6px",
-  },
-  profitabilityMain: {
-    fontSize: "13px",
-    fontWeight: 800,
-    lineHeight: 1.3,
-  },
-  profitabilitySecondary: {
-    fontSize: "13px",
-    fontWeight: 700,
-    lineHeight: 1.25,
-    opacity: 0.86,
-  },
-  profitabilityPositive: {
-    background: "#ecfdf5",
-    border: "1px solid #bbf7d0",
-    color: "#047857",
-  },
-  profitabilityNegative: {
-    background: "#fef2f2",
-    border: "1px solid #fecaca",
-    color: "#b91c1c",
-  },
-  profitabilityNeutral: {
-    background: "#f8fafc",
-    border: "1px solid #e2e8f0",
-    color: "#475569",
-  },
-  helpText: {
-    color: "#475569",
-    fontSize: "14px",
-    margin: "14px 0 0",
-  },
-  errorText: {
-    color: "#b91c1c",
-    fontSize: "14px",
-    margin: "12px 0 0",
-  },
-  successText: {
-    color: "#047857",
-    fontSize: "14px",
-    margin: "12px 0 0",
-  },
-  primaryButton: {
-    marginTop: "16px",
-    border: 0,
-    borderRadius: "4px",
-    background: "#0f766e",
-    color: "#ffffff",
-    cursor: "pointer",
-    fontSize: "13px",
-    fontWeight: 800,
-    minHeight: "40px",
-    padding: "11px 16px",
-  },
-  secondaryButton: {
-    border: "1px solid #cbd5e1",
-    borderRadius: "4px",
-    background: "#ffffff",
-    color: "#334155",
-    cursor: "pointer",
-    fontSize: "13px",
-    fontWeight: 700,
-    minHeight: "40px",
-    padding: "9px 12px",
-  },
-  listCard: {
-    background: "#ffffff",
-    border: "1px solid #e5e7eb",
-    borderRadius: "4px",
-    minWidth: 0,
-    padding: "14px",
-  },
-  filters: {
-    display: "grid",
-    gap: "10px",
-    marginBottom: "12px",
-  },
-  searchInput: {
-    border: "1px solid #cbd5e1",
-    borderRadius: "4px",
-    fontSize: "13px",
-    minWidth: 0,
-    padding: "8px 10px",
-  },
-  filterSelect: {
-    border: "1px solid #cbd5e1",
-    borderRadius: "4px",
-    color: "#334155",
-    fontSize: "13px",
-    padding: "8px 10px",
-    background: "#ffffff",
-  },
-  tableWrapper: {
-    overflowX: "auto",
-    border: "1px solid #e5e7eb",
-    borderRadius: "4px",
-    minWidth: 0,
-  },
-  table: {
-    width: "100%",
-    borderCollapse: "collapse",
-    fontSize: "13px",
-    minWidth: "1160px",
-  },
-  th: {
-    background: "#f9fafb",
-    borderBottom: "1px solid #e5e7eb",
-    color: "#667085",
-    fontSize: "13px",
-    fontWeight: 800,
-    padding: "7px 10px",
-    textAlign: "left",
-    textTransform: "uppercase",
-  },
-  td: {
-    borderBottom: "1px solid #eef2f7",
-    color: "#111827",
-    fontSize: "13px",
-    padding: "7px 10px",
-    verticalAlign: "middle",
-  },
-  tdMuted: {
-    borderBottom: "1px solid #eef2f7",
-    color: "#64748b",
-    fontSize: "13px",
-    padding: "7px 10px",
-    verticalAlign: "middle",
-  },
-  tdPrice: {
-    borderBottom: "1px solid #eef2f7",
-    color: "#0f172a",
-    fontSize: "13px",
-    fontWeight: 800,
-    padding: "7px 10px",
-    verticalAlign: "middle",
-  },
-  tdCode: {
-    borderBottom: "1px solid #eef2f7",
-    color: "#0f172a",
-    fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
-    fontSize: "13px",
-    fontWeight: 700,
-    padding: "7px 10px",
-    verticalAlign: "middle",
-    whiteSpace: "nowrap",
-  },
-  itemMeta: {
-    color: "#475569",
-    display: "block",
-    fontSize: "13px",
-    fontWeight: 600,
-    marginTop: "2px",
-  },
-  itemDescription: {
-    color: "#64748b",
-    display: "block",
-    fontSize: "13px",
-    marginTop: "3px",
-    maxWidth: "320px",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  },
-  statusBadge: {
-    borderRadius: "999px",
-    display: "inline-block",
-    fontSize: "13px",
-    fontWeight: 700,
-    lineHeight: 1,
-    padding: "4px 7px",
-  },
-  statusActive: {
-    background: "#f0fdf4",
-    border: "1px solid #dcfce7",
-    color: "#166534",
-  },
-  statusInactive: {
-    background: "#fffbeb",
-    border: "1px solid #fde68a",
-    color: "#92400e",
-  },
-  statusDeleted: {
-    background: "#fef2f2",
-    border: "1px solid #fee2e2",
-    color: "#991b1b",
-  },
-  actions: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: "5px",
-  },
-  smallButton: {
-    border: "1px solid #d0d5dd",
-    borderRadius: "4px",
-    background: "#ffffff",
-    color: "#344054",
-    cursor: "pointer",
-    fontSize: "13px",
-    fontWeight: 600,
-    minHeight: "36px",
-    padding: "6px 8px",
-  },
-  warningButton: {
-    border: "1px solid #fde68a",
-    borderRadius: "4px",
-    background: "#fffdf5",
-    color: "#92400e",
-    cursor: "pointer",
-    fontSize: "13px",
-    fontWeight: 600,
-    minHeight: "36px",
-    padding: "6px 8px",
-  },
-  successButton: {
-    border: "1px solid #99f6e4",
-    borderRadius: "4px",
-    background: "#f7fffd",
-    color: "#0f766e",
-    cursor: "pointer",
-    fontSize: "13px",
-    fontWeight: 600,
-    minHeight: "36px",
-    padding: "6px 8px",
-  },
-  emptyState: {
-    border: "1px dashed #cbd5e1",
-    borderRadius: "4px",
-    padding: "28px",
-    textAlign: "center",
-  },
-  emptyTitle: {
-    margin: "0 0 6px",
-  },
-  emptyText: {
-    color: "#64748b",
-    margin: 0,
-  },
-  inventoryCardHeader: {
-    alignItems: "flex-start",
-    display: "grid",
-    gap: "10px",
-    gridTemplateColumns: "58px minmax(0, 1fr) auto",
-    minWidth: 0,
-  },
-  inventoryCardHeading: {
-    minWidth: 0,
-  },
-  imagePlaceholder: {
-    alignItems: "center",
-    aspectRatio: "1",
-    background: "#f1f5f9",
-    border: "1px solid #e2e8f0",
-    borderRadius: "4px",
-    color: "#64748b",
-    display: "flex",
-    flexDirection: "column",
-    fontSize: "13px",
-    gap: "2px",
-    justifyContent: "center",
-    lineHeight: 1,
-    textAlign: "center",
-  },
-  mobilePrimaryButton: {
-    background: "#0f766e",
-    border: 0,
-    borderRadius: "4px",
-    color: "#ffffff",
-    cursor: "pointer",
-    fontSize: "13px",
-    fontWeight: 800,
-    minHeight: "40px",
-    padding: "9px 12px",
-    width: "100%",
-  },
-  detailGrid: {
-    display: "grid",
-    gap: "10px",
-    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  },
-  detailField: {
-    background: "#f8fafc",
-    border: "1px solid #eef2f7",
-    borderRadius: "4px",
-    padding: "10px",
-  },
-  detailLabel: {
-    color: "#64748b",
-    display: "block",
-    fontSize: "13px",
-    fontWeight: 800,
-    marginBottom: "4px",
-    textTransform: "uppercase",
-  },
-  detailValue: {
-    color: "#111827",
-    display: "block",
-    fontSize: "13px",
-    fontWeight: 700,
-  },
-  detailCode: {
-    color: "#111827",
-    display: "block",
-    fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
-    fontSize: "13px",
-    fontWeight: 700,
-    overflowWrap: "anywhere",
-  },
-  detailPrice: {
-    color: "#0f172a",
-    display: "block",
-    fontSize: "14px",
-    fontWeight: 800,
-  },
-  descriptionBlock: {
-    borderTop: "1px solid #eef2f7",
-    marginTop: "16px",
-    paddingTop: "14px",
-  },
-  descriptionText: {
-    color: "#334155",
-    fontSize: "14px",
-    lineHeight: 1.55,
-    margin: 0,
-    whiteSpace: "pre-wrap",
-  },
-};
+function Detail({ label, value }) { return <div><dt>{label}</dt><dd>{value}</dd></div>; }
 
 export default InventoryManager;
-
