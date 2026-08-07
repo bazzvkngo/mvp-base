@@ -715,6 +715,20 @@ service cloud.firestore {
         allow read, create, update, delete: if false;
       }
 
+      match /ordenesCompra/{ordenCompraId} {
+        allow read: if canAccessBusiness(businessId)
+          && resource.data.negocioId == businessId;
+        allow create, update, delete: if false;
+      }
+
+      match /purchaseOrderCounters/{counterId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /purchaseOrderCreateRequests/{requestId} {
+        allow read, create, update, delete: if false;
+      }
+
       match /financialMovements/{movementId} {
         allow read: if canAccessBusiness(businessId);
         allow create: if hasBusinessRole(businessId, ["OWNER", "ADMIN"])

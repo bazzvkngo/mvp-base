@@ -12,6 +12,7 @@ import {
   UsersRound,
   WalletCards,
   Truck,
+  ShoppingCart,
 } from "lucide-react";
 
 export const navigationSections = [
@@ -106,6 +107,29 @@ export const navigationSections = [
     ],
   },
   {
+    label: "Compras",
+    items: [
+      {
+        to: "/ordenes-compra/nueva",
+        label: "Nueva orden",
+        title: "Nueva orden de compra",
+        icon: FilePlus2,
+        activeWhen: (pathname) =>
+          pathname === "/ordenes-compra/nueva" ||
+          /^\/ordenes-compra\/[^/]+\/editar$/.test(pathname),
+      },
+      {
+        to: "/ordenes-compra",
+        label: "Órdenes de compra",
+        title: "Órdenes de compra",
+        icon: ShoppingCart,
+        activeWhen: (pathname) =>
+          pathname === "/ordenes-compra" ||
+          /^\/ordenes-compra\/[^/]+$/.test(pathname),
+      },
+    ],
+  },
+  {
     label: "Cuenta",
     items: [
       {
@@ -126,6 +150,12 @@ export function getRouteMeta(pathname) {
   }
   if (/^\/cotizaciones\/[^/]+\/editar$/.test(pathname)) {
     return { title: "Editar cotización" };
+  }
+  if (/^\/ordenes-compra\/[^/]+\/editar$/.test(pathname)) {
+    return { title: "Editar orden de compra" };
+  }
+  if (/^\/ordenes-compra\/[^/]+$/.test(pathname)) {
+    return { title: "Ver orden de compra" };
   }
 
   return (

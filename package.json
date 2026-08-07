@@ -43,6 +43,8 @@
     "test:clients-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/clients-integrated-local.mjs\"",
     "test:providers-model": "node scripts/provider-model-smoke.mjs",
     "test:providers-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/providers-integrated-local.mjs\"",
+    "test:purchase-orders-model": "node scripts/purchase-orders-model-smoke.mjs",
+    "test:purchase-orders-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/purchase-orders-integrated-local.mjs\"",
     "test:business-catalog": "node scripts/business-catalog-smoke.mjs",
     "test:business-category-selector": "node scripts/business-category-selector-smoke.mjs",
     "test:business-quick-flow": "node scripts/business-quick-flow-smoke.mjs",

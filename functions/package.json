@@ -2,7 +2,7 @@
   "name": "functions",
   "description": "Cloud Functions for Firebase",
   "scripts": {
-    "lint": "eslint index.js inventoryDocumentImport.js inventoryModel.js quotePersistence.js clientPersistence.js providerPersistence.js businessOnboarding.js businessSettings.js aiConfig.js aiRateLimiter.js",
+    "lint": "eslint index.js inventoryDocumentImport.js inventoryModel.js quotePersistence.js clientPersistence.js providerPersistence.js purchaseOrderPersistence.js businessOnboarding.js businessSettings.js aiConfig.js aiRateLimiter.js",
     "serve": "firebase emulators:start --only functions",
     "shell": "firebase functions:shell",
     "start": "npm run shell",

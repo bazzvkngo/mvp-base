@@ -21,6 +21,8 @@ import NewQuotePage from "../pages/NewQuotePage";
 import OnboardingPage from "../pages/OnboardingPage";
 import PricingPage from "../pages/PricingPage";
 import QuoteHistoryPage from "../pages/QuoteHistoryPage";
+import NewPurchaseOrderPage from "../pages/NewPurchaseOrderPage";
+import PurchaseOrdersPage from "../pages/PurchaseOrdersPage";
 import ReferenceTasksPage from "../pages/ReferenceTasksPage";
 import StatisticsPage from "../pages/StatisticsPage";
 import BusinessUnavailablePage from "../pages/BusinessUnavailablePage";
@@ -229,6 +231,46 @@ function AppRoutes({
         <Route
           path="/cotizaciones/:quoteId/editar"
           element={<NewQuotePage key={businessId} userId={businessId} />}
+        />
+        <Route
+          path="/ordenes-compra"
+          element={
+            <PurchaseOrdersPage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
+            />
+          }
+        />
+        <Route
+          path="/ordenes-compra/nueva"
+          element={
+            <NewPurchaseOrderPage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
+            />
+          }
+        />
+        <Route
+          path="/ordenes-compra/:ordenCompraId/editar"
+          element={
+            <NewPurchaseOrderPage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
+            />
+          }
+        />
+        <Route
+          path="/ordenes-compra/:ordenCompraId"
+          element={
+            <NewPurchaseOrderPage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
+            />
+          }
         />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

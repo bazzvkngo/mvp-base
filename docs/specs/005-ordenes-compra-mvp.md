@@ -1,0 +1,136 @@
+# Órdenes de Compra MVP
+
+## Objetivo
+
+Registrar órdenes de compra vinculadas a proveedores e inventario del negocio, con numeración transaccional, snapshots históricos autoritativos, cálculo de IVA y estados de ciclo de vida. Este módulo no recibe mercadería, no mueve stock y no genera cuentas por pagar.
+
+## Modelo Firestore
+
+Colección operacional:
+
+```text
+negocios/{businessId}/ordenesCompra/{ordenCompraId}
+```
+
+`ordenCompraId` es el identificador canónico. No se persiste `purchaseOrderId`.
+
+Cada documento guarda:
+
+- `numero` con formato `OC-YYYY-NNNN`, `anio` y `correlativo`;
+- `estado`: `borrador`, `emitida` o `cancelada`;
+- `proveedorId` y `proveedorSnapshot`;
+- `items` con `lineaId`, `itemId`, snapshot de inventario, cantidad, costo editable, descuento y totales de línea;
+- `subtotal`, `descuentoTotal`, `neto`, `iva` y `total`;
+- moneda `CLP` y tasa IVA `0.19`;
+- fecha de emisión y entrega estimada;
+- dirección de entrega, condiciones y observaciones;
+- autoría y timestamps canónicos.
+
+La numeración usa el contador interno por negocio y año:
+
+```text
+negocios/{businessId}/purchaseOrderCounters/{year}
+```
+
+La idempotencia de creación usa:
+
+```text
+negocios/{businessId}/purchaseOrderCreateRequests/{requestId}
+```
+
+Ambas colecciones internas están cerradas al SDK cliente. La misma solicitud con el mismo contenido devuelve el documento previo sin consumir otro número; reutilizarla con contenido diferente se rechaza.
+
+## Autoridad y snapshots
+
+El frontend envía solamente `proveedorId`, los IDs de inventario, cantidad, costo unitario, descuento y campos editables generales. Functions ignora snapshots, número, estado y totales enviados por el cliente.
+
+Al crear, Functions lee el proveedor activo y cada ítem activo dentro de `negocios/{businessId}`. Desde esos documentos arma los snapshots históricos. El costo inicial sugerido en interfaz proviene de `costoBase`, pero `costoUnitario` es editable y se valida en backend.
+
+Al editar un borrador:
+
+- conservar el mismo `proveedorId` preserva exactamente el snapshot existente, incluso si el proveedor cambió o fue archivado;
+- cambiar de proveedor exige que el nuevo esté activo y reconstruye el snapshot;
+- conservar una línea con el mismo `lineaId` e `itemId` preserva su snapshot de inventario;
+- agregar o cambiar un ítem exige que el documento actual esté activo y reconstruye su snapshot.
+
+Los metadatos históricos no se actualizan desde cambios posteriores en Proveedores o Inventario. Los documentos legacy se adaptan solo en lectura.
+
+## Cálculos
+
+Por línea:
+
+```text
+subtotalLinea = round(cantidad × costoUnitario)
+descuentoLinea = round(subtotalLinea × descuentoPct / 100)
+totalLinea = subtotalLinea - descuentoLinea
+```
+
+Totales:
+
+```text
+subtotal = suma(subtotalLinea)
+descuentoTotal = suma(descuentoLinea)
+neto = subtotal - descuentoTotal
+iva = round(neto × 0.19)
+total = neto + iva
+```
+
+Cantidad debe ser finita y mayor que cero; costo finito y mayor o igual a cero; descuento finito entre 0 y 100. Functions siempre recalcula.
+
+## Estados y permisos
+
+Los miembros activos `OWNER`, `ADMIN` y `MEMBER` pueden leer órdenes del negocio. Solo `OWNER` y `ADMIN` pueden ejecutar:
+
+- `crearOrdenCompra`;
+- `actualizarOrdenCompraBorrador`;
+- `emitirOrdenCompra`;
+- `cancelarOrdenCompra`.
+
+Solo `borrador` se edita. Una orden puede pasar de `borrador` a `emitida`, y de `borrador` o `emitida` a `cancelada`. Emitir o cancelar nuevamente el mismo estado es idempotente. No existe eliminación física ni escritura directa desde el SDK cliente.
+
+## Interfaz
+
+La navegación incluye Compras con:
+
+- `/ordenes-compra` para historial y filtros;
+- `/ordenes-compra/nueva` para crear;
+- `/ordenes-compra/{ordenCompraId}/editar` para editar borradores;
+- `/ordenes-compra/{ordenCompraId}` para consulta.
+
+El workspace presenta encabezado, selector de proveedor registrado, catálogo de inventario activo, editor de líneas, resumen sticky y secciones de entrega, condiciones, observaciones y vista previa. La vista imprimible muestra empresa compradora, proveedor, fechas, ítems y totales. No se envían correos.
+
+`MEMBER` puede consultar documentos e imprimirlos, pero no recibe acciones de escritura. Los estados emitido y cancelado son de solo lectura.
+
+## Límites explícitos
+
+Este MVP no implementa:
+
+- recepción total o parcial;
+- compras, facturas o pagos;
+- cuentas por pagar;
+- movimientos o ajustes de inventario;
+- cambios de stock o `costoBase`;
+- vínculo automático con finanzas;
+- eliminación física;
+- correo de órdenes;
+- inteligencia artificial.
+
+## Pruebas
+
+`purchase-orders-model-smoke.mjs` cubre cálculos, rangos, contrato de mutación, adaptación legacy, roles y desacoplamiento.
+
+`purchase-orders-integrated-local.mjs` cubre roles, aislamiento, proveedor e inventario activos, snapshots autoritativos e históricos, manipulación, recalculo, edición, estados, idempotencia, numeración concurrente y reglas de acceso.
+
+La aceptación requiere además los smokes de Proveedores, Inventario, Cotizaciones, Rules, build, lint de Functions y revisión responsive manual.
+
+## Criterios de aceptación
+
+- OWNER y ADMIN crean, editan, emiten y cancelan exclusivamente mediante Functions.
+- MEMBER consulta sin recibir controles de escritura.
+- Numeración e idempotencia son transaccionales e independientes por negocio.
+- Proveedor e ítems se validan dentro del negocio y sus snapshots no se refrescan solos.
+- Los totales persistidos son los recalculados por backend.
+- No se modifica inventario, stock ni costo base.
+- No existe eliminación física ni acceso cliente a contadores o solicitudes.
+- Historial, filtros, estado vacío, workspace y vista imprimible están disponibles.
+- Los smokes relacionados, Rules, build y lint terminan sin regresiones.
