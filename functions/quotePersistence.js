@@ -10,6 +10,7 @@ const VALID_STATUS = new Set([
 ]);
 const VALID_ITEM_TYPES = new Set(["producto", "servicio", "actividad"]);
 const VALID_CLIENT_TYPES = new Set(["persona", "empresa"]);
+const QUOTE_WRITE_ROLES = ["OWNER", "ADMIN"];
 
 function safeText(value, maxLength = 2000) {
   return String(value ?? "").trim().slice(0, maxLength);
@@ -145,7 +146,7 @@ function validateClienteId(value, HttpsError, {required = true} = {}) {
 
 function registeredClientQuoteFields(
   clientSnapshot,
-  {businessId, clienteId},
+  {businessId, clienteId, archivedMessage},
   HttpsError
 ) {
   if (!clientSnapshot.exists) {
@@ -161,7 +162,8 @@ function registeredClientQuoteFields(
   if (stored.estado === "archivado") {
     throw new HttpsError(
       "failed-precondition",
-      "El cliente seleccionado está archivado. Reactívalo antes de usarlo."
+      archivedMessage ||
+        "El cliente seleccionado está archivado. Reactívalo antes de usarlo."
     );
   }
   if (stored.estado !== "activo") {
@@ -569,6 +571,187 @@ async function createQuoteWithNumberHandler({
   throw lastError;
 }
 
+function historicalQuoteCopyInput(source = {}) {
+  const items = (Array.isArray(source.items) ? source.items : []).map((item) => {
+    const unitPrice =
+      item?.precioUnitarioEditable ?? item?.precioUnitario ?? item?.precio ?? 0;
+    return {
+      ...item,
+      precioSugerido: item?.precioSugerido ?? unitPrice,
+      precioUnitarioEditable: unitPrice,
+      descuentoPorcentaje:
+        item?.descuentoPorcentaje ?? item?.descuentoPct ?? 0,
+    };
+  });
+  return {
+    empresa: source.empresa || {},
+    clienteId: getStoredClienteId(source),
+    proyectoNombre: source.proyectoNombre || source.cliente?.proyecto,
+    items,
+    descuento: source.descuento ?? source.descuentoGeneral ?? 0,
+    seccionesAlcance: source.seccionesAlcance,
+    condiciones: source.condiciones || {
+      formaPago: source.condicionesPago,
+      observaciones: source.observaciones,
+      exclusiones: source.exclusiones,
+      terminosAdicionales: source.terminosAdicionales,
+    },
+    aceptacion: source.aceptacion,
+    afectaIva: source.afectaIva !== false,
+    validezDias: source.validezDias,
+    estado: "borrador",
+  };
+}
+
+async function duplicateQuoteAsDraftHandler({
+  request,
+  db,
+  FieldValue,
+  HttpsError,
+  requireBusinessAccess,
+  now = new Date(),
+}) {
+  const uid = request?.auth?.uid;
+  const {businessId, businessRef} = await requireBusinessAccess(
+    request,
+    {db, HttpsError},
+    {roles: QUOTE_WRITE_ROLES}
+  );
+  if (!uid) throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
+  const requestId = validateRequestId(request?.data?.requestId, HttpsError);
+  const sourceId = safeText(request?.data?.sourceId, 160);
+  if (!/^[a-zA-Z0-9_-]{1,160}$/.test(sourceId)) {
+    fail(HttpsError, "No se pudo validar la cotización original.");
+  }
+
+  const dateParts = getChileDateParts(now);
+  const issueDate = getChileDateValue(now);
+  const sourceRef = businessRef.collection("cotizaciones").doc(sourceId);
+  const quoteRef = businessRef.collection("cotizaciones").doc();
+  const counterRef = businessRef.collection("contadores")
+    .doc(`cotizaciones_${dateParts.year}`);
+  const requestRef = businessRef.collection("quoteDuplicateRequests").doc(requestId);
+
+  const persistDuplicate = () => db.runTransaction(async (transaction) => {
+    const existingRequest = await transaction.get(requestRef);
+    if (existingRequest.exists) {
+      const requestData = existingRequest.data() || {};
+      if (requestData.uidUsuario !== uid || requestData.cotizacionOrigenId !== sourceId) {
+        throw new HttpsError(
+          "already-exists",
+          "La solicitud ya fue usada para otra duplicación."
+        );
+      }
+      const existingQuoteSnapshot = await transaction.get(
+        businessRef.collection("cotizaciones").doc(requestData.quoteId)
+      );
+      if (!existingQuoteSnapshot.exists) {
+        throw new HttpsError("internal", "La duplicación idempotente está incompleta.");
+      }
+      return {
+        quote: {id: existingQuoteSnapshot.id, ...existingQuoteSnapshot.data()},
+        requestId,
+        idempotent: true,
+      };
+    }
+
+    const sourceSnapshot = await transaction.get(sourceRef);
+    if (!sourceSnapshot.exists) {
+      throw new HttpsError("not-found", "No se encontró la cotización original.");
+    }
+    const source = sourceSnapshot.data() || {};
+    if (source.negocioId && source.negocioId !== businessId) {
+      throw new HttpsError("permission-denied", "No puedes duplicar esta cotización.");
+    }
+    const sourceStatus = source.estado || "borrador";
+    if (!VALID_STATUS.has(sourceStatus) || sourceStatus === "borrador") {
+      throw new HttpsError(
+        "failed-precondition",
+        "Los borradores se editan directamente y no necesitan duplicarse."
+      );
+    }
+    const clienteId = validateClienteId(getStoredClienteId(source), HttpsError);
+    const clientRef = businessRef.collection("clientes").doc(clienteId);
+    const [clientSnapshot, counterSnapshot] = await Promise.all([
+      transaction.get(clientRef),
+      transaction.get(counterRef),
+    ]);
+    const clientFields = registeredClientQuoteFields(
+      clientSnapshot,
+      {
+        businessId,
+        clienteId,
+        archivedMessage:
+          "El cliente de la cotización original está archivado. Reactívalo para crear una nueva cotización.",
+      },
+      HttpsError
+    );
+    const quote = normalizeQuoteInput(
+      uid,
+      historicalQuoteCopyInput(source),
+      issueDate,
+      HttpsError,
+      {clientFields}
+    );
+    const current = Number(counterSnapshot.data()?.lastNumber || 0);
+    const nextNumber = Number.isSafeInteger(current) && current >= 0 ? current + 1 : 1;
+    const numero = formatCommercialQuoteNumber(dateParts.year, nextNumber);
+    const timestamp = FieldValue.serverTimestamp();
+    const originNumber = safeText(source.numero || source.numeroCotizacion, 120);
+    const storedQuote = {
+      ...quote,
+      negocioId: businessId,
+      creadoPorUid: uid,
+      numero,
+      cotizacionOrigenId: sourceId,
+      cotizacionOrigenNumero: originNumber,
+      creadoEn: timestamp,
+      actualizadoEn: timestamp,
+    };
+
+    transaction.set(counterRef, {
+      year: dateParts.year,
+      lastNumber: nextNumber,
+      negocioId: businessId,
+      uidUsuario: uid,
+      updatedAt: timestamp,
+    });
+    transaction.set(quoteRef, storedQuote);
+    transaction.set(requestRef, {
+      quoteId: quoteRef.id,
+      numero,
+      negocioId: businessId,
+      uidUsuario: uid,
+      cotizacionOrigenId: sourceId,
+      cotizacionOrigenNumero: originNumber,
+      creadoEn: timestamp,
+    });
+    return {
+      quote: {
+        id: quoteRef.id,
+        ...quote,
+        numero,
+        cotizacionOrigenId: sourceId,
+        cotizacionOrigenNumero: originNumber,
+      },
+      requestId,
+      idempotent: false,
+    };
+  });
+
+  let lastError;
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      return await persistDuplicate();
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableTransactionError(error) || attempt === 5) throw error;
+      await wait(30 * (2 ** (attempt - 1)));
+    }
+  }
+  throw lastError;
+}
+
 async function updateQuoteDraftHandler({
   request,
   db,
@@ -667,8 +850,10 @@ module.exports = {
   QUOTE_MODEL_VERSION,
   calculateExpiryDate,
   createQuoteWithNumberHandler,
+  duplicateQuoteAsDraftHandler,
   formatCommercialQuoteNumber,
   getChileDateValue,
+  historicalQuoteCopyInput,
   normalizeQuoteInput,
   updateQuoteDraftHandler,
   validateRequestId,

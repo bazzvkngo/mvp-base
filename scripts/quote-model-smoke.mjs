@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import {createRequire} from "node:module";
 import path from "node:path";
 import {
   adaptStoredQuote,
@@ -8,6 +9,7 @@ import {
   calculateQuoteExpiryDate,
   calculateQuoteLineTotal,
   calculateQuoteTotals,
+  canDuplicateQuotes,
   getQuotePdfFileName,
   normalizeQuoteItem,
   normalizeScopeSections,
@@ -15,6 +17,9 @@ import {
 } from "../src/domain/quoteModel.mjs";
 import {filterSelectableClients} from "../src/domain/clientModel.mjs";
 import { buildQuotePdfDocument } from "../src/domain/quoteDocument.mjs";
+
+const require = createRequire(import.meta.url);
+const {historicalQuoteCopyInput} = require("../functions/quotePersistence.js");
 
 const company = {
   nombreComercial: "BAGNER Servicios Integrales",
@@ -335,6 +340,29 @@ assert.equal(legacyClientId.clienteId, "cliente-legado");
 assert.equal("clientId" in legacyClientId, false);
 console.log("OK compatibilidad: clientId legacy se adapta solo a clienteId canónico");
 
+const copyInput = historicalQuoteCopyInput({
+  ...quoteFixture(),
+  clienteId: "cliente-copy",
+  id: "cotizacion-original",
+  numero: "COT-2026-0001",
+  estado: "rechazada",
+  total: 1,
+  creadoEn: "histórico",
+  cliente: {nombreRazonSocial: "Snapshot histórico"},
+});
+assert.equal(copyInput.estado, "borrador");
+assert.equal(copyInput.clienteId, "cliente-copy");
+assert.equal(copyInput.items[0].precioUnitarioEditable, 350000);
+assert.equal(copyInput.proyectoNombre, "Escalera zona de estanque");
+assert.equal("id" in copyInput, false);
+assert.equal("numero" in copyInput, false);
+assert.equal("total" in copyInput, false);
+assert.equal("creadoEn" in copyInput, false);
+assert.equal(canDuplicateQuotes("OWNER"), true);
+assert.equal(canDuplicateQuotes("ADMIN"), true);
+assert.equal(canDuplicateQuotes("MEMBER"), false);
+console.log("OK duplicación: copia solo datos reutilizables y MEMBER no administra");
+
 const unsafeName = getQuotePdfFileName({
   numero: "026/114:*?",
   clienteNombre: "Compañía / Ñandú Ltda.",
@@ -367,6 +395,12 @@ const sourceQuoteWorkspaceCss = fs.readFileSync(
 const sourcePdf = fs.readFileSync("src/utils/quotePdf.js", "utf8");
 const sourceEmail = fs.readFileSync("src/features/quotes/SendQuoteEmailModal.jsx", "utf8");
 const sourceHistory = fs.readFileSync("src/pages/QuoteHistoryPage.jsx", "utf8");
+const sourceQuoteService = fs.readFileSync("src/services/quoteService.js", "utf8");
+const sourceQuotePersistence = fs.readFileSync("functions/quotePersistence.js", "utf8");
+const duplicateServiceSource = sourceQuoteService.slice(
+  sourceQuoteService.indexOf("export async function duplicateQuoteAsDraft"),
+  sourceQuoteService.indexOf("export async function getQuotes")
+);
 assert.match(sourceNewQuote, /createManagedInventoryItem/);
 assert.doesNotMatch(sourceNewQuote, /\bcreateInventoryItem\b/);
 assert.match(sourceNewQuote, /<ClientSelector/);
@@ -399,6 +433,11 @@ assert.match(sourcePdf, /buildQuotePdfBase64/);
 assert.match(sourceEmail, /buildQuotePdfAttachment/);
 assert.match(sourceHistory, /downloadQuotePdf/);
 assert.match(sourceHistory, /shareQuotePdf/);
+assert.match(sourceHistory, /Duplicar como borrador/);
+assert.match(duplicateServiceSource, /sourceId[\s\S]*requestId/);
+assert.doesNotMatch(duplicateServiceSource, /quote:\s*payload/);
+assert.match(sourceQuotePersistence, /quoteDuplicateRequests/);
+assert.match(sourceQuotePersistence, /cotizacionOrigenId/);
 console.log("OK integración: inventario v2 y PDF único para descarga, correo y compartir");
 
 const outputDir = path.resolve("output/pdf/quote-validation");

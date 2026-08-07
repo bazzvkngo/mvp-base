@@ -379,6 +379,172 @@ async function crearOrdenCompraHandler(request, dependencies, now = new Date()) 
   });
 }
 
+function historicalPurchaseOrderCopyInput(source = {}) {
+  return {
+    proveedorId: source.proveedorId || source.proveedorSnapshot?.proveedorId,
+    fechaEntregaEstimada: source.fechaEntregaEstimada,
+    direccionEntrega: source.direccionEntrega,
+    condicionesPago: source.condicionesPago,
+    observaciones: source.observaciones,
+    items: (Array.isArray(source.items) ? source.items : []).map((item, index) => ({
+      lineaId: item?.lineaId || `linea-${index + 1}`,
+      itemId: item?.itemId || item?.inventarioId || item?.inventarioSnapshot?.inventarioId,
+      cantidad: item?.cantidad,
+      costoUnitario: item?.costoUnitario ?? item?.costo ?? item?.costoBase,
+      descuentoPct: item?.descuentoPct ?? item?.descuentoPorcentaje ?? 0,
+    })),
+  };
+}
+
+async function duplicarOrdenCompraComoBorradorHandler(
+  request,
+  dependencies,
+  now = new Date()
+) {
+  const {db, FieldValue, HttpsError} = dependencies;
+  const {uid, businessId, businessRef} = await requireWriteAccess(
+    request,
+    dependencies
+  );
+  const requestId = requireRequestId(request?.data?.requestId, HttpsError);
+  const sourceId = requireId(request?.data?.sourceId, "La orden original", HttpsError);
+  const sourceRef = businessRef.collection("ordenesCompra").doc(sourceId);
+  const orderRef = businessRef.collection("ordenesCompra").doc();
+  const requestRef = businessRef.collection("purchaseOrderDuplicateRequests")
+    .doc(requestId);
+  const dateParts = getChileDateParts(now);
+  const counterRef = businessRef.collection("purchaseOrderCounters")
+    .doc(String(dateParts.year));
+
+  return withTransactionRetry(db, async (transaction) => {
+    const existingRequest = await transaction.get(requestRef);
+    if (existingRequest.exists) {
+      const requestData = existingRequest.data() || {};
+      if (requestData.uidUsuario !== uid || requestData.ordenCompraOrigenId !== sourceId) {
+        fail(
+          HttpsError,
+          "already-exists",
+          "La solicitud ya fue usada para otra duplicación."
+        );
+      }
+      const existingSnapshot = await transaction.get(
+        businessRef.collection("ordenesCompra").doc(requestData.ordenCompraId)
+      );
+      if (!existingSnapshot.exists) {
+        fail(HttpsError, "internal", "La duplicación idempotente está incompleta.");
+      }
+      return {
+        ordenCompra: {id: existingSnapshot.id, ...existingSnapshot.data()},
+        requestId,
+        idempotent: true,
+      };
+    }
+
+    const sourceSnapshot = await transaction.get(sourceRef);
+    if (!sourceSnapshot.exists) {
+      fail(HttpsError, "not-found", "No se encontró la orden original.");
+    }
+    const source = sourceSnapshot.data() || {};
+    if (source.negocioId !== businessId) {
+      fail(HttpsError, "permission-denied", "No puedes duplicar esta orden.");
+    }
+    if (!["emitida", "cancelada"].includes(source.estado)) {
+      fail(
+        HttpsError,
+        "failed-precondition",
+        "Los borradores se editan directamente y no necesitan duplicarse."
+      );
+    }
+
+    const input = normalizePurchaseOrderInput(
+      historicalPurchaseOrderCopyInput(source),
+      HttpsError
+    );
+    const providerRef = businessRef.collection("proveedores").doc(input.proveedorId);
+    const inventoryRefs = input.items.map((item) =>
+      businessRef.collection("inventario").doc(item.itemId)
+    );
+    const snapshots = await transaction.getAll(
+      providerRef,
+      counterRef,
+      ...inventoryRefs
+    );
+    if (snapshots[0].exists && snapshots[0].data()?.estado === "archivado") {
+      fail(
+        HttpsError,
+        "failed-precondition",
+        "El proveedor de la orden original está archivado. Reactívalo para crear una nueva orden."
+      );
+    }
+    const proveedorSnapshot = providerSnapshotFromDocument(
+      snapshots[0],
+      {businessId, proveedorId: input.proveedorId},
+      HttpsError
+    );
+    const items = input.items.map((item, index) => buildStoredLine(
+      item,
+      inventorySnapshotFromDocument(
+        snapshots[index + 2],
+        {businessId, itemId: item.itemId},
+        HttpsError
+      ),
+      HttpsError
+    ));
+    const current = Number(snapshots[1].data()?.lastNumber || 0);
+    const next = Number.isSafeInteger(current) && current >= 0 ? current + 1 : 1;
+    const numero = formatPurchaseOrderNumber(dateParts.year, next);
+    const timestamp = FieldValue.serverTimestamp();
+    const originNumber = safeText(source.numero || source.numeroOrdenCompra, 120);
+    const stored = {
+      modeloOrdenCompraVersion: PURCHASE_ORDER_MODEL_VERSION,
+      ordenCompraId: orderRef.id,
+      negocioId: businessId,
+      numero,
+      anio: dateParts.year,
+      correlativo: next,
+      estado: "borrador",
+      moneda: "CLP",
+      tasaIva: VAT_RATE,
+      fechaEmision: getChileDateValue(now),
+      fechaEntregaEstimada: input.fechaEntregaEstimada,
+      direccionEntrega: input.direccionEntrega,
+      condicionesPago: input.condicionesPago || proveedorSnapshot.condicionesPago,
+      observaciones: input.observaciones,
+      proveedorId: input.proveedorId,
+      proveedorSnapshot,
+      items,
+      ...calculateTotals(items, HttpsError),
+      ordenCompraOrigenId: sourceId,
+      ordenCompraOrigenNumero: originNumber,
+      creadoPorUid: uid,
+      actualizadoPorUid: uid,
+      creadoEn: timestamp,
+      actualizadoEn: timestamp,
+    };
+    transaction.set(counterRef, {
+      negocioId: businessId,
+      year: dateParts.year,
+      lastNumber: next,
+      actualizadoEn: timestamp,
+    });
+    transaction.set(orderRef, stored);
+    transaction.set(requestRef, {
+      negocioId: businessId,
+      ordenCompraId: orderRef.id,
+      numero,
+      uidUsuario: uid,
+      ordenCompraOrigenId: sourceId,
+      ordenCompraOrigenNumero: originNumber,
+      creadoEn: timestamp,
+    });
+    return {
+      ordenCompra: {...stored, id: orderRef.id, creadoEn: null, actualizadoEn: null},
+      requestId,
+      idempotent: false,
+    };
+  });
+}
+
 function preservedInventorySnapshot(line) {
   const raw = line?.inventarioSnapshot || {};
   return {
@@ -553,10 +719,12 @@ module.exports = {
   cancelarOrdenCompraHandler,
   calculateTotals,
   crearOrdenCompraHandler,
+  duplicarOrdenCompraComoBorradorHandler,
   emitirOrdenCompraHandler,
   formatPurchaseOrderNumber,
   getChileDateValue,
   inventorySnapshotFromDocument,
+  historicalPurchaseOrderCopyInput,
   normalizePurchaseOrderInput,
   providerSnapshotFromDocument,
 };

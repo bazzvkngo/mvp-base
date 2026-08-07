@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import {createRequire} from "node:module";
 import {
   adaptStoredPurchaseOrder,
   buildPurchaseOrderMutationPayload,
@@ -9,6 +10,11 @@ import {
   matchesPurchaseOrderSearch,
   resolvePurchaseOrderProviderPreview,
 } from "../src/domain/purchaseOrderModel.mjs";
+
+const require = createRequire(import.meta.url);
+const {historicalPurchaseOrderCopyInput} = require(
+  "../functions/purchaseOrderPersistence.js"
+);
 
 const item = (overrides = {}) => ({
   lineaId: "linea-1",
@@ -147,6 +153,37 @@ assert.equal(canManagePurchaseOrders("ADMIN"), true);
 assert.equal(canManagePurchaseOrders("MEMBER"), false);
 console.log("OK compatibilidad: adapter legacy y roles");
 
+const copyInput = historicalPurchaseOrderCopyInput({
+  ...stored,
+  id: "orden-original",
+  ordenCompraId: "orden-original",
+  numero: "OC-2026-0001",
+  estado: "cancelada",
+  proveedorId: "proveedor-1",
+  total: 1,
+  items: [{
+    lineaId: "linea-copy",
+    itemId: "item-copy",
+    cantidad: 3,
+    costoUnitario: 12500,
+    descuentoPct: 5,
+    inventarioSnapshot: {nombre: "Histórico"},
+  }],
+});
+assert.equal(copyInput.proveedorId, "proveedor-1");
+assert.deepEqual(copyInput.items[0], {
+  lineaId: "linea-copy",
+  itemId: "item-copy",
+  cantidad: 3,
+  costoUnitario: 12500,
+  descuentoPct: 5,
+});
+assert.equal("id" in copyInput, false);
+assert.equal("numero" in copyInput, false);
+assert.equal("estado" in copyInput, false);
+assert.equal("total" in copyInput, false);
+console.log("OK duplicación: copia datos editables sin autoridad histórica");
+
 const backendSource = fs.readFileSync("functions/purchaseOrderPersistence.js", "utf8");
 const rulesSource = fs.readFileSync("firestore.rules", "utf8");
 const pageSource = fs.readFileSync("src/pages/NewPurchaseOrderPage.jsx", "utf8");
@@ -161,6 +198,8 @@ const purchaseOrderCssSource = fs.readFileSync(
 );
 assert.match(backendSource, /transaction\.getAll/);
 assert.match(backendSource, /purchaseOrderCreateRequests/);
+assert.match(backendSource, /purchaseOrderDuplicateRequests/);
+assert.match(backendSource, /ordenCompraOrigenId/);
 assert.match(backendSource, /purchaseOrderCounters/);
 assert.match(backendSource, /providerSnapshotFromDocument/);
 assert.match(backendSource, /inventorySnapshotFromDocument/);
@@ -171,6 +210,7 @@ assert.doesNotMatch(pageSource, /Quote[A-Z]/);
 assert.match(providerSelectorSource, /isHistorical \? originalSnapshot : selected/);
 assert.match(historySource, /po-history__cards/);
 assert.match(historySource, /<OrderActions/);
+assert.match(historySource, /Duplicar como borrador/);
 assert.match(purchaseOrderCssSource, /@media\(max-width:767px\)/);
 assert.doesNotMatch(purchaseOrderCssSource, /po-history__table\{min-width:800px\}/);
 console.log("OK integración estática: persistencia, reglas, vista imprimible y desacoplamiento");

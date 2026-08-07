@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useState} from "react";
+import React, {useEffect, useMemo, useRef, useState} from "react";
 import {useNavigate} from "react-router-dom";
 import {
   canManagePurchaseOrders,
@@ -6,6 +6,8 @@ import {
 } from "../domain/purchaseOrderModel.mjs";
 import {
   cancelarOrdenCompra,
+  createPurchaseOrderDuplicateRequestId,
+  duplicarOrdenCompraComoBorrador,
   emitirOrdenCompra,
   listarOrdenesCompra,
 } from "../services/purchaseOrderService";
@@ -19,7 +21,7 @@ function dateLabel(value) {
   return date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString("es-CL") : "—";
 }
 
-function OrderActions({canManage, onAction, onOpen, order}) {
+function OrderActions({canManage, duplicating, onAction, onDuplicate, onOpen, order}) {
   return (
     <div className="po-history__actions">
       <button type="button" onClick={() => onOpen(order)}>
@@ -31,17 +33,24 @@ function OrderActions({canManage, onAction, onOpen, order}) {
       {canManage && order.estado !== "cancelada" && (
         <button type="button" onClick={() => onAction(order, "cancelada")}>Cancelar</button>
       )}
+      {canManage && order.estado !== "borrador" && (
+        <button type="button" disabled={duplicating} onClick={() => onDuplicate(order)}>
+          {duplicating ? "Creando copia..." : "Duplicar como borrador"}
+        </button>
+      )}
     </div>
   );
 }
 
 export default function PurchaseOrdersPage({businessId, role}) {
   const navigate = useNavigate();
+  const duplicateRequestIdsRef = useRef(new Map());
   const [orders, setOrders] = useState([]);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("todos");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
+  const [duplicatingOrderId, setDuplicatingOrderId] = useState("");
   const canManage = canManagePurchaseOrders(role);
 
   const load = () => {
@@ -82,6 +91,32 @@ export default function PurchaseOrdersPage({businessId, role}) {
       : `/ordenes-compra/${order.id}`
   );
 
+  const duplicateOrder = async (order) => {
+    if (!globalThis.confirm(
+      "Se creará un nuevo documento editable. El original permanecerá sin cambios."
+    )) return;
+    const requestId = duplicateRequestIdsRef.current.get(order.id) ||
+      createPurchaseOrderDuplicateRequestId();
+    duplicateRequestIdsRef.current.set(order.id, requestId);
+    setDuplicatingOrderId(order.id);
+    setMessage("");
+    try {
+      const result = await duplicarOrdenCompraComoBorrador(
+        businessId,
+        order.id,
+        {requestId}
+      );
+      duplicateRequestIdsRef.current.delete(order.id);
+      navigate(`/ordenes-compra/${result.ordenCompra.id}/editar`, {
+        state: {message: "Copia creada como borrador."},
+      });
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setDuplicatingOrderId("");
+    }
+  };
+
   return (
     <main className="po-history">
       <header className="erp-page-header">
@@ -115,7 +150,7 @@ export default function PurchaseOrdersPage({businessId, role}) {
                   <td><strong>{order.proveedorSnapshot.razonSocial}</strong><small>{order.proveedorSnapshot.rut}</small></td>
                   <td>{money(order.total)}</td>
                   <td><span className={`po-status po-status--${order.estado}`}>{labels[order.estado]}</span></td>
-                  <td><OrderActions canManage={canManage} onAction={action} onOpen={openOrder} order={order} /></td>
+                  <td><OrderActions canManage={canManage} duplicating={duplicatingOrderId === order.id} onAction={action} onDuplicate={duplicateOrder} onOpen={openOrder} order={order} /></td>
                 </tr>
               ))}
               {!filtered.length && <tr><td colSpan="6" className="po-history__empty">No hay órdenes coincidentes.</td></tr>}
@@ -142,7 +177,7 @@ export default function PurchaseOrdersPage({businessId, role}) {
                 <div><dt>Fecha</dt><dd>{dateLabel(order.creadoEn || order.fechaEmision)}</dd></div>
                 <div><dt>Total</dt><dd>{money(order.total)}</dd></div>
               </dl>
-              <OrderActions canManage={canManage} onAction={action} onOpen={openOrder} order={order} />
+              <OrderActions canManage={canManage} duplicating={duplicatingOrderId === order.id} onAction={action} onDuplicate={duplicateOrder} onOpen={openOrder} order={order} />
             </article>
           ))}
           {!filtered.length && <div className="po-history__cards-empty">No hay órdenes coincidentes.</div>}

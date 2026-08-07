@@ -32,6 +32,13 @@ export function createPurchaseOrderRequestId() {
   return `purchase-order-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
+export function createPurchaseOrderDuplicateRequestId() {
+  if (globalThis.crypto?.randomUUID) {
+    return `purchase-order-copy-${globalThis.crypto.randomUUID()}`;
+  }
+  return `purchase-order-copy-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
 function errorMessage(error, fallback) {
   const code = String(error?.code || "").replace(/^functions\//, "");
   const message = String(error?.message || "").trim();
@@ -95,6 +102,18 @@ export function crearOrdenCompra(businessId, raw, options = {}) {
     requestId: options.requestId || createPurchaseOrderRequestId(),
     ordenCompra: buildPurchaseOrderMutationPayload(raw),
   }, "No pudimos crear la orden de compra.");
+}
+
+export function duplicarOrdenCompraComoBorrador(
+  businessId,
+  sourceId,
+  options = {}
+) {
+  return callPurchaseOrder("duplicarOrdenCompraComoBorrador", {
+    businessId: requireBusinessId(businessId),
+    sourceId: requireOrderId(sourceId),
+    requestId: options.requestId || createPurchaseOrderDuplicateRequestId(),
+  }, "No pudimos duplicar la orden de compra.");
 }
 
 export function actualizarOrdenCompraBorrador(businessId, ordenCompraId, raw) {

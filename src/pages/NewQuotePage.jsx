@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import AiAvailabilityStatus from "../components/ai/AiAvailabilityStatus";
 import { AI_MODELS } from "../config/aiModels";
 import {
@@ -370,6 +370,7 @@ function buildQuoteFromSavedQuote(savedQuote = {}) {
 
 function NewQuotePage({ userId }) {
   const { quoteId: editQuoteId = "" } = useParams();
+  const location = useLocation();
   const addedItemsRef = useRef(null);
   const previewRef = useRef(null);
   const createRequestIdRef = useRef("");
@@ -404,7 +405,7 @@ function NewQuotePage({ userId }) {
   const [search, setSearch] = useState("");
   const [catalogTypeFilter, setCatalogTypeFilter] = useState("todos");
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const [success, setSuccess] = useState(() => location.state?.message || "");
   const [itemFeedback, setItemFeedback] = useState("");
   const [savedQuoteId, setSavedQuoteId] = useState(null);
   const [assistantDescription, setAssistantDescription] = useState("");

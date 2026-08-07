@@ -83,6 +83,17 @@ async function expectCallableError(label, operation, expectedCodes) {
   throw new Error(`Se esperaba rechazo: ${label}`);
 }
 
+async function expectDenied(label, operation) {
+  try {
+    await operation();
+  } catch (error) {
+    assert.match(String(error?.code || ""), /permission-denied/);
+    console.log(`OK reglas: ${label}`);
+    return;
+  }
+  throw new Error(`Se esperaba denegación: ${label}`);
+}
+
 function rutFromBody(bodyValue) {
   const body = String(bodyValue);
   let sum = 0;
@@ -195,8 +206,9 @@ function snapshotFields(snapshot) {
 }
 
 const owner = await authenticate(createClientApp("owner"), "owner");
+const member = await authenticate(createClientApp("member"), "member");
 const outsider = await authenticate(createClientApp("outsider"), "outsider");
-const clients = [owner, outsider];
+const clients = [owner, member, outsider];
 const adminApp = initializeAdminApp(
   {projectId: PROJECT_ID},
   `quotes-admin-${RUN_ID}`
@@ -218,6 +230,12 @@ try {
   });
   const businessId = ownerBusiness.data.business.id;
   const outsiderBusinessId = outsiderBusiness.data.business.id;
+  await adminDb.doc(`membresias/${businessId}__${member.uid}`).set({
+    negocioId: businessId,
+    uid: member.uid,
+    rol: "MEMBER",
+    estado: "activo",
+  });
 
   const primaryData = clientPayload({
     body: 30000001,
@@ -413,6 +431,91 @@ try {
   assert.equal(stored.cliente.email, secondaryData.email);
   console.log("OK edición: cambio explícito obtiene un nuevo snapshot autoritativo");
 
+  await adminQuoteRef.update({estado: "emitida"});
+  const sourceBeforeDuplicate = await adminQuoteRef.get();
+  const duplicateQuote = callable(owner, "duplicateQuoteAsDraft");
+  await expectCallableError(
+    "borrador se edita y no se duplica",
+    () => duplicateQuote({
+      businessId,
+      sourceId: concurrent[0].data.quote.id,
+      requestId: `quote-copy-draft-${RUN_ID}`,
+    }),
+    ["failed-precondition"]
+  );
+  const duplicateRequestId = `quote-copy-${RUN_ID}-same`;
+  const [duplicated, duplicatedRetry] = await Promise.all([
+    duplicateQuote({
+      businessId,
+      sourceId: quoteId,
+      requestId: duplicateRequestId,
+      quote: {clienteId: archivedId, total: 1, estado: "aceptada"},
+      clienteSnapshot: {nombreRazonSocial: "Snapshot falsificado"},
+    }),
+    duplicateQuote({businessId, sourceId: quoteId, requestId: duplicateRequestId}),
+  ]);
+  assert.equal(duplicated.data.quote.id, duplicatedRetry.data.quote.id);
+  assert.notEqual(duplicated.data.quote.id, quoteId);
+  assert.notEqual(duplicated.data.quote.numero, sourceBeforeDuplicate.data().numero);
+  assert.equal(duplicated.data.quote.estado, "borrador");
+  assert.equal(duplicated.data.quote.cotizacionOrigenId, quoteId);
+  assert.equal(
+    duplicated.data.quote.cotizacionOrigenNumero,
+    sourceBeforeDuplicate.data().numero
+  );
+  const duplicateRef = adminDb.doc(
+    `negocios/${businessId}/cotizaciones/${duplicated.data.quote.id}`
+  );
+  const storedDuplicate = (await duplicateRef.get()).data();
+  assert.equal(storedDuplicate.clienteId, secondaryId);
+  assert.equal(storedDuplicate.cliente.nombreRazonSocial, secondaryData.nombreRazonSocial);
+  assert.notEqual(storedDuplicate.cliente.nombreRazonSocial, "Snapshot falsificado");
+  assert.deepEqual(storedDuplicate.items, sourceBeforeDuplicate.data().items);
+  assert.equal(storedDuplicate.proyectoNombre, sourceBeforeDuplicate.data().proyectoNombre);
+  assert.equal(storedDuplicate.condicionesPago, sourceBeforeDuplicate.data().condicionesPago);
+  assert.equal(storedDuplicate.total, sourceBeforeDuplicate.data().total);
+  const sourceAfterDuplicate = await adminQuoteRef.get();
+  assert.equal(
+    sourceAfterDuplicate.updateTime.toMillis(),
+    sourceBeforeDuplicate.updateTime.toMillis()
+  );
+  assert.deepEqual(sourceAfterDuplicate.data(), sourceBeforeDuplicate.data());
+  await expectDenied("request de duplicación no se lee", () => getDoc(doc(
+    owner.db,
+    `negocios/${businessId}/quoteDuplicateRequests/${duplicateRequestId}`
+  )));
+  console.log("OK duplicación: nuevo borrador y número, copia comercial e histórico intacto");
+
+  await expectCallableError(
+    "MEMBER no duplica cotizaciones",
+    () => callable(member, "duplicateQuoteAsDraft")({
+      businessId,
+      sourceId: quoteId,
+      requestId: `quote-copy-member-${RUN_ID}`,
+    }),
+    ["permission-denied"]
+  );
+  await expectCallableError(
+    "cotización de otro negocio no se duplica",
+    () => callable(outsider, "duplicateQuoteAsDraft")({
+      businessId: outsiderBusinessId,
+      sourceId: quoteId,
+      requestId: `quote-copy-cross-${RUN_ID}`,
+    }),
+    ["not-found"]
+  );
+  await callable(owner, "archivarCliente")({businessId, clienteId: secondaryId});
+  await expectCallableError(
+    "cliente original archivado bloquea la copia",
+    () => duplicateQuote({
+      businessId,
+      sourceId: quoteId,
+      requestId: `quote-copy-archived-${RUN_ID}`,
+    }),
+    ["failed-precondition"]
+  );
+  console.log("OK duplicación segura: roles, aislamiento y cliente activo autoritativo");
+
   const legacyQuoteId = `legacy-${RUN_ID}`;
   const legacyRef = adminDb.doc(
     `negocios/${businessId}/cotizaciones/${legacyQuoteId}`
@@ -452,7 +555,7 @@ try {
 
   assert.equal(
     (await adminDb.collection(`negocios/${businessId}/cotizaciones`).get()).size,
-    4
+    5
   );
   console.log("QUOTE_INTEGRATED_LOCAL_OK");
 } finally {

@@ -27,6 +27,7 @@ const {
 } = require("./inventoryModel");
 const {
   createQuoteWithNumberHandler,
+  duplicateQuoteAsDraftHandler,
   updateQuoteDraftHandler,
 } = require("./quotePersistence");
 const {
@@ -45,6 +46,7 @@ const {
   actualizarOrdenCompraBorradorHandler,
   cancelarOrdenCompraHandler,
   crearOrdenCompraHandler,
+  duplicarOrdenCompraComoBorradorHandler,
   emitirOrdenCompraHandler,
 } = require("./purchaseOrderPersistence");
 const {
@@ -1917,6 +1919,23 @@ exports.updateQuoteDraft = onCall(
     })
 );
 
+exports.duplicateQuoteAsDraft = onCall(
+  {
+    maxInstances: 20,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    duplicateQuoteAsDraftHandler({
+      request,
+      db,
+      FieldValue,
+      HttpsError,
+      requireBusinessAccess,
+    })
+);
+
 const purchaseOrderPersistenceDependencies = {
   db,
   FieldValue,
@@ -1933,6 +1952,20 @@ exports.crearOrdenCompra = onCall(
   },
   async (request) =>
     crearOrdenCompraHandler(request, purchaseOrderPersistenceDependencies)
+);
+
+exports.duplicarOrdenCompraComoBorrador = onCall(
+  {
+    maxInstances: 20,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    duplicarOrdenCompraComoBorradorHandler(
+      request,
+      purchaseOrderPersistenceDependencies
+    )
 );
 
 exports.actualizarOrdenCompraBorrador = onCall(

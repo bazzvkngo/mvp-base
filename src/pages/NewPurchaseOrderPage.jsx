@@ -1,5 +1,5 @@
 import React, {useEffect, useMemo, useRef, useState} from "react";
-import {useNavigate, useParams} from "react-router-dom";
+import {useLocation, useNavigate, useParams} from "react-router-dom";
 import {
   calculatePurchaseOrderTotals,
   canManagePurchaseOrders,
@@ -16,8 +16,10 @@ import {listarProveedores} from "../services/providerService";
 import {
   actualizarOrdenCompraBorrador,
   cancelarOrdenCompra,
+  createPurchaseOrderDuplicateRequestId,
   createPurchaseOrderRequestId,
   crearOrdenCompra,
+  duplicarOrdenCompraComoBorrador,
   emitirOrdenCompra,
   obtenerOrdenCompra,
 } from "../services/purchaseOrderService";
@@ -43,6 +45,7 @@ function emptyDraft() {
 
 export default function NewPurchaseOrderPage({businessId, role}) {
   const {ordenCompraId} = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const [draft, setDraft] = useState(emptyDraft);
   const [order, setOrder] = useState(null);
@@ -52,10 +55,16 @@ export default function NewPurchaseOrderPage({businessId, role}) {
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
+  const [duplicating, setDuplicating] = useState(false);
+  const [message, setMessage] = useState(() => location.state?.message || "");
   const requestIdRef = useRef(createPurchaseOrderRequestId());
+  const duplicateRequestIdRef = useRef("");
   const canManage = canManagePurchaseOrders(role);
   const readOnly = !canManage || (order && order.estado !== "borrador");
+
+  useEffect(() => {
+    if (location.state?.message) setMessage(location.state.message);
+  }, [location.state?.message]);
 
   useEffect(() => {
     let active = true;
@@ -185,6 +194,32 @@ export default function NewPurchaseOrderPage({businessId, role}) {
     }
   };
 
+  const duplicate = async () => {
+    if (!order || !globalThis.confirm(
+      "Se creará un nuevo documento editable. El original permanecerá sin cambios."
+    )) return;
+    if (!duplicateRequestIdRef.current) {
+      duplicateRequestIdRef.current = createPurchaseOrderDuplicateRequestId();
+    }
+    setDuplicating(true);
+    setMessage("");
+    try {
+      const result = await duplicarOrdenCompraComoBorrador(
+        businessId,
+        order.id,
+        {requestId: duplicateRequestIdRef.current}
+      );
+      duplicateRequestIdRef.current = "";
+      navigate(`/ordenes-compra/${result.ordenCompra.id}/editar`, {
+        state: {message: "Copia creada como borrador."},
+      });
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setDuplicating(false);
+    }
+  };
+
   if (loading) return <p className="muted">Cargando orden de compra...</p>;
 
   return (
@@ -215,6 +250,7 @@ export default function NewPurchaseOrderPage({businessId, role}) {
           <button type="button" className="po-button po-button--secondary" onClick={() => navigate("/ordenes-compra")}>Volver al historial</button>
           {order && <button type="button" className="po-button po-button--secondary" onClick={() => window.print()}>Imprimir</button>}
           {readOnly && canManage && order?.estado === "emitida" && <button type="button" className="po-button po-button--danger" onClick={cancel}>Cancelar orden</button>}
+          {readOnly && canManage && order && <button type="button" className="po-button po-button--secondary" disabled={saving || duplicating} onClick={duplicate}>{duplicating ? "Creando copia..." : "Duplicar como borrador"}</button>}
         </div>
       </header>
       {message && <p className="po-message no-print">{message}</p>}

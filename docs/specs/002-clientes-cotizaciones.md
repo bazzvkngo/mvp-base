@@ -39,9 +39,25 @@ Una cotización histórica sin `clienteId`:
 - puede guardarse como borrador sin inferir coincidencias por nombre o RUT;
 - solo pasa al contrato vinculado cuando el usuario selecciona explícitamente un cliente registrado.
 
+# Duplicación de documentos históricos
+
+Una cotización que ya no es editable directamente puede duplicarse como un borrador independiente. La operación sigue el flujo:
+
+```text
+Documento histórico inmutable → Duplicar como borrador → Nuevo documento independiente
+```
+
+La Function recibe exclusivamente `businessId`, `sourceId` y `requestId`, lee la cotización original dentro del negocio autorizado y exige rol `OWNER` o `ADMIN`. El original conserva su ID, número, estado, snapshots y timestamps sin escrituras.
+
+La copia obtiene un ID, número, fecha, creador y timestamps nuevos mediante el mismo contador transaccional vigente. El cliente se resuelve nuevamente desde su `clienteId` canónico y debe continuar activo en el mismo negocio; un cliente archivado bloquea la duplicación sin reactivarlo. Las líneas, precios, descuentos, alcance, condiciones, observaciones, tratamiento tributario, vigencia y opciones comerciales se reconstruyen desde el documento original leído por backend. Esto preserva descripciones comerciales personalizadas sin confiar en snapshots o totales enviados por el frontend.
+
+La idempotencia usa `negocios/{businessId}/quoteDuplicateRequests/{requestId}`. Repetir la misma solicitud devuelve la misma copia y no consume otro correlativo. El backend agrega `cotizacionOrigenId` y `cotizacionOrigenNumero` únicamente como trazabilidad informativa.
+
+`MEMBER` no recibe la acción y Functions rechaza un intento directo. La duplicación no cambia estados, no envía correo, no genera PDF y no emite automáticamente.
+
 # Seguridad y reglas
 
-No fue necesario ampliar `firestore.rules`. Las cotizaciones conservan la política de lectura y actualización existente, las creaciones directas siguen bloqueadas y la creación autoritativa continúa en Cloud Functions. La colección interna `clientRutKeys` no participa en el selector.
+Las cotizaciones conservan la política previa de lectura y actualización, las creaciones directas siguen bloqueadas y la creación autoritativa continúa en Cloud Functions. Únicamente se añadió en `firestore.rules` el cierre explícito de la colección interna `quoteDuplicateRequests`, utilizada para la idempotencia de duplicación. La colección interna `clientRutKeys` no participa en el selector.
 
 # Pruebas
 
@@ -57,3 +73,6 @@ Los smokes cubren:
 - edición de un borrador cuyo cliente fue archivado;
 - compatibilidad de `clientId` al leer y de cotizaciones sin vínculo;
 - idempotencia de creación y numeración concurrente existente.
+- duplicación autoritativa de un documento histórico, nuevo ID y número, borrador independiente y original intacto;
+- reintento idempotente, rol `MEMBER`, aislamiento entre negocios y rechazo de cliente archivado;
+- omisión de snapshots y totales falsificados en la solicitud de duplicación.

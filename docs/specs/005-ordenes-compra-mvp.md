@@ -38,6 +38,12 @@ La idempotencia de creación usa:
 negocios/{businessId}/purchaseOrderCreateRequests/{requestId}
 ```
 
+La idempotencia de duplicación usa:
+
+```text
+negocios/{businessId}/purchaseOrderDuplicateRequests/{requestId}
+```
+
 Ambas colecciones internas están cerradas al SDK cliente. La misma solicitud con el mismo contenido devuelve el documento previo sin consumir otro número; reutilizarla con contenido diferente se rechaza.
 
 ## Autoridad y snapshots
@@ -54,6 +60,20 @@ Al editar un borrador:
 - agregar o cambiar un ítem exige que el documento actual esté activo y reconstruye su snapshot.
 
 Los metadatos históricos no se actualizan desde cambios posteriores en Proveedores o Inventario. Los documentos legacy se adaptan solo en lectura.
+
+## Duplicación de documentos históricos
+
+Una orden `emitida` o `cancelada` puede reutilizarse sin editar ni reactivar el documento original:
+
+```text
+Documento histórico inmutable → Duplicar como borrador → Nuevo documento independiente
+```
+
+La Callable recibe exclusivamente `businessId`, `sourceId` y `requestId`. Functions valida autenticación, membresía `OWNER` o `ADMIN`, negocio y documento original. Luego vuelve a leer autoritativamente el proveedor y cada ítem desde el mismo negocio. El proveedor y los ítems deben continuar activos; ninguno se reactiva automáticamente. Los snapshots del nuevo documento se construyen con los maestros actuales, mientras cantidades, costos unitarios editables, descuentos, entrega, dirección, condiciones y observaciones se toman del original autorizado. Los totales siempre se recalculan.
+
+La copia obtiene ID, número, creador, fecha y timestamps nuevos mediante el contador transaccional vigente, queda en estado `borrador` y guarda `ordenCompraOrigenId` y `ordenCompraOrigenNumero` como trazabilidad informativa construida por backend. El `requestId` hace que doble clic y reintentos devuelvan la misma copia sin consumir otro correlativo.
+
+La operación no escribe la orden original, Inventario, stock, `costoBase`, Compras, movimientos financieros ni movimientos de inventario. `MEMBER` puede consultar el original, pero no ve la acción y el backend rechaza intentos directos.
 
 ## Cálculos
 
@@ -120,6 +140,8 @@ Este MVP no implementa:
 `purchase-orders-model-smoke.mjs` cubre cálculos, rangos, contrato de mutación, adaptación legacy, roles y desacoplamiento.
 
 `purchase-orders-integrated-local.mjs` cubre roles, aislamiento, proveedor e inventario activos, snapshots autoritativos e históricos, manipulación, recalculo, edición, estados, idempotencia, numeración concurrente y reglas de acceso.
+
+También cubre duplicación de órdenes emitidas y canceladas, original intacto, nuevo ID/número/borrador, reintento concurrente, trazabilidad, reconstrucción autoritativa de proveedor e ítems, preservación de costos editables, rechazo de `MEMBER`, aislamiento entre negocios, proveedor archivado y ausencia de efectos sobre Inventario, Compras y movimientos financieros.
 
 La aceptación requiere además los smokes de Proveedores, Inventario, Cotizaciones, Rules, build, lint de Functions y revisión responsive manual.
 

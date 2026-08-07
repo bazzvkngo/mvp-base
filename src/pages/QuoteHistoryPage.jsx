@@ -1,10 +1,13 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import QuotePrintView from "../features/quotes/QuotePrintView";
 import SendQuoteEmailModal from "../features/quotes/SendQuoteEmailModal";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import { getCompanyProfile } from "../services/companyService";
+import { canDuplicateQuotes } from "../domain/quoteModel.mjs";
 import {
+  createQuoteDuplicateRequestId,
+  duplicateQuoteAsDraft,
   getQuoteDisplayNumber,
   getQuotes,
   updateQuoteStatus,
@@ -97,8 +100,9 @@ function getEmailActionHint(quote) {
   return "";
 }
 
-function QuoteHistoryPage({ userId }) {
+function QuoteHistoryPage({ userId, role }) {
   const navigate = useNavigate();
+  const duplicateRequestIdsRef = useRef(new Map());
   const [quotes, setQuotes] = useState([]);
   const [companyProfile, setCompanyProfile] = useState(null);
   const [selectedQuoteId, setSelectedQuoteId] = useState("");
@@ -110,6 +114,8 @@ function QuoteHistoryPage({ userId }) {
   const [success, setSuccess] = useState("");
   const [emailModalQuote, setEmailModalQuote] = useState(null);
   const [restoreDetailFocus, setRestoreDetailFocus] = useState(true);
+  const [duplicatingQuoteId, setDuplicatingQuoteId] = useState("");
+  const canDuplicate = canDuplicateQuotes(role);
 
   useEffect(() => {
     if (!userId) {
@@ -267,6 +273,29 @@ function QuoteHistoryPage({ userId }) {
     navigate(`/cotizaciones/${quoteId}/editar`);
   };
 
+  const handleDuplicateQuote = async (quote) => {
+    if (!window.confirm(
+      "Se creará un nuevo documento editable. El original permanecerá sin cambios."
+    )) return;
+    const requestId = duplicateRequestIdsRef.current.get(quote.id) ||
+      createQuoteDuplicateRequestId();
+    duplicateRequestIdsRef.current.set(quote.id, requestId);
+    setDuplicatingQuoteId(quote.id);
+    setError("");
+    setSuccess("");
+    try {
+      const result = await duplicateQuoteAsDraft(userId, quote.id, {requestId});
+      duplicateRequestIdsRef.current.delete(quote.id);
+      navigate(`/cotizaciones/${result.quote.id}/editar`, {
+        state: {message: "Copia creada como borrador."},
+      });
+    } catch (duplicateError) {
+      setError(duplicateError.message || "No se pudo duplicar la cotización.");
+    } finally {
+      setDuplicatingQuoteId("");
+    }
+  };
+
   const handleEmailSent = (quoteId, emailPatch, result) => {
     setQuotes((prev) =>
       prev.map((quote) =>
@@ -420,6 +449,9 @@ function QuoteHistoryPage({ userId }) {
                           onArchive={handleArchiveQuote}
                           onRestore={handleRestoreQuote}
                           onEditDraft={handleEditDraft}
+                          canDuplicate={canDuplicate}
+                          duplicating={duplicatingQuoteId === quote.id}
+                          onDuplicate={handleDuplicateQuote}
                         />
                       </div>
                     </td>
@@ -455,6 +487,9 @@ function QuoteHistoryPage({ userId }) {
               onArchive={handleArchiveQuote}
               onRestore={handleRestoreQuote}
               onEditDraft={handleEditDraft}
+              canDuplicate={canDuplicate}
+              duplicating={duplicatingQuoteId === selectedQuote.id}
+              onDuplicate={handleDuplicateQuote}
             />
           </div>
         ) : null}
@@ -582,8 +617,21 @@ function QuoteActions({
   onArchive,
   onRestore,
   onEditDraft,
+  canDuplicate,
+  duplicating,
+  onDuplicate,
 }) {
   const estado = quote.estado || "borrador";
+  const duplicateAction = canDuplicate && estado !== "borrador" ? (
+    <button
+      type="button"
+      onClick={() => onDuplicate(quote)}
+      disabled={disabled || duplicating}
+      style={styles.secondaryButton}
+    >
+      {duplicating ? "Creando copia..." : "Duplicar como borrador"}
+    </button>
+  ) : null;
 
   if (estado === "borrador") {
     return (
@@ -612,6 +660,7 @@ function QuoteActions({
         >
           Archivar
         </button>
+        {duplicateAction}
       </>
     );
   }
@@ -651,6 +700,7 @@ function QuoteActions({
         >
           Archivar
         </button>
+        {duplicateAction}
       </>
     );
   }
@@ -674,6 +724,7 @@ function QuoteActions({
         >
           Archivar
         </button>
+        {duplicateAction}
       </>
     );
   }
@@ -697,20 +748,24 @@ function QuoteActions({
         >
           Archivar
         </button>
+        {duplicateAction}
       </>
     );
   }
 
   if (estado === "archivada") {
     return (
-      <button
-        type="button"
-        onClick={() => onRestore(quote)}
-        disabled={disabled}
-        style={styles.secondaryButton}
-      >
-        Restaurar
-      </button>
+      <>
+        <button
+          type="button"
+          onClick={() => onRestore(quote)}
+          disabled={disabled}
+          style={styles.secondaryButton}
+        >
+          Restaurar
+        </button>
+        {duplicateAction}
+      </>
     );
   }
 

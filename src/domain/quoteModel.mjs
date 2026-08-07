@@ -33,6 +33,10 @@ export function safeQuoteText(value, maxLength = 2000) {
   return String(value ?? "").trim().slice(0, maxLength);
 }
 
+export function canDuplicateQuotes(role) {
+  return ["OWNER", "ADMIN"].includes(String(role || "").toUpperCase());
+}
+
 function normalizeIdentifier(value, fallback = "") {
   return safeQuoteText(value, 160).replace(/[^a-zA-Z0-9_.:-]/g, "-") || fallback;
 }

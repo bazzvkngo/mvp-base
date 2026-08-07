@@ -98,6 +98,13 @@ export function createQuoteRequestId() {
   return `quote-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
+export function createQuoteDuplicateRequestId() {
+  if (globalThis.crypto?.randomUUID) {
+    return `quote-copy-${globalThis.crypto.randomUUID()}`;
+  }
+  return `quote-copy-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
 export async function createQuote(uid, data, { requestId } = {}) {
   assertCloudFunctionAllowed("crear cotizaciones");
   if (!uid) throw new Error("Usuario no autenticado.");
@@ -125,6 +132,34 @@ export async function createQuote(uid, data, { requestId } = {}) {
       err,
       "createQuoteWithNumber",
       "No pudimos asignar el número de cotización. Inténtalo nuevamente."
+    );
+  }
+}
+
+export async function duplicateQuoteAsDraft(uid, sourceId, {requestId} = {}) {
+  assertCloudFunctionAllowed("duplicar cotizaciones");
+  if (!uid) throw new Error("Usuario no autenticado.");
+  if (!sourceId) throw new Error("Selecciona una cotización válida.");
+  const stableRequestId = requestId || createQuoteDuplicateRequestId();
+  try {
+    const callable = httpsCallable(
+      getFirebaseFunctions(FUNCTIONS_REGION),
+      "duplicateQuoteAsDraft"
+    );
+    const response = await callable({
+      businessId: uid,
+      sourceId,
+      requestId: stableRequestId,
+    });
+    return {
+      ...response.data,
+      quote: adaptStoredQuote(response.data?.quote || {}),
+    };
+  } catch (error) {
+    throw normalizeQuoteCallableError(
+      error,
+      "duplicateQuoteAsDraft",
+      "No pudimos duplicar la cotización. Inténtalo nuevamente."
     );
   }
 }

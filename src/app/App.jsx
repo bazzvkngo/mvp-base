@@ -222,7 +222,13 @@ function AppRoutes({
         />
         <Route
           path="/cotizaciones"
-          element={<QuoteHistoryPage key={businessId} userId={businessId} />}
+          element={
+            <QuoteHistoryPage
+              key={businessId}
+              userId={businessId}
+              role={activeBusiness?.role}
+            />
+          }
         />
         <Route
           path="/cotizaciones/nueva"

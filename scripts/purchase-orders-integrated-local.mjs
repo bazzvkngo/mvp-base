@@ -391,6 +391,136 @@ try {
   await expectCallableError("emitida no se edita", () =>
     call(owner, "actualizarOrdenCompraBorrador")({businessId, ordenCompraId: created.id, ordenCompra: orderPayload(providerBId, itemBId)}),
   ["failed-precondition"]);
+  await expectCallableError("borrador se edita y no se duplica", () =>
+    call(owner, "duplicarOrdenCompraComoBorrador")({
+      businessId,
+      sourceId: concurrent[0].data.ordenCompra.id,
+      requestId: `duplicate-draft-${RUN_ID}`,
+    }),
+  ["failed-precondition"]);
+
+  const itemBRef = adminDb.doc(
+    `negocios/${businessId}/inventario/${itemBId}`
+  );
+  const ordersBeforeInactiveItem = await adminDb.collection(
+    `negocios/${businessId}/ordenesCompra`
+  ).get();
+  const counterRef = adminDb.doc(
+    `negocios/${businessId}/purchaseOrderCounters/${created.anio}`
+  );
+  const counterBeforeInactiveItem = await counterRef.get();
+  await itemBRef.update({estado: "inactivo"});
+  await expectCallableError("ítem original inactivo bloquea la copia", () =>
+    call(owner, "duplicarOrdenCompraComoBorrador")({
+      businessId,
+      sourceId: created.id,
+      requestId: `duplicate-inactive-item-${RUN_ID}`,
+    }),
+  ["failed-precondition"]);
+  const ordersAfterInactiveItem = await adminDb.collection(
+    `negocios/${businessId}/ordenesCompra`
+  ).get();
+  const counterAfterInactiveItem = await counterRef.get();
+  assert.equal(ordersAfterInactiveItem.size, ordersBeforeInactiveItem.size);
+  assert.equal(
+    counterAfterInactiveItem.data().lastNumber,
+    counterBeforeInactiveItem.data().lastNumber
+  );
+  await itemBRef.update({estado: "activo"});
+  console.log("OK duplicación rechazada: ítem inactivo no crea orden ni consume correlativo");
+
+  const sourceRef = adminDb.doc(
+    `negocios/${businessId}/ordenesCompra/${created.id}`
+  );
+  const sourceBeforeDuplicate = await sourceRef.get();
+  const inventoryBeforeDuplicate = await adminDb.doc(
+    `negocios/${businessId}/inventario/${itemBId}`
+  ).get();
+  const movementsBeforeDuplicate = await adminDb.collection(
+    `negocios/${businessId}/financialMovements`
+  ).get();
+  const duplicateRequestId = `duplicate-emitted-${RUN_ID}`;
+  const [duplicatedEmitted, duplicatedRetry] = await Promise.all([
+    call(owner, "duplicarOrdenCompraComoBorrador")({
+      businessId,
+      sourceId: created.id,
+      requestId: duplicateRequestId,
+      ordenCompra: orderPayload(archivedProviderId, archivedItemId, {
+        total: 1,
+      }),
+      proveedorSnapshot: {razonSocial: "Proveedor falsificado"},
+    }),
+    call(owner, "duplicarOrdenCompraComoBorrador")({
+      businessId,
+      sourceId: created.id,
+      requestId: duplicateRequestId,
+    }),
+  ]);
+  const emittedCopy = duplicatedEmitted.data.ordenCompra;
+  assert.equal(emittedCopy.id, duplicatedRetry.data.ordenCompra.id);
+  assert.notEqual(emittedCopy.id, created.id);
+  assert.notEqual(emittedCopy.numero, sourceBeforeDuplicate.data().numero);
+  assert.equal(emittedCopy.estado, "borrador");
+  assert.equal(emittedCopy.ordenCompraOrigenId, created.id);
+  assert.equal(
+    emittedCopy.ordenCompraOrigenNumero,
+    sourceBeforeDuplicate.data().numero
+  );
+  assert.equal(emittedCopy.proveedorId, providerBId);
+  assert.equal(emittedCopy.proveedorSnapshot.razonSocial, "Proveedor B SpA");
+  assert.notEqual(emittedCopy.proveedorSnapshot.razonSocial, "Proveedor falsificado");
+  assert.equal(emittedCopy.items[0].itemId, itemBId);
+  assert.equal(emittedCopy.items[0].nombre, "Servicio B");
+  assert.equal(emittedCopy.items[0].costoUnitario, 7000);
+  assert.deepEqual(
+    {
+      subtotal: emittedCopy.subtotal,
+      descuentoTotal: emittedCopy.descuentoTotal,
+      neto: emittedCopy.neto,
+      iva: emittedCopy.iva,
+      total: emittedCopy.total,
+    },
+    {subtotal: 7000, descuentoTotal: 0, neto: 7000, iva: 1330, total: 8330}
+  );
+  const sourceAfterDuplicate = await sourceRef.get();
+  assert.equal(
+    sourceAfterDuplicate.updateTime.toMillis(),
+    sourceBeforeDuplicate.updateTime.toMillis()
+  );
+  assert.deepEqual(sourceAfterDuplicate.data(), sourceBeforeDuplicate.data());
+  const inventoryAfterDuplicate = await adminDb.doc(
+    `negocios/${businessId}/inventario/${itemBId}`
+  ).get();
+  assert.equal(
+    inventoryAfterDuplicate.updateTime.toMillis(),
+    inventoryBeforeDuplicate.updateTime.toMillis()
+  );
+  assert.deepEqual(inventoryAfterDuplicate.data(), inventoryBeforeDuplicate.data());
+  assert.equal(
+    (await adminDb.collection(`negocios/${businessId}/financialMovements`).get()).size,
+    movementsBeforeDuplicate.size
+  );
+  assert.equal(
+    (await adminDb.collection(`negocios/${businessId}/compras`).get()).size,
+    0
+  );
+  console.log("OK duplicación emitida: copia independiente, recalculada y sin stock/compras");
+
+  await expectCallableError("MEMBER no duplica", () =>
+    call(member, "duplicarOrdenCompraComoBorrador")({
+      businessId,
+      sourceId: created.id,
+      requestId: `duplicate-member-${RUN_ID}`,
+    }),
+  ["permission-denied"]);
+  await expectCallableError("orden de otro negocio no se duplica", () =>
+    call(outsider, "duplicarOrdenCompraComoBorrador")({
+      businessId: otherBusinessId,
+      sourceId: created.id,
+      requestId: `duplicate-cross-${RUN_ID}`,
+    }),
+  ["not-found"]);
+
   const cancelled = await call(admin, "cancelarOrdenCompra")({
     businessId, ordenCompraId: created.id,
   });
@@ -399,7 +529,27 @@ try {
     businessId, ordenCompraId: created.id,
   });
   assert.equal(cancelRetry.data.idempotent, true);
-  console.log("OK estados: borrador → emitida → cancelada, con reintentos idempotentes");
+  const duplicatedCancelled = await call(admin, "duplicarOrdenCompraComoBorrador")({
+    businessId,
+    sourceId: created.id,
+    requestId: `duplicate-cancelled-${RUN_ID}`,
+  });
+  assert.equal(duplicatedCancelled.data.ordenCompra.estado, "borrador");
+  assert.notEqual(duplicatedCancelled.data.ordenCompra.id, emittedCopy.id);
+  assert.notEqual(duplicatedCancelled.data.ordenCompra.numero, cancelled.data.ordenCompra.numero);
+  assert.equal(duplicatedCancelled.data.ordenCompra.ordenCompraOrigenId, created.id);
+  console.log("OK estados y duplicación: emitida/cancelada generan borradores nuevos");
+
+  await adminDb.doc(`negocios/${businessId}/proveedores/${providerBId}`).update({
+    estado: "archivado",
+  });
+  await expectCallableError("proveedor original archivado bloquea la copia", () =>
+    call(owner, "duplicarOrdenCompraComoBorrador")({
+      businessId,
+      sourceId: created.id,
+      requestId: `duplicate-archived-provider-${RUN_ID}`,
+    }),
+  ["failed-precondition"], /proveedor.*archivado/i);
 
   const orderPath = `negocios/${businessId}/ordenesCompra/${created.id}`;
   assert.equal((await getDoc(doc(member.db, orderPath))).exists(), true);
@@ -416,6 +566,9 @@ try {
   ));
   await expectDenied("request interno no se lee", () => getDoc(
     doc(owner.db, `negocios/${businessId}/purchaseOrderCreateRequests/${requestId}`)
+  ));
+  await expectDenied("request de duplicación no se lee", () => getDoc(
+    doc(owner.db, `negocios/${businessId}/purchaseOrderDuplicateRequests/${duplicateRequestId}`)
   ));
   console.log("OK reglas: MEMBER lee; escrituras directas e internos quedan cerrados");
 
