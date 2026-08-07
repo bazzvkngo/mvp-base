@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import QuotePrintView from "../features/quotes/QuotePrintView";
 import SendQuoteEmailModal from "../features/quotes/SendQuoteEmailModal";
+import Button from "../components/ui/Button";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import { getCompanyProfile } from "../services/companyService";
 import { canDuplicateQuotes } from "../domain/quoteModel.mjs";
@@ -373,6 +374,11 @@ function QuoteHistoryPage({ userId, role }) {
             estado comercial básico.
           </p>
         </div>
+        {canDuplicate && (
+          <Button type="button" onClick={() => navigate("/cotizaciones/nueva")}>
+            Nueva cotización
+          </Button>
+        )}
       </div>
 
       {error && <p className="no-print" role="alert" style={styles.errorText}>{error}</p>}

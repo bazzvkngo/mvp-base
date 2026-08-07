@@ -159,7 +159,7 @@ export default function PurchaseOrdersPage({businessId, role}) {
           <h1 className="erp-page-header__title">Órdenes de compra</h1>
           <p className="erp-page-header__description">Borradores, órdenes emitidas y canceladas del negocio.</p>
         </div>
-        {canManage && <button type="button" className="po-button po-button--primary" onClick={() => navigate("/ordenes-compra/nueva")}>Nueva orden</button>}
+        {canManage && <button type="button" className="po-button po-button--primary" onClick={() => navigate("/ordenes-compra/nueva")}>Nueva orden de compra</button>}
       </header>
       <section className="po-history__toolbar">
         <input aria-label="Buscar órdenes" placeholder="Buscar número, proveedor o RUT" value={search} onChange={(event) => setSearch(event.target.value)} />
