@@ -30,6 +30,7 @@ import {
 } from "../domain/financialMovement.mjs";
 import {
   REPORT_TABS,
+  REPORT_PERIOD_OPTIONS,
   aggregateOperationalTimeline,
   buildReportCsv,
   filterInventoryMovements,
@@ -45,15 +46,7 @@ import useFinancialMovements from "../hooks/useFinancialMovements";
 import {loadReportData} from "../services/reportService";
 import {formatCLP, formatDate, formatPercent} from "../utils/formatters";
 
-const PERIOD_OPTIONS = [
-  {id: "week", label: "Esta semana"},
-  {id: "month", label: "Este mes"},
-  {id: "three_months", label: "Últimos 3 meses"},
-  {id: "six_months", label: "Últimos 6 meses"},
-  {id: "year", label: "Este año"},
-  {id: "custom", label: "Periodo personalizado"},
-];
-const VALID_PERIODS = new Set(PERIOD_OPTIONS.map((option) => option.id));
+const VALID_PERIODS = new Set(REPORT_PERIOD_OPTIONS.map((option) => option.id));
 const TABS = [
   ["summary", "Resumen"],
   ["sales", "Ventas"],
@@ -290,7 +283,7 @@ function StatisticsPage({businessId}) {
         <div className="financial-page-actions no-print"><Button variant="secondary" icon={Download} onClick={exportActive} disabled={reportState.loading || (["summary", "finances"].includes(activeTab) && financial.loading)}>Exportar CSV</Button></div>
       </div>
       <div className="financial-period-bar">
-        <FinancialPeriodSelector period={period} customStart={customStart} customEnd={customEnd} options={PERIOD_OPTIONS} onPeriodChange={(value) => setParam("period", value === "month" ? "" : value)} onCustomStartChange={(value) => setParam("from", value)} onCustomEndChange={(value) => setParam("to", value)} idPrefix="reports-period" />
+        <FinancialPeriodSelector period={period} customStart={customStart} customEnd={customEnd} options={REPORT_PERIOD_OPTIONS} onPeriodChange={(value) => setParam("period", value === "month" ? "" : value)} onCustomStartChange={(value) => setParam("from", value)} onCustomEndChange={(value) => setParam("to", value)} idPrefix="reports-period" />
         <span className="financial-period-bar__caption">{formatDate(range.start)} al {formatDate(range.end)} · America/Santiago</span>
       </div>
       <div className="financial-tabs statistics-tabs" role="tablist" aria-label="Secciones de Reportes">

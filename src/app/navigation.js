@@ -7,6 +7,7 @@ import {
   ClipboardCheck,
   History,
   LayoutDashboard,
+  ReceiptText,
   UserRound,
   UsersRound,
   WalletCards,
@@ -47,7 +48,7 @@ export const navigationSections = [
         to: "/ventas",
         label: "Ventas",
         title: "Ventas",
-        icon: ShoppingCart,
+        icon: ReceiptText,
         activeWhen: (pathname) =>
           pathname === "/ventas" || pathname.startsWith("/ventas/"),
       },
@@ -66,7 +67,7 @@ export const navigationSections = [
         to: "/ordenes-compra",
         label: "Órdenes de compra",
         title: "Órdenes de compra",
-        icon: ShoppingCart,
+        icon: ClipboardCheck,
         activeWhen: (pathname) =>
           pathname === "/ordenes-compra" ||
           pathname.startsWith("/ordenes-compra/"),
@@ -96,6 +97,18 @@ export const navigationSections = [
     label: "Análisis",
     items: [
       {
+        to: "/reportes",
+        label: "Reportes",
+        title: "Reportes",
+        icon: BarChart3,
+      },
+      {
+        to: "/finanzas",
+        label: "Finanzas",
+        title: "Finanzas",
+        icon: WalletCards,
+      },
+      {
         to: "/valorizacion",
         label: "Valorización",
         title: "Valorización",
@@ -112,18 +125,6 @@ export const navigationSections = [
         label: "Tareas de referencias",
         title: "Tareas de referencias",
         icon: ClipboardCheck,
-      },
-      {
-        to: "/reportes",
-        label: "Reportes",
-        title: "Reportes",
-        icon: BarChart3,
-      },
-      {
-        to: "/finanzas",
-        label: "Finanzas",
-        title: "Finanzas",
-        icon: WalletCards,
       },
     ],
   },

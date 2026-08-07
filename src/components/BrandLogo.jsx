@@ -2,7 +2,7 @@ import React from "react";
 import { CloudCog } from "lucide-react";
 
 const BRAND_NAME = "ValoraCloud";
-const BRAND_SUBTITLE = "Valorización y cotizaciones TI";
+const BRAND_SUBTITLE = "Gestión empresarial";
 function CubeIcon({ size = 42, strokeWidth = 1.5, className = "", style }) {
   return (
     <CloudCog

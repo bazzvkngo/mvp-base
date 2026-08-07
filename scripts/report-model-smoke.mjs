@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   buildReportCsv,
+  combineOperationalTimelines,
   filterInventoryMovements,
   filterQuotes,
   filterSales,
@@ -8,6 +9,7 @@ import {
   getPurchaseMetrics,
   getQuoteMetrics,
   getSalesMetrics,
+  getRecentOperationalActivity,
   normalizeInventoryMovement,
 } from "../src/domain/reportModel.mjs";
 
@@ -88,5 +90,31 @@ assert.match(salesCsv, /"Cliente; Uno"/);
 const inventoryCsv = buildReportCsv("inventory", {items: [purchaseMovement]});
 assert.match(inventoryCsv, /"Documento\/origen"/);
 assert.match(inventoryCsv, /"entrada_compra"/);
+
+const activity = getRecentOperationalActivity(
+  sales,
+  [
+    {id: "p1", numero: "COM-2026-0001", fechaCompra: "2026-08-09", estado: "confirmada", total: 2500, proveedorSnapshot: {razonSocial: "Proveedor Uno"}},
+    {id: "p2", numero: "COM-2026-0002", fechaCompra: "2026-08-10", estado: "borrador", total: 9999, proveedorSnapshot: {razonSocial: "No sumar"}},
+  ],
+  range,
+  5
+);
+assert.deepEqual(activity.map((item) => item.number), ["COM-2026-0001", "VTA-2026-0002", "VTA-2026-0001"]);
+assert.equal(activity[0].route, "/compras/p1");
+assert.equal(activity[1].route, "/ventas/v2");
+assert.equal(getRecentOperationalActivity([], [], range).length, 0);
+
+assert.deepEqual(
+  combineOperationalTimelines(
+    [{key: "2026-08-01", value: 1000}],
+    [{key: "2026-08-02", value: 500}, {key: "2026-08-01", value: 300}]
+  ),
+  [
+    {key: "2026-08-01", sales: 1000, purchases: 300},
+    {key: "2026-08-02", sales: 0, purchases: 500},
+  ]
+);
+assert.deepEqual(combineOperationalTimelines([], []), []);
 
 console.log("Report model smoke: OK");

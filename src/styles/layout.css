@@ -9,6 +9,8 @@
 .sidebar {
   background: var(--color-surface-panel);
   color: var(--color-text-default);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   height: 100vh;
   min-width: 0;
 }
@@ -17,8 +19,8 @@
   border-right: 1px solid var(--color-border-subtle);
   height: 100vh;
   height: 100dvh;
-  overflow-y: auto;
-  padding: var(--space-4) var(--space-3) var(--space-6);
+  overflow: hidden;
+  padding: var(--space-4) var(--space-3) var(--space-3);
   position: sticky;
   top: 0;
 }
@@ -85,14 +87,37 @@
 
 .sidebar-nav {
   display: grid;
-  gap: var(--space-5);
+  gap: var(--space-3);
+}
+
+.sidebar__top {
+  min-width: 0;
+  position: relative;
+  z-index: calc(var(--z-sticky) + 2);
+}
+
+.sidebar__navigation {
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-1) 2px var(--space-3) 0;
+  scrollbar-color: var(--color-border-default) transparent;
+  scrollbar-width: thin;
+}
+
+.sidebar__footer {
+  background: var(--color-surface-panel);
+  border-top: 1px solid var(--color-border-subtle);
+  min-width: 0;
+  padding-top: var(--space-3);
 }
 
 .business-switcher {
   border-bottom: 1px solid var(--color-border-subtle);
   display: grid;
   gap: var(--space-2);
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--space-3);
   min-width: 0;
   padding: 0 var(--space-1) var(--space-4);
   position: relative;
@@ -332,6 +357,9 @@
 
 .nav-link__label {
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .workspace {
@@ -827,6 +855,14 @@
     display: grid;
   }
 
+  .topbar-user--desktop {
+    display: none;
+  }
+
+  .topbar-account-button {
+    display: grid;
+  }
+
   .mobile-nav-layer {
     display: block;
     inset: 0;
@@ -849,7 +885,7 @@
     height: 100vh;
     height: 100dvh;
     max-width: calc(100vw - 48px);
-    overflow-y: auto;
+    overflow: hidden;
     padding: var(--space-4) var(--space-3) var(--space-6);
     position: relative;
     width: min(312px, calc(100vw - 48px));
@@ -862,7 +898,7 @@
     display: flex;
     gap: var(--space-3);
     justify-content: space-between;
-    margin-bottom: var(--space-5);
+    margin-bottom: var(--space-3);
     padding: 0 var(--space-1) var(--space-4);
   }
 
@@ -965,16 +1001,10 @@
     padding: var(--space-2) var(--space-4);
   }
 
-  .topbar-user--desktop {
-    display: none;
-  }
-
-  .topbar-account-button {
-    display: grid;
-  }
-
   .topbar .ui-page-header__eyebrow {
-    display: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .topbar .ui-page-header__title {
@@ -1017,6 +1047,10 @@
   .verification-banner__actions .ui-button {
     flex: 1 1 100%;
     width: 100%;
+  }
+
+  .topbar .ui-page-header__eyebrow {
+    display: none;
   }
 }
 

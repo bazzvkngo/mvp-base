@@ -20,10 +20,23 @@ import {
 const VERIFICATION_NOTICE_KEY = "valoracloud.verificationNotice";
 const RESEND_COOLDOWN_SECONDS = 60;
 
-function PrimaryNavigation({ idPrefix, pathname, onNavigate }) {
+const mainNavigationSections = navigationSections.filter(
+  (section) => section.label !== "Cuenta"
+);
+const accountNavigationSections = navigationSections.filter(
+  (section) => section.label === "Cuenta"
+);
+
+function PrimaryNavigation({
+  ariaLabel = "Navegación principal",
+  idPrefix,
+  onNavigate,
+  pathname,
+  sections = navigationSections,
+}) {
   return (
-    <nav className="sidebar-nav" aria-label="Navegación principal">
-      {navigationSections.map((section, sectionIndex) => {
+    <nav className="sidebar-nav" aria-label={ariaLabel}>
+      {sections.map((section, sectionIndex) => {
         const sectionTitleId = `${idPrefix}-nav-section-${sectionIndex}`;
 
         return (
@@ -329,9 +342,25 @@ function AppLayout({
       <SkipLink />
 
       <aside className="sidebar sidebar--desktop">
-        <BrandLogo variant="sidebar" showText />
-        {businessSwitcher}
-        <PrimaryNavigation idPrefix="desktop" pathname={location.pathname} />
+        <div className="sidebar__top">
+          <BrandLogo variant="sidebar" showText />
+          {businessSwitcher}
+        </div>
+        <div className="sidebar__navigation">
+          <PrimaryNavigation
+            idPrefix="desktop"
+            pathname={location.pathname}
+            sections={mainNavigationSections}
+          />
+        </div>
+        <div className="sidebar__footer">
+          <PrimaryNavigation
+            ariaLabel="Navegación de cuenta"
+            idPrefix="desktop-account"
+            pathname={location.pathname}
+            sections={accountNavigationSections}
+          />
+        </div>
       </aside>
 
       <div className="workspace">
@@ -561,26 +590,40 @@ function AppLayout({
             aria-modal="true"
             aria-labelledby="mobile-navigation-title"
           >
-            <div className="mobile-nav-drawer__header">
-              <div id="mobile-navigation-title">
-                <BrandLogo variant="sidebar" showText />
+            <div className="sidebar__top">
+              <div className="mobile-nav-drawer__header">
+                <div id="mobile-navigation-title">
+                  <BrandLogo variant="sidebar" showText />
+                </div>
+                <button
+                  ref={closeButtonRef}
+                  type="button"
+                  className="mobile-nav-close"
+                  aria-label="Cerrar menú de navegación"
+                  onClick={() => setMobileNavigationOpen(false)}
+                >
+                  <AppIcon icon={X} size={21} />
+                </button>
               </div>
-              <button
-                ref={closeButtonRef}
-                type="button"
-                className="mobile-nav-close"
-                aria-label="Cerrar menú de navegación"
-                onClick={() => setMobileNavigationOpen(false)}
-              >
-                <AppIcon icon={X} size={21} />
-              </button>
+              {businessSwitcher}
             </div>
-            {businessSwitcher}
-            <PrimaryNavigation
-              idPrefix="mobile"
-              pathname={location.pathname}
-              onNavigate={() => setMobileNavigationOpen(false)}
-            />
+            <div className="sidebar__navigation">
+              <PrimaryNavigation
+                idPrefix="mobile"
+                pathname={location.pathname}
+                sections={mainNavigationSections}
+                onNavigate={() => setMobileNavigationOpen(false)}
+              />
+            </div>
+            <div className="sidebar__footer">
+              <PrimaryNavigation
+                ariaLabel="Navegación de cuenta"
+                idPrefix="mobile-account"
+                pathname={location.pathname}
+                sections={accountNavigationSections}
+                onNavigate={() => setMobileNavigationOpen(false)}
+              />
+            </div>
           </aside>
         </div>
       )}

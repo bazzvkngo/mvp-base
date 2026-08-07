@@ -7,6 +7,15 @@ export const REPORT_TABS = Object.freeze([
   "finances",
 ]);
 
+export const REPORT_PERIOD_OPTIONS = Object.freeze([
+  {id: "week", label: "Esta semana"},
+  {id: "month", label: "Este mes"},
+  {id: "three_months", label: "Últimos 3 meses"},
+  {id: "six_months", label: "Últimos 6 meses"},
+  {id: "year", label: "Este año"},
+  {id: "custom", label: "Periodo personalizado"},
+]);
+
 export const DOCUMENT_STATUSES = Object.freeze([
   "borrador",
   "confirmada",
@@ -267,6 +276,59 @@ export function aggregateOperationalTimeline(
     byKey.set(key, current);
   });
   return [...byKey.values()].sort((left, right) => left.key.localeCompare(right.key));
+}
+
+export function combineOperationalTimelines(salesTimeline, purchasesTimeline) {
+  const combined = new Map();
+  (Array.isArray(salesTimeline) ? salesTimeline : []).forEach((item) => {
+    combined.set(item.key, {
+      key: item.key,
+      sales: safeAmount(item.value),
+      purchases: 0,
+    });
+  });
+  (Array.isArray(purchasesTimeline) ? purchasesTimeline : []).forEach((item) => {
+    const current = combined.get(item.key) || {key: item.key, sales: 0, purchases: 0};
+    current.purchases = safeAmount(item.value);
+    combined.set(item.key, current);
+  });
+  return [...combined.values()].sort((left, right) => left.key.localeCompare(right.key));
+}
+
+export function getRecentOperationalActivity(sales, purchases, range, limit = 5) {
+  const salesActivity = getSalesMetrics(sales, range).confirmed.map((sale) => ({
+    id: text(sale.id || sale.ventaId),
+    type: "sale",
+    label: "Venta",
+    number: text(sale.numero) || "Venta sin número",
+    date: text(sale.fechaVenta).slice(0, 10),
+    counterparty: text(sale.clienteSnapshot?.nombreRazonSocial) || "Cliente histórico",
+    amount: safeAmount(sale.total),
+    route: `/ventas/${text(sale.id || sale.ventaId)}`,
+  }));
+  const purchasesActivity = getPurchaseMetrics(purchases, range).confirmed.map(
+    (purchase) => ({
+      id: text(purchase.id || purchase.compraId),
+      type: "purchase",
+      label: "Compra",
+      number: text(purchase.numero) || "Compra sin número",
+      date: text(purchase.fechaCompra).slice(0, 10),
+      counterparty:
+        text(purchase.proveedorSnapshot?.razonSocial) || "Proveedor histórico",
+      amount: safeAmount(purchase.total),
+      route: `/compras/${text(purchase.id || purchase.compraId)}`,
+    })
+  );
+  const maximum = Number.isSafeInteger(Number(limit)) && Number(limit) >= 0
+    ? Number(limit)
+    : 5;
+  return [...salesActivity, ...purchasesActivity]
+    .sort((left, right) => {
+      const dateOrder = right.date.localeCompare(left.date);
+      if (dateOrder !== 0) return dateOrder;
+      return `${left.type}-${left.id}`.localeCompare(`${right.type}-${right.id}`);
+    })
+    .slice(0, maximum);
 }
 
 function csvCell(value) {
