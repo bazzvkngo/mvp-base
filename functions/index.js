@@ -100,6 +100,7 @@ const RESEND_API_KEY_SECRET = defineSecret("RESEND_API_KEY");
 const RESEND_FROM_EMAIL_SECRET = defineSecret("RESEND_FROM_EMAIL");
 const ALLOWED_QUOTE_ITEM_TYPES = ["producto", "servicio", "actividad"];
 const DEFAULT_FUNCTION_REGION = "us-central1";
+const GENERATIVE_AI_ENABLED = false;
 const REFERENCE_REVIEW_STALE_DAYS = 30;
 const PRIMARY_QUOTE_GEMINI_MODEL = AI_MODELS.QUOTE_SUGGESTIONS;
 const QUOTE_GEMINI_MODELS = [PRIMARY_QUOTE_GEMINI_MODEL];
@@ -135,6 +136,7 @@ function getGeminiApiKey() {
 }
 
 function getGeminiClient() {
+  if (!GENERATIVE_AI_ENABLED) return null;
   if (cachedGeminiClient) return cachedGeminiClient;
   const apiKey = getGeminiApiKey();
   if (!apiKey) {
@@ -3907,7 +3909,9 @@ exports.normalizeInventoryItems = onCall(
       ? fileDataToText(fileData)
       : String(data.text || data.content || "");
     const text = safeText(rawText, MAX_INVENTORY_IMPORT_TEXT_LENGTH);
-    const assistantMode = normalizeAssistantMode(data.assistantMode);
+    const assistantMode = GENERATIVE_AI_ENABLED
+      ? normalizeAssistantMode(data.assistantMode)
+      : "local";
     const deterministicResult = fileData
       ? buildDirectInventoryImportItemsFromFile(fileData)
       : null;
@@ -4031,11 +4035,19 @@ exports.normalizeInventoryDocument = onCall(
     secrets: [GEMINI_API_KEY_SECRET],
     timeoutSeconds: 180,
   },
-  async (request) =>
-    normalizeInventoryDocumentHandler(request, {
-      generateGeminiContent,
-      HttpsError,
-    })
+  async (request) => {
+  if (!GENERATIVE_AI_ENABLED) {
+    throw new HttpsError(
+      "failed-precondition",
+      "El análisis inteligente de documentos está temporalmente deshabilitado."
+    );
+  }
+
+  return normalizeInventoryDocumentHandler(request, {
+    generateGeminiContent,
+    HttpsError,
+  });
+}
 );
 
 /**
@@ -4060,7 +4072,9 @@ exports.suggestQuoteItems = onCall(
   const data = request.data || {};
   const description = safeText(data.description, 1200);
   const inventoryItems = normalizeInventorySummary(data.inventoryItems);
-  const assistantMode = normalizeAssistantMode(data.assistantMode);
+  const assistantMode = GENERATIVE_AI_ENABLED
+  ? normalizeAssistantMode(data.assistantMode)
+  : "local";
   console.info(`suggestQuoteItems: assistant mode ${assistantMode}`);
 
   if (!description) {
