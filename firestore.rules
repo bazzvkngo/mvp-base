@@ -678,7 +678,7 @@ service cloud.firestore {
 
       match /referencias/{referenceId} {
         allow read: if canAccessBusiness(businessId);
-        allow create, update: if canAccessBusiness(businessId)
+        allow create, update: if hasBusinessRole(businessId, ["OWNER", "ADMIN"])
           && hasValidBusinessDocument(businessId);
         allow delete: if false;
       }
@@ -808,7 +808,7 @@ service cloud.firestore {
 
       match /tareasReferencias/{taskId} {
         allow read: if canAccessBusiness(businessId);
-        allow update: if canAccessBusiness(businessId)
+        allow update: if hasBusinessRole(businessId, ["OWNER", "ADMIN"])
           && isAllowedReferenceTaskUpdate();
         allow create, delete: if false;
       }

@@ -51,7 +51,9 @@ function buildFormFromReference(reference) {
   };
 }
 
-function MarketReferencesManager({ userId }) {
+function MarketReferencesManager({ userId, role }) {
+  const canWriteReferences = ["OWNER", "ADMIN"].includes(
+  String(role || "").toUpperCase());
   const [searchParams] = useSearchParams();
   const selectedItemFromUrl = searchParams.get("itemId") || "";
   const selectedReferenceFromUrl = searchParams.get("referenceId") || "";
@@ -366,6 +368,7 @@ function MarketReferencesManager({ userId }) {
         </div>
       )}
 
+      {canWriteReferences && (
       <form onSubmit={handleSubmit} style={styles.formCard}>
         <div style={styles.formHeader}>
           <h3 style={styles.formTitle}>
@@ -506,7 +509,7 @@ function MarketReferencesManager({ userId }) {
             : "Guardar referencia"}
         </button>
       </form>
-
+)}
       <div style={styles.listCard}>
         <div style={styles.filters}>
           <select
@@ -591,6 +594,7 @@ function MarketReferencesManager({ userId }) {
                       </span>
                     </td>
                     <td style={styles.td}>
+                      {canWriteReferences && (
                       <div style={styles.actions}>
                         <button
                           type="button"
@@ -616,7 +620,7 @@ function MarketReferencesManager({ userId }) {
                             Reactivar
                           </button>
                         )}
-                      </div>
+                      </div> )}
                     </td>
                   </tr>
                 ))}

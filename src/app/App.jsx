@@ -206,13 +206,15 @@ function AppRoutes({
         <Route
           path="/referencias"
           element={
-            <MarketReferencesPage key={businessId} userId={businessId} />
+            <MarketReferencesPage key={businessId} userId={businessId} role={activeBusiness?.role}
+        />
           }
         />
         <Route
           path="/tareas-referencias"
           element={
-            <ReferenceTasksPage key={businessId} userId={businessId} />
+            <ReferenceTasksPage key={businessId} userId={businessId} role={activeBusiness?.role}
+        />
           }
         />
         <Route

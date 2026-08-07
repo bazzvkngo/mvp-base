@@ -69,8 +69,11 @@ function getLatestActiveReference(references) {
     .sort((a, b) => getReferenceDateTime(b) - getReferenceDateTime(a))[0];
 }
 
-function ReferenceTasksPage({ userId }) {
+function ReferenceTasksPage({ userId, role }) {
   const navigate = useNavigate();
+  const canWriteReferences = ["OWNER", "ADMIN"].includes(
+    String(role || "").toUpperCase()
+  );
   const [referenceTasks, setReferenceTasks] = useState([]);
   const [statusFilter, setStatusFilter] = useState("pendientes");
   const [reasonFilter, setReasonFilter] = useState("todos");
@@ -241,6 +244,7 @@ function ReferenceTasksPage({ userId }) {
           <>
             <ReferenceTasksTable
               tasks={filteredTasks}
+              canWrite={canWriteReferences}
               postponeDaysByTask={postponeDaysByTask}
               resolvingTaskId={resolvingTaskId}
               onAction={openReferenceAction}
@@ -249,6 +253,7 @@ function ReferenceTasksPage({ userId }) {
             />
             <ReferenceTaskCards
               tasks={filteredTasks}
+              canWrite={canWriteReferences}
               postponeDaysByTask={postponeDaysByTask}
               resolvingTaskId={resolvingTaskId}
               onAction={openReferenceAction}
@@ -264,6 +269,7 @@ function ReferenceTasksPage({ userId }) {
 
 function ReferenceTasksTable({
   tasks,
+  canWrite,
   postponeDaysByTask,
   resolvingTaskId,
   onAction,
@@ -317,6 +323,7 @@ function ReferenceTasksTable({
                 <td style={styles.td}>
                   <ReferenceTaskActions
                     task={task}
+                    canWrite={canWrite}
                     isPending={isPending}
                     postponeDays={postponeDaysByTask[task.id] || 7}
                     resolving={resolvingTaskId === task.id}
@@ -363,6 +370,7 @@ function ReferenceTaskCards(props) {
             </dl>
             <ReferenceTaskActions
               task={task}
+              canWrite={props.canWrite}
               isPending={isPending}
               postponeDays={props.postponeDaysByTask[task.id] || 7}
               resolving={props.resolvingTaskId === task.id}
@@ -381,6 +389,7 @@ function ReferenceTaskCards(props) {
 
 function ReferenceTaskActions({
   task,
+  canWrite,
   isPending,
   postponeDays,
   resolving,
@@ -390,6 +399,7 @@ function ReferenceTaskActions({
   idPrefix,
   compact = false,
 }) {
+  if (!canWrite) return <span style={styles.mutedText}>Solo lectura</span>;
   if (!isPending) return <span style={styles.mutedText}>Sin acciones pendientes</span>;
 
   const selectId = `${idPrefix}-postpone-${task.id}`;
