@@ -136,6 +136,12 @@ export const navigationSections = [
         title: "Empresa",
         icon: Building2,
       },
+      {
+        to: "/empleados",
+        label: "Empleados",
+        title: "Empleados",
+        icon: UsersRound,
+      },
     ],
   },
   {

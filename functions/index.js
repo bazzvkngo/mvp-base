@@ -7,6 +7,7 @@ const { defineSecret } = require("firebase-functions/params");
 
 // Admin SDK para acceder a Firestore
 const { initializeApp } = require("firebase-admin/app");
+const { getAuth } = require("firebase-admin/auth");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 
 // Gemini SDK
@@ -77,10 +78,16 @@ const {
   updateBusinessSettingsHandler,
   updatePersonalProfileHandler,
 } = require("./businessSettings");
+const {
+  actualizarMembresiaNegocioHandler,
+  asociarUsuarioExistenteHandler,
+  listarMiembrosNegocioHandler,
+} = require("./businessMemberships");
 
 // Inicializar Admin SDK (una sola vez)
 initializeApp();
 const db = getFirestore();
+const adminAuth = getAuth();
 
 /**
  * La API key de Gemini no debe guardarse en el repositorio.
@@ -3608,6 +3615,13 @@ const businessSettingsDependencies = {
   requireBusinessAccess,
   validateBusinessProfileInput,
 };
+const businessMembershipDependencies = {
+  db,
+  auth: adminAuth,
+  HttpsError,
+  FieldValue,
+  requireBusinessAccess,
+};
 
 exports.getBusinessSession = onCall(
   {
@@ -3695,6 +3709,39 @@ exports.updatePersonalProfile = onCall(
   },
   async (request) =>
     updatePersonalProfileHandler(request, businessSettingsDependencies)
+);
+
+exports.listarMiembrosNegocio = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    listarMiembrosNegocioHandler(request, businessMembershipDependencies)
+);
+
+exports.asociarUsuarioExistente = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    asociarUsuarioExistenteHandler(request, businessMembershipDependencies)
+);
+
+exports.actualizarMembresiaNegocio = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    actualizarMembresiaNegocioHandler(request, businessMembershipDependencies)
 );
 
 exports.initializeInventoryCatalog = onCall(

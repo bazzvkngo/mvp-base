@@ -30,6 +30,7 @@ import SalesPage from "../pages/SalesPage";
 import ReferenceTasksPage from "../pages/ReferenceTasksPage";
 import StatisticsPage from "../pages/StatisticsPage";
 import BusinessUnavailablePage from "../pages/BusinessUnavailablePage";
+import EmployeesPage from "../pages/EmployeesPage";
 import Button from "../components/ui/Button";
 import { subscribeToAuth } from "../services/authService";
 import {
@@ -171,6 +172,16 @@ function AppRoutes({
               userId={businessId}
               role={activeBusiness?.role}
               onBusinessUpdated={onBusinessCreated}
+            />
+          }
+        />
+        <Route
+          path="/empleados"
+          element={
+            <EmployeesPage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
             />
           }
         />

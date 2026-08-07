@@ -1,0 +1,144 @@
+.employees-page {
+  --employees-border: var(--color-border-default);
+}
+
+.employees-eyebrow {
+  color: var(--color-brand-700);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.employees-notice,
+.employees-message {
+  align-items: center;
+  background: var(--color-brand-50);
+  border: 1px solid var(--color-brand-200);
+  border-radius: var(--radius-md);
+  color: var(--color-brand-800);
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+}
+
+.employees-message--error,
+.employees-form-error {
+  color: var(--color-danger-700);
+}
+
+.employees-message--error {
+  background: var(--color-danger-50);
+  border-color: #fecaca;
+}
+
+.employees-panel-header {
+  align-items: flex-start;
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+
+.employees-count {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+.employees-table td {
+  vertical-align: middle;
+}
+
+.employees-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.employees-actions select {
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-md);
+  color: var(--color-text-default);
+  font: inherit;
+  min-height: 40px;
+  padding: 0.5rem 0.75rem;
+}
+
+.employees-actions select:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-offset);
+}
+
+.employees-empty-state h3,
+.employees-empty-state p {
+  margin: 0;
+}
+
+.employees-card {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.employees-card__email {
+  color: var(--color-text-muted);
+  display: block;
+  font-size: var(--font-size-xs);
+  margin-top: var(--space-1);
+  overflow-wrap: anywhere;
+}
+
+.employees-card__details {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.employees-card__details div {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.employees-card__details dt {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.employees-card__details dd {
+  margin: 0;
+}
+
+.employees-add-form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.employees-form-error {
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+@media (max-width: 767px) {
+  .employees-panel-header,
+  .employees-message {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .employees-actions,
+  .employees-actions label,
+  .employees-actions select,
+  .employees-actions .ui-button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 420px) {
+  .employees-card__details {
+    grid-template-columns: 1fr;
+  }
+}
