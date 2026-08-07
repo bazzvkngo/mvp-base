@@ -686,7 +686,7 @@ service cloud.firestore {
       match /cotizaciones/{quoteId} {
         allow read: if canAccessBusiness(businessId);
         allow create: if false;
-        allow update: if canAccessBusiness(businessId)
+        allow update: if hasBusinessRole(businessId, ["OWNER", "ADMIN"])
           && isAllowedBusinessQuoteUpdate(businessId);
         allow delete: if false;
       }

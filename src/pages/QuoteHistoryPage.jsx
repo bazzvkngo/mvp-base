@@ -481,6 +481,7 @@ function QuoteHistoryPage({ userId, role }) {
                         >
                           Ver detalle
                         </button>
+                        {canDuplicate && (
                         <QuoteActions
                           quote={quote}
                           disabled={savingStatus}
@@ -493,7 +494,7 @@ function QuoteHistoryPage({ userId, role }) {
                           onDuplicate={handleDuplicateQuote}
                           onRegisterSale={handleRegisterSale}
                           registeringSale={registeringSaleQuoteId === quote.id}
-                        />
+                        /> )}
                       </div>
                     </td>
                   </tr>
@@ -521,6 +522,7 @@ function QuoteHistoryPage({ userId, role }) {
         description="Revisa el documento formal y administra su estado comercial."
         footer={selectedQuote ? (
           <div className="erp-actions" style={styles.dialogActions}>
+            {canDuplicate && (
             <QuoteActions
               quote={selectedQuote}
               disabled={savingStatus}
@@ -533,12 +535,13 @@ function QuoteHistoryPage({ userId, role }) {
               onDuplicate={handleDuplicateQuote}
               onRegisterSale={handleRegisterSale}
               registeringSale={registeringSaleQuoteId === selectedQuote.id}
-            />
+            /> )}
           </div>
         ) : null}
       >
         {selectedQuote && (
           <QuoteDetail
+          canSendByEmail={canDuplicate}
             quote={selectedQuote}
             companyProfile={companyProfile}
             onOpenEmail={() => {
@@ -831,7 +834,7 @@ function QuoteActions({
   return null;
 }
 
-function QuoteDetail({ quote, companyProfile, onOpenEmail }) {
+function QuoteDetail({ quote, companyProfile, canSendByEmail, onOpenEmail }) {
   const canSendEmail = isQuoteEmailSendable(quote, quote.id);
   const emailActionHint = getEmailActionHint(quote);
   const [pdfAction, setPdfAction] = useState("");
@@ -871,6 +874,7 @@ function QuoteDetail({ quote, companyProfile, onOpenEmail }) {
           <EmailStatusLine quote={quote} />
         </div>
         <div style={styles.detailButtonGroup}>
+          {canSendByEmail && (
           <button
             type="button"
             onClick={onOpenEmail}
@@ -881,7 +885,7 @@ function QuoteDetail({ quote, companyProfile, onOpenEmail }) {
             }}
           >
             Enviar por correo
-          </button>
+          </button> )}
           <button
             type="button"
             onClick={() => runPdfAction("download")}

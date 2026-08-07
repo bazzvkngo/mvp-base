@@ -475,7 +475,11 @@ async function createQuoteWithNumberHandler({
 }) {
   const uid = request?.auth?.uid;
   const { businessId, businessRef: authorizedBusinessRef } =
-    await requireBusinessAccess(request, { db, HttpsError });
+  await requireBusinessAccess(
+    request,
+    { db, HttpsError },
+    { roles: QUOTE_WRITE_ROLES }
+  );
   if (!uid) throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
   const requestId = validateRequestId(request?.data?.requestId, HttpsError);
   const dateParts = getChileDateParts(now);
@@ -762,9 +766,10 @@ async function updateQuoteDraftHandler({
 }) {
   const uid = request?.auth?.uid;
   const { businessId, businessRef } = await requireBusinessAccess(
-    request,
-    { db, HttpsError }
-  );
+  request,
+  { db, HttpsError },
+  { roles: QUOTE_WRITE_ROLES }
+);
   if (!uid) throw new HttpsError("unauthenticated", "Debes iniciar sesiÃ³n.");
   const quoteId = safeText(request?.data?.quoteId, 160);
   if (!/^[a-zA-Z0-9_-]{1,160}$/.test(quoteId)) {

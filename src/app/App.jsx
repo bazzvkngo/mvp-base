@@ -116,6 +116,9 @@ function AppRoutes({
 
   const activeBusiness = businessSession?.activeBusiness;
   const businessId = activeBusiness?.id;
+  const canWriteQuotes = ["OWNER", "ADMIN"].includes(
+   String(activeBusiness?.role || "").toUpperCase()
+  );
   return (
     <Routes>
       <Route
@@ -247,13 +250,26 @@ function AppRoutes({
           }
         />
         <Route
-          path="/cotizaciones/nueva"
-          element={<NewQuotePage key={businessId} userId={businessId} />}
-        />
-        <Route
-          path="/cotizaciones/:quoteId/editar"
-          element={<NewQuotePage key={businessId} userId={businessId} />}
-        />
+  path="/cotizaciones/nueva"
+  element={
+    canWriteQuotes ? (
+      <NewQuotePage key={businessId} userId={businessId} />
+    ) : (
+      <Navigate to="/cotizaciones" replace />
+    )
+  }
+/>
+
+<Route
+  path="/cotizaciones/:quoteId/editar"
+  element={
+    canWriteQuotes ? (
+      <NewQuotePage key={businessId} userId={businessId} />
+    ) : (
+      <Navigate to="/cotizaciones" replace />
+    )
+  }
+/>
         <Route
           path="/ordenes-compra"
           element={
