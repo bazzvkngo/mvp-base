@@ -128,6 +128,11 @@ export const saleDocPath = (businessId, ventaId) => [
   "ventas",
   ventaId,
 ];
+export const inventoryMovementsCollectionPath = (businessId) => [
+  "negocios",
+  businessId,
+  "movimientosInventario",
+];
 export const financialMovementsCollectionPath = (businessId) => [
   "negocios",
   businessId,

@@ -159,11 +159,12 @@ function AppRoutes({
           }
         />
         <Route
-          path="/estadisticas"
+          path="/reportes"
           element={
             <StatisticsPage key={businessId} businessId={businessId} />
           }
         />
+        <Route path="/estadisticas" element={<Navigate to="/reportes" replace />} />
         <Route
           path="/empresa"
           element={

@@ -1226,6 +1226,163 @@
   font-size: var(--font-size-sm);
 }
 
+.report-section-stack {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.report-four-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.report-quote-metrics {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.report-filters {
+  grid-template-columns: minmax(220px, 1.5fr) minmax(170px, 0.7fr);
+  margin-bottom: var(--space-3);
+}
+
+.report-movement-filter {
+  grid-template-columns: minmax(220px, 320px);
+  margin-bottom: var(--space-3);
+}
+
+.report-table-region {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.report-table {
+  min-width: 720px;
+}
+
+.report-table td strong,
+.report-table td small {
+  display: block;
+}
+
+.report-table td small {
+  color: var(--color-text-muted);
+  margin-top: 3px;
+}
+
+.report-table-empty {
+  color: var(--color-text-muted);
+  padding: var(--space-6) !important;
+  text-align: center !important;
+}
+
+.report-detail-button {
+  background: transparent;
+  border: 0;
+  color: var(--color-brand-700);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  padding: 4px 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.report-detail-button:hover {
+  color: var(--color-brand-800);
+}
+
+.report-status,
+.report-movement-type {
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 999px;
+  color: var(--color-text-default);
+  display: inline-flex;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+
+.report-status--confirmada,
+.report-status--aceptada,
+.report-movement-type--entrada_compra {
+  background: var(--color-success-50);
+  border-color: #a7f3d0;
+  color: var(--color-success-700);
+}
+
+.report-status--cancelada,
+.report-status--rechazada,
+.report-movement-type--salida_venta {
+  background: var(--color-danger-50);
+  border-color: #fecaca;
+  color: var(--color-danger-700);
+}
+
+.report-status--emitida {
+  background: var(--color-info-50);
+  border-color: #bfdbfe;
+  color: var(--color-info-700);
+}
+
+.report-status--vencida {
+  background: var(--color-warning-50);
+  border-color: var(--color-warning-200);
+  color: var(--color-warning-800);
+}
+
+.report-timeline {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.report-timeline__row {
+  align-items: center;
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: 78px minmax(100px, 1fr) minmax(100px, auto) 54px;
+}
+
+.report-timeline__row > span,
+.report-timeline__row > small {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.report-timeline__row > div {
+  background: var(--color-surface-subtle);
+  border-radius: 999px;
+  height: 10px;
+  overflow: hidden;
+}
+
+.report-timeline__row i {
+  background: var(--color-brand-600);
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+}
+
+.report-timeline__row strong {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.report-empty-compact {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  padding: var(--space-4) 0;
+}
+
+.report-quote-amounts {
+  margin-top: var(--space-4);
+}
+
 @media (max-width: 1200px) {
   .financial-metric-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1237,6 +1394,10 @@
 
   .financial-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .report-quote-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -1251,15 +1412,30 @@
   .financial-table {
     min-width: 980px;
   }
+
+  .report-four-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
   .financial-metric-grid,
   .summary-financial-grid,
   .statistics-inventory-metrics,
+  .report-four-metrics,
+  .report-quote-metrics,
   .financial-form-grid,
   .financial-filters {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .report-timeline__row {
+    gap: var(--space-2);
+    grid-template-columns: 70px minmax(70px, 1fr) auto;
+  }
+
+  .report-timeline__row > small {
+    display: none;
   }
 
   .financial-form-grid__wide {

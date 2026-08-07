@@ -114,9 +114,9 @@ export const navigationSections = [
         icon: ClipboardCheck,
       },
       {
-        to: "/estadisticas",
-        label: "Estadísticas",
-        title: "Estadísticas",
+        to: "/reportes",
+        label: "Reportes",
+        title: "Reportes",
         icon: BarChart3,
       },
       {
