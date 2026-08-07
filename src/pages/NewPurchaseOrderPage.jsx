@@ -23,6 +23,10 @@ import {
   emitirOrdenCompra,
   obtenerOrdenCompra,
 } from "../services/purchaseOrderService";
+import {
+  crearCompraDesdeOrden,
+  createPurchaseRequestId,
+} from "../services/purchaseService";
 import "../features/purchaseOrders/purchase-orders.css";
 
 const EMPTY_TOTALS = {subtotal: 0, descuentoTotal: 0, neto: 0, iva: 0, total: 0};
@@ -59,6 +63,7 @@ export default function NewPurchaseOrderPage({businessId, role}) {
   const [message, setMessage] = useState(() => location.state?.message || "");
   const requestIdRef = useRef(createPurchaseOrderRequestId());
   const duplicateRequestIdRef = useRef("");
+  const conversionRequestIdRef = useRef("");
   const canManage = canManagePurchaseOrders(role);
   const readOnly = !canManage || (order && order.estado !== "borrador");
 
@@ -220,6 +225,32 @@ export default function NewPurchaseOrderPage({businessId, role}) {
     }
   };
 
+  const convertToPurchase = async () => {
+    if (!order) return;
+    if (order.compraId) {
+      navigate(`/compras/${order.compraId}`);
+      return;
+    }
+    if (!conversionRequestIdRef.current) {
+      conversionRequestIdRef.current = createPurchaseRequestId("convertir-oc");
+    }
+    setSaving(true);
+    setMessage("");
+    try {
+      const result = await crearCompraDesdeOrden(businessId, order.id, {
+        requestId: conversionRequestIdRef.current,
+      });
+      conversionRequestIdRef.current = "";
+      navigate(`/compras/${result.compra.id}/editar`, {
+        state: {message: `Compra creada desde ${order.numero}.`},
+      });
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) return <p className="muted">Cargando orden de compra...</p>;
 
   return (
@@ -250,6 +281,7 @@ export default function NewPurchaseOrderPage({businessId, role}) {
           <button type="button" className="po-button po-button--secondary" onClick={() => navigate("/ordenes-compra")}>Volver al historial</button>
           {order && <button type="button" className="po-button po-button--secondary" onClick={() => window.print()}>Imprimir</button>}
           {readOnly && canManage && order?.estado === "emitida" && <button type="button" className="po-button po-button--danger" onClick={cancel}>Cancelar orden</button>}
+          {readOnly && canManage && order?.estado === "emitida" && <button type="button" className="po-button po-button--primary" disabled={saving} onClick={convertToPurchase}>{order.compraId ? "Ver compra" : saving ? "Registrando..." : "Registrar compra"}</button>}
           {readOnly && canManage && order && <button type="button" className="po-button po-button--secondary" disabled={saving || duplicating} onClick={duplicate}>{duplicating ? "Creando copia..." : "Duplicar como borrador"}</button>}
         </div>
       </header>

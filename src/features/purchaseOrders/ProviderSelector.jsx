@@ -4,6 +4,7 @@ import {matchesProviderSearch} from "../../domain/providerModel.mjs";
 
 export default function ProviderSelector({
   disabled,
+  emptyMessage = "Selecciona un proveedor.",
   onChange,
   originalSnapshot,
   providers,
@@ -31,7 +32,7 @@ export default function ProviderSelector({
             </div>
             {isHistorical && <em className="po-provider__snapshot">Snapshot histórico conservado</em>}
           </>
-        ) : <p>Selecciona el proveedor que recibirá esta orden.</p>}
+        ) : <p>{emptyMessage}</p>}
       </div>
       {!disabled && (
         <button type="button" className="po-button po-button--secondary" onClick={() => setOpen(true)}>

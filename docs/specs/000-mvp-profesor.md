@@ -46,6 +46,7 @@ El código de IA existente se conserva, pero no forma parte del flujo principal 
 - Clientes e integración con Cotizaciones: terminados según las especificaciones 001 y 002.
 - Proveedores: terminado según la especificación 004, con persistencia autoritativa, RUT único por negocio, roles, archivado lógico e interfaz responsive.
 - Órdenes de Compra: terminado según la especificación 005, con revisión visual manual aprobada.
+- Compras: terminado según la especificación 006, con revisión funcional y visual manual aprobada.
 - Inventario manual e importación local desde Excel/CSV: renovados según la especificación 003; pendientes de aceptación manual final en emuladores y anchos objetivo.
 
 # Criterio general de terminado

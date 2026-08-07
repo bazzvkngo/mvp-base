@@ -733,6 +733,34 @@ service cloud.firestore {
         allow read, create, update, delete: if false;
       }
 
+      match /compras/{compraId} {
+        allow read: if canAccessBusiness(businessId)
+          && resource.data.negocioId == businessId;
+        allow create, update, delete: if false;
+      }
+
+      match /movimientosInventario/{movimientoId} {
+        allow read: if canAccessBusiness(businessId)
+          && resource.data.negocioId == businessId;
+        allow create, update, delete: if false;
+      }
+
+      match /purchaseCounters/{counterId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /purchaseCreateRequests/{requestId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /purchaseConfirmRequests/{requestId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /purchaseOrderConversionRequests/{requestId} {
+        allow read, create, update, delete: if false;
+      }
+
       match /financialMovements/{movementId} {
         allow read: if canAccessBusiness(businessId);
         allow create: if hasBusinessRole(businessId, ["OWNER", "ADMIN"])

@@ -11,6 +11,10 @@ import {
   emitirOrdenCompra,
   listarOrdenesCompra,
 } from "../services/purchaseOrderService";
+import {
+  crearCompraDesdeOrden,
+  createPurchaseRequestId,
+} from "../services/purchaseService";
 import "../features/purchaseOrders/purchase-orders.css";
 
 const labels = {borrador: "Borrador", emitida: "Emitida", cancelada: "Cancelada"};
@@ -21,7 +25,7 @@ function dateLabel(value) {
   return date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString("es-CL") : "—";
 }
 
-function OrderActions({canManage, duplicating, onAction, onDuplicate, onOpen, order}) {
+function OrderActions({canManage, converting, duplicating, onAction, onConvert, onDuplicate, onOpen, order}) {
   return (
     <div className="po-history__actions">
       <button type="button" onClick={() => onOpen(order)}>
@@ -38,6 +42,11 @@ function OrderActions({canManage, duplicating, onAction, onDuplicate, onOpen, or
           {duplicating ? "Creando copia..." : "Duplicar como borrador"}
         </button>
       )}
+      {canManage && order.estado === "emitida" && (
+        <button type="button" disabled={converting} onClick={() => onConvert(order)}>
+          {order.compraId ? "Ver compra" : converting ? "Registrando..." : "Registrar compra"}
+        </button>
+      )}
     </div>
   );
 }
@@ -45,12 +54,14 @@ function OrderActions({canManage, duplicating, onAction, onDuplicate, onOpen, or
 export default function PurchaseOrdersPage({businessId, role}) {
   const navigate = useNavigate();
   const duplicateRequestIdsRef = useRef(new Map());
+  const conversionRequestIdsRef = useRef(new Map());
   const [orders, setOrders] = useState([]);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("todos");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [duplicatingOrderId, setDuplicatingOrderId] = useState("");
+  const [convertingOrderId, setConvertingOrderId] = useState("");
   const canManage = canManagePurchaseOrders(role);
 
   const load = () => {
@@ -117,6 +128,29 @@ export default function PurchaseOrdersPage({businessId, role}) {
     }
   };
 
+  const convertOrder = async (order) => {
+    if (order.compraId) {
+      navigate(`/compras/${order.compraId}`);
+      return;
+    }
+    const requestId = conversionRequestIdsRef.current.get(order.id) ||
+      createPurchaseRequestId("convertir-oc");
+    conversionRequestIdsRef.current.set(order.id, requestId);
+    setConvertingOrderId(order.id);
+    setMessage("");
+    try {
+      const result = await crearCompraDesdeOrden(businessId, order.id, {requestId});
+      conversionRequestIdsRef.current.delete(order.id);
+      navigate(`/compras/${result.compra.id}/editar`, {
+        state: {message: `Compra creada desde ${order.numero}.`},
+      });
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setConvertingOrderId("");
+    }
+  };
+
   return (
     <main className="po-history">
       <header className="erp-page-header">
@@ -150,7 +184,7 @@ export default function PurchaseOrdersPage({businessId, role}) {
                   <td><strong>{order.proveedorSnapshot.razonSocial}</strong><small>{order.proveedorSnapshot.rut}</small></td>
                   <td>{money(order.total)}</td>
                   <td><span className={`po-status po-status--${order.estado}`}>{labels[order.estado]}</span></td>
-                  <td><OrderActions canManage={canManage} duplicating={duplicatingOrderId === order.id} onAction={action} onDuplicate={duplicateOrder} onOpen={openOrder} order={order} /></td>
+                  <td><OrderActions canManage={canManage} converting={convertingOrderId === order.id} duplicating={duplicatingOrderId === order.id} onAction={action} onConvert={convertOrder} onDuplicate={duplicateOrder} onOpen={openOrder} order={order} /></td>
                 </tr>
               ))}
               {!filtered.length && <tr><td colSpan="6" className="po-history__empty">No hay órdenes coincidentes.</td></tr>}
@@ -177,7 +211,7 @@ export default function PurchaseOrdersPage({businessId, role}) {
                 <div><dt>Fecha</dt><dd>{dateLabel(order.creadoEn || order.fechaEmision)}</dd></div>
                 <div><dt>Total</dt><dd>{money(order.total)}</dd></div>
               </dl>
-              <OrderActions canManage={canManage} duplicating={duplicatingOrderId === order.id} onAction={action} onDuplicate={duplicateOrder} onOpen={openOrder} order={order} />
+              <OrderActions canManage={canManage} converting={convertingOrderId === order.id} duplicating={duplicatingOrderId === order.id} onAction={action} onConvert={convertOrder} onDuplicate={duplicateOrder} onOpen={openOrder} order={order} />
             </article>
           ))}
           {!filtered.length && <div className="po-history__cards-empty">No hay órdenes coincidentes.</div>}

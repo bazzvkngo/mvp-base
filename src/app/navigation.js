@@ -110,6 +110,23 @@ export const navigationSections = [
     label: "Compras",
     items: [
       {
+        to: "/compras/nueva",
+        label: "Nueva compra",
+        title: "Nueva compra",
+        icon: FilePlus2,
+        activeWhen: (pathname) =>
+          pathname === "/compras/nueva" ||
+          /^\/compras\/[^/]+\/editar$/.test(pathname),
+      },
+      {
+        to: "/compras",
+        label: "Compras",
+        title: "Compras",
+        icon: ShoppingCart,
+        activeWhen: (pathname) =>
+          pathname === "/compras" || /^\/compras\/[^/]+$/.test(pathname),
+      },
+      {
         to: "/ordenes-compra/nueva",
         label: "Nueva orden",
         title: "Nueva orden de compra",
@@ -156,6 +173,12 @@ export function getRouteMeta(pathname) {
   }
   if (/^\/ordenes-compra\/[^/]+$/.test(pathname)) {
     return { title: "Ver orden de compra" };
+  }
+  if (/^\/compras\/[^/]+\/editar$/.test(pathname)) {
+    return { title: "Editar compra" };
+  }
+  if (/^\/compras\/[^/]+$/.test(pathname)) {
+    return { title: "Ver compra" };
   }
 
   return (

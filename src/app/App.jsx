@@ -23,6 +23,8 @@ import PricingPage from "../pages/PricingPage";
 import QuoteHistoryPage from "../pages/QuoteHistoryPage";
 import NewPurchaseOrderPage from "../pages/NewPurchaseOrderPage";
 import PurchaseOrdersPage from "../pages/PurchaseOrdersPage";
+import NewPurchasePage from "../pages/NewPurchasePage";
+import PurchasesPage from "../pages/PurchasesPage";
 import ReferenceTasksPage from "../pages/ReferenceTasksPage";
 import StatisticsPage from "../pages/StatisticsPage";
 import BusinessUnavailablePage from "../pages/BusinessUnavailablePage";
@@ -272,6 +274,46 @@ function AppRoutes({
           path="/ordenes-compra/:ordenCompraId"
           element={
             <NewPurchaseOrderPage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
+            />
+          }
+        />
+        <Route
+          path="/compras"
+          element={
+            <PurchasesPage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
+            />
+          }
+        />
+        <Route
+          path="/compras/nueva"
+          element={
+            <NewPurchasePage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
+            />
+          }
+        />
+        <Route
+          path="/compras/:compraId/editar"
+          element={
+            <NewPurchasePage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
+            />
+          }
+        />
+        <Route
+          path="/compras/:compraId"
+          element={
+            <NewPurchasePage
               key={businessId}
               businessId={businessId}
               role={activeBusiness?.role}

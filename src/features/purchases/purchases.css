@@ -1,0 +1,10 @@
+@import "../purchaseOrders/purchase-orders.css";
+
+.purchase-origin { align-items: center; background: #ecfdf5; border: 1px solid #99d8cf; border-radius: 8px; color: #075f59; display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; padding: 10px 14px; }
+.purchase-stock-note { background: #ecfdf5; border-radius: 6px; color: #075f59; font-size: 13px; margin: 0 0 14px; padding: 10px 12px; }
+.po-status--confirmada { background: #dcfce7; color: #166534; }
+.purchase-document-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); padding-top: 14px; }
+.purchase-document-grid label { display: grid; font-size: 13px; font-weight: 700; gap: 6px; }
+.purchase-document-grid input, .purchase-document-grid select, .purchase-document-grid textarea { border: 1px solid #c9d4da; border-radius: 6px; font: inherit; min-height: 44px; padding: 9px 11px; }
+.purchase-document-grid .purchase-field-wide { grid-column: 1 / -1; }
+@media(max-width:620px){.purchase-document-grid{grid-template-columns:1fr}.purchase-document-grid .purchase-field-wide{grid-column:auto}}

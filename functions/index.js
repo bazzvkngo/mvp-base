@@ -50,6 +50,13 @@ const {
   emitirOrdenCompraHandler,
 } = require("./purchaseOrderPersistence");
 const {
+  actualizarCompraBorradorHandler,
+  cancelarCompraBorradorHandler,
+  confirmarCompraHandler,
+  crearCompraDesdeOrdenHandler,
+  crearCompraHandler,
+} = require("./purchasePersistence");
+const {
   createAdditionalBusinessHandler,
   createFirstBusinessHandler,
   getBusinessSessionHandler,
@@ -2002,6 +2009,38 @@ exports.cancelarOrdenCompra = onCall(
   },
   async (request) =>
     cancelarOrdenCompraHandler(request, purchaseOrderPersistenceDependencies)
+);
+
+const purchasePersistenceDependencies = {
+  db,
+  FieldValue,
+  HttpsError,
+  requireBusinessAccess,
+};
+
+exports.crearCompra = onCall(
+  {maxInstances: 20, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => crearCompraHandler(request, purchasePersistenceDependencies)
+);
+
+exports.crearCompraDesdeOrden = onCall(
+  {maxInstances: 20, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => crearCompraDesdeOrdenHandler(request, purchasePersistenceDependencies)
+);
+
+exports.actualizarCompraBorrador = onCall(
+  {maxInstances: 20, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => actualizarCompraBorradorHandler(request, purchasePersistenceDependencies)
+);
+
+exports.confirmarCompra = onCall(
+  {maxInstances: 20, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => confirmarCompraHandler(request, purchasePersistenceDependencies)
+);
+
+exports.cancelarCompraBorrador = onCall(
+  {maxInstances: 20, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => cancelarCompraBorradorHandler(request, purchasePersistenceDependencies)
 );
 
 const clientPersistenceDependencies = {
