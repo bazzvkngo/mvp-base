@@ -5,7 +5,6 @@ import {
   Boxes,
   Building2,
   ClipboardCheck,
-  FilePlus2,
   History,
   LayoutDashboard,
   UserRound,
@@ -17,54 +16,13 @@ import {
 
 export const navigationSections = [
   {
-    label: "Operación",
+    label: "Inicio",
     items: [
       {
         to: "/dashboard",
         label: "Resumen",
         title: "Resumen",
         icon: LayoutDashboard,
-      },
-      {
-        to: "/finanzas",
-        label: "Finanzas",
-        title: "Finanzas",
-        icon: WalletCards,
-      },
-      {
-        to: "/estadisticas",
-        label: "Estadísticas",
-        title: "Estadísticas",
-        icon: BarChart3,
-      },
-    ],
-  },
-  {
-    label: "Gestión",
-    items: [
-      {
-        to: "/empresa",
-        label: "Empresa",
-        title: "Empresa",
-        icon: Building2,
-      },
-      {
-        to: "/inventario",
-        label: "Inventario",
-        title: "Inventario",
-        icon: Boxes,
-      },
-      {
-        to: "/referencias",
-        label: "Referencias",
-        title: "Referencias de mercado",
-        icon: BookOpenCheck,
-      },
-      {
-        to: "/tareas-referencias",
-        label: "Tareas de referencias",
-        title: "Tareas de referencias",
-        icon: ClipboardCheck,
       },
     ],
   },
@@ -78,62 +36,31 @@ export const navigationSections = [
         icon: UsersRound,
       },
       {
-        to: "/proveedores",
-        label: "Proveedores",
-        title: "Proveedores",
-        icon: Truck,
-      },
-      {
-        to: "/valorizacion",
-        label: "Valorización",
-        title: "Valorización",
-        icon: BadgeDollarSign,
-      },
-      {
-        to: "/cotizaciones/nueva",
-        label: "Nueva cotización",
-        title: "Nueva cotización",
-        icon: FilePlus2,
-        activeWhen: (pathname) =>
-          pathname === "/cotizaciones/nueva" ||
-          /^\/cotizaciones\/[^/]+\/editar$/.test(pathname),
-      },
-      {
         to: "/cotizaciones",
         label: "Cotizaciones",
         title: "Cotizaciones",
         icon: History,
+        activeWhen: (pathname) =>
+          pathname === "/cotizaciones" || pathname.startsWith("/cotizaciones/"),
+      },
+      {
+        to: "/ventas",
+        label: "Ventas",
+        title: "Ventas",
+        icon: ShoppingCart,
+        activeWhen: (pathname) =>
+          pathname === "/ventas" || pathname.startsWith("/ventas/"),
       },
     ],
   },
   {
-    label: "Compras",
+    label: "Abastecimiento",
     items: [
       {
-        to: "/compras/nueva",
-        label: "Nueva compra",
-        title: "Nueva compra",
-        icon: FilePlus2,
-        activeWhen: (pathname) =>
-          pathname === "/compras/nueva" ||
-          /^\/compras\/[^/]+\/editar$/.test(pathname),
-      },
-      {
-        to: "/compras",
-        label: "Compras",
-        title: "Compras",
-        icon: ShoppingCart,
-        activeWhen: (pathname) =>
-          pathname === "/compras" || /^\/compras\/[^/]+$/.test(pathname),
-      },
-      {
-        to: "/ordenes-compra/nueva",
-        label: "Nueva orden",
-        title: "Nueva orden de compra",
-        icon: FilePlus2,
-        activeWhen: (pathname) =>
-          pathname === "/ordenes-compra/nueva" ||
-          /^\/ordenes-compra\/[^/]+\/editar$/.test(pathname),
+        to: "/proveedores",
+        label: "Proveedores",
+        title: "Proveedores",
+        icon: Truck,
       },
       {
         to: "/ordenes-compra",
@@ -142,7 +69,72 @@ export const navigationSections = [
         icon: ShoppingCart,
         activeWhen: (pathname) =>
           pathname === "/ordenes-compra" ||
-          /^\/ordenes-compra\/[^/]+$/.test(pathname),
+          pathname.startsWith("/ordenes-compra/"),
+      },
+      {
+        to: "/compras",
+        label: "Compras",
+        title: "Compras",
+        icon: ShoppingCart,
+        activeWhen: (pathname) =>
+          pathname === "/compras" || pathname.startsWith("/compras/"),
+      },
+    ],
+  },
+  {
+    label: "Inventario",
+    items: [
+      {
+        to: "/inventario",
+        label: "Inventario",
+        title: "Inventario",
+        icon: Boxes,
+      },
+    ],
+  },
+  {
+    label: "Análisis",
+    items: [
+      {
+        to: "/valorizacion",
+        label: "Valorización",
+        title: "Valorización",
+        icon: BadgeDollarSign,
+      },
+      {
+        to: "/referencias",
+        label: "Referencias",
+        title: "Referencias de mercado",
+        icon: BookOpenCheck,
+      },
+      {
+        to: "/tareas-referencias",
+        label: "Tareas de referencias",
+        title: "Tareas de referencias",
+        icon: ClipboardCheck,
+      },
+      {
+        to: "/estadisticas",
+        label: "Estadísticas",
+        title: "Estadísticas",
+        icon: BarChart3,
+      },
+      {
+        to: "/finanzas",
+        label: "Finanzas",
+        title: "Finanzas",
+        icon: WalletCards,
+      },
+    ],
+  },
+  {
+    label: "Gestión",
+    items: [
+      {
+        to: "/empresa",
+        label: "Empresa",
+        title: "Empresa",
+        icon: Building2,
       },
     ],
   },
@@ -165,6 +157,18 @@ export function getRouteMeta(pathname) {
   if (pathname === "/resumen") {
     return { title: "Resumen" };
   }
+  if (pathname === "/cotizaciones/nueva") {
+    return { title: "Nueva cotización" };
+  }
+  if (pathname === "/ventas/nueva") {
+    return { title: "Nueva venta" };
+  }
+  if (pathname === "/compras/nueva") {
+    return { title: "Nueva compra" };
+  }
+  if (pathname === "/ordenes-compra/nueva") {
+    return { title: "Nueva orden de compra" };
+  }
   if (/^\/cotizaciones\/[^/]+\/editar$/.test(pathname)) {
     return { title: "Editar cotización" };
   }
@@ -179,6 +183,12 @@ export function getRouteMeta(pathname) {
   }
   if (/^\/compras\/[^/]+$/.test(pathname)) {
     return { title: "Ver compra" };
+  }
+  if (/^\/ventas\/[^/]+\/editar$/.test(pathname)) {
+    return { title: "Editar venta" };
+  }
+  if (/^\/ventas\/[^/]+$/.test(pathname)) {
+    return { title: "Ver venta" };
   }
 
   return (

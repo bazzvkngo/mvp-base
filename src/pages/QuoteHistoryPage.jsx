@@ -13,6 +13,10 @@ import {
   updateQuoteStatus,
 } from "../services/quoteService";
 import { isQuoteEmailSendable } from "../services/quoteEmailService";
+import {
+  crearVentaDesdeCotizacion,
+  createSaleRequestId,
+} from "../services/saleService";
 import { formatCLP, formatDate } from "../utils/formatters";
 import { downloadQuotePdf, shareQuotePdf } from "../utils/quotePdf";
 
@@ -103,6 +107,7 @@ function getEmailActionHint(quote) {
 function QuoteHistoryPage({ userId, role }) {
   const navigate = useNavigate();
   const duplicateRequestIdsRef = useRef(new Map());
+  const saleRequestIdsRef = useRef(new Map());
   const [quotes, setQuotes] = useState([]);
   const [companyProfile, setCompanyProfile] = useState(null);
   const [selectedQuoteId, setSelectedQuoteId] = useState("");
@@ -115,6 +120,7 @@ function QuoteHistoryPage({ userId, role }) {
   const [emailModalQuote, setEmailModalQuote] = useState(null);
   const [restoreDetailFocus, setRestoreDetailFocus] = useState(true);
   const [duplicatingQuoteId, setDuplicatingQuoteId] = useState("");
+  const [registeringSaleQuoteId, setRegisteringSaleQuoteId] = useState("");
   const canDuplicate = canDuplicateQuotes(role);
 
   useEffect(() => {
@@ -296,6 +302,33 @@ function QuoteHistoryPage({ userId, role }) {
     }
   };
 
+  const handleRegisterSale = async (quote) => {
+    if (quote.ventaId) {
+      navigate(`/ventas/${quote.ventaId}`);
+      return;
+    }
+    const requestId = saleRequestIdsRef.current.get(quote.id) ||
+      createSaleRequestId("sale-quote");
+    saleRequestIdsRef.current.set(quote.id, requestId);
+    setRegisteringSaleQuoteId(quote.id);
+    setError("");
+    setSuccess("");
+    try {
+      const result = await crearVentaDesdeCotizacion(userId, quote.id, {requestId});
+      saleRequestIdsRef.current.delete(quote.id);
+      setQuotes((current) => current.map((item) => item.id === quote.id
+        ? {...item, ventaId: result.venta.id, ventaNumero: result.venta.numero}
+        : item));
+      navigate(`/ventas/${result.venta.id}/editar`, {
+        state: {message: "Venta creada como borrador desde la cotización."},
+      });
+    } catch (saleError) {
+      setError(saleError.message || "No se pudo registrar la venta.");
+    } finally {
+      setRegisteringSaleQuoteId("");
+    }
+  };
+
   const handleEmailSent = (quoteId, emailPatch, result) => {
     setQuotes((prev) =>
       prev.map((quote) =>
@@ -452,6 +485,8 @@ function QuoteHistoryPage({ userId, role }) {
                           canDuplicate={canDuplicate}
                           duplicating={duplicatingQuoteId === quote.id}
                           onDuplicate={handleDuplicateQuote}
+                          onRegisterSale={handleRegisterSale}
+                          registeringSale={registeringSaleQuoteId === quote.id}
                         />
                       </div>
                     </td>
@@ -490,6 +525,8 @@ function QuoteHistoryPage({ userId, role }) {
               canDuplicate={canDuplicate}
               duplicating={duplicatingQuoteId === selectedQuote.id}
               onDuplicate={handleDuplicateQuote}
+              onRegisterSale={handleRegisterSale}
+              registeringSale={registeringSaleQuoteId === selectedQuote.id}
             />
           </div>
         ) : null}
@@ -509,17 +546,19 @@ function QuoteHistoryPage({ userId, role }) {
         )}
       </ResponsiveDialog>
 
-      <SendQuoteEmailModal
-        businessId={userId}
-        open={Boolean(emailModalQuote)}
-        quote={emailModalQuote}
-        quoteId={emailModalQuote?.id}
-        companyProfile={companyProfile}
-        onClose={() => setEmailModalQuote(null)}
-        onSent={(emailPatch, result) =>
-          handleEmailSent(emailModalQuote?.id, emailPatch, result)
-        }
-      />
+      {emailModalQuote && (
+        <SendQuoteEmailModal
+          businessId={userId}
+          open
+          quote={emailModalQuote}
+          quoteId={emailModalQuote.id}
+          companyProfile={companyProfile}
+          onClose={() => setEmailModalQuote(null)}
+          onSent={(emailPatch, result) =>
+            handleEmailSent(emailModalQuote.id, emailPatch, result)
+          }
+        />
+      )}
     </section>
   );
 }
@@ -620,6 +659,8 @@ function QuoteActions({
   canDuplicate,
   duplicating,
   onDuplicate,
+  onRegisterSale,
+  registeringSale,
 }) {
   const estado = quote.estado || "borrador";
   const duplicateAction = canDuplicate && estado !== "borrador" ? (
@@ -708,6 +749,18 @@ function QuoteActions({
   if (estado === "aceptada") {
     return (
       <>
+        {canDuplicate && (
+          <button
+            type="button"
+            onClick={() => onRegisterSale(quote)}
+            disabled={disabled || registeringSale}
+            style={styles.acceptButton}
+          >
+            {quote.ventaId
+              ? `Ver venta${quote.ventaNumero ? ` ${quote.ventaNumero}` : ""}`
+              : registeringSale ? "Registrando venta..." : "Registrar venta"}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => onChangeStatus(quote.id, "emitida")}

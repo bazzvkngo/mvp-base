@@ -117,6 +117,17 @@ export const purchaseDocPath = (businessId, compraId) => [
   "compras",
   compraId,
 ];
+export const salesCollectionPath = (businessId) => [
+  "negocios",
+  businessId,
+  "ventas",
+];
+export const saleDocPath = (businessId, ventaId) => [
+  "negocios",
+  businessId,
+  "ventas",
+  ventaId,
+];
 export const financialMovementsCollectionPath = (businessId) => [
   "negocios",
   businessId,

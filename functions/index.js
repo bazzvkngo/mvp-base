@@ -57,6 +57,13 @@ const {
   crearCompraHandler,
 } = require("./purchasePersistence");
 const {
+  actualizarVentaBorradorHandler,
+  cancelarVentaBorradorHandler,
+  confirmarVentaHandler,
+  crearVentaDesdeCotizacionHandler,
+  crearVentaHandler,
+} = require("./salePersistence");
+const {
   createAdditionalBusinessHandler,
   createFirstBusinessHandler,
   getBusinessSessionHandler,
@@ -2041,6 +2048,38 @@ exports.confirmarCompra = onCall(
 exports.cancelarCompraBorrador = onCall(
   {maxInstances: 20, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
   async (request) => cancelarCompraBorradorHandler(request, purchasePersistenceDependencies)
+);
+
+const salePersistenceDependencies = {
+  db,
+  FieldValue,
+  HttpsError,
+  requireBusinessAccess,
+};
+
+exports.crearVenta = onCall(
+  {maxInstances: 20, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => crearVentaHandler(request, salePersistenceDependencies)
+);
+
+exports.crearVentaDesdeCotizacion = onCall(
+  {maxInstances: 20, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => crearVentaDesdeCotizacionHandler(request, salePersistenceDependencies)
+);
+
+exports.actualizarVentaBorrador = onCall(
+  {maxInstances: 20, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => actualizarVentaBorradorHandler(request, salePersistenceDependencies)
+);
+
+exports.confirmarVenta = onCall(
+  {maxInstances: 20, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => confirmarVentaHandler(request, salePersistenceDependencies)
+);
+
+exports.cancelarVentaBorrador = onCall(
+  {maxInstances: 20, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => cancelarVentaBorradorHandler(request, salePersistenceDependencies)
 );
 
 const clientPersistenceDependencies = {

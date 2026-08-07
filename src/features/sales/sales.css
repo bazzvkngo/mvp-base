@@ -1,0 +1,6 @@
+@import "../purchases/purchases.css";
+
+.sale-origin { align-items: center; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; color: #1e3a8a; display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; padding: 10px 14px; }
+.sale-stock-note { background: #ecfdf5; border-radius: 6px; color: #075f59; font-size: 13px; margin: 0 0 14px; padding: 10px 12px; }
+.sale-stock { color: #526472; display: block; margin-top: 4px; }
+.sale-stock--warning { color: #b45309; font-weight: 700; }
