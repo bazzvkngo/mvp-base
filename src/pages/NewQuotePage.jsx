@@ -17,8 +17,13 @@ import { getCategoriesForArea } from "../domain/inventoryCatalog.mjs";
 import { PRICING_STATUS } from "../domain/pricing";
 import useAiRateLimit from "../hooks/useAiRateLimit";
 import ClientSelector from "../features/clients/ClientSelector";
+import QuoteCatalogDialog from "../features/quotes/QuoteCatalogDialog";
+import QuoteCollapsibleSection from "../features/quotes/QuoteCollapsibleSection";
+import QuoteItemsEditor from "../features/quotes/QuoteItemsEditor";
 import QuotePrintView from "../features/quotes/QuotePrintView";
+import QuoteSummaryPanel from "../features/quotes/QuoteSummaryPanel";
 import SendQuoteEmailModal from "../features/quotes/SendQuoteEmailModal";
+import "../features/quotes/quote-workspace.css";
 import { suggestQuoteItems } from "../services/aiQuoteService";
 import { getCompanyProfile } from "../services/companyService";
 import {
@@ -39,7 +44,7 @@ import { formatCLP, formatDate } from "../utils/formatters";
 import { downloadQuotePdf } from "../utils/quotePdf";
 
 const ASSISTANT_DESCRIPTION_MAX_LENGTH = 1200;
-const MANUAL_CATALOG_PAGE_SIZE = 12;
+const MANUAL_CATALOG_PAGE_SIZE = 10;
 const ITEM_FEEDBACK_HIDE_DELAY = 3500;
 
 const estadoLabels = {
@@ -397,6 +402,7 @@ function NewQuotePage({ userId }) {
   const [loadedDraftQuote, setLoadedDraftQuote] = useState(null);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
+  const [catalogTypeFilter, setCatalogTypeFilter] = useState("todos");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [itemFeedback, setItemFeedback] = useState("");
@@ -433,6 +439,20 @@ function NewQuotePage({ userId }) {
   const [inventoryCategories, setInventoryCategories] = useState([]);
   const [dirty, setDirty] = useState(false);
   const [pdfActionLoading, setPdfActionLoading] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [scopeOpen, setScopeOpen] = useState(false);
+  const [conditionsOpen, setConditionsOpen] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  useEffect(() => {
+    if (!previewOpen) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      previewRef.current?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [previewOpen]);
 
   useEffect(() => {
     currentClienteIdRef.current = quote.clienteId;
@@ -705,9 +725,11 @@ function NewQuotePage({ userId }) {
 
   const filteredValuations = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return valuations;
-
     return valuations.filter((valuation) => {
+      if (catalogTypeFilter !== "todos" && valuation.tipoItem !== catalogTypeFilter) {
+        return false;
+      }
+      if (!query) return true;
       const inventoryItem = valuation.item || {};
       const text = [
         valuation.nombre,
@@ -724,16 +746,14 @@ function NewQuotePage({ userId }) {
         .toLowerCase();
       return text.includes(query);
     });
-  }, [search, valuations]);
+  }, [catalogTypeFilter, search, valuations]);
 
-  const hasActiveCatalogSearch = search.trim().length > 0;
-  const visibleCatalogValuations = hasActiveCatalogSearch
-    ? filteredValuations
-    : filteredValuations.slice(0, manualCatalogVisibleCount);
-  const catalogHasMoreItems =
-    !hasActiveCatalogSearch && manualCatalogVisibleCount < filteredValuations.length;
+  const visibleCatalogValuations = filteredValuations.slice(
+    0,
+    manualCatalogVisibleCount
+  );
+  const catalogHasMoreItems = manualCatalogVisibleCount < filteredValuations.length;
   const catalogShowingAllItems =
-    !hasActiveCatalogSearch &&
     filteredValuations.length > MANUAL_CATALOG_PAGE_SIZE &&
     manualCatalogVisibleCount >= filteredValuations.length;
 
@@ -967,10 +987,7 @@ function NewQuotePage({ userId }) {
   const handleCatalogSearchChange = (event) => {
     const nextSearch = event.target.value;
     setSearch(nextSearch);
-
-    if (!nextSearch.trim()) {
-      setManualCatalogVisibleCount(MANUAL_CATALOG_PAGE_SIZE);
-    }
+    setManualCatalogVisibleCount(MANUAL_CATALOG_PAGE_SIZE);
   };
 
   const showMoreCatalogItems = () => {
@@ -1543,6 +1560,11 @@ function NewQuotePage({ userId }) {
     showItemFeedback("Ítem eliminado de la cotización.");
   };
 
+  const handleCatalogTypeChange = (event) => {
+    setCatalogTypeFilter(event.target.value);
+    setManualCatalogVisibleCount(MANUAL_CATALOG_PAGE_SIZE);
+  };
+
   const moveItem = (index, direction) => {
     setDirty(true);
     setQuote((prev) => {
@@ -1741,9 +1763,10 @@ function NewQuotePage({ userId }) {
   const handlePreview = () => {
     setError(totalsResult.error?.message || "");
     if (totalsResult.error) return;
-    previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setPreviewOpen(true);
   };
   const handleDownloadCurrentPdf = async () => {
+    setPreviewOpen(true);
     const validationError = validateQuote();
     if (validationError) {
       setError(validationError);
@@ -1765,98 +1788,63 @@ function NewQuotePage({ userId }) {
   };
 
   return (
-    <section className="quote-page" style={styles.wrapper}>
-      <style>{quotePageCss}</style>
-      <div className="no-print" style={styles.header}>
+    <section className="quote-page quote-workspace">
+      <header className="quote-workspace__header no-print">
+        <div className="quote-workspace__header-copy">
+          <span className="quote-workspace__eyebrow">Cotizaciones</span>
+          <h1>{isEditMode ? "Editar cotización" : "Nueva cotización"}</h1>
+          <span className="quote-workspace__status">
+            {getQuoteDisplayNumber(quote) || "Borrador sin número"}
+          </span>
+          <small>{quote.fecha ? formatDate(quote.fecha) : "La fecha se asigna al guardar"}</small>
+        </div>
+        <div className="quote-workspace__header-meta">
+          <label>
+            <span>Estado</span>
+            <select value={quote.estado} onChange={(event) => updateField("estado", event.target.value)}>
+              <option value="borrador">Borrador</option>
+              <option value="emitida">Emitida</option>
+            </select>
+          </label>
+          <label>
+            <span>Vigencia</span>
+            <input type="number" min="1" max="3650" value={quote.validezDias} onChange={(event) => updateField("validezDias", event.target.value)} />
+          </label>
+          <label>
+            <span>Tratamiento tributario</span>
+            <select value={quote.afectaIva === false ? "exenta" : "afecta"} onChange={(event) => updateField("afectaIva", event.target.value === "afecta")}>
+              <option value="afecta">Afecta IVA 19%</option>
+              <option value="exenta">Exenta de IVA</option>
+            </select>
+          </label>
+        </div>
+      </header>
+
+      <section className="quote-workspace__panel quote-workspace__client-project no-print">
         <div>
-          <span className="eyebrow">Cotizaciones</span>
-          <h2 style={styles.title}>
-            {isEditMode ? "Editar cotización en borrador" : "Nueva cotización formal"}
-          </h2>
-          <p style={styles.subtitle}>
-            {isEditMode
-              ? `Actualiza el borrador ${getQuoteDisplayNumber(quote)} sin cambiar su número original.`
-              : "Arma una cotización editable desde ítems valorizados, ajusta precios y genera un documento formal."}
-          </p>
+          <span className="quote-workspace__kicker">Cliente</span>
+          <ClientSelector businessId={userId} value={quote.clienteId} snapshot={quote.cliente} onChange={handleClientChange} onAvailabilityChange={setClientAvailability} />
         </div>
-      </div>
-
-      <div className="no-print" style={styles.grid}>
-        <div style={styles.panel}>
-          <h3 style={styles.panelTitle}>1. Datos generales</h3>
-          <div className="quote-data-grid" style={styles.quoteDataGrid}>
-            <Field label="Fecha">
-              <div style={styles.readOnlyValue}>
-                {quote.fecha ? formatDate(quote.fecha) : "Se asigna al guardar"}
-              </div>
-            </Field>
-            <Field label="Número">
-              <div style={styles.readOnlyValue}>
-                {getQuoteDisplayNumber(quote)}
-              </div>
-            </Field>
-            <Field label="Estado">
-              <select
-                value={quote.estado}
-                onChange={(event) => updateField("estado", event.target.value)}
-                style={styles.input}
-              >
-                <option value="borrador">Borrador</option>
-                <option value="emitida">Emitida</option>
-              </select>
-            </Field>
-            <Field label="Vigencia (días)">
-              <input
-                type="number"
-                min="1"
-                max="3650"
-                value={quote.validezDias}
-                onChange={(event) => updateField("validezDias", event.target.value)}
-                style={styles.input}
-              />
-            </Field>
-            <Field label="Tratamiento tributario">
-              <select
-                value={quote.afectaIva === false ? "exenta" : "afecta"}
-                onChange={(event) =>
-                  updateField("afectaIva", event.target.value === "afecta")
-                }
-                style={styles.input}
-              >
-                <option value="afecta">Afecta a IVA (19%)</option>
-                <option value="exenta">Exenta de IVA</option>
-              </select>
-            </Field>
-          </div>
-        </div>
-
-        <div style={styles.panel}>
-          <h3 style={styles.panelTitle}>2. Cliente</h3>
-          <ClientSelector
-            businessId={userId}
-            value={quote.clienteId}
-            snapshot={quote.cliente}
-            onChange={handleClientChange}
-            onAvailabilityChange={setClientAvailability}
-          />
-          <div style={styles.formGrid}>
-            <Field label="Proyecto o trabajo" wide>
-              <input
-                type="text"
-                value={quote.proyectoNombre}
-                onChange={(event) => updateField("proyectoNombre", event.target.value)}
-                placeholder="Ej. Escalera zona de estanque"
-                style={styles.input}
-              />
-            </Field>
-          </div>
-        </div>
-      </div>
+        <label className="quote-workspace__project">
+          <span className="quote-workspace__kicker">Proyecto o trabajo</span>
+          <input type="text" value={quote.proyectoNombre} onChange={(event) => updateField("proyectoNombre", event.target.value)} placeholder="Ej. Escalera zona de estanque" />
+          <small>Identifica brevemente el alcance principal de esta propuesta.</small>
+        </label>
+      </section>
 
       {error && <p className="no-print" style={styles.errorText}>{error}</p>}
       {success && <p className="no-print" style={styles.successText}>{success}</p>}
 
-      <div className="no-print" style={{ ...styles.panel, ...styles.assistantPanel }}>
+      <div className="quote-workspace__layout">
+        <main className="quote-workspace__main">
+      {assistantOpen && (
+      <QuoteCollapsibleSection
+        title="Usar asistente para sugerir ítems"
+        summary="Herramienta opcional de estructura, dictado y sugerencias"
+        open={assistantOpen}
+        onToggle={() => setAssistantOpen((current) => !current)}
+      >
+      <div className="quote-workspace__secondary-body">
         <div style={{ ...styles.sectionHeader, ...styles.assistantHeader }}>
           <div>
             <h3 style={{ ...styles.panelTitle, ...styles.assistantTitle }}>
@@ -2054,502 +2042,150 @@ function NewQuotePage({ userId }) {
           </>
         )}
       </div>
+      </QuoteCollapsibleSection>
+      )}
 
-      <div className="no-print" style={styles.panel}>
-        <div style={{ ...styles.sectionHeader, ...styles.catalogHeader }}>
-          <div>
-            <h3 style={{ ...styles.panelTitle, ...styles.compactPanelTitle }}>
-              Catálogo manual · {valuations.length} ítems
-            </h3>
-            <p style={styles.helpText}>
-              {manualCatalogOpen
-                ? "Solo se muestran ítems activos del inventario."
-                : "Busca y agrega productos, servicios o actividades del inventario."}
-            </p>
-          </div>
-          <div style={styles.catalogActions}>
-            <button
-              type="button"
-              onClick={() => setManualCatalogOpen((current) => !current)}
-              aria-expanded={manualCatalogOpen}
-              aria-controls="manual-catalog-content"
-              style={styles.secondaryButton}
-            >
-              {manualCatalogOpen ? "Ocultar catálogo" : "Mostrar catálogo"}
-            </button>
-            {manualCatalogOpen && (
-              <input
-                value={search}
-                onChange={handleCatalogSearchChange}
-                placeholder="Buscar por nombre o categoría"
-                style={styles.searchInput}
-              />
-            )}
-          </div>
-        </div>
+      <QuoteCatalogDialog
+        open={manualCatalogOpen}
+        onClose={() => setManualCatalogOpen(false)}
+        loading={loading}
+        totalCount={valuations.length}
+        filteredCount={filteredValuations.length}
+        valuations={visibleCatalogValuations}
+        itemQuantityById={itemQuantityById}
+        search={search}
+        onSearchChange={handleCatalogSearchChange}
+        typeFilter={catalogTypeFilter}
+        onTypeChange={handleCatalogTypeChange}
+        onAdd={addItem}
+        catalogHasMoreItems={catalogHasMoreItems}
+        catalogShowingAllItems={catalogShowingAllItems}
+        onShowMore={showMoreCatalogItems}
+        onShowLess={showLessCatalogItems}
+      />
 
-        <div id="manual-catalog-content" hidden={!manualCatalogOpen}>
-          {loading ? (
-            <div style={styles.emptyState}>
-              <h3 style={styles.emptyTitle}>Cargando inventario valorizado</h3>
-              <p style={styles.emptyText}>
-                Estamos preparando los ítems activos para agregarlos a la cotización.
-              </p>
-            </div>
-          ) : valuations.length === 0 ? (
-            <div style={styles.emptyState}>
-              <h3 style={styles.emptyTitle}>No hay inventario activo valorizado</h3>
-              <p style={styles.emptyText}>
-                Agrega ítems activos al inventario para comenzar una cotización.
-              </p>
-            </div>
-          ) : filteredValuations.length === 0 ? (
-            <div style={styles.emptyState}>
-              <h3 style={styles.emptyTitle}>No hay resultados para esa búsqueda</h3>
-              <p style={styles.emptyText}>
-                Ajusta el texto de búsqueda o agrega el ítem desde el asistente.
-              </p>
-            </div>
+      <div ref={addedItemsRef}>
+        <QuoteItemsEditor
+          items={normalizedItems}
+          subtotal={totals.subtotal}
+          feedback={itemFeedback}
+          highlightedItemId={highlightedItemId}
+          onOpenAssistant={() => setAssistantOpen(true)}
+          onOpenCatalog={() => setManualCatalogOpen(true)}
+          onUpdate={updateItem}
+          onMove={moveItem}
+          onRemove={removeItem}
+          validationError={quoteValidation.fieldErrors.items || quoteValidation.fieldErrors.numericos}
+        />
+      </div>
+
+      <QuoteCollapsibleSection
+        title="Alcance del trabajo"
+        summary={quote.seccionesAlcance.length
+          ? `${quote.seccionesAlcance.length} sección${quote.seccionesAlcance.length === 1 ? "" : "es"} descriptiva${quote.seccionesAlcance.length === 1 ? "" : "s"}`
+          : "Sin secciones descriptivas"}
+        open={scopeOpen}
+        onToggle={() => setScopeOpen((current) => !current)}
+      >
+        <div className="quote-workspace__secondary-body">
+          <div className="quote-workspace__secondary-header">
+            <p style={styles.helpText}>Las secciones vacías no aparecerán en el PDF.</p>
+            <button type="button" onClick={addScopeSection} className="quote-workspace__button quote-workspace__button--secondary">Agregar sección</button>
+          </div>
+          {quote.seccionesAlcance.length === 0 ? (
+            <div style={styles.compactEmptyState}>Puedes agregar Servicios, Materiales, Gastos de operación, Entregables o cualquier otro título.</div>
           ) : (
-            <>
-              <div style={styles.valuationGrid}>
-                {visibleCatalogValuations.map((valuation) => {
-                  const quoteQuantity = itemQuantityById[valuation.itemId] || 0;
-                  return (
-                    <div key={valuation.itemId} style={styles.valuationCard}>
-                      <div>
-                        <strong>{valuation.nombre}</strong>
-                        <span style={styles.itemMeta}>
-                          {valuation.categoria || "Sin categoría"} ·{" "}
-                          {tipoLabels[valuation.tipoItem] || valuation.tipoItem || "-"}
-                        </span>
-                      </div>
-                      <div style={styles.valuationFooter}>
-                        <div>
-                          <span style={styles.miniLabel}>Precio sugerido</span>
-                          <strong>{formatCLP(valuation.precioSugerido)}</strong>
-                        </div>
-                        <span
-                          style={{
-                            ...styles.statusBadge,
-                            ...statusStyles[valuation.estadoValorizacion],
-                          }}
-                        >
-                          {valuation.estadoValorizacion}
-                        </span>
-                      </div>
-                      {quoteQuantity > 0 && (
-                        <span style={styles.quoteBadge}>
-                          En cotización: {quoteQuantity}
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => addItem(valuation)}
-                        style={{ ...styles.secondaryButton, ...styles.compactItemButton }}
-                      >
-                        {quoteQuantity > 0 ? "Agregar otra vez" : "Agregar a cotización"}
-                      </button>
+            <div style={styles.scopeList}>
+              {quote.seccionesAlcance.map((section, index) => (
+                <article key={section.id} style={styles.scopeCard}>
+                  <div style={styles.scopeHeader}>
+                    <input value={section.titulo} onChange={(event) => updateScopeSection(section.id, { titulo: event.target.value })} placeholder="Título de la sección" style={styles.input} />
+                    <div style={styles.scopeActions}>
+                      <button type="button" aria-label="Subir sección" disabled={index === 0} onClick={() => moveScopeSection(index, -1)} style={styles.orderButton}>↑</button>
+                      <button type="button" aria-label="Bajar sección" disabled={index === quote.seccionesAlcance.length - 1} onClick={() => moveScopeSection(index, 1)} style={styles.orderButton}>↓</button>
+                      <button type="button" onClick={() => removeScopeSection(section.id)} style={styles.removeButton}>Eliminar</button>
                     </div>
-                  );
-                })}
-              </div>
-              {(catalogHasMoreItems || catalogShowingAllItems) && (
-                <div style={styles.catalogPagination}>
-                  {catalogHasMoreItems ? (
-                    <button
-                      type="button"
-                      onClick={showMoreCatalogItems}
-                      style={styles.secondaryButton}
-                    >
-                      Mostrar más
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={showLessCatalogItems}
-                      style={styles.secondaryButton}
-                    >
-                      Mostrar menos
-                    </button>
+                  </div>
+                  <textarea rows={4} value={(section.lineas || []).join("\n")} onChange={(event) => updateScopeSection(section.id, { lineas: event.target.value.split(/\r?\n/) })} placeholder="Una línea descriptiva por renglón" style={styles.textarea} />
+                  {(quoteValidation.fieldErrors[`alcance.${index}.titulo`] || quoteValidation.fieldErrors[`alcance.${index}.lineas`]) && (
+                    <span style={styles.fieldErrorText}>{quoteValidation.fieldErrors[`alcance.${index}.titulo`] || quoteValidation.fieldErrors[`alcance.${index}.lineas`]}</span>
                   )}
-                </div>
-              )}
-            </>
+                </article>
+              ))}
+            </div>
           )}
         </div>
-      </div>
+      </QuoteCollapsibleSection>
 
-      <div className="no-print" style={styles.panel} ref={addedItemsRef}>
-        <div style={styles.addedHeader}>
-          <div>
-            <h3 style={styles.panelTitle}>3. Ítems valorizados</h3>
-            <p style={styles.helpText}>
-              Resumen editable de la cotización actual.
-            </p>
+      <QuoteCollapsibleSection
+        title="Condiciones comerciales"
+        summary={[
+          quote.condiciones.formaPago || "Pago sin definir",
+          quote.condiciones.plazoEntrega || "Plazo sin definir",
+          quote.condiciones.garantia,
+        ].filter(Boolean).join(" · ")}
+        open={conditionsOpen}
+        onToggle={() => setConditionsOpen((current) => !current)}
+      >
+        <div className="quote-workspace__secondary-body">
+          <div className="quote-workspace__secondary-header">
+            <p style={styles.helpText}>Estos valores aplican sólo a esta cotización.</p>
+            <button type="button" onClick={restoreDefaultConditions} className="quote-workspace__button quote-workspace__button--secondary">Restaurar predeterminadas</button>
           </div>
-          <div style={styles.addedSummary}>
-            <span>{normalizedItems.length} ítem(s)</span>
-            <strong>{formatCLP(totals.total)}</strong>
-          </div>
-        </div>
-        {itemFeedback && (
-          <p
-            className="no-print"
-            aria-live="polite"
-            style={styles.itemFeedbackText}
-          >
-            {itemFeedback}
-          </p>
-        )}
-        {normalizedItems.length === 0 ? (
-          <div style={styles.emptyState}>
-            <h3 style={styles.emptyTitle}>Todavía no hay ítems en la cotización</h3>
-            <p style={styles.emptyText}>
-              Agrega productos o servicios desde el asistente o el catálogo manual.
-            </p>
-          </div>
-        ) : (
-          <div style={styles.tableWrapper}>
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th style={styles.th}>Código / nombre</th>
-                  <th style={styles.th}>Descripción comercial</th>
-                  <th style={styles.th}>Unidad</th>
-                  <th style={styles.th}>Cantidad</th>
-                  <th style={styles.th}>Precio unitario</th>
-                  <th style={styles.th}>Desc. %</th>
-                  <th style={styles.th}>Total línea</th>
-                  <th style={styles.th}>Orden / quitar</th>
-                </tr>
-              </thead>
-              <tbody>
-                {normalizedItems.map((item, index) => {
-                  const lineId = item.lineaId || item.itemId;
-                  return (
-                  <tr
-                    key={lineId}
-                    style={
-                      highlightedItemId === item.itemId
-                        ? styles.highlightedRow
-                        : undefined
-                    }
-                  >
-                    <td style={styles.td}>
-                      <strong>{item.nombre}</strong>
-                      <span style={styles.itemMeta}>
-                        {item.codigo || item.inventarioSnapshot?.codigoInterno || `Ítem ${index + 1}`} · {tipoLabels[item.tipoItem] || item.tipoItem || "-"}
-                      </span>
-                    </td>
-                    <td style={styles.td}>
-                      <textarea
-                        rows={3}
-                        value={item.descripcionComercial ?? item.descripcion ?? ""}
-                        onChange={(event) =>
-                          updateItem(lineId, "descripcionComercial", event.target.value)
-                        }
-                        style={styles.lineDescriptionInput}
-                      />
-                    </td>
-                    <td style={styles.td}>
-                      <input
-                        value={item.unidad || ""}
-                        onChange={(event) => updateItem(lineId, "unidad", event.target.value)}
-                        style={styles.unitInput}
-                      />
-                    </td>
-                    <td style={styles.td}>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={item.cantidad}
-                        onChange={(event) =>
-                          updateItem(lineId, "cantidad", event.target.value)
-                        }
-                        style={styles.numberInput}
-                      />
-                    </td>
-                    <td style={styles.td}>
-                      <input
-                        type="number"
-                        min="0"
-                        value={item.precioUnitarioEditable}
-                        onChange={(event) =>
-                          updateItem(
-                            lineId,
-                            "precioUnitarioEditable",
-                            event.target.value
-                          )
-                        }
-                        style={styles.moneyInput}
-                      />
-                    </td>
-                    <td style={styles.td}>
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.01"
-                        value={item.descuentoPorcentaje ?? 0}
-                        onChange={(event) =>
-                          updateItem(lineId, "descuentoPorcentaje", event.target.value)
-                        }
-                        style={styles.discountPercentInput}
-                      />
-                    </td>
-                    <td style={styles.td}>
-                      <strong>{formatCLP(item.totalLinea)}</strong>
-                    </td>
-                    <td style={styles.td}>
-                      <button
-                        type="button"
-                        onClick={() => moveItem(index, -1)}
-                        disabled={index === 0}
-                        style={styles.orderButton}
-                      >
-                        ↑
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => moveItem(index, 1)}
-                        disabled={index === normalizedItems.length - 1}
-                        style={styles.orderButton}
-                      >
-                        ↓
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => removeItem(lineId)}
-                        style={styles.removeButton}
-                      >
-                        Quitar
-                      </button>
-                    </td>
-                  </tr>
-                );})}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {(quoteValidation.fieldErrors.items || quoteValidation.fieldErrors.numericos) && (
-          <p style={styles.errorText}>
-            {quoteValidation.fieldErrors.items || quoteValidation.fieldErrors.numericos}
-          </p>
-        )}
-      </div>
-
-      <div className="no-print" style={styles.panel}>
-        <div style={styles.sectionHeader}>
-          <div>
-            <h3 style={styles.panelTitle}>4. Alcance del trabajo</h3>
-            <p style={styles.helpText}>
-              Agrega secciones descriptivas no valorizadas. Las secciones vacías no aparecerán en el PDF.
-            </p>
-          </div>
-          <button type="button" onClick={addScopeSection} style={styles.secondaryButton}>
-            Agregar sección
-          </button>
-        </div>
-        {quote.seccionesAlcance.length === 0 ? (
-          <div style={styles.compactEmptyState}>
-            Puedes agregar Servicios, Materiales, Gastos de operación, Entregables o cualquier otro título.
-          </div>
-        ) : (
-          <div style={styles.scopeList}>
-            {quote.seccionesAlcance.map((section, index) => (
-              <article key={section.id} style={styles.scopeCard}>
-                <div style={styles.scopeHeader}>
-                  <input
-                    value={section.titulo}
-                    onChange={(event) =>
-                      updateScopeSection(section.id, { titulo: event.target.value })
-                    }
-                    placeholder="Título de la sección"
-                    style={styles.input}
-                  />
-                  <div style={styles.scopeActions}>
-                    <button type="button" disabled={index === 0} onClick={() => moveScopeSection(index, -1)} style={styles.orderButton}>↑</button>
-                    <button type="button" disabled={index === quote.seccionesAlcance.length - 1} onClick={() => moveScopeSection(index, 1)} style={styles.orderButton}>↓</button>
-                    <button type="button" onClick={() => removeScopeSection(section.id)} style={styles.removeButton}>Eliminar</button>
-                  </div>
-                </div>
-                <textarea
-                  rows={4}
-                  value={(section.lineas || []).join("\n")}
-                  onChange={(event) =>
-                    updateScopeSection(section.id, {
-                      lineas: event.target.value.split(/\r?\n/),
-                    })
-                  }
-                  placeholder="Una línea descriptiva por renglón"
-                  style={styles.textarea}
-                />
-                {(quoteValidation.fieldErrors[`alcance.${index}.titulo`] ||
-                  quoteValidation.fieldErrors[`alcance.${index}.lineas`]) && (
-                  <span style={styles.fieldErrorText}>
-                    {quoteValidation.fieldErrors[`alcance.${index}.titulo`] ||
-                      quoteValidation.fieldErrors[`alcance.${index}.lineas`]}
-                  </span>
-                )}
-              </article>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <section className="no-print" style={styles.closingSection}>
-        <h3 style={styles.closingTitle}>Cierre de la cotización</h3>
-        <div className="quote-bottom-grid" style={styles.bottomGrid}>
-        <div style={{ ...styles.panel, ...styles.observationsPanel }}>
-          <h3 style={styles.panelTitle}>5. Condiciones comerciales</h3>
-          <p style={styles.helpText}>
-            Estos valores son editables para esta cotización y no modifican la configuración de Empresa.
-          </p>
-          <button type="button" onClick={restoreDefaultConditions} style={styles.restoreDefaultButton}>
-            Restaurar condiciones predeterminadas
-          </button>
           <div style={styles.conditionsGrid}>
-            <Field label="Plazo de ejecución o entrega">
-              <input value={quote.condiciones.plazoEntrega} onChange={(event) => updateCondition("plazoEntrega", event.target.value)} style={styles.input} />
-            </Field>
-            <Field label="Forma de pago">
-              <input value={quote.condiciones.formaPago} onChange={(event) => updateCondition("formaPago", event.target.value)} style={styles.input} />
-            </Field>
-            <Field label="Alcance geográfico">
-              <input value={quote.condiciones.alcanceGeografico} onChange={(event) => updateCondition("alcanceGeografico", event.target.value)} style={styles.input} />
-            </Field>
-            <Field label="Garantía">
-              <input value={quote.condiciones.garantia} onChange={(event) => updateCondition("garantia", event.target.value)} style={styles.input} />
-            </Field>
-            <Field label="Observaciones" wide>
-              <textarea rows={3} value={quote.condiciones.observaciones} onChange={(event) => updateCondition("observaciones", event.target.value)} style={styles.textarea} />
-            </Field>
-            <Field label="Exclusiones" wide>
-              <textarea rows={3} value={quote.condiciones.exclusiones} onChange={(event) => updateCondition("exclusiones", event.target.value)} style={styles.textarea} />
-            </Field>
-            <Field label="Términos y condiciones adicionales" wide>
-              <textarea rows={4} value={quote.condiciones.terminosAdicionales} onChange={(event) => updateCondition("terminosAdicionales", event.target.value)} style={styles.textarea} />
-            </Field>
+            <Field label="Plazo de ejecución o entrega"><input value={quote.condiciones.plazoEntrega} onChange={(event) => updateCondition("plazoEntrega", event.target.value)} style={styles.input} /></Field>
+            <Field label="Forma de pago"><input value={quote.condiciones.formaPago} onChange={(event) => updateCondition("formaPago", event.target.value)} style={styles.input} /></Field>
+            <Field label="Alcance geográfico"><input value={quote.condiciones.alcanceGeografico} onChange={(event) => updateCondition("alcanceGeografico", event.target.value)} style={styles.input} /></Field>
+            <Field label="Garantía"><input value={quote.condiciones.garantia} onChange={(event) => updateCondition("garantia", event.target.value)} style={styles.input} /></Field>
+            <Field label="Observaciones" wide><textarea rows={3} value={quote.condiciones.observaciones} onChange={(event) => updateCondition("observaciones", event.target.value)} style={styles.textarea} /></Field>
+            <Field label="Exclusiones" wide><textarea rows={3} value={quote.condiciones.exclusiones} onChange={(event) => updateCondition("exclusiones", event.target.value)} style={styles.textarea} /></Field>
+            <Field label="Términos y condiciones adicionales" wide><textarea rows={4} value={quote.condiciones.terminosAdicionales} onChange={(event) => updateCondition("terminosAdicionales", event.target.value)} style={styles.textarea} /></Field>
           </div>
+        </div>
+      </QuoteCollapsibleSection>
+
+      <QuoteCollapsibleSection
+        title="Opciones adicionales"
+        summary={quote.aceptacion.habilitada ? "Incluye aceptación manual" : "Sin bloque de aceptación manual"}
+        open={optionsOpen}
+        onToggle={() => setOptionsOpen((current) => !current)}
+      >
+        <div className="quote-workspace__secondary-body">
           <label style={styles.acceptanceToggle}>
-            <input
-              type="checkbox"
-              checked={quote.aceptacion.habilitada}
-              onChange={(event) => {
-                setDirty(true);
-                setQuote((prev) => ({ ...prev, aceptacion: { ...prev.aceptacion, habilitada: event.target.checked } }));
-              }}
-            />
+            <input type="checkbox" checked={quote.aceptacion.habilitada} onChange={(event) => {
+              setDirty(true);
+              setQuote((prev) => ({ ...prev, aceptacion: { ...prev.aceptacion, habilitada: event.target.checked } }));
+            }} />
             Incluir bloque de aceptación manual
           </label>
           {quote.aceptacion.habilitada && (
-            <textarea
-              rows={2}
-              value={quote.aceptacion.texto}
-              onChange={(event) => {
-                setDirty(true);
-                setQuote((prev) => ({ ...prev, aceptacion: { ...prev.aceptacion, texto: event.target.value } }));
-              }}
-              style={styles.textarea}
-            />
+            <textarea rows={2} aria-label="Texto de aceptación manual" value={quote.aceptacion.texto} onChange={(event) => {
+              setDirty(true);
+              setQuote((prev) => ({ ...prev, aceptacion: { ...prev.aceptacion, texto: event.target.value } }));
+            }} style={styles.textarea} />
           )}
         </div>
+      </QuoteCollapsibleSection>
+        </main>
 
-        <div style={{ ...styles.panel, ...styles.totalsPanel }}>
-          <div style={styles.totalsHeader}>
-            <div>
-              <h3 style={styles.panelTitle}>6. Totales</h3>
-              <p style={styles.helpText}>Revisa montos antes de guardar o enviar.</p>
-            </div>
-            <span style={styles.quoteStatusBadge}>
-              {estadoLabels[quote.estado] || quote.estado}
-            </span>
-          </div>
-          <div style={styles.totalsBox}>
-            <TotalRow label="Subtotal" value={formatCLP(totals.subtotal)} />
-            <div style={styles.discountRow}>
-              <label style={styles.totalLabel}>Descuento (CLP)</label>
-              <input
-                type="number"
-                min="0"
-                placeholder="0"
-                value={quote.descuento}
-                onChange={(event) => updateField("descuento", event.target.value)}
-                style={styles.discountInput}
-              />
-            </div>
-            {totals.descuentoItems > 0 && (
-              <TotalRow label="Descuentos por línea" value={`-${formatCLP(totals.descuentoItems)}`} />
-            )}
-            <TotalRow label="Subtotal neto" value={formatCLP(totals.neto)} />
-            <TotalRow
-              label={quote.afectaIva === false ? "IVA (exenta)" : "IVA 19%"}
-              value={formatCLP(totals.iva)}
-            />
-            <TotalRow label="Total" value={formatCLP(totals.total)} strong />
-            {totalsResult.error && (
-              <p style={styles.totalErrorText}>{totalsResult.error.message}</p>
-            )}
-          </div>
-
-          <div style={styles.actions}>
-            <button
-              type="button"
-              onClick={() => saveQuote("borrador")}
-              disabled={saving || saveBlockedByClient}
-              style={styles.primaryButton}
-            >
-              {saving ? "Guardando..." : "Guardar borrador"}
-            </button>
-            <button
-              type="button"
-              onClick={handlePreview}
-              disabled={saving}
-              style={styles.secondaryButton}
-            >
-              Previsualizar
-            </button>
-            <button
-              type="button"
-              onClick={handleDownloadCurrentPdf}
-              disabled={saving || pdfActionLoading}
-              style={styles.pdfButton}
-            >
-              {pdfActionLoading ? "Generando PDF..." : "Generar PDF"}
-            </button>
-            <button
-              type="button"
-              onClick={() => saveQuote("emitida")}
-              disabled={saving || saveBlockedByClient}
-              style={styles.emitButton}
-            >
-              Guardar como emitida
-            </button>
-            <button
-              type="button"
-              onClick={openEmailModal}
-              disabled={emailDisabled}
-              style={{
-                ...styles.emailButton,
-                ...(emailDisabled ? styles.disabledButton : {}),
-              }}
-            >
-              Enviar por correo
-            </button>
-            {emailHint && (
-              <p style={styles.actionHint}>
-                {emailHint}
-              </p>
-            )}
-            <button type="button" onClick={clearQuote} style={styles.clearButton}>
-              Limpiar cotización
-            </button>
-          </div>
-        </div>
-        </div>
-      </section>
+        <QuoteSummaryPanel
+          quote={quote}
+          totals={totals}
+          totalsError={totalsResult.error?.message || ""}
+          saving={saving}
+          saveBlockedByClient={saveBlockedByClient}
+          pdfActionLoading={pdfActionLoading}
+          emailDisabled={emailDisabled}
+          emailHint={emailHint}
+          onDiscountChange={(event) => updateField("descuento", event.target.value)}
+          onSaveDraft={() => saveQuote("borrador")}
+          onPreview={handlePreview}
+          onSaveIssued={() => saveQuote("emitida")}
+          onDownloadPdf={handleDownloadCurrentPdf}
+          onOpenEmail={openEmailModal}
+          onClear={clearQuote}
+        />
+      </div>
 
       {suggestedItemDraft && (
         <div className="no-print" style={styles.modalOverlay}>
@@ -2873,9 +2509,28 @@ function NewQuotePage({ userId }) {
         onSent={handleEmailSent}
       />
 
-      <div ref={previewRef}>
-        <QuotePreview quote={previewQuote} companyProfile={companyProfile} />
-      </div>
+      <section ref={previewRef} tabIndex="-1" className="quote-workspace__preview">
+        <div className="quote-collapsible no-print">
+          <button
+            type="button"
+            className="quote-collapsible__trigger"
+            aria-expanded={previewOpen}
+            aria-controls="quote-document-preview"
+            onClick={() => setPreviewOpen((current) => !current)}
+          >
+            <span>
+              <strong>Vista previa del documento</strong>
+              <small>{previewOpen ? "Documento listo para revisar o imprimir" : "Abre la representación completa sólo cuando la necesites"}</small>
+            </span>
+            <span className="quote-collapsible__indicator" aria-hidden="true">{previewOpen ? "−" : "+"}</span>
+          </button>
+        </div>
+        {previewOpen && (
+          <div id="quote-document-preview">
+            <QuotePreview quote={previewQuote} companyProfile={companyProfile} />
+          </div>
+        )}
+      </section>
     </section>
   );
 }
@@ -2899,19 +2554,6 @@ function Field({ label, helpText, helpTone = "default", wide = false, children }
   );
 }
 
-function TotalRow({ label, value, strong = false }) {
-  return (
-    <div style={styles.totalRow}>
-      <span style={strong ? styles.totalLabelStrong : styles.totalLabel}>
-        {label}
-      </span>
-      <strong style={strong ? styles.totalValueStrong : styles.totalValue}>
-        {value}
-      </strong>
-    </div>
-  );
-}
-
 function QuotePreview({ quote, companyProfile }) {
   return (
     <div style={styles.previewPanel}>
@@ -2926,23 +2568,6 @@ function QuotePreview({ quote, companyProfile }) {
     </div>
   );
 }
-
-const quotePageCss = `
-@media (max-width: 720px) {
-  .quote-data-grid {
-    grid-template-columns: 1fr !important;
-  }
-
-  .quote-bottom-grid {
-    grid-template-columns: 1fr !important;
-  }
-
-  .quote-payment-header {
-    align-items: flex-start !important;
-    flex-direction: column !important;
-  }
-}
-`;
 
 const styles = {
   wrapper: {

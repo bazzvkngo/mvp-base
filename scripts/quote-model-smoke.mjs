@@ -348,6 +348,22 @@ const sourceClientSelector = fs.readFileSync(
   "src/features/clients/ClientSelector.jsx",
   "utf8"
 );
+const sourceQuoteCatalog = fs.readFileSync(
+  "src/features/quotes/QuoteCatalogDialog.jsx",
+  "utf8"
+);
+const sourceQuoteItems = fs.readFileSync(
+  "src/features/quotes/QuoteItemsEditor.jsx",
+  "utf8"
+);
+const sourceQuoteCollapsible = fs.readFileSync(
+  "src/features/quotes/QuoteCollapsibleSection.jsx",
+  "utf8"
+);
+const sourceQuoteWorkspaceCss = fs.readFileSync(
+  "src/features/quotes/quote-workspace.css",
+  "utf8"
+);
 const sourcePdf = fs.readFileSync("src/utils/quotePdf.js", "utf8");
 const sourceEmail = fs.readFileSync("src/features/quotes/SendQuoteEmailModal.jsx", "utf8");
 const sourceHistory = fs.readFileSync("src/pages/QuoteHistoryPage.jsx", "utf8");
@@ -364,6 +380,21 @@ assert.match(sourceClientSelector, /if \(!businessId\)/);
 assert.doesNotMatch(sourceClientSelector, /clientRutKeys/);
 assert.match(sourceNewQuote, /areaId/);
 assert.match(sourceNewQuote, /categoriaId/);
+assert.match(sourceNewQuote, /<QuoteSummaryPanel/);
+assert.match(sourceNewQuote, /previewOpen && \(/);
+assert.match(sourceQuoteCatalog, /<ResponsiveDialog/);
+assert.match(sourceQuoteCatalog, /initialFocusRef=\{searchRef\}/);
+assert.match(sourceQuoteCatalog, /Agregar otra vez/);
+assert.doesNotMatch(sourceQuoteItems, /<table/);
+assert.match(sourceQuoteItems, /Editar descripción y unidad/);
+assert.match(sourceQuoteItems, /Subtotal \$\{formatCLP\(subtotal\)\}/);
+assert.match(sourceQuoteItems, /items\.length === 1 \? "" : "s"/);
+assert.match(sourceQuoteItems, /Sin ítems agregados/);
+assert.match(sourceNewQuote, /subtotal=\{totals\.subtotal\}/);
+assert.match(sourceQuoteCollapsible, /aria-expanded=\{open\}/);
+assert.match(sourceQuoteWorkspaceCss, /position:\s*sticky/);
+assert.match(sourceQuoteWorkspaceCss, /@media \(max-width: 620px\)/);
+assert.match(sourceQuoteWorkspaceCss, /position:\s*static/);
 assert.match(sourcePdf, /buildQuotePdfBase64/);
 assert.match(sourceEmail, /buildQuotePdfAttachment/);
 assert.match(sourceHistory, /downloadQuotePdf/);
