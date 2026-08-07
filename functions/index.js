@@ -2420,6 +2420,8 @@ async function sendQuoteEmailWithResend({
   return data || {};
 }
 
+const AUTOMATIC_QUOTE_EMAIL_ENABLED = false;
+
 exports.sendQuoteEmail = onCall(
   {
     maxInstances: 10,
@@ -2431,6 +2433,13 @@ exports.sendQuoteEmail = onCall(
   async (request) => {
     if (!request.auth || !request.auth.uid) {
       throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
+    }
+
+    if (!AUTOMATIC_QUOTE_EMAIL_ENABLED) {
+      throw new HttpsError(
+        "failed-precondition",
+        "El envío automático de cotizaciones está temporalmente deshabilitado. Descarga el PDF y utiliza el envío manual."
+      );
     }
 
     const { businessId, businessRef } = await requireBusinessAccess(
