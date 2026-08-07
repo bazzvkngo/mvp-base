@@ -11,6 +11,7 @@ import {
   UserRound,
   UsersRound,
   WalletCards,
+  Truck,
 } from "lucide-react";
 
 export const navigationSections = [
@@ -74,6 +75,12 @@ export const navigationSections = [
         label: "Clientes",
         title: "Clientes",
         icon: UsersRound,
+      },
+      {
+        to: "/proveedores",
+        label: "Proveedores",
+        title: "Proveedores",
+        icon: Truck,
       },
       {
         to: "/valorizacion",

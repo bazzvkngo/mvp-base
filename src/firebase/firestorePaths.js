@@ -84,6 +84,17 @@ export const clientDocPath = (businessId, clienteId) => [
   "clientes",
   clienteId,
 ];
+export const providersCollectionPath = (businessId) => [
+  "negocios",
+  businessId,
+  "proveedores",
+];
+export const providerDocPath = (businessId, proveedorId) => [
+  "negocios",
+  businessId,
+  "proveedores",
+  proveedorId,
+];
 export const financialMovementsCollectionPath = (businessId) => [
   "negocios",
   businessId,

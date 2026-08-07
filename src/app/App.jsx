@@ -10,6 +10,7 @@ import AppLayout from "../layout/AppLayout";
 import EnvironmentNotice from "../components/EnvironmentNotice";
 import CompanyPage from "../pages/CompanyPage";
 import ClientsPage from "../pages/ClientsPage";
+import ProvidersPage from "../pages/ProvidersPage";
 import AccountPage from "../pages/AccountPage";
 import DashboardPage from "../pages/DashboardPage";
 import FinancePage from "../pages/FinancePage";
@@ -201,6 +202,16 @@ function AppRoutes({
           path="/clientes"
           element={
             <ClientsPage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
+            />
+          }
+        />
+        <Route
+          path="/proveedores"
+          element={
+            <ProvidersPage
               key={businessId}
               businessId={businessId}
               role={activeBusiness?.role}

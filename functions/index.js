@@ -36,6 +36,12 @@ const {
   reactivarClienteHandler,
 } = require("./clientPersistence");
 const {
+  actualizarProveedorHandler,
+  archivarProveedorHandler,
+  crearProveedorHandler,
+  reactivarProveedorHandler,
+} = require("./providerPersistence");
+const {
   createAdditionalBusinessHandler,
   createFirstBusinessHandler,
   getBusinessSessionHandler,
@@ -1954,6 +1960,57 @@ exports.reactivarCliente = onCall(
   },
   async (request) =>
     reactivarClienteHandler(request, clientPersistenceDependencies)
+);
+
+const providerPersistenceDependencies = {
+  db,
+  HttpsError,
+  FieldValue,
+  requireBusinessAccess,
+};
+
+exports.crearProveedor = onCall(
+  {
+    maxInstances: 20,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    crearProveedorHandler(request, providerPersistenceDependencies)
+);
+
+exports.actualizarProveedor = onCall(
+  {
+    maxInstances: 20,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    actualizarProveedorHandler(request, providerPersistenceDependencies)
+);
+
+exports.archivarProveedor = onCall(
+  {
+    maxInstances: 20,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    archivarProveedorHandler(request, providerPersistenceDependencies)
+);
+
+exports.reactivarProveedor = onCall(
+  {
+    maxInstances: 20,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    reactivarProveedorHandler(request, providerPersistenceDependencies)
 );
 
 async function getCompanyProfileForQuote(businessRef, quote) {
