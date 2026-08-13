@@ -1,12 +1,18 @@
 import { httpsCallable } from "firebase/functions";
 import { assertCloudFunctionAllowed } from "../config/firebaseEnvironment.mjs";
 import { getFirebaseFunctions } from "../firebase/firebaseConfig";
+import { formatCLP, formatDate } from "../utils/formatters";
+import { buildQuoteValidityEmailLine } from "../domain/quoteEmailCopy.mjs";
 import { DRAFT_QUOTE_NUMBER_LABEL, getQuoteDisplayNumber } from "./quoteService";
 
 const FUNCTIONS_REGION = "us-central1";
 
 export function isValidEmail(value) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+  if (typeof value !== "string" || value.length > 180) return false;
+  if (/[\r\n,;]/.test(value)) return false;
+  return /^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9-]+(?:\.[A-Z0-9-]+)+$/i.test(
+    value.trim()
+  );
 }
 
 export function buildDefaultQuoteEmail({ quote, companyProfile }) {
@@ -14,43 +20,55 @@ export function buildDefaultQuoteEmail({ quote, companyProfile }) {
   const companyName =
     quote?.empresa?.nombreComercial ||
     companyProfile?.nombreComercial ||
+    quote?.empresa?.razonSocial ||
     companyProfile?.razonSocial ||
-    "ValoraCloud";
+    "";
+  const contactName =
+    quote?.clienteNombre ||
+    quote?.cliente?.nombreRazonSocial ||
+    quote?.clienteSnapshot?.nombreRazonSocial ||
+    quote?.clienteContacto ||
+    quote?.cliente?.personaContacto ||
+    quote?.clienteSnapshot?.personaContacto ||
+    "";
+  const projectName = String(quote?.proyectoNombre || "").trim();
+  const hasTotal = quote?.total !== null && quote?.total !== undefined;
+  const total = Number(quote?.total);
+  const quoteLabel = quoteNumber ? ` ${quoteNumber}` : "";
+  const projectLine = projectName
+    ? `, correspondiente a ${projectName}`
+    : "";
+  const totalLine = hasTotal && Number.isFinite(total)
+    ? `, por un total de ${formatCLP(total)}`
+    : "";
+  const paragraphs = [
+    contactName ? `Hola ${contactName}:` : "Hola:",
+    `Te enviamos la cotización${quoteLabel}${projectLine}${totalLine}.`,
+    buildQuoteValidityEmailLine(quote, formatDate),
+    "Adjuntamos el documento PDF con el detalle completo.",
+    "Puedes revisar y responder la propuesta desde el enlace incluido en este correo.",
+    "Si tienes consultas o necesitas ajustes, responde a este correo.",
+    companyName ? `Saludos,\n${companyName}` : "Saludos,",
+  ].filter(Boolean);
+  const subjectParts = [
+    `Cotización${quoteLabel}`,
+    companyName,
+  ].filter(Boolean);
 
   return {
-    emailCliente: quote?.clienteEmail || "",
-    asunto: quoteNumber
-      ? `Cotización ${quoteNumber} - ${companyName}`
-      : `Cotización - ${companyName}`,
-    mensaje:
-      "Estimado/a cliente:\n\n" +
-      `Adjuntamos la cotización ${quoteNumber || ""} preparada por ${companyName} para su revisión.\n\n` +
-      "Quedamos atentos a sus comentarios.\n\n" +
-      "Saludos,\n" +
-      companyName,
+    emailCliente:
+      quote?.cliente?.email ||
+      quote?.clienteSnapshot?.email ||
+      quote?.clienteEmail ||
+      "",
+    asunto: subjectParts.join(" | "),
+    mensaje: paragraphs.join("\n\n"),
   };
-}
-
-export function buildManualQuoteEmail({ quote }) {
-  const quoteNumber = getQuoteDisplayNumber(quote, "");
-  const companyName =
-    quote?.empresa?.nombreComercial ||
-    quote?.empresa?.razonSocial ||
-    "la empresa emisora";
-
-  return (
-    "Estimado/a cliente:\n\n" +
-    `Comparto la cotización ${quoteNumber || ""} preparada por ${companyName} para su revisión.\n\n` +
-    "Antes de enviar este mensaje, adjuntaré manualmente el archivo PDF de la cotización.\n\n" +
-    "Quedamos atentos a sus comentarios.\n\n" +
-    "Saludos,\n" +
-    companyName
-  );
 }
 
 export function isQuoteEmailSendable(quote, quoteId = quote?.id) {
   const quoteNumber = getQuoteDisplayNumber(quote, "");
-  const sendableStatuses = ["emitida", "aceptada", "rechazada", "vencida"];
+  const sendableStatuses = ["borrador", "emitida"];
 
   return Boolean(
     quoteId &&
@@ -59,13 +77,6 @@ export function isQuoteEmailSendable(quote, quoteId = quote?.id) {
       quote?.fecha &&
       sendableStatuses.includes((quote?.estado || "").toLowerCase())
   );
-}
-
-export function buildMailtoUrl({ emailCliente, asunto, mensaje }) {
-  const recipient = encodeURIComponent(String(emailCliente || "").trim());
-  const subject = encodeURIComponent(asunto || "");
-  const body = encodeURIComponent(mensaje || "");
-  return `mailto:${recipient}?subject=${subject}&body=${body}`;
 }
 
 export async function sendQuoteEmail({
@@ -81,7 +92,7 @@ export async function sendQuoteEmail({
     throw new Error("Guarda la cotización antes de enviarla por correo.");
   }
   if (!isValidEmail(emailCliente)) {
-    throw new Error("Ingresa un correo de cliente válido.");
+    throw new Error("Ingresa un único correo de destino válido.");
   }
   if (!String(asunto || "").trim()) {
     throw new Error("Ingresa el asunto del correo.");
@@ -118,7 +129,9 @@ export async function sendQuoteEmail({
 
   return {
     success: Boolean(response.data?.success),
+    simulated: Boolean(response.data?.simulated),
     provider: response.data?.provider || "",
+    qaPublicUrl: response.data?.qaPublicUrl || "",
     warning: response.data?.warning || "",
     error: response.data?.error || "",
     quoteEmailStatus: response.data?.quoteEmailStatus || {},

@@ -1,6 +1,14 @@
 {
   "indexes": [
     {
+      "collectionGroup": "quotePublicTokens",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "estado", "order": "ASCENDING" },
+        { "fieldPath": "expiraEn", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "financialMovements",
       "queryScope": "COLLECTION",
       "fields": [

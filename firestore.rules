@@ -823,6 +823,10 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    match /quotePublicTokens/{tokenHash} {
+      allow read, write: if false;
+    }
+
     match /paises/{countryCode} {
       allow read: if isSignedIn();
       allow create, update, delete: if false;

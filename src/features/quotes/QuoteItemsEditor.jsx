@@ -12,7 +12,6 @@ function QuoteItemsEditor({
   highlightedItemId,
   items,
   onMove,
-  onOpenAssistant,
   onOpenCatalog,
   onRemove,
   onUpdate,
@@ -32,9 +31,6 @@ function QuoteItemsEditor({
           </p>
         </div>
         <div className="quote-workspace__inline-actions">
-          <button type="button" className="quote-workspace__button quote-workspace__button--secondary" onClick={onOpenAssistant}>
-            Usar asistente
-          </button>
           <button type="button" className="quote-workspace__button quote-workspace__button--primary" onClick={onOpenCatalog}>
             Agregar desde catálogo
           </button>

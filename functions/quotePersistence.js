@@ -532,6 +532,7 @@ async function createQuoteWithNumberHandler({
     const timestamp = FieldValue.serverTimestamp();
     const storedQuote = {
       ...quote,
+      estado: "borrador",
       negocioId: businessId,
       creadoPorUid: uid,
       numero,
@@ -556,7 +557,7 @@ async function createQuoteWithNumberHandler({
     });
 
     return {
-      quote: { id: quoteRef.id, ...quote, numero },
+      quote: { id: quoteRef.id, ...quote, estado: "borrador", numero },
       requestId,
       idempotent: false,
     };
@@ -827,6 +828,7 @@ async function updateQuoteDraftHandler({
     const timestamp = FieldValue.serverTimestamp();
     const storedQuote = {
       ...normalized,
+      estado: "borrador",
       negocioId: businessId,
       uidUsuario: existing.uidUsuario || uid,
       actualizadoPorUid: uid,

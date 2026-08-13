@@ -3,17 +3,9 @@ import { CubeIcon } from "../../components/BrandLogo";
 import {
   adaptStoredQuote,
   getQuoteDisplayNumber,
+  getQuoteStatusLabel,
 } from "../../domain/quoteModel.mjs";
 import { formatCLP, formatDate } from "../../utils/formatters";
-
-const STATUS_LABELS = {
-  borrador: "Borrador",
-  emitida: "Emitida",
-  aceptada: "Aceptada",
-  rechazada: "Rechazada",
-  vencida: "Vencida",
-  archivada: "Archivada",
-};
 
 function hasText(value) {
   return Boolean(String(value ?? "").trim());
@@ -36,6 +28,7 @@ function QuotePrintView({ quote: rawQuote, companyProfile }) {
   });
   const company = quote.empresa;
   const client = quote.cliente;
+  const pendingEmission = quote.estado === "borrador" && !quote.fechaEmision;
   const brand = company.nombreComercial || company.razonSocial || "Bagner";
   const conditions = [
     ["Plazo de ejecución o entrega", quote.condiciones.plazoEntrega],
@@ -70,9 +63,16 @@ function QuotePrintView({ quote: rawQuote, companyProfile }) {
         <div className="quote-document-preview__meta">
           <span>COTIZACIÓN</span>
           <strong>N° {getQuoteDisplayNumber(quote)}</strong>
-          <small>Emisión {formatDate(quote.fecha)}</small>
-          <small>Vence {formatDate(quote.fechaVencimiento)}</small>
-          <b>{STATUS_LABELS[quote.estado] || quote.estado}</b>
+          <small>
+            {pendingEmission ? "Fecha" : "Emisión"}{" "}
+            {formatDate(quote.fechaEmision || quote.fecha)}
+          </small>
+          <small>
+            {pendingEmission
+              ? `Vigencia: ${quote.validezDias || "-"} días desde la emisión`
+              : `Vence ${formatDate(quote.fechaVencimiento)}`}
+          </small>
+          <b>{getQuoteStatusLabel(quote.estado)}</b>
         </div>
       </header>
 

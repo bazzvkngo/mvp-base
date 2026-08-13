@@ -5,6 +5,7 @@ import {
   calculateQuoteExpiryDate,
   getQuoteDisplayNumber,
   getQuotePdfFileName,
+  getQuoteStatusLabel,
   normalizeCompanySnapshot,
 } from "./quoteModel.mjs";
 
@@ -16,15 +17,6 @@ const LIGHT = [244, 247, 251];
 const BORDER = [211, 220, 233];
 const PAGE_MARGIN = 14;
 const PAGE_BOTTOM = 278;
-
-const STATUS_LABELS = {
-  borrador: "Borrador",
-  emitida: "Emitida",
-  aceptada: "Aceptada",
-  rechazada: "Rechazada",
-  vencida: "Vencida",
-  archivada: "Archivada",
-};
 
 function hasText(value) {
   return Boolean(String(value ?? "").trim());
@@ -43,7 +35,7 @@ function formatDate(value) {
   const text = String(value || "");
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
   if (match) return `${match[3]}-${match[2]}-${match[1]}`;
-  const date = new Date(value);
+  const date = typeof value?.toDate === "function" ? value.toDate() : new Date(value);
   return Number.isNaN(date.getTime()) ? text || "-" : date.toLocaleDateString("es-CL");
 }
 
@@ -82,6 +74,7 @@ function drawHeader(doc, quote, company, logoDataUrl, { compact = false } = {}) 
   const top = compact ? 10 : 12;
   const headerBottom = compact ? 38 : 52;
   const brand = company.nombreComercial || company.razonSocial || "Bagner";
+  const pendingEmission = quote.estado === "borrador" && !quote.fechaEmision;
   let textX = PAGE_MARGIN;
 
   if (hasText(logoDataUrl)) {
@@ -138,18 +131,28 @@ function drawHeader(doc, quote, company, logoDataUrl, { compact = false } = {}) 
     doc.setTextColor(...MUTED);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
-    doc.text(`Emisión ${formatDate(quote.fecha)}`, right, top + 19, { align: "right" });
     doc.text(
-      `Vence ${formatDate(
-        quote.fechaVencimiento || calculateQuoteExpiryDate(quote.fecha, quote.validezDias)
+      `${pendingEmission ? "Fecha" : "Emisión"} ${formatDate(
+        quote.fechaEmision || quote.fecha
       )}`,
+      right,
+      top + 19,
+      { align: "right" }
+    );
+    doc.text(
+      pendingEmission
+        ? `Vigencia: ${quote.validezDias || "-"} días desde emisión`
+        : `Vence ${formatDate(
+            quote.fechaVencimiento ||
+              calculateQuoteExpiryDate(quote.fecha, quote.validezDias)
+          )}`,
       right,
       top + 24,
       { align: "right" }
     );
     doc.setFont("helvetica", "bold");
     doc.setTextColor(...NAVY);
-    doc.text(STATUS_LABELS[quote.estado] || quote.estado || "Borrador", right, top + 30, {
+    doc.text(getQuoteStatusLabel(quote.estado), right, top + 30, {
       align: "right",
     });
   }

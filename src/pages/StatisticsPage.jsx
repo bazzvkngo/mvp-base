@@ -42,6 +42,7 @@ import {
   getQuoteMetrics,
   getSalesMetrics,
 } from "../domain/reportModel.mjs";
+import {getQuoteStatusLabel} from "../domain/quoteModel.mjs";
 import useFinancialMovements from "../hooks/useFinancialMovements";
 import {loadReportData} from "../services/reportService";
 import {formatCLP, formatDate, formatPercent} from "../utils/formatters";
@@ -63,7 +64,7 @@ const DOCUMENT_STATUS_OPTIONS = [
 ];
 const QUOTE_STATUS_OPTIONS = [
   ["todos", "Todos los estados"],
-  ["borrador", "Borrador"],
+  ["borrador", "Pendiente de envío"],
   ["emitida", "Emitida"],
   ["aceptada", "Aceptada"],
   ["rechazada", "Rechazada"],
@@ -71,7 +72,7 @@ const QUOTE_STATUS_OPTIONS = [
   ["archivada", "Archivada"],
 ];
 const QUOTE_CHART = [
-  ["borrador", "Borrador", "#94a3b8"],
+  ["borrador", "Pendiente de envío", "#94a3b8"],
   ["emitida", "Emitida", "#38bdf8"],
   ["aceptada", "Aceptada", "#0f766e"],
   ["rechazada", "Rechazada", "#dc2626"],
@@ -114,8 +115,8 @@ function ReportMetricCard({icon, label, note, tone = "neutral", value}) {
   );
 }
 
-function Status({value}) {
-  return <span className={`report-status report-status--${value}`}>{STATUS_LABELS[value] || value || "—"}</span>;
+function Status({value, quote = false}) {
+  return <span className={`report-status report-status--${value}`}>{quote ? getQuoteStatusLabel(value) : STATUS_LABELS[value] || value || "—"}</span>;
 }
 
 function ReportFilters({search, status, statusOptions, onSearch, onStatus, placeholder}) {
@@ -343,7 +344,7 @@ function StatisticsPage({businessId}) {
             <ReportMetricCard label="Vencidas" value={quoteMetrics.counts.vencida.toLocaleString("es-CL")} tone="pending" note={formatCLP(quoteMetrics.amounts.vencida)} />
             <ReportMetricCard label="Conversión" value={quoteMetrics.conversion === null ? "Sin base" : formatPercent(quoteMetrics.conversion)} note="Aceptadas ÷ aceptadas + rechazadas" />
           </section>
-          <div className="statistics-module-grid"><section className="erp-panel"><div className="financial-chart-panel__header"><h2>Cotizaciones por estado actual</h2><p>Incluye todos los estados del periodo seleccionado.</p></div><DashboardDonutChart ariaLabel="Cotizaciones por estado actual" emptyMessage="Sin cotizaciones en el periodo" items={quoteChartItems} /><dl className="statistics-definition-list report-quote-amounts">{QUOTE_CHART.map(([id, label]) => <div key={id}><dt>Monto {label.toLocaleLowerCase("es-CL")}</dt><dd>{formatCLP(quoteMetrics.amounts[id])}</dd></div>)}</dl></section><section className="erp-panel report-documents-panel"><div className="financial-chart-panel__header"><h2>Documentos del periodo</h2><p>Montos cotizados; no representan ingresos.</p></div><ReportFilters search={search} status={status} statusOptions={QUOTE_STATUS_OPTIONS} placeholder="Número o cliente" onSearch={(value) => setParam("q", value)} onStatus={(value) => setParam("status", value === "todos" ? "" : value)} /><div className="erp-table-region report-table-region"><table className="erp-table report-table"><thead><tr><th>Número</th><th>Fecha</th><th>Cliente</th><th>Estado actual</th><th>Monto</th></tr></thead><tbody>{filteredQuotes.map((quote) => <tr key={quote.id}><td><strong>{quote.numero || "—"}</strong></td><td>{formatDate(quote.fecha)}</td><td><strong>{quote.clienteNombre || "Sin cliente"}</strong><small>{quote.clienteRut || ""}</small></td><td><Status value={quote.estado} /></td><td>{formatCLP(quote.total)}</td></tr>)}{!filteredQuotes.length && <EmptyRow columns={5}>No hay cotizaciones para estos filtros.</EmptyRow>}</tbody></table></div></section></div>
+          <div className="statistics-module-grid"><section className="erp-panel"><div className="financial-chart-panel__header"><h2>Cotizaciones por estado actual</h2><p>Incluye todos los estados del periodo seleccionado.</p></div><DashboardDonutChart ariaLabel="Cotizaciones por estado actual" emptyMessage="Sin cotizaciones en el periodo" items={quoteChartItems} /><dl className="statistics-definition-list report-quote-amounts">{QUOTE_CHART.map(([id, label]) => <div key={id}><dt>Monto {label.toLocaleLowerCase("es-CL")}</dt><dd>{formatCLP(quoteMetrics.amounts[id])}</dd></div>)}</dl></section><section className="erp-panel report-documents-panel"><div className="financial-chart-panel__header"><h2>Documentos del periodo</h2><p>Montos cotizados; no representan ingresos.</p></div><ReportFilters search={search} status={status} statusOptions={QUOTE_STATUS_OPTIONS} placeholder="Número o cliente" onSearch={(value) => setParam("q", value)} onStatus={(value) => setParam("status", value === "todos" ? "" : value)} /><div className="erp-table-region report-table-region"><table className="erp-table report-table"><thead><tr><th>Número</th><th>Fecha</th><th>Cliente</th><th>Estado actual</th><th>Monto</th></tr></thead><tbody>{filteredQuotes.map((quote) => <tr key={quote.id}><td><strong>{quote.numero || "—"}</strong></td><td>{formatDate(quote.fecha)}</td><td><strong>{quote.clienteNombre || "Sin cliente"}</strong><small>{quote.clienteRut || ""}</small></td><td><Status value={quote.estado} quote /></td><td>{formatCLP(quote.total)}</td></tr>)}{!filteredQuotes.length && <EmptyRow columns={5}>No hay cotizaciones para estos filtros.</EmptyRow>}</tbody></table></div></section></div>
         </div>
       )}
 

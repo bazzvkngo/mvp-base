@@ -12,6 +12,7 @@
     "react-chartjs-2": "^5.3.1",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.18.0",
+    "sileo": "^0.1.5",
     "xlsx": "file:vendor/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
@@ -36,6 +37,8 @@
     "test:inventory-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/inventory-integrated-local.mjs\"",
     "test:firebase-environment": "node scripts/firebase-environment-smoke.mjs",
     "test:quotes": "node scripts/quote-model-smoke.mjs",
+    "test:quote-email": "node scripts/quote-email-smoke.mjs",
+    "test:quote-public": "node scripts/quote-public-proposal-smoke.mjs",
     "test:quotes-integrated": "node scripts/quote-integrated-local.mjs",
     "test:quote-model": "node scripts/quote-model-smoke.mjs",
     "test:quote-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/quote-integrated-local.mjs\"",

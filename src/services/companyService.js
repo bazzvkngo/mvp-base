@@ -96,6 +96,10 @@ export const DEFAULT_INVENTORY_SETTINGS = {
 
 export const DEFAULT_QUOTE_SETTINGS = {
   condicionesPago: DEFAULT_COMPANY_PROFILE.condicionesPago,
+  plazoEntregaCotizacion: "",
+  alcanceGeograficoCotizacion: "",
+  garantiaCotizacion: "",
+  exclusionesCotizacion: "",
   validezCotizacionDias: DEFAULT_COMPANY_PROFILE.validezCotizacionDias,
   notaFinalCotizacion: "",
   terminosCotizacion: "",
@@ -290,6 +294,10 @@ export function normalizeQuoteSettings(raw = {}) {
     condicionesPago:
       safeString(raw.condicionesPago) || DEFAULT_QUOTE_SETTINGS.condicionesPago,
     validezCotizacionDias: normalizeDays(raw.validezCotizacionDias),
+    plazoEntregaCotizacion: safeString(raw.plazoEntregaCotizacion),
+    alcanceGeograficoCotizacion: safeString(raw.alcanceGeograficoCotizacion),
+    garantiaCotizacion: safeString(raw.garantiaCotizacion),
+    exclusionesCotizacion: safeString(raw.exclusionesCotizacion),
     notaFinalCotizacion: safeString(raw.notaFinalCotizacion),
     terminosCotizacion: safeString(raw.terminosCotizacion),
     notaPieCotizacion:

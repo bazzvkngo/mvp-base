@@ -55,6 +55,22 @@ function validateQuoteSettings(rawData, HttpsError) {
     );
   }
   const condicionesPago = multilineText(rawData?.condicionesPago, 500);
+  const plazoEntregaCotizacion = multilineText(
+    rawData?.plazoEntregaCotizacion,
+    1000
+  );
+  const alcanceGeograficoCotizacion = multilineText(
+    rawData?.alcanceGeograficoCotizacion,
+    2000
+  );
+  const garantiaCotizacion = multilineText(
+    rawData?.garantiaCotizacion,
+    2000
+  );
+  const exclusionesCotizacion = multilineText(
+    rawData?.exclusionesCotizacion,
+    4000
+  );
   const notaFinalCotizacion = multilineText(rawData?.notaFinalCotizacion, 1200);
   const terminosCotizacion = multilineText(rawData?.terminosCotizacion, 2000);
   const notaPieCotizacion = multilineText(rawData?.notaPieCotizacion, 500);
@@ -64,12 +80,17 @@ function validateQuoteSettings(rawData, HttpsError) {
   );
   return {
     ...(condicionesPago ? { condicionesPago } : {}),
+    ...(plazoEntregaCotizacion ? { plazoEntregaCotizacion } : {}),
+    ...(alcanceGeograficoCotizacion
+      ? { alcanceGeograficoCotizacion }
+      : {}),
+    ...(garantiaCotizacion ? { garantiaCotizacion } : {}),
+    ...(exclusionesCotizacion ? { exclusionesCotizacion } : {}),
     validezCotizacionDias: validityDays,
     ...(notaFinalCotizacion ? { notaFinalCotizacion } : {}),
     ...(terminosCotizacion ? { terminosCotizacion } : {}),
     ...(notaPieCotizacion ? { notaPieCotizacion } : {}),
-    aceptacionCotizacionHabilitada:
-      rawData?.aceptacionCotizacionHabilitada === true,
+    aceptacionCotizacionHabilitada: false,
     ...(textoAceptacionCotizacion ? { textoAceptacionCotizacion } : {}),
   };
 }

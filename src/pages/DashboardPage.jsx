@@ -32,6 +32,7 @@ import {
   getRecentOperationalActivity,
   getSalesMetrics,
 } from "../domain/reportModel.mjs";
+import {getQuoteStatusLabel} from "../domain/quoteModel.mjs";
 import useFinancialMovements from "../hooks/useFinancialMovements";
 import {
   getCompanyProfile,
@@ -41,7 +42,7 @@ import {loadReportData} from "../services/reportService";
 import {formatCLP, formatDate, formatPercent} from "../utils/formatters";
 
 const QUOTE_CHART = [
-  ["borrador", "Borrador", "#94a3b8"],
+  ["borrador", getQuoteStatusLabel("borrador"), "#94a3b8"],
   ["emitida", "Emitida", "#38bdf8"],
   ["aceptada", "Aceptada", "#0f766e"],
   ["rechazada", "Rechazada", "#dc2626"],

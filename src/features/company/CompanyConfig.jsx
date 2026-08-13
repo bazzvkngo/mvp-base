@@ -598,7 +598,7 @@ function QuoteSection({ businessId, canEdit }) {
     finally { setSaving(false); }
   };
   return (
-    <SectionFrame title="Cotizaciones" description="Estos valores se copian solo al crear una cotización nueva; cada documento puede editarse por separado.">
+    <SectionFrame title="Valores predeterminados para nuevas cotizaciones" description="Se aplican al crear una cotización. Los cambios realizados dentro de una cotización afectan sólo a ese documento y no modifican estos valores de Empresa.">
       {loading ? <p className="settings-loading">Cargando valores predeterminados...</p> : (
         <form onSubmit={submit}>
           <fieldset className="settings-fieldset settings-card" disabled={!canEdit || saving}>
@@ -606,17 +606,14 @@ function QuoteSection({ businessId, canEdit }) {
             <div className="settings-form-grid">
               <SettingsField label="Condiciones de pago predeterminadas" wide><textarea name="condicionesPago" rows="3" value={form.condicionesPago} onChange={change} /></SettingsField>
               <SettingsField label="Validez predeterminada (días)"><input name="validezCotizacionDias" type="number" min="1" max="365" value={form.validezCotizacionDias} onChange={change} /></SettingsField>
+              <SettingsField label="Plazo de ejecución o entrega" wide optional><textarea name="plazoEntregaCotizacion" rows="2" value={form.plazoEntregaCotizacion} onChange={change} /></SettingsField>
+              <SettingsField label="Garantía predeterminada" wide optional><textarea name="garantiaCotizacion" rows="2" value={form.garantiaCotizacion} onChange={change} /></SettingsField>
+              <SettingsField label="Alcance geográfico predeterminado" wide optional><textarea name="alcanceGeograficoCotizacion" rows="2" value={form.alcanceGeograficoCotizacion} onChange={change} /></SettingsField>
+              <SettingsField label="Exclusiones predeterminadas" wide optional><textarea name="exclusionesCotizacion" rows="3" value={form.exclusionesCotizacion} onChange={change} /></SettingsField>
               <SettingsField label="Nota final predeterminada" wide optional><textarea name="notaFinalCotizacion" rows="3" value={form.notaFinalCotizacion} onChange={change} /></SettingsField>
               <SettingsField label="Términos y condiciones predeterminados" wide optional><textarea name="terminosCotizacion" rows="4" value={form.terminosCotizacion} onChange={change} /></SettingsField>
               <SettingsField label="Pie de documento" wide optional><textarea name="notaPieCotizacion" rows="2" value={form.notaPieCotizacion} onChange={change} /></SettingsField>
             </div>
-            <label className="settings-toggle-row settings-toggle-row--nested">
-              <span><strong>Bloque de aceptación</strong><small>Incluye un texto de aceptación en nuevas cotizaciones.</small></span>
-              <input name="aceptacionCotizacionHabilitada" type="checkbox" role="switch" checked={form.aceptacionCotizacionHabilitada} onChange={change} />
-            </label>
-            {form.aceptacionCotizacionHabilitada && (
-              <SettingsField label="Texto de aceptación" wide><textarea name="textoAceptacionCotizacion" rows="2" value={form.textoAceptacionCotizacion} onChange={change} /></SettingsField>
-            )}
           </fieldset>
           <SectionStatus error={error} success={success} />
           <div className="settings-save-row">{canEdit ? <Button type="submit" icon={Save} disabled={saving}>{saving ? "Guardando..." : "Guardar cotizaciones"}</Button> : <p>Configuración de solo lectura para tu rol.</p>}</div>

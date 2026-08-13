@@ -4,10 +4,12 @@ import {
   Navigate,
   Route,
   Routes,
+  useLocation,
 } from "react-router-dom";
 
 import AppLayout from "../layout/AppLayout";
 import EnvironmentNotice from "../components/EnvironmentNotice";
+import ToastRouteSync from "../components/ToastRouteSync";
 import CompanyPage from "../pages/CompanyPage";
 import ClientsPage from "../pages/ClientsPage";
 import ProvidersPage from "../pages/ProvidersPage";
@@ -21,6 +23,7 @@ import NewQuotePage from "../pages/NewQuotePage";
 import OnboardingPage from "../pages/OnboardingPage";
 import PricingPage from "../pages/PricingPage";
 import QuoteHistoryPage from "../pages/QuoteHistoryPage";
+import PublicQuoteProposalPage from "../pages/PublicQuoteProposalPage";
 import NewPurchaseOrderPage from "../pages/NewPurchaseOrderPage";
 import PurchaseOrdersPage from "../pages/PurchaseOrdersPage";
 import NewPurchasePage from "../pages/NewPurchasePage";
@@ -67,11 +70,30 @@ function BusinessSessionError({ onRetry }) {
 
 function AppRoutes({
   usuario,
+  loading,
+  businessError,
   businessChanging,
   businessSession,
   onBusinessChanged,
   onBusinessCreated,
+  onRetry,
 }) {
+  const location = useLocation();
+  if (/^\/propuesta\/[^/]+\/?$/.test(location.pathname)) {
+    return (
+      <Routes>
+        <Route path="/propuesta/:token" element={<PublicQuoteProposalPage />} />
+        <Route path="*" element={<PublicQuoteProposalPage />} />
+      </Routes>
+    );
+  }
+
+  if (loading) return <LoadingScreen />;
+
+  if (usuario && businessError) {
+    return <BusinessSessionError onRetry={onRetry} />;
+  }
+
   if (!usuario) {
     return (
       <Routes>
@@ -482,27 +504,21 @@ function App() {
     };
   }, [usuario?.uid]);
 
-  if (cargando || (usuario && !businessState.data && !businessState.error)) {
-    return <LoadingScreen />;
-  }
-
-  if (usuario && businessState.error) {
-    return (
-      <BusinessSessionError
-        onRetry={() => refreshBusinessSession().catch(() => {})}
-      />
-    );
-  }
-
   return (
     <BrowserRouter>
+      <ToastRouteSync />
       <EnvironmentNotice />
       <AppRoutes
         usuario={usuario}
+        loading={Boolean(
+          cargando || (usuario && !businessState.data && !businessState.error)
+        )}
+        businessError={businessState.error}
         businessChanging={businessChanging}
         businessSession={businessState.data}
         onBusinessChanged={changeActiveBusiness}
         onBusinessCreated={refreshBusinessSession}
+        onRetry={() => refreshBusinessSession().catch(() => {})}
       />
     </BrowserRouter>
   );

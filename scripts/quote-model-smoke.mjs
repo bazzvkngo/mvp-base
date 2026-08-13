@@ -10,6 +10,8 @@ import {
   calculateQuoteLineTotal,
   calculateQuoteTotals,
   canDuplicateQuotes,
+  DRAFT_QUOTE_NUMBER_LABEL,
+  getQuoteStatusLabel,
   getQuotePdfFileName,
   normalizeQuoteItem,
   normalizeScopeSections,
@@ -361,6 +363,9 @@ assert.equal("creadoEn" in copyInput, false);
 assert.equal(canDuplicateQuotes("OWNER"), true);
 assert.equal(canDuplicateQuotes("ADMIN"), true);
 assert.equal(canDuplicateQuotes("MEMBER"), false);
+assert.equal(DRAFT_QUOTE_NUMBER_LABEL, "Número pendiente");
+assert.equal(getQuoteStatusLabel("borrador"), "Pendiente de envío");
+assert.equal(getQuoteStatusLabel("emitida"), "Emitida");
 console.log("OK duplicación: copia solo datos reutilizables y MEMBER no administra");
 
 const unsafeName = getQuotePdfFileName({
@@ -384,6 +389,14 @@ const sourceQuoteItems = fs.readFileSync(
   "src/features/quotes/QuoteItemsEditor.jsx",
   "utf8"
 );
+const sourceQuoteSummary = fs.readFileSync(
+  "src/features/quotes/QuoteSummaryPanel.jsx",
+  "utf8"
+);
+const sourceCompanyConfig = fs.readFileSync(
+  "src/features/company/CompanyConfig.jsx",
+  "utf8"
+);
 const sourceQuoteCollapsible = fs.readFileSync(
   "src/features/quotes/QuoteCollapsibleSection.jsx",
   "utf8"
@@ -397,6 +410,9 @@ const sourceEmail = fs.readFileSync("src/features/quotes/SendQuoteEmailModal.jsx
 const sourceHistory = fs.readFileSync("src/pages/QuoteHistoryPage.jsx", "utf8");
 const sourceQuoteService = fs.readFileSync("src/services/quoteService.js", "utf8");
 const sourceQuotePersistence = fs.readFileSync("functions/quotePersistence.js", "utf8");
+const sourceQuoteDocument = fs.readFileSync("src/domain/quoteDocument.mjs", "utf8");
+const sourceDashboard = fs.readFileSync("src/pages/DashboardPage.jsx", "utf8");
+const sourceCompanyService = fs.readFileSync("src/services/companyService.js", "utf8");
 const duplicateServiceSource = sourceQuoteService.slice(
   sourceQuoteService.indexOf("export async function duplicateQuoteAsDraft"),
   sourceQuoteService.indexOf("export async function getQuotes")
@@ -415,7 +431,23 @@ assert.doesNotMatch(sourceClientSelector, /clientRutKeys/);
 assert.match(sourceNewQuote, /areaId/);
 assert.match(sourceNewQuote, /categoriaId/);
 assert.match(sourceNewQuote, /<QuoteSummaryPanel/);
-assert.match(sourceNewQuote, /previewOpen && \(/);
+assert.match(sourceNewQuote, /savingRef\.current/);
+assert.match(sourceNewQuote, /estado:\s*"borrador"/);
+assert.match(sourceNewQuote, /openQuoteId/);
+assert.match(sourceNewQuote, /Más condiciones/);
+assert.match(sourceNewQuote, /Restaurar valores de Empresa/);
+assert.match(sourceNewQuote, /if \(isEditMode\) return;/);
+assert.match(sourceNewQuote, /profile\.plazoEntregaCotizacion/);
+assert.match(sourceNewQuote, /profile\.garantiaCotizacion/);
+assert.match(sourceCompanyService, /plazoEntregaCotizacion/);
+assert.match(sourceCompanyService, /garantiaCotizacion/);
+assert.match(sourceNewQuote, /\{false && assistantOpen && \(/);
+assert.doesNotMatch(sourceQuoteItems, /Usar asistente/);
+assert.match(sourceQuoteSummary, /Crear cotización/);
+assert.match(sourceQuoteSummary, /Guardar cambios/);
+assert.doesNotMatch(sourceQuoteSummary, /Vista previa|Enviar por correo|Descargar PDF/);
+assert.match(sourceCompanyConfig, /Valores predeterminados para nuevas cotizaciones/);
+assert.doesNotMatch(sourceCompanyConfig, /Aceptación del cliente/);
 assert.match(sourceQuoteCatalog, /<ResponsiveDialog/);
 assert.match(sourceQuoteCatalog, /initialFocusRef=\{searchRef\}/);
 assert.match(sourceQuoteCatalog, /Agregar otra vez/);
@@ -433,11 +465,17 @@ assert.match(sourcePdf, /buildQuotePdfBase64/);
 assert.match(sourceEmail, /buildQuotePdfAttachment/);
 assert.match(sourceHistory, /downloadQuotePdf/);
 assert.match(sourceHistory, /shareQuotePdf/);
-assert.match(sourceHistory, /Duplicar como borrador/);
+assert.match(sourceHistory, /Duplicar como pendiente/);
+assert.match(sourceHistory, /Marcar como emitida/);
+assert.match(sourceHistory, /onChangeStatus/);
 assert.match(duplicateServiceSource, /sourceId[\s\S]*requestId/);
 assert.doesNotMatch(duplicateServiceSource, /quote:\s*payload/);
 assert.match(sourceQuotePersistence, /quoteDuplicateRequests/);
 assert.match(sourceQuotePersistence, /cotizacionOrigenId/);
+assert.match(sourceQuotePersistence, /storedQuote[\s\S]*estado:\s*"borrador"/);
+assert.doesNotMatch(sourceQuoteDocument, /borrador:\s*"Borrador"/);
+assert.match(sourceQuoteDocument, /getQuoteStatusLabel\(quote\.estado\)/);
+assert.match(sourceDashboard, /getQuoteStatusLabel\("borrador"\)/);
 console.log("OK integración: inventario v2 y PDF único para descarga, correo y compartir");
 
 const outputDir = path.resolve("output/pdf/quote-validation");

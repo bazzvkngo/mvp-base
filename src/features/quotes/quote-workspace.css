@@ -615,6 +615,12 @@
   color: #667985;
 }
 
+.quote-conditions-primary__grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .quote-workspace__preview {
   scroll-margin-top: 14px;
 }
@@ -750,6 +756,10 @@
   .quote-workspace__client-project .client-selector__summary,
   .quote-workspace__client-project .client-selector__empty-selection {
     align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .quote-conditions-primary__grid {
     grid-template-columns: 1fr;
   }
 }

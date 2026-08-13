@@ -1,11 +1,25 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { createPortal } from "react-dom";
+import {
+  Download,
+  Ellipsis,
+  Mail,
+  MessageCircle,
+  Printer,
+} from "lucide-react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { sileo } from "sileo";
 import QuotePrintView from "../features/quotes/QuotePrintView";
 import SendQuoteEmailModal from "../features/quotes/SendQuoteEmailModal";
+import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import { getCompanyProfile } from "../services/companyService";
-import { canDuplicateQuotes } from "../domain/quoteModel.mjs";
+import {
+  canDuplicateQuotes,
+  getQuoteStatusLabel,
+  QUOTE_STATUS_LABELS,
+} from "../domain/quoteModel.mjs";
 import {
   createQuoteDuplicateRequestId,
   duplicateQuoteAsDraft,
@@ -14,6 +28,10 @@ import {
   updateQuoteStatus,
 } from "../services/quoteService";
 import { isQuoteEmailSendable } from "../services/quoteEmailService";
+import {
+  confirmQuoteWhatsAppSent,
+  prepareQuoteWhatsAppShare,
+} from "../services/publicQuoteService";
 import {
   crearVentaDesdeCotizacion,
   createSaleRequestId,
@@ -30,13 +48,15 @@ const STATUS_OPTIONS = [
   "archivada",
 ];
 
-const statusLabels = {
-  borrador: "Borrador",
-  emitida: "Emitida",
-  aceptada: "Aceptada",
-  rechazada: "Rechazada",
-  vencida: "Vencida",
-  archivada: "Archivada",
+const statusLabels = QUOTE_STATUS_LABELS;
+
+const statusFeedbackTitles = {
+  borrador: "Cotización restaurada como pendiente de envío",
+  emitida: "Cotización emitida",
+  aceptada: "Cotización aceptada",
+  rechazada: "Cotización rechazada",
+  vencida: "Cotización marcada como vencida",
+  archivada: "Cotización archivada",
 };
 
 const statusStyles = {
@@ -98,8 +118,8 @@ function getEmailActionHint(quote) {
     return "Restaura la cotización antes de enviarla nuevamente.";
   }
 
-  if (estado === "borrador") {
-    return "Emite la cotización antes de enviarla al cliente.";
+  if (["aceptada", "rechazada", "vencida"].includes(estado)) {
+    return "Sólo las cotizaciones pendientes o emitidas pueden enviarse.";
   }
 
   return "";
@@ -107,6 +127,7 @@ function getEmailActionHint(quote) {
 
 function QuoteHistoryPage({ userId, role }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const duplicateRequestIdsRef = useRef(new Map());
   const saleRequestIdsRef = useRef(new Map());
   const [quotes, setQuotes] = useState([]);
@@ -122,6 +143,7 @@ function QuoteHistoryPage({ userId, role }) {
   const [restoreDetailFocus, setRestoreDetailFocus] = useState(true);
   const [duplicatingQuoteId, setDuplicatingQuoteId] = useState("");
   const [registeringSaleQuoteId, setRegisteringSaleQuoteId] = useState("");
+  const [prepareSaleQuote, setPrepareSaleQuote] = useState(null);
   const canDuplicate = canDuplicateQuotes(role);
 
   useEffect(() => {
@@ -161,6 +183,21 @@ function QuoteHistoryPage({ userId, role }) {
       active = false;
     };
   }, [userId]);
+
+  useEffect(() => {
+    const openQuoteId = String(location.state?.openQuoteId || "");
+    if (!openQuoteId || !quotes.some((quote) => quote.id === openQuoteId)) return;
+
+    setRestoreDetailFocus(false);
+    setSelectedQuoteId(openQuoteId);
+    if (location.state?.createdQuoteNumber) {
+      sileo.success({
+        title: "Cotización creada",
+        description: `${location.state.createdQuoteNumber} está pendiente de envío.`,
+      });
+    }
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.pathname, location.state, navigate, quotes]);
 
   const filteredQuotes = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -207,7 +244,12 @@ function QuoteHistoryPage({ userId, role }) {
   const handleCloseDetail = () => setSelectedQuoteId("");
 
   const handleChangeStatus = async (quoteId, estado, options = {}) => {
-    const { confirm = true, estadoAnterior } = options;
+    const {
+      confirm = true,
+      estadoAnterior,
+      notify = true,
+      successTitle,
+    } = options;
 
     if (confirm) {
       const confirmed = window.confirm(
@@ -222,12 +264,18 @@ function QuoteHistoryPage({ userId, role }) {
     setSuccess("");
 
     try {
-      await updateQuoteStatus(userId, quoteId, estado, { estadoAnterior });
+      const statusPatch = await updateQuoteStatus(
+        userId,
+        quoteId,
+        estado,
+        { estadoAnterior }
+      );
       setQuotes((prev) =>
         prev.map((quote) =>
           quote.id === quoteId
             ? {
                 ...quote,
+                ...statusPatch,
                 estado,
                 ...(estadoAnterior ? { estadoAnterior } : {}),
                 actualizadoEn: new Date(),
@@ -235,11 +283,20 @@ function QuoteHistoryPage({ userId, role }) {
             : quote
         )
       );
-      setSuccess(`Estado actualizado a ${statusLabels[estado].toLowerCase()}.`);
+      if (notify) {
+        sileo.success({
+          title: successTitle || statusFeedbackTitles[estado],
+        });
+      }
       return true;
     } catch (err) {
       console.error("Error al actualizar estado:", err);
-      setError(err.message || "No se pudo actualizar el estado.");
+      const message = err.message || "No se pudo actualizar el estado.";
+      setError(message);
+      sileo.error({
+        title: "No se pudo actualizar la cotización",
+        description: message,
+      });
       return false;
     } finally {
       setSavingStatus(false);
@@ -257,10 +314,9 @@ function QuoteHistoryPage({ userId, role }) {
     const updated = await handleChangeStatus(quote.id, "archivada", {
       confirm: false,
       estadoAnterior: estadoActual,
+      successTitle: "Cotización archivada",
     });
-    if (updated) {
-      setSuccess("Cotización archivada correctamente.");
-    }
+    if (!updated) return;
   };
 
   const handleRestoreQuote = async (quote) => {
@@ -269,15 +325,18 @@ function QuoteHistoryPage({ userId, role }) {
     const estadoRestaurado = canRestorePreviousState
       ? quote.estadoAnterior
       : "borrador";
-    const updated = await handleChangeStatus(quote.id, estadoRestaurado);
-
-    if (updated) {
-      setSuccess("Cotización restaurada correctamente.");
-    }
+    await handleChangeStatus(quote.id, estadoRestaurado, {
+      successTitle: "Cotización restaurada",
+    });
   };
 
   const handleEditDraft = (quoteId) => {
     navigate(`/cotizaciones/${quoteId}/editar`);
+  };
+
+  const handleOpenSale = (quote) => {
+    if (!quote?.ventaId) return;
+    navigate(`/ventas/${quote.ventaId}/editar`);
   };
 
   const handleDuplicateQuote = async (quote) => {
@@ -294,19 +353,27 @@ function QuoteHistoryPage({ userId, role }) {
       const result = await duplicateQuoteAsDraft(userId, quote.id, {requestId});
       duplicateRequestIdsRef.current.delete(quote.id);
       navigate(`/cotizaciones/${result.quote.id}/editar`, {
-        state: {message: "Copia creada como borrador."},
+        state: {message: "Copia creada como pendiente de envío."},
       });
     } catch (duplicateError) {
-      setError(duplicateError.message || "No se pudo duplicar la cotización.");
+      const message =
+        duplicateError.message || "No se pudo duplicar la cotización.";
+      setError(message);
+      sileo.error({
+        title: "No se pudo duplicar la cotización",
+        description: message,
+      });
     } finally {
       setDuplicatingQuoteId("");
     }
   };
 
-  const handleRegisterSale = async (quote) => {
+  const handleRegisterSale = async (quote, options = {}) => {
+    const { navigateAfterCreate = false } = options;
+
     if (quote.ventaId) {
-      navigate(`/ventas/${quote.ventaId}`);
-      return;
+      navigate(`/ventas/${quote.ventaId}/editar`);
+      return null;
     }
     const requestId = saleRequestIdsRef.current.get(quote.id) ||
       createSaleRequestId("sale-quote");
@@ -315,22 +382,79 @@ function QuoteHistoryPage({ userId, role }) {
     setError("");
     setSuccess("");
     try {
-      const result = await crearVentaDesdeCotizacion(userId, quote.id, {requestId});
+      const result = await sileo.promise(
+        crearVentaDesdeCotizacion(userId, quote.id, {requestId}),
+        {
+          loading: {
+            title: "Preparando venta...",
+            description: "Creando la venta en borrador.",
+          },
+          success: (created) => ({
+            title: "Venta preparada",
+            description: `${created.venta.numero} fue creada como borrador.`,
+            button: {
+              title: "Abrir venta",
+              onClick: () => navigate(`/ventas/${created.venta.id}/editar`),
+            },
+          }),
+          error: (saleError) => ({
+            title: "No se pudo preparar la venta",
+            description:
+              saleError?.message || "Puedes volver a intentarlo desde la cotización aceptada.",
+          }),
+        }
+      );
       saleRequestIdsRef.current.delete(quote.id);
       setQuotes((current) => current.map((item) => item.id === quote.id
         ? {...item, ventaId: result.venta.id, ventaNumero: result.venta.numero}
         : item));
-      navigate(`/ventas/${result.venta.id}/editar`, {
-        state: {message: "Venta creada como borrador desde la cotización."},
-      });
+      if (navigateAfterCreate) {
+        navigate(`/ventas/${result.venta.id}/editar`, {
+          state: {message: "Venta creada como borrador desde la cotización."},
+        });
+      }
+      return result;
     } catch (saleError) {
       setError(saleError.message || "No se pudo registrar la venta.");
+      return null;
     } finally {
       setRegisteringSaleQuoteId("");
     }
   };
 
-  const handleEmailSent = (quoteId, emailPatch, result) => {
+  const handleAcceptAndPrepareSale = async (quote) => {
+    if (quote.ventaId) return;
+    setPrepareSaleQuote(quote);
+  };
+
+  const handleConfirmPrepareSale = async () => {
+    const currentQuote = quotes.find(
+      (quote) => quote.id === prepareSaleQuote?.id
+    );
+    const quote = currentQuote || prepareSaleQuote;
+    if (!quote || quote.ventaId) {
+      setPrepareSaleQuote(null);
+      return;
+    }
+
+    const accepted = await handleChangeStatus(quote.id, "aceptada", {
+      confirm: false,
+      notify: false,
+    });
+
+    if (!accepted) {
+      setPrepareSaleQuote(null);
+      return;
+    }
+
+    await handleRegisterSale(
+      { ...quote, estado: "aceptada" },
+      { navigateAfterCreate: false }
+    );
+    setPrepareSaleQuote(null);
+  };
+
+  const handleEmailSent = (quoteId, emailPatch) => {
     setQuotes((prev) =>
       prev.map((quote) =>
         quote.id === quoteId
@@ -343,16 +467,12 @@ function QuoteHistoryPage({ userId, role }) {
       )
     );
 
-    if (result?.success) {
-      setSuccess(
-        `Cotización enviada correctamente a ${emailPatch?.emailClienteDestino || "cliente"}.`
-      );
-    } else {
-      setError(
-        result?.error ||
-          "No fue posible enviar la cotización. Puedes utilizar el respaldo manual."
-      );
-    }
+  };
+
+  const handleWhatsAppShared = (quoteId, statusPatch) => {
+    setQuotes((current) => current.map((quote) => quote.id === quoteId
+      ? { ...quote, ...statusPatch, actualizadoEn: new Date() }
+      : quote));
   };
 
   if (!userId) {
@@ -432,15 +552,13 @@ function QuoteHistoryPage({ userId, role }) {
             <table className="erp-table" style={styles.table}>
               <thead>
                 <tr>
-                  <th style={styles.th}>Número</th>
-                  <th style={styles.th}>Fecha</th>
-                  <th style={styles.th}>Cliente</th>
-                  <th style={styles.th}>Estado</th>
-                  <th style={styles.th}>Correo</th>
-                  <th style={styles.th}>Total</th>
-                  <th style={styles.th}>Ítems</th>
-                  <th style={styles.th}>Actualización</th>
-                  <th style={styles.th}>Acciones</th>
+                  <th style={{ ...styles.th, ...styles.numberColumn }}>Número</th>
+                  <th style={{ ...styles.th, ...styles.clientColumn }}>Cliente</th>
+                  <th style={{ ...styles.th, ...styles.statusColumn }}>Estado</th>
+                  <th style={{ ...styles.th, ...styles.totalColumn }}>Total</th>
+                  <th style={{ ...styles.th, ...styles.saleColumn }}>Venta</th>
+                  <th style={{ ...styles.th, ...styles.updatedColumn }}>Actualización</th>
+                  <th style={{ ...styles.th, ...styles.actionsColumn }}>Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -453,34 +571,47 @@ function QuoteHistoryPage({ userId, role }) {
                         : undefined
                     }
                   >
-                    <td style={styles.td}>
-                      <strong>{getQuoteDisplayNumber(quote, quote.id || "-")}</strong>
+                    <td style={{ ...styles.td, ...styles.numberColumn }}>
+                      <button
+                        type="button"
+                        className="quote-record-link"
+                        aria-haspopup="dialog"
+                        aria-expanded={quote.id === selectedQuoteId}
+                        onClick={() => handleToggleDetail(quote.id)}
+                      >
+                        {getQuoteDisplayNumber(quote, quote.id || "-")}
+                      </button>
                     </td>
-                    <td style={styles.td}>{formatDate(quote.fecha)}</td>
-                    <td style={styles.td}>{quote.clienteNombre || "-"}</td>
-                    <td style={styles.td}>
+                    <td
+                      title={quote.clienteNombre || ""}
+                      style={{ ...styles.td, ...styles.clientCell }}
+                    >
+                      {quote.clienteNombre || "-"}
+                    </td>
+                    <td style={{ ...styles.td, ...styles.statusColumn }}>
                       <StatusBadge status={quote.estado} />
                     </td>
-                    <td style={styles.td}>
-                      <EmailStatusBadge quote={quote} />
-                    </td>
-                    <td style={styles.td}>
+                    <td style={{ ...styles.td, ...styles.totalColumn }}>
                       <strong>{formatCLP(quote.total)}</strong>
                     </td>
-                    <td style={styles.td}>{quote.items?.length || 0}</td>
-                    <td style={styles.td}>
-                      {formatTimestamp(getQuoteTimestamp(quote))}
-                    </td>
-                    <td style={styles.td}>
-                      <div style={styles.rowActions}>
+                    <td style={{ ...styles.td, ...styles.saleColumn }}>
+                      {quote.ventaId && quote.ventaNumero ? (
                         <button
                           type="button"
-                          aria-haspopup="dialog"
-                          onClick={() => handleToggleDetail(quote.id)}
-                          style={styles.secondaryButton}
+                          className="quote-record-link"
+                          onClick={() => handleOpenSale(quote)}
                         >
-                          Ver detalle
+                          {quote.ventaNumero}
                         </button>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td style={{ ...styles.td, ...styles.updatedColumn }}>
+                      {formatTimestamp(getQuoteTimestamp(quote))}
+                    </td>
+                    <td style={{ ...styles.td, ...styles.actionsColumn }}>
+                      <div style={styles.rowActions}>
                         {canDuplicate && (
                         <QuoteActions
                           quote={quote}
@@ -492,6 +623,7 @@ function QuoteHistoryPage({ userId, role }) {
                           canDuplicate={canDuplicate}
                           duplicating={duplicatingQuoteId === quote.id}
                           onDuplicate={handleDuplicateQuote}
+                          onAcceptAndPrepareSale={handleAcceptAndPrepareSale}
                           onRegisterSale={handleRegisterSale}
                           registeringSale={registeringSaleQuoteId === quote.id}
                         /> )}
@@ -505,7 +637,19 @@ function QuoteHistoryPage({ userId, role }) {
           <QuoteCards
             quotes={filteredQuotes}
             selectedQuoteId={selectedQuoteId}
+            onOpenSale={handleOpenSale}
             onViewDetail={handleToggleDetail}
+            canDuplicate={canDuplicate}
+            disabled={savingStatus}
+            duplicatingQuoteId={duplicatingQuoteId}
+            onAcceptAndPrepareSale={handleAcceptAndPrepareSale}
+            onArchive={handleArchiveQuote}
+            onChangeStatus={handleChangeStatus}
+            onDuplicate={handleDuplicateQuote}
+            onEditDraft={handleEditDraft}
+            onRegisterSale={handleRegisterSale}
+            onRestore={handleRestoreQuote}
+            registeringSaleQuoteId={registeringSaleQuoteId}
           />
           </>
         )}
@@ -533,6 +677,7 @@ function QuoteHistoryPage({ userId, role }) {
               canDuplicate={canDuplicate}
               duplicating={duplicatingQuoteId === selectedQuote.id}
               onDuplicate={handleDuplicateQuote}
+              onAcceptAndPrepareSale={handleAcceptAndPrepareSale}
               onRegisterSale={handleRegisterSale}
               registeringSale={registeringSaleQuoteId === selectedQuote.id}
             /> )}
@@ -541,9 +686,11 @@ function QuoteHistoryPage({ userId, role }) {
       >
         {selectedQuote && (
           <QuoteDetail
-          canSendByEmail={canDuplicate}
+            businessId={userId}
+            canSendByEmail={canDuplicate}
             quote={selectedQuote}
             companyProfile={companyProfile}
+            onWhatsAppShared={handleWhatsAppShared}
             onOpenEmail={() => {
               if (isQuoteEmailSendable(selectedQuote, selectedQuote.id)) {
                 setRestoreDetailFocus(false);
@@ -553,6 +700,52 @@ function QuoteHistoryPage({ userId, role }) {
             }}
           />
         )}
+      </ResponsiveDialog>
+
+      <ResponsiveDialog
+        open={Boolean(prepareSaleQuote)}
+        onClose={() => {
+          if (!savingStatus && !registeringSaleQuoteId) {
+            setPrepareSaleQuote(null);
+          }
+        }}
+        size="small"
+        eyebrow="Cotizaciones"
+        title="Preparar venta"
+        description={
+          prepareSaleQuote
+            ? `Se creará una venta en borrador a partir de la cotización ${getQuoteDisplayNumber(
+                prepareSaleQuote,
+                prepareSaleQuote.id || "-"
+              )}.`
+            : ""
+        }
+        footer={
+          <div className="erp-actions" style={styles.prepareSaleActions}>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={savingStatus || Boolean(registeringSaleQuoteId)}
+              onClick={() => setPrepareSaleQuote(null)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={savingStatus || Boolean(registeringSaleQuoteId)}
+              onClick={handleConfirmPrepareSale}
+            >
+              {savingStatus || registeringSaleQuoteId
+                ? "Creando venta..."
+                : "Crear venta en borrador"}
+            </Button>
+          </div>
+        }
+      >
+        <p style={styles.prepareSaleNotice}>
+          Podrás revisarla antes de confirmarla. El inventario no se descontará
+          todavía.
+        </p>
       </ResponsiveDialog>
 
       {emailModalQuote && (
@@ -582,7 +775,7 @@ function StatusBadge({ status }) {
         ...statusStyles[normalizedStatus],
       }}
     >
-      {statusLabels[normalizedStatus] || normalizedStatus}
+      {getQuoteStatusLabel(normalizedStatus)}
     </span>
   );
 }
@@ -609,7 +802,23 @@ function EmailStatusBadge({ quote }) {
   return <span style={styles.emailMuted}>Sin envío</span>;
 }
 
-function QuoteCards({ quotes, selectedQuoteId, onViewDetail }) {
+function QuoteCards({
+  quotes,
+  selectedQuoteId,
+  onOpenSale,
+  onViewDetail,
+  canDuplicate,
+  disabled,
+  duplicatingQuoteId,
+  onAcceptAndPrepareSale,
+  onArchive,
+  onChangeStatus,
+  onDuplicate,
+  onEditDraft,
+  onRegisterSale,
+  onRestore,
+  registeringSaleQuoteId,
+}) {
   return (
     <div className="erp-card-list erp-mobile-only" aria-label="Cotizaciones">
       {quotes.map((quote) => (
@@ -617,7 +826,15 @@ function QuoteCards({ quotes, selectedQuoteId, onViewDetail }) {
           <div className="erp-record-card__header">
             <div>
               <h3 className="erp-record-card__title">
-                {getQuoteDisplayNumber(quote, quote.id || "-")}
+                <button
+                  type="button"
+                  className="quote-record-link"
+                  aria-haspopup="dialog"
+                  aria-expanded={selectedQuoteId === quote.id}
+                  onClick={() => onViewDetail(quote.id)}
+                >
+                  {getQuoteDisplayNumber(quote, quote.id || "-")}
+                </button>
               </h3>
               <p className="erp-record-card__subtitle">
                 {quote.clienteNombre || "Cliente sin nombre"}
@@ -642,16 +859,41 @@ function QuoteCards({ quotes, selectedQuoteId, onViewDetail }) {
               <dt className="erp-meta__label">Ítems</dt>
               <dd className="erp-meta__value">{quote.items?.length || 0}</dd>
             </div>
+            <div className="erp-meta">
+              <dt className="erp-meta__label">Venta</dt>
+              <dd className="erp-meta__value">
+                {quote.ventaId && quote.ventaNumero ? (
+                  <button
+                    type="button"
+                    className="quote-record-link"
+                    onClick={() => onOpenSale(quote)}
+                  >
+                    {quote.ventaNumero}
+                  </button>
+                ) : (
+                  "—"
+                )}
+              </dd>
+            </div>
           </dl>
-          <button
-            type="button"
-            aria-haspopup="dialog"
-            aria-expanded={selectedQuoteId === quote.id}
-            onClick={() => onViewDetail(quote.id)}
-            style={styles.cardPrimaryButton}
-          >
-            Ver detalle
-          </button>
+          {canDuplicate && (
+            <div className="erp-actions" style={styles.mobileCardActions}>
+              <QuoteActions
+                quote={quote}
+                disabled={disabled}
+                onChangeStatus={onChangeStatus}
+                onArchive={onArchive}
+                onRestore={onRestore}
+                onEditDraft={onEditDraft}
+                canDuplicate={canDuplicate}
+                duplicating={duplicatingQuoteId === quote.id}
+                onDuplicate={onDuplicate}
+                onAcceptAndPrepareSale={onAcceptAndPrepareSale}
+                onRegisterSale={onRegisterSale}
+                registeringSale={registeringSaleQuoteId === quote.id}
+              />
+            </div>
+          )}
         </article>
       ))}
     </div>
@@ -668,20 +910,59 @@ function QuoteActions({
   canDuplicate,
   duplicating,
   onDuplicate,
+  onAcceptAndPrepareSale,
   onRegisterSale,
   registeringSale,
 }) {
   const estado = quote.estado || "borrador";
-  const duplicateAction = canDuplicate && estado !== "borrador" ? (
-    <button
-      type="button"
-      onClick={() => onDuplicate(quote)}
-      disabled={disabled || duplicating}
-      style={styles.secondaryButton}
-    >
-      {duplicating ? "Creando copia..." : "Duplicar como borrador"}
-    </button>
-  ) : null;
+  const duplicateMenuAction = canDuplicate && estado !== "borrador"
+    ? {
+        label: duplicating ? "Creando copia..." : "Duplicar como pendiente",
+        disabled: disabled || duplicating,
+        onSelect: () => onDuplicate(quote),
+      }
+    : null;
+  const archiveMenuAction = {
+    label: "Archivar",
+    disabled,
+    onSelect: () => onArchive(quote),
+  };
+
+  if (quote.ventaId) {
+    const linkedSaleActions = [
+      duplicateMenuAction,
+      estado !== "archivada" ? archiveMenuAction : null,
+    ].filter(Boolean);
+
+    return (
+      <>
+        {estado === "archivada" && (
+          <button
+            type="button"
+            onClick={() => onRestore(quote)}
+            disabled={disabled}
+            style={styles.secondaryButton}
+          >
+            Restaurar
+          </button>
+        )}
+        {linkedSaleActions.length > 0 && (
+          <MoreActionsMenu
+            disabled={disabled || duplicating}
+            actions={linkedSaleActions}
+          />
+        )}
+      </>
+    );
+  }
+
+  if (status === "simulado") {
+    return (
+      <span style={{ ...styles.emailBadge, ...styles.emailSent }}>
+        Preparada QA
+      </span>
+    );
+  }
 
   if (estado === "borrador") {
     return (
@@ -692,25 +973,21 @@ function QuoteActions({
           disabled={disabled}
           style={styles.secondaryButton}
         >
-          Editar borrador
+          Editar cotización
         </button>
         <button
           type="button"
           onClick={() => onChangeStatus(quote.id, "emitida")}
           disabled={disabled}
-          style={styles.secondaryButton}
+          style={styles.primaryButton}
+          title="Indica que la cotización fue enviada al cliente. Todavía no registra una venta."
         >
-          Marcar emitida
+          Marcar como emitida
         </button>
-        <button
-          type="button"
-          onClick={() => onArchive(quote)}
+        <MoreActionsMenu
+          actions={[archiveMenuAction]}
           disabled={disabled}
-          style={styles.archiveButton}
-        >
-          Archivar
-        </button>
-        {duplicateAction}
+        />
       </>
     );
   }
@@ -720,37 +997,29 @@ function QuoteActions({
       <>
         <button
           type="button"
-          onClick={() => onChangeStatus(quote.id, "aceptada")}
-          disabled={disabled}
-          style={styles.acceptButton}
+          onClick={() => onAcceptAndPrepareSale(quote)}
+          disabled={disabled || registeringSale}
+          style={styles.primaryButton}
         >
-          Aceptada
+          {registeringSale
+            ? "Preparando venta..."
+            : "Aceptar y preparar venta"}
         </button>
-        <button
-          type="button"
-          onClick={() => onChangeStatus(quote.id, "rechazada")}
-          disabled={disabled}
-          style={styles.rejectButton}
-        >
-          Rechazada
-        </button>
-        <button
-          type="button"
-          onClick={() => onChangeStatus(quote.id, "vencida")}
-          disabled={disabled}
-          style={styles.expireButton}
-        >
-          Vencida
-        </button>
-        <button
-          type="button"
-          onClick={() => onArchive(quote)}
-          disabled={disabled}
-          style={styles.archiveButton}
-        >
-          Archivar
-        </button>
-        {duplicateAction}
+        <MoreActionsMenu
+          disabled={disabled || registeringSale}
+          actions={[
+            {
+              label: "Rechazar",
+              onSelect: () => onChangeStatus(quote.id, "rechazada"),
+            },
+            {
+              label: "Marcar vencida",
+              onSelect: () => onChangeStatus(quote.id, "vencida"),
+            },
+            duplicateMenuAction,
+            archiveMenuAction,
+          ].filter(Boolean)}
+        />
       </>
     );
   }
@@ -758,35 +1027,28 @@ function QuoteActions({
   if (estado === "aceptada") {
     return (
       <>
-        {canDuplicate && (
+        {canDuplicate && !quote.ventaId && (
           <button
             type="button"
             onClick={() => onRegisterSale(quote)}
             disabled={disabled || registeringSale}
-            style={styles.acceptButton}
+            style={styles.primaryButton}
+            title="Crea una venta en borrador. Todavía no descuenta stock."
           >
-            {quote.ventaId
-              ? `Ver venta${quote.ventaNumero ? ` ${quote.ventaNumero}` : ""}`
-              : registeringSale ? "Registrando venta..." : "Registrar venta"}
+            {registeringSale ? "Creando venta..." : "Crear venta"}
           </button>
         )}
-        <button
-          type="button"
-          onClick={() => onChangeStatus(quote.id, "emitida")}
-          disabled={disabled}
-          style={styles.secondaryButton}
-        >
-          Corregir a emitida
-        </button>
-        <button
-          type="button"
-          onClick={() => onArchive(quote)}
-          disabled={disabled}
-          style={styles.archiveButton}
-        >
-          Archivar
-        </button>
-        {duplicateAction}
+        <MoreActionsMenu
+          disabled={disabled || registeringSale}
+          actions={[
+            {
+              label: "Corregir a emitida",
+              onSelect: () => onChangeStatus(quote.id, "emitida"),
+            },
+            duplicateMenuAction,
+            archiveMenuAction,
+          ].filter(Boolean)}
+        />
       </>
     );
   }
@@ -802,15 +1064,10 @@ function QuoteActions({
         >
           Reabrir como emitida
         </button>
-        <button
-          type="button"
-          onClick={() => onArchive(quote)}
+        <MoreActionsMenu
           disabled={disabled}
-          style={styles.archiveButton}
-        >
-          Archivar
-        </button>
-        {duplicateAction}
+          actions={[duplicateMenuAction, archiveMenuAction].filter(Boolean)}
+        />
       </>
     );
   }
@@ -826,7 +1083,12 @@ function QuoteActions({
         >
           Restaurar
         </button>
-        {duplicateAction}
+        {duplicateMenuAction && (
+          <MoreActionsMenu
+            disabled={disabled || duplicating}
+            actions={[duplicateMenuAction]}
+          />
+        )}
       </>
     );
   }
@@ -834,11 +1096,163 @@ function QuoteActions({
   return null;
 }
 
-function QuoteDetail({ quote, companyProfile, canSendByEmail, onOpenEmail }) {
+function MoreActionsMenu({ actions, disabled }) {
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState({ left: 0, top: 0 });
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
+  const itemRefs = useRef([]);
+  const menuId = React.useId();
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const closeMenu = () => setOpen(false);
+    const handlePointerDown = (event) => {
+      if (
+        !triggerRef.current?.contains(event.target) &&
+        !menuRef.current?.contains(event.target)
+      ) {
+        closeMenu();
+      }
+    };
+    const handleKeyDown = (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      closeMenu();
+      triggerRef.current?.focus();
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("resize", closeMenu);
+    window.addEventListener("scroll", closeMenu, true);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("resize", closeMenu);
+      window.removeEventListener("scroll", closeMenu, true);
+    };
+  }, [open]);
+
+  const openMenu = (focusLast = false) => {
+    const trigger = triggerRef.current;
+    if (!trigger || disabled) return;
+
+    const rect = trigger.getBoundingClientRect();
+    const menuWidth = 224;
+    const estimatedHeight = actions.length * 42 + 12;
+    const left = Math.max(
+      8,
+      Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8)
+    );
+    const below = rect.bottom + 6;
+    const top = below + estimatedHeight <= window.innerHeight - 8
+      ? below
+      : Math.max(8, rect.top - estimatedHeight - 6);
+
+    setPosition({ left, top });
+    setOpen(true);
+    window.requestAnimationFrame(() => {
+      const availableItems = itemRefs.current.filter(
+        (item) => item && !item.disabled
+      );
+      const targetIndex = focusLast ? availableItems.length - 1 : 0;
+      availableItems[targetIndex]?.focus();
+    });
+  };
+
+  const handleMenuKeyDown = (event) => {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const availableItems = itemRefs.current.filter(
+      (item) => item && !item.disabled
+    );
+    if (!availableItems.length) return;
+    const currentIndex = availableItems.indexOf(document.activeElement);
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? availableItems.length - 1
+        : event.key === "ArrowDown"
+          ? (currentIndex + 1 + availableItems.length) % availableItems.length
+          : (currentIndex - 1 + availableItems.length) % availableItems.length;
+    availableItems[nextIndex]?.focus();
+  };
+
+  const handleSelect = (action) => {
+    setOpen(false);
+    triggerRef.current?.focus();
+    action.onSelect();
+  };
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-controls={open ? menuId : undefined}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        disabled={disabled}
+        onClick={() => (open ? setOpen(false) : openMenu())}
+        onKeyDown={(event) => {
+          if (!open && ["ArrowDown", "ArrowUp"].includes(event.key)) {
+            event.preventDefault();
+            openMenu(event.key === "ArrowUp");
+          }
+        }}
+        style={styles.moreActionsButton}
+      >
+        <span>Más acciones</span>
+        <AppIcon icon={Ellipsis} size={17} />
+      </button>
+      {open && typeof document !== "undefined" && createPortal(
+        <div
+          id={menuId}
+          ref={menuRef}
+          role="menu"
+          aria-label="Más acciones de cotización"
+          onKeyDown={handleMenuKeyDown}
+          style={{ ...styles.actionsMenu, ...position }}
+        >
+          {actions.map((action, index) => (
+            <button
+              key={action.label}
+              ref={(node) => {
+                itemRefs.current[index] = node;
+              }}
+              type="button"
+              role="menuitem"
+              disabled={action.disabled}
+              onClick={() => handleSelect(action)}
+              style={styles.actionsMenuItem}
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
+
+function QuoteDetail({
+  businessId,
+  quote,
+  companyProfile,
+  canSendByEmail,
+  onOpenEmail,
+  onWhatsAppShared,
+}) {
   const canSendEmail = isQuoteEmailSendable(quote, quote.id);
+  const canShareWhatsApp = ["borrador", "emitida"].includes(quote.estado);
   const emailActionHint = getEmailActionHint(quote);
   const [pdfAction, setPdfAction] = useState("");
   const [pdfError, setPdfError] = useState("");
+  const [whatsAppConfirmationOpen, setWhatsAppConfirmationOpen] = useState(false);
+  const [confirmingWhatsApp, setConfirmingWhatsApp] = useState(false);
 
   const runPdfAction = async (action) => {
     setPdfAction(action);
@@ -847,14 +1261,50 @@ function QuoteDetail({ quote, companyProfile, canSendByEmail, onOpenEmail }) {
       if (action === "download") {
         await downloadQuotePdf({ quote, companyProfile });
       } else {
-        await shareQuotePdf({ quote, companyProfile });
+        const prepared = await prepareQuoteWhatsAppShare(businessId, quote.id);
+        await shareQuotePdf({
+          quote,
+          companyProfile,
+          publicUrl: prepared.publicUrl,
+        });
+        setWhatsAppConfirmationOpen(true);
       }
     } catch (error) {
       if (error?.name !== "AbortError") {
-        setPdfError(error?.message || "No fue posible preparar el PDF.");
+        const message = error?.message || "No fue posible preparar el PDF.";
+        setPdfError(message);
+        sileo.error({
+          title: action === "download"
+            ? "No se pudo descargar el PDF"
+            : "No se pudo preparar WhatsApp",
+          description: message,
+        });
       }
     } finally {
       setPdfAction("");
+    }
+  };
+
+  const confirmWhatsAppSent = async () => {
+    setConfirmingWhatsApp(true);
+    setPdfError("");
+    try {
+      const statusPatch = await confirmQuoteWhatsAppSent(businessId, quote.id);
+      onWhatsAppShared?.(quote.id, statusPatch);
+      setWhatsAppConfirmationOpen(false);
+      sileo.success({
+        title: "Cotización emitida",
+        description: `${getQuoteDisplayNumber(quote, quote.id)} fue registrada como enviada por WhatsApp.`,
+      });
+    } catch (error) {
+      const message = error?.message || "No fue posible registrar el envío.";
+      setPdfError(message);
+      sileo.error({
+        title: "No se pudo registrar el envío",
+        description: message,
+      });
+    } finally {
+      setConfirmingWhatsApp(false);
     }
   };
 
@@ -871,9 +1321,21 @@ function QuoteDetail({ quote, companyProfile, canSendByEmail, onOpenEmail }) {
               Cliente histórico no vinculado a un registro actual.
             </p>
           )}
-          <EmailStatusLine quote={quote} />
+          <CommercialStatusTimeline quote={quote} />
         </div>
         <div style={styles.detailButtonGroup}>
+          {canSendByEmail && (
+            <button
+              type="button"
+              onClick={() => runPdfAction("whatsapp")}
+              disabled={Boolean(pdfAction) || !canShareWhatsApp}
+              title={canShareWhatsApp ? "" : "Sólo disponible para cotizaciones pendientes o emitidas."}
+              style={styles.whatsappButton}
+            >
+              <AppIcon icon={MessageCircle} size={17} />
+              {pdfAction === "whatsapp" ? "Preparando..." : "WhatsApp"}
+            </button>
+          )}
           {canSendByEmail && (
           <button
             type="button"
@@ -884,7 +1346,8 @@ function QuoteDetail({ quote, companyProfile, canSendByEmail, onOpenEmail }) {
               ...(!canSendEmail ? styles.disabledButton : {}),
             }}
           >
-            Enviar por correo
+            <AppIcon icon={Mail} size={17} />
+            Correo
           </button> )}
           <button
             type="button"
@@ -892,15 +1355,16 @@ function QuoteDetail({ quote, companyProfile, canSendByEmail, onOpenEmail }) {
             disabled={Boolean(pdfAction)}
             style={styles.printButton}
           >
+            <AppIcon icon={Download} size={17} />
             {pdfAction === "download" ? "Generando..." : "Descargar PDF"}
           </button>
           <button
             type="button"
-            onClick={() => runPdfAction("share")}
-            disabled={Boolean(pdfAction)}
-            style={styles.printButton}
+            onClick={() => window.print()}
+            style={styles.secondaryDocumentButton}
           >
-            {pdfAction === "share" ? "Preparando..." : "Compartir PDF"}
+            <AppIcon icon={Printer} size={17} />
+            Imprimir
           </button>
         </div>
         {!canSendEmail && emailActionHint && (
@@ -914,25 +1378,135 @@ function QuoteDetail({ quote, companyProfile, canSendByEmail, onOpenEmail }) {
       <div style={styles.detailDocument}>
         <QuotePrintView quote={quote} companyProfile={companyProfile} />
       </div>
+
+      <ResponsiveDialog
+        open={whatsAppConfirmationOpen}
+        onClose={() => {
+          if (!confirmingWhatsApp) setWhatsAppConfirmationOpen(false);
+        }}
+        size="small"
+        eyebrow="WhatsApp"
+        title="¿Enviaste la cotización?"
+        description="Si completaste el envío por WhatsApp, registra la cotización como emitida. Si cancelaste o todavía no la enviaste, puedes mantenerla pendiente."
+        footer={(
+          <div className="erp-actions" style={styles.prepareSaleActions}>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={confirmingWhatsApp}
+              onClick={() => setWhatsAppConfirmationOpen(false)}
+            >
+              Mantener pendiente
+            </Button>
+            <Button
+              type="button"
+              disabled={confirmingWhatsApp}
+              onClick={confirmWhatsAppSent}
+            >
+              {confirmingWhatsApp ? "Registrando..." : "Sí, fue enviada"}
+            </Button>
+          </div>
+        )}
+      />
     </div>
   );
 
 }
 
-function EmailStatusLine({ quote }) {
-  if (!quote.estadoEnvioCorreo || quote.estadoEnvioCorreo === "simulado") {
-    return null;
+function CommercialStatusTimeline({ quote }) {
+  const events = [];
+  if (quote.whatsappPreparadoEn && quote.estado === "borrador") {
+    events.push({
+      label: "Preparada para WhatsApp",
+      value: formatTimestamp(quote.whatsappPreparadoEn),
+      note: "Todavía pendiente de confirmación de envío",
+    });
   }
+  if (quote.canalEmision === "whatsapp" && quote.fechaEmision) {
+    events.push({
+      label: quote.emisionDetectadaPor === "apertura_cliente"
+        ? "Emitida al detectar apertura del cliente"
+        : "Emitida por WhatsApp",
+      value: formatTimestamp(quote.fechaEmision),
+    });
+  }
+  if (["enviado", "simulado"].includes(quote.estadoEnvioCorreo)) {
+    const destinationEmail = String(quote.emailClienteDestino || "").trim();
+    const originalEmail = String(
+      quote.correoOriginalCliente ||
+        quote.cliente?.email ||
+        quote.clienteSnapshot?.email ||
+        quote.clienteEmail ||
+        ""
+    ).trim();
+    const destinationNote = destinationEmail
+      ? quote.destinatarioAlternativo
+        ? `Destino alternativo: ${destinationEmail}${
+            originalEmail ? ` · Correo asociado: ${originalEmail}` : ""
+          }`
+        : `Destino: ${destinationEmail}`
+      : "";
+    events.push({
+      label: quote.estadoEnvioCorreo === "simulado" ? "Preparada en QA" : "Enviada",
+      value: quote.fechaEnvioCorreo
+        ? formatTimestamp(quote.fechaEnvioCorreo)
+        : "Fecha no disponible",
+      note: destinationNote,
+    });
+  }
+  if (quote.propuestaPublicaVistaEn) {
+    events.push({
+      label: "Vista por cliente",
+      value: formatTimestamp(quote.propuestaPublicaVistaEn),
+    });
+  }
+  if (
+    quote.respuestaClienteOrigen === "portal_publico" &&
+    ["aceptada", "rechazada"].includes(quote.respuestaCliente)
+  ) {
+    events.push({
+      label: quote.respuestaCliente === "aceptada"
+        ? "Aceptada por cliente"
+        : "Rechazada por cliente",
+      value: quote.respuestaClienteEn
+        ? formatTimestamp(quote.respuestaClienteEn)
+        : "Respuesta registrada",
+      note: "Respuesta registrada por el cliente",
+    });
+  } else if (
+    ["enviado", "simulado"].includes(quote.estadoEnvioCorreo) &&
+    !quote.respuestaCliente &&
+    quote.estado !== "vencida"
+  ) {
+    events.push({ label: "Sin respuesta", value: "Pendiente del cliente" });
+  }
+  if (quote.vencidaAutomaticamente) {
+    events.push({
+      label: "Vencida automáticamente",
+      value: quote.vencidaEn ? formatTimestamp(quote.vencidaEn) : "Vencida",
+    });
+  }
+  if (quote.estadoEnvioCorreo === "error") {
+    events.push({
+      label: "Error de envío",
+      value: quote.ultimoErrorEnvio || "No fue posible enviar el correo",
+    });
+  }
+  if (!events.length) return null;
 
   return (
-    <p style={styles.emailStatusLine}>
-      Correo: <strong>{quote.estadoEnvioCorreo}</strong>
-      {quote.emailClienteDestino ? ` a ${quote.emailClienteDestino}` : ""}
-      {quote.fechaEnvioCorreo
-        ? ` · ultimo intento ${formatTimestamp(quote.fechaEnvioCorreo)}`
-        : ""}
-      {quote.ultimoErrorEnvio ? ` · ${quote.ultimoErrorEnvio}` : ""}
-    </p>
+    <section style={styles.commercialStatus} aria-label="Estado comercial">
+      <strong style={styles.commercialStatusTitle}>Estado comercial</strong>
+      <div style={styles.commercialStatusGrid}>
+        {events.map((event) => (
+          <div key={`${event.label}-${event.value}`} style={styles.commercialStatusEvent}>
+            <span style={styles.commercialStatusLabel}>{event.label}</span>
+            <span style={styles.commercialStatusValue}>{event.value}</span>
+            {event.note && <small style={styles.commercialStatusNote}>{event.note}</small>}
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -963,6 +1537,44 @@ const styles = {
     minWidth: 0,
     padding: "18px",
   },
+  commercialStatus: {
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
+    borderRadius: "6px",
+    display: "grid",
+    gap: "8px",
+    marginTop: "12px",
+    padding: "11px 12px",
+  },
+  commercialStatusTitle: {
+    color: "#0f172a",
+    fontSize: "13px",
+  },
+  commercialStatusGrid: {
+    display: "grid",
+    gap: "8px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+  },
+  commercialStatusEvent: {
+    borderLeft: "2px solid #0f766e",
+    display: "grid",
+    gap: "2px",
+    paddingLeft: "8px",
+  },
+  commercialStatusLabel: {
+    color: "#334155",
+    fontSize: "12px",
+    fontWeight: 700,
+  },
+  commercialStatusValue: {
+    color: "#64748b",
+    fontSize: "12px",
+  },
+  commercialStatusNote: {
+    color: "#0f766e",
+    fontSize: "11px",
+    fontWeight: 700,
+  },
   panelTitle: {
     margin: "0 0 6px",
     fontSize: "17px",
@@ -992,13 +1604,42 @@ const styles = {
     padding: "10px 11px",
   },
   tableWrapper: {
-    overflowX: "auto",
     minWidth: 0,
+    overflow: "visible",
   },
   table: {
     borderCollapse: "collapse",
-    minWidth: "1180px",
+    minWidth: 0,
+    tableLayout: "fixed",
     width: "100%",
+  },
+  numberColumn: {
+    width: "13%",
+  },
+  clientColumn: {
+    width: "18%",
+  },
+  statusColumn: {
+    width: "10%",
+  },
+  totalColumn: {
+    width: "12%",
+  },
+  saleColumn: {
+    width: "13%",
+  },
+  updatedColumn: {
+    width: "14%",
+  },
+  actionsColumn: {
+    whiteSpace: "normal",
+    width: "20%",
+  },
+  clientCell: {
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
   },
   th: {
     background: "#f8fafc",
@@ -1025,6 +1666,60 @@ const styles = {
     display: "flex",
     flexWrap: "wrap",
     gap: "8px",
+    minWidth: 0,
+  },
+  mobileCardActions: {
+    marginTop: "12px",
+  },
+  primaryButton: {
+    background: "#0f766e",
+    border: "1px solid #0f766e",
+    borderRadius: "4px",
+    color: "#ffffff",
+    cursor: "pointer",
+    fontSize: "13px",
+    fontWeight: 800,
+    minHeight: "38px",
+    padding: "8px 11px",
+  },
+  moreActionsButton: {
+    alignItems: "center",
+    background: "#f8fafc",
+    border: "1px solid #cbd5e1",
+    borderRadius: "4px",
+    color: "#334155",
+    cursor: "pointer",
+    display: "inline-flex",
+    fontSize: "13px",
+    fontWeight: 700,
+    gap: "6px",
+    minHeight: "38px",
+    padding: "8px 10px",
+  },
+  actionsMenu: {
+    background: "#ffffff",
+    border: "1px solid #cbd5e1",
+    borderRadius: "6px",
+    boxShadow: "0 12px 30px rgba(15, 23, 42, 0.18)",
+    display: "grid",
+    gap: "2px",
+    padding: "6px",
+    position: "fixed",
+    width: "224px",
+    zIndex: 1300,
+  },
+  actionsMenuItem: {
+    background: "transparent",
+    border: 0,
+    borderRadius: "4px",
+    color: "#334155",
+    cursor: "pointer",
+    fontSize: "13px",
+    fontWeight: 700,
+    minHeight: "40px",
+    padding: "9px 10px",
+    textAlign: "left",
+    width: "100%",
   },
   secondaryButton: {
     background: "#f8fafc",
@@ -1037,58 +1732,17 @@ const styles = {
     minHeight: "38px",
     padding: "8px 10px",
   },
-  acceptButton: {
-    background: "#f0fdf4",
-    border: "1px solid #bbf7d0",
-    borderRadius: "4px",
-    color: "#166534",
-    cursor: "pointer",
-    fontSize: "13px",
-    fontWeight: 700,
-    minHeight: "38px",
-    padding: "8px 10px",
-  },
-  rejectButton: {
-    background: "#fef2f2",
-    border: "1px solid #fecaca",
-    borderRadius: "4px",
-    color: "#991b1b",
-    cursor: "pointer",
-    fontSize: "13px",
-    fontWeight: 700,
-    minHeight: "38px",
-    padding: "8px 10px",
-  },
-  expireButton: {
-    background: "#fffbeb",
-    border: "1px solid #fde68a",
-    borderRadius: "4px",
-    color: "#92400e",
-    cursor: "pointer",
-    fontSize: "13px",
-    fontWeight: 700,
-    minHeight: "38px",
-    padding: "8px 10px",
-  },
-  archiveButton: {
-    background: "#f8fafc",
-    border: "1px solid #d1d5db",
-    borderRadius: "4px",
-    color: "#4b5563",
-    cursor: "pointer",
-    fontSize: "13px",
-    fontWeight: 700,
-    minHeight: "38px",
-    padding: "8px 10px",
-  },
   printButton: {
+    alignItems: "center",
     background: "#111827",
     border: 0,
     borderRadius: "4px",
     color: "#ffffff",
     cursor: "pointer",
+    display: "inline-flex",
     fontSize: "13px",
     fontWeight: 800,
+    gap: "6px",
     minHeight: "40px",
     padding: "10px 12px",
     whiteSpace: "nowrap",
@@ -1151,13 +1805,46 @@ const styles = {
     justifyContent: "flex-end",
   },
   emailButton: {
+    alignItems: "center",
     background: "#0f766e",
     border: 0,
     borderRadius: "4px",
     color: "#ffffff",
     cursor: "pointer",
+    display: "inline-flex",
     fontSize: "13px",
     fontWeight: 800,
+    gap: "6px",
+    minHeight: "40px",
+    padding: "10px 12px",
+    whiteSpace: "nowrap",
+  },
+  whatsappButton: {
+    alignItems: "center",
+    background: "#128c7e",
+    border: 0,
+    borderRadius: "4px",
+    color: "#ffffff",
+    cursor: "pointer",
+    display: "inline-flex",
+    fontSize: "13px",
+    fontWeight: 800,
+    gap: "6px",
+    minHeight: "40px",
+    padding: "10px 12px",
+    whiteSpace: "nowrap",
+  },
+  secondaryDocumentButton: {
+    alignItems: "center",
+    background: "#f8fafc",
+    border: "1px solid #cbd5e1",
+    borderRadius: "4px",
+    color: "#334155",
+    cursor: "pointer",
+    display: "inline-flex",
+    fontSize: "13px",
+    fontWeight: 800,
+    gap: "6px",
     minHeight: "40px",
     padding: "10px 12px",
     whiteSpace: "nowrap",
@@ -1174,12 +1861,6 @@ const styles = {
     fontSize: "13px",
     margin: "4px 0 0",
   },
-  emailStatusLine: {
-    color: "#64748b",
-    fontSize: "13px",
-    lineHeight: 1.4,
-    margin: "8px 0 0",
-  },
   detailDocument: {
     maxWidth: "100%",
     minWidth: 0,
@@ -1189,17 +1870,18 @@ const styles = {
     justifyContent: "flex-end",
     width: "100%",
   },
-  cardPrimaryButton: {
-    background: "#0f766e",
-    border: 0,
-    borderRadius: "4px",
-    color: "#ffffff",
-    cursor: "pointer",
-    fontSize: "13px",
-    fontWeight: 800,
-    minHeight: "40px",
-    padding: "9px 12px",
+  prepareSaleActions: {
+    justifyContent: "flex-end",
     width: "100%",
+  },
+  prepareSaleNotice: {
+    background: "#eff6ff",
+    border: "1px solid #bfdbfe",
+    borderRadius: "6px",
+    color: "#1e3a8a",
+    lineHeight: 1.5,
+    margin: 0,
+    padding: "12px 14px",
   },
   printSheet: {
     background: "#ffffff",

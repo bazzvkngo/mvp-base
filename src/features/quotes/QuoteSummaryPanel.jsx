@@ -1,4 +1,5 @@
 import React from "react";
+import { getQuoteStatusLabel } from "../../domain/quoteModel.mjs";
 import { formatCLP } from "../../utils/formatters";
 
 function SummaryRow({ label, strong, value }) {
@@ -6,19 +7,13 @@ function SummaryRow({ label, strong, value }) {
 }
 
 function QuoteSummaryPanel({
-  emailDisabled,
-  emailHint,
-  onClear,
+  isEditMode,
   onDiscountChange,
-  onDownloadPdf,
-  onOpenEmail,
-  onPreview,
-  onSaveDraft,
-  onSaveIssued,
-  pdfActionLoading,
+  onSave,
   quote,
   saveBlockedByClient,
   saving,
+  savingEstado,
   totals,
   totalsError,
 }) {
@@ -27,7 +22,9 @@ function QuoteSummaryPanel({
       <section className="quote-workspace__panel quote-summary">
         <header className="quote-summary__header">
           <div><span className="quote-workspace__kicker">Resumen</span><h2>Totales</h2></div>
-          <span className={`quote-workspace__status quote-workspace__status--${quote.estado}`}>{quote.estado === "emitida" ? "Emitida" : "Borrador"}</span>
+          {isEditMode && (
+            <span className={`quote-workspace__status quote-workspace__status--${quote.estado}`}>{getQuoteStatusLabel(quote.estado)}</span>
+          )}
         </header>
         <div className="quote-summary__amounts">
           <SummaryRow label="Subtotal" value={formatCLP(totals.subtotal)} />
@@ -39,13 +36,7 @@ function QuoteSummaryPanel({
         </div>
         {totalsError && <p className="quote-workspace__message quote-workspace__message--error">{totalsError}</p>}
         <div className="quote-summary__actions">
-          <button type="button" className="quote-workspace__button quote-workspace__button--primary" onClick={onSaveDraft} disabled={saving || saveBlockedByClient}>{saving ? "Guardando…" : "Guardar borrador"}</button>
-          <button type="button" className="quote-workspace__button quote-workspace__button--secondary" onClick={onPreview} disabled={saving}>Previsualizar</button>
-          <button type="button" className="quote-workspace__button quote-workspace__button--issued" onClick={onSaveIssued} disabled={saving || saveBlockedByClient}>Guardar como emitida</button>
-          <button type="button" className="quote-workspace__button quote-workspace__button--secondary" onClick={onDownloadPdf} disabled={saving || pdfActionLoading}>{pdfActionLoading ? "Generando PDF…" : "Generar PDF"}</button>
-          <button type="button" className="quote-workspace__button quote-workspace__button--secondary" onClick={onOpenEmail} disabled={emailDisabled}>Enviar por correo</button>
-          {emailHint && <small className="quote-summary__hint">{emailHint}</small>}
-          <button type="button" className="quote-summary__clear" onClick={onClear}>Limpiar cotización</button>
+          <button type="button" className="quote-workspace__button quote-workspace__button--primary" onClick={onSave} disabled={saving || saveBlockedByClient}>{savingEstado === "borrador" ? (isEditMode ? "Guardando..." : "Creando...") : (isEditMode ? "Guardar cambios" : "Crear cotización")}</button>
         </div>
       </section>
     </aside>

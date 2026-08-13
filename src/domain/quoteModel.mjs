@@ -2,7 +2,21 @@ export const QUOTE_MODEL_VERSION = 2;
 export const CLP_CURRENCY = "CLP";
 export const CHILE_VAT_RATE = 0.19;
 export const DEFAULT_QUOTE_VALIDITY_DAYS = 15;
-export const DRAFT_QUOTE_NUMBER_LABEL = "Borrador sin número";
+export const DRAFT_QUOTE_NUMBER_LABEL = "Número pendiente";
+
+export const QUOTE_STATUS_LABELS = Object.freeze({
+  borrador: "Pendiente de envío",
+  emitida: "Emitida",
+  aceptada: "Aceptada",
+  rechazada: "Rechazada",
+  vencida: "Vencida",
+  archivada: "Archivada",
+});
+
+export function getQuoteStatusLabel(status) {
+  const normalized = safeQuoteText(status, 30) || "borrador";
+  return QUOTE_STATUS_LABELS[normalized] || normalized;
+}
 
 const VALID_QUOTE_STATUS = new Set([
   "borrador",

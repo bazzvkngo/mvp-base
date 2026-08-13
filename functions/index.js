@@ -8,7 +8,7 @@ const { defineSecret } = require("firebase-functions/params");
 // Admin SDK para acceder a Firestore
 const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
-const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
 
 // Gemini SDK
 const { GoogleGenAI } = require("@google/genai");
@@ -64,6 +64,19 @@ const {
   crearVentaDesdeCotizacionHandler,
   crearVentaHandler,
 } = require("./salePersistence");
+const { sendQuoteEmailHandler } = require("./quoteEmail");
+const {
+  buildQuoteEmissionPatch,
+  confirmQuoteWhatsAppSentHandler,
+  createPublicQuoteToken,
+  expirePublicQuoteProposalsHandler,
+  getPublicBaseUrl,
+  getPublicQuoteProposalHandler,
+  isEmulatorEnvironment,
+  markQuoteEmittedManuallyHandler,
+  prepareQuoteWhatsAppShareHandler,
+  respondPublicQuoteProposalHandler,
+} = require("./quotePublicProposal");
 const {
   createAdditionalBusinessHandler,
   createFirstBusinessHandler,
@@ -2206,10 +2219,6 @@ async function getCompanyProfileForQuote(businessRef, quote) {
   return snapshot.exists ? snapshot.data() || {} : {};
 }
 
-function isValidEmailAddress(value) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
-}
-
 function escapeHtml(value) {
   return String(value || "")
     .replace(/&/g, "&amp;")
@@ -2309,7 +2318,7 @@ function joinNonEmpty(parts, separator = " / ") {
   return parts.filter((part) => String(part || "").trim()).join(separator);
 }
 
-function buildPlainQuoteEmail({ quote, mensaje }) {
+function buildPlainQuoteEmail({ quote, mensaje, proposalUrl }) {
   const company = quote.empresa || {};
   const companyName = company.nombreComercial || company.razonSocial || "Bagner";
   const companyContact = joinNonEmpty([
@@ -2332,6 +2341,9 @@ function buildPlainQuoteEmail({ quote, mensaje }) {
     "",
     "El detalle de los productos, servicios, condiciones comerciales y observaciones se encuentra en el documento PDF adjunto.",
     "",
+    "Revisa y responde la cotizacion en este enlace:",
+    proposalUrl,
+    "",
     companyContact || companyAddress ? `Contacto ${companyName}:` : "",
     companyContact,
     companyAddress,
@@ -2342,7 +2354,7 @@ function buildPlainQuoteEmail({ quote, mensaje }) {
   return lines.filter((line) => line !== "").join("\n");
 }
 
-function buildQuoteEmailHtml({ quote, mensaje }) {
+function buildQuoteEmailHtml({ quote, mensaje, proposalUrl }) {
   const company = quote.empresa || {};
   const brand = company.nombreComercial || company.razonSocial || "Bagner";
   const companyContact = joinNonEmpty([
@@ -2373,6 +2385,11 @@ function buildQuoteEmailHtml({ quote, mensaje }) {
           </div>
           <div style="background:#eef6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px;margin:18px 0;color:#1e3a8a;">
             El detalle de los productos, servicios, condiciones comerciales y observaciones se encuentra en el documento PDF adjunto.
+          </div>
+          <div style="margin:22px 0;text-align:center;">
+            <a href="${escapeHtml(proposalUrl)}" style="background:#0f766e;border-radius:6px;color:#ffffff;display:inline-block;font-weight:700;padding:12px 18px;text-decoration:none;">
+              Revisar y responder cotizaci&oacute;n
+            </a>
           </div>
           ${
             companyContact || companyAddress
@@ -2422,8 +2439,6 @@ async function sendQuoteEmailWithResend({
   return data || {};
 }
 
-const AUTOMATIC_QUOTE_EMAIL_ENABLED = false;
-
 exports.sendQuoteEmail = onCall(
   {
     maxInstances: 10,
@@ -2432,212 +2447,119 @@ exports.sendQuoteEmail = onCall(
     secrets: [RESEND_API_KEY_SECRET, RESEND_FROM_EMAIL_SECRET],
     timeoutSeconds: 60,
   },
-  async (request) => {
-    if (!request.auth || !request.auth.uid) {
-      throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
-    }
+  async (request) =>
+    sendQuoteEmailHandler(request, {
+      ...businessOnboardingDependencies,
+      buildPlainQuoteEmail,
+      buildQuoteEmailHtml,
+      buildQuoteEmissionPatch,
+      createPublicQuoteToken,
+      getCompanyProfileForQuote,
+      getPublicBaseUrl,
+      getQuoteEmailSender,
+      getResendApiKey,
+      isEmulatorEnvironment,
+      normalizePdfAttachment,
+      requireBusinessAccess,
+      safeText,
+      sendQuoteEmailWithProvider: sendQuoteEmailWithResend,
+      Timestamp,
+    })
+);
 
-    if (!AUTOMATIC_QUOTE_EMAIL_ENABLED) {
-      throw new HttpsError(
-        "failed-precondition",
-        "El envío automático de cotizaciones está temporalmente deshabilitado. Descarga el PDF y utiliza el envío manual."
-      );
-    }
+exports.getPublicQuoteProposal = onCall(
+  {
+    maxInstances: 20,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    getPublicQuoteProposalHandler(request, {
+      db,
+      FieldValue,
+      HttpsError,
+      Timestamp,
+    })
+);
 
-    const { businessId, businessRef } = await requireBusinessAccess(
-      request,
-      businessOnboardingDependencies
-    );
-    const data = request.data || {};
-    const rawEmailCliente = String(
-      data.emailCliente || data.emailClienteDestino || ""
-    );
-    const rawAsunto = String(data.asunto || "");
-    const rawMensaje = String(data.mensaje || "");
-    const quoteId = safeText(data.quoteId, 100);
-    const emailCliente = safeText(rawEmailCliente, 180);
-    const asunto = safeText(rawAsunto, 180);
-    const mensaje = safeText(rawMensaje, 2000);
-    const pdfAttachment = normalizePdfAttachment(data);
+exports.respondPublicQuoteProposal = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    respondPublicQuoteProposalHandler(request, {
+      db,
+      FieldValue,
+      HttpsError,
+      Timestamp,
+    })
+);
 
-    if (!quoteId) {
-      throw new HttpsError("invalid-argument", "quoteId es requerido.");
-    }
-    if (!isValidEmailAddress(emailCliente)) {
-      throw new HttpsError(
-        "invalid-argument",
-        "Ingresa un correo de cliente valido."
-      );
-    }
-    if (rawEmailCliente.length > 180) {
-      throw new HttpsError(
-        "invalid-argument",
-        "El correo de destino es demasiado largo."
-      );
-    }
-    if (!asunto) {
-      throw new HttpsError("invalid-argument", "El asunto es obligatorio.");
-    }
-    if (rawAsunto.length > 180) {
-      throw new HttpsError(
-        "invalid-argument",
-        "El asunto debe tener 180 caracteres o menos."
-      );
-    }
-    if (/[\r\n]/.test(asunto)) {
-      throw new HttpsError(
-        "invalid-argument",
-        "El asunto no puede contener saltos de linea."
-      );
-    }
-    if (!mensaje) {
-      throw new HttpsError("invalid-argument", "El mensaje es obligatorio.");
-    }
-    if (rawMensaje.length > 2000) {
-      throw new HttpsError(
-        "invalid-argument",
-        "El mensaje debe tener 2000 caracteres o menos."
-      );
-    }
-    if (!pdfAttachment) {
-      throw new HttpsError("invalid-argument", "El PDF adjunto es obligatorio.");
-    }
+exports.prepareQuoteWhatsAppShare = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    prepareQuoteWhatsAppShareHandler(request, {
+      ...businessOnboardingDependencies,
+      getPublicBaseUrl,
+      requireBusinessAccess,
+      Timestamp,
+    })
+);
 
-    const quoteRef = businessRef.collection("cotizaciones").doc(quoteId);
-    const quoteSnapshot = await quoteRef.get();
+exports.markQuoteEmittedManually = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    markQuoteEmittedManuallyHandler(request, {
+      ...businessOnboardingDependencies,
+      requireBusinessAccess,
+    })
+);
 
-    if (!quoteSnapshot.exists) {
-      throw new HttpsError("not-found", "No se encontro la cotizacion.");
-    }
+exports.confirmQuoteWhatsAppSent = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    confirmQuoteWhatsAppSentHandler(request, {
+      ...businessOnboardingDependencies,
+      requireBusinessAccess,
+      Timestamp,
+    })
+);
 
-    const quote = {
-      id: quoteSnapshot.id,
-      ...quoteSnapshot.data(),
-    };
-    if (quote.negocioId && quote.negocioId !== businessId) {
-      throw new HttpsError("permission-denied", "No puedes enviar esta cotizacion.");
-    }
-    const sendableStatuses = ["emitida", "aceptada", "rechazada", "vencida"];
-    if (!sendableStatuses.includes((quote.estado || "").toLowerCase())) {
-      throw new HttpsError(
-        "failed-precondition",
-        "La cotizacion debe estar emitida o cerrada antes de enviarse."
-      );
-    }
-
-    quote.empresa = await getCompanyProfileForQuote(businessRef, quote);
-    const html = buildQuoteEmailHtml({ quote, asunto, mensaje });
-    const text = buildPlainQuoteEmail({ quote, asunto, mensaje });
-    const apiKey = getResendApiKey();
-    const from = getQuoteEmailSender();
-    const attemptedAt = new Date();
-    const baseEmailPatch = {
-      emailClienteDestino: emailCliente,
-      fechaEnvioCorreo: FieldValue.serverTimestamp(),
-      asuntoCorreo: asunto,
-      mensajeCorreo: mensaje,
-      archivoAdjuntoCorreo: pdfAttachment.filename,
-      actualizadoEn: FieldValue.serverTimestamp(),
-    };
-
-    if (!apiKey || !from) {
-      const configurationError =
-        "No fue posible enviar la cotizacion. Puedes utilizar el respaldo manual.";
-      const patch = {
-        ...baseEmailPatch,
-        enviadoPorCorreo: false,
-        estadoEnvioCorreo: "error",
-        proveedorCorreo: "resend",
-        ultimoErrorEnvio: configurationError,
-      };
-      await quoteRef.update(patch);
-      return {
-        success: false,
-        provider: "resend",
-        error: configurationError,
-        quoteEmailStatus: {
-          emailClienteDestino: emailCliente,
-          asuntoCorreo: asunto,
-          mensajeCorreo: mensaje,
-          archivoAdjuntoCorreo: pdfAttachment.filename,
-          enviadoPorCorreo: false,
-          estadoEnvioCorreo: "error",
-          proveedorCorreo: "resend",
-          ultimoErrorEnvio: configurationError,
-          fechaEnvioCorreo: attemptedAt.toISOString(),
-        },
-      };
-    }
-
-    try {
-      const providerResponse = await sendQuoteEmailWithResend({
-        apiKey,
-        from,
-        to: emailCliente,
-        subject: asunto,
-        html,
-        text,
-        attachments: [pdfAttachment],
-      });
-      const patch = {
-        ...baseEmailPatch,
-        enviadoPorCorreo: true,
-        estadoEnvioCorreo: "enviado",
-        ultimoErrorEnvio: "",
-        proveedorCorreo: "resend",
-        idEnvioCorreoProveedor: safeText(providerResponse.id, 120),
-        archivoAdjuntoCorreo: pdfAttachment.filename,
-      };
-      await quoteRef.update(patch);
-      return {
-        success: true,
-        provider: "resend",
-        quoteEmailStatus: {
-          emailClienteDestino: emailCliente,
-          asuntoCorreo: asunto,
-          mensajeCorreo: mensaje,
-          enviadoPorCorreo: true,
-          estadoEnvioCorreo: "enviado",
-          ultimoErrorEnvio: "",
-          proveedorCorreo: "resend",
-          idEnvioCorreoProveedor: safeText(providerResponse.id, 120),
-          archivoAdjuntoCorreo: pdfAttachment.filename,
-          fechaEnvioCorreo: attemptedAt.toISOString(),
-        },
-      };
-    } catch (error) {
-      console.error("sendQuoteEmail: proveedor fallo.", {
-        message: error.message,
-        name: error.name,
-      });
-      const providerError =
-        "No fue posible enviar la cotizacion. Puedes utilizar el respaldo manual.";
-      const patch = {
-        ...baseEmailPatch,
-        enviadoPorCorreo: false,
-        estadoEnvioCorreo: "error",
-        ultimoErrorEnvio: providerError,
-        proveedorCorreo: "resend",
-        archivoAdjuntoCorreo: pdfAttachment.filename,
-      };
-      await quoteRef.update(patch);
-      return {
-        success: false,
-        provider: "resend",
-        error: providerError,
-        quoteEmailStatus: {
-          emailClienteDestino: emailCliente,
-          asuntoCorreo: asunto,
-          mensajeCorreo: mensaje,
-          enviadoPorCorreo: false,
-          estadoEnvioCorreo: "error",
-          ultimoErrorEnvio: patch.ultimoErrorEnvio,
-          proveedorCorreo: "resend",
-          archivoAdjuntoCorreo: pdfAttachment.filename,
-          fechaEnvioCorreo: attemptedAt.toISOString(),
-        },
-      };
-    }
+exports.expirePublicQuoteProposals = onSchedule(
+  {
+    maxInstances: 1,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    schedule: "every 1 hours",
+    timeZone: "America/Santiago",
+    timeoutSeconds: 300,
+  },
+  async () => {
+    const result = await expirePublicQuoteProposalsHandler({
+      db,
+      FieldValue,
+      Timestamp,
+    });
+    console.log("Vencimiento de propuestas públicas completado.", result);
   }
 );
 

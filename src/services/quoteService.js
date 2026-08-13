@@ -210,12 +210,31 @@ export async function updateQuote(uid, quoteId, data) {
 }
 
 export async function updateQuoteStatus(uid, quoteId, estado, options = {}) {
-  assertClientWriteAllowed("cambiar el estado de cotizaciones");
   if (!uid) throw new Error("Usuario no autenticado.");
   if (!quoteId) throw new Error("quoteId es requerido.");
   if (!["borrador", "emitida", "aceptada", "rechazada", "vencida", "archivada"].includes(estado)) {
     throw new Error("Estado de cotización inválido.");
   }
+
+  if (estado === "emitida") {
+    assertCloudFunctionAllowed("marcar la cotización como emitida");
+    const callable = httpsCallable(
+      getFirebaseFunctions(FUNCTIONS_REGION),
+      "markQuoteEmittedManually"
+    );
+    try {
+      const response = await callable({ businessId: uid, quoteId });
+      return response.data?.quoteStatus || { estado: "emitida" };
+    } catch (error) {
+      throw normalizeQuoteCallableError(
+        error,
+        "markQuoteEmittedManually",
+        "No se pudo marcar la cotización como emitida."
+      );
+    }
+  }
+
+  assertClientWriteAllowed("cambiar el estado de cotizaciones");
 
   const payload = {
     estado,
@@ -227,6 +246,7 @@ export async function updateQuoteStatus(uid, quoteId, estado, options = {}) {
   }
 
   await updateDoc(doc(db, ...quoteDocPath(uid, quoteId)), payload);
+  return payload;
 }
 
 let cachedSimularCotizacionProyecto = null;

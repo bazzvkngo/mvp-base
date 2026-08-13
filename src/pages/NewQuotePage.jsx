@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { sileo } from "sileo";
 import AiAvailabilityStatus from "../components/ai/AiAvailabilityStatus";
 import { AI_MODELS } from "../config/aiModels";
 import {
@@ -9,6 +10,7 @@ import {
 import {
   calculateQuoteLineAmounts,
   DEFAULT_QUOTE_CONDITIONS,
+  getQuoteStatusLabel,
   resolveQuoteClientSelectionSnapshot,
   tryCalculateQuoteTotals,
   validateQuoteDraft,
@@ -20,9 +22,7 @@ import ClientSelector from "../features/clients/ClientSelector";
 import QuoteCatalogDialog from "../features/quotes/QuoteCatalogDialog";
 import QuoteCollapsibleSection from "../features/quotes/QuoteCollapsibleSection";
 import QuoteItemsEditor from "../features/quotes/QuoteItemsEditor";
-import QuotePrintView from "../features/quotes/QuotePrintView";
 import QuoteSummaryPanel from "../features/quotes/QuoteSummaryPanel";
-import SendQuoteEmailModal from "../features/quotes/SendQuoteEmailModal";
 import "../features/quotes/quote-workspace.css";
 import { suggestQuoteItems } from "../services/aiQuoteService";
 import { getCompanyProfile } from "../services/companyService";
@@ -31,7 +31,6 @@ import {
   subscribeToInventoryAreas,
   subscribeToInventoryCategories,
 } from "../services/inventoryService";
-import { isQuoteEmailSendable } from "../services/quoteEmailService";
 import {
   createQuote,
   createQuoteRequestId,
@@ -41,16 +40,10 @@ import {
 } from "../services/quoteService";
 import { subscribeToValuations } from "../services/valuationService";
 import { formatCLP, formatDate } from "../utils/formatters";
-import { downloadQuotePdf } from "../utils/quotePdf";
 
 const ASSISTANT_DESCRIPTION_MAX_LENGTH = 1200;
 const MANUAL_CATALOG_PAGE_SIZE = 10;
 const ITEM_FEEDBACK_HIDE_DELAY = 3500;
-
-const estadoLabels = {
-  borrador: "Borrador",
-  emitida: "Emitida",
-};
 
 const tipoLabels = {
   producto: "Producto",
@@ -371,9 +364,10 @@ function buildQuoteFromSavedQuote(savedQuote = {}) {
 function NewQuotePage({ userId }) {
   const { quoteId: editQuoteId = "" } = useParams();
   const location = useLocation();
+  const navigate = useNavigate();
   const addedItemsRef = useRef(null);
-  const previewRef = useRef(null);
   const createRequestIdRef = useRef("");
+  const savingRef = useRef(false);
   const originalLinkedClientRef = useRef({
     clienteId: "",
     snapshot: null,
@@ -402,6 +396,7 @@ function NewQuotePage({ userId }) {
   const [editLockedMessage, setEditLockedMessage] = useState("");
   const [loadedDraftQuote, setLoadedDraftQuote] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [savingEstado, setSavingEstado] = useState("");
   const [search, setSearch] = useState("");
   const [catalogTypeFilter, setCatalogTypeFilter] = useState("todos");
   const [error, setError] = useState("");
@@ -430,7 +425,6 @@ function NewQuotePage({ userId }) {
   const [manualCatalogVisibleCount, setManualCatalogVisibleCount] = useState(
     MANUAL_CATALOG_PAGE_SIZE
   );
-  const [emailModalOpen, setEmailModalOpen] = useState(false);
   const [clientAvailability, setClientAvailability] = useState({
     error: "",
     hasActiveClients: false,
@@ -439,21 +433,9 @@ function NewQuotePage({ userId }) {
   const [inventoryAreas, setInventoryAreas] = useState([]);
   const [inventoryCategories, setInventoryCategories] = useState([]);
   const [dirty, setDirty] = useState(false);
-  const [pdfActionLoading, setPdfActionLoading] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [scopeOpen, setScopeOpen] = useState(false);
   const [conditionsOpen, setConditionsOpen] = useState(false);
-  const [optionsOpen, setOptionsOpen] = useState(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
-
-  useEffect(() => {
-    if (!previewOpen) return undefined;
-    const frame = window.requestAnimationFrame(() => {
-      previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      previewRef.current?.focus({ preventScroll: true });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [previewOpen]);
 
   useEffect(() => {
     currentClienteIdRef.current = quote.clienteId;
@@ -490,16 +472,25 @@ function NewQuotePage({ userId }) {
           afectaIva: profile.impuestoPredeterminadoId === "IVA_GENERAL",
           condicionesPago:
             prev.condicionesPago || profile.condicionesPago || "",
-          validezDias:
-            prev.validezDias || profile.validezCotizacionDias || 15,
+          validezDias: profile.validezCotizacionDias || 15,
           condiciones: {
             ...prev.condiciones,
             formaPago:
               prev.condiciones?.formaPago || profile.condicionesPago || "",
-            plazoEntrega: prev.condiciones?.plazoEntrega || "",
-            alcanceGeografico: prev.condiciones?.alcanceGeografico || "",
-            garantia: prev.condiciones?.garantia || "",
-            exclusiones: prev.condiciones?.exclusiones || "",
+            plazoEntrega:
+              prev.condiciones?.plazoEntrega ||
+              profile.plazoEntregaCotizacion ||
+              "",
+            alcanceGeografico:
+              prev.condiciones?.alcanceGeografico ||
+              profile.alcanceGeograficoCotizacion ||
+              "",
+            garantia:
+              prev.condiciones?.garantia || profile.garantiaCotizacion || "",
+            exclusiones:
+              prev.condiciones?.exclusiones ||
+              profile.exclusionesCotizacion ||
+              "",
             terminosAdicionales:
               prev.condiciones?.terminosAdicionales ||
               profile.terminosCotizacion ||
@@ -510,7 +501,7 @@ function NewQuotePage({ userId }) {
               "",
           },
           aceptacion: {
-            habilitada: profile.aceptacionCotizacionHabilitada === true,
+            habilitada: false,
             texto:
               profile.textoAceptacionCotizacion ||
               prev.aceptacion?.texto ||
@@ -682,22 +673,6 @@ function NewQuotePage({ userId }) {
   const totals = totalsResult.totals;
   const quoteValidation = useMemo(() => validateQuoteDraft(quote), [quote]);
 
-  const currentSavedQuote = useMemo(
-    () => ({
-      id: savedQuoteId,
-      ...quote,
-      empresa: quote.empresa || companyProfile || {},
-      items: normalizedItems,
-      subtotal: totals.subtotal,
-      descuento: totals.descuento,
-      descuentoTotal: totals.descuentoTotal,
-      neto: totals.neto,
-      iva: totals.iva,
-      total: totals.total,
-    }),
-    [companyProfile, normalizedItems, quote, savedQuoteId, totals]
-  );
-
   const itemQuantityById = useMemo(() => {
     const quantities = {};
     normalizedItems.forEach((item) => {
@@ -818,10 +793,10 @@ function NewQuotePage({ userId }) {
     const defaults = {
       ...DEFAULT_QUOTE_CONDITIONS,
       formaPago: companyProfile.condicionesPago || "",
-      plazoEntrega: "",
-      alcanceGeografico: "",
-      garantia: "",
-      exclusiones: "",
+      plazoEntrega: companyProfile.plazoEntregaCotizacion || "",
+      alcanceGeografico: companyProfile.alcanceGeograficoCotizacion || "",
+      garantia: companyProfile.garantiaCotizacion || "",
+      exclusiones: companyProfile.exclusionesCotizacion || "",
       terminosAdicionales: companyProfile.terminosCotizacion || "",
       observaciones: companyProfile.notaFinalCotizacion || "",
     };
@@ -875,6 +850,7 @@ function NewQuotePage({ userId }) {
 
   const addScopeSection = () => {
     setDirty(true);
+    setScopeOpen(true);
     setQuote((prev) => ({
       ...prev,
       seccionesAlcance: [
@@ -1618,8 +1594,8 @@ function NewQuotePage({ userId }) {
     !quote.clienteId
   );
 
-  const saveQuote = async (estado) => {
-    if (saving) return;
+  const saveQuote = async () => {
+    if (savingRef.current) return;
     if (isEditMode && editLockedMessage) {
       setError(editLockedMessage);
       return;
@@ -1632,14 +1608,16 @@ function NewQuotePage({ userId }) {
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
+    setSavingEstado("borrador");
     setError("");
     setSuccess("");
 
     try {
       const payload = {
         ...quote,
-        estado,
+        estado: "borrador",
         empresa: quote.empresa || companyProfile || {},
         items: quote.items,
         subtotal: totals.subtotal,
@@ -1657,7 +1635,8 @@ function NewQuotePage({ userId }) {
         : await createQuote(userId, payload, {
             requestId: createRequestIdRef.current,
           });
-      if (!savedQuoteId) {
+      const isNewQuote = !savedQuoteId;
+      if (isNewQuote) {
         setSavedQuoteId(saved.id);
       }
       const nextSavedQuote = buildQuoteFromSavedQuote(saved);
@@ -1668,45 +1647,36 @@ function NewQuotePage({ userId }) {
       currentClienteIdRef.current = nextSavedQuote.clienteId;
       setQuote(nextSavedQuote);
       setDirty(false);
-      if (isEditMode && estado === "borrador") {
+      if (isEditMode) {
         setLoadedDraftQuote(nextSavedQuote);
-        setSuccess("Borrador actualizado correctamente.");
-      } else {
-        setSuccess(
-          `Cotización ${getQuoteDisplayNumber(saved)} guardada como ${estadoLabels[
-            estado
-          ].toLowerCase()}.`
-        );
       }
-
-      if (isEditMode && estado !== "borrador") {
-        setEditLockedMessage(
-          "Esta cotización ya no puede editarse porque fue emitida o cerrada."
-        );
+      const quoteNumber = getQuoteDisplayNumber(saved, saved.id || "");
+      if (isNewQuote) {
+        createRequestIdRef.current = "";
+        navigate("/cotizaciones", {
+          state: {
+            createdQuoteNumber: quoteNumber,
+            openQuoteId: saved.id,
+          },
+        });
+        return;
       }
+      sileo.success({
+        title: "Cambios guardados",
+        description: `${quoteNumber} continúa pendiente de envío.`,
+      });
     } catch (err) {
       console.error("Error al guardar cotización:", err);
-      setError(err.message || "No se pudo guardar la cotización.");
+      const message = err.message || "No se pudo guardar la cotización.";
+      setError(message);
+      sileo.error({
+        title: "No se pudo guardar la cotización",
+        description: message,
+      });
     } finally {
+      savingRef.current = false;
       setSaving(false);
-    }
-  };
-
-  const handleEmailSent = (emailPatch, result) => {
-    setQuote((prev) => ({
-      ...prev,
-      ...emailPatch,
-    }));
-
-    if (result?.success) {
-      setSuccess(
-        `Cotización enviada correctamente a ${emailPatch?.emailClienteDestino || "cliente"}.`
-      );
-    } else {
-      setError(
-        result?.error ||
-          "No fue posible enviar la cotización. Puedes utilizar el respaldo manual."
-      );
+      setSavingEstado("");
     }
   };
 
@@ -1722,7 +1692,7 @@ function NewQuotePage({ userId }) {
     return (
       <section className="quote-page" style={styles.wrapper}>
         <div className="no-print" style={styles.panel}>
-          <h3 style={styles.panelTitle}>Cargando borrador</h3>
+          <h3 style={styles.panelTitle}>Cargando cotización pendiente</h3>
           <p style={styles.helpText}>Estamos obteniendo la cotización guardada.</p>
         </div>
       </section>
@@ -1743,81 +1713,20 @@ function NewQuotePage({ userId }) {
     );
   }
 
-  const canSendCurrentQuote = isQuoteEmailSendable(currentSavedQuote, savedQuoteId);
-  const emailDisabled = saving || !canSendCurrentQuote;
-  const emailHint = !canSendCurrentQuote
-    ? "Emite la cotización antes de enviarla al cliente."
-    : "";
-  const openEmailModal = () => {
-    if (!canSendCurrentQuote) {
-      setError("Emite la cotización antes de enviarla al cliente.");
-      return;
-    }
-    setEmailModalOpen(true);
-  };
-  const previewQuote = {
-    ...quote,
-    items: normalizedItems,
-    ...totals,
-    empresa: quote.empresa || companyProfile || {},
-  };
-  const handlePreview = () => {
-    setError(totalsResult.error?.message || "");
-    if (totalsResult.error) return;
-    setPreviewOpen(true);
-  };
-  const handleDownloadCurrentPdf = async () => {
-    setPreviewOpen(true);
-    const validationError = validateQuote();
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-    setPdfActionLoading(true);
-    setError("");
-    try {
-      const fileName = await downloadQuotePdf({
-        quote: previewQuote,
-        companyProfile,
-      });
-      setSuccess(`PDF ${fileName} generado correctamente.`);
-    } catch (err) {
-      setError(err.message || "No fue posible generar el PDF.");
-    } finally {
-      setPdfActionLoading(false);
-    }
-  };
-
   return (
     <section className="quote-page quote-workspace">
       <header className="quote-workspace__header no-print">
         <div className="quote-workspace__header-copy">
           <span className="quote-workspace__eyebrow">Cotizaciones</span>
           <h1>{isEditMode ? "Editar cotización" : "Nueva cotización"}</h1>
-          <span className="quote-workspace__status">
-            {getQuoteDisplayNumber(quote) || "Borrador sin número"}
-          </span>
-          <small>{quote.fecha ? formatDate(quote.fecha) : "La fecha se asigna al guardar"}</small>
-        </div>
-        <div className="quote-workspace__header-meta">
-          <label>
-            <span>Estado</span>
-            <select value={quote.estado} onChange={(event) => updateField("estado", event.target.value)}>
-              <option value="borrador">Borrador</option>
-              <option value="emitida">Emitida</option>
-            </select>
-          </label>
-          <label>
-            <span>Vigencia</span>
-            <input type="number" min="1" max="3650" value={quote.validezDias} onChange={(event) => updateField("validezDias", event.target.value)} />
-          </label>
-          <label>
-            <span>Tratamiento tributario</span>
-            <select value={quote.afectaIva === false ? "exenta" : "afecta"} onChange={(event) => updateField("afectaIva", event.target.value === "afecta")}>
-              <option value="afecta">Afecta IVA 19%</option>
-              <option value="exenta">Exenta de IVA</option>
-            </select>
-          </label>
+          {isEditMode ? (
+            <span className="quote-workspace__status">
+              {getQuoteDisplayNumber(quote)} · {getQuoteStatusLabel(quote.estado)}
+            </span>
+          ) : (
+            <small>El número se asignará al crear la cotización.</small>
+          )}
+          {isEditMode && quote.fecha && <small>{formatDate(quote.fecha)}</small>}
         </div>
       </header>
 
@@ -1838,7 +1747,7 @@ function NewQuotePage({ userId }) {
 
       <div className="quote-workspace__layout">
         <main className="quote-workspace__main">
-      {assistantOpen && (
+      {false && assistantOpen && (
       <QuoteCollapsibleSection
         title="Usar asistente para sugerir ítems"
         summary="Herramienta opcional de estructura, dictado y sugerencias"
@@ -2071,7 +1980,6 @@ function NewQuotePage({ userId }) {
           subtotal={totals.subtotal}
           feedback={itemFeedback}
           highlightedItemId={highlightedItemId}
-          onOpenAssistant={() => setAssistantOpen(true)}
           onOpenCatalog={() => setManualCatalogOpen(true)}
           onUpdate={updateItem}
           onMove={moveItem}
@@ -2081,12 +1989,12 @@ function NewQuotePage({ userId }) {
       </div>
 
       <QuoteCollapsibleSection
-        title="Alcance del trabajo"
+        title={quote.seccionesAlcance.length ? "Alcance del trabajo" : "+ Agregar alcance o entregables"}
         summary={quote.seccionesAlcance.length
           ? `${quote.seccionesAlcance.length} sección${quote.seccionesAlcance.length === 1 ? "" : "es"} descriptiva${quote.seccionesAlcance.length === 1 ? "" : "s"}`
-          : "Sin secciones descriptivas"}
+          : "Opcional"}
         open={scopeOpen}
-        onToggle={() => setScopeOpen((current) => !current)}
+        onToggle={() => quote.seccionesAlcance.length ? setScopeOpen((current) => !current) : addScopeSection()}
       >
         <div className="quote-workspace__secondary-body">
           <div className="quote-workspace__secondary-header">
@@ -2118,73 +2026,54 @@ function NewQuotePage({ userId }) {
         </div>
       </QuoteCollapsibleSection>
 
+      <section className="quote-workspace__panel quote-conditions-primary no-print">
+        <header className="quote-workspace__panel-header">
+          <div>
+            <span className="quote-workspace__kicker">Condiciones comerciales</span>
+            <h2>Condiciones principales</h2>
+            <p>Los valores de Empresa se copiaron a este documento y puedes ajustarlos sólo para esta cotización.</p>
+          </div>
+        </header>
+        <div className="quote-conditions-primary__grid">
+          <Field label="Vigencia (días)"><input type="number" min="1" max="3650" value={quote.validezDias} onChange={(event) => updateField("validezDias", event.target.value)} style={styles.input} /></Field>
+          <Field label="Tratamiento tributario"><select value={quote.afectaIva === false ? "exenta" : "afecta"} onChange={(event) => updateField("afectaIva", event.target.value === "afecta")} style={styles.input}><option value="afecta">Afecta IVA 19%</option><option value="exenta">Exenta de IVA</option></select></Field>
+          <Field label="Forma de pago"><input value={quote.condiciones.formaPago} onChange={(event) => updateCondition("formaPago", event.target.value)} style={styles.input} /></Field>
+          <Field label="Plazo de ejecución o entrega"><input value={quote.condiciones.plazoEntrega} onChange={(event) => updateCondition("plazoEntrega", event.target.value)} style={styles.input} /></Field>
+        </div>
+      </section>
+
       <QuoteCollapsibleSection
-        title="Condiciones comerciales"
-        summary={[
-          quote.condiciones.formaPago || "Pago sin definir",
-          quote.condiciones.plazoEntrega || "Plazo sin definir",
-          quote.condiciones.garantia,
-        ].filter(Boolean).join(" · ")}
+        title="Más condiciones"
+        summary={[quote.condiciones.garantia, quote.condiciones.alcanceGeografico, quote.condiciones.observaciones].filter(Boolean).length ? "Hay condiciones adicionales configuradas" : "Garantía, alcance, observaciones, exclusiones y términos"}
         open={conditionsOpen}
         onToggle={() => setConditionsOpen((current) => !current)}
       >
         <div className="quote-workspace__secondary-body">
           <div className="quote-workspace__secondary-header">
-            <p style={styles.helpText}>Estos valores aplican sólo a esta cotización.</p>
-            <button type="button" onClick={restoreDefaultConditions} className="quote-workspace__button quote-workspace__button--secondary">Restaurar predeterminadas</button>
+            <p style={styles.helpText}>Estos cambios afectan sólo a este documento.</p>
+            <button type="button" onClick={restoreDefaultConditions} className="quote-summary__clear">Restaurar valores de Empresa</button>
           </div>
           <div style={styles.conditionsGrid}>
-            <Field label="Plazo de ejecución o entrega"><input value={quote.condiciones.plazoEntrega} onChange={(event) => updateCondition("plazoEntrega", event.target.value)} style={styles.input} /></Field>
-            <Field label="Forma de pago"><input value={quote.condiciones.formaPago} onChange={(event) => updateCondition("formaPago", event.target.value)} style={styles.input} /></Field>
-            <Field label="Alcance geográfico"><input value={quote.condiciones.alcanceGeografico} onChange={(event) => updateCondition("alcanceGeografico", event.target.value)} style={styles.input} /></Field>
             <Field label="Garantía"><input value={quote.condiciones.garantia} onChange={(event) => updateCondition("garantia", event.target.value)} style={styles.input} /></Field>
+            <Field label="Alcance geográfico"><input value={quote.condiciones.alcanceGeografico} onChange={(event) => updateCondition("alcanceGeografico", event.target.value)} style={styles.input} /></Field>
             <Field label="Observaciones" wide><textarea rows={3} value={quote.condiciones.observaciones} onChange={(event) => updateCondition("observaciones", event.target.value)} style={styles.textarea} /></Field>
             <Field label="Exclusiones" wide><textarea rows={3} value={quote.condiciones.exclusiones} onChange={(event) => updateCondition("exclusiones", event.target.value)} style={styles.textarea} /></Field>
             <Field label="Términos y condiciones adicionales" wide><textarea rows={4} value={quote.condiciones.terminosAdicionales} onChange={(event) => updateCondition("terminosAdicionales", event.target.value)} style={styles.textarea} /></Field>
           </div>
         </div>
       </QuoteCollapsibleSection>
-
-      <QuoteCollapsibleSection
-        title="Opciones adicionales"
-        summary={quote.aceptacion.habilitada ? "Incluye aceptación manual" : "Sin bloque de aceptación manual"}
-        open={optionsOpen}
-        onToggle={() => setOptionsOpen((current) => !current)}
-      >
-        <div className="quote-workspace__secondary-body">
-          <label style={styles.acceptanceToggle}>
-            <input type="checkbox" checked={quote.aceptacion.habilitada} onChange={(event) => {
-              setDirty(true);
-              setQuote((prev) => ({ ...prev, aceptacion: { ...prev.aceptacion, habilitada: event.target.checked } }));
-            }} />
-            Incluir bloque de aceptación manual
-          </label>
-          {quote.aceptacion.habilitada && (
-            <textarea rows={2} aria-label="Texto de aceptación manual" value={quote.aceptacion.texto} onChange={(event) => {
-              setDirty(true);
-              setQuote((prev) => ({ ...prev, aceptacion: { ...prev.aceptacion, texto: event.target.value } }));
-            }} style={styles.textarea} />
-          )}
-        </div>
-      </QuoteCollapsibleSection>
         </main>
 
         <QuoteSummaryPanel
+          isEditMode={isEditMode}
           quote={quote}
           totals={totals}
           totalsError={totalsResult.error?.message || ""}
           saving={saving}
+          savingEstado={savingEstado}
           saveBlockedByClient={saveBlockedByClient}
-          pdfActionLoading={pdfActionLoading}
-          emailDisabled={emailDisabled}
-          emailHint={emailHint}
           onDiscountChange={(event) => updateField("descuento", event.target.value)}
-          onSaveDraft={() => saveQuote("borrador")}
-          onPreview={handlePreview}
-          onSaveIssued={() => saveQuote("emitida")}
-          onDownloadPdf={handleDownloadCurrentPdf}
-          onOpenEmail={openEmailModal}
-          onClear={clearQuote}
+          onSave={saveQuote}
         />
       </div>
 
@@ -2500,38 +2389,6 @@ function NewQuotePage({ userId }) {
         </div>
       )}
 
-      <SendQuoteEmailModal
-        businessId={userId}
-        open={emailModalOpen}
-        quote={currentSavedQuote}
-        quoteId={savedQuoteId}
-        companyProfile={companyProfile}
-        onClose={() => setEmailModalOpen(false)}
-        onSent={handleEmailSent}
-      />
-
-      <section ref={previewRef} tabIndex="-1" className="quote-workspace__preview">
-        <div className="quote-collapsible no-print">
-          <button
-            type="button"
-            className="quote-collapsible__trigger"
-            aria-expanded={previewOpen}
-            aria-controls="quote-document-preview"
-            onClick={() => setPreviewOpen((current) => !current)}
-          >
-            <span>
-              <strong>Vista previa del documento</strong>
-              <small>{previewOpen ? "Documento listo para revisar o imprimir" : "Abre la representación completa sólo cuando la necesites"}</small>
-            </span>
-            <span className="quote-collapsible__indicator" aria-hidden="true">{previewOpen ? "−" : "+"}</span>
-          </button>
-        </div>
-        {previewOpen && (
-          <div id="quote-document-preview">
-            <QuotePreview quote={previewQuote} companyProfile={companyProfile} />
-          </div>
-        )}
-      </section>
     </section>
   );
 }
@@ -2552,21 +2409,6 @@ function Field({ label, helpText, helpTone = "default", wide = false, children }
       )}
       {children}
     </label>
-  );
-}
-
-function QuotePreview({ quote, companyProfile }) {
-  return (
-    <div style={styles.previewPanel}>
-      <div className="no-print" style={styles.previewActions}>
-        <h3 style={styles.panelTitle}>7. Vista previa y acciones</h3>
-        <button type="button" onClick={() => window.print()} style={styles.printButton}>
-          Imprimir cotización
-        </button>
-      </div>
-
-      <QuotePrintView quote={quote} companyProfile={companyProfile} />
-    </div>
   );
 }
 

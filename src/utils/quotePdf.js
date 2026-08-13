@@ -1,5 +1,8 @@
 import { buildQuotePdfBase64 } from "../domain/quoteDocument.mjs";
-import { getQuotePdfFileName } from "../domain/quoteModel.mjs";
+import {
+  getQuoteDisplayNumber,
+  getQuotePdfFileName,
+} from "../domain/quoteModel.mjs";
 
 function hasText(value) {
   return Boolean(String(value ?? "").trim());
@@ -73,26 +76,120 @@ function triggerBlobDownload(blob, fileName) {
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-export async function shareQuotePdf({ quote, companyProfile }) {
-  const attachment = await buildQuotePdfAttachment({ quote, companyProfile });
-  if (!attachment.contentBase64) throw new Error("PDF de cotización vacío o inválido.");
+function canSharePdfFiles() {
+  if (
+    typeof navigator === "undefined" ||
+    typeof navigator.share !== "function" ||
+    typeof navigator.canShare !== "function" ||
+    typeof File === "undefined"
+  ) {
+    return false;
+  }
+
+  try {
+    const probe = new File([new Uint8Array()], "cotizacion.pdf", {
+      type: "application/pdf",
+    });
+    return navigator.canShare({ files: [probe] });
+  } catch {
+    return false;
+  }
+}
+
+function normalizeWhatsAppPhone(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length < 8 || digits.length > 15) return "";
+
+  if (raw.startsWith("+") || raw.startsWith("00")) {
+    return raw.startsWith("00") ? digits.slice(2) : digits;
+  }
+  if (digits.startsWith("56") && digits.length === 11) return digits;
+  if (digits.length === 9) return `56${digits}`;
+  return "";
+}
+
+function buildWhatsAppUrl({ quote, companyProfile, publicUrl }) {
+  const company = quote?.empresa || companyProfile || {};
+  const quoteNumber = getQuoteDisplayNumber(quote, quote?.id || "");
+  const clientName = String(quote?.clienteNombre || "").trim() || "cliente";
+  const companyName = String(
+    company.nombreComercial || company.razonSocial || "nuestra empresa"
+  ).trim();
+  const phone = normalizeWhatsAppPhone(
+    quote?.clienteTelefono || quote?.cliente?.telefono
+  );
+  const message = [
+    `Hola ${clientName}, te comparto la cotización ${quoteNumber} de ${companyName}.`,
+    `Revisar y responder propuesta: ${publicUrl}`,
+    "Quedo atento a tus comentarios.",
+  ].join("\n\n");
+  const destination = phone ? `https://wa.me/${phone}` : "https://wa.me/";
+  return `${destination}?text=${encodeURIComponent(message)}`;
+}
+
+export async function shareQuotePdf({ quote, companyProfile, publicUrl }) {
+  if (!/^https?:\/\//i.test(String(publicUrl || ""))) {
+    throw new Error("No se pudo preparar el enlace público de la propuesta.");
+  }
+  const supportsDirectFileShare = canSharePdfFiles();
+  const fallbackWindow = supportsDirectFileShare
+    ? null
+    : window.open("", "_blank");
+  if (fallbackWindow) fallbackWindow.opener = null;
+  let attachment;
+
+  try {
+    attachment = await buildQuotePdfAttachment({ quote, companyProfile });
+  } catch (error) {
+    fallbackWindow?.close();
+    throw error;
+  }
+  if (!attachment.contentBase64) {
+    fallbackWindow?.close();
+    throw new Error("PDF de cotización vacío o inválido.");
+  }
   const blob = attachmentToBlob(attachment);
   const file = new File([blob], attachment.fileName, { type: attachment.contentType });
-  const title = `Cotización ${quote?.numero || ""}`.trim();
+  const quoteNumber = getQuoteDisplayNumber(quote, quote?.id || "");
+  const title = `Cotización ${quoteNumber}`;
+  const company = quote?.empresa || companyProfile || {};
+  const companyName = String(
+    company.nombreComercial || company.razonSocial || "nuestra empresa"
+  ).trim();
   const sharePayload = {
     title,
-    text: `${title} para ${quote?.clienteNombre || "cliente"}.`,
+    text: [
+      `Hola ${quote?.clienteNombre || "cliente"}, te comparto ${title} de ${companyName}.`,
+      `Revisar y responder propuesta: ${publicUrl}`,
+    ].join("\n\n"),
     files: [file],
   };
-  if (navigator.share && (!navigator.canShare || navigator.canShare(sharePayload))) {
+
+  if (supportsDirectFileShare && navigator.canShare(sharePayload)) {
     await navigator.share(sharePayload);
-    return { fileName: attachment.fileName, sharedDirectly: true };
+    return {
+      externalFlowOpened: true,
+      fileName: attachment.fileName,
+      sharedDirectly: true,
+    };
   }
 
   triggerBlobDownload(blob, attachment.fileName);
-  const whatsappText = encodeURIComponent(
-    `${title}. Descargué ${attachment.fileName}; adjúntalo en este chat.`
-  );
-  window.open(`https://wa.me/?text=${whatsappText}`, "_blank", "noopener,noreferrer");
-  return { fileName: attachment.fileName, sharedDirectly: false };
+  const whatsappUrl = buildWhatsAppUrl({ quote, companyProfile, publicUrl });
+  if (fallbackWindow && !fallbackWindow.closed) {
+    fallbackWindow.location.href = whatsappUrl;
+  } else {
+    const openedWindow = window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+    if (!openedWindow) {
+      throw new Error("El navegador bloqueó la apertura de WhatsApp.");
+    }
+  }
+  return {
+    externalFlowOpened: true,
+    fileName: attachment.fileName,
+    sharedDirectly: false,
+  };
 }
