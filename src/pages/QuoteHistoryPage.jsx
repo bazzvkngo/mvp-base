@@ -5,7 +5,9 @@ import {
   Ellipsis,
   Mail,
   MessageCircle,
+  Plus,
   Printer,
+  Search,
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { sileo } from "sileo";
@@ -496,45 +498,48 @@ function QuoteHistoryPage({ userId, role }) {
   }
 
   return (
-    <section className="quote-history-page erp-page" style={styles.wrapper}>
-      <div className="no-print erp-page-header" style={styles.header}>
-        <div className="erp-page-header__content">
-          <span className="eyebrow">Cotizaciones</span>
-          <h2 style={styles.title}>Historial de cotizaciones</h2>
-          <p style={styles.subtitle}>
-            Consulta documentos guardados, revisa su detalle y actualiza el
-            estado comercial básico.
-          </p>
+    <section className="quote-history-page erp-page">
+      <div className="no-print erp-module-intro">
+        <div className="erp-page-intro">
+          <p>Consulta y administra las cotizaciones del negocio.</p>
         </div>
         {canDuplicate && (
-          <Button type="button" onClick={() => navigate("/cotizaciones/nueva")}>
+          <Button type="button" icon={Plus} onClick={() => navigate("/cotizaciones/nueva")}>
             Nueva cotización
           </Button>
         )}
       </div>
 
-      {error && <p className="no-print" role="alert" style={styles.errorText}>{error}</p>}
-      {success && <p className="no-print" role="status" style={styles.successText}>{success}</p>}
+      {error && <div className="no-print client-message client-message--error" role="alert">{error}</div>}
+      {success && <div className="no-print client-message" role="status">{success}</div>}
 
-      <div className="no-print erp-panel" style={styles.panel}>
-        <div className="erp-filters" style={styles.filters}>
-          <label className="erp-field">
-            <span>Buscar cotización</span>
-            <input
-              className="erp-control"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Número o cliente"
-              style={styles.searchInput}
-            />
+      <div className="no-print erp-panel erp-history-panel quote-history-list-panel">
+        <div className="erp-panel-header">
+          <div>
+            <h2 className="erp-panel-title">Cotizaciones registradas</h2>
+            <p className="erp-secondary-text">{filteredQuotes.length} de {quotes.length} cotizaciones</p>
+          </div>
+        </div>
+
+        <div className="erp-filters erp-history-filters erp-history-filters--two clients-filters quote-history-filters">
+          <label className="erp-field erp-history-search-field">
+            <span className="erp-field__label">Buscar por número o cliente</span>
+            <span className="clients-search-control">
+              <AppIcon icon={Search} size={18} />
+              <input
+                className="erp-control"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Ej.: COT-2026-0001 o cliente"
+              />
+            </span>
           </label>
           <label className="erp-field">
-            <span>Estado</span>
+            <span className="erp-field__label">Estado</span>
             <select
               className="erp-control"
               value={statusFilter}
               onChange={(event) => setStatusFilter(event.target.value)}
-              style={styles.select}
             >
               <option value="todos">Todas excepto archivadas</option>
               {STATUS_OPTIONS.map((status) => (
@@ -547,43 +552,36 @@ function QuoteHistoryPage({ userId, role }) {
         </div>
 
         {loading ? (
-          <p style={styles.emptyText}>Cargando cotizaciones...</p>
+          <div className="erp-empty-state" role="status">Cargando cotizaciones...</div>
         ) : quotes.length === 0 ? (
-          <div style={styles.emptyState}>
-            <h3 style={styles.emptyTitle}>No hay cotizaciones guardadas</h3>
-            <p style={styles.emptyText}>
-              Crea una cotización desde /cotizaciones/nueva para verla en este
-              historial.
-            </p>
+          <div className="erp-empty-state quote-history-empty">
+            <h3>No hay cotizaciones guardadas</h3>
+            <p>Crea una nueva cotización para comenzar.</p>
           </div>
         ) : filteredQuotes.length === 0 ? (
-          <p style={styles.emptyText}>No hay cotizaciones con esos filtros.</p>
+          <div className="erp-empty-state">No hay cotizaciones con esos filtros.</div>
         ) : (
           <>
-          <div className="erp-table-region erp-desktop-only" style={styles.tableWrapper}>
-            <table className="erp-table" style={styles.table}>
+          <div className="erp-table-region erp-desktop-only">
+            <table className="erp-table clients-table quote-history-table">
               <thead>
                 <tr>
-                  <th style={{ ...styles.th, ...styles.numberColumn }}>Número</th>
-                  <th style={{ ...styles.th, ...styles.clientColumn }}>Cliente</th>
-                  <th style={{ ...styles.th, ...styles.statusColumn }}>Estado</th>
-                  <th style={{ ...styles.th, ...styles.totalColumn }}>Total</th>
-                  <th style={{ ...styles.th, ...styles.saleColumn }}>Venta</th>
-                  <th style={{ ...styles.th, ...styles.updatedColumn }}>Actualización</th>
-                  <th style={{ ...styles.th, ...styles.actionsColumn }}>Acciones</th>
+                  <th className="quote-history-table__number">Número</th>
+                  <th className="quote-history-table__client">Cliente</th>
+                  <th className="quote-history-table__status">Estado</th>
+                  <th className="quote-history-table__total">Total</th>
+                  <th className="quote-history-table__sale">Venta</th>
+                  <th className="quote-history-table__updated">Actualización</th>
+                  <th className="quote-history-table__actions">Acciones</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredQuotes.map((quote) => (
                   <tr
                     key={quote.id}
-                    style={
-                      quote.id === selectedQuoteId
-                        ? styles.selectedRow
-                        : undefined
-                    }
+                    className={quote.id === selectedQuoteId ? "quote-history-table__row--selected" : undefined}
                   >
-                    <td style={{ ...styles.td, ...styles.numberColumn }}>
+                    <td>
                       <button
                         type="button"
                         className="quote-record-link"
@@ -595,18 +593,18 @@ function QuoteHistoryPage({ userId, role }) {
                       </button>
                     </td>
                     <td
+                      className="quote-history-table__client-cell"
                       title={quote.clienteNombre || ""}
-                      style={{ ...styles.td, ...styles.clientCell }}
                     >
                       {quote.clienteNombre || "-"}
                     </td>
-                    <td style={{ ...styles.td, ...styles.statusColumn }}>
+                    <td>
                       <StatusBadge status={quote.estado} />
                     </td>
-                    <td style={{ ...styles.td, ...styles.totalColumn }}>
+                    <td className="quote-history-table__total">
                       <strong>{formatCLP(quote.total)}</strong>
                     </td>
-                    <td style={{ ...styles.td, ...styles.saleColumn }}>
+                    <td>
                       {quote.ventaId && quote.ventaNumero ? (
                         <button
                           type="button"
@@ -619,10 +617,10 @@ function QuoteHistoryPage({ userId, role }) {
                         "—"
                       )}
                     </td>
-                    <td style={{ ...styles.td, ...styles.updatedColumn }}>
+                    <td>
                       {formatTimestamp(getQuoteTimestamp(quote))}
                     </td>
-                    <td style={{ ...styles.td, ...styles.actionsColumn }}>
+                    <td className="quote-history-table__actions">
                       <div style={styles.rowActions}>
                         {canDuplicate && (
                         <QuoteActions
@@ -782,8 +780,8 @@ function StatusBadge({ status }) {
 
   return (
     <span
+      className="ui-status-badge quote-history-status"
       style={{
-        ...styles.statusBadge,
         ...statusStyles[normalizedStatus],
       }}
     >
@@ -1569,32 +1567,6 @@ function CommercialStatusTimeline({ quote }) {
 }
 
 const styles = {
-  wrapper: {
-    display: "grid",
-    gap: "18px",
-    minWidth: 0,
-  },
-  header: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: "16px",
-  },
-  title: {
-    margin: "4px 0 6px",
-    fontSize: "24px",
-  },
-  subtitle: {
-    margin: 0,
-    color: "#64748b",
-    lineHeight: 1.5,
-  },
-  panel: {
-    background: "#ffffff",
-    border: "1px solid #e5e7eb",
-    borderRadius: "4px",
-    minWidth: 0,
-    padding: "18px",
-  },
   commercialStatus: {
     background: "#f8fafc",
     border: "1px solid #e2e8f0",
@@ -1660,89 +1632,6 @@ const styles = {
     color: "#64748b",
     margin: 0,
     fontSize: "14px",
-  },
-  filters: {
-    display: "grid",
-    gap: "10px",
-    marginBottom: "14px",
-  },
-  searchInput: {
-    border: "1px solid #cbd5e1",
-    borderRadius: "4px",
-    fontSize: "13px",
-    minWidth: 0,
-    padding: "10px 11px",
-  },
-  select: {
-    background: "#ffffff",
-    border: "1px solid #cbd5e1",
-    borderRadius: "4px",
-    fontSize: "13px",
-    padding: "10px 11px",
-  },
-  tableWrapper: {
-    minWidth: 0,
-    overflow: "visible",
-  },
-  table: {
-    borderCollapse: "collapse",
-    minWidth: 0,
-    tableLayout: "fixed",
-    width: "100%",
-  },
-  numberColumn: {
-    width: "13%",
-  },
-  clientColumn: {
-    width: "18%",
-  },
-  statusColumn: {
-    overflow: "hidden",
-    whiteSpace: "normal",
-    width: "10%",
-  },
-  totalColumn: {
-    overflow: "hidden",
-    textAlign: "right",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-    width: "12%",
-  },
-  saleColumn: {
-    width: "13%",
-  },
-  updatedColumn: {
-    width: "14%",
-  },
-  actionsColumn: {
-    whiteSpace: "normal",
-    width: "20%",
-  },
-  clientCell: {
-    minWidth: 0,
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  },
-  th: {
-    background: "#f8fafc",
-    borderBottom: "1px solid #e5e7eb",
-    color: "#64748b",
-    fontSize: "13px",
-    padding: "10px",
-    textAlign: "left",
-    textTransform: "uppercase",
-    whiteSpace: "nowrap",
-  },
-  td: {
-    borderBottom: "1px solid #eef2f7",
-    fontSize: "14px",
-    padding: "10px",
-    verticalAlign: "middle",
-    whiteSpace: "nowrap",
-  },
-  selectedRow: {
-    background: "#f0fdfa",
   },
   rowActions: {
     alignItems: "center",
@@ -1829,18 +1718,6 @@ const styles = {
     minHeight: "40px",
     padding: "10px 12px",
     whiteSpace: "nowrap",
-  },
-  statusBadge: {
-    borderRadius: "999px",
-    boxSizing: "border-box",
-    display: "inline-block",
-    fontSize: "13px",
-    fontWeight: 800,
-    maxWidth: "100%",
-    overflowWrap: "anywhere",
-    padding: "4px 9px",
-    textAlign: "center",
-    whiteSpace: "normal",
   },
   emailBadge: {
     borderRadius: "999px",
@@ -2068,32 +1945,11 @@ const styles = {
     marginTop: "20px",
     paddingTop: "14px",
   },
-  emptyState: {
-    border: "1px dashed #cbd5e1",
-    borderRadius: "4px",
-    padding: "26px",
-    textAlign: "center",
-  },
-  emptyTitle: {
-    margin: "0 0 6px",
-  },
-  emptyText: {
-    color: "#64748b",
-    margin: 0,
-  },
   errorText: {
     background: "#fef2f2",
     border: "1px solid #fecaca",
     borderRadius: "4px",
     color: "#b91c1c",
-    margin: 0,
-    padding: "11px 13px",
-  },
-  successText: {
-    background: "#ecfdf5",
-    border: "1px solid #bbf7d0",
-    borderRadius: "4px",
-    color: "#166534",
     margin: 0,
     padding: "11px 13px",
   },

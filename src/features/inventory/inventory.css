@@ -1,6 +1,4 @@
 .inventory-page { gap: var(--space-4); }
-.inventory-page-header { align-items: center; }
-.inventory-eyebrow { color: var(--color-brand-700); font-size: var(--font-size-xs); font-weight: var(--font-weight-bold); text-transform: uppercase; }
 .inventory-header-actions, .inventory-form-actions, .inventory-row-actions, .inventory-empty-state > div { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .inventory-button { align-items: center; border-radius: var(--radius-md); cursor: pointer; display: inline-flex; font-size: var(--font-size-sm); font-weight: var(--font-weight-bold); gap: var(--space-2); justify-content: center; min-height: 40px; padding: .55rem .85rem; }
 .inventory-button:disabled { cursor: not-allowed; opacity: .58; }

@@ -231,17 +231,15 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
 
   return (
     <section className="erp-page inventory-page">
-      <header className="erp-page-header inventory-page-header">
-        <div className="erp-page-header__content">
-          <span className="inventory-eyebrow">Operación</span>
-          <h1 className="erp-page-header__title">Inventario</h1>
-          <p className="erp-page-header__description">Consulta y administra productos, servicios y actividades del negocio activo.</p>
+      <div className="erp-module-intro">
+        <div className="erp-page-intro">
+          <p>Administra productos, servicios y actividades del negocio activo.</p>
         </div>
-        {!cannotWrite && <div className="inventory-header-actions">
+        {!cannotWrite && <div className="erp-module-actions inventory-header-actions">
           <button type="button" className="inventory-button inventory-button--secondary" onClick={() => setImportOpen(true)}><AppIcon icon={FileSpreadsheet} size={18} />Importar Excel</button>
           <button type="button" className="inventory-button inventory-button--primary" onClick={openNewItem}><AppIcon icon={PackagePlus} size={18} />Nuevo ítem</button>
         </div>}
-      </header>
+      </div>
 
       {cannotWrite && <p className="inventory-feedback inventory-feedback--notice">Puedes consultar el inventario. La creación y edición requieren rol Propietario o Administrador.</p>}
       {feedback.message && <p className={`inventory-feedback inventory-feedback--${feedback.type}`} role={feedback.type === "error" ? "alert" : "status"}>{feedback.message}</p>}

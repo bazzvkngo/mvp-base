@@ -43,6 +43,7 @@ import {
   getSalesMetrics,
 } from "../domain/reportModel.mjs";
 import {getQuoteStatusLabel} from "../domain/quoteModel.mjs";
+import {getSaleStatusLabel} from "../domain/saleModel.mjs";
 import useFinancialMovements from "../hooks/useFinancialMovements";
 import {loadReportData} from "../services/reportService";
 import {formatCLP, formatDate, formatPercent} from "../utils/formatters";
@@ -59,6 +60,12 @@ const TABS = [
 const DOCUMENT_STATUS_OPTIONS = [
   ["todos", "Todos los estados"],
   ["borrador", "Borrador"],
+  ["confirmada", "Confirmada"],
+  ["cancelada", "Cancelada"],
+];
+const SALE_STATUS_OPTIONS = [
+  ["todos", "Todos los estados"],
+  ["borrador", "Preparada"],
   ["confirmada", "Confirmada"],
   ["cancelada", "Cancelada"],
 ];
@@ -115,8 +122,13 @@ function ReportMetricCard({icon, label, note, tone = "neutral", value}) {
   );
 }
 
-function Status({value, quote = false}) {
-  return <span className={`report-status report-status--${value}`}>{quote ? getQuoteStatusLabel(value) : STATUS_LABELS[value] || value || "—"}</span>;
+function Status({value, quote = false, sale = false}) {
+  const label = quote
+    ? getQuoteStatusLabel(value)
+    : sale
+      ? getSaleStatusLabel(value)
+      : STATUS_LABELS[value] || value || "—";
+  return <span className={`report-status report-status--${value}`}>{label}</span>;
 }
 
 function ReportFilters({search, status, statusOptions, onSearch, onStatus, placeholder}) {
@@ -172,9 +184,9 @@ function SalesReport({items, metrics, timeline, navigate, search, status, setPar
       </section>
       <section className="erp-panel report-documents-panel">
         <div className="financial-chart-panel__header"><h2>Documentos del periodo</h2><p>Los filtros del listado no alteran las métricas confirmadas.</p></div>
-        <ReportFilters search={search} status={status} statusOptions={DOCUMENT_STATUS_OPTIONS} placeholder="Número o cliente" onSearch={(value) => setParam("q", value)} onStatus={(value) => setParam("status", value === "todos" ? "" : value)} />
+        <ReportFilters search={search} status={status} statusOptions={SALE_STATUS_OPTIONS} placeholder="Número o cliente" onSearch={(value) => setParam("q", value)} onStatus={(value) => setParam("status", value === "todos" ? "" : value)} />
         <div className="erp-table-region report-table-region"><table className="erp-table report-table"><thead><tr><th>Número</th><th>Fecha</th><th>Cliente</th><th>Estado</th><th>Total</th><th>Detalle</th></tr></thead><tbody>
-          {items.map((sale) => <tr key={sale.id}><td><strong>{sale.numero || "—"}</strong></td><td>{formatDate(sale.fechaVenta)}</td><td><strong>{sale.clienteSnapshot?.nombreRazonSocial || "Sin cliente"}</strong><small>{sale.clienteSnapshot?.rut || ""}</small></td><td><Status value={sale.estado} /></td><td>{formatCLP(sale.total)}</td><td><button className="report-detail-button" type="button" onClick={() => navigate(`/ventas/${sale.id}`)}>Ver</button></td></tr>)}
+          {items.map((sale) => <tr key={sale.id}><td><strong>{sale.numero || "—"}</strong></td><td>{formatDate(sale.fechaVenta)}</td><td><strong>{sale.clienteSnapshot?.nombreRazonSocial || "Sin cliente"}</strong><small>{sale.clienteSnapshot?.rut || ""}</small></td><td><Status sale value={sale.estado} /></td><td>{formatCLP(sale.total)}</td><td><button className="report-detail-button" type="button" onClick={() => navigate(`/ventas/${sale.id}`)}>Ver</button></td></tr>)}
           {!items.length && <EmptyRow columns={6}>No hay ventas para estos filtros.</EmptyRow>}
         </tbody></table></div>
       </section>

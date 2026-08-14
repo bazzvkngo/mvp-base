@@ -2,6 +2,22 @@ export const SALE_MODEL_VERSION = 1;
 export const SALE_VAT_RATE = 0.19;
 export const SALE_STATUSES = Object.freeze(["borrador", "confirmada", "cancelada"]);
 export const SALE_DOCUMENT_TYPES = Object.freeze(["factura", "boleta", "otro", "sin_documento"]);
+export const SALE_STATUS_LABELS = Object.freeze({
+  borrador: "Preparada",
+  confirmada: "Confirmada",
+  cancelada: "Cancelada",
+});
+export const SALE_ITEM_TYPE_LABELS = Object.freeze({
+  producto: "Producto",
+  servicio: "Servicio",
+  actividad: "Actividad",
+});
+export const SALE_DOCUMENT_TYPE_LABELS = Object.freeze({
+  factura: "Factura",
+  boleta: "Boleta",
+  otro: "Otro",
+  sin_documento: "Sin documento",
+});
 
 const STATUS_SET = new Set(SALE_STATUSES);
 const DOCUMENT_SET = new Set(SALE_DOCUMENT_TYPES);
@@ -9,6 +25,18 @@ const ITEM_TYPES = new Set(["producto", "servicio", "actividad"]);
 const MAXIMUM_AMOUNT_MESSAGE = "El monto de la venta supera el máximo permitido.";
 
 const text = (value, max = 2000) => String(value ?? "").trim().replace(/\s+/g, " ").slice(0, max);
+
+export function getSaleStatusLabel(status) {
+  return SALE_STATUS_LABELS[String(status || "").toLowerCase()] || String(status || "");
+}
+
+export function getSaleItemTypeLabel(type) {
+  return SALE_ITEM_TYPE_LABELS[String(type || "").toLowerCase()] || "Ítem";
+}
+
+export function getSaleDocumentTypeLabel(type) {
+  return SALE_DOCUMENT_TYPE_LABELS[String(type || "").toLowerCase()] || "Sin documento";
+}
 
 function id(value, label, {optional = false} = {}) {
   const result = text(value, 160);

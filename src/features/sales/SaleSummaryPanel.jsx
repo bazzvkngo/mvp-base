@@ -1,5 +1,60 @@
 import React from "react";
+import {Ellipsis} from "lucide-react";
+import AppIcon from "../../components/ui/AppIcon";
+
 const money = (value) => `$${Math.round(Number(value || 0)).toLocaleString("es-CL")}`;
-export default function SaleSummaryPanel({disabled, onCancel, onConfirm, onSave, processing, totals}) {
-  return <aside className="po-panel po-summary"><header className="po-summary__header"><span className="po-kicker">Resumen</span><h2>Totales</h2></header><div className="po-summary__amounts"><div><span>Subtotal</span><strong>{money(totals.subtotal)}</strong></div><div><span>Descuentos de ítems</span><strong>-{money(totals.descuentoItems)}</strong></div><div><span>Descuento general</span><strong>-{money(totals.descuento)}</strong></div><div><span>Neto</span><strong>{money(totals.neto)}</strong></div><div><span>{totals.afectaIva ? "IVA 19%" : "IVA · Exenta"}</span><strong>{money(totals.iva)}</strong></div><div className="po-summary__total"><span>Total</span><strong>{money(totals.total)}</strong></div></div>{!disabled && <div className="po-summary__actions"><button type="button" className="po-button po-button--primary" disabled={processing} onClick={onSave}>Guardar borrador</button><button type="button" className="po-button po-button--issued" disabled={processing} onClick={onConfirm}>Confirmar venta</button><p className="sale-action-help">Cierra la venta. Los productos descuentan stock al confirmar; servicios y actividades no afectan existencias.</p>{onCancel && <div className="po-summary__danger"><button type="button" className="po-button po-button--danger" disabled={processing} onClick={onCancel}>Cancelar borrador</button></div>}</div>}</aside>;
+
+export default function SaleSummaryPanel({
+  disabled,
+  hasInsufficientStock = false,
+  onCancel,
+  onConfirm,
+  onSave,
+  processing,
+  totals,
+}) {
+  return (
+    <aside className="po-panel po-summary sale-summary">
+      <header className="po-summary__header">
+        <span className="po-kicker">Resumen</span>
+        <h2>Totales</h2>
+      </header>
+      <div className="po-summary__amounts">
+        <div><span>Subtotal</span><strong>{money(totals.subtotal)}</strong></div>
+        <div><span>Descuentos</span><strong>-{money(totals.descuentoTotal)}</strong></div>
+        <div><span>Neto</span><strong>{money(totals.neto)}</strong></div>
+        <div><span>{totals.afectaIva ? "IVA 19%" : "IVA · Exenta"}</span><strong>{money(totals.iva)}</strong></div>
+        <div className="po-summary__total"><span>Total</span><strong>{money(totals.total)}</strong></div>
+      </div>
+      {!disabled && (
+        <div className="po-summary__actions">
+          {hasInsufficientStock && (
+            <p className="sale-confirm-blocked" role="alert">
+              No puedes confirmar esta venta porque uno o más productos no tienen stock suficiente.
+            </p>
+          )}
+          <button
+            type="button"
+            className="po-button po-button--primary sale-confirm-button"
+            disabled={processing || hasInsufficientStock}
+            onClick={onConfirm}
+          >
+            Confirmar venta
+          </button>
+          <button type="button" className="po-button po-button--secondary" disabled={processing} onClick={onSave}>
+            Guardar cambios
+          </button>
+          <p className="sale-action-help">
+            Al confirmar se registrará la venta y se descontará el stock de los productos correspondientes.
+          </p>
+          {onCancel && (
+            <details className="sale-more-actions">
+              <summary><span>Más acciones</span><AppIcon icon={Ellipsis} size={17} /></summary>
+              <button type="button" disabled={processing} onClick={onCancel}>Cancelar venta</button>
+            </details>
+          )}
+        </div>
+      )}
+    </aside>
+  );
 }

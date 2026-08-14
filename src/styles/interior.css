@@ -6,6 +6,27 @@
   width: 100%;
 }
 
+.erp-module-intro {
+  align-items: flex-start;
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.erp-module-intro .erp-page-intro {
+  flex: 1 1 auto;
+}
+
+.erp-module-actions {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
 .erp-page-header {
   align-items: flex-start;
   display: flex;
@@ -119,6 +140,18 @@
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
   margin-bottom: var(--space-4);
   min-width: 0;
+}
+
+.erp-history-panel {
+  min-width: 0;
+}
+
+.erp-history-filters--two {
+  grid-template-columns: minmax(260px, 2fr) minmax(180px, 1fr);
+}
+
+.erp-history-filters--three {
+  grid-template-columns: minmax(280px, 2fr) repeat(2, minmax(160px, 1fr));
 }
 
 .erp-field {
@@ -431,6 +464,26 @@
 }
 
 @media (max-width: 767px) {
+  .erp-module-intro {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .erp-module-actions,
+  .erp-module-actions > .ui-button,
+  .erp-module-intro > .ui-button {
+    width: 100%;
+  }
+
+  .erp-history-filters--two,
+  .erp-history-filters--three {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .erp-history-search-field {
+    grid-column: auto;
+  }
+
   .erp-page-header {
     align-items: stretch;
     flex-direction: column;
@@ -2627,6 +2680,82 @@
   padding: var(--space-2) var(--space-3);
 }
 
+/* Historial de cotizaciones */
+.quote-history-filters {
+  grid-template-columns: minmax(260px, 2fr) minmax(180px, 1fr);
+}
+
+.quote-history-table {
+  min-width: 880px;
+  table-layout: fixed;
+}
+
+.quote-history-table__number {
+  width: 13%;
+}
+
+.quote-history-table__client {
+  width: 19%;
+}
+
+.quote-history-table__status {
+  width: 11%;
+}
+
+.quote-history-table__total {
+  text-align: right !important;
+  width: 12%;
+}
+
+.quote-history-table__sale {
+  width: 12%;
+}
+
+.quote-history-table__updated {
+  width: 15%;
+}
+
+.quote-history-table__actions {
+  text-align: right !important;
+  width: 18%;
+}
+
+.quote-history-table__actions > div {
+  justify-content: flex-end;
+}
+
+.quote-history-table__client-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quote-history-table__row--selected {
+  background: var(--color-surface-selected);
+}
+
+.quote-history-status {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  min-height: 24px;
+}
+
+.quote-history-empty {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: center;
+}
+
+.quote-history-empty h3,
+.quote-history-empty p {
+  margin: 0;
+}
+
+.quote-history-empty h3 {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-md);
+}
+
 @media (max-width: 767px) {
   .clients-page-heading,
   .client-message {
@@ -2635,11 +2764,14 @@
   }
 
   .clients-page-heading > .ui-button,
+  .quote-history-page .erp-page-header > .ui-button,
+  .sale-history .erp-page-header > .ui-button,
   .client-message > .ui-button {
     width: 100%;
   }
 
   .clients-filters,
+  .quote-history-filters,
   .client-form-grid {
     grid-template-columns: minmax(0, 1fr);
   }

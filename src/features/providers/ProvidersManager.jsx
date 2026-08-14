@@ -193,7 +193,7 @@ function ProvidersManager({businessId, role}) {
 
   return (
     <section className="erp-page clients-page providers-page">
-      <div className="clients-page-heading">
+      <div className="erp-module-intro">
         <div className="erp-page-intro">
           <p>Mantén una ficha única por RUT para cada proveedor del negocio activo.</p>
         </div>
