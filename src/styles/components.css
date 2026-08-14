@@ -1994,6 +1994,66 @@
   display: grid;
 }
 
+.quote-email-dialog__qa-notice {
+  background: #fffbeb;
+  border: 1px solid #f59e0b;
+  border-radius: 6px;
+  color: #78350f;
+  display: grid;
+  gap: 3px;
+  grid-column: 1 / -1;
+  padding: 10px 12px;
+}
+
+.quote-email-dialog__qa-notice strong {
+  font-size: 13px;
+}
+
+.quote-email-dialog__qa-notice span {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.quote-email-dialog__qa-notice--result {
+  background: #ecfeff;
+  border-color: #67e8f9;
+  color: #155e75;
+}
+
+.quote-email-dialog__qa-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.quote-email-dialog__qa-action {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-sm);
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 12px;
+  font-weight: var(--font-weight-bold);
+  gap: var(--space-2);
+  justify-content: center;
+  min-height: 36px;
+  padding: 7px 10px;
+  text-decoration: none;
+}
+
+.quote-email-dialog__qa-action:hover {
+  background: #cffafe;
+}
+
+.quote-email-dialog__qa-action:focus-visible {
+  outline: 2px solid #0891b2;
+  outline-offset: 2px;
+}
+
 .quote-email-dialog__field-heading {
   align-items: center;
   display: flex;

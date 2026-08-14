@@ -73,6 +73,7 @@ function QuotePrintView({ quote: rawQuote, companyProfile }) {
               : `Vence ${formatDate(quote.fechaVencimiento)}`}
           </small>
           <b>{getQuoteStatusLabel(quote.estado)}</b>
+          {pendingEmission && <small>Aún no ha sido enviada al cliente.</small>}
         </div>
       </header>
 

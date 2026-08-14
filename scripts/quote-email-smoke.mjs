@@ -203,6 +203,29 @@ function baseDependencies(overrides = {}, storedQuote = validQuote) {
 
 {
   const pendingQuote = { ...validQuote, estado: "borrador" };
+  const { dependencies, calls, quoteUpdates, attemptUpdates } = baseDependencies(
+    { isEmulatorEnvironment: () => true },
+    pendingQuote
+  );
+  const result = await sendQuoteEmailHandler(request, dependencies);
+  const simulatedPatch = quoteUpdates.at(-1);
+  assert.equal(result.success, true);
+  assert.equal(result.simulated, true);
+  assert.equal(result.qaPublicUrl, "https://valoracloud.bagner.cl/propuesta/token-seguro");
+  assert.equal(result.quoteEmailStatus.enviadoPorCorreo, false);
+  assert.equal(result.quoteEmailStatus.estadoEnvioCorreo, "simulado");
+  assert.equal(result.quoteEmailStatus.proveedorCorreo, "emulator");
+  assert.equal(calls.provider.length, 0);
+  assert.equal(simulatedPatch.estadoEnvioCorreo, "simulado");
+  assert.equal(simulatedPatch.enviadoPorCorreo, false);
+  assert.equal("estado" in simulatedPatch, false);
+  assert.equal("canalEmision" in simulatedPatch, false);
+  assert.equal(pendingQuote.estado, "borrador");
+  assert.equal(attemptUpdates.at(-1).estado, "simulado");
+}
+
+{
+  const pendingQuote = { ...validQuote, estado: "borrador" };
   const { dependencies, quoteUpdates } = baseDependencies(
     {
       sendQuoteEmailWithProvider: async () => {
@@ -377,6 +400,7 @@ const modalSource = fs.readFileSync(
   "src/features/quotes/SendQuoteEmailModal.jsx",
   "utf8"
 );
+const historySource = fs.readFileSync("src/pages/QuoteHistoryPage.jsx", "utf8");
 const toastRouteSyncSource = fs.readFileSync(
   "src/components/ToastRouteSync.jsx",
   "utf8"
@@ -388,6 +412,24 @@ assert.match(functionSource, /sendQuoteEmailHandler/);
 assert.match(modalSource, /<ResponsiveDialog/);
 assert.match(modalSource, /Usar otro correo/);
 assert.match(modalSource, /Volver al correo del cliente/);
+assert.match(modalSource, /Simulación preparada/);
+assert.match(modalSource, /En QA local no se envió un correo real/);
+assert.match(modalSource, /setQaPublicUrl\(resultQaPublicUrl\)/);
+assert.match(modalSource, /firebaseEnvironment\.isEmulator && result\.simulated/);
+assert.match(modalSource, /if \(!isQaSimulation\) onClose/);
+assert.match(modalSource, /\[defaults, open, quoteId\]/);
+assert.match(modalSource, /Abrir propuesta QA/);
+assert.match(modalSource, /Copiar enlace/);
+assert.match(modalSource, /navigator\.clipboard\.writeText\(qaPublicUrl\)/);
+assert.match(modalSource, /title: "Enlace copiado"/);
+assert.match(modalSource, /target="_blank"/);
+assert.match(modalSource, /rel="noopener noreferrer"/);
+assert.doesNotMatch(modalSource, /localStorage|sessionStorage/);
+assert.match(historySource, /Simulación de correo — QA local/);
+assert.match(historySource, /No se envió un correo real/);
+assert.match(historySource, /Enviada por correo/);
+assert.match(historySource, /Proveedor:/);
+assert.doesNotMatch(historySource, /Preparada en QA|Destino:/);
 assert.doesNotMatch(modalSource, /buildMailtoUrl|downloadQuotePdf/);
 assert.match(toastRouteSyncSource, /useLocation/);
 assert.match(toastRouteSyncSource, /useRef\(pathname\)/);
@@ -395,7 +437,9 @@ assert.match(toastRouteSyncSource, /sileo\.clear\(\)/);
 assert.doesNotMatch(toastRouteSyncSource, /location\.(search|hash)/);
 assert.match(appSource, /<ToastRouteSync\s*\/>/);
 assert.equal((mainSource.match(/<Toaster\b/g) || []).length, 1);
+assert.match(mainSource, /position="bottom-right"/);
+assert.match(mainSource, /offset=\{\{ bottom: 128, right: 16 \}\}/);
 
 console.log(
-  "QUOTE_EMAIL_SMOKE_OK borrador/emisión, reenvío, fallo conservador, permisos, destinatario, trazabilidad, seguridad y cooldown"
+  "QUOTE_EMAIL_SMOKE_OK borrador/emisión, simulación QA, reenvío, fallo conservador, permisos, destinatario, trazabilidad, seguridad y cooldown"
 );

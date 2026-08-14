@@ -135,12 +135,16 @@ function PublicQuoteProposalPage() {
 
   const resolved = ["aceptada", "rechazada"].includes(proposal.estado);
   const expired = proposal.estado === "vencida";
+  const pending = proposal.estado === "borrador";
 
   return (
     <main className="public-proposal">
       <header className="public-proposal__topbar">
         <BrandLogo variant="auth" subtitle="Propuesta comercial" />
-        <span>Documento emitido por {companyName}</span>
+        <span>
+          {pending ? "Propuesta preparada por" : "Documento emitido por"}{" "}
+          {companyName}
+        </span>
       </header>
 
       <section className="public-proposal__hero">
@@ -155,7 +159,11 @@ function PublicQuoteProposalPage() {
         <div className="public-proposal__total">
           <small>Total</small>
           <strong>{formatCLP(proposal.total)}</strong>
-          <span>Vigente hasta {formatDate(proposal.fechaVencimiento)}</span>
+          <span>
+            {pending
+              ? `Vigencia: ${proposal.validezDias || "-"} días desde la emisión`
+              : `Vigente hasta ${formatDate(proposal.fechaVencimiento)}`}
+          </span>
         </div>
       </section>
 
@@ -199,7 +207,20 @@ function PublicQuoteProposalPage() {
         >
           {downloading ? "Preparando PDF..." : "Descargar PDF"}
         </Button>
-        {canRespond && (
+      </div>
+
+      <section className="public-proposal__document">
+        <QuotePrintView quote={proposal} companyProfile={proposal.empresa} />
+      </section>
+
+      {canRespond && (
+        <section className="public-proposal__response no-print">
+          <div>
+            <h2>Respuesta a la propuesta</h2>
+            <p>
+              Confirma tu decisión respecto de la cotización {proposal.numero}.
+            </p>
+          </div>
           <div className="public-proposal__response-actions">
             <Button type="button" variant="secondary" onClick={() => setDialog("reject")}>
               Rechazar propuesta
@@ -208,12 +229,8 @@ function PublicQuoteProposalPage() {
               Aceptar propuesta
             </Button>
           </div>
-        )}
-      </div>
-
-      <section className="public-proposal__document">
-        <QuotePrintView quote={proposal} companyProfile={proposal.empresa} />
-      </section>
+        </section>
+      )}
 
       <footer className="public-proposal__footer">
         Propuesta gestionada de forma segura con ValoraCloud.
@@ -246,8 +263,7 @@ function PublicQuoteProposalPage() {
         }
       >
         <p className="public-proposal__dialog-copy">
-          Esta acción registrará tu respuesta en la cotización. No genera una venta
-          ni afecta inventario.
+          Al confirmar, tu respuesta quedará registrada y será informada a {companyName}.
         </p>
       </ResponsiveDialog>
 

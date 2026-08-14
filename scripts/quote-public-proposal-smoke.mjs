@@ -519,6 +519,10 @@ for (const [action, expectedStatus, extraData] of [
   );
   assert.equal(rejected.estado, "rechazada");
   assert.equal(db.read(quotePath).motivoRechazoCliente, "precio");
+  assert.equal(
+    db.read(quotePath).comentarioRechazoCliente,
+    "Fuera del presupuesto actual."
+  );
   await assert.rejects(
     respondPublicQuoteProposalHandler(
       { data: { token: rawToken, action: "accept" } },
@@ -608,6 +612,10 @@ assert.equal(sanitized.items[0].precioUnitarioEditable, 1000);
 
 const appSource = fs.readFileSync("src/app/App.jsx", "utf8");
 const historySource = fs.readFileSync("src/pages/QuoteHistoryPage.jsx", "utf8");
+const publicPageSource = fs.readFileSync(
+  "src/pages/PublicQuoteProposalPage.jsx",
+  "utf8"
+);
 const quoteServiceSource = fs.readFileSync("src/services/quoteService.js", "utf8");
 const rulesSource = fs.readFileSync("firestore.rules", "utf8");
 const indexes = JSON.parse(fs.readFileSync("firestore.indexes.json", "utf8"));
@@ -640,6 +648,22 @@ assert.match(historySource, /Sí, fue enviada/);
 assert.match(historySource, /title: "Cotización emitida"/);
 assert.match(historySource, /error\?\.name !== "AbortError"/);
 assert.match(historySource, /\{canSendByEmail && \([\s\S]*runPdfAction\("whatsapp"\)/);
+assert.match(publicPageSource, /Propuesta preparada por/);
+assert.match(publicPageSource, /Vigencia: \$\{proposal\.validezDias/);
+assert.match(publicPageSource, /Respuesta a la propuesta/);
+assert.match(publicPageSource, /Confirma tu decisión respecto de la cotización/);
+assert.match(publicPageSource, /Al confirmar, tu respuesta quedará registrada/);
+assert.doesNotMatch(publicPageSource, /No genera una venta|afecta inventario|stock/i);
+const publicToolbarSource = publicPageSource.slice(
+  publicPageSource.indexOf('<div className="public-proposal__toolbar'),
+  publicPageSource.indexOf('<section className="public-proposal__document">')
+);
+assert.doesNotMatch(publicToolbarSource, /Rechazar propuesta|Aceptar propuesta/);
+assert.ok(
+  publicPageSource.indexOf('<section className="public-proposal__response no-print">') >
+    publicPageSource.indexOf('<section className="public-proposal__document">'),
+  "La respuesta pública debe aparecer después del documento completo"
+);
 assert.match(quoteServiceSource, /"markQuoteEmittedManually"/);
 const manualEmissionClientSource = quoteServiceSource.slice(
   quoteServiceSource.indexOf('if \(estado === "emitida"\)'.replace("\\", "")),

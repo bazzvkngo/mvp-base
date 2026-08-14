@@ -51,13 +51,22 @@ const STATUS_OPTIONS = [
 const statusLabels = QUOTE_STATUS_LABELS;
 
 const statusFeedbackTitles = {
-  borrador: "Cotización restaurada como pendiente de envío",
+  borrador: "Cotización restaurada como pendiente",
   emitida: "Cotización emitida",
   aceptada: "Cotización aceptada",
   rechazada: "Cotización rechazada",
   vencida: "Cotización marcada como vencida",
   archivada: "Cotización archivada",
 };
+
+const REJECTION_REASON_LABELS = Object.freeze({
+  precio: "Precio",
+  plazo: "Plazo",
+  requerimiento_cambio: "El requerimiento cambió",
+  otra_alternativa: "Eligió otra alternativa",
+  otro: "Otro",
+  no_indica: "No indicado",
+});
 
 const statusStyles = {
   borrador: {
@@ -193,7 +202,7 @@ function QuoteHistoryPage({ userId, role }) {
     if (location.state?.createdQuoteNumber) {
       sileo.success({
         title: "Cotización creada",
-        description: `${location.state.createdQuoteNumber} está pendiente de envío.`,
+        description: `${location.state.createdQuoteNumber} está pendiente. Aún no ha sido enviada al cliente.`,
       });
     }
     navigate(location.pathname, { replace: true, state: null });
@@ -353,7 +362,7 @@ function QuoteHistoryPage({ userId, role }) {
       const result = await duplicateQuoteAsDraft(userId, quote.id, {requestId});
       duplicateRequestIdsRef.current.delete(quote.id);
       navigate(`/cotizaciones/${result.quote.id}/editar`, {
-        state: {message: "Copia creada como pendiente de envío."},
+        state: {message: "Copia creada como pendiente."},
       });
     } catch (duplicateError) {
       const message =
@@ -391,7 +400,10 @@ function QuoteHistoryPage({ userId, role }) {
           },
           success: (created) => ({
             title: "Venta preparada",
-            description: `${created.venta.numero} fue creada como borrador.`,
+            description: `${created.venta.numero} fue preparada desde ${getQuoteDisplayNumber(
+              quote,
+              quote.id || "-"
+            )}.`,
             button: {
               title: "Abrir venta",
               onClick: () => navigate(`/ventas/${created.venta.id}/editar`),
@@ -799,6 +811,14 @@ function EmailStatusBadge({ quote }) {
     );
   }
 
+  if (status === "simulado") {
+    return (
+      <span style={{ ...styles.emailBadge, ...styles.emailSimulated }}>
+        Simulación QA
+      </span>
+    );
+  }
+
   return <span style={styles.emailMuted}>Sin envío</span>;
 }
 
@@ -956,14 +976,6 @@ function QuoteActions({
     );
   }
 
-  if (status === "simulado") {
-    return (
-      <span style={{ ...styles.emailBadge, ...styles.emailSent }}>
-        Preparada QA
-      </span>
-    );
-  }
-
   if (estado === "borrador") {
     return (
       <>
@@ -1035,7 +1047,7 @@ function QuoteActions({
             style={styles.primaryButton}
             title="Crea una venta en borrador. Todavía no descuenta stock."
           >
-            {registeringSale ? "Creando venta..." : "Crear venta"}
+            {registeringSale ? "Preparando venta..." : "Preparar venta"}
           </button>
         )}
         <MoreActionsMenu
@@ -1430,7 +1442,21 @@ function CommercialStatusTimeline({ quote }) {
       value: formatTimestamp(quote.fechaEmision),
     });
   }
-  if (["enviado", "simulado"].includes(quote.estadoEnvioCorreo)) {
+  if (quote.estadoEnvioCorreo === "simulado") {
+    const destinationEmail = String(quote.emailClienteDestino || "").trim();
+    const simulationDate = quote.fechaEnvioCorreo
+      ? `Fecha de simulación: ${formatTimestamp(quote.fechaEnvioCorreo)}`
+      : "";
+    const testRecipient = destinationEmail
+      ? `Destinatario de prueba: ${destinationEmail}`
+      : "";
+    events.push({
+      label: "Simulación de correo — QA local",
+      value: "No se envió un correo real.",
+      note: [simulationDate, testRecipient].filter(Boolean).join(" · "),
+    });
+  }
+  if (quote.estadoEnvioCorreo === "enviado") {
     const destinationEmail = String(quote.emailClienteDestino || "").trim();
     const originalEmail = String(
       quote.correoOriginalCliente ||
@@ -1441,17 +1467,18 @@ function CommercialStatusTimeline({ quote }) {
     ).trim();
     const destinationNote = destinationEmail
       ? quote.destinatarioAlternativo
-        ? `Destino alternativo: ${destinationEmail}${
+        ? `Destinatario alternativo: ${destinationEmail}${
             originalEmail ? ` · Correo asociado: ${originalEmail}` : ""
           }`
-        : `Destino: ${destinationEmail}`
-      : "";
+        : `Destinatario: ${destinationEmail}`
+      : "Destinatario no disponible";
+    const providerNote = `Proveedor: ${quote.proveedorCorreo || "no disponible"}`;
     events.push({
-      label: quote.estadoEnvioCorreo === "simulado" ? "Preparada en QA" : "Enviada",
+      label: "Enviada por correo",
       value: quote.fechaEnvioCorreo
         ? formatTimestamp(quote.fechaEnvioCorreo)
         : "Fecha no disponible",
-      note: destinationNote,
+      note: `${destinationNote} · ${providerNote}`,
     });
   }
   if (quote.propuestaPublicaVistaEn) {
@@ -1464,17 +1491,34 @@ function CommercialStatusTimeline({ quote }) {
     quote.respuestaClienteOrigen === "portal_publico" &&
     ["aceptada", "rechazada"].includes(quote.respuestaCliente)
   ) {
+    const rejectedByClient = quote.respuestaCliente === "rechazada";
+    const rejectionReason = REJECTION_REASON_LABELS[
+      String(quote.motivoRechazoCliente || "").trim()
+    ] || "No indicado";
+    const rejectionComment = String(
+      quote.comentarioRechazoCliente || ""
+    ).trim();
     events.push({
-      label: quote.respuestaCliente === "aceptada"
+      label: !rejectedByClient
         ? "Aceptada por cliente"
         : "Rechazada por cliente",
       value: quote.respuestaClienteEn
         ? formatTimestamp(quote.respuestaClienteEn)
         : "Respuesta registrada",
-      note: "Respuesta registrada por el cliente",
+      note: rejectedByClient ? "" : "Respuesta registrada por el cliente",
+      details: rejectedByClient
+        ? [
+            { label: "Motivo", value: rejectionReason },
+            {
+              label: "Comentario del cliente",
+              value: rejectionComment || "Sin comentario adicional",
+              quoted: Boolean(rejectionComment),
+            },
+          ]
+        : [],
     });
   } else if (
-    ["enviado", "simulado"].includes(quote.estadoEnvioCorreo) &&
+    quote.estadoEnvioCorreo === "enviado" &&
     !quote.respuestaCliente &&
     quote.estado !== "vencida"
   ) {
@@ -1503,6 +1547,20 @@ function CommercialStatusTimeline({ quote }) {
             <span style={styles.commercialStatusLabel}>{event.label}</span>
             <span style={styles.commercialStatusValue}>{event.value}</span>
             {event.note && <small style={styles.commercialStatusNote}>{event.note}</small>}
+            {event.details?.length > 0 && (
+              <div style={styles.commercialStatusDetails}>
+                {event.details.map((detail) => (
+                  <div key={detail.label} style={styles.commercialStatusDetail}>
+                    <strong style={styles.commercialStatusDetailLabel}>
+                      {detail.label}:
+                    </strong>
+                    <span style={styles.commercialStatusDetailValue}>
+                      {detail.quoted ? `“${detail.value}”` : detail.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -1575,6 +1633,25 @@ const styles = {
     fontSize: "11px",
     fontWeight: 700,
   },
+  commercialStatusDetails: {
+    display: "grid",
+    gap: "6px",
+    marginTop: "4px",
+  },
+  commercialStatusDetail: {
+    display: "grid",
+    gap: "1px",
+  },
+  commercialStatusDetailLabel: {
+    color: "#334155",
+    fontSize: "11px",
+  },
+  commercialStatusDetailValue: {
+    color: "#475569",
+    fontSize: "12px",
+    overflowWrap: "anywhere",
+    whiteSpace: "pre-wrap",
+  },
   panelTitle: {
     margin: "0 0 6px",
     fontSize: "17px",
@@ -1620,9 +1697,15 @@ const styles = {
     width: "18%",
   },
   statusColumn: {
+    overflow: "hidden",
+    whiteSpace: "normal",
     width: "10%",
   },
   totalColumn: {
+    overflow: "hidden",
+    textAlign: "right",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
     width: "12%",
   },
   saleColumn: {
@@ -1749,11 +1832,15 @@ const styles = {
   },
   statusBadge: {
     borderRadius: "999px",
+    boxSizing: "border-box",
     display: "inline-block",
     fontSize: "13px",
     fontWeight: 800,
+    maxWidth: "100%",
+    overflowWrap: "anywhere",
     padding: "4px 9px",
-    whiteSpace: "nowrap",
+    textAlign: "center",
+    whiteSpace: "normal",
   },
   emailBadge: {
     borderRadius: "999px",

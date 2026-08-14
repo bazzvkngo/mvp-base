@@ -364,7 +364,7 @@ assert.equal(canDuplicateQuotes("OWNER"), true);
 assert.equal(canDuplicateQuotes("ADMIN"), true);
 assert.equal(canDuplicateQuotes("MEMBER"), false);
 assert.equal(DRAFT_QUOTE_NUMBER_LABEL, "Número pendiente");
-assert.equal(getQuoteStatusLabel("borrador"), "Pendiente de envío");
+assert.equal(getQuoteStatusLabel("borrador"), "Pendiente");
 assert.equal(getQuoteStatusLabel("emitida"), "Emitida");
 console.log("OK duplicación: copia solo datos reutilizables y MEMBER no administra");
 
@@ -467,6 +467,13 @@ assert.match(sourceHistory, /downloadQuotePdf/);
 assert.match(sourceHistory, /shareQuotePdf/);
 assert.match(sourceHistory, /Duplicar como pendiente/);
 assert.match(sourceHistory, /Marcar como emitida/);
+assert.match(sourceHistory, /motivoRechazoCliente/);
+assert.match(sourceHistory, /comentarioRechazoCliente/);
+assert.match(sourceHistory, /Sin comentario adicional/);
+assert.match(sourceHistory, /Preparar venta/);
+assert.match(sourceHistory, /title: "Venta preparada"/);
+assert.match(sourceHistory, /fue preparada desde/);
+assert.match(sourceHistory, /title: "Abrir venta"/);
 assert.match(sourceHistory, /onChangeStatus/);
 assert.match(duplicateServiceSource, /sourceId[\s\S]*requestId/);
 assert.doesNotMatch(duplicateServiceSource, /quote:\s*payload/);
@@ -541,6 +548,15 @@ const scenarios = [
       proyectoNombre: "",
       seccionesAlcance: [],
       condiciones: {},
+      aceptacion: { habilitada: false, texto: "" },
+    }),
+  ],
+  [
+    "06-pending",
+    quoteFixture({
+      estado: "borrador",
+      seccionesAlcance: [],
+      condiciones: { formaPago: company.condicionesPago },
       aceptacion: { habilitada: false, texto: "" },
     }),
   ],

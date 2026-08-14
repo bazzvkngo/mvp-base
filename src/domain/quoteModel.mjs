@@ -5,7 +5,7 @@ export const DEFAULT_QUOTE_VALIDITY_DAYS = 15;
 export const DRAFT_QUOTE_NUMBER_LABEL = "Número pendiente";
 
 export const QUOTE_STATUS_LABELS = Object.freeze({
-  borrador: "Pendiente de envío",
+  borrador: "Pendiente",
   emitida: "Emitida",
   aceptada: "Aceptada",
   rechazada: "Rechazada",

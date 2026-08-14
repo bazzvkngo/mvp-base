@@ -1663,7 +1663,7 @@ function NewQuotePage({ userId }) {
       }
       sileo.success({
         title: "Cambios guardados",
-        description: `${quoteNumber} continúa pendiente de envío.`,
+        description: `${quoteNumber} continúa pendiente. Aún no ha sido enviada al cliente.`,
       });
     } catch (err) {
       console.error("Error al guardar cotización:", err);

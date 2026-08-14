@@ -64,7 +64,7 @@ const DOCUMENT_STATUS_OPTIONS = [
 ];
 const QUOTE_STATUS_OPTIONS = [
   ["todos", "Todos los estados"],
-  ["borrador", "Pendiente de envío"],
+  ["borrador", "Pendiente"],
   ["emitida", "Emitida"],
   ["aceptada", "Aceptada"],
   ["rechazada", "Rechazada"],
@@ -72,7 +72,7 @@ const QUOTE_STATUS_OPTIONS = [
   ["archivada", "Archivada"],
 ];
 const QUOTE_CHART = [
-  ["borrador", "Pendiente de envío", "#94a3b8"],
+  ["borrador", "Pendiente", "#94a3b8"],
   ["emitida", "Emitida", "#38bdf8"],
   ["aceptada", "Aceptada", "#0f766e"],
   ["rechazada", "Rechazada", "#dc2626"],

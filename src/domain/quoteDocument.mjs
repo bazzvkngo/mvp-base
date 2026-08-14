@@ -155,6 +155,14 @@ function drawHeader(doc, quote, company, logoDataUrl, { compact = false } = {}) 
     doc.text(getQuoteStatusLabel(quote.estado), right, top + 30, {
       align: "right",
     });
+    if (pendingEmission) {
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(...MUTED);
+      doc.setFontSize(7);
+      doc.text("Aún no ha sido enviada al cliente.", right, top + 34.5, {
+        align: "right",
+      });
+    }
   }
 
   doc.setDrawColor(...NAVY);

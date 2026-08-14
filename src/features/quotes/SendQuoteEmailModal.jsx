@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Check, FileText } from "lucide-react";
+import { Check, Copy, ExternalLink, FileText } from "lucide-react";
 import { sileo } from "sileo";
 import Button from "../../components/ui/Button";
 import AppIcon from "../../components/ui/AppIcon";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
+import { firebaseEnvironment } from "../../config/firebaseEnvironment.mjs";
 import {
   buildDefaultQuoteEmail,
   isQuoteEmailSendable,
@@ -60,16 +61,21 @@ function SendQuoteEmailModal({
   const [mensaje, setMensaje] = useState(defaults.mensaje);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [qaPublicUrl, setQaPublicUrl] = useState("");
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setQaPublicUrl("");
+      return;
+    }
     setEmailCliente(defaults.emailCliente);
     setUsingAlternateEmail(false);
     setAsunto(defaults.asunto);
     setMensaje(defaults.mensaje);
     setError("");
+    setQaPublicUrl("");
     submittingRef.current = false;
-  }, [defaults, open]);
+  }, [defaults, open, quoteId]);
 
   if (!quote) return null;
 
@@ -82,6 +88,7 @@ function SendQuoteEmailModal({
     event.preventDefault();
     if (submittingRef.current) return;
     setError("");
+    setQaPublicUrl("");
 
     let validationError = "";
     if (!quoteId) {
@@ -130,41 +137,63 @@ function SendQuoteEmailModal({
         return result;
       })();
 
-      const result = await sileo.promise(request, {
-        loading: {
-          title: "Enviando cotización",
-          description: `Preparando ${quoteNumber} y su PDF adjunto.`,
-        },
-        success: (sentResult) => ({
-          title: "Cotización enviada",
-          description: sentResult.simulated
-            ? `${quoteNumber} quedó preparada para QA sin consumir Resend.`
-            : `${quoteNumber} fue enviada a ${emailCliente.trim()}.`,
-          ...(sentResult.qaPublicUrl
-            ? {
-                button: {
-                  title: "Copiar enlace QA",
-                  onClick: () => {
-                    if (navigator.clipboard?.writeText) {
-                      navigator.clipboard.writeText(sentResult.qaPublicUrl).catch(() => {
-                        window.prompt("Copia el enlace público de QA:", sentResult.qaPublicUrl);
-                      });
-                    } else {
-                      window.prompt("Copia el enlace público de QA:", sentResult.qaPublicUrl);
-                    }
-                  },
-                },
-              }
-            : {}),
-        }),
-        error: (sendError) => ({
+      const loadingToastId = sileo.show({
+        duration: null,
+        type: "loading",
+        title: firebaseEnvironment.isEmulator
+          ? "Preparando simulación"
+          : "Procesando correo",
+        description: `Preparando ${quoteNumber} y su PDF adjunto.`,
+      });
+      let result;
+      try {
+        result = await request;
+      } catch (sendError) {
+        sileo.dismiss(loadingToastId);
+        sileo.error({
           title: "No pudimos enviar la cotización",
           description: getSafeEmailError(sendError),
-        }),
-      });
+        });
+        throw sendError;
+      }
+      sileo.dismiss(loadingToastId);
+
+      const isQaSimulation = firebaseEnvironment.isEmulator && result.simulated;
+      const resultQaPublicUrl = isQaSimulation
+        ? String(result.qaPublicUrl || "").trim()
+        : "";
+      const qaLinkAction = resultQaPublicUrl
+        ? {
+            button: {
+              title: "Copiar enlace QA",
+              onClick: () => {
+                if (navigator.clipboard?.writeText) {
+                  navigator.clipboard.writeText(resultQaPublicUrl).catch(() => {
+                    window.prompt("Copia el enlace público de QA:", resultQaPublicUrl);
+                  });
+                } else {
+                  window.prompt("Copia el enlace público de QA:", resultQaPublicUrl);
+                }
+              },
+            },
+          }
+        : {};
+      if (result.simulated) {
+        setQaPublicUrl(resultQaPublicUrl);
+        sileo.info({
+          title: "Simulación preparada",
+          description: "En QA local no se envió un correo real.",
+          ...qaLinkAction,
+        });
+      } else {
+        sileo.success({
+          title: "Cotización enviada",
+          description: `${quoteNumber} fue enviada a ${emailCliente.trim()}.`,
+        });
+      }
 
       onSent?.(result.quoteEmailStatus, result);
-      onClose?.();
+      if (!isQaSimulation) onClose?.();
     } catch (sendError) {
       console.error("Error enviando cotización por correo:", sendError);
       const safeMessage = getSafeEmailError(sendError);
@@ -175,6 +204,21 @@ function SendQuoteEmailModal({
     } finally {
       submittingRef.current = false;
       setSending(false);
+    }
+  };
+
+  const copyQaPublicUrl = async () => {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard API no disponible.");
+      }
+      await navigator.clipboard.writeText(qaPublicUrl);
+      sileo.info({
+        title: "Enlace copiado",
+        duration: 2200,
+      });
+    } catch {
+      window.prompt("Copia el enlace público de QA:", qaPublicUrl);
     }
   };
 
@@ -193,7 +237,13 @@ function SendQuoteEmailModal({
         form="send-quote-email-form"
         disabled={sending || !canSendQuote}
       >
-        {sending ? "Enviando..." : "Enviar cotización"}
+        {firebaseEnvironment.isEmulator
+          ? sending
+            ? "Preparando..."
+            : "Preparar simulación"
+          : sending
+            ? "Enviando..."
+            : "Enviar cotización"}
       </Button>
     </>
   );
@@ -201,19 +251,59 @@ function SendQuoteEmailModal({
   return (
     <ResponsiveDialog
       className="quote-email-dialog"
-      description="Revisa los datos del correo antes de enviar el documento al cliente."
+      description={firebaseEnvironment.isEmulator
+        ? "Revisa los datos que se usarán en esta simulación local."
+        : "Revisa los datos del correo antes de enviar el documento al cliente."}
       footer={footer}
       initialFocusRef={emailInputRef}
       onClose={closeDialog}
       open={open}
       size="large"
-      title="Enviar cotización por correo"
+      title={firebaseEnvironment.isEmulator
+        ? "Simular correo de cotización"
+        : "Enviar cotización por correo"}
     >
       <form
         id="send-quote-email-form"
         className="quote-email-dialog__content"
         onSubmit={handleSubmit}
       >
+        {firebaseEnvironment.isEmulator && (
+          <div
+            className={`quote-email-dialog__qa-notice${
+              qaPublicUrl ? " quote-email-dialog__qa-notice--result" : ""
+            }`}
+            role="status"
+          >
+            <strong>Simulación de correo — QA local</strong>
+            <span>
+              {qaPublicUrl
+                ? "No se envió un correo real. Usa este enlace para revisar exactamente la propuesta que recibiría el cliente."
+                : "No se enviará un correo real. El destinatario se registrará sólo como dato de prueba."}
+            </span>
+            {qaPublicUrl && (
+              <div className="quote-email-dialog__qa-actions">
+                <a
+                  className="quote-email-dialog__qa-action"
+                  href={qaPublicUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <AppIcon icon={ExternalLink} size={16} />
+                  <span>Abrir propuesta QA</span>
+                </a>
+                <button
+                  className="quote-email-dialog__qa-action"
+                  type="button"
+                  onClick={copyQaPublicUrl}
+                >
+                  <AppIcon icon={Copy} size={16} />
+                  <span>Copiar enlace</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
         <section className="quote-email-dialog__fields">
           <div className="quote-email-dialog__field">
             <div className="quote-email-dialog__field-heading">
