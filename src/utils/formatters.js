@@ -1,9 +1,37 @@
-export function formatCLP(value) {
-  return Number(value || 0).toLocaleString("es-CL", {
+export const DEFAULT_CURRENCY = "CLP";
+export const DEFAULT_LOCALE = "es-CL";
+
+function safeLocale(locale) {
+  try {
+    return Intl.getCanonicalLocales(String(locale || DEFAULT_LOCALE))[0] || DEFAULT_LOCALE;
+  } catch {
+    return DEFAULT_LOCALE;
+  }
+}
+
+function safeCurrency(currency) {
+  const normalized = String(currency || DEFAULT_CURRENCY).trim().toUpperCase();
+  try {
+    new Intl.NumberFormat(DEFAULT_LOCALE, { style: "currency", currency: normalized });
+    return normalized;
+  } catch {
+    return DEFAULT_CURRENCY;
+  }
+}
+
+export function formatMoney(value, currency = DEFAULT_CURRENCY, locale = DEFAULT_LOCALE) {
+  return new Intl.NumberFormat(safeLocale(locale), {
     style: "currency",
-    currency: "CLP",
-    minimumFractionDigits: 0,
-  });
+    currency: safeCurrency(currency),
+  }).format(Number(value || 0));
+}
+
+export function formatNumber(value, locale = DEFAULT_LOCALE, options = {}) {
+  return new Intl.NumberFormat(safeLocale(locale), options).format(Number(value || 0));
+}
+
+export function formatCLP(value) {
+  return formatMoney(value, DEFAULT_CURRENCY, DEFAULT_LOCALE);
 }
 
 export function formatPercent(value, decimals = 1) {
@@ -15,36 +43,22 @@ export function formatPercent(value, decimals = 1) {
   return `${formatted} %`;
 }
 
-export function formatDate(value) {
+export function formatDate(value, locale = DEFAULT_LOCALE) {
   if (!value) return "-";
 
-  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const [year, month, day] = value.split("-");
-    return `${day}-${month}-${year}`;
-  }
-
-  const date =
-    typeof value?.toDate === "function"
+  const date = typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(`${value}T12:00:00Z`)
+    : typeof value?.toDate === "function"
       ? value.toDate()
       : value instanceof Date
-      ? value
-      : new Date(value);
+        ? value
+        : new Date(value);
 
   if (Number.isNaN(date.getTime())) return "-";
 
-  const parts = new Intl.DateTimeFormat("es-CL", {
-    timeZone: "America/Santiago",
+  return new Intl.DateTimeFormat(safeLocale(locale), {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).formatToParts(date);
-
-  const dateParts = parts.reduce((result, part) => {
-    if (part.type !== "literal") {
-      result[part.type] = part.value;
-    }
-    return result;
-  }, {});
-
-  return `${dateParts.day}-${dateParts.month}-${dateParts.year}`;
+  }).format(date);
 }

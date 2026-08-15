@@ -1,4 +1,5 @@
 const {createHash} = require("node:crypto");
+const {adaptDocumentLocalization, documentLocalizationSnapshot} = require("./localization");
 
 const PURCHASE_ORDER_MODEL_VERSION = 1;
 const VAT_RATE = 0.19;
@@ -229,11 +230,11 @@ function buildStoredLine(input, inventorySnapshot, HttpsError) {
   };
 }
 
-function calculateTotals(items, HttpsError) {
+function calculateTotals(items, HttpsError, taxRate = VAT_RATE) {
   const subtotal = items.reduce((sum, item) => sum + item.subtotalLinea, 0);
   const descuentoTotal = items.reduce((sum, item) => sum + item.descuentoLinea, 0);
   const neto = subtotal - descuentoTotal;
-  const iva = Math.round(neto * VAT_RATE);
+  const iva = Math.round(neto * taxRate);
   const total = neto + iva;
   assertSafeMoney(
     [subtotal, descuentoTotal, neto, iva, total],
@@ -313,7 +314,8 @@ async function crearOrdenCompraHandler(request, dependencies, now = new Date()) 
     const inventoryRefs = input.items.map((item) =>
       businessRef.collection("inventario").doc(item.itemId)
     );
-    const snapshots = await transaction.getAll(providerRef, counterRef, ...inventoryRefs);
+    const taxSettingsRef = businessRef.collection("configuracion").doc("impuestos");
+    const snapshots = await transaction.getAll(providerRef, counterRef, businessRef, taxSettingsRef, ...inventoryRefs);
     const proveedorSnapshot = providerSnapshotFromDocument(
       snapshots[0],
       {businessId, proveedorId: input.proveedorId},
@@ -322,7 +324,7 @@ async function crearOrdenCompraHandler(request, dependencies, now = new Date()) 
     const items = input.items.map((item, index) => buildStoredLine(
       item,
       inventorySnapshotFromDocument(
-        snapshots[index + 2],
+        snapshots[index + 4],
         {businessId, itemId: item.itemId},
         HttpsError
       ),
@@ -332,6 +334,10 @@ async function crearOrdenCompraHandler(request, dependencies, now = new Date()) 
     const next = Number.isSafeInteger(current) && current >= 0 ? current + 1 : 1;
     const numero = formatPurchaseOrderNumber(dateParts.year, next);
     const timestamp = FieldValue.serverTimestamp();
+    const localization = documentLocalizationSnapshot(
+      snapshots[2].data() || {},
+      snapshots[3].data() || {}
+    );
     const stored = {
       modeloOrdenCompraVersion: PURCHASE_ORDER_MODEL_VERSION,
       ordenCompraId: orderRef.id,
@@ -340,8 +346,11 @@ async function crearOrdenCompraHandler(request, dependencies, now = new Date()) 
       anio: dateParts.year,
       correlativo: next,
       estado: "borrador",
-      moneda: "CLP",
-      tasaIva: VAT_RATE,
+      paisCodigo: localization.paisCodigo,
+      moneda: localization.moneda,
+      locale: localization.locale,
+      impuestoNombre: localization.impuestoNombre,
+      tasaIva: localization.tasaIva,
       fechaEmision: getChileDateValue(now),
       fechaEntregaEstimada: input.fechaEntregaEstimada,
       direccionEntrega: input.direccionEntrega,
@@ -350,7 +359,7 @@ async function crearOrdenCompraHandler(request, dependencies, now = new Date()) 
       proveedorId: input.proveedorId,
       proveedorSnapshot,
       items,
-      ...calculateTotals(items, HttpsError),
+      ...calculateTotals(items, HttpsError, localization.tasaIva),
       creadoPorUid: uid,
       actualizadoPorUid: uid,
       creadoEn: timestamp,
@@ -495,6 +504,7 @@ async function duplicarOrdenCompraComoBorradorHandler(
     const numero = formatPurchaseOrderNumber(dateParts.year, next);
     const timestamp = FieldValue.serverTimestamp();
     const originNumber = safeText(source.numero || source.numeroOrdenCompra, 120);
+    const localization = adaptDocumentLocalization(source);
     const stored = {
       modeloOrdenCompraVersion: PURCHASE_ORDER_MODEL_VERSION,
       ordenCompraId: orderRef.id,
@@ -503,8 +513,11 @@ async function duplicarOrdenCompraComoBorradorHandler(
       anio: dateParts.year,
       correlativo: next,
       estado: "borrador",
-      moneda: "CLP",
-      tasaIva: VAT_RATE,
+      paisCodigo: localization.paisCodigo,
+      moneda: localization.moneda,
+      locale: localization.locale,
+      impuestoNombre: localization.impuestoNombre,
+      tasaIva: localization.tasaIva,
       fechaEmision: getChileDateValue(now),
       fechaEntregaEstimada: input.fechaEntregaEstimada,
       direccionEntrega: input.direccionEntrega,
@@ -513,7 +526,7 @@ async function duplicarOrdenCompraComoBorradorHandler(
       proveedorId: input.proveedorId,
       proveedorSnapshot,
       items,
-      ...calculateTotals(items, HttpsError),
+      ...calculateTotals(items, HttpsError, localization.tasaIva),
       ordenCompraOrigenId: sourceId,
       ordenCompraOrigenNumero: originNumber,
       creadoPorUid: uid,
@@ -657,7 +670,7 @@ async function actualizarOrdenCompraBorradorHandler(request, dependencies) {
       proveedorId: input.proveedorId,
       proveedorSnapshot,
       items,
-      ...calculateTotals(items, HttpsError),
+      ...calculateTotals(items, HttpsError, adaptDocumentLocalization(existing).tasaIva),
       actualizadoPorUid: uid,
       actualizadoEn: timestamp,
     };

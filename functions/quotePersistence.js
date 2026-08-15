@@ -1,5 +1,6 @@
 const QUOTE_MODEL_VERSION = 2;
 const VAT_RATE = 0.19;
+const {documentLocalizationSnapshot, adaptDocumentLocalization} = require("./localization");
 const VALID_STATUS = new Set([
   "borrador",
   "emitida",
@@ -82,12 +83,16 @@ function normalizeCompany(source = {}) {
     ["nombreComercial", 200],
     ["razonSocial", 240],
     ["rut", 40],
+    ["identificadorFiscalTipo", 40],
+    ["identificadorFiscalValor", 80],
     ["giro", 240],
     ["email", 240],
     ["telefono", 100],
     ["direccion", 300],
     ["ciudad", 160],
     ["region", 160],
+    ["regionEstado", 160],
+    ["codigoPostal", 30],
     ["sitioWeb", 300],
     ["logoUrl", 1200],
     ["responsable", 200],
@@ -348,7 +353,7 @@ function normalizeItems(items, HttpsError) {
   });
 }
 
-function calculateTotals(items, rawDiscount, affectsVat, HttpsError) {
+function calculateTotals(items, rawDiscount, affectsVat, HttpsError, taxRate = VAT_RATE) {
   const subtotal = items.reduce((sum, item) => sum + item.subtotalLinea, 0);
   const descuentoItems = items.reduce((sum, item) => sum + item.descuentoLinea, 0);
   const descuento =
@@ -360,7 +365,7 @@ function calculateTotals(items, rawDiscount, affectsVat, HttpsError) {
   }
   const descuentoTotal = descuentoItems + descuento;
   const neto = subtotal - descuentoTotal;
-  const iva = affectsVat ? Math.round(neto * VAT_RATE) : 0;
+  const iva = affectsVat ? Math.round(neto * taxRate) : 0;
   return {
     subtotal,
     descuento,
@@ -401,14 +406,16 @@ function normalizeQuoteInput(
   raw = {},
   issueDate,
   HttpsError,
-  {clientFields = null} = {}
+  {clientFields = null, localization = null} = {}
 ) {
   const company = normalizeCompany(raw.empresa || {});
   const resolvedClientFields =
     clientFields || legacyClientQuoteFields(raw, HttpsError);
   const items = normalizeItems(raw.items, HttpsError);
   const affectsVat = raw.afectaIva !== false;
-  const totals = calculateTotals(items, raw.descuento, affectsVat, HttpsError);
+  const location = localization || adaptDocumentLocalization(raw);
+  const taxRate = affectsVat ? location.tasaIva : 0;
+  const totals = calculateTotals(items, raw.descuento, affectsVat, HttpsError, taxRate);
   const validity = Number(raw.validezDias);
   const validezDias = Number.isInteger(validity) && validity > 0 && validity <= 3650
     ? validity
@@ -423,14 +430,17 @@ function normalizeQuoteInput(
 
   return {
     modeloCotizacionVersion: QUOTE_MODEL_VERSION,
-    moneda: "CLP",
+    paisCodigo: location.paisCodigo,
+    moneda: location.moneda,
+    locale: location.locale,
+    impuestoNombre: location.impuestoNombre,
     fecha: issueDate,
     validezDias,
     fechaVencimiento: calculateExpiryDate(issueDate, validezDias),
     estado: VALID_STATUS.has(raw.estado) ? raw.estado : "borrador",
     afectaIva: affectsVat,
     tipoIva: affectsVat ? "afecta" : "exenta",
-    tasaIva: affectsVat ? VAT_RATE : 0,
+    tasaIva: taxRate,
     ...resolvedClientFields,
     proyectoNombre: safeText(
       raw.proyectoNombre || raw.cliente?.proyecto,
@@ -489,6 +499,7 @@ async function createQuoteWithNumberHandler({
   const userRef = authorizedBusinessRef;
   const quoteRef = userRef.collection("cotizaciones").doc();
   const clientRef = userRef.collection("clientes").doc(clienteId);
+  const taxSettingsRef = userRef.collection("configuracion").doc("impuestos");
   const counterRef = userRef.collection("contadores").doc(`cotizaciones_${dateParts.year}`);
   const requestRef = userRef.collection("quoteCreateRequests").doc(requestId);
 
@@ -512,8 +523,13 @@ async function createQuoteWithNumberHandler({
       };
     }
 
-    const clientSnapshot = await transaction.get(clientRef);
-    const counterSnapshot = await transaction.get(counterRef);
+    const [clientSnapshot, counterSnapshot, businessSnapshot, taxSettingsSnapshot] =
+      await Promise.all([
+        transaction.get(clientRef),
+        transaction.get(counterRef),
+        transaction.get(userRef),
+        transaction.get(taxSettingsRef),
+      ]);
     const clientFields = registeredClientQuoteFields(
       clientSnapshot,
       {businessId, clienteId},
@@ -524,7 +540,13 @@ async function createQuoteWithNumberHandler({
       rawQuote,
       issueDate,
       HttpsError,
-      {clientFields}
+      {
+        clientFields,
+        localization: documentLocalizationSnapshot(
+          businessSnapshot.data() || {},
+          taxSettingsSnapshot.data() || {}
+        ),
+      }
     );
     const current = Number(counterSnapshot.data()?.lastNumber || 0);
     const nextNumber = Number.isSafeInteger(current) && current >= 0 ? current + 1 : 1;
@@ -696,7 +718,7 @@ async function duplicateQuoteAsDraftHandler({
       historicalQuoteCopyInput(source),
       issueDate,
       HttpsError,
-      {clientFields}
+      {clientFields, localization: adaptDocumentLocalization(source)}
     );
     const current = Number(counterSnapshot.data()?.lastNumber || 0);
     const nextNumber = Number.isSafeInteger(current) && current >= 0 ? current + 1 : 1;
@@ -823,7 +845,7 @@ async function updateQuoteDraftHandler({
       rawQuote,
       issueDate,
       HttpsError,
-      {clientFields}
+      {clientFields, localization: adaptDocumentLocalization(existing)}
     );
     const timestamp = FieldValue.serverTimestamp();
     const storedQuote = {

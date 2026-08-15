@@ -1,4 +1,5 @@
 const {createHash} = require("node:crypto");
+const {adaptDocumentLocalization, documentLocalizationSnapshot} = require("./localization");
 
 const MODEL_VERSION = 1;
 const VAT_RATE = 0.19;
@@ -91,22 +92,23 @@ function storedLine(value, snapshot, HttpsError, extra = {}) {
   safeMoney([subtotalLinea, descuentoLinea, totalLinea], HttpsError);
   return {lineaId: value.lineaId, itemId: value.itemId, codigo: snapshot.codigoInterno, nombre: snapshot.nombre, descripcion: snapshot.descripcion, tipoItem: snapshot.tipoItem, unidad: snapshot.unidad, cantidad: value.cantidad, precioUnitario: value.precioUnitario, descuentoPct: value.descuentoPct, subtotalLinea, descuentoLinea, totalLinea, inventarioSnapshot: snapshot, ...extra};
 }
-function totals(items, HttpsError, {descuentoGeneral = 0, afectaIva = true} = {}) {
+function totals(items, HttpsError, {descuentoGeneral = 0, afectaIva = true, tasaIva = VAT_RATE} = {}) {
   const subtotal = items.reduce((sum, item) => sum + item.subtotalLinea, 0);
   const descuentoItems = items.reduce((sum, item) => sum + item.descuentoLinea, 0);
   const descuento = number(descuentoGeneral ?? 0, "El descuento general", HttpsError);
   if (descuento > subtotal - descuentoItems) fail(HttpsError, "invalid-argument", "El descuento general no puede superar el monto disponible.");
   const descuentoTotal = descuentoItems + descuento;
-  const neto = subtotal - descuentoTotal; const tasaIva = afectaIva ? VAT_RATE : 0;
-  const iva = afectaIva ? Math.round(neto * tasaIva) : 0; const total = neto + iva;
+  const neto = subtotal - descuentoTotal; const effectiveTaxRate = afectaIva ? tasaIva : 0;
+  const iva = afectaIva ? Math.round(neto * effectiveTaxRate) : 0; const total = neto + iva;
   safeMoney([subtotal, descuentoItems, descuento, descuentoTotal, neto, iva, total], HttpsError);
-  return {subtotal, descuentoItems, descuento, descuentoTotal, neto, afectaIva, tasaIva, iva, total};
+  return {subtotal, descuentoItems, descuento, descuentoTotal, neto, afectaIva, tasaIva: effectiveTaxRate, iva, total};
 }
 function hash(value) { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
 async function access(request, dependencies) { return dependencies.requireBusinessAccess(request, {db: dependencies.db, HttpsError: dependencies.HttpsError}, {roles: WRITE_ROLES}); }
 function formatNumber(year, sequence) { return `VTA-${year}-${String(sequence).padStart(4, "0")}`; }
-function baseStored({businessId, uid, ventaId, numero, sequence, now, normalized, clienteSnapshot, items, origin = {}, timestamp, HttpsError}) {
-  return {modeloVentaVersion: MODEL_VERSION, ventaId, negocioId: businessId, numero, anio: now.year, correlativo: sequence, estado: "borrador", moneda: "CLP", clienteId: normalized.clienteId, clienteSnapshot, ...origin, items, ...totals(items, HttpsError, {descuentoGeneral: normalized.descuento, afectaIva: normalized.afectaIva}), fechaVenta: normalized.fechaVenta, fechaDocumento: normalized.fechaDocumento, tipoDocumento: normalized.tipoDocumento, numeroDocumento: normalized.numeroDocumento, condicionesPago: normalized.condicionesPago, observaciones: normalized.observaciones, stockAplicado: false, stockAplicadoAt: null, creadoPorUid: uid, actualizadoPorUid: uid, createdAt: timestamp, updatedAt: timestamp};
+function baseStored({businessId, uid, ventaId, numero, sequence, now, normalized, clienteSnapshot, items, localization, origin = {}, timestamp, HttpsError}) {
+  const location = localization || adaptDocumentLocalization({});
+  return {modeloVentaVersion: MODEL_VERSION, ventaId, negocioId: businessId, numero, anio: now.year, correlativo: sequence, estado: "borrador", paisCodigo: location.paisCodigo, moneda: location.moneda, locale: location.locale, impuestoNombre: location.impuestoNombre, clienteId: normalized.clienteId, clienteSnapshot, ...origin, items, ...totals(items, HttpsError, {descuentoGeneral: normalized.descuento, afectaIva: normalized.afectaIva, tasaIva: location.tasaIva}), fechaVenta: normalized.fechaVenta, fechaDocumento: normalized.fechaDocumento, tipoDocumento: normalized.tipoDocumento, numeroDocumento: normalized.numeroDocumento, condicionesPago: normalized.condicionesPago, observaciones: normalized.observaciones, stockAplicado: false, stockAplicadoAt: null, creadoPorUid: uid, actualizadoPorUid: uid, createdAt: timestamp, updatedAt: timestamp};
 }
 function retryable(error) { return Number(error?.code) === 10 || String(error?.message || "").toLowerCase().includes("transaction is invalid"); }
 async function transactionRetry(db, callback) { let last; for (let attempt = 0; attempt < 5; attempt += 1) { try { return await db.runTransaction(callback); } catch (error) { last = error; if (!retryable(error) || attempt === 4) throw error; await new Promise((resolve) => setTimeout(resolve, 30 * (2 ** attempt))); } } throw last; }
@@ -120,12 +122,12 @@ async function crearVentaHandler(request, dependencies, clock = new Date()) {
   return transactionRetry(db, async (transaction) => {
     const previous = await transaction.get(requestRef);
     if (previous.exists) { const data = previous.data() || {}; if (data.uidUsuario !== uid || data.fingerprint !== fingerprint) fail(HttpsError, "already-exists", "La solicitud ya fue usada con otros datos."); const existing = await transaction.get(businessRef.collection("ventas").doc(data.ventaId)); return {venta: {id: existing.id, ...existing.data()}, requestId: reqId, idempotent: true}; }
-    const refs = [businessRef.collection("clientes").doc(normalized.clienteId), counterRef, ...normalized.items.map((item) => businessRef.collection("inventario").doc(item.itemId))];
+    const refs = [businessRef.collection("clientes").doc(normalized.clienteId), counterRef, businessRef, businessRef.collection("configuracion").doc("impuestos"), ...normalized.items.map((item) => businessRef.collection("inventario").doc(item.itemId))];
     const snapshots = await transaction.getAll(...refs); const clienteSnapshot = client(snapshots[0], businessId, normalized.clienteId, HttpsError);
-    const items = normalized.items.map((item, index) => storedLine(item, inventory(snapshots[index + 2], businessId, item.itemId, HttpsError), HttpsError));
+    const items = normalized.items.map((item, index) => storedLine(item, inventory(snapshots[index + 4], businessId, item.itemId, HttpsError), HttpsError));
     const current = Number(snapshots[1].data()?.lastNumber || 0); const sequence = Number.isSafeInteger(current) && current >= 0 ? current + 1 : 1;
     const numero = formatNumber(now.year, sequence); const timestamp = FieldValue.serverTimestamp();
-    const stored = baseStored({businessId, uid, ventaId: saleRef.id, numero, sequence, now, normalized, clienteSnapshot, items, timestamp, HttpsError});
+    const stored = baseStored({businessId, uid, ventaId: saleRef.id, numero, sequence, now, normalized, clienteSnapshot, items, localization: documentLocalizationSnapshot(snapshots[2].data() || {}, snapshots[3].data() || {}), timestamp, HttpsError});
     transaction.set(counterRef, {negocioId: businessId, year: now.year, lastNumber: sequence, actualizadoEn: timestamp}); transaction.set(saleRef, stored);
     transaction.set(requestRef, {ventaId: saleRef.id, numero, negocioId: businessId, uidUsuario: uid, fingerprint, creadoEn: timestamp});
     return {venta: {id: saleRef.id, ...stored, createdAt: null, updatedAt: null}, requestId: reqId, idempotent: false};
@@ -166,7 +168,7 @@ async function crearVentaDesdeCotizacionHandler(request, dependencies, clock = n
     const clienteSnapshot = quoteClientSnapshot(quote, HttpsError); const items = quote.items.map((item, index) => quoteLine(item, index, HttpsError));
     const normalized = input({clienteId: clienteSnapshot.clienteId, descuento: quote.descuento ?? quote.descuentoGeneral ?? 0, afectaIva: quote.afectaIva !== false, fechaVenta: now.value, fechaDocumento: "", tipoDocumento: "sin_documento", numeroDocumento: "", condicionesPago: quote.condicionesPago || quote.condiciones?.formaPago, observaciones: quote.observaciones || quote.condiciones?.observaciones, items}, HttpsError);
     const current = Number(counterSnapshot.data()?.lastNumber || 0); const sequence = Number.isSafeInteger(current) && current >= 0 ? current + 1 : 1; const numero = formatNumber(now.year, sequence); const timestamp = FieldValue.serverTimestamp();
-    const stored = baseStored({businessId, uid, ventaId: saleRef.id, numero, sequence, now, normalized, clienteSnapshot, items, origin: {cotizacionId: quoteId, cotizacionNumero: text(quote.numero, 120)}, timestamp, HttpsError});
+    const stored = baseStored({businessId, uid, ventaId: saleRef.id, numero, sequence, now, normalized, clienteSnapshot, items, localization: adaptDocumentLocalization(quote), origin: {cotizacionId: quoteId, cotizacionNumero: text(quote.numero, 120)}, timestamp, HttpsError});
     transaction.set(counterRef, {negocioId: businessId, year: now.year, lastNumber: sequence, actualizadoEn: timestamp}); transaction.set(saleRef, stored);
     transaction.update(quoteRef, {ventaId: saleRef.id, ventaNumero: numero, ventaRegistradaEn: timestamp, actualizadoEn: timestamp});
     transaction.set(requestRef, {negocioId: businessId, cotizacionId: quoteId, ventaId: saleRef.id, numero, uidUsuario: uid, creadoEn: timestamp});
@@ -197,7 +199,7 @@ async function actualizarVentaBorradorHandler(request, dependencies) {
     const snapshots = refs.length ? await transaction.getAll(...refs) : []; let cursor = 0;
     const clienteSnapshot = clientChanged ? client(snapshots[cursor++], businessId, normalized.clienteId, HttpsError) : preservedClient(existing);
     const items = normalized.items.map((item, index) => storedLine(item, itemChanged[index] ? inventory(snapshots[cursor++], businessId, item.itemId, HttpsError) : preservedItem(previousLines.get(item.lineaId)), HttpsError, existing.cotizacionId ? {cantidadCotizada: previousLines.get(item.lineaId).cantidadCotizada} : {}));
-    const timestamp = FieldValue.serverTimestamp(); const update = {...normalized, clienteSnapshot, items, ...totals(items, HttpsError, {descuentoGeneral: normalized.descuento, afectaIva: normalized.afectaIva}), actualizadoPorUid: uid, updatedAt: timestamp}; transaction.update(saleRef, update);
+    const timestamp = FieldValue.serverTimestamp(); const update = {...normalized, clienteSnapshot, items, ...totals(items, HttpsError, {descuentoGeneral: normalized.descuento, afectaIva: normalized.afectaIva, tasaIva: adaptDocumentLocalization(existing).tasaIva}), actualizadoPorUid: uid, updatedAt: timestamp}; transaction.update(saleRef, update);
     return {venta: {id: ventaId, ...existing, ...update, updatedAt: null}};
   });
 }

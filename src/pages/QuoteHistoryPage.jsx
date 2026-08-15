@@ -38,7 +38,7 @@ import {
   crearVentaDesdeCotizacion,
   createSaleRequestId,
 } from "../services/saleService";
-import { formatCLP, formatDate } from "../utils/formatters";
+import { formatDate, formatMoney } from "../utils/formatters";
 import { downloadQuotePdf, shareQuotePdf } from "../utils/quotePdf";
 
 const STATUS_OPTIONS = [
@@ -602,7 +602,7 @@ function QuoteHistoryPage({ userId, role }) {
                       <StatusBadge status={quote.estado} />
                     </td>
                     <td className="quote-history-table__total">
-                      <strong>{formatCLP(quote.total)}</strong>
+                      <strong>{formatMoney(quote.total, quote.moneda, quote.locale)}</strong>
                     </td>
                     <td>
                       {quote.ventaId && quote.ventaNumero ? (
@@ -867,7 +867,7 @@ function QuoteCards({
             </div>
             <div className="erp-meta">
               <dt className="erp-meta__label">Total</dt>
-              <dd className="erp-meta__value"><strong>{formatCLP(quote.total)}</strong></dd>
+              <dd className="erp-meta__value"><strong>{formatMoney(quote.total, quote.moneda, quote.locale)}</strong></dd>
             </div>
             <div className="erp-meta">
               <dt className="erp-meta__label">Correo</dt>

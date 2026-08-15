@@ -5,7 +5,7 @@ import {
   getQuoteDisplayNumber,
   getQuoteStatusLabel,
 } from "../../domain/quoteModel.mjs";
-import { formatCLP, formatDate } from "../../utils/formatters";
+import { formatDate, formatMoney } from "../../utils/formatters";
 
 function hasText(value) {
   return Boolean(String(value ?? "").trim());
@@ -26,6 +26,7 @@ function QuotePrintView({ quote: rawQuote, companyProfile }) {
     ...rawQuote,
     empresa: rawQuote?.empresa || companyProfile || {},
   });
+  const money = (value) => formatMoney(value, quote.moneda, quote.locale);
   const company = quote.empresa;
   const client = quote.cliente;
   const pendingEmission = quote.estado === "borrador" && !quote.fechaEmision;
@@ -55,7 +56,7 @@ function QuotePrintView({ quote: rawQuote, companyProfile }) {
           <div>
             <h2>{brand}</h2>
             {company.razonSocial !== brand && <OptionalLine value={company.razonSocial} />}
-            <OptionalLine label="RUT" value={company.rut} />
+            <OptionalLine label={company.identificadorFiscalTipo || "Identificación fiscal"} value={company.identificadorFiscalValor || company.rut} />
             <OptionalLine value={[company.direccion, company.ciudad, company.region].filter(hasText).join(" · ")} />
             <OptionalLine value={[company.email, company.telefono].filter(hasText).join(" · ")} />
           </div>
@@ -122,11 +123,11 @@ function QuotePrintView({ quote: rawQuote, companyProfile }) {
                   </td>
                   <td>{item.unidad || "-"}</td>
                   <td className="numeric">{item.cantidad}</td>
-                  <td className="numeric">{formatCLP(item.precioUnitarioEditable)}</td>
+                  <td className="numeric">{money(item.precioUnitarioEditable)}</td>
                   <td className="numeric">
                     {item.descuentoPorcentaje ? `${item.descuentoPorcentaje}%` : "-"}
                   </td>
-                  <td className="numeric"><strong>{formatCLP(item.totalLinea)}</strong></td>
+                  <td className="numeric"><strong>{money(item.totalLinea)}</strong></td>
                 </tr>
               ))}
             </tbody>
@@ -135,16 +136,18 @@ function QuotePrintView({ quote: rawQuote, companyProfile }) {
       )}
 
       <div className="quote-document-preview__totals">
-        <TotalRow label="Subtotal" value={formatCLP(quote.subtotal)} />
+        <TotalRow label="Subtotal" value={money(quote.subtotal)} />
         {quote.descuentoTotal > 0 && (
-          <TotalRow label="Descuento total" value={`-${formatCLP(quote.descuentoTotal)}`} />
+          <TotalRow label="Descuento total" value={`-${money(quote.descuentoTotal)}`} />
         )}
-        <TotalRow label="Subtotal neto" value={formatCLP(quote.neto)} />
+        <TotalRow label="Subtotal neto" value={money(quote.neto)} />
         <TotalRow
-          label={quote.afectaIva ? "IVA 19%" : "IVA (exenta)"}
-          value={formatCLP(quote.iva)}
+          label={quote.afectaIva
+            ? `${quote.impuestoNombre || "IVA"} ${Number(quote.tasaIva || 0) * 100}%`
+            : `${quote.impuestoNombre || "Impuesto"} (exenta)`}
+          value={money(quote.iva)}
         />
-        <TotalRow label="Total" value={formatCLP(quote.total)} strong />
+        <TotalRow label="Total" value={money(quote.total)} strong />
       </div>
 
       {quote.legacyIvaNoDefinido && (

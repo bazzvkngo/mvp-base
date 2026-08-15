@@ -1,6 +1,7 @@
 import {jsPDF} from "jspdf";
 import {autoTable} from "jspdf-autotable";
 import {adaptStoredPurchaseOrder} from "./purchaseOrderModel.mjs";
+import {formatMoney} from "../utils/formatters.js";
 
 const NAVY = [7, 40, 93];
 const RED = [210, 36, 48];
@@ -12,11 +13,7 @@ const MARGIN = 14;
 
 const hasText = (value) => Boolean(String(value ?? "").trim());
 const join = (values) => values.filter(hasText).join(" · ");
-const money = (value) => new Intl.NumberFormat("es-CL", {
-  style: "currency",
-  currency: "CLP",
-  maximumFractionDigits: 0,
-}).format(Number(value) || 0);
+const money = (value, order) => formatMoney(value, order?.moneda, order?.locale);
 const statusLabel = (value) => ({borrador: "Pendiente", emitida: "Emitida", cancelada: "Cancelada"})[value] || "Pendiente";
 const paymentLabel = (value) => ({contado: "Contado", transferencia: "Transferencia", credito: "Crédito", otro: "Otro"})[value] || value;
 
@@ -121,11 +118,11 @@ function drawProvider(doc, order, y) {
 
 function drawTotals(doc, order, y) {
   const rows = [
-    ["Subtotal", money(order.subtotal)],
-    ["Descuentos", Number(order.descuentoTotal) > 0 ? `-${money(order.descuentoTotal)}` : money(0)],
-    ["Neto", money(order.neto)],
-    ["IVA 19%", money(order.iva)],
-    ["TOTAL", money(order.total)],
+    ["Subtotal", money(order.subtotal, order)],
+    ["Descuentos", Number(order.descuentoTotal) > 0 ? `-${money(order.descuentoTotal, order)}` : money(0, order)],
+    ["Neto", money(order.neto, order)],
+    [`${order.impuestoNombre || "IVA"} ${Number(order.tasaIva || 0) * 100}%`, money(order.iva, order)],
+    ["TOTAL", money(order.total, order)],
   ];
   const width = 76;
   const height = 43;
@@ -209,9 +206,9 @@ export function buildPurchaseOrderPdfDocument({order: rawOrder, companyProfile =
       item.codigo || "-",
       `${item.nombre}${item.descripcion ? `\n${item.descripcion}` : ""}`,
       `${item.cantidad} ${item.unidad || ""}`,
-      money(item.costoUnitario),
+      money(item.costoUnitario, order),
       item.descuentoPct ? `${item.descuentoPct}%` : "-",
-      money(item.totalLinea),
+      money(item.totalLinea, order),
     ]),
     theme: "grid",
     showHead: "everyPage",

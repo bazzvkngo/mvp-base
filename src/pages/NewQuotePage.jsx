@@ -667,8 +667,11 @@ function NewQuotePage({ userId }) {
     () =>
       tryCalculateQuoteTotals(quote.items, quote.descuento, {
         afectaIva: quote.afectaIva !== false,
+        tasaIva:
+          quote.tasaIva ??
+          Number(companyProfile?.impuestoPredeterminadoTasa ?? 19) / 100,
       }),
-    [quote.afectaIva, quote.descuento, quote.items]
+    [companyProfile?.impuestoPredeterminadoTasa, quote.afectaIva, quote.descuento, quote.items, quote.tasaIva]
   );
   const totals = totalsResult.totals;
   const quoteValidation = useMemo(() => validateQuoteDraft(quote), [quote]);
@@ -2065,10 +2068,14 @@ function NewQuotePage({ userId }) {
         </main>
 
         <QuoteSummaryPanel
+          currency={quote.moneda || companyProfile?.monedaCodigo || "CLP"}
           isEditMode={isEditMode}
+          locale={quote.locale || companyProfile?.locale || "es-CL"}
           quote={quote}
           totals={totals}
           totalsError={totalsResult.error?.message || ""}
+          taxName={quote.impuestoNombre || companyProfile?.impuestoPredeterminadoNombre || "IVA"}
+          taxRate={Number(quote.tasaIva ?? Number(companyProfile?.impuestoPredeterminadoTasa ?? 19) / 100) * 100}
           saving={saving}
           savingEstado={savingEstado}
           saveBlockedByClient={saveBlockedByClient}

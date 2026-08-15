@@ -352,12 +352,16 @@ export function normalizeCompanySnapshot(value = {}) {
     nombreComercial: safeQuoteText(source.nombreComercial, 200),
     razonSocial: safeQuoteText(source.razonSocial, 240),
     rut: safeQuoteText(source.rut, 40),
+    identificadorFiscalTipo: safeQuoteText(source.identificadorFiscalTipo, 40) || "RUT",
+    identificadorFiscalValor: safeQuoteText(source.identificadorFiscalValor || source.rut, 80),
     giro: safeQuoteText(source.giro, 240),
     email: safeQuoteText(source.email, 240),
     telefono: safeQuoteText(source.telefono, 100),
     direccion: safeQuoteText(source.direccion, 300),
     ciudad: safeQuoteText(source.ciudad, 160),
     region: safeQuoteText(source.region, 160),
+    regionEstado: safeQuoteText(source.regionEstado || source.region, 160),
+    codigoPostal: safeQuoteText(source.codigoPostal, 30),
     sitioWeb: safeQuoteText(source.sitioWeb, 300),
     logoUrl: safeQuoteText(source.logoUrl, 1200),
     responsable: safeQuoteText(
@@ -593,7 +597,11 @@ export function adaptStoredQuote(raw = {}) {
   const items = normalizeQuoteItems(raw.items, { strict: false });
   const legacyTaxUndefined = !isCurrent && !hasOwn(raw, "afectaIva");
   const afectaIva = legacyTaxUndefined ? false : raw.afectaIva !== false;
-  const fallbackTotals = tryCalculateQuoteTotals(items, raw.descuento, { afectaIva }).totals;
+  const localization = adaptDocumentLocalization(raw);
+  const fallbackTotals = tryCalculateQuoteTotals(items, raw.descuento, {
+    afectaIva,
+    tasaIva: localization.tasaIva,
+  }).totals;
   const conditions = normalizeQuoteConditions(raw, company);
   const validezDias = normalizeValidityDays(
     raw.validezDias ?? raw.validezCotizacionDias,
@@ -604,10 +612,10 @@ export function adaptStoredQuote(raw = {}) {
 
   return {
     ...stored,
+    ...localization,
     modeloCotizacionVersion: isCurrent
       ? Number(raw.modeloCotizacionVersion)
       : 1,
-    moneda: safeQuoteText(raw.moneda, 10) || CLP_CURRENCY,
     numero: getQuoteDisplayNumber(raw, ""),
     fecha,
     validezDias,
@@ -680,3 +688,4 @@ export function getQuotePdfFileName(quote) {
   const client = cleanPart(normalizeClientSnapshot(quote).empresa, "Cliente");
   return `Cotizacion_${number}_${client}.pdf`;
 }
+import {adaptDocumentLocalization} from "./localization.mjs";

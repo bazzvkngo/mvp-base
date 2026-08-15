@@ -1,18 +1,22 @@
 import React from "react";
 import {Ellipsis} from "lucide-react";
 import AppIcon from "../../components/ui/AppIcon";
-
-const money = (value) => `$${Math.round(Number(value || 0)).toLocaleString("es-CL")}`;
+import {formatMoney} from "../../utils/formatters";
 
 export default function SaleSummaryPanel({
+  currency,
   disabled,
   hasInsufficientStock = false,
+  locale,
   onCancel,
   onConfirm,
   onSave,
   processing,
   totals,
+  taxName = "IVA",
+  taxRate = 19,
 }) {
+  const money = (value) => formatMoney(value, currency, locale);
   return (
     <aside className="po-panel po-summary sale-summary">
       <header className="po-summary__header">
@@ -23,7 +27,7 @@ export default function SaleSummaryPanel({
         <div><span>Subtotal</span><strong>{money(totals.subtotal)}</strong></div>
         <div><span>Descuentos</span><strong>-{money(totals.descuentoTotal)}</strong></div>
         <div><span>Neto</span><strong>{money(totals.neto)}</strong></div>
-        <div><span>{totals.afectaIva ? "IVA 19%" : "IVA · Exenta"}</span><strong>{money(totals.iva)}</strong></div>
+        <div><span>{totals.afectaIva ? `${taxName} ${taxRate}%` : `${taxName} · Exenta`}</span><strong>{money(totals.iva)}</strong></div>
         <div className="po-summary__total"><span>Total</span><strong>{money(totals.total)}</strong></div>
       </div>
       {!disabled && (

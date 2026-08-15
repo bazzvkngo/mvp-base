@@ -1,7 +1,7 @@
 import { httpsCallable } from "firebase/functions";
 import { assertCloudFunctionAllowed } from "../config/firebaseEnvironment.mjs";
 import { getFirebaseFunctions } from "../firebase/firebaseConfig";
-import { formatCLP, formatDate } from "../utils/formatters";
+import { formatDate, formatMoney } from "../utils/formatters";
 import { buildQuoteValidityEmailLine } from "../domain/quoteEmailCopy.mjs";
 import { DRAFT_QUOTE_NUMBER_LABEL, getQuoteDisplayNumber } from "./quoteService";
 
@@ -39,7 +39,7 @@ export function buildDefaultQuoteEmail({ quote, companyProfile }) {
     ? `, correspondiente a ${projectName}`
     : "";
   const totalLine = hasTotal && Number.isFinite(total)
-    ? `, por un total de ${formatCLP(total)}`
+    ? `, por un total de ${formatMoney(total, quote?.moneda, quote?.locale)}`
     : "";
   const paragraphs = [
     contactName ? `Hola ${contactName}:` : "Hola:",

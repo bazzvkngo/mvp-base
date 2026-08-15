@@ -22,6 +22,7 @@ import {
   personalProfileDocPath,
   userConfigDocPath,
 } from "../firebase/firestorePaths";
+import { adaptBusinessLocalization } from "../domain/localization.mjs";
 
 const functions = getFirebaseFunctions("us-central1");
 
@@ -45,6 +46,9 @@ export const DEFAULT_COMPANY_PROFILE = {
   paisNombre: "Chile",
   monedaCodigo: "CLP",
   monedaNombre: "Peso chileno",
+  locale: "es-CL",
+  identificadorFiscalTipo: "RUT",
+  identificadorFiscalValor: "",
   regionCodigo: "",
   regionNombre: "",
   comunaCodigo: "",
@@ -57,6 +61,8 @@ export const DEFAULT_COMPANY_PROFILE = {
   direccion: "",
   ciudad: "",
   region: "",
+  regionEstado: "",
+  codigoPostal: "",
   responsable: "",
   cargoResponsable: "",
   sitioWeb: "",
@@ -78,13 +84,13 @@ export const DEFAULT_COMPANY_PROFILE = {
     "Los valores pueden variar segun alcance final y disponibilidad de insumos.",
   notaFinalCotizacion: "",
   impuestoPredeterminadoId: "IVA_GENERAL",
-  impuestoPredeterminadoNombre: "IVA general",
+  impuestoPredeterminadoNombre: "IVA",
   impuestoPredeterminadoTasa: 19,
 };
 
 export const DEFAULT_TAX_SETTINGS = {
   impuestoPredeterminadoId: "IVA_GENERAL",
-  impuestoPredeterminadoNombre: "IVA general",
+  impuestoPredeterminadoNombre: "IVA",
   impuestoPredeterminadoTasa: 19,
 };
 
@@ -207,27 +213,28 @@ export function normalizeCompanyConfig(raw = {}) {
 }
 
 export function normalizeCompanyProfile(raw = {}) {
+  const localization = adaptBusinessLocalization(raw);
   return {
     nombreComercial: safeString(raw.nombreComercial),
     rubroCodigo: safeString(raw.rubroCodigo),
     rubroNombre: safeString(raw.rubroNombre),
     rubroOtro: safeString(raw.rubroOtro),
-    paisCodigo: safeString(raw.paisCodigo) || "CL",
-    paisNombre: safeString(raw.paisNombre) || "Chile",
-    monedaCodigo: safeString(raw.monedaCodigo) || "CLP",
-    monedaNombre: safeString(raw.monedaNombre) || "Peso chileno",
+    ...localization,
     regionCodigo: safeString(raw.regionCodigo),
     regionNombre: safeString(raw.regionNombre || raw.region),
     comunaCodigo: safeString(raw.comunaCodigo),
     comunaNombre: safeString(raw.comunaNombre || raw.ciudad),
     razonSocial: safeString(raw.razonSocial),
     rut: safeString(raw.rut),
+    identificadorFiscalValor: localization.identificadorFiscalValor,
     giro: safeString(raw.giro),
     email: safeString(raw.email),
     telefono: safeString(raw.telefono),
     direccion: safeString(raw.direccion),
     ciudad: safeString(raw.ciudad),
     region: safeString(raw.region),
+    regionEstado: safeString(raw.regionEstado || raw.regionNombre || raw.region),
+    codigoPostal: safeString(raw.codigoPostal),
     responsable: safeString(raw.responsable),
     cargoResponsable: safeString(raw.cargoResponsable),
     sitioWeb: normalizeUrl(raw.sitioWeb),
@@ -259,21 +266,17 @@ export function normalizeCompanyProfile(raw = {}) {
 }
 
 export function normalizeTaxSettings(raw = {}) {
-  const selected = ["IVA_GENERAL", "IVA_EXENTO", "SIN_IMPUESTO"].includes(
-    raw.impuestoPredeterminadoId
-  )
-    ? raw.impuestoPredeterminadoId
-    : DEFAULT_TAX_SETTINGS.impuestoPredeterminadoId;
-  const rates = { IVA_GENERAL: 19, IVA_EXENTO: 0, SIN_IMPUESTO: 0 };
-  const names = {
-    IVA_GENERAL: "IVA general",
-    IVA_EXENTO: "IVA exento",
-    SIN_IMPUESTO: "Sin impuesto",
-  };
+  const rate = Number(raw.impuestoPredeterminadoTasa);
   return {
-    impuestoPredeterminadoId: selected,
-    impuestoPredeterminadoNombre: names[selected],
-    impuestoPredeterminadoTasa: rates[selected],
+    impuestoPredeterminadoId:
+      safeString(raw.impuestoPredeterminadoId) || "PERSONALIZADO",
+    impuestoPredeterminadoNombre:
+      safeString(raw.impuestoPredeterminadoNombre) ||
+      DEFAULT_TAX_SETTINGS.impuestoPredeterminadoNombre,
+    impuestoPredeterminadoTasa:
+      Number.isFinite(rate) && rate >= 0 && rate <= 100
+        ? rate
+        : DEFAULT_TAX_SETTINGS.impuestoPredeterminadoTasa,
   };
 }
 
@@ -328,11 +331,11 @@ export function getCompanyProfileCompletion(profile = {}) {
   if (!safeString(profile.rubroCodigo || profile.rubroNombre)) {
     missingMinimum.push("Rubro principal");
   }
-  if (!safeString(profile.regionCodigo)) missingMinimum.push("Región");
+  if (!safeString(profile.regionCodigo || profile.regionEstado)) missingMinimum.push("Región / Estado");
   if (!safeString(profile.paisCodigo)) missingMinimum.push("País");
   if (!safeString(profile.monedaCodigo)) missingMinimum.push("Moneda");
 
-  if (!safeString(profile.rut)) missingRecommended.push("RUT");
+  if (!safeString(profile.identificadorFiscalValor || profile.rut)) missingRecommended.push("Identificación fiscal");
   if (!safeString(profile.comunaCodigo || profile.ciudad)) {
     missingRecommended.push("Comuna");
   }
@@ -423,9 +426,19 @@ export async function getCompanyProfile(userId) {
     monedaCodigo: profile.monedaCodigo || business.monedaCodigo || "CLP",
     monedaNombre:
       profile.monedaNombre || business.monedaNombre || "Peso chileno",
+    locale: profile.locale || business.locale || "es-CL",
+    identificadorFiscalTipo:
+      profile.identificadorFiscalTipo || business.identificadorFiscalTipo || "RUT",
+    identificadorFiscalValor:
+      profile.identificadorFiscalValor || profile.rut ||
+      business.identificadorFiscalValor || business.rut || "",
     regionCodigo: profile.regionCodigo || business.regionCodigo || "",
     regionNombre:
       profile.regionNombre || profile.region || business.regionNombre || "",
+    regionEstado:
+      profile.regionEstado || profile.regionNombre || profile.region ||
+      business.regionEstado || business.regionNombre || "",
+    codigoPostal: profile.codigoPostal || business.codigoPostal || "",
     comunaCodigo: profile.comunaCodigo || business.comunaCodigo || "",
     comunaNombre:
       profile.comunaNombre || profile.ciudad || business.comunaNombre || "",

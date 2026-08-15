@@ -147,25 +147,41 @@ function validateRequiredBusinessFields(
     );
   }
 
-  const country = countriesByCode.get("CL");
-  const currency = currenciesByCode.get("CLP");
+  const requestedCountryCode = safeText(data.paisCodigo, 10).toUpperCase() || "CL";
+  const requestedCurrencyCode = safeText(data.monedaCodigo, 10).toUpperCase() || "CLP";
+  const country = countriesByCode.get(requestedCountryCode);
+  const currency = currenciesByCode.get(requestedCurrencyCode);
+  if (!country?.active || !currency?.active) {
+    throw new HttpsError("invalid-argument", "Selecciona un país y una moneda válidos.");
+  }
   const categoryFields = validateBusinessCategory(data, HttpsError, {
     existingBusiness,
   });
   const regionCode = safeText(data.regionCodigo, 2);
-  const region = regionsByCode.get(regionCode);
-  if (!region) {
+  const region = country.code === "CL"
+    ? regionsByCode.get(regionCode)
+    : { code: "", name: safeText(data.regionEstado, 120), communes: [] };
+  if (!region || (country.code !== "CL" && !region.name)) {
     throw new HttpsError("invalid-argument", "Selecciona una región válida.");
   }
   const communeCode = safeText(data.comunaCodigo, 5);
   const commune = communeCode
     ? region.communes.find((item) => item.code === communeCode)
     : null;
-  if (communeCode && !commune) {
+  if (country.code === "CL" && communeCode && !commune) {
     throw new HttpsError(
       "invalid-argument",
       "Selecciona una comuna perteneciente a la región indicada."
     );
+  }
+
+  let locale;
+  try {
+    locale = Intl.getCanonicalLocales(
+      safeText(data.locale, 40) || country.defaultLocale || "es-CL"
+    )[0];
+  } catch {
+    throw new HttpsError("invalid-argument", "Ingresa un formato regional válido.");
   }
 
   const normalized = {
@@ -173,8 +189,11 @@ function validateRequiredBusinessFields(
     ...categoryFields,
     paisCodigo: country.code,
     paisNombre: country.name,
+    locale,
     regionCodigo: region.code,
     regionNombre: region.name,
+    regionEstado: region.name,
+    ciudad: commune?.name || safeText(data.ciudad, 120),
     monedaCodigo: currency.code,
     monedaNombre: currency.name,
     ...(commune
@@ -216,8 +235,9 @@ function validateBusinessProfileInput(
     existingBusiness,
   });
 
-  const rut = normalizeRut(data.rut);
-  if (rut && !isValidChileanRut(rut)) {
+  const fiscalValue = safeText(data.identificadorFiscalValor || data.rut, 80);
+  const rut = base.paisCodigo === "CL" ? normalizeRut(fiscalValue) : safeText(data.rut, 80);
+  if (base.paisCodigo === "CL" && rut && !isValidChileanRut(rut)) {
     throw new HttpsError("invalid-argument", "Ingresa un RUT válido.");
   }
   const email = safeText(data.email, 180).toLowerCase();
@@ -236,7 +256,13 @@ function validateBusinessProfileInput(
   return {
     ...base,
     rut,
+    identificadorFiscalTipo:
+      safeText(data.identificadorFiscalTipo, 40) ||
+      countriesByCode.get(base.paisCodigo)?.defaultFiscalIdentifierLabel ||
+      "Identificación fiscal",
+    identificadorFiscalValor: fiscalValue,
     direccion: safeText(data.direccion, 240),
+    codigoPostal: safeText(data.codigoPostal, 30),
     telefono: safeText(data.telefono, 40),
     email,
     razonSocial: safeText(data.razonSocial, 180),
@@ -275,11 +301,15 @@ function getBusinessProfileCompletion(profile = {}) {
   ) {
     missingMinimum.push("rubroCodigo");
   }
-  if (!safeText(profile.regionCodigo, 2)) missingMinimum.push("regionCodigo");
+  if (!safeText(profile.regionCodigo || profile.regionEstado, 120)) {
+    missingMinimum.push("regionEstado");
+  }
   if (!safeText(profile.paisCodigo, 2)) missingMinimum.push("paisCodigo");
   if (!safeText(profile.monedaCodigo, 8)) missingMinimum.push("monedaCodigo");
 
-  if (!normalizeRut(profile.rut)) missingRecommended.push("rut");
+  if (!safeText(profile.identificadorFiscalValor || profile.rut, 80)) {
+    missingRecommended.push("identificadorFiscalValor");
+  }
   if (
     !safeText(profile.comunaCodigo, 5) &&
     !safeText(profile.ciudad, 120)
@@ -313,8 +343,15 @@ function quickCompanyProfile(input, businessId) {
     paisNombre: input.paisNombre,
     monedaCodigo: input.monedaCodigo,
     monedaNombre: input.monedaNombre,
+    locale: input.locale,
+    identificadorFiscalTipo:
+      input.identificadorFiscalTipo ||
+      countriesByCode.get(input.paisCodigo)?.defaultFiscalIdentifierLabel ||
+      "Identificación fiscal",
+    identificadorFiscalValor: input.identificadorFiscalValor || "",
     regionCodigo: input.regionCodigo,
     regionNombre: input.regionNombre,
+    regionEstado: input.regionEstado || input.regionNombre,
     region: input.regionNombre,
     ...(input.comunaCodigo
       ? {
@@ -866,8 +903,15 @@ async function updateBusinessProfileHandler(
       paisNombre: profileInput.paisNombre,
       monedaCodigo: profileInput.monedaCodigo,
       monedaNombre: profileInput.monedaNombre,
+      locale: profileInput.locale,
+      identificadorFiscalTipo: profileInput.identificadorFiscalTipo,
+      identificadorFiscalValor: profileInput.identificadorFiscalValor || FieldValue.delete(),
+      rut: profileInput.rut || FieldValue.delete(),
       regionCodigo: profileInput.regionCodigo,
       regionNombre: profileInput.regionNombre,
+      regionEstado: profileInput.regionEstado,
+      ciudad: profileInput.ciudad || FieldValue.delete(),
+      codigoPostal: profileInput.codigoPostal || FieldValue.delete(),
       ...businessCommuneStoragePatch,
       actualizadoPorUid: context.uid,
       actualizadoEn: now,

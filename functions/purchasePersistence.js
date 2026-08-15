@@ -1,4 +1,5 @@
 const {createHash} = require("node:crypto");
+const {adaptDocumentLocalization, documentLocalizationSnapshot} = require("./localization");
 
 const MODEL_VERSION = 2;
 const VAT_RATE = 0.19;
@@ -96,11 +97,11 @@ function storedLine(value, snapshot, HttpsError) {
   safeMoney([subtotalLinea, descuentoLinea, totalLinea], HttpsError);
   return {lineaId: value.lineaId, itemId: value.itemId, codigo: snapshot.codigoInterno, nombre: snapshot.nombre, descripcion: snapshot.descripcion, tipoItem: snapshot.tipoItem, unidad: snapshot.unidad, cantidad: value.cantidad, costoUnitario: value.costoUnitario, descuentoPct: value.descuentoPct, subtotalLinea, descuentoLinea, totalLinea, inventarioSnapshot: snapshot};
 }
-function totals(items, HttpsError) {
+function totals(items, HttpsError, taxRate = VAT_RATE) {
   const subtotal = items.reduce((sum, item) => sum + item.subtotalLinea, 0);
   const descuentoTotal = items.reduce((sum, item) => sum + item.descuentoLinea, 0);
   const neto = subtotal - descuentoTotal;
-  const iva = Math.round(neto * VAT_RATE);
+  const iva = Math.round(neto * taxRate);
   const total = neto + iva;
   safeMoney([subtotal, descuentoTotal, neto, iva, total], HttpsError);
   return {subtotal, descuentoTotal, neto, iva, total};
@@ -110,8 +111,9 @@ async function access(request, dependencies) {
   return dependencies.requireBusinessAccess(request, {db: dependencies.db, HttpsError: dependencies.HttpsError}, {roles: WRITE_ROLES});
 }
 function formatNumber(year, sequence) { return `COM-${year}-${String(sequence).padStart(4, "0")}`; }
-function baseStored({businessId, uid, purchaseId, numero, sequence, now, normalized, proveedorSnapshot, items, origin = {}, timestamp, HttpsError}) {
-  return {modeloCompraVersion: MODEL_VERSION, compraId: purchaseId, negocioId: businessId, numero, anio: now.year, correlativo: sequence, estado: "borrador", moneda: "CLP", tasaIva: VAT_RATE, proveedorId: normalized.proveedorId, proveedorSnapshot, ...origin, items, ...totals(items, HttpsError), fechaCompra: normalized.fechaCompra, fechaDocumento: normalized.fechaDocumento, tipoDocumento: normalized.tipoDocumento, numeroDocumentoProveedor: normalized.numeroDocumentoProveedor, condicionesPago: normalized.condicionesPago || text(proveedorSnapshot.condicionesPago, 2000), observaciones: normalized.observaciones, stockGestionadoPor: "recepcion", stockAplicado: false, stockAplicadoEn: null, creadoPorUid: uid, actualizadoPorUid: uid, creadoEn: timestamp, actualizadoEn: timestamp};
+function baseStored({businessId, uid, purchaseId, numero, sequence, now, normalized, proveedorSnapshot, items, localization, origin = {}, timestamp, HttpsError}) {
+  const location = localization || adaptDocumentLocalization({});
+  return {modeloCompraVersion: MODEL_VERSION, compraId: purchaseId, negocioId: businessId, numero, anio: now.year, correlativo: sequence, estado: "borrador", paisCodigo: location.paisCodigo, moneda: location.moneda, locale: location.locale, impuestoNombre: location.impuestoNombre, tasaIva: location.tasaIva, proveedorId: normalized.proveedorId, proveedorSnapshot, ...origin, items, ...totals(items, HttpsError, location.tasaIva), fechaCompra: normalized.fechaCompra, fechaDocumento: normalized.fechaDocumento, tipoDocumento: normalized.tipoDocumento, numeroDocumentoProveedor: normalized.numeroDocumentoProveedor, condicionesPago: normalized.condicionesPago || text(proveedorSnapshot.condicionesPago, 2000), observaciones: normalized.observaciones, stockGestionadoPor: "recepcion", stockAplicado: false, stockAplicadoEn: null, creadoPorUid: uid, actualizadoPorUid: uid, creadoEn: timestamp, actualizadoEn: timestamp};
 }
 function retryable(error) { return Number(error?.code) === 10 || String(error?.message || "").toLowerCase().includes("transaction is invalid"); }
 async function transactionRetry(db, callback) {
@@ -140,15 +142,15 @@ async function crearCompraHandler(request, dependencies, clock = new Date()) {
       const existing = await transaction.get(businessRef.collection("compras").doc(data.compraId));
       return {compra: {id: existing.id, ...existing.data()}, requestId: reqId, idempotent: true};
     }
-    const refs = [businessRef.collection("proveedores").doc(normalized.proveedorId), counterRef, ...normalized.items.map((item) => businessRef.collection("inventario").doc(item.itemId))];
+    const refs = [businessRef.collection("proveedores").doc(normalized.proveedorId), counterRef, businessRef, businessRef.collection("configuracion").doc("impuestos"), ...normalized.items.map((item) => businessRef.collection("inventario").doc(item.itemId))];
     const snapshots = await transaction.getAll(...refs);
     const proveedorSnapshot = provider(snapshots[0], businessId, normalized.proveedorId, HttpsError);
-    const items = normalized.items.map((item, index) => storedLine(item, inventory(snapshots[index + 2], businessId, item.itemId, HttpsError), HttpsError));
+    const items = normalized.items.map((item, index) => storedLine(item, inventory(snapshots[index + 4], businessId, item.itemId, HttpsError), HttpsError));
     const current = Number(snapshots[1].data()?.lastNumber || 0);
     const sequence = Number.isSafeInteger(current) && current >= 0 ? current + 1 : 1;
     const numero = formatNumber(now.year, sequence);
     const timestamp = FieldValue.serverTimestamp();
-    const stored = baseStored({businessId, uid, purchaseId: purchaseRef.id, numero, sequence, now, normalized, proveedorSnapshot, items, timestamp, HttpsError});
+    const stored = baseStored({businessId, uid, purchaseId: purchaseRef.id, numero, sequence, now, normalized, proveedorSnapshot, items, localization: documentLocalizationSnapshot(snapshots[2].data() || {}, snapshots[3].data() || {}), timestamp, HttpsError});
     transaction.set(counterRef, {negocioId: businessId, year: now.year, lastNumber: sequence, actualizadoEn: timestamp});
     transaction.set(purchaseRef, stored);
     transaction.set(requestRef, {compraId: purchaseRef.id, numero, negocioId: businessId, uidUsuario: uid, fingerprint, creadoEn: timestamp});
@@ -200,7 +202,7 @@ async function crearCompraDesdeOrdenHandler(request, dependencies, clock = new D
     const sequence = Number.isSafeInteger(current) && current >= 0 ? current + 1 : 1;
     const numero = formatNumber(now.year, sequence);
     const timestamp = FieldValue.serverTimestamp();
-    const stored = baseStored({businessId, uid, purchaseId: purchaseRef.id, numero, sequence, now, normalized, proveedorSnapshot, items, origin: {ordenCompraId: orderId, ordenCompraNumero: text(order.numero, 120)}, timestamp, HttpsError});
+    const stored = baseStored({businessId, uid, purchaseId: purchaseRef.id, numero, sequence, now, normalized, proveedorSnapshot, items, localization: adaptDocumentLocalization(order), origin: {ordenCompraId: orderId, ordenCompraNumero: text(order.numero, 120)}, timestamp, HttpsError});
     transaction.set(counterRef, {negocioId: businessId, year: now.year, lastNumber: sequence, actualizadoEn: timestamp});
     transaction.set(purchaseRef, stored);
     transaction.update(orderRef, {compraId: purchaseRef.id, compraNumero: numero, compraRegistradaEn: timestamp, actualizadoEn: timestamp, actualizadoPorUid: uid});
@@ -270,6 +272,7 @@ async function crearCompraDesdeRecepcionHandler(request, dependencies, clock = n
       normalized,
       proveedorSnapshot: reception.proveedorSnapshot || {},
       items,
+      localization: adaptDocumentLocalization(reception),
       origin: {
         recepcionId: receptionId,
         recepcionNumero: text(reception.numero, 120),
@@ -323,7 +326,7 @@ async function actualizarCompraBorradorHandler(request, dependencies) {
     const proveedorSnapshot = providerChanged ? provider(snapshots[cursor++], businessId, normalized.proveedorId, HttpsError) : preservedProvider(existing);
     const items = normalized.items.map((item, index) => storedLine(item, itemChanged[index] ? inventory(snapshots[cursor++], businessId, item.itemId, HttpsError) : preservedItem(previousLines.get(item.lineaId)), HttpsError));
     const timestamp = FieldValue.serverTimestamp();
-    const update = {...normalized, proveedorSnapshot, items, ...totals(items, HttpsError), actualizadoPorUid: uid, actualizadoEn: timestamp};
+    const update = {...normalized, proveedorSnapshot, items, ...totals(items, HttpsError, adaptDocumentLocalization(existing).tasaIva), actualizadoPorUid: uid, actualizadoEn: timestamp};
     delete update.itemsInput;
     transaction.update(purchaseRef, update);
     return {compra: {id: purchaseId, ...existing, ...update, actualizadoEn: null}};

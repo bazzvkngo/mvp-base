@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "source": {
     "organization": "Subsecretaría de Desarrollo Regional y Administrativo (SUBDERE)",
     "title": "Códigos Únicos Territoriales - Actualizado al 2018",
@@ -10,8 +10,20 @@
       "code": "CL",
       "name": "Chile",
       "defaultCurrencyCode": "CLP",
+      "defaultLocale": "es-CL",
+      "defaultFiscalIdentifierLabel": "RUT",
       "active": true
-    }
+    },
+    { "code": "BO", "name": "Bolivia", "defaultCurrencyCode": "BOB", "defaultLocale": "es-BO", "defaultFiscalIdentifierLabel": "NIT", "active": true },
+    { "code": "BR", "name": "Brasil", "defaultCurrencyCode": "BRL", "defaultLocale": "pt-BR", "defaultFiscalIdentifierLabel": "CNPJ", "fiscalIdentifierLabels": ["CNPJ", "CPF"], "active": true },
+    { "code": "PE", "name": "Perú", "defaultCurrencyCode": "PEN", "defaultLocale": "es-PE", "defaultFiscalIdentifierLabel": "RUC", "active": true },
+    { "code": "AR", "name": "Argentina", "defaultCurrencyCode": "ARS", "defaultLocale": "es-AR", "defaultFiscalIdentifierLabel": "CUIT", "active": true },
+    { "code": "CO", "name": "Colombia", "defaultCurrencyCode": "COP", "defaultLocale": "es-CO", "defaultFiscalIdentifierLabel": "NIT", "active": true },
+    { "code": "EC", "name": "Ecuador", "defaultCurrencyCode": "USD", "defaultLocale": "es-EC", "defaultFiscalIdentifierLabel": "RUC", "active": true },
+    { "code": "PY", "name": "Paraguay", "defaultCurrencyCode": "PYG", "defaultLocale": "es-PY", "defaultFiscalIdentifierLabel": "RUC", "active": true },
+    { "code": "UY", "name": "Uruguay", "defaultCurrencyCode": "UYU", "defaultLocale": "es-UY", "defaultFiscalIdentifierLabel": "RUT", "active": true },
+    { "code": "MX", "name": "México", "defaultCurrencyCode": "MXN", "defaultLocale": "es-MX", "defaultFiscalIdentifierLabel": "RFC", "active": true },
+    { "code": "OTHER", "name": "Otro país", "defaultCurrencyCode": "USD", "defaultLocale": "es", "defaultFiscalIdentifierLabel": "Identificación fiscal", "active": true }
   ],
   "currencies": [
     {
@@ -20,7 +32,17 @@
       "symbol": "$",
       "decimals": 0,
       "active": true
-    }
+    },
+    { "code": "BOB", "name": "Boliviano", "symbol": "Bs", "decimals": 2, "active": true },
+    { "code": "BRL", "name": "Real brasileño", "symbol": "R$", "decimals": 2, "active": true },
+    { "code": "PEN", "name": "Sol peruano", "symbol": "S/", "decimals": 2, "active": true },
+    { "code": "ARS", "name": "Peso argentino", "symbol": "$", "decimals": 2, "active": true },
+    { "code": "COP", "name": "Peso colombiano", "symbol": "$", "decimals": 2, "active": true },
+    { "code": "PYG", "name": "Guaraní paraguayo", "symbol": "₲", "decimals": 0, "active": true },
+    { "code": "UYU", "name": "Peso uruguayo", "symbol": "$U", "decimals": 2, "active": true },
+    { "code": "MXN", "name": "Peso mexicano", "symbol": "$", "decimals": 2, "active": true },
+    { "code": "USD", "name": "Dólar estadounidense", "symbol": "US$", "decimals": 2, "active": true },
+    { "code": "EUR", "name": "Euro", "symbol": "€", "decimals": 2, "active": true }
   ],
   "businessCategorySectors": [
     { "code": "COMERCIO", "name": "Comercio y tiendas", "order": 10 },

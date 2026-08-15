@@ -12,10 +12,10 @@ import {
   matchesSaleSearch,
 } from "../domain/saleModel.mjs";
 import {cancelarVentaBorrador, listarVentas} from "../services/saleService";
-import {formatDate} from "../utils/formatters";
+import {formatDate, formatMoney} from "../utils/formatters";
 import "../features/sales/sales.css";
 
-const money = (value) => `$${Math.round(Number(value || 0)).toLocaleString("es-CL")}`;
+const money = (value, document) => formatMoney(value, document?.moneda, document?.locale);
 
 function Actions({canManage, onAction, processing, sale}) {
   const prepared = sale.estado === "borrador" && canManage;
@@ -139,7 +139,7 @@ export default function SalesPage({businessId, role}) {
                     <td><div className="sale-history-number"><button type="button" className="sale-history-link" onClick={() => open(sale)}>{sale.numero}</button><small className="clients-table__secondary">{formatDate(sale.fechaVenta)}</small></div></td>
                     <td><strong className="clients-table__name">{sale.clienteSnapshot.nombreRazonSocial}</strong><small className="clients-table__secondary">{sale.clienteSnapshot.rut}</small></td>
                     <td>{getSaleDocumentTypeLabel(sale.tipoDocumento)}{sale.tipoDocumento !== "sin_documento" && <small>{sale.numeroDocumento || "Sin número"}</small>}</td>
-                    <td className="sale-history-total">{money(sale.total)}</td>
+                    <td className="sale-history-total">{money(sale.total, sale)}</td>
                     <td>{sale.cotizacionId ? <button type="button" className="sale-history-link sale-origin-link" onClick={() => openOriginQuote(sale)}>{sale.cotizacionNumero || "Ver cotización"}</button> : "Directa"}</td>
                     <td><span className={`po-status po-status--${sale.estado}`}>{getSaleStatusLabel(sale.estado)}</span></td>
                     <td><Actions canManage={canManage} onAction={setActionTarget} processing={processing === sale.id} sale={sale} /></td>

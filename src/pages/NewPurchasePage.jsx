@@ -111,21 +111,28 @@ export default function NewPurchasePage({businessId, role}) {
 
   const totals = useMemo(() => {
     try {
-      return draft.items.length ? calculatePurchaseTotals(draft.items) : EMPTY_TOTALS;
+      return draft.items.length ? calculatePurchaseTotals(draft.items, {
+        tasaIva: purchase?.tasaIva ?? Number(company?.impuestoPredeterminadoTasa ?? 19) / 100,
+      }) : EMPTY_TOTALS;
     } catch {
       return EMPTY_TOTALS;
     }
-  }, [draft.items]);
+  }, [company?.impuestoPredeterminadoTasa, draft.items, purchase?.tasaIva]);
 
   const printable = useMemo(() => ({
     ...(purchase || {}),
     ...draft,
     numero: purchase?.numero || "Compra por asignar",
+    paisCodigo: purchase?.paisCodigo || company?.paisCodigo || "CL",
+    moneda: purchase?.moneda || company?.monedaCodigo || "CLP",
+    locale: purchase?.locale || company?.locale || "es-CL",
+    impuestoNombre: purchase?.impuestoNombre || company?.impuestoPredeterminadoNombre || "IVA",
+    tasaIva: purchase?.tasaIva ?? Number(company?.impuestoPredeterminadoTasa ?? 19) / 100,
     proveedorSnapshot: purchase?.proveedorId === draft.proveedorId
       ? purchase.proveedorSnapshot
       : providers.find((provider) => provider.proveedorId === draft.proveedorId) || {},
     ...totals,
-  }), [draft, providers, purchase, totals]);
+  }), [company, draft, providers, purchase, totals]);
 
   const addItem = (item) => setDraft((current) => ({
     ...current,
@@ -381,13 +388,17 @@ export default function NewPurchasePage({businessId, role}) {
             </details>
           </div>
           <PurchaseSummaryPanel
+            currency={printable.moneda}
             disabled={readOnly}
             isNew={!purchase}
+            locale={printable.locale}
             onCancel={purchase ? () => setActionDialog("cancel") : null}
             onConfirm={() => setActionDialog("confirm")}
             onSave={save}
             processing={processing}
             totals={totals}
+            taxName={printable.impuestoNombre}
+            taxRate={Number(printable.tasaIva || 0) * 100}
           />
         </div>
       </div>

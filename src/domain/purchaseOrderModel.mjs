@@ -67,13 +67,13 @@ export function calculatePurchaseOrderLine(raw = {}, index = 0) {
   };
 }
 
-export function calculatePurchaseOrderTotals(items = []) {
+export function calculatePurchaseOrderTotals(items = [], {tasaIva = PURCHASE_ORDER_VAT_RATE} = {}) {
   if (!Array.isArray(items)) throw new Error("Los ítems de la orden no son válidos.");
   const lines = items.map(calculatePurchaseOrderLine);
   const subtotal = lines.reduce((sum, line) => sum + line.subtotalLinea, 0);
   const descuentoTotal = lines.reduce((sum, line) => sum + line.descuentoLinea, 0);
   const neto = subtotal - descuentoTotal;
-  const iva = Math.round(neto * PURCHASE_ORDER_VAT_RATE);
+  const iva = Math.round(neto * tasaIva);
   const total = neto + iva;
   assertSafeMoney(subtotal, descuentoTotal, neto, iva, total);
   return {subtotal, descuentoTotal, neto, iva, total};
@@ -162,7 +162,8 @@ function adaptStoredLine(raw = {}, index = 0) {
 
 export function adaptStoredPurchaseOrder(raw = {}) {
   const items = (Array.isArray(raw.items) ? raw.items : []).map(adaptStoredLine);
-  const calculated = calculatePurchaseOrderTotals(items);
+  const localization = adaptDocumentLocalization(raw);
+  const calculated = calculatePurchaseOrderTotals(items, {tasaIva: localization.tasaIva});
   const estado = text(raw.estado, 20).toLowerCase();
   const proveedorSnapshot = adaptProviderSnapshot(
     raw.proveedorSnapshot || raw.proveedor || {
@@ -185,8 +186,7 @@ export function adaptStoredPurchaseOrder(raw = {}) {
     direccionEntrega: text(raw.direccionEntrega, 500),
     condicionesPago: paymentLabel(text(raw.condicionesPago, 2000)),
     observaciones: text(raw.observaciones, 4000),
-    moneda: "CLP",
-    tasaIva: PURCHASE_ORDER_VAT_RATE,
+    ...localization,
     ...calculated,
   };
 }
@@ -218,3 +218,4 @@ export function getSupplierResponseLabel(order) {
     getSupplierResponseState(order)
   ];
 }
+import {adaptDocumentLocalization} from "./localization.mjs";

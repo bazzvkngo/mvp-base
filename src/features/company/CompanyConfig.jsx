@@ -15,10 +15,14 @@ import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
 import {
   CHILE_REGIONS,
+  COUNTRIES,
+  CURRENCIES,
   getBusinessCategoryDisplayName,
   getCommuneByCode,
   getCommunesForRegion,
   getRegionByCode,
+  getDefaultFiscalIdentifierLabel,
+  getDefaultLocaleForCountry,
 } from "../../domain/businessCatalog";
 import {
   isValidBusinessEmail,
@@ -51,6 +55,11 @@ const EMPTY_INFORMATION = {
   rubroCodigo: "",
   rubroNombre: "",
   rubroOtro: "",
+  paisCodigo: "CL",
+  monedaCodigo: "CLP",
+  locale: "es-CL",
+  identificadorFiscalTipo: "RUT",
+  identificadorFiscalValor: "",
   regionCodigo: "",
   comunaCodigo: "",
   razonSocial: "",
@@ -59,6 +68,9 @@ const EMPTY_INFORMATION = {
   email: "",
   telefono: "",
   direccion: "",
+  ciudad: "",
+  regionEstado: "",
+  codigoPostal: "",
   sitioWeb: "",
   logoUrl: "",
   logoPath: "",
@@ -208,11 +220,12 @@ function BusinessInformationSection({ businessId, canEdit, onBusinessUpdated }) 
     if (form.rubroCodigo === "OTRO" && form.rubroOtro.trim().length < 2) {
       errors.rubroCodigo = "Describe la categoría del negocio.";
     }
-    if (!getRegionByCode(form.regionCodigo)) errors.regionCodigo = "Selecciona una región.";
-    if (form.comunaCodigo && !getCommuneByCode(form.regionCodigo, form.comunaCodigo)) {
+    if (form.paisCodigo === "CL" && !getRegionByCode(form.regionCodigo)) errors.regionCodigo = "Selecciona una región.";
+    if (form.paisCodigo !== "CL" && !form.regionEstado.trim()) errors.regionEstado = "Ingresa la región o estado.";
+    if (form.paisCodigo === "CL" && form.comunaCodigo && !getCommuneByCode(form.regionCodigo, form.comunaCodigo)) {
       errors.comunaCodigo = "La comuna no corresponde a la región seleccionada.";
     }
-    if (form.rut.trim() && !isValidChileanRut(form.rut)) {
+    if (form.paisCodigo === "CL" && form.identificadorFiscalValor.trim() && !isValidChileanRut(form.identificadorFiscalValor)) {
       errors.rut = "Ingresa un RUT válido, por ejemplo 12.345.678-5.";
     }
     if (form.email.trim() && !isValidBusinessEmail(form.email)) {
@@ -225,8 +238,8 @@ function BusinessInformationSection({ businessId, canEdit, onBusinessUpdated }) 
   }, [form]);
   const recommendedPending = React.useMemo(() => {
     const fields = [];
-    if (!form.rut.trim()) fields.push("RUT");
-    if (!form.comunaCodigo) fields.push("comuna");
+    if (!form.identificadorFiscalValor.trim()) fields.push("identificación fiscal");
+    if (form.paisCodigo === "CL" && !form.comunaCodigo) fields.push("comuna");
     if (!form.direccion.trim()) fields.push("dirección");
     if (!form.telefono.trim() && !form.email.trim()) fields.push("contacto comercial");
     return fields;
@@ -239,6 +252,18 @@ function BusinessInformationSection({ businessId, canEdit, onBusinessUpdated }) 
       [name]: value,
       ...(name === "regionCodigo" && !getCommuneByCode(value, current.comunaCodigo)
         ? { comunaCodigo: "" }
+        : {}),
+      ...(name === "paisCodigo"
+        ? {
+            locale: getDefaultLocaleForCountry(value),
+            identificadorFiscalTipo: getDefaultFiscalIdentifierLabel(value),
+            regionCodigo: "",
+            comunaCodigo: "",
+            regionEstado: "",
+            ciudad: "",
+            rut: "",
+            identificadorFiscalValor: "",
+          }
         : {}),
     }));
     setError("");
@@ -268,9 +293,14 @@ function BusinessInformationSection({ businessId, canEdit, onBusinessUpdated }) 
     try {
       const profile = await saveBusinessInformation(businessId, {
         ...form,
-        paisCodigo: "CL",
-        monedaCodigo: "CLP",
-        rut: form.rut ? formatRutInput(form.rut) : "",
+        rut:
+          form.paisCodigo === "CL" && form.identificadorFiscalValor
+            ? formatRutInput(form.identificadorFiscalValor)
+            : form.rut,
+        identificadorFiscalValor:
+          form.paisCodigo === "CL" && form.identificadorFiscalValor
+            ? formatRutInput(form.identificadorFiscalValor)
+            : form.identificadorFiscalValor,
       });
       setForm((current) => ({ ...current, ...profile }));
       await onBusinessUpdated?.();
@@ -335,7 +365,7 @@ function BusinessInformationSection({ businessId, canEdit, onBusinessUpdated }) 
   return (
     <SectionFrame
       title="Información de la empresa"
-      description="Datos comerciales del negocio activo. Chile y peso chileno (CLP) se aplican automáticamente."
+      description="Datos comerciales, localización y formato de los nuevos documentos del negocio activo."
     >
       <form onSubmit={save} noValidate>
         <fieldset className="settings-fieldset" disabled={!canEdit || saving}>
@@ -382,6 +412,35 @@ function BusinessInformationSection({ businessId, canEdit, onBusinessUpdated }) 
           </div>
 
           <div className="settings-card">
+            <h3>Localización y configuración comercial</h3>
+            <div className="settings-form-grid">
+              <SettingsField label="País" required>
+                <select name="paisCodigo" value={form.paisCodigo} onChange={change}>
+                  {COUNTRIES.filter((country) => country.active !== false).map((country) => (
+                    <option key={country.code} value={country.code}>{country.name}</option>
+                  ))}
+                </select>
+              </SettingsField>
+              <SettingsField label="Moneda predeterminada" required hint="Se aplica sólo a documentos nuevos.">
+                <select name="monedaCodigo" value={form.monedaCodigo} onChange={change}>
+                  {CURRENCIES.filter((currency) => currency.active !== false).map((currency) => (
+                    <option key={currency.code} value={currency.code}>{currency.name} ({currency.code})</option>
+                  ))}
+                </select>
+              </SettingsField>
+              <SettingsField label="Formato regional" required hint="Controla números, monedas y fechas.">
+                <input name="locale" value={form.locale} onChange={change} placeholder="es-CL" />
+              </SettingsField>
+              <SettingsField label="Tipo / etiqueta fiscal" optional hint={form.paisCodigo === "BR" ? "Puedes usar CNPJ o CPF." : "Configurable según el país."}>
+                <input name="identificadorFiscalTipo" value={form.identificadorFiscalTipo} onChange={change} />
+              </SettingsField>
+              <SettingsField label={form.identificadorFiscalTipo || "Identificación fiscal"} optional error={touched.rut ? fieldErrors.rut : ""}>
+                <input name="identificadorFiscalValor" value={form.identificadorFiscalValor} onChange={change} onBlur={() => touch("rut")} />
+              </SettingsField>
+            </div>
+          </div>
+
+          <div className="settings-card">
             <div className="settings-form-grid">
               <SettingsField label="Nombre comercial" required error={touched.nombreComercial ? fieldErrors.nombreComercial : ""}>
                 <input name="nombreComercial" value={form.nombreComercial} onChange={change} onBlur={() => touch("nombreComercial")} aria-invalid={Boolean(touched.nombreComercial && fieldErrors.nombreComercial)} />
@@ -408,26 +467,39 @@ function BusinessInformationSection({ businessId, canEdit, onBusinessUpdated }) 
                   ) : "\u00a0"}
                 </span>
               </div>
-              <SettingsField label="RUT" optional error={touched.rut ? fieldErrors.rut : ""}>
-                <input name="rut" value={form.rut} placeholder="12.345.678-5" onChange={change} onBlur={() => { setForm((current) => ({ ...current, rut: current.rut ? formatRutInput(current.rut) : "" })); touch("rut"); }} aria-invalid={Boolean(touched.rut && fieldErrors.rut)} />
-              </SettingsField>
               <SettingsField label="Razón social" optional>
                 <input name="razonSocial" value={form.razonSocial} onChange={change} />
               </SettingsField>
               <SettingsField label="Giro" optional wide>
                 <input name="giro" value={form.giro} onChange={change} />
               </SettingsField>
-              <SettingsField label="Región" required error={touched.regionCodigo ? fieldErrors.regionCodigo : ""}>
-                <select name="regionCodigo" value={form.regionCodigo} onChange={change} onBlur={() => touch("regionCodigo")} aria-invalid={Boolean(touched.regionCodigo && fieldErrors.regionCodigo)}>
-                  <option value="">Selecciona una región</option>
-                  {CHILE_REGIONS.map((region) => <option key={region.code} value={region.code}>{region.name}</option>)}
-                </select>
-              </SettingsField>
-              <SettingsField label="Comuna" optional hint="Puedes completarla más adelante." error={touched.comunaCodigo ? fieldErrors.comunaCodigo : ""}>
-                <select name="comunaCodigo" value={form.comunaCodigo} onChange={change} onBlur={() => touch("comunaCodigo")} disabled={!form.regionCodigo || !canEdit || saving}>
-                  <option value="">Sin comuna</option>
-                  {communes.map((commune) => <option key={commune.code} value={commune.code}>{commune.name}</option>)}
-                </select>
+              {form.paisCodigo === "CL" ? (
+                <>
+                  <SettingsField label="Región" required error={touched.regionCodigo ? fieldErrors.regionCodigo : ""}>
+                    <select name="regionCodigo" value={form.regionCodigo} onChange={change} onBlur={() => touch("regionCodigo")}>
+                      <option value="">Selecciona una región</option>
+                      {CHILE_REGIONS.map((region) => <option key={region.code} value={region.code}>{region.name}</option>)}
+                    </select>
+                  </SettingsField>
+                  <SettingsField label="Comuna / ciudad" optional error={touched.comunaCodigo ? fieldErrors.comunaCodigo : ""}>
+                    <select name="comunaCodigo" value={form.comunaCodigo} onChange={change} onBlur={() => touch("comunaCodigo")} disabled={!form.regionCodigo || !canEdit || saving}>
+                      <option value="">Sin comuna</option>
+                      {communes.map((commune) => <option key={commune.code} value={commune.code}>{commune.name}</option>)}
+                    </select>
+                  </SettingsField>
+                </>
+              ) : (
+                <>
+                  <SettingsField label="Región / Estado" required error={fieldErrors.regionEstado}>
+                    <input name="regionEstado" value={form.regionEstado} onChange={change} />
+                  </SettingsField>
+                  <SettingsField label="Ciudad" optional>
+                    <input name="ciudad" value={form.ciudad} onChange={change} />
+                  </SettingsField>
+                </>
+              )}
+              <SettingsField label="Código postal" optional>
+                <input name="codigoPostal" value={form.codigoPostal} onChange={change} />
               </SettingsField>
               <SettingsField label="Dirección comercial" optional wide>
                 <input name="direccion" value={form.direccion} onChange={change} />
@@ -446,7 +518,7 @@ function BusinessInformationSection({ businessId, canEdit, onBusinessUpdated }) 
         </fieldset>
         {form.nombreComercial.trim() &&
           (form.rubroCodigo || form.rubroNombre) &&
-          form.regionCodigo &&
+          (form.regionCodigo || form.regionEstado) &&
           recommendedPending.length > 0 && (
           <p className="settings-message settings-message--warning" role="status">
             La configuración básica está completa. Recomendado por completar: {recommendedPending.join(", ")}.
@@ -476,33 +548,34 @@ function TaxSection({ businessId, canEdit }) {
       .finally(() => active && setLoading(false));
     return () => { active = false; };
   }, [businessId]);
-  const options = [
-    { id: "IVA_GENERAL", title: "IVA general", detail: "19%" },
-    { id: "IVA_EXENTO", title: "IVA exento", detail: "0%" },
-    { id: "SIN_IMPUESTO", title: "Sin impuesto", detail: "0%" },
-  ];
   const submit = async (event) => {
-    event.preventDefault(); setSaving(true); setError(""); setSuccess("");
+    event.preventDefault();
+    const rate = Number(form.impuestoPredeterminadoTasa);
+    if (!form.impuestoPredeterminadoNombre.trim() || !Number.isFinite(rate) || rate < 0 || rate > 100) {
+      setError("Ingresa un nombre y una tasa entre 0 y 100.");
+      return;
+    }
+    setSaving(true); setError(""); setSuccess("");
     try {
-      setForm(await saveBusinessSettings(businessId, "impuestos", form));
+      setForm(await saveBusinessSettings(businessId, "impuestos", { ...form, impuestoPredeterminadoTasa: rate }));
       setSuccess("Configuración tributaria guardada correctamente.");
     } catch (saveError) {
       setError(messageForError(saveError, "No pudimos guardar los impuestos."));
     } finally { setSaving(false); }
   };
   return (
-    <SectionFrame title="Impuestos" description="Se aplica a productos sin impuesto específico y a cotizaciones nuevas. No modifica cotizaciones históricas.">
+    <SectionFrame title="Impuestos" description="Valor predeterminado configurable para documentos nuevos. No define tasas legales ni modifica históricos.">
       {loading ? <p className="settings-loading">Cargando impuestos...</p> : (
         <form onSubmit={submit}>
           <fieldset className="settings-fieldset settings-card" disabled={!canEdit || saving}>
             <legend>Impuesto predeterminado</legend>
-            <div className="settings-choice-list">
-              {options.map((option) => (
-                <label className={`settings-choice${form.impuestoPredeterminadoId === option.id ? " is-selected" : ""}`} key={option.id}>
-                  <input type="radio" name="impuestoPredeterminadoId" value={option.id} checked={form.impuestoPredeterminadoId === option.id} onChange={(event) => { setForm({ ...form, impuestoPredeterminadoId: event.target.value }); setSuccess(""); }} />
-                  <span><strong>{option.title}</strong><small>{option.detail}</small></span>
-                </label>
-              ))}
+            <div className="settings-form-grid">
+              <SettingsField label="Nombre" required hint="Ej.: IVA, IGV o Impuesto.">
+                <input value={form.impuestoPredeterminadoNombre} onChange={(event) => setForm({ ...form, impuestoPredeterminadoNombre: event.target.value })} />
+              </SettingsField>
+              <SettingsField label="Tasa (%)" required hint="Se guarda como default del negocio.">
+                <input type="number" min="0" max="100" step="0.01" value={form.impuestoPredeterminadoTasa} onChange={(event) => setForm({ ...form, impuestoPredeterminadoTasa: event.target.value })} />
+              </SettingsField>
             </div>
           </fieldset>
           <SectionStatus error={error} success={success} />

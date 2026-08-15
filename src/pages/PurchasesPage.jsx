@@ -5,11 +5,12 @@ import {sileo} from "sileo";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
+import {formatMoney} from "../utils/formatters";
 import {canManagePurchases, getPurchaseDocumentTypeLabel, getPurchaseStatusLabel, matchesPurchaseSearch} from "../domain/purchaseModel.mjs";
 import {cancelarCompraBorrador, confirmarCompra, createPurchaseRequestId, listarCompras} from "../services/purchaseService";
 import "../features/purchases/purchases.css";
 
-const money = (value) => `$${Math.round(Number(value || 0)).toLocaleString("es-CL")}`;
+const money = (value, document) => formatMoney(value, document?.moneda, document?.locale);
 function Actions({canManage, onAction, onOpen, purchase, processing}) {
   return (
     <div className="po-history__actions">
@@ -92,7 +93,7 @@ export default function PurchasesPage({businessId, role}) {
                     <td><button type="button" className="po-inline-link" onClick={() => open(purchase)}>{purchase.numero}</button><small>{purchase.fechaCompra || "—"}</small></td>
                     <td><strong>{purchase.proveedorSnapshot.razonSocial}</strong><small>{purchase.proveedorSnapshot.rut}</small></td>
                     <td>{getPurchaseDocumentTypeLabel(purchase.tipoDocumento)}<small>{purchase.tipoDocumento === "sin_documento" ? "" : purchase.numeroDocumentoProveedor || "Sin número"}</small></td>
-                    <td>{money(purchase.total)}</td>
+                    <td>{money(purchase.total, purchase)}</td>
                     <td>{purchase.recepcionId ? <button type="button" className="po-inline-link" onClick={() => navigate(`/recepciones/${purchase.recepcionId}`)}>{purchase.recepcionNumero || "Abrir recepción"}</button> : purchase.ordenCompraId ? <button type="button" className="po-inline-link" onClick={() => navigate(`/ordenes-compra/${purchase.ordenCompraId}`)}>{purchase.ordenCompraNumero || "Abrir OC"}</button> : "Directa"}</td>
                     <td><span className={`po-status po-status--${purchase.estado}`}>{getPurchaseStatusLabel(purchase.estado)}</span></td>
                     <td><Actions canManage={canManage} onAction={action} onOpen={open} processing={processing === purchase.id} purchase={purchase} /></td>

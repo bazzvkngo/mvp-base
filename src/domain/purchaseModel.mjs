@@ -55,13 +55,13 @@ export function calculatePurchaseLine(raw = {}, index = 0) {
   return {cantidad, costoUnitario, descuentoPct, subtotalLinea, descuentoLinea, totalLinea};
 }
 
-export function calculatePurchaseTotals(items = []) {
+export function calculatePurchaseTotals(items = [], {tasaIva = PURCHASE_VAT_RATE} = {}) {
   if (!Array.isArray(items) || !items.length) throw new Error("Agrega al menos un ítem a la compra.");
   const lines = items.map(calculatePurchaseLine);
   const subtotal = lines.reduce((sum, line) => sum + line.subtotalLinea, 0);
   const descuentoTotal = lines.reduce((sum, line) => sum + line.descuentoLinea, 0);
   const neto = subtotal - descuentoTotal;
-  const iva = Math.round(neto * PURCHASE_VAT_RATE);
+  const iva = Math.round(neto * tasaIva);
   const total = neto + iva;
   safeMoney(subtotal, descuentoTotal, neto, iva, total);
   return {subtotal, descuentoTotal, neto, iva, total};
@@ -116,11 +116,13 @@ function storedLine(raw = {}, index = 0) {
 
 export function adaptStoredPurchase(raw = {}) {
   const items = (Array.isArray(raw.items) ? raw.items : []).map(storedLine);
-  const totals = items.length ? calculatePurchaseTotals(items) : {subtotal: 0, descuentoTotal: 0, neto: 0, iva: 0, total: 0};
+  const localization = adaptDocumentLocalization(raw);
+  const totals = items.length ? calculatePurchaseTotals(items, {tasaIva: localization.tasaIva}) : {subtotal: 0, descuentoTotal: 0, neto: 0, iva: 0, total: 0};
   const estado = text(raw.estado, 20).toLowerCase();
   const proveedor = providerSnapshot(raw.proveedorSnapshot || {proveedorId: raw.proveedorId, razonSocial: raw.proveedorNombre, rut: raw.proveedorRut});
   return {
     ...raw,
+    ...localization,
     id: text(raw.id || raw.compraId, 160), compraId: text(raw.compraId || raw.id, 160),
     numero: text(raw.numero, 120), estado: STATUS_SET.has(estado) ? estado : "borrador",
     proveedorId: text(raw.proveedorId || proveedor.proveedorId, 160), proveedorSnapshot: proveedor,
@@ -145,3 +147,4 @@ export function matchesPurchaseSearch(purchase, search) {
   if (!query) return true;
   return normalize(`${purchase.numero} ${purchase.proveedorSnapshot?.razonSocial} ${purchase.proveedorSnapshot?.rut} ${purchase.numeroDocumentoProveedor} ${purchase.ordenCompraNumero} ${purchase.recepcionNumero}`).includes(query);
 }
+import {adaptDocumentLocalization} from "./localization.mjs";

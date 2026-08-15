@@ -19,15 +19,21 @@ function optionalPatch(fieldValue, value) {
 }
 
 function validateTaxSettings(rawData, HttpsError) {
-  const taxId = safeText(rawData?.impuestoPredeterminadoId, 40).toUpperCase();
-  const tax = TAX_OPTIONS[taxId];
-  if (!tax) {
+  const legacy = TAX_OPTIONS[safeText(rawData?.impuestoPredeterminadoId, 40).toUpperCase()];
+  const nombre = safeText(rawData?.impuestoPredeterminadoNombre, 60) || legacy?.nombre || "";
+  const tasa = rawData?.impuestoPredeterminadoTasa === undefined
+    ? Number(legacy?.tasa)
+    : Number(rawData.impuestoPredeterminadoTasa);
+  if (!nombre) {
     throw new HttpsError("invalid-argument", "Selecciona un impuesto válido.");
   }
+  if (!Number.isFinite(tasa) || tasa < 0 || tasa > 100) {
+    throw new HttpsError("invalid-argument", "La tasa debe estar entre 0 y 100.");
+  }
   return {
-    impuestoPredeterminadoId: tax.id,
-    impuestoPredeterminadoNombre: tax.nombre,
-    impuestoPredeterminadoTasa: tax.tasa,
+    impuestoPredeterminadoId: legacy?.id || "PERSONALIZADO",
+    impuestoPredeterminadoNombre: nombre,
+    impuestoPredeterminadoTasa: tasa,
   };
 }
 
@@ -154,17 +160,25 @@ async function updateBusinessInformationHandler(
     telefono: optionalPatch(FieldValue, input.telefono),
     direccion: optionalPatch(FieldValue, input.direccion),
     sitioWeb: optionalPatch(FieldValue, input.sitioWeb),
-    ciudad: optionalPatch(FieldValue, input.comunaNombre),
+    ciudad: optionalPatch(FieldValue, input.ciudad || input.comunaNombre),
+    regionEstado: optionalPatch(FieldValue, input.regionEstado),
+    codigoPostal: optionalPatch(FieldValue, input.codigoPostal),
+    identificadorFiscalTipo: optionalPatch(FieldValue, input.identificadorFiscalTipo),
+    identificadorFiscalValor: optionalPatch(FieldValue, input.identificadorFiscalValor),
   };
 
   await db.runTransaction(async (transaction) => {
     transaction.update(context.businessRef, {
       nombreComercial: input.nombreComercial,
       ...categoryPatch,
-      paisCodigo: "CL",
-      paisNombre: "Chile",
-      monedaCodigo: "CLP",
-      monedaNombre: "Peso chileno",
+      paisCodigo: input.paisCodigo,
+      paisNombre: input.paisNombre,
+      monedaCodigo: input.monedaCodigo,
+      monedaNombre: input.monedaNombre,
+      locale: input.locale,
+      identificadorFiscalTipo: input.identificadorFiscalTipo,
+      identificadorFiscalValor: optionalPatch(FieldValue, input.identificadorFiscalValor),
+      rut: optionalPatch(FieldValue, input.rut),
       regionCodigo: input.regionCodigo,
       regionNombre: input.regionNombre,
       ...communePatch,
@@ -177,10 +191,11 @@ async function updateBusinessInformationHandler(
         negocioId: context.businessId,
         nombreComercial: input.nombreComercial,
         ...categoryPatch,
-        paisCodigo: "CL",
-        paisNombre: "Chile",
-        monedaCodigo: "CLP",
-        monedaNombre: "Peso chileno",
+        paisCodigo: input.paisCodigo,
+        paisNombre: input.paisNombre,
+        monedaCodigo: input.monedaCodigo,
+        monedaNombre: input.monedaNombre,
+        locale: input.locale,
         regionCodigo: input.regionCodigo,
         regionNombre: input.regionNombre,
         region: input.regionNombre,
@@ -199,10 +214,13 @@ async function updateBusinessInformationHandler(
       rubroCodigo: input.rubroCodigo,
       rubroNombre: input.rubroNombre,
       rubroOtro: input.rubroOtro,
-      paisCodigo: "CL",
-      paisNombre: "Chile",
-      monedaCodigo: "CLP",
-      monedaNombre: "Peso chileno",
+      paisCodigo: input.paisCodigo,
+      paisNombre: input.paisNombre,
+      monedaCodigo: input.monedaCodigo,
+      monedaNombre: input.monedaNombre,
+      locale: input.locale,
+      identificadorFiscalTipo: input.identificadorFiscalTipo,
+      identificadorFiscalValor: input.identificadorFiscalValor,
       regionCodigo: input.regionCodigo,
       regionNombre: input.regionNombre,
       comunaCodigo: input.comunaCodigo || "",
@@ -213,6 +231,9 @@ async function updateBusinessInformationHandler(
       email: input.email,
       telefono: input.telefono,
       direccion: input.direccion,
+      ciudad: input.ciudad,
+      regionEstado: input.regionEstado,
+      codigoPostal: input.codigoPostal,
       sitioWeb: input.sitioWeb,
     },
   };

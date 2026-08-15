@@ -8,6 +8,7 @@ import {
   getQuoteStatusLabel,
   normalizeCompanySnapshot,
 } from "./quoteModel.mjs";
+import {formatMoney} from "../utils/formatters.js";
 
 const NAVY = [7, 40, 93];
 const RED = [210, 36, 48];
@@ -22,13 +23,8 @@ function hasText(value) {
   return Boolean(String(value ?? "").trim());
 }
 
-function formatCLP(value) {
-  return new Intl.NumberFormat("es-CL", {
-    style: "currency",
-    currency: "CLP",
-    maximumFractionDigits: 0,
-    minimumFractionDigits: 0,
-  }).format(Number(value) || 0);
+function money(value, quote) {
+  return formatMoney(value, quote?.moneda, quote?.locale);
 }
 
 function formatDate(value) {
@@ -106,7 +102,12 @@ function drawHeader(doc, quote, company, logoDataUrl, { compact = false } = {}) 
     doc.setFontSize(7.6);
     const companyLines = [
       company.razonSocial && company.razonSocial !== brand ? company.razonSocial : "",
-      joinNonEmpty([company.rut ? `RUT ${company.rut}` : "", company.giro]),
+      joinNonEmpty([
+        company.identificadorFiscalValor || company.rut
+          ? `${company.identificadorFiscalTipo || "Identificación fiscal"} ${company.identificadorFiscalValor || company.rut}`
+          : "",
+        company.giro,
+      ]),
       joinNonEmpty([company.direccion, company.ciudad, company.region]),
       joinNonEmpty([company.email, company.telefono, company.sitioWeb]),
     ].filter(hasText);
@@ -261,13 +262,13 @@ function drawWrappedParagraph(doc, text, y, onNewPage, { bullet = false } = {}) 
 
 function drawTotals(doc, quote, y, onNewPage) {
   const rows = [
-    ["Subtotal", formatCLP(quote.subtotal)],
+    ["Subtotal", money(quote.subtotal, quote)],
     ...(Number(quote.descuentoTotal) > 0
-      ? [["Descuento total", `-${formatCLP(quote.descuentoTotal)}`]]
+      ? [["Descuento total", `-${money(quote.descuentoTotal, quote)}`]]
       : []),
-    ["Subtotal neto", formatCLP(quote.neto)],
-    [quote.afectaIva ? "IVA 19%" : "IVA (exenta)", formatCLP(quote.iva)],
-    ["TOTAL", formatCLP(quote.total)],
+    ["Subtotal neto", money(quote.neto, quote)],
+    [quote.afectaIva ? `${quote.impuestoNombre || "IVA"} ${Number(quote.tasaIva || 0) * 100}%` : `${quote.impuestoNombre || "Impuesto"} (exenta)`, money(quote.iva, quote)],
+    ["TOTAL", money(quote.total, quote)],
   ];
   const width = 76;
   const height = 8 + rows.length * 7;
@@ -347,9 +348,9 @@ export function buildQuotePdfDocument({ quote: rawQuote, companyProfile, logoDat
     },
     item.unidad || "-",
     String(item.cantidad),
-    formatCLP(item.precioUnitarioEditable),
+    money(item.precioUnitarioEditable, quote),
     item.descuentoPorcentaje ? `${item.descuentoPorcentaje}%` : "-",
-    formatCLP(item.totalLinea),
+    money(item.totalLinea, quote),
   ]);
 
   autoTable(doc, {

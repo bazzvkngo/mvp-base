@@ -164,11 +164,13 @@ export default function NewPurchaseOrderPage({businessId, role}) {
 
   const totals = useMemo(() => {
     try {
-      return calculatePurchaseOrderTotals(draft.items);
+      return calculatePurchaseOrderTotals(draft.items, {
+        tasaIva: order?.tasaIva ?? Number(company?.impuestoPredeterminadoTasa ?? 19) / 100,
+      });
     } catch {
       return EMPTY_TOTALS;
     }
-  }, [draft.items]);
+  }, [company?.impuestoPredeterminadoTasa, draft.items, order?.tasaIva]);
 
   const memberByUid = useMemo(
     () => new Map(members.map((member) => [member.uid, member])),
@@ -179,13 +181,18 @@ export default function NewPurchaseOrderPage({businessId, role}) {
     ...(order || {}),
     ...draft,
     numero: order?.numero || "OC por asignar",
+    paisCodigo: order?.paisCodigo || company?.paisCodigo || "CL",
+    moneda: order?.moneda || company?.monedaCodigo || "CLP",
+    locale: order?.locale || company?.locale || "es-CL",
+    impuestoNombre: order?.impuestoNombre || company?.impuestoPredeterminadoNombre || "IVA",
+    tasaIva: order?.tasaIva ?? Number(company?.impuestoPredeterminadoTasa ?? 19) / 100,
     proveedorSnapshot: resolvePurchaseOrderProviderPreview(
       order,
       draft.proveedorId,
       providers
     ) || {},
     ...totals,
-  }), [draft, order, providers, totals]);
+  }), [company, draft, order, providers, totals]);
 
   const addItem = (item) => {
     setDraft((current) => ({
@@ -526,11 +533,15 @@ export default function NewPurchaseOrderPage({businessId, role}) {
             )}
           </div>
           <PurchaseOrderSummary
+            currency={printableOrder.moneda}
             disabled={readOnly}
             isNew={!order}
+            locale={printableOrder.locale}
             onSave={save}
             saving={saving}
             totals={totals}
+            taxName={printableOrder.impuestoNombre}
+            taxRate={Number(printableOrder.tasaIva || 0) * 100}
           />
         </div>
       </div>

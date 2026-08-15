@@ -12,7 +12,7 @@ import {
   getPublicQuoteProposal,
   respondPublicQuoteProposal,
 } from "../services/publicQuoteService";
-import { formatCLP, formatDate } from "../utils/formatters";
+import { formatDate, formatMoney } from "../utils/formatters";
 import { downloadQuotePdf } from "../utils/quotePdf";
 
 const REJECTION_OPTIONS = [
@@ -158,7 +158,7 @@ function PublicQuoteProposalPage() {
         </div>
         <div className="public-proposal__total">
           <small>Total</small>
-          <strong>{formatCLP(proposal.total)}</strong>
+          <strong>{formatMoney(proposal.total, proposal.moneda, proposal.locale)}</strong>
           <span>
             {pending
               ? `Vigencia: ${proposal.validezDias || "-"} días desde la emisión`
@@ -241,7 +241,7 @@ function PublicQuoteProposalPage() {
         onClose={() => !responding && setDialog("")}
         size="small"
         title="Aceptar propuesta"
-        description={`¿Confirmas la aceptación de ${proposal.numero} por ${formatCLP(proposal.total)}?`}
+        description={`¿Confirmas la aceptación de ${proposal.numero} por ${formatMoney(proposal.total, proposal.moneda, proposal.locale)}?`}
         footer={
           <>
             <Button

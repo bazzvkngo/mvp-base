@@ -1,6 +1,7 @@
 const WRITE_ROLES = ["OWNER", "ADMIN"];
 const ITEM_TYPES = new Set(["producto", "servicio", "actividad"]);
 const EPSILON = 0.000001;
+const {adaptDocumentLocalization} = require("./localization");
 
 function fail(HttpsError, code, message) {
   throw new HttpsError(code, message);
@@ -219,6 +220,7 @@ async function crearRecepcionDesdeOrdenHandler(request, dependencies, now = new 
     const sequence = Number.isSafeInteger(current) && current >= 0 ? current + 1 : 1;
     const numero = formatReceptionNumber(year, sequence);
     const timestamp = FieldValue.serverTimestamp();
+    const localization = adaptDocumentLocalization(order);
     const stored = {
       modeloRecepcionVersion: 1,
       recepcionId: receptionRef.id,
@@ -227,6 +229,11 @@ async function crearRecepcionDesdeOrdenHandler(request, dependencies, now = new 
       anio: year,
       correlativo: sequence,
       estado: "borrador",
+      paisCodigo: localization.paisCodigo,
+      moneda: localization.moneda,
+      locale: localization.locale,
+      impuestoNombre: localization.impuestoNombre,
+      tasaIva: localization.tasaIva,
       fechaRecepcion: chileDate(now),
       observaciones: "",
       ordenCompraId: orderId,

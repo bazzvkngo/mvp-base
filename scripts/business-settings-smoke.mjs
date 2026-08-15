@@ -114,8 +114,8 @@ const quoteSettings = validateQuoteSettings(
 );
 assert.equal(quoteSettings.validezCotizacionDias, 21);
 assert.equal(quoteSettings.notaFinalCotizacion, "Gracias.");
-assert.equal("plazoEntregaCotizacion" in quoteSettings, false);
-assert.equal("garantiaCotizacion" in quoteSettings, false);
+assert.equal(quoteSettings.plazoEntregaCotizacion, "No debe persistirse como ajuste de empresa");
+assert.equal(quoteSettings.garantiaCotizacion, "Tampoco");
 rejectsWithCode(
   () => validateQuoteSettings({ validezCotizacionDias: 0 }, TestHttpsError),
   "invalid-argument"

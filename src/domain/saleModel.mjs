@@ -165,9 +165,10 @@ function storedLine(raw = {}, index = 0) {
 
 export function adaptStoredSale(raw = {}) {
   const items = (Array.isArray(raw.items) ? raw.items : []).map(storedLine);
+  const localization = adaptDocumentLocalization(raw);
   const afectaIva = raw.afectaIva !== false;
   const totals = items.length
-    ? calculateSaleTotals(items, raw.descuento ?? 0, {afectaIva})
+    ? calculateSaleTotals(items, raw.descuento ?? 0, {afectaIva, tasaIva: localization.tasaIva})
     : {
         subtotal: 0,
         descuentoItems: 0,
@@ -175,7 +176,7 @@ export function adaptStoredSale(raw = {}) {
         descuentoTotal: Number(raw.descuento || 0),
         neto: 0,
         afectaIva,
-        tasaIva: afectaIva ? SALE_VAT_RATE : 0,
+        tasaIva: afectaIva ? localization.tasaIva : 0,
         iva: 0,
         total: 0,
       };
@@ -183,6 +184,7 @@ export function adaptStoredSale(raw = {}) {
   const cliente = clientSnapshot(raw.clienteSnapshot || {clienteId: raw.clienteId, nombreRazonSocial: raw.clienteNombre, rut: raw.clienteRut});
   return {
     ...raw,
+    ...localization,
     id: text(raw.id || raw.ventaId, 160),
     ventaId: text(raw.ventaId || raw.id, 160),
     numero: text(raw.numero, 120),
@@ -225,3 +227,4 @@ export function matchesSaleSearch(sale, search) {
   if (!query) return true;
   return normalize(`${sale.numero} ${sale.clienteSnapshot?.nombreRazonSocial} ${sale.clienteSnapshot?.rut} ${sale.numeroDocumento} ${sale.cotizacionNumero}`).includes(query);
 }
+import {adaptDocumentLocalization} from "./localization.mjs";

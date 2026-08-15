@@ -1,8 +1,13 @@
-import catalog from "../../functions/businessCatalog.json";
+import catalog from "../../functions/businessCatalog.json" with { type: "json" };
 
 export const BUSINESS_CATALOG_VERSION = catalog.schemaVersion;
 export const COUNTRIES = Object.freeze(catalog.countries);
 export const CURRENCIES = Object.freeze(catalog.currencies);
+export const LOCALE_CONFIG = Object.freeze(
+  Object.fromEntries(
+    catalog.countries.map((country) => [country.code, country.defaultLocale])
+  )
+);
 export const BUSINESS_CATEGORY_SECTORS = Object.freeze(
   catalog.businessCategorySectors
 );
@@ -22,6 +27,14 @@ export function getCountryByCode(code) {
 
 export function getCurrencyByCode(code) {
   return currenciesByCode.get(String(code || "")) || null;
+}
+
+export function getDefaultLocaleForCountry(code) {
+  return getCountryByCode(code)?.defaultLocale || "es-CL";
+}
+
+export function getDefaultFiscalIdentifierLabel(code) {
+  return getCountryByCode(code)?.defaultFiscalIdentifierLabel || "RUT";
 }
 
 export function getBusinessCategoryByCode(code) {

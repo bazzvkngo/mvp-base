@@ -5,7 +5,7 @@ import {
   getSaleItemTypeLabel,
   getSaleStatusLabel,
 } from "../../domain/saleModel.mjs";
-import {formatCLP, formatDate} from "../../utils/formatters";
+import {formatDate, formatMoney} from "../../utils/formatters";
 
 const hasText = (value) => Boolean(String(value ?? "").trim());
 const lineTotal = (item) => Number.isFinite(item.totalLinea)
@@ -23,6 +23,7 @@ function TotalRow({label, strong = false, value}) {
 }
 
 export default function SalePrintView({company: rawCompany, sale = {}}) {
+  const money = (value) => formatMoney(value, sale.moneda, sale.locale);
   const company = rawCompany || {};
   const client = sale.clienteSnapshot || {};
   const brand = company.nombreComercial || company.razonSocial || "ValoraCloud";
@@ -44,7 +45,7 @@ export default function SalePrintView({company: rawCompany, sale = {}}) {
           <div>
             <h2>{brand}</h2>
             {company.razonSocial !== brand && <OptionalLine value={company.razonSocial} />}
-            <OptionalLine label="RUT" value={company.rut} />
+            <OptionalLine label={company.identificadorFiscalTipo || "Identificación fiscal"} value={company.identificadorFiscalValor || company.rut} />
             <OptionalLine value={companyLocation} />
             <OptionalLine value={[company.email, company.telefono].filter(hasText).join(" · ")} />
           </div>
@@ -89,9 +90,9 @@ export default function SalePrintView({company: rawCompany, sale = {}}) {
                   <td><strong>{item.nombre}</strong><span>{getSaleItemTypeLabel(item.tipoItem)}{item.descripcion ? ` · ${item.descripcion}` : ""}</span></td>
                   <td>{item.unidad || "—"}</td>
                   <td className="numeric">{item.cantidad}</td>
-                  <td className="numeric">{formatCLP(item.precioUnitario)}</td>
+                  <td className="numeric">{money(item.precioUnitario)}</td>
                   <td className="numeric">{Number(item.descuentoPct || 0) ? `${item.descuentoPct}%` : "—"}</td>
-                  <td className="numeric"><strong>{formatCLP(lineTotal(item))}</strong></td>
+                  <td className="numeric"><strong>{money(lineTotal(item))}</strong></td>
                 </tr>
               ))}
             </tbody>
@@ -100,11 +101,11 @@ export default function SalePrintView({company: rawCompany, sale = {}}) {
       )}
 
       <div className="sale-document-preview__totals">
-        <TotalRow label="Subtotal" value={formatCLP(sale.subtotal)} />
-        {discountTotal > 0 && <TotalRow label="Descuentos" value={`-${formatCLP(discountTotal)}`} />}
-        <TotalRow label="Neto" value={formatCLP(sale.neto)} />
-        <TotalRow label={sale.afectaIva ? "IVA 19%" : "IVA (exenta)"} value={formatCLP(sale.iva)} />
-        <TotalRow label="Total" value={formatCLP(sale.total)} strong />
+        <TotalRow label="Subtotal" value={money(sale.subtotal)} />
+        {discountTotal > 0 && <TotalRow label="Descuentos" value={`-${money(discountTotal)}`} />}
+        <TotalRow label="Neto" value={money(sale.neto)} />
+        <TotalRow label={sale.afectaIva ? `${sale.impuestoNombre || "IVA"} ${Number(sale.tasaIva || 0) * 100}%` : `${sale.impuestoNombre || "Impuesto"} (exenta)`} value={money(sale.iva)} />
+        <TotalRow label="Total" value={money(sale.total)} strong />
       </div>
 
       {sale.condicionesPago && <section className="sale-document-preview__section"><h3>Condiciones comerciales</h3><p>{sale.condicionesPago}</p></section>}

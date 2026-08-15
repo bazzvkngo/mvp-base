@@ -117,12 +117,15 @@ export default function NewSalePage({businessId, role}) {
   const totals = useMemo(() => {
     try {
       return draft.items.length
-        ? calculateSaleTotals(draft.items, draft.descuento, {afectaIva: draft.afectaIva})
+        ? calculateSaleTotals(draft.items, draft.descuento, {
+            afectaIva: draft.afectaIva,
+            tasaIva: sale?.tasaIva ?? Number(company?.impuestoPredeterminadoTasa ?? 19) / 100,
+          })
         : {...EMPTY_TOTALS, descuento: Number(draft.descuento || 0), afectaIva: draft.afectaIva !== false, tasaIva: draft.afectaIva === false ? 0 : 0.19};
     } catch {
       return {...EMPTY_TOTALS, afectaIva: draft.afectaIva !== false, tasaIva: draft.afectaIva === false ? 0 : 0.19};
     }
-  }, [draft.afectaIva, draft.descuento, draft.items]);
+  }, [company?.impuestoPredeterminadoTasa, draft.afectaIva, draft.descuento, draft.items, sale?.tasaIva]);
 
   const hasInsufficientStock = useMemo(() => {
     const inventoryById = new Map(inventory.map((item) => [item.id, item]));
@@ -138,11 +141,16 @@ export default function NewSalePage({businessId, role}) {
     ...(sale || {}),
     ...draft,
     numero: sale?.numero || "Venta por asignar",
+    paisCodigo: sale?.paisCodigo || company?.paisCodigo || "CL",
+    moneda: sale?.moneda || company?.monedaCodigo || "CLP",
+    locale: sale?.locale || company?.locale || "es-CL",
+    impuestoNombre: sale?.impuestoNombre || company?.impuestoPredeterminadoNombre || "IVA",
+    tasaIva: sale?.tasaIva ?? Number(company?.impuestoPredeterminadoTasa ?? 19) / 100,
     clienteSnapshot: sale?.clienteId === draft.clienteId
       ? sale.clienteSnapshot
       : clients.find((client) => client.clienteId === draft.clienteId) || {},
     ...totals,
-  }), [clients, draft, sale, totals]);
+  }), [clients, company, draft, sale, totals]);
 
   const addItem = (item) => setDraft((current) => ({
     ...current,
@@ -348,7 +356,7 @@ export default function NewSalePage({businessId, role}) {
               {previewOpen && <div className="sale-preview-body"><SalePrintView company={company} sale={printable} /></div>}
             </section>
           </div>
-          <SaleSummaryPanel disabled={readOnly} hasInsufficientStock={hasInsufficientStock} onCancel={sale ? () => setActionDialog("cancel") : null} onConfirm={() => setActionDialog("confirm")} onSave={save} processing={processing} totals={totals} />
+          <SaleSummaryPanel currency={printable.moneda} disabled={readOnly} hasInsufficientStock={hasInsufficientStock} locale={printable.locale} onCancel={sale ? () => setActionDialog("cancel") : null} onConfirm={() => setActionDialog("confirm")} onSave={save} processing={processing} taxName={printable.impuestoNombre} taxRate={Number(printable.tasaIva || 0) * 100} totals={totals} />
         </div>
       </div>
 

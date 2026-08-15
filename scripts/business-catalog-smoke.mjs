@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 import catalog from "../functions/businessCatalog.json" with { type: "json" };
 
-assert.equal(catalog.schemaVersion, 2);
-assert.equal(catalog.countries.length, 1);
+assert.equal(catalog.schemaVersion, 3);
+assert.equal(catalog.countries.length, 11);
 assert.equal(catalog.countries[0].code, "CL");
-assert.equal(catalog.currencies.length, 1);
+assert.equal(catalog.countries.find((country) => country.code === "BR").defaultLocale, "pt-BR");
+assert.equal(catalog.currencies.length, 11);
 assert.equal(catalog.currencies[0].code, "CLP");
+assert.ok(catalog.currencies.some((currency) => currency.code === "BOB"));
+assert.ok(catalog.currencies.some((currency) => currency.code === "BRL"));
+assert.ok(catalog.currencies.some((currency) => currency.code === "PEN"));
+assert.ok(catalog.currencies.some((currency) => currency.code === "USD"));
 assert.ok(catalog.businessCategories.some((category) => category.code === "OTRO"));
 assert.equal(catalog.businessCategorySectors.length, 6);
 assert.ok(catalog.businessCategories.length >= 68);
