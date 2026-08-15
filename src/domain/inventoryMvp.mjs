@@ -44,6 +44,10 @@ export function normalizeInventoryText(value) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
+export function normalizeInventoryRequestedCode(value) {
+  return String(value || "").trim().toUpperCase().replace(/\s+/g, "-");
+}
+
 export function parseInventoryNumber(value) {
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
   const raw = String(value ?? "").trim();
@@ -120,9 +124,13 @@ export function adaptInventoryItem(item = {}) {
   const margin = Number(item.margenDeseado ?? item.margen ?? 0);
   const adapted = {
     ...item,
+    codigoInterno: String(item.codigoInterno || item.sku || "").trim(),
     tipoItem: type,
     estado: item.estado || "activo",
     nombre: String(item.nombre || item.descripcionItem || "Ítem sin nombre").trim(),
+    marca: type === "producto" ? String(item.marca || "").trim() : "",
+    modelo: type === "producto" ? String(item.modelo || "").trim() : "",
+    codigoBarras: type === "producto" ? String(item.codigoBarras || "").trim() : "",
     unidad: String(item.unidad || getDefaultUnitForType(type)).trim(),
     costoBase: Number.isFinite(cost) ? cost : 0,
     margenDeseado: Number.isFinite(margin) ? margin : 0,
@@ -137,16 +145,17 @@ export function adaptInventoryItem(item = {}) {
   return adapted;
 }
 
-export function isInventoryLowStock(item, threshold = 0) {
+export function isInventoryLowStock(item) {
   const adapted = adaptInventoryItem(item);
   return (
     adapted.tipoItem === "producto" &&
     adapted.estado === "activo" &&
-    adapted.stock <= Math.max(adapted.stockMinimo, Number(threshold || 0))
+    adapted.stockMinimo > 0 &&
+    adapted.stock <= adapted.stockMinimo
   );
 }
 
-export function summarizeInventory(items, { lowStockThreshold = 0 } = {}) {
+export function summarizeInventory(items) {
   const active = (Array.isArray(items) ? items : [])
     .map(adaptInventoryItem)
     .filter((item) => item.estado === "activo");
@@ -155,7 +164,7 @@ export function summarizeInventory(items, { lowStockThreshold = 0 } = {}) {
     total: active.length,
     products: products.length,
     servicesAndActivities: active.length - products.length,
-    lowStock: products.filter((item) => isInventoryLowStock(item, lowStockThreshold)).length,
+    lowStock: products.filter((item) => isInventoryLowStock(item)).length,
     inventoryCost: products.reduce(
       (total, item) => total + item.costoBase * Math.max(item.stock, 0),
       0
@@ -174,7 +183,15 @@ export function filterInventoryItems(items, filters = {}) {
     if (filters.categoryId && !["todas", "sin_categoria"].includes(filters.categoryId) && item.categoriaId !== filters.categoryId) return false;
     if (!query) return true;
     return normalizeInventoryText(
-      [item.codigoInterno, item.sku, item.nombre, item.descripcion].filter(Boolean).join(" ")
+      [
+        item.codigoInterno,
+        item.sku,
+        item.nombre,
+        item.descripcion,
+        item.codigoBarras,
+        item.marca,
+        item.modelo,
+      ].filter(Boolean).join(" ")
     ).includes(query);
   });
 }
@@ -186,6 +203,17 @@ export function validateInventoryDraft(draft = {}) {
   if (String(draft.nombre || "").trim().length > 140) errors.nombre = "El nombre admite hasta 140 caracteres.";
   if (!String(draft.unidad || "").trim()) errors.unidad = "Selecciona una unidad.";
   if (draft.categoriaId && !draft.areaId) errors.categoriaId = "Selecciona primero un área.";
+  const requestedCode = normalizeInventoryRequestedCode(draft.codigoSolicitado);
+  if (requestedCode && !/^[A-Z0-9][A-Z0-9._-]{1,39}$/.test(requestedCode)) {
+    errors.codigoSolicitado = "Usa entre 2 y 40 letras, números, puntos, guiones o guiones bajos.";
+  } else if (/^(PR|SV|AC)-\d+$/.test(requestedCode)) {
+    errors.codigoSolicitado = "Los prefijos PR, SV y AC están reservados para códigos automáticos.";
+  }
+  if (draft.tipoItem === "producto") {
+    if (String(draft.marca || "").trim().length > 100) errors.marca = "La marca admite hasta 100 caracteres.";
+    if (String(draft.modelo || "").trim().length > 100) errors.modelo = "El modelo admite hasta 100 caracteres.";
+    if (String(draft.codigoBarras || "").trim().length > 120) errors.codigoBarras = "El código de barras admite hasta 120 caracteres.";
+  }
 
   const numericFields = [
     ["costoBase", "El costo base"],
@@ -242,7 +270,12 @@ export function buildInventoryPayload(
     categoriaId: String(draft.categoriaId || "").trim(),
     categoria: category?.nombre || "",
   };
+  const requestedCode = normalizeInventoryRequestedCode(draft.codigoSolicitado);
+  if (requestedCode) payload.codigoSolicitado = requestedCode;
   if (draft.tipoItem === "producto") {
+    payload.marca = String(draft.marca || "").trim();
+    payload.modelo = String(draft.modelo || "").trim();
+    payload.codigoBarras = String(draft.codigoBarras || "").trim();
     payload.stock = parseInventoryNumber(draft.stock);
     payload.stockMinimo = parseInventoryNumber(draft.stockMinimo);
     payload.unidadStock = String(draft.unidadStock || draft.unidad).trim();

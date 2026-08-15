@@ -162,6 +162,7 @@ function item(overrides = {}) {
     precioInterno: 600000,
     marca: "Lenovo",
     modelo: "T14",
+    codigoBarras: "0012345678905",
     stock: 4,
     stockMinimo: 1,
     ...overrides,
@@ -316,6 +317,11 @@ async function main() {
     },
     { impuestoId: "IVA_GENERAL", impuestoTasa: 19 },
     "Los productos nuevos deben recibir un impuesto estable sin modificar ítems previos."
+  );
+  assert.equal(
+    db.read(`usuarios/${uid}/inventario/${first.itemId}`).codigoBarras,
+    "0012345678905",
+    "El código de barras debe persistir como string y conservar ceros iniciales."
   );
 
   const idempotentRetry = await createInventoryItemWithCodeHandler(
@@ -475,6 +481,7 @@ async function main() {
         nombre: "Instalación",
         marca: "No debe persistir",
         modelo: "No debe persistir",
+        codigoBarras: "0000001",
         stock: 99,
         stockMinimo: 10,
       }),
@@ -492,7 +499,16 @@ async function main() {
   assert.equal(activity.codigoInterno, "AC-0001");
   const serviceData = db.read(`usuarios/${uid}/inventario/${service.itemId}`);
   assert.equal("marca" in serviceData, false);
+  assert.equal("modelo" in serviceData, false);
+  assert.equal("codigoBarras" in serviceData, false);
   assert.equal("stock" in serviceData, false);
+  assert.equal("stockMinimo" in serviceData, false);
+  const activityData = db.read(`usuarios/${uid}/inventario/${activity.itemId}`);
+  assert.equal("marca" in activityData, false);
+  assert.equal("modelo" in activityData, false);
+  assert.equal("codigoBarras" in activityData, false);
+  assert.equal("stock" in activityData, false);
+  assert.equal("stockMinimo" in activityData, false);
 
   const productCounterBeforeInvalid = db.read(
     `usuarios/${uid}/inventarioContadores/producto`
@@ -568,6 +584,9 @@ async function main() {
   );
   assert.match(managerSource, /asignará.*guardar/i);
   assert.doesNotMatch(managerSource, /name=["']sku["']/);
+  assert.match(managerSource, /SKU \/ código interno/);
+  assert.match(managerSource, /Código de barras/);
+  assert.match(managerSource, /Stock bajo/);
   assert.match(managerSource, /preserveLegacyModel/);
   assert.match(
     managerSource,
@@ -580,6 +599,20 @@ async function main() {
   assert.doesNotMatch(managerSource, /initializeInventoryCatalog\s*\(/);
   assert.match(managerSource, /ResponsiveDialog/);
   assert.match(managerSource, /Importar Excel/);
+  assert.match(managerSource, /inventory-type-selector/);
+  assert.doesNotMatch(managerSource, /← Cambiar tipo/);
+  assert.match(managerSource, /tipoItem:\s*"producto"/);
+  assert.doesNotMatch(managerSource, /Selecciona el tipo de ítem para continuar/);
+  assert.match(managerSource, /Nombre del ítem/);
+  assert.match(managerSource, /Administrar áreas y categorías/);
+  assert.match(managerSource, /Definir precio de venta manual/);
+  assert.match(managerSource, /<h3>Precio<\/h3>/);
+  assert.match(managerSource, /<h3>Existencias<\/h3>/);
+  assert.doesNotMatch(managerSource, /Código interno \(opcional\)|Costos y precios|Administrar catálogo completo/);
+  assert.match(managerSource, /catalogReturnToForm/);
+  assert.match(managerSource, /updateDraft\("areaId", result\.areaId\)/);
+  assert.match(managerSource, /updateDraft\("categoriaId", result\.categoriaId\)/);
+  assert.match(managerSource, /footer=.*inventory-item-form/s);
   assert.doesNotMatch(managerSource, /softDeleteInventoryItem|>\s*Eliminar\s*</);
 
   const catalogManagerSource = await readFile(
@@ -590,7 +623,9 @@ async function main() {
     "utf8"
   );
   assert.match(catalogManagerSource, /Reintentar carga/);
-  assert.match(catalogManagerSource, /Crear catálogo inicial/);
+  assert.match(catalogManagerSource, /Aún no tienes áreas creadas/);
+  assert.match(catalogManagerSource, /Crear primera área/);
+  assert.doesNotMatch(catalogManagerSource, /Crear catálogo inicial|Verificar catálogo inicial|initializeInventoryCatalog|Informática|Hardware|Software|Redes/);
 
   const firebaseConfigSource = await readFile(
     new URL("../src/firebase/firebaseConfig.js", import.meta.url),

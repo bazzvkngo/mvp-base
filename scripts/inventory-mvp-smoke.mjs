@@ -5,6 +5,7 @@ import {
   adaptInventoryItem,
   buildInventoryPayload,
   filterInventoryItems,
+  isInventoryLowStock,
   parseInventoryNumber,
   summarizeInventory,
   validateInventoryDraft,
@@ -45,10 +46,15 @@ function main() {
     });
 
   const product = buildInventoryPayload({
-    tipoItem: "producto", nombre: "Router", unidad: "unidad", costoBase: "1000",
+    tipoItem: "producto", codigoSolicitado: " nb-001 ", nombre: "Router", unidad: "unidad", costoBase: "1000",
     margenDeseado: "25", precioManual: "", stock: "4", stockMinimo: "2",
+    marca: " Lenovo ", modelo: " ThinkPad E13 ", codigoBarras: " 07801234567890 ",
     areaId: "", categoriaId: "", descripcion: "",
   });
+  assert.equal(product.codigoSolicitado, "NB-001");
+  assert.equal(product.marca, "Lenovo");
+  assert.equal(product.modelo, "ThinkPad E13");
+  assert.equal(product.codigoBarras, "07801234567890");
   assert.equal(product.precioInterno, 1250);
   assert.equal(product.stock, 4);
   assert.equal(product.areaId, "");
@@ -79,16 +85,23 @@ function main() {
   const service = buildInventoryPayload({
     tipoItem: "servicio", nombre: "Soporte", unidad: "hora", costoBase: "20000",
     margenDeseado: "30", precioManual: "30000", areaId: "", categoriaId: "",
+    marca: "No corresponde", modelo: "No corresponde", codigoBarras: "000123",
+    stock: "8", stockMinimo: "2",
   });
   assert.equal(service.precioInterno, 30000);
   assert.equal(service.precioManual, true);
   assert.equal("stock" in service, false);
+  assert.equal("stockMinimo" in service, false);
+  assert.equal("marca" in service, false);
+  assert.equal("modelo" in service, false);
+  assert.equal("codigoBarras" in service, false);
 
   const activity = buildInventoryPayload({
     tipoItem: "actividad", nombre: "Levantamiento", unidad: "actividad", costoBase: "0",
     margenDeseado: "0", precioManual: "", areaId: "", categoriaId: "",
   });
   assert.equal("stock" in activity, false);
+  assert.equal("stockMinimo" in activity, false);
   assert.equal(Object.keys(validateInventoryDraft({ ...activity, stock: "-1" })).length, 0);
   assert.ok(validateInventoryDraft({ ...product, costoBase: "-1" }).costoBase);
   assert.ok(validateInventoryDraft({ ...product, costoBase: "Infinity" }).costoBase);
@@ -99,16 +112,26 @@ function main() {
   const legacy = adaptInventoryItem({ nombre: "Legacy", precio: 900, stock: 2 });
   assert.equal(legacy.tipoItem, "producto");
   assert.equal(legacy.costoBase, 900);
+  assert.equal(legacy.codigoInterno, "");
+  assert.equal(legacy.marca, "");
+  assert.equal(legacy.modelo, "");
+  assert.equal(legacy.codigoBarras, "");
   const list = [
-    { id: "p", nombre: "Router", codigoInterno: "PR-0001", tipoItem: "producto", costoBase: 100, margenDeseado: 20, stock: 1, stockMinimo: 2, estado: "activo" },
+    { id: "p", nombre: "ThinkPad", codigoInterno: "NB-001", marca: "Lenovo", modelo: "E13", codigoBarras: "07801234567890", tipoItem: "producto", costoBase: 100, margenDeseado: 20, stock: 1, stockMinimo: 2, estado: "activo" },
     { id: "s", nombre: "Soporte", tipoItem: "servicio", costoBase: 200, margenDeseado: 10, estado: "activo" },
     { id: "a", nombre: "Archivado", tipoItem: "actividad", costoBase: 100, margenDeseado: 10, estado: "inactivo" },
+    { id: "z", nombre: "Sin mínimo", tipoItem: "producto", costoBase: 50, margenDeseado: 10, stock: 0, stockMinimo: 0, estado: "activo" },
   ];
-  assert.equal(summarizeInventory(list).total, 2);
+  assert.equal(summarizeInventory(list).total, 3);
   assert.equal(summarizeInventory(list).lowStock, 1);
   assert.equal(summarizeInventory(list).inventoryCost, 100);
-  assert.deepEqual(filterInventoryItems(list, { query: "pr-0001", status: "activo" }).map(({ id }) => id), ["p"]);
+  ["thinkpad", "lenovo", "e13", "nb-001", "07801234567890"].forEach((query) => {
+    assert.deepEqual(filterInventoryItems(list, { query, status: "activo" }).map(({ id }) => id), ["p"]);
+  });
   assert.deepEqual(filterInventoryItems(list, { type: "servicio", status: "activo" }).map(({ id }) => id), ["s"]);
+  assert.equal(isInventoryLowStock(list[0]), true);
+  assert.equal(isInventoryLowStock(list[1]), false);
+  assert.equal(isInventoryLowStock(list[3]), false);
 
   const headers = mapInventoryHeaders(["TÍPO ÍTEM", "Producto", "Código", "Área", "Categoría", "Medida", "Costo Base", "Margen %", "Precio venta", "Cantidad", "Stock mínimo", "Descripción"]);
   assert.equal(headers.tipoItem, 0);
