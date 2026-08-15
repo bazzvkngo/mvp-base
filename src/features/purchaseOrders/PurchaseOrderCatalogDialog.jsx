@@ -44,7 +44,7 @@ export default function PurchaseOrderCatalogDialog({items, onAdd, onClose, open}
             <article key={item.id}>
               <div>
                 <strong>{item.nombre}</strong>
-                <small>{item.codigoInterno || item.sku || "Sin código"} · {item.tipoItem}</small>
+                <small>{item.codigoInterno || item.sku || "Sin código"} · {({producto: "Producto", servicio: "Servicio", actividad: "Actividad"})[item.tipoItem] || "Producto"}{item.tipoItem === "producto" ? ` · Stock actual: ${Number(item.stock || 0)}` : ""}</small>
               </div>
               <span>${Number(item.costoBase || 0).toLocaleString("es-CL")}</span>
               <button type="button" className="po-button po-button--secondary" onClick={() => onAdd(item)}>

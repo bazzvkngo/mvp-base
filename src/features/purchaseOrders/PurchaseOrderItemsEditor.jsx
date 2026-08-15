@@ -1,6 +1,7 @@
 import React from "react";
 
 const money = (value) => `$${Math.round(Number(value || 0)).toLocaleString("es-CL")}`;
+const typeLabel = (value) => ({producto: "Producto", servicio: "Servicio", actividad: "Actividad"})[value] || "Producto";
 
 export default function PurchaseOrderItemsEditor({disabled, items, onChange, onOpenCatalog, readOnly}) {
   const update = (index, field, value) => onChange(items.map((item, itemIndex) =>
@@ -10,7 +11,6 @@ export default function PurchaseOrderItemsEditor({disabled, items, onChange, onO
     <section className="po-panel">
       <header className="po-panel__header">
         <div>
-          <span className="po-kicker">Detalle de compra</span>
           <h2>Ítems de la orden</h2>
           <p>{items.length === 1 ? "1 ítem" : `${items.length} ítems`}</p>
         </div>
@@ -34,7 +34,7 @@ export default function PurchaseOrderItemsEditor({disabled, items, onChange, onO
               <article className={`po-line${readOnly ? " po-line--readonly" : ""}`} key={item.lineaId}>
                 <div className="po-line__identity">
                   <strong>{item.nombre}</strong>
-                  <small>{item.codigo || "Sin código"} · {item.tipoItem || "producto"} · {item.unidad || "unidad"}</small>
+                  <small>{item.codigo || "Sin código"} · {typeLabel(item.tipoItem)} · {item.unidad || "unidad"}</small>
                 </div>
                 {readOnly ? (
                   <dl className="po-line__readonly">

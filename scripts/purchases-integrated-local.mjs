@@ -109,6 +109,11 @@ try {
   assert.equal(otherCreated.data.compra.numero, "COM-2026-0001");
   const adminCreated = await call(admin, "crearCompra")({businessId, requestId: requestId("admin-create"), compra: purchasePayload(providerId, [line(productB, "admin-line")])});
   assert.equal(adminCreated.data.compra.numero, "COM-2026-0002");
+  assert.equal(ownerCreated.data.compra.modeloCompraVersion, 2);
+  await Promise.all([
+    adminDb.doc(`negocios/${businessId}/compras/${ownerCreated.data.compra.id}`).update({modeloCompraVersion: 1, stockGestionadoPor: null}),
+    adminDb.doc(`negocios/${businessId}/compras/${adminCreated.data.compra.id}`).update({modeloCompraVersion: 1, stockGestionadoPor: null}),
+  ]);
   console.log("OK roles OWNER/ADMIN y correlativos independientes por negocio");
 
   await expectCallableError("MEMBER no crea", () => call(member, "crearCompra")({businessId, requestId: requestId("member-create"), compra: purchasePayload(providerId, [line(productA, "member-line")])}), ["permission-denied"]);
@@ -160,6 +165,10 @@ try {
     call(owner, "crearCompra")({businessId, requestId: requestId("create-two"), compra: concurrencyPayload("two", 2)}),
     call(admin, "crearCompra")({businessId, requestId: requestId("create-five"), compra: concurrencyPayload("five", 5)}),
   ]);
+  await Promise.all([
+    adminDb.doc(`negocios/${businessId}/compras/${draftTwo.data.compra.id}`).update({modeloCompraVersion: 1, stockGestionadoPor: null}),
+    adminDb.doc(`negocios/${businessId}/compras/${draftFive.data.compra.id}`).update({modeloCompraVersion: 1, stockGestionadoPor: null}),
+  ]);
   assert.notEqual(draftTwo.data.compra.numero, draftFive.data.compra.numero);
   const stockBeforeConcurrent = (await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock;
   await Promise.all([
@@ -170,6 +179,7 @@ try {
   console.log("OK concurrencia: dos confirmaciones acumulan stock sin pérdida");
 
   const multiProduct = await call(owner, "crearCompra")({businessId, requestId: requestId("multi-create"), compra: purchasePayload(providerId, [line(productA, "multi-a", {cantidad: 2}), line(productB, "multi-b", {cantidad: 5})])});
+  await adminDb.doc(`negocios/${businessId}/compras/${multiProduct.data.compra.id}`).update({modeloCompraVersion: 1, stockGestionadoPor: null});
   const productABefore = (await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock;
   const productBBefore = (await adminDb.doc(`negocios/${businessId}/inventario/${productB}`).get()).data().stock;
   await call(owner, "confirmarCompra")({businessId, compraId: multiProduct.data.compra.id, requestId: requestId("multi-confirm")});
@@ -178,6 +188,7 @@ try {
   console.log("OK confirmación con múltiples productos");
 
   const rollbackDraft = await call(owner, "crearCompra")({businessId, requestId: requestId("rollback-create"), compra: purchasePayload(providerId, [line(productA, "rollback-a", {cantidad: 1}), line(productB, "rollback-b", {cantidad: 1})])});
+  await adminDb.doc(`negocios/${businessId}/compras/${rollbackDraft.data.compra.id}`).update({modeloCompraVersion: 1, stockGestionadoPor: null});
   const stockBeforeRollback = (await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock;
   await adminDb.doc(`negocios/${businessId}/inventario/${productB}`).delete();
   await expectCallableError("rollback por producto faltante", () => call(owner, "confirmarCompra")({businessId, compraId: rollbackDraft.data.compra.id, requestId: requestId("rollback-confirm")}), ["failed-precondition"]);
@@ -236,9 +247,9 @@ try {
   assert.equal((await adminDb.doc(`negocios/${businessId}/ordenesCompra/${orderId}`).get()).data().compraId, conversion.data.compra.id);
   const inactiveBefore = (await adminDb.doc(`negocios/${businessId}/inventario/${inactiveProduct}`).get()).data().stock;
   await call(owner, "confirmarCompra")({businessId, compraId: conversion.data.compra.id, requestId: requestId("confirm-converted")});
-  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${inactiveProduct}`).get()).data().stock, inactiveBefore + 3);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${inactiveProduct}`).get()).data().stock, inactiveBefore);
   assert.equal((await adminDb.doc(`negocios/${businessId}/ordenesCompra/${orderId}`).get()).data().estado, "emitida");
-  assert.equal((await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("compraId", "==", conversion.data.compra.id).get()).size, 1);
+  assert.equal((await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("compraId", "==", conversion.data.compra.id).get()).size, 0);
   const concurrentConversions = await Promise.all([
     call(owner, "crearCompraDesdeOrden")({businessId, ordenCompraId: concurrentOrderId, requestId: requestId("convert-concurrent-a")}),
     call(admin, "crearCompraDesdeOrden")({businessId, ordenCompraId: concurrentOrderId, requestId: requestId("convert-concurrent-b")}),

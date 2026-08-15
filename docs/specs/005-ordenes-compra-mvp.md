@@ -1,5 +1,7 @@
 # Órdenes de Compra MVP
 
+> Actualización: la OC representa lo solicitado y no modifica stock. La respuesta del proveedor es una dimensión separada y una OC emitida origina Recepciones, no Compras directas. Ver `011-recepciones-mvp.md`.
+
 ## Objetivo
 
 Registrar órdenes de compra vinculadas a proveedores e inventario del negocio, con numeración transaccional, snapshots históricos autoritativos, cálculo de IVA y estados de ciclo de vida. Este módulo no recibe mercadería, no mueve stock y no genera cuentas por pagar.

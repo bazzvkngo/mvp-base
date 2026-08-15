@@ -1,6 +1,6 @@
 const {createHash} = require("node:crypto");
 
-const MODEL_VERSION = 1;
+const MODEL_VERSION = 2;
 const VAT_RATE = 0.19;
 const WRITE_ROLES = ["OWNER", "ADMIN"];
 const TYPES = new Set(["producto", "servicio", "actividad"]);
@@ -111,7 +111,7 @@ async function access(request, dependencies) {
 }
 function formatNumber(year, sequence) { return `COM-${year}-${String(sequence).padStart(4, "0")}`; }
 function baseStored({businessId, uid, purchaseId, numero, sequence, now, normalized, proveedorSnapshot, items, origin = {}, timestamp, HttpsError}) {
-  return {modeloCompraVersion: MODEL_VERSION, compraId: purchaseId, negocioId: businessId, numero, anio: now.year, correlativo: sequence, estado: "borrador", moneda: "CLP", tasaIva: VAT_RATE, proveedorId: normalized.proveedorId, proveedorSnapshot, ...origin, items, ...totals(items, HttpsError), fechaCompra: normalized.fechaCompra, fechaDocumento: normalized.fechaDocumento, tipoDocumento: normalized.tipoDocumento, numeroDocumentoProveedor: normalized.numeroDocumentoProveedor, condicionesPago: normalized.condicionesPago || proveedorSnapshot.condicionesPago, observaciones: normalized.observaciones, stockAplicado: false, stockAplicadoEn: null, creadoPorUid: uid, actualizadoPorUid: uid, creadoEn: timestamp, actualizadoEn: timestamp};
+  return {modeloCompraVersion: MODEL_VERSION, compraId: purchaseId, negocioId: businessId, numero, anio: now.year, correlativo: sequence, estado: "borrador", moneda: "CLP", tasaIva: VAT_RATE, proveedorId: normalized.proveedorId, proveedorSnapshot, ...origin, items, ...totals(items, HttpsError), fechaCompra: normalized.fechaCompra, fechaDocumento: normalized.fechaDocumento, tipoDocumento: normalized.tipoDocumento, numeroDocumentoProveedor: normalized.numeroDocumentoProveedor, condicionesPago: normalized.condicionesPago || text(proveedorSnapshot.condicionesPago, 2000), observaciones: normalized.observaciones, stockGestionadoPor: "recepcion", stockAplicado: false, stockAplicadoEn: null, creadoPorUid: uid, actualizadoPorUid: uid, creadoEn: timestamp, actualizadoEn: timestamp};
 }
 function retryable(error) { return Number(error?.code) === 10 || String(error?.message || "").toLowerCase().includes("transaction is invalid"); }
 async function transactionRetry(db, callback) {
@@ -209,6 +209,84 @@ async function crearCompraDesdeOrdenHandler(request, dependencies, clock = new D
   });
 }
 
+async function crearCompraDesdeRecepcionHandler(request, dependencies, clock = new Date()) {
+  const {db, FieldValue, HttpsError} = dependencies;
+  const {uid, businessId, businessRef} = await access(request, dependencies);
+  const reqId = requestId(request?.data?.requestId, HttpsError);
+  const receptionId = id(request?.data?.recepcionId, "La recepcion", HttpsError);
+  const now = chileParts(clock);
+  const purchaseRef = businessRef.collection("compras").doc();
+  const requestRef = businessRef.collection("receptionPurchaseConversionRequests").doc(reqId);
+  const receptionRef = businessRef.collection("recepciones").doc(receptionId);
+  const counterRef = businessRef.collection("purchaseCounters").doc(String(now.year));
+  return transactionRetry(db, async (transaction) => {
+    const previous = await transaction.get(requestRef);
+    if (previous.exists) {
+      const data = previous.data() || {};
+      if (data.uidUsuario !== uid || data.recepcionId !== receptionId) {
+        fail(HttpsError, "already-exists", "La solicitud ya fue usada para otra recepcion.");
+      }
+      const existing = await transaction.get(businessRef.collection("compras").doc(data.compraId));
+      return {compra: {id: existing.id, ...existing.data()}, requestId: reqId, idempotent: true};
+    }
+    const [receptionSnapshot, counterSnapshot] = await Promise.all([
+      transaction.get(receptionRef),
+      transaction.get(counterRef),
+    ]);
+    if (!receptionSnapshot.exists) fail(HttpsError, "not-found", "No se encontro la recepcion.");
+    const reception = receptionSnapshot.data() || {};
+    if (reception.negocioId !== businessId) fail(HttpsError, "permission-denied", "No puedes registrar esta recepcion.");
+    if (reception.compraId) {
+      const existing = await transaction.get(businessRef.collection("compras").doc(reception.compraId));
+      if (!existing.exists) fail(HttpsError, "failed-precondition", "El enlace con la compra es inconsistente.");
+      return {compra: {id: existing.id, ...existing.data()}, requestId: reqId, idempotent: true, alreadyConverted: true};
+    }
+    if (reception.estado !== "confirmada" || reception.stockAplicado !== true) {
+      fail(HttpsError, "failed-precondition", "Solo una recepcion recibida puede registrarse como compra.");
+    }
+    const sourceItems = (reception.items || []).filter((line) => Number(line.cantidad) > 0);
+    const normalized = input({
+      proveedorId: reception.proveedorId,
+      fechaCompra: now.value,
+      fechaDocumento: "",
+      tipoDocumento: "sin_documento",
+      numeroDocumentoProveedor: "",
+      condicionesPago: "",
+      observaciones: `Originada desde ${reception.numero || "recepcion"}`,
+      items: sourceItems,
+    }, HttpsError);
+    const items = sourceItems.map((line, index) => ocSnapshotLine(line, index, HttpsError));
+    const current = Number(counterSnapshot.data()?.lastNumber || 0);
+    const sequence = Number.isSafeInteger(current) && current >= 0 ? current + 1 : 1;
+    const numero = formatNumber(now.year, sequence);
+    const timestamp = FieldValue.serverTimestamp();
+    const stored = baseStored({
+      businessId,
+      uid,
+      purchaseId: purchaseRef.id,
+      numero,
+      sequence,
+      now,
+      normalized,
+      proveedorSnapshot: reception.proveedorSnapshot || {},
+      items,
+      origin: {
+        recepcionId: receptionId,
+        recepcionNumero: text(reception.numero, 120),
+        ordenCompraId: text(reception.ordenCompraId, 160),
+        ordenCompraNumero: text(reception.ordenCompraNumero, 120),
+      },
+      timestamp,
+      HttpsError,
+    });
+    transaction.set(counterRef, {negocioId: businessId, year: now.year, lastNumber: sequence, actualizadoEn: timestamp});
+    transaction.set(purchaseRef, stored);
+    transaction.update(receptionRef, {compraId: purchaseRef.id, compraNumero: numero, actualizadoPorUid: uid, actualizadoEn: timestamp});
+    transaction.set(requestRef, {negocioId: businessId, recepcionId: receptionId, compraId: purchaseRef.id, uidUsuario: uid, creadoEn: timestamp});
+    return {compra: {id: purchaseRef.id, ...stored, creadoEn: null, actualizadoEn: null}, requestId: reqId, idempotent: false};
+  });
+}
+
 function preservedProvider(purchase) { return purchase.proveedorSnapshot || {}; }
 function preservedItem(line) { return line?.inventarioSnapshot || {inventarioId: line?.itemId, codigoInterno: line?.codigo, nombre: line?.nombre, descripcion: line?.descripcion, tipoItem: line?.tipoItem, unidad: line?.unidad}; }
 function assertOrderReferencesUnchanged(existing, normalized, HttpsError) {
@@ -276,6 +354,13 @@ async function confirmarCompraHandler(request, dependencies) {
       return {compra: {id: purchaseId, ...purchase}, requestId: reqId, idempotent: true, productosActualizados: 0};
     }
     if (purchase.estado !== "borrador") fail(HttpsError, "failed-precondition", "La compra no puede confirmarse.");
+    if (Number(purchase.modeloCompraVersion || 1) >= 2 || purchase.stockGestionadoPor === "recepcion") {
+      const timestamp = FieldValue.serverTimestamp();
+      const update = {estado: "confirmada", stockAplicado: false, stockAplicadoEn: null, confirmadoPorUid: uid, confirmadoEn: timestamp, actualizadoPorUid: uid, actualizadoEn: timestamp};
+      transaction.update(purchaseRef, update);
+      transaction.set(requestRef, {negocioId: businessId, compraId: purchaseId, uidUsuario: uid, productosActualizados: 0, creadoEn: timestamp});
+      return {compra: {id: purchaseId, ...purchase, ...update, confirmadoEn: null, actualizadoEn: null}, requestId: reqId, idempotent: false, productosActualizados: 0};
+    }
     const purchaseLines = Array.isArray(purchase.items) ? purchase.items : [];
     const productLines = purchaseLines.filter((line) => line.tipoItem === "producto");
     const linesToValidate = purchase.ordenCompraId ? productLines : purchaseLines;
@@ -341,4 +426,4 @@ async function cancelarCompraBorradorHandler(request, dependencies) {
   });
 }
 
-module.exports = {actualizarCompraBorradorHandler, cancelarCompraBorradorHandler, confirmarCompraHandler, crearCompraDesdeOrdenHandler, crearCompraHandler, formatPurchaseNumber: formatNumber, normalizePurchaseInput: input, calculatePurchaseTotals: totals};
+module.exports = {actualizarCompraBorradorHandler, cancelarCompraBorradorHandler, confirmarCompraHandler, crearCompraDesdeOrdenHandler, crearCompraDesdeRecepcionHandler, crearCompraHandler, formatPurchaseNumber: formatNumber, normalizePurchaseInput: input, calculatePurchaseTotals: totals};

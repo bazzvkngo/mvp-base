@@ -1,8 +1,10 @@
 # Compras MVP
 
+> Actualización: las compras nuevas (`modeloCompraVersion: 2`) son documentos económicos y no modifican stock. La entrada física ocurre al confirmar una Recepción. El comportamiento anterior se conserva para documentos históricos de modelo 1. Ver `011-recepciones-mvp.md`.
+
 ## Objetivo
 
-Registrar compras directas o derivadas de una orden de compra emitida, conservar su evidencia histórica y aplicar entradas de stock de productos al confirmar. Este módulo no implementa pagos, cuentas por pagar, recepción parcial, contabilidad ni ajustes manuales.
+Registrar compras directas o derivadas de una recepción como documentos económicos y conservar su evidencia histórica. En el modelo 2, confirmar una compra no modifica stock: la entrada física y las recepciones parciales se registran en Recepciones conforme a la SPEC 011. El modelo 1 conserva compatibilidad histórica con su comportamiento anterior. Este módulo no implementa pagos, cuentas por pagar, contabilidad ni ajustes manuales.
 
 ## Modelo Firestore
 

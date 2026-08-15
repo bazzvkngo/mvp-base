@@ -28,6 +28,8 @@ import NewPurchaseOrderPage from "../pages/NewPurchaseOrderPage";
 import PurchaseOrdersPage from "../pages/PurchaseOrdersPage";
 import NewPurchasePage from "../pages/NewPurchasePage";
 import PurchasesPage from "../pages/PurchasesPage";
+import ReceptionsPage from "../pages/ReceptionsPage";
+import NewReceptionPage from "../pages/NewReceptionPage";
 import NewSalePage from "../pages/NewSalePage";
 import SalesPage from "../pages/SalesPage";
 import ReferenceTasksPage from "../pages/ReferenceTasksPage";
@@ -328,6 +330,36 @@ function AppRoutes({
           path="/ordenes-compra/:ordenCompraId"
           element={
             <NewPurchaseOrderPage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
+            />
+          }
+        />
+        <Route
+          path="/recepciones"
+          element={
+            <ReceptionsPage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
+            />
+          }
+        />
+        <Route
+          path="/recepciones/:recepcionId/editar"
+          element={
+            <NewReceptionPage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
+            />
+          }
+        />
+        <Route
+          path="/recepciones/:recepcionId"
+          element={
+            <NewReceptionPage
               key={businessId}
               businessId={businessId}
               role={activeBusiness?.role}

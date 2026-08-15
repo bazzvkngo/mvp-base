@@ -1,12 +1,26 @@
-export const PURCHASE_MODEL_VERSION = 1;
+export const PURCHASE_MODEL_VERSION = 2;
 export const PURCHASE_VAT_RATE = 0.19;
 export const PURCHASE_STATUSES = Object.freeze(["borrador", "confirmada", "cancelada"]);
 export const PURCHASE_DOCUMENT_TYPES = Object.freeze(["factura", "boleta", "otro", "sin_documento"]);
+
+export function getPurchaseStatusLabel(value) {
+  return ({borrador: "Preparada", confirmada: "Confirmada", cancelada: "Cancelada"})[value] || "Preparada";
+}
+
+export function getPurchaseDocumentTypeLabel(value) {
+  return ({factura: "Factura", boleta: "Boleta", otro: "Otro", sin_documento: "Sin documento"})[value] || "Sin documento";
+}
+
+export function shouldReconcilePurchaseConfirmation(error) {
+  const code = String(error?.code || "").replace(/^functions\//, "");
+  return ["cancelled", "deadline-exceeded", "internal", "unknown", "unavailable"].includes(code);
+}
 
 const STATUS_SET = new Set(PURCHASE_STATUSES);
 const DOCUMENT_SET = new Set(PURCHASE_DOCUMENT_TYPES);
 const ITEM_TYPES = new Set(["producto", "servicio", "actividad"]);
 const MAXIMUM_AMOUNT_MESSAGE = "El monto de la compra supera el máximo permitido.";
+const paymentLabel = (value) => ({contado: "Contado", transferencia: "Transferencia", credito: "Crédito", otro: "Otro"})[value] || value;
 
 const text = (value, max = 2000) => String(value ?? "").trim().replace(/\s+/g, " ").slice(0, max);
 
@@ -111,10 +125,12 @@ export function adaptStoredPurchase(raw = {}) {
     numero: text(raw.numero, 120), estado: STATUS_SET.has(estado) ? estado : "borrador",
     proveedorId: text(raw.proveedorId || proveedor.proveedorId, 160), proveedorSnapshot: proveedor,
     ordenCompraId: text(raw.ordenCompraId, 160), ordenCompraNumero: text(raw.ordenCompraNumero, 120),
+    recepcionId: text(raw.recepcionId, 160), recepcionNumero: text(raw.recepcionNumero, 120),
+    stockGestionadoPor: text(raw.stockGestionadoPor, 40),
     fechaCompra: text(raw.fechaCompra, 10), fechaDocumento: text(raw.fechaDocumento, 10),
     tipoDocumento: DOCUMENT_SET.has(raw.tipoDocumento) ? raw.tipoDocumento : "sin_documento",
     numeroDocumentoProveedor: text(raw.numeroDocumentoProveedor, 120),
-    condicionesPago: text(raw.condicionesPago, 2000), observaciones: text(raw.observaciones, 4000),
+    condicionesPago: paymentLabel(text(raw.condicionesPago, 2000)), observaciones: text(raw.observaciones, 4000),
     items, ...totals,
   };
 }
@@ -127,5 +143,5 @@ export function matchesPurchaseSearch(purchase, search) {
   const normalize = (value) => text(value, 600).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   const query = normalize(search);
   if (!query) return true;
-  return normalize(`${purchase.numero} ${purchase.proveedorSnapshot?.razonSocial} ${purchase.proveedorSnapshot?.rut} ${purchase.numeroDocumentoProveedor} ${purchase.ordenCompraNumero}`).includes(query);
+  return normalize(`${purchase.numero} ${purchase.proveedorSnapshot?.razonSocial} ${purchase.proveedorSnapshot?.rut} ${purchase.numeroDocumentoProveedor} ${purchase.ordenCompraNumero} ${purchase.recepcionNumero}`).includes(query);
 }

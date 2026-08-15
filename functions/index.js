@@ -49,14 +49,22 @@ const {
   crearOrdenCompraHandler,
   duplicarOrdenCompraComoBorradorHandler,
   emitirOrdenCompraHandler,
+  registrarRespuestaProveedorHandler,
 } = require("./purchaseOrderPersistence");
 const {
   actualizarCompraBorradorHandler,
   cancelarCompraBorradorHandler,
   confirmarCompraHandler,
   crearCompraDesdeOrdenHandler,
+  crearCompraDesdeRecepcionHandler,
   crearCompraHandler,
 } = require("./purchasePersistence");
+const {
+  actualizarRecepcionBorradorHandler,
+  cancelarRecepcionBorradorHandler,
+  confirmarRecepcionHandler,
+  crearRecepcionDesdeOrdenHandler,
+} = require("./receptionPersistence");
 const {
   actualizarVentaBorradorHandler,
   cancelarVentaBorradorHandler,
@@ -65,6 +73,7 @@ const {
   crearVentaHandler,
 } = require("./salePersistence");
 const { sendQuoteEmailHandler } = require("./quoteEmail");
+const { sendPurchaseOrderEmailHandler } = require("./purchaseOrderEmail");
 const {
   buildQuoteEmissionPatch,
   confirmQuoteWhatsAppSentHandler,
@@ -2040,6 +2049,39 @@ exports.cancelarOrdenCompra = onCall(
     cancelarOrdenCompraHandler(request, purchaseOrderPersistenceDependencies)
 );
 
+exports.registrarRespuestaProveedorOrdenCompra = onCall(
+  {maxInstances: 20, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) =>
+    registrarRespuestaProveedorHandler(request, purchaseOrderPersistenceDependencies)
+);
+
+const receptionPersistenceDependencies = {
+  db,
+  FieldValue,
+  HttpsError,
+  requireBusinessAccess,
+};
+
+exports.crearRecepcionDesdeOrden = onCall(
+  {maxInstances: 20, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => crearRecepcionDesdeOrdenHandler(request, receptionPersistenceDependencies)
+);
+
+exports.actualizarRecepcionBorrador = onCall(
+  {maxInstances: 20, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => actualizarRecepcionBorradorHandler(request, receptionPersistenceDependencies)
+);
+
+exports.confirmarRecepcion = onCall(
+  {maxInstances: 20, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => confirmarRecepcionHandler(request, receptionPersistenceDependencies)
+);
+
+exports.cancelarRecepcionBorrador = onCall(
+  {maxInstances: 20, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => cancelarRecepcionBorradorHandler(request, receptionPersistenceDependencies)
+);
+
 const purchasePersistenceDependencies = {
   db,
   FieldValue,
@@ -2409,7 +2451,7 @@ function buildQuoteEmailHtml({ quote, mensaje, proposalUrl }) {
   </html>`;
 }
 
-async function sendQuoteEmailWithResend({
+async function sendEmailWithResend({
   apiKey,
   from,
   to,
@@ -2462,8 +2504,35 @@ exports.sendQuoteEmail = onCall(
       normalizePdfAttachment,
       requireBusinessAccess,
       safeText,
-      sendQuoteEmailWithProvider: sendQuoteEmailWithResend,
+      sendQuoteEmailWithProvider: sendEmailWithResend,
       Timestamp,
+    })
+);
+
+exports.crearCompraDesdeRecepcion = onCall(
+  {maxInstances: 20, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => crearCompraDesdeRecepcionHandler(request, purchasePersistenceDependencies)
+);
+
+exports.sendPurchaseOrderEmail = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    secrets: [RESEND_API_KEY_SECRET, RESEND_FROM_EMAIL_SECRET],
+    timeoutSeconds: 60,
+  },
+  async (request) =>
+    sendPurchaseOrderEmailHandler(request, {
+      ...businessOnboardingDependencies,
+      escapeHtml,
+      getCompanyProfile: getCompanyProfileForQuote,
+      getEmailSender: getQuoteEmailSender,
+      getResendApiKey,
+      isEmulatorEnvironment,
+      normalizePdfAttachment,
+      requireBusinessAccess,
+      sendEmailWithProvider: sendEmailWithResend,
     })
 );
 

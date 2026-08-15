@@ -1,6 +1,7 @@
 import React from "react";
 
 const money = (value) => `$${Math.round(Number(value || 0)).toLocaleString("es-CL")}`;
+const typeLabel = (value) => ({producto: "Producto", servicio: "Servicio", actividad: "Actividad"})[value] || "Producto";
 
 export default function PurchaseItemsEditor({
   disabled,
@@ -20,7 +21,7 @@ export default function PurchaseItemsEditor({
       <header className="po-panel__header">
         <div>
           <span className="po-kicker">Detalle de compra</span>
-          <h2>Ítems recibidos</h2>
+          <h2>Ítems de la compra</h2>
           <p>{items.length === 1 ? "1 ítem" : `${items.length} ítems`}</p>
         </div>
         {canChangeReferences && (
@@ -44,7 +45,7 @@ export default function PurchaseItemsEditor({
               <article className={`po-line${readOnly ? " po-line--readonly" : ""}`} key={item.lineaId}>
                 <div className="po-line__identity">
                   <strong>{item.nombre}</strong>
-                  <small>{item.codigo || "Sin código"} · {item.tipoItem} · {item.unidad}</small>
+                  <small>{item.codigo || "Sin código"} · {typeLabel(item.tipoItem)} · {item.unidad}</small>
                 </div>
                 {readOnly ? (
                   <dl className="po-line__readonly">

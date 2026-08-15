@@ -1,13 +1,14 @@
 import React, {useEffect, useMemo, useRef, useState} from "react";
 import {Plus, Search} from "lucide-react";
 import {useNavigate} from "react-router-dom";
+import {sileo} from "sileo";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
-import {canManagePurchases, matchesPurchaseSearch} from "../domain/purchaseModel.mjs";
+import ResponsiveDialog from "../components/ui/ResponsiveDialog";
+import {canManagePurchases, getPurchaseDocumentTypeLabel, getPurchaseStatusLabel, matchesPurchaseSearch} from "../domain/purchaseModel.mjs";
 import {cancelarCompraBorrador, confirmarCompra, createPurchaseRequestId, listarCompras} from "../services/purchaseService";
 import "../features/purchases/purchases.css";
 
-const labels = {borrador: "Borrador", confirmada: "Confirmada", cancelada: "Cancelada"};
 const money = (value) => `$${Math.round(Number(value || 0)).toLocaleString("es-CL")}`;
 function Actions({canManage, onAction, onOpen, purchase, processing}) {
   return (
@@ -16,7 +17,7 @@ function Actions({canManage, onAction, onOpen, purchase, processing}) {
       {canManage && purchase.estado === "borrador" && (
         <>
           <button type="button" disabled={processing} onClick={() => onAction(purchase, "confirmar")}>Confirmar</button>
-          <button type="button" disabled={processing} onClick={() => onAction(purchase, "cancelar")}>Cancelar</button>
+          <details className="po-more-actions"><summary>Más acciones ···</summary><div><button type="button" disabled={processing} onClick={() => onAction(purchase, "cancelar")}>Cancelar compra</button></div></details>
         </>
       )}
     </div>
@@ -26,17 +27,19 @@ export default function PurchasesPage({businessId, role}) {
   const navigate = useNavigate();
   const confirmIds = useRef(new Map());
   const [items, setItems] = useState([]); const [search, setSearch] = useState(""); const [status, setStatus] = useState("todos"); const [origin, setOrigin] = useState("todos"); const [message, setMessage] = useState(""); const [loading, setLoading] = useState(true); const [processing, setProcessing] = useState("");
+  const [pendingAction, setPendingAction] = useState(null);
   const canManage = canManagePurchases(role);
   const load = async () => { setLoading(true); try { setItems(await listarCompras(businessId)); } catch (error) { setMessage(error.message); } finally { setLoading(false); } };
   useEffect(() => { let active = true; setLoading(true); listarCompras(businessId).then((values) => { if (active) setItems(values); }).catch((error) => { if (active) setMessage(error.message); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [businessId]);
   const filtered = useMemo(() => items.filter((item) => (status === "todos" || item.estado === status) && (origin === "todos" || (origin === "oc" ? item.ordenCompraId : !item.ordenCompraId)) && matchesPurchaseSearch(item, search)), [items, origin, search, status]);
-  const action = async (purchase, type) => { const prompt = type === "confirmar" ? "Al confirmar la compra se actualizará el stock de los productos incluidos. Esta acción no podrá editarse posteriormente." : "¿Cancelar este borrador de compra?"; if (!globalThis.confirm(prompt)) return; setProcessing(purchase.id); setMessage(""); try { if (type === "confirmar") { const requestId = confirmIds.current.get(purchase.id) || createPurchaseRequestId("purchase-confirm"); confirmIds.current.set(purchase.id, requestId); const result = await confirmarCompra(businessId, purchase.id, {requestId}); confirmIds.current.delete(purchase.id); setMessage(result.productosActualizados ? "Compra confirmada. El inventario fue actualizado." : "Compra confirmada."); } else await cancelarCompraBorrador(businessId, purchase.id); await load(); } catch (error) { setMessage(error.message); } finally { setProcessing(""); } };
+  const action = (purchase, type) => setPendingAction({purchase, type});
+  const executeAction = async () => { const {purchase, type} = pendingAction || {}; if (!purchase) return; setProcessing(purchase.id); setMessage(""); try { if (type === "confirmar") { const requestId = confirmIds.current.get(purchase.id) || createPurchaseRequestId("purchase-confirm"); confirmIds.current.set(purchase.id, requestId); const result = await confirmarCompra(businessId, purchase.id, {requestId}); confirmIds.current.delete(purchase.id); sileo.success({title: "Compra confirmada", description: result.productosActualizados ? "Compra histórica confirmada con su comportamiento original." : "Documento económico confirmado sin modificar stock."}); } else { await cancelarCompraBorrador(businessId, purchase.id); sileo.success({title: "Compra cancelada", description: `${purchase.numero} quedó cancelada sin modificar stock.`}); } setPendingAction(null); await load(); } catch (error) { setMessage(error.message); sileo.error({title: type === "confirmar" ? "No se pudo confirmar la compra" : "No se pudo cancelar la compra", description: error.message}); } finally { setProcessing(""); } };
   const open = (purchase) => navigate(purchase.estado === "borrador" && canManage ? `/compras/${purchase.id}/editar` : `/compras/${purchase.id}`);
   return (
     <main className="erp-page po-history">
       <div className="erp-module-intro">
         <div className="erp-page-intro">
-          <p>Registra y consulta compras y entradas de inventario.</p>
+          <p>Registra documentos económicos de compra. El stock se gestiona en Recepciones.</p>
         </div>
         {canManage && <Button type="button" icon={Plus} onClick={() => navigate("/compras/nueva")}>Nueva compra</Button>}
       </div>
@@ -63,7 +66,7 @@ export default function PurchasesPage({businessId, role}) {
             <span className="erp-field__label">Estado</span>
             <select className="erp-control" value={status} onChange={(event) => setStatus(event.target.value)}>
               <option value="todos">Todos los estados</option>
-              <option value="borrador">Borradores</option>
+              <option value="borrador">Preparadas</option>
               <option value="confirmada">Confirmadas</option>
               <option value="cancelada">Canceladas</option>
             </select>
@@ -82,30 +85,29 @@ export default function PurchasesPage({businessId, role}) {
           <>
           <section className="erp-table-region po-history__desktop">
             <table className="erp-table po-history__table">
-              <thead><tr><th>Número</th><th>Fecha</th><th>Proveedor</th><th>Documento</th><th>Total</th><th>Origen</th><th>Estado</th><th>Acciones</th></tr></thead>
+              <thead><tr><th>Compra</th><th>Proveedor</th><th>Documento</th><th>Total</th><th>Origen</th><th>Estado</th><th>Acciones</th></tr></thead>
               <tbody>
                 {filtered.map((purchase) => (
                   <tr key={purchase.id}>
-                    <td><strong>{purchase.numero}</strong></td>
-                    <td>{purchase.fechaCompra || "—"}</td>
+                    <td><button type="button" className="po-inline-link" onClick={() => open(purchase)}>{purchase.numero}</button><small>{purchase.fechaCompra || "—"}</small></td>
                     <td><strong>{purchase.proveedorSnapshot.razonSocial}</strong><small>{purchase.proveedorSnapshot.rut}</small></td>
-                    <td>{purchase.tipoDocumento}<small>{purchase.numeroDocumentoProveedor || "Sin número"}</small></td>
+                    <td>{getPurchaseDocumentTypeLabel(purchase.tipoDocumento)}<small>{purchase.tipoDocumento === "sin_documento" ? "" : purchase.numeroDocumentoProveedor || "Sin número"}</small></td>
                     <td>{money(purchase.total)}</td>
-                    <td>{purchase.ordenCompraNumero || "Directa"}</td>
-                    <td><span className={`po-status po-status--${purchase.estado}`}>{labels[purchase.estado]}</span></td>
+                    <td>{purchase.recepcionId ? <button type="button" className="po-inline-link" onClick={() => navigate(`/recepciones/${purchase.recepcionId}`)}>{purchase.recepcionNumero || "Abrir recepción"}</button> : purchase.ordenCompraId ? <button type="button" className="po-inline-link" onClick={() => navigate(`/ordenes-compra/${purchase.ordenCompraId}`)}>{purchase.ordenCompraNumero || "Abrir OC"}</button> : "Directa"}</td>
+                    <td><span className={`po-status po-status--${purchase.estado}`}>{getPurchaseStatusLabel(purchase.estado)}</span></td>
                     <td><Actions canManage={canManage} onAction={action} onOpen={open} processing={processing === purchase.id} purchase={purchase} /></td>
                   </tr>
                 ))}
-                {!filtered.length && <tr><td colSpan="8" className="po-history__empty">No hay compras coincidentes.</td></tr>}
+                {!filtered.length && <tr><td colSpan="7" className="po-history__empty">No hay compras coincidentes.</td></tr>}
               </tbody>
             </table>
           </section>
           <section className="po-history__cards" aria-label="Compras">
             {filtered.map((purchase) => (
               <article className="po-history-card" key={purchase.id}>
-                <header><div><span className="po-history-card__label">Compra</span><strong>{purchase.numero}</strong></div><span className={`po-status po-status--${purchase.estado}`}>{labels[purchase.estado]}</span></header>
+                <header><div><span className="po-history-card__label">Compra</span><button type="button" className="po-inline-link" onClick={() => open(purchase)}>{purchase.numero}</button></div><span className={`po-status po-status--${purchase.estado}`}>{getPurchaseStatusLabel(purchase.estado)}</span></header>
                 <div className="po-history-card__provider"><strong>{purchase.proveedorSnapshot.razonSocial}</strong><span>{purchase.proveedorSnapshot.rut || "Sin RUT"}</span></div>
-                <dl><div><dt>Fecha</dt><dd>{purchase.fechaCompra || "—"}</dd></div><div><dt>Total</dt><dd>{money(purchase.total)}</dd></div><div><dt>Documento</dt><dd>{purchase.numeroDocumentoProveedor || "Sin documento"}</dd></div><div><dt>Origen</dt><dd>{purchase.ordenCompraNumero || "Directa"}</dd></div></dl>
+                <dl><div><dt>Fecha</dt><dd>{purchase.fechaCompra || "—"}</dd></div><div><dt>Total</dt><dd>{money(purchase.total)}</dd></div><div><dt>Documento</dt><dd>{purchase.tipoDocumento === "sin_documento" ? "Sin documento" : purchase.numeroDocumentoProveedor || getPurchaseDocumentTypeLabel(purchase.tipoDocumento)}</dd></div><div><dt>Origen</dt><dd>{purchase.ordenCompraId ? <button type="button" className="po-inline-link" onClick={() => navigate(`/ordenes-compra/${purchase.ordenCompraId}`)}>{purchase.ordenCompraNumero || "Abrir OC"}</button> : "Directa"}</dd></div></dl>
                 <Actions canManage={canManage} onAction={action} onOpen={open} processing={processing === purchase.id} purchase={purchase} />
               </article>
             ))}
@@ -114,6 +116,7 @@ export default function PurchasesPage({businessId, role}) {
           </>
         )}
       </section>
+      <ResponsiveDialog open={Boolean(pendingAction)} onClose={() => !processing && setPendingAction(null)} eyebrow={pendingAction?.type === "confirmar" ? "Compra preparada" : "Más acciones"} title={pendingAction?.type === "confirmar" ? "Confirmar compra" : "Cancelar compra"} description={pendingAction?.type === "confirmar" ? "Al confirmar, se registrará el documento económico del proveedor." : "La compra preparada quedará cancelada sin modificar stock."} size="small" footer={<><Button type="button" variant="secondary" disabled={Boolean(processing)} onClick={() => setPendingAction(null)}>Volver</Button><Button type="button" variant={pendingAction?.type === "confirmar" ? "primary" : "danger"} disabled={Boolean(processing)} onClick={executeAction}>{processing ? "Procesando..." : pendingAction?.type === "confirmar" ? "Confirmar compra" : "Cancelar compra"}</Button></>}><p>{pendingAction?.type === "confirmar" ? "El stock no cambiará en este paso, porque el inventario se actualiza al confirmar las recepciones." : "Esta acción no se puede deshacer."}</p></ResponsiveDialog>
     </main>
   );
 }

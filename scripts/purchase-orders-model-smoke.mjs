@@ -210,7 +210,7 @@ assert.doesNotMatch(pageSource, /Quote[A-Z]/);
 assert.match(providerSelectorSource, /isHistorical \? originalSnapshot : selected/);
 assert.match(historySource, /po-history__cards/);
 assert.match(historySource, /<OrderActions/);
-assert.match(historySource, /Duplicar como borrador/);
+assert.match(historySource, /Duplicar como pendiente/);
 assert.match(purchaseOrderCssSource, /@media\(max-width:767px\)/);
 assert.doesNotMatch(purchaseOrderCssSource, /po-history__table\{min-width:800px\}/);
 console.log("OK integración estática: persistencia, reglas, vista imprimible y desacoplamiento");

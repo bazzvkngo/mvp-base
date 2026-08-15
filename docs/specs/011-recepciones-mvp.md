@@ -1,0 +1,42 @@
+# SPEC 011 — Recepciones MVP
+
+## Objetivo
+
+Separar lo solicitado, lo recibido físicamente y el documento económico:
+
+`Proveedor → Orden de compra → respuesta manual → Recepción → Inventario → Compra`
+
+## Fuente de verdad
+
+- La orden de compra conserva la solicitud histórica y no modifica stock.
+- `respuestaProveedor` es una dimensión informativa de la OC: `pendiente`, `confirmada` o `rechazada`.
+- La recepción registra lo recibido contra una OC emitida y es la única entrada nueva de abastecimiento.
+- La compra registra el documento económico. Las compras modelo 2 no modifican stock.
+- Compras y movimientos modelo 1 conservan compatibilidad histórica.
+
+## Persistencia y estados
+
+Las recepciones viven en `negocios/{businessId}/recepciones/{recepcionId}` y usan `REC-AAAA-NNNN`.
+Sus estados internos son `borrador`, `confirmada` y `cancelada`; en UI: Preparada, Recibida y Cancelada.
+
+Una recepción guarda snapshots del proveedor, OC y líneas, además de cantidades solicitadas, recibidas anteriormente y recibidas ahora. No modifica la OC histórica.
+
+## Invariantes autoritativas
+
+- Sólo OWNER/ADMIN escribe.
+- La OC debe pertenecer al negocio y estar emitida.
+- Sin respuesta no bloquea; una respuesta rechazada bloquea el camino principal hasta corregirla.
+- La suma confirmada por línea nunca supera la cantidad solicitada.
+- Guardar un borrador no cambia stock.
+- Confirmar suma stock sólo para productos; servicios y actividades no lo modifican.
+- `requestId`, `stockAplicado`, transacción y movimientos deterministas evitan doble aplicación.
+- Los movimientos nuevos usan `tipoOrigen: recepcion` y referencian recepción y OC.
+- El cliente no escribe directamente recepciones, contadores, idempotencia ni movimientos.
+
+## Compras y compatibilidad
+
+Una recepción confirmada puede preparar una compra con cantidades efectivamente recibidas. El usuario completa documento, costo real y descuentos. Confirmar una compra modelo 2 es exclusivamente económico y no vuelve a sumar stock.
+
+La compra directa sigue disponible, pero tampoco representa entrada física en el modelo 2. La recepción directa o ajuste queda fuera de este MVP.
+
+No hay migración destructiva. `confirmarCompra` conserva la aplicación de stock sólo para borradores históricos de modelo 1. Toda compra nueva usa `modeloCompraVersion: 2` y `stockGestionadoPor: recepcion`.

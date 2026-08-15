@@ -7,8 +7,11 @@ import {
   calculatePurchaseLine,
   calculatePurchaseTotals,
   canManagePurchases,
+  getPurchaseDocumentTypeLabel,
+  getPurchaseStatusLabel,
   matchesPurchaseSearch,
   PURCHASE_STATUSES,
+  shouldReconcilePurchaseConfirmation,
 } from "../src/domain/purchaseModel.mjs";
 
 const require = createRequire(import.meta.url);
@@ -113,6 +116,10 @@ assert.equal(canManagePurchases("OWNER"), true);
 assert.equal(canManagePurchases("ADMIN"), true);
 assert.equal(canManagePurchases("MEMBER"), false);
 assert.deepEqual(PURCHASE_STATUSES, ["borrador", "confirmada", "cancelada"]);
+assert.equal(getPurchaseStatusLabel("borrador"), "Preparada");
+assert.equal(getPurchaseDocumentTypeLabel("sin_documento"), "Sin documento");
+assert.equal(shouldReconcilePurchaseConfirmation({code: "unavailable"}), true);
+assert.equal(shouldReconcilePurchaseConfirmation({code: "permission-denied"}), false);
 console.log("OK compras modelo: adaptación, búsqueda y roles");
 
 const backend = fs.readFileSync(new URL("../functions/purchasePersistence.js", import.meta.url), "utf8");

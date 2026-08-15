@@ -380,6 +380,31 @@ try {
   assert.equal(new Set(numbers).size, numbers.length);
   console.log("OK concurrencia: numeración transaccional distinta por negocio/año");
 
+  const emailDraftId = concurrent[0].data.ordenCompra.id;
+  const simulatedEmail = await call(owner, "sendPurchaseOrderEmail")({
+    businessId,
+    ordenCompraId: emailDraftId,
+    emailProveedor: "compras@proveedor.test",
+    pdfBase64: Buffer.from("%PDF-1.4\n%%EOF").toString("base64"),
+    pdfFilename: `${concurrent[0].data.ordenCompra.numero}.pdf`,
+    pdfMimeType: "application/pdf",
+  });
+  assert.equal(simulatedEmail.data.simulated, true);
+  assert.equal((await adminDb.doc(
+    `negocios/${businessId}/ordenesCompra/${emailDraftId}`
+  ).get()).data().estado, "borrador");
+  await expectCallableError("MEMBER no envía OC por correo", () =>
+    call(member, "sendPurchaseOrderEmail")({
+      businessId,
+      ordenCompraId: emailDraftId,
+      emailProveedor: "compras@proveedor.test",
+      pdfBase64: Buffer.from("%PDF-1.4\n%%EOF").toString("base64"),
+      pdfFilename: "orden.pdf",
+      pdfMimeType: "application/pdf",
+    }),
+  ["permission-denied"]);
+  console.log("OK correo OC: simulación local conserva pendiente y MEMBER es rechazado");
+
   const emitted = await call(owner, "emitirOrdenCompra")({
     businessId, ordenCompraId: created.id,
   });
@@ -388,6 +413,16 @@ try {
     businessId, ordenCompraId: created.id,
   });
   assert.equal(emittedRetry.data.idempotent, true);
+  const whatsAppResend = await call(owner, "emitirOrdenCompra")({
+    businessId,
+    ordenCompraId: created.id,
+    canalEmision: "whatsapp",
+    destinatario: "+56 9 1234 5678",
+  });
+  assert.equal(whatsAppResend.data.idempotent, false);
+  assert.equal(whatsAppResend.data.ordenCompra.estado, "emitida");
+  assert.equal(whatsAppResend.data.ordenCompra.ultimoCanalEnvio, "whatsapp");
+  assert.equal(whatsAppResend.data.ordenCompra.cantidadEnvios, 2);
   await expectCallableError("emitida no se edita", () =>
     call(owner, "actualizarOrdenCompraBorrador")({businessId, ordenCompraId: created.id, ordenCompra: orderPayload(providerBId, itemBId)}),
   ["failed-precondition"]);
@@ -569,6 +604,9 @@ try {
   ));
   await expectDenied("request de duplicación no se lee", () => getDoc(
     doc(owner.db, `negocios/${businessId}/purchaseOrderDuplicateRequests/${duplicateRequestId}`)
+  ));
+  await expectDenied("intento de correo OC no se lee", () => getDoc(
+    doc(owner.db, `negocios/${businessId}/purchaseOrderEmailAttempts/${emailDraftId}`)
   ));
   console.log("OK reglas: MEMBER lee; escrituras directas e internos quedan cerrados");
 

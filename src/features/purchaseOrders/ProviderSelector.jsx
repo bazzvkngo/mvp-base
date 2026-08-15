@@ -2,6 +2,8 @@ import React, {useMemo, useState} from "react";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import {matchesProviderSearch} from "../../domain/providerModel.mjs";
 
+const paymentLabel = (value) => ({contado: "Contado", transferencia: "Transferencia", credito: "Crédito", otro: "Otro"})[value] || value;
+
 export default function ProviderSelector({
   disabled,
   emptyMessage = "Selecciona un proveedor.",
@@ -28,7 +30,11 @@ export default function ProviderSelector({
             <strong className="po-provider__name">{display.razonSocial}</strong>
             <div className="po-provider__metadata">
               <span>RUT {display.rut || "no informado"}</span>
-              <span>{display.personaContacto || display.email || "Sin contacto informado"}</span>
+              <span>{display.personaContacto || "Sin contacto informado"}</span>
+              <span>{display.email || "Sin correo"}</span>
+              <span>{display.telefono || "Sin teléfono"}</span>
+              <span>{[display.direccion, display.comunaNombre, display.regionNombre].filter(Boolean).join(", ") || "Sin dirección"}</span>
+              <span>{paymentLabel(display.condicionesPago) || "Sin condiciones de pago"}{display.condicionesPago === "credito" && display.diasCredito ? ` · ${display.diasCredito} días` : ""}</span>
             </div>
             {isHistorical && <em className="po-provider__snapshot">Snapshot histórico conservado</em>}
           </>
@@ -65,7 +71,7 @@ export default function ProviderSelector({
                 }}
               >
                 <strong>{provider.razonSocial}</strong>
-                <span>{provider.rut} · {provider.condicionesPago || "Sin condición"}</span>
+                <span>{provider.rut} · {paymentLabel(provider.condicionesPago) || "Sin condición"}</span>
               </button>
             ))}
             {!activeProviders.length && <p>No hay proveedores activos coincidentes.</p>}

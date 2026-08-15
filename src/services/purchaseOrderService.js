@@ -124,10 +124,12 @@ export function actualizarOrdenCompraBorrador(businessId, ordenCompraId, raw) {
   }, "No pudimos guardar el borrador.");
 }
 
-export function emitirOrdenCompra(businessId, ordenCompraId) {
+export function emitirOrdenCompra(businessId, ordenCompraId, options = {}) {
   return callPurchaseOrder("emitirOrdenCompra", {
     businessId: requireBusinessId(businessId),
     ordenCompraId: requireOrderId(ordenCompraId),
+    canalEmision: options.canalEmision || "manual",
+    destinatario: options.destinatario || "",
   }, "No pudimos emitir la orden de compra.");
 }
 
@@ -136,4 +138,13 @@ export function cancelarOrdenCompra(businessId, ordenCompraId) {
     businessId: requireBusinessId(businessId),
     ordenCompraId: requireOrderId(ordenCompraId),
   }, "No pudimos cancelar la orden de compra.");
+}
+
+export function registrarRespuestaProveedor(businessId, ordenCompraId, estado, comentario = "") {
+  return callPurchaseOrder("registrarRespuestaProveedorOrdenCompra", {
+    businessId: requireBusinessId(businessId),
+    ordenCompraId: requireOrderId(ordenCompraId),
+    estado,
+    comentario,
+  }, "No pudimos registrar la respuesta del proveedor.");
 }

@@ -8,6 +8,7 @@ import {
   History,
   LayoutDashboard,
   ReceiptText,
+  PackageCheck,
   UserRound,
   UsersRound,
   WalletCards,
@@ -71,6 +72,14 @@ export const navigationSections = [
         activeWhen: (pathname) =>
           pathname === "/ordenes-compra" ||
           pathname.startsWith("/ordenes-compra/"),
+      },
+      {
+        to: "/recepciones",
+        label: "Recepciones",
+        title: "Recepciones",
+        icon: PackageCheck,
+        activeWhen: (pathname) =>
+          pathname === "/recepciones" || pathname.startsWith("/recepciones/"),
       },
       {
         to: "/compras",
@@ -172,6 +181,12 @@ export function getRouteMeta(pathname) {
   }
   if (pathname === "/compras/nueva") {
     return { title: "Nueva compra" };
+  }
+  if (/^\/recepciones\/[^/]+\/editar$/.test(pathname)) {
+    return { title: "Editar recepcion" };
+  }
+  if (/^\/recepciones\/[^/]+$/.test(pathname)) {
+    return { title: "Ver recepcion" };
   }
   if (pathname === "/ordenes-compra/nueva") {
     return { title: "Nueva orden de compra" };

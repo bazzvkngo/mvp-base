@@ -1,6 +1,15 @@
 import React, {useEffect, useMemo, useRef, useState} from "react";
 import {useLocation, useNavigate, useParams} from "react-router-dom";
-import {calculatePurchaseTotals, canManagePurchases} from "../domain/purchaseModel.mjs";
+import {sileo} from "sileo";
+import Button from "../components/ui/Button";
+import ResponsiveDialog from "../components/ui/ResponsiveDialog";
+import {
+  calculatePurchaseTotals,
+  canManagePurchases,
+  getPurchaseDocumentTypeLabel,
+  getPurchaseStatusLabel,
+  shouldReconcilePurchaseConfirmation,
+} from "../domain/purchaseModel.mjs";
 import ProviderSelector from "../features/purchaseOrders/ProviderSelector";
 import PurchaseCatalogDialog from "../features/purchases/PurchaseCatalogDialog";
 import PurchaseItemsEditor from "../features/purchases/PurchaseItemsEditor";
@@ -46,18 +55,23 @@ export default function NewPurchasePage({businessId, role}) {
   const [inventory, setInventory] = useState([]);
   const [company, setCompany] = useState(null);
   const [catalogOpen, setCatalogOpen] = useState(false);
+  const [actionDialog, setActionDialog] = useState("");
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
-  const [message, setMessage] = useState(() => location.state?.message || "");
+  const [message, setMessage] = useState("");
   const createId = useRef(createPurchaseRequestId("purchase-create"));
   const confirmId = useRef(createPurchaseRequestId("purchase-confirm"));
+  const pendingConfirmationPurchaseId = useRef("");
   const canManage = canManagePurchases(role);
   const readOnly = !canManage || Boolean(purchase && purchase.estado !== "borrador");
-  const referencesLocked = Boolean(purchase?.ordenCompraId);
+  const referencesLocked = Boolean(purchase?.ordenCompraId || purchase?.recepcionId);
 
   useEffect(() => {
-    if (location.state?.message) setMessage(location.state.message);
-  }, [location.state?.message]);
+    if (location.state?.message) {
+      sileo.success({title: location.state.message, description: location.state?.description});
+      navigate(location.pathname, {replace: true, state: {}});
+    }
+  }, [location.pathname, location.state?.description, location.state?.message, navigate]);
 
   useEffect(() => {
     let active = true;
@@ -139,48 +153,88 @@ export default function NewPurchasePage({businessId, role}) {
     try {
       const stored = await persist();
       setPurchase(stored);
+      pendingConfirmationPurchaseId.current = "";
       createId.current = createPurchaseRequestId("purchase-create");
-      setMessage("Borrador guardado.");
       if (!compraId) {
         navigate(`/compras/${stored.id}/editar`, {
           replace: true,
-          state: {message: "Borrador guardado."},
+          state: {message: "Compra preparada", description: `${stored.numero} quedó preparada para confirmar.`},
         });
+      } else {
+        sileo.success({title: "Compra actualizada", description: `${stored.numero} continúa preparada para confirmar.`});
       }
     } catch (error) {
       setMessage(error.message);
+      sileo.error({title: "No se pudo guardar la compra", description: error.message});
     } finally {
       setProcessing(false);
     }
   };
 
   const confirm = async () => {
-    if (!globalThis.confirm(
-      "Al confirmar la compra se actualizará el stock de los productos incluidos. Esta acción no podrá editarse posteriormente."
-    )) return;
+    setActionDialog("");
     setProcessing(true);
     setMessage("");
+    let stored = purchase;
     try {
-      const stored = await persist();
+      if (!stored || pendingConfirmationPurchaseId.current !== stored.id) {
+        stored = await persist();
+        setPurchase(stored);
+      }
+    } catch (error) {
+      setMessage(error.message);
+      sileo.error({title: "No se pudo preparar la compra", description: error.message});
+      setProcessing(false);
+      return;
+    }
+    pendingConfirmationPurchaseId.current = stored.id;
+    const finishConfirmation = (confirmed, productsUpdated) => {
+      pendingConfirmationPurchaseId.current = "";
+      confirmId.current = createPurchaseRequestId("purchase-confirm");
+      setPurchase(confirmed);
+      navigate(`/compras/${confirmed.id}`, {
+        replace: true,
+        state: {
+          message: "Compra confirmada",
+          description: productsUpdated
+            ? "Compra histórica confirmada con su comportamiento de stock original."
+            : "Documento económico confirmado. No se modificó stock.",
+        },
+      });
+    };
+    try {
       const result = await confirmarCompra(businessId, stored.id, {
         requestId: confirmId.current,
       });
-      confirmId.current = createPurchaseRequestId("purchase-confirm");
-      setPurchase(result.compra);
-      const success = result.productosActualizados
-        ? "Compra confirmada. El inventario fue actualizado."
-        : "Compra confirmada.";
-      setMessage(success);
-      navigate(`/compras/${stored.id}`, {replace: true, state: {message: success}});
+      finishConfirmation(result.compra, result.productosActualizados);
     } catch (error) {
-      setMessage(error.message);
+      if (!shouldReconcilePurchaseConfirmation(error)) {
+        pendingConfirmationPurchaseId.current = "";
+        setMessage(error.message);
+        sileo.error({title: "No se pudo confirmar la compra", description: error.message});
+      } else {
+        try {
+          const authoritative = await obtenerCompra(businessId, stored.id);
+          if (authoritative?.estado === "confirmada" || authoritative?.stockAplicado === true) {
+            finishConfirmation(authoritative);
+          } else {
+            if (authoritative) setPurchase(authoritative);
+            setMessage(error.message);
+            sileo.error({title: "No se pudo confirmar la compra", description: "La compra continúa preparada. Puedes reintentar con seguridad."});
+          }
+        } catch {
+          setMessage(error.message);
+          sileo.error({title: "No se pudo verificar la confirmación", description: "Recarga la compra antes de volver a intentarlo."});
+        }
+      }
     } finally {
       setProcessing(false);
     }
   };
 
   const cancel = async () => {
-    if (!purchase || !globalThis.confirm("¿Cancelar este borrador de compra?")) return;
+    if (!purchase) return;
+    setActionDialog("");
     setProcessing(true);
     try {
       const result = await cancelarCompraBorrador(businessId, purchase.id);
@@ -188,14 +242,21 @@ export default function NewPurchasePage({businessId, role}) {
       setMessage("Compra cancelada.");
       navigate(`/compras/${purchase.id}`, {
         replace: true,
-        state: {message: "Compra cancelada."},
+        state: {message: "Compra cancelada", description: `${purchase.numero} quedó cancelada sin modificar stock.`},
       });
     } catch (error) {
       setMessage(error.message);
+      sileo.error({title: "No se pudo cancelar la compra", description: error.message});
     } finally {
       setProcessing(false);
     }
   };
+
+  const changeDocumentType = (tipoDocumento) => setDraft((current) => ({
+    ...current,
+    tipoDocumento,
+    ...(tipoDocumento === "sin_documento" ? {numeroDocumentoProveedor: "", fechaDocumento: ""} : {}),
+  }));
 
   if (loading) return <p className="muted">Cargando compra...</p>;
 
@@ -207,7 +268,7 @@ export default function NewPurchasePage({businessId, role}) {
           <div className="po-header__title-row">
             <h1>{purchase ? "Compra" : "Nueva compra"}</h1>
             <span className={`po-status po-status--${purchase?.estado || "borrador"}`}>
-              {purchase?.estado || "Borrador"}
+              {getPurchaseStatusLabel(purchase?.estado || "borrador")}
             </span>
           </div>
           <div className="po-header__meta">
@@ -226,18 +287,19 @@ export default function NewPurchasePage({businessId, role}) {
           )}
         </div>
       </header>
-      {message && <p className="po-message no-print">{message}</p>}
-      {purchase?.ordenCompraNumero && (
+      {message && <p className="po-message po-message--error no-print">{message}</p>}
+      {purchase && (
         <div className="purchase-origin no-print">
-          <strong>Originada desde {purchase.ordenCompraNumero}</strong>
-          <button type="button" className="po-button po-button--secondary" onClick={() => navigate(`/ordenes-compra/${purchase.ordenCompraId}`)}>
+          <strong>{purchase.recepcionNumero ? `Originada desde ${purchase.recepcionNumero}` : purchase.ordenCompraNumero ? `Originada desde ${purchase.ordenCompraNumero}` : "Origen: Directa"}</strong>
+          {purchase.recepcionId && <button type="button" className="po-button po-button--secondary" onClick={() => navigate(`/recepciones/${purchase.recepcionId}`)}>Ver recepción</button>}
+          {purchase.ordenCompraId && <button type="button" className="po-button po-button--secondary" onClick={() => navigate(`/ordenes-compra/${purchase.ordenCompraId}`)}>
             Ver orden
-          </button>
+          </button>}
         </div>
       )}
       {purchase?.estado === "confirmada" && purchase.stockAplicado &&
         purchase.items.some((item) => item.tipoItem === "producto") && (
-        <p className="purchase-stock-note no-print">Stock aplicado al confirmar esta compra.</p>
+        <p className="purchase-stock-note no-print">El inventario se actualizó al confirmar esta compra.</p>
       )}
       <div className="no-print">
         <ProviderSelector
@@ -264,28 +326,28 @@ export default function NewPurchasePage({businessId, role}) {
               </summary>
               {readOnly ? (
                 <dl className="po-line__readonly">
-                  <div><dt>Tipo</dt><dd>{draft.tipoDocumento}</dd></div>
-                  <div><dt>Número</dt><dd>{draft.numeroDocumentoProveedor || "—"}</dd></div>
+                  <div><dt>Tipo</dt><dd>{getPurchaseDocumentTypeLabel(draft.tipoDocumento)}</dd></div>
+                  {draft.tipoDocumento !== "sin_documento" && <div><dt>Número</dt><dd>{draft.numeroDocumentoProveedor || "—"}</dd></div>}
                   <div><dt>Fecha compra</dt><dd>{draft.fechaCompra}</dd></div>
-                  <div><dt>Fecha documento</dt><dd>{draft.fechaDocumento || "—"}</dd></div>
+                  {draft.tipoDocumento !== "sin_documento" && <div><dt>Fecha documento</dt><dd>{draft.fechaDocumento || "—"}</dd></div>}
                 </dl>
               ) : (
                 <div className="purchase-document-grid">
                   <label>Tipo de documento
-                    <select value={draft.tipoDocumento} onChange={(event) => setDraft({...draft, tipoDocumento: event.target.value})}>
+                    <select value={draft.tipoDocumento} onChange={(event) => changeDocumentType(event.target.value)}>
                       <option value="factura">Factura</option><option value="boleta">Boleta</option>
-                      <option value="otro">Nota / Otro</option><option value="sin_documento">Sin documento</option>
+                      <option value="otro">Otro</option><option value="sin_documento">Sin documento</option>
                     </select>
                   </label>
-                  <label>Número documento proveedor
+                  {draft.tipoDocumento !== "sin_documento" && <label>Número documento proveedor
                     <input value={draft.numeroDocumentoProveedor} onChange={(event) => setDraft({...draft, numeroDocumentoProveedor: event.target.value})} />
-                  </label>
+                  </label>}
                   <label>Fecha compra
                     <input type="date" value={draft.fechaCompra} onChange={(event) => setDraft({...draft, fechaCompra: event.target.value})} />
                   </label>
-                  <label>Fecha documento
+                  {draft.tipoDocumento !== "sin_documento" && <label>Fecha documento
                     <input type="date" value={draft.fechaDocumento} onChange={(event) => setDraft({...draft, fechaDocumento: event.target.value})} />
-                  </label>
+                  </label>}
                 </div>
               )}
             </details>
@@ -320,8 +382,9 @@ export default function NewPurchasePage({businessId, role}) {
           </div>
           <PurchaseSummaryPanel
             disabled={readOnly}
-            onCancel={purchase ? cancel : null}
-            onConfirm={confirm}
+            isNew={!purchase}
+            onCancel={purchase ? () => setActionDialog("cancel") : null}
+            onConfirm={() => setActionDialog("confirm")}
             onSave={save}
             processing={processing}
             totals={totals}
@@ -335,6 +398,8 @@ export default function NewPurchasePage({businessId, role}) {
         onClose={() => setCatalogOpen(false)}
         open={catalogOpen}
       />
+      <ResponsiveDialog open={actionDialog === "confirm"} onClose={() => !processing && setActionDialog("")} eyebrow="Compra preparada" title="Confirmar compra" description="Al confirmar, se registrará el documento económico del proveedor." size="small" footer={<><Button type="button" variant="secondary" disabled={processing} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" disabled={processing} onClick={confirm}>{processing ? "Confirmando..." : "Confirmar compra"}</Button></>}><p>El stock no cambiará en este paso, porque el inventario se actualiza al confirmar las recepciones.</p></ResponsiveDialog>
+      <ResponsiveDialog open={actionDialog === "cancel"} onClose={() => !processing && setActionDialog("")} eyebrow="Más acciones" title="Cancelar compra" description="La compra preparada quedará cancelada y ya no podrá editarse." size="small" footer={<><Button type="button" variant="secondary" disabled={processing} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" variant="danger" disabled={processing} onClick={cancel}>{processing ? "Cancelando..." : "Cancelar compra"}</Button></>}><p>Cancelar una compra preparada no modifica stock.</p></ResponsiveDialog>
     </main>
   );
 }

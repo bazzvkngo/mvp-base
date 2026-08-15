@@ -681,21 +681,61 @@ async function transitionOrder(request, dependencies, targetStatus) {
     if (existing.negocioId !== businessId) {
       fail(HttpsError, "permission-denied", "No puedes modificar esta orden.");
     }
-    if (existing.estado === targetStatus) {
+    const hasExplicitEmission = Boolean(
+      request?.data?.canalEmision || request?.data?.destinatario
+    );
+    if (
+      existing.estado === targetStatus &&
+      (targetStatus !== "emitida" || !hasExplicitEmission)
+    ) {
       return {ordenCompra: {id: orderId, ...existing}, idempotent: true};
     }
-    if (targetStatus === "emitida" && existing.estado !== "borrador") {
+    if (targetStatus === "emitida" && !["borrador", "emitida"].includes(existing.estado)) {
       fail(HttpsError, "failed-precondition", "Solo puedes emitir una orden en borrador.");
     }
     if (targetStatus === "cancelada" && !["borrador", "emitida"].includes(existing.estado)) {
       fail(HttpsError, "failed-precondition", "La orden no se puede cancelar.");
     }
     const timestamp = FieldValue.serverTimestamp();
+    const emissionChannel = safeText(
+      request?.data?.canalEmision || "manual",
+      20
+    ).toLowerCase();
+    if (
+      targetStatus === "emitida" &&
+      !["correo", "whatsapp", "manual"].includes(emissionChannel)
+    ) {
+      fail(HttpsError, "invalid-argument", "El canal de emisión no es válido.");
+    }
+    const emissionDestination = safeText(
+      request?.data?.destinatario || "",
+      180
+    );
+    if (/\r|\n/.test(emissionDestination)) {
+      fail(HttpsError, "invalid-argument", "El destino de emisión no es válido.");
+    }
+    const isResend = targetStatus === "emitida" && existing.estado === "emitida";
     const update = {
       estado: targetStatus,
       actualizadoPorUid: uid,
       actualizadoEn: timestamp,
-      ...(targetStatus === "emitida" ? {emitidaEn: timestamp} : {canceladaEn: timestamp}),
+      ...(targetStatus === "emitida" ? {
+        ...(isResend ? {} : {
+          emitidaEn: timestamp,
+          emitidaPorUid: uid,
+          canalEmision: emissionChannel,
+          destinatarioEmision: emissionDestination,
+        }),
+        cantidadEnvios: Number(existing.cantidadEnvios || 0) + 1,
+        ultimoEnvioEn: timestamp,
+        ultimoEnvioPorUid: uid,
+        ultimoCanalEnvio: emissionChannel,
+        ultimoDestinatarioEnvio: emissionDestination,
+        ...(isResend ? {
+          reenviadaEn: timestamp,
+          reenviadaPorUid: uid,
+        } : {}),
+      } : {canceladaEn: timestamp, canceladaPorUid: uid}),
     };
     transaction.update(orderRef, update);
     return {
@@ -713,6 +753,49 @@ function cancelarOrdenCompraHandler(request, dependencies) {
   return transitionOrder(request, dependencies, "cancelada");
 }
 
+async function registrarRespuestaProveedorHandler(request, dependencies) {
+  const {db, FieldValue, HttpsError} = dependencies;
+  const {uid, businessId, businessRef} = await requireWriteAccess(
+    request,
+    dependencies
+  );
+  const orderId = requireId(request?.data?.ordenCompraId, "La orden", HttpsError);
+  const state = safeText(request?.data?.estado, 20).toLowerCase();
+  if (!["confirmada", "rechazada"].includes(state)) {
+    fail(HttpsError, "invalid-argument", "Selecciona una respuesta valida.");
+  }
+  const orderRef = businessRef.collection("ordenesCompra").doc(orderId);
+  return withTransactionRetry(db, async (transaction) => {
+    const snapshot = await transaction.get(orderRef);
+    if (!snapshot.exists) fail(HttpsError, "not-found", "La orden no existe.");
+    const order = snapshot.data() || {};
+    if (order.negocioId !== businessId) {
+      fail(HttpsError, "permission-denied", "No puedes modificar esta orden.");
+    }
+    if (order.estado !== "emitida") {
+      fail(HttpsError, "failed-precondition", "La respuesta solo se registra en ordenes emitidas.");
+    }
+    const timestamp = FieldValue.serverTimestamp();
+    const answer = {
+      estado: state,
+      fecha: timestamp,
+      registradaPorUid: uid,
+      registradaPorNombre: safeText(request.auth?.token?.name, 160),
+      registradaPorEmail: safeText(request.auth?.token?.email, 240),
+      comentario: safeText(request?.data?.comentario, 2000),
+    };
+    const update = {
+      respuestaProveedor: answer,
+      actualizadoPorUid: uid,
+      actualizadoEn: timestamp,
+    };
+    transaction.update(orderRef, update);
+    return {
+      ordenCompra: {id: orderId, ...order, ...update, actualizadoEn: null},
+    };
+  });
+}
+
 module.exports = {
   PURCHASE_ORDER_MODEL_VERSION,
   actualizarOrdenCompraBorradorHandler,
@@ -727,4 +810,5 @@ module.exports = {
   historicalPurchaseOrderCopyInput,
   normalizePurchaseOrderInput,
   providerSnapshotFromDocument,
+  registrarRespuestaProveedorHandler,
 };

@@ -733,6 +733,32 @@ service cloud.firestore {
         allow read, create, update, delete: if false;
       }
 
+      match /purchaseOrderEmailAttempts/{attemptId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /recepciones/{recepcionId} {
+        allow read: if canAccessBusiness(businessId)
+          && resource.data.negocioId == businessId;
+        allow create, update, delete: if false;
+      }
+
+      match /receptionCounters/{counterId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /receptionCreateRequests/{requestId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /receptionConfirmRequests/{requestId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /receptionPurchaseConversionRequests/{requestId} {
+        allow read, create, update, delete: if false;
+      }
+
       match /compras/{compraId} {
         allow read: if canAccessBusiness(businessId)
           && resource.data.negocioId == businessId;

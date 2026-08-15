@@ -9,6 +9,7 @@ export const PURCHASE_ORDER_STATUSES = Object.freeze([
 const STATUS_SET = new Set(PURCHASE_ORDER_STATUSES);
 const ITEM_TYPE_SET = new Set(["producto", "servicio", "actividad"]);
 const MAXIMUM_AMOUNT_MESSAGE = "El monto de la orden supera el máximo permitido.";
+const paymentLabel = (value) => ({contado: "Contado", transferencia: "Transferencia", credito: "Crédito", otro: "Otro"})[value] || value;
 
 function text(value, maxLength = 2000) {
   return String(value ?? "").trim().replace(/\s+/g, " ").slice(0, maxLength);
@@ -102,7 +103,7 @@ export function buildPurchaseOrderMutationPayload(raw = {}) {
     proveedorId,
     fechaEntregaEstimada: text(raw.fechaEntregaEstimada, 10),
     direccionEntrega: text(raw.direccionEntrega, 500),
-    condicionesPago: text(raw.condicionesPago, 2000),
+    condicionesPago: paymentLabel(text(raw.condicionesPago, 2000)),
     observaciones: text(raw.observaciones, 4000),
     items: raw.items.map((item, index) => {
       const calculated = calculatePurchaseOrderLine(item, index);
@@ -182,7 +183,7 @@ export function adaptStoredPurchaseOrder(raw = {}) {
     fechaEmision: text(raw.fechaEmision || raw.fecha, 10),
     fechaEntregaEstimada: text(raw.fechaEntregaEstimada, 10),
     direccionEntrega: text(raw.direccionEntrega, 500),
-    condicionesPago: text(raw.condicionesPago, 2000),
+    condicionesPago: paymentLabel(text(raw.condicionesPago, 2000)),
     observaciones: text(raw.observaciones, 4000),
     moneda: "CLP",
     tasaIva: PURCHASE_ORDER_VAT_RATE,
@@ -205,4 +206,15 @@ export function matchesPurchaseOrderSearch(order, search) {
 
 export function canManagePurchaseOrders(role) {
   return ["OWNER", "ADMIN"].includes(String(role || "").toUpperCase());
+}
+
+export function getSupplierResponseState(order) {
+  const value = text(order?.respuestaProveedor?.estado, 20).toLowerCase();
+  return ["confirmada", "rechazada"].includes(value) ? value : "pendiente";
+}
+
+export function getSupplierResponseLabel(order) {
+  return ({confirmada: "Confirmada por proveedor", rechazada: "Rechazada por proveedor", pendiente: "Sin respuesta"})[
+    getSupplierResponseState(order)
+  ];
 }

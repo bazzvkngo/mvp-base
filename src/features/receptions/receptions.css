@@ -1,0 +1,12 @@
+@import "../purchaseOrders/purchase-orders.css";
+
+.reception-callout { align-items: center; background: #f0fdfa; border: 1px solid #99d8cf; border-radius: 8px; color: #075f59; display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; margin-bottom: 16px; padding: 12px 14px; }
+.reception-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.reception-grid label { display: grid; font-size: 13px; font-weight: 700; gap: 6px; }
+.reception-grid input, .reception-grid textarea { border: 1px solid #c9d4da; border-radius: 6px; font: inherit; min-height: 42px; padding: 9px 11px; }
+.reception-grid__wide { grid-column: 1 / -1; }
+.reception-qty { max-width: 110px; }
+.po-status--recibida_parcial { background: #fff7ed; color: #9a3412; }
+.po-status--recibida_total { background: #dcfce7; color: #166534; }
+.po-status--sin_recepcion { background: #f1f5f9; color: #475569; }
+@media (max-width: 620px) { .reception-grid { grid-template-columns: 1fr; } .reception-grid__wide { grid-column: auto; } }
