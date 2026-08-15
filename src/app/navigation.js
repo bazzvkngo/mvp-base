@@ -12,7 +12,6 @@ import {
   PackageCheck,
   UserRound,
   UsersRound,
-  WalletCards,
   Truck,
   ShoppingCart,
 } from "lucide-react";
@@ -93,7 +92,7 @@ export const navigationSections = [
     ],
   },
   {
-    label: "Inventario",
+    label: "Operación",
     items: [
       {
         to: "/inventario",
@@ -101,11 +100,6 @@ export const navigationSections = [
         title: "Inventario",
         icon: Boxes,
       },
-    ],
-  },
-  {
-    label: "Operación",
-    items: [
       {
         to: "/trabajos",
         label: "Proyectos y trabajos",
@@ -124,12 +118,6 @@ export const navigationSections = [
         icon: BarChart3,
       },
       {
-        to: "/finanzas",
-        label: "Finanzas",
-        title: "Finanzas",
-        icon: WalletCards,
-      },
-      {
         to: "/valorizacion",
         label: "Valorización",
         title: "Valorización",
@@ -140,12 +128,6 @@ export const navigationSections = [
         label: "Referencias",
         title: "Referencias de mercado",
         icon: BookOpenCheck,
-      },
-      {
-        to: "/tareas-referencias",
-        label: "Tareas de referencias",
-        title: "Tareas de referencias",
-        icon: ClipboardCheck,
       },
     ],
   },
@@ -180,6 +162,10 @@ export const navigationSections = [
 ];
 
 const navigationItems = navigationSections.flatMap((section) => section.items);
+const hiddenRouteMeta = Object.freeze({
+  "/finanzas": { title: "Finanzas" },
+  "/tareas-referencias": { title: "Tareas de referencias" },
+});
 
 export function getRouteMeta(pathname) {
   if (pathname === "/resumen") {
@@ -226,7 +212,8 @@ export function getRouteMeta(pathname) {
   }
 
   return (
-    navigationItems.find((item) => item.to === pathname) || {
+    navigationItems.find((item) => item.to === pathname) ||
+    hiddenRouteMeta[pathname] || {
       title: "ValoraCloud",
     }
   );
