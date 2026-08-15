@@ -258,7 +258,7 @@ export function validateInventoryImportPreviewRow(item, areas, categories) {
     errors.push("El Costo base debe ser un número mayor o igual a cero.");
   }
   if (!isNonNegativeNumber(item?.margenDeseado)) {
-    errors.push("El Margen debe ser un número mayor o igual a cero.");
+    errors.push("El Recargo debe ser un número mayor o igual a cero.");
   }
 
   if (type === "producto") {

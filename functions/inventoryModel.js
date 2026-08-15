@@ -1,6 +1,7 @@
 const { createHash } = require("node:crypto");
 
 const INVENTORY_MODEL_VERSION = 2;
+const INVENTORY_PRICE_FORMATION_VERSION = 2;
 const MAX_INVENTORY_IMPORT_BATCH_SIZE = 200;
 const INVENTORY_TYPES = Object.freeze(["producto", "servicio", "actividad"]);
 const INTERNAL_CODE_PREFIXES = Object.freeze({
@@ -152,6 +153,27 @@ function inventoryPersistenceData(item) {
   return data;
 }
 
+function calculateInventoryPriceFormation({
+  costoBase,
+  tasaImpuestoCompra,
+  margenDeseado,
+  precioInterno,
+  precioManual,
+}) {
+  const montoImpuestoCompra = Math.round(costoBase * tasaImpuestoCompra / 100);
+  const costoPagado = Math.round(costoBase * (1 + tasaImpuestoCompra / 100));
+  const precioVentaSugerido = Math.round(
+    costoBase * (1 + tasaImpuestoCompra / 100) * (1 + margenDeseado / 100)
+  );
+  return {
+    tasaImpuestoCompra,
+    montoImpuestoCompra,
+    costoPagado,
+    precioVentaSugerido,
+    precioInterno: precioManual ? precioInterno : precioVentaSugerido,
+  };
+}
+
 async function assertRequestedCodesAvailable(userRef, codes, HttpsError) {
   const requestedCodes = new Set(
     codes.map(normalizeInventoryCodeForComparison).filter(Boolean)
@@ -231,20 +253,22 @@ function validateInventoryItemInput(
   const costoBase = toFiniteNumber(source.costoBase, "El costo base", HttpsError);
   const margenDeseado = toFiniteNumber(
     source.margenDeseado,
-    "El margen deseado",
+    "El recargo",
     HttpsError
   );
   if (margenDeseado > 1000) {
     throw new HttpsError(
       "invalid-argument",
-      "El margen deseado no puede superar 1000%."
+      "El recargo no puede superar 1000%."
     );
   }
+  const usesPurchaseTaxPriceFormation = tipoItem === "producto" &&
+    Number(source.formacionPrecioVersion) === INVENTORY_PRICE_FORMATION_VERSION;
   const calculatedPrice = Math.round(
     costoBase + (costoBase * margenDeseado) / 100
   );
   const precioManual = source.precioManual === true;
-  const precioInterno = precioManual
+  let precioInterno = precioManual
     ? toFiniteNumber(source.precioInterno, "El precio interno", HttpsError)
     : calculatedPrice;
 
@@ -269,6 +293,33 @@ function validateInventoryItemInput(
   if (codigoSolicitado) result.codigoSolicitado = codigoSolicitado;
 
   if (tipoItem === "producto") {
+    if (usesPurchaseTaxPriceFormation) {
+      const tasaImpuestoCompra = toFiniteNumber(
+        source.tasaImpuestoCompra,
+        "El IVA de compra",
+        HttpsError
+      );
+      if (tasaImpuestoCompra > 100) {
+        throw new HttpsError(
+          "invalid-argument",
+          "El IVA de compra no puede superar 100%."
+        );
+      }
+      const formation = calculateInventoryPriceFormation({
+        costoBase,
+        tasaImpuestoCompra,
+        margenDeseado,
+        precioInterno,
+        precioManual,
+      });
+      precioInterno = formation.precioInterno;
+      result.precioInterno = precioInterno;
+      result.formacionPrecioVersion = INVENTORY_PRICE_FORMATION_VERSION;
+      result.tasaImpuestoCompra = formation.tasaImpuestoCompra;
+      result.montoImpuestoCompra = formation.montoImpuestoCompra;
+      result.costoPagado = formation.costoPagado;
+      result.precioVentaSugerido = formation.precioVentaSugerido;
+    }
     const marca = safeText(source.marca, 100);
     const modelo = safeText(source.modelo, 100);
     if (marca) result.marca = marca;

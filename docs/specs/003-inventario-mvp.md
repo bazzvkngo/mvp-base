@@ -31,6 +31,9 @@ Campos canónicos nuevos:
 - `margenDeseado`;
 - `precioInterno`;
 - `precioManual`;
+- `formacionPrecioVersion`, `tasaImpuestoCompra`, `montoImpuestoCompra`,
+  `costoPagado` y `precioVentaSugerido`, sólo para productos que usan
+  explícitamente la formación de precio con impuesto de compra;
 - `estado`;
 - `areaId` y `categoriaId`, solo cuando se seleccionan;
 - `categoria`, como etiqueta compatible con consumidores actuales;
@@ -52,17 +55,25 @@ negocios/{businessId}/inventoryCodeKeys/{codeKeyId}
 - Servicio: prestación valorizada. No persiste campos de stock.
 - Actividad: trabajo o tarea valorizada. No persiste campos de stock.
 
-Los campos comunes son nombre, unidad, costo base unitario, margen deseado, precio interno calculado, ajuste manual opcional, descripción y estado activo. Área y categoría son opcionales. Una categoría seleccionada siempre debe pertenecer a un área activa.
+Los campos comunes son nombre, unidad, costo base unitario, recargo porcentual persistido por compatibilidad como `margenDeseado`, precio interno calculado, ajuste manual opcional, descripción y estado activo. Área y categoría son opcionales. Una categoría seleccionada siempre debe pertenecer a un área activa.
 
 ## Cálculo de precio
 
-El precio calculado reutiliza `calculateBasePrice` y el precio efectivo reutiliza `calculateEffectiveInternalPrice` desde el dominio de valorización. La fórmula vigente es:
+Servicios, actividades y productos históricos conservan la fórmula anterior:
 
 ```text
-precio calculado = costo base + (costo base × margen deseado / 100)
+precio calculado = costo base + (costo base × recargo / 100)
 ```
 
-Un ajuste manual positivo reemplaza el precio calculado únicamente para el ítem. El backend vuelve a validar números finitos, rangos no negativos y margen máximo de 1000%.
+Los productos con `formacionPrecioVersion = 2` separan el costo unitario neto, el impuesto pagado en la compra y el desembolso usado como base comercial:
+
+```text
+monto impuesto compra = costo base × tasa impuesto compra / 100
+costo pagado = costo base × (1 + tasa impuesto compra / 100)
+precio venta sugerido = costo pagado × (1 + recargo / 100)
+```
+
+La tasa se elige visiblemente entre 0%, 19% o un valor personalizado entre 0% y 100%; no expresa tratamiento contable o tributario. Un ajuste manual positivo reemplaza el precio sugerido únicamente como precio final del ítem. El backend vuelve a validar números finitos, rangos no negativos y recargo máximo de 1000%.
 
 ## Unidades
 
@@ -88,7 +99,7 @@ La plantilla descargable contiene:
 tipo,nombre,codigo,area,categoria,unidad,costo_base,margen,precio_manual,stock,stock_minimo,descripcion
 ```
 
-`nombre` y `tipo` son obligatorios. Si falta el tipo, la fila queda pendiente de revisión. Un código vacío se genera con el correlativo seguro. Un código aportado se normaliza, no puede usar los prefijos automáticos `PR`, `SV` o `AC`, y se verifica en backend para impedir duplicados.
+`nombre` y `tipo` son obligatorios. Si falta el tipo, la fila queda pendiente de revisión. La plantilla conserva el esquema anterior sin inferir IVA de compra. Un código vacío se genera con el correlativo seguro. Un código aportado se normaliza, no puede usar los prefijos automáticos `PR`, `SV` o `AC`, y se verifica en backend para impedir duplicados.
 
 ## Backend y seguridad multiempresa
 
@@ -108,7 +119,7 @@ Las Rules permiten lectura a miembros activos, bloquean colecciones internas y r
 
 ## Compatibilidad legacy
 
-La lectura adapta valores faltantes sin migrar documentos al abrir la ruta. Se admiten `sku`, `precio`, fechas legacy y ausencia de clasificación. Los documentos existentes siguen visibles mediante el filtro de estado correspondiente. Cotizaciones y Valorización continúan consumiendo `nombre`, `tipoItem`, `unidad`, `costoBase`, `margenDeseado`, `precioInterno` y las banderas de precio manual existentes.
+La lectura adapta valores faltantes sin migrar documentos al abrir la ruta. Se admiten `sku`, `precio`, fechas legacy y ausencia de clasificación. Un producto sin `formacionPrecioVersion = 2` no recibe una tasa inferida y conserva la fórmula anterior hasta que el usuario configure explícitamente su IVA de compra. Los documentos existentes siguen visibles mediante el filtro de estado correspondiente. Cotizaciones y Valorización continúan consumiendo `nombre`, `tipoItem`, `unidad`, `costoBase`, `margenDeseado`, `precioInterno` y las banderas de precio manual existentes; `precioInterno` sigue siendo siempre el precio final.
 
 ## Criterios de aceptación
 

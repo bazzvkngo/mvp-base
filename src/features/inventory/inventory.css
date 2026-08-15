@@ -46,10 +46,12 @@
 .inventory-form-grid--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .inventory-identity-primary { display: grid; gap: var(--space-3); grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr); }
 .inventory-product-identity, .inventory-classification-grid, .inventory-price-grid { align-items: start; display: grid; gap: var(--space-3); grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.inventory-sale-price { background: #f0fdfa; border: 1px solid #99f6e4; border-radius: var(--radius-md); display: flex; flex-direction: column; gap: 2px; justify-content: center; min-height: 40px; padding: .4rem .7rem; }
+.inventory-sale-price { background: var(--color-surface-subtle); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); display: flex; flex-direction: column; gap: 2px; justify-content: center; min-height: 40px; padding: .4rem .7rem; }
 .inventory-sale-price span { color: var(--color-text-muted); font-size: 11px; font-weight: var(--font-weight-bold); }
 .inventory-sale-price strong { color: var(--color-brand-800); font-size: var(--font-size-lg); line-height: 1.2; }
 .inventory-sale-price small { color: var(--color-text-muted); font-size: 10px; }
+.inventory-sale-price--final { background: #f0fdfa; border-color: #99f6e4; }
+.inventory-custom-tax-field { max-width: calc((100% - (2 * var(--space-3))) / 3); }
 .inventory-manual-price-toggle { align-items: center; color: var(--color-text-default); cursor: pointer; display: inline-flex; font-size: var(--font-size-sm); gap: var(--space-2); justify-self: start; }
 .inventory-manual-price-toggle input { accent-color: var(--color-brand-700); height: 16px; margin: 0; width: 16px; }
 .inventory-manual-price-field { max-width: calc((100% - (2 * var(--space-3))) / 3); }
@@ -149,7 +151,7 @@
   .inventory-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .inventory-summary .erp-metric-card:last-child { grid-column: 1 / -1; }
   .inventory-filters, .inventory-form-grid, .inventory-form-grid--three, .inventory-identity-primary, .inventory-product-identity, .inventory-classification-grid, .inventory-price-grid, .inventory-detail-grid { grid-template-columns: minmax(0, 1fr); }
-  .inventory-manual-price-field { max-width: none; }
+  .inventory-manual-price-field, .inventory-custom-tax-field { max-width: none; }
   .inventory-search { grid-column: auto; }
   .inventory-catalog-columns { grid-template-columns: minmax(0, 1fr); }
   .inventory-catalog-column + .inventory-catalog-column { border-left: 0; border-top: 1px solid var(--color-border-subtle); }

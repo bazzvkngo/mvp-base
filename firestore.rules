@@ -178,8 +178,38 @@ service cloud.firestore {
         "stock",
         "stockMinimo",
         "codigoBarras",
-        "unidadStock"
+        "unidadStock",
+        "formacionPrecioVersion",
+        "tasaImpuestoCompra",
+        "montoImpuestoCompra",
+        "costoPagado",
+        "precioVentaSugerido"
       ]);
+    }
+
+    function hasValidPurchasePriceFormation() {
+      let fields = [
+        "formacionPrecioVersion",
+        "tasaImpuestoCompra",
+        "montoImpuestoCompra",
+        "costoPagado",
+        "precioVentaSugerido"
+      ];
+      return !request.resource.data.keys().hasAny(fields)
+        || (
+          request.resource.data.tipoItem == "producto"
+          && request.resource.data.keys().hasAll(fields)
+          && request.resource.data.formacionPrecioVersion == 2
+          && request.resource.data.tasaImpuestoCompra is number
+          && request.resource.data.tasaImpuestoCompra >= 0
+          && request.resource.data.tasaImpuestoCompra <= 100
+          && request.resource.data.montoImpuestoCompra is number
+          && request.resource.data.montoImpuestoCompra >= 0
+          && request.resource.data.costoPagado is number
+          && request.resource.data.costoPagado >= 0
+          && request.resource.data.precioVentaSugerido is number
+          && request.resource.data.precioVentaSugerido >= 0
+        );
     }
 
     function hasValidInventoryStructure(uid) {
@@ -194,6 +224,7 @@ service cloud.firestore {
         && request.resource.data.margenDeseado is number
         && request.resource.data.precioInterno is number
         && hasValidInventoryCatalogRelation(uid)
+        && hasValidPurchasePriceFormation()
         && (
           (
             request.resource.data.tipoItem == "producto"
@@ -228,6 +259,7 @@ service cloud.firestore {
         && request.resource.data.margenDeseado is number
         && request.resource.data.precioInterno is number
         && hasValidBusinessInventoryCatalogRelation(businessId)
+        && hasValidPurchasePriceFormation()
         && (
           (
             request.resource.data.tipoItem == "producto"
@@ -263,6 +295,7 @@ service cloud.firestore {
         && request.resource.data.margenDeseado is number
         && request.resource.data.precioInterno is number
         && hasValidBusinessInventoryCatalogRelation(businessId)
+        && hasValidPurchasePriceFormation()
         && (
           (
             request.resource.data.tipoItem == "producto"

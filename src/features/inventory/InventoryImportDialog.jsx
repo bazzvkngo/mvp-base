@@ -216,7 +216,7 @@ function InventoryImportDialog({ areas, businessId, categories, existingItems, o
                       </ImportField>
                       <ImportField label="Unidad" error={errors.unidad}><input value={row.draft.unidad} onChange={(event) => updateRow(row.rowId, "unidad", event.target.value)} /></ImportField>
                       <ImportField label="Costo base" error={errors.costoBase}><input inputMode="decimal" value={row.draft.costoBase} onChange={(event) => updateRow(row.rowId, "costoBase", event.target.value)} /></ImportField>
-                      <ImportField label="Margen %" error={errors.margenDeseado}><input inputMode="decimal" value={row.draft.margenDeseado} onChange={(event) => updateRow(row.rowId, "margenDeseado", event.target.value)} /></ImportField>
+                      <ImportField label="Recargo %" error={errors.margenDeseado}><input inputMode="decimal" value={row.draft.margenDeseado} onChange={(event) => updateRow(row.rowId, "margenDeseado", event.target.value)} /></ImportField>
                       <ImportField label="Precio manual" error={errors.precioManual}><input inputMode="decimal" value={row.draft.precioManual} onChange={(event) => updateRow(row.rowId, "precioManual", event.target.value)} /></ImportField>
                       {row.draft.tipoItem === "producto" && <><ImportField label="Stock" error={errors.stock}><input inputMode="decimal" value={row.draft.stock} onChange={(event) => updateRow(row.rowId, "stock", event.target.value)} /></ImportField><ImportField label="Stock mínimo" error={errors.stockMinimo}><input inputMode="decimal" value={row.draft.stockMinimo} onChange={(event) => updateRow(row.rowId, "stockMinimo", event.target.value)} /></ImportField></>}
                     </div>

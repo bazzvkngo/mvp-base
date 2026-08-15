@@ -194,6 +194,56 @@ async function main() {
     () => validateInventoryItemInput(item({ stock: -2 }), TestHttpsError),
     (error) => error?.code === "invalid-argument"
   );
+  const taxedFormation = validateInventoryItemInput(item({
+    costoBase: 100000,
+    margenDeseado: 25,
+    formacionPrecioVersion: 2,
+    tasaImpuestoCompra: 19,
+  }), TestHttpsError);
+  assert.equal(taxedFormation.montoImpuestoCompra, 19000);
+  assert.equal(taxedFormation.costoPagado, 119000);
+  assert.equal(taxedFormation.precioVentaSugerido, 148750);
+  assert.equal(taxedFormation.precioInterno, 148750);
+  const customTaxFormation = validateInventoryItemInput(item({
+    costoBase: 100000,
+    margenDeseado: 20,
+    formacionPrecioVersion: 2,
+    tasaImpuestoCompra: 10,
+  }), TestHttpsError);
+  assert.equal(customTaxFormation.costoPagado, 110000);
+  assert.equal(customTaxFormation.precioInterno, 132000);
+  const manuallyPricedFormation = validateInventoryItemInput(item({
+    costoBase: 100000,
+    margenDeseado: 25,
+    formacionPrecioVersion: 2,
+    tasaImpuestoCompra: 19,
+    precioManual: true,
+    precioInterno: 140000,
+  }), TestHttpsError);
+  assert.equal(manuallyPricedFormation.precioVentaSugerido, 148750);
+  assert.equal(manuallyPricedFormation.precioInterno, 140000);
+  const historicalFormation = validateInventoryItemInput(item({
+    costoBase: 100000,
+    margenDeseado: 25,
+    precioInterno: 125000,
+  }), TestHttpsError);
+  assert.equal(historicalFormation.precioInterno, 125000);
+  assert.equal("formacionPrecioVersion" in historicalFormation, false);
+  assert.throws(
+    () => validateInventoryItemInput(item({
+      formacionPrecioVersion: 2,
+      tasaImpuestoCompra: 101,
+    }), TestHttpsError),
+    (error) => error?.code === "invalid-argument"
+  );
+  const serviceWithoutProductPricing = validateInventoryItemInput(item({
+    tipoItem: "servicio",
+    unidad: "hora",
+    formacionPrecioVersion: 2,
+    tasaImpuestoCompra: 19,
+  }), TestHttpsError);
+  assert.equal("formacionPrecioVersion" in serviceWithoutProductPricing, false);
+  assert.equal("tasaImpuestoCompra" in serviceWithoutProductPricing, false);
 
   await initializeInventoryCatalogHandler(request(uid), deps);
   await initializeInventoryCatalogHandler(request(uid), deps);

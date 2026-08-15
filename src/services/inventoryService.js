@@ -26,6 +26,10 @@ import {
   inventoryDocPath,
 } from "../firebase/firestorePaths.js";
 import { sortInventoryItems } from "../domain/inventoryCompatibility.mjs";
+import {
+  INVENTORY_PRICE_FORMATION_VERSION,
+  calculateInventoryPriceFormation,
+} from "../domain/inventoryMvp.mjs";
 
 const VALID_TYPES = ["producto", "servicio", "actividad"];
 const VALID_STATUS = ["activo", "inactivo", "eliminado"];
@@ -220,14 +224,14 @@ export function normalizeInventoryItem(uid, data, { isCreate = false } = {}) {
     data.margenDeseado === null ||
     data.margenDeseado === undefined
   ) {
-    throw new Error("El margen deseado es obligatorio.");
+    throw new Error("El recargo es obligatorio.");
   }
 
   const costoBase = toNumber(data.costoBase, "El costo base");
-  const margenDeseado = toNumber(data.margenDeseado, "El margen deseado");
+  const margenDeseado = toNumber(data.margenDeseado, "El recargo");
   const precioManual = MANUAL_PRICE_FLAGS.some((flag) => data[flag] === true);
   if (costoBase < 0 || margenDeseado < 0 || margenDeseado > 1000) {
-    throw new Error("Costo y margen deben estar dentro del rango permitido.");
+    throw new Error("Costo y recargo deben estar dentro del rango permitido.");
   }
   const precioInterno = precioManual
     ? toNumber(data.precioInterno, "El precio interno")
@@ -255,6 +259,32 @@ export function normalizeInventoryItem(uid, data, { isCreate = false } = {}) {
     negocioId: uid,
     actualizadoEn: serverTimestamp(),
   };
+
+  if (
+    tipoItem === "producto" &&
+    Number(data.formacionPrecioVersion) === INVENTORY_PRICE_FORMATION_VERSION
+  ) {
+    const tasaImpuestoCompra = toNumber(
+      data.tasaImpuestoCompra,
+      "El IVA de compra"
+    );
+    if (tasaImpuestoCompra < 0 || tasaImpuestoCompra > 100) {
+      throw new Error("El IVA de compra debe estar entre 0 y 100%.");
+    }
+    const formation = calculateInventoryPriceFormation({
+      costoBase,
+      tasaImpuestoCompra,
+      margenDeseado,
+      precioInterno,
+      precioManual,
+    });
+    payload.formacionPrecioVersion = INVENTORY_PRICE_FORMATION_VERSION;
+    payload.tasaImpuestoCompra = formation.tasaImpuestoCompra;
+    payload.montoImpuestoCompra = formation.montoImpuestoCompra;
+    payload.costoPagado = formation.costoPagado;
+    payload.precioVentaSugerido = formation.precioVentaSugerido;
+    payload.precioInterno = formation.precioVentaFinal;
+  }
 
   if (data.origen) {
     payload.origen = String(data.origen).trim();
@@ -335,6 +365,11 @@ export function normalizeManagedInventoryUpdate(
     payload.stockMinimo = deleteField();
     payload.codigoBarras = deleteField();
     payload.unidadStock = deleteField();
+    payload.formacionPrecioVersion = deleteField();
+    payload.tasaImpuestoCompra = deleteField();
+    payload.montoImpuestoCompra = deleteField();
+    payload.costoPagado = deleteField();
+    payload.precioVentaSugerido = deleteField();
   }
 
   return payload;

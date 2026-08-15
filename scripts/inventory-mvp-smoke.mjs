@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
   INVENTORY_UNITS,
+  INVENTORY_PRICE_FORMATION_VERSION,
   adaptInventoryItem,
   buildInventoryPayload,
+  calculateInventoryPriceFormation,
   filterInventoryItems,
   isInventoryLowStock,
   parseInventoryNumber,
@@ -59,6 +61,49 @@ function main() {
   assert.equal(product.stock, 4);
   assert.equal(product.areaId, "");
   assert.equal(product.estado, "activo", "Un ítem nuevo debe quedar activo.");
+  const taxedProduct = buildInventoryPayload({
+    tipoItem: "producto", nombre: "Router con IVA", unidad: "unidad", costoBase: "100000",
+    margenDeseado: "25", precioManual: "", stock: "4", stockMinimo: "2",
+    marca: "Cisco", modelo: "C1111", codigoBarras: "07801234567890",
+    areaId: "", categoriaId: "", descripcion: "",
+    formacionPrecioVersion: INVENTORY_PRICE_FORMATION_VERSION,
+    tasaImpuestoCompra: "19",
+  });
+  assert.equal(taxedProduct.montoImpuestoCompra, 19000);
+  assert.equal(taxedProduct.costoPagado, 119000);
+  assert.equal(taxedProduct.precioVentaSugerido, 148750);
+  assert.equal(taxedProduct.precioInterno, 148750);
+  assert.equal(taxedProduct.codigoBarras, "07801234567890");
+  assert.equal(taxedProduct.stock, 4);
+
+  const withoutPurchaseTax = calculateInventoryPriceFormation({
+    costoBase: 100000,
+    tasaImpuestoCompra: 0,
+    margenDeseado: 25,
+  });
+  assert.equal(withoutPurchaseTax.costoPagado, 100000);
+  assert.equal(withoutPurchaseTax.precioVentaSugerido, 125000);
+
+  const customPurchaseTax = calculateInventoryPriceFormation({
+    costoBase: 100000,
+    tasaImpuestoCompra: 10,
+    margenDeseado: 20,
+  });
+  assert.equal(customPurchaseTax.montoImpuestoCompra, 10000);
+  assert.equal(customPurchaseTax.costoPagado, 110000);
+  assert.equal(customPurchaseTax.precioVentaSugerido, 132000);
+
+  const manualTaxedProduct = buildInventoryPayload({
+    ...taxedProduct,
+    precioManual: "140000",
+  });
+  assert.equal(manualTaxedProduct.precioVentaSugerido, 148750);
+  assert.equal(manualTaxedProduct.precioInterno, 140000);
+  assert.equal(manualTaxedProduct.precioManual, true);
+  assert.ok(validateInventoryDraft({
+    ...taxedProduct,
+    tasaImpuestoCompra: "101",
+  }).tasaImpuestoCompra);
   const chileanFormattedProduct = buildInventoryPayload({
     tipoItem: "producto", nombre: "Equipo", unidad: "unidad", costoBase: "520.000",
     margenDeseado: "12,5", precioManual: "", stock: "1", stockMinimo: "0",
@@ -95,6 +140,9 @@ function main() {
   assert.equal("marca" in service, false);
   assert.equal("modelo" in service, false);
   assert.equal("codigoBarras" in service, false);
+  assert.equal("formacionPrecioVersion" in service, false);
+  assert.equal("tasaImpuestoCompra" in service, false);
+  assert.equal("costoPagado" in service, false);
 
   const activity = buildInventoryPayload({
     tipoItem: "actividad", nombre: "Levantamiento", unidad: "actividad", costoBase: "0",
@@ -116,6 +164,19 @@ function main() {
   assert.equal(legacy.marca, "");
   assert.equal(legacy.modelo, "");
   assert.equal(legacy.codigoBarras, "");
+  const historicalProduct = adaptInventoryItem({
+    tipoItem: "producto",
+    nombre: "Producto histórico",
+    costoBase: 100000,
+    margenDeseado: 25,
+    precioInterno: 125000,
+  });
+  assert.equal(historicalProduct.tasaImpuestoCompra, 0);
+  assert.equal(historicalProduct.precioEfectivo, 125000);
+  const adaptedTaxedProduct = adaptInventoryItem(taxedProduct);
+  assert.equal(adaptedTaxedProduct.montoImpuestoCompra, 19000);
+  assert.equal(adaptedTaxedProduct.costoPagado, 119000);
+  assert.equal(adaptedTaxedProduct.precioEfectivo, 148750);
   const list = [
     { id: "p", nombre: "ThinkPad", codigoInterno: "NB-001", marca: "Lenovo", modelo: "E13", codigoBarras: "07801234567890", tipoItem: "producto", costoBase: 100, margenDeseado: 20, stock: 1, stockMinimo: 2, estado: "activo" },
     { id: "s", nombre: "Soporte", tipoItem: "servicio", costoBase: 200, margenDeseado: 10, estado: "activo" },

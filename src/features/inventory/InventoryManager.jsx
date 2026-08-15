@@ -5,8 +5,10 @@ import Button from "../../components/ui/Button";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import {
   INVENTORY_TYPES,
+  INVENTORY_PRICE_FORMATION_VERSION,
   adaptInventoryItem,
   buildInventoryPayload,
+  calculateInventoryPriceFormation,
   filterInventoryItems,
   getDefaultUnitForType,
   getInventoryTypeLabel,
@@ -48,6 +50,8 @@ const EMPTY_DRAFT = Object.freeze({
   unidad: "unidad",
   costoBase: "",
   margenDeseado: "",
+  formacionPrecioVersion: INVENTORY_PRICE_FORMATION_VERSION,
+  tasaImpuestoCompra: "0",
   precioManual: "",
   stock: "0",
   stockMinimo: "0",
@@ -170,6 +174,12 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
       unidad: item.unidad,
       costoBase: String(item.costoBase),
       margenDeseado: String(item.margenDeseado),
+      formacionPrecioVersion: item.formacionPrecioVersion === INVENTORY_PRICE_FORMATION_VERSION
+        ? INVENTORY_PRICE_FORMATION_VERSION
+        : "",
+      tasaImpuestoCompra: item.formacionPrecioVersion === INVENTORY_PRICE_FORMATION_VERSION
+        ? String(item.tasaImpuestoCompra ?? 0)
+        : "0",
       precioManual: item.precioManual === true ? String(item.precioInterno ?? "") : "",
       stock: String(item.stock ?? 0),
       stockMinimo: String(item.stockMinimo ?? 0),
@@ -193,6 +203,11 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
           next.codigoBarras = "";
           next.stock = "0";
           next.stockMinimo = "0";
+          next.formacionPrecioVersion = "";
+          next.tasaImpuestoCompra = "0";
+        } else if (!editingItem) {
+          next.formacionPrecioVersion = INVENTORY_PRICE_FORMATION_VERSION;
+          next.tasaImpuestoCompra = "0";
         }
       }
       if (field === "areaId") next.categoriaId = "";
@@ -320,8 +335,45 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
   };
 
   const selectType = (type) => updateDraft("tipoItem", type);
-  const calculatedPrice = Math.round(calculateBasePrice({ costoBase: parseInventoryNumber(draft.costoBase) || 0, margenDeseado: parseInventoryNumber(draft.margenDeseado) || 0 }));
-  const effectivePrice = Math.round(calculateEffectiveInternalPrice({ costoBase: parseInventoryNumber(draft.costoBase) || 0, margenDeseado: parseInventoryNumber(draft.margenDeseado) || 0, precioInterno: parseInventoryNumber(draft.precioManual), precioManual: String(draft.precioManual).trim() !== "" }));
+  const usesPurchaseTaxPriceFormation = draft.tipoItem === "producto" &&
+    Number(draft.formacionPrecioVersion) === INVENTORY_PRICE_FORMATION_VERSION;
+  const purchaseTaxRate = parseInventoryNumber(draft.tasaImpuestoCompra);
+  const purchaseTaxMode = !usesPurchaseTaxPriceFormation
+    ? "historico"
+    : purchaseTaxRate === 0
+      ? "0"
+      : purchaseTaxRate === 19
+        ? "19"
+        : "personalizado";
+  const productPriceFormation = calculateInventoryPriceFormation({
+    costoBase: parseInventoryNumber(draft.costoBase) || 0,
+    tasaImpuestoCompra: purchaseTaxRate || 0,
+    margenDeseado: parseInventoryNumber(draft.margenDeseado) || 0,
+    precioInterno: parseInventoryNumber(draft.precioManual),
+    precioManual: manualPriceEnabled && String(draft.precioManual).trim() !== "",
+  });
+  const legacyCalculatedPrice = Math.round(calculateBasePrice({ costoBase: parseInventoryNumber(draft.costoBase) || 0, margenDeseado: parseInventoryNumber(draft.margenDeseado) || 0 }));
+  const calculatedPrice = usesPurchaseTaxPriceFormation
+    ? productPriceFormation.precioVentaSugerido
+    : legacyCalculatedPrice;
+  const effectivePrice = usesPurchaseTaxPriceFormation
+    ? productPriceFormation.precioVentaFinal
+    : Math.round(calculateEffectiveInternalPrice({ costoBase: parseInventoryNumber(draft.costoBase) || 0, margenDeseado: parseInventoryNumber(draft.margenDeseado) || 0, precioInterno: parseInventoryNumber(draft.precioManual), precioManual: manualPriceEnabled && String(draft.precioManual).trim() !== "" }));
+  const changePurchaseTaxMode = (mode) => {
+    if (mode === "historico") return;
+    setDraft((current) => ({
+      ...current,
+      formacionPrecioVersion: INVENTORY_PRICE_FORMATION_VERSION,
+      tasaImpuestoCompra: mode === "19"
+        ? "19"
+        : mode === "0"
+          ? "0"
+          : (![0, 19].includes(parseInventoryNumber(current.tasaImpuestoCompra))
+            ? current.tasaImpuestoCompra
+            : ""),
+    }));
+    setFieldErrors((current) => ({ ...current, tasaImpuestoCompra: "" }));
+  };
 
   return (
     <section className="erp-page inventory-page">
@@ -381,7 +433,35 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
               <CatalogSelect label="Área" value={draft.areaId} onChange={(value) => updateDraft("areaId", value)} onCreate={() => openQuickCreate("area")}><option value="">Sin área</option>{activeAreas.map((area) => <option key={area.id} value={area.id}>{area.nombre}</option>)}</CatalogSelect>
               <CatalogSelect label="Categoría" value={draft.categoriaId} disabled={!draft.areaId} error={fieldErrors.categoriaId} createDisabled={!draft.areaId} createTitle={!draft.areaId ? "Selecciona un área primero" : "Crear categoría"} onChange={(value) => updateDraft("categoriaId", value)} onCreate={() => openQuickCreate("category")}><option value="">Sin categoría</option>{formCategories.map((category) => <option key={category.id} value={category.id}>{category.nombre}</option>)}</CatalogSelect>
             </div><button type="button" className="inventory-link-button" onClick={openCatalogManager}>Administrar áreas y categorías</button></section>
-            <section className="inventory-form-section"><h3>Precio</h3><div className="inventory-price-grid"><Field label="Costo unitario" required error={fieldErrors.costoBase}><input className="erp-control" type="number" min="0" step="any" value={draft.costoBase} onChange={(event) => updateDraft("costoBase", event.target.value)} /></Field><Field label="Margen (%)" required error={fieldErrors.margenDeseado}><input className="erp-control" type="number" min="0" max="1000" step="any" value={draft.margenDeseado} onChange={(event) => updateDraft("margenDeseado", event.target.value)} /></Field><div className="inventory-sale-price"><span>Precio de venta</span><strong>{formatCLP(effectivePrice)}</strong>{manualPriceEnabled && String(draft.precioManual).trim() !== "" && <small>Calculado: {formatCLP(calculatedPrice)}</small>}</div></div><label className="inventory-manual-price-toggle"><input type="checkbox" checked={manualPriceEnabled} onChange={(event) => { const enabled = event.target.checked; setManualPriceEnabled(enabled); if (!enabled) updateDraft("precioManual", ""); }} /><span>Definir precio de venta manual</span></label>{manualPriceEnabled && <div className="inventory-manual-price-field"><Field label="Precio de venta manual" error={fieldErrors.precioManual}><input className="erp-control" type="number" min="0" step="any" value={draft.precioManual} onChange={(event) => updateDraft("precioManual", event.target.value)} /></Field></div>}</section>
+            <section className="inventory-form-section">
+              <h3>Precio</h3>
+              {draft.tipoItem === "producto" ? <>
+                <div className="inventory-price-grid">
+                  <Field label="Costo unitario neto" required error={fieldErrors.costoBase}><input className="erp-control" type="number" min="0" step="any" value={draft.costoBase} onChange={(event) => updateDraft("costoBase", event.target.value)} /></Field>
+                  <Field label="IVA de compra" required error={fieldErrors.tasaImpuestoCompra}>
+                    <select className="erp-control" value={purchaseTaxMode} onChange={(event) => changePurchaseTaxMode(event.target.value)}>
+                      {!usesPurchaseTaxPriceFormation && <option value="historico">Sin IVA / esquema anterior</option>}
+                      <option value="0">Sin IVA / 0%</option>
+                      <option value="19">19%</option>
+                      <option value="personalizado">Personalizado</option>
+                    </select>
+                  </Field>
+                  <PriceResult label="Costo pagado" value={productPriceFormation.costoPagado} detail={`IVA: ${formatCLP(productPriceFormation.montoImpuestoCompra)}`} />
+                </div>
+                {purchaseTaxMode === "personalizado" && <div className="inventory-custom-tax-field"><Field label="Tasa personalizada (%)" required error={fieldErrors.tasaImpuestoCompra}><input className="erp-control" type="number" min="0" max="100" step="any" value={draft.tasaImpuestoCompra} onChange={(event) => updateDraft("tasaImpuestoCompra", event.target.value)} /></Field></div>}
+                <div className="inventory-price-grid inventory-price-grid--commercial">
+                  <Field label="Recargo (%)" required error={fieldErrors.margenDeseado}><input className="erp-control" type="number" min="0" max="1000" step="any" value={draft.margenDeseado} onChange={(event) => updateDraft("margenDeseado", event.target.value)} /></Field>
+                  <PriceResult label="Precio sugerido" value={calculatedPrice} />
+                  <PriceResult label="Precio de venta final" value={effectivePrice} tone="final" />
+                </div>
+              </> : <div className="inventory-price-grid">
+                <Field label="Costo unitario" required error={fieldErrors.costoBase}><input className="erp-control" type="number" min="0" step="any" value={draft.costoBase} onChange={(event) => updateDraft("costoBase", event.target.value)} /></Field>
+                <Field label="Recargo (%)" required error={fieldErrors.margenDeseado}><input className="erp-control" type="number" min="0" max="1000" step="any" value={draft.margenDeseado} onChange={(event) => updateDraft("margenDeseado", event.target.value)} /></Field>
+                <PriceResult label="Precio de venta final" value={effectivePrice} tone="final" detail={manualPriceEnabled && String(draft.precioManual).trim() !== "" ? `Sugerido: ${formatCLP(calculatedPrice)}` : ""} />
+              </div>}
+              <label className="inventory-manual-price-toggle"><input type="checkbox" checked={manualPriceEnabled} onChange={(event) => { const enabled = event.target.checked; setManualPriceEnabled(enabled); if (!enabled) updateDraft("precioManual", ""); }} /><span>Definir precio de venta manual</span></label>
+              {manualPriceEnabled && <div className="inventory-manual-price-field"><Field label="Precio de venta final" error={fieldErrors.precioManual}><input className="erp-control" type="number" min="0" step="any" value={draft.precioManual} onChange={(event) => updateDraft("precioManual", event.target.value)} /></Field></div>}
+            </section>
             {draft.tipoItem === "producto" && <section className="inventory-form-section"><h3>Existencias</h3><div className="inventory-form-grid inventory-form-grid--three"><Field label="Stock actual" error={fieldErrors.stock}><input className="erp-control" type="number" min="0" step="any" value={draft.stock} onChange={(event) => updateDraft("stock", event.target.value)} /></Field><Field label="Stock mínimo" error={fieldErrors.stockMinimo}><input className="erp-control" type="number" min="0" step="any" value={draft.stockMinimo} onChange={(event) => updateDraft("stockMinimo", event.target.value)} /></Field><Field label="Unidad de inventario"><select className="erp-control" value={draft.unidadStock} onChange={(event) => updateDraft("unidadStock", event.target.value)}><option value={draft.unidad}>{draft.unidad || "Unidad seleccionada"}</option><option value="unidad">Unidad</option></select></Field></div><p className="inventory-stock-helper">Se marcará como stock bajo al alcanzar el mínimo.</p></section>}
             {feedback.type === "error" && <p className="inventory-feedback inventory-feedback--error" role="alert">{feedback.message}</p>}
         </form>
@@ -398,6 +478,7 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
 function Metric({ label, tone, value }) { return <article className={`erp-metric-card${tone ? ` inventory-metric--${tone}` : ""}`}><span className="erp-metric-card__label">{label}</span><strong className="erp-metric-card__value">{value}</strong></article>; }
 function Filter({ children, disabled, label, onChange, value }) { return <label className="erp-field"><span className="erp-field__label">{label}</span><select className="erp-control" disabled={disabled} value={value} onChange={(event) => onChange(event.target.value)}>{children}</select></label>; }
 function Field({ children, error, hint, label, required }) { return <label className="erp-field"><span className="erp-field__label">{label}{required ? " *" : ""}</span>{children}{hint && <small className="inventory-field-hint">{hint}</small>}{error && <small className="inventory-field-error">{error}</small>}</label>; }
+function PriceResult({ detail, label, tone = "", value }) { return <div className={`inventory-sale-price${tone ? ` inventory-sale-price--${tone}` : ""}`}><span>{label}</span><strong>{formatCLP(value)}</strong>{detail && <small>{detail}</small>}</div>; }
 function CatalogSelect({children, createDisabled, createTitle, disabled, error, label, onChange, onCreate, value}) { return <label className="erp-field inventory-catalog-select-field"><span className="erp-field__label">{label}</span><span><select className="erp-control" disabled={disabled} value={value} onChange={(event) => onChange(event.target.value)}>{children}</select><button type="button" disabled={createDisabled} title={createTitle || `Crear ${label.toLowerCase()}`} aria-label={`Crear ${label.toLowerCase()}`} onClick={onCreate}>+</button></span>{error && <small className="inventory-field-error">{error}</small>}</label>; }
 
 function IdentityMetadata({ item }) {
@@ -422,7 +503,7 @@ function Actions({ cannotWrite, item, onArchive, onEdit, onReactivate }) { if (c
 function ItemDetail({ areas, cannotWrite, categories, item, onArchive, onClose, onEdit, onReactivate }) {
   if (!item) return null;
   const adapted = adaptInventoryItem(item);
-  return <ResponsiveDialog open onClose={onClose} eyebrow="Inventario" title={adapted.nombre} description={adapted.codigoInterno || adapted.sku || "Registro heredado sin código"} footer={!cannotWrite ? <Actions item={adapted} onEdit={onEdit} onArchive={onArchive} onReactivate={onReactivate} /> : null}><dl className="inventory-detail-grid"><Detail label="SKU / código interno" value={adapted.codigoInterno || "No informado"} />{adapted.tipoItem === "producto" && <><Detail label="Marca" value={adapted.marca || "No informada"} /><Detail label="Modelo" value={adapted.modelo || "No informado"} /><Detail label="Código de barras" value={adapted.codigoBarras || "No informado"} /></>}<Detail label="Tipo" value={getInventoryTypeLabel(adapted.tipoItem)} /><Detail label="Área" value={getInventoryAreaLabel(adapted, areas)} /><Detail label="Categoría" value={getInventoryCategoryLabel(adapted, categories)} /><Detail label="Unidad" value={adapted.unidad} /><Detail label="Costo base" value={formatCLP(adapted.costoBase)} /><Detail label="Margen" value={`${adapted.margenDeseado}%`} /><Detail label="Precio calculado" value={formatCLP(adapted.precioCalculado)} /><Detail label="Precio de venta" value={formatCLP(adapted.precioEfectivo)} />{adapted.tipoItem === "producto" && <><Detail label="Stock actual" value={`${adapted.stock} ${adapted.unidadStock || adapted.unidad}`} /><Detail label="Stock mínimo" value={adapted.stockMinimo} /><Detail label="Nivel de stock" value={isInventoryLowStock(adapted) ? "Stock bajo" : "Disponible"} /></>}</dl>{adapted.descripcion && <div className="inventory-detail-description"><strong>Descripción</strong><p>{adapted.descripcion}</p></div>}</ResponsiveDialog>;
+  return <ResponsiveDialog open onClose={onClose} eyebrow="Inventario" title={adapted.nombre} description={adapted.codigoInterno || adapted.sku || "Registro heredado sin código"} footer={!cannotWrite ? <Actions item={adapted} onEdit={onEdit} onArchive={onArchive} onReactivate={onReactivate} /> : null}><dl className="inventory-detail-grid"><Detail label="SKU / código interno" value={adapted.codigoInterno || "No informado"} />{adapted.tipoItem === "producto" && <><Detail label="Marca" value={adapted.marca || "No informada"} /><Detail label="Modelo" value={adapted.modelo || "No informado"} /><Detail label="Código de barras" value={adapted.codigoBarras || "No informado"} /></>}<Detail label="Tipo" value={getInventoryTypeLabel(adapted.tipoItem)} /><Detail label="Área" value={getInventoryAreaLabel(adapted, areas)} /><Detail label="Categoría" value={getInventoryCategoryLabel(adapted, categories)} /><Detail label="Unidad" value={adapted.unidad} />{adapted.tipoItem === "producto" ? <><Detail label="Costo unitario neto" value={formatCLP(adapted.costoBase)} /><Detail label="IVA de compra" value={`${adapted.tasaImpuestoCompra}% · ${formatCLP(adapted.montoImpuestoCompra)}`} /><Detail label="Costo pagado" value={formatCLP(adapted.costoPagado)} /><Detail label="Recargo" value={`${adapted.margenDeseado}%`} /><Detail label="Precio sugerido" value={formatCLP(adapted.precioCalculado)} /><Detail label="Precio de venta final" value={formatCLP(adapted.precioEfectivo)} /></> : <><Detail label="Costo unitario" value={formatCLP(adapted.costoBase)} /><Detail label="Recargo" value={`${adapted.margenDeseado}%`} /><Detail label="Precio sugerido" value={formatCLP(adapted.precioCalculado)} /><Detail label="Precio de venta final" value={formatCLP(adapted.precioEfectivo)} /></>}{adapted.tipoItem === "producto" && <><Detail label="Stock actual" value={`${adapted.stock} ${adapted.unidadStock || adapted.unidad}`} /><Detail label="Stock mínimo" value={adapted.stockMinimo} /><Detail label="Nivel de stock" value={isInventoryLowStock(adapted) ? "Stock bajo" : "Disponible"} /></>}</dl>{adapted.descripcion && <div className="inventory-detail-description"><strong>Descripción</strong><p>{adapted.descripcion}</p></div>}</ResponsiveDialog>;
 }
 function Detail({ label, value }) { return <div><dt>{label}</dt><dd>{value}</dd></div>; }
 
