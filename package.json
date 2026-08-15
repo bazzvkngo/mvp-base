@@ -66,6 +66,7 @@
     "test:finance": "node scripts/financial-model-smoke.mjs",
     "test:statistics": "node scripts/financial-model-smoke.mjs",
     "test:reports": "node scripts/report-model-smoke.mjs",
+    "test:works-model": "node scripts/works-model-smoke.mjs",
     "test:summary": "node scripts/financial-model-smoke.mjs",
     "seed:business-catalogs:emulator": "node scripts/seed-business-catalogs.mjs --emulator"
   },

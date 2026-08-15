@@ -105,6 +105,15 @@ const {
   asociarUsuarioExistenteHandler,
   listarMiembrosNegocioHandler,
 } = require("./businessMemberships");
+const {
+  actualizarTrabajoHandler,
+  agregarNotaTrabajoHandler,
+  agregarTareaTrabajoHandler,
+  cambiarEstadoTareaTrabajoHandler,
+  cambiarEstadoTrabajoHandler,
+  crearTrabajoHandler,
+  eliminarTareaTrabajoHandler,
+} = require("./workPersistence");
 
 // Inicializar Admin SDK (una sola vez)
 initializeApp();
@@ -2195,6 +2204,49 @@ exports.reactivarCliente = onCall(
   },
   async (request) =>
     reactivarClienteHandler(request, clientPersistenceDependencies)
+);
+
+const workPersistenceDependencies = {
+  db,
+  auth: adminAuth,
+  HttpsError,
+  FieldValue,
+  requireBusinessAccess,
+};
+
+const workCallableOptions = {
+  maxInstances: 20,
+  memory: "256MiB",
+  region: DEFAULT_FUNCTION_REGION,
+  timeoutSeconds: 30,
+};
+
+exports.crearTrabajo = onCall(workCallableOptions, async (request) =>
+  crearTrabajoHandler(request, workPersistenceDependencies)
+);
+
+exports.actualizarTrabajo = onCall(workCallableOptions, async (request) =>
+  actualizarTrabajoHandler(request, workPersistenceDependencies)
+);
+
+exports.cambiarEstadoTrabajo = onCall(workCallableOptions, async (request) =>
+  cambiarEstadoTrabajoHandler(request, workPersistenceDependencies)
+);
+
+exports.agregarTareaTrabajo = onCall(workCallableOptions, async (request) =>
+  agregarTareaTrabajoHandler(request, workPersistenceDependencies)
+);
+
+exports.cambiarEstadoTareaTrabajo = onCall(workCallableOptions, async (request) =>
+  cambiarEstadoTareaTrabajoHandler(request, workPersistenceDependencies)
+);
+
+exports.eliminarTareaTrabajo = onCall(workCallableOptions, async (request) =>
+  eliminarTareaTrabajoHandler(request, workPersistenceDependencies)
+);
+
+exports.agregarNotaTrabajo = onCall(workCallableOptions, async (request) =>
+  agregarNotaTrabajoHandler(request, workPersistenceDependencies)
 );
 
 const providerPersistenceDependencies = {

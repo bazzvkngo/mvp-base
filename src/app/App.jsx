@@ -36,6 +36,7 @@ import ReferenceTasksPage from "../pages/ReferenceTasksPage";
 import StatisticsPage from "../pages/StatisticsPage";
 import BusinessUnavailablePage from "../pages/BusinessUnavailablePage";
 import EmployeesPage from "../pages/EmployeesPage";
+import WorksPage from "../pages/WorksPage";
 import Button from "../components/ui/Button";
 import { subscribeToAuth } from "../services/authService";
 import {
@@ -207,6 +208,16 @@ function AppRoutes({
           path="/empleados"
           element={
             <EmployeesPage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
+            />
+          }
+        />
+        <Route
+          path="/trabajos"
+          element={
+            <WorksPage
               key={businessId}
               businessId={businessId}
               role={activeBusiness?.role}

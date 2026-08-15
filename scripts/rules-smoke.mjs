@@ -363,6 +363,11 @@ async function main() {
     const foreignBusinessId = `rules-foreign-${guestUid}`;
     const foreignClientPath =
       `negocios/${foreignBusinessId}/clientes/foreign-client-smoke`;
+    const businessWorkPath =
+      `negocios/${businessId}/trabajos/work-rules-smoke`;
+    const businessWorkTaskPath = `${businessWorkPath}/tareas/task-rules-smoke`;
+    const businessWorkNotePath = `${businessWorkPath}/notas/note-rules-smoke`;
+    const businessWorkHistoryPath = `${businessWorkPath}/historial/event-rules-smoke`;
     await Promise.all([
       adminDb.doc(businessClientPath).set({
         clienteId: "client-rules-smoke",
@@ -404,11 +409,82 @@ async function main() {
         nombreRazonSocial: "Cliente externo",
         estado: "activo",
       }),
+      adminDb.doc(businessWorkPath).set({
+        trabajoId: "work-rules-smoke",
+        negocioId: businessId,
+        numero: "TRB-2026-0001",
+        titulo: "Trabajo de reglas",
+        estado: "pendiente",
+        prioridad: "normal",
+      }),
+      adminDb.doc(businessWorkTaskPath).set({
+        tareaId: "task-rules-smoke",
+        trabajoId: "work-rules-smoke",
+        negocioId: businessId,
+        titulo: "Tarea protegida",
+        completada: false,
+      }),
+      adminDb.doc(businessWorkNotePath).set({
+        notaId: "note-rules-smoke",
+        trabajoId: "work-rules-smoke",
+        negocioId: businessId,
+        texto: "Nota protegida",
+      }),
+      adminDb.doc(businessWorkHistoryPath).set({
+        eventoId: "event-rules-smoke",
+        trabajoId: "work-rules-smoke",
+        negocioId: businessId,
+        tipo: "trabajo_creado",
+      }),
+      adminDb.doc(`negocios/${businessId}/workCounters/2026`).set({
+        negocioId: businessId,
+        ultimoNumero: 1,
+      }),
+      adminDb.doc(`negocios/${businessId}/workCreateRequests/request-smoke`).set({
+        negocioId: businessId,
+        trabajoId: "work-rules-smoke",
+      }),
     ]);
     if (!(await getDoc(doc(ownerClient.db, businessClientPath))).exists()) {
       throw new Error("El miembro OWNER no pudo leer clientes del negocio.");
     }
     console.log("OK permitido: miembro activo lee clientes del negocio");
+    for (const protectedPath of [businessWorkPath, businessWorkTaskPath, businessWorkNotePath, businessWorkHistoryPath]) {
+      if (!(await getDoc(doc(ownerClient.db, protectedPath))).exists()) {
+        throw new Error(`El miembro activo no pudo leer ${protectedPath}.`);
+      }
+    }
+    console.log("OK permitido: miembro activo lee trabajo, tareas, notas e historial");
+    await expectDenied("usuario sin membresía lee trabajo", () =>
+      getDoc(doc(guestClient.db, businessWorkPath))
+    );
+    const businessWorksCollection = collection(ownerClient.db, "negocios", businessId, "trabajos");
+    const filteredWorksSnapshot = await getDocs(query(businessWorksCollection, where("negocioId", "==", businessId)));
+    if (filteredWorksSnapshot.size !== 1) {
+      throw new Error("La consulta filtrada no devolvió el trabajo esperado.");
+    }
+    console.log("OK permitido: consulta de trabajos filtrada por negocioId");
+    await expectDenied("OWNER crea trabajo directamente", () =>
+      setDoc(doc(ownerClient.db, `negocios/${businessId}/trabajos/direct-work`), {negocioId: businessId, titulo: "Directo"})
+    );
+    await expectDenied("OWNER edita trabajo directamente", () =>
+      updateDoc(doc(ownerClient.db, businessWorkPath), {titulo: "Edición directa"})
+    );
+    await expectDenied("OWNER escribe tarea directamente", () =>
+      setDoc(doc(ownerClient.db, `${businessWorkPath}/tareas/direct-task`), {negocioId: businessId, trabajoId: "work-rules-smoke", titulo: "Directa"})
+    );
+    await expectDenied("OWNER escribe nota directamente", () =>
+      setDoc(doc(ownerClient.db, `${businessWorkPath}/notas/direct-note`), {negocioId: businessId, trabajoId: "work-rules-smoke", texto: "Directa"})
+    );
+    await expectDenied("OWNER escribe historial directamente", () =>
+      setDoc(doc(ownerClient.db, `${businessWorkPath}/historial/direct-event`), {negocioId: businessId, trabajoId: "work-rules-smoke", tipo: "forjado"})
+    );
+    await expectDenied("workCounters bloquea lectura directa", () =>
+      getDoc(doc(ownerClient.db, `negocios/${businessId}/workCounters/2026`))
+    );
+    await expectDenied("workCreateRequests bloquea lectura directa", () =>
+      getDoc(doc(ownerClient.db, `negocios/${businessId}/workCreateRequests/request-smoke`))
+    );
     await expectDenied("usuario sin membresía lee clientes", () =>
       getDoc(doc(guestClient.db, businessClientPath))
     );

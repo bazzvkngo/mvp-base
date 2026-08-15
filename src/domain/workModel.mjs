@@ -1,0 +1,157 @@
+export const WORK_MODEL_VERSION = 1;
+
+export const WORK_STATUSES = Object.freeze([
+  {value: "pendiente", label: "Pendiente"},
+  {value: "en_progreso", label: "En progreso"},
+  {value: "en_espera", label: "En espera"},
+  {value: "completado", label: "Completado"},
+  {value: "cancelado", label: "Cancelado"},
+]);
+
+export const WORK_PRIORITIES = Object.freeze([
+  {value: "baja", label: "Baja"},
+  {value: "normal", label: "Normal"},
+  {value: "alta", label: "Alta"},
+  {value: "urgente", label: "Urgente"},
+]);
+
+const STATUS_VALUES = new Set(WORK_STATUSES.map(({value}) => value));
+const PRIORITY_VALUES = new Set(WORK_PRIORITIES.map(({value}) => value));
+
+export function normalizeWorkSearch(value) {
+  return String(value || "").trim().toLocaleLowerCase("es-CL")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+export function formatWorkNumber(year, sequence) {
+  return `TRB-${year}-${String(sequence).padStart(4, "0")}`;
+}
+
+export function getWorkStatusLabel(value) {
+  return WORK_STATUSES.find((item) => item.value === value)?.label || "Pendiente";
+}
+
+export function getWorkPriorityLabel(value) {
+  return WORK_PRIORITIES.find((item) => item.value === value)?.label || "Normal";
+}
+
+export function canManageWorks(role) {
+  return ["OWNER", "ADMIN"].includes(String(role || "").toUpperCase());
+}
+
+function dateValue(value) {
+  if (!value) return null;
+  if (typeof value?.toDate === "function") return value.toDate().toISOString();
+  if (typeof value === "string") return value;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+export function adaptStoredWork(raw = {}) {
+  const estado = STATUS_VALUES.has(raw.estado) ? raw.estado : "pendiente";
+  const prioridad = PRIORITY_VALUES.has(raw.prioridad) ? raw.prioridad : "normal";
+  return {
+    ...raw,
+    id: raw.id || raw.trabajoId || "",
+    trabajoId: raw.trabajoId || raw.id || "",
+    numero: String(raw.numero || "").trim(),
+    titulo: String(raw.titulo || "Trabajo sin título").trim(),
+    descripcion: String(raw.descripcion || "").trim(),
+    clienteId: String(raw.clienteId || "").trim(),
+    clienteSnapshot: raw.clienteSnapshot || null,
+    responsableUid: String(raw.responsableUid || "").trim(),
+    responsableSnapshot: raw.responsableSnapshot || null,
+    participanteUids: Array.isArray(raw.participanteUids) ? raw.participanteUids : [],
+    participantesSnapshot: Array.isArray(raw.participantesSnapshot) ? raw.participantesSnapshot : [],
+    estado,
+    prioridad,
+    fechaInicio: String(raw.fechaInicio || ""),
+    fechaPrevista: String(raw.fechaPrevista || ""),
+    fechaCompletado: dateValue(raw.fechaCompletado),
+    creadoEn: dateValue(raw.creadoEn),
+    actualizadoEn: dateValue(raw.actualizadoEn),
+    tareasTotal: Number(raw.tareasTotal || 0),
+    tareasCompletadas: Number(raw.tareasCompletadas || 0),
+  };
+}
+
+export function adaptWorkTask(raw = {}) {
+  return {
+    ...raw,
+    id: raw.id || raw.tareaId || "",
+    tareaId: raw.tareaId || raw.id || "",
+    titulo: String(raw.titulo || "").trim(),
+    completada: raw.completada === true,
+    completadaEn: dateValue(raw.completadaEn),
+  };
+}
+
+export function adaptWorkNote(raw = {}) {
+  return {...raw, id: raw.id || raw.notaId || "", notaId: raw.notaId || raw.id || "", texto: String(raw.texto || "").trim(), creadoEn: dateValue(raw.creadoEn)};
+}
+
+export function adaptWorkEvent(raw = {}) {
+  return {...raw, id: raw.id || raw.eventoId || "", eventoId: raw.eventoId || raw.id || "", fecha: dateValue(raw.fecha)};
+}
+
+export function buildWorkMutationPayload(raw = {}) {
+  return {
+    titulo: String(raw.titulo || "").trim(),
+    descripcion: String(raw.descripcion || "").trim(),
+    clienteId: String(raw.clienteId || "").trim(),
+    responsableUid: String(raw.responsableUid || "").trim(),
+    participanteUids: [...new Set((Array.isArray(raw.participanteUids) ? raw.participanteUids : []).map((value) => String(value || "").trim()).filter(Boolean))],
+    estado: String(raw.estado || "pendiente"),
+    prioridad: String(raw.prioridad || "normal"),
+    fechaInicio: String(raw.fechaInicio || ""),
+    fechaPrevista: String(raw.fechaPrevista || ""),
+  };
+}
+
+export function getWorkDraftErrors(raw = {}) {
+  const errors = {};
+  if (!String(raw.titulo || "").trim()) errors.titulo = "Ingresa un título.";
+  if (String(raw.titulo || "").trim().length > 180) errors.titulo = "El título no puede superar 180 caracteres.";
+  if (String(raw.descripcion || "").length > 5000) errors.descripcion = "La descripción no puede superar 5000 caracteres.";
+  if (!STATUS_VALUES.has(String(raw.estado || ""))) errors.estado = "Selecciona un estado válido.";
+  if (!PRIORITY_VALUES.has(String(raw.prioridad || ""))) errors.prioridad = "Selecciona una prioridad válida.";
+  if (raw.fechaInicio && !/^\d{4}-\d{2}-\d{2}$/.test(raw.fechaInicio)) errors.fechaInicio = "Selecciona una fecha válida.";
+  if (raw.fechaPrevista && !/^\d{4}-\d{2}-\d{2}$/.test(raw.fechaPrevista)) errors.fechaPrevista = "Selecciona una fecha válida.";
+  return errors;
+}
+
+export function matchesWorkFilters(work, filters = {}) {
+  if (filters.estado && filters.estado !== "todos" && work.estado !== filters.estado) return false;
+  if (filters.prioridad && filters.prioridad !== "todas" && work.prioridad !== filters.prioridad) return false;
+  if (filters.responsableUid && filters.responsableUid !== "todos" && work.responsableUid !== filters.responsableUid) return false;
+  const query = normalizeWorkSearch(filters.query);
+  if (!query) return true;
+  return normalizeWorkSearch([work.numero, work.titulo, work.clienteSnapshot?.nombreRazonSocial, work.clienteSnapshot?.rut].filter(Boolean).join(" ")).includes(query);
+}
+
+export function getWorkTaskProgress(work) {
+  const total = Math.max(0, Number(work?.tareasTotal || 0));
+  const completed = Math.min(total, Math.max(0, Number(work?.tareasCompletadas || 0)));
+  return {total, completed};
+}
+
+export function humanizeWorkEvent(event = {}) {
+  const actor = event.actorSnapshot?.nombre || "Una persona del equipo";
+  const detail = event.detalle || {};
+  const messages = {
+    trabajo_creado: `${actor} creó el trabajo.`,
+    estado_cambiado: `${actor} cambió el estado de ${getWorkStatusLabel(detail.estadoAnterior)} a ${getWorkStatusLabel(detail.estadoNuevo)}.`,
+    responsable_cambiado: `${actor} cambió el responsable a ${detail.responsableNombre || "Sin responsable"}.`,
+    participante_agregado: `${actor} agregó a ${detail.participanteNombre || "un participante"}.`,
+    participante_retirado: `${actor} retiró a ${detail.participanteNombre || "un participante"}.`,
+    tarea_creada: `${actor} agregó la tarea “${detail.tareaTitulo || "Sin título"}”.`,
+    tarea_completada: `${actor} completó la tarea “${detail.tareaTitulo || "Sin título"}”.`,
+    tarea_reabierta: `${actor} reabrió la tarea “${detail.tareaTitulo || "Sin título"}”.`,
+    tarea_eliminada: `${actor} eliminó la tarea “${detail.tareaTitulo || "Sin título"}”.`,
+    nota_agregada: `${actor} agregó una nota.`,
+    trabajo_completado: `${actor} completó el trabajo.`,
+    trabajo_cancelado: `${actor} canceló el trabajo.`,
+    trabajo_reabierto: `${actor} reabrió el trabajo como ${getWorkStatusLabel(detail.estadoNuevo)}.`,
+  };
+  return messages[event.tipo] || `${actor} actualizó el trabajo.`;
+}

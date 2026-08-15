@@ -5,6 +5,7 @@ import {
   Boxes,
   Building2,
   ClipboardCheck,
+  BriefcaseBusiness,
   History,
   LayoutDashboard,
   ReceiptText,
@@ -99,6 +100,17 @@ export const navigationSections = [
         label: "Inventario",
         title: "Inventario",
         icon: Boxes,
+      },
+    ],
+  },
+  {
+    label: "Operación",
+    items: [
+      {
+        to: "/trabajos",
+        label: "Proyectos y trabajos",
+        title: "Proyectos y trabajos",
+        icon: BriefcaseBusiness,
       },
     ],
   },

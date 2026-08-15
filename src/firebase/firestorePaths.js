@@ -84,6 +84,29 @@ export const clientDocPath = (businessId, clienteId) => [
   "clientes",
   clienteId,
 ];
+export const worksCollectionPath = (businessId) => [
+  "negocios",
+  businessId,
+  "trabajos",
+];
+export const workDocPath = (businessId, trabajoId) => [
+  "negocios",
+  businessId,
+  "trabajos",
+  trabajoId,
+];
+export const workTasksCollectionPath = (businessId, trabajoId) => [
+  ...workDocPath(businessId, trabajoId),
+  "tareas",
+];
+export const workNotesCollectionPath = (businessId, trabajoId) => [
+  ...workDocPath(businessId, trabajoId),
+  "notas",
+];
+export const workHistoryCollectionPath = (businessId, trabajoId) => [
+  ...workDocPath(businessId, trabajoId),
+  "historial",
+];
 export const providersCollectionPath = (businessId) => [
   "negocios",
   businessId,

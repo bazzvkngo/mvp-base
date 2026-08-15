@@ -697,6 +697,41 @@ service cloud.firestore {
         allow create, update, delete: if false;
       }
 
+      match /trabajos/{trabajoId} {
+        allow read: if canAccessBusiness(businessId)
+          && resource.data.negocioId == businessId;
+        allow create, update, delete: if false;
+
+        match /tareas/{tareaId} {
+          allow read: if canAccessBusiness(businessId)
+            && resource.data.negocioId == businessId
+            && resource.data.trabajoId == trabajoId;
+          allow create, update, delete: if false;
+        }
+
+        match /notas/{notaId} {
+          allow read: if canAccessBusiness(businessId)
+            && resource.data.negocioId == businessId
+            && resource.data.trabajoId == trabajoId;
+          allow create, update, delete: if false;
+        }
+
+        match /historial/{eventoId} {
+          allow read: if canAccessBusiness(businessId)
+            && resource.data.negocioId == businessId
+            && resource.data.trabajoId == trabajoId;
+          allow create, update, delete: if false;
+        }
+      }
+
+      match /workCounters/{counterId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /workCreateRequests/{requestId} {
+        allow read, create, update, delete: if false;
+      }
+
       match /clientRutKeys/{rutKey} {
         allow read, create, update, delete: if false;
       }
