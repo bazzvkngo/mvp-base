@@ -53,7 +53,7 @@ function PlatformAdminLayout({businessSession, onReturnToErp, usuario}) {
 
   const returnToErp = async () => {
     await onReturnToErp?.();
-    navigate("/dashboard");
+    navigate("/cotizaciones");
   };
 
   return <div className="platform-shell">

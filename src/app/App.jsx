@@ -14,7 +14,6 @@ import CompanyPage from "../pages/CompanyPage";
 import ClientsPage from "../pages/ClientsPage";
 import ProvidersPage from "../pages/ProvidersPage";
 import AccountPage from "../pages/AccountPage";
-import DashboardPage from "../pages/DashboardPage";
 import FinancePage from "../pages/FinancePage";
 import InventoryPage from "../pages/InventoryPage";
 import LoginPage from "../pages/LoginPage";
@@ -122,7 +121,9 @@ function AppRoutes({
 
   if (isPlatformRoute(location.pathname)) {
     if (!platformAccess?.isSuperadmin) {
-      return <Navigate to={businessSession?.needsOnboarding ? "/onboarding" : "/dashboard"} replace />;
+      return <Navigate to={businessSession?.needsOnboarding
+        ? "/onboarding"
+        : getDefaultBusinessPath(businessSession?.activeBusiness?.role)} replace />;
     }
     return <Routes>
       <Route element={<PlatformAdminLayout usuario={usuario} businessSession={businessSession} onReturnToErp={onBusinessCreated} />}>
@@ -193,10 +194,10 @@ function AppRoutes({
     <Routes>
       <Route
         path="/login"
-        element={<Navigate to="/dashboard" replace />}
+        element={<Navigate to="/cotizaciones" replace />}
       />
-      <Route path="/onboarding" element={<Navigate to="/dashboard" replace />} />
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+      <Route path="/onboarding" element={<Navigate to="/cotizaciones" replace />} />
+      <Route path="/" element={<Navigate to="/cotizaciones" replace />} />
       <Route
         element={
           <AppLayout
@@ -210,19 +211,8 @@ function AppRoutes({
           />
         }
       >
-        <Route
-          path="/dashboard"
-          element={
-            <DashboardPage
-              key={businessId}
-              usuario={usuario}
-              businessId={businessId}
-              currencyCode={activeBusiness?.monedaCodigo}
-              role={activeBusiness?.role}
-            />
-          }
-        />
-        <Route path="/resumen" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/dashboard" element={<Navigate to="/cotizaciones" replace />} />
+        <Route path="/resumen" element={<Navigate to="/cotizaciones" replace />} />
         <Route
           path="/finanzas"
           element={
@@ -517,7 +507,7 @@ function AppRoutes({
           }
         />
       </Route>
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route path="*" element={<Navigate to={safeLanding} replace />} />
     </Routes>
   );
 }

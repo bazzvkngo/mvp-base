@@ -190,9 +190,9 @@ function ReferenceTasksPage({ userId, role }) {
         <button
           type="button"
           style={styles.secondaryButton}
-          onClick={() => navigate("/dashboard")}
+          onClick={() => navigate("/cotizaciones")}
         >
-          Volver al Dashboard
+          Volver a Cotizaciones
         </button>
       </div>
 

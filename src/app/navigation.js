@@ -5,7 +5,6 @@ import {
   ClipboardCheck,
   BriefcaseBusiness,
   History,
-  LayoutDashboard,
   ReceiptText,
   PackageCheck,
   UserRound,
@@ -15,17 +14,6 @@ import {
 } from "lucide-react";
 
 export const navigationSections = [
-  {
-    label: "Inicio",
-    items: [
-      {
-        to: "/dashboard",
-        label: "Resumen",
-        title: "Resumen",
-        icon: LayoutDashboard,
-      },
-    ],
-  },
   {
     label: "Comercial",
     items: [

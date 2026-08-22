@@ -43,6 +43,8 @@ assert.equal(canAccessBusinessPath("TECNICO", "/trabajos"), true);
 assert.equal(canAccessBusinessPath("TECNICO", "/reportes"), false);
 assert.equal(canAccessBusinessPath("FINANZAS", "/reportes"), true);
 assert.equal(canAccessBusinessPath("FINANZAS", "/empresa"), false);
+assert.equal(getDefaultBusinessPath("OWNER"), "/cotizaciones");
+assert.equal(getDefaultBusinessPath("VENTAS"), "/cotizaciones");
 assert.equal(getDefaultBusinessPath("TECNICO"), "/trabajos");
 console.log("OK RBAC: rutas y redirecciones seguras por rol");
 

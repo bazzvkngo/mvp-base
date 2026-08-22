@@ -11,6 +11,7 @@ const [
   companyConfig,
   businessService,
   appLayout,
+  navigation,
 ] = await Promise.all([
   readFile(new URL("../src/pages/OnboardingPage.jsx", import.meta.url), "utf8"),
   readFile(
@@ -29,6 +30,7 @@ const [
   ),
   readFile(new URL("../src/services/businessService.js", import.meta.url), "utf8"),
   readFile(new URL("../src/layout/AppLayout.jsx", import.meta.url), "utf8"),
+  readFile(new URL("../src/app/navigation.js", import.meta.url), "utf8"),
 ]);
 
 for (const field of ["nombreComercial", "rubroCodigo", "regionCodigo"]) {
@@ -87,7 +89,9 @@ assert.match(onboarding, /setSubmitError\(getBusinessCreationErrorMessage\(error
 assert.doesNotMatch(onboarding, /catch[\s\S]*setValues\(INITIAL_QUICK_BUSINESS_VALUES\)/);
 assert.doesNotMatch(drawer, /catch[\s\S]*setValues\(INITIAL_QUICK_BUSINESS_VALUES\)/);
 assert.match(app, /businessSession\?\.needsOnboarding/);
-assert.match(app, /<Navigate to="\/dashboard" replace/);
+assert.match(app, /<Navigate to="\/cotizaciones" replace/);
+assert.match(app, /path="\/dashboard" element=\{<Navigate to="\/cotizaciones" replace \/>\}/);
+assert.doesNotMatch(navigation, /to: "\/dashboard"/);
 assert.match(app, /key=\{businessId\}/);
 assert.match(companyConfig, /ownerOnly: true/);
 assert.match(companyConfig, /confirmation\.trim\(\) === expectedName/);

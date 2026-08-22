@@ -315,6 +315,7 @@ function AppLayout({
 
   const handleBusinessChanged = async (business) => {
     await onBusinessChanged(business.id);
+    navigate("/cotizaciones");
     setMobileNavigationOpen(false);
     setBusinessNotice(
       `Ahora estás trabajando en ${business.nombreComercial}`
@@ -323,7 +324,7 @@ function AppLayout({
 
   const handleBusinessCreated = async (business) => {
     await onBusinessCreated();
-    navigate("/dashboard");
+    navigate("/cotizaciones");
     setBusinessNotice(`${business.nombreComercial} fue creado correctamente`);
   };
 
