@@ -500,6 +500,10 @@ service cloud.firestore {
         allow read, create, update, delete: if false;
       }
 
+      match /businessDeleteRequests/{requestId} {
+        allow read, create, update, delete: if false;
+      }
+
       match /config/{docId} {
         allow read, create, update: if isOwner(uid);
         allow delete: if false;

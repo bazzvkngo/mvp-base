@@ -95,6 +95,7 @@ const {transitionQuoteStatusHandler} = require("./quoteLifecycle");
 const {
   createAdditionalBusinessHandler,
   createFirstBusinessHandler,
+  deleteBusinessHandler,
   getBusinessSessionHandler,
   requireBusinessAccess,
   setActiveBusinessHandler,
@@ -3750,6 +3751,17 @@ exports.createAdditionalBusiness = onCall(
   },
   async (request) =>
     createAdditionalBusinessHandler(request, businessOnboardingDependencies)
+);
+
+exports.deleteBusiness = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    deleteBusinessHandler(request, businessOnboardingDependencies)
 );
 
 exports.setActiveBusiness = onCall(

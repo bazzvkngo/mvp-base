@@ -13,6 +13,7 @@ import { useSearchParams } from "react-router-dom";
 import BusinessCategoryPicker from "../../components/BusinessCategoryPicker";
 import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
+import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import {
   CHILE_REGIONS,
   COUNTRIES,
@@ -42,12 +43,17 @@ import {
   saveBusinessSettings,
   uploadCompanyLogo,
 } from "../../services/companyService";
+import {
+  deleteBusiness,
+  getBusinessDeletionRequestId,
+} from "../../services/businessService";
 
 const SECTIONS = [
   { id: "informacion", label: "Información empresa", icon: Building2 },
   { id: "impuestos", label: "Impuestos", icon: Landmark },
   { id: "inventario", label: "Inventario", icon: PackageCheck },
   { id: "cotizaciones", label: "Cotizaciones", icon: FileText },
+  { id: "eliminacion", label: "Eliminar empresa", icon: Trash2, ownerOnly: true },
 ];
 
 const EMPTY_INFORMATION = {
@@ -696,15 +702,143 @@ function QuoteSection({ businessId, canEdit }) {
   );
 }
 
-function CompanyConfig({ onBusinessUpdated, role, userId }) {
+function BusinessDeletionSection({
+  businessId,
+  businessName,
+  currentUserUid,
+  onBusinessDeleted,
+}) {
+  const confirmationInputRef = React.useRef(null);
+  const [dialogOpen, setDialogOpen] = React.useState(false);
+  const [confirmation, setConfirmation] = React.useState("");
+  const [deleting, setDeleting] = React.useState(false);
+  const [error, setError] = React.useState("");
+  const expectedName = String(businessName || "").trim();
+  const confirmationMatches = Boolean(expectedName) &&
+    confirmation.trim() === expectedName;
+
+  const closeDialog = () => {
+    if (deleting) return;
+    setDialogOpen(false);
+    setConfirmation("");
+    setError("");
+  };
+
+  const confirmDeletion = async () => {
+    if (!confirmationMatches || !currentUserUid) return;
+    setDeleting(true);
+    setError("");
+    try {
+      const requestId = getBusinessDeletionRequestId(
+        currentUserUid,
+        businessId
+      );
+      const result = await deleteBusiness(businessId, requestId);
+      await onBusinessDeleted?.(result);
+    } catch (deleteError) {
+      setError(
+        messageForError(
+          deleteError,
+          "No pudimos eliminar la empresa. Inténtalo nuevamente."
+        )
+      );
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <SectionFrame
+      title="Eliminar empresa"
+      description="Esta acción retira la empresa del uso normal sin borrar su historial."
+    >
+      <div className="settings-card settings-danger-zone">
+        <div>
+          <h3>Eliminación lógica</h3>
+          <p>
+            La empresa desaparecerá del selector y sus miembros no podrán seguir
+            operando. Clientes, documentos, inventario y demás datos históricos
+            se conservarán.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="danger"
+          icon={Trash2}
+          onClick={() => setDialogOpen(true)}
+        >
+          Eliminar empresa
+        </Button>
+      </div>
+
+      <ResponsiveDialog
+        open={dialogOpen}
+        onClose={closeDialog}
+        initialFocusRef={confirmationInputRef}
+        eyebrow="Acción reservada al OWNER"
+        title="Confirma la eliminación de la empresa"
+        description="No se borrará ningún dato histórico, pero la empresa dejará de estar disponible para todos sus miembros."
+        footer={
+          <>
+            <Button type="button" variant="secondary" onClick={closeDialog} disabled={deleting}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              icon={Trash2}
+              onClick={confirmDeletion}
+              disabled={!confirmationMatches || deleting}
+            >
+              {deleting ? "Eliminando..." : "Eliminar definitivamente"}
+            </Button>
+          </>
+        }
+      >
+        <div className="settings-deletion-confirmation">
+          <p>
+            Escribe <strong>{expectedName}</strong> para confirmar.
+          </p>
+          <SettingsField
+            label="Nombre de la empresa"
+            error={confirmation && !confirmationMatches ? "El nombre no coincide." : ""}
+          >
+            <input
+              ref={confirmationInputRef}
+              value={confirmation}
+              onChange={(event) => {
+                setConfirmation(event.target.value);
+                setError("");
+              }}
+              autoComplete="off"
+              aria-invalid={Boolean(confirmation && !confirmationMatches)}
+            />
+          </SettingsField>
+          <SectionStatus error={error} />
+        </div>
+      </ResponsiveDialog>
+    </SectionFrame>
+  );
+}
+
+function CompanyConfig({
+  businessId,
+  businessName,
+  currentUserUid,
+  onBusinessDeleted,
+  onBusinessUpdated,
+  role,
+}) {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedSection = searchParams.get("seccion") || "informacion";
-  const activeSection = SECTIONS.some((section) => section.id === requestedSection)
+  const availableSections = SECTIONS.filter(
+    (section) => !section.ownerOnly || role === "OWNER"
+  );
+  const activeSection = availableSections.some((section) => section.id === requestedSection)
     ? requestedSection
     : "informacion";
   const canEdit = role === "OWNER" || role === "ADMIN";
 
-  if (!userId) return <p className="settings-message settings-message--error">No hay un negocio activo.</p>;
+  if (!businessId) return <p className="settings-message settings-message--error">No hay un negocio activo.</p>;
 
   return (
     <section className="erp-page company-settings-page">
@@ -720,7 +854,7 @@ function CompanyConfig({ onBusinessUpdated, role, userId }) {
       <div className="settings-layout">
         <nav className="settings-subnav" aria-label="Secciones de empresa">
           <span className="settings-subnav__label">Empresa</span>
-          {SECTIONS.map((section) => (
+          {availableSections.map((section) => (
             <button
               key={section.id}
               type="button"
@@ -734,10 +868,18 @@ function CompanyConfig({ onBusinessUpdated, role, userId }) {
           ))}
         </nav>
         <div className="settings-content">
-          {activeSection === "informacion" && <BusinessInformationSection businessId={userId} canEdit={canEdit} onBusinessUpdated={onBusinessUpdated} />}
-          {activeSection === "impuestos" && <TaxSection businessId={userId} canEdit={canEdit} />}
-          {activeSection === "inventario" && <InventorySection businessId={userId} canEdit={canEdit} />}
-          {activeSection === "cotizaciones" && <QuoteSection businessId={userId} canEdit={canEdit} />}
+          {activeSection === "informacion" && <BusinessInformationSection businessId={businessId} canEdit={canEdit} onBusinessUpdated={onBusinessUpdated} />}
+          {activeSection === "impuestos" && <TaxSection businessId={businessId} canEdit={canEdit} />}
+          {activeSection === "inventario" && <InventorySection businessId={businessId} canEdit={canEdit} />}
+          {activeSection === "cotizaciones" && <QuoteSection businessId={businessId} canEdit={canEdit} />}
+          {activeSection === "eliminacion" && role === "OWNER" && (
+            <BusinessDeletionSection
+              businessId={businessId}
+              businessName={businessName}
+              currentUserUid={currentUserUid}
+              onBusinessDeleted={onBusinessDeleted}
+            />
+          )}
         </div>
       </div>
     </section>

@@ -198,8 +198,11 @@ function AppRoutes({
           element={
             <CompanyPage
               key={businessId}
-              userId={businessId}
+              businessId={businessId}
+              businessName={activeBusiness?.nombreComercial}
+              currentUserUid={usuario?.uid}
               role={activeBusiness?.role}
+              onBusinessDeleted={onBusinessCreated}
               onBusinessUpdated={onBusinessCreated}
             />
           }

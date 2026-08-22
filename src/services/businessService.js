@@ -27,6 +27,12 @@ export async function setActiveBusiness(businessId) {
   return response.data;
 }
 
+export async function deleteBusiness(businessId, requestId) {
+  const callable = httpsCallable(functions, "deleteBusiness");
+  const response = await callable({ businessId, requestId });
+  return response.data;
+}
+
 export function getBusinessCreationRequestId(uid) {
   const storageKey = `valoracloud.firstBusinessRequest.${uid}`;
   const existing = window.sessionStorage.getItem(storageKey);
@@ -55,4 +61,14 @@ export function clearAdditionalBusinessCreationRequestId(uid) {
   window.sessionStorage.removeItem(
     `valoracloud.additionalBusinessRequest.${uid}`
   );
+}
+
+export function getBusinessDeletionRequestId(uid, businessId) {
+  const storageKey = `valoracloud.businessDeleteRequest.${uid}.${businessId}`;
+  const existing = window.sessionStorage.getItem(storageKey);
+  if (existing) return existing;
+
+  const generated = `delete_${crypto.randomUUID().replaceAll("-", "")}`;
+  window.sessionStorage.setItem(storageKey, generated);
+  return generated;
 }

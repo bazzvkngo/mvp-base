@@ -9,10 +9,12 @@ import {
 } from "firebase/auth";
 import {
   connectFirestoreEmulator,
+  deleteDoc,
   doc,
   getDoc,
   getFirestore,
   setDoc,
+  updateDoc,
 } from "firebase/firestore";
 import {
   connectFunctionsEmulator,
@@ -345,14 +347,125 @@ async function main() {
       2
     );
 
-    await adminDb.collection("negocios").doc(firstBusinessId).update({ estado: "inactivo" });
-    await adminDb.collection("usuarios").doc(ownerUid).set(
-      { negocioActivoId: firstBusinessId },
-      { merge: true }
+    await adminDb
+      .collection("membresias")
+      .doc(`${firstBusinessId}__${inviteeUid}`)
+      .set({
+        negocioId: firstBusinessId,
+        uid: inviteeUid,
+        rol: "ADMIN",
+        estado: "activo",
+      });
+    await expectCallableCode("permission-denied", () =>
+      callable(invitee, "deleteBusiness", {
+        businessId: firstBusinessId,
+        requestId: "multi_admin_delete_001",
+      })
     );
+    await adminDb
+      .collection("membresias")
+      .doc(`${firstBusinessId}__${inviteeUid}`)
+      .update({ rol: "MEMBER" });
+    await expectCallableCode("permission-denied", () =>
+      callable(invitee, "deleteBusiness", {
+        businessId: firstBusinessId,
+        requestId: "multi_member_delete_001",
+      })
+    );
+    await expectDenied(() =>
+      updateDoc(doc(owner.db, "negocios", firstBusinessId), {
+        estado: "eliminada",
+      })
+    );
+    await expectDenied(() =>
+      deleteDoc(doc(owner.db, "negocios", firstBusinessId))
+    );
+
+    const deletionPayload = {
+      businessId: firstBusinessId,
+      requestId: "multi_owner_delete_001",
+    };
+    const deletion = await callable(owner, "deleteBusiness", deletionPayload);
+    assert.equal(deletion.data.businessId, firstBusinessId);
+    assert.equal(deletion.data.estado, "eliminada");
+    assert.equal(deletion.data.nextBusinessId, secondBusinessId);
+    assert.equal(deletion.data.needsOnboarding, false);
+    assert.equal(deletion.data.idempotent, false);
+
+    const deletionRetry = await callable(owner, "deleteBusiness", deletionPayload);
+    assert.equal(deletionRetry.data.idempotent, true);
+    assert.equal(deletionRetry.data.nextBusinessId, secondBusinessId);
+    const [deletedBusiness, preservedMembership, preservedInventory, deleteRequests] =
+      await Promise.all([
+        adminDb.collection("negocios").doc(firstBusinessId).get(),
+        adminDb.collection("membresias").doc(`${firstBusinessId}__${ownerUid}`).get(),
+        adminDb.doc(`negocios/${firstBusinessId}/inventario/item-a`).get(),
+        adminDb
+          .collection("usuarios")
+          .doc(ownerUid)
+          .collection("businessDeleteRequests")
+          .get(),
+      ]);
+    assert.equal(deletedBusiness.data()?.estado, "eliminada");
+    assert.ok(deletedBusiness.data()?.eliminadoEn);
+    assert.equal(deletedBusiness.data()?.eliminadoPorUid, ownerUid);
+    assert.equal(preservedMembership.exists, true);
+    assert.equal(preservedInventory.data()?.nombre, "Inventario A");
+    assert.equal(deleteRequests.size, 1);
+    await expectDenied(() =>
+      getDoc(doc(owner.db, "negocios", firstBusinessId, "inventario", "item-a"))
+    );
+    await expectDenied(() =>
+      getDoc(doc(invitee.db, "negocios", firstBusinessId, "inventario", "item-a"))
+    );
+    await expectCallableCode("failed-precondition", () =>
+      callable(owner, "setActiveBusiness", { businessId: firstBusinessId })
+    );
+    await expectDenied(() =>
+      getDoc(
+        doc(
+          owner.db,
+          "usuarios",
+          ownerUid,
+          "businessDeleteRequests",
+          deletionPayload.requestId
+        )
+      )
+    );
+
     const fallbackSession = await callable(owner, "getBusinessSession");
     assert.equal(fallbackSession.data.activeBusiness.id, secondBusinessId);
     assert.equal(fallbackSession.data.businesses.length, 1);
+    assert.equal(fallbackSession.data.plan.ownedBusinessCount, 1);
+    assert.equal(fallbackSession.data.plan.canCreateBusiness, true);
+
+    const replacement = await callable(owner, "createAdditionalBusiness", {
+      ...baseBusiness,
+      nombreComercial: "Negocio de reemplazo",
+      requestId: "multi_owner_replacement_001",
+    });
+    assert.equal(replacement.data.plan.ownedBusinessCount, 2);
+    await callable(owner, "setActiveBusiness", { businessId: secondBusinessId });
+    assert.equal(
+      (await callable(owner, "getBusinessSession")).data.activeBusiness.id,
+      secondBusinessId
+    );
+
+    const outsiderDeletion = await callable(outsider, "deleteBusiness", {
+      businessId: outsiderBusinessId,
+      requestId: "multi_outsider_delete_001",
+    });
+    assert.equal(outsiderDeletion.data.needsOnboarding, true);
+    assert.equal(outsiderDeletion.data.nextBusinessId, null);
+    const outsiderAfterDeletion = await callable(outsider, "getBusinessSession");
+    assert.equal(outsiderAfterDeletion.data.accessState, "onboarding");
+    assert.equal(outsiderAfterDeletion.data.needsOnboarding, true);
+    assert.equal(outsiderAfterDeletion.data.plan.ownedBusinessCount, 0);
+    assert.equal(
+      (await adminDb.collection("usuarios").doc(outsiderUid).get()).data()
+        ?.negocioActivoId,
+      undefined
+    );
 
     console.log(
       "BUSINESS_MULTI_INTEGRATED_OK",
@@ -364,6 +477,9 @@ async function main() {
         idempotencyVerified: true,
         isolationVerified: true,
         concurrentLimitVerified: true,
+        logicalDeletionVerified: true,
+        deletionFallbackVerified: true,
+        deletedBusinessLimitExcluded: true,
       })
     );
   } finally {

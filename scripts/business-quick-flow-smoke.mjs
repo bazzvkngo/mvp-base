@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { normalizeQuickBusinessPayload } from "../src/domain/businessQuickPayload.mjs";
 
-const [onboarding, drawer, fields, formModel, app] = await Promise.all([
+const [onboarding, drawer, fields, formModel, app, companyConfig, businessService] = await Promise.all([
   readFile(new URL("../src/pages/OnboardingPage.jsx", import.meta.url), "utf8"),
   readFile(
     new URL("../src/components/AdditionalBusinessDrawer.jsx", import.meta.url),
@@ -14,6 +14,11 @@ const [onboarding, drawer, fields, formModel, app] = await Promise.all([
   ),
   readFile(new URL("../src/domain/businessForm.js", import.meta.url), "utf8"),
   readFile(new URL("../src/app/App.jsx", import.meta.url), "utf8"),
+  readFile(
+    new URL("../src/features/company/CompanyConfig.jsx", import.meta.url),
+    "utf8"
+  ),
+  readFile(new URL("../src/services/businessService.js", import.meta.url), "utf8"),
 ]);
 
 for (const field of ["nombreComercial", "rubroCodigo", "regionCodigo"]) {
@@ -74,5 +79,9 @@ assert.doesNotMatch(drawer, /catch[\s\S]*setValues\(INITIAL_QUICK_BUSINESS_VALUE
 assert.match(app, /businessSession\?\.needsOnboarding/);
 assert.match(app, /<Navigate to="\/dashboard" replace/);
 assert.match(app, /key=\{businessId\}/);
+assert.match(companyConfig, /ownerOnly: true/);
+assert.match(companyConfig, /confirmation\.trim\(\) === expectedName/);
+assert.match(companyConfig, /Eliminar definitivamente/);
+assert.match(businessService, /httpsCallable\(functions, "deleteBusiness"\)/);
 
 console.log("BUSINESS_QUICK_FLOW_SMOKE_OK");

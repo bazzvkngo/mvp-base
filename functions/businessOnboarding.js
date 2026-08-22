@@ -3,6 +3,7 @@ const catalog = require("./businessCatalog.json");
 
 const BUSINESS_ROLES = Object.freeze(["OWNER", "ADMIN", "MEMBER"]);
 const ACTIVE_STATUS = "activo";
+const DELETED_STATUS = "eliminada";
 const FREE_PLAN_OWNER_BUSINESS_LIMIT = 2;
 
 const countriesByCode = new Map(
@@ -407,6 +408,24 @@ function planResponse(ownedBusinessCount) {
   };
 }
 
+function isAvailableBusinessSnapshot(snapshot) {
+  return Boolean(
+    snapshot?.exists &&
+      snapshot.data()?.estado === ACTIVE_STATUS &&
+      !snapshot.data()?.eliminadoEn
+  );
+}
+
+function sortBusinessEntries(left, right) {
+  const byName = String(
+    left.snapshot.data()?.nombreComercial || ""
+  ).localeCompare(
+    String(right.snapshot.data()?.nombreComercial || ""),
+    "es"
+  );
+  return byName || left.snapshot.id.localeCompare(right.snapshot.id);
+}
+
 async function requireBusinessAccess(
   request,
   { db, HttpsError },
@@ -528,7 +547,6 @@ async function createFirstBusinessHandler(
       .filter(
         (membership) =>
           membership.uid === uid &&
-          membership.estado === ACTIVE_STATUS &&
           BUSINESS_ROLES.includes(membership.rol)
       );
     const membershipBusinesses = await Promise.all(
@@ -537,10 +555,9 @@ async function createFirstBusinessHandler(
       )
     );
     const validMembershipIndex = membershipBusinesses.findIndex(
-      (snapshot) =>
-        snapshot.exists &&
-        snapshot.data()?.estado === ACTIVE_STATUS &&
-        !snapshot.data()?.eliminadoEn
+      (snapshot, index) =>
+        memberships[index].estado === ACTIVE_STATUS &&
+        isAvailableBusinessSnapshot(snapshot)
     );
 
     if (validMembershipIndex >= 0) {
@@ -584,13 +601,11 @@ async function createFirstBusinessHandler(
       };
     }
 
-    const ownedBusinessCount = Math.max(
-      membershipsSnapshot.docs.filter(
-        (snapshot) =>
-          snapshot.data()?.uid === uid && snapshot.data()?.rol === "OWNER"
-      ).length,
-      Number(ownerPlanSnapshot.data()?.cantidad || 0)
-    );
+    const ownedBusinessCount = membershipBusinesses.filter(
+      (snapshot, index) =>
+        memberships[index].rol === "OWNER" &&
+        isAvailableBusinessSnapshot(snapshot)
+    ).length;
     if (ownedBusinessCount >= FREE_PLAN_OWNER_BUSINESS_LIMIT) {
       throw new HttpsError(
         "resource-exhausted",
@@ -740,14 +755,20 @@ async function createAdditionalBusinessHandler(
       };
     }
 
-    const actualOwnedCount = membershipsSnapshot.docs.filter((snapshot) => {
-      const membership = snapshot.data() || {};
-      return membership.uid === uid && membership.rol === "OWNER";
-    }).length;
-    const ownedBusinessCount = Math.max(
-      actualOwnedCount,
-      Number(ownerPlanSnapshot.data()?.cantidad || 0)
+    const ownerMemberships = membershipsSnapshot.docs
+      .map((snapshot) => snapshot.data() || {})
+      .filter(
+        (membership) =>
+          membership.uid === uid && membership.rol === "OWNER"
+      );
+    const ownerBusinessSnapshots = await Promise.all(
+      ownerMemberships.map((membership) =>
+        transaction.get(db.collection("negocios").doc(membership.negocioId))
+      )
     );
+    const ownedBusinessCount = ownerBusinessSnapshots.filter(
+      isAvailableBusinessSnapshot
+    ).length;
 
     if (ownedBusinessCount >= FREE_PLAN_OWNER_BUSINESS_LIMIT) {
       throw new HttpsError(
@@ -830,6 +851,184 @@ async function createAdditionalBusinessHandler(
       },
       idempotent: false,
       plan: planResponse(ownedBusinessCount + 1),
+    };
+  });
+}
+
+async function deleteBusinessHandler(
+  request,
+  { db, HttpsError, FieldValue }
+) {
+  const uid = requireAuthenticatedUid(request, HttpsError);
+  const requestId = validateRequestId(request?.data?.requestId, HttpsError);
+  const businessId = safeText(request?.data?.businessId, 160);
+  if (!/^[a-zA-Z0-9_-]{1,160}$/.test(businessId)) {
+    throw new HttpsError("invalid-argument", "Selecciona un negocio válido.");
+  }
+
+  const userRef = db.collection("usuarios").doc(uid);
+  const businessRef = db.collection("negocios").doc(businessId);
+  const membershipRef = db
+    .collection("membresias")
+    .doc(membershipDocumentId(businessId, uid));
+  const requestRef = userRef
+    .collection("businessDeleteRequests")
+    .doc(requestId);
+  const ownerPlanRef = userRef.collection("sistema").doc("negociosPropios");
+  const membershipsQuery = db
+    .collection("membresias")
+    .where("uid", "==", uid);
+
+  return db.runTransaction(async (transaction) => {
+    const [
+      userSnapshot,
+      businessSnapshot,
+      membershipSnapshot,
+      requestSnapshot,
+      ownerPlanSnapshot,
+      membershipsSnapshot,
+    ] = await Promise.all([
+      transaction.get(userRef),
+      transaction.get(businessRef),
+      transaction.get(membershipRef),
+      transaction.get(requestRef),
+      transaction.get(ownerPlanRef),
+      transaction.get(membershipsQuery),
+    ]);
+
+    if (requestSnapshot.exists) {
+      const previousRequest = requestSnapshot.data() || {};
+      if (
+        previousRequest.tipo !== "eliminacion" ||
+        previousRequest.negocioId !== businessId
+      ) {
+        throw new HttpsError(
+          "failed-precondition",
+          "La misma solicitud ya fue utilizada para otro negocio."
+        );
+      }
+      return {
+        businessId,
+        estado: DELETED_STATUS,
+        nextBusinessId: previousRequest.nextBusinessId || null,
+        needsOnboarding: Boolean(previousRequest.needsOnboarding),
+        idempotent: true,
+      };
+    }
+
+    const membership = membershipSnapshot.data() || {};
+    if (
+      !businessSnapshot.exists ||
+      !membershipSnapshot.exists ||
+      membership.uid !== uid ||
+      membership.negocioId !== businessId ||
+      membership.estado !== ACTIVE_STATUS ||
+      membership.rol !== "OWNER"
+    ) {
+      throw new HttpsError(
+        "permission-denied",
+        "Sólo el propietario puede eliminar esta empresa."
+      );
+    }
+
+    const memberships = membershipsSnapshot.docs
+      .map((snapshot) => snapshot.data() || {})
+      .filter(
+        (item) => item.uid === uid && BUSINESS_ROLES.includes(item.rol)
+      );
+    const businessSnapshots = await Promise.all(
+      memberships.map((item) =>
+        transaction.get(db.collection("negocios").doc(item.negocioId))
+      )
+    );
+    const entries = businessSnapshots.map((snapshot, index) => ({
+      snapshot,
+      membership: memberships[index],
+    }));
+    const availableAlternatives = entries
+      .filter(
+        ({ snapshot, membership: item }) =>
+          snapshot.id !== businessId &&
+          item.estado === ACTIVE_STATUS &&
+          isAvailableBusinessSnapshot(snapshot)
+      )
+      .sort(sortBusinessEntries);
+    const activeOwnedBusinessCount = entries.filter(
+      ({ snapshot, membership: item }) =>
+        snapshot.id !== businessId &&
+        item.rol === "OWNER" &&
+        isAvailableBusinessSnapshot(snapshot)
+    ).length;
+    const userData = userSnapshot.data() || {};
+    const currentAlternative = availableAlternatives.find(
+      ({ snapshot }) => snapshot.id === userData.negocioActivoId
+    );
+    const nextBusiness = currentAlternative || availableAlternatives[0] || null;
+    const deletingActiveBusiness = userData.negocioActivoId === businessId;
+    const shouldRepairActiveBusiness = deletingActiveBusiness ||
+      !availableAlternatives.some(
+        ({ snapshot }) => snapshot.id === userData.negocioActivoId
+      );
+    const nextBusinessId = shouldRepairActiveBusiness
+      ? nextBusiness?.snapshot.id || null
+      : userData.negocioActivoId;
+    const needsOnboarding = !nextBusinessId;
+    const now = FieldValue.serverTimestamp();
+    const businessData = businessSnapshot.data() || {};
+    const alreadyDeleted =
+      businessData.estado === DELETED_STATUS || Boolean(businessData.eliminadoEn);
+
+    if (!alreadyDeleted) {
+      transaction.update(businessRef, {
+        estado: DELETED_STATUS,
+        eliminadoEn: now,
+        eliminadoPorUid: uid,
+        actualizadoEn: now,
+      });
+    }
+    if (shouldRepairActiveBusiness) {
+      transaction.set(
+        userRef,
+        {
+          negocioActivoId: nextBusinessId || FieldValue.delete(),
+          actualizadoEn: now,
+          ...(userSnapshot.exists
+            ? {}
+            : {
+                email: request?.auth?.token?.email || null,
+                creadoEn: now,
+              }),
+        },
+        { merge: true }
+      );
+    }
+    transaction.set(
+      ownerPlanRef,
+      {
+        uid,
+        plan: "FREE",
+        limite: FREE_PLAN_OWNER_BUSINESS_LIMIT,
+        cantidad: activeOwnedBusinessCount,
+        actualizadoEn: now,
+        ...(ownerPlanSnapshot.exists ? {} : { creadoEn: now }),
+      },
+      { merge: true }
+    );
+    transaction.create(requestRef, {
+      uid,
+      negocioId: businessId,
+      tipo: "eliminacion",
+      nextBusinessId: nextBusinessId || null,
+      needsOnboarding,
+      creadoEn: now,
+    });
+
+    return {
+      businessId,
+      estado: DELETED_STATUS,
+      nextBusinessId,
+      needsOnboarding,
+      idempotent: alreadyDeleted,
     };
   });
 }
@@ -973,37 +1172,30 @@ async function getBusinessSessionHandler(
       (membership) =>
         membership.uid === uid && BUSINESS_ROLES.includes(membership.rol)
     );
-  const activeMemberships = memberships.filter(
-    (membership) => membership.estado === ACTIVE_STATUS
-  );
   const businessSnapshots = await Promise.all(
-    activeMemberships.map((membership) =>
+    memberships.map((membership) =>
       db.collection("negocios").doc(membership.negocioId).get()
     )
   );
   const available = businessSnapshots
     .map((snapshot, index) => ({
       snapshot,
-      membership: activeMemberships[index],
+      membership: memberships[index],
     }))
     .filter(
-      ({ snapshot }) =>
-        snapshot.exists &&
-        snapshot.data()?.estado === ACTIVE_STATUS &&
-        !snapshot.data()?.eliminadoEn
+      ({ snapshot, membership }) =>
+        membership.estado === ACTIVE_STATUS &&
+        isAvailableBusinessSnapshot(snapshot)
     )
-    .sort((left, right) =>
-      String(left.snapshot.data()?.nombreComercial || "").localeCompare(
-        String(right.snapshot.data()?.nombreComercial || ""),
-        "es"
-      )
-    );
+    .sort(sortBusinessEntries);
 
   const availableBusinesses = available.map(({ snapshot, membership }) =>
     businessResponse(snapshot, membership)
   );
-  const ownedBusinessCount = memberships.filter(
-    (membership) => membership.rol === "OWNER"
+  const ownedBusinessCount = businessSnapshots.filter(
+    (snapshot, index) =>
+      memberships[index].rol === "OWNER" &&
+      isAvailableBusinessSnapshot(snapshot)
   ).length;
 
   const preferred = available.find(
@@ -1039,6 +1231,16 @@ async function getBusinessSessionHandler(
       membershipCount: memberships.length,
       plan: planResponse(ownedBusinessCount),
     };
+  }
+
+  if (userSnapshot.exists && userData.negocioActivoId) {
+    await userRef.set(
+      {
+        negocioActivoId: FieldValue.delete(),
+        actualizadoEn: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
   }
 
   return {
@@ -1109,10 +1311,12 @@ function buildBusinessCatalogSeedEntries() {
 module.exports = {
   ACTIVE_STATUS,
   BUSINESS_ROLES,
+  DELETED_STATUS,
   FREE_PLAN_OWNER_BUSINESS_LIMIT,
   buildBusinessCatalogSeedEntries,
   createAdditionalBusinessHandler,
   createFirstBusinessHandler,
+  deleteBusinessHandler,
   getBusinessSessionHandler,
   membershipDocumentId,
   requireBusinessAccess,
