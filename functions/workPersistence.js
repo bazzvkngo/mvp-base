@@ -2,6 +2,7 @@ const {createHash} = require("node:crypto");
 
 const WORK_MODEL_VERSION = 2;
 const WORK_FILE_MODEL_VERSION = 1;
+const WORK_TASK_MODEL_VERSION = 2;
 const WRITE_ROLES = ["OWNER", "ADMIN"];
 const WORK_STATUSES = new Set(["pendiente", "en_progreso", "en_espera", "completado", "cancelado"]);
 const WORK_PRIORITIES = new Set(["baja", "normal", "alta", "urgente"]);
@@ -104,6 +105,45 @@ function linkedWorkFields(snapshot, businessId, HttpsError) {
 
 function assertTaskMutable(work, HttpsError) {
   if (["completado", "cancelado"].includes(work.estado)) fail(HttpsError, "failed-precondition", "Reabre el trabajo antes de modificar sus tareas.");
+}
+
+function normalizeTaskInput(raw = {}, HttpsError) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) fail(HttpsError, "invalid-argument", "Los datos de la tarea deben enviarse como objeto.");
+  return {
+    titulo: text(raw.titulo, "El título de la tarea", 240, HttpsError, {required: true}),
+    descripcion: text(raw.descripcion, "La descripción de la tarea", 4000, HttpsError),
+    responsableUid: identifier(raw.responsableUid, "El responsable de la tarea", HttpsError, {optional: true}),
+  };
+}
+
+function assertTask(snapshot, businessId, workId, HttpsError) {
+  const task = snapshot.data() || {};
+  if (!snapshot.exists || task.negocioId !== businessId || task.trabajoId !== workId) fail(HttpsError, "not-found", "No se encontró la tarea.");
+  return task;
+}
+
+function taskIsCompleted(task) {
+  return task.estado === "completada" || task.completada === true;
+}
+
+function assertTaskOperator(task, context, HttpsError) {
+  if (WRITE_ROLES.includes(context.membership?.rol)) return;
+  if (context.membership?.rol !== "MEMBER" || String(task.responsableUid || "") !== context.uid) {
+    fail(HttpsError, "permission-denied", "Sólo la persona asignada puede actualizar esta tarea.");
+  }
+}
+
+function previousTaskRequest(snapshot, {fingerprint: expectedFingerprint, operation, uid}, HttpsError) {
+  if (!snapshot.exists) return null;
+  const stored = snapshot.data() || {};
+  if (stored.uidUsuario !== uid || stored.operacion !== operation || stored.fingerprint !== expectedFingerprint) {
+    fail(HttpsError, "already-exists", "La solicitud ya fue utilizada para otra operación.");
+  }
+  return {...(stored.resultado || {}), idempotent: true};
+}
+
+function taskRequestPayload({businessId, fingerprint: value, operation, result, timestamp, uid, workId, taskId}) {
+  return {negocioId: businessId, trabajoId: workId, tareaId: taskId, operacion: operation, fingerprint: value, uidUsuario: uid, resultado: result, creadoEn: timestamp};
 }
 
 function clientSnapshot(snapshot, businessId, HttpsError) {
@@ -394,60 +434,189 @@ async function cambiarEstadoTrabajoHandler(request, dependencies) {
   return {trabajoId: workId, estado};
 }
 
-async function agregarTareaTrabajoHandler(request, dependencies) {
+async function crearTareaTrabajoV2Handler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
   const context = await requireWriteAccess(request, dependencies);
   const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError);
-  const titulo = text(request?.data?.titulo, "El título de la tarea", 240, HttpsError, {required: true});
-  const people = await userSnapshots(dependencies, [context.uid]); const actor = publicPerson(people, context.uid);
-  const workRef = context.businessRef.collection("trabajos").doc(workId); const taskRef = workRef.collection("tareas").doc();
+  const input = normalizeTaskInput(request?.data?.tarea || {titulo: request?.data?.titulo}, HttpsError);
+  const requestId = requestIdentifier(request?.data?.requestId, HttpsError);
+  const requestFingerprint = fingerprint({workId, input});
+  const people = await userSnapshots(dependencies, [context.uid, input.responsableUid]);
+  const actor = publicPerson(people, context.uid);
+  const assignedPerson = input.responsableUid ? publicPerson(people, input.responsableUid) : null;
+  const workRef = context.businessRef.collection("trabajos").doc(workId);
+  const taskRef = workRef.collection("tareas").doc();
+  const requestRef = context.businessRef.collection("workTaskRequests").doc(requestId);
+  let result;
   await db.runTransaction(async (transaction) => {
+    const previous = previousTaskRequest(await transaction.get(requestRef), {fingerprint: requestFingerprint, operation: "crear", uid: context.uid}, HttpsError);
+    if (previous) { result = previous; return; }
     const work = assertWork(await transaction.get(workRef), context.businessId, HttpsError); assertTaskMutable(work, HttpsError);
+    if (input.responsableUid) assertActiveMember(await transaction.get(db.collection("membresias").doc(membershipId(context.businessId, input.responsableUid))), context.businessId, input.responsableUid, HttpsError);
     const timestamp = FieldValue.serverTimestamp();
-    transaction.create(taskRef, {tareaId: taskRef.id, negocioId: context.businessId, trabajoId: workId, titulo, completada: false, completadaEn: null, completadaPorUid: null, creadoPorUid: context.uid, creadoEn: timestamp, actualizadoEn: timestamp});
-    transaction.update(workRef, {tareasTotal: Number(work.tareasTotal || 0) + 1, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
-    writeEvent(transaction, workRef, {businessId: context.businessId, type: "tarea_creada", actorUid: context.uid, actor, detail: {tareaId: taskRef.id, tareaTitulo: titulo}, timestamp});
+    transaction.create(taskRef, {
+      modeloTareaVersion: WORK_TASK_MODEL_VERSION,
+      tareaId: taskRef.id,
+      negocioId: context.businessId,
+      trabajoId: workId,
+      titulo: input.titulo,
+      descripcion: input.descripcion,
+      responsableUid: input.responsableUid,
+      responsableSnapshot: assignedPerson,
+      estado: "pendiente",
+      completada: false,
+      completadaEn: null,
+      completadaPorUid: null,
+      completadaPorSnapshot: null,
+      documentacionTotal: 0,
+      creadoPorUid: context.uid,
+      creadoEn: timestamp,
+      actualizadoEn: timestamp,
+    });
+    transaction.update(workRef, {tareasTotal: Number(work.tareasTotal || 0) + 1, modeloTrabajoVersion: WORK_MODEL_VERSION, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
+    writeEvent(transaction, workRef, {businessId: context.businessId, type: "tarea_creada", actorUid: context.uid, actor, detail: {tareaId: taskRef.id, tareaTitulo: input.titulo}, timestamp});
+    if (assignedPerson) writeEvent(transaction, workRef, {businessId: context.businessId, type: "tarea_asignada", actorUid: context.uid, actor, detail: {tareaId: taskRef.id, tareaTitulo: input.titulo, responsableNombre: assignedPerson.nombre}, timestamp});
+    result = {tareaId: taskRef.id, idempotent: false};
+    transaction.create(requestRef, taskRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "crear", result, timestamp, uid: context.uid, workId, taskId: taskRef.id}));
   });
-  return {tareaId: taskRef.id};
+  return result;
 }
 
-async function cambiarEstadoTareaTrabajoHandler(request, dependencies) {
+async function cambiarEstadoTareaTrabajoV2Handler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
-  const context = await requireWriteAccess(request, dependencies);
+  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError});
   const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError); const taskId = identifier(request?.data?.tareaId, "La tarea", HttpsError);
   if (typeof request?.data?.completada !== "boolean") fail(HttpsError, "invalid-argument", "El estado de la tarea no es válido.");
-  const completed = request.data.completada; const people = await userSnapshots(dependencies, [context.uid]); const actor = publicPerson(people, context.uid);
+  const completed = request.data.completada;
+  if (!completed && !WRITE_ROLES.includes(context.membership?.rol)) fail(HttpsError, "permission-denied", "Sólo OWNER o ADMIN puede reabrir tareas.");
+  const documentation = text(request?.data?.documentacionCierre, "La documentación de cierre", 8000, HttpsError);
+  const requestId = requestIdentifier(request?.data?.requestId, HttpsError);
+  const operation = completed ? "completar" : "reabrir";
+  const requestFingerprint = fingerprint({workId, taskId, completed, documentation});
+  const people = await userSnapshots(dependencies, [context.uid]); const actor = publicPerson(people, context.uid);
   const workRef = context.businessRef.collection("trabajos").doc(workId); const taskRef = workRef.collection("tareas").doc(taskId);
+  const documentationRef = documentation ? taskRef.collection("documentacion").doc() : null;
+  const requestRef = context.businessRef.collection("workTaskRequests").doc(requestId);
+  let result;
   await db.runTransaction(async (transaction) => {
+    const previous = previousTaskRequest(await transaction.get(requestRef), {fingerprint: requestFingerprint, operation, uid: context.uid}, HttpsError);
+    if (previous) { result = previous; return; }
     const work = assertWork(await transaction.get(workRef), context.businessId, HttpsError); assertTaskMutable(work, HttpsError);
-    const taskSnapshot = await transaction.get(taskRef); const task = taskSnapshot.data() || {};
-    if (!taskSnapshot.exists || task.negocioId !== context.businessId || task.trabajoId !== workId) fail(HttpsError, "not-found", "No se encontró la tarea.");
-    if (task.completada === completed) return;
+    const task = assertTask(await transaction.get(taskRef), context.businessId, workId, HttpsError); assertTaskOperator(task, context, HttpsError);
     const timestamp = FieldValue.serverTimestamp();
-    transaction.update(taskRef, {completada: completed, completadaEn: completed ? timestamp : null, completadaPorUid: completed ? context.uid : null, actualizadoEn: timestamp});
+    if (taskIsCompleted(task) === completed) {
+      result = {tareaId: taskId, completada: completed, sinCambios: true, idempotent: false};
+      transaction.create(requestRef, taskRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation, result, timestamp, uid: context.uid, workId, taskId}));
+      return;
+    }
+    if (documentationRef) {
+      transaction.create(documentationRef, {documentacionId: documentationRef.id, negocioId: context.businessId, trabajoId: workId, tareaId: taskId, tipo: "cierre", texto: documentation, autorUid: context.uid, autorSnapshot: {nombre: actor.nombre, correo: actor.correo}, creadoEn: timestamp});
+      writeEvent(transaction, workRef, {businessId: context.businessId, type: "tarea_documentacion_agregada", actorUid: context.uid, actor, detail: {tareaId: taskId, tareaTitulo: task.titulo, documentacionId: documentationRef.id, resumen: documentation.slice(0, 500)}, timestamp});
+    }
+    transaction.update(taskRef, {
+      modeloTareaVersion: WORK_TASK_MODEL_VERSION,
+      estado: completed ? "completada" : "pendiente",
+      completada: completed,
+      completadaEn: completed ? timestamp : null,
+      completadaPorUid: completed ? context.uid : null,
+      completadaPorSnapshot: completed ? {nombre: actor.nombre, correo: actor.correo} : null,
+      ...(documentationRef ? {documentacionTotal: Number(task.documentacionTotal || 0) + 1, ultimaDocumentacionEn: timestamp} : {}),
+      actualizadoEn: timestamp,
+    });
     const count = Math.max(0, Number(work.tareasCompletadas || 0) + (completed ? 1 : -1));
-    transaction.update(workRef, {tareasCompletadas: Math.min(Number(work.tareasTotal || 0), count), actualizadoPorUid: context.uid, actualizadoEn: timestamp});
+    transaction.update(workRef, {tareasCompletadas: Math.min(Number(work.tareasTotal || 0), count), modeloTrabajoVersion: WORK_MODEL_VERSION, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
     writeEvent(transaction, workRef, {businessId: context.businessId, type: completed ? "tarea_completada" : "tarea_reabierta", actorUid: context.uid, actor, detail: {tareaId: taskId, tareaTitulo: task.titulo}, timestamp});
+    result = {tareaId: taskId, completada: completed, idempotent: false};
+    transaction.create(requestRef, taskRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation, result, timestamp, uid: context.uid, workId, taskId}));
   });
-  return {tareaId: taskId, completada: completed};
+  return result;
 }
 
-async function eliminarTareaTrabajoHandler(request, dependencies) {
+async function asignarTareaTrabajoHandler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
   const context = await requireWriteAccess(request, dependencies);
   const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError); const taskId = identifier(request?.data?.tareaId, "La tarea", HttpsError);
+  const responsableUid = identifier(request?.data?.responsableUid, "El responsable de la tarea", HttpsError, {optional: true});
+  const requestId = requestIdentifier(request?.data?.requestId, HttpsError);
+  const requestFingerprint = fingerprint({workId, taskId, responsableUid});
+  const people = await userSnapshots(dependencies, [context.uid, responsableUid]); const actor = publicPerson(people, context.uid);
+  const assignedPerson = responsableUid ? publicPerson(people, responsableUid) : null;
+  const workRef = context.businessRef.collection("trabajos").doc(workId); const taskRef = workRef.collection("tareas").doc(taskId);
+  const requestRef = context.businessRef.collection("workTaskRequests").doc(requestId);
+  let result;
+  await db.runTransaction(async (transaction) => {
+    const previous = previousTaskRequest(await transaction.get(requestRef), {fingerprint: requestFingerprint, operation: "asignar", uid: context.uid}, HttpsError);
+    if (previous) { result = previous; return; }
+    const work = assertWork(await transaction.get(workRef), context.businessId, HttpsError); assertTaskMutable(work, HttpsError);
+    const task = assertTask(await transaction.get(taskRef), context.businessId, workId, HttpsError);
+    if (responsableUid) assertActiveMember(await transaction.get(db.collection("membresias").doc(membershipId(context.businessId, responsableUid))), context.businessId, responsableUid, HttpsError);
+    const timestamp = FieldValue.serverTimestamp();
+    const previousUid = String(task.responsableUid || "");
+    if (previousUid === responsableUid) {
+      result = {tareaId: taskId, responsableUid, sinCambios: true, idempotent: false};
+      transaction.create(requestRef, taskRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "asignar", result, timestamp, uid: context.uid, workId, taskId}));
+      return;
+    }
+    transaction.update(taskRef, {modeloTareaVersion: WORK_TASK_MODEL_VERSION, estado: taskIsCompleted(task) ? "completada" : "pendiente", descripcion: String(task.descripcion || ""), responsableUid, responsableSnapshot: assignedPerson, actualizadoEn: timestamp});
+    transaction.update(workRef, {modeloTrabajoVersion: WORK_MODEL_VERSION, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
+    writeEvent(transaction, workRef, {businessId: context.businessId, type: previousUid ? "tarea_reasignada" : "tarea_asignada", actorUid: context.uid, actor, detail: {tareaId: taskId, tareaTitulo: task.titulo, responsableAnteriorNombre: task.responsableSnapshot?.nombre || "Sin responsable", responsableNombre: assignedPerson?.nombre || "Sin responsable"}, timestamp});
+    result = {tareaId: taskId, responsableUid, idempotent: false};
+    transaction.create(requestRef, taskRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "asignar", result, timestamp, uid: context.uid, workId, taskId}));
+  });
+  return result;
+}
+
+async function documentarTareaTrabajoHandler(request, dependencies) {
+  const {db, FieldValue, HttpsError} = dependencies;
+  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError});
+  const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError); const taskId = identifier(request?.data?.tareaId, "La tarea", HttpsError);
+  const documentation = text(request?.data?.texto, "La documentación", 8000, HttpsError, {required: true});
+  const requestId = requestIdentifier(request?.data?.requestId, HttpsError);
+  const requestFingerprint = fingerprint({workId, taskId, documentation});
+  const people = await userSnapshots(dependencies, [context.uid]); const actor = publicPerson(people, context.uid);
+  const workRef = context.businessRef.collection("trabajos").doc(workId); const taskRef = workRef.collection("tareas").doc(taskId); const documentationRef = taskRef.collection("documentacion").doc();
+  const requestRef = context.businessRef.collection("workTaskRequests").doc(requestId);
+  let result;
+  await db.runTransaction(async (transaction) => {
+    const previous = previousTaskRequest(await transaction.get(requestRef), {fingerprint: requestFingerprint, operation: "documentar", uid: context.uid}, HttpsError);
+    if (previous) { result = previous; return; }
+    const work = assertWork(await transaction.get(workRef), context.businessId, HttpsError); assertTaskMutable(work, HttpsError);
+    const task = assertTask(await transaction.get(taskRef), context.businessId, workId, HttpsError); assertTaskOperator(task, context, HttpsError);
+    const timestamp = FieldValue.serverTimestamp();
+    transaction.create(documentationRef, {documentacionId: documentationRef.id, negocioId: context.businessId, trabajoId: workId, tareaId: taskId, tipo: "avance", texto: documentation, autorUid: context.uid, autorSnapshot: {nombre: actor.nombre, correo: actor.correo}, creadoEn: timestamp});
+    transaction.update(taskRef, {modeloTareaVersion: WORK_TASK_MODEL_VERSION, estado: taskIsCompleted(task) ? "completada" : "pendiente", descripcion: String(task.descripcion || ""), documentacionTotal: Number(task.documentacionTotal || 0) + 1, ultimaDocumentacionEn: timestamp, actualizadoEn: timestamp});
+    transaction.update(workRef, {modeloTrabajoVersion: WORK_MODEL_VERSION, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
+    writeEvent(transaction, workRef, {businessId: context.businessId, type: "tarea_documentacion_agregada", actorUid: context.uid, actor, detail: {tareaId: taskId, tareaTitulo: task.titulo, documentacionId: documentationRef.id, resumen: documentation.slice(0, 500)}, timestamp});
+    result = {tareaId: taskId, documentacionId: documentationRef.id, idempotent: false};
+    transaction.create(requestRef, taskRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "documentar", result, timestamp, uid: context.uid, workId, taskId}));
+  });
+  return result;
+}
+
+async function eliminarTareaTrabajoV2Handler(request, dependencies) {
+  const {db, FieldValue, HttpsError} = dependencies;
+  const context = await requireWriteAccess(request, dependencies);
+  const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError); const taskId = identifier(request?.data?.tareaId, "La tarea", HttpsError);
+  const requestId = requestIdentifier(request?.data?.requestId, HttpsError);
+  const requestFingerprint = fingerprint({workId, taskId});
   const people = await userSnapshots(dependencies, [context.uid]); const actor = publicPerson(people, context.uid);
   const workRef = context.businessRef.collection("trabajos").doc(workId); const taskRef = workRef.collection("tareas").doc(taskId);
+  const requestRef = context.businessRef.collection("workTaskRequests").doc(requestId);
+  let result;
   await db.runTransaction(async (transaction) => {
+    const previous = previousTaskRequest(await transaction.get(requestRef), {fingerprint: requestFingerprint, operation: "eliminar", uid: context.uid}, HttpsError);
+    if (previous) { result = previous; return; }
     const work = assertWork(await transaction.get(workRef), context.businessId, HttpsError); assertTaskMutable(work, HttpsError);
-    const taskSnapshot = await transaction.get(taskRef); const task = taskSnapshot.data() || {};
-    if (!taskSnapshot.exists || task.negocioId !== context.businessId || task.trabajoId !== workId) fail(HttpsError, "not-found", "No se encontró la tarea.");
-    if (task.completada) fail(HttpsError, "failed-precondition", "Reabre la tarea antes de eliminarla.");
+    const task = assertTask(await transaction.get(taskRef), context.businessId, workId, HttpsError);
+    if (Number(task.modeloTareaVersion || 1) >= WORK_TASK_MODEL_VERSION) fail(HttpsError, "failed-precondition", "Las tareas operativas se conservan para mantener su trazabilidad.");
+    if (taskIsCompleted(task)) fail(HttpsError, "failed-precondition", "Reabre la tarea antes de eliminarla.");
     const timestamp = FieldValue.serverTimestamp(); transaction.delete(taskRef);
     transaction.update(workRef, {tareasTotal: Math.max(0, Number(work.tareasTotal || 0) - 1), actualizadoPorUid: context.uid, actualizadoEn: timestamp});
     writeEvent(transaction, workRef, {businessId: context.businessId, type: "tarea_eliminada", actorUid: context.uid, actor, detail: {tareaId: taskId, tareaTitulo: task.titulo}, timestamp});
+    result = {tareaId: taskId, idempotent: false};
+    transaction.create(requestRef, taskRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "eliminar", result, timestamp, uid: context.uid, workId, taskId}));
   });
-  return {tareaId: taskId};
+  return result;
 }
 
 async function agregarNotaTrabajoHandler(request, dependencies) {
@@ -469,15 +638,18 @@ async function agregarNotaTrabajoHandler(request, dependencies) {
 module.exports = {
   WORK_MODEL_VERSION,
   WORK_FILE_MODEL_VERSION,
+  WORK_TASK_MODEL_VERSION,
   WORK_PRIORITIES,
   WORK_STATUSES,
   actualizarTrabajoHandler,
   agregarNotaTrabajoHandler,
-  agregarTareaTrabajoHandler,
-  cambiarEstadoTareaTrabajoHandler,
+  asignarTareaTrabajoHandler,
+  cambiarEstadoTareaTrabajoV2Handler,
   cambiarEstadoTrabajoHandler,
   crearTrabajoHandler,
-  eliminarTareaTrabajoHandler,
+  crearTareaTrabajoV2Handler,
+  documentarTareaTrabajoHandler,
+  eliminarTareaTrabajoV2Handler,
   formatWorkNumber,
   linkedWorkFields,
   normalizeWorkInput,

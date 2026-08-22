@@ -1,5 +1,6 @@
 export const WORK_MODEL_VERSION = 2;
 export const WORK_FILE_MODEL_VERSION = 1;
+export const WORK_TASK_MODEL_VERSION = 2;
 
 export const WORK_STATUSES = Object.freeze([
   {value: "pendiente", label: "Pendiente"},
@@ -95,13 +96,38 @@ export function adaptWorkLink(raw = {}) {
 }
 
 export function adaptWorkTask(raw = {}) {
+  const completada = raw.estado === "completada" || raw.completada === true;
   return {
     ...raw,
     id: raw.id || raw.tareaId || "",
     tareaId: raw.tareaId || raw.id || "",
     titulo: String(raw.titulo || "").trim(),
-    completada: raw.completada === true,
+    descripcion: String(raw.descripcion || "").trim(),
+    modeloTareaVersion: Number(raw.modeloTareaVersion || 1),
+    responsableUid: String(raw.responsableUid || "").trim(),
+    responsableSnapshot: raw.responsableSnapshot || null,
+    estado: completada ? "completada" : "pendiente",
+    completada,
+    creadoPorUid: String(raw.creadoPorUid || "").trim(),
+    creadoEn: dateValue(raw.creadoEn),
+    completadaPorUid: String(raw.completadaPorUid || "").trim(),
+    completadaPorSnapshot: raw.completadaPorSnapshot || null,
     completadaEn: dateValue(raw.completadaEn),
+    documentacionTotal: Number(raw.documentacionTotal || 0),
+    documentacion: Array.isArray(raw.documentacion) ? raw.documentacion : [],
+  };
+}
+
+export function adaptWorkTaskDocumentation(raw = {}) {
+  return {
+    ...raw,
+    id: raw.id || raw.documentacionId || "",
+    documentacionId: raw.documentacionId || raw.id || "",
+    tipo: raw.tipo === "cierre" ? "cierre" : "avance",
+    texto: String(raw.texto || "").trim(),
+    autorUid: String(raw.autorUid || "").trim(),
+    autorSnapshot: raw.autorSnapshot || null,
+    creadoEn: dateValue(raw.creadoEn),
   };
 }
 
@@ -166,6 +192,9 @@ export function humanizeWorkEvent(event = {}) {
     tarea_creada: `${actor} agregó la tarea “${detail.tareaTitulo || "Sin título"}”.`,
     tarea_completada: `${actor} completó la tarea “${detail.tareaTitulo || "Sin título"}”.`,
     tarea_reabierta: `${actor} reabrió la tarea “${detail.tareaTitulo || "Sin título"}”.`,
+    tarea_asignada: `${actor} asignó la tarea “${detail.tareaTitulo || "Sin título"}” a ${detail.responsableNombre || "Sin responsable"}.`,
+    tarea_reasignada: `${actor} reasignó la tarea “${detail.tareaTitulo || "Sin título"}” de ${detail.responsableAnteriorNombre || "Sin responsable"} a ${detail.responsableNombre || "Sin responsable"}.`,
+    tarea_documentacion_agregada: `${actor} agregó documentación a la tarea “${detail.tareaTitulo || "Sin título"}”.`,
     tarea_eliminada: `${actor} eliminó la tarea “${detail.tareaTitulo || "Sin título"}”.`,
     nota_agregada: `${actor} agregó una nota.`,
     trabajo_completado: `${actor} completó el trabajo.`,

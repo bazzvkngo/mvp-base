@@ -704,6 +704,14 @@ service cloud.firestore {
             && resource.data.negocioId == businessId
             && resource.data.trabajoId == trabajoId;
           allow create, update, delete: if false;
+
+          match /documentacion/{documentacionId} {
+            allow read: if canAccessBusiness(businessId)
+              && resource.data.negocioId == businessId
+              && resource.data.trabajoId == trabajoId
+              && resource.data.tareaId == tareaId;
+            allow create, update, delete: if false;
+          }
         }
 
         match /notas/{notaId} {
@@ -733,6 +741,10 @@ service cloud.firestore {
       }
 
       match /workCreateRequests/{requestId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /workTaskRequests/{requestId} {
         allow read, create, update, delete: if false;
       }
 

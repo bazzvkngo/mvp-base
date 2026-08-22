@@ -392,6 +392,7 @@ async function main() {
     const businessWorkPath =
       `negocios/${businessId}/trabajos/work-rules-smoke`;
     const businessWorkTaskPath = `${businessWorkPath}/tareas/task-rules-smoke`;
+    const businessWorkTaskDocumentationPath = `${businessWorkTaskPath}/documentacion/documentation-rules-smoke`;
     const businessWorkNotePath = `${businessWorkPath}/notas/note-rules-smoke`;
     const businessWorkHistoryPath = `${businessWorkPath}/historial/event-rules-smoke`;
     const businessWorkLinkPath = `${businessWorkPath}/vinculos/cotizacion__quote-rules-smoke`;
@@ -451,6 +452,13 @@ async function main() {
         titulo: "Tarea protegida",
         completada: false,
       }),
+      adminDb.doc(businessWorkTaskDocumentationPath).set({
+        documentacionId: "documentation-rules-smoke",
+        tareaId: "task-rules-smoke",
+        trabajoId: "work-rules-smoke",
+        negocioId: businessId,
+        texto: "Documentación protegida",
+      }),
       adminDb.doc(businessWorkNotePath).set({
         notaId: "note-rules-smoke",
         trabajoId: "work-rules-smoke",
@@ -478,17 +486,32 @@ async function main() {
         negocioId: businessId,
         trabajoId: "work-rules-smoke",
       }),
+      adminDb.doc(`negocios/${businessId}/workTaskRequests/task-request-smoke`).set({
+        negocioId: businessId,
+        trabajoId: "work-rules-smoke",
+        tareaId: "task-rules-smoke",
+      }),
     ]);
     if (!(await getDoc(doc(ownerClient.db, businessClientPath))).exists()) {
       throw new Error("El miembro OWNER no pudo leer clientes del negocio.");
     }
     console.log("OK permitido: miembro activo lee clientes del negocio");
-    for (const protectedPath of [businessWorkPath, businessWorkTaskPath, businessWorkNotePath, businessWorkHistoryPath, businessWorkLinkPath]) {
+    for (const protectedPath of [businessWorkPath, businessWorkTaskPath, businessWorkTaskDocumentationPath, businessWorkNotePath, businessWorkHistoryPath, businessWorkLinkPath]) {
       if (!(await getDoc(doc(ownerClient.db, protectedPath))).exists()) {
         throw new Error(`El miembro activo no pudo leer ${protectedPath}.`);
       }
     }
     console.log("OK permitido: miembro activo lee trabajo, tareas, notas e historial");
+    const taskDocumentationSnapshot = await getDocs(query(
+      collection(ownerClient.db, businessWorkTaskPath, "documentacion"),
+      where("negocioId", "==", businessId),
+      where("trabajoId", "==", "work-rules-smoke"),
+      where("tareaId", "==", "task-rules-smoke")
+    ));
+    if (taskDocumentationSnapshot.size !== 1) {
+      throw new Error("La consulta no devolviÃ³ la documentaciÃ³n de tarea esperada.");
+    }
+    console.log("OK permitido: miembro activo lista documentaciÃ³n de tarea");
     await expectDenied("usuario sin membresía lee trabajo", () =>
       getDoc(doc(guestClient.db, businessWorkPath))
     );
@@ -507,6 +530,12 @@ async function main() {
     await expectDenied("OWNER escribe tarea directamente", () =>
       setDoc(doc(ownerClient.db, `${businessWorkPath}/tareas/direct-task`), {negocioId: businessId, trabajoId: "work-rules-smoke", titulo: "Directa"})
     );
+    await expectDenied("OWNER edita tarea directamente", () =>
+      updateDoc(doc(ownerClient.db, businessWorkTaskPath), {estado: "completada", completada: true})
+    );
+    await expectDenied("OWNER documenta tarea directamente", () =>
+      setDoc(doc(ownerClient.db, `${businessWorkTaskPath}/documentacion/direct-documentation`), {negocioId: businessId, trabajoId: "work-rules-smoke", tareaId: "task-rules-smoke", texto: "Directa"})
+    );
     await expectDenied("OWNER escribe nota directamente", () =>
       setDoc(doc(ownerClient.db, `${businessWorkPath}/notas/direct-note`), {negocioId: businessId, trabajoId: "work-rules-smoke", texto: "Directa"})
     );
@@ -521,6 +550,9 @@ async function main() {
     );
     await expectDenied("workCreateRequests bloquea lectura directa", () =>
       getDoc(doc(ownerClient.db, `negocios/${businessId}/workCreateRequests/request-smoke`))
+    );
+    await expectDenied("workTaskRequests bloquea lectura directa", () =>
+      getDoc(doc(ownerClient.db, `negocios/${businessId}/workTaskRequests/task-request-smoke`))
     );
     await expectDenied("usuario sin membresía lee clientes", () =>
       getDoc(doc(guestClient.db, businessClientPath))

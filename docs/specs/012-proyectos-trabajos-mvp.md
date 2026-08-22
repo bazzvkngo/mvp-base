@@ -33,6 +33,14 @@ Una Cotización creada desde un Proyecto conserva `trabajoId`, `trabajoNumero` y
 
 El documento raíz declara `modeloExpedienteVersion`, `cotizacionesVinculadas` y `ventasVinculadas`. Registros legacy sin estos campos ni subcolección continúan válidos con contadores cero. Esta separación deja espacio para futuras categorías de vínculo sin implementar aún gastos, horas hombre, materiales ni balance.
 
+## Tareas operativas V2 / fase 2
+
+Las tareas nuevas usan `modeloTareaVersion: 2`, título, descripción, `responsableUid` y snapshot autoritativo, estado `pendiente`/`completada`, autoría, fechas y responsable del cierre. `completada` se conserva como campo compatible. Una tarea legacy sin versión se adapta como versión 1 y OWNER/ADMIN puede completarla o reabrirla sin migración previa.
+
+La documentación es append-only en `tareas/{tareaId}/documentacion/{documentacionId}`. Cada alta, asignación/reasignación, documentación, completado y reapertura agrega además un evento al historial del TRB. `workTaskRequests/{requestId}` es interno y hace idempotentes las operaciones que producen eventos. Las tareas V2 no se eliminan físicamente; sólo el checklist legacy incompleto conserva la eliminación compatible.
+
+OWNER/ADMIN crea, asigna, reasigna, completa y reabre. Mientras no exista RBAC técnico granular, `MEMBER` representa al técnico operativo: Functions sólo le permite documentar o completar una tarea cuyo `responsableUid` coincide con su UID y cuya membresía sigue activa. La ficha compartida conserva la lectura empresarial actual para no romper legacy; una política futura podrá restringir visibilidad por asignación sin cambiar este contrato persistido.
+
 El contador anual y la idempotencia de creación son internos:
 
 ```text

@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {createRequire} from "node:module";
-import {adaptStoredWork, adaptWorkLink, buildWorkMutationPayload, canManageWorks, formatWorkNumber as formatFrontendNumber, getWorkDraftErrors, humanizeWorkEvent, matchesWorkFilters, WORK_MODEL_VERSION} from "../src/domain/workModel.mjs";
+import {adaptStoredWork, adaptWorkLink, adaptWorkTask, adaptWorkTaskDocumentation, buildWorkMutationPayload, canManageWorks, formatWorkNumber as formatFrontendNumber, getWorkDraftErrors, humanizeWorkEvent, matchesWorkFilters, WORK_MODEL_VERSION} from "../src/domain/workModel.mjs";
 
 const require = createRequire(import.meta.url);
-const {actualizarTrabajoHandler, agregarNotaTrabajoHandler, agregarTareaTrabajoHandler, cambiarEstadoTareaTrabajoHandler, cambiarEstadoTrabajoHandler, crearTrabajoHandler, eliminarTareaTrabajoHandler, formatWorkNumber, normalizeWorkInput, writeCommercialLink, writeQuoteResponseEvent} = require("../functions/workPersistence.js");
+const {actualizarTrabajoHandler, agregarNotaTrabajoHandler, asignarTareaTrabajoHandler, cambiarEstadoTareaTrabajoV2Handler, cambiarEstadoTrabajoHandler, crearTareaTrabajoV2Handler, crearTrabajoHandler, documentarTareaTrabajoHandler, eliminarTareaTrabajoV2Handler, formatWorkNumber, normalizeWorkInput, writeCommercialLink, writeQuoteResponseEvent} = require("../functions/workPersistence.js");
 
 class TestHttpsError extends Error { constructor(code, message) { super(message); this.code = code; } }
 class Snapshot { constructor(ref, value) { this.id = ref.id; this.exists = value !== undefined; this.value = value; } data() { return this.value; } }
@@ -35,9 +35,10 @@ const profiles = new Map([
   ["owner-a", {uid: "owner-a", nombre: "Mauricio", correo: "owner@example.cl"}],
   ["worker-a", {uid: "worker-a", nombre: "Ana Operaciones", correo: "ana@example.cl"}],
   ["worker-b", {uid: "worker-b", nombre: "Luis Terreno", correo: "luis@example.cl"}],
+  ["worker-c", {uid: "worker-c", nombre: "Camila Técnica", correo: "camila@example.cl"}],
 ]);
 
-for (const [uid, role] of [["owner-a", "OWNER"], ["worker-a", "MEMBER"], ["worker-b", "ADMIN"]]) {
+for (const [uid, role] of [["owner-a", "OWNER"], ["worker-a", "MEMBER"], ["worker-b", "ADMIN"], ["worker-c", "MEMBER"]]) {
   db.seed(`membresias/business-a__${uid}`, {negocioId: "business-a", uid, rol: role, estado: "activo"});
 }
 db.seed("negocios/business-a/clientes/client-a", {negocioId: "business-a", clienteId: "client-a", estado: "activo", nombreRazonSocial: "Constructora Sur", rut: "12.345.678-5", email: "cliente@example.cl", telefono: "+56911111111", personaContacto: "Paula"});
@@ -100,14 +101,50 @@ const updateEvents = db.matching(`${workPath}/historial/`).map(([, value]) => va
 assert.equal(updateEvents.includes("responsable_cambiado"), true); assert.equal(updateEvents.includes("participante_agregado"), true); assert.equal(updateEvents.includes("participante_retirado"), true); assert.equal(updateEvents.includes("estado_cambiado"), true);
 console.log("OK edición: responsable, participantes y estado generan trazabilidad");
 
-const task = await agregarTareaTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, titulo: "Revisar instalación"}), dependencies);
-await cambiarEstadoTareaTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId, completada: true}), dependencies);
-assert.equal(db.read(`${workPath}/tareas/${task.tareaId}`).completada, true); assert.equal(db.read(workPath).tareasCompletadas, 1);
-await assert.rejects(() => eliminarTareaTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId}), dependencies), (error) => error.code === "failed-precondition");
-await cambiarEstadoTareaTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId, completada: false}), dependencies);
-await eliminarTareaTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId}), dependencies);
-assert.equal(db.read(`${workPath}/tareas/${task.tareaId}`), undefined); assert.equal(db.read(workPath).tareasTotal, 0);
-console.log("OK checklist: alta, completado, reapertura y eliminación segura");
+const taskRequest = request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, requestId: "task-create-0001", tarea: {titulo: "Revisar instalación", descripcion: "Validar tablero y protecciones", responsableUid: "worker-a"}});
+const task = await crearTareaTrabajoV2Handler(taskRequest, dependencies);
+const taskRetry = await crearTareaTrabajoV2Handler(taskRequest, dependencies);
+assert.equal(taskRetry.tareaId, task.tareaId); assert.equal(taskRetry.idempotent, true);
+let storedTask = db.read(`${workPath}/tareas/${task.tareaId}`);
+assert.equal(storedTask.modeloTareaVersion, 2); assert.equal(storedTask.responsableUid, "worker-a"); assert.equal(storedTask.responsableSnapshot.nombre, "Ana Operaciones");
+assert.equal(db.matching(`${workPath}/historial/`).filter(([, value]) => value.tipo === "tarea_creada" && value.detalle.tareaId === task.tareaId).length, 1);
+await assert.rejects(() => crearTareaTrabajoV2Handler(request("worker-a", {businessId: "business-a", trabajoId: created.trabajoId, requestId: "task-create-member", tarea: {titulo: "Sin permiso", descripcion: "", responsableUid: "worker-a"}}), dependencies), (error) => error.code === "permission-denied");
+await assert.rejects(() => crearTareaTrabajoV2Handler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, requestId: "task-create-invalid", tarea: {titulo: "Inválida", descripcion: "", responsableUid: "ghost-user"}}), dependencies), (error) => error.code === "failed-precondition");
+await assert.rejects(() => crearTareaTrabajoV2Handler(request("owner-a", {businessId: "business-b", trabajoId: created.trabajoId, requestId: "task-create-cross", tarea: {titulo: "Externa", descripcion: "", responsableUid: ""}}), dependencies), (error) => error.code === "permission-denied");
+
+const documentRequest = request("worker-a", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId, requestId: "task-document-0001", texto: "Mediciones registradas y tablero conforme."});
+const documented = await documentarTareaTrabajoHandler(documentRequest, dependencies);
+const documentedRetry = await documentarTareaTrabajoHandler(documentRequest, dependencies);
+assert.equal(documentedRetry.documentacionId, documented.documentacionId); assert.equal(documentedRetry.idempotent, true);
+assert.equal(db.matching(`${workPath}/tareas/${task.tareaId}/documentacion/`).length, 1);
+await assert.rejects(() => documentarTareaTrabajoHandler(request("worker-c", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId, requestId: "task-document-other", texto: "No autorizada"}), dependencies), (error) => error.code === "permission-denied");
+
+const completeRequest = request("worker-a", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId, completada: true, documentacionCierre: "Cierre técnico conforme.", requestId: "task-complete-0001"});
+await cambiarEstadoTareaTrabajoV2Handler(completeRequest, dependencies);
+const completeRetry = await cambiarEstadoTareaTrabajoV2Handler(completeRequest, dependencies);
+assert.equal(completeRetry.idempotent, true);
+storedTask = db.read(`${workPath}/tareas/${task.tareaId}`);
+assert.equal(storedTask.estado, "completada"); assert.equal(storedTask.completadaPorUid, "worker-a"); assert.equal(db.read(workPath).tareasCompletadas, 1);
+assert.equal(db.matching(`${workPath}/historial/`).filter(([, value]) => value.tipo === "tarea_completada" && value.detalle.tareaId === task.tareaId).length, 1);
+await assert.rejects(() => cambiarEstadoTareaTrabajoV2Handler(request("worker-a", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId, completada: false, requestId: "task-member-reopen"}), dependencies), (error) => error.code === "permission-denied");
+
+await asignarTareaTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId, responsableUid: "worker-c", requestId: "task-assign-0001"}), dependencies);
+assert.equal(db.read(`${workPath}/tareas/${task.tareaId}`).responsableUid, "worker-c");
+await assert.rejects(() => asignarTareaTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId, responsableUid: "ghost-user", requestId: "task-assign-invalid"}), dependencies), (error) => error.code === "failed-precondition");
+await cambiarEstadoTareaTrabajoV2Handler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId, completada: false, requestId: "task-reopen-0001"}), dependencies);
+assert.equal(db.read(`${workPath}/tareas/${task.tareaId}`).estado, "pendiente"); assert.equal(db.read(workPath).tareasCompletadas, 0);
+await assert.rejects(() => eliminarTareaTrabajoV2Handler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId, requestId: "task-delete-v2"}), dependencies), (error) => error.code === "failed-precondition");
+const taskEvents = db.matching(`${workPath}/historial/`).map(([, value]) => value.tipo);
+assert.equal(taskEvents.includes("tarea_reasignada"), true); assert.equal(taskEvents.includes("tarea_reabierta"), true); assert.equal(taskEvents.includes("tarea_completada"), true); assert.equal(taskEvents.includes("tarea_documentacion_agregada"), true);
+
+const legacyTaskId = "legacy-task";
+db.seed(`${workPath}/tareas/${legacyTaskId}`, {tareaId: legacyTaskId, negocioId: "business-a", trabajoId: created.trabajoId, titulo: "Checklist legacy", completada: false, creadoEn: "2026-08-14T20:05:00.000Z"});
+db.seed(workPath, {...db.read(workPath), tareasTotal: 2});
+await cambiarEstadoTareaTrabajoV2Handler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: legacyTaskId, completada: true, requestId: "task-legacy-complete"}), dependencies);
+assert.equal(db.read(`${workPath}/tareas/${legacyTaskId}`).modeloTareaVersion, 2);
+assert.equal(adaptWorkTask({tareaId: "old", titulo: "Antigua", completada: false}).modeloTareaVersion, 1);
+assert.equal(adaptWorkTaskDocumentation({documentacionId: "doc", texto: "Informe"}).texto, "Informe");
+console.log("OK tareas V2: asignación, documentación, técnico, idempotencia, reapertura, aislamiento y legacy");
 
 const note = await agregarNotaTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, texto: "Configuración inicial completada."}), dependencies);
 assert.equal(db.read(`${workPath}/notas/${note.notaId}`).autorSnapshot.nombre, "Mauricio");
@@ -116,7 +153,7 @@ console.log("OK notas: autor, fecha y evento append-only");
 
 await cambiarEstadoTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, estado: "completado"}), dependencies);
 assert.equal(db.read(workPath).estado, "completado"); assert.ok(db.read(workPath).fechaCompletado);
-await assert.rejects(() => agregarTareaTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, titulo: "No permitida"}), dependencies), (error) => error.code === "failed-precondition");
+await assert.rejects(() => crearTareaTrabajoV2Handler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, requestId: "task-terminal-create", tarea: {titulo: "No permitida", descripcion: "", responsableUid: ""}}), dependencies), (error) => error.code === "failed-precondition");
 await cambiarEstadoTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, estado: "pendiente"}), dependencies);
 assert.equal(db.read(workPath).fechaCompletado, null);
 await cambiarEstadoTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, estado: "cancelado"}), dependencies);
@@ -136,9 +173,9 @@ console.log("OK frontend: búsqueda, payload restringido y eventos sin UID crudo
 const rules = fs.readFileSync("firestore.rules", "utf8");
 const page = fs.readFileSync("src/pages/WorksPage.jsx", "utf8");
 const backend = fs.readFileSync("functions/workPersistence.js", "utf8");
-assert.match(rules, /match \/trabajos\/\{trabajoId\}/); assert.match(rules, /match \/historial\/\{eventoId\}[\s\S]*allow create, update, delete: if false/);
-assert.match(backend, /workCounters/); assert.match(backend, /workCreateRequests/); assert.match(backend, /requireBusinessAccess/);
-assert.match(page, /ResponsiveDialog/); assert.doesNotMatch(page, /window\.confirm|actorUid/); assert.match(page, /works-board/); assert.match(page, /Historial del trabajo/);
+assert.match(rules, /match \/trabajos\/\{trabajoId\}/); assert.match(rules, /match \/historial\/\{eventoId\}[\s\S]*allow create, update, delete: if false/); assert.match(rules, /match \/documentacion\/\{documentacionId\}/);
+assert.match(backend, /workCounters/); assert.match(backend, /workCreateRequests/); assert.match(backend, /workTaskRequests/); assert.match(backend, /requireBusinessAccess/);
+assert.match(page, /ResponsiveDialog/); assert.doesNotMatch(page, /window\.confirm|actorUid/); assert.match(page, /works-board/); assert.match(page, /Historial del trabajo/); assert.match(page, /TaskSection/); assert.match(page, /No tienes tareas asignadas/);
 console.log("OK integración: Rules, autoridad backend, lista/tablero y confirmación segura");
 
 console.log("WORKS_MODEL_SMOKE_OK");

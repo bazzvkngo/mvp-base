@@ -99,6 +99,12 @@ export const workTasksCollectionPath = (businessId, trabajoId) => [
   ...workDocPath(businessId, trabajoId),
   "tareas",
 ];
+export const workTaskDocumentationCollectionPath = (businessId, trabajoId, tareaId) => [
+  ...workDocPath(businessId, trabajoId),
+  "tareas",
+  tareaId,
+  "documentacion",
+];
 export const workNotesCollectionPath = (businessId, trabajoId) => [
   ...workDocPath(businessId, trabajoId),
   "notas",

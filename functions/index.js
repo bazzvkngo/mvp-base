@@ -115,11 +115,13 @@ const {
 const {
   actualizarTrabajoHandler,
   agregarNotaTrabajoHandler,
-  agregarTareaTrabajoHandler,
-  cambiarEstadoTareaTrabajoHandler,
+  asignarTareaTrabajoHandler,
+  cambiarEstadoTareaTrabajoV2Handler,
   cambiarEstadoTrabajoHandler,
   crearTrabajoHandler,
-  eliminarTareaTrabajoHandler,
+  crearTareaTrabajoV2Handler,
+  documentarTareaTrabajoHandler,
+  eliminarTareaTrabajoV2Handler,
 } = require("./workPersistence");
 
 // Inicializar Admin SDK (una sola vez)
@@ -2241,15 +2243,23 @@ exports.cambiarEstadoTrabajo = onCall(workCallableOptions, async (request) =>
 );
 
 exports.agregarTareaTrabajo = onCall(workCallableOptions, async (request) =>
-  agregarTareaTrabajoHandler(request, workPersistenceDependencies)
+  crearTareaTrabajoV2Handler(request, workPersistenceDependencies)
 );
 
 exports.cambiarEstadoTareaTrabajo = onCall(workCallableOptions, async (request) =>
-  cambiarEstadoTareaTrabajoHandler(request, workPersistenceDependencies)
+  cambiarEstadoTareaTrabajoV2Handler(request, workPersistenceDependencies)
 );
 
 exports.eliminarTareaTrabajo = onCall(workCallableOptions, async (request) =>
-  eliminarTareaTrabajoHandler(request, workPersistenceDependencies)
+  eliminarTareaTrabajoV2Handler(request, workPersistenceDependencies)
+);
+
+exports.asignarTareaTrabajo = onCall(workCallableOptions, async (request) =>
+  asignarTareaTrabajoHandler(request, workPersistenceDependencies)
+);
+
+exports.documentarTareaTrabajo = onCall(workCallableOptions, async (request) =>
+  documentarTareaTrabajoHandler(request, workPersistenceDependencies)
 );
 
 exports.agregarNotaTrabajo = onCall(workCallableOptions, async (request) =>

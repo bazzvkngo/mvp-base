@@ -223,6 +223,7 @@ function AppRoutes({
             <WorksPage
               key={businessId}
               businessId={businessId}
+              currentUserUid={usuario?.uid}
               role={activeBusiness?.role}
             />
           }
