@@ -43,6 +43,16 @@ import {
   getBusinessSession,
   setActiveBusiness,
 } from "../services/businessService";
+import {isPlatformRoute} from "../domain/platformAccess.mjs";
+import {getPlatformAccess} from "../services/platformAdminService";
+import PlatformAdminLayout from "../platform/PlatformAdminLayout";
+import {
+  PlatformBusinessDetailPage,
+  PlatformBusinessesPage,
+  PlatformDashboardPage,
+  PlatformUserDetailPage,
+  PlatformUsersPage,
+} from "../platform/PlatformAdminPages";
 
 function LoadingScreen() {
   return (
@@ -74,12 +84,14 @@ function BusinessSessionError({ onRetry }) {
 function AppRoutes({
   usuario,
   loading,
+  businessLoading,
   businessError,
   businessChanging,
   businessSession,
   onBusinessChanged,
   onBusinessCreated,
   onRetry,
+  platformAccess,
 }) {
   const location = useLocation();
   if (/^\/propuesta\/[^/]+\/?$/.test(location.pathname)) {
@@ -93,10 +105,6 @@ function AppRoutes({
 
   if (loading) return <LoadingScreen />;
 
-  if (usuario && businessError) {
-    return <BusinessSessionError onRetry={onRetry} />;
-  }
-
   if (!usuario) {
     return (
       <Routes>
@@ -104,6 +112,30 @@ function AppRoutes({
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     );
+  }
+
+  if (isPlatformRoute(location.pathname)) {
+    if (!platformAccess?.isSuperadmin) {
+      return <Navigate to={businessSession?.needsOnboarding ? "/onboarding" : "/dashboard"} replace />;
+    }
+    return <Routes>
+      <Route element={<PlatformAdminLayout usuario={usuario} businessSession={businessSession} onReturnToErp={onBusinessCreated} />}>
+        <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
+        <Route path="/admin/dashboard" element={<PlatformDashboardPage />} />
+        <Route path="/admin/empresas" element={<PlatformBusinessesPage />} />
+        <Route path="/admin/empresas/:businessId" element={<PlatformBusinessDetailPage />} />
+        <Route path="/admin/usuarios" element={<PlatformUsersPage />} />
+        <Route path="/admin/usuarios/:uid" element={<PlatformUserDetailPage />} />
+        <Route path="/admin/verificaciones" element={<PlatformBusinessesPage verificationOnly />} />
+      </Route>
+      <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
+    </Routes>;
+  }
+
+  if (businessLoading) return <LoadingScreen />;
+
+  if (businessError) {
+    return <BusinessSessionError onRetry={onRetry} />;
   }
 
   if (businessSession?.accessState === "unavailable") {
@@ -123,6 +155,9 @@ function AppRoutes({
   }
 
   if (businessSession?.needsOnboarding) {
+    if (platformAccess?.isSuperadmin && location.pathname === "/login") {
+      return <Navigate to="/admin/dashboard" replace />;
+    }
     return (
       <Routes>
         <Route
@@ -161,6 +196,7 @@ function AppRoutes({
             negocioActivo={activeBusiness}
             onBusinessChanged={onBusinessChanged}
             onBusinessCreated={onBusinessCreated}
+            platformSuperadmin={platformAccess?.isSuperadmin}
           />
         }
       >
@@ -479,6 +515,7 @@ function App() {
     error: null,
   });
   const [businessChanging, setBusinessChanging] = useState(false);
+  const [platformState, setPlatformState] = useState({loading: false, data: null});
 
   const refreshBusinessSession = useCallback(async () => {
     setBusinessState((current) => ({ ...current, loading: true, error: null }));
@@ -519,6 +556,7 @@ function App() {
     const unsubscribe = subscribeToAuth((user) => {
       setUsuario(user);
       setCargando(false);
+      setPlatformState({loading: Boolean(user), data: null});
       setBusinessState({
         loading: Boolean(user),
         data: null,
@@ -528,6 +566,15 @@ function App() {
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!usuario?.uid) return;
+    let active = true;
+    getPlatformAccess(usuario)
+      .then((data) => active && setPlatformState({loading: false, data}))
+      .catch(() => active && setPlatformState({loading: false, data: {isSuperadmin: false, role: null}}));
+    return () => { active = false; };
+  }, [usuario]);
 
   useEffect(() => {
     if (!usuario?.uid) return;
@@ -560,8 +607,9 @@ function App() {
       <EnvironmentNotice />
       <AppRoutes
         usuario={usuario}
-        loading={Boolean(
-          cargando || (usuario && !businessState.data && !businessState.error)
+        loading={Boolean(cargando || platformState.loading)}
+        businessLoading={Boolean(
+          usuario && !businessState.data && !businessState.error
         )}
         businessError={businessState.error}
         businessChanging={businessChanging}
@@ -569,6 +617,7 @@ function App() {
         onBusinessChanged={changeActiveBusiness}
         onBusinessCreated={refreshBusinessSession}
         onRetry={() => refreshBusinessSession().catch(() => {})}
+        platformAccess={platformState.data}
       />
     </BrowserRouter>
   );

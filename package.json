@@ -65,6 +65,8 @@
     "test:business-settings": "node scripts/business-settings-smoke.mjs",
     "test:business-verification": "node scripts/business-verification-smoke.mjs",
     "test:business-verification-integrated": "firebase emulators:exec --only auth,firestore,functions,storage \"node scripts/business-verification-integrated.mjs\"",
+    "test:platform-admin": "node scripts/platform-admin-smoke.mjs",
+    "test:platform-admin-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/platform-admin-integrated.mjs\"",
     "test:business-onboarding": "firebase emulators:exec --only auth,firestore,functions \"node scripts/business-onboarding-integrated.mjs\"",
     "test:business-multi": "firebase emulators:exec --only auth,firestore,functions \"node scripts/business-multi-integrated.mjs\"",
     "test:business-members-model": "node scripts/business-members-model-smoke.mjs",

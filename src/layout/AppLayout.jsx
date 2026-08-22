@@ -1,5 +1,5 @@
 import React from "react";
-import { LogOut, MailCheck, MailWarning, Menu, UserRound, X } from "lucide-react";
+import { LogOut, MailCheck, MailWarning, Menu, ShieldCheck, UserRound, X } from "lucide-react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import AdditionalBusinessDrawer from "../components/AdditionalBusinessDrawer";
 import BrandLogo from "../components/BrandLogo";
@@ -82,6 +82,7 @@ function AppLayout({
   negocioActivo,
   onBusinessChanged,
   onBusinessCreated,
+  platformSuperadmin,
 }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -401,6 +402,7 @@ function AppLayout({
                 {emailVerified ? "Verificado" : "Pendiente"}
               </StatusBadge>
             </div>
+            {platformSuperadmin && <Button type="button" variant="secondary" icon={ShieldCheck} onClick={() => navigate("/admin/dashboard")}>Panel plataforma</Button>}
             <Button
               type="button"
               variant="ghost-danger"
@@ -561,6 +563,7 @@ function AppLayout({
           >
             Editar perfil
           </Button>
+          {platformSuperadmin && <Button type="button" variant="secondary" icon={ShieldCheck} onClick={() => { setMobileAccountOpen(false); navigate("/admin/dashboard"); }}>Panel plataforma</Button>}
           <Button
             type="button"
             variant="ghost-danger"

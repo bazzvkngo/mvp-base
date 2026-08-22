@@ -1062,6 +1062,25 @@ async function main() {
     await deleteObject(ref(ownerClient.storage, logoPath));
     console.log("OK permitido: propietario elimina su logo");
 
+    await adminDb.doc(`usuarios/${ownerUid}`).set(
+      {estadoPlataforma: "suspendido"},
+      {merge: true}
+    );
+    await expectDenied("usuario suspendido lee empresa", () =>
+      getDoc(doc(ownerClient.db, `negocios/${businessId}`))
+    );
+    await expectDenied("usuario suspendido lee perfil propio", () =>
+      getDoc(doc(ownerClient.db, personalProfilePath))
+    );
+    await expectDenied("usuario suspendido escribe Storage", () =>
+      uploadBytes(
+        ref(ownerClient.storage, `usuarios/${ownerUid}/empresa/logo/suspendido.png`),
+        new Uint8Array([137, 80, 78, 71]),
+        {contentType: "image/png"}
+      )
+    );
+    console.log("OK denegado: suspension de plataforma cierra SDK y Storage");
+
     console.log("RULES_SMOKE_OK");
   } finally {
     await Promise.all([

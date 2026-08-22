@@ -421,6 +421,15 @@ function isAvailableBusinessSnapshot(snapshot) {
   );
 }
 
+function assertPlatformUserActive(user = {}, HttpsError) {
+  if (user.estadoPlataforma === "suspendido") {
+    throw new HttpsError(
+      "permission-denied",
+      "La cuenta de usuario esta suspendida por la plataforma."
+    );
+  }
+}
+
 function sortBusinessEntries(left, right) {
   const byName = String(
     left.snapshot.data()?.nombreComercial || ""
@@ -443,14 +452,17 @@ async function requireBusinessAccess(
   }
 
   const businessRef = db.collection("negocios").doc(businessId);
+  const userRef = db.collection("usuarios").doc(uid);
   const membershipRef = db
     .collection("membresias")
     .doc(membershipDocumentId(businessId, uid));
-  const [businessSnapshot, membershipSnapshot] = await Promise.all([
+  const [businessSnapshot, membershipSnapshot, userSnapshot] = await Promise.all([
     businessRef.get(),
     membershipRef.get(),
+    userRef.get(),
   ]);
   const membership = membershipSnapshot.data() || {};
+  assertPlatformUserActive(userSnapshot.data() || {}, HttpsError);
 
   if (
     !membershipSnapshot.exists ||
@@ -519,6 +531,8 @@ async function createFirstBusinessHandler(
         transaction.get(ownerPlanRef),
         transaction.get(membershipsQuery),
       ]);
+
+    assertPlatformUserActive(userSnapshot.data() || {}, HttpsError);
 
     if (requestSnapshot.exists) {
       const requestData = requestSnapshot.data() || {};
@@ -734,6 +748,8 @@ async function createAdditionalBusinessHandler(
         transaction.get(ownerMembershipsQuery),
       ]);
 
+    assertPlatformUserActive(userSnapshot.data() || {}, HttpsError);
+
     if (requestSnapshot.exists) {
       const previousRequest = requestSnapshot.data() || {};
       if (
@@ -903,6 +919,8 @@ async function deleteBusinessHandler(
       transaction.get(membershipsQuery),
     ]);
 
+    assertPlatformUserActive(userSnapshot.data() || {}, HttpsError);
+
     if (requestSnapshot.exists) {
       const previousRequest = requestSnapshot.data() || {};
       if (
@@ -922,7 +940,6 @@ async function deleteBusinessHandler(
         idempotent: true,
       };
     }
-
     const membership = membershipSnapshot.data() || {};
     if (
       !businessSnapshot.exists ||
@@ -1189,6 +1206,7 @@ async function getBusinessSessionHandler(
     db.collection("membresias").where("uid", "==", uid).get(),
   ]);
   const userData = userSnapshot.data() || {};
+  assertPlatformUserActive(userData, HttpsError);
   const memberships = membershipsSnapshot.docs
     .map((snapshot) => ({ id: snapshot.id, ...snapshot.data() }))
     .filter(

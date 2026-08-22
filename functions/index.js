@@ -1,14 +1,14 @@
 // functions/index.js
 
 // Import de Firebase Functions v2 (callable)
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const {onCall: firebaseOnCall, HttpsError} = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
 
 // Admin SDK para acceder a Firestore
 const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
-const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
+const { getFirestore, FieldPath, FieldValue, Timestamp } = require("firebase-admin/firestore");
 const {getStorage} = require("firebase-admin/storage");
 
 // Gemini SDK
@@ -113,6 +113,16 @@ const {
   solicitarVerificacionEmpresaHandler,
 } = require("./businessVerification");
 const {
+  cambiarEstadoEmpresaPlataformaHandler,
+  cambiarEstadoUsuarioPlataformaHandler,
+  listarEmpresasPlataformaHandler,
+  listarUsuariosPlataformaHandler,
+  obtenerEmpresaPlataformaHandler,
+  obtenerDocumentoVerificacionPlataformaHandler,
+  obtenerResumenPlataformaHandler,
+  obtenerUsuarioPlataformaHandler,
+} = require("./platformAdmin");
+const {
   actualizarMembresiaNegocioHandler,
   asociarUsuarioExistenteHandler,
   listarMiembrosNegocioHandler,
@@ -141,6 +151,26 @@ initializeApp();
 const db = getFirestore();
 const adminAuth = getAuth();
 const adminStorageBucket = getStorage().bucket();
+
+function onCall(optionsOrHandler, maybeHandler) {
+  const handler = maybeHandler || optionsOrHandler;
+  const guardedHandler = async (request) => {
+    if (request?.auth?.uid) {
+      const userSnapshot = await db.collection("usuarios")
+        .doc(request.auth.uid).get();
+      if (userSnapshot.data()?.estadoPlataforma === "suspendido") {
+        throw new HttpsError(
+          "permission-denied",
+          "La cuenta de usuario esta suspendida por la plataforma."
+        );
+      }
+    }
+    return handler(request);
+  };
+  return maybeHandler
+    ? firebaseOnCall(optionsOrHandler, guardedHandler)
+    : firebaseOnCall(guardedHandler);
+}
 
 /**
  * La API key de Gemini no debe guardarse en el repositorio.
@@ -3770,6 +3800,14 @@ const businessVerificationDependencies = {
   FieldValue,
   requireBusinessAccess,
 };
+const platformAdminDependencies = {
+  auth: adminAuth,
+  bucket: adminStorageBucket,
+  db,
+  FieldPath,
+  FieldValue,
+  HttpsError,
+};
 const businessMembershipDependencies = {
   db,
   auth: adminAuth,
@@ -3903,6 +3941,46 @@ exports.resolverVerificacionEmpresa = onCall(
       request,
       businessVerificationDependencies
     )
+);
+
+exports.obtenerResumenPlataforma = onCall(
+  {maxInstances: 10, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => obtenerResumenPlataformaHandler(request, platformAdminDependencies)
+);
+
+exports.listarEmpresasPlataforma = onCall(
+  {maxInstances: 10, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => listarEmpresasPlataformaHandler(request, platformAdminDependencies)
+);
+
+exports.obtenerEmpresaPlataforma = onCall(
+  {maxInstances: 10, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => obtenerEmpresaPlataformaHandler(request, platformAdminDependencies)
+);
+
+exports.obtenerDocumentoVerificacionPlataforma = onCall(
+  {maxInstances: 10, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => obtenerDocumentoVerificacionPlataformaHandler(request, platformAdminDependencies)
+);
+
+exports.listarUsuariosPlataforma = onCall(
+  {maxInstances: 10, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => listarUsuariosPlataformaHandler(request, platformAdminDependencies)
+);
+
+exports.obtenerUsuarioPlataforma = onCall(
+  {maxInstances: 10, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => obtenerUsuarioPlataformaHandler(request, platformAdminDependencies)
+);
+
+exports.cambiarEstadoEmpresaPlataforma = onCall(
+  {maxInstances: 10, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => cambiarEstadoEmpresaPlataformaHandler(request, platformAdminDependencies)
+);
+
+exports.cambiarEstadoUsuarioPlataforma = onCall(
+  {maxInstances: 10, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => cambiarEstadoUsuarioPlataformaHandler(request, platformAdminDependencies)
 );
 
 exports.listarMiembrosNegocio = onCall(

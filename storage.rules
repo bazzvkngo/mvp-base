@@ -2,6 +2,14 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
+    function platformUserIsActive(uid) {
+      return !firestore.exists(
+          /databases/(default)/documents/usuarios/$(uid)
+        ) || firestore.get(
+          /databases/(default)/documents/usuarios/$(uid)
+        ).data.get("estadoPlataforma", "activo") != "suspendido";
+    }
+
     function businessMembership(businessId) {
       return firestore.get(
         /databases/(default)/documents/membresias/$(businessId + "__" + request.auth.uid)
@@ -29,6 +37,7 @@ service firebase.storage {
 
     function canAccessBusiness(businessId) {
       return hasBusinessMembership(businessId)
+        && platformUserIsActive(request.auth.uid)
         && hasActiveBusinessDocument(businessId)
         && businessMembership(businessId).data.uid == request.auth.uid
         && businessMembership(businessId).data.negocioId == businessId
@@ -41,11 +50,6 @@ service firebase.storage {
         && businessMembership(businessId).data.rol in ["OWNER", "ADMIN"];
     }
 
-    function isPlatformSuperadmin() {
-      return request.auth != null
-        && request.auth.token.platformRole == "PLATFORM_SUPERADMIN";
-    }
-
     function canRequestBusinessVerification(businessId) {
       return canAccessBusiness(businessId)
         && businessMembership(businessId).data.rol == "OWNER";
@@ -53,17 +57,20 @@ service firebase.storage {
 
     match /usuarios/{uid}/empresa/logo/{fileName} {
       allow read: if request.auth != null
-        && request.auth.uid == uid;
+        && request.auth.uid == uid
+        && platformUserIsActive(uid);
 
       allow create, update: if request.auth != null
         && request.auth.uid == uid
+        && platformUserIsActive(uid)
         && request.resource.size <= 2 * 1024 * 1024
         && request.resource.contentType.matches(
           'image/(jpeg|png|webp)'
         );
 
       allow delete: if request.auth != null
-        && request.auth.uid == uid;
+        && request.auth.uid == uid
+        && platformUserIsActive(uid);
     }
 
     match /negocios/{businessId}/empresa/logo/{fileName} {
@@ -79,9 +86,8 @@ service firebase.storage {
     }
 
     match /negocios/{businessId}/verificacion/{ownerUid}/{requestId}/{fileName} {
-      allow read: if isPlatformSuperadmin()
-        || (canRequestBusinessVerification(businessId)
-          && request.auth.uid == ownerUid);
+      allow read: if canRequestBusinessVerification(businessId)
+        && request.auth.uid == ownerUid;
 
       allow write: if resource == null
         && request.resource != null

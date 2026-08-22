@@ -8,7 +8,7 @@ La solicitud autoritativa se conserva append-only en `negocios/{businessId}/soli
 
 ## Autoridad de plataforma
 
-Resolver una solicitud requiere el custom claim firmado `platformRole: "PLATFORM_SUPERADMIN"`. El privilegio se provisiona fuera de la aplicación ERP con credenciales administrativas y nunca se deriva ni se concede desde `membresias`. Aunque posea el claim, una identidad con membresía `OWNER` o `ADMIN` activa en el negocio objetivo no puede resolver su verificación. No se incorpora aún una interfaz `/admin`.
+Resolver una solicitud requiere el custom claim firmado `platformRole: "PLATFORM_SUPERADMIN"`. El privilegio se provisiona fuera de la aplicación ERP con credenciales administrativas y nunca se deriva ni se concede desde `membresias`. Aunque posea el claim, una identidad con membresía `OWNER` o `ADMIN` activa en el negocio objetivo no puede resolver su verificación. La interfaz separada se define en la SPEC 015.
 
 ## Identidad fiscal global
 

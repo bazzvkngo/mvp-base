@@ -118,7 +118,7 @@ try {
   await rejected("OWNER con claim aprueba su empresa", () => call(owner, "resolverVerificacionEmpresa")({businessId, solicitudId: requested.data.solicitudId, decision: "APROBAR", motivo: "", requestId: requestId("self_approve")}), ["permission-denied"]);
   await adminAuth.setCustomUserClaims(platform.uid, {platformRole: "PLATFORM_SUPERADMIN"});
   await platform.user.getIdToken(true);
-  assert.equal((await getDoc(doc(platform.db, "negocios", businessId, "solicitudesVerificacionEmpresa", requested.data.solicitudId))).exists(), true);
+  await rejected("plataforma no lee solicitud por SDK", () => getDoc(doc(platform.db, "negocios", businessId, "solicitudesVerificacionEmpresa", requested.data.solicitudId)), ["permission-denied"]);
   const decisionId = requestId("platform_approve");
   const approved = await call(platform, "resolverVerificacionEmpresa")({businessId, solicitudId: requested.data.solicitudId, decision: "APROBAR", motivo: "", requestId: decisionId});
   const approvedRetry = await call(platform, "resolverVerificacionEmpresa")({businessId, solicitudId: requested.data.solicitudId, decision: "APROBAR", motivo: "", requestId: decisionId});
