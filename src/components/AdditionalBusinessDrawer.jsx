@@ -19,7 +19,6 @@ import ResponsiveDialog from "./ui/ResponsiveDialog";
 function AdditionalBusinessDrawer({
   onClose,
   onCreated,
-  onLimitReached,
   open,
   usuario,
 }) {
@@ -181,9 +180,6 @@ function AdditionalBusinessDrawer({
         );
       }
       setSubmitError(getBusinessCreationErrorMessage(error));
-      if (String(error?.code || "").includes("resource-exhausted")) {
-        onLimitReached?.(error?.details?.ownerBusinessLimit);
-      }
     } finally {
       setIsSubmitting(false);
     }

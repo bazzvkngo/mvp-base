@@ -2,7 +2,16 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { normalizeQuickBusinessPayload } from "../src/domain/businessQuickPayload.mjs";
 
-const [onboarding, drawer, fields, formModel, app, companyConfig, businessService] = await Promise.all([
+const [
+  onboarding,
+  drawer,
+  fields,
+  formModel,
+  app,
+  companyConfig,
+  businessService,
+  appLayout,
+] = await Promise.all([
   readFile(new URL("../src/pages/OnboardingPage.jsx", import.meta.url), "utf8"),
   readFile(
     new URL("../src/components/AdditionalBusinessDrawer.jsx", import.meta.url),
@@ -19,6 +28,7 @@ const [onboarding, drawer, fields, formModel, app, companyConfig, businessServic
     "utf8"
   ),
   readFile(new URL("../src/services/businessService.js", import.meta.url), "utf8"),
+  readFile(new URL("../src/layout/AppLayout.jsx", import.meta.url), "utf8"),
 ]);
 
 for (const field of ["nombreComercial", "rubroCodigo", "regionCodigo"]) {
@@ -83,5 +93,10 @@ assert.match(companyConfig, /ownerOnly: true/);
 assert.match(companyConfig, /confirmation\.trim\(\) === expectedName/);
 assert.match(companyConfig, /Eliminar definitivamente/);
 assert.match(businessService, /httpsCallable\(functions, "deleteBusiness"\)/);
+assert.doesNotMatch(drawer, /onLimitReached|resource-exhausted/);
+assert.doesNotMatch(
+  appLayout,
+  /businessLimitOpen|canCreateBusiness === false|Alcanzaste el límite/
+);
 
 console.log("BUSINESS_QUICK_FLOW_SMOKE_OK");

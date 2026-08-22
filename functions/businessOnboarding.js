@@ -9,7 +9,7 @@ const {
 const BUSINESS_ROLES = Object.freeze(["OWNER", "ADMIN", "MEMBER"]);
 const ACTIVE_STATUS = "activo";
 const DELETED_STATUS = "eliminada";
-const FREE_PLAN_OWNER_BUSINESS_LIMIT = 2;
+const PILOT_OWNER_BUSINESS_LIMIT = null;
 
 const countriesByCode = new Map(
   catalog.countries.map((country) => [country.code, country])
@@ -407,9 +407,10 @@ function planResponse(ownedBusinessCount) {
   const normalizedCount = Math.max(Number(ownedBusinessCount || 0), 0);
   return {
     code: "FREE",
-    ownerBusinessLimit: FREE_PLAN_OWNER_BUSINESS_LIMIT,
+    ownerBusinessLimit: PILOT_OWNER_BUSINESS_LIMIT,
     ownedBusinessCount: normalizedCount,
-    canCreateBusiness: normalizedCount < FREE_PLAN_OWNER_BUSINESS_LIMIT,
+    canCreateBusiness: true,
+    limitEnforced: false,
   };
 }
 
@@ -625,18 +626,6 @@ async function createFirstBusinessHandler(
         memberships[index].rol === "OWNER" &&
         isAvailableBusinessSnapshot(snapshot)
     ).length;
-    if (ownedBusinessCount >= FREE_PLAN_OWNER_BUSINESS_LIMIT) {
-      throw new HttpsError(
-        "resource-exhausted",
-        `Tu plan actual permite administrar hasta ${FREE_PLAN_OWNER_BUSINESS_LIMIT} negocios como propietario.`,
-        {
-          reason: "owner-business-limit",
-          ownerBusinessLimit: FREE_PLAN_OWNER_BUSINESS_LIMIT,
-          ownedBusinessCount,
-        }
-      );
-    }
-
     const businessRef = proposedBusinessRef;
     const membershipRef = db
       .collection("membresias")
@@ -701,7 +690,8 @@ async function createFirstBusinessHandler(
       {
         uid,
         plan: "FREE",
-        limite: FREE_PLAN_OWNER_BUSINESS_LIMIT,
+        limite: PILOT_OWNER_BUSINESS_LIMIT,
+        limiteAplicado: false,
         cantidad: ownedBusinessCount + 1,
         actualizadoEn: now,
         ...(ownerPlanSnapshot.exists ? {} : { creadoEn: now }),
@@ -792,18 +782,6 @@ async function createAdditionalBusinessHandler(
       isAvailableBusinessSnapshot
     ).length;
 
-    if (ownedBusinessCount >= FREE_PLAN_OWNER_BUSINESS_LIMIT) {
-      throw new HttpsError(
-        "resource-exhausted",
-        `Tu plan actual permite administrar hasta ${FREE_PLAN_OWNER_BUSINESS_LIMIT} negocios como propietario.`,
-        {
-          reason: "owner-business-limit",
-          ownerBusinessLimit: FREE_PLAN_OWNER_BUSINESS_LIMIT,
-          ownedBusinessCount,
-        }
-      );
-    }
-
     const businessRef = proposedBusinessRef;
     const membershipRef = db
       .collection("membresias")
@@ -850,7 +828,8 @@ async function createAdditionalBusinessHandler(
       {
         uid,
         plan: "FREE",
-        limite: FREE_PLAN_OWNER_BUSINESS_LIMIT,
+        limite: PILOT_OWNER_BUSINESS_LIMIT,
+        limiteAplicado: false,
         cantidad: ownedBusinessCount + 1,
         actualizadoEn: now,
         ...(ownerPlanSnapshot.exists ? {} : { creadoEn: now }),
@@ -1031,7 +1010,8 @@ async function deleteBusinessHandler(
       {
         uid,
         plan: "FREE",
-        limite: FREE_PLAN_OWNER_BUSINESS_LIMIT,
+        limite: PILOT_OWNER_BUSINESS_LIMIT,
+        limiteAplicado: false,
         cantidad: activeOwnedBusinessCount,
         actualizadoEn: now,
         ...(ownerPlanSnapshot.exists ? {} : { creadoEn: now }),
@@ -1353,7 +1333,7 @@ module.exports = {
   ACTIVE_STATUS,
   BUSINESS_ROLES,
   DELETED_STATUS,
-  FREE_PLAN_OWNER_BUSINESS_LIMIT,
+  PILOT_OWNER_BUSINESS_LIMIT,
   buildBusinessCatalogSeedEntries,
   createAdditionalBusinessHandler,
   createFirstBusinessHandler,

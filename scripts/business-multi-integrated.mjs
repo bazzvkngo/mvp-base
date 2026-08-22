@@ -179,9 +179,10 @@ async function main() {
       ownerSession.data.businesses.some((business) => business.id === outsiderBusinessId),
       false
     );
-    assert.equal(ownerSession.data.plan.ownerBusinessLimit, 2);
+    assert.equal(ownerSession.data.plan.ownerBusinessLimit, null);
     assert.equal(ownerSession.data.plan.ownedBusinessCount, 2);
-    assert.equal(ownerSession.data.plan.canCreateBusiness, false);
+    assert.equal(ownerSession.data.plan.canCreateBusiness, true);
+    assert.equal(ownerSession.data.plan.limitEnforced, false);
 
     await expectCallableCode("permission-denied", () =>
       callable(owner, "setActiveBusiness", { businessId: outsiderBusinessId })
@@ -201,12 +202,26 @@ async function main() {
       firstBusinessId
     );
 
-    await expectCallableCode("resource-exhausted", () =>
-      callable(owner, "createAdditionalBusiness", {
-        ...baseBusiness,
-        nombreComercial: "Tercer negocio bloqueado",
-        requestId: "multi_owner_third_001",
-      })
+    const third = await callable(owner, "createAdditionalBusiness", {
+      ...baseBusiness,
+      nombreComercial: "ZZ Tercer negocio permitido",
+      requestId: "multi_owner_third_001",
+    });
+    const fourth = await callable(owner, "createAdditionalBusiness", {
+      ...baseBusiness,
+      nombreComercial: "ZZZ Cuarto negocio permitido",
+      requestId: "multi_owner_fourth_001",
+    });
+    const expandedSession = await callable(owner, "getBusinessSession");
+    assert.equal(third.data.plan.ownedBusinessCount, 3);
+    assert.equal(fourth.data.plan.ownedBusinessCount, 4);
+    assert.equal(expandedSession.data.businesses.length, 4);
+    assert.equal(expandedSession.data.plan.canCreateBusiness, true);
+    assert.equal(
+      expandedSession.data.businesses.some(
+        (business) => business.id === outsiderBusinessId
+      ),
+      false
     );
     assert.equal(
       (
@@ -215,7 +230,7 @@ async function main() {
           .where("creadoPorUid", "==", ownerUid)
           .get()
       ).size,
-      2
+      4
     );
 
     await Promise.all([
@@ -327,16 +342,8 @@ async function main() {
         requestId: "multi_concurrent_add_002",
       }),
     ]);
-    assert.equal(simultaneous.filter((result) => result.status === "fulfilled").length, 1);
-    assert.equal(simultaneous.filter((result) => result.status === "rejected").length, 1);
-    assert.equal(
-      simultaneous
-        .filter((result) => result.status === "rejected")
-        .every((result) =>
-          String(result.reason?.code || "").includes("resource-exhausted")
-        ),
-      true
-    );
+    assert.equal(simultaneous.filter((result) => result.status === "fulfilled").length, 2);
+    assert.equal(simultaneous.filter((result) => result.status === "rejected").length, 0);
     assert.equal(
       (
         await adminDb
@@ -344,7 +351,7 @@ async function main() {
           .where("creadoPorUid", "==", concurrentUid)
           .get()
       ).size,
-      2
+      3
     );
 
     await adminDb
@@ -381,6 +388,7 @@ async function main() {
       deleteDoc(doc(owner.db, "negocios", firstBusinessId))
     );
 
+    await callable(owner, "setActiveBusiness", { businessId: firstBusinessId });
     const deletionPayload = {
       businessId: firstBusinessId,
       requestId: "multi_owner_delete_001",
@@ -435,16 +443,22 @@ async function main() {
 
     const fallbackSession = await callable(owner, "getBusinessSession");
     assert.equal(fallbackSession.data.activeBusiness.id, secondBusinessId);
-    assert.equal(fallbackSession.data.businesses.length, 1);
-    assert.equal(fallbackSession.data.plan.ownedBusinessCount, 1);
+    assert.equal(fallbackSession.data.businesses.length, 3);
+    assert.equal(fallbackSession.data.plan.ownedBusinessCount, 3);
     assert.equal(fallbackSession.data.plan.canCreateBusiness, true);
+    assert.equal(
+      fallbackSession.data.businesses.some(
+        (business) => business.id === firstBusinessId
+      ),
+      false
+    );
 
     const replacement = await callable(owner, "createAdditionalBusiness", {
       ...baseBusiness,
       nombreComercial: "Negocio de reemplazo",
       requestId: "multi_owner_replacement_001",
     });
-    assert.equal(replacement.data.plan.ownedBusinessCount, 2);
+    assert.equal(replacement.data.plan.ownedBusinessCount, 4);
     await callable(owner, "setActiveBusiness", { businessId: secondBusinessId });
     assert.equal(
       (await callable(owner, "getBusinessSession")).data.activeBusiness.id,
@@ -476,7 +490,7 @@ async function main() {
         activeBusinessPersisted: true,
         idempotencyVerified: true,
         isolationVerified: true,
-        concurrentLimitVerified: true,
+        concurrentUnlimitedCreationVerified: true,
         logicalDeletionVerified: true,
         deletionFallbackVerified: true,
         deletedBusinessLimitExcluded: true,

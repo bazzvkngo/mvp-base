@@ -33,8 +33,8 @@ también devuelve el primer negocio ya creado.
   `OWNER | ADMIN | MEMBER`, estado y auditoría.
 - `usuarios/{uid}/sistema/primerNegocio`: bloqueo transaccional servidor-servidor.
 - `usuarios/{uid}/businessCreateRequests/{requestId}`: idempotencia servidor-servidor.
-- `usuarios/{uid}/sistema/negociosPropios`: contador transaccional y límite del
-  plan para negocios con rol `OWNER`.
+- `usuarios/{uid}/sistema/negociosPropios`: contador transaccional y punto de
+  extensión para la política comercial de negocios con rol `OWNER`.
 - `paises`, `regiones`, `comunas`, `monedas`, `rubros`: catálogos globales de
   solo lectura para usuarios autenticados.
 - `metadatos/esquema`: versión y conteos del catálogo.
@@ -55,17 +55,18 @@ ejecuta una migración remota automática.
   `rubroOtro`; este texto no modifica el catálogo global.
 
 - `getBusinessSession` entrega solo negocios activos con una membresía válida,
-  el rol del usuario, el negocio activo y el estado del límite del plan.
+  el rol del usuario, el negocio activo y la política de creación vigente.
 - `setActiveBusiness` comprueba negocio y membresía en backend antes de cambiar
   `negocioActivoId`; el puntero no concede autorización por sí solo.
 - `createAdditionalBusiness` usa los mismos tres campos de creación rápida y
   crea en una única
   transacción el negocio, la membresía `OWNER`, el perfil comercial inicial, el
-  registro idempotente, el contador del plan y el nuevo contexto activo.
-- El plan `FREE` permite dos negocios con rol `OWNER`. Las membresías `ADMIN` y
-  `MEMBER` no consumen el límite. El contador y la consulta de membresías se leen
-  dentro de la transacción para impedir que solicitudes concurrentes excedan el
-  máximo.
+  registro idempotente, el contador informativo y el nuevo contexto activo.
+- En el piloto V1 no se aplica un máximo comercial a los negocios con rol
+  `OWNER`: la sesión informa `ownerBusinessLimit: null`,
+  `canCreateBusiness: true` y `limitEnforced: false`. El contador considera sólo
+  negocios activos/no eliminados y conserva el punto de extensión para una
+  política futura, sin implementar planes ni billing.
 
 ## Negocio activo, inactivo o eliminado
 
@@ -74,7 +75,7 @@ ejecuta una migración remota automática.
   actualiza el puntero del usuario.
 - Si no queda ninguna membresía válida sobre un negocio activo, se muestra el
   onboarding breve. `createFirstBusiness` vuelve a comprobar las membresías y
-  el límite dentro de su transacción para evitar duplicados o saltarse el plan.
+  el bloqueo idempotente dentro de su transacción para evitar duplicados.
 - Un negocio inexistente o con `eliminadoEn` se considera no disponible.
 
 ## Configuración completa

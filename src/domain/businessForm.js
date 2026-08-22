@@ -93,7 +93,7 @@ export function getBusinessCreationErrorMessage(error) {
     return error?.message || "No fue posible crear el negocio.";
   }
   if (code.includes("resource-exhausted")) {
-    return error?.message || "Alcanzaste el límite de negocios de tu plan.";
+    return error?.message || "El servicio no pudo procesar la solicitud. Reintenta en unos segundos.";
   }
   if (code.includes("unavailable") || code.includes("deadline-exceeded")) {
     return "No pudimos conectar con el servicio. Reintenta en unos segundos.";

@@ -99,7 +99,6 @@ function AppLayout({
   const [mobileNavigationOpen, setMobileNavigationOpen] = React.useState(false);
   const [mobileAccountOpen, setMobileAccountOpen] = React.useState(false);
   const [businessDrawerOpen, setBusinessDrawerOpen] = React.useState(false);
-  const [businessLimitOpen, setBusinessLimitOpen] = React.useState(false);
   const [businessNotice, setBusinessNotice] = React.useState("");
   const menuButtonRef = React.useRef(null);
   const drawerRef = React.useRef(null);
@@ -300,13 +299,8 @@ function AppLayout({
     ? `Reenviar en ${resendCooldown} s`
     : "Reenviar verificación";
   const routeMeta = getRouteMeta(location.pathname);
-  const ownerBusinessLimit = businessSession?.plan?.ownerBusinessLimit;
 
   const handleOpenBusinessDrawer = () => {
-    if (businessSession?.plan?.canCreateBusiness === false) {
-      setBusinessLimitOpen(true);
-      return;
-    }
     if (mobileNavigationOpen) {
       setMobileNavigationOpen(false);
       window.requestAnimationFrame(() => setBusinessDrawerOpen(true));
@@ -636,25 +630,7 @@ function AppLayout({
         usuario={usuario}
         onClose={() => setBusinessDrawerOpen(false)}
         onCreated={handleBusinessCreated}
-        onLimitReached={() => setBusinessLimitOpen(true)}
       />
-
-      <ResponsiveDialog
-        open={businessLimitOpen}
-        onClose={() => setBusinessLimitOpen(false)}
-        title="Alcanzaste el límite de negocios"
-        size="small"
-        footer={
-          <Button type="button" onClick={() => setBusinessLimitOpen(false)}>
-            Entendido
-          </Button>
-        }
-      >
-        <p className="business-limit-message">
-          Tu plan actual permite administrar hasta {ownerBusinessLimit} negocios
-          como propietario.
-        </p>
-      </ResponsiveDialog>
     </div>
   );
 }
