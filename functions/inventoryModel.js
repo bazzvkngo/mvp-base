@@ -425,6 +425,53 @@ function getImportRequestFingerprint(rows) {
   return createHash("sha256").update(JSON.stringify(rows)).digest("hex");
 }
 
+function getInventoryUpdateFingerprint(itemId, item) {
+  return createHash("sha256")
+    .update(JSON.stringify({itemId, item}))
+    .digest("hex");
+}
+
+function optionalField(value, FieldValue) {
+  return value ? value : FieldValue.delete();
+}
+
+function inventoryEditableUpdate(item, categoryName, FieldValue) {
+  const update = {
+    nombre: item.nombre,
+    descripcion: item.descripcion,
+    unidad: item.unidad,
+    costoBase: item.costoBase,
+    margenDeseado: item.margenDeseado,
+    precioInterno: item.precioInterno,
+    precioManual: item.precioManual,
+    areaId: optionalField(item.areaId, FieldValue),
+    categoriaId: optionalField(item.categoriaId, FieldValue),
+    categoria: categoryName || "",
+  };
+  if (item.tipoItem !== "producto") return update;
+  return {
+    ...update,
+    marca: optionalField(item.marca, FieldValue),
+    modelo: optionalField(item.modelo, FieldValue),
+    codigoBarras: optionalField(item.codigoBarras, FieldValue),
+    unidadStock: item.unidadStock || item.unidad,
+    stockMinimo: item.stockMinimo,
+    formacionPrecioVersion: item.formacionPrecioVersion || FieldValue.delete(),
+    tasaImpuestoCompra: item.formacionPrecioVersion
+      ? item.tasaImpuestoCompra
+      : FieldValue.delete(),
+    montoImpuestoCompra: item.formacionPrecioVersion
+      ? item.montoImpuestoCompra
+      : FieldValue.delete(),
+    costoPagado: item.formacionPrecioVersion
+      ? item.costoPagado
+      : FieldValue.delete(),
+    precioVentaSugerido: item.formacionPrecioVersion
+      ? item.precioVentaSugerido
+      : FieldValue.delete(),
+  };
+}
+
 function normalizeInventoryImportRows(
   rawRows,
   HttpsError,
@@ -929,6 +976,159 @@ async function createInventoryItemWithCodeHandler(
   });
 }
 
+async function updateInventoryItemHandler(
+  request,
+  { db, HttpsError, FieldValue, requireBusinessAccess }
+) {
+  const { uid, businessId, businessRef } = await resolveBusinessContext(
+    request,
+    {db, HttpsError, requireBusinessAccess}
+  );
+  const itemId = safeText(request.data?.itemId, 160);
+  if (!/^[a-zA-Z0-9_-]{1,160}$/.test(itemId)) {
+    throw new HttpsError("invalid-argument", "Selecciona un ítem válido.");
+  }
+  const requestId = validateRequestId(request.data?.requestId, HttpsError);
+  const inventorySettingsSnapshot = await readDocumentSnapshot(
+    db,
+    businessRef.collection("configuracion").doc("inventario")
+  );
+  const item = validateInventoryItemInput(request.data?.item, HttpsError, {
+    allowNegativeStock:
+      inventorySettingsSnapshot.data()?.permitirStockNegativo === true,
+  });
+  if (Math.abs(Number(item.stock || 0)) > Number.MAX_SAFE_INTEGER) {
+    throw new HttpsError(
+      "invalid-argument",
+      "El stock está fuera del rango permitido."
+    );
+  }
+  const fingerprint = getInventoryUpdateFingerprint(itemId, item);
+  const itemRef = businessRef.collection("inventario").doc(itemId);
+  const requestRef = businessRef.collection("inventoryUpdateRequests").doc(requestId);
+  const areaRef = item.areaId
+    ? businessRef.collection("areas").doc(item.areaId)
+    : null;
+  const categoryRef = item.categoriaId
+    ? businessRef.collection("categoriasInventario").doc(item.categoriaId)
+    : null;
+  const movementRef = businessRef.collection("movimientosInventario")
+    .doc(`ajuste__${requestId}`);
+
+  return db.runTransaction(async (transaction) => {
+    const [requestSnapshot, itemSnapshot, areaSnapshot, categorySnapshot] =
+      await Promise.all([
+        transaction.get(requestRef),
+        transaction.get(itemRef),
+        areaRef ? transaction.get(areaRef) : Promise.resolve(null),
+        categoryRef ? transaction.get(categoryRef) : Promise.resolve(null),
+      ]);
+    if (requestSnapshot.exists) {
+      const previous = requestSnapshot.data() || {};
+      if (previous.fingerprint !== fingerprint) {
+        throw new HttpsError(
+          "failed-precondition",
+          "La solicitud ya fue utilizada con una edición diferente."
+        );
+      }
+      return {...(previous.resultado || {}), idempotent: true};
+    }
+    if (!itemSnapshot.exists) {
+      throw new HttpsError("not-found", "El ítem ya no existe.");
+    }
+    const current = itemSnapshot.data() || {};
+    if (current.negocioId && current.negocioId !== businessId) {
+      throw new HttpsError("permission-denied", "El ítem no pertenece al negocio.");
+    }
+    const currentType = INVENTORY_TYPES.includes(current.tipoItem)
+      ? current.tipoItem
+      : "producto";
+    if (currentType !== item.tipoItem) {
+      throw new HttpsError(
+        "failed-precondition",
+        "El tipo de un ítem existente no se puede modificar."
+      );
+    }
+    if (areaRef && (!areaSnapshot?.exists || areaSnapshot.data()?.estado !== "activo")) {
+      throw new HttpsError("failed-precondition", "Selecciona un área activa.");
+    }
+    if (
+      categoryRef && (
+        !categorySnapshot?.exists ||
+        categorySnapshot.data()?.estado !== "activo" ||
+        categorySnapshot.data()?.areaId !== item.areaId
+      )
+    ) {
+      throw new HttpsError(
+        "failed-precondition",
+        "La categoría debe estar activa y pertenecer al área seleccionada."
+      );
+    }
+
+    const timestamp = FieldValue.serverTimestamp();
+    const stockAnterior = Number(current.stock || 0);
+    const stockPosterior = item.tipoItem === "producto" ? item.stock : null;
+    if (!Number.isFinite(stockAnterior)) {
+      throw new HttpsError(
+        "failed-precondition",
+        "El stock actual no puede ajustarse de forma segura."
+      );
+    }
+    const stockChanged = item.tipoItem === "producto" &&
+      stockPosterior !== stockAnterior;
+    const update = {
+      ...inventoryEditableUpdate(
+        item,
+        categorySnapshot?.data()?.nombre || "",
+        FieldValue
+      ),
+      ...(stockChanged ? {stock: stockPosterior} : {}),
+      actualizadoPorUid: uid,
+      actualizadoEn: timestamp,
+    };
+    transaction.update(itemRef, update);
+
+    if (stockChanged) {
+      const delta = stockPosterior - stockAnterior;
+      transaction.create(movementRef, {
+        movimientoId: movementRef.id,
+        negocioId: businessId,
+        itemId,
+        tipo: "AJUSTE_STOCK",
+        direccion: delta > 0 ? "ENTRADA" : "SALIDA",
+        cantidad: Math.abs(delta),
+        diferenciaStock: delta,
+        stockAnterior,
+        stockPosterior,
+        motivo: "Ajuste manual desde Inventario",
+        productoSnapshot: {
+          codigoInterno: safeText(current.codigoInterno || current.sku, 80),
+          nombre: item.nombre,
+          unidad: item.unidadStock || item.unidad,
+        },
+        creadoPorUid: uid,
+        creadoEn: timestamp,
+      });
+    }
+    const result = {
+      itemId,
+      movimientoId: stockChanged ? movementRef.id : null,
+      stockAnterior: item.tipoItem === "producto" ? stockAnterior : null,
+      stockPosterior,
+      idempotent: false,
+    };
+    transaction.create(requestRef, {
+      negocioId: businessId,
+      itemId,
+      fingerprint,
+      resultado: result,
+      creadoPorUid: uid,
+      creadoEn: timestamp,
+    });
+    return result;
+  });
+}
+
 async function confirmInventoryImportV2Handler(
   request,
   { db, HttpsError, FieldValue, requireBusinessAccess }
@@ -1182,5 +1382,6 @@ module.exports = {
   normalizeCatalogName,
   saveInventoryAreaHandler,
   saveInventoryCategoryHandler,
+  updateInventoryItemHandler,
   validateInventoryItemInput,
 };

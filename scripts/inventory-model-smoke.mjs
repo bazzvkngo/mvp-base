@@ -637,7 +637,7 @@ async function main() {
   assert.match(managerSource, /SKU \/ código interno/);
   assert.match(managerSource, /Código de barras/);
   assert.match(managerSource, /Stock bajo/);
-  assert.match(managerSource, /preserveLegacyModel/);
+  assert.match(managerSource, /requestId:\s*createRequestRef\.current/);
   assert.match(
     managerSource,
     /authorizedStatus:\s*adaptInventoryItem\(editingItem\)\.estado/,

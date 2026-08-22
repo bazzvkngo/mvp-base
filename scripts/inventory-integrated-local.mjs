@@ -256,6 +256,78 @@ async function main() {
     assert.equal(productData.marca, "Cisco");
     assert.equal(productData.modelo, "ISR 1100");
     assert.equal(productData.stock, 8);
+    const productRef = doc(
+      db,
+      "negocios",
+      businessId,
+      "inventario",
+      productResponse.data.itemId
+    );
+    await updateDoc(productRef, {nombre: "Router local editable"});
+    assert.equal((await getDoc(productRef)).data().nombre, "Router local editable");
+    await assert.rejects(updateDoc(productRef, {stock: 80}));
+    await assert.rejects(updateDoc(productRef, {costoPromedio: 1}));
+
+    const authoritativeUpdatePayload = {
+      requestId: "integrated_product_update_0001",
+      itemId: productResponse.data.itemId,
+      item: {
+        ...commonItem,
+        tipoItem: "producto",
+        nombre: "Router ajustado autoritativamente",
+        marca: "Cisco",
+        modelo: "ISR 1100",
+        stock: 11,
+        stockMinimo: 3,
+        codigoBarras: "780000000001",
+      },
+    };
+    const authoritativeUpdate = await call(
+      "updateInventoryItem",
+      authoritativeUpdatePayload
+    );
+    const authoritativeRetry = await call(
+      "updateInventoryItem",
+      authoritativeUpdatePayload
+    );
+    assert.equal(authoritativeUpdate.data.stockAnterior, 8);
+    assert.equal(authoritativeUpdate.data.stockPosterior, 11);
+    assert.equal(authoritativeRetry.data.idempotent, true);
+    assert.equal(
+      authoritativeRetry.data.movimientoId,
+      authoritativeUpdate.data.movimientoId
+    );
+    const adjustment = (
+      await adminDb.doc(
+        `negocios/${businessId}/movimientosInventario/${authoritativeUpdate.data.movimientoId}`
+      ).get()
+    ).data();
+    assert.equal(adjustment.tipo, "AJUSTE_STOCK");
+    assert.equal(adjustment.diferenciaStock, 3);
+    assert.equal(adjustment.stockAnterior, 8);
+    assert.equal(adjustment.stockPosterior, 11);
+    await expectCallableCode("failed-precondition", () =>
+      call("updateInventoryItem", {
+        ...authoritativeUpdatePayload,
+        item: {...authoritativeUpdatePayload.item, stock: 12},
+      })
+    );
+    const metadataUpdate = await call("updateInventoryItem", {
+      ...authoritativeUpdatePayload,
+      requestId: "integrated_product_metadata_0001",
+      item: {
+        ...authoritativeUpdatePayload.item,
+        descripcion: "Edición normal sin cambio de existencias",
+      },
+    });
+    assert.equal(metadataUpdate.data.movimientoId, null);
+    assert.equal((await getDoc(productRef)).data().stock, 11);
+    const productAdjustments = await adminDb
+      .collection(`negocios/${businessId}/movimientosInventario`)
+      .where("itemId", "==", productResponse.data.itemId)
+      .where("tipo", "==", "AJUSTE_STOCK")
+      .get();
+    assert.equal(productAdjustments.size, 1);
 
     await expectCallableCode("invalid-argument", () =>
       call("createInventoryItemWithCode", {
@@ -310,39 +382,44 @@ async function main() {
     const legacyBefore = (await getDoc(legacyRef)).data();
     assert.equal(legacyBefore.areaId, undefined);
     assert.equal(legacyBefore.codigoInterno, undefined);
-    await updateDoc(legacyRef, {
-      areaId: "area_informatica",
-      categoriaId: categoryId,
-      categoria: "Redes y conectividad",
-      marca: "Legacy",
-      modelo: "L-42",
-      stock: 1,
-      stockMinimo: 0,
+    const legacyUpdate = await call("updateInventoryItem", {
+      itemId: "legacy-integrated",
+      requestId: "integrated_legacy_update_0001",
+      item: {
+        tipoItem: "producto",
+        nombre: "Equipo heredado actualizado",
+        descripcion: "Registro anterior",
+        unidad: "unidad",
+        costoBase: 5000,
+        margenDeseado: 10,
+        precioInterno: 5500,
+        precioManual: false,
+        areaId: "area_informatica",
+        categoriaId: categoryId,
+        marca: "Legacy",
+        modelo: "L-42",
+        stock: 1,
+        stockMinimo: 0,
+      },
     });
+    assert.ok(legacyUpdate.data.movimientoId);
     const legacyAfter = (await getDoc(legacyRef)).data();
     assert.equal(legacyAfter.sku, "LEGACY-042");
     assert.equal(legacyAfter.codigoInterno, undefined);
     assert.deepEqual(legacyAfter.campoDesconocido, { conservar: true });
 
-    const productRef = doc(
-      db,
-      "negocios",
-      businessId,
-      "inventario",
-      productResponse.data.itemId
-    );
-    await updateDoc(productRef, {
+    await assert.rejects(updateDoc(productRef, {
       tipoItem: "servicio",
       marca: deleteField(),
       modelo: deleteField(),
       stock: deleteField(),
       stockMinimo: deleteField(),
       codigoBarras: deleteField(),
-    });
+    }));
     const convertedProduct = (await getDoc(productRef)).data();
     assert.equal(convertedProduct.codigoInterno, "PR-0001");
-    assert.equal(convertedProduct.tipoItem, "servicio");
-    assert.equal("marca" in convertedProduct, false);
+    assert.equal(convertedProduct.tipoItem, "producto");
+    assert.equal(convertedProduct.stock, 11);
 
     const importRows = [
       {
@@ -647,6 +724,12 @@ async function main() {
       )
     );
     await assert.rejects(
+      setDoc(
+        doc(db, "negocios", businessId, "inventoryUpdateRequests", "client-write"),
+        { itemId: productResponse.data.itemId }
+      )
+    );
+    await assert.rejects(
       setDoc(doc(db, "negocios", businessId, "inventarioContadores", "producto"), {
         ultimoNumero: 9999,
       })
@@ -670,6 +753,9 @@ async function main() {
         requestId: "member_cannot_create_0001",
         item: commonItem,
       })
+    );
+    await expectCallableCode("permission-denied", () =>
+      call("updateInventoryItem", authoritativeUpdatePayload)
     );
 
     console.log(

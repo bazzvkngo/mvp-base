@@ -218,6 +218,7 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
     });
     setManualPriceEnabled(item.precioManual === true);
     setFieldErrors({});
+    createRequestRef.current = "";
     setDetailItem(null);
     setFormOpen(true);
   };
@@ -332,10 +333,11 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
           : undefined
       );
       if (editingItem) {
+        if (!createRequestRef.current) createRequestRef.current = requestId();
         await updateManagedInventoryItem(businessId, editingItem.id, payload, {
-          preserveLegacyModel: editingItem.modeloInventarioVersion !== 2 || !editingItem.codigoInterno,
-          allowNegativeStock: false,
+          requestId: createRequestRef.current,
         });
+        createRequestRef.current = "";
         setFeedback({ type: "success", message: "Ítem actualizado correctamente." });
       } else {
         if (!createRequestRef.current) createRequestRef.current = requestId();

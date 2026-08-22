@@ -26,6 +26,7 @@ const {
   initializeInventoryCatalogHandler,
   saveInventoryAreaHandler,
   saveInventoryCategoryHandler,
+  updateInventoryItemHandler,
 } = require("./inventoryModel");
 const {
   createQuoteWithNumberHandler,
@@ -4058,6 +4059,17 @@ exports.createInventoryItemWithCode = onCall(
   },
   async (request) =>
     createInventoryItemWithCodeHandler(request, inventoryModelDependencies)
+);
+
+exports.updateInventoryItem = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 60,
+  },
+  async (request) =>
+    updateInventoryItemHandler(request, inventoryModelDependencies)
 );
 
 exports.confirmInventoryImportV2 = onCall(

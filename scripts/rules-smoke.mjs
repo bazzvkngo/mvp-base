@@ -122,6 +122,8 @@ async function main() {
       costoBase: 1000,
       margenDeseado: 20,
       precioInterno: 1200,
+      stock: 3,
+      stockMinimo: 1,
       sku: "LEG-001",
       estado: "activo",
       creadoDesdeCotizacion: true,
@@ -147,11 +149,15 @@ async function main() {
       categoria: "Hardware",
       marca: "Lenovo",
       modelo: "T14",
-      stock: 3,
-      stockMinimo: 1,
       actualizadoEn: serverTimestamp(),
     });
     console.log("OK permitido: registro heredado adopta area y categoria sin renumerarse");
+    await expectDenied("cliente altera stock heredado directamente", () =>
+      updateDoc(doc(ownerClient.db, inventoryPath), {
+        stock: 4,
+        actualizadoEn: serverTimestamp(),
+      })
+    );
 
     await expectDenied("cliente altera SKU/codigo heredado", () =>
       updateDoc(doc(ownerClient.db, inventoryPath), {
@@ -204,6 +210,18 @@ async function main() {
       throw new Error("Editar un item alteró su código o su contador.");
     }
     console.log("OK permitido: propietario edita item v2 valido");
+    await expectDenied("cliente altera stock v2 directamente", () =>
+      updateDoc(doc(ownerClient.db, managedItemPath), {
+        stock: 9,
+        actualizadoEn: serverTimestamp(),
+      })
+    );
+    await expectDenied("cliente altera costo promedio directamente", () =>
+      updateDoc(doc(ownerClient.db, managedItemPath), {
+        costoPromedio: 1,
+        actualizadoEn: serverTimestamp(),
+      })
+    );
     await expectDenied("cliente altera codigo interno v2", () =>
       updateDoc(doc(ownerClient.db, managedItemPath), {
         codigoInterno: "PR-9000",
@@ -358,6 +376,43 @@ async function main() {
     }
     await expectDenied("otro usuario lee perfil de negocio ajeno", () =>
       getDoc(doc(otherClient.db, businessProfilePath))
+    );
+
+    const businessInventoryPath =
+      `negocios/${businessId}/inventario/item-stock-hardening`;
+    await adminDb.doc(businessInventoryPath).set({
+      negocioId: businessId,
+      modeloInventarioVersion: 2,
+      codigoInterno: "PR-0001",
+      tipoItem: "producto",
+      nombre: "Producto protegido",
+      categoria: "",
+      unidad: "unidad",
+      costoBase: 1000,
+      margenDeseado: 20,
+      precioInterno: 1200,
+      precioManual: false,
+      stock: 5,
+      stockMinimo: 1,
+      estado: "activo",
+    });
+    await updateDoc(doc(ownerClient.db, businessInventoryPath), {
+      nombre: "Producto protegido editado",
+      actualizadoEn: serverTimestamp(),
+    });
+    console.log("OK permitido: OWNER edita nombre sin alterar stock");
+    await expectDenied("OWNER altera stock directamente", () =>
+      updateDoc(doc(ownerClient.db, businessInventoryPath), {
+        stock: 50,
+        actualizadoEn: serverTimestamp(),
+      })
+    );
+    await expectDenied("OWNER altera derivados de adquisición", () =>
+      updateDoc(doc(ownerClient.db, businessInventoryPath), {
+        costoPromedio: 10,
+        ultimoCosto: 10,
+        actualizadoEn: serverTimestamp(),
+      })
     );
 
     const businessQuotePath =

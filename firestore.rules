@@ -207,8 +207,9 @@ service cloud.firestore {
       ]);
     }
 
-    function inventoryAcquisitionFieldsAreImmutable() {
+    function inventoryAuthoritativeFieldsAreImmutable() {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        "stock",
         "costoPromedio",
         "costoPromedioMoneda",
         "ultimoCosto",
@@ -564,7 +565,7 @@ service cloud.firestore {
         allow update: if isOwner(uid)
           && hasValidDocumentOwner(uid)
           && inventoryCodesAreImmutable()
-          && inventoryAcquisitionFieldsAreImmutable()
+          && inventoryAuthoritativeFieldsAreImmutable()
           && (
             isInventoryLifecycleUpdate()
             || hasValidInventoryV2(uid)
@@ -596,6 +597,10 @@ service cloud.firestore {
       }
 
       match /inventoryImportRequests/{requestId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /inventoryUpdateRequests/{requestId} {
         allow read, create, update, delete: if false;
       }
 
@@ -669,7 +674,7 @@ service cloud.firestore {
         allow update: if hasBusinessRole(businessId, ["OWNER", "ADMIN"])
           && hasValidBusinessDocument(businessId)
           && inventoryCodesAreImmutable()
-          && inventoryAcquisitionFieldsAreImmutable()
+          && inventoryAuthoritativeFieldsAreImmutable()
           && (
             isInventoryLifecycleUpdate()
             || hasValidBusinessInventoryV2(businessId)
@@ -701,6 +706,10 @@ service cloud.firestore {
       }
 
       match /inventoryImportRequests/{requestId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /inventoryUpdateRequests/{requestId} {
         allow read, create, update, delete: if false;
       }
 

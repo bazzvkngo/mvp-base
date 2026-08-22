@@ -121,6 +121,17 @@ tipo,nombre,codigo,area,categoria,unidad,costo_base,margen,precio_manual,stock,s
 
 Las Rules permiten lectura a miembros activos, bloquean colecciones internas y restringen escrituras operacionales de inventario a `OWNER` y `ADMIN`. No se permite eliminación física.
 
+### Hardening de stock
+
+La edición normal se ejecuta mediante `updateInventoryItem`. `stock` y los
+campos de adquisición derivados (`costoPromedio`, `ultimoCosto`, proveedor y
+referencias de última adquisición) son inmutables desde el SDK cliente. Cuando
+el formulario cambia el stock actual, la Function registra en la misma
+transacción un movimiento `AJUSTE_STOCK`, con stock anterior/posterior, delta,
+usuario, fecha y snapshot mínimo. Nombre, descripción, precios, stock mínimo y
+clasificación continúan editables bajo validación autoritativa. Los ajustes usan
+`requestId` y `inventoryUpdateRequests` para evitar movimientos duplicados.
+
 ## Compatibilidad legacy
 
 La lectura adapta valores faltantes sin migrar documentos al abrir la ruta. Se admiten `sku`, `precio`, fechas legacy y ausencia de clasificación. Un producto sin `formacionPrecioVersion = 2` no recibe una tasa inferida y conserva la fórmula anterior hasta que el usuario configure explícitamente su IVA de compra. Los documentos existentes siguen visibles mediante el filtro de estado correspondiente. Cotizaciones y Valorización continúan consumiendo `nombre`, `tipoItem`, `unidad`, `costoBase`, `margenDeseado`, `precioInterno` y las banderas de precio manual existentes; `precioInterno` sigue siendo siempre el precio final.

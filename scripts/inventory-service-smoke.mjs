@@ -50,5 +50,9 @@ assert.match(catalogQueryBody, /orderBy\("nombreNormalizado",\s*"asc"\)/);
 assert.match(source, /sortInventoryItems\s*\(/);
 assert.match(source, /firebaseEnvironment\.isEmulator/);
 assert.doesNotMatch(source, /import\.meta\.env\.DEV/);
+assert.match(
+  source,
+  /invokeInventoryModelCallable\("updateInventoryItem",\s*\{/
+);
 
 console.log("INVENTORY_SERVICE_SMOKE_OK");

@@ -428,10 +428,19 @@ export async function updateInventoryItem(uid, itemId, data) {
   return updateDoc(doc(db, ...inventoryDocPath(uid, itemId)), payload);
 }
 
-export async function updateManagedInventoryItem(uid, itemId, data, options) {
-  assertClientWriteAllowed("editar inventario");
-  const payload = normalizeManagedInventoryUpdate(uid, data, options);
-  return updateDoc(doc(db, ...inventoryDocPath(uid, itemId)), payload);
+export async function updateManagedInventoryItem(
+  businessId,
+  itemId,
+  data,
+  {requestId} = {}
+) {
+  const response = await invokeInventoryModelCallable("updateInventoryItem", {
+    businessId,
+    itemId,
+    item: data,
+    requestId,
+  });
+  return response.data;
 }
 
 export async function deactivateInventoryItem(uid, itemId) {
