@@ -537,6 +537,7 @@ export function buildQuotePayload(uid, raw = {}, { issueDate } = {}) {
     modeloCotizacionVersion: QUOTE_MODEL_VERSION,
     moneda: CLP_CURRENCY,
     numero: safeQuoteText(raw.numero, 120),
+    trabajoId: safeQuoteText(raw.trabajoId, 160),
     fecha,
     validezDias,
     fechaVencimiento: calculateQuoteExpiryDate(fecha, validezDias),
@@ -624,6 +625,9 @@ export function adaptStoredQuote(raw = {}) {
       ? Number(raw.modeloCotizacionVersion)
       : 1,
     numero: getQuoteDisplayNumber(raw, ""),
+    trabajoId: safeQuoteText(raw.trabajoId, 160),
+    trabajoNumero: safeQuoteText(raw.trabajoNumero, 120),
+    trabajoTitulo: safeQuoteText(raw.trabajoTitulo, 180),
     fecha,
     validezDias,
     fechaVencimiento:

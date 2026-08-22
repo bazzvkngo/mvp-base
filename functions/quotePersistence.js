@@ -6,6 +6,10 @@ const {
   buildAuthoritativeCompanySnapshot,
   getHistoricalCompanySnapshot,
 } = require("./companySnapshot");
+const {
+  linkedWorkFields,
+  writeCommercialLink,
+} = require("./workPersistence");
 const VALID_STATUS = new Set([
   "borrador",
   "emitida",
@@ -115,6 +119,15 @@ function validateClienteId(value, HttpsError, {required = true} = {}) {
     throw new HttpsError("invalid-argument", "Selecciona un cliente válido.");
   }
   return clienteId;
+}
+
+function validateTrabajoId(value, HttpsError) {
+  const trabajoId = safeText(value, 160);
+  if (!trabajoId) return "";
+  if (!/^[a-zA-Z0-9_-]{1,160}$/.test(trabajoId)) {
+    throw new HttpsError("invalid-argument", "Selecciona un proyecto válido.");
+  }
+  return trabajoId;
 }
 
 function registeredClientQuoteFields(
@@ -464,6 +477,7 @@ async function createQuoteWithNumberHandler({
   const issueDate = getChileDateValue(now);
   const rawQuote = request?.data?.quote || {};
   const clienteId = validateClienteId(rawQuote.clienteId, HttpsError);
+  const trabajoId = validateTrabajoId(rawQuote.trabajoId, HttpsError);
   const userRef = authorizedBusinessRef;
   const quoteRef = userRef.collection("cotizaciones").doc();
   const clientRef = userRef.collection("clientes").doc(clienteId);
@@ -471,6 +485,9 @@ async function createQuoteWithNumberHandler({
   const taxSettingsRef = userRef.collection("configuracion").doc("impuestos");
   const counterRef = userRef.collection("contadores").doc(`cotizaciones_${dateParts.year}`);
   const requestRef = userRef.collection("quoteCreateRequests").doc(requestId);
+  const workRef = trabajoId
+    ? userRef.collection("trabajos").doc(trabajoId)
+    : null;
 
   const persistQuote = () => db.runTransaction(async (transaction) => {
     const existingRequest = await transaction.get(requestRef);
@@ -492,14 +509,22 @@ async function createQuoteWithNumberHandler({
       };
     }
 
-    const [clientSnapshot, counterSnapshot, businessSnapshot, taxSettingsSnapshot, companyProfileSnapshot] =
-      await Promise.all([
+    const snapshots = await Promise.all([
         transaction.get(clientRef),
         transaction.get(counterRef),
         transaction.get(userRef),
         transaction.get(taxSettingsRef),
         transaction.get(companyProfileRef),
+        ...(workRef ? [transaction.get(workRef)] : []),
       ]);
+    const [
+      clientSnapshot,
+      counterSnapshot,
+      businessSnapshot,
+      taxSettingsSnapshot,
+      companyProfileSnapshot,
+      workSnapshot,
+    ] = snapshots;
     const clientFields = registeredClientQuoteFields(
       clientSnapshot,
       {businessId, clienteId},
@@ -527,8 +552,12 @@ async function createQuoteWithNumberHandler({
     const nextNumber = Number.isSafeInteger(current) && current >= 0 ? current + 1 : 1;
     const numero = formatCommercialQuoteNumber(dateParts.year, nextNumber);
     const timestamp = FieldValue.serverTimestamp();
+    const workFields = workRef
+      ? linkedWorkFields(workSnapshot, businessId, HttpsError)
+      : {};
     const storedQuote = {
       ...quote,
+      ...workFields,
       estado: "borrador",
       negocioId: businessId,
       creadoPorUid: uid,
@@ -551,10 +580,31 @@ async function createQuoteWithNumberHandler({
       negocioId: businessId,
       uidUsuario: uid,
       creadoEn: timestamp,
+      ...(trabajoId ? {trabajoId} : {}),
     });
+    if (workRef) {
+      const work = workSnapshot.data() || {};
+      writeCommercialLink(transaction, workRef, {
+        actorUid: uid,
+        businessId,
+        currentCount: work.cotizacionesVinculadas,
+        documentId: quoteRef.id,
+        documentNumber: numero,
+        documentStatus: "borrador",
+        documentType: "cotizacion",
+        timestamp,
+        total: quote.total,
+      });
+    }
 
     return {
-      quote: { id: quoteRef.id, ...quote, estado: "borrador", numero },
+      quote: {
+        id: quoteRef.id,
+        ...quote,
+        ...workFields,
+        estado: "borrador",
+        numero,
+      },
       requestId,
       idempotent: false,
     };
@@ -672,14 +722,26 @@ async function duplicateQuoteAsDraftHandler({
       );
     }
     const clienteId = validateClienteId(getStoredClienteId(source), HttpsError);
+    const trabajoId = validateTrabajoId(source.trabajoId, HttpsError);
     const clientRef = businessRef.collection("clientes").doc(clienteId);
     const companyProfileRef = businessRef.collection("empresa").doc("perfil");
-    const [clientSnapshot, counterSnapshot, businessSnapshot, companyProfileSnapshot] = await Promise.all([
+    const workRef = trabajoId
+      ? businessRef.collection("trabajos").doc(trabajoId)
+      : null;
+    const snapshots = await Promise.all([
       transaction.get(clientRef),
       transaction.get(counterRef),
       transaction.get(businessRef),
       transaction.get(companyProfileRef),
+      ...(workRef ? [transaction.get(workRef)] : []),
     ]);
+    const [
+      clientSnapshot,
+      counterSnapshot,
+      businessSnapshot,
+      companyProfileSnapshot,
+      workSnapshot,
+    ] = snapshots;
     const clientFields = registeredClientQuoteFields(
       clientSnapshot,
       {
@@ -710,8 +772,12 @@ async function duplicateQuoteAsDraftHandler({
     const numero = formatCommercialQuoteNumber(dateParts.year, nextNumber);
     const timestamp = FieldValue.serverTimestamp();
     const originNumber = safeText(source.numero || source.numeroCotizacion, 120);
+    const workFields = workRef
+      ? linkedWorkFields(workSnapshot, businessId, HttpsError)
+      : {};
     const storedQuote = {
       ...quote,
+      ...workFields,
       negocioId: businessId,
       creadoPorUid: uid,
       numero,
@@ -737,11 +803,31 @@ async function duplicateQuoteAsDraftHandler({
       cotizacionOrigenId: sourceId,
       cotizacionOrigenNumero: originNumber,
       creadoEn: timestamp,
+      ...(trabajoId ? {trabajoId} : {}),
     });
+    if (workRef) {
+      const work = workSnapshot.data() || {};
+      writeCommercialLink(transaction, workRef, {
+        actorUid: uid,
+        businessId,
+        currentCount: work.cotizacionesVinculadas,
+        documentId: quoteRef.id,
+        documentNumber: numero,
+        documentStatus: "borrador",
+        documentType: "cotizacion",
+        extra: {
+          cotizacionOrigenId: sourceId,
+          cotizacionOrigenNumero: originNumber,
+        },
+        timestamp,
+        total: quote.total,
+      });
+    }
     return {
       quote: {
         id: quoteRef.id,
         ...quote,
+        ...workFields,
         numero,
         cotizacionOrigenId: sourceId,
         cotizacionOrigenNumero: originNumber,
@@ -846,6 +932,13 @@ async function updateQuoteDraftHandler({
     const storedQuote = {
       ...normalized,
       ...companyFields,
+      ...(existing.trabajoId
+        ? {
+            trabajoId: existing.trabajoId,
+            trabajoNumero: existing.trabajoNumero || "",
+            trabajoTitulo: existing.trabajoTitulo || "",
+          }
+        : {}),
       estado: "borrador",
       negocioId: businessId,
       uidUsuario: existing.uidUsuario || uid,

@@ -1,4 +1,5 @@
-export const WORK_MODEL_VERSION = 1;
+export const WORK_MODEL_VERSION = 2;
+export const WORK_FILE_MODEL_VERSION = 1;
 
 export const WORK_STATUSES = Object.freeze([
   {value: "pendiente", label: "Pendiente"},
@@ -72,6 +73,24 @@ export function adaptStoredWork(raw = {}) {
     actualizadoEn: dateValue(raw.actualizadoEn),
     tareasTotal: Number(raw.tareasTotal || 0),
     tareasCompletadas: Number(raw.tareasCompletadas || 0),
+    modeloExpedienteVersion: Number(raw.modeloExpedienteVersion || 0),
+    cotizacionesVinculadas: Number(raw.cotizacionesVinculadas || 0),
+    ventasVinculadas: Number(raw.ventasVinculadas || 0),
+  };
+}
+
+export function adaptWorkLink(raw = {}) {
+  const tipoDocumento = raw.tipoDocumento === "venta" ? "venta" : "cotizacion";
+  return {
+    ...raw,
+    id: raw.id || raw.vinculoId || "",
+    vinculoId: raw.vinculoId || raw.id || "",
+    tipoDocumento,
+    documentoId: String(raw.documentoId || raw.cotizacionId || raw.ventaId || "").trim(),
+    numero: String(raw.numero || raw.cotizacionNumero || raw.ventaNumero || "").trim(),
+    estadoAlVincular: String(raw.estadoAlVincular || "").trim(),
+    total: Number(raw.total || 0),
+    creadoEn: dateValue(raw.creadoEn),
   };
 }
 
@@ -152,6 +171,9 @@ export function humanizeWorkEvent(event = {}) {
     trabajo_completado: `${actor} completó el trabajo.`,
     trabajo_cancelado: `${actor} canceló el trabajo.`,
     trabajo_reabierto: `${actor} reabrió el trabajo como ${getWorkStatusLabel(detail.estadoNuevo)}.`,
+    cotizacion_vinculada: `${actor} vinculó la cotización ${detail.numero || "sin número"}.`,
+    cotizacion_respuesta: `La cotización ${detail.cotizacionNumero || "sin número"} fue ${detail.respuesta || "respondida"}.`,
+    venta_vinculada: `${actor} vinculó la venta ${detail.numero || "sin número"}.`,
   };
   return messages[event.tipo] || `${actor} actualizó el trabajo.`;
 }

@@ -259,20 +259,25 @@ const statusStyles = {
   },
 };
 
-function buildInitialQuote() {
+function buildInitialQuote(projectContext = null) {
+  const client = projectContext?.clienteSnapshot || null;
+  const clienteId = String(projectContext?.clienteId || client?.clienteId || "").trim();
   return {
     numero: "",
     fecha: "",
-    clienteId: "",
-    cliente: null,
-    clienteNombre: "",
-    clienteRut: "",
-    clienteContacto: "",
-    clienteEmail: "",
-    clienteTelefono: "",
-    clienteDireccion: "",
-    clienteCiudad: "",
-    proyectoNombre: "",
+    clienteId,
+    cliente: client ? {...client, clienteId} : null,
+    clienteNombre: client?.nombreRazonSocial || "",
+    clienteRut: client?.rut || "",
+    clienteContacto: client?.personaContacto || "",
+    clienteEmail: client?.email || "",
+    clienteTelefono: client?.telefono || "",
+    clienteDireccion: client?.direccion || "",
+    clienteCiudad: client?.comunaNombre || "",
+    proyectoNombre: projectContext?.trabajoTitulo || "",
+    trabajoId: projectContext?.trabajoId || "",
+    trabajoNumero: projectContext?.trabajoNumero || "",
+    trabajoTitulo: projectContext?.trabajoTitulo || "",
     condicionesPago: "",
     condiciones: { ...DEFAULT_QUOTE_CONDITIONS },
     validezDias: 15,
@@ -364,15 +369,16 @@ function buildQuoteFromSavedQuote(savedQuote = {}) {
 function NewQuotePage({ userId }) {
   const { quoteId: editQuoteId = "" } = useParams();
   const location = useLocation();
+  const projectContext = location.state?.projectContext || null;
   const navigate = useNavigate();
   const addedItemsRef = useRef(null);
   const createRequestIdRef = useRef("");
   const savingRef = useRef(false);
   const originalLinkedClientRef = useRef({
-    clienteId: "",
-    snapshot: null,
+    clienteId: String(projectContext?.clienteId || projectContext?.clienteSnapshot?.clienteId || ""),
+    snapshot: projectContext?.clienteSnapshot || null,
   });
-  const currentClienteIdRef = useRef("");
+  const currentClienteIdRef = useRef(String(projectContext?.clienteId || projectContext?.clienteSnapshot?.clienteId || ""));
   const assistantDescriptionRef = useRef("");
   const dictationBaseTextRef = useRef("");
   const dictationFinalTextRef = useRef("");
@@ -387,7 +393,7 @@ function NewQuotePage({ userId }) {
   const aiAvailability = useAiRateLimit(AI_MODELS.quoteSuggestions, {
     enabled: Boolean(userId) && assistantUsesGemini,
   });
-  const [quote, setQuote] = useState(() => buildInitialQuote());
+  const [quote, setQuote] = useState(() => buildInitialQuote(projectContext));
   const [valuations, setValuations] = useState([]);
   const [companyProfile, setCompanyProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1568,9 +1574,12 @@ function NewQuotePage({ userId }) {
       return;
     }
 
-    setQuote(buildInitialQuote());
-    originalLinkedClientRef.current = {clienteId: "", snapshot: null};
-    currentClienteIdRef.current = "";
+    setQuote(buildInitialQuote(projectContext));
+    originalLinkedClientRef.current = {
+      clienteId: String(projectContext?.clienteId || projectContext?.clienteSnapshot?.clienteId || ""),
+      snapshot: projectContext?.clienteSnapshot || null,
+    };
+    currentClienteIdRef.current = originalLinkedClientRef.current.clienteId;
     setSavedQuoteId(null);
     setError("");
     setSuccess("");
@@ -1730,6 +1739,11 @@ function NewQuotePage({ userId }) {
             <small>El número se asignará al crear la cotización.</small>
           )}
           {isEditMode && quote.fecha && <small>{formatDate(quote.fecha)}</small>}
+          {quote.trabajoId && (
+            <Link to="/trabajos" state={{openWorkId: quote.trabajoId}} className="quote-workspace__project-link">
+              Proyecto {quote.trabajoNumero || quote.trabajoTitulo || quote.trabajoId}
+            </Link>
+          )}
         </div>
       </header>
 

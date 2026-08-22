@@ -394,6 +394,7 @@ async function main() {
     const businessWorkTaskPath = `${businessWorkPath}/tareas/task-rules-smoke`;
     const businessWorkNotePath = `${businessWorkPath}/notas/note-rules-smoke`;
     const businessWorkHistoryPath = `${businessWorkPath}/historial/event-rules-smoke`;
+    const businessWorkLinkPath = `${businessWorkPath}/vinculos/cotizacion__quote-rules-smoke`;
     await Promise.all([
       adminDb.doc(businessClientPath).set({
         clienteId: "client-rules-smoke",
@@ -462,6 +463,13 @@ async function main() {
         negocioId: businessId,
         tipo: "trabajo_creado",
       }),
+      adminDb.doc(businessWorkLinkPath).set({
+        vinculoId: "cotizacion__quote-rules-smoke",
+        trabajoId: "work-rules-smoke",
+        negocioId: businessId,
+        tipoDocumento: "cotizacion",
+        documentoId: "quote-rules-smoke",
+      }),
       adminDb.doc(`negocios/${businessId}/workCounters/2026`).set({
         negocioId: businessId,
         ultimoNumero: 1,
@@ -475,7 +483,7 @@ async function main() {
       throw new Error("El miembro OWNER no pudo leer clientes del negocio.");
     }
     console.log("OK permitido: miembro activo lee clientes del negocio");
-    for (const protectedPath of [businessWorkPath, businessWorkTaskPath, businessWorkNotePath, businessWorkHistoryPath]) {
+    for (const protectedPath of [businessWorkPath, businessWorkTaskPath, businessWorkNotePath, businessWorkHistoryPath, businessWorkLinkPath]) {
       if (!(await getDoc(doc(ownerClient.db, protectedPath))).exists()) {
         throw new Error(`El miembro activo no pudo leer ${protectedPath}.`);
       }
@@ -504,6 +512,9 @@ async function main() {
     );
     await expectDenied("OWNER escribe historial directamente", () =>
       setDoc(doc(ownerClient.db, `${businessWorkPath}/historial/direct-event`), {negocioId: businessId, trabajoId: "work-rules-smoke", tipo: "forjado"})
+    );
+    await expectDenied("OWNER escribe vínculo comercial directamente", () =>
+      setDoc(doc(ownerClient.db, `${businessWorkPath}/vinculos/direct-link`), {negocioId: businessId, trabajoId: "work-rules-smoke", tipoDocumento: "venta"})
     );
     await expectDenied("workCounters bloquea lectura directa", () =>
       getDoc(doc(ownerClient.db, `negocios/${businessId}/workCounters/2026`))

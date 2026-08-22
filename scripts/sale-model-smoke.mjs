@@ -51,8 +51,9 @@ assert.equal(normalizeSaleInput(sale(1), TestHttpsError).afectaIva, true);
 assert.throws(() => normalizeSaleInput(sale(201), TestHttpsError), /La venta admite hasta 200 ítems/);
 console.log("OK ventas modelo: payload mínimo y máximo de 200 líneas en frontend/backend");
 
-const stored = adaptStoredSale({ventaId: "sale-1", numero: "VTA-2026-0001", estado: "confirmada", clienteId: "client-1", clienteSnapshot: {clienteId: "client-1", nombreRazonSocial: "Cliente Uno", rut: "76.000.000-0"}, cotizacionId: "quote-1", cotizacionNumero: "COT-2026-0001", tipoDocumento: "factura", numeroDocumento: "F-100", items: [{...line(), nombre: "Producto", tipoItem: "producto", unidad: "unidad"}]});
+const stored = adaptStoredSale({ventaId: "sale-1", numero: "VTA-2026-0001", estado: "confirmada", clienteId: "client-1", clienteSnapshot: {clienteId: "client-1", nombreRazonSocial: "Cliente Uno", rut: "76.000.000-0"}, cotizacionId: "quote-1", cotizacionNumero: "COT-2026-0001", trabajoId: "work-1", trabajoNumero: "TRB-2026-0001", trabajoTitulo: "Diagnóstico", tipoDocumento: "factura", numeroDocumento: "F-100", items: [{...line(), nombre: "Producto", tipoItem: "producto", unidad: "unidad"}]});
 assert.equal(stored.id, "sale-1"); assert.equal(stored.total, 2142); assert.equal(stored.clienteSnapshot.nombreRazonSocial, "Cliente Uno");
+assert.equal(stored.trabajoId, "work-1"); assert.equal(stored.trabajoNumero, "TRB-2026-0001");
 assert.equal(matchesSaleSearch(stored, "COT-2026-0001"), true); assert.equal(matchesSaleSearch(stored, "76.000.000-0"), true); assert.equal(matchesSaleSearch(stored, "nada"), false);
 assert.equal(canManageSales("OWNER"), true); assert.equal(canManageSales("ADMIN"), true); assert.equal(canManageSales("MEMBER"), false);
 assert.deepEqual(SALE_STATUSES, ["borrador", "confirmada", "cancelada"]);

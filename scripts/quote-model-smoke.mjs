@@ -142,8 +142,14 @@ const linkedMutation = buildQuoteMutationPayload("test-user", {
   ...quoteFixture(),
   clienteId: registeredClient.clienteId,
   cliente: registeredClient,
+  trabajoId: "work-1",
+  trabajoNumero: "TRB-FALSO",
+  trabajoTitulo: "Proyecto falso",
 });
 assert.equal(linkedMutation.clienteId, registeredClient.clienteId);
+assert.equal(linkedMutation.trabajoId, "work-1");
+assert.equal("trabajoNumero" in linkedMutation, false);
+assert.equal("trabajoTitulo" in linkedMutation, false);
 assert.equal("clientId" in linkedMutation, false);
 assert.equal("cliente" in linkedMutation, false);
 assert.equal("empresa" in linkedMutation, false);
@@ -333,6 +339,10 @@ assert.equal(legacy.afectaIva, false);
 assert.equal(legacy.total, 350000);
 assert.equal(legacy.clienteId, "");
 assert.equal(legacy.clienteHistoricoNoVinculado, true);
+assert.equal(legacy.trabajoId, "");
+
+const projectQuote = adaptStoredQuote({...legacy, trabajoId: "work-1", trabajoNumero: "TRB-2026-0001", trabajoTitulo: "Diagnóstico"});
+assert.equal(projectQuote.trabajoId, "work-1"); assert.equal(projectQuote.trabajoNumero, "TRB-2026-0001"); assert.equal(projectQuote.trabajoTitulo, "Diagnóstico");
 console.log("OK compatibilidad: cotización legacy preservada sin inferir IVA");
 
 const legacyClientId = adaptStoredQuote({

@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {createRequire} from "node:module";
-import {adaptStoredWork, buildWorkMutationPayload, canManageWorks, formatWorkNumber as formatFrontendNumber, getWorkDraftErrors, humanizeWorkEvent, matchesWorkFilters} from "../src/domain/workModel.mjs";
+import {adaptStoredWork, adaptWorkLink, buildWorkMutationPayload, canManageWorks, formatWorkNumber as formatFrontendNumber, getWorkDraftErrors, humanizeWorkEvent, matchesWorkFilters, WORK_MODEL_VERSION} from "../src/domain/workModel.mjs";
 
 const require = createRequire(import.meta.url);
-const {actualizarTrabajoHandler, agregarNotaTrabajoHandler, agregarTareaTrabajoHandler, cambiarEstadoTareaTrabajoHandler, cambiarEstadoTrabajoHandler, crearTrabajoHandler, eliminarTareaTrabajoHandler, formatWorkNumber, normalizeWorkInput} = require("../functions/workPersistence.js");
+const {actualizarTrabajoHandler, agregarNotaTrabajoHandler, agregarTareaTrabajoHandler, cambiarEstadoTareaTrabajoHandler, cambiarEstadoTrabajoHandler, crearTrabajoHandler, eliminarTareaTrabajoHandler, formatWorkNumber, normalizeWorkInput, writeCommercialLink, writeQuoteResponseEvent} = require("../functions/workPersistence.js");
 
 class TestHttpsError extends Error { constructor(code, message) { super(message); this.code = code; } }
 class Snapshot { constructor(ref, value) { this.id = ref.id; this.exists = value !== undefined; this.value = value; } data() { return this.value; } }
@@ -73,6 +73,16 @@ assert.equal(stored.participantesSnapshot[0].nombre, "Luis Terreno");
 assert.equal(db.matching(`${workPath}/historial/`).some(([, value]) => value.tipo === "trabajo_creado"), true);
 console.log("OK creación: correlativo, cliente, responsables e historial autoritativos");
 
+assert.equal(stored.modeloTrabajoVersion, WORK_MODEL_VERSION);
+assert.equal(stored.modeloExpedienteVersion, 1);
+const workRef = db.collection("negocios").doc("business-a").collection("trabajos").doc(created.trabajoId);
+await db.runTransaction(async (transaction) => writeCommercialLink(transaction, workRef, {actorUid: "owner-a", businessId: "business-a", currentCount: 0, documentId: "quote-a", documentNumber: "COT-2026-0001", documentStatus: "borrador", documentType: "cotizacion", timestamp: FieldValue.serverTimestamp(), total: 119000}));
+await db.runTransaction(async (transaction) => writeQuoteResponseEvent(transaction, workRef, {actorUid: "owner-a", businessId: "business-a", eventKey: "response-a", quoteId: "quote-a", quoteNumber: "COT-2026-0001", response: "rechazada", timestamp: FieldValue.serverTimestamp()}));
+assert.equal(adaptWorkLink({...db.read(`${workPath}/vinculos/cotizacion__quote-a`), id: "cotizacion__quote-a"}).documentoId, "quote-a");
+assert.equal(db.read(workPath).cotizacionesVinculadas, 1);
+assert.equal(db.matching(`${workPath}/historial/`).some(([, value]) => value.tipo === "cotizacion_respuesta"), true);
+console.log("OK expediente: vínculo mínimo inmutable y respuesta append-only");
+
 const retry = await crearTrabajoHandler(request("owner-a", {businessId: "business-a", requestId: "work-request-0001", trabajo: input()}), dependencies, new Date("2026-08-14T12:00:00Z"));
 assert.equal(retry.trabajoId, created.trabajoId); assert.equal(retry.sinCambios, true);
 const noClient = await crearTrabajoHandler(request("owner-a", {businessId: "business-a", requestId: "work-request-0002", trabajo: input({titulo: "Trabajo interno", clienteId: "", responsableUid: "", participanteUids: []})}), dependencies, new Date("2026-08-14T12:00:00Z"));
@@ -115,6 +125,8 @@ assert.equal(terminalEvents.includes("trabajo_completado"), true); assert.equal(
 console.log("OK transiciones: completado, reapertura, cancelación y fecha de término");
 
 const adapted = adaptStoredWork({...stored, id: created.trabajoId});
+const legacyAdapted = adaptStoredWork({id: "legacy-work", titulo: "Legacy"});
+assert.equal(legacyAdapted.cotizacionesVinculadas, 0); assert.equal(legacyAdapted.ventasVinculadas, 0); assert.equal(legacyAdapted.modeloExpedienteVersion, 0);
 assert.equal(matchesWorkFilters(adapted, {query: "constructora sur", estado: "todos", prioridad: "todas", responsableUid: "todos"}), true);
 const mutation = buildWorkMutationPayload({...input(), numero: "TRB-FAKE", clienteSnapshot: {nombre: "Falso"}, creadoPorUid: "fake"});
 assert.equal("numero" in mutation, false); assert.equal("clienteSnapshot" in mutation, false); assert.equal("creadoPorUid" in mutation, false);

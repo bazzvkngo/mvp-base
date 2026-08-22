@@ -719,6 +719,13 @@ service cloud.firestore {
             && resource.data.trabajoId == trabajoId;
           allow create, update, delete: if false;
         }
+
+        match /vinculos/{vinculoId} {
+          allow read: if canAccessBusiness(businessId)
+            && resource.data.negocioId == businessId
+            && resource.data.trabajoId == trabajoId;
+          allow create, update, delete: if false;
+        }
       }
 
       match /workCounters/{counterId} {

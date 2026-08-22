@@ -10,6 +10,10 @@ const {
   quoteHasActiveResponse,
   quoteOpportunityVersion,
 } = require("./quoteLifecycle");
+const {
+  linkedWorkFields,
+  writeQuoteResponseEvent,
+} = require("./workPersistence");
 
 const PUBLIC_TOKEN_COLLECTION = "quotePublicTokens";
 const PUBLIC_TOKEN_BYTES = 32;
@@ -1176,6 +1180,12 @@ async function respondPublicQuoteProposalHandler(request, dependencies) {
     if (!validateStoredTokenLink(tokenData, quote, tokenHash)) {
       return { outcome: "invalid" };
     }
+    const workRef = quote.trabajoId
+      ? db.collection("negocios").doc(businessId)
+        .collection("trabajos").doc(safeText(quote.trabajoId, 160))
+      : null;
+    const workSnapshot = workRef ? await transaction.get(workRef) : null;
+    if (workRef) linkedWorkFields(workSnapshot, businessId, HttpsError);
 
     const decision = evaluatePublicResponse({
       action: input.action,
@@ -1275,6 +1285,25 @@ async function respondPublicQuoteProposalHandler(request, dependencies) {
         },
       })
     );
+    if (workRef) {
+      writeQuoteResponseEvent(transaction, workRef, {
+        actor: {
+          nombre: quote.clienteNombre || quote.cliente?.nombreRazonSocial || "Cliente",
+          correo: quote.clienteEmail || quote.cliente?.email || "",
+        },
+        businessId,
+        eventKey: tokenHash,
+        quoteId,
+        quoteNumber: quote.numero,
+        response: decision.quoteStatus,
+        detail: {
+          motivo: input.reason,
+          comentario: input.comment,
+          oportunidadVersion: quoteOpportunityVersion(quote),
+        },
+        timestamp: FieldValue.serverTimestamp(),
+      });
+    }
     const tokenPatch = {
       estado: "responded",
       respuesta: decision.response,

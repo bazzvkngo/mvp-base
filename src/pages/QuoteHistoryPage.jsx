@@ -768,6 +768,7 @@ function QuoteHistoryPage({ userId, role }) {
             quote={selectedQuote}
             companyProfile={companyProfile}
             onWhatsAppShared={handleWhatsAppShared}
+            onOpenWork={() => navigate("/trabajos", {state: {openWorkId: selectedQuote.trabajoId}})}
             onOpenEmail={() => {
               if (isQuoteEmailSendable(selectedQuote, selectedQuote.id)) {
                 setRestoreDetailFocus(false);
@@ -1324,6 +1325,7 @@ function QuoteDetail({
   companyProfile,
   canSendByEmail,
   onOpenEmail,
+  onOpenWork,
   onWhatsAppShared,
 }) {
   const canSendEmail = isQuoteEmailSendable(quote, quote.id);
@@ -1419,6 +1421,11 @@ function QuoteDetail({
             <p className="quote-legacy-client-note">
               Cliente histórico no vinculado a un registro actual.
             </p>
+          )}
+          {quote.trabajoId && (
+            <button type="button" style={styles.projectLinkButton} onClick={onOpenWork}>
+              Proyecto {quote.trabajoNumero || quote.trabajoTitulo || quote.trabajoId}
+            </button>
           )}
           <CommercialStatusTimeline quote={quote} />
         </div>
@@ -1920,6 +1927,15 @@ const styles = {
     minHeight: "40px",
     padding: "10px 12px",
     whiteSpace: "nowrap",
+  },
+  projectLinkButton: {
+    background: "transparent",
+    border: 0,
+    color: "#1d4ed8",
+    cursor: "pointer",
+    fontSize: "13px",
+    fontWeight: 700,
+    padding: 0,
   },
   whatsappButton: {
     alignItems: "center",

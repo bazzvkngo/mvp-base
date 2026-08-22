@@ -2,6 +2,7 @@ const {createHash} = require("node:crypto");
 const {adaptDocumentLocalization, documentLocalizationSnapshot} = require("./localization");
 const {buildAuthoritativeCompanySnapshot, resolveCompanySnapshot} = require("./companySnapshot");
 const {fiscalSnapshotFields} = require("./fiscalIdentifier");
+const {linkedWorkFields, writeCommercialLink} = require("./workPersistence");
 
 const MODEL_VERSION = 1;
 const VAT_RATE = 0.19;
@@ -167,14 +168,42 @@ async function crearVentaDesdeCotizacionHandler(request, dependencies, clock = n
     if (quote.estado !== "aceptada") fail(HttpsError, "failed-precondition", "Sólo una cotización aceptada puede registrarse como venta.");
     if (!Array.isArray(quote.items) || !quote.items.length) fail(HttpsError, "failed-precondition", "La cotización no contiene ítems.");
     if (quote.items.length > 200) fail(HttpsError, "failed-precondition", "La venta admite hasta 200 ítems.");
+    const trabajoId = quote.trabajoId
+      ? id(quote.trabajoId, "El proyecto", HttpsError)
+      : "";
+    const workRef = trabajoId
+      ? businessRef.collection("trabajos").doc(trabajoId)
+      : null;
+    const workSnapshot = workRef ? await transaction.get(workRef) : null;
+    const workFields = workRef
+      ? linkedWorkFields(workSnapshot, businessId, HttpsError)
+      : {};
     const clienteSnapshot = quoteClientSnapshot(quote, HttpsError); const items = quote.items.map((item, index) => quoteLine(item, index, HttpsError));
     const normalized = input({clienteId: clienteSnapshot.clienteId, descuento: quote.descuento ?? quote.descuentoGeneral ?? 0, afectaIva: quote.afectaIva !== false, fechaVenta: now.value, fechaDocumento: "", tipoDocumento: "sin_documento", numeroDocumento: "", condicionesPago: quote.condicionesPago || quote.condiciones?.formaPago, observaciones: quote.observaciones || quote.condiciones?.observaciones, items}, HttpsError);
     const current = Number(counterSnapshot.data()?.lastNumber || 0); const sequence = Number.isSafeInteger(current) && current >= 0 ? current + 1 : 1; const numero = formatNumber(now.year, sequence); const timestamp = FieldValue.serverTimestamp();
     const currentCompanySnapshot = buildAuthoritativeCompanySnapshot({businessId, business: businessSnapshot.data() || {}, profile: companyProfileSnapshot.data() || {}});
-    const stored = baseStored({businessId, uid, ventaId: saleRef.id, numero, sequence, now, normalized, clienteSnapshot, items, localization: adaptDocumentLocalization(quote), empresaSnapshot: resolveCompanySnapshot(quote, currentCompanySnapshot), origin: {cotizacionId: quoteId, cotizacionNumero: text(quote.numero, 120)}, timestamp, HttpsError});
+    const stored = baseStored({businessId, uid, ventaId: saleRef.id, numero, sequence, now, normalized, clienteSnapshot, items, localization: adaptDocumentLocalization(quote), empresaSnapshot: resolveCompanySnapshot(quote, currentCompanySnapshot), origin: {cotizacionId: quoteId, cotizacionNumero: text(quote.numero, 120), ...workFields}, timestamp, HttpsError});
     transaction.set(counterRef, {negocioId: businessId, year: now.year, lastNumber: sequence, actualizadoEn: timestamp}); transaction.set(saleRef, stored);
     transaction.update(quoteRef, {ventaId: saleRef.id, ventaNumero: numero, ventaRegistradaEn: timestamp, actualizadoEn: timestamp});
-    transaction.set(requestRef, {negocioId: businessId, cotizacionId: quoteId, ventaId: saleRef.id, numero, uidUsuario: uid, creadoEn: timestamp});
+    transaction.set(requestRef, {negocioId: businessId, cotizacionId: quoteId, ventaId: saleRef.id, numero, uidUsuario: uid, creadoEn: timestamp, ...(trabajoId ? {trabajoId} : {})});
+    if (workRef) {
+      const work = workSnapshot.data() || {};
+      writeCommercialLink(transaction, workRef, {
+        actorUid: uid,
+        businessId,
+        currentCount: work.ventasVinculadas,
+        documentId: saleRef.id,
+        documentNumber: numero,
+        documentStatus: "borrador",
+        documentType: "venta",
+        extra: {
+          cotizacionId: quoteId,
+          cotizacionNumero: text(quote.numero, 120),
+        },
+        timestamp,
+        total: stored.total,
+      });
+    }
     return {venta: {id: saleRef.id, ...stored, createdAt: null, updatedAt: null}, requestId: reqId, idempotent: false};
   });
 }

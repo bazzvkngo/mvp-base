@@ -327,6 +327,47 @@ try {
   );
   console.log("OK creación: selección obligatoria, activa y aislada por negocio");
 
+  const project = await callable(owner, "crearTrabajo")({
+    businessId,
+    requestId: `work-commercial-${RUN_ID}`,
+    trabajo: {titulo: "Diagnóstico y reparación", descripcion: "Expediente comercial", clienteId: primaryId, responsableUid: "", participanteUids: [], estado: "pendiente", prioridad: "normal", fechaInicio: "", fechaPrevista: ""},
+  });
+  const foreignProject = await callable(outsider, "crearTrabajo")({
+    businessId: outsiderBusinessId,
+    requestId: `work-foreign-${RUN_ID}`,
+    trabajo: {titulo: "Proyecto externo", descripcion: "", clienteId: "", responsableUid: "", participanteUids: [], estado: "pendiente", prioridad: "normal", fechaInicio: "", fechaPrevista: ""},
+  });
+  await expectCallableError(
+    "proyecto de otro negocio",
+    () => createQuote({businessId, requestId: `quote-cross-work-${RUN_ID}`, quote: makeQuote(primaryId, 40, {trabajoId: foreignProject.data.trabajoId})}),
+    ["not-found"]
+  );
+  const transitionStatus = callable(owner, "transitionQuoteStatus");
+  const rejectedProjectQuote = await createQuote({businessId, requestId: `quote-work-rejected-${RUN_ID}`, quote: makeQuote(primaryId, 41, {trabajoId: project.data.trabajoId, trabajoNumero: "TRB-FALSO", trabajoTitulo: "Proyecto falso"})});
+  assert.equal(rejectedProjectQuote.data.quote.trabajoNumero, project.data.numero);
+  await transitionStatus({businessId, quoteId: rejectedProjectQuote.data.quote.id, estado: "emitida", requestId: `work-quote-emit-${RUN_ID}`});
+  const rejectionRequestId = `work-quote-reject-${RUN_ID}`;
+  await transitionStatus({businessId, quoteId: rejectedProjectQuote.data.quote.id, estado: "rechazada", requestId: rejectionRequestId});
+  await transitionStatus({businessId, quoteId: rejectedProjectQuote.data.quote.id, estado: "rechazada", requestId: rejectionRequestId});
+  const acceptedProjectQuote = await createQuote({businessId, requestId: `quote-work-accepted-${RUN_ID}`, quote: makeQuote(primaryId, 42, {trabajoId: project.data.trabajoId})});
+  await transitionStatus({businessId, quoteId: acceptedProjectQuote.data.quote.id, estado: "emitida", requestId: `work-quote-two-emit-${RUN_ID}`});
+  await transitionStatus({businessId, quoteId: acceptedProjectQuote.data.quote.id, estado: "aceptada", requestId: `work-quote-two-accept-${RUN_ID}`});
+  const projectSaleRequestId = `work-sale-${RUN_ID}`;
+  const projectSale = await callable(owner, "crearVentaDesdeCotizacion")({businessId, cotizacionId: acceptedProjectQuote.data.quote.id, requestId: projectSaleRequestId});
+  const projectSaleRetry = await callable(owner, "crearVentaDesdeCotizacion")({businessId, cotizacionId: acceptedProjectQuote.data.quote.id, requestId: projectSaleRequestId});
+  assert.equal(projectSaleRetry.data.venta.id, projectSale.data.venta.id);
+  assert.equal(projectSale.data.venta.trabajoId, project.data.trabajoId);
+  const workRef = adminDb.doc(`negocios/${businessId}/trabajos/${project.data.trabajoId}`);
+  const workLinks = await workRef.collection("vinculos").get();
+  const workEvents = await workRef.collection("historial").get();
+  assert.equal(workLinks.size, 3);
+  assert.equal(workEvents.docs.filter((entry) => entry.data().tipo === "cotizacion_vinculada").length, 2);
+  assert.equal(workEvents.docs.filter((entry) => entry.data().tipo === "cotizacion_respuesta").length, 2);
+  assert.equal(workEvents.docs.filter((entry) => entry.data().tipo === "venta_vinculada").length, 1);
+  assert.equal((await workRef.get()).data().cotizacionesVinculadas, 2);
+  assert.equal((await workRef.get()).data().ventasVinculadas, 1);
+  console.log("OK expediente TRB/COT/VEN: múltiples propuestas, rechazo append-only, Venta e aislamiento");
+
   const requestId = `quote-${RUN_ID}-same`;
   const [first, retry] = await Promise.all([
     createQuote({businessId, requestId, quote: makeQuote(primaryId, 1)}),
@@ -656,7 +697,7 @@ try {
 
   assert.equal(
     (await adminDb.collection(`negocios/${businessId}/cotizaciones`).get()).size,
-    5
+    7
   );
   console.log("QUOTE_INTEGRATED_LOCAL_OK");
 } finally {

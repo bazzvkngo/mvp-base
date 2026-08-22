@@ -22,7 +22,16 @@ Las tareas, notas e historial se separan para evitar crecimiento ilimitado del d
 negocios/{businessId}/trabajos/{trabajoId}/tareas/{tareaId}
 negocios/{businessId}/trabajos/{trabajoId}/notas/{notaId}
 negocios/{businessId}/trabajos/{trabajoId}/historial/{eventoId}
+negocios/{businessId}/trabajos/{trabajoId}/vinculos/{tipo}__{documentoId}
 ```
+
+## Expediente comercial V2 / fase 1
+
+Una Cotización creada desde un Proyecto conserva `trabajoId`, `trabajoNumero` y `trabajoTitulo` resueltos por Functions. Al convertir una Cotización aceptada, la Venta hereda los mismos campos después de revalidar que el TRB pertenece al negocio. El cliente sólo propone `trabajoId`; números y títulos son snapshots autoritativos.
+
+`vinculos` es un índice append-only con una referencia y snapshot mínimo al momento de vincular (tipo, ID, número, estado y total), nunca una copia completa del documento comercial. El estado vigente se consulta desde la COT/VEN canónica. El historial agrega eventos inmutables `cotizacion_vinculada`, `cotizacion_respuesta` y `venta_vinculada`; rechazar una propuesta no borra su vínculo y otra COT puede agregarse al mismo TRB.
+
+El documento raíz declara `modeloExpedienteVersion`, `cotizacionesVinculadas` y `ventasVinculadas`. Registros legacy sin estos campos ni subcolección continúan válidos con contadores cero. Esta separación deja espacio para futuras categorías de vínculo sin implementar aún gastos, horas hombre, materiales ni balance.
 
 El contador anual y la idempotencia de creación son internos:
 

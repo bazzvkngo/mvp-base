@@ -1,4 +1,8 @@
 const QUOTE_LIFECYCLE_REQUEST_PATTERN = /^[A-Za-z0-9_-]{8,160}$/;
+const {
+  linkedWorkFields,
+  writeQuoteResponseEvent,
+} = require("./workPersistence");
 const QUOTE_STATUSES = new Set([
   "borrador",
   "emitida",
@@ -149,6 +153,11 @@ async function transitionQuoteStatusHandler(request, dependencies) {
     if (quote.negocioId && quote.negocioId !== businessId) {
       throw new HttpsError("permission-denied", "No puedes modificar esta cotización.");
     }
+    const workRef = quote.trabajoId
+      ? businessRef.collection("trabajos").doc(safeText(quote.trabajoId, 160))
+      : null;
+    const workSnapshot = workRef ? await transaction.get(workRef) : null;
+    if (workRef) linkedWorkFields(workSnapshot, businessId, HttpsError);
     const previousStatus = safeText(quote.estado, 30) || "borrador";
     assertTransitionAllowed(quote, targetStatus, HttpsError);
     if (previousStatus === targetStatus) {
@@ -179,6 +188,18 @@ async function transitionQuoteStatusHandler(request, dependencies) {
         previousStatus,
         uid,
       }));
+      if (workRef && ["aceptada", "rechazada"].includes(targetStatus)) {
+        writeQuoteResponseEvent(transaction, workRef, {
+          actor: {nombre: "Persona del equipo"},
+          actorUid: uid,
+          businessId,
+          eventKey: requestId,
+          quoteId,
+          quoteNumber: quote.numero,
+          response: targetStatus,
+          timestamp: FieldValue.serverTimestamp(),
+        });
+      }
       result = {
         estado: targetStatus,
         ...(patch.estadoAnterior ? {estadoAnterior: patch.estadoAnterior} : {}),

@@ -297,6 +297,7 @@ export default function NewSalePage({businessId, role}) {
             </div>
             <div className="sale-context-sale__metadata">
               {sale?.cotizacionId ? <span>Originada desde <button type="button" className="sale-inline-link" onClick={() => navigate(`/cotizaciones/${sale.cotizacionId}/editar`)}>{sale.cotizacionNumero || "cotización aceptada"}</button></span> : <span>Venta directa</span>}
+              {sale?.trabajoId && <span>Proyecto <button type="button" className="sale-inline-link" onClick={() => navigate("/trabajos", {state: {openWorkId: sale.trabajoId}})}>{sale.trabajoNumero || sale.trabajoTitulo || sale.trabajoId}</button></span>}
               <span>Fecha {formatDate(draft.fechaVenta)}</span>
             </div>
             {!readOnly && <p className="sale-header-guidance">Revisa la venta antes de confirmarla.</p>}

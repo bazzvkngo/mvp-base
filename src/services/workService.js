@@ -1,9 +1,11 @@
-import {collection, getDocs, query, where} from "firebase/firestore";
+import {collection, doc, getDoc, getDocs, query, where} from "firebase/firestore";
 import {httpsCallable} from "firebase/functions";
 import {assertCloudFunctionAllowed} from "../config/firebaseEnvironment.mjs";
-import {adaptStoredWork, adaptWorkEvent, adaptWorkNote, adaptWorkTask, buildWorkMutationPayload} from "../domain/workModel.mjs";
+import {adaptStoredQuote} from "../domain/quoteModel.mjs";
+import {adaptStoredSale} from "../domain/saleModel.mjs";
+import {adaptStoredWork, adaptWorkEvent, adaptWorkLink, adaptWorkNote, adaptWorkTask, buildWorkMutationPayload} from "../domain/workModel.mjs";
 import {db, getFirebaseFunctions} from "../firebase/firebaseConfig";
-import {workHistoryCollectionPath, workNotesCollectionPath, worksCollectionPath, workTasksCollectionPath} from "../firebase/firestorePaths";
+import {quoteDocPath, saleDocPath, workHistoryCollectionPath, workLinksCollectionPath, workNotesCollectionPath, worksCollectionPath, workTasksCollectionPath} from "../firebase/firestorePaths";
 
 const functions = getFirebaseFunctions("us-central1");
 
@@ -42,15 +44,33 @@ export async function listarTrabajos(rawBusinessId) {
 
 export async function cargarFichaTrabajo(rawBusinessId, rawWorkId) {
   const id = businessId(rawBusinessId); const selectedWorkId = workId(rawWorkId);
-  const [tasks, notes, history] = await Promise.all([
+  const [tasks, notes, history, linksSnapshot] = await Promise.all([
     getDocs(collection(db, ...workTasksCollectionPath(id, selectedWorkId))),
     getDocs(collection(db, ...workNotesCollectionPath(id, selectedWorkId))),
     getDocs(collection(db, ...workHistoryCollectionPath(id, selectedWorkId))),
+    getDocs(collection(db, ...workLinksCollectionPath(id, selectedWorkId))),
   ]);
+  const vinculos = sortByDate(linksSnapshot.docs.map((entry) => adaptWorkLink({...entry.data(), id: entry.id})), "creadoEn");
+  const canonicalDocuments = await Promise.all(vinculos.map(async (link) => {
+    const path = link.tipoDocumento === "venta"
+      ? saleDocPath(id, link.documentoId)
+      : quoteDocPath(id, link.documentoId);
+    const snapshot = await getDoc(doc(db, ...path));
+    if (!snapshot.exists()) return null;
+    const stored = {id: snapshot.id, ...snapshot.data()};
+    if (String(stored.trabajoId || "") !== selectedWorkId) return null;
+    return {
+      tipo: link.tipoDocumento,
+      documento: link.tipoDocumento === "venta" ? adaptStoredSale(stored) : adaptStoredQuote(stored),
+    };
+  }));
   return {
     tareas: sortByDate(tasks.docs.map((entry) => adaptWorkTask({...entry.data(), id: entry.id})), "creadoEn"),
     notas: sortByDate(notes.docs.map((entry) => adaptWorkNote({...entry.data(), id: entry.id})), "creadoEn", "desc"),
     historial: sortByDate(history.docs.map((entry) => adaptWorkEvent({...entry.data(), id: entry.id})), "fecha", "desc"),
+    vinculos,
+    cotizaciones: canonicalDocuments.filter((entry) => entry?.tipo === "cotizacion").map((entry) => entry.documento),
+    ventas: canonicalDocuments.filter((entry) => entry?.tipo === "venta").map((entry) => entry.documento),
   };
 }
 

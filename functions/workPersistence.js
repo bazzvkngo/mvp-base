@@ -1,6 +1,7 @@
 const {createHash} = require("node:crypto");
 
-const WORK_MODEL_VERSION = 1;
+const WORK_MODEL_VERSION = 2;
+const WORK_FILE_MODEL_VERSION = 1;
 const WRITE_ROLES = ["OWNER", "ADMIN"];
 const WORK_STATUSES = new Set(["pendiente", "en_progreso", "en_espera", "completado", "cancelado"]);
 const WORK_PRIORITIES = new Set(["baja", "normal", "alta", "urgente"]);
@@ -92,6 +93,15 @@ function assertWork(snapshot, businessId, HttpsError) {
   return stored;
 }
 
+function linkedWorkFields(snapshot, businessId, HttpsError) {
+  const work = assertWork(snapshot, businessId, HttpsError);
+  return {
+    trabajoId: snapshot.id,
+    trabajoNumero: text(work.numero, "El número del trabajo", 120, HttpsError),
+    trabajoTitulo: text(work.titulo, "El título del trabajo", 180, HttpsError),
+  };
+}
+
 function assertTaskMutable(work, HttpsError) {
   if (["completado", "cancelado"].includes(work.estado)) fail(HttpsError, "failed-precondition", "Reabre el trabajo antes de modificar sus tareas.");
 }
@@ -141,6 +151,111 @@ function eventPayload({eventRef, businessId, workId, type, actorUid, actor, deta
 function writeEvent(transaction, workRef, data) {
   const eventRef = workRef.collection("historial").doc();
   transaction.set(eventRef, eventPayload({...data, eventRef, workId: workRef.id}));
+}
+
+function commercialActor(actor = {}) {
+  return {
+    nombre: String(actor.nombre || "Persona del equipo").trim(),
+    correo: String(actor.correo || "").trim(),
+  };
+}
+
+function writeCommercialLink(transaction, workRef, {
+  actor = {},
+  actorUid = "",
+  businessId,
+  currentCount = 0,
+  documentId,
+  documentNumber = "",
+  documentStatus = "borrador",
+  documentType,
+  extra = {},
+  timestamp,
+  total = 0,
+}) {
+  const isQuote = documentType === "cotizacion";
+  const prefix = isQuote ? "cotizacion" : "venta";
+  const counterField = isQuote ? "cotizacionesVinculadas" : "ventasVinculadas";
+  const linkRef = workRef.collection("vinculos").doc(`${prefix}__${documentId}`);
+  const eventRef = workRef.collection("historial")
+    .doc(`${prefix}_vinculada__${documentId}`);
+  const workId = workRef.id;
+  const common = {
+    negocioId: businessId,
+    trabajoId: workId,
+    tipoDocumento: documentType,
+    documentoId: documentId,
+    numero: String(documentNumber || "").trim(),
+    estadoAlVincular: String(documentStatus || "").trim(),
+    total: Number(total || 0),
+    creadoPorUid: String(actorUid || "").trim(),
+    creadoEn: timestamp,
+  };
+  transaction.create(linkRef, {
+    vinculoId: linkRef.id,
+    ...common,
+    ...(isQuote
+      ? {cotizacionId: documentId, cotizacionNumero: common.numero}
+      : {ventaId: documentId, ventaNumero: common.numero}),
+    ...extra,
+  });
+  transaction.create(eventRef, eventPayload({
+    eventRef,
+    businessId,
+    workId,
+    type: `${prefix}_vinculada`,
+    actorUid: String(actorUid || "").trim(),
+    actor: commercialActor(actor),
+    detail: {
+      documentoId: documentId,
+      numero: common.numero,
+      estado: common.estadoAlVincular,
+      total: common.total,
+      ...extra,
+    },
+    timestamp,
+  }));
+  transaction.update(workRef, {
+    modeloTrabajoVersion: WORK_MODEL_VERSION,
+    modeloExpedienteVersion: WORK_FILE_MODEL_VERSION,
+    [counterField]: Number(currentCount || 0) + 1,
+    actualizadoEn: timestamp,
+  });
+}
+
+function writeQuoteResponseEvent(transaction, workRef, {
+  actor = {},
+  actorUid = "",
+  businessId,
+  eventKey,
+  quoteId,
+  quoteNumber = "",
+  response,
+  detail = {},
+  timestamp,
+}) {
+  const eventRef = workRef.collection("historial")
+    .doc(`cotizacion_respuesta__${quoteId}__${eventKey}`);
+  transaction.create(eventRef, eventPayload({
+    eventRef,
+    businessId,
+    workId: workRef.id,
+    type: "cotizacion_respuesta",
+    actorUid: String(actorUid || "").trim(),
+    actor: commercialActor(actor),
+    detail: {
+      cotizacionId: quoteId,
+      cotizacionNumero: String(quoteNumber || "").trim(),
+      respuesta: String(response || "").trim(),
+      ...detail,
+    },
+    timestamp,
+  }));
+  transaction.update(workRef, {
+    modeloTrabajoVersion: WORK_MODEL_VERSION,
+    modeloExpedienteVersion: WORK_FILE_MODEL_VERSION,
+    actualizadoEn: timestamp,
+  });
 }
 
 async function requireWriteAccess(request, dependencies) {
@@ -199,6 +314,9 @@ async function crearTrabajoHandler(request, dependencies, now = new Date()) {
       fechaCompletado: input.estado === "completado" ? timestamp : null,
       tareasTotal: 0,
       tareasCompletadas: 0,
+      modeloExpedienteVersion: WORK_FILE_MODEL_VERSION,
+      cotizacionesVinculadas: 0,
+      ventasVinculadas: 0,
       creadoPorUid: context.uid,
       actualizadoPorUid: context.uid,
       creadoEn: timestamp,
@@ -350,6 +468,7 @@ async function agregarNotaTrabajoHandler(request, dependencies) {
 
 module.exports = {
   WORK_MODEL_VERSION,
+  WORK_FILE_MODEL_VERSION,
   WORK_PRIORITIES,
   WORK_STATUSES,
   actualizarTrabajoHandler,
@@ -360,5 +479,8 @@ module.exports = {
   crearTrabajoHandler,
   eliminarTareaTrabajoHandler,
   formatWorkNumber,
+  linkedWorkFields,
   normalizeWorkInput,
+  writeCommercialLink,
+  writeQuoteResponseEvent,
 };

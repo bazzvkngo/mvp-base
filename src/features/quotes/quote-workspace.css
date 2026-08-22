@@ -763,3 +763,4 @@
     grid-template-columns: 1fr;
   }
 }
+.quote-workspace__project-link { color: var(--color-brand-700); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); width: fit-content; }

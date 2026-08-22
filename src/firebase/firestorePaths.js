@@ -107,6 +107,10 @@ export const workHistoryCollectionPath = (businessId, trabajoId) => [
   ...workDocPath(businessId, trabajoId),
   "historial",
 ];
+export const workLinksCollectionPath = (businessId, trabajoId) => [
+  ...workDocPath(businessId, trabajoId),
+  "vinculos",
+];
 export const providersCollectionPath = (businessId) => [
   "negocios",
   businessId,
