@@ -85,19 +85,38 @@ try {
   await rejected("orden totalmente recibida", () => call(owner, "crearRecepcionDesdeOrden")({businessId, ordenCompraId: orderId, requestId: requestId("complete")}), ["failed-precondition"]);
   console.log("OK recepción acumulada total");
 
+  const firstConversion = await call(owner, "crearCompraDesdeRecepcion")({businessId, recepcionId: first.data.recepcion.id, requestId: requestId("purchase-from-first-reception")});
+  assert.equal(firstConversion.data.compra.recepcionId, first.data.recepcion.id);
+  assert.equal(firstConversion.data.compra.items.find((line) => line.tipoItem === "producto").cantidad, 4);
   const conversionId = requestId("purchase-from-reception");
   const fromReception = await call(owner, "crearCompraDesdeRecepcion")({businessId, recepcionId: second.data.recepcion.id, requestId: conversionId});
   const conversionRetry = await call(owner, "crearCompraDesdeRecepcion")({businessId, recepcionId: second.data.recepcion.id, requestId: conversionId});
+  const conversionRetryWithOtherRequest = await call(owner, "crearCompraDesdeRecepcion")({businessId, recepcionId: second.data.recepcion.id, requestId: requestId("purchase-from-reception-retry")});
   assert.equal(fromReception.data.compra.id, conversionRetry.data.compra.id);
+  assert.equal(fromReception.data.compra.id, conversionRetryWithOtherRequest.data.compra.id);
+  assert.notEqual(firstConversion.data.compra.id, fromReception.data.compra.id);
   assert.equal(fromReception.data.compra.recepcionId, second.data.recepcion.id);
   assert.equal(fromReception.data.compra.items.find((line) => line.tipoItem === "producto").cantidad, 6);
+  assert.equal((await adminDb.collection(`negocios/${businessId}/compras`).where("ordenCompraId", "==", orderId).get()).size, 2);
+  await rejected("ruta legacy no convierte una OC con recepciones", () => call(owner, "crearCompraDesdeOrden")({businessId, ordenCompraId: orderId, requestId: requestId("legacy-after-receptions")}), ["failed-precondition"]);
   const economicItems = fromReception.data.compra.items.map((line) => ({lineaId: line.lineaId, itemId: line.itemId, cantidad: line.cantidad, costoUnitario: line.costoUnitario + 300, descuentoPct: 0}));
   await call(owner, "actualizarCompraBorrador")({businessId, compraId: fromReception.data.compra.id, compra: {proveedorId: providerId, fechaCompra: "2026-08-14", fechaDocumento: "2026-08-14", tipoDocumento: "factura", numeroDocumentoProveedor: "F-REC-1", items: economicItems}});
   const stockBeforeEconomicDocument = (await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data().stock;
   await call(owner, "confirmarCompra")({businessId, compraId: fromReception.data.compra.id, requestId: requestId("confirm-economic")});
   assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data().stock, stockBeforeEconomicDocument);
   assert.equal((await adminDb.doc(`negocios/${businessId}/recepciones/${second.data.recepcion.id}`).get()).data().compraId, fromReception.data.compra.id);
-  console.log("OK recepción confirmada prepara compra económica sin doble stock");
+  console.log("OK recepciones parciales preparan compras independientes e idempotentes sin doble stock");
+
+  const legacyOrderId = `legacy-collision-${RUN_ID}`; await seedOrder(legacyOrderId, 3);
+  const legacyPurchase = await call(owner, "crearCompraDesdeOrden")({businessId, ordenCompraId: legacyOrderId, requestId: requestId("legacy-before-reception")});
+  const legacyReception = await call(owner, "crearRecepcionDesdeOrden")({businessId, ordenCompraId: legacyOrderId, requestId: requestId("legacy-reception")});
+  const legacyReceptionItems = legacyReception.data.recepcion.items.map((line) => ({lineaId: line.lineaId, cantidad: line.tipoItem === "producto" ? 3 : 0}));
+  await call(owner, "actualizarRecepcionBorrador")({businessId, recepcionId: legacyReception.data.recepcion.id, recepcion: {fechaRecepcion: "2026-08-14", observaciones: "Recepción posterior a compra legacy", items: legacyReceptionItems}});
+  await call(owner, "confirmarRecepcion")({businessId, recepcionId: legacyReception.data.recepcion.id, requestId: requestId("legacy-confirm-reception")});
+  await rejected("recepción no duplica una compra legacy", () => call(owner, "crearCompraDesdeRecepcion")({businessId, recepcionId: legacyReception.data.recepcion.id, requestId: requestId("v2-after-legacy")}), ["failed-precondition"]);
+  assert.equal((await adminDb.collection(`negocios/${businessId}/compras`).where("ordenCompraId", "==", legacyOrderId).get()).size, 1);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/ordenesCompra/${legacyOrderId}`).get()).data().compraId, legacyPurchase.data.compra.id);
+  console.log("OK compatibilidad legacy: recepción conserva stock y no crea una segunda compra");
 
   const concurrentOrder = `concurrent-${RUN_ID}`; await seedOrder(concurrentOrder, 5);
   const draftA = await call(owner, "crearRecepcionDesdeOrden")({businessId, ordenCompraId: concurrentOrder, requestId: requestId("draft-a")});

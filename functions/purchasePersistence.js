@@ -175,6 +175,9 @@ async function crearCompraDesdeOrdenHandler(request, dependencies, clock = new D
   const purchaseRef = businessRef.collection("compras").doc();
   const requestRef = businessRef.collection("purchaseOrderConversionRequests").doc(reqId);
   const orderRef = businessRef.collection("ordenesCompra").doc(orderId);
+  const receptionsQuery = businessRef.collection("recepciones")
+    .where("ordenCompraId", "==", orderId)
+    .limit(1);
   const counterRef = businessRef.collection("purchaseCounters").doc(String(now.year));
   return transactionRetry(db, async (transaction) => {
     const previous = await transaction.get(requestRef);
@@ -184,7 +187,11 @@ async function crearCompraDesdeOrdenHandler(request, dependencies, clock = new D
       const existing = await transaction.get(businessRef.collection("compras").doc(data.compraId));
       return {compra: {id: existing.id, ...existing.data()}, requestId: reqId, idempotent: true};
     }
-    const [orderSnapshot, counterSnapshot] = await Promise.all([transaction.get(orderRef), transaction.get(counterRef)]);
+    const [orderSnapshot, counterSnapshot, receptionsSnapshot] = await Promise.all([
+      transaction.get(orderRef),
+      transaction.get(counterRef),
+      transaction.get(receptionsQuery),
+    ]);
     if (!orderSnapshot.exists) fail(HttpsError, "not-found", "No se encontró la orden de compra.");
     const order = orderSnapshot.data() || {};
     if (order.negocioId !== businessId) fail(HttpsError, "permission-denied", "No puedes registrar esta orden.");
@@ -195,6 +202,13 @@ async function crearCompraDesdeOrdenHandler(request, dependencies, clock = new D
       return {compra: {id: existing.id, ...existing.data()}, requestId: reqId, idempotent: true, alreadyConverted: true};
     }
     if (order.estado !== "emitida") fail(HttpsError, "failed-precondition", "Sólo una orden emitida puede registrarse como compra.");
+    if (!receptionsSnapshot.empty) {
+      fail(
+        HttpsError,
+        "failed-precondition",
+        "La orden ya inició el flujo de recepciones. Prepara cada compra desde su recepción confirmada."
+      );
+    }
     const proveedorSnapshot = order.proveedorSnapshot || {};
     const normalized = input({proveedorId: order.proveedorId, fechaCompra: now.value, fechaDocumento: "", tipoDocumento: "sin_documento", numeroDocumentoProveedor: "", condicionesPago: order.condicionesPago, observaciones: order.observaciones, items: order.items}, HttpsError);
     const items = order.items.map((item, index) => ocSnapshotLine(item, index, HttpsError));
@@ -245,6 +259,24 @@ async function crearCompraDesdeRecepcionHandler(request, dependencies, clock = n
     }
     if (reception.estado !== "confirmada" || reception.stockAplicado !== true) {
       fail(HttpsError, "failed-precondition", "Solo una recepcion recibida puede registrarse como compra.");
+    }
+    const orderId = id(reception.ordenCompraId, "La orden de compra", HttpsError);
+    const orderSnapshot = await transaction.get(
+      businessRef.collection("ordenesCompra").doc(orderId)
+    );
+    if (!orderSnapshot.exists) {
+      fail(HttpsError, "failed-precondition", "No se encontro la orden de compra de la recepcion.");
+    }
+    const order = orderSnapshot.data() || {};
+    if (order.negocioId !== businessId) {
+      fail(HttpsError, "permission-denied", "La orden de compra pertenece a otro negocio.");
+    }
+    if (order.compraId) {
+      fail(
+        HttpsError,
+        "failed-precondition",
+        "La orden ya fue registrada como compra mediante el flujo anterior. Esta recepcion no puede generar otra compra."
+      );
     }
     const sourceItems = (reception.items || []).filter((line) => Number(line.cantidad) > 0);
     const normalized = input({
