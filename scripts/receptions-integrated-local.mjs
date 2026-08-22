@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {createRequire} from "node:module";
 import {deleteApp, initializeApp} from "firebase/app";
 import {connectAuthEmulator, createUserWithEmailAndPassword, getAuth} from "firebase/auth";
-import {collection, connectFirestoreEmulator, doc, getDocs, getFirestore, query, setDoc, terminate, where} from "firebase/firestore";
+import {collection, connectFirestoreEmulator, doc, getDocs, getFirestore, query, setDoc, terminate, updateDoc, where} from "firebase/firestore";
 import {connectFunctionsEmulator, getFunctions, httpsCallable} from "firebase/functions";
 
 const PROJECT_ID = "tesis-inventario-ia";
@@ -53,12 +53,12 @@ try {
   const provider = {proveedorId: providerId, negocioId: businessId, estado: "activo", rut: "76.111.111-1", razonSocial: "Proveedor Recepciones SpA"};
   await Promise.all([
     adminDb.doc(`negocios/${businessId}/proveedores/${providerId}`).set(provider),
-    adminDb.doc(`negocios/${businessId}/inventario/${productId}`).set({negocioId: businessId, estado: "activo", tipoItem: "producto", nombre: "Producto", unidad: "unidad", stock: 5}),
+    adminDb.doc(`negocios/${businessId}/inventario/${productId}`).set({negocioId: businessId, estado: "activo", tipoItem: "producto", nombre: "Producto", unidad: "unidad", stock: 0}),
     adminDb.doc(`negocios/${businessId}/inventario/${serviceId}`).set({negocioId: businessId, estado: "activo", tipoItem: "servicio", nombre: "Servicio", unidad: "servicio"}),
   ]);
-  const orderLine = (lineaId, itemId, nombre, tipoItem, cantidad) => ({lineaId, itemId, nombre, tipoItem, unidad: tipoItem === "producto" ? "unidad" : "servicio", cantidad, costoUnitario: 1000, descuentoPct: 0, inventarioSnapshot: {inventarioId: itemId, nombre, tipoItem, unidad: "unidad"}});
-  const seedOrder = async (id, quantity = 10, response = "pendiente") => {
-    await adminDb.doc(`negocios/${businessId}/ordenesCompra/${id}`).set({ordenCompraId: id, negocioId: businessId, numero: `OC-${id}`, estado: "emitida", proveedorId: providerId, proveedorSnapshot: provider, empresaSnapshot: companySnapshotA, respuestaProveedor: {estado: response}, items: [orderLine("product-line", productId, "Producto", "producto", quantity), orderLine("service-line", serviceId, "Servicio", "servicio", 2)]});
+  const orderLine = (lineaId, itemId, nombre, tipoItem, cantidad, cost = 1000) => ({lineaId, itemId, nombre, tipoItem, unidad: tipoItem === "producto" ? "unidad" : "servicio", cantidad, costoUnitario: cost, descuentoPct: 0, inventarioSnapshot: {inventarioId: itemId, nombre, tipoItem, unidad: "unidad"}});
+  const seedOrder = async (id, quantity = 10, response = "pendiente", cost = 1000, currency = "CLP") => {
+    await adminDb.doc(`negocios/${businessId}/ordenesCompra/${id}`).set({ordenCompraId: id, negocioId: businessId, numero: `OC-${id}`, estado: "emitida", moneda: currency, tasaIva: 0.19, proveedorId: providerId, proveedorSnapshot: provider, empresaSnapshot: companySnapshotA, respuestaProveedor: {estado: response}, items: [orderLine("product-line", productId, "Producto", "producto", quantity, cost), orderLine("service-line", serviceId, "Servicio", "servicio", 2, cost)]});
   };
   const orderId = `partial-${RUN_ID}`; await seedOrder(orderId);
 
@@ -74,24 +74,38 @@ try {
   const confirmId = requestId("confirm-first");
   const confirmed = await call(owner, "confirmarRecepcion")({businessId, recepcionId: first.data.recepcion.id, requestId: confirmId});
   assert.equal(confirmed.data.recepcion.estado, "confirmada"); assert.equal(confirmed.data.productosActualizados, 1);
-  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data().stock, 9);
+  const productAfterFirst = (await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data();
+  assert.equal(productAfterFirst.stock, 4);
+  assert.equal(productAfterFirst.costoPromedio, 1190);
+  assert.equal(productAfterFirst.ultimoCosto, 1190);
+  assert.equal(productAfterFirst.ultimoProveedor.razonSocial, provider.razonSocial);
   assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${serviceId}`).get()).data().stock, undefined);
   const movements = await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("recepcionId", "==", first.data.recepcion.id).get();
   assert.equal(movements.size, 1); assert.equal(movements.docs[0].data().tipo, "entrada_recepcion");
+  const firstAcquisitions = await adminDb.collection(`negocios/${businessId}/adquisicionesInventario`).where("recepcionId", "==", first.data.recepcion.id).get();
+  assert.equal(firstAcquisitions.size, 1);
+  assert.equal(firstAcquisitions.docs[0].data().costoPagadoTotal, 4760);
+  assert.equal(firstAcquisitions.docs[0].data().proveedorId, providerId);
+  assert.equal(firstAcquisitions.docs[0].data().ordenCompraId, orderId);
+  assert.equal(firstAcquisitions.docs[0].data().compraId, "");
   await call(owner, "confirmarRecepcion")({businessId, recepcionId: first.data.recepcion.id, requestId: confirmId});
-  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data().stock, 9);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data().stock, 4);
+  assert.equal((await adminDb.collection(`negocios/${businessId}/adquisicionesInventario`).where("recepcionId", "==", first.data.recepcion.id).get()).size, 1);
   console.log("OK recepción parcial, servicio sin stock e idempotencia");
 
   const second = await call(owner, "crearRecepcionDesdeOrden")({businessId, ordenCompraId: orderId, requestId: requestId("create-second")});
   assert.equal(second.data.recepcion.items.find((line) => line.tipoItem === "producto").cantidad, 6);
   await call(owner, "confirmarRecepcion")({businessId, recepcionId: second.data.recepcion.id, requestId: requestId("confirm-second")});
-  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data().stock, 15);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data().stock, 10);
   await rejected("orden totalmente recibida", () => call(owner, "crearRecepcionDesdeOrden")({businessId, ordenCompraId: orderId, requestId: requestId("complete")}), ["failed-precondition"]);
   console.log("OK recepción acumulada total");
 
   const firstConversion = await call(owner, "crearCompraDesdeRecepcion")({businessId, recepcionId: first.data.recepcion.id, requestId: requestId("purchase-from-first-reception")});
   assert.equal(firstConversion.data.compra.recepcionId, first.data.recepcion.id);
   assert.equal(firstConversion.data.compra.items.find((line) => line.tipoItem === "producto").cantidad, 4);
+  const linkedFirstAcquisition = (await adminDb.doc(`negocios/${businessId}/adquisicionesInventario/${first.data.recepcion.id}__product-line`).get()).data();
+  assert.equal(linkedFirstAcquisition.compraId, firstConversion.data.compra.id);
+  assert.equal(linkedFirstAcquisition.compraNumero, firstConversion.data.compra.numero);
   const conversionId = requestId("purchase-from-reception");
   const fromReception = await call(owner, "crearCompraDesdeRecepcion")({businessId, recepcionId: second.data.recepcion.id, requestId: conversionId});
   const conversionRetry = await call(owner, "crearCompraDesdeRecepcion")({businessId, recepcionId: second.data.recepcion.id, requestId: conversionId});
@@ -107,10 +121,30 @@ try {
   const economicItems = fromReception.data.compra.items.map((line) => ({lineaId: line.lineaId, itemId: line.itemId, cantidad: line.cantidad, costoUnitario: line.costoUnitario + 300, descuentoPct: 0}));
   await call(owner, "actualizarCompraBorrador")({businessId, compraId: fromReception.data.compra.id, compra: {proveedorId: providerId, fechaCompra: "2026-08-14", fechaDocumento: "2026-08-14", tipoDocumento: "factura", numeroDocumentoProveedor: "F-REC-1", items: economicItems}});
   const stockBeforeEconomicDocument = (await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data().stock;
+  const acquisitionsBeforeEconomicDocument = (await adminDb.collection(`negocios/${businessId}/adquisicionesInventario`).get()).size;
   await call(owner, "confirmarCompra")({businessId, compraId: fromReception.data.compra.id, requestId: requestId("confirm-economic")});
   assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data().stock, stockBeforeEconomicDocument);
+  assert.equal((await adminDb.collection(`negocios/${businessId}/adquisicionesInventario`).get()).size, acquisitionsBeforeEconomicDocument);
   assert.equal((await adminDb.doc(`negocios/${businessId}/recepciones/${second.data.recepcion.id}`).get()).data().compraId, fromReception.data.compra.id);
   console.log("OK recepciones parciales preparan compras independientes e idempotentes sin doble stock");
+
+  const averageOrderId = `average-${RUN_ID}`; await seedOrder(averageOrderId, 1, "pendiente", 1200);
+  const averageReception = await call(owner, "crearRecepcionDesdeOrden")({businessId, ordenCompraId: averageOrderId, requestId: requestId("average-reception")});
+  await call(owner, "confirmarRecepcion")({businessId, recepcionId: averageReception.data.recepcion.id, requestId: requestId("average-confirm")});
+  const productAfterSecondCost = (await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data();
+  assert.equal(productAfterSecondCost.stock, 11);
+  assert.equal(productAfterSecondCost.ultimoCosto, 1428);
+  assert.equal(productAfterSecondCost.costoPromedio, 1211.6364);
+  console.log("OK segunda adquisición recalcula costo promedio ponderado");
+
+  const incompatibleOrderId = `currency-${RUN_ID}`; await seedOrder(incompatibleOrderId, 1, "pendiente", 1000, "USD");
+  const incompatibleReception = await call(owner, "crearRecepcionDesdeOrden")({businessId, ordenCompraId: incompatibleOrderId, requestId: requestId("currency-reception")});
+  const stockBeforeCurrencyRejection = (await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data().stock;
+  const acquisitionsBeforeCurrencyRejection = (await adminDb.collection(`negocios/${businessId}/adquisicionesInventario`).get()).size;
+  await rejected("promedio entre monedas incompatibles", () => call(owner, "confirmarRecepcion")({businessId, recepcionId: incompatibleReception.data.recepcion.id, requestId: requestId("currency-confirm")}), ["failed-precondition"]);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data().stock, stockBeforeCurrencyRejection);
+  assert.equal((await adminDb.collection(`negocios/${businessId}/adquisicionesInventario`).get()).size, acquisitionsBeforeCurrencyRejection);
+  console.log("OK moneda incompatible revierte stock y adquisición");
 
   const legacyOrderId = `legacy-collision-${RUN_ID}`; await seedOrder(legacyOrderId, 3);
   const legacyPurchase = await call(owner, "crearCompraDesdeOrden")({businessId, ordenCompraId: legacyOrderId, requestId: requestId("legacy-before-reception")});
@@ -142,15 +176,22 @@ try {
   const purchase = await call(owner, "crearCompra")({businessId, requestId: requestId("purchase"), compra: {proveedorId: providerId, fechaCompra: "2026-08-14", tipoDocumento: "factura", fechaDocumento: "2026-08-14", numeroDocumentoProveedor: "F-1", items: [{lineaId: "purchase-line", itemId: productId, cantidad: 3, costoUnitario: 1200, descuentoPct: 0}]}});
   assert.equal(purchase.data.compra.empresaSnapshot.razonSocial, companyProfileB.razonSocial);
   const beforePurchase = (await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data().stock;
+  const acquisitionsBeforePurchase = (await adminDb.collection(`negocios/${businessId}/adquisicionesInventario`).get()).size;
   const purchaseConfirmed = await call(owner, "confirmarCompra")({businessId, compraId: purchase.data.compra.id, requestId: requestId("purchase-confirm")});
   assert.equal(purchaseConfirmed.data.compra.estado, "confirmada"); assert.equal(purchaseConfirmed.data.compra.stockAplicado, false);
   assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data().stock, beforePurchase);
+  assert.equal((await adminDb.collection(`negocios/${businessId}/adquisicionesInventario`).get()).size, acquisitionsBeforePurchase);
   console.log("OK compra nueva económica sin doble stock");
 
   const receptionsQuery = (target) => query(collection(target.db, "negocios", businessId, "recepciones"), where("negocioId", "==", businessId));
+  const acquisitionsQuery = (target) => query(collection(target.db, "negocios", businessId, "adquisicionesInventario"), where("negocioId", "==", businessId), where("itemId", "==", productId));
   assert.ok((await getDocs(receptionsQuery(member))).size >= 2);
+  assert.ok((await getDocs(acquisitionsQuery(member))).size >= 2);
   await rejected("lectura cruzada", () => getDocs(receptionsQuery(outsider)), ["permission-denied"]);
+  await rejected("lectura cruzada de adquisiciones", () => getDocs(acquisitionsQuery(outsider)), ["permission-denied"]);
   await rejected("escritura cliente bloqueada", () => setDoc(doc(owner.db, "negocios", businessId, "recepciones", `fake-${RUN_ID}`), {negocioId: businessId}), ["permission-denied"]);
+  await rejected("adquisición directa bloqueada", () => setDoc(doc(owner.db, "negocios", businessId, "adquisicionesInventario", `fake-${RUN_ID}`), {negocioId: businessId, itemId: productId}), ["permission-denied"]);
+  await rejected("costo promedio directo bloqueado", () => updateDoc(doc(owner.db, "negocios", businessId, "inventario", productId), {costoPromedio: 1}), ["permission-denied"]);
   assert.equal((await adminDb.collection(`negocios/${otherBusinessId}/recepciones`).get()).size, 0);
   console.log("Reception integrated smoke: OK");
 } finally {

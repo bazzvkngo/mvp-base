@@ -22,6 +22,7 @@ import { calculateBasePrice, calculateEffectiveInternalPrice } from "../../domai
 import {
   createManagedInventoryItem,
   deactivateInventoryItem,
+  getInventoryAcquisitions,
   reactivateInventoryItem,
   saveInventoryArea,
   saveInventoryCategory,
@@ -31,7 +32,7 @@ import {
   updateManagedInventoryItem,
 } from "../../services/inventoryService";
 import { DEFAULT_INVENTORY_SETTINGS, getBusinessSettings } from "../../services/companyService";
-import { formatCLP } from "../../utils/formatters";
+import { formatCLP, formatDate, formatMoney } from "../../utils/formatters";
 import InventoryCatalogManager from "./InventoryCatalogManager";
 import InventoryImportDialog from "./InventoryImportDialog";
 import UnitSelector from "./UnitSelector";
@@ -89,6 +90,8 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
   const [quickError, setQuickError] = useState("");
   const [quickSaving, setQuickSaving] = useState(false);
   const [detailItem, setDetailItem] = useState(null);
+  const [acquisitions, setAcquisitions] = useState([]);
+  const [acquisitionsState, setAcquisitionsState] = useState({loading: false, error: ""});
   const [editingItem, setEditingItem] = useState(null);
   const [draft, setDraft] = useState({ ...EMPTY_DRAFT });
   const [manualPriceEnabled, setManualPriceEnabled] = useState(false);
@@ -136,6 +139,33 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
     getBusinessSettings(businessId, "inventario").then((value) => active && setSettings(value)).catch(() => {});
     return () => { active = false; };
   }, [businessId]);
+
+  useEffect(() => {
+    if (!businessId || !detailItem?.id || adaptInventoryItem(detailItem).tipoItem !== "producto") {
+      setAcquisitions([]);
+      setAcquisitionsState({loading: false, error: ""});
+      return undefined;
+    }
+    let active = true;
+    setAcquisitions([]);
+    setAcquisitionsState({loading: true, error: ""});
+    getInventoryAcquisitions(businessId, detailItem.id)
+      .then((records) => {
+        if (!active) return;
+        setAcquisitions(records);
+        setAcquisitionsState({loading: false, error: ""});
+      })
+      .catch((error) => {
+        console.error("Error al cargar adquisiciones:", error);
+        if (active) {
+          setAcquisitionsState({
+            loading: false,
+            error: "No se pudo cargar el historial de adquisiciones.",
+          });
+        }
+      });
+    return () => { active = false; };
+  }, [businessId, detailItem]);
 
   const summary = useMemo(() => summarizeInventory(items, { lowStockThreshold: settings.umbralStockBajo }), [items, settings.umbralStockBajo]);
   const visibleItems = useMemo(() => filterInventoryItems(items, filters), [filters, items]);
@@ -470,7 +500,7 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
       <ResponsiveDialog className="inventory-catalog-dialog" open={catalogOpen} onClose={closeCatalogManager} size="large" eyebrow="Inventario" title="Áreas y categorías" description="Organiza el catálogo según las necesidades de tu negocio."><InventoryCatalogManager areas={areas} businessId={businessId} categories={categories} loadErrors={catalogState.errors} loading={catalogState.loading} onRetry={() => setCatalogState((current) => ({ ...current, retry: current.retry + 1 }))} /></ResponsiveDialog>
       <ResponsiveDialog open={Boolean(quickCreate)} onClose={closeQuickCreate} initialFocusRef={quickNameRef} size="small" eyebrow="Clasificación" title={quickCreate === "area" ? "Nueva área" : "Nueva categoría"} description={quickCreate === "area" ? "Crea un área sin perder los datos del ítem." : "La categoría quedará asociada al área seleccionada."} footer={<><Button type="button" variant="secondary" disabled={quickSaving} onClick={closeQuickCreate}>Cancelar</Button><Button type="submit" form="inventory-quick-classification-form" disabled={quickSaving}>{quickSaving ? "Creando..." : quickCreate === "area" ? "Crear área" : "Crear categoría"}</Button></>}><form id="inventory-quick-classification-form" className="inventory-quick-classification-form" onSubmit={submitQuickCreate}>{quickCreate === "category" && <p>Área: <strong>{areas.find((area) => area.id === draft.areaId)?.nombre || "Área seleccionada"}</strong></p>}<Field label="Nombre" required error={quickError}><input ref={quickNameRef} className="erp-control" maxLength={80} value={quickName} onChange={(event) => { setQuickName(event.target.value); setQuickError(""); }} /></Field></form></ResponsiveDialog>
       <InventoryImportDialog open={importOpen} onClose={() => setImportOpen(false)} onImported={(info) => setFeedback(info?.partial ? { type: "notice", message: "La importación quedó parcial; revisa el resumen antes de continuar." } : { type: "success", message: "Importación confirmada correctamente." })} businessId={businessId} areas={areas} categories={categories} existingItems={items} />
-      <ItemDetail item={detailItem} areas={areas} categories={categories} cannotWrite={cannotWrite} onClose={() => setDetailItem(null)} onEdit={openEditItem} onArchive={(item) => changeStatus(item, "inactivo")} onReactivate={(item) => changeStatus(item, "activo")} />
+      <ItemDetail item={detailItem} areas={areas} categories={categories} acquisitions={acquisitions} acquisitionsState={acquisitionsState} cannotWrite={cannotWrite} onClose={() => setDetailItem(null)} onEdit={openEditItem} onArchive={(item) => changeStatus(item, "inactivo")} onReactivate={(item) => changeStatus(item, "activo")} />
     </section>
   );
 }
@@ -500,10 +530,54 @@ function InventoryList({ areas, cannotWrite, categories, items, onArchive, onEdi
 function Status({ item }) { return <span className={`inventory-status inventory-status--${item.estado === "activo" ? "active" : "archived"}`}>{item.estado === "activo" ? "Activo" : "Archivado"}</span>; }
 function Actions({ cannotWrite, item, onArchive, onEdit, onReactivate }) { if (cannotWrite) return null; return <div className="inventory-row-actions"><button type="button" onClick={() => onEdit(item)}>Editar</button>{item.estado === "activo" ? <button type="button" onClick={() => onArchive(item)}><AppIcon icon={Archive} size={15} />Archivar</button> : <button type="button" onClick={() => onReactivate(item)}><AppIcon icon={RotateCcw} size={15} />Reactivar</button>}</div>; }
 
-function ItemDetail({ areas, cannotWrite, categories, item, onArchive, onClose, onEdit, onReactivate }) {
+function ItemDetail({ acquisitions, acquisitionsState, areas, cannotWrite, categories, item, onArchive, onClose, onEdit, onReactivate }) {
   if (!item) return null;
   const adapted = adaptInventoryItem(item);
-  return <ResponsiveDialog open onClose={onClose} eyebrow="Inventario" title={adapted.nombre} description={adapted.codigoInterno || adapted.sku || "Registro heredado sin código"} footer={!cannotWrite ? <Actions item={adapted} onEdit={onEdit} onArchive={onArchive} onReactivate={onReactivate} /> : null}><dl className="inventory-detail-grid"><Detail label="SKU / código interno" value={adapted.codigoInterno || "No informado"} />{adapted.tipoItem === "producto" && <><Detail label="Marca" value={adapted.marca || "No informada"} /><Detail label="Modelo" value={adapted.modelo || "No informado"} /><Detail label="Código de barras" value={adapted.codigoBarras || "No informado"} /></>}<Detail label="Tipo" value={getInventoryTypeLabel(adapted.tipoItem)} /><Detail label="Área" value={getInventoryAreaLabel(adapted, areas)} /><Detail label="Categoría" value={getInventoryCategoryLabel(adapted, categories)} /><Detail label="Unidad" value={adapted.unidad} />{adapted.tipoItem === "producto" ? <><Detail label="Costo unitario neto" value={formatCLP(adapted.costoBase)} /><Detail label="IVA de compra" value={`${adapted.tasaImpuestoCompra}% · ${formatCLP(adapted.montoImpuestoCompra)}`} /><Detail label="Costo pagado" value={formatCLP(adapted.costoPagado)} /><Detail label="Recargo" value={`${adapted.margenDeseado}%`} /><Detail label="Precio sugerido" value={formatCLP(adapted.precioCalculado)} /><Detail label="Precio de venta final" value={formatCLP(adapted.precioEfectivo)} /></> : <><Detail label="Costo unitario" value={formatCLP(adapted.costoBase)} /><Detail label="Recargo" value={`${adapted.margenDeseado}%`} /><Detail label="Precio sugerido" value={formatCLP(adapted.precioCalculado)} /><Detail label="Precio de venta final" value={formatCLP(adapted.precioEfectivo)} /></>}{adapted.tipoItem === "producto" && <><Detail label="Stock actual" value={`${adapted.stock} ${adapted.unidadStock || adapted.unidad}`} /><Detail label="Stock mínimo" value={adapted.stockMinimo} /><Detail label="Nivel de stock" value={isInventoryLowStock(adapted) ? "Stock bajo" : "Disponible"} /></>}</dl>{adapted.descripcion && <div className="inventory-detail-description"><strong>Descripción</strong><p>{adapted.descripcion}</p></div>}</ResponsiveDialog>;
+  const currency = adapted.costoPromedioMoneda || "CLP";
+  const providerName = adapted.ultimoProveedor?.razonSocial || "Sin adquisiciones registradas";
+  return <ResponsiveDialog open onClose={onClose} size="large" eyebrow="Inventario" title={adapted.nombre} description={adapted.codigoInterno || adapted.sku || "Registro heredado sin código"} footer={!cannotWrite ? <Actions item={adapted} onEdit={onEdit} onArchive={onArchive} onReactivate={onReactivate} /> : null}>
+    <dl className="inventory-detail-grid">
+      <Detail label="SKU / código interno" value={adapted.codigoInterno || "No informado"} />
+      {adapted.tipoItem === "producto" && <><Detail label="Marca" value={adapted.marca || "No informada"} /><Detail label="Modelo" value={adapted.modelo || "No informado"} /><Detail label="Código de barras" value={adapted.codigoBarras || "No informado"} /></>}
+      <Detail label="Tipo" value={getInventoryTypeLabel(adapted.tipoItem)} />
+      <Detail label="Área" value={getInventoryAreaLabel(adapted, areas)} />
+      <Detail label="Categoría" value={getInventoryCategoryLabel(adapted, categories)} />
+      <Detail label="Unidad" value={adapted.unidad} />
+      {adapted.tipoItem === "producto" ? <>
+        <Detail label="Costo unitario neto" value={formatCLP(adapted.costoBase)} />
+        <Detail label="IVA de compra" value={`${adapted.tasaImpuestoCompra}% · ${formatCLP(adapted.montoImpuestoCompra)}`} />
+        <Detail label="Costo pagado" value={formatCLP(adapted.costoPagado)} />
+        <Detail label="Costo promedio" value={adapted.costoPromedio === null ? "Sin adquisiciones" : formatMoney(adapted.costoPromedio, currency)} />
+        <Detail label="Último costo" value={adapted.ultimoCosto === null ? "Sin adquisiciones" : formatMoney(adapted.ultimoCosto, currency)} />
+        <Detail label="Último proveedor" value={providerName} />
+        <Detail label="Recargo" value={`${adapted.margenDeseado}%`} />
+        <Detail label="Precio sugerido" value={formatCLP(adapted.precioCalculado)} />
+        <Detail label="Precio de venta final" value={formatCLP(adapted.precioEfectivo)} />
+      </> : <>
+        <Detail label="Costo unitario" value={formatCLP(adapted.costoBase)} />
+        <Detail label="Recargo" value={`${adapted.margenDeseado}%`} />
+        <Detail label="Precio sugerido" value={formatCLP(adapted.precioCalculado)} />
+        <Detail label="Precio de venta final" value={formatCLP(adapted.precioEfectivo)} />
+      </>}
+      {adapted.tipoItem === "producto" && <><Detail label="Stock actual" value={`${adapted.stock} ${adapted.unidadStock || adapted.unidad}`} /><Detail label="Stock mínimo" value={adapted.stockMinimo} /><Detail label="Nivel de stock" value={isInventoryLowStock(adapted) ? "Stock bajo" : "Disponible"} /></>}
+    </dl>
+    {adapted.descripcion && <div className="inventory-detail-description"><strong>Descripción</strong><p>{adapted.descripcion}</p></div>}
+    {adapted.tipoItem === "producto" && <AcquisitionHistory acquisitions={acquisitions} state={acquisitionsState} />}
+  </ResponsiveDialog>;
+}
+function AcquisitionHistory({ acquisitions, state }) {
+  return <section className="inventory-acquisition-history">
+    <h3>Historial de adquisiciones</h3>
+    {state.loading ? <p>Cargando adquisiciones…</p> : state.error ? <p className="inventory-feedback inventory-feedback--error">{state.error}</p> : acquisitions.length === 0 ? <p>Este producto aún no tiene adquisiciones registradas desde Recepción.</p> : <div className="inventory-acquisition-list">{acquisitions.map((entry) => {
+      const provider = entry.proveedorSnapshot?.razonSocial || "Proveedor no informado";
+      const chain = [entry.ordenCompraNumero, entry.recepcionNumero, entry.compraNumero].filter(Boolean).join(" · ");
+      return <article key={entry.id}>
+        <div><strong>{formatDate(entry.fechaAdquisicion)}</strong><span>{provider}</span></div>
+        <div><strong>{entry.cantidad} {entry.productoSnapshot?.unidad || "unidad"}</strong><span>{formatMoney(entry.costoPagadoUnitario, entry.moneda)} c/u · {formatMoney(entry.costoPagadoTotal, entry.moneda)} total</span></div>
+        <small>{chain || "Origen documental no informado"} · UID {entry.registradoPorUid || "no informado"}</small>
+      </article>;
+    })}</div>}
+  </section>;
 }
 function Detail({ label, value }) { return <div><dt>{label}</dt><dd>{value}</dd></div>; }
 

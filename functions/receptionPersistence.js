@@ -3,6 +3,11 @@ const ITEM_TYPES = new Set(["producto", "servicio", "actividad"]);
 const EPSILON = 0.000001;
 const {adaptDocumentLocalization} = require("./localization");
 const {buildAuthoritativeCompanySnapshot, resolveCompanySnapshot} = require("./companySnapshot");
+const {
+  calculateAcquisitionAmounts,
+  calculateWeightedAverage,
+  legacyPaidCost,
+} = require("./inventoryAcquisition");
 
 function fail(HttpsError, code, message) {
   throw new HttpsError(code, message);
@@ -367,6 +372,8 @@ async function confirmarRecepcionHandler(request, dependencies) {
       : [];
     const inventory = new Map(inventorySnapshots.map((entry) => [entry.id, entry]));
     const timestamp = FieldValue.serverTimestamp();
+    const receptionCurrency = text(reception.moneda, 12).toUpperCase() || "CLP";
+    const providerSnapshot = reception.proveedorSnapshot || {};
     const running = new Map();
     productLines.forEach((line) => {
       const inventorySnapshot = inventory.get(line.itemId);
@@ -377,12 +384,45 @@ async function confirmarRecepcionHandler(request, dependencies) {
       if (item.negocioId && item.negocioId !== businessId) {
         fail(HttpsError, "permission-denied", "El item pertenece a otro negocio.");
       }
-      const before = running.has(line.itemId)
-        ? running.get(line.itemId)
-        : Number(item.stock || 0);
-      const after = before + Number(line.cantidad);
-      running.set(line.itemId, after);
+      const previous = running.get(line.itemId) || {
+        stock: Number(item.stock || 0),
+        costoPromedio: legacyPaidCost(item),
+        moneda: text(item.costoPromedioMoneda, 12).toUpperCase(),
+      };
+      if (
+        previous.stock > EPSILON &&
+        previous.moneda &&
+        previous.moneda !== receptionCurrency
+      ) {
+        fail(
+          HttpsError,
+          "failed-precondition",
+          `No se puede promediar ${line.nombre || "el producto"} en monedas distintas.`
+        );
+      }
+      const amounts = calculateAcquisitionAmounts({
+        cantidad: line.cantidad,
+        costoUnitario: line.costoUnitario,
+        descuentoPct: line.descuentoPct,
+        tasaImpuestoCompra: Number(reception.tasaIva || 0) * 100,
+      });
+      const after = previous.stock + amounts.cantidad;
+      const average = calculateWeightedAverage({
+        stockAnterior: previous.stock,
+        costoPromedioAnterior: previous.costoPromedio,
+        cantidadEntrada: amounts.cantidad,
+        costoEntrada: amounts.costoPagadoUnitario,
+      });
+      running.set(line.itemId, {
+        stock: after,
+        costoPromedio: average,
+        moneda: receptionCurrency,
+        ultimoCosto: amounts.costoPagadoUnitario,
+        ultimaAdquisicionId: `${receptionId}__${line.lineaId}`,
+      });
       const movementRef = businessRef.collection("movimientosInventario")
+        .doc(`${receptionId}__${line.lineaId}`);
+      const acquisitionRef = businessRef.collection("adquisicionesInventario")
         .doc(`${receptionId}__${line.lineaId}`);
       transaction.create(movementRef, {
         negocioId: businessId,
@@ -394,16 +434,80 @@ async function confirmarRecepcionHandler(request, dependencies) {
         ordenCompraNumero: reception.ordenCompraNumero,
         itemId: line.itemId,
         lineaId: line.lineaId,
-        cantidad: Number(line.cantidad),
-        stockAnterior: before,
+        adquisicionId: acquisitionRef.id,
+        cantidad: amounts.cantidad,
+        costoUnitarioAplicado: amounts.costoPagadoUnitario,
+        costoTotal: amounts.costoPagadoTotal,
+        moneda: receptionCurrency,
+        stockAnterior: previous.stock,
         stockResultante: after,
         creadoPorUid: uid,
         creadoEn: timestamp,
       });
+      transaction.create(acquisitionRef, {
+        modeloAdquisicionVersion: 1,
+        adquisicionId: acquisitionRef.id,
+        negocioId: businessId,
+        itemId: line.itemId,
+        lineaId: line.lineaId,
+        productoSnapshot: {
+          inventarioId: line.itemId,
+          codigoInterno: text(
+            line.inventarioSnapshot?.codigoInterno || line.codigo,
+            100
+          ),
+          nombre: text(line.inventarioSnapshot?.nombre || line.nombre, 240),
+          tipoItem: "producto",
+          unidad: text(line.inventarioSnapshot?.unidad || line.unidad, 80) || "unidad",
+        },
+        proveedorId: text(reception.proveedorId, 160),
+        proveedorSnapshot: {
+          proveedorId: text(
+            providerSnapshot.proveedorId || reception.proveedorId,
+            160
+          ),
+          razonSocial: text(
+            providerSnapshot.razonSocial || providerSnapshot.nombre,
+            240
+          ),
+          identificadorFiscalTipo: text(
+            providerSnapshot.identificadorFiscalTipo,
+            40
+          ),
+          identificadorFiscalValor: text(
+            providerSnapshot.identificadorFiscalValor || providerSnapshot.rut,
+            80
+          ),
+        },
+        ...amounts,
+        moneda: receptionCurrency,
+        fechaAdquisicion: text(reception.fechaRecepcion, 10),
+        ordenCompraId: text(reception.ordenCompraId, 160),
+        ordenCompraNumero: text(reception.ordenCompraNumero, 120),
+        recepcionId: receptionId,
+        recepcionNumero: text(reception.numero, 120),
+        compraId: text(reception.compraId, 160),
+        compraNumero: text(reception.compraNumero, 120),
+        movimientoInventarioId: movementRef.id,
+        registradoPorUid: uid,
+        creadoEn: timestamp,
+      });
     });
-    running.forEach((stock, itemId) => {
+    running.forEach((state, itemId) => {
       transaction.update(businessRef.collection("inventario").doc(itemId), {
-        stock,
+        stock: state.stock,
+        costoPromedio: state.costoPromedio,
+        costoPromedioMoneda: state.moneda,
+        ultimoCosto: state.ultimoCosto,
+        ultimoProveedor: {
+          proveedorId: text(reception.proveedorId, 160),
+          razonSocial: text(
+            providerSnapshot.razonSocial || providerSnapshot.nombre,
+            240
+          ),
+        },
+        ultimaAdquisicionId: state.ultimaAdquisicionId,
+        ultimaAdquisicionEn: timestamp,
         actualizadoEn: timestamp,
       });
     });

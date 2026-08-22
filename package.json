@@ -51,7 +51,7 @@
     "test:purchase-orders-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/purchase-orders-integrated-local.mjs\"",
     "test:purchases-model": "node scripts/purchase-model-smoke.mjs",
     "test:purchases-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/purchases-integrated-local.mjs\"",
-    "test:receptions-model": "node scripts/reception-model-smoke.mjs",
+    "test:receptions-model": "node scripts/reception-model-smoke.mjs && node scripts/inventory-acquisition-smoke.mjs",
     "test:receptions-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/receptions-integrated-local.mjs\"",
     "test:sales-model": "node scripts/sale-model-smoke.mjs",
     "test:sales-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/sales-integrated-local.mjs\"",

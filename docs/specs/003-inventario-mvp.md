@@ -38,7 +38,11 @@ Campos canónicos nuevos:
 - `areaId` y `categoriaId`, solo cuando se seleccionan;
 - `categoria`, como etiqueta compatible con consumidores actuales;
 - `stock`, `stockMinimo` y `unidadStock`, solo para productos;
+- `costoPromedio`, `costoPromedioMoneda`, `ultimoCosto`, `ultimoProveedor` y
+  referencia a la última adquisición, sólo cuando una Recepción confirmó una entrada;
 - campos de auditoría autoritativos.
+
+El historial canónico vive en `negocios/{businessId}/adquisicionesInventario/{recepcionId__lineaId}` y conserva producto/proveedor, cantidad, costo e impuesto, moneda, OC, Recepción, Compra si existe, fecha, movimiento y usuario. Sólo Functions puede escribirlo.
 
 Las reservas y solicitudes internas no son accesibles mediante el SDK cliente:
 
@@ -137,4 +141,4 @@ La lectura adapta valores faltantes sin migrar documentos al abrir la ruta. Se a
 
 ## Fuera de alcance
 
-Variantes, tallas, colores, medidas configurables, imágenes, catálogo público, códigos de barras o cámara, proveedores, compras, ventas, movimientos históricos de stock, conversiones de unidades, IA, Gemini, PDF, OCR y migraciones masivas.
+Variantes, tallas, colores, medidas configurables, imágenes, catálogo público, códigos de barras o cámara, ventas, conversiones de unidades, FX, IA, Gemini, PDF, OCR y migraciones masivas.

@@ -187,6 +187,14 @@ export function adaptInventoryItem(item = {}) {
     adapted.precioCalculado = adapted.precioVentaSugerido;
     adapted.precioEfectivo = Math.round(calculateEffectiveInternalPrice(adapted));
   }
+  const averageCost = Number(item.costoPromedio);
+  const lastCost = Number(item.ultimoCosto);
+  adapted.costoPromedio = Number.isFinite(averageCost) ? averageCost : null;
+  adapted.costoPromedioMoneda = String(item.costoPromedioMoneda || "").trim().toUpperCase();
+  adapted.ultimoCosto = Number.isFinite(lastCost) ? lastCost : null;
+  adapted.ultimoProveedor = item.ultimoProveedor && typeof item.ultimoProveedor === "object"
+    ? item.ultimoProveedor
+    : null;
   return adapted;
 }
 

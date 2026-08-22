@@ -13,6 +13,7 @@ Colecciones operacionales:
 ```text
 negocios/{businessId}/compras/{compraId}
 negocios/{businessId}/movimientosInventario/{movimientoId}
+negocios/{businessId}/adquisicionesInventario/{adquisicionId}
 ```
 
 `compraId` y `movimientoId` son nombres canónicos. Cada compra guarda:
@@ -85,15 +86,15 @@ Una compra admite como máximo 200 líneas. Este límite mantiene la confirmaci�
 
 ## Confirmación y stock
 
-Confirmar ejecuta una única transacción Firestore:
+Para compras modelo 2, confirmar ejecuta una transacción exclusivamente económica:
 
 - comprueba que la compra esté en borrador y `stockAplicado` sea falso;
-- lee todos los productos involucrados;
-- suma `cantidad` a su `stock` actual sin modificar `costoBase`;
-- crea un movimiento inmutable `entrada_compra` por cada línea de producto;
-- marca la compra `confirmada`, `stockAplicado: true` y registra autoría y fecha.
+- marca la compra `confirmada`, conserva `stockAplicado: false` y registra autoría y fecha;
+- no modifica stock, promedio ni adquisiciones, incluso si se editaron costos del documento.
 
-Servicios y actividades permanecen en el documento de compra, pero no reciben `stock` ni generan movimientos. Si cualquier producto falta o es inconsistente, toda la transacción se revierte: ningún stock, movimiento ni estado queda parcialmente escrito.
+La Recepción confirmada es la única fuente nueva de `entrada_recepcion`, adquisición y costo promedio. Al preparar una Compra desde ella se vincula `compraId`/`compraNumero` a su adquisición sin alterar los hechos económicos originales. Servicios y actividades nunca generan adquisiciones.
+
+La ruta de stock `entrada_compra` se conserva exclusivamente para borradores históricos de modelo 1, sin crear adquisiciones ni recalcular promedio.
 
 La idempotencia tiene doble defensa: `purchaseConfirmRequests/{requestId}` protege reintentos de transporte y el propio estado `confirmada`/`stockAplicado` impide aplicar stock otra vez con un request diferente. Las transacciones de inventario preservan incrementos concurrentes.
 
@@ -148,7 +149,7 @@ La aceptación requiere además regresiones de Órdenes de Compra, Inventario, P
 - La autoridad de negocio, roles, referencias, snapshots, cálculos y estados reside en Functions.
 - Una Recepción confirmada produce como máximo una Compra y conserva su evidencia histórica.
 - Varias Recepciones parciales de una OC pueden producir Compras distintas sin superponerse con una Compra legacy por la OC completa.
-- Confirmar aumenta stock únicamente de productos y genera movimientos inmutables.
+- Confirmar una Compra modelo 2 no modifica stock ni duplica adquisiciones.
 - Reintentos y concurrencia no duplican ni pierden stock.
 - Un fallo revierte la confirmación completa.
 - No se modifica `costoBase` ni se crean efectos financieros.

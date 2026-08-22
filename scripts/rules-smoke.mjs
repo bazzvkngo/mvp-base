@@ -399,6 +399,7 @@ async function main() {
     const businessWorkExpensePath = `${businessWorkPath}/gastos/expense-rules-smoke`;
     const businessWorkLaborPath = `${businessWorkPath}/horasHombre/labor-rules-smoke`;
     const businessWorkMaterialMovementPath = `negocios/${businessId}/movimientosInventario/material-rules-smoke`;
+    const businessAcquisitionPath = `negocios/${businessId}/adquisicionesInventario/acquisition-rules-smoke`;
     await Promise.all([
       adminDb.doc(businessClientPath).set({
         clienteId: "client-rules-smoke",
@@ -415,6 +416,12 @@ async function main() {
         negocioId: businessId,
         rutNormalizado: "12345678-5",
         estadoCliente: "activo",
+      }),
+      adminDb.doc(businessAcquisitionPath).set({
+        adquisicionId: "acquisition-rules-smoke",
+        negocioId: businessId,
+        itemId: "item-rules-smoke",
+        recepcionId: "reception-rules-smoke",
       }),
       adminDb.doc(unknownBusinessPath).set({
         negocioId: businessId,
@@ -577,6 +584,13 @@ async function main() {
     ));
     if (materialMovementsSnapshot.size !== 1) throw new Error("La consulta no devolvió los materiales del trabajo.");
     console.log("OK permitido: miembro activo lista movimientos de materiales del trabajo");
+    const acquisitionsSnapshot = await getDocs(query(
+      collection(ownerClient.db, "negocios", businessId, "adquisicionesInventario"),
+      where("negocioId", "==", businessId),
+      where("itemId", "==", "item-rules-smoke")
+    ));
+    if (acquisitionsSnapshot.size !== 1) throw new Error("La consulta no devolvió la adquisición esperada.");
+    console.log("OK permitido: miembro activo lista adquisiciones del inventario");
     await expectDenied("usuario sin membresía lee trabajo", () =>
       getDoc(doc(guestClient.db, businessWorkPath))
     );
@@ -633,6 +647,15 @@ async function main() {
     );
     await expectDenied("OWNER crea movimiento de material directamente", () =>
       setDoc(doc(ownerClient.db, `negocios/${businessId}/movimientosInventario/direct-material`), {negocioId: businessId, trabajoId: "work-rules-smoke", tipo: "SALIDA_PROYECTO"})
+    );
+    await expectDenied("OWNER crea adquisición directamente", () =>
+      setDoc(doc(ownerClient.db, `negocios/${businessId}/adquisicionesInventario/direct-acquisition`), {negocioId: businessId, itemId: "item-rules-smoke"})
+    );
+    await expectDenied("OWNER edita adquisición directamente", () =>
+      updateDoc(doc(ownerClient.db, businessAcquisitionPath), {costoPagadoTotal: 1})
+    );
+    await expectDenied("OWNER elimina adquisición directamente", () =>
+      deleteDoc(doc(ownerClient.db, businessAcquisitionPath))
     );
     await expectDenied("OWNER edita movimiento de material directamente", () =>
       updateDoc(doc(ownerClient.db, businessWorkMaterialMovementPath), {cantidad: 2})

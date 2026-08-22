@@ -35,6 +35,11 @@ export const inventoryDocPath = (userId, itemId) => [
   "inventario",
   itemId,
 ];
+export const inventoryAcquisitionsCollectionPath = (businessId) => [
+  "negocios",
+  businessId,
+  "adquisicionesInventario",
+];
 export const inventoryAreasCollectionPath = (userId) => [
   "negocios",
   userId,

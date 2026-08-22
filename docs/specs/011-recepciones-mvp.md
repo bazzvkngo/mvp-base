@@ -31,12 +31,20 @@ Una recepción guarda snapshots del proveedor, OC y líneas, además de cantidad
 - Confirmar suma stock sólo para productos; servicios y actividades no lo modifican.
 - `requestId`, `stockAplicado`, transacción y movimientos deterministas evitan doble aplicación.
 - Los movimientos nuevos usan `tipoOrigen: recepcion` y referencian recepción y OC.
+- Cada línea de producto crea además una adquisición inmutable en
+  `adquisicionesInventario` con ID determinista `recepcionId__lineaId`.
+- La misma transacción actualiza stock, `costoPromedio`, `ultimoCosto` y
+  `ultimoProveedor`; costo y stock nunca quedan aplicados por separado.
+- El promedio usa costo pagado unitario (neto tras descuento más impuesto de
+  compra) y bloquea la mezcla con un promedio vigente en otra moneda.
 - El cliente no escribe directamente recepciones, contadores, idempotencia ni movimientos.
 
 ## Compras y compatibilidad
 
-Una recepción confirmada puede preparar una compra con cantidades efectivamente recibidas. El usuario completa documento, costo real y descuentos. Confirmar una compra modelo 2 es exclusivamente económico y no vuelve a sumar stock.
+Una recepción confirmada puede preparar una compra con cantidades efectivamente recibidas. El usuario completa documento, costo real y descuentos. Confirmar una compra modelo 2 es exclusivamente económico y no vuelve a sumar stock. Al prepararla, Functions agrega su referencia a las adquisiciones de la Recepción sin reescribir cantidad, costo, moneda, proveedor, OC, REC ni autoría.
 
 La compra directa sigue disponible, pero tampoco representa entrada física en el modelo 2. La recepción directa o ajuste queda fuera de este MVP.
 
 No hay migración destructiva. `confirmarCompra` conserva la aplicación de stock sólo para borradores históricos de modelo 1. Toda compra nueva usa `modeloCompraVersion: 2` y `stockGestionadoPor: recepcion`.
+
+Para productos legacy sin promedio, la primera Recepción valoriza el stock anterior con `costoPagado`, o con `costoBase` más su tasa configurada como fallback. Un producto sin adquisiciones continúa funcionando y muestra historial vacío.

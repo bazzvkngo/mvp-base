@@ -285,6 +285,10 @@ async function crearCompraDesdeRecepcionHandler(request, dependencies, clock = n
         "La orden ya fue registrada como compra mediante el flujo anterior. Esta recepcion no puede generar otra compra."
       );
     }
+    const acquisitions = await transaction.get(
+      businessRef.collection("adquisicionesInventario")
+        .where("recepcionId", "==", receptionId)
+    );
     const sourceItems = (reception.items || []).filter((line) => Number(line.cantidad) > 0);
     const normalized = input({
       proveedorId: reception.proveedorId,
@@ -329,6 +333,13 @@ async function crearCompraDesdeRecepcionHandler(request, dependencies, clock = n
     transaction.set(counterRef, {negocioId: businessId, year: now.year, lastNumber: sequence, actualizadoEn: timestamp});
     transaction.set(purchaseRef, stored);
     transaction.update(receptionRef, {compraId: purchaseRef.id, compraNumero: numero, actualizadoPorUid: uid, actualizadoEn: timestamp});
+    acquisitions.docs.forEach((acquisition) => {
+      transaction.update(acquisition.ref, {
+        compraId: purchaseRef.id,
+        compraNumero: numero,
+        compraVinculadaEn: timestamp,
+      });
+    });
     transaction.set(requestRef, {negocioId: businessId, recepcionId: receptionId, compraId: purchaseRef.id, uidUsuario: uid, creadoEn: timestamp});
     return {compra: {id: purchaseRef.id, ...stored, creadoEn: null, actualizadoEn: null}, requestId: reqId, idempotent: false};
   });

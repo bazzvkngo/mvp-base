@@ -187,6 +187,28 @@ service cloud.firestore {
       ]);
     }
 
+    function hasNoInventoryAcquisitionFields() {
+      return !request.resource.data.keys().hasAny([
+        "costoPromedio",
+        "costoPromedioMoneda",
+        "ultimoCosto",
+        "ultimoProveedor",
+        "ultimaAdquisicionId",
+        "ultimaAdquisicionEn"
+      ]);
+    }
+
+    function inventoryAcquisitionFieldsAreImmutable() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        "costoPromedio",
+        "costoPromedioMoneda",
+        "ultimoCosto",
+        "ultimoProveedor",
+        "ultimaAdquisicionId",
+        "ultimaAdquisicionEn"
+      ]);
+    }
+
     function hasValidPurchasePriceFormation() {
       let fields = [
         "formacionPrecioVersion",
@@ -524,10 +546,12 @@ service cloud.firestore {
         allow read: if isOwner(uid);
         allow create: if isOwner(uid)
           && hasValidDocumentOwner(uid)
+          && hasNoInventoryAcquisitionFields()
           && isAllowedLegacyInventoryCreate();
         allow update: if isOwner(uid)
           && hasValidDocumentOwner(uid)
           && inventoryCodesAreImmutable()
+          && inventoryAcquisitionFieldsAreImmutable()
           && (
             isInventoryLifecycleUpdate()
             || hasValidInventoryV2(uid)
@@ -627,10 +651,12 @@ service cloud.firestore {
         allow read: if canAccessBusiness(businessId);
         allow create: if hasBusinessRole(businessId, ["OWNER", "ADMIN"])
           && hasValidBusinessDocument(businessId)
+          && hasNoInventoryAcquisitionFields()
           && isAllowedLegacyInventoryCreate();
         allow update: if hasBusinessRole(businessId, ["OWNER", "ADMIN"])
           && hasValidBusinessDocument(businessId)
           && inventoryCodesAreImmutable()
+          && inventoryAcquisitionFieldsAreImmutable()
           && (
             isInventoryLifecycleUpdate()
             || hasValidBusinessInventoryV2(businessId)
@@ -843,6 +869,12 @@ service cloud.firestore {
       }
 
       match /movimientosInventario/{movimientoId} {
+        allow read: if canAccessBusiness(businessId)
+          && resource.data.negocioId == businessId;
+        allow create, update, delete: if false;
+      }
+
+      match /adquisicionesInventario/{adquisicionId} {
         allow read: if canAccessBusiness(businessId)
           && resource.data.negocioId == businessId;
         allow create, update, delete: if false;

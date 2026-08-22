@@ -20,6 +20,7 @@ import {
 } from "../config/firebaseEnvironment.mjs";
 import { db, getFirebaseFunctions } from "../firebase/firebaseConfig.js";
 import {
+  inventoryAcquisitionsCollectionPath,
   inventoryAreasCollectionPath,
   inventoryCategoriesCollectionPath,
   inventoryCollectionPath,
@@ -44,6 +45,10 @@ const MANUAL_PRICE_FLAGS = [
 
 function inventoryCollectionRef(uid) {
   return collection(db, ...inventoryCollectionPath(uid));
+}
+
+function inventoryAcquisitionsCollectionRef(businessId) {
+  return collection(db, ...inventoryAcquisitionsCollectionPath(businessId));
 }
 
 function inventoryQuery(uid) {
@@ -380,6 +385,22 @@ export async function getInventoryItems(uid) {
   return sortInventoryItems(
     snapshot.docs.map((itemDoc) => ({ id: itemDoc.id, ...itemDoc.data() }))
   );
+}
+
+export async function getInventoryAcquisitions(businessId, itemId) {
+  const snapshot = await getDocs(query(
+    inventoryAcquisitionsCollectionRef(businessId),
+    where("negocioId", "==", businessId),
+    where("itemId", "==", itemId)
+  ));
+  return snapshot.docs
+    .map((entry) => ({id: entry.id, ...entry.data()}))
+    .sort((left, right) => {
+      const leftTime = left.creadoEn?.toMillis?.() || 0;
+      const rightTime = right.creadoEn?.toMillis?.() || 0;
+      return rightTime - leftTime || String(right.fechaAdquisicion || "")
+        .localeCompare(String(left.fechaAdquisicion || ""));
+    });
 }
 
 export function subscribeToInventory(uid, onItems, onError) {
