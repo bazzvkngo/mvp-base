@@ -1,6 +1,17 @@
 export const WORK_MODEL_VERSION = 2;
 export const WORK_FILE_MODEL_VERSION = 1;
 export const WORK_TASK_MODEL_VERSION = 2;
+export const WORK_EXPENSE_MODEL_VERSION = 1;
+export const WORK_LABOR_MODEL_VERSION = 1;
+
+export const WORK_EXPENSE_CATEGORIES = Object.freeze([
+  {value: "MATERIAL", label: "Material", classification: "DIRECTO"},
+  {value: "MANO_DE_OBRA", label: "Mano de obra", classification: "DIRECTO"},
+  {value: "OPERATIVO", label: "Operativo", classification: "DIRECTO"},
+  {value: "SERVICIO_EXTERNO", label: "Servicio externo", classification: "DIRECTO"},
+  {value: "ADMINISTRATIVO", label: "Administrativo", classification: "INDIRECTO"},
+  {value: "OTRO", label: "Otro", classification: "DIRECTO"},
+]);
 
 export const WORK_STATUSES = Object.freeze([
   {value: "pendiente", label: "Pendiente"},
@@ -77,6 +88,14 @@ export function adaptStoredWork(raw = {}) {
     modeloExpedienteVersion: Number(raw.modeloExpedienteVersion || 0),
     cotizacionesVinculadas: Number(raw.cotizacionesVinculadas || 0),
     ventasVinculadas: Number(raw.ventasVinculadas || 0),
+    moneda: String(raw.moneda || "").trim().toUpperCase(),
+    gastosVigentesTotal: Number(raw.gastosVigentesTotal || 0),
+    gastosMontoTotal: Number(raw.gastosMontoTotal || 0),
+    gastosMontoDirecto: Number(raw.gastosMontoDirecto || 0),
+    gastosMontoIndirecto: Number(raw.gastosMontoIndirecto || 0),
+    horasHombreVigentesTotal: Number(raw.horasHombreVigentesTotal || 0),
+    horasHombreCantidadTotal: Number(raw.horasHombreCantidadTotal || 0),
+    horasHombreCostoTotal: Number(raw.horasHombreCostoTotal || 0),
   };
 }
 
@@ -128,6 +147,51 @@ export function adaptWorkTaskDocumentation(raw = {}) {
     autorUid: String(raw.autorUid || "").trim(),
     autorSnapshot: raw.autorSnapshot || null,
     creadoEn: dateValue(raw.creadoEn),
+  };
+}
+
+export function adaptWorkExpense(raw = {}) {
+  return {
+    ...raw,
+    id: raw.id || raw.gastoId || "",
+    gastoId: raw.gastoId || raw.id || "",
+    modeloGastoVersion: Number(raw.modeloGastoVersion || 1),
+    concepto: String(raw.concepto || "").trim(),
+    monto: Number(raw.monto || 0),
+    categoria: String(raw.categoria || "OTRO").trim().toUpperCase(),
+    clasificacionCosto: raw.clasificacionCosto === "INDIRECTO" ? "INDIRECTO" : "DIRECTO",
+    moneda: String(raw.moneda || "").trim().toUpperCase(),
+    responsableDelGastoUid: String(raw.responsableDelGastoUid || "").trim(),
+    responsableDelGastoSnapshot: raw.responsableDelGastoSnapshot || null,
+    registradoPorUid: String(raw.registradoPorUid || "").trim(),
+    registradoPorSnapshot: raw.registradoPorSnapshot || null,
+    fecha: String(raw.fecha || "").trim(),
+    observacion: String(raw.observacion || "").trim(),
+    estado: raw.estado === "anulado" ? "anulado" : "vigente",
+    creadoEn: dateValue(raw.creadoEn),
+    anuladoEn: dateValue(raw.anuladoEn),
+    motivoAnulacion: String(raw.motivoAnulacion || "").trim(),
+  };
+}
+
+export function adaptWorkLabor(raw = {}) {
+  return {
+    ...raw,
+    id: raw.id || raw.horasHombreId || "",
+    horasHombreId: raw.horasHombreId || raw.id || "",
+    modeloHorasHombreVersion: Number(raw.modeloHorasHombreVersion || 1),
+    tecnicoUid: String(raw.tecnicoUid || "").trim(),
+    tecnicoSnapshot: raw.tecnicoSnapshot || null,
+    horas: Number(raw.horas || 0),
+    costoHora: Number(raw.costoHora || 0),
+    total: Number(raw.total || 0),
+    moneda: String(raw.moneda || "").trim().toUpperCase(),
+    fecha: String(raw.fecha || "").trim(),
+    concepto: String(raw.concepto || "").trim(),
+    estado: raw.estado === "anulado" ? "anulado" : "vigente",
+    creadoEn: dateValue(raw.creadoEn),
+    anuladoEn: dateValue(raw.anuladoEn),
+    motivoAnulacion: String(raw.motivoAnulacion || "").trim(),
   };
 }
 
@@ -196,6 +260,10 @@ export function humanizeWorkEvent(event = {}) {
     tarea_reasignada: `${actor} reasignó la tarea “${detail.tareaTitulo || "Sin título"}” de ${detail.responsableAnteriorNombre || "Sin responsable"} a ${detail.responsableNombre || "Sin responsable"}.`,
     tarea_documentacion_agregada: `${actor} agregó documentación a la tarea “${detail.tareaTitulo || "Sin título"}”.`,
     tarea_eliminada: `${actor} eliminó la tarea “${detail.tareaTitulo || "Sin título"}”.`,
+    gasto_registrado: `${actor} registró el gasto “${detail.concepto || "Sin concepto"}”.`,
+    gasto_anulado: `${actor} anuló el gasto “${detail.concepto || "Sin concepto"}”.`,
+    horas_hombre_registradas: `${actor} registró ${Number(detail.horas || 0)} HH para ${detail.tecnicoNombre || "un técnico"}.`,
+    horas_hombre_anuladas: `${actor} anuló ${Number(detail.horas || 0)} HH de “${detail.concepto || "Sin concepto"}”.`,
     nota_agregada: `${actor} agregó una nota.`,
     trabajo_completado: `${actor} completó el trabajo.`,
     trabajo_cancelado: `${actor} canceló el trabajo.`,

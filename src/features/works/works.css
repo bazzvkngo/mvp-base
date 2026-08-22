@@ -93,6 +93,27 @@
 .works-task-document-form textarea { resize: vertical; }
 .works-task-actions { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .works-task-actions > button:not(.ui-button) { align-items: center; background: transparent; border: 0; color: var(--color-danger-700); cursor: pointer; display: inline-flex; font-size: var(--font-size-xs); gap: var(--space-1); padding: var(--space-2); }
+.works-financial-note { color: var(--color-text-muted) !important; font-size: var(--font-size-xs); }
+.works-financial-columns { display: grid; gap: var(--space-4); grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.works-financial-columns > section { border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); display: grid; gap: var(--space-3); padding: var(--space-3); }
+.works-financial-columns > section > header { display: grid; gap: var(--space-1); }
+.works-financial-columns > section > header > div { align-items: center; display: flex; gap: var(--space-2); justify-content: space-between; }
+.works-financial-columns h4 { color: var(--color-text-strong); margin: 0; }
+.works-financial-columns header small, .works-cost-list small { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+.works-cost-subtotals { background: var(--color-surface-subtle); border-radius: var(--radius-sm); display: grid; gap: var(--space-1); margin: 0; padding: var(--space-2); }
+.works-cost-subtotals > div { display: flex; font-size: var(--font-size-xs); justify-content: space-between; }
+.works-cost-subtotals dd { font-weight: var(--font-weight-semibold); margin: 0; }
+.works-cost-form { display: grid; gap: var(--space-2); grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.works-cost-form textarea, .works-cost-form > .ui-button { grid-column: 1 / -1; }
+.works-cost-form textarea { resize: vertical; }
+.works-cost-list { display: grid; gap: var(--space-2); }
+.works-cost-list > article { border-top: 1px solid var(--color-border-subtle); display: grid; gap: var(--space-2); padding-top: var(--space-2); }
+.works-cost-list > article > div { display: grid; gap: 3px; }
+.works-cost-list strong, .works-cost-list span { color: var(--color-text-strong); font-size: var(--font-size-sm); }
+.works-cost-list p { color: var(--color-text-default); font-size: var(--font-size-xs); margin: 0; white-space: pre-wrap; }
+.works-cost-list .is-annulled { opacity: .65; }
+.works-cost-list .is-annulled strong, .works-cost-list .is-annulled span { text-decoration: line-through; }
+.works-annul-form { align-items: center; display: grid; gap: var(--space-2); grid-template-columns: minmax(0, 1fr) auto; }
 .works-note-form { display: grid; gap: var(--space-2); justify-items: end; }
 .works-note-form textarea { resize: vertical; }
 .works-notes { display: grid; gap: var(--space-2); }
@@ -108,4 +129,4 @@
 .works-timeline p { color: var(--color-text-default); font-size: var(--font-size-sm); margin: 3px 0 0; }
 .works-timeline blockquote { background: var(--color-surface-subtle); border-left: 3px solid var(--color-brand-400); color: var(--color-text-default); font-size: var(--font-size-sm); margin: var(--space-2) 0 0; padding: var(--space-2) var(--space-3); white-space: pre-wrap; }
 @media(max-width:900px) { .works-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } .works-search { grid-column: 1 / -1; } }
-@media(max-width:767px) { .works-filters, .works-form-grid, .works-summary, .works-task-create, .works-task-document-form { grid-template-columns: minmax(0, 1fr); } .works-field--wide, .works-search, .works-task-create textarea { grid-column: auto; } .works-toolbar { align-items: stretch; flex-direction: column; } .works-view-switch, .works-view-switch button { flex: 1; } .works-detail-actions, .works-commercial-heading, .works-commercial-list article, .works-task-list--v2 > article > header { align-items: stretch; flex-direction: column; } .works-detail-actions > .ui-status-badge { align-self: flex-start; margin-right: 0; } .works-inline-form { grid-template-columns: minmax(0, 1fr); } .works-inline-form .ui-button, .works-note-form .ui-button, .works-task-create .ui-button, .works-task-document-form .ui-button { width: 100%; } .works-task-list--v2 > article > header select { max-width: none; } }
+@media(max-width:767px) { .works-filters, .works-form-grid, .works-summary, .works-task-create, .works-task-document-form, .works-financial-columns, .works-cost-form, .works-annul-form { grid-template-columns: minmax(0, 1fr); } .works-field--wide, .works-search, .works-task-create textarea, .works-cost-form textarea, .works-cost-form > .ui-button { grid-column: auto; } .works-toolbar { align-items: stretch; flex-direction: column; } .works-view-switch, .works-view-switch button { flex: 1; } .works-detail-actions, .works-commercial-heading, .works-commercial-list article, .works-task-list--v2 > article > header { align-items: stretch; flex-direction: column; } .works-detail-actions > .ui-status-badge { align-self: flex-start; margin-right: 0; } .works-inline-form { grid-template-columns: minmax(0, 1fr); } .works-inline-form .ui-button, .works-note-form .ui-button, .works-task-create .ui-button, .works-task-document-form .ui-button, .works-cost-form .ui-button, .works-annul-form .ui-button { width: 100%; } .works-task-list--v2 > article > header select { max-width: none; } }

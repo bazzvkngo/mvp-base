@@ -721,6 +721,20 @@ service cloud.firestore {
           allow create, update, delete: if false;
         }
 
+        match /gastos/{gastoId} {
+          allow read: if canAccessBusiness(businessId)
+            && resource.data.negocioId == businessId
+            && resource.data.trabajoId == trabajoId;
+          allow create, update, delete: if false;
+        }
+
+        match /horasHombre/{horasHombreId} {
+          allow read: if canAccessBusiness(businessId)
+            && resource.data.negocioId == businessId
+            && resource.data.trabajoId == trabajoId;
+          allow create, update, delete: if false;
+        }
+
         match /historial/{eventoId} {
           allow read: if canAccessBusiness(businessId)
             && resource.data.negocioId == businessId
@@ -745,6 +759,10 @@ service cloud.firestore {
       }
 
       match /workTaskRequests/{requestId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /workCostRequests/{requestId} {
         allow read, create, update, delete: if false;
       }
 

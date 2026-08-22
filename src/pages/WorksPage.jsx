@@ -5,10 +5,11 @@ import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import StatusBadge from "../components/ui/StatusBadge";
-import {WORK_PRIORITIES, WORK_STATUSES, canManageWorks, getWorkDraftErrors, getWorkPriorityLabel, getWorkStatusLabel, getWorkTaskProgress, humanizeWorkEvent, matchesWorkFilters} from "../domain/workModel.mjs";
+import {WORK_EXPENSE_CATEGORIES, WORK_PRIORITIES, WORK_STATUSES, canManageWorks, getWorkDraftErrors, getWorkPriorityLabel, getWorkStatusLabel, getWorkTaskProgress, humanizeWorkEvent, matchesWorkFilters} from "../domain/workModel.mjs";
 import {listarMiembrosNegocio} from "../services/businessMemberService.js";
 import {listarClientes} from "../services/clientService.js";
-import {actualizarTrabajo, agregarNotaTrabajo, agregarTareaTrabajo, asignarTareaTrabajo, cambiarEstadoTareaTrabajo, cambiarEstadoTrabajo, cargarFichaTrabajo, createWorkRequestId, createWorkTaskRequestId, crearTrabajo, documentarTareaTrabajo, eliminarTareaTrabajo, listarTrabajos} from "../services/workService.js";
+import {actualizarTrabajo, agregarNotaTrabajo, agregarTareaTrabajo, anularGastoTrabajo, anularHorasHombreTrabajo, asignarTareaTrabajo, cambiarEstadoTareaTrabajo, cambiarEstadoTrabajo, cargarFichaTrabajo, createWorkCostRequestId, createWorkRequestId, createWorkTaskRequestId, crearTrabajo, documentarTareaTrabajo, eliminarTareaTrabajo, listarTrabajos, registrarGastoTrabajo, registrarHorasHombreTrabajo} from "../services/workService.js";
+import {formatMoney} from "../utils/formatters.js";
 import "../features/works/works.css";
 
 const EMPTY_WORK = Object.freeze({titulo: "", descripcion: "", clienteId: "", responsableUid: "", participanteUids: [], estado: "pendiente", prioridad: "normal", fechaInicio: "", fechaPrevista: ""});
@@ -30,7 +31,7 @@ function Priority({value}) {
   return <span className={`works-priority works-priority--${value}`}>{getWorkPriorityLabel(value)}</span>;
 }
 
-export default function WorksPage({businessId, currentUserUid, role}) {
+export default function WorksPage({businessId, currencyCode, currentUserUid, role}) {
   const canManage = canManageWorks(role);
   const location = useLocation();
   const navigate = useNavigate();
@@ -48,7 +49,7 @@ export default function WorksPage({businessId, currentUserUid, role}) {
   const [fieldErrors, setFieldErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [selectedWork, setSelectedWork] = useState(null);
-  const [detail, setDetail] = useState({tareas: [], notas: [], historial: [], vinculos: [], cotizaciones: [], ventas: []});
+  const [detail, setDetail] = useState({tareas: [], notas: [], historial: [], vinculos: [], cotizaciones: [], ventas: [], gastos: [], horasHombre: []});
   const [detailLoading, setDetailLoading] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [processing, setProcessing] = useState("");
@@ -144,7 +145,7 @@ export default function WorksPage({businessId, currentUserUid, role}) {
 
     <ResponsiveDialog className="works-form-dialog" open={formOpen} onClose={() => !saving && setFormOpen(false)} size="large" eyebrow="Proyectos y trabajos" title={editingWork ? `Editar ${editingWork.numero}` : "Nuevo trabajo"} description="Registra la información y planificación operativa." footer={<><Button type="button" variant="secondary" disabled={saving} onClick={() => setFormOpen(false)}>Cancelar</Button><Button type="submit" form="work-form" disabled={saving}>{saving ? "Guardando..." : editingWork ? "Guardar cambios" : "Crear trabajo"}</Button></>}><form id="work-form" className="works-form" onSubmit={save}><FormSection title="Información"><div className="works-form-grid"><Field className="works-field--wide" label="Título" required error={fieldErrors.titulo}><input autoFocus className="erp-control" maxLength="180" value={draft.titulo} onChange={(event) => updateDraft("titulo", event.target.value)} /></Field><Field className="works-field--wide" label="Descripción" error={fieldErrors.descripcion}><textarea className="erp-control" rows="3" maxLength="5000" value={draft.descripcion} onChange={(event) => updateDraft("descripcion", event.target.value)} /></Field><Field className="works-field--wide" label="Cliente"><select className="erp-control" value={draft.clienteId} onChange={(event) => updateDraft("clienteId", event.target.value)}><option value="">Sin cliente</option>{clients.map((client) => <option key={client.clienteId} value={client.clienteId}>{client.nombreRazonSocial} · {client.rut}</option>)}</select></Field></div></FormSection><FormSection title="Planificación"><div className="works-form-grid"><Field label="Responsable"><select className="erp-control" value={draft.responsableUid} onChange={(event) => updateDraft("responsableUid", event.target.value)}><option value="">Sin responsable</option>{members.map((member) => <option key={member.uid} value={member.uid}>{member.nombre}</option>)}</select></Field><Field label="Prioridad" required error={fieldErrors.prioridad}><select className="erp-control" value={draft.prioridad} onChange={(event) => updateDraft("prioridad", event.target.value)}>{WORK_PRIORITIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field><Field label="Estado" required error={fieldErrors.estado}><select className="erp-control" value={draft.estado} onChange={(event) => updateDraft("estado", event.target.value)}>{WORK_STATUSES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field><Field label="Fecha de inicio" error={fieldErrors.fechaInicio}><input className="erp-control" type="date" value={draft.fechaInicio} onChange={(event) => updateDraft("fechaInicio", event.target.value)} /></Field><Field label="Fecha prevista" error={fieldErrors.fechaPrevista}><input className="erp-control" type="date" value={draft.fechaPrevista} onChange={(event) => updateDraft("fechaPrevista", event.target.value)} /></Field><fieldset className="works-participants works-field--wide"><legend>Participantes</legend><div>{members.filter((member) => member.uid !== draft.responsableUid).map((member) => <label key={member.uid}><input type="checkbox" checked={draft.participanteUids.includes(member.uid)} onChange={(event) => updateDraft("participanteUids", event.target.checked ? [...draft.participanteUids, member.uid] : draft.participanteUids.filter((uid) => uid !== member.uid))} />{member.nombre}</label>)}{!members.length && <span>No hay miembros activos disponibles.</span>}</div></fieldset></div></FormSection></form></ResponsiveDialog>
 
-    <ResponsiveDialog className="works-detail-dialog" open={Boolean(selectedWork)} onClose={() => setSelectedWork(null)} size="large" eyebrow={selectedWork?.numero} title={selectedWork?.titulo} description="Ficha operativa e historial del trabajo."><>{selectedWork && <div className="works-detail"><div className="works-detail-actions"><Status value={selectedWork.estado} />{canManage && <><Button type="button" variant="secondary" icon={Pencil} onClick={() => openEdit(selectedWork)}>Editar</Button><label><span className="sr-only">Cambiar estado</span><select className="erp-control" disabled={Boolean(processing)} value={selectedWork.estado} onChange={(event) => { const next = event.target.value; if (next === "cancelado") setCancelWork(selectedWork); else runDetailAction("state", () => cambiarEstadoTrabajo(businessId, selectedWork.id, next)); }}>{WORK_STATUSES.filter((item) => item.value !== "cancelado").map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}{selectedWork.estado === "cancelado" && <option value="cancelado">Cancelado</option>}</select></label>{selectedWork.estado !== "cancelado" && <Button type="button" variant="ghost-danger" onClick={() => setCancelWork(selectedWork)}>Cancelar trabajo</Button>}</>}</div><WorkSummary work={selectedWork} /><section className="works-detail-section"><h3>Descripción</h3><p>{selectedWork.descripcion || "Sin descripción registrada."}</p></section><CommercialFile canManage={canManage} detail={detail} loading={detailLoading} navigate={navigate} work={selectedWork} /><TaskSection key={selectedWork.id} businessId={businessId} canManage={canManage} currentUserUid={currentUserUid} loading={detailLoading} members={members} processing={processing} role={role} runAction={runDetailAction} tasks={detail.tareas} terminal={terminal} workId={selectedWork.id} /><section className="works-detail-section"><h3>Notas</h3>{canManage && <form className="works-note-form" onSubmit={addNote}><textarea className="erp-control" rows="2" maxLength="4000" value={noteText} onChange={(event) => setNoteText(event.target.value)} placeholder="Agrega una actualización o antecedente relevante." /><Button type="submit" disabled={processing === "note-new"}>Agregar nota</Button></form>}<div className="works-notes">{detail.notas.map((note) => <article key={note.id}><header><strong>{note.autorSnapshot?.nombre || "Persona del equipo"}</strong><time>{dateLabel(note.creadoEn, true)}</time></header><p>{note.texto}</p></article>)}{!detail.notas.length && <p className="works-empty-copy">Aún no hay notas.</p>}</div></section><section className="works-detail-section"><h3>Historial del trabajo</h3><ol className="works-timeline">{detail.historial.map((event) => <li key={event.id}><time>{dateLabel(event.fecha, true)}</time><p>{humanizeWorkEvent(event)}</p>{event.tipo === "nota_agregada" && event.detalle?.texto && <blockquote>{event.detalle.texto}</blockquote>}</li>)}</ol></section></div>}</></ResponsiveDialog>
+    <ResponsiveDialog className="works-detail-dialog" open={Boolean(selectedWork)} onClose={() => setSelectedWork(null)} size="large" eyebrow={selectedWork?.numero} title={selectedWork?.titulo} description="Ficha operativa e historial del trabajo."><>{selectedWork && <div className="works-detail"><div className="works-detail-actions"><Status value={selectedWork.estado} />{canManage && <><Button type="button" variant="secondary" icon={Pencil} onClick={() => openEdit(selectedWork)}>Editar</Button><label><span className="sr-only">Cambiar estado</span><select className="erp-control" disabled={Boolean(processing)} value={selectedWork.estado} onChange={(event) => { const next = event.target.value; if (next === "cancelado") setCancelWork(selectedWork); else runDetailAction("state", () => cambiarEstadoTrabajo(businessId, selectedWork.id, next)); }}>{WORK_STATUSES.filter((item) => item.value !== "cancelado").map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}{selectedWork.estado === "cancelado" && <option value="cancelado">Cancelado</option>}</select></label>{selectedWork.estado !== "cancelado" && <Button type="button" variant="ghost-danger" onClick={() => setCancelWork(selectedWork)}>Cancelar trabajo</Button>}</>}</div><WorkSummary work={selectedWork} /><section className="works-detail-section"><h3>Descripción</h3><p>{selectedWork.descripcion || "Sin descripción registrada."}</p></section><CommercialFile canManage={canManage} detail={detail} loading={detailLoading} navigate={navigate} work={selectedWork} /><TaskSection key={selectedWork.id} businessId={businessId} canManage={canManage} currentUserUid={currentUserUid} loading={detailLoading} members={members} processing={processing} role={role} runAction={runDetailAction} tasks={detail.tareas} terminal={terminal} workId={selectedWork.id} /><FinancialSection key={`costs-${selectedWork.id}`} businessId={businessId} canManage={canManage} currency={selectedWork.moneda || currencyCode || "CLP"} currentUserUid={currentUserUid} expenses={detail.gastos} labor={detail.horasHombre} loading={detailLoading} members={members} processing={processing} role={role} runAction={runDetailAction} workId={selectedWork.id} /><section className="works-detail-section"><h3>Notas</h3>{canManage && <form className="works-note-form" onSubmit={addNote}><textarea className="erp-control" rows="2" maxLength="4000" value={noteText} onChange={(event) => setNoteText(event.target.value)} placeholder="Agrega una actualización o antecedente relevante." /><Button type="submit" disabled={processing === "note-new"}>Agregar nota</Button></form>}<div className="works-notes">{detail.notas.map((note) => <article key={note.id}><header><strong>{note.autorSnapshot?.nombre || "Persona del equipo"}</strong><time>{dateLabel(note.creadoEn, true)}</time></header><p>{note.texto}</p></article>)}{!detail.notas.length && <p className="works-empty-copy">Aún no hay notas.</p>}</div></section><section className="works-detail-section"><h3>Historial del trabajo</h3><ol className="works-timeline">{detail.historial.map((event) => <li key={event.id}><time>{dateLabel(event.fecha, true)}</time><p>{humanizeWorkEvent(event)}</p>{event.tipo === "nota_agregada" && event.detalle?.texto && <blockquote>{event.detalle.texto}</blockquote>}</li>)}</ol></section></div>}</></ResponsiveDialog>
 
     <ResponsiveDialog open={Boolean(cancelWork)} onClose={() => !processing && setCancelWork(null)} size="small" eyebrow="Proyectos y trabajos" title="Cancelar trabajo" description="El registro y su historial se conservarán." footer={<><Button type="button" variant="secondary" disabled={Boolean(processing)} onClick={() => setCancelWork(null)}>Volver</Button><Button type="button" variant="danger" disabled={Boolean(processing)} onClick={() => runDetailAction("cancel", () => cambiarEstadoTrabajo(businessId, cancelWork.id, "cancelado")).then(() => setCancelWork(null))}>{processing ? "Cancelando..." : "Cancelar trabajo"}</Button></>}><p>¿Confirmas que deseas cancelar {cancelWork?.numero}?</p></ResponsiveDialog>
   </main>;
@@ -199,6 +200,80 @@ function TaskSection({businessId, canManage, currentUserUid, loading, members, p
       </article>)}
       {!visibleTasks.length && <p className="works-empty-copy">{canManage ? "Aún no hay tareas." : "No tienes tareas asignadas."}</p>}
     </div>}
+  </section>;
+}
+
+function chileToday() {
+  const parts = new Intl.DateTimeFormat("en", {timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit"}).formatToParts(new Date());
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+
+function FinancialSection({businessId, canManage, currency, currentUserUid, expenses, labor, loading, members, processing, role, runAction, workId}) {
+  const [expenseDraft, setExpenseDraft] = useState({concepto: "", monto: "", categoria: "MATERIAL", responsableDelGastoUid: "", fecha: chileToday(), observacion: ""});
+  const [laborDraft, setLaborDraft] = useState({tecnicoUid: "", horas: "", costoHora: "", fecha: chileToday(), concepto: ""});
+  const [annulReasons, setAnnulReasons] = useState({});
+  const canRegister = canManage || role === "MEMBER";
+  const activeExpenses = expenses.filter((entry) => entry.estado !== "anulado");
+  const activeLabor = labor.filter((entry) => entry.estado !== "anulado");
+  const expenseTotal = activeExpenses.reduce((sum, entry) => sum + entry.monto, 0);
+  const directExpenseTotal = activeExpenses.filter((entry) => entry.clasificacionCosto === "DIRECTO").reduce((sum, entry) => sum + entry.monto, 0);
+  const indirectExpenseTotal = activeExpenses.filter((entry) => entry.clasificacionCosto === "INDIRECTO").reduce((sum, entry) => sum + entry.monto, 0);
+  const laborHours = activeLabor.reduce((sum, entry) => sum + entry.horas, 0);
+  const laborTotal = activeLabor.reduce((sum, entry) => sum + entry.total, 0);
+  const saveExpense = (event) => {
+    event.preventDefault();
+    const payload = {...expenseDraft, responsableDelGastoUid: canManage ? expenseDraft.responsableDelGastoUid : currentUserUid};
+    runAction("expense-new", () => registrarGastoTrabajo(businessId, workId, payload, createWorkCostRequestId("expense-create"))).then((success) => {
+      if (success) setExpenseDraft({concepto: "", monto: "", categoria: "MATERIAL", responsableDelGastoUid: "", fecha: chileToday(), observacion: ""});
+    });
+  };
+  const saveLabor = (event) => {
+    event.preventDefault();
+    const payload = {...laborDraft, tecnicoUid: canManage ? laborDraft.tecnicoUid : currentUserUid};
+    runAction("labor-new", () => registrarHorasHombreTrabajo(businessId, workId, payload, createWorkCostRequestId("labor-create"))).then((success) => {
+      if (success) setLaborDraft({tecnicoUid: "", horas: "", costoHora: "", fecha: chileToday(), concepto: ""});
+    });
+  };
+  const annul = (event, kind, recordId) => {
+    event.preventDefault();
+    const key = `${kind}-${recordId}`; const reason = String(annulReasons[key] || "").trim();
+    if (!reason) return;
+    const action = kind === "expense"
+      ? () => anularGastoTrabajo(businessId, workId, recordId, reason, createWorkCostRequestId("expense-annul"))
+      : () => anularHorasHombreTrabajo(businessId, workId, recordId, reason, createWorkCostRequestId("labor-annul"));
+    runAction(`${key}-annul`, action).then((success) => {if (success) setAnnulReasons((current) => ({...current, [key]: ""}));});
+  };
+
+  return <section className="works-detail-section works-financial-file">
+    <div className="works-section-heading"><div><h3>Costos reales</h3><span>Moneda {currency}</span></div></div>
+    <p className="works-financial-note">Los registros no se editan ni eliminan: para corregir, anula el original y crea el reemplazo.</p>
+    <div className="works-financial-columns">
+      <section><header><div><h4>Gastos</h4><strong>{formatMoney(expenseTotal, currency)}</strong></div><small>Directos e indirectos, sin balance final.</small></header>
+        <dl className="works-cost-subtotals"><div><dt><strong>Costos directos</strong></dt><dd>{formatMoney(directExpenseTotal, currency)}</dd></div><div><dt><strong>Costos indirectos</strong></dt><dd>{formatMoney(indirectExpenseTotal, currency)}</dd></div>{WORK_EXPENSE_CATEGORIES.map((category) => <div key={category.value}><dt>{category.label}</dt><dd>{formatMoney(activeExpenses.filter((entry) => entry.categoria === category.value).reduce((sum, entry) => sum + entry.monto, 0), currency)}</dd></div>)}</dl>
+        {canRegister && <form className="works-cost-form" onSubmit={saveExpense}>
+          <input className="erp-control" maxLength="240" required value={expenseDraft.concepto} onChange={(event) => setExpenseDraft((current) => ({...current, concepto: event.target.value}))} placeholder="Concepto del gasto" />
+          <input className="erp-control" type="number" min="0.01" max="999999999999.99" step="0.01" required value={expenseDraft.monto} onChange={(event) => setExpenseDraft((current) => ({...current, monto: event.target.value}))} placeholder="Monto" />
+          <select className="erp-control" value={expenseDraft.categoria} onChange={(event) => setExpenseDraft((current) => ({...current, categoria: event.target.value}))}>{WORK_EXPENSE_CATEGORIES.map((category) => <option key={category.value} value={category.value}>{category.label}{category.classification === "INDIRECTO" ? " · indirecto" : " · directo"}</option>)}</select>
+          {canManage && <select className="erp-control" value={expenseDraft.responsableDelGastoUid} onChange={(event) => setExpenseDraft((current) => ({...current, responsableDelGastoUid: event.target.value}))}><option value="">Sin responsable específico</option>{members.map((member) => <option key={member.uid} value={member.uid}>{member.nombre}</option>)}</select>}
+          <input className="erp-control" type="date" required value={expenseDraft.fecha} onChange={(event) => setExpenseDraft((current) => ({...current, fecha: event.target.value}))} />
+          <textarea className="erp-control" maxLength="4000" rows="2" value={expenseDraft.observacion} onChange={(event) => setExpenseDraft((current) => ({...current, observacion: event.target.value}))} placeholder="Observación" />
+          <Button type="submit" disabled={Boolean(processing)}>Registrar gasto</Button>
+        </form>}
+        {loading ? <p>Cargando gastos...</p> : <div className="works-cost-list">{expenses.map((entry) => { const key = `expense-${entry.id}`; return <article key={entry.id} className={entry.estado === "anulado" ? "is-annulled" : ""}><div><strong>{entry.concepto}</strong><span>{formatMoney(entry.monto, entry.moneda || currency)} · {WORK_EXPENSE_CATEGORIES.find((item) => item.value === entry.categoria)?.label || entry.categoria} · {entry.clasificacionCosto === "INDIRECTO" ? "Indirecto" : "Directo"}</span><small>{dateLabel(entry.fecha)} · {entry.responsableDelGastoSnapshot?.nombre || entry.registradoPorSnapshot?.nombre || "Equipo"}</small>{entry.observacion && <p>{entry.observacion}</p>}{entry.estado === "anulado" && <small>Anulado: {entry.motivoAnulacion}</small>}</div>{canManage && entry.estado !== "anulado" && <form className="works-annul-form" onSubmit={(event) => annul(event, "expense", entry.id)}><input className="erp-control" maxLength="1000" required value={annulReasons[key] || ""} onChange={(event) => setAnnulReasons((current) => ({...current, [key]: event.target.value}))} placeholder="Motivo de anulación" /><Button type="submit" variant="ghost-danger" disabled={Boolean(processing)}>Anular</Button></form>}</article>;})}{!expenses.length && <p className="works-empty-copy">Sin gastos registrados.</p>}</div>}
+      </section>
+      <section><header><div><h4>Horas hombre</h4><strong>{laborHours} HH · {formatMoney(laborTotal, currency)}</strong></div><small>El total se calcula en backend.</small></header>
+        {canRegister && <form className="works-cost-form" onSubmit={saveLabor}>
+          <input className="erp-control" maxLength="240" required value={laborDraft.concepto} onChange={(event) => setLaborDraft((current) => ({...current, concepto: event.target.value}))} placeholder="Concepto o actividad" />
+          {canManage && <select className="erp-control" required value={laborDraft.tecnicoUid} onChange={(event) => setLaborDraft((current) => ({...current, tecnicoUid: event.target.value}))}><option value="">Selecciona técnico</option>{members.map((member) => <option key={member.uid} value={member.uid}>{member.nombre}</option>)}</select>}
+          <input className="erp-control" type="number" min="0.01" max="1000" step="0.01" required value={laborDraft.horas} onChange={(event) => setLaborDraft((current) => ({...current, horas: event.target.value}))} placeholder="Horas" />
+          <input className="erp-control" type="number" min="0.01" max="999999999999.99" step="0.01" required value={laborDraft.costoHora} onChange={(event) => setLaborDraft((current) => ({...current, costoHora: event.target.value}))} placeholder="Costo por hora" />
+          <input className="erp-control" type="date" required value={laborDraft.fecha} onChange={(event) => setLaborDraft((current) => ({...current, fecha: event.target.value}))} />
+          <Button type="submit" disabled={Boolean(processing)}>Registrar HH</Button>
+        </form>}
+        {loading ? <p>Cargando HH...</p> : <div className="works-cost-list">{labor.map((entry) => { const key = `labor-${entry.id}`; return <article key={entry.id} className={entry.estado === "anulado" ? "is-annulled" : ""}><div><strong>{entry.concepto}</strong><span>{entry.horas} HH × {formatMoney(entry.costoHora, entry.moneda || currency)} = {formatMoney(entry.total, entry.moneda || currency)}</span><small>{dateLabel(entry.fecha)} · {entry.tecnicoSnapshot?.nombre || "Técnico"}</small>{entry.estado === "anulado" && <small>Anulado: {entry.motivoAnulacion}</small>}</div>{canManage && entry.estado !== "anulado" && <form className="works-annul-form" onSubmit={(event) => annul(event, "labor", entry.id)}><input className="erp-control" maxLength="1000" required value={annulReasons[key] || ""} onChange={(event) => setAnnulReasons((current) => ({...current, [key]: event.target.value}))} placeholder="Motivo de anulación" /><Button type="submit" variant="ghost-danger" disabled={Boolean(processing)}>Anular</Button></form>}</article>;})}{!labor.length && <p className="works-empty-copy">Sin HH registradas.</p>}</div>}
+      </section>
+    </div>
   </section>;
 }
 

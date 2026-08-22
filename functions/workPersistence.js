@@ -3,9 +3,12 @@ const {createHash} = require("node:crypto");
 const WORK_MODEL_VERSION = 2;
 const WORK_FILE_MODEL_VERSION = 1;
 const WORK_TASK_MODEL_VERSION = 2;
+const WORK_EXPENSE_MODEL_VERSION = 1;
+const WORK_LABOR_MODEL_VERSION = 1;
 const WRITE_ROLES = ["OWNER", "ADMIN"];
 const WORK_STATUSES = new Set(["pendiente", "en_progreso", "en_espera", "completado", "cancelado"]);
 const WORK_PRIORITIES = new Set(["baja", "normal", "alta", "urgente"]);
+const WORK_EXPENSE_CATEGORIES = new Set(["MATERIAL", "MANO_DE_OBRA", "OPERATIVO", "SERVICIO_EXTERNO", "ADMINISTRATIVO", "OTRO"]);
 const WORK_INPUT_FIELDS = new Set(["titulo", "descripcion", "clienteId", "responsableUid", "participanteUids", "estado", "prioridad", "fechaInicio", "fechaPrevista"]);
 
 function fail(HttpsError, code, message) {
@@ -144,6 +147,81 @@ function previousTaskRequest(snapshot, {fingerprint: expectedFingerprint, operat
 
 function taskRequestPayload({businessId, fingerprint: value, operation, result, timestamp, uid, workId, taskId}) {
   return {negocioId: businessId, trabajoId: workId, tareaId: taskId, operacion: operation, fingerprint: value, uidUsuario: uid, resultado: result, creadoEn: timestamp};
+}
+
+function positiveDecimal(value, label, max, HttpsError) {
+  const normalized = typeof value === "string" ? value.trim().replace(",", ".") : value;
+  if ((typeof normalized !== "string" && typeof normalized !== "number") || !/^\d+(\.\d{1,2})?$/.test(String(normalized))) {
+    fail(HttpsError, "invalid-argument", `${label} debe ser un número positivo con hasta dos decimales.`);
+  }
+  const number = Number(normalized);
+  if (!Number.isFinite(number) || number <= 0 || number > max) fail(HttpsError, "invalid-argument", `${label} está fuera del rango permitido.`);
+  return Math.round(number * 100) / 100;
+}
+
+function requiredDate(value, label, HttpsError) {
+  const normalized = optionalDate(value, label, HttpsError);
+  if (!normalized) fail(HttpsError, "invalid-argument", `${label} es obligatoria.`);
+  return normalized;
+}
+
+function normalizeExpenseInput(raw = {}, HttpsError) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) fail(HttpsError, "invalid-argument", "Los datos del gasto deben enviarse como objeto.");
+  const categoria = text(raw.categoria, "La categoría", 40, HttpsError, {required: true}).toUpperCase();
+  if (!WORK_EXPENSE_CATEGORIES.has(categoria)) fail(HttpsError, "invalid-argument", "Selecciona una categoría de gasto válida.");
+  return {
+    concepto: text(raw.concepto, "El concepto", 240, HttpsError, {required: true}),
+    monto: positiveDecimal(raw.monto, "El monto", 999999999999.99, HttpsError),
+    categoria,
+    responsableDelGastoUid: identifier(raw.responsableDelGastoUid, "El responsable del gasto", HttpsError, {optional: true}),
+    fecha: requiredDate(raw.fecha, "La fecha", HttpsError),
+    observacion: text(raw.observacion, "La observación", 4000, HttpsError),
+  };
+}
+
+function normalizeLaborInput(raw = {}, HttpsError) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) fail(HttpsError, "invalid-argument", "Los datos de HH deben enviarse como objeto.");
+  return {
+    tecnicoUid: identifier(raw.tecnicoUid, "El técnico", HttpsError, {optional: true}),
+    horas: positiveDecimal(raw.horas, "Las horas", 1000, HttpsError),
+    costoHora: positiveDecimal(raw.costoHora, "El costo por hora", 999999999999.99, HttpsError),
+    fecha: requiredDate(raw.fecha, "La fecha", HttpsError),
+    concepto: text(raw.concepto, "El concepto", 240, HttpsError, {required: true}),
+  };
+}
+
+function expenseClassification(category) {
+  return category === "ADMINISTRATIVO" ? "INDIRECTO" : "DIRECTO";
+}
+
+function roundMoney(value) {
+  return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+}
+
+function memberLinkedUid(context, proposedUid, label, HttpsError, {required = false} = {}) {
+  if (context.membership?.rol === "MEMBER") {
+    if (proposedUid && proposedUid !== context.uid) fail(HttpsError, "permission-denied", `${label} debe corresponder a tu propia membresía.`);
+    return context.uid;
+  }
+  if (required && !proposedUid) fail(HttpsError, "invalid-argument", `${label} es obligatorio.`);
+  return proposedUid;
+}
+
+function workCurrency(work, business, HttpsError) {
+  const currency = String(work.moneda || business.monedaCodigo || business.moneda || "").trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(currency)) fail(HttpsError, "failed-precondition", "El negocio no tiene una moneda válida configurada.");
+  return currency;
+}
+
+function previousCostRequest(snapshot, {fingerprint: expectedFingerprint, operation, uid}, HttpsError) {
+  if (!snapshot.exists) return null;
+  const stored = snapshot.data() || {};
+  if (stored.uidUsuario !== uid || stored.operacion !== operation || stored.fingerprint !== expectedFingerprint) fail(HttpsError, "already-exists", "La solicitud ya fue utilizada para otra operación.");
+  return {...(stored.resultado || {}), idempotent: true};
+}
+
+function costRequestPayload({businessId, fingerprint: value, operation, result, timestamp, uid, workId, recordId}) {
+  return {negocioId: businessId, trabajoId: workId, registroId: recordId, operacion: operation, fingerprint: value, uidUsuario: uid, resultado: result, creadoEn: timestamp};
 }
 
 function clientSnapshot(snapshot, businessId, HttpsError) {
@@ -357,6 +435,13 @@ async function crearTrabajoHandler(request, dependencies, now = new Date()) {
       modeloExpedienteVersion: WORK_FILE_MODEL_VERSION,
       cotizacionesVinculadas: 0,
       ventasVinculadas: 0,
+      gastosVigentesTotal: 0,
+      gastosMontoTotal: 0,
+      gastosMontoDirecto: 0,
+      gastosMontoIndirecto: 0,
+      horasHombreVigentesTotal: 0,
+      horasHombreCantidadTotal: 0,
+      horasHombreCostoTotal: 0,
       creadoPorUid: context.uid,
       actualizadoPorUid: context.uid,
       creadoEn: timestamp,
@@ -619,6 +704,221 @@ async function eliminarTareaTrabajoV2Handler(request, dependencies) {
   return result;
 }
 
+async function registrarGastoTrabajoHandler(request, dependencies) {
+  const {db, FieldValue, HttpsError} = dependencies;
+  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError});
+  const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError);
+  const input = normalizeExpenseInput(request?.data?.gasto || {}, HttpsError);
+  input.responsableDelGastoUid = memberLinkedUid(context, input.responsableDelGastoUid, "El responsable del gasto", HttpsError);
+  const requestId = requestIdentifier(request?.data?.requestId, HttpsError);
+  const requestFingerprint = fingerprint({workId, input});
+  const people = await userSnapshots(dependencies, [context.uid, input.responsableDelGastoUid]);
+  const actor = publicPerson(people, context.uid);
+  const responsible = input.responsableDelGastoUid ? publicPerson(people, input.responsableDelGastoUid) : null;
+  const workRef = context.businessRef.collection("trabajos").doc(workId);
+  const expenseRef = workRef.collection("gastos").doc();
+  const requestRef = context.businessRef.collection("workCostRequests").doc(requestId);
+  let result;
+  await db.runTransaction(async (transaction) => {
+    const previous = previousCostRequest(await transaction.get(requestRef), {fingerprint: requestFingerprint, operation: "registrar_gasto", uid: context.uid}, HttpsError);
+    if (previous) { result = previous; return; }
+    const [workSnapshot, businessSnapshot] = await Promise.all([transaction.get(workRef), transaction.get(context.businessRef)]);
+    const work = assertWork(workSnapshot, context.businessId, HttpsError);
+    const business = businessSnapshot.data() || {};
+    if (!businessSnapshot.exists) fail(HttpsError, "failed-precondition", "El negocio seleccionado no está disponible.");
+    if (input.responsableDelGastoUid) assertActiveMember(await transaction.get(db.collection("membresias").doc(membershipId(context.businessId, input.responsableDelGastoUid))), context.businessId, input.responsableDelGastoUid, HttpsError);
+    const moneda = workCurrency(work, business, HttpsError);
+    const clasificacionCosto = expenseClassification(input.categoria);
+    const timestamp = FieldValue.serverTimestamp();
+    transaction.create(expenseRef, {
+      modeloGastoVersion: WORK_EXPENSE_MODEL_VERSION,
+      gastoId: expenseRef.id,
+      negocioId: context.businessId,
+      trabajoId: workId,
+      ...input,
+      clasificacionCosto,
+      moneda,
+      estado: "vigente",
+      registradoPorUid: context.uid,
+      registradoPorSnapshot: {nombre: actor.nombre, correo: actor.correo},
+      responsableDelGastoSnapshot: responsible,
+      anuladoEn: null,
+      anuladoPorUid: null,
+      anuladoPorSnapshot: null,
+      motivoAnulacion: "",
+      creadoEn: timestamp,
+      actualizadoEn: timestamp,
+    });
+    const directAmount = clasificacionCosto === "DIRECTO" ? input.monto : 0;
+    const indirectAmount = clasificacionCosto === "INDIRECTO" ? input.monto : 0;
+    transaction.update(workRef, {
+      moneda,
+      gastosVigentesTotal: Number(work.gastosVigentesTotal || 0) + 1,
+      gastosMontoTotal: roundMoney(Number(work.gastosMontoTotal || 0) + input.monto),
+      gastosMontoDirecto: roundMoney(Number(work.gastosMontoDirecto || 0) + directAmount),
+      gastosMontoIndirecto: roundMoney(Number(work.gastosMontoIndirecto || 0) + indirectAmount),
+      modeloTrabajoVersion: WORK_MODEL_VERSION,
+      actualizadoPorUid: context.uid,
+      actualizadoEn: timestamp,
+    });
+    writeEvent(transaction, workRef, {businessId: context.businessId, type: "gasto_registrado", actorUid: context.uid, actor, detail: {gastoId: expenseRef.id, concepto: input.concepto, monto: input.monto, categoria: input.categoria, clasificacionCosto, moneda}, timestamp});
+    result = {gastoId: expenseRef.id, moneda, idempotent: false};
+    transaction.create(requestRef, costRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "registrar_gasto", result, timestamp, uid: context.uid, workId, recordId: expenseRef.id}));
+  });
+  return result;
+}
+
+async function registrarHorasHombreTrabajoHandler(request, dependencies) {
+  const {db, FieldValue, HttpsError} = dependencies;
+  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError});
+  const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError);
+  const input = normalizeLaborInput(request?.data?.horasHombre || {}, HttpsError);
+  input.tecnicoUid = memberLinkedUid(context, input.tecnicoUid, "El técnico", HttpsError, {required: true});
+  const total = roundMoney(input.horas * input.costoHora);
+  if (!Number.isFinite(total) || total > 999999999999.99) fail(HttpsError, "invalid-argument", "El total de HH está fuera del rango permitido.");
+  const requestId = requestIdentifier(request?.data?.requestId, HttpsError);
+  const requestFingerprint = fingerprint({workId, input, total});
+  const people = await userSnapshots(dependencies, [context.uid, input.tecnicoUid]);
+  const actor = publicPerson(people, context.uid);
+  const technician = publicPerson(people, input.tecnicoUid);
+  const workRef = context.businessRef.collection("trabajos").doc(workId);
+  const laborRef = workRef.collection("horasHombre").doc();
+  const requestRef = context.businessRef.collection("workCostRequests").doc(requestId);
+  let result;
+  await db.runTransaction(async (transaction) => {
+    const previous = previousCostRequest(await transaction.get(requestRef), {fingerprint: requestFingerprint, operation: "registrar_hh", uid: context.uid}, HttpsError);
+    if (previous) { result = previous; return; }
+    const [workSnapshot, businessSnapshot, memberSnapshot] = await Promise.all([
+      transaction.get(workRef),
+      transaction.get(context.businessRef),
+      transaction.get(db.collection("membresias").doc(membershipId(context.businessId, input.tecnicoUid))),
+    ]);
+    const work = assertWork(workSnapshot, context.businessId, HttpsError);
+    const business = businessSnapshot.data() || {};
+    if (!businessSnapshot.exists) fail(HttpsError, "failed-precondition", "El negocio seleccionado no está disponible.");
+    assertActiveMember(memberSnapshot, context.businessId, input.tecnicoUid, HttpsError);
+    const moneda = workCurrency(work, business, HttpsError);
+    const timestamp = FieldValue.serverTimestamp();
+    transaction.create(laborRef, {
+      modeloHorasHombreVersion: WORK_LABOR_MODEL_VERSION,
+      horasHombreId: laborRef.id,
+      negocioId: context.businessId,
+      trabajoId: workId,
+      ...input,
+      tecnicoSnapshot: technician,
+      total,
+      moneda,
+      estado: "vigente",
+      registradoPorUid: context.uid,
+      registradoPorSnapshot: {nombre: actor.nombre, correo: actor.correo},
+      anuladoEn: null,
+      anuladoPorUid: null,
+      anuladoPorSnapshot: null,
+      motivoAnulacion: "",
+      creadoEn: timestamp,
+      actualizadoEn: timestamp,
+    });
+    transaction.update(workRef, {
+      moneda,
+      horasHombreVigentesTotal: Number(work.horasHombreVigentesTotal || 0) + 1,
+      horasHombreCantidadTotal: roundMoney(Number(work.horasHombreCantidadTotal || 0) + input.horas),
+      horasHombreCostoTotal: roundMoney(Number(work.horasHombreCostoTotal || 0) + total),
+      modeloTrabajoVersion: WORK_MODEL_VERSION,
+      actualizadoPorUid: context.uid,
+      actualizadoEn: timestamp,
+    });
+    writeEvent(transaction, workRef, {businessId: context.businessId, type: "horas_hombre_registradas", actorUid: context.uid, actor, detail: {horasHombreId: laborRef.id, concepto: input.concepto, tecnicoNombre: technician.nombre, horas: input.horas, costoHora: input.costoHora, total, moneda}, timestamp});
+    result = {horasHombreId: laborRef.id, total, moneda, idempotent: false};
+    transaction.create(requestRef, costRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "registrar_hh", result, timestamp, uid: context.uid, workId, recordId: laborRef.id}));
+  });
+  return result;
+}
+
+async function anularGastoTrabajoHandler(request, dependencies) {
+  const {db, FieldValue, HttpsError} = dependencies;
+  const context = await requireWriteAccess(request, dependencies);
+  const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError);
+  const expenseId = identifier(request?.data?.gastoId, "El gasto", HttpsError);
+  const reason = text(request?.data?.motivo, "El motivo de anulación", 1000, HttpsError, {required: true});
+  const requestId = requestIdentifier(request?.data?.requestId, HttpsError);
+  const requestFingerprint = fingerprint({workId, expenseId, reason});
+  const people = await userSnapshots(dependencies, [context.uid]); const actor = publicPerson(people, context.uid);
+  const workRef = context.businessRef.collection("trabajos").doc(workId);
+  const expenseRef = workRef.collection("gastos").doc(expenseId);
+  const requestRef = context.businessRef.collection("workCostRequests").doc(requestId);
+  let result;
+  await db.runTransaction(async (transaction) => {
+    const previous = previousCostRequest(await transaction.get(requestRef), {fingerprint: requestFingerprint, operation: "anular_gasto", uid: context.uid}, HttpsError);
+    if (previous) { result = previous; return; }
+    const work = assertWork(await transaction.get(workRef), context.businessId, HttpsError);
+    const expenseSnapshot = await transaction.get(expenseRef); const expense = expenseSnapshot.data() || {};
+    if (!expenseSnapshot.exists || expense.negocioId !== context.businessId || expense.trabajoId !== workId) fail(HttpsError, "not-found", "No se encontró el gasto.");
+    const timestamp = FieldValue.serverTimestamp();
+    if (expense.estado === "anulado") {
+      result = {gastoId: expenseId, sinCambios: true, idempotent: false};
+      transaction.create(requestRef, costRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "anular_gasto", result, timestamp, uid: context.uid, workId, recordId: expenseId}));
+      return;
+    }
+    const amount = Number(expense.monto || 0);
+    const directAmount = expense.clasificacionCosto === "INDIRECTO" ? 0 : amount;
+    const indirectAmount = expense.clasificacionCosto === "INDIRECTO" ? amount : 0;
+    transaction.update(expenseRef, {estado: "anulado", anuladoEn: timestamp, anuladoPorUid: context.uid, anuladoPorSnapshot: {nombre: actor.nombre, correo: actor.correo}, motivoAnulacion: reason, actualizadoEn: timestamp});
+    transaction.update(workRef, {
+      gastosVigentesTotal: Math.max(0, Number(work.gastosVigentesTotal || 0) - 1),
+      gastosMontoTotal: Math.max(0, roundMoney(Number(work.gastosMontoTotal || 0) - amount)),
+      gastosMontoDirecto: Math.max(0, roundMoney(Number(work.gastosMontoDirecto || 0) - directAmount)),
+      gastosMontoIndirecto: Math.max(0, roundMoney(Number(work.gastosMontoIndirecto || 0) - indirectAmount)),
+      actualizadoPorUid: context.uid,
+      actualizadoEn: timestamp,
+    });
+    writeEvent(transaction, workRef, {businessId: context.businessId, type: "gasto_anulado", actorUid: context.uid, actor, detail: {gastoId: expenseId, concepto: expense.concepto, monto: amount, moneda: expense.moneda, motivo: reason}, timestamp});
+    result = {gastoId: expenseId, idempotent: false};
+    transaction.create(requestRef, costRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "anular_gasto", result, timestamp, uid: context.uid, workId, recordId: expenseId}));
+  });
+  return result;
+}
+
+async function anularHorasHombreTrabajoHandler(request, dependencies) {
+  const {db, FieldValue, HttpsError} = dependencies;
+  const context = await requireWriteAccess(request, dependencies);
+  const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError);
+  const laborId = identifier(request?.data?.horasHombreId, "El registro de HH", HttpsError);
+  const reason = text(request?.data?.motivo, "El motivo de anulación", 1000, HttpsError, {required: true});
+  const requestId = requestIdentifier(request?.data?.requestId, HttpsError);
+  const requestFingerprint = fingerprint({workId, laborId, reason});
+  const people = await userSnapshots(dependencies, [context.uid]); const actor = publicPerson(people, context.uid);
+  const workRef = context.businessRef.collection("trabajos").doc(workId);
+  const laborRef = workRef.collection("horasHombre").doc(laborId);
+  const requestRef = context.businessRef.collection("workCostRequests").doc(requestId);
+  let result;
+  await db.runTransaction(async (transaction) => {
+    const previous = previousCostRequest(await transaction.get(requestRef), {fingerprint: requestFingerprint, operation: "anular_hh", uid: context.uid}, HttpsError);
+    if (previous) { result = previous; return; }
+    const work = assertWork(await transaction.get(workRef), context.businessId, HttpsError);
+    const laborSnapshot = await transaction.get(laborRef); const labor = laborSnapshot.data() || {};
+    if (!laborSnapshot.exists || labor.negocioId !== context.businessId || labor.trabajoId !== workId) fail(HttpsError, "not-found", "No se encontró el registro de HH.");
+    const timestamp = FieldValue.serverTimestamp();
+    if (labor.estado === "anulado") {
+      result = {horasHombreId: laborId, sinCambios: true, idempotent: false};
+      transaction.create(requestRef, costRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "anular_hh", result, timestamp, uid: context.uid, workId, recordId: laborId}));
+      return;
+    }
+    const hours = Number(labor.horas || 0); const total = Number(labor.total || 0);
+    transaction.update(laborRef, {estado: "anulado", anuladoEn: timestamp, anuladoPorUid: context.uid, anuladoPorSnapshot: {nombre: actor.nombre, correo: actor.correo}, motivoAnulacion: reason, actualizadoEn: timestamp});
+    transaction.update(workRef, {
+      horasHombreVigentesTotal: Math.max(0, Number(work.horasHombreVigentesTotal || 0) - 1),
+      horasHombreCantidadTotal: Math.max(0, roundMoney(Number(work.horasHombreCantidadTotal || 0) - hours)),
+      horasHombreCostoTotal: Math.max(0, roundMoney(Number(work.horasHombreCostoTotal || 0) - total)),
+      actualizadoPorUid: context.uid,
+      actualizadoEn: timestamp,
+    });
+    writeEvent(transaction, workRef, {businessId: context.businessId, type: "horas_hombre_anuladas", actorUid: context.uid, actor, detail: {horasHombreId: laborId, concepto: labor.concepto, horas: hours, total, moneda: labor.moneda, motivo: reason}, timestamp});
+    result = {horasHombreId: laborId, idempotent: false};
+    transaction.create(requestRef, costRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "anular_hh", result, timestamp, uid: context.uid, workId, recordId: laborId}));
+  });
+  return result;
+}
+
 async function agregarNotaTrabajoHandler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
   const context = await requireWriteAccess(request, dependencies);
@@ -636,13 +936,18 @@ async function agregarNotaTrabajoHandler(request, dependencies) {
 }
 
 module.exports = {
+  WORK_EXPENSE_CATEGORIES,
+  WORK_EXPENSE_MODEL_VERSION,
   WORK_MODEL_VERSION,
   WORK_FILE_MODEL_VERSION,
+  WORK_LABOR_MODEL_VERSION,
   WORK_TASK_MODEL_VERSION,
   WORK_PRIORITIES,
   WORK_STATUSES,
   actualizarTrabajoHandler,
   agregarNotaTrabajoHandler,
+  anularGastoTrabajoHandler,
+  anularHorasHombreTrabajoHandler,
   asignarTareaTrabajoHandler,
   cambiarEstadoTareaTrabajoV2Handler,
   cambiarEstadoTrabajoHandler,
@@ -653,6 +958,8 @@ module.exports = {
   formatWorkNumber,
   linkedWorkFields,
   normalizeWorkInput,
+  registrarGastoTrabajoHandler,
+  registrarHorasHombreTrabajoHandler,
   writeCommercialLink,
   writeQuoteResponseEvent,
 };

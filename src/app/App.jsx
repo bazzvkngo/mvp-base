@@ -224,6 +224,7 @@ function AppRoutes({
               key={businessId}
               businessId={businessId}
               currentUserUid={usuario?.uid}
+              currencyCode={activeBusiness?.monedaCodigo}
               role={activeBusiness?.role}
             />
           }

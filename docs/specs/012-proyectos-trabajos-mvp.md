@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-Registrar, asignar y seguir trabajos operativos genéricos por empresa, conservando una trazabilidad legible de cambios, tareas y notas. El módulo no administra materiales, costos, rentabilidad, facturación, pagos ni horas valorizadas.
+Registrar, asignar y seguir trabajos operativos genéricos por empresa, conservando una trazabilidad legible de cambios, tareas, costos y notas. El módulo no administra todavía rentabilidad, facturación ni pagos.
 
 ## Modelo
 
@@ -41,6 +41,16 @@ La documentación es append-only en `tareas/{tareaId}/documentacion/{documentaci
 
 OWNER/ADMIN crea, asigna, reasigna, completa y reabre. Mientras no exista RBAC técnico granular, `MEMBER` representa al técnico operativo: Functions sólo le permite documentar o completar una tarea cuyo `responsableUid` coincide con su UID y cuya membresía sigue activa. La ficha compartida conserva la lectura empresarial actual para no romper legacy; una política futura podrá restringir visibilidad por asignación sin cambiar este contrato persistido.
 
+## Costos reales / fase 3
+
+Los gastos viven en `trabajos/{trabajoId}/gastos/{gastoId}` y las horas valorizadas en `trabajos/{trabajoId}/horasHombre/{horasHombreId}`. Cada registro es inmutable salvo la transición autoritativa `vigente → anulado`; una corrección se expresa anulando el original y creando el reemplazo. Ambos documentos y sus eventos permanecen en el expediente.
+
+Los gastos usan categorías `MATERIAL`, `MANO_DE_OBRA`, `OPERATIVO`, `SERVICIO_EXTERNO`, `ADMINISTRATIVO` y `OTRO`. `ADMINISTRATIVO` se clasifica como `INDIRECTO`; las demás son `DIRECTO`. HH conserva técnico, horas, costo unitario y `total` calculado por Functions con precisión de dos decimales. El frontend nunca decide el total.
+
+La primera operación financiera fija `moneda` en el TRB desde la moneda autoritativa del negocio; operaciones posteriores reutilizan ese snapshot y no existe conversión FX. OWNER/ADMIN registra y anula. En la transición RBAC actual, MEMBER puede registrar gastos y HH sólo asociados a su propio UID; no puede anular. Toda persona asociada se revalida como miembro activo.
+
+`workCostRequests/{requestId}` es interno e idempotente. El historial agrega `gasto_registrado`, `gasto_anulado`, `horas_hombre_registradas` y `horas_hombre_anuladas`. TRB legacy sin moneda, gastos, HH o contadores se adapta con totales cero sin migración.
+
 El contador anual y la idempotencia de creación son internos:
 
 ```text
@@ -70,7 +80,7 @@ La ruta `/trabajos` ofrece búsqueda y filtros, lista responsive y tablero sin d
 
 ## Límites
 
-- Sin materiales ni integración con inventario.
-- Sin costos, rentabilidad, horas valorizadas, facturación o pagos.
+- Sin materiales consumidos ni integración de costos con inventario.
+- Sin balance, rentabilidad, facturación o pagos.
 - Sin archivos adjuntos, comentarios anidados, subtareas o dependencias.
 - Sin drag-and-drop.

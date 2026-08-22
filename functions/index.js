@@ -115,6 +115,8 @@ const {
 const {
   actualizarTrabajoHandler,
   agregarNotaTrabajoHandler,
+  anularGastoTrabajoHandler,
+  anularHorasHombreTrabajoHandler,
   asignarTareaTrabajoHandler,
   cambiarEstadoTareaTrabajoV2Handler,
   cambiarEstadoTrabajoHandler,
@@ -122,6 +124,8 @@ const {
   crearTareaTrabajoV2Handler,
   documentarTareaTrabajoHandler,
   eliminarTareaTrabajoV2Handler,
+  registrarGastoTrabajoHandler,
+  registrarHorasHombreTrabajoHandler,
 } = require("./workPersistence");
 
 // Inicializar Admin SDK (una sola vez)
@@ -2260,6 +2264,22 @@ exports.asignarTareaTrabajo = onCall(workCallableOptions, async (request) =>
 
 exports.documentarTareaTrabajo = onCall(workCallableOptions, async (request) =>
   documentarTareaTrabajoHandler(request, workPersistenceDependencies)
+);
+
+exports.registrarGastoTrabajo = onCall(workCallableOptions, async (request) =>
+  registrarGastoTrabajoHandler(request, workPersistenceDependencies)
+);
+
+exports.anularGastoTrabajo = onCall(workCallableOptions, async (request) =>
+  anularGastoTrabajoHandler(request, workPersistenceDependencies)
+);
+
+exports.registrarHorasHombreTrabajo = onCall(workCallableOptions, async (request) =>
+  registrarHorasHombreTrabajoHandler(request, workPersistenceDependencies)
+);
+
+exports.anularHorasHombreTrabajo = onCall(workCallableOptions, async (request) =>
+  anularHorasHombreTrabajoHandler(request, workPersistenceDependencies)
 );
 
 exports.agregarNotaTrabajo = onCall(workCallableOptions, async (request) =>

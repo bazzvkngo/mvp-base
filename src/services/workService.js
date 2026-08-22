@@ -3,9 +3,9 @@ import {httpsCallable} from "firebase/functions";
 import {assertCloudFunctionAllowed} from "../config/firebaseEnvironment.mjs";
 import {adaptStoredQuote} from "../domain/quoteModel.mjs";
 import {adaptStoredSale} from "../domain/saleModel.mjs";
-import {adaptStoredWork, adaptWorkEvent, adaptWorkLink, adaptWorkNote, adaptWorkTask, adaptWorkTaskDocumentation, buildWorkMutationPayload} from "../domain/workModel.mjs";
+import {adaptStoredWork, adaptWorkEvent, adaptWorkExpense, adaptWorkLabor, adaptWorkLink, adaptWorkNote, adaptWorkTask, adaptWorkTaskDocumentation, buildWorkMutationPayload} from "../domain/workModel.mjs";
 import {db, getFirebaseFunctions} from "../firebase/firebaseConfig";
-import {quoteDocPath, saleDocPath, workHistoryCollectionPath, workLinksCollectionPath, workNotesCollectionPath, worksCollectionPath, workTaskDocumentationCollectionPath, workTasksCollectionPath} from "../firebase/firestorePaths";
+import {quoteDocPath, saleDocPath, workExpensesCollectionPath, workHistoryCollectionPath, workLaborCollectionPath, workLinksCollectionPath, workNotesCollectionPath, worksCollectionPath, workTaskDocumentationCollectionPath, workTasksCollectionPath} from "../firebase/firestorePaths";
 
 const functions = getFirebaseFunctions("us-central1");
 
@@ -41,6 +41,11 @@ export function createWorkTaskRequestId(action = "task") {
   return `${action}_${String(value).replace(/[^a-zA-Z0-9_-]/g, "")}`.slice(0, 120);
 }
 
+export function createWorkCostRequestId(action = "cost") {
+  const value = globalThis.crypto?.randomUUID?.() || `${Date.now()}_${Math.random()}`;
+  return `${action}_${String(value).replace(/[^a-zA-Z0-9_-]/g, "")}`.slice(0, 120);
+}
+
 export async function listarTrabajos(rawBusinessId) {
   const id = businessId(rawBusinessId);
   const snapshot = await getDocs(query(collection(db, ...worksCollectionPath(id)), where("negocioId", "==", id)));
@@ -49,11 +54,13 @@ export async function listarTrabajos(rawBusinessId) {
 
 export async function cargarFichaTrabajo(rawBusinessId, rawWorkId) {
   const id = businessId(rawBusinessId); const selectedWorkId = workId(rawWorkId);
-  const [tasks, notes, history, linksSnapshot] = await Promise.all([
+  const [tasks, notes, history, linksSnapshot, expensesSnapshot, laborSnapshot] = await Promise.all([
     getDocs(collection(db, ...workTasksCollectionPath(id, selectedWorkId))),
     getDocs(collection(db, ...workNotesCollectionPath(id, selectedWorkId))),
     getDocs(collection(db, ...workHistoryCollectionPath(id, selectedWorkId))),
     getDocs(collection(db, ...workLinksCollectionPath(id, selectedWorkId))),
+    getDocs(query(collection(db, ...workExpensesCollectionPath(id, selectedWorkId)), where("negocioId", "==", id), where("trabajoId", "==", selectedWorkId))),
+    getDocs(query(collection(db, ...workLaborCollectionPath(id, selectedWorkId)), where("negocioId", "==", id), where("trabajoId", "==", selectedWorkId))),
   ]);
   const vinculos = sortByDate(linksSnapshot.docs.map((entry) => adaptWorkLink({...entry.data(), id: entry.id})), "creadoEn");
   const taskDocuments = tasks.docs.map((entry) => adaptWorkTask({...entry.data(), id: entry.id}));
@@ -86,6 +93,8 @@ export async function cargarFichaTrabajo(rawBusinessId, rawWorkId) {
     vinculos,
     cotizaciones: canonicalDocuments.filter((entry) => entry?.tipo === "cotizacion").map((entry) => entry.documento),
     ventas: canonicalDocuments.filter((entry) => entry?.tipo === "venta").map((entry) => entry.documento),
+    gastos: sortByDate(expensesSnapshot.docs.map((entry) => adaptWorkExpense({...entry.data(), id: entry.id})), "fecha", "desc"),
+    horasHombre: sortByDate(laborSnapshot.docs.map((entry) => adaptWorkLabor({...entry.data(), id: entry.id})), "fecha", "desc"),
   };
 }
 
@@ -122,6 +131,22 @@ export async function documentarTareaTrabajo(rawBusinessId, rawWorkId, tareaId, 
 
 export async function eliminarTareaTrabajo(rawBusinessId, rawWorkId, tareaId, requestId) {
   return (await call("eliminarTareaTrabajo", {businessId: businessId(rawBusinessId), trabajoId: workId(rawWorkId), tareaId, requestId}, "eliminar tareas")).data;
+}
+
+export async function registrarGastoTrabajo(rawBusinessId, rawWorkId, gasto, requestId) {
+  return (await call("registrarGastoTrabajo", {businessId: businessId(rawBusinessId), trabajoId: workId(rawWorkId), gasto, requestId}, "registrar gastos de trabajos")).data;
+}
+
+export async function anularGastoTrabajo(rawBusinessId, rawWorkId, gastoId, motivo, requestId) {
+  return (await call("anularGastoTrabajo", {businessId: businessId(rawBusinessId), trabajoId: workId(rawWorkId), gastoId, motivo, requestId}, "anular gastos de trabajos")).data;
+}
+
+export async function registrarHorasHombreTrabajo(rawBusinessId, rawWorkId, horasHombre, requestId) {
+  return (await call("registrarHorasHombreTrabajo", {businessId: businessId(rawBusinessId), trabajoId: workId(rawWorkId), horasHombre, requestId}, "registrar horas hombre")).data;
+}
+
+export async function anularHorasHombreTrabajo(rawBusinessId, rawWorkId, horasHombreId, motivo, requestId) {
+  return (await call("anularHorasHombreTrabajo", {businessId: businessId(rawBusinessId), trabajoId: workId(rawWorkId), horasHombreId, motivo, requestId}, "anular horas hombre")).data;
 }
 
 export async function agregarNotaTrabajo(rawBusinessId, rawWorkId, texto) {
