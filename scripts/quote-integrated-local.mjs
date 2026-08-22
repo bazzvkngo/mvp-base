@@ -579,6 +579,81 @@ try {
   assert.equal(storedLegacy.observaciones, "Legacy editable");
   console.log("OK legacy: abre y guarda sin inferir ni forzar una vinculación");
 
+  await duplicateRef.update({
+    estado: "rechazada",
+    respuestaCliente: "rechazada",
+    respuestaClienteOrigen: "portal_publico",
+    motivoRechazoCliente: "precio",
+    comentarioRechazoCliente: "Respuesta histórica integrada",
+    respuestaClienteEn: new Date(),
+  });
+  const quoteCountBeforeReopen = (
+    await adminDb.collection(`negocios/${businessId}/cotizaciones`).get()
+  ).size;
+  const reopenRequestId = `quote-reopen-${RUN_ID}`;
+  const reopened = await callable(owner, "reopenQuote")({
+    businessId,
+    quoteId: duplicated.data.quote.id,
+    requestId: reopenRequestId,
+  });
+  assert.equal(reopened.data.quoteStatus.estado, "emitida");
+  const repeatedReopen = await callable(owner, "reopenQuote")({
+    businessId,
+    quoteId: duplicated.data.quote.id,
+    requestId: reopenRequestId,
+  });
+  assert.equal(repeatedReopen.data.quoteStatus.idempotent, true);
+  const publicToken = reopened.data.quoteStatus.publicUrl.split("/").at(-1);
+  await callable(owner, "respondPublicQuoteProposal")({
+    token: publicToken,
+    action: "accept",
+  });
+  const afterAcceptance = (await duplicateRef.get()).data();
+  assert.equal(afterAcceptance.estado, "aceptada");
+  assert.equal(afterAcceptance.respuestaOportunidadVersion, 2);
+  const lifecycleEvents = await duplicateRef.collection("eventos").get();
+  assert.equal(lifecycleEvents.size, 3);
+  assert.equal(
+    (await adminDb.collection(`negocios/${businessId}/cotizaciones`).get()).size,
+    quoteCountBeforeReopen
+  );
+
+  const emailRequest = {
+    businessId,
+    quoteId: duplicated.data.quote.id,
+    requestId: `quote-email-${RUN_ID}`,
+    emailCliente: "cliente@example.test",
+    asunto: "Copia de cotización integrada",
+    mensaje: "Envío de copia sin cambiar el estado.",
+    pdfBase64: "JVBERi0xLjQK",
+    pdfFilename: "cotizacion.pdf",
+    pdfMimeType: "application/pdf",
+  };
+  const emailResend = await callable(owner, "sendQuoteEmail")(emailRequest);
+  assert.equal(emailResend.data.success, true);
+  assert.equal(emailResend.data.simulated, true);
+  const repeatedEmail = await callable(owner, "sendQuoteEmail")(emailRequest);
+  assert.equal(repeatedEmail.data.idempotent, true);
+  assert.equal((await duplicateRef.get()).data().estado, "aceptada");
+  assert.equal((await duplicateRef.collection("eventos").get()).size, 4);
+
+  const converted = await callable(owner, "crearVentaDesdeCotizacion")({
+    businessId,
+    cotizacionId: duplicated.data.quote.id,
+    requestId: `quote-sale-${RUN_ID}`,
+  });
+  assert.ok(converted.data.venta.id);
+  await expectCallableError(
+    "cotización con Venta no se reabre",
+    () => callable(owner, "reopenQuote")({
+      businessId,
+      quoteId: duplicated.data.quote.id,
+      requestId: `quote-reopen-after-sale-${RUN_ID}`,
+    }),
+    ["failed-precondition"]
+  );
+  console.log("OK ciclo: reapertura idempotente, historial, aceptación y venta protegida");
+
   assert.equal(
     (await adminDb.collection(`negocios/${businessId}/cotizaciones`).get()).size,
     5

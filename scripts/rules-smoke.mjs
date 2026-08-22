@@ -308,6 +308,12 @@ async function main() {
         actualizadoEn: serverTimestamp(),
       })
     );
+    await expectDenied("cliente SDK fuerza aceptacion legacy", () =>
+      updateDoc(doc(ownerClient.db, managedQuotePath), {
+        estado: "aceptada",
+        actualizadoEn: serverTimestamp(),
+      })
+    );
 
     await expectDenied("cliente incrementa contador de cotizaciones", () =>
       setDoc(
@@ -352,6 +358,26 @@ async function main() {
     }
     await expectDenied("otro usuario lee perfil de negocio ajeno", () =>
       getDoc(doc(otherClient.db, businessProfilePath))
+    );
+
+    const businessQuotePath =
+      `negocios/${businessId}/cotizaciones/quote-managed`;
+    await adminDb.doc(businessQuotePath).set({
+      negocioId: businessId,
+      numero: "COT-2026-0001",
+      estado: "emitida",
+    });
+    await expectDenied("cliente SDK fuerza rechazo de cotizacion", () =>
+      updateDoc(doc(ownerClient.db, businessQuotePath), {
+        estado: "rechazada",
+        actualizadoEn: serverTimestamp(),
+      })
+    );
+    await expectDenied("cliente SDK crea evento de cotizacion", () =>
+      setDoc(doc(ownerClient.db, `${businessQuotePath}/eventos/forged`), {
+        tipo: "respuesta_cliente",
+        estadoResultante: "aceptada",
+      })
     );
 
     const businessClientPath =

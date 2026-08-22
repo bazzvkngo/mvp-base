@@ -57,7 +57,10 @@ La idempotencia usa `negocios/{businessId}/quoteDuplicateRequests/{requestId}`. 
 
 # Seguridad y reglas
 
-Las cotizaciones conservan la política previa de lectura y actualización, las creaciones directas siguen bloqueadas y la creación autoritativa continúa en Cloud Functions. Únicamente se añadió en `firestore.rules` el cierre explícito de la colección interna `quoteDuplicateRequests`, utilizada para la idempotencia de duplicación. La colección interna `clientRutKeys` no participa en el selector.
+Las cotizaciones conservan lectura para miembros activos, pero toda creación o
+actualización directa queda bloqueada; persistencia y estados son autoritativos en
+Cloud Functions. Las colecciones internas de requests permanecen cerradas y los
+eventos sólo admiten lectura del negocio. `clientRutKeys` no participa en el selector.
 
 # Pruebas
 
@@ -76,3 +79,27 @@ Los smokes cubren:
 - duplicación autoritativa de un documento histórico, nuevo ID y número, borrador independiente y original intacto;
 - reintento idempotente, rol `MEMBER`, aislamiento entre negocios y rechazo de cliente archivado;
 - omisión de snapshots y totales falsificados en la solicitud de duplicación.
+
+# Ciclo autoritativo, reenvío y reapertura
+
+El campo `estado` es una proyección autoritativa: ninguna transición se escribe
+con el SDK cliente. `transitionQuoteStatus` valida las transiciones ordinarias y
+`reopenQuote` es la única operación terminal a `emitida`. Rules conserva lectura
+para miembros activos, pero bloquea toda escritura cliente sobre cotizaciones. La
+edición de borradores continúa mediante `updateQuoteDraft`.
+
+Cada respuesta, cambio de estado, reapertura y entrega confirmada crea un documento
+inmutable en `cotizaciones/{cotizacionId}/eventos/{eventoId}`. El evento conserva
+fecha de servidor, actor, medio, destinatario, estados y `requestId`. Los campos de
+respuesta en la cotización siguen como proyección compatible con documentos legacy;
+al reabrir uno, su respuesta anterior se importa primero a un evento.
+
+Reenviar por correo o WhatsApp reutiliza la misma COT y nunca cambia su estado. En
+`aceptada`, `rechazada` o `vencida`, el enlace es una copia pública sin respuesta;
+en `borrador` o `emitida` conserva el flujo vigente. Los `requestId`, eventos
+deterministas, lease y cooldown evitan duplicados técnicos razonables.
+
+Reabrir `aceptada`, `rechazada` o `vencida` incrementa `oportunidadVersion`, calcula
+una nueva vigencia y emite un token público ligado a esa versión. Los tokens de
+versiones anteriores ya no pueden responder. Si existe `ventaId`, la reapertura se
+rechaza siempre; la COT puede reenviarse como copia sin alterar su venta.

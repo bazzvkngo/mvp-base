@@ -88,8 +88,10 @@ const {
   isEmulatorEnvironment,
   markQuoteEmittedManuallyHandler,
   prepareQuoteWhatsAppShareHandler,
+  reopenQuoteHandler,
   respondPublicQuoteProposalHandler,
 } = require("./quotePublicProposal");
+const {transitionQuoteStatusHandler} = require("./quoteLifecycle");
 const {
   createAdditionalBusinessHandler,
   createFirstBusinessHandler,
@@ -2656,6 +2658,37 @@ exports.markQuoteEmittedManually = onCall(
     markQuoteEmittedManuallyHandler(request, {
       ...businessOnboardingDependencies,
       requireBusinessAccess,
+    })
+);
+
+exports.transitionQuoteStatus = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    transitionQuoteStatusHandler(request, {
+      ...businessOnboardingDependencies,
+      buildQuoteEmissionPatch,
+      requireBusinessAccess,
+    })
+);
+
+exports.reopenQuote = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    reopenQuoteHandler(request, {
+      ...businessOnboardingDependencies,
+      getPublicBaseUrl,
+      requireBusinessAccess,
+      Timestamp,
     })
 );
 

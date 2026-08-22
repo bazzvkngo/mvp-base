@@ -1,6 +1,5 @@
 import { httpsCallable } from "firebase/functions";
 import {
-  assertClientWriteAllowed,
   assertCloudFunctionAllowed,
   firebaseEnvironment,
 } from "../config/firebaseEnvironment.mjs";
@@ -11,8 +10,6 @@ import {
   getDocs,
   orderBy,
   query,
-  serverTimestamp,
-  updateDoc,
 } from "firebase/firestore";
 import "../firebase/firebaseConfig";
 import {
@@ -103,6 +100,13 @@ export function createQuoteDuplicateRequestId() {
     return `quote-copy-${globalThis.crypto.randomUUID()}`;
   }
   return `quote-copy-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+export function createQuoteLifecycleRequestId(prefix = "quote-lifecycle") {
+  if (globalThis.crypto?.randomUUID) {
+    return `${prefix}-${globalThis.crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
 export async function createQuote(uid, data, { requestId } = {}) {
@@ -216,37 +220,48 @@ export async function updateQuoteStatus(uid, quoteId, estado, options = {}) {
     throw new Error("Estado de cotización inválido.");
   }
 
-  if (estado === "emitida") {
-    assertCloudFunctionAllowed("marcar la cotización como emitida");
-    const callable = httpsCallable(
-      getFirebaseFunctions(FUNCTIONS_REGION),
-      "markQuoteEmittedManually"
+  assertCloudFunctionAllowed("cambiar el estado de cotizaciones");
+  const requestId = options.requestId || createQuoteLifecycleRequestId("quote-status");
+  const callable = httpsCallable(
+    getFirebaseFunctions(FUNCTIONS_REGION),
+    "transitionQuoteStatus"
+  );
+  try {
+    const response = await callable({businessId: uid, quoteId, estado, requestId});
+    return response.data?.quoteStatus || {estado};
+  } catch (error) {
+    throw normalizeQuoteCallableError(
+      error,
+      "transitionQuoteStatus",
+      "No se pudo cambiar el estado de la cotización."
     );
-    try {
-      const response = await callable({ businessId: uid, quoteId });
-      return response.data?.quoteStatus || { estado: "emitida" };
-    } catch (error) {
-      throw normalizeQuoteCallableError(
-        error,
-        "markQuoteEmittedManually",
-        "No se pudo marcar la cotización como emitida."
-      );
-    }
   }
+}
 
-  assertClientWriteAllowed("cambiar el estado de cotizaciones");
-
-  const payload = {
-    estado,
-    actualizadoEn: serverTimestamp(),
-  };
-
-  if (["borrador", "emitida", "aceptada", "rechazada", "vencida", "archivada"].includes(options.estadoAnterior)) {
-    payload.estadoAnterior = options.estadoAnterior;
+export async function reopenQuote(uid, quoteId, {requestId} = {}) {
+  assertCloudFunctionAllowed("reabrir la cotización");
+  const stableRequestId = requestId || createQuoteLifecycleRequestId("quote-reopen");
+  const callable = httpsCallable(
+    getFirebaseFunctions(FUNCTIONS_REGION),
+    "reopenQuote"
+  );
+  try {
+    const response = await callable({businessId: uid, quoteId, requestId: stableRequestId});
+    return response.data?.quoteStatus || {};
+  } catch (error) {
+    throw normalizeQuoteCallableError(
+      error,
+      "reopenQuote",
+      "No se pudo reabrir la cotización."
+    );
   }
+}
 
-  await updateDoc(doc(db, ...quoteDocPath(uid, quoteId)), payload);
-  return payload;
+export async function getQuoteEvents(uid, quoteId) {
+  if (!uid || !quoteId) return [];
+  const eventsRef = collection(db, ...quoteDocPath(uid, quoteId), "eventos");
+  const snapshot = await getDocs(query(eventsRef, orderBy("creadoEn", "asc")));
+  return snapshot.docs.map((eventDoc) => ({id: eventDoc.id, ...eventDoc.data()}));
 }
 
 let cachedSimularCotizacionProyecto = null;

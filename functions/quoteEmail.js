@@ -1,7 +1,15 @@
 const SENDABLE_QUOTE_STATUSES = new Set([
   "borrador",
   "emitida",
+  "aceptada",
+  "rechazada",
+  "vencida",
 ]);
+const {
+  buildQuoteEvent,
+  normalizeLifecycleRequestId,
+  quoteEventRef,
+} = require("./quoteLifecycle");
 const QUOTE_EMAIL_COOLDOWN_MS = 30 * 1000;
 const QUOTE_EMAIL_LEASE_MS = 2 * 60 * 1000;
 
@@ -60,7 +68,7 @@ function validateStoredQuoteForEmail(
   if (!SENDABLE_QUOTE_STATUSES.has(String(quote.estado || "").toLowerCase())) {
     throw new HttpsError(
       "failed-precondition",
-      "Sólo las cotizaciones pendientes o emitidas pueden enviarse."
+      "La cotización no puede enviarse desde su estado actual."
     );
   }
 
@@ -109,18 +117,21 @@ async function reserveQuoteEmailAttempt({
   HttpsError,
   nowMs,
   quoteId,
+  requestId,
   uid,
 }) {
   const quoteRef = businessRef.collection("cotizaciones").doc(quoteId);
   const attemptRef = businessRef
     .collection("enviosCotizaciones")
     .doc(quoteId);
+  const eventRef = quoteEventRef(quoteRef, `reenvio_correo__${requestId}`);
 
   const reservation = await businessRef.firestore.runTransaction(
     async (transaction) => {
-      const [quoteSnapshot, attemptSnapshot] = await Promise.all([
+      const [quoteSnapshot, attemptSnapshot, eventSnapshot] = await Promise.all([
         transaction.get(quoteRef),
         transaction.get(attemptRef),
+        transaction.get(eventRef),
       ]);
       if (!quoteSnapshot.exists) {
         throw new HttpsError("not-found", "No se encontró la cotización.");
@@ -135,6 +146,23 @@ async function reserveQuoteEmailAttempt({
         emailCliente,
         HttpsError,
       });
+      if (eventSnapshot.exists) {
+        const storedEvent = eventSnapshot.data() || {};
+        if (
+          storedEvent.uidUsuario !== uid ||
+          storedEvent.destinatario !== recipient.emailClienteDestino
+        ) {
+          throw new HttpsError(
+            "already-exists",
+            "El requestId ya fue utilizado para otro envío."
+          );
+        }
+        return {
+          idempotent: true,
+          quote: storedQuote,
+          recipient,
+        };
+      }
       const previousAttempt = attemptSnapshot.exists
         ? attemptSnapshot.data() || {}
         : null;
@@ -167,16 +195,49 @@ async function reserveQuoteEmailAttempt({
         actualizadoEn: FieldValue.serverTimestamp(),
       });
 
-      return { quote: storedQuote, recipient };
+      return {idempotent: false, quote: storedQuote, recipient};
     }
   );
 
   return {
     attemptRef,
+    eventRef,
+    idempotent: reservation.idempotent,
     quote: reservation.quote,
     quoteRef,
     recipient: reservation.recipient,
   };
+}
+
+async function recordQuoteEmailDelivery({
+  businessId,
+  businessRef,
+  eventRef,
+  FieldValue,
+  quote,
+  quoteId,
+  recipient,
+  requestId,
+  simulated,
+  uid,
+}) {
+  await eventRef.create(buildQuoteEvent({
+    businessId,
+    eventType: quote.estado === "borrador"
+      ? "cotizacion_enviada"
+      : "cotizacion_reenviada",
+    FieldValue,
+    medium: "correo",
+    quoteId,
+    requestId,
+    resultingStatus: quote.estado === "borrador" && !simulated
+      ? "emitida"
+      : quote.estado,
+    previousStatus: quote.estado,
+    recipient: recipient.emailClienteDestino,
+    uid,
+    details: {simulado: simulated === true},
+  }));
 }
 
 async function finishQuoteEmailAttempt({
@@ -237,6 +298,7 @@ async function sendQuoteEmailHandler(request, dependencies) {
   const rawAsunto = String(data.asunto || "");
   const rawMensaje = String(data.mensaje || "");
   const quoteId = safeText(data.quoteId, 100);
+  const requestId = normalizeLifecycleRequestId(data.requestId, HttpsError);
   const emailCliente = normalizeSingleRecipient(rawEmailCliente, HttpsError);
   const asunto = safeText(rawAsunto, 180);
   const mensaje = safeText(rawMensaje, 2000);
@@ -285,9 +347,18 @@ async function sendQuoteEmailHandler(request, dependencies) {
     HttpsError,
     nowMs: attemptedAt.getTime(),
     quoteId,
+    requestId,
     uid,
   });
-  const { attemptRef, quoteRef } = reservation;
+  if (reservation.idempotent) {
+    return {
+      success: true,
+      idempotent: true,
+      provider: "idempotent",
+      quoteEmailStatus: {estado: reservation.quote.estado},
+    };
+  }
+  const {attemptRef, eventRef, quoteRef} = reservation;
   const recipient =
     reservation.recipient ||
     validateStoredQuoteForEmail(reservation.quote, {
@@ -364,7 +435,7 @@ async function sendQuoteEmailHandler(request, dependencies) {
         now: attemptedAt,
         quote,
       })
-    : { estado: "emitida" };
+    : {};
 
   if (isEmulatorEnvironment()) {
     const patch = {
@@ -381,6 +452,18 @@ async function sendQuoteEmailHandler(request, dependencies) {
       nowMs: dependencies.now?.() || Date.now(),
       provider: "emulator",
       status: "simulado",
+    });
+    await (dependencies.recordQuoteEmailDelivery || recordQuoteEmailDelivery)({
+      businessId,
+      businessRef,
+      eventRef,
+      FieldValue,
+      quote,
+      quoteId,
+      recipient,
+      requestId,
+      simulated: true,
+      uid,
     });
     return {
       success: true,
@@ -467,11 +550,23 @@ async function sendQuoteEmailHandler(request, dependencies) {
       providerId,
       status: "enviado",
     });
+    await (dependencies.recordQuoteEmailDelivery || recordQuoteEmailDelivery)({
+      businessId,
+      businessRef,
+      eventRef,
+      FieldValue,
+      quote,
+      quoteId,
+      recipient,
+      requestId,
+      simulated: false,
+      uid,
+    });
     return {
       success: true,
       provider: "resend",
       quoteEmailStatus: {
-        estado: "emitida",
+        estado: quote.estado === "borrador" ? "emitida" : quote.estado,
         ...(quote.estado === "borrador"
           ? {
               canalEmision: "correo",
@@ -539,6 +634,7 @@ module.exports = {
   assertQuoteEmailAttemptAvailable,
   getStoredQuoteClientEmail,
   normalizeSingleRecipient,
+  recordQuoteEmailDelivery,
   sendQuoteEmailHandler,
   validateStoredQuoteForEmail,
 };

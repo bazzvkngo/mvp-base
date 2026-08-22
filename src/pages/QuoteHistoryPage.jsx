@@ -25,13 +25,16 @@ import {
 import {
   createQuoteDuplicateRequestId,
   duplicateQuoteAsDraft,
+  getQuoteEvents,
   getQuoteDisplayNumber,
   getQuotes,
+  reopenQuote,
   updateQuoteStatus,
 } from "../services/quoteService";
 import { isQuoteEmailSendable } from "../services/quoteEmailService";
 import {
   confirmQuoteWhatsAppSent,
+  createQuoteDeliveryRequestId,
   prepareQuoteWhatsAppShare,
 } from "../services/publicQuoteService";
 import {
@@ -130,7 +133,7 @@ function getEmailActionHint(quote) {
   }
 
   if (["aceptada", "rechazada", "vencida"].includes(estado)) {
-    return "Sólo las cotizaciones pendientes o emitidas pueden enviarse.";
+    return "Se enviará una copia sin cambiar el estado ni habilitar otra respuesta.";
   }
 
   return "";
@@ -155,6 +158,8 @@ function QuoteHistoryPage({ userId, role }) {
   const [duplicatingQuoteId, setDuplicatingQuoteId] = useState("");
   const [registeringSaleQuoteId, setRegisteringSaleQuoteId] = useState("");
   const [prepareSaleQuote, setPrepareSaleQuote] = useState(null);
+  const [quoteEventsById, setQuoteEventsById] = useState({});
+  const reopenRequestIdsRef = useRef(new Map());
   const canDuplicate = canDuplicateQuotes(role);
 
   useEffect(() => {
@@ -234,9 +239,28 @@ function QuoteHistoryPage({ userId, role }) {
   }, [quotes, search, statusFilter]);
 
   const selectedQuote = useMemo(
-    () => quotes.find((quote) => quote.id === selectedQuoteId) || null,
-    [quotes, selectedQuoteId]
+    () => {
+      const quote = quotes.find((item) => item.id === selectedQuoteId) || null;
+      return quote
+        ? {...quote, historialEventos: quoteEventsById[quote.id] || []}
+        : null;
+    },
+    [quoteEventsById, quotes, selectedQuoteId]
   );
+
+  const refreshQuoteEvents = async (quoteId) => {
+    if (!userId || !quoteId) return;
+    try {
+      const events = await getQuoteEvents(userId, quoteId);
+      setQuoteEventsById((current) => ({...current, [quoteId]: events}));
+    } catch (eventError) {
+      console.error("Error al cargar historial autoritativo:", eventError);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedQuoteId) refreshQuoteEvents(selectedQuoteId);
+  }, [selectedQuoteId, userId]);
 
   useEffect(() => {
     if (
@@ -299,6 +323,7 @@ function QuoteHistoryPage({ userId, role }) {
           title: successTitle || statusFeedbackTitles[estado],
         });
       }
+      refreshQuoteEvents(quoteId);
       return true;
     } catch (err) {
       console.error("Error al actualizar estado:", err);
@@ -343,6 +368,44 @@ function QuoteHistoryPage({ userId, role }) {
 
   const handleEditDraft = (quoteId) => {
     navigate(`/cotizaciones/${quoteId}/editar`);
+  };
+
+  const handleReopenQuote = async (quote) => {
+    if (quote.ventaId) {
+      sileo.error({
+        title: "La cotización ya tiene una venta",
+        description: "La relación comercial existente impide abrir una nueva oportunidad.",
+      });
+      return;
+    }
+    if (!window.confirm(
+      "¿Reabrir esta cotización? La respuesta anterior se conservará en el historial."
+    )) return;
+    let requestId = reopenRequestIdsRef.current.get(quote.id);
+    if (!requestId) {
+      requestId = createQuoteDeliveryRequestId("reopen");
+      reopenRequestIdsRef.current.set(quote.id, requestId);
+    }
+    setSavingStatus(true);
+    try {
+      const statusPatch = await reopenQuote(userId, quote.id, {requestId});
+      reopenRequestIdsRef.current.delete(quote.id);
+      setQuotes((current) => current.map((item) => item.id === quote.id
+        ? {...item, ...statusPatch, actualizadoEn: new Date()}
+        : item));
+      await refreshQuoteEvents(quote.id);
+      sileo.success({
+        title: "Cotización reabierta",
+        description: "Se habilitó una nueva oportunidad pública sin borrar respuestas anteriores.",
+      });
+    } catch (reopenError) {
+      sileo.error({
+        title: "No se pudo reabrir la cotización",
+        description: reopenError.message,
+      });
+    } finally {
+      setSavingStatus(false);
+    }
   };
 
   const handleOpenSale = (quote) => {
@@ -480,13 +543,14 @@ function QuoteHistoryPage({ userId, role }) {
           : quote
       )
     );
-
+    refreshQuoteEvents(quoteId);
   };
 
   const handleWhatsAppShared = (quoteId, statusPatch) => {
     setQuotes((current) => current.map((quote) => quote.id === quoteId
       ? { ...quote, ...statusPatch, actualizadoEn: new Date() }
       : quote));
+    refreshQuoteEvents(quoteId);
   };
 
   if (!userId) {
@@ -635,6 +699,7 @@ function QuoteHistoryPage({ userId, role }) {
                           onDuplicate={handleDuplicateQuote}
                           onAcceptAndPrepareSale={handleAcceptAndPrepareSale}
                           onRegisterSale={handleRegisterSale}
+                          onReopen={handleReopenQuote}
                           registeringSale={registeringSaleQuoteId === quote.id}
                         /> )}
                       </div>
@@ -658,6 +723,7 @@ function QuoteHistoryPage({ userId, role }) {
             onDuplicate={handleDuplicateQuote}
             onEditDraft={handleEditDraft}
             onRegisterSale={handleRegisterSale}
+            onReopen={handleReopenQuote}
             onRestore={handleRestoreQuote}
             registeringSaleQuoteId={registeringSaleQuoteId}
           />
@@ -689,6 +755,7 @@ function QuoteHistoryPage({ userId, role }) {
               onDuplicate={handleDuplicateQuote}
               onAcceptAndPrepareSale={handleAcceptAndPrepareSale}
               onRegisterSale={handleRegisterSale}
+              onReopen={handleReopenQuote}
               registeringSale={registeringSaleQuoteId === selectedQuote.id}
             /> )}
           </div>
@@ -834,6 +901,7 @@ function QuoteCards({
   onDuplicate,
   onEditDraft,
   onRegisterSale,
+  onReopen,
   onRestore,
   registeringSaleQuoteId,
 }) {
@@ -908,6 +976,7 @@ function QuoteCards({
                 onDuplicate={onDuplicate}
                 onAcceptAndPrepareSale={onAcceptAndPrepareSale}
                 onRegisterSale={onRegisterSale}
+                onReopen={onReopen}
                 registeringSale={registeringSaleQuoteId === quote.id}
               />
             </div>
@@ -930,6 +999,7 @@ function QuoteActions({
   onDuplicate,
   onAcceptAndPrepareSale,
   onRegisterSale,
+  onReopen,
   registeringSale,
 }) {
   const estado = quote.estado || "borrador";
@@ -1052,8 +1122,8 @@ function QuoteActions({
           disabled={disabled || registeringSale}
           actions={[
             {
-              label: "Corregir a emitida",
-              onSelect: () => onChangeStatus(quote.id, "emitida"),
+              label: "Reabrir propuesta",
+              onSelect: () => onReopen(quote),
             },
             duplicateMenuAction,
             archiveMenuAction,
@@ -1068,7 +1138,7 @@ function QuoteActions({
       <>
         <button
           type="button"
-          onClick={() => onChangeStatus(quote.id, "emitida")}
+          onClick={() => onReopen(quote)}
           disabled={disabled}
           style={styles.secondaryButton}
         >
@@ -1257,12 +1327,19 @@ function QuoteDetail({
   onWhatsAppShared,
 }) {
   const canSendEmail = isQuoteEmailSendable(quote, quote.id);
-  const canShareWhatsApp = ["borrador", "emitida"].includes(quote.estado);
+  const canShareWhatsApp = [
+    "borrador",
+    "emitida",
+    "aceptada",
+    "rechazada",
+    "vencida",
+  ].includes(quote.estado);
   const emailActionHint = getEmailActionHint(quote);
   const [pdfAction, setPdfAction] = useState("");
   const [pdfError, setPdfError] = useState("");
   const [whatsAppConfirmationOpen, setWhatsAppConfirmationOpen] = useState(false);
   const [confirmingWhatsApp, setConfirmingWhatsApp] = useState(false);
+  const whatsAppRequestIdRef = useRef("");
 
   const runPdfAction = async (action) => {
     setPdfAction(action);
@@ -1271,7 +1348,14 @@ function QuoteDetail({
       if (action === "download") {
         await downloadQuotePdf({ quote, companyProfile });
       } else {
-        const prepared = await prepareQuoteWhatsAppShare(businessId, quote.id);
+        const requestId = whatsAppRequestIdRef.current ||
+          createQuoteDeliveryRequestId("whatsapp");
+        whatsAppRequestIdRef.current = requestId;
+        const prepared = await prepareQuoteWhatsAppShare(
+          businessId,
+          quote.id,
+          {requestId}
+        );
         await shareQuotePdf({
           quote,
           companyProfile,
@@ -1299,12 +1383,17 @@ function QuoteDetail({
     setConfirmingWhatsApp(true);
     setPdfError("");
     try {
-      const statusPatch = await confirmQuoteWhatsAppSent(businessId, quote.id);
+      const statusPatch = await confirmQuoteWhatsAppSent(
+        businessId,
+        quote.id,
+        whatsAppRequestIdRef.current
+      );
+      whatsAppRequestIdRef.current = "";
       onWhatsAppShared?.(quote.id, statusPatch);
       setWhatsAppConfirmationOpen(false);
       sileo.success({
-        title: "Cotización emitida",
-        description: `${getQuoteDisplayNumber(quote, quote.id)} fue registrada como enviada por WhatsApp.`,
+        title: "Envío por WhatsApp registrado",
+        description: `${getQuoteDisplayNumber(quote, quote.id)} conservó su estado ${getQuoteStatusLabel(statusPatch.estado)}.`,
       });
     } catch (error) {
       const message = error?.message || "No fue posible registrar el envío.";
@@ -1339,7 +1428,7 @@ function QuoteDetail({
               type="button"
               onClick={() => runPdfAction("whatsapp")}
               disabled={Boolean(pdfAction) || !canShareWhatsApp}
-              title={canShareWhatsApp ? "" : "Sólo disponible para cotizaciones pendientes o emitidas."}
+              title={canShareWhatsApp ? "" : "No disponible desde este estado."}
               style={styles.whatsappButton}
             >
               <AppIcon icon={MessageCircle} size={17} />
@@ -1424,7 +1513,55 @@ function QuoteDetail({
 }
 
 function CommercialStatusTimeline({ quote }) {
-  const events = [];
+  const events = (Array.isArray(quote.historialEventos)
+    ? quote.historialEventos
+    : []).map((event) => {
+      const details = event.detalle || {};
+      if (event.tipo === "respuesta_cliente") {
+        const rejected = details.respuesta === "rechazada" ||
+          event.estadoResultante === "rechazada";
+        return {
+          label: rejected ? "Rechazada por cliente" : "Aceptada por cliente",
+          value: formatTimestamp(details.fechaRespuesta || event.creadoEn),
+          note: `Oportunidad ${details.oportunidadVersion || 1}`,
+          details: rejected ? [
+            {
+              label: "Motivo",
+              value: REJECTION_REASON_LABELS[details.motivo] || "No indicado",
+            },
+            {
+              label: "Comentario del cliente",
+              value: details.comentario || "Sin comentario adicional",
+              quoted: Boolean(details.comentario),
+            },
+          ] : [],
+        };
+      }
+      if (event.tipo === "cotizacion_reabierta") {
+        return {
+          label: "Cotización reabierta",
+          value: formatTimestamp(event.creadoEn),
+          note: `Nueva oportunidad ${details.oportunidadVersion || ""}`.trim(),
+        };
+      }
+      if (["cotizacion_enviada", "cotizacion_reenviada"].includes(event.tipo)) {
+        return {
+          label: `${event.tipo === "cotizacion_reenviada" ? "Reenviada" : "Enviada"} por ${
+            event.medio || "medio no indicado"
+          }`,
+          value: formatTimestamp(event.creadoEn),
+          note: event.destinatario ? `Destinatario: ${event.destinatario}` : "",
+        };
+      }
+      return {
+        label: "Estado actualizado",
+        value: formatTimestamp(event.creadoEn),
+        note: `${getQuoteStatusLabel(event.estadoAnterior)} → ${getQuoteStatusLabel(
+          event.estadoResultante
+        )}`,
+      };
+    });
+  if (!events.length) {
   if (quote.whatsappPreparadoEn && quote.estado === "borrador") {
     events.push({
       label: "Preparada para WhatsApp",
@@ -1533,6 +1670,7 @@ function CommercialStatusTimeline({ quote }) {
       label: "Error de envío",
       value: quote.ultimoErrorEnvio || "No fue posible enviar el correo",
     });
+  }
   }
   if (!events.length) return null;
 

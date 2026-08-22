@@ -3,6 +3,13 @@ const {
   buildAuthoritativeCompanySnapshot,
   getHistoricalCompanySnapshot,
 } = require("./companySnapshot");
+const {
+  buildQuoteEvent,
+  normalizeLifecycleRequestId,
+  quoteEventRef,
+  quoteHasActiveResponse,
+  quoteOpportunityVersion,
+} = require("./quoteLifecycle");
 
 const PUBLIC_TOKEN_COLLECTION = "quotePublicTokens";
 const PUBLIC_TOKEN_BYTES = 32;
@@ -12,6 +19,7 @@ const PUBLIC_BASE_URL = "https://valoracloud.bagner.cl";
 const EMULATOR_PUBLIC_BASE_URL = "http://localhost:5173";
 const CHILE_TIME_ZONE = "America/Santiago";
 const MAX_REJECTION_COMMENT_LENGTH = 500;
+const COPY_LINK_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
 const REJECTION_REASONS = new Set([
   "precio",
   "plazo",
@@ -131,6 +139,13 @@ function buildQuoteEmissionPatch({
 }
 
 function calculateQuoteExpiryDate(quote = {}) {
+  const storedExpiry = safeText(quote.fechaVencimiento, 40);
+  if (
+    quoteOpportunityVersion(quote) > 1 &&
+    /^\d{4}-\d{2}-\d{2}$/.test(storedExpiry)
+  ) {
+    return storedExpiry;
+  }
   const emissionMillis = getTimestampMillis(quote.fechaEmision);
   if (emissionMillis > 0) {
     const fromEmission = calculateEmissionExpiryDate(
@@ -139,7 +154,6 @@ function calculateQuoteExpiryDate(quote = {}) {
     );
     if (fromEmission) return fromEmission;
   }
-  const storedExpiry = safeText(quote.fechaVencimiento, 40);
   if (/^\d{4}-\d{2}-\d{2}$/.test(storedExpiry)) return storedExpiry;
   const issueDate = safeText(quote.fecha, 40);
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(issueDate);
@@ -198,7 +212,11 @@ function pendingTokenExpiryInstant(quote = {}, now = new Date()) {
 }
 
 function effectiveQuoteExpiryMillis(quote = {}, tokenData = {}) {
-  if (quote.estado === "emitida" && quote.fechaEmision) {
+  if (
+    tokenData.respuestaHabilitada !== false &&
+    quote.estado === "emitida" &&
+    quote.fechaEmision
+  ) {
     return quoteExpiryInstant(quote)?.getTime() || 0;
   }
   return getTimestampMillis(tokenData.expiraEn);
@@ -347,27 +365,72 @@ async function createPublicQuoteToken({
   now = new Date(),
   publicBaseUrl = getPublicBaseUrl(),
   quoteRef,
+  requestId = "",
+  responseEnabled,
+  uid = "",
 }) {
   const tokenMaterial = createPublicTokenMaterial();
   const tokenRef = db.collection(PUBLIC_TOKEN_COLLECTION).doc(tokenMaterial.tokenHash);
+  const publicUrl = `${publicBaseUrl.replace(/\/+$/, "")}/propuesta/${tokenMaterial.rawToken}`;
+  const requestRef = requestId
+    ? db.collection("negocios").doc(businessId)
+      .collection("quoteLifecycleRequests").doc(requestId)
+    : null;
   let expiryAt;
+  let resolvedPublicUrl = publicUrl;
+  let resolvedTokenHash = tokenMaterial.tokenHash;
+  let idempotent = false;
 
   await db.runTransaction(async (transaction) => {
-    const quoteSnapshot = await transaction.get(quoteRef);
+    const [quoteSnapshot, previousRequest] = await Promise.all([
+      transaction.get(quoteRef),
+      requestRef ? transaction.get(requestRef) : Promise.resolve(null),
+    ]);
+    if (previousRequest?.exists) {
+      const stored = previousRequest.data() || {};
+      if (
+        stored.cotizacionId !== quoteRef.id ||
+        stored.accion !== `preparar_${safeText(channel, 30)}` ||
+        stored.uidUsuario !== uid
+      ) {
+        throw new HttpsError(
+          "already-exists",
+          "El requestId ya fue utilizado para otra operación."
+        );
+      }
+      resolvedPublicUrl = safeText(stored.enlacePublico, 1200);
+      resolvedTokenHash = safeText(stored.tokenHash, 64);
+      expiryAt = new Date(getTimestampMillis(stored.expiraEn));
+      idempotent = true;
+      return;
+    }
     if (!quoteSnapshot.exists) throw genericPublicProposalError(HttpsError);
     const quote = quoteSnapshot.data() || {};
     if (quote.negocioId && quote.negocioId !== businessId) {
       throw new HttpsError("permission-denied", "No puedes publicar esta cotización.");
     }
-    if (!["borrador", "emitida"].includes(quote.estado)) {
+    const canRespond = responseEnabled ?? ["borrador", "emitida"].includes(
+      quote.estado
+    );
+    if (canRespond && !["borrador", "emitida"].includes(quote.estado)) {
       throw new HttpsError(
         "failed-precondition",
         "Sólo las cotizaciones pendientes o emitidas pueden compartirse."
       );
     }
-    expiryAt = quote.estado === "borrador"
-      ? pendingTokenExpiryInstant(quote, now)
-      : quoteExpiryInstant(quote);
+    if (!canRespond && !["emitida", "aceptada", "rechazada", "vencida"].includes(
+      quote.estado
+    )) {
+      throw new HttpsError(
+        "failed-precondition",
+        "La cotización no puede reenviarse desde su estado actual."
+      );
+    }
+    expiryAt = !canRespond
+      ? new Date(now.getTime() + COPY_LINK_DURATION_MS)
+      : quote.estado === "borrador"
+        ? pendingTokenExpiryInstant(quote, now)
+        : quoteExpiryInstant(quote);
     if (!expiryAt) {
       throw new HttpsError(
         "failed-precondition",
@@ -381,7 +444,9 @@ async function createPublicQuoteToken({
       );
     }
 
-    const tokenState = publicTokenStatusForQuote(quote);
+    const tokenState = canRespond
+      ? publicTokenStatusForQuote(quote)
+      : {estado: "active", respuesta: null};
     transaction.create(tokenRef, {
       negocioId: safeText(businessId, 160),
       cotizacionId: quoteRef.id,
@@ -391,6 +456,8 @@ async function createPublicQuoteToken({
       estado: tokenState.estado,
       respondidoEn: null,
       respuesta: tokenState.respuesta,
+      respuestaHabilitada: canRespond,
+      oportunidadVersion: quoteOpportunityVersion(quote),
       primeraAperturaEn: null,
       ultimaAperturaEn: null,
       aperturas: 0,
@@ -399,7 +466,7 @@ async function createPublicQuoteToken({
       tokenPublicoHash: tokenMaterial.tokenHash,
       propuestaPublicaCreadaEn: FieldValue.serverTimestamp(),
       propuestaPublicaExpiraEn: Timestamp.fromDate(expiryAt),
-      ...(quote.estado === "emitida" && quote.fechaEmision
+      ...(canRespond && quote.estado === "emitida" && quote.fechaEmision
         ? { fechaVencimiento: calculateQuoteExpiryDate(quote) }
         : {}),
       ...(channel === "whatsapp"
@@ -410,12 +477,25 @@ async function createPublicQuoteToken({
         : {}),
       actualizadoEn: FieldValue.serverTimestamp(),
     });
+    if (requestRef) {
+      transaction.create(requestRef, {
+        negocioId: businessId,
+        cotizacionId: quoteRef.id,
+        accion: `preparar_${safeText(channel, 30)}`,
+        uidUsuario: uid,
+        enlacePublico: publicUrl,
+        tokenHash: tokenMaterial.tokenHash,
+        expiraEn: Timestamp.fromDate(expiryAt),
+        creadoEn: FieldValue.serverTimestamp(),
+      });
+    }
   });
 
   return {
     expiresAt: expiryAt,
-    publicUrl: `${publicBaseUrl.replace(/\/+$/, "")}/propuesta/${tokenMaterial.rawToken}`,
-    tokenHash: tokenMaterial.tokenHash,
+    publicUrl: resolvedPublicUrl,
+    tokenHash: resolvedTokenHash,
+    idempotent,
   };
 }
 
@@ -431,12 +511,16 @@ async function prepareQuoteWhatsAppShareHandler(request, dependencies) {
   if (!request?.auth?.uid) {
     throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
   }
-  const { businessId, businessRef } = await requireBusinessAccess(
+  const {businessId, businessRef, uid} = await requireBusinessAccess(
     request,
     dependencies,
     { roles: ["OWNER", "ADMIN"] }
   );
   const quoteId = safeText(request?.data?.quoteId, 160);
+  const requestId = normalizeLifecycleRequestId(
+    request?.data?.requestId,
+    HttpsError
+  );
   if (!/^[a-zA-Z0-9_-]{1,160}$/.test(quoteId)) {
     throw new HttpsError("invalid-argument", "Selecciona una cotización válida.");
   }
@@ -449,11 +533,14 @@ async function prepareQuoteWhatsAppShareHandler(request, dependencies) {
     now: new Date(dependencies.now?.() || Date.now()),
     publicBaseUrl: resolvePublicBaseUrl(),
     quoteRef: businessRef.collection("cotizaciones").doc(quoteId),
+    requestId,
     Timestamp,
+    uid,
   });
   return {
     publicUrl: created.publicUrl,
     expiresAt: created.expiresAt.toISOString(),
+    requestId,
   };
 }
 
@@ -462,7 +549,7 @@ async function markQuoteEmittedManuallyHandler(request, dependencies) {
   if (!request?.auth?.uid) {
     throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
   }
-  const { businessId, businessRef } = await requireBusinessAccess(
+  const {businessId, businessRef, uid} = await requireBusinessAccess(
     request,
     dependencies,
     { roles: ["OWNER", "ADMIN"] }
@@ -473,6 +560,7 @@ async function markQuoteEmittedManuallyHandler(request, dependencies) {
   }
 
   const quoteRef = businessRef.collection("cotizaciones").doc(quoteId);
+  const eventRef = quoteRef.collection("eventos").doc();
   const emissionNow = new Date(dependencies.now?.() || Date.now());
   let quoteStatus = null;
   await businessRef.firestore.runTransaction(async (transaction) => {
@@ -484,18 +572,21 @@ async function markQuoteEmittedManuallyHandler(request, dependencies) {
     if (quote.negocioId && quote.negocioId !== businessId) {
       throw new HttpsError("permission-denied", "No puedes emitir esta cotización.");
     }
-    const canRestoreArchivedEmission =
-      quote.estado === "archivada" && quote.estadoAnterior === "emitida";
-    if (
-      !["borrador", "emitida", "aceptada", "rechazada", "vencida"].includes(
-        quote.estado
-      ) &&
-      !canRestoreArchivedEmission
-    ) {
+    if (!["borrador", "emitida"].includes(quote.estado)) {
       throw new HttpsError(
         "failed-precondition",
         "La cotización no puede marcarse como emitida desde su estado actual."
       );
+    }
+
+    if (quote.estado === "emitida") {
+      quoteStatus = {
+        estado: "emitida",
+        canalEmision: quote.canalEmision || "",
+        fechaEmision: quote.fechaEmision || null,
+        fechaVencimiento: quote.fechaVencimiento || calculateQuoteExpiryDate(quote),
+      };
+      return;
     }
 
     const hasPriorEmission = getTimestampMillis(quote.fechaEmision) > 0;
@@ -512,6 +603,17 @@ async function markQuoteEmittedManuallyHandler(request, dependencies) {
       ...emissionPatch,
       actualizadoEn: FieldValue.serverTimestamp(),
     });
+    transaction.create(eventRef, buildQuoteEvent({
+      businessId,
+      eventType: "estado_cambiado",
+      FieldValue,
+      medium: "manual",
+      quoteId,
+      requestId: `legacy-manual-${eventRef.id}`,
+      resultingStatus: "emitida",
+      previousStatus: quote.estado,
+      uid,
+    }));
     quoteStatus = {
       estado: "emitida",
       canalEmision: emissionPatch.canalEmision || quote.canalEmision || "",
@@ -526,6 +628,189 @@ async function markQuoteEmittedManuallyHandler(request, dependencies) {
   return { success: true, quoteStatus };
 }
 
+async function reopenQuoteHandler(request, dependencies) {
+  const {
+    db,
+    FieldValue,
+    getPublicBaseUrl: resolvePublicBaseUrl,
+    HttpsError,
+    requireBusinessAccess,
+    Timestamp,
+  } = dependencies;
+  if (!request?.auth?.uid) {
+    throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
+  }
+  const {businessId, businessRef, uid} = await requireBusinessAccess(
+    request,
+    dependencies,
+    {roles: ["OWNER", "ADMIN"]}
+  );
+  const quoteId = safeText(request?.data?.quoteId, 160);
+  const requestId = normalizeLifecycleRequestId(
+    request?.data?.requestId,
+    HttpsError
+  );
+  if (!/^[A-Za-z0-9_-]{1,160}$/.test(quoteId)) {
+    throw new HttpsError("invalid-argument", "Selecciona una cotización válida.");
+  }
+
+  const tokenMaterial = createPublicTokenMaterial();
+  const publicUrl = `${resolvePublicBaseUrl().replace(/\/+$/, "")}/propuesta/${tokenMaterial.rawToken}`;
+  const quoteRef = businessRef.collection("cotizaciones").doc(quoteId);
+  const requestRef = businessRef.collection("quoteLifecycleRequests").doc(requestId);
+  const tokenRef = db.collection(PUBLIC_TOKEN_COLLECTION).doc(tokenMaterial.tokenHash);
+  const eventRef = quoteEventRef(quoteRef, `reapertura__${requestId}`);
+  const reopenNow = new Date(dependencies.now?.() || Date.now());
+  let result;
+
+  await db.runTransaction(async (transaction) => {
+    const [previousRequest, quoteSnapshot] = await Promise.all([
+      transaction.get(requestRef),
+      transaction.get(quoteRef),
+    ]);
+    if (previousRequest.exists) {
+      const stored = previousRequest.data() || {};
+      if (
+        stored.cotizacionId !== quoteId ||
+        stored.accion !== "reabrir" ||
+        stored.uidUsuario !== uid
+      ) {
+        throw new HttpsError(
+          "already-exists",
+          "El requestId ya fue utilizado para otra operación."
+        );
+      }
+      result = {...(stored.resultado || {}), idempotent: true};
+      return;
+    }
+    if (!quoteSnapshot.exists) {
+      throw new HttpsError("not-found", "No se encontró la cotización.");
+    }
+    const quote = quoteSnapshot.data() || {};
+    if (quote.negocioId && quote.negocioId !== businessId) {
+      throw new HttpsError("permission-denied", "No puedes reabrir esta cotización.");
+    }
+    if (!["aceptada", "rechazada", "vencida"].includes(quote.estado)) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Sólo una cotización aceptada, rechazada o vencida puede reabrirse."
+      );
+    }
+    if (safeText(quote.ventaId, 160)) {
+      throw new HttpsError(
+        "failed-precondition",
+        "La cotización ya originó una venta y no puede reabrirse."
+      );
+    }
+    const previousStatus = quote.estado;
+    const previousVersion = quoteOpportunityVersion(quote);
+    const nextVersion = previousVersion + 1;
+    const fechaVencimiento = calculateEmissionExpiryDate(quote, reopenNow);
+    if (!fechaVencimiento) {
+      throw new HttpsError(
+        "failed-precondition",
+        "La cotización no tiene una vigencia válida."
+      );
+    }
+    const expiryAt = quoteExpiryInstant({
+      ...quote,
+      oportunidadVersion: nextVersion,
+      fechaVencimiento,
+    });
+
+    if (quote.respuestaCliente) {
+      const legacyResponseRef = quoteEventRef(
+        quoteRef,
+        `respuesta_legacy__${previousVersion}`
+      );
+      const previousResponseEvent = await transaction.get(legacyResponseRef);
+      if (!previousResponseEvent.exists) {
+        transaction.create(legacyResponseRef, buildQuoteEvent({
+          businessId,
+          eventType: "respuesta_cliente",
+          FieldValue,
+          medium: quote.respuestaClienteOrigen || "legacy",
+          quoteId,
+          requestId: `legacy-${previousVersion}`,
+          resultingStatus: quote.respuestaCliente,
+          previousStatus: "emitida",
+          details: {
+            respuesta: safeText(quote.respuestaCliente, 30),
+            motivo: safeText(quote.motivoRechazoCliente, 40),
+            comentario: safeText(quote.comentarioRechazoCliente, 500),
+            fechaRespuesta: quote.respuestaClienteEn || null,
+            oportunidadVersion: previousVersion,
+            importadoDesdeLegacy: true,
+          },
+        }));
+      }
+    }
+
+    transaction.create(tokenRef, {
+      negocioId: businessId,
+      cotizacionId: quoteId,
+      canalOrigen: "reapertura",
+      creadoEn: FieldValue.serverTimestamp(),
+      expiraEn: Timestamp.fromDate(expiryAt),
+      estado: "active",
+      respondidoEn: null,
+      respuesta: null,
+      respuestaHabilitada: true,
+      oportunidadVersion: nextVersion,
+      primeraAperturaEn: null,
+      ultimaAperturaEn: null,
+      aperturas: 0,
+    });
+    transaction.update(quoteRef, {
+      estado: "emitida",
+      estadoAnterior: previousStatus,
+      oportunidadVersion: nextVersion,
+      fechaReapertura: FieldValue.serverTimestamp(),
+      fechaVencimiento,
+      reabiertaEn: FieldValue.serverTimestamp(),
+      reabiertaPorUid: uid,
+      tokenPublicoHash: tokenMaterial.tokenHash,
+      propuestaPublicaCreadaEn: FieldValue.serverTimestamp(),
+      propuestaPublicaExpiraEn: Timestamp.fromDate(expiryAt),
+      actualizadoEn: FieldValue.serverTimestamp(),
+    });
+    transaction.create(eventRef, buildQuoteEvent({
+      businessId,
+      eventType: "cotizacion_reabierta",
+      FieldValue,
+      medium: "manual",
+      quoteId,
+      requestId,
+      resultingStatus: "emitida",
+      previousStatus,
+      uid,
+      details: {
+        oportunidadVersionAnterior: previousVersion,
+        oportunidadVersion: nextVersion,
+        fechaVencimiento,
+      },
+    }));
+    result = {
+      estado: "emitida",
+      estadoAnterior: previousStatus,
+      oportunidadVersion: nextVersion,
+      fechaVencimiento,
+      publicUrl,
+      expiresAt: expiryAt.toISOString(),
+      idempotent: false,
+    };
+    transaction.create(requestRef, {
+      negocioId: businessId,
+      cotizacionId: quoteId,
+      accion: "reabrir",
+      uidUsuario: uid,
+      resultado: result,
+      creadoEn: FieldValue.serverTimestamp(),
+    });
+  });
+  return {success: true, quoteStatus: result};
+}
+
 async function confirmQuoteWhatsAppSentHandler(request, dependencies) {
   const { FieldValue, HttpsError, requireBusinessAccess, Timestamp } = dependencies;
   if (!request?.auth?.uid) {
@@ -537,14 +822,22 @@ async function confirmQuoteWhatsAppSentHandler(request, dependencies) {
     { roles: ["OWNER", "ADMIN"] }
   );
   const quoteId = safeText(request?.data?.quoteId, 160);
+  const requestId = normalizeLifecycleRequestId(
+    request?.data?.requestId,
+    HttpsError
+  );
   if (!/^[a-zA-Z0-9_-]{1,160}$/.test(quoteId)) {
     throw new HttpsError("invalid-argument", "Selecciona una cotización válida.");
   }
   const quoteRef = businessRef.collection("cotizaciones").doc(quoteId);
+  const eventRef = quoteEventRef(quoteRef, `reenvio_whatsapp__${requestId}`);
   const confirmationNow = new Date(dependencies.now?.() || Date.now());
   let quoteStatus = null;
   await businessRef.firestore.runTransaction(async (transaction) => {
-    const snapshot = await transaction.get(quoteRef);
+    const [snapshot, previousEvent] = await Promise.all([
+      transaction.get(quoteRef),
+      transaction.get(eventRef),
+    ]);
     if (!snapshot.exists) {
       throw new HttpsError("not-found", "No se encontró la cotización.");
     }
@@ -552,17 +845,32 @@ async function confirmQuoteWhatsAppSentHandler(request, dependencies) {
     if (quote.negocioId && quote.negocioId !== businessId) {
       throw new HttpsError("permission-denied", "No puedes compartir esta cotización.");
     }
-    if (!["borrador", "emitida"].includes(quote.estado)) {
+    if (!["borrador", "emitida", "aceptada", "rechazada", "vencida"].includes(
+      quote.estado
+    )) {
       throw new HttpsError(
         "failed-precondition",
         "La cotización ya no admite un nuevo envío."
       );
     }
-    if (!quote.whatsappPreparadoEn) {
+    if (!quote.whatsappPreparadoEn || quote.tokenWhatsappHash === "") {
       throw new HttpsError(
         "failed-precondition",
         "Prepara el enlace público antes de registrar el envío."
       );
+    }
+    if (previousEvent.exists) {
+      if ((previousEvent.data() || {}).uidUsuario !== uid) {
+        throw new HttpsError(
+          "already-exists",
+          "El requestId ya fue utilizado para otro envío."
+        );
+      }
+      quoteStatus = {
+        estado: quote.estado,
+        idempotent: true,
+      };
+      return;
     }
     const emissionPatch = quote.estado === "borrador"
       ? buildQuoteEmissionPatch({
@@ -574,7 +882,7 @@ async function confirmQuoteWhatsAppSentHandler(request, dependencies) {
         })
       : {};
     quoteStatus = {
-      estado: "emitida",
+      estado: quote.estado === "borrador" ? "emitida" : quote.estado,
       canalEmision: emissionPatch.canalEmision || quote.canalEmision || "whatsapp",
       fechaEmision: quote.estado === "borrador"
         ? confirmationNow.toISOString()
@@ -588,6 +896,29 @@ async function confirmQuoteWhatsAppSentHandler(request, dependencies) {
       envioWhatsappConfirmadoPorUid: uid,
       actualizadoEn: FieldValue.serverTimestamp(),
     });
+    transaction.create(eventRef, buildQuoteEvent({
+      businessId,
+      eventType: quote.estado === "borrador"
+        ? "cotizacion_enviada"
+        : "cotizacion_reenviada",
+      FieldValue,
+      medium: "whatsapp",
+      quoteId,
+      requestId,
+      resultingStatus: quoteStatus.estado,
+      previousStatus: quote.estado,
+      recipient: safeText(
+        quote.cliente?.telefono ||
+        quote.clienteSnapshot?.telefono ||
+        quote.clienteTelefono ||
+        quote.cliente?.email ||
+        quote.clienteSnapshot?.email ||
+        quote.clienteNombre ||
+        "cliente de la cotización",
+        100
+      ),
+      uid,
+    }));
 
     const tokenHash = safeText(quote.tokenWhatsappHash, 64);
     if (PUBLIC_TOKEN_HASH_PATTERN.test(tokenHash) && emissionPatch.fechaVencimiento) {
@@ -630,17 +961,20 @@ async function getPublicQuoteProposalHandler(request, dependencies) {
     if (!validateStoredTokenLink(tokenData, quote, tokenHash)) return null;
 
     const expiryMillis = effectiveQuoteExpiryMillis(quote, tokenData);
+    const responseEnabled = tokenData.respuestaHabilitada !== false;
     const expired =
       tokenData.estado === "expired" ||
       (
       tokenData.estado === "active" &&
-      !quote.respuestaCliente &&
+      responseEnabled &&
+      !quoteHasActiveResponse(quote) &&
       expiryMillis > 0 &&
       expiryMillis <= now.getTime()
       );
     const channel = safeText(tokenData.canalOrigen || tokenData.canal, 30);
     const emitsFromWhatsAppOpening =
       !expired &&
+      responseEnabled &&
       tokenData.estado === "active" &&
       quote.estado === "borrador" &&
       channel === "whatsapp";
@@ -703,13 +1037,43 @@ async function getPublicQuoteProposalHandler(request, dependencies) {
         ? {}
         : { propuestaPublicaVistaEn: FieldValue.serverTimestamp() }),
     };
-    if (expired && quote.estado === "emitida" && !quote.respuestaCliente) {
+    if (expired && quote.estado === "emitida" && !quoteHasActiveResponse(quote)) {
       Object.assign(quotePatch, {
         estado: "vencida",
         vencidaEn: FieldValue.serverTimestamp(),
         vencidaAutomaticamente: true,
         actualizadoEn: FieldValue.serverTimestamp(),
       });
+      transaction.create(
+        quoteEventRef(quoteRef, `vencimiento__${tokenHash}`),
+        buildQuoteEvent({
+          businessId,
+          eventType: "estado_cambiado",
+          FieldValue,
+          medium: "sistema",
+          quoteId,
+          requestId: `token-${tokenHash}`,
+          resultingStatus: "vencida",
+          previousStatus: "emitida",
+          details: {automatico: true},
+        })
+      );
+    }
+    if (emitsFromWhatsAppOpening) {
+      transaction.create(
+        quoteEventRef(quoteRef, `emision__${tokenHash}`),
+        buildQuoteEvent({
+          businessId,
+          eventType: "estado_cambiado",
+          FieldValue,
+          medium: "whatsapp",
+          quoteId,
+          requestId: `token-${tokenHash}`,
+          resultingStatus: "emitida",
+          previousStatus: "borrador",
+          details: {detectadoPor: "apertura_cliente"},
+        })
+      );
     }
     transaction.update(quoteRef, quotePatch);
     return sanitizePublicQuote(proposalQuote, { effectiveStatus });
@@ -759,6 +1123,11 @@ function evaluatePublicResponse({ action, nowMs, quote, tokenData }) {
       ? { outcome: "idempotent", quoteStatus: requestedQuoteStatus }
       : { outcome: "conflict" };
   }
+  if (tokenData.respuestaHabilitada === false) return { outcome: "unavailable" };
+  const tokenVersion = Number(tokenData.oportunidadVersion) || 1;
+  if (tokenVersion !== quoteOpportunityVersion(quote)) {
+    return { outcome: "unavailable" };
+  }
   if (effectiveQuoteExpiryMillis(quote, tokenData) <= nowMs) {
     return { outcome: "expired" };
   }
@@ -776,7 +1145,7 @@ function evaluatePublicResponse({ action, nowMs, quote, tokenData }) {
       requiresWhatsAppEmission: true,
     };
   }
-  if (quote.estado !== "emitida" || quote.respuestaCliente) {
+  if (quote.estado !== "emitida" || quoteHasActiveResponse(quote)) {
     return { outcome: "unavailable" };
   }
   return { outcome: "apply", quoteStatus: requestedQuoteStatus, response: requestedResponse };
@@ -819,13 +1188,27 @@ async function respondPublicQuoteProposalHandler(request, dependencies) {
         estado: "expired",
         expiradoEn: FieldValue.serverTimestamp(),
       }, { merge: true });
-      if (quote.estado === "emitida" && !quote.respuestaCliente) {
+      if (quote.estado === "emitida" && !quoteHasActiveResponse(quote)) {
         transaction.update(quoteRef, {
           estado: "vencida",
           vencidaEn: FieldValue.serverTimestamp(),
           vencidaAutomaticamente: true,
           actualizadoEn: FieldValue.serverTimestamp(),
         });
+        transaction.create(
+          quoteEventRef(quoteRef, `vencimiento__${tokenHash}`),
+          buildQuoteEvent({
+            businessId,
+            eventType: "estado_cambiado",
+            FieldValue,
+            medium: "sistema",
+            quoteId,
+            requestId: `token-${tokenHash}`,
+            resultingStatus: "vencida",
+            previousStatus: "emitida",
+            details: {automatico: true},
+          })
+        );
       }
       return decision;
     }
@@ -854,6 +1237,7 @@ async function respondPublicQuoteProposalHandler(request, dependencies) {
       respuestaCliente: decision.quoteStatus,
       respuestaClienteEn: FieldValue.serverTimestamp(),
       respuestaClienteOrigen: "portal_publico",
+      respuestaOportunidadVersion: quoteOpportunityVersion(quote),
       ...(decision.requiresWhatsAppEmission
         ? {
             ultimaVistaPropuestaPublicaEn: FieldValue.serverTimestamp(),
@@ -867,8 +1251,30 @@ async function respondPublicQuoteProposalHandler(request, dependencies) {
     if (input.action === "reject") {
       quotePatch.motivoRechazoCliente = input.reason;
       quotePatch.comentarioRechazoCliente = input.comment;
+    } else {
+      quotePatch.motivoRechazoCliente = "";
+      quotePatch.comentarioRechazoCliente = "";
     }
     transaction.update(quoteRef, quotePatch);
+    transaction.create(
+      quoteEventRef(quoteRef, `respuesta_publica__${tokenHash}`),
+      buildQuoteEvent({
+        businessId,
+        eventType: "respuesta_cliente",
+        FieldValue,
+        medium: "portal_publico",
+        quoteId,
+        requestId: `token-${tokenHash}`,
+        resultingStatus: decision.quoteStatus,
+        previousStatus: quote.estado,
+        details: {
+          respuesta: decision.quoteStatus,
+          motivo: input.reason,
+          comentario: input.comment,
+          oportunidadVersion: quoteOpportunityVersion(quote),
+        },
+      })
+    );
     const tokenPatch = {
       estado: "responded",
       respuesta: decision.response,
@@ -909,6 +1315,14 @@ function evaluateExpiration({ nowMs, quote, tokenData }) {
   if (tokenData.estado !== "active") {
     return { outcome: "skip" };
   }
+  if (tokenData.respuestaHabilitada === false) {
+    return effectiveQuoteExpiryMillis(quote, tokenData) <= nowMs
+      ? {outcome: "preserve_quote", tokenStatus: "expired", response: null}
+      : {outcome: "skip"};
+  }
+  if ((Number(tokenData.oportunidadVersion) || 1) !== quoteOpportunityVersion(quote)) {
+    return {outcome: "preserve_quote", tokenStatus: "expired", response: null};
+  }
   const expiryMs = effectiveQuoteExpiryMillis(quote, tokenData);
   const storedExpiryMs = getTimestampMillis(tokenData.expiraEn);
   if (
@@ -919,7 +1333,7 @@ function evaluateExpiration({ nowMs, quote, tokenData }) {
     return { outcome: "reschedule", expiresAtMs: expiryMs };
   }
   if (!expiryMs || expiryMs > nowMs) return { outcome: "skip" };
-  if (quote.estado === "emitida" && !quote.respuestaCliente) {
+  if (quote.estado === "emitida" && !quoteHasActiveResponse(quote)) {
     return { outcome: "expire_quote", tokenStatus: "expired" };
   }
   if (quote.estado === "aceptada") {
@@ -983,6 +1397,20 @@ async function expireOnePublicQuoteProposal(tokenSnapshot, dependencies, now) {
         vencidaAutomaticamente: true,
         actualizadoEn: FieldValue.serverTimestamp(),
       });
+      transaction.create(
+        quoteEventRef(quoteRef, `vencimiento__${tokenRef.id}`),
+        buildQuoteEvent({
+          businessId,
+          eventType: "estado_cambiado",
+          FieldValue,
+          medium: "sistema",
+          quoteId,
+          requestId: `token-${tokenRef.id}`,
+          resultingStatus: "vencida",
+          previousStatus: "emitida",
+          details: {automatico: true},
+        })
+      );
     }
     return decision.outcome;
   });
@@ -1035,6 +1463,7 @@ module.exports = {
   confirmQuoteWhatsAppSentHandler,
   prepareQuoteWhatsAppShareHandler,
   quoteExpiryInstant,
+  reopenQuoteHandler,
   respondPublicQuoteProposalHandler,
   sanitizePublicQuote,
   validateAndHashPublicToken,

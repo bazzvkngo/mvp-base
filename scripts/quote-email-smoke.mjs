@@ -30,6 +30,7 @@ const request = {
     emailCliente: "cliente@example.com",
     asunto: "Cotización COT-2026-0001 | Empresa Demo",
     mensaje: "Hola cliente",
+    requestId: "quote-email-request-0001",
     pdfBase64: "JVBERi0xLjQ=",
     pdfFilename: "COT-2026-0001.pdf",
     pdfMimeType: "application/pdf",
@@ -78,7 +79,14 @@ function baseDependencies(overrides = {}, storedQuote = validQuote) {
   const attemptRef = {
     set: async (patch) => attemptUpdates.push(patch),
   };
-  const calls = { provider: [], roles: [], html: [], text: [], tokens: [] };
+  const calls = {
+    deliveries: [],
+    provider: [],
+    roles: [],
+    html: [],
+    text: [],
+    tokens: [],
+  };
   return {
     dependencies: {
       FieldValue,
@@ -128,9 +136,13 @@ function baseDependencies(overrides = {}, storedQuote = validQuote) {
       },
       reserveQuoteEmailAttempt: async () => ({
         attemptRef,
+        eventRef: {},
         quote: storedQuote,
         quoteRef,
       }),
+      recordQuoteEmailDelivery: async (payload) => {
+        calls.deliveries.push(payload);
+      },
       safeText: (value, maxLength) =>
         String(value || "").trim().slice(0, maxLength),
       sendQuoteEmailWithProvider: async (payload) => {
@@ -184,10 +196,12 @@ function baseDependencies(overrides = {}, storedQuote = validQuote) {
   assert.equal("cc" in calls.provider[0], false);
   assert.equal("bcc" in calls.provider[0], false);
   assert.equal(quoteUpdates.at(-1).estadoEnvioCorreo, "enviado");
-  assert.equal(quoteUpdates.at(-1).estado, "emitida");
+  assert.equal("estado" in quoteUpdates.at(-1), false);
   assert.equal("canalEmision" in quoteUpdates.at(-1), false);
   assert.equal("fechaEmision" in quoteUpdates.at(-1), false);
   assert.equal(attemptUpdates.at(-1).estado, "enviado");
+  assert.equal(calls.deliveries.length, 1);
+  assert.equal(calls.deliveries[0].quote.estado, "emitida");
 }
 
 {
@@ -199,6 +213,34 @@ function baseDependencies(overrides = {}, storedQuote = validQuote) {
   assert.equal(quoteUpdates.at(-1).estado, "emitida");
   assert.equal(quoteUpdates.at(-1).canalEmision, "correo");
   assert.equal(quoteUpdates.at(-1).fechaVencimiento, "1970-01-11");
+}
+
+{
+  const rejectedQuote = {...validQuote, estado: "rechazada"};
+  const {dependencies, calls, quoteUpdates} = baseDependencies(
+    {},
+    rejectedQuote
+  );
+  const result = await sendQuoteEmailHandler(request, dependencies);
+  assert.equal(result.success, true);
+  assert.equal(result.quoteEmailStatus.estado, "rechazada");
+  assert.equal("estado" in quoteUpdates.at(-1), false);
+  assert.equal(calls.deliveries.length, 1);
+  assert.equal(calls.deliveries[0].quote.estado, "rechazada");
+}
+
+{
+  const {dependencies, calls} = baseDependencies({
+    reserveQuoteEmailAttempt: async () => ({
+      idempotent: true,
+      quote: validQuote,
+    }),
+  });
+  const result = await sendQuoteEmailHandler(request, dependencies);
+  assert.equal(result.idempotent, true);
+  assert.equal(result.quoteEmailStatus.estado, "emitida");
+  assert.equal(calls.provider.length, 0);
+  assert.equal(calls.deliveries.length, 0);
 }
 
 {
@@ -329,7 +371,21 @@ assert.equal(
   "cliente@example.com"
 );
 
-for (const estado of ["aceptada", "rechazada", "vencida", "archivada"]) {
+for (const estado of ["aceptada", "rechazada", "vencida"]) {
+  assert.equal(
+    validateStoredQuoteForEmail(
+      {...validQuote, estado},
+      {
+        businessId: "business-1",
+        emailCliente: "cliente@example.com",
+        HttpsError: TestHttpsError,
+      }
+    ).emailClienteDestino,
+    "cliente@example.com"
+  );
+}
+
+for (const estado of ["archivada"]) {
   assert.throws(
     () =>
       validateStoredQuoteForEmail(

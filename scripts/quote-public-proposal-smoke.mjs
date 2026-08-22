@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const {
+  buildQuoteEmissionPatch,
   createPublicQuoteToken,
   confirmQuoteWhatsAppSentHandler,
   calculateEmissionExpiryDate,
@@ -14,9 +15,13 @@ const {
   hashPublicToken,
   markQuoteEmittedManuallyHandler,
   prepareQuoteWhatsAppShareHandler,
+  reopenQuoteHandler,
   respondPublicQuoteProposalHandler,
   sanitizePublicQuote,
 } = require("../functions/quotePublicProposal.js");
+const {
+  transitionQuoteStatusHandler,
+} = require("../functions/quoteLifecycle.js");
 
 class TestHttpsError extends Error {
   constructor(code, message) {
@@ -305,14 +310,20 @@ async function createProposalFixture(overrides = {}, { channel = "" } = {}) {
     Timestamp,
   };
   const prepared = await prepareQuoteWhatsAppShareHandler(
-    { auth: { uid: "owner-1" }, data: { quoteId: "quote-1" } },
+    {
+      auth: {uid: "owner-1"},
+      data: {quoteId: "quote-1", requestId: "whatsapp-request-0001"},
+    },
     dependencies
   );
   assert.match(prepared.publicUrl, /\/propuesta\//);
   assert.equal(db.read(quotePath).estado, "borrador");
 
   const shared = await confirmQuoteWhatsAppSentHandler(
-    { auth: { uid: "owner-1" }, data: { quoteId: "quote-1" } },
+    {
+      auth: {uid: "owner-1"},
+      data: {quoteId: "quote-1", requestId: "whatsapp-request-0001"},
+    },
     dependencies
   );
   assert.deepEqual(roles, [["OWNER", "ADMIN"], ["OWNER", "ADMIN"]]);
@@ -356,9 +367,12 @@ async function createProposalFixture(overrides = {}, { channel = "" } = {}) {
     estado: "archivada",
     estadoAnterior: "emitida",
   });
-  await markQuoteEmittedManuallyHandler(
-    { auth: { uid: "owner-1" }, data: { quoteId: "quote-1" } },
-    dependencies
+  await assert.rejects(
+    markQuoteEmittedManuallyHandler(
+      {auth: {uid: "owner-1"}, data: {quoteId: "quote-1"}},
+      dependencies
+    ),
+    (error) => error.code === "failed-precondition"
   );
   assert.deepEqual(db.read(quotePath).fechaEmision, originalEmission);
 
@@ -611,6 +625,164 @@ assert.equal(
   "skip"
 );
 
+{
+  const quotePath = "negocios/business-1/cotizaciones/quote-reopen";
+  const db = createFakeDb([[quotePath, quoteFixture({
+    estado: "rechazada",
+    respuestaCliente: "rechazada",
+    respuestaClienteOrigen: "portal_publico",
+    motivoRechazoCliente: "precio",
+    comentarioRechazoCliente: "Respuesta anterior",
+  })]]);
+  const businessRef = db.collection("negocios").doc("business-1");
+  const dependencies = {
+    db,
+    FieldValue,
+    getPublicBaseUrl: () => "http://localhost:5173",
+    HttpsError: TestHttpsError,
+    now: () => now.getTime(),
+    requireBusinessAccess: async () => ({
+      businessId: "business-1",
+      businessRef,
+      uid: "owner-1",
+    }),
+    Timestamp,
+  };
+  const reopenRequest = {
+    auth: {uid: "owner-1"},
+    data: {
+      quoteId: "quote-reopen",
+      requestId: "quote-reopen-request-0001",
+    },
+  };
+  const reopened = await reopenQuoteHandler(reopenRequest, dependencies);
+  assert.equal(reopened.quoteStatus.estado, "emitida");
+  assert.equal(db.read(quotePath).oportunidadVersion, 2);
+  assert.equal(db.read(quotePath).respuestaCliente, "rechazada");
+  assert.ok(db.read(`${quotePath}/eventos/respuesta_legacy__1`));
+  assert.ok(db.read(
+    `${quotePath}/eventos/reapertura__quote-reopen-request-0001`
+  ));
+
+  const retry = await reopenQuoteHandler(reopenRequest, dependencies);
+  assert.equal(retry.quoteStatus.idempotent, true);
+  const publicToken = reopened.quoteStatus.publicUrl.split("/").at(-1);
+  const accepted = await respondPublicQuoteProposalHandler(
+    {data: {token: publicToken, action: "accept"}},
+    {db, FieldValue, HttpsError: TestHttpsError, now: () => now.getTime()}
+  );
+  assert.equal(accepted.estado, "aceptada");
+  assert.equal(db.read(quotePath).respuestaOportunidadVersion, 2);
+  assert.equal(
+    [...db.store.keys()].filter((path) =>
+      path.startsWith(`${quotePath}/eventos/respuesta_`)
+    ).length,
+    2
+  );
+}
+
+{
+  const quotePath = "negocios/business-1/cotizaciones/quote-with-sale";
+  const db = createFakeDb([[quotePath, quoteFixture({
+    estado: "aceptada",
+    ventaId: "sale-1",
+  })]]);
+  const businessRef = db.collection("negocios").doc("business-1");
+  await assert.rejects(
+    reopenQuoteHandler(
+      {
+        auth: {uid: "owner-1"},
+        data: {
+          quoteId: "quote-with-sale",
+          requestId: "quote-reopen-with-sale-0001",
+        },
+      },
+      {
+        db,
+        FieldValue,
+        getPublicBaseUrl: () => "http://localhost:5173",
+        HttpsError: TestHttpsError,
+        now: () => now.getTime(),
+        requireBusinessAccess: async () => ({
+          businessId: "business-1",
+          businessRef,
+          uid: "owner-1",
+        }),
+        Timestamp,
+      }
+    ),
+    (error) => error.code === "failed-precondition" && /venta/i.test(error.message)
+  );
+  assert.equal(db.read(quotePath).estado, "aceptada");
+}
+
+{
+  const quotePath = "negocios/business-1/cotizaciones/quote-copy";
+  const db = createFakeDb([[quotePath, quoteFixture({estado: "rechazada"})]]);
+  const quoteRef = db.collection("negocios").doc("business-1")
+    .collection("cotizaciones").doc("quote-copy");
+  const copy = await createPublicQuoteToken({
+    businessId: "business-1",
+    channel: "correo",
+    db,
+    FieldValue,
+    HttpsError: TestHttpsError,
+    now,
+    publicBaseUrl: "http://localhost:5173",
+    quoteRef,
+    Timestamp,
+  });
+  const copyToken = copy.publicUrl.split("/").at(-1);
+  const proposal = await getPublicQuoteProposalHandler(
+    {data: {token: copyToken}},
+    {db, FieldValue, HttpsError: TestHttpsError, now: () => now.getTime()}
+  );
+  assert.equal(proposal.proposal.estado, "rechazada");
+  await assert.rejects(
+    respondPublicQuoteProposalHandler(
+      {data: {token: copyToken, action: "accept"}},
+      {db, FieldValue, HttpsError: TestHttpsError, now: () => now.getTime()}
+    ),
+    (error) => error.code === "failed-precondition"
+  );
+  assert.equal(db.read(quotePath).estado, "rechazada");
+}
+
+{
+  const quotePath = "negocios/business-1/cotizaciones/quote-transition";
+  const db = createFakeDb([[quotePath, quoteFixture()]]);
+  const businessRef = db.collection("negocios").doc("business-1");
+  const transitionRequest = {
+    auth: {uid: "owner-1"},
+    data: {
+      quoteId: "quote-transition",
+      estado: "rechazada",
+      requestId: "quote-status-request-0001",
+    },
+  };
+  const dependencies = {
+    buildQuoteEmissionPatch,
+    FieldValue,
+    HttpsError: TestHttpsError,
+    now: () => now.getTime(),
+    requireBusinessAccess: async () => ({
+      businessId: "business-1",
+      businessRef,
+      uid: "owner-1",
+    }),
+  };
+  await transitionQuoteStatusHandler(transitionRequest, dependencies);
+  const retry = await transitionQuoteStatusHandler(transitionRequest, dependencies);
+  assert.equal(retry.quoteStatus.idempotent, true);
+  assert.equal(db.read(quotePath).estado, "rechazada");
+  assert.equal(
+    [...db.store.keys()].filter((path) =>
+      path.startsWith(`${quotePath}/eventos/estado__`)
+    ).length,
+    1
+  );
+}
+
 const sanitized = sanitizePublicQuote(quoteFixture());
 assert.equal(sanitized.total, 1190);
 assert.equal(sanitized.items[0].precioUnitarioEditable, 1000);
@@ -651,7 +823,7 @@ assert.doesNotMatch(shareFlowSource, /confirmQuoteWhatsAppSent/);
 assert.match(historySource, /¿Enviaste la cotización\?/);
 assert.match(historySource, /Mantener pendiente/);
 assert.match(historySource, /Sí, fue enviada/);
-assert.match(historySource, /title: "Cotización emitida"/);
+assert.match(historySource, /title: "Envío por WhatsApp registrado"/);
 assert.match(historySource, /error\?\.name !== "AbortError"/);
 assert.match(historySource, /\{canSendByEmail && \([\s\S]*runPdfAction\("whatsapp"\)/);
 assert.match(publicPageSource, /Propuesta preparada por/);
@@ -670,12 +842,8 @@ assert.ok(
     publicPageSource.indexOf('<section className="public-proposal__document">'),
   "La respuesta pública debe aparecer después del documento completo"
 );
-assert.match(quoteServiceSource, /"markQuoteEmittedManually"/);
-const manualEmissionClientSource = quoteServiceSource.slice(
-  quoteServiceSource.indexOf('if \(estado === "emitida"\)'.replace("\\", "")),
-  quoteServiceSource.indexOf('assertClientWriteAllowed("cambiar el estado')
-);
-assert.doesNotMatch(manualEmissionClientSource, /updateDoc|serverTimestamp/);
+assert.match(quoteServiceSource, /"transitionQuoteStatus"/);
+assert.doesNotMatch(quoteServiceSource, /assertClientWriteAllowed/);
 
 console.log(
   "QUOTE_PUBLIC_PROPOSAL_SMOKE_OK confirmación WhatsApp, apertura cliente, tokens múltiples, respuestas y vigencia"

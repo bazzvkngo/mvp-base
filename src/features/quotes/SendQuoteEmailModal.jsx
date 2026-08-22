@@ -7,6 +7,7 @@ import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import { firebaseEnvironment } from "../../config/firebaseEnvironment.mjs";
 import {
   buildDefaultQuoteEmail,
+  createQuoteEmailRequestId,
   isQuoteEmailSendable,
   isValidEmail,
   sendQuoteEmail,
@@ -55,6 +56,7 @@ function SendQuoteEmailModal({
   const pdfFileName = useMemo(() => getQuotePdfFileName(quote), [quote]);
   const emailInputRef = useRef(null);
   const submittingRef = useRef(false);
+  const requestIdRef = useRef("");
   const [emailCliente, setEmailCliente] = useState(defaults.emailCliente);
   const [usingAlternateEmail, setUsingAlternateEmail] = useState(false);
   const [asunto, setAsunto] = useState(defaults.asunto);
@@ -75,6 +77,7 @@ function SendQuoteEmailModal({
     setError("");
     setQaPublicUrl("");
     submittingRef.current = false;
+    requestIdRef.current = createQuoteEmailRequestId();
   }, [defaults, open, quoteId]);
 
   if (!quote) return null;
@@ -94,7 +97,7 @@ function SendQuoteEmailModal({
     if (!quoteId) {
       validationError = "Guarda la cotización antes de enviarla por correo.";
     } else if (!canSendQuote) {
-      validationError = "Sólo puedes enviar cotizaciones pendientes o emitidas.";
+      validationError = "La cotización no puede enviarse desde su estado actual.";
     } else if (!isValidEmail(emailCliente)) {
       validationError = "Ingresa un único correo de destino válido.";
     } else if (!asunto.trim()) {
@@ -129,6 +132,7 @@ function SendQuoteEmailModal({
           asunto,
           mensaje,
           pdfAttachment,
+          requestId: requestIdRef.current,
         });
         completedResult = result;
         if (!result.success) {

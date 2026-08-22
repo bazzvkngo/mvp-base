@@ -13,6 +13,13 @@ const REJECTION_REASONS = new Set([
   "no_indica",
 ]);
 
+export function createQuoteDeliveryRequestId(medium = "delivery") {
+  if (globalThis.crypto?.randomUUID) {
+    return `quote-${medium}-${globalThis.crypto.randomUUID()}`;
+  }
+  return `quote-${medium}-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
 function validateToken(token) {
   const normalized = String(token || "").trim();
   if (!PUBLIC_TOKEN_PATTERN.test(normalized)) {
@@ -90,7 +97,11 @@ export async function respondPublicQuoteProposal({
   }
 }
 
-export async function prepareQuoteWhatsAppShare(businessId, quoteId) {
+export async function prepareQuoteWhatsAppShare(
+  businessId,
+  quoteId,
+  {requestId} = {}
+) {
   assertCloudFunctionAllowed("preparar el enlace público de la cotización");
   if (!businessId || !quoteId) {
     throw new Error("Selecciona una cotización válida.");
@@ -100,12 +111,17 @@ export async function prepareQuoteWhatsAppShare(businessId, quoteId) {
       getFirebaseFunctions(FUNCTIONS_REGION),
       "prepareQuoteWhatsAppShare"
     );
-    const response = await callable({ businessId, quoteId });
+    const stableRequestId = requestId || createQuoteDeliveryRequestId("whatsapp");
+    const response = await callable({businessId, quoteId, requestId: stableRequestId});
     const publicUrl = String(response.data?.publicUrl || "");
     if (!/^https?:\/\//i.test(publicUrl)) {
       throw new Error("No se pudo preparar el enlace público.");
     }
-    return { publicUrl, expiresAt: response.data?.expiresAt || "" };
+    return {
+      publicUrl,
+      expiresAt: response.data?.expiresAt || "",
+      requestId: stableRequestId,
+    };
   } catch (error) {
     throw publicProposalError(
       error,
@@ -114,7 +130,7 @@ export async function prepareQuoteWhatsAppShare(businessId, quoteId) {
   }
 }
 
-export async function confirmQuoteWhatsAppSent(businessId, quoteId) {
+export async function confirmQuoteWhatsAppSent(businessId, quoteId, requestId) {
   assertCloudFunctionAllowed("confirmar el envío de la cotización por WhatsApp");
   if (!businessId || !quoteId) {
     throw new Error("Selecciona una cotización válida.");
@@ -124,7 +140,7 @@ export async function confirmQuoteWhatsAppSent(businessId, quoteId) {
       getFirebaseFunctions(FUNCTIONS_REGION),
       "confirmQuoteWhatsAppSent"
     );
-    const response = await callable({ businessId, quoteId });
+    const response = await callable({businessId, quoteId, requestId});
     return response.data?.quoteStatus || {};
   } catch (error) {
     throw publicProposalError(

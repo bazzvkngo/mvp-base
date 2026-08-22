@@ -8,6 +8,13 @@ import { DRAFT_QUOTE_NUMBER_LABEL, getQuoteDisplayNumber } from "./quoteService"
 
 const FUNCTIONS_REGION = "us-central1";
 
+export function createQuoteEmailRequestId() {
+  if (globalThis.crypto?.randomUUID) {
+    return `quote-email-${globalThis.crypto.randomUUID()}`;
+  }
+  return `quote-email-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
 export function isValidEmail(value) {
   if (typeof value !== "string" || value.length > 180) return false;
   if (/[\r\n,;]/.test(value)) return false;
@@ -65,7 +72,7 @@ export function buildDefaultQuoteEmail({ quote, companyProfile }) {
 
 export function isQuoteEmailSendable(quote, quoteId = quote?.id) {
   const quoteNumber = getQuoteDisplayNumber(quote, "");
-  const sendableStatuses = ["borrador", "emitida"];
+  const sendableStatuses = ["borrador", "emitida", "aceptada", "rechazada", "vencida"];
 
   return Boolean(
     quoteId &&
@@ -83,6 +90,7 @@ export async function sendQuoteEmail({
   asunto,
   mensaje,
   pdfAttachment,
+  requestId,
 }) {
   assertCloudFunctionAllowed("el envío de cotizaciones por correo");
   if (!quoteId) {
@@ -122,10 +130,12 @@ export async function sendQuoteEmail({
     pdfBase64,
     pdfFilename: pdfAttachment?.fileName || "",
     pdfMimeType: pdfAttachment?.contentType || "application/pdf",
+    requestId: requestId || createQuoteEmailRequestId(),
   });
 
   return {
     success: Boolean(response.data?.success),
+    idempotent: Boolean(response.data?.idempotent),
     simulated: Boolean(response.data?.simulated),
     provider: response.data?.provider || "",
     qaPublicUrl: response.data?.qaPublicUrl || "",
