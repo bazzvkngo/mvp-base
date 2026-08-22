@@ -126,6 +126,8 @@ const {
   eliminarTareaTrabajoV2Handler,
   registrarGastoTrabajoHandler,
   registrarHorasHombreTrabajoHandler,
+  registrarDevolucionMaterialTrabajoHandler,
+  registrarSalidaMaterialTrabajoHandler,
 } = require("./workPersistence");
 
 // Inicializar Admin SDK (una sola vez)
@@ -2280,6 +2282,14 @@ exports.registrarHorasHombreTrabajo = onCall(workCallableOptions, async (request
 
 exports.anularHorasHombreTrabajo = onCall(workCallableOptions, async (request) =>
   anularHorasHombreTrabajoHandler(request, workPersistenceDependencies)
+);
+
+exports.registrarSalidaMaterialTrabajo = onCall(workCallableOptions, async (request) =>
+  registrarSalidaMaterialTrabajoHandler(request, workPersistenceDependencies)
+);
+
+exports.registrarDevolucionMaterialTrabajo = onCall(workCallableOptions, async (request) =>
+  registrarDevolucionMaterialTrabajoHandler(request, workPersistenceDependencies)
 );
 
 exports.agregarNotaTrabajo = onCall(workCallableOptions, async (request) =>

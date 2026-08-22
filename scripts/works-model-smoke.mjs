@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {createRequire} from "node:module";
-import {adaptStoredWork, adaptWorkExpense, adaptWorkLabor, adaptWorkLink, adaptWorkTask, adaptWorkTaskDocumentation, buildWorkMutationPayload, canManageWorks, formatWorkNumber as formatFrontendNumber, getWorkDraftErrors, humanizeWorkEvent, matchesWorkFilters, WORK_MODEL_VERSION} from "../src/domain/workModel.mjs";
+import {adaptStoredWork, adaptWorkExpense, adaptWorkLabor, adaptWorkLink, adaptWorkMaterialMovement, adaptWorkTask, adaptWorkTaskDocumentation, buildWorkMutationPayload, canManageWorks, formatWorkNumber as formatFrontendNumber, getWorkDraftErrors, humanizeWorkEvent, matchesWorkFilters, WORK_MODEL_VERSION} from "../src/domain/workModel.mjs";
 
 const require = createRequire(import.meta.url);
-const {actualizarTrabajoHandler, agregarNotaTrabajoHandler, anularGastoTrabajoHandler, anularHorasHombreTrabajoHandler, asignarTareaTrabajoHandler, cambiarEstadoTareaTrabajoV2Handler, cambiarEstadoTrabajoHandler, crearTareaTrabajoV2Handler, crearTrabajoHandler, documentarTareaTrabajoHandler, eliminarTareaTrabajoV2Handler, formatWorkNumber, normalizeWorkInput, registrarGastoTrabajoHandler, registrarHorasHombreTrabajoHandler, WORK_EXPENSE_CATEGORIES, writeCommercialLink, writeQuoteResponseEvent} = require("../functions/workPersistence.js");
+const {actualizarTrabajoHandler, agregarNotaTrabajoHandler, anularGastoTrabajoHandler, anularHorasHombreTrabajoHandler, asignarTareaTrabajoHandler, cambiarEstadoTareaTrabajoV2Handler, cambiarEstadoTrabajoHandler, crearTareaTrabajoV2Handler, crearTrabajoHandler, documentarTareaTrabajoHandler, eliminarTareaTrabajoV2Handler, formatWorkNumber, normalizeWorkInput, registrarDevolucionMaterialTrabajoHandler, registrarGastoTrabajoHandler, registrarHorasHombreTrabajoHandler, registrarSalidaMaterialTrabajoHandler, WORK_EXPENSE_CATEGORIES, writeCommercialLink, writeQuoteResponseEvent} = require("../functions/workPersistence.js");
 
 class TestHttpsError extends Error { constructor(code, message) { super(message); this.code = code; } }
 class Snapshot { constructor(ref, value) { this.id = ref.id; this.exists = value !== undefined; this.value = value; } data() { return this.value; } }
@@ -186,6 +186,45 @@ const costEvents = db.matching(`${workPath}/historial/`).map(([, value]) => valu
 for (const event of ["gasto_registrado", "gasto_anulado", "horas_hombre_registradas", "horas_hombre_anuladas"]) assert.equal(costEvents.includes(event), true);
 assert.equal(adaptWorkExpense(storedExpense).monto, 100000); assert.equal(adaptWorkLabor(storedLabor).total, 40000);
 console.log("OK costos: gastos, HH autoritativas, moneda, membresías, idempotencia, anulación y corrección append-only");
+
+const productPath = "negocios/business-a/inventario/product-a";
+db.seed(productPath, {negocioId: "business-a", itemId: "product-a", tipoItem: "producto", estado: "activo", nombre: "Cable THHN", codigoInterno: "MAT-001", unidad: "metro", stock: 10, costoPromedio: 800, costoBase: 1000});
+db.seed("negocios/business-a/inventario/service-a", {negocioId: "business-a", itemId: "service-a", tipoItem: "servicio", estado: "activo", nombre: "Instalación", stock: 10, costoBase: 500});
+const materialExitRequest = request("worker-a", {businessId: "business-a", trabajoId: created.trabajoId, itemId: "product-a", cantidad: 5, fecha: "2026-08-14", costoTotal: 1, requestId: "material-exit-0001"});
+const materialExit = await registrarSalidaMaterialTrabajoHandler(materialExitRequest, dependencies);
+const materialExitRetry = await registrarSalidaMaterialTrabajoHandler(materialExitRequest, dependencies);
+assert.equal(materialExit.costoUnitario, 800); assert.equal(materialExit.costoTotal, 4000); assert.equal(materialExitRetry.idempotent, true);
+assert.equal(db.read(productPath).stock, 5);
+let materialMovements = db.matching("negocios/business-a/movimientosInventario/").map(([, value]) => value).filter((value) => value.trabajoId === created.trabajoId);
+assert.equal(materialMovements.length, 1); assert.equal(materialMovements[0].tipo, "SALIDA_PROYECTO"); assert.equal(materialMovements[0].productoSnapshot.nombre, "Cable THHN");
+assert.equal(db.read(workPath).materialesCostoTotal, 4000);
+await assert.rejects(() => registrarSalidaMaterialTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, itemId: "product-a", cantidad: 6, fecha: "2026-08-14", requestId: "material-no-stock"}), dependencies), (error) => error.code === "failed-precondition");
+assert.equal(db.read(productPath).stock, 5); assert.equal(db.matching("negocios/business-a/movimientosInventario/").filter(([, value]) => value.trabajoId === created.trabajoId).length, 1);
+await assert.rejects(() => registrarSalidaMaterialTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, itemId: "service-a", cantidad: 1, fecha: "2026-08-14", requestId: "material-invalid-item"}), dependencies), (error) => error.code === "failed-precondition");
+await assert.rejects(() => registrarSalidaMaterialTrabajoHandler(request("owner-a", {businessId: "business-b", trabajoId: created.trabajoId, itemId: "product-a", cantidad: 1, fecha: "2026-08-14", requestId: "material-cross-business"}), dependencies), (error) => error.code === "permission-denied");
+
+db.seed(productPath, {...db.read(productPath), costoPromedio: 1200, costoBase: 1400});
+await assert.rejects(() => registrarDevolucionMaterialTrabajoHandler(request("worker-a", {businessId: "business-a", trabajoId: created.trabajoId, movimientoOrigenId: materialExit.movimientoId, cantidad: 1, fecha: "2026-08-15", requestId: "material-return-member"}), dependencies), (error) => error.code === "permission-denied");
+const partialReturnRequest = request("worker-b", {businessId: "business-a", trabajoId: created.trabajoId, movimientoOrigenId: materialExit.movimientoId, cantidad: 2, fecha: "2026-08-15", requestId: "material-return-0001"});
+const partialReturn = await registrarDevolucionMaterialTrabajoHandler(partialReturnRequest, dependencies);
+const partialReturnRetry = await registrarDevolucionMaterialTrabajoHandler(partialReturnRequest, dependencies);
+assert.equal(partialReturn.costoUnitario, 800); assert.equal(partialReturn.costoTotal, 1600); assert.equal(partialReturn.cantidadPendiente, 3); assert.equal(partialReturnRetry.idempotent, true); assert.equal(db.read(productPath).stock, 7);
+await assert.rejects(() => registrarDevolucionMaterialTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, movimientoOrigenId: materialExit.movimientoId, cantidad: 4, fecha: "2026-08-15", requestId: "material-over-return"}), dependencies), (error) => error.code === "failed-precondition");
+assert.equal(db.read(productPath).stock, 7);
+const fullReturn = await registrarDevolucionMaterialTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, movimientoOrigenId: materialExit.movimientoId, cantidad: 3, fecha: "2026-08-15", requestId: "material-return-0002"}), dependencies);
+assert.equal(fullReturn.costoUnitario, 800); assert.equal(fullReturn.costoTotal, 2400); assert.equal(fullReturn.cantidadPendiente, 0); assert.equal(db.read(productPath).stock, 10); assert.equal(db.read(workPath).materialesCostoTotal, 0);
+materialMovements = db.matching("negocios/business-a/movimientosInventario/").map(([, value]) => value).filter((value) => value.trabajoId === created.trabajoId);
+assert.equal(materialMovements.length, 3); assert.equal(materialMovements.filter((value) => value.tipo === "DEVOLUCION_PROYECTO").length, 2);
+assert.equal(materialMovements.find((value) => value.movimientoId === materialExit.movimientoId).cantidadDevuelta, undefined);
+assert.equal(adaptWorkMaterialMovement(materialMovements[1]).movimientoOrigenId, materialExit.movimientoId);
+db.seed("negocios/business-a/inventario/product-base", {negocioId: "business-a", itemId: "product-base", tipoItem: "producto", estado: "activo", nombre: "Conector", unidad: "unidad", stock: 2, costoBase: 250});
+const baseCostExit = await registrarSalidaMaterialTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, itemId: "product-base", cantidad: 1, fecha: "2026-08-16", requestId: "material-base-cost"}), dependencies);
+assert.equal(baseCostExit.costoUnitario, 250); assert.equal(baseCostExit.costoTotal, 250);
+const materialEvents = db.matching(`${workPath}/historial/`).map(([, value]) => value.tipo);
+assert.equal(materialEvents.includes("material_salida_registrada"), true); assert.equal(materialEvents.includes("material_devolucion_registrada"), true);
+const legacyWork = adaptStoredWork({trabajoId: "legacy-work", titulo: "Legacy"});
+assert.equal(legacyWork.materialesCostoTotal, 0); assert.equal(legacyWork.materialesSalidasTotal, 0);
+console.log("OK materiales: salida transaccional, stock, costo congelado, idempotencia, devoluciones netas, permisos, aislamiento y legacy");
 
 const note = await agregarNotaTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, texto: "Configuración inicial completada."}), dependencies);
 assert.equal(db.read(`${workPath}/notas/${note.notaId}`).autorSnapshot.nombre, "Mauricio");

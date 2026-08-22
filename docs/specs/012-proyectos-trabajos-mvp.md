@@ -51,6 +51,14 @@ La primera operación financiera fija `moneda` en el TRB desde la moneda autorit
 
 `workCostRequests/{requestId}` es interno e idempotente. El historial agrega `gasto_registrado`, `gasto_anulado`, `horas_hombre_registradas` y `horas_hombre_anuladas`. TRB legacy sin moneda, gastos, HH o contadores se adapta con totales cero sin migración.
 
+## Materiales / fase 4
+
+Las salidas y devoluciones del TRB reutilizan el libro empresarial `movimientosInventario`. `SALIDA_PROYECTO` descuenta stock y `DEVOLUCION_PROYECTO` lo restituye; ambos movimientos son inmutables, conservan `trabajoId`, `itemId`, cantidad, costo unitario y total, moneda, stock anterior/posterior, actor, fecha y snapshot mínimo del producto. La devolución referencia siempre su `movimientoOrigenId`.
+
+Functions ejecuta movimiento y stock en una misma transacción. Sólo admite `tipoItem: producto`, valida stock y congela primero `costoPromedio` cuando existe; en su ausencia usa `costoBase` y fallbacks de costo legacy. La devolución usa exclusivamente el costo congelado de la salida, aunque el costo vigente cambie después.
+
+`workMaterialRequests/{requestId}` hace idempotentes las operaciones. `workMaterialBalances/{movimientoOrigenId}` es un control interno mutable para impedir sobre-devoluciones concurrentes sin reescribir el movimiento original. Rules niega todo acceso SDK a ambos; el libro de movimientos sólo admite lectura empresarial y ninguna escritura directa. MEMBER activo puede registrar consumos propios en la transición RBAC actual; sólo OWNER/ADMIN devuelve y gestiona. TRB legacy adapta contadores y costo de materiales a cero.
+
 El contador anual y la idempotencia de creación son internos:
 
 ```text
@@ -80,7 +88,6 @@ La ruta `/trabajos` ofrece búsqueda y filtros, lista responsive y tablero sin d
 
 ## Límites
 
-- Sin materiales consumidos ni integración de costos con inventario.
 - Sin balance, rentabilidad, facturación o pagos.
 - Sin archivos adjuntos, comentarios anidados, subtareas o dependencias.
 - Sin drag-and-drop.

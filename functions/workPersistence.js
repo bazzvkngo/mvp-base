@@ -5,6 +5,7 @@ const WORK_FILE_MODEL_VERSION = 1;
 const WORK_TASK_MODEL_VERSION = 2;
 const WORK_EXPENSE_MODEL_VERSION = 1;
 const WORK_LABOR_MODEL_VERSION = 1;
+const WORK_MATERIAL_MODEL_VERSION = 1;
 const WRITE_ROLES = ["OWNER", "ADMIN"];
 const WORK_STATUSES = new Set(["pendiente", "en_progreso", "en_espera", "completado", "cancelado"]);
 const WORK_PRIORITIES = new Set(["baja", "normal", "alta", "urgente"]);
@@ -196,6 +197,38 @@ function expenseClassification(category) {
 
 function roundMoney(value) {
   return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+}
+
+function authoritativeInventoryCost(item, HttpsError) {
+  const candidates = [
+    ["costoPromedio", item.costoPromedio],
+    ["costoBase", item.costoBase],
+    ["costo", item.costo],
+    ["precioCompra", item.precioCompra],
+  ];
+  const selected = candidates.find(([, value]) => value !== "" && value != null && Number.isFinite(Number(value)) && Number(value) >= 0);
+  if (!selected) fail(HttpsError, "failed-precondition", "El producto no tiene un costo vigente v\u00e1lido.");
+  return {costoUnitario: roundMoney(Number(selected[1])), costoFuente: selected[0]};
+}
+
+function assertInventoryProduct(snapshot, businessId, HttpsError, {requireActive = false} = {}) {
+  if (!snapshot.exists) fail(HttpsError, "not-found", "No se encontr\u00f3 el producto de inventario.");
+  const item = snapshot.data() || {};
+  if (item.negocioId !== businessId) fail(HttpsError, "permission-denied", "El producto no pertenece al negocio.");
+  if (String(item.tipoItem || "").toLowerCase() !== "producto") fail(HttpsError, "failed-precondition", "S\u00f3lo los productos pueden mover stock.");
+  if (requireActive && item.estado !== "activo") fail(HttpsError, "failed-precondition", "Selecciona un producto activo.");
+  const stock = Number(item.stock);
+  if (!Number.isFinite(stock) || stock < 0) fail(HttpsError, "failed-precondition", "El producto no tiene stock v\u00e1lido.");
+  return {...item, stock};
+}
+
+function productSnapshot(item, itemId) {
+  return {
+    itemId,
+    codigoInterno: String(item.codigoInterno || "").trim(),
+    nombre: String(item.nombre || "Producto sin nombre").trim(),
+    unidad: String(item.unidad || item.unidadStock || "unidad").trim(),
+  };
 }
 
 function memberLinkedUid(context, proposedUid, label, HttpsError, {required = false} = {}) {
@@ -442,6 +475,9 @@ async function crearTrabajoHandler(request, dependencies, now = new Date()) {
       horasHombreVigentesTotal: 0,
       horasHombreCantidadTotal: 0,
       horasHombreCostoTotal: 0,
+      materialesSalidasTotal: 0,
+      materialesDevolucionesTotal: 0,
+      materialesCostoTotal: 0,
       creadoPorUid: context.uid,
       actualizadoPorUid: context.uid,
       creadoEn: timestamp,
@@ -935,12 +971,152 @@ async function agregarNotaTrabajoHandler(request, dependencies) {
   return {notaId: noteRef.id};
 }
 
+async function registrarSalidaMaterialTrabajoHandler(request, dependencies) {
+  const {db, FieldValue, HttpsError} = dependencies;
+  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError});
+  const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError);
+  const itemId = identifier(request?.data?.itemId, "El producto", HttpsError);
+  const cantidad = positiveDecimal(request?.data?.cantidad, "La cantidad", 999999999.99, HttpsError);
+  const fecha = requiredDate(request?.data?.fecha, "La fecha", HttpsError);
+  const requestId = requestIdentifier(request?.data?.requestId, HttpsError);
+  const requestFingerprint = fingerprint({workId, itemId, cantidad, fecha});
+  const people = await userSnapshots(dependencies, [context.uid]);
+  const actor = publicPerson(people, context.uid);
+  const workRef = context.businessRef.collection("trabajos").doc(workId);
+  const itemRef = context.businessRef.collection("inventario").doc(itemId);
+  const movementRef = context.businessRef.collection("movimientosInventario").doc();
+  const balanceRef = context.businessRef.collection("workMaterialBalances").doc(movementRef.id);
+  const requestRef = context.businessRef.collection("workMaterialRequests").doc(requestId);
+  let result;
+  await db.runTransaction(async (transaction) => {
+    const previous = previousCostRequest(await transaction.get(requestRef), {fingerprint: requestFingerprint, operation: "salida_material", uid: context.uid}, HttpsError);
+    if (previous) { result = previous; return; }
+    const [workSnapshot, businessSnapshot, itemSnapshot] = await Promise.all([
+      transaction.get(workRef), transaction.get(context.businessRef), transaction.get(itemRef),
+    ]);
+    const work = assertWork(workSnapshot, context.businessId, HttpsError);
+    if (!businessSnapshot.exists) fail(HttpsError, "failed-precondition", "El negocio seleccionado no est\u00e1 disponible.");
+    const item = assertInventoryProduct(itemSnapshot, context.businessId, HttpsError, {requireActive: true});
+    if (item.stock < cantidad) fail(HttpsError, "failed-precondition", "No hay stock suficiente para registrar la salida.");
+    const {costoUnitario, costoFuente} = authoritativeInventoryCost(item, HttpsError);
+    const costoTotal = roundMoney(cantidad * costoUnitario);
+    if (!Number.isFinite(costoTotal) || costoTotal > 999999999999.99) fail(HttpsError, "invalid-argument", "El costo total del material est\u00e1 fuera del rango permitido.");
+    const moneda = workCurrency(work, businessSnapshot.data() || {}, HttpsError);
+    const stockPosterior = roundMoney(item.stock - cantidad);
+    const timestamp = FieldValue.serverTimestamp();
+    const snapshot = productSnapshot(item, itemId);
+    transaction.update(itemRef, {stock: stockPosterior, actualizadoEn: timestamp, actualizadoPorUid: context.uid});
+    transaction.create(movementRef, {
+      modeloMovimientoProyectoVersion: WORK_MATERIAL_MODEL_VERSION,
+      movimientoId: movementRef.id,
+      negocioId: context.businessId,
+      trabajoId: workId,
+      tipo: "SALIDA_PROYECTO",
+      itemId,
+      cantidad,
+      costoUnitario,
+      costoTotal,
+      costoFuente,
+      moneda,
+      stockAnterior: item.stock,
+      stockPosterior,
+      movimientoOrigenId: null,
+      productoSnapshot: snapshot,
+      usuarioUid: context.uid,
+      usuarioSnapshot: {nombre: actor.nombre, correo: actor.correo},
+      fecha,
+      creadoEn: timestamp,
+    });
+    transaction.create(balanceRef, {negocioId: context.businessId, trabajoId: workId, movimientoOrigenId: movementRef.id, itemId, cantidadSalida: cantidad, cantidadDevuelta: 0, costoSalida: costoTotal, costoDevuelto: 0, actualizadoEn: timestamp});
+    transaction.update(workRef, {moneda, materialesSalidasTotal: Number(work.materialesSalidasTotal || 0) + 1, materialesCostoTotal: roundMoney(Number(work.materialesCostoTotal || 0) + costoTotal), modeloTrabajoVersion: WORK_MODEL_VERSION, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
+    writeEvent(transaction, workRef, {businessId: context.businessId, type: "material_salida_registrada", actorUid: context.uid, actor, detail: {movimientoId: movementRef.id, itemId, productoNombre: snapshot.nombre, cantidad, costoUnitario, costoTotal, moneda}, timestamp});
+    result = {movimientoId: movementRef.id, costoUnitario, costoTotal, moneda, stockPosterior, idempotent: false};
+    transaction.create(requestRef, costRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "salida_material", result, timestamp, uid: context.uid, workId, recordId: movementRef.id}));
+  });
+  return result;
+}
+
+async function registrarDevolucionMaterialTrabajoHandler(request, dependencies) {
+  const {db, FieldValue, HttpsError} = dependencies;
+  const context = await requireWriteAccess(request, dependencies);
+  const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError);
+  const originMovementId = identifier(request?.data?.movimientoOrigenId, "La salida de origen", HttpsError);
+  const cantidad = positiveDecimal(request?.data?.cantidad, "La cantidad", 999999999.99, HttpsError);
+  const fecha = requiredDate(request?.data?.fecha, "La fecha", HttpsError);
+  const requestId = requestIdentifier(request?.data?.requestId, HttpsError);
+  const requestFingerprint = fingerprint({workId, originMovementId, cantidad, fecha});
+  const people = await userSnapshots(dependencies, [context.uid]);
+  const actor = publicPerson(people, context.uid);
+  const workRef = context.businessRef.collection("trabajos").doc(workId);
+  const originRef = context.businessRef.collection("movimientosInventario").doc(originMovementId);
+  const balanceRef = context.businessRef.collection("workMaterialBalances").doc(originMovementId);
+  const movementRef = context.businessRef.collection("movimientosInventario").doc();
+  const requestRef = context.businessRef.collection("workMaterialRequests").doc(requestId);
+  let result;
+  await db.runTransaction(async (transaction) => {
+    const previous = previousCostRequest(await transaction.get(requestRef), {fingerprint: requestFingerprint, operation: "devolucion_material", uid: context.uid}, HttpsError);
+    if (previous) { result = previous; return; }
+    const [workSnapshot, originSnapshot, balanceSnapshot] = await Promise.all([transaction.get(workRef), transaction.get(originRef), transaction.get(balanceRef)]);
+    const work = assertWork(workSnapshot, context.businessId, HttpsError);
+    if (!originSnapshot.exists) fail(HttpsError, "not-found", "No se encontr\u00f3 la salida de material.");
+    const origin = originSnapshot.data() || {};
+    if (origin.negocioId !== context.businessId || origin.trabajoId !== workId || origin.tipo !== "SALIDA_PROYECTO") fail(HttpsError, "failed-precondition", "La salida no corresponde a este proyecto.");
+    if (!balanceSnapshot.exists) fail(HttpsError, "failed-precondition", "La salida no tiene un saldo de devoluci\u00f3n v\u00e1lido.");
+    const balance = balanceSnapshot.data() || {};
+    if (balance.negocioId !== context.businessId || balance.trabajoId !== workId || balance.itemId !== origin.itemId) fail(HttpsError, "failed-precondition", "El saldo de la salida no es v\u00e1lido.");
+    const returnedQuantity = Number(balance.cantidadDevuelta || 0);
+    const exitQuantity = Number(balance.cantidadSalida);
+    const remainingQuantity = roundMoney(exitQuantity - returnedQuantity);
+    if (!Number.isFinite(remainingQuantity) || cantidad > remainingQuantity) fail(HttpsError, "failed-precondition", "La devoluci\u00f3n supera el consumo neto pendiente.");
+    const itemRef = context.businessRef.collection("inventario").doc(origin.itemId);
+    const itemSnapshot = await transaction.get(itemRef);
+    const item = assertInventoryProduct(itemSnapshot, context.businessId, HttpsError);
+    const costoUnitario = Number(origin.costoUnitario);
+    const originCost = Number(balance.costoSalida);
+    const returnedCost = Number(balance.costoDevuelto || 0);
+    if (!Number.isFinite(costoUnitario) || costoUnitario < 0 || !Number.isFinite(originCost) || originCost < 0 || !Number.isFinite(returnedCost) || returnedCost < 0) fail(HttpsError, "failed-precondition", "La salida no tiene un costo congelado v\u00e1lido.");
+    const isFinalReturn = Math.abs(cantidad - remainingQuantity) < 0.001;
+    const costoTotal = isFinalReturn ? roundMoney(originCost - returnedCost) : roundMoney(cantidad * costoUnitario);
+    const stockPosterior = roundMoney(item.stock + cantidad);
+    const timestamp = FieldValue.serverTimestamp();
+    transaction.update(itemRef, {stock: stockPosterior, actualizadoEn: timestamp, actualizadoPorUid: context.uid});
+    transaction.create(movementRef, {
+      modeloMovimientoProyectoVersion: WORK_MATERIAL_MODEL_VERSION,
+      movimientoId: movementRef.id,
+      negocioId: context.businessId,
+      trabajoId: workId,
+      tipo: "DEVOLUCION_PROYECTO",
+      itemId: origin.itemId,
+      cantidad,
+      costoUnitario,
+      costoTotal,
+      costoFuente: String(origin.costoFuente || "salida_congelada"),
+      moneda: String(origin.moneda || work.moneda || "").trim().toUpperCase(),
+      stockAnterior: item.stock,
+      stockPosterior,
+      movimientoOrigenId: originMovementId,
+      productoSnapshot: origin.productoSnapshot || productSnapshot(item, origin.itemId),
+      usuarioUid: context.uid,
+      usuarioSnapshot: {nombre: actor.nombre, correo: actor.correo},
+      fecha,
+      creadoEn: timestamp,
+    });
+    transaction.update(balanceRef, {cantidadDevuelta: roundMoney(returnedQuantity + cantidad), costoDevuelto: roundMoney(returnedCost + costoTotal), actualizadoEn: timestamp});
+    transaction.update(workRef, {materialesDevolucionesTotal: Number(work.materialesDevolucionesTotal || 0) + 1, materialesCostoTotal: Math.max(0, roundMoney(Number(work.materialesCostoTotal || 0) - costoTotal)), modeloTrabajoVersion: WORK_MODEL_VERSION, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
+    writeEvent(transaction, workRef, {businessId: context.businessId, type: "material_devolucion_registrada", actorUid: context.uid, actor, detail: {movimientoId: movementRef.id, movimientoOrigenId: originMovementId, itemId: origin.itemId, productoNombre: origin.productoSnapshot?.nombre || item.nombre, cantidad, costoUnitario, costoTotal, moneda: origin.moneda}, timestamp});
+    result = {movimientoId: movementRef.id, movimientoOrigenId: originMovementId, costoUnitario, costoTotal, moneda: origin.moneda, stockPosterior, cantidadPendiente: roundMoney(remainingQuantity - cantidad), idempotent: false};
+    transaction.create(requestRef, costRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "devolucion_material", result, timestamp, uid: context.uid, workId, recordId: movementRef.id}));
+  });
+  return result;
+}
+
 module.exports = {
   WORK_EXPENSE_CATEGORIES,
   WORK_EXPENSE_MODEL_VERSION,
   WORK_MODEL_VERSION,
   WORK_FILE_MODEL_VERSION,
   WORK_LABOR_MODEL_VERSION,
+  WORK_MATERIAL_MODEL_VERSION,
   WORK_TASK_MODEL_VERSION,
   WORK_PRIORITIES,
   WORK_STATUSES,
@@ -960,6 +1136,8 @@ module.exports = {
   normalizeWorkInput,
   registrarGastoTrabajoHandler,
   registrarHorasHombreTrabajoHandler,
+  registrarDevolucionMaterialTrabajoHandler,
+  registrarSalidaMaterialTrabajoHandler,
   writeCommercialLink,
   writeQuoteResponseEvent,
 };

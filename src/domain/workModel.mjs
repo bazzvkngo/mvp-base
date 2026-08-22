@@ -3,6 +3,7 @@ export const WORK_FILE_MODEL_VERSION = 1;
 export const WORK_TASK_MODEL_VERSION = 2;
 export const WORK_EXPENSE_MODEL_VERSION = 1;
 export const WORK_LABOR_MODEL_VERSION = 1;
+export const WORK_MATERIAL_MODEL_VERSION = 1;
 
 export const WORK_EXPENSE_CATEGORIES = Object.freeze([
   {value: "MATERIAL", label: "Material", classification: "DIRECTO"},
@@ -96,6 +97,9 @@ export function adaptStoredWork(raw = {}) {
     horasHombreVigentesTotal: Number(raw.horasHombreVigentesTotal || 0),
     horasHombreCantidadTotal: Number(raw.horasHombreCantidadTotal || 0),
     horasHombreCostoTotal: Number(raw.horasHombreCostoTotal || 0),
+    materialesSalidasTotal: Number(raw.materialesSalidasTotal || 0),
+    materialesDevolucionesTotal: Number(raw.materialesDevolucionesTotal || 0),
+    materialesCostoTotal: Number(raw.materialesCostoTotal || 0),
   };
 }
 
@@ -195,6 +199,29 @@ export function adaptWorkLabor(raw = {}) {
   };
 }
 
+export function adaptWorkMaterialMovement(raw = {}) {
+  const tipo = raw.tipo === "DEVOLUCION_PROYECTO" ? "DEVOLUCION_PROYECTO" : "SALIDA_PROYECTO";
+  return {
+    ...raw,
+    id: raw.id || raw.movimientoId || "",
+    movimientoId: raw.movimientoId || raw.id || "",
+    modeloMovimientoProyectoVersion: Number(raw.modeloMovimientoProyectoVersion || 1),
+    tipo,
+    trabajoId: String(raw.trabajoId || "").trim(),
+    itemId: String(raw.itemId || "").trim(),
+    cantidad: Number(raw.cantidad || 0),
+    costoUnitario: Number(raw.costoUnitario || 0),
+    costoTotal: Number(raw.costoTotal || 0),
+    moneda: String(raw.moneda || "").trim().toUpperCase(),
+    movimientoOrigenId: String(raw.movimientoOrigenId || "").trim(),
+    productoSnapshot: raw.productoSnapshot || null,
+    usuarioUid: String(raw.usuarioUid || "").trim(),
+    usuarioSnapshot: raw.usuarioSnapshot || null,
+    fecha: String(raw.fecha || "").trim(),
+    creadoEn: dateValue(raw.creadoEn),
+  };
+}
+
 export function adaptWorkNote(raw = {}) {
   return {...raw, id: raw.id || raw.notaId || "", notaId: raw.notaId || raw.id || "", texto: String(raw.texto || "").trim(), creadoEn: dateValue(raw.creadoEn)};
 }
@@ -264,6 +291,8 @@ export function humanizeWorkEvent(event = {}) {
     gasto_anulado: `${actor} anuló el gasto “${detail.concepto || "Sin concepto"}”.`,
     horas_hombre_registradas: `${actor} registró ${Number(detail.horas || 0)} HH para ${detail.tecnicoNombre || "un técnico"}.`,
     horas_hombre_anuladas: `${actor} anuló ${Number(detail.horas || 0)} HH de “${detail.concepto || "Sin concepto"}”.`,
+    material_salida_registrada: `${actor} registró la salida de ${Number(detail.cantidad || 0)} ${detail.productoNombre || "material"}.`,
+    material_devolucion_registrada: `${actor} registró la devolución de ${Number(detail.cantidad || 0)} ${detail.productoNombre || "material"}.`,
     nota_agregada: `${actor} agregó una nota.`,
     trabajo_completado: `${actor} completó el trabajo.`,
     trabajo_cancelado: `${actor} canceló el trabajo.`,

@@ -766,6 +766,14 @@ service cloud.firestore {
         allow read, create, update, delete: if false;
       }
 
+      match /workMaterialRequests/{requestId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /workMaterialBalances/{balanceId} {
+        allow read, create, update, delete: if false;
+      }
+
       match /clientRutKeys/{rutKey} {
         allow read, create, update, delete: if false;
       }

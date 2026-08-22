@@ -398,6 +398,7 @@ async function main() {
     const businessWorkLinkPath = `${businessWorkPath}/vinculos/cotizacion__quote-rules-smoke`;
     const businessWorkExpensePath = `${businessWorkPath}/gastos/expense-rules-smoke`;
     const businessWorkLaborPath = `${businessWorkPath}/horasHombre/labor-rules-smoke`;
+    const businessWorkMaterialMovementPath = `negocios/${businessId}/movimientosInventario/material-rules-smoke`;
     await Promise.all([
       adminDb.doc(businessClientPath).set({
         clienteId: "client-rules-smoke",
@@ -499,6 +500,16 @@ async function main() {
         total: 2000,
         estado: "vigente",
       }),
+      adminDb.doc(businessWorkMaterialMovementPath).set({
+        movimientoId: "material-rules-smoke",
+        trabajoId: "work-rules-smoke",
+        negocioId: businessId,
+        itemId: "product-rules-smoke",
+        tipo: "SALIDA_PROYECTO",
+        cantidad: 1,
+        costoUnitario: 1000,
+        costoTotal: 1000,
+      }),
       adminDb.doc(`negocios/${businessId}/workCounters/2026`).set({
         negocioId: businessId,
         ultimoNumero: 1,
@@ -516,6 +527,18 @@ async function main() {
         negocioId: businessId,
         trabajoId: "work-rules-smoke",
         registroId: "expense-rules-smoke",
+      }),
+      adminDb.doc(`negocios/${businessId}/workMaterialRequests/material-request-smoke`).set({
+        negocioId: businessId,
+        trabajoId: "work-rules-smoke",
+        registroId: "material-rules-smoke",
+      }),
+      adminDb.doc(`negocios/${businessId}/workMaterialBalances/material-rules-smoke`).set({
+        negocioId: businessId,
+        trabajoId: "work-rules-smoke",
+        movimientoOrigenId: "material-rules-smoke",
+        cantidadSalida: 1,
+        cantidadDevuelta: 0,
       }),
     ]);
     if (!(await getDoc(doc(ownerClient.db, businessClientPath))).exists()) {
@@ -547,6 +570,13 @@ async function main() {
       if (snapshot.size !== 1) throw new Error(`La consulta no devolvió ${label}.`);
     }
     console.log("OK permitido: miembro activo lista gastos y HH");
+    const materialMovementsSnapshot = await getDocs(query(
+      collection(ownerClient.db, "negocios", businessId, "movimientosInventario"),
+      where("negocioId", "==", businessId),
+      where("trabajoId", "==", "work-rules-smoke")
+    ));
+    if (materialMovementsSnapshot.size !== 1) throw new Error("La consulta no devolvió los materiales del trabajo.");
+    console.log("OK permitido: miembro activo lista movimientos de materiales del trabajo");
     await expectDenied("usuario sin membresía lee trabajo", () =>
       getDoc(doc(guestClient.db, businessWorkPath))
     );
@@ -601,6 +631,15 @@ async function main() {
     await expectDenied("OWNER elimina HH directamente", () =>
       deleteDoc(doc(ownerClient.db, businessWorkLaborPath))
     );
+    await expectDenied("OWNER crea movimiento de material directamente", () =>
+      setDoc(doc(ownerClient.db, `negocios/${businessId}/movimientosInventario/direct-material`), {negocioId: businessId, trabajoId: "work-rules-smoke", tipo: "SALIDA_PROYECTO"})
+    );
+    await expectDenied("OWNER edita movimiento de material directamente", () =>
+      updateDoc(doc(ownerClient.db, businessWorkMaterialMovementPath), {cantidad: 2})
+    );
+    await expectDenied("OWNER elimina movimiento de material directamente", () =>
+      deleteDoc(doc(ownerClient.db, businessWorkMaterialMovementPath))
+    );
     await expectDenied("workCounters bloquea lectura directa", () =>
       getDoc(doc(ownerClient.db, `negocios/${businessId}/workCounters/2026`))
     );
@@ -612,6 +651,12 @@ async function main() {
     );
     await expectDenied("workCostRequests bloquea lectura directa", () =>
       getDoc(doc(ownerClient.db, `negocios/${businessId}/workCostRequests/cost-request-smoke`))
+    );
+    await expectDenied("workMaterialRequests bloquea lectura directa", () =>
+      getDoc(doc(ownerClient.db, `negocios/${businessId}/workMaterialRequests/material-request-smoke`))
+    );
+    await expectDenied("workMaterialBalances bloquea lectura directa", () =>
+      getDoc(doc(ownerClient.db, `negocios/${businessId}/workMaterialBalances/material-rules-smoke`))
     );
     await expectDenied("usuario sin membresía lee clientes", () =>
       getDoc(doc(guestClient.db, businessClientPath))
