@@ -1,6 +1,7 @@
 import {jsPDF} from "jspdf";
 import {autoTable} from "jspdf-autotable";
 import {adaptStoredPurchaseOrder} from "./purchaseOrderModel.mjs";
+import {resolveDocumentCompany} from "./companySnapshot.mjs";
 import {formatMoney} from "../utils/formatters.js";
 
 const NAVY = [7, 40, 93];
@@ -48,7 +49,12 @@ function drawHeader(doc, order, company, logoDataUrl = "", compact = false) {
     doc.setTextColor(...MUTED);
     [
       company.razonSocial !== brand ? company.razonSocial : "",
-      join([company.rut ? `RUT ${company.rut}` : "", company.giro]),
+      join([
+        company.identificadorFiscalValor
+          ? `${company.identificadorFiscalTipo || "Identificación fiscal"} ${company.identificadorFiscalValor}`
+          : company.rut ? `RUT ${company.rut}` : "",
+        company.giro,
+      ]),
       join([company.direccion, company.comunaNombre || company.comuna, company.regionNombre || company.region]),
       join([company.email, company.telefono]),
     ].filter(hasText).forEach((line, index) => doc.text(line, textX, top + 11 + index * 4, {maxWidth: 108}));
@@ -194,7 +200,7 @@ function drawFooter(doc, company) {
 
 export function buildPurchaseOrderPdfDocument({order: rawOrder, companyProfile = {}, logoDataUrl = ""}) {
   const order = adaptStoredPurchaseOrder(rawOrder || {});
-  const company = companyProfile || {};
+  const company = resolveDocumentCompany(order, companyProfile);
   const doc = new jsPDF({unit: "mm", format: "a4", orientation: "portrait"});
   let y = drawHeader(doc, order, company, logoDataUrl) + 7;
   y = drawProvider(doc, order, y);

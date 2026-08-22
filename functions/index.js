@@ -75,6 +75,10 @@ const {
 const { sendQuoteEmailHandler } = require("./quoteEmail");
 const { sendPurchaseOrderEmailHandler } = require("./purchaseOrderEmail");
 const {
+  buildAuthoritativeCompanySnapshot,
+  getHistoricalCompanySnapshot,
+} = require("./companySnapshot");
+const {
   buildQuoteEmissionPatch,
   confirmQuoteWhatsAppSentHandler,
   createPublicQuoteToken,
@@ -2301,16 +2305,21 @@ exports.reactivarProveedor = onCall(
 );
 
 async function getCompanyProfileForQuote(businessRef, quote) {
-  if (hasCompanyEmailData(quote.empresa)) {
-    return quote.empresa;
+  const historical = getHistoricalCompanySnapshot(quote);
+  if (hasCompanyEmailData(historical)) {
+    return historical;
   }
 
-  const snapshot = await businessRef
-    .collection("empresa")
-    .doc("perfil")
-    .get();
+  const [businessSnapshot, profileSnapshot] = await Promise.all([
+    businessRef.get(),
+    businessRef.collection("empresa").doc("perfil").get(),
+  ]);
 
-  return snapshot.exists ? snapshot.data() || {} : {};
+  return buildAuthoritativeCompanySnapshot({
+    businessId: businessRef.id,
+    business: businessSnapshot.data() || {},
+    profile: profileSnapshot.data() || {},
+  });
 }
 
 function escapeHtml(value) {

@@ -100,8 +100,13 @@ function quoteFixture(overrides = {}) {
     fechaVencimiento: "2026-08-23",
     validezDias: 10,
     moneda: "CLP",
+    empresaSnapshot: {
+      nombreComercial: "Empresa Histórica A",
+      email: "historica@empresa.cl",
+      logoUrl: "https://example.com/logo-historico.png",
+    },
     empresa: {
-      nombreComercial: "Empresa Demo",
+      nombreComercial: "Empresa Legacy B",
       email: "ventas@empresa.cl",
       logoUrl: "https://example.com/logo.png",
     },
@@ -609,6 +614,7 @@ assert.equal(
 const sanitized = sanitizePublicQuote(quoteFixture());
 assert.equal(sanitized.total, 1190);
 assert.equal(sanitized.items[0].precioUnitarioEditable, 1000);
+assert.equal(sanitized.empresa.nombreComercial, "Empresa Histórica A");
 
 const appSource = fs.readFileSync("src/app/App.jsx", "utf8");
 const historySource = fs.readFileSync("src/pages/QuoteHistoryPage.jsx", "utf8");

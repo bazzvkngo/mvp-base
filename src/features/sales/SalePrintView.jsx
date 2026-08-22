@@ -1,5 +1,6 @@
 import React from "react";
 import {CubeIcon} from "../../components/BrandLogo";
+import {resolveDocumentCompany} from "../../domain/companySnapshot.mjs";
 import {
   getSaleDocumentTypeLabel,
   getSaleItemTypeLabel,
@@ -24,7 +25,7 @@ function TotalRow({label, strong = false, value}) {
 
 export default function SalePrintView({company: rawCompany, sale = {}}) {
   const money = (value) => formatMoney(value, sale.moneda, sale.locale);
-  const company = rawCompany || {};
+  const company = resolveDocumentCompany(sale, rawCompany);
   const client = sale.clienteSnapshot || {};
   const brand = company.nombreComercial || company.razonSocial || "ValoraCloud";
   const saleDocumentType = sale.tipoDocumento || "sin_documento";

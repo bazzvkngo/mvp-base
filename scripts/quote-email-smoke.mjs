@@ -407,8 +407,10 @@ const toastRouteSyncSource = fs.readFileSync(
 );
 const appSource = fs.readFileSync("src/app/App.jsx", "utf8");
 const mainSource = fs.readFileSync("src/main.jsx", "utf8");
+const emailServiceSource = fs.readFileSync("src/services/quoteEmailService.js", "utf8");
 assert.doesNotMatch(functionSource, /AUTOMATIC_QUOTE_EMAIL_ENABLED/);
 assert.match(functionSource, /sendQuoteEmailHandler/);
+assert.match(emailServiceSource, /resolveDocumentCompany\(quote, companyProfile\)/);
 assert.match(modalSource, /<ResponsiveDialog/);
 assert.match(modalSource, /Usar otro correo/);
 assert.match(modalSource, /Volver al correo del cliente/);

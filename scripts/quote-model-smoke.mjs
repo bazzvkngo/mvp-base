@@ -146,6 +146,8 @@ const linkedMutation = buildQuoteMutationPayload("test-user", {
 assert.equal(linkedMutation.clienteId, registeredClient.clienteId);
 assert.equal("clientId" in linkedMutation, false);
 assert.equal("cliente" in linkedMutation, false);
+assert.equal("empresa" in linkedMutation, false);
+assert.equal("empresaSnapshot" in linkedMutation, false);
 assert.equal("clienteNombre" in linkedMutation, false);
 assert.equal("clienteRut" in linkedMutation, false);
 console.log("OK contrato: mutación vinculada envía clienteId sin snapshot autoritativo");

@@ -2,6 +2,7 @@ const WRITE_ROLES = ["OWNER", "ADMIN"];
 const ITEM_TYPES = new Set(["producto", "servicio", "actividad"]);
 const EPSILON = 0.000001;
 const {adaptDocumentLocalization} = require("./localization");
+const {buildAuthoritativeCompanySnapshot, resolveCompanySnapshot} = require("./companySnapshot");
 
 function fail(HttpsError, code, message) {
   throw new HttpsError(code, message);
@@ -198,10 +199,12 @@ async function crearRecepcionDesdeOrdenHandler(request, dependencies, now = new 
       );
       return {recepcion: {id: existing.id, ...existing.data()}, idempotent: true};
     }
-    const [orderSnapshot, counterSnapshot, receptions] = await Promise.all([
+    const [orderSnapshot, counterSnapshot, receptions, businessSnapshot, companyProfileSnapshot] = await Promise.all([
       transaction.get(orderRef),
       transaction.get(counterRef),
       transaction.get(receptionsQuery),
+      transaction.get(businessRef),
+      transaction.get(businessRef.collection("empresa").doc("perfil")),
     ]);
     const order = orderSnapshot.data();
     assertReceivableOrder(order, businessId, HttpsError);
@@ -234,6 +237,14 @@ async function crearRecepcionDesdeOrdenHandler(request, dependencies, now = new 
       locale: localization.locale,
       impuestoNombre: localization.impuestoNombre,
       tasaIva: localization.tasaIva,
+      empresaSnapshot: resolveCompanySnapshot(
+        order,
+        buildAuthoritativeCompanySnapshot({
+          businessId,
+          business: businessSnapshot.data() || {},
+          profile: companyProfileSnapshot.data() || {},
+        })
+      ),
       fechaRecepcion: chileDate(now),
       observaciones: "",
       ordenCompraId: orderId,

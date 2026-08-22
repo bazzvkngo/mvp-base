@@ -184,6 +184,7 @@ export function adaptStoredSale(raw = {}) {
   const cliente = clientSnapshot(raw.clienteSnapshot || {clienteId: raw.clienteId, nombreRazonSocial: raw.clienteNombre, rut: raw.clienteRut});
   return {
     ...raw,
+    empresaSnapshot: adaptCompanySnapshot(raw.empresaSnapshot || raw.empresa || {}),
     ...localization,
     id: text(raw.id || raw.ventaId, 160),
     ventaId: text(raw.ventaId || raw.id, 160),
@@ -228,3 +229,4 @@ export function matchesSaleSearch(sale, search) {
   return normalize(`${sale.numero} ${sale.clienteSnapshot?.nombreRazonSocial} ${sale.clienteSnapshot?.rut} ${sale.numeroDocumento} ${sale.cotizacionNumero}`).includes(query);
 }
 import {adaptDocumentLocalization} from "./localization.mjs";
+import {adaptCompanySnapshot} from "./companySnapshot.mjs";

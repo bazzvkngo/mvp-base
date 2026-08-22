@@ -1,6 +1,10 @@
 const QUOTE_MODEL_VERSION = 2;
 const VAT_RATE = 0.19;
 const {documentLocalizationSnapshot, adaptDocumentLocalization} = require("./localization");
+const {
+  buildAuthoritativeCompanySnapshot,
+  getHistoricalCompanySnapshot,
+} = require("./companySnapshot");
 const VALID_STATUS = new Set([
   "borrador",
   "emitida",
@@ -76,43 +80,6 @@ function normalizeObjectText(source, fields) {
   return Object.fromEntries(
     fields.map(([field, maxLength]) => [field, safeText(source?.[field], maxLength)])
   );
-}
-
-function normalizeCompany(source = {}) {
-  const result = normalizeObjectText(source, [
-    ["nombreComercial", 200],
-    ["razonSocial", 240],
-    ["rut", 40],
-    ["identificadorFiscalTipo", 40],
-    ["identificadorFiscalValor", 80],
-    ["giro", 240],
-    ["email", 240],
-    ["telefono", 100],
-    ["direccion", 300],
-    ["ciudad", 160],
-    ["region", 160],
-    ["regionEstado", 160],
-    ["codigoPostal", 30],
-    ["sitioWeb", 300],
-    ["logoUrl", 1200],
-    ["responsable", 200],
-    ["cargoResponsable", 160],
-    ["condicionesPago", 2000],
-    ["plazoEntregaCotizacion", 1000],
-    ["alcanceGeograficoCotizacion", 2000],
-    ["garantiaCotizacion", 2000],
-    ["exclusionesCotizacion", 4000],
-    ["terminosCotizacion", 6000],
-    ["textoAceptacionCotizacion", 2000],
-    ["notaPieCotizacion", 3000],
-  ]);
-  result.aceptacionCotizacionHabilitada =
-    source.aceptacionCotizacionHabilitada === true;
-  const days = Number(source.validezCotizacionDias);
-  result.validezCotizacionDias = Number.isInteger(days) && days > 0 && days <= 3650
-    ? days
-    : 15;
-  return result;
 }
 
 function normalizeClient(source = {}, HttpsError) {
@@ -406,9 +373,9 @@ function normalizeQuoteInput(
   raw = {},
   issueDate,
   HttpsError,
-  {clientFields = null, localization = null} = {}
+  {clientFields = null, localization = null, companySnapshot = null} = {}
 ) {
-  const company = normalizeCompany(raw.empresa || {});
+  const company = companySnapshot || {};
   const resolvedClientFields =
     clientFields || legacyClientQuoteFields(raw, HttpsError);
   const items = normalizeItems(raw.items, HttpsError);
@@ -419,7 +386,7 @@ function normalizeQuoteInput(
   const validity = Number(raw.validezDias);
   const validezDias = Number.isInteger(validity) && validity > 0 && validity <= 3650
     ? validity
-    : company.validezCotizacionDias;
+    : 15;
   const conditions = normalizeConditions(raw.condiciones || {
     formaPago: raw.condicionesPago,
     observaciones: raw.observaciones,
@@ -446,7 +413,7 @@ function normalizeQuoteInput(
       raw.proyectoNombre || raw.cliente?.proyecto,
       300
     ),
-    empresa: company,
+    empresaSnapshot: company,
     items,
     seccionesAlcance: normalizeScopeSections(raw.seccionesAlcance),
     condiciones: conditions,
@@ -499,6 +466,7 @@ async function createQuoteWithNumberHandler({
   const userRef = authorizedBusinessRef;
   const quoteRef = userRef.collection("cotizaciones").doc();
   const clientRef = userRef.collection("clientes").doc(clienteId);
+  const companyProfileRef = userRef.collection("empresa").doc("perfil");
   const taxSettingsRef = userRef.collection("configuracion").doc("impuestos");
   const counterRef = userRef.collection("contadores").doc(`cotizaciones_${dateParts.year}`);
   const requestRef = userRef.collection("quoteCreateRequests").doc(requestId);
@@ -523,12 +491,13 @@ async function createQuoteWithNumberHandler({
       };
     }
 
-    const [clientSnapshot, counterSnapshot, businessSnapshot, taxSettingsSnapshot] =
+    const [clientSnapshot, counterSnapshot, businessSnapshot, taxSettingsSnapshot, companyProfileSnapshot] =
       await Promise.all([
         transaction.get(clientRef),
         transaction.get(counterRef),
         transaction.get(userRef),
         transaction.get(taxSettingsRef),
+        transaction.get(companyProfileRef),
       ]);
     const clientFields = registeredClientQuoteFields(
       clientSnapshot,
@@ -546,6 +515,11 @@ async function createQuoteWithNumberHandler({
           businessSnapshot.data() || {},
           taxSettingsSnapshot.data() || {}
         ),
+        companySnapshot: buildAuthoritativeCompanySnapshot({
+          businessId,
+          business: businessSnapshot.data() || {},
+          profile: companyProfileSnapshot.data() || {},
+        }),
       }
     );
     const current = Number(counterSnapshot.data()?.lastNumber || 0);
@@ -611,7 +585,6 @@ function historicalQuoteCopyInput(source = {}) {
     };
   });
   return {
-    empresa: source.empresa || {},
     clienteId: getStoredClienteId(source),
     proyectoNombre: source.proyectoNombre || source.cliente?.proyecto,
     items,
@@ -699,9 +672,12 @@ async function duplicateQuoteAsDraftHandler({
     }
     const clienteId = validateClienteId(getStoredClienteId(source), HttpsError);
     const clientRef = businessRef.collection("clientes").doc(clienteId);
-    const [clientSnapshot, counterSnapshot] = await Promise.all([
+    const companyProfileRef = businessRef.collection("empresa").doc("perfil");
+    const [clientSnapshot, counterSnapshot, businessSnapshot, companyProfileSnapshot] = await Promise.all([
       transaction.get(clientRef),
       transaction.get(counterRef),
+      transaction.get(businessRef),
+      transaction.get(companyProfileRef),
     ]);
     const clientFields = registeredClientQuoteFields(
       clientSnapshot,
@@ -718,7 +694,15 @@ async function duplicateQuoteAsDraftHandler({
       historicalQuoteCopyInput(source),
       issueDate,
       HttpsError,
-      {clientFields, localization: adaptDocumentLocalization(source)}
+      {
+        clientFields,
+        localization: adaptDocumentLocalization(source),
+        companySnapshot: buildAuthoritativeCompanySnapshot({
+          businessId,
+          business: businessSnapshot.data() || {},
+          profile: companyProfileSnapshot.data() || {},
+        }),
+      }
     );
     const current = Number(counterSnapshot.data()?.lastNumber || 0);
     const nextNumber = Number.isSafeInteger(current) && current >= 0 ? current + 1 : 1;
@@ -845,11 +829,22 @@ async function updateQuoteDraftHandler({
       rawQuote,
       issueDate,
       HttpsError,
-      {clientFields, localization: adaptDocumentLocalization(existing)}
+      {
+        clientFields,
+        localization: adaptDocumentLocalization(existing),
+        companySnapshot: getHistoricalCompanySnapshot(existing) || {},
+      }
     );
+    delete normalized.empresaSnapshot;
+    const companyFields = existing.empresaSnapshot
+      ? {empresaSnapshot: existing.empresaSnapshot}
+      : existing.empresa
+        ? {empresa: existing.empresa}
+        : {};
     const timestamp = FieldValue.serverTimestamp();
     const storedQuote = {
       ...normalized,
+      ...companyFields,
       estado: "borrador",
       negocioId: businessId,
       uidUsuario: existing.uidUsuario || uid,

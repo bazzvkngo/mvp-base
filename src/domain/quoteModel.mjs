@@ -349,9 +349,10 @@ export function normalizeQuoteConditions(raw = {}, company = {}) {
 export function normalizeCompanySnapshot(value = {}) {
   const source = value && typeof value === "object" ? value : {};
   return {
+    negocioId: safeQuoteText(source.negocioId || source.businessId, 160),
     nombreComercial: safeQuoteText(source.nombreComercial, 200),
     razonSocial: safeQuoteText(source.razonSocial, 240),
-    rut: safeQuoteText(source.rut, 40),
+    rut: safeQuoteText(source.rut || source.identificadorFiscalValor, 40),
     identificadorFiscalTipo: safeQuoteText(source.identificadorFiscalTipo, 40) || "RUT",
     identificadorFiscalValor: safeQuoteText(source.identificadorFiscalValor || source.rut, 80),
     giro: safeQuoteText(source.giro, 240),
@@ -359,7 +360,10 @@ export function normalizeCompanySnapshot(value = {}) {
     telefono: safeQuoteText(source.telefono, 100),
     direccion: safeQuoteText(source.direccion, 300),
     ciudad: safeQuoteText(source.ciudad, 160),
-    region: safeQuoteText(source.region, 160),
+    region: safeQuoteText(source.region || source.regionNombre, 160),
+    regionNombre: safeQuoteText(source.regionNombre || source.region, 160),
+    comunaCodigo: safeQuoteText(source.comunaCodigo, 20),
+    comunaNombre: safeQuoteText(source.comunaNombre, 160),
     regionEstado: safeQuoteText(source.regionEstado || source.region, 160),
     codigoPostal: safeQuoteText(source.codigoPostal, 30),
     sitioWeb: safeQuoteText(source.sitioWeb, 300),
@@ -570,6 +574,7 @@ export function buildQuotePayload(uid, raw = {}, { issueDate } = {}) {
 
 export function buildQuoteMutationPayload(uid, raw = {}, options = {}) {
   const payload = buildQuotePayload(uid, raw, options);
+  delete payload.empresa;
   if (!payload.clienteId) return payload;
 
   const mutationPayload = {...payload};
@@ -589,7 +594,7 @@ export function buildQuoteMutationPayload(uid, raw = {}, options = {}) {
 export function adaptStoredQuote(raw = {}) {
   const { clientId: legacyClientId, ...stored } = raw;
   const isCurrent = Number(raw.modeloCotizacionVersion) >= QUOTE_MODEL_VERSION;
-  const company = normalizeCompanySnapshot(raw.empresa || {});
+  const company = normalizeCompanySnapshot(raw.empresaSnapshot || raw.empresa || {});
   const client = normalizeClientSnapshot({
     ...raw,
     clienteId: raw.clienteId || legacyClientId,
@@ -626,6 +631,7 @@ export function adaptStoredQuote(raw = {}) {
     afectaIva,
     tipoIva: legacyTaxUndefined ? "legacy_sin_definir" : afectaIva ? "afecta" : "exenta",
     legacyIvaNoDefinido: legacyTaxUndefined,
+    empresaSnapshot: company,
     empresa: company,
     cliente: client,
     clienteId: client.clienteId,

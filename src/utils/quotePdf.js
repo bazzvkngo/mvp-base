@@ -1,4 +1,5 @@
 import { buildQuotePdfBase64 } from "../domain/quoteDocument.mjs";
+import {resolveDocumentCompany} from "../domain/companySnapshot.mjs";
 import {
   getQuoteDisplayNumber,
   getQuotePdfFileName,
@@ -42,7 +43,7 @@ async function loadImageDataUrl(url) {
 export { getQuotePdfFileName };
 
 export async function buildQuotePdfAttachment({ quote, companyProfile }) {
-  const company = quote?.empresa || companyProfile || {};
+  const company = resolveDocumentCompany(quote, companyProfile);
   const logoDataUrl = await loadImageDataUrl(company.logoUrl);
   return buildQuotePdfBase64({ quote, companyProfile, logoDataUrl });
 }
@@ -112,7 +113,7 @@ function normalizeWhatsAppPhone(value) {
 }
 
 function buildWhatsAppUrl({ quote, companyProfile, publicUrl }) {
-  const company = quote?.empresa || companyProfile || {};
+  const company = resolveDocumentCompany(quote, companyProfile);
   const quoteNumber = getQuoteDisplayNumber(quote, quote?.id || "");
   const clientName = String(quote?.clienteNombre || "").trim() || "cliente";
   const companyName = String(
@@ -155,7 +156,7 @@ export async function shareQuotePdf({ quote, companyProfile, publicUrl }) {
   const file = new File([blob], attachment.fileName, { type: attachment.contentType });
   const quoteNumber = getQuoteDisplayNumber(quote, quote?.id || "");
   const title = `Cotización ${quoteNumber}`;
-  const company = quote?.empresa || companyProfile || {};
+  const company = resolveDocumentCompany(quote, companyProfile);
   const companyName = String(
     company.nombreComercial || company.razonSocial || "nuestra empresa"
   ).trim();

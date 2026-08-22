@@ -1,4 +1,8 @@
 const crypto = require("node:crypto");
+const {
+  buildAuthoritativeCompanySnapshot,
+  getHistoricalCompanySnapshot,
+} = require("./companySnapshot");
 
 const PUBLIC_TOKEN_COLLECTION = "quotePublicTokens";
 const PUBLIC_TOKEN_BYTES = 32;
@@ -208,9 +212,11 @@ function publicTokenStatusForQuote(quote = {}) {
 }
 
 function sanitizePublicQuote(quote = {}, { effectiveStatus = "" } = {}) {
-  const company = quote.empresa && typeof quote.empresa === "object"
-    ? quote.empresa
-    : {};
+  const company = quote.empresaSnapshot && typeof quote.empresaSnapshot === "object"
+    ? quote.empresaSnapshot
+    : quote.empresa && typeof quote.empresa === "object"
+      ? quote.empresa
+      : {};
   const client = quote.cliente && typeof quote.cliente === "object"
     ? quote.cliente
     : quote.clienteSnapshot && typeof quote.clienteSnapshot === "object"
@@ -233,7 +239,7 @@ function sanitizePublicQuote(quote = {}, { effectiveStatus = "" } = {}) {
     empresa: {
       nombreComercial: safeText(company.nombreComercial, 200),
       razonSocial: safeText(company.razonSocial, 240),
-      rut: safeText(company.rut, 40),
+      rut: safeText(company.rut || company.identificadorFiscalValor, 80),
       identificadorFiscalTipo: safeText(company.identificadorFiscalTipo, 40) || "RUT",
       identificadorFiscalValor: safeText(company.identificadorFiscalValor || company.rut, 80),
       giro: safeText(company.giro, 240),
@@ -241,7 +247,7 @@ function sanitizePublicQuote(quote = {}, { effectiveStatus = "" } = {}) {
       telefono: safeText(company.telefono, 100),
       direccion: safeText(company.direccion, 300),
       ciudad: safeText(company.ciudad, 160),
-      region: safeText(company.region, 160),
+      region: safeText(company.region || company.regionNombre, 160),
       sitioWeb: safeText(company.sitioWeb, 300),
       logoUrl: safePublicAssetUrl(company.logoUrl, [quote.negocioId]),
       responsable: safeText(company.responsable, 200),
@@ -648,6 +654,22 @@ async function getPublicQuoteProposalHandler(request, dependencies) {
         })
       : {};
     const effectiveQuote = { ...quote, ...emissionPatch };
+    let proposalQuote = effectiveQuote;
+    if (!getHistoricalCompanySnapshot(effectiveQuote)) {
+      const businessRef = db.collection("negocios").doc(businessId);
+      const [businessSnapshot, companyProfileSnapshot] = await Promise.all([
+        transaction.get(businessRef),
+        transaction.get(businessRef.collection("empresa").doc("perfil")),
+      ]);
+      proposalQuote = {
+        ...effectiveQuote,
+        empresaSnapshot: buildAuthoritativeCompanySnapshot({
+          businessId,
+          business: businessSnapshot.data() || {},
+          profile: companyProfileSnapshot.data() || {},
+        }),
+      };
+    }
     const effectiveStatus = expired ? "vencida" : effectiveQuote.estado;
     const openingPatch = {
       ultimaAperturaEn: FieldValue.serverTimestamp(),
@@ -690,7 +712,7 @@ async function getPublicQuoteProposalHandler(request, dependencies) {
       });
     }
     transaction.update(quoteRef, quotePatch);
-    return sanitizePublicQuote(effectiveQuote, { effectiveStatus });
+    return sanitizePublicQuote(proposalQuote, { effectiveStatus });
   });
 
   if (!result) throw genericPublicProposalError(HttpsError);

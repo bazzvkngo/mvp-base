@@ -22,6 +22,7 @@ export function adaptStoredReception(raw = {}) {
   const state = text(raw.estado, 20).toLowerCase();
   return {
     ...raw,
+    empresaSnapshot: adaptCompanySnapshot(raw.empresaSnapshot || raw.empresa || {}),
     id: text(raw.id || raw.recepcionId, 160),
     recepcionId: text(raw.recepcionId || raw.id, 160),
     numero: text(raw.numero, 120),
@@ -109,3 +110,5 @@ export function shouldReconcileReceptionConfirmation(error) {
   const code = String(error?.code || "").replace(/^functions\//, "");
   return ["cancelled", "deadline-exceeded", "internal", "unknown", "unavailable"].includes(code);
 }
+
+import {adaptCompanySnapshot} from "./companySnapshot.mjs";

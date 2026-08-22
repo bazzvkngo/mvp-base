@@ -5,6 +5,7 @@ import {
   getQuoteDisplayNumber,
   getQuoteStatusLabel,
 } from "../../domain/quoteModel.mjs";
+import {resolveDocumentCompany} from "../../domain/companySnapshot.mjs";
 import { formatDate, formatMoney } from "../../utils/formatters";
 
 function hasText(value) {
@@ -24,7 +25,7 @@ function OptionalLine({ label, value }) {
 function QuotePrintView({ quote: rawQuote, companyProfile }) {
   const quote = adaptStoredQuote({
     ...rawQuote,
-    empresa: rawQuote?.empresa || companyProfile || {},
+    empresaSnapshot: resolveDocumentCompany(rawQuote, companyProfile),
   });
   const money = (value) => formatMoney(value, quote.moneda, quote.locale);
   const company = quote.empresa;

@@ -1,10 +1,12 @@
 import React from "react";
+import {resolveDocumentCompany} from "../../domain/companySnapshot.mjs";
 import {formatMoney} from "../../utils/formatters";
 
 const status = (value) => ({borrador: "Pendiente", emitida: "Emitida", cancelada: "Cancelada"})[value] || "Pendiente";
 const payment = (value) => ({contado: "Contado", transferencia: "Transferencia", credito: "Crédito", otro: "Otro"})[value] || value;
 
-export default function PurchaseOrderPrintView({company = {}, order}) {
+export default function PurchaseOrderPrintView({company: liveCompany = {}, order}) {
+  const company = resolveDocumentCompany(order, liveCompany);
   const money = (value) => formatMoney(value, order.moneda, order.locale);
   const discountMoney = (value) => Number(value) > 0 ? `-${money(value)}` : money(0);
   const provider = order.proveedorSnapshot || {};

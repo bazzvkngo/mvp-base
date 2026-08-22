@@ -40,9 +40,12 @@ try {
   const main = await call(owner, "createFirstBusiness")({nombreComercial: "Negocio ventas", rubroCodigo: "SERVICIOS_PROFESIONALES", regionCodigo: "13", requestId: requestId("business-main")});
   const other = await call(outsider, "createFirstBusiness")({nombreComercial: "Negocio externo", rubroCodigo: "SERVICIOS_PROFESIONALES", regionCodigo: "13", requestId: requestId("business-other")});
   const businessId = main.data.business.id; const otherBusinessId = other.data.business.id;
+  const companyProfileA = {negocioId: businessId, nombreComercial: "Empresa A", razonSocial: "Empresa Histórica A SpA", identificadorFiscalTipo: "RUT", identificadorFiscalValor: "76.200.200-2", email: "empresa-a@example.test"};
+  const companyProfileB = {...companyProfileA, nombreComercial: "Empresa B", razonSocial: "Empresa Vigente B SpA", email: "empresa-b@example.test"};
   await Promise.all([
     adminDb.doc(`membresias/${businessId}__${admin.uid}`).set({negocioId: businessId, uid: admin.uid, rol: "ADMIN", estado: "activo"}),
     adminDb.doc(`membresias/${businessId}__${member.uid}`).set({negocioId: businessId, uid: member.uid, rol: "MEMBER", estado: "activo"}),
+    adminDb.doc(`negocios/${businessId}/empresa/perfil`).set(companyProfileA, {merge: true}),
   ]);
   const clientId = `client-${RUN_ID}`; const crossClient = `cross-client-${RUN_ID}`;
   const product = `product-${RUN_ID}`; const insufficient = `insufficient-${RUN_ID}`; const rollbackA = `rollback-a-${RUN_ID}`; const rollbackB = `rollback-b-${RUN_ID}`; const concurrent = `concurrent-${RUN_ID}`; const historical = `historical-${RUN_ID}`; const crossItem = `cross-item-${RUN_ID}`; const service = `service-${RUN_ID}`; const activity = `activity-${RUN_ID}`;
@@ -68,6 +71,9 @@ try {
   const created = await call(owner, "crearVenta")({businessId, requestId: createId, venta: payload(clientId, [line(product, "main-product", {cantidad: 3}), line(service, "main-service"), line(activity, "main-activity")])});
   assert.equal(created.data.venta.numero, "VTA-2026-0001"); assert.equal(created.data.venta.estado, "borrador"); assert.equal(created.data.venta.clienteSnapshot.nombreRazonSocial, "Cliente Autoritativo SpA"); assert.equal(created.data.venta.items[0].nombre, "Notebook Lenovo ThinkPad E13"); assert.equal(created.data.venta.stockAplicado, false);
   assert.equal(created.data.venta.descuento, 0); assert.equal(created.data.venta.afectaIva, true); assert.equal(created.data.venta.tasaIva, 0.19);
+  assert.equal(created.data.venta.empresaSnapshot.razonSocial, companyProfileA.razonSocial);
+  await adminDb.doc(`negocios/${businessId}/empresa/perfil`).set(companyProfileB);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/ventas/${created.data.venta.id}`).get()).data().empresaSnapshot.razonSocial, companyProfileA.razonSocial);
   assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${product}`).get()).data().stock, 10);
   const retryCreate = await call(owner, "crearVenta")({businessId, requestId: createId, venta: payload(clientId, [line(product, "main-product", {cantidad: 3}), line(service, "main-service"), line(activity, "main-activity")])});
   assert.equal(retryCreate.data.venta.id, created.data.venta.id); assert.equal(retryCreate.data.idempotent, true);
@@ -108,16 +114,19 @@ try {
 
   const quoteId = `quote-${RUN_ID}`; const exemptQuoteId = `quote-exempt-${RUN_ID}`; const rejectedQuoteId = `quote-rejected-${RUN_ID}`;
   const quoteItem = {lineaId: "quote-product", itemId: historical, cantidad: 2, precioUnitarioEditable: 9000, descuentoPorcentaje: 5, codigo: "HIST", nombre: "Producto histórico cotizado", tipoItem: "producto", unidad: "unidad", inventarioSnapshot: {inventarioId: historical, codigoInterno: "HIST", nombre: "Producto histórico cotizado", tipoItem: "producto", unidad: "unidad"}};
-  const quoteFixture = {quoteId, negocioId: businessId, numero: "COT-2026-0900", estado: "aceptada", clienteId: clientId, cliente: {...clientFixture, nombreRazonSocial: "Cliente histórico cotizado"}, items: [quoteItem], subtotal: 18000, descuentoItems: 900, descuento: 1100, descuentoTotal: 2000, neto: 16000, afectaIva: true, tasaIva: 0.19, iva: 3040, total: 19040, condiciones: {formaPago: "30 días", observaciones: "Histórico"}};
+  const quoteFixture = {quoteId, negocioId: businessId, numero: "COT-2026-0900", estado: "aceptada", clienteId: clientId, cliente: {...clientFixture, nombreRazonSocial: "Cliente histórico cotizado"}, empresaSnapshot: companyProfileA, items: [quoteItem], subtotal: 18000, descuentoItems: 900, descuento: 1100, descuentoTotal: 2000, neto: 16000, afectaIva: true, tasaIva: 0.19, iva: 3040, total: 19040, condiciones: {formaPago: "30 días", observaciones: "Histórico"}};
   const exemptQuoteFixture = {...quoteFixture, quoteId: exemptQuoteId, numero: "COT-2026-0902", afectaIva: false, tasaIva: 0, iva: 0, total: 16000};
+  delete exemptQuoteFixture.empresaSnapshot;
   await Promise.all([adminDb.doc(`negocios/${businessId}/cotizaciones/${quoteId}`).set(quoteFixture), adminDb.doc(`negocios/${businessId}/cotizaciones/${exemptQuoteId}`).set(exemptQuoteFixture), adminDb.doc(`negocios/${businessId}/cotizaciones/${rejectedQuoteId}`).set({...quoteFixture, quoteId: rejectedQuoteId, numero: "COT-2026-0901", estado: "rechazada"})]);
   await expectCallableError("cotización no elegible", () => call(owner, "crearVentaDesdeCotizacion")({businessId, cotizacionId: rejectedQuoteId, requestId: requestId("rejected-quote")}));
   await expectCallableError("cotización cross-business", () => call(outsider, "crearVentaDesdeCotizacion")({businessId: otherBusinessId, cotizacionId: quoteId, requestId: requestId("cross-quote")}), ["not-found", "permission-denied"]);
   const conversionId = requestId("quote-convert"); const converted = await call(owner, "crearVentaDesdeCotizacion")({businessId, cotizacionId: quoteId, requestId: conversionId}); assert.equal(converted.data.venta.cotizacionId, quoteId); assert.equal(converted.data.venta.clienteSnapshot.nombreRazonSocial, "Cliente histórico cotizado"); assert.equal(converted.data.venta.items[0].nombre, "Producto histórico cotizado");
+  assert.equal(converted.data.venta.empresaSnapshot.razonSocial, companyProfileA.razonSocial);
   for (const field of ["subtotal", "descuentoItems", "descuento", "descuentoTotal", "neto", "afectaIva", "tasaIva", "iva", "total"]) assert.equal(converted.data.venta[field], quoteFixture[field], `conversión afecta: ${field}`);
   const exemptConverted = await call(owner, "crearVentaDesdeCotizacion")({businessId, cotizacionId: exemptQuoteId, requestId: requestId("quote-exempt")});
   for (const field of ["subtotal", "descuentoItems", "descuento", "descuentoTotal", "neto", "afectaIva", "tasaIva", "iva", "total"]) assert.equal(exemptConverted.data.venta[field], exemptQuoteFixture[field], `conversión exenta: ${field}`);
   assert.equal(exemptConverted.data.venta.iva, 0);
+  assert.equal(exemptConverted.data.venta.empresaSnapshot.razonSocial, companyProfileB.razonSocial);
   assert.equal((await adminDb.doc(`negocios/${businessId}/cotizaciones/${quoteId}`).get()).data().total, quoteFixture.total);
   console.log("OK conversión tributaria: descuentos y totales idénticos en cotizaciones afectas y exentas");
   const conversionRetry = await call(owner, "crearVentaDesdeCotizacion")({businessId, cotizacionId: quoteId, requestId: conversionId}); const conversionOther = await call(owner, "crearVentaDesdeCotizacion")({businessId, cotizacionId: quoteId, requestId: requestId("quote-convert-other")}); assert.equal(conversionRetry.data.venta.id, converted.data.venta.id); assert.equal(conversionOther.data.venta.id, converted.data.venta.id); assert.equal((await adminDb.collection(`negocios/${businessId}/ventas`).where("cotizacionId", "==", quoteId).get()).size, 1);

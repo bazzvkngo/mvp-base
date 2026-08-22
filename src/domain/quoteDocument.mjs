@@ -1,5 +1,6 @@
 import { jsPDF } from "jspdf";
 import { autoTable } from "jspdf-autotable";
+import {resolveDocumentCompany} from "./companySnapshot.mjs";
 import {
   adaptStoredQuote,
   calculateQuoteExpiryDate,
@@ -332,7 +333,7 @@ function drawFooter(doc, quote, company) {
 export function buildQuotePdfDocument({ quote: rawQuote, companyProfile, logoDataUrl = "" }) {
   const quote = adaptStoredQuote({
     ...rawQuote,
-    empresa: rawQuote?.empresa || companyProfile || {},
+    empresaSnapshot: resolveDocumentCompany(rawQuote, companyProfile),
   });
   const company = normalizeCompanySnapshot(quote.empresa || companyProfile || {});
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });

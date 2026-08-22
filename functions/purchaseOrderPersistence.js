@@ -1,5 +1,6 @@
 const {createHash} = require("node:crypto");
 const {adaptDocumentLocalization, documentLocalizationSnapshot} = require("./localization");
+const {buildAuthoritativeCompanySnapshot} = require("./companySnapshot");
 
 const PURCHASE_ORDER_MODEL_VERSION = 1;
 const VAT_RATE = 0.19;
@@ -315,7 +316,8 @@ async function crearOrdenCompraHandler(request, dependencies, now = new Date()) 
       businessRef.collection("inventario").doc(item.itemId)
     );
     const taxSettingsRef = businessRef.collection("configuracion").doc("impuestos");
-    const snapshots = await transaction.getAll(providerRef, counterRef, businessRef, taxSettingsRef, ...inventoryRefs);
+    const companyProfileRef = businessRef.collection("empresa").doc("perfil");
+    const snapshots = await transaction.getAll(providerRef, counterRef, businessRef, taxSettingsRef, companyProfileRef, ...inventoryRefs);
     const proveedorSnapshot = providerSnapshotFromDocument(
       snapshots[0],
       {businessId, proveedorId: input.proveedorId},
@@ -324,7 +326,7 @@ async function crearOrdenCompraHandler(request, dependencies, now = new Date()) 
     const items = input.items.map((item, index) => buildStoredLine(
       item,
       inventorySnapshotFromDocument(
-        snapshots[index + 4],
+        snapshots[index + 5],
         {businessId, itemId: item.itemId},
         HttpsError
       ),
@@ -351,6 +353,11 @@ async function crearOrdenCompraHandler(request, dependencies, now = new Date()) 
       locale: localization.locale,
       impuestoNombre: localization.impuestoNombre,
       tasaIva: localization.tasaIva,
+      empresaSnapshot: buildAuthoritativeCompanySnapshot({
+        businessId,
+        business: snapshots[2].data() || {},
+        profile: snapshots[4].data() || {},
+      }),
       fechaEmision: getChileDateValue(now),
       fechaEntregaEstimada: input.fechaEntregaEstimada,
       direccionEntrega: input.direccionEntrega,
@@ -473,9 +480,12 @@ async function duplicarOrdenCompraComoBorradorHandler(
     const inventoryRefs = input.items.map((item) =>
       businessRef.collection("inventario").doc(item.itemId)
     );
+    const companyProfileRef = businessRef.collection("empresa").doc("perfil");
     const snapshots = await transaction.getAll(
       providerRef,
       counterRef,
+      businessRef,
+      companyProfileRef,
       ...inventoryRefs
     );
     if (snapshots[0].exists && snapshots[0].data()?.estado === "archivado") {
@@ -493,7 +503,7 @@ async function duplicarOrdenCompraComoBorradorHandler(
     const items = input.items.map((item, index) => buildStoredLine(
       item,
       inventorySnapshotFromDocument(
-        snapshots[index + 2],
+        snapshots[index + 4],
         {businessId, itemId: item.itemId},
         HttpsError
       ),
@@ -518,6 +528,11 @@ async function duplicarOrdenCompraComoBorradorHandler(
       locale: localization.locale,
       impuestoNombre: localization.impuestoNombre,
       tasaIva: localization.tasaIva,
+      empresaSnapshot: buildAuthoritativeCompanySnapshot({
+        businessId,
+        business: snapshots[2].data() || {},
+        profile: snapshots[3].data() || {},
+      }),
       fechaEmision: getChileDateValue(now),
       fechaEntregaEstimada: input.fechaEntregaEstimada,
       direccionEntrega: input.direccionEntrega,

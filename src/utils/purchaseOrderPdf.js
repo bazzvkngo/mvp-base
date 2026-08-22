@@ -1,4 +1,5 @@
 import {buildPurchaseOrderPdfBase64} from "../domain/purchaseOrderDocument.mjs";
+import {resolveDocumentCompany} from "../domain/companySnapshot.mjs";
 
 async function blobToDataUrl(blob) {
   return await new Promise((resolve) => {
@@ -21,7 +22,8 @@ async function loadLogo(url) {
 }
 
 export async function buildPurchaseOrderPdfAttachment({order, companyProfile}) {
-  const logoDataUrl = await loadLogo(companyProfile?.logoUrl);
+  const company = resolveDocumentCompany(order, companyProfile);
+  const logoDataUrl = await loadLogo(company.logoUrl);
   return buildPurchaseOrderPdfBase64({order, companyProfile, logoDataUrl});
 }
 
@@ -74,7 +76,8 @@ export async function sharePurchaseOrderWhatsApp({order, companyProfile}) {
   }
   const blob = attachmentToBlob(attachment);
   const file = new File([blob], attachment.fileName, {type: attachment.contentType});
-  const companyName = companyProfile?.nombreComercial || companyProfile?.razonSocial || "nuestra empresa";
+  const company = resolveDocumentCompany(order, companyProfile);
+  const companyName = company.nombreComercial || company.razonSocial || "nuestra empresa";
   const providerName = order.proveedorSnapshot?.razonSocial || "proveedor";
   const text = `Hola ${providerName}, te comparto la orden de compra ${order.numero} de ${companyName}. El PDF contiene el detalle completo.`;
   const payload = {title: `Orden de compra ${order.numero}`, text, files: [file]};

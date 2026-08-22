@@ -122,6 +122,7 @@ export function adaptStoredPurchase(raw = {}) {
   const proveedor = providerSnapshot(raw.proveedorSnapshot || {proveedorId: raw.proveedorId, razonSocial: raw.proveedorNombre, rut: raw.proveedorRut});
   return {
     ...raw,
+    empresaSnapshot: adaptCompanySnapshot(raw.empresaSnapshot || raw.empresa || {}),
     ...localization,
     id: text(raw.id || raw.compraId, 160), compraId: text(raw.compraId || raw.id, 160),
     numero: text(raw.numero, 120), estado: STATUS_SET.has(estado) ? estado : "borrador",
@@ -148,3 +149,4 @@ export function matchesPurchaseSearch(purchase, search) {
   return normalize(`${purchase.numero} ${purchase.proveedorSnapshot?.razonSocial} ${purchase.proveedorSnapshot?.rut} ${purchase.numeroDocumentoProveedor} ${purchase.ordenCompraNumero} ${purchase.recepcionNumero}`).includes(query);
 }
 import {adaptDocumentLocalization} from "./localization.mjs";
+import {adaptCompanySnapshot} from "./companySnapshot.mjs";

@@ -1,11 +1,13 @@
 import React from "react";
+import {resolveDocumentCompany} from "../../domain/companySnapshot.mjs";
 import {getPurchaseDocumentTypeLabel, getPurchaseStatusLabel} from "../../domain/purchaseModel.mjs";
 import {formatMoney} from "../../utils/formatters";
 const lineTotal = (item) => Number.isFinite(item.totalLinea)
   ? item.totalLinea
   : Math.round(Number(item.cantidad || 0) * Number(item.costoUnitario || 0)) -
     Math.round((Number(item.cantidad || 0) * Number(item.costoUnitario || 0) * Number(item.descuentoPct || 0)) / 100);
-export default function PurchasePrintView({company, purchase}) {
+export default function PurchasePrintView({company: liveCompany, purchase}) {
+  const company = resolveDocumentCompany(purchase, liveCompany);
   const money = (value) => formatMoney(value, purchase.moneda, purchase.locale);
   return (
     <article className="po-print">

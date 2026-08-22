@@ -1,5 +1,6 @@
 const {createHash} = require("node:crypto");
 const {adaptDocumentLocalization, documentLocalizationSnapshot} = require("./localization");
+const {buildAuthoritativeCompanySnapshot, resolveCompanySnapshot} = require("./companySnapshot");
 
 const MODEL_VERSION = 2;
 const VAT_RATE = 0.19;
@@ -111,9 +112,9 @@ async function access(request, dependencies) {
   return dependencies.requireBusinessAccess(request, {db: dependencies.db, HttpsError: dependencies.HttpsError}, {roles: WRITE_ROLES});
 }
 function formatNumber(year, sequence) { return `COM-${year}-${String(sequence).padStart(4, "0")}`; }
-function baseStored({businessId, uid, purchaseId, numero, sequence, now, normalized, proveedorSnapshot, items, localization, origin = {}, timestamp, HttpsError}) {
+function baseStored({businessId, uid, purchaseId, numero, sequence, now, normalized, proveedorSnapshot, items, localization, empresaSnapshot, origin = {}, timestamp, HttpsError}) {
   const location = localization || adaptDocumentLocalization({});
-  return {modeloCompraVersion: MODEL_VERSION, compraId: purchaseId, negocioId: businessId, numero, anio: now.year, correlativo: sequence, estado: "borrador", paisCodigo: location.paisCodigo, moneda: location.moneda, locale: location.locale, impuestoNombre: location.impuestoNombre, tasaIva: location.tasaIva, proveedorId: normalized.proveedorId, proveedorSnapshot, ...origin, items, ...totals(items, HttpsError, location.tasaIva), fechaCompra: normalized.fechaCompra, fechaDocumento: normalized.fechaDocumento, tipoDocumento: normalized.tipoDocumento, numeroDocumentoProveedor: normalized.numeroDocumentoProveedor, condicionesPago: normalized.condicionesPago || text(proveedorSnapshot.condicionesPago, 2000), observaciones: normalized.observaciones, stockGestionadoPor: "recepcion", stockAplicado: false, stockAplicadoEn: null, creadoPorUid: uid, actualizadoPorUid: uid, creadoEn: timestamp, actualizadoEn: timestamp};
+  return {modeloCompraVersion: MODEL_VERSION, compraId: purchaseId, negocioId: businessId, numero, anio: now.year, correlativo: sequence, estado: "borrador", paisCodigo: location.paisCodigo, moneda: location.moneda, locale: location.locale, impuestoNombre: location.impuestoNombre, tasaIva: location.tasaIva, empresaSnapshot, proveedorId: normalized.proveedorId, proveedorSnapshot, ...origin, items, ...totals(items, HttpsError, location.tasaIva), fechaCompra: normalized.fechaCompra, fechaDocumento: normalized.fechaDocumento, tipoDocumento: normalized.tipoDocumento, numeroDocumentoProveedor: normalized.numeroDocumentoProveedor, condicionesPago: normalized.condicionesPago || text(proveedorSnapshot.condicionesPago, 2000), observaciones: normalized.observaciones, stockGestionadoPor: "recepcion", stockAplicado: false, stockAplicadoEn: null, creadoPorUid: uid, actualizadoPorUid: uid, creadoEn: timestamp, actualizadoEn: timestamp};
 }
 function retryable(error) { return Number(error?.code) === 10 || String(error?.message || "").toLowerCase().includes("transaction is invalid"); }
 async function transactionRetry(db, callback) {
@@ -142,15 +143,15 @@ async function crearCompraHandler(request, dependencies, clock = new Date()) {
       const existing = await transaction.get(businessRef.collection("compras").doc(data.compraId));
       return {compra: {id: existing.id, ...existing.data()}, requestId: reqId, idempotent: true};
     }
-    const refs = [businessRef.collection("proveedores").doc(normalized.proveedorId), counterRef, businessRef, businessRef.collection("configuracion").doc("impuestos"), ...normalized.items.map((item) => businessRef.collection("inventario").doc(item.itemId))];
+    const refs = [businessRef.collection("proveedores").doc(normalized.proveedorId), counterRef, businessRef, businessRef.collection("configuracion").doc("impuestos"), businessRef.collection("empresa").doc("perfil"), ...normalized.items.map((item) => businessRef.collection("inventario").doc(item.itemId))];
     const snapshots = await transaction.getAll(...refs);
     const proveedorSnapshot = provider(snapshots[0], businessId, normalized.proveedorId, HttpsError);
-    const items = normalized.items.map((item, index) => storedLine(item, inventory(snapshots[index + 4], businessId, item.itemId, HttpsError), HttpsError));
+    const items = normalized.items.map((item, index) => storedLine(item, inventory(snapshots[index + 5], businessId, item.itemId, HttpsError), HttpsError));
     const current = Number(snapshots[1].data()?.lastNumber || 0);
     const sequence = Number.isSafeInteger(current) && current >= 0 ? current + 1 : 1;
     const numero = formatNumber(now.year, sequence);
     const timestamp = FieldValue.serverTimestamp();
-    const stored = baseStored({businessId, uid, purchaseId: purchaseRef.id, numero, sequence, now, normalized, proveedorSnapshot, items, localization: documentLocalizationSnapshot(snapshots[2].data() || {}, snapshots[3].data() || {}), timestamp, HttpsError});
+    const stored = baseStored({businessId, uid, purchaseId: purchaseRef.id, numero, sequence, now, normalized, proveedorSnapshot, items, localization: documentLocalizationSnapshot(snapshots[2].data() || {}, snapshots[3].data() || {}), empresaSnapshot: buildAuthoritativeCompanySnapshot({businessId, business: snapshots[2].data() || {}, profile: snapshots[4].data() || {}}), timestamp, HttpsError});
     transaction.set(counterRef, {negocioId: businessId, year: now.year, lastNumber: sequence, actualizadoEn: timestamp});
     transaction.set(purchaseRef, stored);
     transaction.set(requestRef, {compraId: purchaseRef.id, numero, negocioId: businessId, uidUsuario: uid, fingerprint, creadoEn: timestamp});
@@ -187,10 +188,12 @@ async function crearCompraDesdeOrdenHandler(request, dependencies, clock = new D
       const existing = await transaction.get(businessRef.collection("compras").doc(data.compraId));
       return {compra: {id: existing.id, ...existing.data()}, requestId: reqId, idempotent: true};
     }
-    const [orderSnapshot, counterSnapshot, receptionsSnapshot] = await Promise.all([
+    const [orderSnapshot, counterSnapshot, receptionsSnapshot, businessSnapshot, companyProfileSnapshot] = await Promise.all([
       transaction.get(orderRef),
       transaction.get(counterRef),
       transaction.get(receptionsQuery),
+      transaction.get(businessRef),
+      transaction.get(businessRef.collection("empresa").doc("perfil")),
     ]);
     if (!orderSnapshot.exists) fail(HttpsError, "not-found", "No se encontró la orden de compra.");
     const order = orderSnapshot.data() || {};
@@ -216,7 +219,8 @@ async function crearCompraDesdeOrdenHandler(request, dependencies, clock = new D
     const sequence = Number.isSafeInteger(current) && current >= 0 ? current + 1 : 1;
     const numero = formatNumber(now.year, sequence);
     const timestamp = FieldValue.serverTimestamp();
-    const stored = baseStored({businessId, uid, purchaseId: purchaseRef.id, numero, sequence, now, normalized, proveedorSnapshot, items, localization: adaptDocumentLocalization(order), origin: {ordenCompraId: orderId, ordenCompraNumero: text(order.numero, 120)}, timestamp, HttpsError});
+    const currentCompanySnapshot = buildAuthoritativeCompanySnapshot({businessId, business: businessSnapshot.data() || {}, profile: companyProfileSnapshot.data() || {}});
+    const stored = baseStored({businessId, uid, purchaseId: purchaseRef.id, numero, sequence, now, normalized, proveedorSnapshot, items, localization: adaptDocumentLocalization(order), empresaSnapshot: resolveCompanySnapshot(order, currentCompanySnapshot), origin: {ordenCompraId: orderId, ordenCompraNumero: text(order.numero, 120)}, timestamp, HttpsError});
     transaction.set(counterRef, {negocioId: businessId, year: now.year, lastNumber: sequence, actualizadoEn: timestamp});
     transaction.set(purchaseRef, stored);
     transaction.update(orderRef, {compraId: purchaseRef.id, compraNumero: numero, compraRegistradaEn: timestamp, actualizadoEn: timestamp, actualizadoPorUid: uid});
@@ -245,9 +249,11 @@ async function crearCompraDesdeRecepcionHandler(request, dependencies, clock = n
       const existing = await transaction.get(businessRef.collection("compras").doc(data.compraId));
       return {compra: {id: existing.id, ...existing.data()}, requestId: reqId, idempotent: true};
     }
-    const [receptionSnapshot, counterSnapshot] = await Promise.all([
+    const [receptionSnapshot, counterSnapshot, businessSnapshot, companyProfileSnapshot] = await Promise.all([
       transaction.get(receptionRef),
       transaction.get(counterRef),
+      transaction.get(businessRef),
+      transaction.get(businessRef.collection("empresa").doc("perfil")),
     ]);
     if (!receptionSnapshot.exists) fail(HttpsError, "not-found", "No se encontro la recepcion.");
     const reception = receptionSnapshot.data() || {};
@@ -294,6 +300,7 @@ async function crearCompraDesdeRecepcionHandler(request, dependencies, clock = n
     const sequence = Number.isSafeInteger(current) && current >= 0 ? current + 1 : 1;
     const numero = formatNumber(now.year, sequence);
     const timestamp = FieldValue.serverTimestamp();
+    const currentCompanySnapshot = buildAuthoritativeCompanySnapshot({businessId, business: businessSnapshot.data() || {}, profile: companyProfileSnapshot.data() || {}});
     const stored = baseStored({
       businessId,
       uid,
@@ -305,6 +312,10 @@ async function crearCompraDesdeRecepcionHandler(request, dependencies, clock = n
       proveedorSnapshot: reception.proveedorSnapshot || {},
       items,
       localization: adaptDocumentLocalization(reception),
+      empresaSnapshot: resolveCompanySnapshot(
+        reception,
+        resolveCompanySnapshot(order, currentCompanySnapshot)
+      ),
       origin: {
         recepcionId: receptionId,
         recepcionNumero: text(reception.numero, 120),

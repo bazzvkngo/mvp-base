@@ -57,6 +57,7 @@
     "test:sales-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/sales-integrated-local.mjs\"",
     "test:business-catalog": "node scripts/business-catalog-smoke.mjs",
     "test:localization": "node scripts/localization-smoke.mjs",
+    "test:company-snapshot": "node scripts/company-snapshot-smoke.mjs",
     "test:business-category-selector": "node scripts/business-category-selector-smoke.mjs",
     "test:business-quick-flow": "node scripts/business-quick-flow-smoke.mjs",
     "test:business-settings": "node scripts/business-settings-smoke.mjs",

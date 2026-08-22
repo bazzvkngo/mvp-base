@@ -1,5 +1,6 @@
 const {createHash} = require("node:crypto");
 const {adaptDocumentLocalization, documentLocalizationSnapshot} = require("./localization");
+const {buildAuthoritativeCompanySnapshot, resolveCompanySnapshot} = require("./companySnapshot");
 
 const MODEL_VERSION = 1;
 const VAT_RATE = 0.19;
@@ -106,9 +107,9 @@ function totals(items, HttpsError, {descuentoGeneral = 0, afectaIva = true, tasa
 function hash(value) { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
 async function access(request, dependencies) { return dependencies.requireBusinessAccess(request, {db: dependencies.db, HttpsError: dependencies.HttpsError}, {roles: WRITE_ROLES}); }
 function formatNumber(year, sequence) { return `VTA-${year}-${String(sequence).padStart(4, "0")}`; }
-function baseStored({businessId, uid, ventaId, numero, sequence, now, normalized, clienteSnapshot, items, localization, origin = {}, timestamp, HttpsError}) {
+function baseStored({businessId, uid, ventaId, numero, sequence, now, normalized, clienteSnapshot, items, localization, empresaSnapshot, origin = {}, timestamp, HttpsError}) {
   const location = localization || adaptDocumentLocalization({});
-  return {modeloVentaVersion: MODEL_VERSION, ventaId, negocioId: businessId, numero, anio: now.year, correlativo: sequence, estado: "borrador", paisCodigo: location.paisCodigo, moneda: location.moneda, locale: location.locale, impuestoNombre: location.impuestoNombre, clienteId: normalized.clienteId, clienteSnapshot, ...origin, items, ...totals(items, HttpsError, {descuentoGeneral: normalized.descuento, afectaIva: normalized.afectaIva, tasaIva: location.tasaIva}), fechaVenta: normalized.fechaVenta, fechaDocumento: normalized.fechaDocumento, tipoDocumento: normalized.tipoDocumento, numeroDocumento: normalized.numeroDocumento, condicionesPago: normalized.condicionesPago, observaciones: normalized.observaciones, stockAplicado: false, stockAplicadoAt: null, creadoPorUid: uid, actualizadoPorUid: uid, createdAt: timestamp, updatedAt: timestamp};
+  return {modeloVentaVersion: MODEL_VERSION, ventaId, negocioId: businessId, numero, anio: now.year, correlativo: sequence, estado: "borrador", paisCodigo: location.paisCodigo, moneda: location.moneda, locale: location.locale, impuestoNombre: location.impuestoNombre, empresaSnapshot, clienteId: normalized.clienteId, clienteSnapshot, ...origin, items, ...totals(items, HttpsError, {descuentoGeneral: normalized.descuento, afectaIva: normalized.afectaIva, tasaIva: location.tasaIva}), fechaVenta: normalized.fechaVenta, fechaDocumento: normalized.fechaDocumento, tipoDocumento: normalized.tipoDocumento, numeroDocumento: normalized.numeroDocumento, condicionesPago: normalized.condicionesPago, observaciones: normalized.observaciones, stockAplicado: false, stockAplicadoAt: null, creadoPorUid: uid, actualizadoPorUid: uid, createdAt: timestamp, updatedAt: timestamp};
 }
 function retryable(error) { return Number(error?.code) === 10 || String(error?.message || "").toLowerCase().includes("transaction is invalid"); }
 async function transactionRetry(db, callback) { let last; for (let attempt = 0; attempt < 5; attempt += 1) { try { return await db.runTransaction(callback); } catch (error) { last = error; if (!retryable(error) || attempt === 4) throw error; await new Promise((resolve) => setTimeout(resolve, 30 * (2 ** attempt))); } } throw last; }
@@ -122,12 +123,12 @@ async function crearVentaHandler(request, dependencies, clock = new Date()) {
   return transactionRetry(db, async (transaction) => {
     const previous = await transaction.get(requestRef);
     if (previous.exists) { const data = previous.data() || {}; if (data.uidUsuario !== uid || data.fingerprint !== fingerprint) fail(HttpsError, "already-exists", "La solicitud ya fue usada con otros datos."); const existing = await transaction.get(businessRef.collection("ventas").doc(data.ventaId)); return {venta: {id: existing.id, ...existing.data()}, requestId: reqId, idempotent: true}; }
-    const refs = [businessRef.collection("clientes").doc(normalized.clienteId), counterRef, businessRef, businessRef.collection("configuracion").doc("impuestos"), ...normalized.items.map((item) => businessRef.collection("inventario").doc(item.itemId))];
+    const refs = [businessRef.collection("clientes").doc(normalized.clienteId), counterRef, businessRef, businessRef.collection("configuracion").doc("impuestos"), businessRef.collection("empresa").doc("perfil"), ...normalized.items.map((item) => businessRef.collection("inventario").doc(item.itemId))];
     const snapshots = await transaction.getAll(...refs); const clienteSnapshot = client(snapshots[0], businessId, normalized.clienteId, HttpsError);
-    const items = normalized.items.map((item, index) => storedLine(item, inventory(snapshots[index + 4], businessId, item.itemId, HttpsError), HttpsError));
+    const items = normalized.items.map((item, index) => storedLine(item, inventory(snapshots[index + 5], businessId, item.itemId, HttpsError), HttpsError));
     const current = Number(snapshots[1].data()?.lastNumber || 0); const sequence = Number.isSafeInteger(current) && current >= 0 ? current + 1 : 1;
     const numero = formatNumber(now.year, sequence); const timestamp = FieldValue.serverTimestamp();
-    const stored = baseStored({businessId, uid, ventaId: saleRef.id, numero, sequence, now, normalized, clienteSnapshot, items, localization: documentLocalizationSnapshot(snapshots[2].data() || {}, snapshots[3].data() || {}), timestamp, HttpsError});
+    const stored = baseStored({businessId, uid, ventaId: saleRef.id, numero, sequence, now, normalized, clienteSnapshot, items, localization: documentLocalizationSnapshot(snapshots[2].data() || {}, snapshots[3].data() || {}), empresaSnapshot: buildAuthoritativeCompanySnapshot({businessId, business: snapshots[2].data() || {}, profile: snapshots[4].data() || {}}), timestamp, HttpsError});
     transaction.set(counterRef, {negocioId: businessId, year: now.year, lastNumber: sequence, actualizadoEn: timestamp}); transaction.set(saleRef, stored);
     transaction.set(requestRef, {ventaId: saleRef.id, numero, negocioId: businessId, uidUsuario: uid, fingerprint, creadoEn: timestamp});
     return {venta: {id: saleRef.id, ...stored, createdAt: null, updatedAt: null}, requestId: reqId, idempotent: false};
@@ -158,7 +159,7 @@ async function crearVentaDesdeCotizacionHandler(request, dependencies, clock = n
   return transactionRetry(db, async (transaction) => {
     const previous = await transaction.get(requestRef);
     if (previous.exists) { const data = previous.data() || {}; if (data.uidUsuario !== uid || data.cotizacionId !== quoteId) fail(HttpsError, "already-exists", "La solicitud ya fue usada para otra cotización."); const existing = await transaction.get(businessRef.collection("ventas").doc(data.ventaId)); return {venta: {id: existing.id, ...existing.data()}, requestId: reqId, idempotent: true}; }
-    const [quoteSnapshot, counterSnapshot] = await Promise.all([transaction.get(quoteRef), transaction.get(counterRef)]);
+    const [quoteSnapshot, counterSnapshot, businessSnapshot, companyProfileSnapshot] = await Promise.all([transaction.get(quoteRef), transaction.get(counterRef), transaction.get(businessRef), transaction.get(businessRef.collection("empresa").doc("perfil"))]);
     if (!quoteSnapshot.exists) fail(HttpsError, "not-found", "No se encontró la cotización."); const quote = quoteSnapshot.data() || {};
     if (quote.negocioId && quote.negocioId !== businessId) fail(HttpsError, "permission-denied", "No puedes registrar esta cotización.");
     if (quote.ventaId) { const existing = await transaction.get(businessRef.collection("ventas").doc(quote.ventaId)); if (!existing.exists) fail(HttpsError, "failed-precondition", "El enlace de la cotización con su venta es inconsistente."); transaction.set(requestRef, {negocioId: businessId, cotizacionId: quoteId, ventaId: existing.id, numero: existing.data()?.numero || quote.ventaNumero || "", uidUsuario: uid, creadoEn: FieldValue.serverTimestamp()}); return {venta: {id: existing.id, ...existing.data()}, requestId: reqId, idempotent: true, alreadyConverted: true}; }
@@ -168,7 +169,8 @@ async function crearVentaDesdeCotizacionHandler(request, dependencies, clock = n
     const clienteSnapshot = quoteClientSnapshot(quote, HttpsError); const items = quote.items.map((item, index) => quoteLine(item, index, HttpsError));
     const normalized = input({clienteId: clienteSnapshot.clienteId, descuento: quote.descuento ?? quote.descuentoGeneral ?? 0, afectaIva: quote.afectaIva !== false, fechaVenta: now.value, fechaDocumento: "", tipoDocumento: "sin_documento", numeroDocumento: "", condicionesPago: quote.condicionesPago || quote.condiciones?.formaPago, observaciones: quote.observaciones || quote.condiciones?.observaciones, items}, HttpsError);
     const current = Number(counterSnapshot.data()?.lastNumber || 0); const sequence = Number.isSafeInteger(current) && current >= 0 ? current + 1 : 1; const numero = formatNumber(now.year, sequence); const timestamp = FieldValue.serverTimestamp();
-    const stored = baseStored({businessId, uid, ventaId: saleRef.id, numero, sequence, now, normalized, clienteSnapshot, items, localization: adaptDocumentLocalization(quote), origin: {cotizacionId: quoteId, cotizacionNumero: text(quote.numero, 120)}, timestamp, HttpsError});
+    const currentCompanySnapshot = buildAuthoritativeCompanySnapshot({businessId, business: businessSnapshot.data() || {}, profile: companyProfileSnapshot.data() || {}});
+    const stored = baseStored({businessId, uid, ventaId: saleRef.id, numero, sequence, now, normalized, clienteSnapshot, items, localization: adaptDocumentLocalization(quote), empresaSnapshot: resolveCompanySnapshot(quote, currentCompanySnapshot), origin: {cotizacionId: quoteId, cotizacionNumero: text(quote.numero, 120)}, timestamp, HttpsError});
     transaction.set(counterRef, {negocioId: businessId, year: now.year, lastNumber: sequence, actualizadoEn: timestamp}); transaction.set(saleRef, stored);
     transaction.update(quoteRef, {ventaId: saleRef.id, ventaNumero: numero, ventaRegistradaEn: timestamp, actualizadoEn: timestamp});
     transaction.set(requestRef, {negocioId: businessId, cotizacionId: quoteId, ventaId: saleRef.id, numero, uidUsuario: uid, creadoEn: timestamp});

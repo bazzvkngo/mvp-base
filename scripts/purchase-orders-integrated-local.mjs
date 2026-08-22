@@ -140,6 +140,14 @@ try {
     requestId: `business-other-${RUN_ID}`,
   });
   const otherBusinessId = otherResponse.data.business.id;
+  const companyProfileA = {
+    negocioId: businessId,
+    nombreComercial: "Empresa A",
+    razonSocial: "Empresa Histórica A SpA",
+    identificadorFiscalTipo: "RUT",
+    identificadorFiscalValor: "76.300.300-3",
+  };
+  const companyProfileB = {...companyProfileA, nombreComercial: "Empresa B", razonSocial: "Empresa Vigente B SpA"};
 
   await Promise.all([
     adminDb.doc(`membresias/${businessId}__${admin.uid}`).set({
@@ -148,6 +156,7 @@ try {
     adminDb.doc(`membresias/${businessId}__${member.uid}`).set({
       negocioId: businessId, uid: member.uid, rol: "MEMBER", estado: "activo",
     }),
+    adminDb.doc(`negocios/${businessId}/empresa/perfil`).set(companyProfileA, {merge: true}),
   ]);
 
   const providerId = `provider-${RUN_ID}`;
@@ -242,6 +251,9 @@ try {
   assert.equal(created.proveedorSnapshot.razonSocial, "Proveedor Original SpA");
   assert.equal(created.proveedorSnapshot.rut, "12.345.678-5");
   assert.equal(created.proveedorSnapshot.regionCodigo, "13");
+  assert.equal(created.empresaSnapshot.razonSocial, companyProfileA.razonSocial);
+  await adminDb.doc(`negocios/${businessId}/empresa/perfil`).set(companyProfileB);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/ordenesCompra/${created.id}`).get()).data().empresaSnapshot.razonSocial, companyProfileA.razonSocial);
   assert.equal(created.items[0].nombre, "Producto original");
   assert.equal(created.items[0].codigo, "PR-0001");
   assert.equal(created.items[0].costoUnitario, 10000);
@@ -504,6 +516,7 @@ try {
   assert.equal(emittedCopy.proveedorId, providerBId);
   assert.equal(emittedCopy.proveedorSnapshot.razonSocial, "Proveedor B SpA");
   assert.notEqual(emittedCopy.proveedorSnapshot.razonSocial, "Proveedor falsificado");
+  assert.equal(emittedCopy.empresaSnapshot.razonSocial, companyProfileB.razonSocial);
   assert.equal(emittedCopy.items[0].itemId, itemBId);
   assert.equal(emittedCopy.items[0].nombre, "Servicio B");
   assert.equal(emittedCopy.items[0].costoUnitario, 7000);

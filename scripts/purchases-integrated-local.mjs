@@ -67,9 +67,11 @@ try {
   const mainResult = await call(owner, "createFirstBusiness")({nombreComercial: "Negocio compras", rubroCodigo: "SERVICIOS_PROFESIONALES", regionCodigo: "13", requestId: requestId("business-main")});
   const otherResult = await call(outsider, "createFirstBusiness")({nombreComercial: "Negocio compras externo", rubroCodigo: "SERVICIOS_PROFESIONALES", regionCodigo: "13", requestId: requestId("business-other")});
   const businessId = mainResult.data.business.id; const otherBusinessId = otherResult.data.business.id;
+  const companyProfile = {negocioId: businessId, nombreComercial: "Empresa Compradora", razonSocial: "Empresa Compradora SpA", identificadorFiscalTipo: "RUT", identificadorFiscalValor: "76.500.500-5"};
   await Promise.all([
     adminDb.doc(`membresias/${businessId}__${admin.uid}`).set({negocioId: businessId, uid: admin.uid, rol: "ADMIN", estado: "activo"}),
     adminDb.doc(`membresias/${businessId}__${member.uid}`).set({negocioId: businessId, uid: member.uid, rol: "MEMBER", estado: "activo"}),
+    adminDb.doc(`negocios/${businessId}/empresa/perfil`).set(companyProfile, {merge: true}),
   ]);
 
   const providerId = `provider-${RUN_ID}`; const providerBId = `provider-b-${RUN_ID}`; const providerOtherId = `provider-other-${RUN_ID}`;
@@ -97,6 +99,7 @@ try {
   assert.equal(ownerCreated.data.compra.numero, "COM-2026-0001");
   assert.equal(ownerCreated.data.compra.estado, "borrador");
   assert.equal(ownerCreated.data.compra.proveedorSnapshot.razonSocial, "Proveedor Autoritativo SpA");
+  assert.equal(ownerCreated.data.compra.empresaSnapshot.razonSocial, companyProfile.razonSocial);
   assert.equal(ownerCreated.data.compra.items[0].nombre, "Producto A");
   assert.equal(ownerCreated.data.compra.total, 42840);
   assert.equal(ownerCreated.data.compra.stockAplicado, false);

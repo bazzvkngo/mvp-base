@@ -3,6 +3,7 @@ import { assertCloudFunctionAllowed } from "../config/firebaseEnvironment.mjs";
 import { getFirebaseFunctions } from "../firebase/firebaseConfig";
 import { formatDate, formatMoney } from "../utils/formatters";
 import { buildQuoteValidityEmailLine } from "../domain/quoteEmailCopy.mjs";
+import {resolveDocumentCompany} from "../domain/companySnapshot.mjs";
 import { DRAFT_QUOTE_NUMBER_LABEL, getQuoteDisplayNumber } from "./quoteService";
 
 const FUNCTIONS_REGION = "us-central1";
@@ -17,12 +18,8 @@ export function isValidEmail(value) {
 
 export function buildDefaultQuoteEmail({ quote, companyProfile }) {
   const quoteNumber = getQuoteDisplayNumber(quote, "");
-  const companyName =
-    quote?.empresa?.nombreComercial ||
-    companyProfile?.nombreComercial ||
-    quote?.empresa?.razonSocial ||
-    companyProfile?.razonSocial ||
-    "";
+  const company = resolveDocumentCompany(quote, companyProfile);
+  const companyName = company.nombreComercial || company.razonSocial || "";
   const contactName =
     quote?.clienteNombre ||
     quote?.cliente?.nombreRazonSocial ||

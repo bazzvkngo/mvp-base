@@ -45,7 +45,10 @@ try {
   const businessResult = await call(owner, "createFirstBusiness")({nombreComercial: "Negocio recepciones", rubroCodigo: "SERVICIOS_PROFESIONALES", regionCodigo: "13", requestId: requestId("business")});
   const otherResult = await call(outsider, "createFirstBusiness")({nombreComercial: "Negocio externo", rubroCodigo: "SERVICIOS_PROFESIONALES", regionCodigo: "13", requestId: requestId("other")});
   const businessId = businessResult.data.business.id; const otherBusinessId = otherResult.data.business.id;
+  const companySnapshotA = {negocioId: businessId, nombreComercial: "Empresa A", razonSocial: "Empresa Histórica A SpA", identificadorFiscalTipo: "RUT", identificadorFiscalValor: "76.400.400-4"};
+  const companyProfileB = {...companySnapshotA, nombreComercial: "Empresa B", razonSocial: "Empresa Vigente B SpA"};
   await adminDb.doc(`membresias/${businessId}__${member.uid}`).set({negocioId: businessId, uid: member.uid, rol: "MEMBER", estado: "activo"});
+  await adminDb.doc(`negocios/${businessId}/empresa/perfil`).set(companyProfileB, {merge: true});
   const providerId = `provider-${RUN_ID}`; const productId = `product-${RUN_ID}`; const serviceId = `service-${RUN_ID}`;
   const provider = {proveedorId: providerId, negocioId: businessId, estado: "activo", rut: "76.111.111-1", razonSocial: "Proveedor Recepciones SpA"};
   await Promise.all([
@@ -55,7 +58,7 @@ try {
   ]);
   const orderLine = (lineaId, itemId, nombre, tipoItem, cantidad) => ({lineaId, itemId, nombre, tipoItem, unidad: tipoItem === "producto" ? "unidad" : "servicio", cantidad, costoUnitario: 1000, descuentoPct: 0, inventarioSnapshot: {inventarioId: itemId, nombre, tipoItem, unidad: "unidad"}});
   const seedOrder = async (id, quantity = 10, response = "pendiente") => {
-    await adminDb.doc(`negocios/${businessId}/ordenesCompra/${id}`).set({ordenCompraId: id, negocioId: businessId, numero: `OC-${id}`, estado: "emitida", proveedorId: providerId, proveedorSnapshot: provider, respuestaProveedor: {estado: response}, items: [orderLine("product-line", productId, "Producto", "producto", quantity), orderLine("service-line", serviceId, "Servicio", "servicio", 2)]});
+    await adminDb.doc(`negocios/${businessId}/ordenesCompra/${id}`).set({ordenCompraId: id, negocioId: businessId, numero: `OC-${id}`, estado: "emitida", proveedorId: providerId, proveedorSnapshot: provider, empresaSnapshot: companySnapshotA, respuestaProveedor: {estado: response}, items: [orderLine("product-line", productId, "Producto", "producto", quantity), orderLine("service-line", serviceId, "Servicio", "servicio", 2)]});
   };
   const orderId = `partial-${RUN_ID}`; await seedOrder(orderId);
 
@@ -65,6 +68,7 @@ try {
   const retryCreate = await call(owner, "crearRecepcionDesdeOrden")({businessId, ordenCompraId: orderId, requestId: createId});
   assert.equal(first.data.recepcion.id, retryCreate.data.recepcion.id); assert.equal(retryCreate.data.idempotent, true);
   assert.equal(first.data.recepcion.numero, "REC-2026-0001"); assert.equal(first.data.recepcion.stockAplicado, false);
+  assert.equal(first.data.recepcion.empresaSnapshot.razonSocial, companySnapshotA.razonSocial);
   const firstItems = first.data.recepcion.items.map((line) => ({lineaId: line.lineaId, cantidad: line.tipoItem === "producto" ? 4 : 1}));
   await call(owner, "actualizarRecepcionBorrador")({businessId, recepcionId: first.data.recepcion.id, recepcion: {fechaRecepcion: "2026-08-14", observaciones: "Parcial", items: firstItems}});
   const confirmId = requestId("confirm-first");
@@ -97,6 +101,7 @@ try {
   assert.notEqual(firstConversion.data.compra.id, fromReception.data.compra.id);
   assert.equal(fromReception.data.compra.recepcionId, second.data.recepcion.id);
   assert.equal(fromReception.data.compra.items.find((line) => line.tipoItem === "producto").cantidad, 6);
+  assert.equal(fromReception.data.compra.empresaSnapshot.razonSocial, companySnapshotA.razonSocial);
   assert.equal((await adminDb.collection(`negocios/${businessId}/compras`).where("ordenCompraId", "==", orderId).get()).size, 2);
   await rejected("ruta legacy no convierte una OC con recepciones", () => call(owner, "crearCompraDesdeOrden")({businessId, ordenCompraId: orderId, requestId: requestId("legacy-after-receptions")}), ["failed-precondition"]);
   const economicItems = fromReception.data.compra.items.map((line) => ({lineaId: line.lineaId, itemId: line.itemId, cantidad: line.cantidad, costoUnitario: line.costoUnitario + 300, descuentoPct: 0}));
@@ -135,6 +140,7 @@ try {
   console.log("OK respuesta proveedor separada y corregible");
 
   const purchase = await call(owner, "crearCompra")({businessId, requestId: requestId("purchase"), compra: {proveedorId: providerId, fechaCompra: "2026-08-14", tipoDocumento: "factura", fechaDocumento: "2026-08-14", numeroDocumentoProveedor: "F-1", items: [{lineaId: "purchase-line", itemId: productId, cantidad: 3, costoUnitario: 1200, descuentoPct: 0}]}});
+  assert.equal(purchase.data.compra.empresaSnapshot.razonSocial, companyProfileB.razonSocial);
   const beforePurchase = (await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data().stock;
   const purchaseConfirmed = await call(owner, "confirmarCompra")({businessId, compraId: purchase.data.compra.id, requestId: requestId("purchase-confirm")});
   assert.equal(purchaseConfirmed.data.compra.estado, "confirmada"); assert.equal(purchaseConfirmed.data.compra.stockAplicado, false);

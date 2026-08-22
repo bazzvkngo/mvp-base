@@ -174,6 +174,7 @@ export function adaptStoredPurchaseOrder(raw = {}) {
   );
   return {
     ...raw,
+    empresaSnapshot: adaptCompanySnapshot(raw.empresaSnapshot || raw.empresa || {}),
     id: text(raw.id || raw.ordenCompraId, 160),
     ordenCompraId: text(raw.ordenCompraId || raw.id, 160),
     numero: text(raw.numero || raw.numeroOrdenCompra, 120),
@@ -219,3 +220,4 @@ export function getSupplierResponseLabel(order) {
   ];
 }
 import {adaptDocumentLocalization} from "./localization.mjs";
+import {adaptCompanySnapshot} from "./companySnapshot.mjs";

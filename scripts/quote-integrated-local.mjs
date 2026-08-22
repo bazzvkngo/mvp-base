@@ -230,6 +230,16 @@ try {
   });
   const businessId = ownerBusiness.data.business.id;
   const outsiderBusinessId = outsiderBusiness.data.business.id;
+  const companyProfileA = {
+    negocioId: businessId,
+    nombreComercial: "Empresa Histórica A",
+    razonSocial: "Empresa Histórica A SpA",
+    identificadorFiscalTipo: "RUT",
+    identificadorFiscalValor: "76.100.100-1",
+    email: "empresa-a@example.test",
+    direccion: "Dirección histórica 100",
+  };
+  await adminDb.doc(`negocios/${businessId}/empresa/perfil`).set(companyProfileA, {merge: true});
   await adminDb.doc(`membresias/${businessId}__${member.uid}`).set({
     negocioId: businessId,
     uid: member.uid,
@@ -341,6 +351,11 @@ try {
   let stored = (await getDoc(quoteRef)).data();
   assert.equal(stored.clienteId, primaryId);
   assert.equal("clientId" in stored, false);
+  assert.equal(stored.empresaSnapshot.nombreComercial, companyProfileA.nombreComercial);
+  assert.equal(stored.empresaSnapshot.razonSocial, companyProfileA.razonSocial);
+  assert.equal(stored.empresaSnapshot.identificadorFiscalValor, companyProfileA.identificadorFiscalValor);
+  assert.equal("empresa" in stored, false);
+  assert.notEqual(stored.empresaSnapshot.nombreComercial, "Bagner local");
   assert.deepEqual(snapshotFields(stored.cliente), {
     clienteId: primaryId,
     tipoCliente: primaryData.tipoCliente,
@@ -358,7 +373,15 @@ try {
   });
   assert.notEqual(stored.cliente.nombreRazonSocial, "NOMBRE MANIPULADO");
   const historicalSnapshot = structuredClone(stored.cliente);
-  console.log("OK snapshot: Functions ignora datos de cliente enviados por frontend");
+  const historicalCompanySnapshot = structuredClone(stored.empresaSnapshot);
+  await adminDb.doc(`negocios/${businessId}/empresa/perfil`).set({
+    ...companyProfileA,
+    nombreComercial: "Empresa Vigente B",
+    razonSocial: "Empresa Vigente B SpA",
+  });
+  stored = (await getDoc(quoteRef)).data();
+  assert.deepEqual(stored.empresaSnapshot, historicalCompanySnapshot);
+  console.log("OK snapshot: Functions ignora empresa manipulada y conserva identidad histórica");
 
   const changedPrimary = {...primaryData,
     nombreRazonSocial: "Cliente Principal Renombrado SpA",
@@ -372,6 +395,7 @@ try {
   });
   stored = (await getDoc(quoteRef)).data();
   assert.deepEqual(stored.cliente, historicalSnapshot);
+  assert.deepEqual(stored.empresaSnapshot, historicalCompanySnapshot);
   console.log("OK histórico: editar el cliente no cambia la cotización existente");
 
   await updateQuoteDraft({
@@ -470,6 +494,8 @@ try {
   assert.equal(storedDuplicate.clienteId, secondaryId);
   assert.equal(storedDuplicate.cliente.nombreRazonSocial, secondaryData.nombreRazonSocial);
   assert.notEqual(storedDuplicate.cliente.nombreRazonSocial, "Snapshot falsificado");
+  assert.equal(storedDuplicate.empresaSnapshot.nombreComercial, "Empresa Vigente B");
+  assert.notDeepEqual(storedDuplicate.empresaSnapshot, historicalCompanySnapshot);
   assert.deepEqual(storedDuplicate.items, sourceBeforeDuplicate.data().items);
   assert.equal(storedDuplicate.proyectoNombre, sourceBeforeDuplicate.data().proyectoNombre);
   assert.equal(storedDuplicate.condicionesPago, sourceBeforeDuplicate.data().condicionesPago);
