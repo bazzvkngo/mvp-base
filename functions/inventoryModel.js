@@ -1,4 +1,5 @@
 const { createHash } = require("node:crypto");
+const {INVENTORY_WRITE_ROLES} = require("./rbac");
 
 const INVENTORY_MODEL_VERSION = 2;
 const INVENTORY_PRICE_FORMATION_VERSION = 2;
@@ -396,7 +397,7 @@ async function resolveBusinessContext(
     return requireBusinessAccess(
       request,
       { db, HttpsError },
-      { roles: ["OWNER", "ADMIN"] }
+      { roles: INVENTORY_WRITE_ROLES }
     );
   }
   const uid = request?.auth?.uid;

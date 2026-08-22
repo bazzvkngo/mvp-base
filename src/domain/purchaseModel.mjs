@@ -141,7 +141,7 @@ export function adaptStoredPurchase(raw = {}) {
 }
 
 export function canManagePurchases(role) {
-  return ["OWNER", "ADMIN"].includes(String(role || "").toUpperCase());
+  return ["OWNER", "ADMIN", "COMPRAS"].includes(String(role || "").toUpperCase());
 }
 
 export function matchesPurchaseSearch(purchase, search) {

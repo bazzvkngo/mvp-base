@@ -22,10 +22,10 @@ export async function listarMiembrosNegocio(businessId) {
   return (response.data?.miembros || []).map(adaptBusinessMember);
 }
 
-export async function asociarUsuarioExistente(businessId, correo) {
+export async function asociarUsuarioExistente(businessId, correo, rol) {
   const response = await call(
     "asociarUsuarioExistente",
-    {businessId, correo: normalizeBusinessMemberEmail(correo)},
+    {businessId, correo: normalizeBusinessMemberEmail(correo), rol},
     "asociar usuarios"
   );
   return response.data?.miembro || null;

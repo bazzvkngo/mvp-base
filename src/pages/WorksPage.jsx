@@ -61,12 +61,13 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
     if (!businessId) return;
     setLoading(true); setError("");
     try {
-      const [workList, clientList, memberList, inventoryList] = await Promise.all([listarTrabajos(businessId), listarClientes(businessId), listarMiembrosNegocio(businessId), getInventoryItems(businessId)]);
+      const access = {role, currentUserUid};
+      const [workList, clientList, memberList, inventoryList] = await Promise.all([listarTrabajos(businessId, access), canManage ? listarClientes(businessId) : Promise.resolve([]), canManage ? listarMiembrosNegocio(businessId) : Promise.resolve([]), getInventoryItems(businessId)]);
       setWorks(workList); setClients(clientList.filter((client) => client.estado === "activo")); setMembers(memberList.filter((member) => member.estado === "activo")); setInventoryProducts(inventoryList.filter((item) => item.estado === "activo" && item.tipoItem === "producto"));
     } catch (loadError) {
       setError(loadError.message || "No se pudo cargar Proyectos y trabajos.");
     } finally { setLoading(false); }
-  }, [businessId]);
+  }, [businessId, canManage, currentUserUid, role]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -85,14 +86,14 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
     setDetailLoading(true);
     try {
       const [file, balance] = await Promise.all([
-        cargarFichaTrabajo(businessId, workId),
+        cargarFichaTrabajo(businessId, workId, {role, currentUserUid}),
         canViewWorkProfitability(role) ? obtenerBalanceTrabajo(businessId, workId) : Promise.resolve(null),
       ]);
       setDetail({...file, balance});
     }
     catch (detailError) { setError(detailError.message || "No se pudo cargar la ficha del trabajo."); }
     finally { setDetailLoading(false); }
-  }, [businessId, role]);
+  }, [businessId, currentUserUid, role]);
 
   useEffect(() => {
     const requestedWorkId = String(location.state?.openWorkId || "");
@@ -108,7 +109,7 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
 
   const openDetail = (work) => { setSelectedWork(work); setNoteText(""); loadDetail(work.id); };
   const refreshWork = async (workId) => {
-    const [list, inventoryList] = await Promise.all([listarTrabajos(businessId), getInventoryItems(businessId)]); setWorks(list); setInventoryProducts(inventoryList.filter((item) => item.estado === "activo" && item.tipoItem === "producto"));
+    const [list, inventoryList] = await Promise.all([listarTrabajos(businessId, {role, currentUserUid}), getInventoryItems(businessId)]); setWorks(list); setInventoryProducts(inventoryList.filter((item) => item.estado === "activo" && item.tipoItem === "producto"));
     const current = list.find((work) => work.id === workId);
     if (current) setSelectedWork(current);
     await loadDetail(workId);
@@ -127,7 +128,7 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
       if (editingWork) await actualizarTrabajo(businessId, editingWork.id, draft);
       else { const result = await crearTrabajo(businessId, draft, createRequestRef.current || createWorkRequestId()); workId = result.trabajoId; }
       setFormOpen(false); setEditingWork(null);
-      const list = await listarTrabajos(businessId); setWorks(list); const current = list.find((work) => work.id === workId); if (current) openDetail(current);
+      const list = await listarTrabajos(businessId, {role, currentUserUid}); setWorks(list); const current = list.find((work) => work.id === workId); if (current) openDetail(current);
     } catch (saveError) { setError(saveError.message || "No se pudo guardar el trabajo."); }
     finally { setSaving(false); }
   };
@@ -176,7 +177,7 @@ function TaskSection({businessId, canManage, currentUserUid, loading, members, p
       if (success) setDraft({titulo: "", descripcion: "", responsableUid: ""});
     });
   };
-  const canOperate = (task) => canManage || (role === "MEMBER" && task.responsableUid === currentUserUid);
+  const canOperate = (task) => canManage || (["TECNICO", "MEMBER"].includes(role) && task.responsableUid === currentUserUid);
   const assign = (task, responsableUid) => runAction(`task-assign-${task.id}`, () => asignarTareaTrabajo(businessId, workId, task.id, responsableUid, createWorkTaskRequestId("task-assign")));
   const changeState = (task, completed) => runAction(`task-state-${task.id}`, () => cambiarEstadoTareaTrabajo(businessId, workId, task.id, completed, {requestId: createWorkTaskRequestId(completed ? "task-complete" : "task-reopen")}));
   const addDocumentation = (event, task) => {
@@ -221,7 +222,7 @@ function FinancialSection({businessId, canManage, currency, currentUserUid, expe
   const [expenseDraft, setExpenseDraft] = useState({concepto: "", monto: "", categoria: "MATERIAL", responsableDelGastoUid: "", fecha: chileToday(), observacion: ""});
   const [laborDraft, setLaborDraft] = useState({tecnicoUid: "", horas: "", costoHora: "", fecha: chileToday(), concepto: ""});
   const [annulReasons, setAnnulReasons] = useState({});
-  const canRegister = canManage || role === "MEMBER";
+  const canRegister = canManage || ["TECNICO", "MEMBER"].includes(role);
   const visibleExpenses = canManage ? expenses : expenses.filter((entry) => [entry.registradoPorUid, entry.responsableDelGastoUid].includes(currentUserUid));
   const visibleLabor = canManage ? labor : labor.filter((entry) => [entry.registradoPorUid, entry.tecnicoUid].includes(currentUserUid));
   const activeExpenses = visibleExpenses.filter((entry) => entry.estado !== "anulado");
@@ -290,7 +291,7 @@ function FinancialSection({businessId, canManage, currency, currentUserUid, expe
 function MaterialsSection({businessId, canManage, currency, currentUserUid, loading, movements, processing, products, role, runAction, workId}) {
   const [draft, setDraft] = useState({itemId: "", cantidad: "", fecha: chileToday()});
   const [returnDrafts, setReturnDrafts] = useState({});
-  const canConsume = canManage || role === "MEMBER";
+  const canConsume = canManage || ["TECNICO", "MEMBER"].includes(role);
   const exits = movements.filter((movement) => movement.tipo === "SALIDA_PROYECTO" && (canManage || movement.usuarioUid === currentUserUid));
   const returns = movements.filter((movement) => movement.tipo === "DEVOLUCION_PROYECTO");
   const visibleExitIds = new Set(exits.map((movement) => movement.id));

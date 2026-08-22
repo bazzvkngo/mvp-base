@@ -20,7 +20,7 @@ const VALID_STATUS = new Set([
 ]);
 const VALID_ITEM_TYPES = new Set(["producto", "servicio", "actividad"]);
 const VALID_CLIENT_TYPES = new Set(["persona", "empresa"]);
-const QUOTE_WRITE_ROLES = ["OWNER", "ADMIN"];
+const {SALES_WRITE_ROLES: QUOTE_WRITE_ROLES} = require("./rbac");
 
 function safeText(value, maxLength = 2000) {
   return String(value ?? "").trim().slice(0, maxLength);

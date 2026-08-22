@@ -11,6 +11,7 @@ import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import SkipLink from "../components/ui/SkipLink";
 import StatusBadge from "../components/ui/StatusBadge";
 import { getRouteMeta, navigationSections } from "../app/navigation";
+import {filterNavigationSections} from "../domain/rbac.mjs";
 import {
   logout,
   refreshCurrentUser,
@@ -19,13 +20,6 @@ import {
 
 const VERIFICATION_NOTICE_KEY = "valoracloud.verificationNotice";
 const RESEND_COOLDOWN_SECONDS = 60;
-
-const mainNavigationSections = navigationSections.filter(
-  (section) => section.label !== "Cuenta"
-);
-const accountNavigationSections = navigationSections.filter(
-  (section) => section.label === "Cuenta"
-);
 
 function PrimaryNavigation({
   ariaLabel = "Navegación principal",
@@ -103,6 +97,16 @@ function AppLayout({
   const menuButtonRef = React.useRef(null);
   const drawerRef = React.useRef(null);
   const closeButtonRef = React.useRef(null);
+  const allowedNavigationSections = React.useMemo(
+    () => filterNavigationSections(navigationSections, negocioActivo?.role),
+    [negocioActivo?.role]
+  );
+  const mainNavigationSections = allowedNavigationSections.filter(
+    (section) => section.label !== "Cuenta"
+  );
+  const accountNavigationSections = allowedNavigationSections.filter(
+    (section) => section.label === "Cuenta"
+  );
 
   React.useEffect(() => {
     setEmailVerified(usuario?.emailVerified ?? true);

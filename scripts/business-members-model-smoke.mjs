@@ -11,11 +11,15 @@ import {
 assert.equal(canReadBusinessMembers("OWNER"), true);
 assert.equal(canReadBusinessMembers("ADMIN"), true);
 assert.equal(canReadBusinessMembers("MEMBER"), true);
+assert.equal(canReadBusinessMembers("VENTAS"), true);
+assert.equal(canReadBusinessMembers("COMPRAS"), true);
+assert.equal(canReadBusinessMembers("TECNICO"), true);
+assert.equal(canReadBusinessMembers("FINANZAS"), true);
 assert.equal(canReadBusinessMembers("UNKNOWN"), false);
 assert.equal(canManageBusinessMembers("OWNER"), true);
 assert.equal(canManageBusinessMembers("ADMIN"), false);
 assert.equal(canManageBusinessMembers("MEMBER"), false);
-console.log("OK miembros modelo: OWNER administra y ADMIN/MEMBER consultan");
+console.log("OK miembros modelo: roles V1 y MEMBER legacy son contratos reconocidos");
 
 assert.equal(normalizeBusinessMemberEmail(" Persona@Empresa.CL "), "persona@empresa.cl");
 assert.equal(isValidBusinessMemberEmail("persona@empresa.cl"), true);

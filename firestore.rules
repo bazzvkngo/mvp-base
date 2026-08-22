@@ -50,6 +50,39 @@ service cloud.firestore {
         && get(membershipPath(businessId, request.auth.uid)).data.rol in roles;
     }
 
+    function isAssignedWorkData(work) {
+      return work.get("responsableUid", "") == request.auth.uid
+        || request.auth.uid in work.get("participanteUids", []);
+    }
+
+    function canReadWork(businessId, workId) {
+      let workPath = /databases/$(database)/documents/negocios/$(businessId)/trabajos/$(workId);
+      return hasBusinessRole(businessId, ["OWNER", "ADMIN", "FINANZAS", "MEMBER"])
+        || (
+          hasBusinessRole(businessId, ["TECNICO"])
+          && exists(workPath)
+          && isAssignedWorkData(get(workPath).data)
+        );
+    }
+
+    function canReadWorkOperations(businessId, workId) {
+      return hasBusinessRole(businessId, ["OWNER", "ADMIN", "MEMBER"])
+        || (canReadWork(businessId, workId) && hasBusinessRole(businessId, ["TECNICO"]));
+    }
+
+    function canReadWorkCosts(businessId, workId, record) {
+      return hasBusinessRole(businessId, ["OWNER", "ADMIN", "FINANZAS", "MEMBER"])
+        || (
+          canReadWork(businessId, workId)
+          && hasBusinessRole(businessId, ["TECNICO"])
+          && (
+            record.get("registradoPorUid", "") == request.auth.uid
+            || record.get("responsableDelGastoUid", "") == request.auth.uid
+            || record.get("tecnicoUid", "") == request.auth.uid
+          )
+        );
+    }
+
     function hasValidDocumentOwner(uid) {
       return !request.resource.data.keys().hasAny(["uidUsuario"])
         || request.resource.data.uidUsuario == uid;
@@ -667,11 +700,11 @@ service cloud.firestore {
 
       match /inventario/{itemId} {
         allow read: if canAccessBusiness(businessId);
-        allow create: if hasBusinessRole(businessId, ["OWNER", "ADMIN"])
+        allow create: if hasBusinessRole(businessId, ["OWNER", "ADMIN", "COMPRAS"])
           && hasValidBusinessDocument(businessId)
           && hasNoInventoryAcquisitionFields()
           && isAllowedLegacyInventoryCreate();
-        allow update: if hasBusinessRole(businessId, ["OWNER", "ADMIN"])
+        allow update: if hasBusinessRole(businessId, ["OWNER", "ADMIN", "COMPRAS"])
           && hasValidBusinessDocument(businessId)
           && inventoryCodesAreImmutable()
           && inventoryAuthoritativeFieldsAreImmutable()
@@ -718,80 +751,94 @@ service cloud.firestore {
       }
 
       match /referencias/{referenceId} {
-        allow read: if canAccessBusiness(businessId);
+        allow read: if hasBusinessRole(businessId, ["OWNER", "ADMIN", "VENTAS", "COMPRAS", "MEMBER"]);
         allow create, update: if hasBusinessRole(businessId, ["OWNER", "ADMIN"])
           && hasValidBusinessDocument(businessId);
         allow delete: if false;
       }
 
       match /cotizaciones/{quoteId} {
-        allow read: if canAccessBusiness(businessId);
+        allow read: if hasBusinessRole(businessId, ["OWNER", "ADMIN", "VENTAS", "FINANZAS", "MEMBER"]);
         allow create: if false;
         allow update: if false;
         allow delete: if false;
 
         match /eventos/{eventId} {
-          allow read: if canAccessBusiness(businessId);
+          allow read: if hasBusinessRole(businessId, ["OWNER", "ADMIN", "VENTAS", "FINANZAS", "MEMBER"]);
           allow create, update, delete: if false;
         }
       }
 
       match /clientes/{clienteId} {
-        allow read: if canAccessBusiness(businessId)
+        allow read: if hasBusinessRole(businessId, ["OWNER", "ADMIN", "VENTAS", "MEMBER"])
           && resource.data.negocioId == businessId;
         allow create, update, delete: if false;
       }
 
       match /trabajos/{trabajoId} {
-        allow read: if canAccessBusiness(businessId)
-          && resource.data.negocioId == businessId;
+        allow read: if resource.data.negocioId == businessId
+          && (
+            hasBusinessRole(businessId, ["OWNER", "ADMIN", "FINANZAS", "MEMBER"])
+            || (
+              hasBusinessRole(businessId, ["TECNICO"])
+              && isAssignedWorkData(resource.data)
+            )
+          );
         allow create, update, delete: if false;
 
         match /tareas/{tareaId} {
-          allow read: if canAccessBusiness(businessId)
+          allow read: if canReadWorkOperations(businessId, trabajoId)
             && resource.data.negocioId == businessId
-            && resource.data.trabajoId == trabajoId;
+            && resource.data.trabajoId == trabajoId
+            && (
+              !hasBusinessRole(businessId, ["TECNICO"])
+              || resource.data.get("responsableUid", "") == request.auth.uid
+            );
           allow create, update, delete: if false;
 
           match /documentacion/{documentacionId} {
-            allow read: if canAccessBusiness(businessId)
+            allow read: if canReadWorkOperations(businessId, trabajoId)
               && resource.data.negocioId == businessId
               && resource.data.trabajoId == trabajoId
-              && resource.data.tareaId == tareaId;
+              && resource.data.tareaId == tareaId
+              && (
+                !hasBusinessRole(businessId, ["TECNICO"])
+                || get(/databases/$(database)/documents/negocios/$(businessId)/trabajos/$(trabajoId)/tareas/$(tareaId)).data.get("responsableUid", "") == request.auth.uid
+              );
             allow create, update, delete: if false;
           }
         }
 
         match /notas/{notaId} {
-          allow read: if canAccessBusiness(businessId)
+          allow read: if canReadWorkOperations(businessId, trabajoId)
             && resource.data.negocioId == businessId
             && resource.data.trabajoId == trabajoId;
           allow create, update, delete: if false;
         }
 
         match /gastos/{gastoId} {
-          allow read: if canAccessBusiness(businessId)
+          allow read: if canReadWorkCosts(businessId, trabajoId, resource.data)
             && resource.data.negocioId == businessId
             && resource.data.trabajoId == trabajoId;
           allow create, update, delete: if false;
         }
 
         match /horasHombre/{horasHombreId} {
-          allow read: if canAccessBusiness(businessId)
+          allow read: if canReadWorkCosts(businessId, trabajoId, resource.data)
             && resource.data.negocioId == businessId
             && resource.data.trabajoId == trabajoId;
           allow create, update, delete: if false;
         }
 
         match /historial/{eventoId} {
-          allow read: if canAccessBusiness(businessId)
+          allow read: if canReadWorkOperations(businessId, trabajoId)
             && resource.data.negocioId == businessId
             && resource.data.trabajoId == trabajoId;
           allow create, update, delete: if false;
         }
 
         match /vinculos/{vinculoId} {
-          allow read: if canAccessBusiness(businessId)
+          allow read: if canReadWorkOperations(businessId, trabajoId)
             && resource.data.negocioId == businessId
             && resource.data.trabajoId == trabajoId;
           allow create, update, delete: if false;
@@ -827,7 +874,7 @@ service cloud.firestore {
       }
 
       match /proveedores/{proveedorId} {
-        allow read: if canAccessBusiness(businessId)
+        allow read: if hasBusinessRole(businessId, ["OWNER", "ADMIN", "COMPRAS", "MEMBER"])
           && resource.data.negocioId == businessId;
         allow create, update, delete: if false;
       }
@@ -841,7 +888,7 @@ service cloud.firestore {
       }
 
       match /ordenesCompra/{ordenCompraId} {
-        allow read: if canAccessBusiness(businessId)
+        allow read: if hasBusinessRole(businessId, ["OWNER", "ADMIN", "COMPRAS", "FINANZAS", "MEMBER"])
           && resource.data.negocioId == businessId;
         allow create, update, delete: if false;
       }
@@ -863,7 +910,7 @@ service cloud.firestore {
       }
 
       match /recepciones/{recepcionId} {
-        allow read: if canAccessBusiness(businessId)
+        allow read: if hasBusinessRole(businessId, ["OWNER", "ADMIN", "COMPRAS", "FINANZAS", "MEMBER"])
           && resource.data.negocioId == businessId;
         allow create, update, delete: if false;
       }
@@ -909,19 +956,26 @@ service cloud.firestore {
       }
 
       match /compras/{compraId} {
-        allow read: if canAccessBusiness(businessId)
+        allow read: if hasBusinessRole(businessId, ["OWNER", "ADMIN", "COMPRAS", "FINANZAS", "MEMBER"])
           && resource.data.negocioId == businessId;
         allow create, update, delete: if false;
       }
 
       match /movimientosInventario/{movimientoId} {
-        allow read: if canAccessBusiness(businessId)
-          && resource.data.negocioId == businessId;
+        allow read: if resource.data.negocioId == businessId
+          && (
+            hasBusinessRole(businessId, ["OWNER", "ADMIN", "VENTAS", "COMPRAS", "FINANZAS", "MEMBER"])
+            || (
+              resource.data.get("trabajoId", "") != ""
+              && canReadWork(businessId, resource.data.trabajoId)
+              && hasBusinessRole(businessId, ["TECNICO"])
+            )
+          );
         allow create, update, delete: if false;
       }
 
       match /adquisicionesInventario/{adquisicionId} {
-        allow read: if canAccessBusiness(businessId)
+        allow read: if hasBusinessRole(businessId, ["OWNER", "ADMIN", "COMPRAS", "FINANZAS", "MEMBER"])
           && resource.data.negocioId == businessId;
         allow create, update, delete: if false;
       }
@@ -943,7 +997,7 @@ service cloud.firestore {
       }
 
       match /ventas/{ventaId} {
-        allow read: if canAccessBusiness(businessId)
+        allow read: if hasBusinessRole(businessId, ["OWNER", "ADMIN", "VENTAS", "FINANZAS", "MEMBER"])
           && resource.data.negocioId == businessId;
         allow create, update, delete: if false;
       }
@@ -965,12 +1019,12 @@ service cloud.firestore {
       }
 
       match /financialMovements/{movementId} {
-        allow read: if canAccessBusiness(businessId);
-        allow create: if hasBusinessRole(businessId, ["OWNER", "ADMIN"])
+        allow read: if hasBusinessRole(businessId, ["OWNER", "ADMIN", "FINANZAS", "MEMBER"]);
+        allow create: if hasBusinessRole(businessId, ["OWNER", "ADMIN", "FINANZAS"])
           && isAllowedFinancialMovementCreate(businessId);
-        allow update: if hasBusinessRole(businessId, ["OWNER", "ADMIN"])
+        allow update: if hasBusinessRole(businessId, ["OWNER", "ADMIN", "FINANZAS"])
           && isAllowedFinancialMovementUpdate(businessId);
-        allow delete: if hasBusinessRole(businessId, ["OWNER", "ADMIN"])
+        allow delete: if hasBusinessRole(businessId, ["OWNER", "ADMIN", "FINANZAS"])
           && resource.data.businessId == businessId
           && resource.data.sourceType == "manual";
       }
@@ -992,7 +1046,7 @@ service cloud.firestore {
       }
 
       match /tareasReferencias/{taskId} {
-        allow read: if canAccessBusiness(businessId);
+        allow read: if hasBusinessRole(businessId, ["OWNER", "ADMIN", "VENTAS", "COMPRAS", "MEMBER"]);
         allow update: if hasBusinessRole(businessId, ["OWNER", "ADMIN"])
           && isAllowedReferenceTaskUpdate();
         allow create, delete: if false;

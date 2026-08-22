@@ -63,7 +63,7 @@ const emptyLegacy = calculateWorkBalance({business, work: {trabajoId: "empty", n
 assert.equal(emptyLegacy.costoTotal, 0); assert.equal(emptyLegacy.valorComercial, null);
 console.log("OK legacy: gasto MATERIAL sin libro se conserva y expediente vacío queda en cero/parcial");
 
-assert.equal(canViewWorkProfitability("OWNER"), true); assert.equal(canViewWorkProfitability("ADMIN"), true); assert.equal(canViewWorkProfitability("MEMBER"), false);
+assert.equal(canViewWorkProfitability("OWNER"), true); assert.equal(canViewWorkProfitability("ADMIN"), true); assert.equal(canViewWorkProfitability("FINANZAS"), true); assert.equal(canViewWorkProfitability("TECNICO"), false); assert.equal(canViewWorkProfitability("MEMBER"), false);
 assert.equal(adaptWorkBalance(complete).rentabilidadPct, 55);
 
 const snapshot = (value) => ({exists: value != null, data: () => value});
@@ -81,7 +81,10 @@ const dependencies = {
 };
 const ownerBalance = await obtenerBalanceTrabajoHandler({auth: {uid: "owner-a", role: "OWNER"}, data: {businessId: "business-a", trabajoId: "work-a"}}, dependencies);
 assert.equal(ownerBalance.resultado, 110000); assert.equal(typeof ownerBalance.calculadoEn, "string");
+const financeBalance = await obtenerBalanceTrabajoHandler({auth: {uid: "finance-a", role: "FINANZAS"}, data: {businessId: "business-a", trabajoId: "work-a"}}, dependencies);
+assert.equal(financeBalance.resultado, 110000);
 await assert.rejects(() => obtenerBalanceTrabajoHandler({auth: {uid: "member-a", role: "MEMBER"}, data: {businessId: "business-a", trabajoId: "work-a"}}, dependencies), (error) => error.code === "permission-denied");
-console.log("OK seguridad: Callable autoritativa restringe margen a OWNER/ADMIN");
+await assert.rejects(() => obtenerBalanceTrabajoHandler({auth: {uid: "tech-a", role: "TECNICO"}, data: {businessId: "business-a", trabajoId: "work-a"}}, dependencies), (error) => error.code === "permission-denied");
+console.log("OK seguridad: margen limitado a OWNER/ADMIN/FINANZAS y denegado a TECNICO");
 
 console.log("WORK_BALANCE_SMOKE_OK");

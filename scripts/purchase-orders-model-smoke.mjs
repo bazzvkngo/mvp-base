@@ -150,6 +150,8 @@ assert.equal(stored.total, 11900);
 assert.equal("purchaseOrderId" in stored, false);
 assert.equal(matchesPurchaseOrderSearch(stored, "historico"), true);
 assert.equal(canManagePurchaseOrders("ADMIN"), true);
+assert.equal(canManagePurchaseOrders("COMPRAS"), true);
+assert.equal(canManagePurchaseOrders("VENTAS"), false);
 assert.equal(canManagePurchaseOrders("MEMBER"), false);
 console.log("OK compatibilidad: adapter legacy y roles");
 

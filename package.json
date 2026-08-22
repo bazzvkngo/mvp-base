@@ -70,6 +70,7 @@
     "test:business-onboarding": "firebase emulators:exec --only auth,firestore,functions \"node scripts/business-onboarding-integrated.mjs\"",
     "test:business-multi": "firebase emulators:exec --only auth,firestore,functions \"node scripts/business-multi-integrated.mjs\"",
     "test:business-members-model": "node scripts/business-members-model-smoke.mjs",
+    "test:rbac": "node scripts/rbac-smoke.mjs",
     "test:business-members-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/business-members-integrated-local.mjs\"",
     "test:finance": "node scripts/financial-model-smoke.mjs",
     "test:statistics": "node scripts/financial-model-smoke.mjs",

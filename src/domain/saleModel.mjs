@@ -212,7 +212,7 @@ export function adaptStoredSale(raw = {}) {
 }
 
 export function canManageSales(role) {
-  return ["OWNER", "ADMIN"].includes(String(role || "").toUpperCase());
+  return ["OWNER", "ADMIN", "VENTAS"].includes(String(role || "").toUpperCase());
 }
 
 export function shouldReconcileSaleConfirmation(error) {

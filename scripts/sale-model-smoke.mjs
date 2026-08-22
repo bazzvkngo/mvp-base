@@ -55,7 +55,7 @@ const stored = adaptStoredSale({ventaId: "sale-1", numero: "VTA-2026-0001", esta
 assert.equal(stored.id, "sale-1"); assert.equal(stored.total, 2142); assert.equal(stored.clienteSnapshot.nombreRazonSocial, "Cliente Uno");
 assert.equal(stored.trabajoId, "work-1"); assert.equal(stored.trabajoNumero, "TRB-2026-0001");
 assert.equal(matchesSaleSearch(stored, "COT-2026-0001"), true); assert.equal(matchesSaleSearch(stored, "76.000.000-0"), true); assert.equal(matchesSaleSearch(stored, "nada"), false);
-assert.equal(canManageSales("OWNER"), true); assert.equal(canManageSales("ADMIN"), true); assert.equal(canManageSales("MEMBER"), false);
+assert.equal(canManageSales("OWNER"), true); assert.equal(canManageSales("ADMIN"), true); assert.equal(canManageSales("VENTAS"), true); assert.equal(canManageSales("COMPRAS"), false); assert.equal(canManageSales("MEMBER"), false);
 assert.deepEqual(SALE_STATUSES, ["borrador", "confirmada", "cancelada"]);
 assert.equal(getSaleStatusLabel("borrador"), "Preparada");
 assert.equal(getSaleStatusLabel("confirmada"), "Confirmada");

@@ -1,4 +1,5 @@
 const crypto = require("node:crypto");
+const {SALES_WRITE_ROLES} = require("./rbac");
 const {
   buildAuthoritativeCompanySnapshot,
   getHistoricalCompanySnapshot,
@@ -518,7 +519,7 @@ async function prepareQuoteWhatsAppShareHandler(request, dependencies) {
   const {businessId, businessRef, uid} = await requireBusinessAccess(
     request,
     dependencies,
-    { roles: ["OWNER", "ADMIN"] }
+    { roles: SALES_WRITE_ROLES }
   );
   const quoteId = safeText(request?.data?.quoteId, 160);
   const requestId = normalizeLifecycleRequestId(
@@ -556,7 +557,7 @@ async function markQuoteEmittedManuallyHandler(request, dependencies) {
   const {businessId, businessRef, uid} = await requireBusinessAccess(
     request,
     dependencies,
-    { roles: ["OWNER", "ADMIN"] }
+    { roles: SALES_WRITE_ROLES }
   );
   const quoteId = safeText(request?.data?.quoteId, 160);
   if (!/^[a-zA-Z0-9_-]{1,160}$/.test(quoteId)) {
@@ -647,7 +648,7 @@ async function reopenQuoteHandler(request, dependencies) {
   const {businessId, businessRef, uid} = await requireBusinessAccess(
     request,
     dependencies,
-    {roles: ["OWNER", "ADMIN"]}
+    {roles: SALES_WRITE_ROLES}
   );
   const quoteId = safeText(request?.data?.quoteId, 160);
   const requestId = normalizeLifecycleRequestId(
@@ -823,7 +824,7 @@ async function confirmQuoteWhatsAppSentHandler(request, dependencies) {
   const { businessId, businessRef, uid } = await requireBusinessAccess(
     request,
     dependencies,
-    { roles: ["OWNER", "ADMIN"] }
+    { roles: SALES_WRITE_ROLES }
   );
   const quoteId = safeText(request?.data?.quoteId, 160);
   const requestId = normalizeLifecycleRequestId(

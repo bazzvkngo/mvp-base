@@ -1,3 +1,4 @@
+const {SALES_WRITE_ROLES} = require("./rbac");
 const QUOTE_LIFECYCLE_REQUEST_PATTERN = /^[A-Za-z0-9_-]{8,160}$/;
 const {
   linkedWorkFields,
@@ -108,7 +109,7 @@ async function transitionQuoteStatusHandler(request, dependencies) {
   const {businessId, businessRef, uid} = await requireBusinessAccess(
     request,
     dependencies,
-    {roles: ["OWNER", "ADMIN"]}
+    {roles: SALES_WRITE_ROLES}
   );
   const quoteId = safeText(request?.data?.quoteId, 160);
   const targetStatus = safeText(request?.data?.estado, 30).toLowerCase();

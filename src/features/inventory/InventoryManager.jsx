@@ -19,6 +19,7 @@ import {
 } from "../../domain/inventoryMvp.mjs";
 import { getCategoriesForArea, getInventoryAreaLabel, getInventoryCategoryLabel, isDuplicateAreaName, isDuplicateCategoryName } from "../../domain/inventoryCatalog.mjs";
 import { calculateBasePrice, calculateEffectiveInternalPrice } from "../../domain/pricing.js";
+import {BUSINESS_PERMISSIONS, hasBusinessPermission} from "../../domain/rbac.mjs";
 import {
   createManagedInventoryItem,
   deactivateInventoryItem,
@@ -72,7 +73,8 @@ function requestId() {
 }
 
 function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
-  const cannotWrite = readOnly || role === "MEMBER";
+  const cannotWrite = readOnly || !hasBusinessPermission(role, BUSINESS_PERMISSIONS.INVENTORY_WRITE);
+  const canReadCosts = hasBusinessPermission(role, BUSINESS_PERMISSIONS.INVENTORY_COSTS_READ);
   const [items, setItems] = useState([]);
   const [areas, setAreas] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -141,7 +143,7 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
   }, [businessId]);
 
   useEffect(() => {
-    if (!businessId || !detailItem?.id || adaptInventoryItem(detailItem).tipoItem !== "producto") {
+    if (!businessId || !canReadCosts || !detailItem?.id || adaptInventoryItem(detailItem).tipoItem !== "producto") {
       setAcquisitions([]);
       setAcquisitionsState({loading: false, error: ""});
       return undefined;
@@ -165,7 +167,7 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
         }
       });
     return () => { active = false; };
-  }, [businessId, detailItem]);
+  }, [businessId, canReadCosts, detailItem]);
 
   const summary = useMemo(() => summarizeInventory(items, { lowStockThreshold: settings.umbralStockBajo }), [items, settings.umbralStockBajo]);
   const visibleItems = useMemo(() => filterInventoryItems(items, filters), [filters, items]);
@@ -502,7 +504,7 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
       <ResponsiveDialog className="inventory-catalog-dialog" open={catalogOpen} onClose={closeCatalogManager} size="large" eyebrow="Inventario" title="Áreas y categorías" description="Organiza el catálogo según las necesidades de tu negocio."><InventoryCatalogManager areas={areas} businessId={businessId} categories={categories} loadErrors={catalogState.errors} loading={catalogState.loading} onRetry={() => setCatalogState((current) => ({ ...current, retry: current.retry + 1 }))} /></ResponsiveDialog>
       <ResponsiveDialog open={Boolean(quickCreate)} onClose={closeQuickCreate} initialFocusRef={quickNameRef} size="small" eyebrow="Clasificación" title={quickCreate === "area" ? "Nueva área" : "Nueva categoría"} description={quickCreate === "area" ? "Crea un área sin perder los datos del ítem." : "La categoría quedará asociada al área seleccionada."} footer={<><Button type="button" variant="secondary" disabled={quickSaving} onClick={closeQuickCreate}>Cancelar</Button><Button type="submit" form="inventory-quick-classification-form" disabled={quickSaving}>{quickSaving ? "Creando..." : quickCreate === "area" ? "Crear área" : "Crear categoría"}</Button></>}><form id="inventory-quick-classification-form" className="inventory-quick-classification-form" onSubmit={submitQuickCreate}>{quickCreate === "category" && <p>Área: <strong>{areas.find((area) => area.id === draft.areaId)?.nombre || "Área seleccionada"}</strong></p>}<Field label="Nombre" required error={quickError}><input ref={quickNameRef} className="erp-control" maxLength={80} value={quickName} onChange={(event) => { setQuickName(event.target.value); setQuickError(""); }} /></Field></form></ResponsiveDialog>
       <InventoryImportDialog open={importOpen} onClose={() => setImportOpen(false)} onImported={(info) => setFeedback(info?.partial ? { type: "notice", message: "La importación quedó parcial; revisa el resumen antes de continuar." } : { type: "success", message: "Importación confirmada correctamente." })} businessId={businessId} areas={areas} categories={categories} existingItems={items} />
-      <ItemDetail item={detailItem} areas={areas} categories={categories} acquisitions={acquisitions} acquisitionsState={acquisitionsState} cannotWrite={cannotWrite} onClose={() => setDetailItem(null)} onEdit={openEditItem} onArchive={(item) => changeStatus(item, "inactivo")} onReactivate={(item) => changeStatus(item, "activo")} />
+      <ItemDetail item={detailItem} areas={areas} categories={categories} acquisitions={acquisitions} acquisitionsState={acquisitionsState} cannotWrite={cannotWrite} showCosts={canReadCosts} onClose={() => setDetailItem(null)} onEdit={openEditItem} onArchive={(item) => changeStatus(item, "inactivo")} onReactivate={(item) => changeStatus(item, "activo")} />
     </section>
   );
 }
@@ -532,7 +534,7 @@ function InventoryList({ areas, cannotWrite, categories, items, onArchive, onEdi
 function Status({ item }) { return <span className={`inventory-status inventory-status--${item.estado === "activo" ? "active" : "archived"}`}>{item.estado === "activo" ? "Activo" : "Archivado"}</span>; }
 function Actions({ cannotWrite, item, onArchive, onEdit, onReactivate }) { if (cannotWrite) return null; return <div className="inventory-row-actions"><button type="button" onClick={() => onEdit(item)}>Editar</button>{item.estado === "activo" ? <button type="button" onClick={() => onArchive(item)}><AppIcon icon={Archive} size={15} />Archivar</button> : <button type="button" onClick={() => onReactivate(item)}><AppIcon icon={RotateCcw} size={15} />Reactivar</button>}</div>; }
 
-function ItemDetail({ acquisitions, acquisitionsState, areas, cannotWrite, categories, item, onArchive, onClose, onEdit, onReactivate }) {
+function ItemDetail({ acquisitions, acquisitionsState, areas, cannotWrite, categories, item, onArchive, onClose, onEdit, onReactivate, showCosts }) {
   if (!item) return null;
   const adapted = adaptInventoryItem(item);
   const currency = adapted.costoPromedioMoneda || "CLP";
@@ -549,9 +551,9 @@ function ItemDetail({ acquisitions, acquisitionsState, areas, cannotWrite, categ
         <Detail label="Costo unitario neto" value={formatCLP(adapted.costoBase)} />
         <Detail label="IVA de compra" value={`${adapted.tasaImpuestoCompra}% · ${formatCLP(adapted.montoImpuestoCompra)}`} />
         <Detail label="Costo pagado" value={formatCLP(adapted.costoPagado)} />
-        <Detail label="Costo promedio" value={adapted.costoPromedio === null ? "Sin adquisiciones" : formatMoney(adapted.costoPromedio, currency)} />
-        <Detail label="Último costo" value={adapted.ultimoCosto === null ? "Sin adquisiciones" : formatMoney(adapted.ultimoCosto, currency)} />
-        <Detail label="Último proveedor" value={providerName} />
+        {showCosts && <Detail label="Costo promedio" value={adapted.costoPromedio === null ? "Sin adquisiciones" : formatMoney(adapted.costoPromedio, currency)} />}
+        {showCosts && <Detail label="Último costo" value={adapted.ultimoCosto === null ? "Sin adquisiciones" : formatMoney(adapted.ultimoCosto, currency)} />}
+        {showCosts && <Detail label="Último proveedor" value={providerName} />}
         <Detail label="Recargo" value={`${adapted.margenDeseado}%`} />
         <Detail label="Precio sugerido" value={formatCLP(adapted.precioCalculado)} />
         <Detail label="Precio de venta final" value={formatCLP(adapted.precioEfectivo)} />
@@ -564,7 +566,7 @@ function ItemDetail({ acquisitions, acquisitionsState, areas, cannotWrite, categ
       {adapted.tipoItem === "producto" && <><Detail label="Stock actual" value={`${adapted.stock} ${adapted.unidadStock || adapted.unidad}`} /><Detail label="Stock mínimo" value={adapted.stockMinimo} /><Detail label="Nivel de stock" value={isInventoryLowStock(adapted) ? "Stock bajo" : "Disponible"} /></>}
     </dl>
     {adapted.descripcion && <div className="inventory-detail-description"><strong>Descripción</strong><p>{adapted.descripcion}</p></div>}
-    {adapted.tipoItem === "producto" && <AcquisitionHistory acquisitions={acquisitions} state={acquisitionsState} />}
+    {showCosts && adapted.tipoItem === "producto" && <AcquisitionHistory acquisitions={acquisitions} state={acquisitionsState} />}
   </ResponsiveDialog>;
 }
 function AcquisitionHistory({ acquisitions, state }) {

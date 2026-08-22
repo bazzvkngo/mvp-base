@@ -54,7 +54,7 @@ export function canManageWorks(role) {
 }
 
 export function canViewWorkProfitability(role) {
-  return canManageWorks(role);
+  return ["OWNER", "ADMIN", "FINANZAS"].includes(String(role || "").toUpperCase());
 }
 
 export function adaptWorkBalance(raw = {}) {

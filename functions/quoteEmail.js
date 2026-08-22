@@ -1,3 +1,4 @@
+const {SALES_WRITE_ROLES} = require("./rbac");
 const SENDABLE_QUOTE_STATUSES = new Set([
   "borrador",
   "emitida",
@@ -290,7 +291,7 @@ async function sendQuoteEmailHandler(request, dependencies) {
   const { businessId, businessRef, uid } = await requireBusinessAccess(
     request,
     dependencies,
-    { roles: ["OWNER", "ADMIN"] }
+    { roles: SALES_WRITE_ROLES }
   );
   const data = request.data || {};
   const rawEmailCliente =

@@ -6,7 +6,7 @@ const {
   buildVerificationInvalidationPlan,
 } = require("./businessVerification");
 
-const BUSINESS_ROLES = Object.freeze(["OWNER", "ADMIN", "MEMBER"]);
+const {BUSINESS_ROLES} = require("./rbac");
 const ACTIVE_STATUS = "activo";
 const DELETED_STATUS = "eliminada";
 const PILOT_OWNER_BUSINESS_LIMIT = null;

@@ -46,10 +46,18 @@ export function createWorkCostRequestId(action = "cost") {
   return `${action}_${String(value).replace(/[^a-zA-Z0-9_-]/g, "")}`.slice(0, 120);
 }
 
-export async function listarTrabajos(rawBusinessId) {
+export async function listarTrabajos(rawBusinessId, {role = "", currentUserUid = ""} = {}) {
   const id = businessId(rawBusinessId);
-  const snapshot = await getDocs(query(collection(db, ...worksCollectionPath(id)), where("negocioId", "==", id)));
-  return snapshot.docs.map((entry) => adaptStoredWork({...entry.data(), id: entry.id})).sort((left, right) => String(right.actualizadoEn || "").localeCompare(String(left.actualizadoEn || "")));
+  const isTechnician = String(role).toUpperCase() === "TECNICO";
+  const base = collection(db, ...worksCollectionPath(id));
+  const snapshots = isTechnician
+    ? await Promise.all([
+        getDocs(query(base, where("negocioId", "==", id), where("responsableUid", "==", currentUserUid))),
+        getDocs(query(base, where("negocioId", "==", id), where("participanteUids", "array-contains", currentUserUid))),
+      ])
+    : [await getDocs(query(base, where("negocioId", "==", id)))];
+  const entries = new Map(snapshots.flatMap((snapshot) => snapshot.docs).map((entry) => [entry.id, entry]));
+  return [...entries.values()].map((entry) => adaptStoredWork({...entry.data(), id: entry.id})).sort((left, right) => String(right.actualizadoEn || "").localeCompare(String(left.actualizadoEn || "")));
 }
 
 export async function obtenerBalanceTrabajo(rawBusinessId, rawWorkId) {
@@ -57,15 +65,19 @@ export async function obtenerBalanceTrabajo(rawBusinessId, rawWorkId) {
   return adaptWorkBalance(response.data);
 }
 
-export async function cargarFichaTrabajo(rawBusinessId, rawWorkId) {
+export async function cargarFichaTrabajo(rawBusinessId, rawWorkId, {role = "", currentUserUid = ""} = {}) {
   const id = businessId(rawBusinessId); const selectedWorkId = workId(rawWorkId);
+  const isTechnician = String(role).toUpperCase() === "TECNICO";
+  const emptySnapshot = {docs: []};
   const [tasks, notes, history, linksSnapshot, expensesSnapshot, laborSnapshot, materialMovementsSnapshot] = await Promise.all([
-    getDocs(collection(db, ...workTasksCollectionPath(id, selectedWorkId))),
-    getDocs(collection(db, ...workNotesCollectionPath(id, selectedWorkId))),
-    getDocs(collection(db, ...workHistoryCollectionPath(id, selectedWorkId))),
-    getDocs(collection(db, ...workLinksCollectionPath(id, selectedWorkId))),
-    getDocs(query(collection(db, ...workExpensesCollectionPath(id, selectedWorkId)), where("negocioId", "==", id), where("trabajoId", "==", selectedWorkId))),
-    getDocs(query(collection(db, ...workLaborCollectionPath(id, selectedWorkId)), where("negocioId", "==", id), where("trabajoId", "==", selectedWorkId))),
+    getDocs(isTechnician
+      ? query(collection(db, ...workTasksCollectionPath(id, selectedWorkId)), where("negocioId", "==", id), where("trabajoId", "==", selectedWorkId), where("responsableUid", "==", currentUserUid))
+      : collection(db, ...workTasksCollectionPath(id, selectedWorkId))),
+    getDocs(query(collection(db, ...workNotesCollectionPath(id, selectedWorkId)), where("negocioId", "==", id), where("trabajoId", "==", selectedWorkId))),
+    getDocs(query(collection(db, ...workHistoryCollectionPath(id, selectedWorkId)), where("negocioId", "==", id), where("trabajoId", "==", selectedWorkId))),
+    isTechnician ? Promise.resolve(emptySnapshot) : getDocs(query(collection(db, ...workLinksCollectionPath(id, selectedWorkId)), where("negocioId", "==", id), where("trabajoId", "==", selectedWorkId))),
+    getDocs(query(collection(db, ...workExpensesCollectionPath(id, selectedWorkId)), where("negocioId", "==", id), where("trabajoId", "==", selectedWorkId), ...(isTechnician ? [where("registradoPorUid", "==", currentUserUid)] : []))),
+    getDocs(query(collection(db, ...workLaborCollectionPath(id, selectedWorkId)), where("negocioId", "==", id), where("trabajoId", "==", selectedWorkId), ...(isTechnician ? [where("registradoPorUid", "==", currentUserUid)] : []))),
     getDocs(query(collection(db, ...inventoryMovementsCollectionPath(id)), where("negocioId", "==", id), where("trabajoId", "==", selectedWorkId))),
   ]);
   const vinculos = sortByDate(linksSnapshot.docs.map((entry) => adaptWorkLink({...entry.data(), id: entry.id})), "creadoEn");

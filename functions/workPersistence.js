@@ -1,4 +1,8 @@
 const {createHash} = require("node:crypto");
+const {
+  WORK_MANAGEMENT_ROLES,
+  WORK_OPERATION_ROLES,
+} = require("./rbac");
 
 const WORK_MODEL_VERSION = 2;
 const WORK_FILE_MODEL_VERSION = 1;
@@ -6,7 +10,7 @@ const WORK_TASK_MODEL_VERSION = 2;
 const WORK_EXPENSE_MODEL_VERSION = 1;
 const WORK_LABOR_MODEL_VERSION = 1;
 const WORK_MATERIAL_MODEL_VERSION = 1;
-const WRITE_ROLES = ["OWNER", "ADMIN"];
+const WRITE_ROLES = WORK_MANAGEMENT_ROLES;
 const WORK_STATUSES = new Set(["pendiente", "en_progreso", "en_espera", "completado", "cancelado"]);
 const WORK_PRIORITIES = new Set(["baja", "normal", "alta", "urgente"]);
 const WORK_EXPENSE_CATEGORIES = new Set(["MATERIAL", "MANO_DE_OBRA", "OPERATIVO", "SERVICIO_EXTERNO", "ADMINISTRATIVO", "OTRO"]);
@@ -132,8 +136,17 @@ function taskIsCompleted(task) {
 
 function assertTaskOperator(task, context, HttpsError) {
   if (WRITE_ROLES.includes(context.membership?.rol)) return;
-  if (context.membership?.rol !== "MEMBER" || String(task.responsableUid || "") !== context.uid) {
+  if (!["TECNICO", "MEMBER"].includes(context.membership?.rol) || String(task.responsableUid || "") !== context.uid) {
     fail(HttpsError, "permission-denied", "Sólo la persona asignada puede actualizar esta tarea.");
+  }
+}
+
+function assertWorkOperator(work, context, HttpsError) {
+  if (WRITE_ROLES.includes(context.membership?.rol) || context.membership?.rol === "MEMBER") return;
+  const assigned = work.responsableUid === context.uid ||
+    (Array.isArray(work.participanteUids) && work.participanteUids.includes(context.uid));
+  if (context.membership?.rol !== "TECNICO" || !assigned) {
+    fail(HttpsError, "permission-denied", "El proyecto no está asignado a tu membresía.");
   }
 }
 
@@ -232,7 +245,7 @@ function productSnapshot(item, itemId) {
 }
 
 function memberLinkedUid(context, proposedUid, label, HttpsError, {required = false} = {}) {
-  if (context.membership?.rol === "MEMBER") {
+  if (["TECNICO", "MEMBER"].includes(context.membership?.rol)) {
     if (proposedUid && proposedUid !== context.uid) fail(HttpsError, "permission-denied", `${label} debe corresponder a tu propia membresía.`);
     return context.uid;
   }
@@ -293,6 +306,17 @@ async function userSnapshots(dependencies, uids) {
 function publicPerson(snapshot, uid) {
   const value = snapshot.get(uid) || {};
   return {uid, nombre: String(value.nombre || "Sin nombre registrado"), correo: String(value.correo || "")};
+}
+
+function taskAssigneeWorkAccess(work, uid, person) {
+  if (!uid || uid === work.responsableUid || (work.participanteUids || []).includes(uid)) return {};
+  return {
+    participanteUids: [...new Set([...(work.participanteUids || []), uid])],
+    participantesSnapshot: [
+      ...(work.participantesSnapshot || []).filter((entry) => entry?.uid !== uid),
+      person,
+    ],
+  };
 }
 
 function eventPayload({eventRef, businessId, workId, type, actorUid, actor, detail, timestamp}) {
@@ -625,7 +649,7 @@ async function crearTareaTrabajoV2Handler(request, dependencies) {
       creadoEn: timestamp,
       actualizadoEn: timestamp,
     });
-    transaction.update(workRef, {tareasTotal: Number(work.tareasTotal || 0) + 1, modeloTrabajoVersion: WORK_MODEL_VERSION, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
+    transaction.update(workRef, {...taskAssigneeWorkAccess(work, input.responsableUid, assignedPerson), tareasTotal: Number(work.tareasTotal || 0) + 1, modeloTrabajoVersion: WORK_MODEL_VERSION, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
     writeEvent(transaction, workRef, {businessId: context.businessId, type: "tarea_creada", actorUid: context.uid, actor, detail: {tareaId: taskRef.id, tareaTitulo: input.titulo}, timestamp});
     if (assignedPerson) writeEvent(transaction, workRef, {businessId: context.businessId, type: "tarea_asignada", actorUid: context.uid, actor, detail: {tareaId: taskRef.id, tareaTitulo: input.titulo, responsableNombre: assignedPerson.nombre}, timestamp});
     result = {tareaId: taskRef.id, idempotent: false};
@@ -636,7 +660,7 @@ async function crearTareaTrabajoV2Handler(request, dependencies) {
 
 async function cambiarEstadoTareaTrabajoV2Handler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
-  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError});
+  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES});
   const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError); const taskId = identifier(request?.data?.tareaId, "La tarea", HttpsError);
   if (typeof request?.data?.completada !== "boolean") fail(HttpsError, "invalid-argument", "El estado de la tarea no es válido.");
   const completed = request.data.completada;
@@ -653,7 +677,7 @@ async function cambiarEstadoTareaTrabajoV2Handler(request, dependencies) {
   await db.runTransaction(async (transaction) => {
     const previous = previousTaskRequest(await transaction.get(requestRef), {fingerprint: requestFingerprint, operation, uid: context.uid}, HttpsError);
     if (previous) { result = previous; return; }
-    const work = assertWork(await transaction.get(workRef), context.businessId, HttpsError); assertTaskMutable(work, HttpsError);
+    const work = assertWork(await transaction.get(workRef), context.businessId, HttpsError); assertWorkOperator(work, context, HttpsError); assertTaskMutable(work, HttpsError);
     const task = assertTask(await transaction.get(taskRef), context.businessId, workId, HttpsError); assertTaskOperator(task, context, HttpsError);
     const timestamp = FieldValue.serverTimestamp();
     if (taskIsCompleted(task) === completed) {
@@ -710,7 +734,7 @@ async function asignarTareaTrabajoHandler(request, dependencies) {
       return;
     }
     transaction.update(taskRef, {modeloTareaVersion: WORK_TASK_MODEL_VERSION, estado: taskIsCompleted(task) ? "completada" : "pendiente", descripcion: String(task.descripcion || ""), responsableUid, responsableSnapshot: assignedPerson, actualizadoEn: timestamp});
-    transaction.update(workRef, {modeloTrabajoVersion: WORK_MODEL_VERSION, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
+    transaction.update(workRef, {...taskAssigneeWorkAccess(work, responsableUid, assignedPerson), modeloTrabajoVersion: WORK_MODEL_VERSION, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
     writeEvent(transaction, workRef, {businessId: context.businessId, type: previousUid ? "tarea_reasignada" : "tarea_asignada", actorUid: context.uid, actor, detail: {tareaId: taskId, tareaTitulo: task.titulo, responsableAnteriorNombre: task.responsableSnapshot?.nombre || "Sin responsable", responsableNombre: assignedPerson?.nombre || "Sin responsable"}, timestamp});
     result = {tareaId: taskId, responsableUid, idempotent: false};
     transaction.create(requestRef, taskRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "asignar", result, timestamp, uid: context.uid, workId, taskId}));
@@ -720,7 +744,7 @@ async function asignarTareaTrabajoHandler(request, dependencies) {
 
 async function documentarTareaTrabajoHandler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
-  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError});
+  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES});
   const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError); const taskId = identifier(request?.data?.tareaId, "La tarea", HttpsError);
   const documentation = text(request?.data?.texto, "La documentación", 8000, HttpsError, {required: true});
   const requestId = requestIdentifier(request?.data?.requestId, HttpsError);
@@ -732,7 +756,7 @@ async function documentarTareaTrabajoHandler(request, dependencies) {
   await db.runTransaction(async (transaction) => {
     const previous = previousTaskRequest(await transaction.get(requestRef), {fingerprint: requestFingerprint, operation: "documentar", uid: context.uid}, HttpsError);
     if (previous) { result = previous; return; }
-    const work = assertWork(await transaction.get(workRef), context.businessId, HttpsError); assertTaskMutable(work, HttpsError);
+    const work = assertWork(await transaction.get(workRef), context.businessId, HttpsError); assertWorkOperator(work, context, HttpsError); assertTaskMutable(work, HttpsError);
     const task = assertTask(await transaction.get(taskRef), context.businessId, workId, HttpsError); assertTaskOperator(task, context, HttpsError);
     const timestamp = FieldValue.serverTimestamp();
     transaction.create(documentationRef, {documentacionId: documentationRef.id, negocioId: context.businessId, trabajoId: workId, tareaId: taskId, tipo: "avance", texto: documentation, autorUid: context.uid, autorSnapshot: {nombre: actor.nombre, correo: actor.correo}, creadoEn: timestamp});
@@ -773,7 +797,7 @@ async function eliminarTareaTrabajoV2Handler(request, dependencies) {
 
 async function registrarGastoTrabajoHandler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
-  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError});
+  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES});
   const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError);
   const input = normalizeExpenseInput(request?.data?.gasto || {}, HttpsError);
   input.responsableDelGastoUid = memberLinkedUid(context, input.responsableDelGastoUid, "El responsable del gasto", HttpsError);
@@ -791,6 +815,7 @@ async function registrarGastoTrabajoHandler(request, dependencies) {
     if (previous) { result = previous; return; }
     const [workSnapshot, businessSnapshot] = await Promise.all([transaction.get(workRef), transaction.get(context.businessRef)]);
     const work = assertWork(workSnapshot, context.businessId, HttpsError);
+    assertWorkOperator(work, context, HttpsError);
     const business = businessSnapshot.data() || {};
     if (!businessSnapshot.exists) fail(HttpsError, "failed-precondition", "El negocio seleccionado no está disponible.");
     if (input.responsableDelGastoUid) assertActiveMember(await transaction.get(db.collection("membresias").doc(membershipId(context.businessId, input.responsableDelGastoUid))), context.businessId, input.responsableDelGastoUid, HttpsError);
@@ -837,7 +862,7 @@ async function registrarGastoTrabajoHandler(request, dependencies) {
 
 async function registrarHorasHombreTrabajoHandler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
-  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError});
+  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES});
   const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError);
   const input = normalizeLaborInput(request?.data?.horasHombre || {}, HttpsError);
   input.tecnicoUid = memberLinkedUid(context, input.tecnicoUid, "El técnico", HttpsError, {required: true});
@@ -861,6 +886,7 @@ async function registrarHorasHombreTrabajoHandler(request, dependencies) {
       transaction.get(db.collection("membresias").doc(membershipId(context.businessId, input.tecnicoUid))),
     ]);
     const work = assertWork(workSnapshot, context.businessId, HttpsError);
+    assertWorkOperator(work, context, HttpsError);
     const business = businessSnapshot.data() || {};
     if (!businessSnapshot.exists) fail(HttpsError, "failed-precondition", "El negocio seleccionado no está disponible.");
     assertActiveMember(memberSnapshot, context.businessId, input.tecnicoUid, HttpsError);
@@ -1004,7 +1030,7 @@ async function agregarNotaTrabajoHandler(request, dependencies) {
 
 async function registrarSalidaMaterialTrabajoHandler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
-  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError});
+  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES});
   const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError);
   const itemId = identifier(request?.data?.itemId, "El producto", HttpsError);
   const cantidad = positiveDecimal(request?.data?.cantidad, "La cantidad", 999999999.99, HttpsError);
@@ -1026,6 +1052,7 @@ async function registrarSalidaMaterialTrabajoHandler(request, dependencies) {
       transaction.get(workRef), transaction.get(context.businessRef), transaction.get(itemRef),
     ]);
     const work = assertWork(workSnapshot, context.businessId, HttpsError);
+    assertWorkOperator(work, context, HttpsError);
     if (!businessSnapshot.exists) fail(HttpsError, "failed-precondition", "El negocio seleccionado no est\u00e1 disponible.");
     const item = assertInventoryProduct(itemSnapshot, context.businessId, HttpsError, {requireActive: true});
     if (item.stock < cantidad) fail(HttpsError, "failed-precondition", "No hay stock suficiente para registrar la salida.");

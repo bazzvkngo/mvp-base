@@ -38,7 +38,7 @@ const profiles = new Map([
   ["worker-c", {uid: "worker-c", nombre: "Camila Técnica", correo: "camila@example.cl"}],
 ]);
 
-for (const [uid, role] of [["owner-a", "OWNER"], ["worker-a", "MEMBER"], ["worker-b", "ADMIN"], ["worker-c", "MEMBER"]]) {
+for (const [uid, role] of [["owner-a", "OWNER"], ["worker-a", "TECNICO"], ["worker-b", "ADMIN"], ["worker-c", "TECNICO"]]) {
   db.seed(`membresias/business-a__${uid}`, {negocioId: "business-a", uid, rol: role, estado: "activo"});
 }
 db.seed("negocios/business-a", {nombreComercial: "Empresa A", estado: "activo", monedaCodigo: "USD"});
@@ -62,6 +62,7 @@ assert.throws(() => normalizeWorkInput(input({estado: "inventado"}), TestHttpsEr
 assert.throws(() => normalizeWorkInput(input({prioridad: "media"}), TestHttpsError), (error) => error.code === "invalid-argument");
 assert.deepEqual(getWorkDraftErrors(input()), {});
 assert.equal(canManageWorks("ADMIN"), true);
+assert.equal(canManageWorks("TECNICO"), false);
 assert.equal(canManageWorks("MEMBER"), false);
 assert.equal(WORK_EXPENSE_CATEGORIES.has("ADMINISTRATIVO"), true);
 console.log("OK contrato: estados, prioridades, formato y roles canónicos");

@@ -990,6 +990,75 @@ async function main() {
       getDoc(doc(guestClient.db, ownerMovementPath))
     );
 
+    const businessProviderPath = `negocios/${businessId}/proveedores/provider-rbac`;
+    const businessPurchasePath = `negocios/${businessId}/compras/purchase-rbac`;
+    const businessSalePath = `negocios/${businessId}/ventas/sale-rbac`;
+    const unassignedWorkPath = `negocios/${businessId}/trabajos/work-unassigned-rbac`;
+    await Promise.all([
+      adminDb.doc(businessProviderPath).set({negocioId: businessId, proveedorId: "provider-rbac", estado: "activo"}),
+      adminDb.doc(businessPurchasePath).set({negocioId: businessId, compraId: "purchase-rbac", estado: "confirmada"}),
+      adminDb.doc(businessSalePath).set({negocioId: businessId, ventaId: "sale-rbac", estado: "confirmada"}),
+      adminDb.doc(unassignedWorkPath).set({negocioId: businessId, trabajoId: "work-unassigned-rbac", titulo: "No asignado", participanteUids: []}),
+      adminDb.doc(businessWorkPath).update({participanteUids: [otherUid]}),
+      adminDb.doc(businessWorkTaskPath).update({responsableUid: otherUid}),
+      adminDb.doc(businessWorkExpensePath).update({registradoPorUid: otherUid, responsableDelGastoUid: otherUid}),
+      adminDb.doc(businessWorkLaborPath).update({registradoPorUid: otherUid, tecnicoUid: otherUid}),
+    ]);
+
+    await adminDb.doc(`membresias/${businessId}__${otherUid}`).update({rol: "VENTAS"});
+    for (const readablePath of [businessClientPath, businessQuotePath, businessSalePath, businessInventoryPath]) {
+      if (!(await getDoc(doc(otherClient.db, readablePath))).exists()) throw new Error(`VENTAS no leyó ${readablePath}`);
+    }
+    await expectDenied("VENTAS no consulta proveedores", () => getDoc(doc(otherClient.db, businessProviderPath)));
+    await expectDenied("VENTAS no consulta compras", () => getDoc(doc(otherClient.db, businessPurchasePath)));
+    await expectDenied("VENTAS no consulta finanzas", () => getDoc(doc(otherClient.db, ownerMovementPath)));
+    console.log("OK RBAC Rules: VENTAS aislado del dominio de compras y finanzas");
+
+    await adminDb.doc(`membresias/${businessId}__${otherUid}`).update({rol: "COMPRAS"});
+    for (const readablePath of [businessProviderPath, businessPurchasePath, businessInventoryPath, businessAcquisitionPath]) {
+      if (!(await getDoc(doc(otherClient.db, readablePath))).exists()) throw new Error(`COMPRAS no leyó ${readablePath}`);
+    }
+    await updateDoc(doc(otherClient.db, businessInventoryPath), {nombre: "Producto editado por COMPRAS", actualizadoEn: serverTimestamp()});
+    await expectDenied("COMPRAS no consulta clientes", () => getDoc(doc(otherClient.db, businessClientPath)));
+    await expectDenied("COMPRAS no consulta ventas", () => getDoc(doc(otherClient.db, businessSalePath)));
+    console.log("OK RBAC Rules: COMPRAS gestiona inventario sin acceso comercial");
+
+    await adminDb.doc(`membresias/${businessId}__${otherUid}`).update({rol: "TECNICO"});
+    for (const readablePath of [businessWorkPath, businessWorkTaskPath, businessWorkExpensePath, businessWorkLaborPath, businessWorkMaterialMovementPath]) {
+      if (!(await getDoc(doc(otherClient.db, readablePath))).exists()) throw new Error(`TECNICO no leyó ${readablePath}`);
+    }
+    const assignedWorks = await getDocs(query(
+      collection(otherClient.db, "negocios", businessId, "trabajos"),
+      where("negocioId", "==", businessId),
+      where("participanteUids", "array-contains", otherUid)
+    ));
+    if (assignedWorks.size !== 1) throw new Error("TECNICO no pudo listar sus proyectos asignados");
+    const assignedTasks = await getDocs(query(
+      collection(otherClient.db, businessWorkPath, "tareas"),
+      where("negocioId", "==", businessId),
+      where("trabajoId", "==", "work-rules-smoke"),
+      where("responsableUid", "==", otherUid)
+    ));
+    if (assignedTasks.size !== 1) throw new Error("TECNICO no pudo listar sus tareas asignadas");
+    await expectDenied("TECNICO no consulta proyectos no asignados", () => getDoc(doc(otherClient.db, unassignedWorkPath)));
+    await expectDenied("TECNICO no consulta ventas", () => getDoc(doc(otherClient.db, businessSalePath)));
+    await expectDenied("TECNICO no consulta finanzas", () => getDoc(doc(otherClient.db, ownerMovementPath)));
+    await expectDenied("TECNICO no consulta adquisiciones", () => getDoc(doc(otherClient.db, businessAcquisitionPath)));
+    console.log("OK RBAC Rules: TECNICO limitado a expediente y registros asignados");
+
+    await adminDb.doc(`membresias/${businessId}__${otherUid}`).update({rol: "FINANZAS"});
+    for (const readablePath of [businessSalePath, businessPurchasePath, ownerMovementPath, businessAcquisitionPath, businessWorkPath, businessWorkExpensePath]) {
+      if (!(await getDoc(doc(otherClient.db, readablePath))).exists()) throw new Error(`FINANZAS no leyó ${readablePath}`);
+    }
+    await expectDenied("FINANZAS no consulta clientes", () => getDoc(doc(otherClient.db, businessClientPath)));
+    await expectDenied("FINANZAS no consulta proveedores", () => getDoc(doc(otherClient.db, businessProviderPath)));
+    await expectDenied("FINANZAS no consulta tareas operativas", () => getDoc(doc(otherClient.db, businessWorkTaskPath)));
+    console.log("OK RBAC Rules: FINANZAS consulta economía sin administrar operación");
+
+    await adminDb.doc(`membresias/${businessId}__${otherUid}`).update({rol: "MEMBER"});
+    if (!(await getDoc(doc(otherClient.db, businessClientPath))).exists()) throw new Error("MEMBER legacy perdió su lectura histórica");
+    console.log("OK RBAC Rules: MEMBER legacy conserva lectura compatible");
+
     const automaticMovementPath =
       `negocios/${businessId}/financialMovements/quote__quote-1`;
     await adminDb.doc(automaticMovementPath).set({

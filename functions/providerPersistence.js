@@ -15,7 +15,7 @@ const {
 const PROVIDER_MODEL_VERSION = 2;
 const ACTIVE_STATUS = "activo";
 const ARCHIVED_STATUS = "archivado";
-const AUTHORIZED_ROLES = ["OWNER", "ADMIN"];
+const {PURCHASE_WRITE_ROLES: AUTHORIZED_ROLES} = require("./rbac");
 const PAYMENT_TERMS = new Set(["contado", "transferencia", "credito", "otro"]);
 const PROVIDER_INPUT_FIELDS = new Set([
   "rut",

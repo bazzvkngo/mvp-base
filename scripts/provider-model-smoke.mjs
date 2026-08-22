@@ -138,7 +138,9 @@ assert.equal(canReadProviders("MEMBER"), true);
 assert.equal(canManageProviders("MEMBER"), false);
 assert.equal(canManageProviders("ADMIN"), true);
 assert.equal(canManageProviders("OWNER"), true);
-console.log("OK roles UI: MEMBER lee; OWNER y ADMIN administran");
+assert.equal(canManageProviders("COMPRAS"), true);
+assert.equal(canReadProviders("VENTAS"), false);
+console.log("OK roles UI: COMPRAS administra y VENTAS queda fuera");
 
 const sourceService = fs.readFileSync("src/services/providerService.js", "utf8");
 const sourceManager = fs.readFileSync(
@@ -164,7 +166,7 @@ assert.match(sourceForm, /initialFocusRef=\{firstInputRef\}/);
 assert.match(sourceForm, /getCommuneByCode/);
 assert.match(sourceRules, /match \/proveedores\/\{proveedorId\}/);
 assert.match(sourceRules, /match \/providerRutKeys\/\{rutKey\}/);
-assert.match(sourcePersistence, /AUTHORIZED_ROLES = \["OWNER", "ADMIN"\]/);
+assert.match(sourcePersistence, /PURCHASE_WRITE_ROLES: AUTHORIZED_ROLES/);
 assert.match(sourcePersistence, /collection\("providerCreateRequests"\)/);
 console.log("OK contrato: servicio, cambio de negocio, UI, Rules y backend autoritativo");
 

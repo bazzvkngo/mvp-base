@@ -185,19 +185,40 @@ try {
   assert.equal(memberList.data.miembros.length, 3);
   console.log("OK directorio: ADMIN y MEMBER consultan miembros activos");
 
+  await call(owner, "actualizarMembresiaNegocio")({
+    businessId,
+    miembroUid: member.uid,
+    rol: "MEMBER",
+    estado: "inactivo",
+  });
+  await call(owner, "actualizarMembresiaNegocio")({
+    businessId,
+    miembroUid: member.uid,
+    rol: "MEMBER",
+    estado: "activo",
+  });
+  console.log("OK legacy: MEMBER existente conserva gestión de estado sin reasignarse");
+
+  await expectCallableError(
+    "MEMBER no se asigna a nuevas membresías",
+    () => call(owner, "asociarUsuarioExistente")({businessId, correo: target.email, rol: "MEMBER"}),
+    ["invalid-argument"]
+  );
+
   const added = await call(owner, "asociarUsuarioExistente")({
     businessId,
     correo: target.email,
+    rol: "TECNICO",
   });
   assert.equal(added.data.miembro.uid, target.uid);
-  assert.equal(added.data.miembro.rol, "MEMBER");
+  assert.equal(added.data.miembro.rol, "TECNICO");
   assert.equal(added.data.miembro.estado, "activo");
   const targetMembershipRef = adminDb.doc(
     `membresias/${businessId}__${target.uid}`
   );
   const storedTarget = (await targetMembershipRef.get()).data();
   assert.equal(storedTarget.negocioId, businessId);
-  assert.equal(storedTarget.rol, "MEMBER");
+  assert.equal(storedTarget.rol, "TECNICO");
   assert.equal(storedTarget.estado, "activo");
   const targetDirectoryEntry = (
     await call(owner, "listarMiembrosNegocio")({businessId})
@@ -206,7 +227,7 @@ try {
   assert.equal(targetDirectoryEntry.correo, target.email);
   assert.equal(targetDirectoryEntry.telefonoPersonal, undefined);
   assert.equal(targetDirectoryEntry.numeroDocumento, undefined);
-  console.log("OK asociación: OWNER agrega cuenta existente como MEMBER activo");
+  console.log("OK asociación: OWNER agrega cuenta existente como TECNICO activo");
 
   await expectCallableError(
     "ADMIN no asocia usuarios",
@@ -278,16 +299,16 @@ try {
   await call(owner, "actualizarMembresiaNegocio")({
     businessId,
     miembroUid: target.uid,
-    rol: "MEMBER",
+    rol: "VENTAS",
     estado: "activo",
   });
-  assert.equal((await targetMembershipRef.get()).data().rol, "MEMBER");
-  console.log("OK roles: OWNER cambia MEMBER -> ADMIN -> MEMBER");
+  assert.equal((await targetMembershipRef.get()).data().rol, "VENTAS");
+  console.log("OK roles: OWNER cambia TECNICO -> ADMIN -> VENTAS");
 
   await call(owner, "actualizarMembresiaNegocio")({
     businessId,
     miembroUid: target.uid,
-    rol: "MEMBER",
+    rol: "VENTAS",
     estado: "inactivo",
   });
   assert.equal((await targetMembershipRef.get()).data().estado, "inactivo");
@@ -310,7 +331,7 @@ try {
   await call(owner, "actualizarMembresiaNegocio")({
     businessId,
     miembroUid: target.uid,
-    rol: "MEMBER",
+    rol: "VENTAS",
     estado: "activo",
   });
   assert.equal((await targetMembershipRef.get()).data().estado, "activo");
@@ -321,7 +342,7 @@ try {
     () => call(owner, "actualizarMembresiaNegocio")({
       businessId,
       miembroUid: owner.uid,
-      rol: "MEMBER",
+      rol: "TECNICO",
       estado: "inactivo",
     }),
     ["failed-precondition"]
@@ -331,7 +352,7 @@ try {
     () => call(owner, "actualizarMembresiaNegocio")({
       businessId: otherBusinessId,
       miembroUid: outsider.uid,
-      rol: "MEMBER",
+      rol: "TECNICO",
       estado: "inactivo",
     }),
     ["permission-denied"]

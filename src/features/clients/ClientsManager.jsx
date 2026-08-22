@@ -24,8 +24,8 @@ import {
 } from "../../services/clientService";
 import ClientFormDialog from "./ClientFormDialog";
 
-const READ_ROLES = new Set(["OWNER", "ADMIN", "MEMBER"]);
-const WRITE_ROLES = new Set(["OWNER", "ADMIN"]);
+const READ_ROLES = new Set(["OWNER", "ADMIN", "VENTAS", "MEMBER"]);
+const WRITE_ROLES = new Set(["OWNER", "ADMIN", "VENTAS"]);
 
 function contactSummary(client) {
   return client.email || client.telefono || "Sin datos de contacto";

@@ -20,8 +20,8 @@ export const PROVIDER_PAYMENT_TERMS = Object.freeze([
 
 const PROVIDER_STATUS_SET = new Set(PROVIDER_STATUSES);
 const PROVIDER_PAYMENT_TERM_SET = new Set(PROVIDER_PAYMENT_TERMS);
-const READ_ROLES = new Set(["OWNER", "ADMIN", "MEMBER"]);
-const WRITE_ROLES = new Set(["OWNER", "ADMIN"]);
+const READ_ROLES = new Set(["OWNER", "ADMIN", "COMPRAS", "MEMBER"]);
+const WRITE_ROLES = new Set(["OWNER", "ADMIN", "COMPRAS"]);
 const PROVIDER_TEXT_FIELDS = Object.freeze({
   rut: {maxLength: 20, label: "RUT"},
   razonSocial: {maxLength: 240, label: "razón social"},

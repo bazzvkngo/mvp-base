@@ -32,6 +32,7 @@ import {
   getSalesMetrics,
 } from "../domain/reportModel.mjs";
 import {getQuoteStatusLabel} from "../domain/quoteModel.mjs";
+import {BUSINESS_PERMISSIONS, hasBusinessPermission} from "../domain/rbac.mjs";
 import useFinancialMovements from "../hooks/useFinancialMovements";
 import {
   getCompanyProfile,
@@ -72,27 +73,12 @@ function DashboardCountCard({icon, label, note, tone = "neutral", value}) {
   );
 }
 
-function QuickActions({canManage, navigate}) {
-  const actions = canManage
-    ? [
-        {label: "Nueva venta", route: "/ventas/nueva", icon: ShoppingCart, primary: true},
-        {label: "Nueva cotización", route: "/cotizaciones/nueva", icon: FilePlus2},
-        {label: "Nueva compra", route: "/compras/nueva", icon: Truck},
-        {label: "Nueva orden de compra", route: "/ordenes-compra/nueva", icon: ClipboardCheck},
-        {label: "Nuevo ítem", route: "/inventario", icon: PackagePlus},
-      ]
-    : [
-        {label: "Ver ventas", route: "/ventas", icon: ShoppingCart, primary: true},
-        {label: "Ver compras", route: "/compras", icon: Truck},
-        {label: "Ver inventario", route: "/inventario", icon: Boxes},
-        {label: "Ver Reportes", route: "/reportes", icon: BarChart3},
-      ];
-
+function QuickActions({actions, navigate}) {
   return (
     <section className="erp-panel dashboard-v2-actions" aria-labelledby="dashboard-actions-title">
       <div>
         <h2 id="dashboard-actions-title" className="erp-panel-title">Acciones rápidas</h2>
-        <p>{canManage ? "Atajos para registrar la operación diaria." : "Accesos de consulta disponibles para tu rol."}</p>
+        <p>Atajos disponibles para tu rol en la empresa activa.</p>
       </div>
       <div className="dashboard-v2-actions__buttons">
         {actions.map((action) => (
@@ -198,13 +184,24 @@ export default function DashboardPage({businessId, currencyCode = "CLP", role}) 
     () => getFinancialPeriodRange(period, customPeriod, today),
     [customPeriod, period, today]
   );
-  const financial = useFinancialMovements(businessId, range);
-  const canManage = role === "OWNER" || role === "ADMIN";
+  const can = (permission) => hasBusinessPermission(role, permission);
+  const canReadFinance = can(BUSINESS_PERMISSIONS.FINANCE_READ);
+  const financial = useFinancialMovements(canReadFinance ? businessId : "", range);
+  const quickActions = [
+    can(BUSINESS_PERMISSIONS.SALES_WRITE) && {label: "Nueva venta", route: "/ventas/nueva", icon: ShoppingCart, primary: true},
+    can(BUSINESS_PERMISSIONS.QUOTES_WRITE) && {label: "Nueva cotización", route: "/cotizaciones/nueva", icon: FilePlus2},
+    can(BUSINESS_PERMISSIONS.PURCHASES_WRITE) && {label: "Nueva compra", route: "/compras/nueva", icon: Truck},
+    can(BUSINESS_PERMISSIONS.PURCHASES_WRITE) && {label: "Nueva orden de compra", route: "/ordenes-compra/nueva", icon: ClipboardCheck},
+    can(BUSINESS_PERMISSIONS.INVENTORY_WRITE) && {label: "Nuevo ítem", route: "/inventario", icon: PackagePlus},
+    can(BUSINESS_PERMISSIONS.WORKS_OPERATE) && {label: "Ver proyectos", route: "/trabajos", icon: ClipboardCheck},
+    can(BUSINESS_PERMISSIONS.REPORTS_READ) && {label: "Ver reportes", route: "/reportes", icon: BarChart3},
+    can(BUSINESS_PERMISSIONS.FINANCE_READ) && {label: "Ver finanzas", route: "/finanzas", icon: WalletCards},
+  ].filter(Boolean);
 
   useEffect(() => {
     let active = true;
     setReportState((current) => ({...current, loading: true, error: ""}));
-    loadReportData(businessId, {fallbackCurrency: currencyCode})
+    loadReportData(businessId, {fallbackCurrency: currencyCode, role})
       .then((data) => active && setReportState({data, loading: false, error: ""}))
       .catch((error) => active && setReportState((current) => ({
         ...current,
@@ -212,11 +209,12 @@ export default function DashboardPage({businessId, currencyCode = "CLP", role}) 
         error: error?.message || "No pudimos cargar el resumen operacional.",
       })));
     return () => { active = false; };
-  }, [businessId, currencyCode]);
+  }, [businessId, currencyCode, role]);
 
   useEffect(() => {
     let active = true;
     setCompanyProfilePending(false);
+    if (!hasBusinessPermission(role, BUSINESS_PERMISSIONS.COMPANY_READ)) return undefined;
     getCompanyProfile(businessId)
       .then((profile) => {
         if (!active) return;
@@ -227,7 +225,7 @@ export default function DashboardPage({businessId, currencyCode = "CLP", role}) 
         if (import.meta.env.DEV) console.error("No se pudo revisar el perfil de empresa:", error);
       });
     return () => { active = false; };
-  }, [businessId]);
+  }, [businessId, role]);
 
   const {sales, purchases, quotes, inventory} = reportState.data;
   const salesMetrics = useMemo(() => getSalesMetrics(sales, range, {fallbackCurrency: currencyCode}), [currencyCode, range, sales]);
@@ -273,7 +271,7 @@ export default function DashboardPage({businessId, currencyCode = "CLP", role}) 
           <h2>Estado operacional del negocio</h2>
           <p>Ventas, compras, cotizaciones, inventario y movimientos financieros registrados.</p>
         </div>
-        <Button variant="secondary" icon={BarChart3} onClick={() => navigate(reportsRoute)}>Ver Reportes</Button>
+        {can(BUSINESS_PERMISSIONS.REPORTS_READ) && <Button variant="secondary" icon={BarChart3} onClick={() => navigate(reportsRoute)}>Ver Reportes</Button>}
       </header>
 
       <div className="financial-period-bar dashboard-v2-period">
@@ -293,7 +291,7 @@ export default function DashboardPage({businessId, currencyCode = "CLP", role}) 
       {reportState.error && <div className="financial-feedback financial-feedback--error" role="alert">{reportState.error}</div>}
       {reportState.loading && <div className="financial-inline-loading" role="status">Cargando estado operacional del negocio activo...</div>}
 
-      <QuickActions canManage={canManage} navigate={navigate} />
+      <QuickActions actions={quickActions} navigate={navigate} />
 
       {!reportState.loading && !reportState.error && (
         <>
@@ -305,10 +303,10 @@ export default function DashboardPage({businessId, currencyCode = "CLP", role}) 
             <DashboardCountCard icon={WalletCards} label="Saldo financiero registrado" value={financial.loading || financial.error ? "—" : formatCLP(financial.summary.netResult)} tone="net" note={financial.error ? "Finanzas no disponible" : financial.loading ? "Actualizando movimientos registrados" : `Por cobrar ${formatCLP(financial.summary.receivable)} · Por pagar ${formatCLP(financial.summary.payable)}`} />
           </section>
 
-          <div className="dashboard-v2-financial-note">
+          {canReadFinance && <div className="dashboard-v2-financial-note">
             <span>La tarjeta financiera corresponde a movimientos financieros registrados; no representa utilidad, margen ni ventas menos compras.</span>
             <button type="button" onClick={() => navigate("/finanzas")}>Ver Finanzas</button>
-          </div>
+          </div>}
 
           <div className="dashboard-v2-visual-grid">
             <section className="erp-panel financial-chart-panel">

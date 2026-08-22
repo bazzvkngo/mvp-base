@@ -15,7 +15,7 @@ const CLIENT_MODEL_VERSION = 2;
 const CLIENT_TYPES = new Set(["persona", "empresa"]);
 const ACTIVE_STATUS = "activo";
 const ARCHIVED_STATUS = "archivado";
-const AUTHORIZED_ROLES = ["OWNER", "ADMIN"];
+const {SALES_WRITE_ROLES: AUTHORIZED_ROLES} = require("./rbac");
 const CLIENT_INPUT_FIELDS = new Set([
   "tipoCliente",
   "rut",

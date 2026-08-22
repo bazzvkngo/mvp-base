@@ -103,7 +103,7 @@ export function getOrderReceptionProgress(order, receptions = []) {
 }
 
 export function canManageReceptions(role) {
-  return ["OWNER", "ADMIN"].includes(String(role || "").toUpperCase());
+  return ["OWNER", "ADMIN", "COMPRAS"].includes(String(role || "").toUpperCase());
 }
 
 export function shouldReconcileReceptionConfirmation(error) {

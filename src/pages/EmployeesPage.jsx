@@ -64,6 +64,9 @@ function MemberActions({member, onRoleChange, onStatusChange, processing}) {
           value={member.rol}
           onChange={(event) => onRoleChange(member, event.target.value)}
         >
+          {member.rol === "MEMBER" && (
+            <option value="MEMBER" disabled>Miembro (legacy)</option>
+          )}
           {MANAGEABLE_BUSINESS_MEMBER_ROLES.map((role) => (
             <option key={role} value={role}>
               {BUSINESS_MEMBER_ROLE_LABELS[role]}
@@ -96,6 +99,7 @@ export default function EmployeesPage({businessId, role}) {
   const [feedbackIsError, setFeedbackIsError] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [email, setEmail] = useState("");
+  const [newMemberRole, setNewMemberRole] = useState("TECNICO");
   const [emailError, setEmailError] = useState("");
   const [adding, setAdding] = useState(false);
   const [processingUid, setProcessingUid] = useState("");
@@ -125,6 +129,7 @@ export default function EmployeesPage({businessId, role}) {
 
   const openAddDialog = () => {
     setEmail("");
+    setNewMemberRole("TECNICO");
     setEmailError("");
     setDialogOpen(true);
   };
@@ -138,9 +143,9 @@ export default function EmployeesPage({businessId, role}) {
     setAdding(true);
     setEmailError("");
     try {
-      await asociarUsuarioExistente(businessId, email);
+      await asociarUsuarioExistente(businessId, email, newMemberRole);
       setDialogOpen(false);
-      setFeedback("Usuario agregado como MEMBER con acceso activo.");
+      setFeedback(`Usuario agregado con rol ${BUSINESS_MEMBER_ROLE_LABELS[newMemberRole]}.`);
       setFeedbackIsError(false);
       await loadMembers();
     } catch (error) {
@@ -343,7 +348,7 @@ export default function EmployeesPage({businessId, role}) {
         onClose={() => {if (!adding) setDialogOpen(false);}}
         title="Agregar usuario existente"
         eyebrow="Empleados"
-        description="La cuenta debe existir previamente en ValoraCloud. Se agregará como MEMBER con acceso activo."
+        description="La cuenta debe existir previamente en ValoraCloud. Asigna el dominio mínimo que necesita."
         size="small"
         initialFocusRef={emailRef}
         footer={(
@@ -372,6 +377,20 @@ export default function EmployeesPage({businessId, role}) {
               aria-describedby={emailError ? "employee-email-error" : undefined}
               placeholder="persona@empresa.cl"
             />
+          </label>
+          <label className="erp-field">
+            <span className="erp-field__label">Rol empresarial</span>
+            <select
+              className="erp-control"
+              value={newMemberRole}
+              onChange={(event) => setNewMemberRole(event.target.value)}
+            >
+              {MANAGEABLE_BUSINESS_MEMBER_ROLES.map((availableRole) => (
+                <option key={availableRole} value={availableRole}>
+                  {BUSINESS_MEMBER_ROLE_LABELS[availableRole]}
+                </option>
+              ))}
+            </select>
           </label>
           {emailError && <p id="employee-email-error" className="employees-form-error" role="alert">{emailError}</p>}
         </form>

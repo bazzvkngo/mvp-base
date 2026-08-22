@@ -6,7 +6,7 @@ const {linkedWorkFields, writeCommercialLink, writeSaleConfirmationEvent} = requ
 
 const MODEL_VERSION = 1;
 const VAT_RATE = 0.19;
-const WRITE_ROLES = ["OWNER", "ADMIN"];
+const {SALES_WRITE_ROLES: WRITE_ROLES} = require("./rbac");
 const TYPES = new Set(["producto", "servicio", "actividad"]);
 const DOCUMENT_TYPES = new Set(["factura", "boleta", "otro", "sin_documento"]);
 const MAXIMUM_AMOUNT_MESSAGE = "El monto de la venta supera el máximo permitido.";

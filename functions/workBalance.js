@@ -1,5 +1,5 @@
 const WORK_BALANCE_MODEL_VERSION = 1;
-const BALANCE_ROLES = ["OWNER", "ADMIN"];
+const {BALANCE_READ_ROLES: BALANCE_ROLES} = require("./rbac");
 const PROJECT_MOVEMENT_TYPES = new Set(["SALIDA_PROYECTO", "DEVOLUCION_PROYECTO"]);
 
 function fail(HttpsError, code, message) {

@@ -5,7 +5,7 @@ const {fiscalSnapshotFields} = require("./fiscalIdentifier");
 
 const PURCHASE_ORDER_MODEL_VERSION = 1;
 const VAT_RATE = 0.19;
-const WRITE_ROLES = ["OWNER", "ADMIN"];
+const {PURCHASE_WRITE_ROLES: WRITE_ROLES} = require("./rbac");
 const ITEM_TYPES = new Set(["producto", "servicio", "actividad"]);
 const MAXIMUM_AMOUNT_MESSAGE = "El monto de la orden supera el máximo permitido.";
 

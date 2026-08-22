@@ -114,6 +114,8 @@ assert.equal(matchesPurchaseSearch(stored, "76.000.000-0"), true);
 assert.equal(matchesPurchaseSearch(stored, "sin coincidencia"), false);
 assert.equal(canManagePurchases("OWNER"), true);
 assert.equal(canManagePurchases("ADMIN"), true);
+assert.equal(canManagePurchases("COMPRAS"), true);
+assert.equal(canManagePurchases("VENTAS"), false);
 assert.equal(canManagePurchases("MEMBER"), false);
 assert.deepEqual(PURCHASE_STATUSES, ["borrador", "confirmada", "cancelada"]);
 assert.equal(getPurchaseStatusLabel("borrador"), "Preparada");

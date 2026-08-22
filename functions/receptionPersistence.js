@@ -1,4 +1,4 @@
-const WRITE_ROLES = ["OWNER", "ADMIN"];
+const {PURCHASE_WRITE_ROLES: WRITE_ROLES} = require("./rbac");
 const ITEM_TYPES = new Set(["producto", "servicio", "actividad"]);
 const EPSILON = 0.000001;
 const {adaptDocumentLocalization} = require("./localization");

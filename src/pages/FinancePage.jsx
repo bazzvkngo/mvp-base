@@ -119,7 +119,7 @@ function FinancePage({ businessId, role }) {
   const [deleteCandidate, setDeleteCandidate] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [feedback, setFeedback] = useState("");
-  const canManage = role === "OWNER" || role === "ADMIN";
+  const canManage = ["OWNER", "ADMIN", "FINANZAS"].includes(String(role || "").toUpperCase());
 
   const setParam = (name, value) => {
     const next = new URLSearchParams(searchParams);
@@ -205,7 +205,7 @@ function FinancePage({ businessId, role }) {
 
       {!canManage && (
         <div className="financial-readonly-notice" role="status">
-          Tu rol MEMBER tiene acceso de lectura. OWNER o ADMIN deben registrar y modificar movimientos.
+          Tu rol MEMBER legacy conserva acceso de lectura. OWNER, ADMIN o FINANZAS gestionan movimientos.
         </div>
       )}
       {feedback && <div className="financial-feedback" role="status">{feedback}</div>}

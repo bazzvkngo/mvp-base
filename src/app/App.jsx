@@ -44,6 +44,12 @@ import {
   setActiveBusiness,
 } from "../services/businessService";
 import {isPlatformRoute} from "../domain/platformAccess.mjs";
+import {
+  BUSINESS_PERMISSIONS,
+  canAccessBusinessPath,
+  getDefaultBusinessPath,
+  hasBusinessPermission,
+} from "../domain/rbac.mjs";
 import {getPlatformAccess} from "../services/platformAdminService";
 import PlatformAdminLayout from "../platform/PlatformAdminLayout";
 import {
@@ -176,9 +182,13 @@ function AppRoutes({
 
   const activeBusiness = businessSession?.activeBusiness;
   const businessId = activeBusiness?.id;
-  const canWriteQuotes = ["OWNER", "ADMIN"].includes(
-   String(activeBusiness?.role || "").toUpperCase()
-  );
+  const role = activeBusiness?.role;
+  const safeLanding = getDefaultBusinessPath(role);
+  if (!["/", "/login", "/onboarding"].includes(location.pathname) &&
+      !canAccessBusinessPath(role, location.pathname)) {
+    return <Navigate to={safeLanding} replace />;
+  }
+  const canWriteQuotes = hasBusinessPermission(role, BUSINESS_PERMISSIONS.QUOTES_WRITE);
   return (
     <Routes>
       <Route

@@ -32,6 +32,49 @@
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "date", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "trabajos",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "negocioId", "order": "ASCENDING" },
+        { "fieldPath": "responsableUid", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "trabajos",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "negocioId", "order": "ASCENDING" },
+        { "fieldPath": "participanteUids", "arrayConfig": "CONTAINS" }
+      ]
+    },
+    {
+      "collectionGroup": "tareas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "negocioId", "order": "ASCENDING" },
+        { "fieldPath": "trabajoId", "order": "ASCENDING" },
+        { "fieldPath": "responsableUid", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "gastos",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "negocioId", "order": "ASCENDING" },
+        { "fieldPath": "trabajoId", "order": "ASCENDING" },
+        { "fieldPath": "registradoPorUid", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "horasHombre",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "negocioId", "order": "ASCENDING" },
+        { "fieldPath": "trabajoId", "order": "ASCENDING" },
+        { "fieldPath": "registradoPorUid", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

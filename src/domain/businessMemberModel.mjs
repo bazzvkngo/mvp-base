@@ -1,12 +1,14 @@
-export const BUSINESS_MEMBER_ROLES = Object.freeze(["OWNER", "ADMIN", "MEMBER"]);
-export const MANAGEABLE_BUSINESS_MEMBER_ROLES = Object.freeze(["ADMIN", "MEMBER"]);
+import {
+  ASSIGNABLE_BUSINESS_ROLES,
+  BUSINESS_ROLES,
+  BUSINESS_ROLE_LABELS,
+} from "./rbac.mjs";
+
+export const BUSINESS_MEMBER_ROLES = BUSINESS_ROLES;
+export const MANAGEABLE_BUSINESS_MEMBER_ROLES = ASSIGNABLE_BUSINESS_ROLES;
 export const BUSINESS_MEMBER_STATUSES = Object.freeze(["activo", "inactivo"]);
 
-export const BUSINESS_MEMBER_ROLE_LABELS = Object.freeze({
-  OWNER: "Propietario",
-  ADMIN: "Administrador",
-  MEMBER: "Miembro",
-});
+export const BUSINESS_MEMBER_ROLE_LABELS = BUSINESS_ROLE_LABELS;
 
 export const BUSINESS_MEMBER_STATUS_LABELS = Object.freeze({
   activo: "Activo",

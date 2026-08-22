@@ -50,7 +50,7 @@ export function safeQuoteText(value, maxLength = 2000) {
 }
 
 export function canDuplicateQuotes(role) {
-  return ["OWNER", "ADMIN"].includes(String(role || "").toUpperCase());
+  return ["OWNER", "ADMIN", "VENTAS"].includes(String(role || "").toUpperCase());
 }
 
 function normalizeIdentifier(value, fallback = "") {

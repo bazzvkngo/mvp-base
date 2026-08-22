@@ -1,5 +1,8 @@
-const BUSINESS_ROLES = Object.freeze(["OWNER", "ADMIN", "MEMBER"]);
-const MANAGEABLE_ROLES = Object.freeze(["ADMIN", "MEMBER"]);
+const {
+  ASSIGNABLE_BUSINESS_ROLES,
+  BUSINESS_ROLES,
+} = require("./rbac");
+const MANAGEABLE_ROLES = ASSIGNABLE_BUSINESS_ROLES;
 const MEMBERSHIP_STATUSES = Object.freeze(["activo", "inactivo"]);
 const ACTIVE_STATUS = "activo";
 const DIRECTORY_BATCH_SIZE = 100;
@@ -127,13 +130,17 @@ async function listarMiembrosNegocioHandler(
   request,
   {db, auth, HttpsError, requireBusinessAccess}
 ) {
-  let context = await requireBusinessAccess(request, {db, HttpsError});
+  let context = await requireBusinessAccess(
+    request, {db, HttpsError}, {roles: ["OWNER", "ADMIN", "MEMBER"]}
+  );
   const membershipsSnapshot = await db
     .collection("membresias")
     .where("negocioId", "==", context.businessId)
     .get();
 
-  context = await requireBusinessAccess(request, {db, HttpsError});
+  context = await requireBusinessAccess(
+    request, {db, HttpsError}, {roles: ["OWNER", "ADMIN", "MEMBER"]}
+  );
   const canSeeInactive = context.membership.rol === "OWNER";
   const memberships = membershipsSnapshot.docs.filter((snapshot) =>
     isCanonicalMembership(snapshot, context.businessId) &&
@@ -144,7 +151,9 @@ async function listarMiembrosNegocioHandler(
     getAuthUsersByUid(auth, uids),
     getProfilesByUid(db, uids),
   ]);
-  const roleOrder = {OWNER: 0, ADMIN: 1, MEMBER: 2};
+  const roleOrder = {
+    OWNER: 0, ADMIN: 1, VENTAS: 2, COMPRAS: 3, TECNICO: 4, FINANZAS: 5, MEMBER: 6,
+  };
   const members = memberships
     .map((snapshot) => {
       const uid = snapshot.data().uid;
@@ -168,6 +177,10 @@ async function asociarUsuarioExistenteHandler(
     {roles: ["OWNER"]}
   );
   const email = validateEmail(request?.data?.correo, HttpsError);
+  const role = safeText(request?.data?.rol || "TECNICO", 20).toUpperCase();
+  if (!MANAGEABLE_ROLES.includes(role)) {
+    throw new HttpsError("invalid-argument", "Selecciona un rol V1 válido.");
+  }
   let authUser;
   try {
     authUser = await auth.getUserByEmail(email);
@@ -219,7 +232,7 @@ async function asociarUsuarioExistenteHandler(
     transaction.create(targetRef, {
       negocioId: context.businessId,
       uid: targetUid,
-      rol: "MEMBER",
+      rol: role,
       estado: ACTIVE_STATUS,
       creadoPorUid: context.uid,
       actualizadoPorUid: context.uid,
@@ -229,7 +242,7 @@ async function asociarUsuarioExistenteHandler(
   });
 
   return {
-    miembro: {uid: targetUid, rol: "MEMBER", estado: ACTIVE_STATUS},
+    miembro: {uid: targetUid, rol: role, estado: ACTIVE_STATUS},
   };
 }
 
@@ -245,10 +258,10 @@ async function actualizarMembresiaNegocioHandler(
   const targetUid = validateUid(request?.data?.miembroUid, HttpsError);
   const role = safeText(request?.data?.rol, 20).toUpperCase();
   const status = safeText(request?.data?.estado, 20).toLowerCase();
-  if (!MANAGEABLE_ROLES.includes(role)) {
+  if (!MANAGEABLE_ROLES.includes(role) && role !== "MEMBER") {
     throw new HttpsError(
       "invalid-argument",
-      "El rol debe ser ADMIN o MEMBER."
+      "Selecciona un rol V1 válido."
     );
   }
   if (!MEMBERSHIP_STATUSES.includes(status)) {
@@ -297,6 +310,12 @@ async function actualizarMembresiaNegocioHandler(
       throw new HttpsError(
         "failed-precondition",
         "La membresía OWNER no puede modificarse en este módulo."
+      );
+    }
+    if (role === "MEMBER" && target.rol !== "MEMBER") {
+      throw new HttpsError(
+        "invalid-argument",
+        "MEMBER sólo puede conservarse en membresías legacy existentes."
       );
     }
     if (target.rol === role && target.estado === status) return;

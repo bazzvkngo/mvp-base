@@ -1,3 +1,4 @@
+const {PURCHASE_WRITE_ROLES} = require("./rbac");
 const SENDABLE_STATUSES = new Set(["borrador", "emitida"]);
 const PURCHASE_ORDER_EMAIL_COOLDOWN_MS = 30 * 1000;
 const PURCHASE_ORDER_EMAIL_LEASE_MS = 2 * 60 * 1000;
@@ -239,7 +240,7 @@ async function sendPurchaseOrderEmailHandler(request, dependencies) {
   const {businessId, businessRef, uid} = await requireBusinessAccess(
     request,
     dependencies,
-    {roles: ["OWNER", "ADMIN"]}
+    {roles: PURCHASE_WRITE_ROLES}
   );
   const orderId = safeText(request.data?.ordenCompraId, 160);
   if (!/^[a-zA-Z0-9_-]{1,160}$/.test(orderId)) {

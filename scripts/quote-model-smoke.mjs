@@ -375,6 +375,8 @@ assert.equal("creadoEn" in copyInput, false);
 assert.equal(canDuplicateQuotes("OWNER"), true);
 assert.equal(canDuplicateQuotes("ADMIN"), true);
 assert.equal(canDuplicateQuotes("MEMBER"), false);
+assert.equal(canDuplicateQuotes("VENTAS"), true);
+assert.equal(canDuplicateQuotes("COMPRAS"), false);
 assert.equal(DRAFT_QUOTE_NUMBER_LABEL, "Número pendiente");
 assert.equal(getQuoteStatusLabel("borrador"), "Pendiente");
 assert.equal(getQuoteStatusLabel("emitida"), "Emitida");
