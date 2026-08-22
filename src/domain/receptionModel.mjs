@@ -8,6 +8,12 @@ export function getReceptionStatusLabel(value) {
   return ({borrador: "Preparada", confirmada: "Recibida", cancelada: "Cancelada"})[value] || "Preparada";
 }
 
+export function getReceptionPurchaseAction(reception = {}, purchase = null, canManage = false) {
+  if (!reception || reception.estado !== "confirmada") return "";
+  if (!reception.compraId) return canManage ? "prepare" : "";
+  return canManage && purchase?.estado === "borrador" ? "continue" : "view";
+}
+
 export function getSupplierResponseLabel(value) {
   return ({confirmada: "Confirmada", rechazada: "Rechazada", pendiente: "Sin respuesta"})[value] || "Sin respuesta";
 }

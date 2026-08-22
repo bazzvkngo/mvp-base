@@ -1,6 +1,14 @@
 @import "../purchaseOrders/purchase-orders.css";
 
 .reception-callout { align-items: center; background: #f0fdfa; border: 1px solid #99d8cf; border-radius: 8px; color: #075f59; display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; margin-bottom: 16px; padding: 12px 14px; }
+.reception-success { align-items: center; background: #ecfdf5; border: 1px solid #86d8b5; border-radius: 10px; color: #14532d; display: flex; gap: 24px; justify-content: space-between; margin-bottom: 16px; padding: 18px; }
+.reception-success__copy { display: grid; gap: 5px; }
+.reception-success__copy h2, .reception-success__copy p { margin: 0; }
+.reception-success__copy h2 { color: #14532d; font-size: 18px; }
+.reception-success__eyebrow { color: #047857; font-size: 12px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+.reception-success__next { color: #35634a; font-size: 14px; }
+.reception-success__action { align-items: center; display: grid; flex: 0 0 auto; gap: 6px; justify-items: stretch; min-width: 170px; }
+.reception-success__action small { color: #35634a; text-align: center; }
 .reception-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .reception-grid label { display: grid; font-size: 13px; font-weight: 700; gap: 6px; }
 .reception-grid input, .reception-grid textarea { border: 1px solid #c9d4da; border-radius: 6px; font: inherit; min-height: 42px; padding: 9px 11px; }
@@ -9,4 +17,4 @@
 .po-status--recibida_parcial { background: #fff7ed; color: #9a3412; }
 .po-status--recibida_total { background: #dcfce7; color: #166534; }
 .po-status--sin_recepcion { background: #f1f5f9; color: #475569; }
-@media (max-width: 620px) { .reception-grid { grid-template-columns: 1fr; } .reception-grid__wide { grid-column: auto; } }
+@media (max-width: 620px) { .reception-grid { grid-template-columns: 1fr; } .reception-grid__wide { grid-column: auto; } .reception-success { align-items: stretch; flex-direction: column; gap: 16px; } .reception-success__action { min-width: 0; } }

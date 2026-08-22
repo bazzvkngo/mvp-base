@@ -4,6 +4,7 @@ import {
   buildReceptionMutationPayload,
   getOrderReceptionStatus,
   getOrderReceptionStatusLabel,
+  getReceptionPurchaseAction,
   getReceptionStatusLabel,
   shouldReconcileReceptionConfirmation,
 } from "../src/domain/receptionModel.mjs";
@@ -49,5 +50,13 @@ assert.throws(() => buildReceptionMutationPayload({
 }), /al menos una cantidad|no son validas/i);
 assert.equal(shouldReconcileReceptionConfirmation({code: "functions/unavailable"}), true);
 assert.equal(shouldReconcileReceptionConfirmation({code: "functions/failed-precondition"}), false);
+
+assert.equal(getReceptionPurchaseAction(null, null, true), "");
+assert.equal(getReceptionPurchaseAction({estado: "borrador"}, null, true), "");
+assert.equal(getReceptionPurchaseAction({estado: "confirmada"}, null, true), "prepare");
+assert.equal(getReceptionPurchaseAction({estado: "confirmada", compraId: "com-1"}, {estado: "borrador"}, true), "continue");
+assert.equal(getReceptionPurchaseAction({estado: "confirmada", compraId: "com-1"}, {estado: "confirmada"}, true), "view");
+assert.equal(getReceptionPurchaseAction({estado: "confirmada", compraId: "com-1"}, {estado: "borrador"}, false), "view");
+assert.equal(getReceptionPurchaseAction({estado: "confirmada"}, null, false), "");
 
 console.log("Reception model smoke: OK");
