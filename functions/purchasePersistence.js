@@ -1,6 +1,7 @@
 const {createHash} = require("node:crypto");
 const {adaptDocumentLocalization, documentLocalizationSnapshot} = require("./localization");
 const {buildAuthoritativeCompanySnapshot, resolveCompanySnapshot} = require("./companySnapshot");
+const {fiscalSnapshotFields} = require("./fiscalIdentifier");
 
 const MODEL_VERSION = 2;
 const VAT_RATE = 0.19;
@@ -75,7 +76,7 @@ function provider(snapshot, businessId, providerId, HttpsError) {
   if (raw.estado !== "activo") fail(HttpsError, "failed-precondition", "El proveedor no está disponible.");
   if (!text(raw.razonSocial, 240)) fail(HttpsError, "failed-precondition", "El proveedor no tiene razón social.");
   return {
-    proveedorId: text(raw.proveedorId, 160), rut: text(raw.rut, 40), razonSocial: text(raw.razonSocial, 240), nombreFantasia: text(raw.nombreFantasia, 240),
+    proveedorId: text(raw.proveedorId, 160), ...fiscalSnapshotFields(raw), razonSocial: text(raw.razonSocial, 240), nombreFantasia: text(raw.nombreFantasia, 240),
     giro: text(raw.giro, 240), personaContacto: text(raw.personaContacto, 200), email: text(raw.email, 240), telefono: text(raw.telefono, 100),
     direccion: text(raw.direccion, 300), regionCodigo: text(raw.regionCodigo, 20), regionNombre: text(raw.regionNombre, 160),
     comunaCodigo: text(raw.comunaCodigo, 20), comunaNombre: text(raw.comunaNombre, 160), condicionesPago: text(raw.condicionesPago, 2000),
@@ -472,4 +473,4 @@ async function cancelarCompraBorradorHandler(request, dependencies) {
   });
 }
 
-module.exports = {actualizarCompraBorradorHandler, cancelarCompraBorradorHandler, confirmarCompraHandler, crearCompraDesdeOrdenHandler, crearCompraDesdeRecepcionHandler, crearCompraHandler, formatPurchaseNumber: formatNumber, normalizePurchaseInput: input, calculatePurchaseTotals: totals};
+module.exports = {actualizarCompraBorradorHandler, cancelarCompraBorradorHandler, confirmarCompraHandler, crearCompraDesdeOrdenHandler, crearCompraDesdeRecepcionHandler, crearCompraHandler, formatPurchaseNumber: formatNumber, normalizePurchaseInput: input, calculatePurchaseTotals: totals, providerSnapshotFromDocument: provider};

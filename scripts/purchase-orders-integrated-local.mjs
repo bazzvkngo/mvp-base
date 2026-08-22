@@ -249,7 +249,10 @@ try {
   assert.equal(created.ordenCompraId, created.id);
   assert.equal(Object.hasOwn(created, "purchaseOrderId"), false);
   assert.equal(created.proveedorSnapshot.razonSocial, "Proveedor Original SpA");
-  assert.equal(created.proveedorSnapshot.rut, "12.345.678-5");
+  assert.equal(created.proveedorSnapshot.identificadorFiscalTipo, "RUT");
+  assert.equal(created.proveedorSnapshot.identificadorFiscalValor, "12.345.678-5");
+  assert.equal(created.proveedorSnapshot.identificadorFiscalNormalizado, "123456785");
+  assert.equal(Object.hasOwn(created.proveedorSnapshot, "rut"), false);
   assert.equal(created.proveedorSnapshot.regionCodigo, "13");
   assert.equal(created.empresaSnapshot.razonSocial, companyProfileA.razonSocial);
   await adminDb.doc(`negocios/${businessId}/empresa/perfil`).set(companyProfileB);

@@ -83,7 +83,7 @@ function QuotePrintView({ quote: rawQuote, companyProfile }) {
         <div>
           <h3>Cliente</h3>
           <OptionalLine value={client.empresa} />
-          <OptionalLine label="RUT" value={client.rut} />
+          <OptionalLine label={client.identificadorFiscalTipo || "Identificación fiscal"} value={client.identificadorFiscalValor || client.rut} />
           <OptionalLine label="Contacto" value={client.contacto} />
           <OptionalLine value={[client.email, client.telefono].filter(hasText).join(" · ")} />
         </div>

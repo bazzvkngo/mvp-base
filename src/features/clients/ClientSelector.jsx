@@ -104,7 +104,7 @@ function ClientSelector({
                 {value ? "Cliente registrado" : "Cliente histórico no vinculado"}
               </span>
             </div>
-            <p>{snapshot?.rut || "Sin RUT"}</p>
+            <p>{snapshot?.identificadorFiscalValor || snapshot?.rut || "Sin identificación fiscal"}</p>
             <p>
               {[snapshot?.email, snapshot?.telefono].filter(Boolean).join(" · ") ||
                 "Sin datos de contacto"}
@@ -158,7 +158,7 @@ function ClientSelector({
         size="medium"
         eyebrow="Cotización"
         title="Seleccionar cliente"
-        description="Busca por nombre o RUT. Solo se muestran clientes activos del negocio actual."
+        description="Busca por nombre o identificación fiscal. Solo se muestran clientes activos del negocio actual."
       >
         <label className="client-selector__search">
           <span>Buscar cliente</span>
@@ -170,7 +170,7 @@ function ClientSelector({
               value={search}
               maxLength={SEARCH_MAX_LENGTH}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Nombre o RUT"
+              placeholder="Nombre o identificación fiscal"
             />
           </div>
         </label>
@@ -186,7 +186,7 @@ function ClientSelector({
                   onClick={() => selectClient(client)}
                 >
                   <strong>{clientName(client)}</strong>
-                  <span>{client.rut}</span>
+                  <span>{client.identificadorFiscalValor || client.rut}</span>
                   <small>{client.email || client.telefono || "Sin datos de contacto"}</small>
                 </button>
               </div>

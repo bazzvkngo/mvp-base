@@ -19,7 +19,7 @@ export default function SaleClientSelector({clients, disabled, onChange, origina
           <>
             <strong className="sale-context-client__name">{display.nombreRazonSocial}</strong>
             <div className="sale-context-client__metadata">
-              <span>RUT {display.rut || "no informado"}</span>
+              <span>{display.identificadorFiscalTipo || "Identificación fiscal"} {display.identificadorFiscalValor || display.rut || "no informada"}</span>
               <span>{display.personaContacto || display.email || "Sin contacto informado"}</span>
             </div>
             {historical && <em className="sale-context-client__snapshot">Snapshot histórico conservado</em>}
@@ -30,9 +30,9 @@ export default function SaleClientSelector({clients, disabled, onChange, origina
 
       <ResponsiveDialog open={open} onClose={() => setOpen(false)} title="Seleccionar cliente" description="Solo se muestran clientes activos del negocio." size="medium">
         <div className="po-selector">
-          <input aria-label="Buscar cliente" placeholder="Buscar por nombre o RUT" value={search} onChange={(event) => setSearch(event.target.value)} />
+          <input aria-label="Buscar cliente" placeholder="Buscar por nombre o identificación fiscal" value={search} onChange={(event) => setSearch(event.target.value)} />
           <div className="po-selector__list">
-            {visible.map((client) => <button type="button" key={client.clienteId} onClick={() => { onChange(client.clienteId); setOpen(false); setSearch(""); }}><strong>{client.nombreRazonSocial}</strong><span>{client.rut || "Sin RUT"} · {client.email || client.telefono || "Sin contacto"}</span></button>)}
+            {visible.map((client) => <button type="button" key={client.clienteId} onClick={() => { onChange(client.clienteId); setOpen(false); setSearch(""); }}><strong>{client.nombreRazonSocial}</strong><span>{client.identificadorFiscalValor || client.rut || "Sin identificación fiscal"} · {client.email || client.telefono || "Sin contacto"}</span></button>)}
             {!visible.length && <p>No hay clientes activos coincidentes.</p>}
           </div>
         </div>

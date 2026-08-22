@@ -13,6 +13,7 @@ import Button from "../../components/ui/Button";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import StatusBadge from "../../components/ui/StatusBadge";
 import { matchesClientSearch } from "../../domain/clientModel.mjs";
+import {getFiscalIdentifierLabel} from "../../domain/fiscalIdentifier.mjs";
 import {
   actualizarCliente,
   archivarCliente,
@@ -73,7 +74,7 @@ function ClientActions({canManage, client, onArchive, onEdit, onReactivate}) {
   );
 }
 
-function ClientsManager({businessId, role}) {
+function ClientsManager({businessId, countryCode = "CL", role}) {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -86,6 +87,7 @@ function ClientsManager({businessId, role}) {
   const [changingStatus, setChangingStatus] = useState(false);
   const canRead = READ_ROLES.has(role);
   const canManage = WRITE_ROLES.has(role);
+  const fiscalLabel = getFiscalIdentifierLabel(countryCode);
 
   const loadClients = useCallback(async () => {
     if (!businessId || !canRead) {
@@ -154,7 +156,7 @@ function ClientsManager({businessId, role}) {
     try {
       if (confirmation.action === "archive") {
         await archivarCliente(businessId, confirmation.client.clienteId);
-        setFeedback("Cliente archivado. Su RUT continúa reservado.");
+        setFeedback(`Cliente archivado. Su ${fiscalLabel} continúa reservado.`);
       } else {
         await reactivarCliente(businessId, confirmation.client.clienteId);
         setFeedback("Cliente reactivado correctamente.");
@@ -188,7 +190,7 @@ function ClientsManager({businessId, role}) {
       <div className="erp-module-intro">
         <div className="erp-page-intro">
           <p>
-            Mantén una ficha única por RUT para cada cliente del negocio activo.
+            Mantén una ficha única por {fiscalLabel} para cada cliente del negocio activo.
           </p>
         </div>
         {canManage && (
@@ -243,7 +245,7 @@ function ClientsManager({businessId, role}) {
 
         <div className="erp-filters clients-filters no-print">
           <label className="erp-field clients-search-field">
-            <span className="erp-field__label">Buscar por nombre o RUT</span>
+            <span className="erp-field__label">Buscar por nombre o {fiscalLabel}</span>
             <span className="clients-search-control">
               <AppIcon icon={Search} size={18} />
               <input
@@ -279,7 +281,7 @@ function ClientsManager({businessId, role}) {
             <h3>{hasFilters ? "No hay coincidencias" : "Aún no hay clientes"}</h3>
             <p>
               {hasFilters
-                ? "Prueba con otro nombre, RUT o estado."
+                ? `Prueba con otro nombre, ${fiscalLabel} o estado.`
                 : canManage
                   ? "Crea el primer cliente para comenzar tu registro comercial."
                   : "OWNER o ADMIN pueden registrar el primer cliente."}
@@ -311,7 +313,7 @@ function ClientsManager({businessId, role}) {
                           {client.nombreRazonSocial}
                         </strong>
                         <span className="clients-table__secondary">
-                          {client.tipoCliente === "persona" ? "Persona" : "Empresa"} · {client.rut}
+                          {client.tipoCliente === "persona" ? "Persona" : "Empresa"} · {client.identificadorFiscalValor || client.rut}
                         </span>
                       </td>
                       <td>
@@ -354,7 +356,7 @@ function ClientsManager({businessId, role}) {
                         {client.nombreRazonSocial}
                       </h3>
                       <span className="clients-table__secondary">
-                        {client.tipoCliente === "persona" ? "Persona" : "Empresa"} · {client.rut}
+                        {client.tipoCliente === "persona" ? "Persona" : "Empresa"} · {client.identificadorFiscalValor || client.rut}
                       </span>
                     </div>
                     <StatusBadge
@@ -383,6 +385,7 @@ function ClientsManager({businessId, role}) {
 
       <ClientFormDialog
         client={formState.client}
+        countryCode={countryCode}
         onClose={() => setFormState({open: false, client: null})}
         onSubmit={saveClient}
         open={formState.open}
@@ -391,7 +394,7 @@ function ClientsManager({businessId, role}) {
       <ResponsiveDialog
         description={
           confirmationIsArchive
-            ? "El cliente dejará de estar activo, pero su RUT seguirá reservado."
+            ? `El cliente dejará de estar activo, pero su ${fiscalLabel} seguirá reservado.`
             : "El cliente volverá a estar disponible para las operaciones del negocio."
         }
         footer={

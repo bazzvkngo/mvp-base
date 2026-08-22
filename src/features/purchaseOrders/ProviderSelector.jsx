@@ -29,7 +29,7 @@ export default function ProviderSelector({
           <>
             <strong className="po-provider__name">{display.razonSocial}</strong>
             <div className="po-provider__metadata">
-              <span>RUT {display.rut || "no informado"}</span>
+              <span>{display.identificadorFiscalTipo || "Identificación fiscal"} {display.identificadorFiscalValor || display.rut || "no informada"}</span>
               <span>{display.personaContacto || "Sin contacto informado"}</span>
               <span>{display.email || "Sin correo"}</span>
               <span>{display.telefono || "Sin teléfono"}</span>
@@ -55,7 +55,7 @@ export default function ProviderSelector({
         <div className="po-selector">
           <input
             aria-label="Buscar proveedor"
-            placeholder="Buscar por razón social o RUT"
+            placeholder="Buscar por razón social o identificación fiscal"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
@@ -71,7 +71,7 @@ export default function ProviderSelector({
                 }}
               >
                 <strong>{provider.razonSocial}</strong>
-                <span>{provider.rut} · {paymentLabel(provider.condicionesPago) || "Sin condición"}</span>
+                <span>{provider.identificadorFiscalValor || provider.rut} · {paymentLabel(provider.condicionesPago) || "Sin condición"}</span>
               </button>
             ))}
             {!activeProviders.length && <p>No hay proveedores activos coincidentes.</p>}

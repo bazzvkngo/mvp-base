@@ -6,6 +6,7 @@ import {
   formatChileanRut,
   getClientFieldErrors,
 } from "../../domain/clientModel.mjs";
+import {getFiscalIdentifierLabel, getFiscalIdentifierPlaceholder, normalizeCountryCode} from "../../domain/fiscalIdentifier.mjs";
 import {
   CHILE_REGIONS,
   getCommuneByCode,
@@ -61,7 +62,7 @@ function ClientField({children, error, field, label, optional = true, wide}) {
   );
 }
 
-function ClientFormDialog({client, onClose, onSubmit, open}) {
+function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open}) {
   const [values, setValues] = useState(() => toFormValues(client));
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState("");
@@ -69,6 +70,9 @@ function ClientFormDialog({client, onClose, onSubmit, open}) {
   const firstInputRef = useRef(null);
   const fieldRefs = useRef({});
   const isEditing = Boolean(client?.clienteId);
+  const country = normalizeCountryCode(countryCode);
+  const isChile = country === "CL";
+  const fiscalLabel = getFiscalIdentifierLabel(country);
   const communes = useMemo(
     () => getCommunesForRegion(values.regionCodigo),
     [values.regionCodigo]
@@ -134,16 +138,16 @@ function ClientFormDialog({client, onClose, onSubmit, open}) {
 
     let nextErrors = {};
     try {
-      nextErrors = getClientFieldErrors(values);
+      nextErrors = getClientFieldErrors(values, country);
     } catch (error) {
       nextErrors = error?.fieldErrors || {};
       setServerError(error?.message || "Revisa los datos ingresados.");
     }
 
-    if (values.comunaCodigo && !values.regionCodigo) {
+    if (isChile && values.comunaCodigo && !values.regionCodigo) {
       nextErrors.regionCodigo = "Selecciona una región para la comuna.";
     } else if (
-      values.comunaCodigo &&
+      isChile && values.comunaCodigo &&
       !getCommuneByCode(values.regionCodigo, values.comunaCodigo)
     ) {
       nextErrors.comunaCodigo = "Selecciona una comuna válida.";
@@ -156,19 +160,20 @@ function ClientFormDialog({client, onClose, onSubmit, open}) {
       return;
     }
 
-    const region = getRegionByCode(values.regionCodigo);
-    const commune = getCommuneByCode(
+    const region = isChile ? getRegionByCode(values.regionCodigo) : null;
+    const commune = isChile ? getCommuneByCode(
       values.regionCodigo,
       values.comunaCodigo
-    );
+    ) : null;
 
     setSaving(true);
     setServerError("");
     try {
       await onSubmit({
         ...values,
-        regionNombre: region?.name || "",
-        comunaNombre: commune?.name || "",
+        paisCodigo: country,
+        regionNombre: isChile ? region?.name || "" : values.regionNombre,
+        comunaNombre: isChile ? commune?.name || "" : values.comunaNombre,
       });
       onClose();
     } catch (error) {
@@ -233,14 +238,14 @@ function ClientFormDialog({client, onClose, onSubmit, open}) {
             </select>
           </ClientField>
 
-          <ClientField error={errors.rut} field="rut" label="RUT" optional={false}>
+          <ClientField error={errors.rut} field="rut" label={fiscalLabel} optional={false}>
             <input
               ref={(node) => setFieldRef("rut", node)}
               value={values.rut}
               onChange={(event) => updateField("rut", event.target.value)}
-              onBlur={() => updateField("rut", formatChileanRut(values.rut))}
+              onBlur={() => isChile && updateField("rut", formatChileanRut(values.rut))}
               inputMode="text"
-              placeholder="12.345.678-5"
+              placeholder={getFiscalIdentifierPlaceholder(country)}
             />
           </ClientField>
 
@@ -306,7 +311,7 @@ function ClientFormDialog({client, onClose, onSubmit, open}) {
             />
           </ClientField>
 
-          <ClientField error={errors.regionCodigo} field="regionCodigo" label="Región">
+          {isChile ? <><ClientField error={errors.regionCodigo} field="regionCodigo" label="Región">
             <select
               ref={(node) => setFieldRef("regionCodigo", node)}
               value={values.regionCodigo}
@@ -336,6 +341,14 @@ function ClientFormDialog({client, onClose, onSubmit, open}) {
               ))}
             </select>
           </ClientField>
+          </> : <>
+            <ClientField error={errors.regionNombre} field="regionNombre" label="Región / Estado / Departamento">
+              <input ref={(node) => setFieldRef("regionNombre", node)} value={values.regionNombre} onChange={(event) => updateField("regionNombre", event.target.value)} />
+            </ClientField>
+            <ClientField error={errors.comunaNombre} field="comunaNombre" label="Ciudad / Municipio">
+              <input ref={(node) => setFieldRef("comunaNombre", node)} value={values.comunaNombre} onChange={(event) => updateField("comunaNombre", event.target.value)} />
+            </ClientField>
+          </>}
 
           <ClientField error={errors.notas} field="notas" label="Notas" wide>
             <textarea

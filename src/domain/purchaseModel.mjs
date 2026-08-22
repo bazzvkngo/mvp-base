@@ -1,3 +1,5 @@
+import {adaptStoredFiscalIdentifier} from "./fiscalIdentifier.mjs";
+
 export const PURCHASE_MODEL_VERSION = 2;
 export const PURCHASE_VAT_RATE = 0.19;
 export const PURCHASE_STATUSES = Object.freeze(["borrador", "confirmada", "cancelada"]);
@@ -93,7 +95,7 @@ export function buildPurchaseMutationPayload(raw = {}) {
 }
 
 const providerSnapshot = (raw = {}) => ({
-  proveedorId: text(raw.proveedorId || raw.id, 160), rut: text(raw.rut, 40),
+  proveedorId: text(raw.proveedorId || raw.id, 160), ...adaptStoredFiscalIdentifier(raw),
   razonSocial: text(raw.razonSocial || raw.nombre, 240), nombreFantasia: text(raw.nombreFantasia, 240),
   giro: text(raw.giro, 240), personaContacto: text(raw.personaContacto, 200), email: text(raw.email, 240),
   telefono: text(raw.telefono, 100), direccion: text(raw.direccion, 300), condicionesPago: text(raw.condicionesPago, 2000),

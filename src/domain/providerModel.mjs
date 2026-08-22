@@ -1,10 +1,15 @@
 import {
+  adaptStoredFiscalIdentifier,
+  buildFiscalIdentifier,
   formatChileanRut,
+  getFiscalIdentifierLabel,
   isValidChileanRut,
+  isValidFiscalIdentifier,
   normalizeChileanRut,
-} from "./clientModel.mjs";
+  normalizeCountryCode,
+} from "./fiscalIdentifier.mjs";
 
-export const PROVIDER_MODEL_VERSION = 1;
+export const PROVIDER_MODEL_VERSION = 2;
 export const PROVIDER_STATUSES = Object.freeze(["activo", "archivado"]);
 export const PROVIDER_PAYMENT_TERMS = Object.freeze([
   "contado",
@@ -94,9 +99,13 @@ function normalizeCreditDays(value, errors) {
   return number;
 }
 
-function normalizeTerritory(normalized, errors, territoryCatalog = {}) {
+function normalizeTerritory(normalized, errors, territoryCatalog = {}, countryCode = "CL") {
   const regionCodigo = normalized.regionCodigo;
   const comunaCodigo = normalized.comunaCodigo;
+
+  if (normalizeCountryCode(countryCode) !== "CL") {
+    return {regionCodigo, regionNombre: normalized.regionNombre, comunaCodigo, comunaNombre: normalized.comunaNombre};
+  }
 
   if (!regionCodigo) {
     if (comunaCodigo) {
@@ -152,7 +161,7 @@ function normalizeTerritory(normalized, errors, territoryCatalog = {}) {
   };
 }
 
-function collectProviderValidation(raw = {}, territoryCatalog = {}) {
+function collectProviderValidation(raw = {}, territoryCatalog = {}, countryCode = raw?.paisCodigo || "CL") {
   const errors = {};
   const normalized = {};
 
@@ -167,15 +176,16 @@ function collectProviderValidation(raw = {}, territoryCatalog = {}) {
     }
   );
 
-  normalized.rut = normalizeProviderRut(normalized.rut);
+  const country = normalizeCountryCode(countryCode);
+  const fiscalValue = raw?.identificadorFiscalValor || normalized.rut;
   normalized.email = normalized.email.toLowerCase();
   normalized.condicionesPago = normalized.condicionesPago.toLowerCase();
   normalized.diasCredito = normalizeCreditDays(raw?.diasCredito, errors);
 
-  if (!errors.rut && !normalized.rut) {
-    errors.rut = "Ingresa el RUT del proveedor.";
-  } else if (!errors.rut && !isValidProviderRut(normalized.rut)) {
-    errors.rut = "Ingresa un RUT chileno válido.";
+  if (!errors.rut && !fiscalValue) {
+    errors.rut = `Ingresa el ${getFiscalIdentifierLabel(country)} del proveedor.`;
+  } else if (!errors.rut && !isValidFiscalIdentifier(country, fiscalValue)) {
+    errors.rut = `Ingresa un ${getFiscalIdentifierLabel(country)} válido.`;
   }
   if (!errors.razonSocial && !normalized.razonSocial) {
     errors.razonSocial = "Ingresa la razón social.";
@@ -194,16 +204,16 @@ function collectProviderValidation(raw = {}, territoryCatalog = {}) {
     errors.condicionesPago = "Selecciona una condición de pago válida.";
   }
 
-  const territory = normalizeTerritory(normalized, errors, territoryCatalog);
-  return {errors, normalized: {...normalized, ...territory}};
+  const territory = normalizeTerritory(normalized, errors, territoryCatalog, country);
+  return {errors, normalized: {...normalized, ...territory}, country, fiscalValue};
 }
 
-export function getProviderFieldErrors(raw = {}, territoryCatalog = {}) {
-  return collectProviderValidation(raw, territoryCatalog).errors;
+export function getProviderFieldErrors(raw = {}, territoryCatalog = {}, countryCode = raw?.paisCodigo || "CL") {
+  return collectProviderValidation(raw, territoryCatalog, countryCode).errors;
 }
 
-export function normalizeProviderInput(raw = {}, territoryCatalog = {}) {
-  const {errors, normalized} = collectProviderValidation(raw, territoryCatalog);
+export function normalizeProviderInput(raw = {}, territoryCatalog = {}, countryCode = raw?.paisCodigo || "CL") {
+  const {errors, normalized, country, fiscalValue} = collectProviderValidation(raw, territoryCatalog, countryCode);
   if (Object.keys(errors).length > 0) {
     const error = new Error(Object.values(errors)[0]);
     error.code = "provider/invalid-data";
@@ -211,10 +221,12 @@ export function normalizeProviderInput(raw = {}, territoryCatalog = {}) {
     throw error;
   }
 
+  const fiscal = buildFiscalIdentifier(country, fiscalValue);
   return {
     modeloProveedorVersion: PROVIDER_MODEL_VERSION,
-    rut: formatProviderRut(normalized.rut),
-    rutNormalizado: normalized.rut,
+    ...fiscal,
+    rut: fiscal.identificadorFiscalValor,
+    rutNormalizado: country === "CL" ? normalizeChileanRut(fiscal.identificadorFiscalNormalizado) : "",
     razonSocial: normalized.razonSocial,
     nombreFantasia: normalized.nombreFantasia,
     giro: normalized.giro,
@@ -232,10 +244,12 @@ export function normalizeProviderInput(raw = {}, territoryCatalog = {}) {
   };
 }
 
-export function buildProviderMutationPayload(raw = {}) {
-  const normalized = normalizeProviderInput(raw);
+export function buildProviderMutationPayload(raw = {}, countryCode = raw?.paisCodigo || "CL") {
+  const normalized = normalizeProviderInput(raw, {}, countryCode);
   return {
-    rut: normalized.rut,
+    paisCodigo: normalized.paisCodigo,
+    identificadorFiscalTipo: normalized.identificadorFiscalTipo,
+    identificadorFiscalValor: normalized.identificadorFiscalValor,
     razonSocial: normalized.razonSocial,
     nombreFantasia: normalized.nombreFantasia,
     giro: normalized.giro,
@@ -254,12 +268,14 @@ export function buildProviderMutationPayload(raw = {}) {
 }
 
 export function adaptStoredProvider(raw = {}) {
-  const stored = normalizeProviderInput(raw);
+  const fiscal = adaptStoredFiscalIdentifier(raw);
+  const stored = normalizeProviderInput({...raw, rut: fiscal.identificadorFiscalValor}, {}, fiscal.paisCodigo);
   const proveedorId = normalizeProviderText(raw.proveedorId || raw.id, 160, "proveedorId");
   const status = normalizeProviderText(raw.estado, 20, "estado").toLowerCase();
   return {
     ...raw,
     ...stored,
+    ...fiscal,
     proveedorId,
     negocioId: normalizeProviderText(raw.negocioId, 160, "negocioId"),
     estado: PROVIDER_STATUS_SET.has(status) ? status : "activo",
@@ -281,7 +297,7 @@ export function matchesProviderSearch(provider, search) {
   if (!query) return true;
   const searchable = normalizeSearchText(
     `${provider?.razonSocial || ""} ${provider?.nombreFantasia || ""} ` +
-      `${provider?.rut || ""} ${provider?.rutNormalizado || ""}`
+      `${provider?.identificadorFiscalValor || provider?.rut || ""} ${provider?.identificadorFiscalNormalizado || provider?.rutNormalizado || ""}`
   ).replace(/[^a-z0-9k]/g, "");
   return searchable.includes(query);
 }

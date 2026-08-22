@@ -1,6 +1,17 @@
 const businessCatalog = require("./businessCatalog.json");
+const {
+  adaptStoredFiscalIdentifier,
+  buildFiscalIdentifier,
+  formatChileanRut,
+  getFiscalIdentifierLabel,
+  getFiscalReservationKey,
+  isValidChileanRut,
+  isValidFiscalIdentifier,
+  normalizeChileanRut,
+  normalizeCountryCode,
+} = require("./fiscalIdentifier");
 
-const CLIENT_MODEL_VERSION = 1;
+const CLIENT_MODEL_VERSION = 2;
 const CLIENT_TYPES = new Set(["persona", "empresa"]);
 const ACTIVE_STATUS = "activo";
 const ARCHIVED_STATUS = "archivado";
@@ -8,6 +19,9 @@ const AUTHORIZED_ROLES = ["OWNER", "ADMIN"];
 const CLIENT_INPUT_FIELDS = new Set([
   "tipoCliente",
   "rut",
+  "paisCodigo",
+  "identificadorFiscalTipo",
+  "identificadorFiscalValor",
   "nombreRazonSocial",
   "giro",
   "email",
@@ -23,6 +37,9 @@ const CLIENT_INPUT_FIELDS = new Set([
 const CLIENT_FIELD_LABELS = {
   tipoCliente: "tipo de cliente",
   rut: "RUT",
+  paisCodigo: "país",
+  identificadorFiscalTipo: "tipo de identificación fiscal",
+  identificadorFiscalValor: "identificación fiscal",
   nombreRazonSocial: "nombre o razón social",
   giro: "giro",
   email: "correo",
@@ -60,49 +77,15 @@ function normalizeTextField(raw, field, maxLength, HttpsError) {
   return normalized;
 }
 
-function normalizeChileanRut(value) {
-  const compact = String(value ?? "")
-    .toUpperCase()
-    .replace(/[^0-9K]/g, "");
-  if (compact.length < 2) return compact;
-  return `${compact.slice(0, -1)}-${compact.slice(-1)}`;
-}
-
-function formatChileanRut(value) {
-  const normalized = normalizeChileanRut(value);
-  const match = /^(\d+)-([\dK])$/.exec(normalized);
-  if (!match) return normalized;
-  const formattedBody = match[1].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  return `${formattedBody}-${match[2]}`;
-}
-
-function isValidChileanRut(value) {
-  const normalized = normalizeChileanRut(value);
-  if (!/^\d{7,8}-[\dK]$/.test(normalized)) return false;
-
-  const [body, suppliedDigit] = normalized.split("-");
-  let sum = 0;
-  let multiplier = 2;
-  for (let index = body.length - 1; index >= 0; index -= 1) {
-    sum += Number(body[index]) * multiplier;
-    multiplier = multiplier === 7 ? 2 : multiplier + 1;
-  }
-  const remainder = 11 - (sum % 11);
-  const expectedDigit =
-    remainder === 11 ? "0" : remainder === 10 ? "K" : String(remainder);
-  return suppliedDigit === expectedDigit;
-}
-
 function getClientRutKey(value) {
-  const normalized = normalizeChileanRut(value);
-  return isValidChileanRut(normalized) ? normalized.replace("-", "") : "";
+  return isValidChileanRut(value) ? getFiscalReservationKey("CL", value) : "";
 }
 
 function fail(HttpsError, code, message, details = undefined) {
   throw new HttpsError(code, message, details);
 }
 
-function normalizeTerritory(raw, HttpsError) {
+function normalizeTerritory(raw, HttpsError, countryCode = "CL") {
   const regionCodigo = normalizeTextField(
     raw,
     "regionCodigo",
@@ -119,6 +102,15 @@ function normalizeTerritory(raw, HttpsError) {
   // Los nombres se validan como texto, pero nunca son autoritativos.
   normalizeTextField(raw, "regionNombre", 160, HttpsError);
   normalizeTextField(raw, "comunaNombre", 160, HttpsError);
+
+  if (normalizeCountryCode(countryCode) !== "CL") {
+    return {
+      regionCodigo,
+      regionNombre: normalizeTextField(raw, "regionNombre", 160, HttpsError),
+      comunaCodigo,
+      comunaNombre: normalizeTextField(raw, "comunaNombre", 160, HttpsError),
+    };
+  }
 
   if (!regionCodigo) {
     if (comunaCodigo) {
@@ -167,7 +159,7 @@ function normalizeTerritory(raw, HttpsError) {
   };
 }
 
-function normalizeClientInput(raw = {}, HttpsError) {
+function normalizeClientInput(raw = {}, HttpsError, authoritativeCountry = "CL") {
   if (raw == null) raw = {};
   if (typeof raw !== "object" || Array.isArray(raw)) {
     fail(
@@ -193,9 +185,14 @@ function normalizeClientInput(raw = {}, HttpsError) {
     20,
     HttpsError
   ).toLowerCase();
-  const rutNormalizado = normalizeChileanRut(
-    normalizeTextField(raw, "rut", 20, HttpsError)
+  const countryCode = normalizeCountryCode(authoritativeCountry);
+  const fiscalValue = normalizeTextField(
+    {identificadorFiscalValor: raw.identificadorFiscalValor || raw.rut},
+    "identificadorFiscalValor",
+    80,
+    HttpsError
   );
+  const fiscal = buildFiscalIdentifier(countryCode, fiscalValue);
   const nombreRazonSocial = normalizeTextField(
     raw,
     "nombreRazonSocial",
@@ -203,7 +200,7 @@ function normalizeClientInput(raw = {}, HttpsError) {
     HttpsError
   );
   const email = normalizeTextField(raw, "email", 240, HttpsError).toLowerCase();
-  const territory = normalizeTerritory(raw, HttpsError);
+  const territory = normalizeTerritory(raw, HttpsError, countryCode);
 
   if (!CLIENT_TYPES.has(tipoCliente)) {
     fail(
@@ -212,8 +209,8 @@ function normalizeClientInput(raw = {}, HttpsError) {
       "Selecciona si el cliente es persona o empresa."
     );
   }
-  if (!isValidChileanRut(rutNormalizado)) {
-    fail(HttpsError, "invalid-argument", "Ingresa un RUT chileno válido.");
+  if (!isValidFiscalIdentifier(countryCode, fiscalValue)) {
+    fail(HttpsError, "invalid-argument", `Ingresa un ${getFiscalIdentifierLabel(countryCode)} válido.`);
   }
   if (!nombreRazonSocial) {
     fail(HttpsError, "invalid-argument", "Ingresa el nombre o razón social.");
@@ -225,8 +222,7 @@ function normalizeClientInput(raw = {}, HttpsError) {
   return {
     modeloClienteVersion: CLIENT_MODEL_VERSION,
     tipoCliente,
-    rut: formatChileanRut(rutNormalizado),
-    rutNormalizado,
+    ...fiscal,
     nombreRazonSocial,
     giro: normalizeTextField(raw, "giro", 240, HttpsError),
     email,
@@ -267,43 +263,45 @@ function assertStoredClient(snapshot, businessId, HttpsError) {
 
 function assertReservationOwner(
   reservationSnapshot,
-  {clienteId, businessId, rutNormalizado},
+  {clienteId, businessId, fiscal},
   HttpsError
 ) {
   const reservation = reservationSnapshot.data() || {};
+  const reservationNormalized = reservation.identificadorFiscalNormalizado ||
+    normalizeChileanRut(reservation.rutNormalizado || "").replace("-", "");
   if (
     !reservationSnapshot.exists ||
     reservation.clienteId !== clienteId ||
     reservation.negocioId !== businessId ||
-    reservation.rutNormalizado !== rutNormalizado
+    reservationNormalized !== fiscal.identificadorFiscalNormalizado
   ) {
     fail(
       HttpsError,
       "failed-precondition",
-      "La reserva del RUT del cliente es inconsistente."
+      "La reserva de identificación fiscal del cliente es inconsistente."
     );
   }
 }
 
-function duplicateRutError(reservation, HttpsError) {
+function duplicateFiscalError(reservation, HttpsError) {
   if (reservation?.estadoCliente === ARCHIVED_STATUS) {
     fail(
       HttpsError,
       "failed-precondition",
-      "Ya existe un cliente archivado con este RUT. Debes reactivarlo."
+      "Ya existe un cliente archivado con esta identificación fiscal. Debes reactivarlo."
     );
   }
   fail(
     HttpsError,
     "already-exists",
-    "Ya existe un cliente con este RUT en el negocio."
+    "Ya existe un cliente con esta identificación fiscal en el negocio."
   );
 }
 
 function reservationPayload({
   businessId,
   clienteId,
-  rutNormalizado,
+  fiscal,
   estadoCliente,
   uid,
   timestamp,
@@ -312,7 +310,9 @@ function reservationPayload({
   return {
     negocioId: businessId,
     clienteId,
-    rutNormalizado,
+    paisCodigo: fiscal.paisCodigo,
+    identificadorFiscalTipo: fiscal.identificadorFiscalTipo,
+    identificadorFiscalNormalizado: fiscal.identificadorFiscalNormalizado,
     estadoCliente,
     actualizadoPorUid: uid,
     actualizadoEn: timestamp,
@@ -338,17 +338,18 @@ async function crearClienteHandler(
     {db, HttpsError},
     {roles: AUTHORIZED_ROLES}
   );
-  const normalized = normalizeClientInput(request?.data?.cliente || {}, HttpsError);
-  const rutKey = getClientRutKey(normalized.rutNormalizado);
+  const countryCode = normalizeCountryCode(context.businessSnapshot.data()?.paisCodigo);
+  const normalized = normalizeClientInput(request?.data?.cliente || {}, HttpsError, countryCode);
+  const fiscalKey = getFiscalReservationKey(countryCode, normalized.identificadorFiscalNormalizado);
   const clienteRef = context.businessRef.collection("clientes").doc();
   const reservationRef = context.businessRef
     .collection("clientRutKeys")
-    .doc(rutKey);
+    .doc(fiscalKey);
 
   await db.runTransaction(async (transaction) => {
     const reservationSnapshot = await transaction.get(reservationRef);
     if (reservationSnapshot.exists) {
-      duplicateRutError(reservationSnapshot.data(), HttpsError);
+      duplicateFiscalError(reservationSnapshot.data(), HttpsError);
     }
 
     const timestamp = FieldValue.serverTimestamp();
@@ -368,7 +369,7 @@ async function crearClienteHandler(
       reservationPayload({
         businessId: context.businessId,
         clienteId: clienteRef.id,
-        rutNormalizado: normalized.rutNormalizado,
+        fiscal: normalized,
         estadoCliente: ACTIVE_STATUS,
         uid: context.uid,
         timestamp,
@@ -397,7 +398,8 @@ async function actualizarClienteHandler(
     {roles: AUTHORIZED_ROLES}
   );
   const clienteId = validateClienteId(request?.data?.clienteId, HttpsError);
-  const normalized = normalizeClientInput(request?.data?.cliente || {}, HttpsError);
+  const countryCode = normalizeCountryCode(context.businessSnapshot.data()?.paisCodigo);
+  const normalized = normalizeClientInput(request?.data?.cliente || {}, HttpsError, countryCode);
   const clienteRef = context.businessRef.collection("clientes").doc(clienteId);
 
   await db.runTransaction(async (transaction) => {
@@ -411,8 +413,9 @@ async function actualizarClienteHandler(
       );
     }
 
-    const previousRutKey = getClientRutKey(stored.rutNormalizado || stored.rut);
-    const nextRutKey = getClientRutKey(normalized.rutNormalizado);
+    const previousFiscal = adaptStoredFiscalIdentifier(stored, countryCode);
+    const previousRutKey = getFiscalReservationKey(previousFiscal.paisCodigo, previousFiscal.identificadorFiscalNormalizado);
+    const nextRutKey = getFiscalReservationKey(countryCode, normalized.identificadorFiscalNormalizado);
     const previousReservationRef = context.businessRef
       .collection("clientRutKeys")
       .doc(previousRutKey);
@@ -424,7 +427,7 @@ async function actualizarClienteHandler(
       {
         clienteId,
         businessId: context.businessId,
-        rutNormalizado: normalizeChileanRut(stored.rutNormalizado || stored.rut),
+        fiscal: previousFiscal,
       },
       HttpsError
     );
@@ -436,7 +439,7 @@ async function actualizarClienteHandler(
         .doc(nextRutKey);
       const nextReservationSnapshot = await transaction.get(nextReservationRef);
       if (nextReservationSnapshot.exists) {
-        duplicateRutError(nextReservationSnapshot.data(), HttpsError);
+        duplicateFiscalError(nextReservationSnapshot.data(), HttpsError);
       }
     }
 
@@ -455,7 +458,7 @@ async function actualizarClienteHandler(
         reservationPayload({
           businessId: context.businessId,
           clienteId,
-          rutNormalizado: normalized.rutNormalizado,
+          fiscal: normalized,
           estadoCliente: ACTIVE_STATUS,
           uid: context.uid,
           timestamp,
@@ -497,15 +500,15 @@ async function archivarClienteHandler(
   const result = await db.runTransaction(async (transaction) => {
     const clientSnapshot = await transaction.get(clienteRef);
     const stored = assertStoredClient(clientSnapshot, context.businessId, HttpsError);
-    const rutNormalizado = normalizeChileanRut(stored.rutNormalizado || stored.rut);
-    const rutKey = getClientRutKey(rutNormalizado);
+    const fiscal = adaptStoredFiscalIdentifier(stored, context.businessSnapshot.data()?.paisCodigo);
+    const rutKey = getFiscalReservationKey(fiscal.paisCodigo, fiscal.identificadorFiscalNormalizado);
     const reservationRef = context.businessRef
       .collection("clientRutKeys")
       .doc(rutKey);
     const reservationSnapshot = await transaction.get(reservationRef);
     assertReservationOwner(
       reservationSnapshot,
-      {clienteId, businessId: context.businessId, rutNormalizado},
+      {clienteId, businessId: context.businessId, fiscal},
       HttpsError
     );
     if (stored.estado === ARCHIVED_STATUS) {
@@ -513,7 +516,7 @@ async function archivarClienteHandler(
         fail(
           HttpsError,
           "failed-precondition",
-          "El estado de la reserva del RUT es inconsistente."
+          "El estado de la reserva fiscal es inconsistente."
         );
       }
       return {sinCambios: true};
@@ -555,15 +558,15 @@ async function reactivarClienteHandler(
   const result = await db.runTransaction(async (transaction) => {
     const clientSnapshot = await transaction.get(clienteRef);
     const stored = assertStoredClient(clientSnapshot, context.businessId, HttpsError);
-    const rutNormalizado = normalizeChileanRut(stored.rutNormalizado || stored.rut);
-    const rutKey = getClientRutKey(rutNormalizado);
+    const fiscal = adaptStoredFiscalIdentifier(stored, context.businessSnapshot.data()?.paisCodigo);
+    const rutKey = getFiscalReservationKey(fiscal.paisCodigo, fiscal.identificadorFiscalNormalizado);
     const reservationRef = context.businessRef
       .collection("clientRutKeys")
       .doc(rutKey);
     const reservationSnapshot = await transaction.get(reservationRef);
     assertReservationOwner(
       reservationSnapshot,
-      {clienteId, businessId: context.businessId, rutNormalizado},
+      {clienteId, businessId: context.businessId, fiscal},
       HttpsError
     );
     if (stored.estado === ACTIVE_STATUS) {
@@ -571,7 +574,7 @@ async function reactivarClienteHandler(
         fail(
           HttpsError,
           "failed-precondition",
-          "El estado de la reserva del RUT es inconsistente."
+          "El estado de la reserva fiscal es inconsistente."
         );
       }
       return {sinCambios: true};

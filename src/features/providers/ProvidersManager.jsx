@@ -17,6 +17,7 @@ import {
   canReadProviders,
   matchesProviderSearch,
 } from "../../domain/providerModel.mjs";
+import {getFiscalIdentifierLabel} from "../../domain/fiscalIdentifier.mjs";
 import {
   actualizarProveedor,
   archivarProveedor,
@@ -74,7 +75,7 @@ function ProviderActions({canManage, onArchive, onEdit, onReactivate, provider})
   );
 }
 
-function ProvidersManager({businessId, role}) {
+function ProvidersManager({businessId, countryCode = "CL", role}) {
   const [providers, setProviders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -88,6 +89,7 @@ function ProvidersManager({businessId, role}) {
   const loadSequenceRef = useRef(0);
   const canRead = canReadProviders(role);
   const canManage = canManageProviders(role);
+  const fiscalLabel = getFiscalIdentifierLabel(countryCode);
 
   const loadProviders = useCallback(async () => {
     const loadSequence = ++loadSequenceRef.current;
@@ -162,7 +164,7 @@ function ProvidersManager({businessId, role}) {
     try {
       if (confirmation.action === "archive") {
         await archivarProveedor(businessId, confirmation.provider.proveedorId);
-        setFeedback("Proveedor archivado. Su RUT continúa reservado.");
+        setFeedback(`Proveedor archivado. Su ${fiscalLabel} continúa reservado.`);
       } else {
         await reactivarProveedor(businessId, confirmation.provider.proveedorId);
         setFeedback("Proveedor reactivado correctamente.");
@@ -195,7 +197,7 @@ function ProvidersManager({businessId, role}) {
     <section className="erp-page clients-page providers-page">
       <div className="erp-module-intro">
         <div className="erp-page-intro">
-          <p>Mantén una ficha única por RUT para cada proveedor del negocio activo.</p>
+          <p>Mantén una ficha única por {fiscalLabel} para cada proveedor del negocio activo.</p>
         </div>
         {canManage && <Button icon={Plus} onClick={openCreate}>Nuevo proveedor</Button>}
       </div>
@@ -231,10 +233,10 @@ function ProvidersManager({businessId, role}) {
 
         <div className="erp-filters clients-filters no-print">
           <label className="erp-field clients-search-field">
-            <span className="erp-field__label">Buscar por nombre o RUT</span>
+            <span className="erp-field__label">Buscar por nombre o {fiscalLabel}</span>
             <span className="clients-search-control">
               <AppIcon icon={Search} size={18} />
-              <input className="erp-control" value={search} onChange={(event) => setSearch(event.target.value)} maxLength={200} placeholder="Ej.: Acme o 12.345.678-5" />
+              <input className="erp-control" value={search} onChange={(event) => setSearch(event.target.value)} maxLength={200} placeholder="Ej.: Acme o identificación fiscal" />
             </span>
           </label>
           <label className="erp-field">
@@ -255,7 +257,7 @@ function ProvidersManager({businessId, role}) {
             <h3>{hasFilters ? "No hay coincidencias" : "No hay proveedores registrados"}</h3>
             <p>
               {hasFilters
-                ? "Prueba con otro nombre, RUT o estado."
+                ? `Prueba con otro nombre, ${fiscalLabel} o estado.`
                 : canManage
                   ? "Crea el primer proveedor para comenzar tu registro comercial."
                   : "OWNER o ADMIN pueden registrar el primer proveedor."}
@@ -272,7 +274,7 @@ function ProvidersManager({businessId, role}) {
                     <tr key={provider.proveedorId}>
                       <td>
                         <strong className="clients-table__name">{provider.razonSocial}</strong>
-                        <span className="clients-table__secondary">{provider.rut}{provider.nombreFantasia ? ` · ${provider.nombreFantasia}` : ""}</span>
+                        <span className="clients-table__secondary">{provider.identificadorFiscalValor || provider.rut}{provider.nombreFantasia ? ` · ${provider.nombreFantasia}` : ""}</span>
                       </td>
                       <td><span>{contactSummary(provider)}</span>{provider.email && <span className="clients-table__secondary">{provider.email}</span>}{provider.telefono && <span className="clients-table__secondary">{provider.telefono}</span>}</td>
                       <td>{locationSummary(provider)}</td>
@@ -291,7 +293,7 @@ function ProvidersManager({businessId, role}) {
               {visibleProviders.map((provider) => (
                 <article className="erp-record-card client-card" key={provider.proveedorId}>
                   <header className="erp-record-card__header">
-                    <div><h3 className="erp-record-card__title">{provider.razonSocial}</h3><span className="clients-table__secondary">{provider.rut}{provider.nombreFantasia ? ` · ${provider.nombreFantasia}` : ""}</span></div>
+                    <div><h3 className="erp-record-card__title">{provider.razonSocial}</h3><span className="clients-table__secondary">{provider.identificadorFiscalValor || provider.rut}{provider.nombreFantasia ? ` · ${provider.nombreFantasia}` : ""}</span></div>
                     <StatusBadge variant={provider.estado === "activo" ? "success" : "neutral"}>{provider.estado === "activo" ? "Activo" : "Archivado"}</StatusBadge>
                   </header>
                   <dl className="client-card__details">
@@ -307,7 +309,7 @@ function ProvidersManager({businessId, role}) {
         ) : null}
       </section>
 
-      <ProviderFormDialog provider={formState.provider} onClose={() => setFormState({open: false, provider: null})} onSubmit={saveProvider} open={formState.open} />
+      <ProviderFormDialog countryCode={countryCode} provider={formState.provider} onClose={() => setFormState({open: false, provider: null})} onSubmit={saveProvider} open={formState.open} />
 
       <ResponsiveDialog
         description={confirmationIsArchive

@@ -64,7 +64,7 @@ export default function SalePrintView({company: rawCompany, sale = {}}) {
         <div>
           <h3>Cliente</h3>
           <OptionalLine value={client.nombreRazonSocial} />
-          <OptionalLine label="RUT" value={client.rut} />
+          <OptionalLine label={client.identificadorFiscalTipo || "Identificación fiscal"} value={client.identificadorFiscalValor || client.rut} />
           <OptionalLine label="Contacto" value={client.personaContacto} />
           <OptionalLine value={[client.email, client.telefono].filter(hasText).join(" · ")} />
           <OptionalLine value={clientLocation} />

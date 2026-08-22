@@ -1,6 +1,7 @@
 const {createHash} = require("node:crypto");
 const {adaptDocumentLocalization, documentLocalizationSnapshot} = require("./localization");
 const {buildAuthoritativeCompanySnapshot, resolveCompanySnapshot} = require("./companySnapshot");
+const {fiscalSnapshotFields} = require("./fiscalIdentifier");
 
 const MODEL_VERSION = 1;
 const VAT_RATE = 0.19;
@@ -74,7 +75,7 @@ function client(snapshot, businessId, clientId, HttpsError) {
   if (raw.negocioId !== businessId || text(raw.clienteId, 160) !== clientId) fail(HttpsError, "failed-precondition", "El cliente es inconsistente.");
   if (raw.estado !== "activo") fail(HttpsError, "failed-precondition", "El cliente no está disponible.");
   if (!text(raw.nombreRazonSocial, 240)) fail(HttpsError, "failed-precondition", "El cliente no tiene nombre o razón social.");
-  return {clienteId: clientId, tipoCliente: text(raw.tipoCliente, 20), rut: text(raw.rut, 40), nombreRazonSocial: text(raw.nombreRazonSocial, 240), giro: text(raw.giro, 240), email: text(raw.email, 240), telefono: text(raw.telefono, 100), direccion: text(raw.direccion, 300), personaContacto: text(raw.personaContacto, 200), regionCodigo: text(raw.regionCodigo, 20), regionNombre: text(raw.regionNombre, 160), comunaCodigo: text(raw.comunaCodigo, 20), comunaNombre: text(raw.comunaNombre, 160)};
+  return {clienteId: clientId, tipoCliente: text(raw.tipoCliente, 20), ...fiscalSnapshotFields(raw), nombreRazonSocial: text(raw.nombreRazonSocial, 240), giro: text(raw.giro, 240), email: text(raw.email, 240), telefono: text(raw.telefono, 100), direccion: text(raw.direccion, 300), personaContacto: text(raw.personaContacto, 200), regionCodigo: text(raw.regionCodigo, 20), regionNombre: text(raw.regionNombre, 160), comunaCodigo: text(raw.comunaCodigo, 20), comunaNombre: text(raw.comunaNombre, 160)};
 }
 function inventory(snapshot, businessId, itemId, HttpsError, active = true) {
   if (!snapshot.exists) fail(HttpsError, "not-found", "No se encontró un ítem de inventario.");
@@ -140,7 +141,7 @@ function quoteClientSnapshot(quote, HttpsError) {
   const clienteId = id(quote.clienteId || source.clienteId, "El cliente de la cotización", HttpsError);
   const nombreRazonSocial = text(source.nombreRazonSocial || source.empresa || quote.clienteNombre, 240);
   if (!nombreRazonSocial) fail(HttpsError, "failed-precondition", "La cotización no contiene un snapshot de cliente válido.");
-  return {clienteId, tipoCliente: text(source.tipoCliente, 20), rut: text(source.rut || quote.clienteRut, 40), nombreRazonSocial, giro: text(source.giro, 240), email: text(source.email || quote.clienteEmail, 240), telefono: text(source.telefono || quote.clienteTelefono, 100), direccion: text(source.direccion || quote.clienteDireccion, 300), personaContacto: text(source.personaContacto || source.contacto || quote.clienteContacto, 200), regionCodigo: text(source.regionCodigo, 20), regionNombre: text(source.regionNombre, 160), comunaCodigo: text(source.comunaCodigo, 20), comunaNombre: text(source.comunaNombre || source.ciudad || quote.clienteCiudad, 160)};
+  return {clienteId, tipoCliente: text(source.tipoCliente, 20), ...fiscalSnapshotFields({...source, rut: source.rut || quote.clienteRut}), nombreRazonSocial, giro: text(source.giro, 240), email: text(source.email || quote.clienteEmail, 240), telefono: text(source.telefono || quote.clienteTelefono, 100), direccion: text(source.direccion || quote.clienteDireccion, 300), personaContacto: text(source.personaContacto || source.contacto || quote.clienteContacto, 200), regionCodigo: text(source.regionCodigo, 20), regionNombre: text(source.regionNombre, 160), comunaCodigo: text(source.comunaCodigo, 20), comunaNombre: text(source.comunaNombre || source.ciudad || quote.clienteCiudad, 160)};
 }
 function quoteLine(raw, index, HttpsError) {
   const snap = raw?.inventarioSnapshot || {}; const tipoItem = TYPES.has(raw?.tipoItem || snap.tipoItem) ? raw.tipoItem || snap.tipoItem : "producto";
@@ -237,4 +238,4 @@ async function cancelarVentaBorradorHandler(request, dependencies) {
   return transactionRetry(db, async (transaction) => { const snapshot = await transaction.get(saleRef); if (!snapshot.exists) fail(HttpsError, "not-found", "No se encontró la venta."); const existing = snapshot.data() || {}; if (existing.negocioId !== businessId) fail(HttpsError, "permission-denied", "No puedes cancelar esta venta."); if (existing.estado === "cancelada") return {venta: {id: ventaId, ...existing}, idempotent: true}; if (existing.estado !== "borrador" || existing.stockAplicado) fail(HttpsError, "failed-precondition", "Sólo puedes cancelar ventas en borrador."); const timestamp = FieldValue.serverTimestamp(); const update = {estado: "cancelada", canceladoPorUid: uid, cancelledAt: timestamp, actualizadoPorUid: uid, updatedAt: timestamp}; transaction.update(saleRef, update); return {venta: {id: ventaId, ...existing, ...update, updatedAt: null}, idempotent: false}; });
 }
 
-module.exports = {actualizarVentaBorradorHandler, cancelarVentaBorradorHandler, confirmarVentaHandler, crearVentaDesdeCotizacionHandler, crearVentaHandler, formatSaleNumber: formatNumber, normalizeSaleInput: input, calculateSaleTotals: totals};
+module.exports = {actualizarVentaBorradorHandler, cancelarVentaBorradorHandler, confirmarVentaHandler, crearVentaDesdeCotizacionHandler, crearVentaHandler, formatSaleNumber: formatNumber, normalizeSaleInput: input, calculateSaleTotals: totals, clientSnapshotFromDocument: client, quoteClientSnapshot};

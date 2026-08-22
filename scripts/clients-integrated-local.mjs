@@ -23,6 +23,7 @@ import {
   getClientRutKey,
   normalizeChileanRut,
 } from "../src/domain/clientModel.mjs";
+import {buildFiscalIdentifier} from "../src/domain/fiscalIdentifier.mjs";
 
 const PROJECT_ID = "tesis-inventario-ia";
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -126,7 +127,7 @@ async function assertClientInputWasNotPersisted(adminDb, businessId, rut) {
       .get(),
     adminDb
       .collection(`negocios/${businessId}/clientes`)
-      .where("rutNormalizado", "==", normalizeChileanRut(rut))
+      .where("identificadorFiscalNormalizado", "==", buildFiscalIdentifier("CL", rut).identificadorFiscalNormalizado)
       .get(),
   ]);
   assert.equal(reservationSnapshot.exists, false);
@@ -417,7 +418,7 @@ try {
   );
   console.log("OK concurrencia: una sola creación reserva el RUT");
 
-  const ownerRutKey = getClientRutKey(ownerData.rut);
+  const ownerRutKey = getClientRutKey(ownerData.identificadorFiscalValor);
   const ownerReservationPath =
     `negocios/${businessId}/clientRutKeys/${ownerRutKey}`;
   await callable(owner, "actualizarCliente")({
@@ -440,7 +441,7 @@ try {
   await callable(owner, "actualizarCliente")({
     businessId,
     clienteId: ownerClientId,
-    cliente: {...ownerData, rut: changedRut},
+    cliente: {...ownerData, identificadorFiscalValor: changedRut},
   });
   assert.equal((await adminDb.doc(ownerReservationPath).get()).exists, false);
   assert.equal(
@@ -454,7 +455,7 @@ try {
   const releasedRutCreate = await callable(owner, "crearCliente")({
     businessId,
     cliente: clientPayload({
-      rut: ownerData.rut,
+      rut: ownerData.identificadorFiscalValor,
       nombre: "Cliente RUT Liberado",
     }),
   });
@@ -474,7 +475,7 @@ try {
           clienteId: ownerClientId,
         }),
       ["failed-precondition"],
-      /reserva del RUT/i
+      /reserva.*fiscal/i
     );
     const [clientAfter, reservationAfter] = await Promise.all([
       adminDb.doc(ownerClientPath).get(),
@@ -496,13 +497,13 @@ try {
   await adminDb.doc(changedReservationPath).update({negocioId: businessId});
 
   await adminDb.doc(changedReservationPath).update({
-    rutNormalizado: "12345678-5",
+    identificadorFiscalNormalizado: "123456785",
   });
   await assertRejectedReservationDoesNotWrite(
-    "reserva con rutNormalizado inconsistente"
+    "reserva con identificador fiscal inconsistente"
   );
   await adminDb.doc(changedReservationPath).update({
-    rutNormalizado: normalizeChileanRut(changedRut),
+    identificadorFiscalNormalizado: buildFiscalIdentifier("CL", changedRut).identificadorFiscalNormalizado,
   });
   console.log("OK reservas: valida clienteId, negocioId y RUT sin escrituras parciales");
 

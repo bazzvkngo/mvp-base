@@ -14,7 +14,7 @@ export default function PurchasePrintView({company: liveCompany, purchase}) {
       <header><div><small>COMPRA</small><h1>{purchase.numero || "Compra por asignar"}</h1><p>{purchase.ordenCompraNumero ? `Originada desde ${purchase.ordenCompraNumero}` : "Compra directa"}</p></div><strong>{getPurchaseStatusLabel(purchase.estado || "borrador")}</strong></header>
       <div className="po-print__parties">
         <section><small>Empresa</small><strong>{company?.nombreComercial || company?.razonSocial || "Empresa"}</strong><p>{company?.identificadorFiscalValor || company?.rut || ""}</p></section>
-        <section><small>Proveedor</small><strong>{purchase.proveedorSnapshot?.razonSocial || "—"}</strong><p>{purchase.proveedorSnapshot?.rut || ""}</p></section>
+        <section><small>Proveedor</small><strong>{purchase.proveedorSnapshot?.razonSocial || "—"}</strong><p>{purchase.proveedorSnapshot?.identificadorFiscalValor || purchase.proveedorSnapshot?.rut || ""}</p></section>
         <section><small>Documento</small><strong>{getPurchaseDocumentTypeLabel(purchase.tipoDocumento)}</strong>{purchase.tipoDocumento !== "sin_documento" && <p>{purchase.numeroDocumentoProveedor || "Sin número"}</p>}<p>{purchase.fechaCompra || "—"}</p></section>
       </div>
       <table><thead><tr><th>Ítem</th><th>Cantidad</th><th>Costo</th><th>Desc.</th><th>Total</th></tr></thead><tbody>{purchase.items?.map((item) => <tr key={item.lineaId}><td><strong>{item.nombre}</strong><small>{item.codigo}</small></td><td>{item.cantidad}</td><td>{money(item.costoUnitario)}</td><td>{item.descuentoPct}%</td><td>{money(lineTotal(item))}</td></tr>)}</tbody></table>

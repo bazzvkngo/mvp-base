@@ -2,6 +2,19 @@
 
 Administrar clientes registrados por empresa y utilizarlos posteriormente en cotizaciones, ventas y reportes.
 
+## Enmienda multipaís pre-V1
+
+Desde el modelo 2, los clientes nuevos persisten `paisCodigo`,
+`identificadorFiscalTipo`, `identificadorFiscalValor` e
+`identificadorFiscalNormalizado`. Functions deriva el país del negocio
+autorizado: CL valida RUT, BO NIT, BR CPF/CNPJ, PE RUC y los demás países una
+identificación fiscal genérica. La unicidad sigue siendo por negocio en
+`clientRutKeys`, nombre interno conservado por compatibilidad.
+
+Los documentos modelo 1 con `rut`/`rutNormalizado` y sus reservas continúan
+operables sin migración. Las referencias a RUT del resto de esta SPEC describen
+CL/legacy; para documentos nuevos prevalece esta enmienda.
+
 # Estado
 
 - Etapas 1, 2 y 3 terminadas.

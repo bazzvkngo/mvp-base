@@ -1,8 +1,8 @@
 import React from "react";
 import ProvidersManager from "../features/providers/ProvidersManager";
 
-function ProvidersPage({businessId, role}) {
-  return <ProvidersManager businessId={businessId} role={role} />;
+function ProvidersPage({businessId, countryCode, role}) {
+  return <ProvidersManager businessId={businessId} countryCode={countryCode} role={role} />;
 }
 
 export default ProvidersPage;

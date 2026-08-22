@@ -1,13 +1,27 @@
 const {createHash} = require("node:crypto");
 const businessCatalog = require("./businessCatalog.json");
+const {
+  adaptStoredFiscalIdentifier,
+  buildFiscalIdentifier,
+  formatChileanRut,
+  getFiscalIdentifierLabel,
+  getFiscalReservationKey,
+  isValidChileanRut,
+  isValidFiscalIdentifier,
+  normalizeChileanRut,
+  normalizeCountryCode,
+} = require("./fiscalIdentifier");
 
-const PROVIDER_MODEL_VERSION = 1;
+const PROVIDER_MODEL_VERSION = 2;
 const ACTIVE_STATUS = "activo";
 const ARCHIVED_STATUS = "archivado";
 const AUTHORIZED_ROLES = ["OWNER", "ADMIN"];
 const PAYMENT_TERMS = new Set(["contado", "transferencia", "credito", "otro"]);
 const PROVIDER_INPUT_FIELDS = new Set([
   "rut",
+  "paisCodigo",
+  "identificadorFiscalTipo",
+  "identificadorFiscalValor",
   "razonSocial",
   "nombreFantasia",
   "giro",
@@ -28,6 +42,7 @@ const AUTHORITATIVE_FIELDS = new Set([
   "proveedorId",
   "negocioId",
   "rutNormalizado",
+  "identificadorFiscalNormalizado",
   "estado",
   "creadoPorUid",
   "actualizadoPorUid",
@@ -39,6 +54,9 @@ const AUTHORITATIVE_FIELDS = new Set([
 ]);
 const FIELD_CONFIG = {
   rut: [20, "RUT"],
+  paisCodigo: [10, "país"],
+  identificadorFiscalTipo: [40, "tipo de identificación fiscal"],
+  identificadorFiscalValor: [80, "identificación fiscal"],
   razonSocial: [240, "razón social"],
   nombreFantasia: [240, "nombre de fantasía"],
   giro: [240, "giro"],
@@ -103,47 +121,24 @@ function normalizeTextField(raw, field, HttpsError) {
   return normalized;
 }
 
-function normalizeChileanRut(value) {
-  const compact = String(value ?? "")
-    .toUpperCase()
-    .replace(/[^0-9K]/g, "");
-  if (compact.length < 2) return compact;
-  return `${compact.slice(0, -1)}-${compact.slice(-1)}`;
-}
-
-function formatChileanRut(value) {
-  const normalized = normalizeChileanRut(value);
-  const match = /^(\d+)-([\dK])$/.exec(normalized);
-  if (!match) return normalized;
-  return `${match[1].replace(/\B(?=(\d{3})+(?!\d))/g, ".")}-${match[2]}`;
-}
-
-function isValidChileanRut(value) {
-  const normalized = normalizeChileanRut(value);
-  if (!/^\d{7,8}-[\dK]$/.test(normalized)) return false;
-  const [body, suppliedDigit] = normalized.split("-");
-  let sum = 0;
-  let multiplier = 2;
-  for (let index = body.length - 1; index >= 0; index -= 1) {
-    sum += Number(body[index]) * multiplier;
-    multiplier = multiplier === 7 ? 2 : multiplier + 1;
-  }
-  const remainder = 11 - (sum % 11);
-  const expectedDigit =
-    remainder === 11 ? "0" : remainder === 10 ? "K" : String(remainder);
-  return suppliedDigit === expectedDigit;
-}
-
 function getProviderRutKey(value) {
-  const normalized = normalizeChileanRut(value);
-  return isValidChileanRut(normalized) ? normalized.replace("-", "") : "";
+  return isValidChileanRut(value) ? getFiscalReservationKey("CL", value) : "";
 }
 
-function normalizeTerritory(raw, HttpsError) {
+function normalizeTerritory(raw, HttpsError, countryCode = "CL") {
   const regionCodigo = normalizeTextField(raw, "regionCodigo", HttpsError);
   const comunaCodigo = normalizeTextField(raw, "comunaCodigo", HttpsError);
   normalizeTextField(raw, "regionNombre", HttpsError);
   normalizeTextField(raw, "comunaNombre", HttpsError);
+
+  if (normalizeCountryCode(countryCode) !== "CL") {
+    return {
+      regionCodigo,
+      regionNombre: normalizeTextField(raw, "regionNombre", HttpsError),
+      comunaCodigo,
+      comunaNombre: normalizeTextField(raw, "comunaNombre", HttpsError),
+    };
+  }
 
   if (!regionCodigo) {
     if (comunaCodigo) {
@@ -202,11 +197,15 @@ function normalizeCreditDays(value, HttpsError) {
   return number;
 }
 
-function normalizeProviderInput(raw = {}, HttpsError) {
+function normalizeProviderInput(raw = {}, HttpsError, authoritativeCountry = "CL") {
   const input = editableProviderInput(raw, HttpsError);
-  const rutNormalizado = normalizeChileanRut(
-    normalizeTextField(input, "rut", HttpsError)
+  const countryCode = normalizeCountryCode(authoritativeCountry);
+  const fiscalValue = normalizeTextField(
+    {...input, identificadorFiscalValor: input.identificadorFiscalValor || input.rut},
+    "identificadorFiscalValor",
+    HttpsError
   );
+  const fiscal = buildFiscalIdentifier(countryCode, fiscalValue);
   const razonSocial = normalizeTextField(input, "razonSocial", HttpsError);
   const email = normalizeTextField(input, "email", HttpsError).toLowerCase();
   const telefono = normalizeTextField(input, "telefono", HttpsError);
@@ -216,8 +215,8 @@ function normalizeProviderInput(raw = {}, HttpsError) {
     HttpsError
   ).toLowerCase();
 
-  if (!isValidChileanRut(rutNormalizado)) {
-    fail(HttpsError, "invalid-argument", "Ingresa un RUT chileno válido.");
+  if (!isValidFiscalIdentifier(countryCode, fiscalValue)) {
+    fail(HttpsError, "invalid-argument", `Ingresa un ${getFiscalIdentifierLabel(countryCode)} válido.`);
   }
   if (!razonSocial) {
     fail(HttpsError, "invalid-argument", "Ingresa la razón social.");
@@ -237,8 +236,7 @@ function normalizeProviderInput(raw = {}, HttpsError) {
 
   return {
     modeloProveedorVersion: PROVIDER_MODEL_VERSION,
-    rut: formatChileanRut(rutNormalizado),
-    rutNormalizado,
+    ...fiscal,
     razonSocial,
     nombreFantasia: normalizeTextField(input, "nombreFantasia", HttpsError),
     giro: normalizeTextField(input, "giro", HttpsError),
@@ -246,7 +244,7 @@ function normalizeProviderInput(raw = {}, HttpsError) {
     email,
     telefono,
     direccion: normalizeTextField(input, "direccion", HttpsError),
-    ...normalizeTerritory(input, HttpsError),
+    ...normalizeTerritory(input, HttpsError, countryCode),
     condicionesPago,
     diasCredito: normalizeCreditDays(input.diasCredito, HttpsError),
     notas: normalizeTextField(input, "notas", HttpsError),
@@ -291,43 +289,45 @@ function assertStoredProvider(snapshot, businessId, HttpsError) {
 
 function assertReservationOwner(
   reservationSnapshot,
-  {proveedorId, businessId, rutNormalizado},
+  {proveedorId, businessId, fiscal},
   HttpsError
 ) {
   const reservation = reservationSnapshot.data() || {};
+  const reservationNormalized = reservation.identificadorFiscalNormalizado ||
+    normalizeChileanRut(reservation.rutNormalizado || "").replace("-", "");
   if (
     !reservationSnapshot.exists ||
     reservation.proveedorId !== proveedorId ||
     reservation.negocioId !== businessId ||
-    reservation.rutNormalizado !== rutNormalizado
+    reservationNormalized !== fiscal.identificadorFiscalNormalizado
   ) {
     fail(
       HttpsError,
       "failed-precondition",
-      "La reserva del RUT del proveedor es inconsistente."
+      "La reserva de identificación fiscal del proveedor es inconsistente."
     );
   }
 }
 
-function duplicateRutError(reservation, HttpsError) {
+function duplicateFiscalError(reservation, HttpsError) {
   if (reservation?.estadoProveedor === ARCHIVED_STATUS) {
     fail(
       HttpsError,
       "failed-precondition",
-      "Ya existe un proveedor archivado con este RUT. Debes reactivarlo."
+      "Ya existe un proveedor archivado con esta identificación fiscal. Debes reactivarlo."
     );
   }
   fail(
     HttpsError,
     "already-exists",
-    "Ya existe un proveedor con este RUT en el negocio."
+    "Ya existe un proveedor con esta identificación fiscal en el negocio."
   );
 }
 
 function reservationPayload({
   businessId,
   proveedorId,
-  rutNormalizado,
+  fiscal,
   estadoProveedor,
   uid,
   timestamp,
@@ -336,7 +336,9 @@ function reservationPayload({
   return {
     negocioId: businessId,
     proveedorId,
-    rutNormalizado,
+    paisCodigo: fiscal.paisCodigo,
+    identificadorFiscalTipo: fiscal.identificadorFiscalTipo,
+    identificadorFiscalNormalizado: fiscal.identificadorFiscalNormalizado,
     estadoProveedor,
     actualizadoPorUid: uid,
     actualizadoEn: timestamp,
@@ -366,16 +368,18 @@ async function crearProveedorHandler(
     {db, HttpsError},
     {roles: AUTHORIZED_ROLES}
   );
+  const countryCode = normalizeCountryCode(context.businessSnapshot.data()?.paisCodigo);
   const normalized = normalizeProviderInput(
     request?.data?.proveedor || {},
-    HttpsError
+    HttpsError,
+    countryCode
   );
   const requestId = validateRequestId(request?.data?.requestId, HttpsError);
   const signature = inputSignature(normalized);
   const proveedorRef = context.businessRef.collection("proveedores").doc();
   const reservationRef = context.businessRef
     .collection("providerRutKeys")
-    .doc(getProviderRutKey(normalized.rutNormalizado));
+    .doc(getFiscalReservationKey(countryCode, normalized.identificadorFiscalNormalizado));
   const requestRef = context.businessRef
     .collection("providerCreateRequests")
     .doc(requestId);
@@ -409,7 +413,7 @@ async function crearProveedorHandler(
 
     const reservationSnapshot = await transaction.get(reservationRef);
     if (reservationSnapshot.exists) {
-      duplicateRutError(reservationSnapshot.data(), HttpsError);
+      duplicateFiscalError(reservationSnapshot.data(), HttpsError);
     }
 
     const timestamp = FieldValue.serverTimestamp();
@@ -430,7 +434,7 @@ async function crearProveedorHandler(
       reservationPayload({
         businessId: context.businessId,
         proveedorId: proveedorRef.id,
-        rutNormalizado: normalized.rutNormalizado,
+        fiscal: normalized,
         estadoProveedor: ACTIVE_STATUS,
         uid: context.uid,
         timestamp,
@@ -471,9 +475,11 @@ async function actualizarProveedorHandler(
     {roles: AUTHORIZED_ROLES}
   );
   const proveedorId = validateProviderId(request?.data?.proveedorId, HttpsError);
+  const countryCode = normalizeCountryCode(context.businessSnapshot.data()?.paisCodigo);
   const normalized = normalizeProviderInput(
     request?.data?.proveedor || {},
-    HttpsError
+    HttpsError,
+    countryCode
   );
   const proveedorRef = context.businessRef
     .collection("proveedores")
@@ -494,16 +500,16 @@ async function actualizarProveedorHandler(
       );
     }
 
-    const previousRut = normalizeChileanRut(stored.rutNormalizado || stored.rut);
-    const previousRutKey = getProviderRutKey(previousRut);
+    const previousFiscal = adaptStoredFiscalIdentifier(stored, countryCode);
+    const previousRutKey = getFiscalReservationKey(previousFiscal.paisCodigo, previousFiscal.identificadorFiscalNormalizado);
     if (!previousRutKey) {
       fail(
         HttpsError,
         "failed-precondition",
-        "El RUT almacenado del proveedor es inválido."
+        "La identificación fiscal almacenada del proveedor es inválida."
       );
     }
-    const nextRutKey = getProviderRutKey(normalized.rutNormalizado);
+    const nextRutKey = getFiscalReservationKey(countryCode, normalized.identificadorFiscalNormalizado);
     const previousReservationRef = context.businessRef
       .collection("providerRutKeys")
       .doc(previousRutKey);
@@ -512,14 +518,14 @@ async function actualizarProveedorHandler(
     );
     assertReservationOwner(
       previousReservationSnapshot,
-      {proveedorId, businessId: context.businessId, rutNormalizado: previousRut},
+      {proveedorId, businessId: context.businessId, fiscal: previousFiscal},
       HttpsError
     );
     if (previousReservationSnapshot.data()?.estadoProveedor !== stored.estado) {
       fail(
         HttpsError,
         "failed-precondition",
-        "El estado de la reserva del RUT es inconsistente."
+        "El estado de la reserva fiscal es inconsistente."
       );
     }
 
@@ -530,7 +536,7 @@ async function actualizarProveedorHandler(
         .doc(nextRutKey);
       const nextReservationSnapshot = await transaction.get(nextReservationRef);
       if (nextReservationSnapshot.exists) {
-        duplicateRutError(nextReservationSnapshot.data(), HttpsError);
+        duplicateFiscalError(nextReservationSnapshot.data(), HttpsError);
       }
     }
 
@@ -554,7 +560,7 @@ async function actualizarProveedorHandler(
         reservationPayload({
           businessId: context.businessId,
           proveedorId,
-          rutNormalizado: normalized.rutNormalizado,
+          fiscal: normalized,
           estadoProveedor: ACTIVE_STATUS,
           uid: context.uid,
           timestamp,
@@ -598,28 +604,29 @@ async function changeProviderStatus(
       context.businessId,
       HttpsError
     );
-    const rutNormalizado = normalizeChileanRut(stored.rutNormalizado || stored.rut);
-    if (!getProviderRutKey(rutNormalizado)) {
+    const fiscal = adaptStoredFiscalIdentifier(stored, context.businessSnapshot.data()?.paisCodigo);
+    const reservationKey = getFiscalReservationKey(fiscal.paisCodigo, fiscal.identificadorFiscalNormalizado);
+    if (!reservationKey) {
       fail(
         HttpsError,
         "failed-precondition",
-        "El RUT almacenado del proveedor es inválido."
+        "La identificación fiscal almacenada del proveedor es inválida."
       );
     }
     const reservationRef = context.businessRef
       .collection("providerRutKeys")
-      .doc(getProviderRutKey(rutNormalizado));
+      .doc(reservationKey);
     const reservationSnapshot = await transaction.get(reservationRef);
     assertReservationOwner(
       reservationSnapshot,
-      {proveedorId, businessId: context.businessId, rutNormalizado},
+      {proveedorId, businessId: context.businessId, fiscal},
       HttpsError
     );
     if (reservationSnapshot.data()?.estadoProveedor !== stored.estado) {
       fail(
         HttpsError,
         "failed-precondition",
-        "El estado de la reserva del RUT es inconsistente."
+        "El estado de la reserva fiscal es inconsistente."
       );
     }
 

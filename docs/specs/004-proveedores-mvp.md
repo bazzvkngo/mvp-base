@@ -1,5 +1,18 @@
 # Proveedores MVP
 
+## Enmienda multipaís pre-V1
+
+Desde el modelo 2, los proveedores nuevos persisten `paisCodigo`,
+`identificadorFiscalTipo`, `identificadorFiscalValor` e
+`identificadorFiscalNormalizado`. Functions deriva el país del negocio
+autorizado, no del payload ni de su moneda: CL valida RUT, BO NIT, BR CPF/CNPJ,
+PE RUC y los demás países una identificación fiscal genérica.
+
+La unicidad sigue siendo por negocio en `providerRutKeys`, nombre interno
+conservado por compatibilidad con Rules y reservas. Los documentos modelo 1 con
+`rut`/`rutNormalizado` continúan operables sin migración. Las secciones RUT
+siguientes aplican a CL/legacy; para documentos nuevos prevalece esta enmienda.
+
 ## Objetivo
 
 Administrar proveedores registrados por empresa con aislamiento multiempresa, RUT chileno único dentro de cada negocio, persistencia autoritativa y archivado lógico. El módulo deja definido el contrato que podrán consumir posteriormente Órdenes de Compra, Compras e Inventario, sin implementar todavía esos flujos.

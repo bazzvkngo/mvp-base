@@ -215,7 +215,7 @@ try {
     businessId,
     cliente: {
       tipoCliente: "empresa",
-      rut: ownerData.rut,
+      rut: ownerData.identificadorFiscalValor,
       nombreRazonSocial: "Cliente con RUT de proveedor",
       giro: "Servicios",
       email: "cliente.mismo.rut@example.test",
@@ -242,7 +242,7 @@ try {
   assert.equal(repeatedCreate.data.sinCambios, true);
   const ownerRutQuery = await adminDb
     .collection(`negocios/${businessId}/proveedores`)
-    .where("rutNormalizado", "==", normalizeProviderRut(ownerData.rut))
+    .where("identificadorFiscalNormalizado", "==", getProviderRutKey(ownerData.identificadorFiscalValor))
     .get();
   assert.equal(ownerRutQuery.size, 1);
   console.log("OK idempotencia: reintento conserva el mismo proveedor");
@@ -328,7 +328,7 @@ try {
     outsider,
     outsiderBusinessId,
     `external-same-rut-${RUN_ID}`,
-    providerPayload({rut: ownerData.rut, razonSocial: "Proveedor Otro Negocio"})
+    providerPayload({rut: ownerData.identificadorFiscalValor, razonSocial: "Proveedor Otro Negocio"})
   );
   assert.notEqual(externalSameRut.data.proveedor.proveedorId, ownerProviderId);
   console.log("OK multiempresa: el mismo RUT existe en otro negocio");
@@ -343,7 +343,7 @@ try {
     ["permission-denied"]
   );
 
-  const ownerRutKey = getProviderRutKey(ownerData.rut);
+  const ownerRutKey = getProviderRutKey(ownerData.identificadorFiscalValor);
   const ownerReservationPath =
     `negocios/${businessId}/providerRutKeys/${ownerRutKey}`;
   const reservationBeforeSameRut = await adminDb.doc(ownerReservationPath).get();
@@ -368,7 +368,7 @@ try {
   await callable(owner, "actualizarProveedor")({
     businessId,
     proveedorId: ownerProviderId,
-    proveedor: {...ownerData, rut: changedRut},
+    proveedor: {...ownerData, identificadorFiscalValor: changedRut},
   });
   assert.equal((await adminDb.doc(ownerReservationPath).get()).exists, false);
   assert.equal(
@@ -379,12 +379,12 @@ try {
     owner,
     businessId,
     `released-rut-${RUN_ID}`,
-    providerPayload({rut: ownerData.rut, razonSocial: "Proveedor RUT Liberado"})
+    providerPayload({rut: ownerData.identificadorFiscalValor, razonSocial: "Proveedor RUT Liberado"})
   );
   assert.notEqual(releasedRutCreate.data.proveedor.proveedorId, ownerProviderId);
   console.log("OK edición: cambia RUT y libera el anterior atómicamente");
 
-  const adminRutKey = getProviderRutKey(adminData.rut);
+  const adminRutKey = getProviderRutKey(adminData.identificadorFiscalValor);
   const adminReservationPath =
     `negocios/${businessId}/providerRutKeys/${adminRutKey}`;
   const firstArchive = await callable(admin, "archivarProveedor")({

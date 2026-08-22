@@ -6,6 +6,7 @@ import {
   formatProviderRut,
   getProviderFieldErrors,
 } from "../../domain/providerModel.mjs";
+import {getFiscalIdentifierLabel, getFiscalIdentifierPlaceholder, normalizeCountryCode} from "../../domain/fiscalIdentifier.mjs";
 import {
   CHILE_REGIONS,
   getCommuneByCode,
@@ -63,7 +64,7 @@ function ProviderField({children, error, field, label, optional = true, wide}) {
   );
 }
 
-function ProviderFormDialog({onClose, onSubmit, open, provider}) {
+function ProviderFormDialog({countryCode = "CL", onClose, onSubmit, open, provider}) {
   const [values, setValues] = useState(() => toFormValues(provider));
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState("");
@@ -71,6 +72,9 @@ function ProviderFormDialog({onClose, onSubmit, open, provider}) {
   const firstInputRef = useRef(null);
   const fieldRefs = useRef({});
   const isEditing = Boolean(provider?.proveedorId);
+  const country = normalizeCountryCode(countryCode);
+  const isChile = country === "CL";
+  const fiscalLabel = getFiscalIdentifierLabel(country);
   const communes = useMemo(
     () => getCommunesForRegion(values.regionCodigo),
     [values.regionCodigo]
@@ -150,7 +154,7 @@ function ProviderFormDialog({onClose, onSubmit, open, provider}) {
       nextErrors = getProviderFieldErrors(values, {
         getRegionByCode,
         getCommuneByCode,
-      });
+      }, country);
     } catch (error) {
       nextErrors = error?.fieldErrors || {};
       setServerError(error?.message || "Revisa los datos ingresados.");
@@ -163,15 +167,16 @@ function ProviderFormDialog({onClose, onSubmit, open, provider}) {
       return;
     }
 
-    const region = getRegionByCode(values.regionCodigo);
-    const commune = getCommuneByCode(values.regionCodigo, values.comunaCodigo);
+    const region = isChile ? getRegionByCode(values.regionCodigo) : null;
+    const commune = isChile ? getCommuneByCode(values.regionCodigo, values.comunaCodigo) : null;
     setSaving(true);
     setServerError("");
     try {
       await onSubmit({
         ...values,
-        regionNombre: region?.name || "",
-        comunaNombre: commune?.name || "",
+        paisCodigo: country,
+        regionNombre: isChile ? region?.name || "" : values.regionNombre,
+        comunaNombre: isChile ? commune?.name || "" : values.comunaNombre,
       });
       onClose();
     } catch (error) {
@@ -215,13 +220,13 @@ function ProviderFormDialog({onClose, onSubmit, open, provider}) {
         <fieldset className="client-form-grid" disabled={saving}>
           <legend className="sr-only">Datos del proveedor</legend>
 
-          <ProviderField error={errors.rut} field="rut" label="RUT" optional={false}>
+          <ProviderField error={errors.rut} field="rut" label={fiscalLabel} optional={false}>
             <input
               ref={(node) => setFieldRef("rut", node)}
               value={values.rut}
               onChange={(event) => updateField("rut", event.target.value)}
-              onBlur={() => updateField("rut", formatProviderRut(values.rut))}
-              placeholder="12.345.678-5"
+              onBlur={() => isChile && updateField("rut", formatProviderRut(values.rut))}
+              placeholder={getFiscalIdentifierPlaceholder(country)}
             />
           </ProviderField>
 
@@ -258,7 +263,7 @@ function ProviderFormDialog({onClose, onSubmit, open, provider}) {
             <input ref={(node) => setFieldRef("direccion", node)} value={values.direccion} onChange={(event) => updateField("direccion", event.target.value)} autoComplete="street-address" />
           </ProviderField>
 
-          <ProviderField error={errors.regionCodigo} field="regionCodigo" label="Región">
+          {isChile ? <><ProviderField error={errors.regionCodigo} field="regionCodigo" label="Región">
             <select ref={(node) => setFieldRef("regionCodigo", node)} value={values.regionCodigo} onChange={handleRegionChange}>
               <option value="">Sin especificar</option>
               {CHILE_REGIONS.map((region) => <option key={region.code} value={region.code}>{region.name}</option>)}
@@ -271,6 +276,14 @@ function ProviderFormDialog({onClose, onSubmit, open, provider}) {
               {communes.map((commune) => <option key={commune.code} value={commune.code}>{commune.name}</option>)}
             </select>
           </ProviderField>
+          </> : <>
+            <ProviderField error={errors.regionNombre} field="regionNombre" label="Región / Estado / Departamento">
+              <input ref={(node) => setFieldRef("regionNombre", node)} value={values.regionNombre} onChange={(event) => updateField("regionNombre", event.target.value)} />
+            </ProviderField>
+            <ProviderField error={errors.comunaNombre} field="comunaNombre" label="Ciudad / Municipio">
+              <input ref={(node) => setFieldRef("comunaNombre", node)} value={values.comunaNombre} onChange={(event) => updateField("comunaNombre", event.target.value)} />
+            </ProviderField>
+          </>}
 
           <ProviderField error={errors.condicionesPago} field="condicionesPago" label="Condiciones de pago">
             <select ref={(node) => setFieldRef("condicionesPago", node)} value={values.condicionesPago} onChange={handlePaymentChange}>

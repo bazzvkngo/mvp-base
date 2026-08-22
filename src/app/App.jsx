@@ -262,6 +262,7 @@ function AppRoutes({
             <ClientsPage
               key={businessId}
               businessId={businessId}
+              countryCode={activeBusiness?.paisCodigo}
               role={activeBusiness?.role}
             />
           }
@@ -272,6 +273,7 @@ function AppRoutes({
             <ProvidersPage
               key={businessId}
               businessId={businessId}
+              countryCode={activeBusiness?.paisCodigo}
               role={activeBusiness?.role}
             />
           }

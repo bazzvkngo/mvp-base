@@ -1,6 +1,7 @@
 const {createHash} = require("node:crypto");
 const {adaptDocumentLocalization, documentLocalizationSnapshot} = require("./localization");
 const {buildAuthoritativeCompanySnapshot} = require("./companySnapshot");
+const {fiscalSnapshotFields} = require("./fiscalIdentifier");
 
 const PURCHASE_ORDER_MODEL_VERSION = 1;
 const VAT_RATE = 0.19;
@@ -161,7 +162,7 @@ function providerSnapshotFromDocument(snapshot, context, HttpsError) {
   }
   return {
     proveedorId: context.proveedorId,
-    rut: safeText(stored.rut, 40),
+    ...fiscalSnapshotFields(stored),
     razonSocial,
     nombreFantasia: safeText(stored.nombreFantasia, 240),
     giro: safeText(stored.giro, 240),
@@ -595,7 +596,7 @@ function preservedProviderSnapshot(order) {
       raw.proveedorId || order?.proveedorId,
       160
     ),
-    rut: safeText(raw.rut || order?.proveedorRut, 40),
+    ...fiscalSnapshotFields({...raw, rut: raw.rut || order?.proveedorRut}),
     razonSocial: safeText(
       raw.razonSocial || raw.nombre || order?.proveedorNombre,
       240

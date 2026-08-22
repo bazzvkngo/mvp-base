@@ -1,4 +1,16 @@
-export const CLIENT_MODEL_VERSION = 1;
+import {
+  adaptStoredFiscalIdentifier,
+  buildFiscalIdentifier,
+  formatChileanRut,
+  getFiscalIdentifierLabel,
+  isValidChileanRut,
+  isValidFiscalIdentifier,
+  normalizeChileanRut,
+  normalizeCountryCode,
+} from "./fiscalIdentifier.mjs";
+
+export const CLIENT_MODEL_VERSION = 2;
+export {formatChileanRut, isValidChileanRut, normalizeChileanRut};
 
 export const CLIENT_TYPES = Object.freeze(["persona", "empresa"]);
 export const CLIENT_STATUSES = Object.freeze(["activo", "archivado"]);
@@ -43,39 +55,6 @@ export function normalizeClientText(
   return normalized;
 }
 
-export function normalizeChileanRut(value) {
-  const compact = String(value ?? "")
-    .toUpperCase()
-    .replace(/[^0-9K]/g, "");
-  if (compact.length < 2) return compact;
-  return `${compact.slice(0, -1)}-${compact.slice(-1)}`;
-}
-
-export function formatChileanRut(value) {
-  const normalized = normalizeChileanRut(value);
-  const match = /^(\d+)-([\dK])$/.exec(normalized);
-  if (!match) return normalized;
-  const formattedBody = match[1].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  return `${formattedBody}-${match[2]}`;
-}
-
-export function isValidChileanRut(value) {
-  const normalized = normalizeChileanRut(value);
-  if (!/^\d{7,8}-[\dK]$/.test(normalized)) return false;
-
-  const [body, suppliedDigit] = normalized.split("-");
-  let sum = 0;
-  let multiplier = 2;
-  for (let index = body.length - 1; index >= 0; index -= 1) {
-    sum += Number(body[index]) * multiplier;
-    multiplier = multiplier === 7 ? 2 : multiplier + 1;
-  }
-  const remainder = 11 - (sum % 11);
-  const expectedDigit =
-    remainder === 11 ? "0" : remainder === 10 ? "K" : String(remainder);
-  return suppliedDigit === expectedDigit;
-}
-
 export function getClientRutKey(value) {
   const normalized = normalizeChileanRut(value);
   return isValidChileanRut(normalized) ? normalized.replace("-", "") : "";
@@ -85,7 +64,7 @@ function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
-export function getClientFieldErrors(raw = {}) {
+export function getClientFieldErrors(raw = {}, countryCode = raw?.paisCodigo || "CL") {
   const errors = {};
   const normalized = {};
 
@@ -105,17 +84,18 @@ export function getClientFieldErrors(raw = {}) {
   );
 
   const tipoCliente = normalized.tipoCliente.toLowerCase();
-  const rut = normalizeChileanRut(normalized.rut);
+  const country = normalizeCountryCode(countryCode);
+  const fiscalValue = raw?.identificadorFiscalValor || normalized.rut;
   const nombreRazonSocial = normalized.nombreRazonSocial;
   const email = normalized.email.toLowerCase();
 
   if (!errors.tipoCliente && !CLIENT_TYPE_SET.has(tipoCliente)) {
     errors.tipoCliente = "Selecciona si el cliente es persona o empresa.";
   }
-  if (!errors.rut && !rut) {
-    errors.rut = "Ingresa el RUT del cliente.";
-  } else if (!errors.rut && !isValidChileanRut(rut)) {
-    errors.rut = "Ingresa un RUT chileno válido.";
+  if (!errors.rut && !fiscalValue) {
+    errors.rut = `Ingresa el ${getFiscalIdentifierLabel(country)} del cliente.`;
+  } else if (!errors.rut && !isValidFiscalIdentifier(country, fiscalValue)) {
+    errors.rut = `Ingresa un ${getFiscalIdentifierLabel(country)} válido.`;
   }
   if (!errors.nombreRazonSocial && !nombreRazonSocial) {
     errors.nombreRazonSocial = "Ingresa el nombre o razón social.";
@@ -127,8 +107,9 @@ export function getClientFieldErrors(raw = {}) {
   return errors;
 }
 
-export function normalizeClientInput(raw = {}) {
-  const errors = getClientFieldErrors(raw);
+export function normalizeClientInput(raw = {}, countryCode = raw?.paisCodigo || "CL") {
+  const country = normalizeCountryCode(countryCode);
+  const errors = getClientFieldErrors(raw, country);
   if (Object.keys(errors).length > 0) {
     const error = new Error(Object.values(errors)[0]);
     error.code = "client/invalid-data";
@@ -136,9 +117,8 @@ export function normalizeClientInput(raw = {}) {
     throw error;
   }
 
-  const rutNormalizado = normalizeChileanRut(
-    normalizeClientText(raw.rut, 20, "RUT")
-  );
+  const fiscalValue = normalizeClientText(raw.identificadorFiscalValor || raw.rut, 80, getFiscalIdentifierLabel(country));
+  const fiscal = buildFiscalIdentifier(country, fiscalValue);
   return {
     modeloClienteVersion: CLIENT_MODEL_VERSION,
     tipoCliente: normalizeClientText(
@@ -146,8 +126,9 @@ export function normalizeClientInput(raw = {}) {
       20,
       "tipo de cliente"
     ).toLowerCase(),
-    rut: formatChileanRut(rutNormalizado),
-    rutNormalizado,
+    ...fiscal,
+    rut: fiscal.identificadorFiscalValor,
+    rutNormalizado: country === "CL" ? normalizeChileanRut(fiscal.identificadorFiscalNormalizado) : "",
     nombreRazonSocial: normalizeClientText(
       raw.nombreRazonSocial,
       240,
@@ -178,11 +159,13 @@ export function normalizeClientInput(raw = {}) {
   };
 }
 
-export function buildClientMutationPayload(raw = {}) {
-  const normalized = normalizeClientInput(raw);
+export function buildClientMutationPayload(raw = {}, countryCode = raw?.paisCodigo || "CL") {
+  const normalized = normalizeClientInput(raw, countryCode);
   return {
     tipoCliente: normalized.tipoCliente,
-    rut: normalized.rut,
+    paisCodigo: normalized.paisCodigo,
+    identificadorFiscalTipo: normalized.identificadorFiscalTipo,
+    identificadorFiscalValor: normalized.identificadorFiscalValor,
     nombreRazonSocial: normalized.nombreRazonSocial,
     giro: normalized.giro,
     email: normalized.email,
@@ -199,6 +182,7 @@ export function buildClientMutationPayload(raw = {}) {
 
 export function adaptStoredClient(raw = {}) {
   const { clientId: legacyClientId, ...stored } = raw;
+  const fiscal = adaptStoredFiscalIdentifier(raw);
   const clienteId = normalizeClientText(
     raw.clienteId || raw.id || legacyClientId,
     160
@@ -206,7 +190,8 @@ export function adaptStoredClient(raw = {}) {
   const status = normalizeClientText(raw.estado, 20).toLowerCase();
   return {
     ...stored,
-    ...normalizeClientInput(raw),
+    ...normalizeClientInput({...raw, rut: fiscal.identificadorFiscalValor}, fiscal.paisCodigo),
+    ...fiscal,
     clienteId,
     estado: CLIENT_STATUS_SET.has(status) ? status : "activo",
   };
@@ -227,8 +212,8 @@ export function matchesClientSearch(client, search) {
   const query = normalizeSearchText(search).replace(/[^a-z0-9k]/g, "");
   if (!query) return true;
   const searchable = normalizeSearchText(
-    `${client?.nombreRazonSocial || ""} ${client?.rut || ""} ${
-      client?.rutNormalizado || ""
+    `${client?.nombreRazonSocial || ""} ${client?.identificadorFiscalValor || client?.rut || ""} ${
+      client?.identificadorFiscalNormalizado || client?.rutNormalizado || ""
     }`
   ).replace(/[^a-z0-9k]/g, "");
   return searchable.includes(query);

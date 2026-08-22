@@ -1,3 +1,5 @@
+import {adaptStoredFiscalIdentifier} from "./fiscalIdentifier.mjs";
+
 export const QUOTE_MODEL_VERSION = 2;
 export const CLP_CURRENCY = "CLP";
 export const CHILE_VAT_RATE = 0.19;
@@ -421,7 +423,7 @@ export function normalizeClientSnapshot(raw = {}) {
       160
     ),
     tipoCliente: safeQuoteText(source.tipoCliente, 20),
-    rut: safeQuoteText(source.rut || raw.clienteRut, 40),
+    ...adaptStoredFiscalIdentifier({...source, rut: source.rut || raw.clienteRut}),
     nombreRazonSocial,
     giro: safeQuoteText(source.giro, 240),
     email: safeQuoteText(source.email || raw.clienteEmail, 240),

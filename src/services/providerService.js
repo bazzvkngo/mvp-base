@@ -48,7 +48,7 @@ export function getProviderErrorMessage(error) {
   }
   if (code === "not-found") return "El proveedor ya no existe.";
   if (code === "already-exists") {
-    return serverMessage || "Ya existe un proveedor con este RUT en el negocio.";
+    return serverMessage || "Ya existe un proveedor con esta identificación fiscal en el negocio.";
   }
   if (code === "invalid-argument" || code === "failed-precondition") {
     return serverMessage || "Los datos del proveedor no son válidos.";

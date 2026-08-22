@@ -1,6 +1,7 @@
 const QUOTE_MODEL_VERSION = 2;
 const VAT_RATE = 0.19;
 const {documentLocalizationSnapshot, adaptDocumentLocalization} = require("./localization");
+const {fiscalSnapshotFields} = require("./fiscalIdentifier");
 const {
   buildAuthoritativeCompanySnapshot,
   getHistoricalCompanySnapshot,
@@ -149,7 +150,7 @@ function registeredClientQuoteFields(
   const snapshot = {
     clienteId,
     tipoCliente,
-    rut: safeText(stored.rut, 40),
+    ...fiscalSnapshotFields(stored),
     nombreRazonSocial: safeText(stored.nombreRazonSocial, 240),
     giro: safeText(stored.giro, 240),
     email: safeText(stored.email, 240),
@@ -163,7 +164,7 @@ function registeredClientQuoteFields(
   };
   if (
     !VALID_CLIENT_TYPES.has(tipoCliente) ||
-    !snapshot.rut ||
+    !snapshot.identificadorFiscalValor ||
     !snapshot.nombreRazonSocial
   ) {
     throw new HttpsError(
@@ -176,7 +177,7 @@ function registeredClientQuoteFields(
     cliente: snapshot,
     clienteId,
     clienteNombre: snapshot.nombreRazonSocial,
-    clienteRut: snapshot.rut,
+    clienteRut: snapshot.identificadorFiscalValor,
     clienteContacto: snapshot.personaContacto,
     clienteEmail: snapshot.email,
     clienteTelefono: snapshot.telefono,
@@ -879,6 +880,7 @@ module.exports = {
   getChileDateValue,
   historicalQuoteCopyInput,
   normalizeQuoteInput,
+  registeredClientQuoteFields,
   updateQuoteDraftHandler,
   validateRequestId,
 };

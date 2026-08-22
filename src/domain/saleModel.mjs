@@ -1,3 +1,5 @@
+import {adaptStoredFiscalIdentifier} from "./fiscalIdentifier.mjs";
+
 export const SALE_MODEL_VERSION = 1;
 export const SALE_VAT_RATE = 0.19;
 export const SALE_STATUSES = Object.freeze(["borrador", "confirmada", "cancelada"]);
@@ -134,7 +136,7 @@ export function buildSaleMutationPayload(raw = {}) {
 const clientSnapshot = (raw = {}) => ({
   clienteId: text(raw.clienteId || raw.id, 160),
   tipoCliente: text(raw.tipoCliente, 20),
-  rut: text(raw.rut, 40),
+  ...adaptStoredFiscalIdentifier(raw),
   nombreRazonSocial: text(raw.nombreRazonSocial || raw.nombre, 240),
   giro: text(raw.giro, 240),
   email: text(raw.email, 240),

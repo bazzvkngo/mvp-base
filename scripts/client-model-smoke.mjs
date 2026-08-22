@@ -41,6 +41,9 @@ const normalized = normalizeClientInput({
 assert.equal(normalized.tipoCliente, "empresa");
 assert.equal(normalized.rut, "12.345.678-5");
 assert.equal(normalized.rutNormalizado, "12345678-5");
+assert.equal(normalized.paisCodigo, "CL");
+assert.equal(normalized.identificadorFiscalTipo, "RUT");
+assert.equal(normalized.identificadorFiscalNormalizado, "123456785");
 assert.equal(normalized.nombreRazonSocial, "Servicios del Sur SpA");
 assert.equal(normalized.email, "contacto@example.cl");
 console.log("OK cliente: normaliza el contrato del documento");
@@ -62,7 +65,9 @@ const mutationPayload = buildClientMutationPayload({
 });
 assert.deepEqual(Object.keys(mutationPayload), [
   "tipoCliente",
-  "rut",
+  "paisCodigo",
+  "identificadorFiscalTipo",
+  "identificadorFiscalValor",
   "nombreRazonSocial",
   "giro",
   "email",
@@ -77,6 +82,7 @@ assert.deepEqual(Object.keys(mutationPayload), [
 ]);
 assert.equal(Object.hasOwn(mutationPayload, "modeloClienteVersion"), false);
 assert.equal(Object.hasOwn(mutationPayload, "rutNormalizado"), false);
+assert.equal(Object.hasOwn(mutationPayload, "rut"), false);
 assert.equal(Object.hasOwn(mutationPayload, "estado"), false);
 assert.equal(Object.hasOwn(mutationPayload, "clienteId"), false);
 assert.equal(Object.hasOwn(mutationPayload, "negocioId"), false);

@@ -41,7 +41,7 @@ export function getClientErrorMessage(error) {
   }
   if (code === "not-found") return "El cliente ya no existe.";
   if (code === "already-exists") {
-    return "Ya existe un cliente con este RUT en el negocio.";
+    return serverMessage || "Ya existe un cliente con esta identificación fiscal en el negocio.";
   }
   if (code === "invalid-argument" || code === "failed-precondition") {
     return serverMessage || "Los datos del cliente no son válidos.";
