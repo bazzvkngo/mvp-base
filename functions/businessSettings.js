@@ -5,6 +5,10 @@ const TAX_OPTIONS = Object.freeze({
 });
 
 const PERSONAL_DOCUMENT_TYPES = Object.freeze(["RUT", "CI", "PASAPORTE", "OTRO"]);
+const {
+  applyVerificationInvalidation,
+  buildVerificationInvalidationPlan,
+} = require("./businessVerification");
 
 function safeText(value, maxLength = 180) {
   return String(value || "").trim().replace(/\s+/g, " ").slice(0, maxLength);
@@ -168,6 +172,21 @@ async function updateBusinessInformationHandler(
   };
 
   await db.runTransaction(async (transaction) => {
+    const [currentBusiness, currentProfile] = await Promise.all([
+      transaction.get(context.businessRef),
+      transaction.get(profileRef),
+    ]);
+    const invalidation = await buildVerificationInvalidationPlan({
+      business: currentBusiness.data() || {},
+      businessId: context.businessId,
+      businessRef: context.businessRef,
+      db,
+      FieldValue,
+      nextProfile: input,
+      profile: currentProfile.data() || {},
+      transaction,
+      uid: context.uid,
+    });
     transaction.update(context.businessRef, {
       nombreComercial: input.nombreComercial,
       ...categoryPatch,
@@ -182,6 +201,7 @@ async function updateBusinessInformationHandler(
       regionCodigo: input.regionCodigo,
       regionNombre: input.regionNombre,
       ...communePatch,
+      ...(invalidation?.businessPatch || {}),
       actualizadoPorUid: context.uid,
       actualizadoEn: now,
     });
@@ -206,6 +226,7 @@ async function updateBusinessInformationHandler(
       },
       { merge: true }
     );
+    applyVerificationInvalidation(transaction, invalidation);
   });
 
   return {

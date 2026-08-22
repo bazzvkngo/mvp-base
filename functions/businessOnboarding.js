@@ -1,5 +1,10 @@
 const { createHash } = require("node:crypto");
 const catalog = require("./businessCatalog.json");
+const {
+  VERIFICATION_STATES,
+  applyVerificationInvalidation,
+  buildVerificationInvalidationPlan,
+} = require("./businessVerification");
 
 const BUSINESS_ROLES = Object.freeze(["OWNER", "ADMIN", "MEMBER"]);
 const ACTIVE_STATUS = "activo";
@@ -628,6 +633,7 @@ async function createFirstBusinessHandler(
     transaction.create(businessRef, {
       ...input,
       estado: ACTIVE_STATUS,
+      verificacionEmpresa: {estado: VERIFICATION_STATES.NOT_VERIFIED},
       modeloNegocioVersion: 2,
       creacionRapidaVersion: 1,
       creadoPorUid: uid,
@@ -792,6 +798,7 @@ async function createAdditionalBusinessHandler(
     transaction.create(businessRef, {
       ...input,
       estado: ACTIVE_STATUS,
+      verificacionEmpresa: {estado: VERIFICATION_STATES.NOT_VERIFIED},
       modeloNegocioVersion: 2,
       creacionRapidaVersion: 1,
       creadoPorUid: uid,
@@ -1094,7 +1101,21 @@ async function updateBusinessProfileHandler(
   };
 
   await db.runTransaction(async (transaction) => {
-    const currentProfile = await transaction.get(profileRef);
+    const [currentBusiness, currentProfile] = await Promise.all([
+      transaction.get(context.businessRef),
+      transaction.get(profileRef),
+    ]);
+    const invalidation = await buildVerificationInvalidationPlan({
+      business: currentBusiness.data() || {},
+      businessId: context.businessId,
+      businessRef: context.businessRef,
+      db,
+      FieldValue,
+      nextProfile: profileInput,
+      profile: currentProfile.data() || {},
+      transaction,
+      uid: context.uid,
+    });
     transaction.update(context.businessRef, {
       nombreComercial: profileInput.nombreComercial,
       ...categoryStoragePatch,
@@ -1112,6 +1133,7 @@ async function updateBusinessProfileHandler(
       ciudad: profileInput.ciudad || FieldValue.delete(),
       codigoPostal: profileInput.codigoPostal || FieldValue.delete(),
       ...businessCommuneStoragePatch,
+      ...(invalidation?.businessPatch || {}),
       actualizadoPorUid: context.uid,
       actualizadoEn: now,
     });
@@ -1125,6 +1147,7 @@ async function updateBusinessProfileHandler(
       },
       { merge: true }
     );
+    applyVerificationInvalidation(transaction, invalidation);
   });
 
   return {

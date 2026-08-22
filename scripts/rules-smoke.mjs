@@ -1002,6 +1002,31 @@ async function main() {
     );
     await deleteObject(ref(ownerClient.storage, businessLogoPath));
 
+    const verificationEvidencePath = `negocios/${businessId}/verificacion/${ownerUid}/verification-rules-request/documento.pdf`;
+    await uploadBytes(
+      ref(ownerClient.storage, verificationEvidencePath),
+      new TextEncoder().encode("evidencia empresarial"),
+      {contentType: "application/pdf"}
+    );
+    console.log("OK permitido: OWNER sube evidencia de verificación");
+    await expectDenied("otro usuario sube evidencia de verificación", () =>
+      uploadBytes(
+        ref(otherClient.storage, `negocios/${businessId}/verificacion/${otherUid}/verification-rules-request/documento.pdf`),
+        new TextEncoder().encode("evidencia ajena"),
+        {contentType: "application/pdf"}
+      )
+    );
+    await expectDenied("OWNER sobrescribe evidencia de verificación", () =>
+      uploadBytes(
+        ref(ownerClient.storage, verificationEvidencePath),
+        new TextEncoder().encode("reemplazo"),
+        {contentType: "application/pdf"}
+      )
+    );
+    await expectDenied("OWNER elimina evidencia de verificación", () =>
+      deleteObject(ref(ownerClient.storage, verificationEvidencePath))
+    );
+
     const logoPath = `usuarios/${ownerUid}/empresa/logo/logo-smoke.png`;
     await uploadBytes(
       ref(ownerClient.storage, logoPath),

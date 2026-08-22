@@ -7,6 +7,7 @@ import {
   Landmark,
   PackageCheck,
   Save,
+  ShieldCheck,
   Trash2,
 } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
@@ -47,9 +48,18 @@ import {
   deleteBusiness,
   getBusinessDeletionRequestId,
 } from "../../services/businessService";
+import {
+  BUSINESS_VERIFICATION_STATES,
+  BUSINESS_VERIFICATION_STATUS_LABELS,
+  MAX_VERIFICATION_EVIDENCE_BYTES,
+  VERIFICATION_EVIDENCE_TYPES,
+  createBusinessVerificationRequestId,
+  requestBusinessVerification,
+} from "../../services/businessVerificationService";
 
 const SECTIONS = [
   { id: "informacion", label: "Información empresa", icon: Building2 },
+  { id: "verificacion", label: "Verificación", icon: ShieldCheck },
   { id: "impuestos", label: "Impuestos", icon: Landmark },
   { id: "inventario", label: "Inventario", icon: PackageCheck },
   { id: "cotizaciones", label: "Cotizaciones", icon: FileText },
@@ -89,6 +99,9 @@ function messageForError(error, fallback) {
     return "Tu rol no permite modificar esta configuración.";
   }
   if (code.includes("invalid-argument")) return error?.message || fallback;
+  if (code.includes("failed-precondition") || code.includes("already-exists")) {
+    return error?.message || fallback;
+  }
   if (code.includes("unavailable") || code.includes("deadline-exceeded")) {
     return "No pudimos conectar con el servicio. Tus cambios siguen en pantalla.";
   }
@@ -373,6 +386,12 @@ function BusinessInformationSection({ businessId, canEdit, onBusinessUpdated }) 
       title="Información de la empresa"
       description="Datos comerciales, localización y formato de los nuevos documentos del negocio activo."
     >
+      {[BUSINESS_VERIFICATION_STATES.PENDING, BUSINESS_VERIFICATION_STATES.VERIFIED]
+        .includes(form.verificacionEmpresa?.estado) && (
+        <p className="settings-message settings-message--warning" role="status">
+          Cambiar razón social, país, tipo o identificación fiscal invalidará la verificación actual y requerirá una nueva solicitud.
+        </p>
+      )}
       <form onSubmit={save} noValidate>
         <fieldset className="settings-fieldset" disabled={!canEdit || saving}>
           <legend className="sr-only">Datos comerciales y logo</legend>
@@ -538,6 +557,166 @@ function BusinessInformationSection({ businessId, canEdit, onBusinessUpdated }) 
       </form>
     </SectionFrame>
   );
+}
+
+function BusinessVerificationSection({businessId, currentUserUid, role}) {
+  const [profile, setProfile] = React.useState(null);
+  const [form, setForm] = React.useState({
+    razonSocial: "",
+    paisCodigo: "CL",
+    identificadorFiscalTipo: "RUT",
+    identificadorFiscalValor: "",
+    relacionSolicitante: "",
+    correoSolicitante: "",
+    telefonoSolicitante: "",
+    observaciones: "",
+  });
+  const [file, setFile] = React.useState(null);
+  const [dialogOpen, setDialogOpen] = React.useState(false);
+  const [loading, setLoading] = React.useState(true);
+  const [submitting, setSubmitting] = React.useState(false);
+  const [error, setError] = React.useState("");
+  const [success, setSuccess] = React.useState("");
+  const requestRef = React.useRef("");
+
+  React.useEffect(() => {
+    requestRef.current = "";
+    setFile(null);
+    setDialogOpen(false);
+    setError("");
+    setSuccess("");
+    setForm({
+      razonSocial: "",
+      paisCodigo: "CL",
+      identificadorFiscalTipo: "RUT",
+      identificadorFiscalValor: "",
+      relacionSolicitante: "",
+      correoSolicitante: "",
+      telefonoSolicitante: "",
+      observaciones: "",
+    });
+  }, [businessId]);
+
+  const load = React.useCallback(async () => {
+    const value = await getCompanyProfile(businessId);
+    setProfile(value);
+    setForm((current) => ({
+      ...current,
+      razonSocial: value.razonSocial || "",
+      paisCodigo: value.paisCodigo || "CL",
+      identificadorFiscalTipo: value.identificadorFiscalTipo || "Identificación fiscal",
+      identificadorFiscalValor: value.identificadorFiscalValor || "",
+      correoSolicitante: value.email || "",
+      telefonoSolicitante: value.telefono || "",
+    }));
+    return value;
+  }, [businessId]);
+
+  React.useEffect(() => {
+    let active = true;
+    setLoading(true);
+    load()
+      .catch((loadError) => {
+        if (active) setError(messageForError(loadError, "No pudimos cargar el estado de verificación."));
+      })
+      .finally(() => active && setLoading(false));
+    return () => { active = false; };
+  }, [load]);
+
+  const verification = profile?.verificacionEmpresa || {
+    estado: BUSINESS_VERIFICATION_STATES.NOT_VERIFIED,
+  };
+  const canRequest = role === "OWNER";
+  const requestBlocked = [
+    BUSINESS_VERIFICATION_STATES.PENDING,
+    BUSINESS_VERIFICATION_STATES.VERIFIED,
+  ].includes(verification.estado);
+  const update = (field, value) => {
+    setForm((current) => ({...current, [field]: value}));
+    requestRef.current = "";
+    setError("");
+  };
+  const chooseEvidence = (selected) => {
+    setError("");
+    requestRef.current = "";
+    if (!selected) {
+      setFile(null);
+      return;
+    }
+    if (!VERIFICATION_EVIDENCE_TYPES.includes(selected.type) ||
+      selected.size <= 0 || selected.size > MAX_VERIFICATION_EVIDENCE_BYTES) {
+      setFile(null);
+      setError("El documento debe ser PDF, JPG o PNG y pesar hasta 5 MB.");
+      return;
+    }
+    setFile(selected);
+  };
+  const submit = async (event) => {
+    event.preventDefault();
+    if (!form.razonSocial.trim() || !form.identificadorFiscalValor.trim() ||
+      form.relacionSolicitante.trim().length < 2 ||
+      !isValidBusinessEmail(form.correoSolicitante) ||
+      form.telefonoSolicitante.trim().length < 6) {
+      setError("Completa razón social, identificación fiscal, cargo, correo y teléfono válidos.");
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    setSuccess("");
+    try {
+      if (!requestRef.current) {
+        requestRef.current = createBusinessVerificationRequestId();
+      }
+      await requestBusinessVerification({
+        businessId,
+        file,
+        requestId: requestRef.current,
+        solicitud: form,
+        uid: currentUserUid,
+      });
+      await load();
+      setDialogOpen(false);
+      setFile(null);
+      setSuccess("Solicitud enviada. La empresa quedó pendiente de revisión.");
+    } catch (submitError) {
+      setError(messageForError(submitError, "No pudimos enviar la solicitud de verificación."));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading) return <p className="settings-loading">Cargando verificación...</p>;
+
+  return <SectionFrame title="Verificación empresarial" description="La revisión es realizada por la plataforma y es independiente de los roles del negocio.">
+    <div className={`settings-card settings-verification-card is-${verification.estado.toLowerCase()}`}>
+      <div className="settings-verification-heading">
+        <AppIcon icon={ShieldCheck} size={24} />
+        <div><span>Estado actual</span><strong>{BUSINESS_VERIFICATION_STATUS_LABELS[verification.estado]}</strong></div>
+      </div>
+      {verification.estado === BUSINESS_VERIFICATION_STATES.NOT_VERIFIED && <p>La identidad fiscal de esta empresa aún no ha sido revisada por ValoraCloud.</p>}
+      {verification.estado === BUSINESS_VERIFICATION_STATES.PENDING && <p>La solicitud está en revisión. No es necesario volver a enviarla.</p>}
+      {verification.estado === BUSINESS_VERIFICATION_STATES.VERIFIED && <p>La razón social y la identidad fiscal fueron verificadas. Los cambios fiscales reiniciarán este estado.</p>}
+      {verification.estado === BUSINESS_VERIFICATION_STATES.REJECTED && <p><strong>Motivo:</strong> {verification.motivoRechazo || "La plataforma rechazó la solicitud."}</p>}
+      {!canRequest && <p className="settings-verification-help">Sólo el OWNER puede solicitar verificación. ADMIN y MEMBER pueden consultar el estado.</p>}
+      {canRequest && !requestBlocked && <Button type="button" icon={ShieldCheck} onClick={() => { setDialogOpen(true); setError(""); }}>Solicitar verificación</Button>}
+    </div>
+    <SectionStatus error={!dialogOpen ? error : ""} success={success} />
+    <ResponsiveDialog open={dialogOpen} onClose={() => !submitting && setDialogOpen(false)} size="large" eyebrow="Acción reservada al OWNER" title="Solicitar verificación empresarial" description="Los datos fiscales deben coincidir con la información guardada de la empresa." footer={<><Button type="button" variant="secondary" disabled={submitting} onClick={() => setDialogOpen(false)}>Cancelar</Button><Button type="submit" form="business-verification-form" disabled={submitting}>{submitting ? "Enviando..." : "Enviar solicitud"}</Button></>}>
+      <form id="business-verification-form" className="settings-verification-form" onSubmit={submit}>
+        <div className="settings-form-grid">
+          <SettingsField label="Razón social" required hint="Se verifica contra la empresa guardada."><input value={form.razonSocial} readOnly /></SettingsField>
+          <SettingsField label="País" required><input value={form.paisCodigo} readOnly /></SettingsField>
+          <SettingsField label={form.identificadorFiscalTipo || "Identificación fiscal"} required><input value={form.identificadorFiscalValor} readOnly /></SettingsField>
+          <SettingsField label="Relación o cargo" required><input value={form.relacionSolicitante} onChange={(event) => update("relacionSolicitante", event.target.value)} placeholder="Ej. Representante legal" /></SettingsField>
+          <SettingsField label="Correo del solicitante" required><input type="email" value={form.correoSolicitante} onChange={(event) => update("correoSolicitante", event.target.value)} /></SettingsField>
+          <SettingsField label="Teléfono del solicitante" required><input type="tel" value={form.telefonoSolicitante} onChange={(event) => update("telefonoSolicitante", event.target.value)} /></SettingsField>
+          <SettingsField label="Documento acreditativo" optional wide hint="PDF, JPG o PNG; máximo 5 MB."><input type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => chooseEvidence(event.target.files?.[0] || null)} />{file && <small>{file.name}</small>}</SettingsField>
+          <SettingsField label="Observaciones" optional wide><textarea rows="4" maxLength="4000" value={form.observaciones} onChange={(event) => update("observaciones", event.target.value)} /></SettingsField>
+        </div>
+        <SectionStatus error={error} />
+      </form>
+    </ResponsiveDialog>
+  </SectionFrame>;
 }
 
 function TaxSection({ businessId, canEdit }) {
@@ -869,6 +1048,7 @@ function CompanyConfig({
         </nav>
         <div className="settings-content">
           {activeSection === "informacion" && <BusinessInformationSection businessId={businessId} canEdit={canEdit} onBusinessUpdated={onBusinessUpdated} />}
+          {activeSection === "verificacion" && <BusinessVerificationSection businessId={businessId} currentUserUid={currentUserUid} role={role} />}
           {activeSection === "impuestos" && <TaxSection businessId={businessId} canEdit={canEdit} />}
           {activeSection === "inventario" && <InventorySection businessId={businessId} canEdit={canEdit} />}
           {activeSection === "cotizaciones" && <QuoteSection businessId={businessId} canEdit={canEdit} />}

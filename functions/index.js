@@ -9,6 +9,7 @@ const { defineSecret } = require("firebase-functions/params");
 const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
+const {getStorage} = require("firebase-admin/storage");
 
 // Gemini SDK
 const { GoogleGenAI } = require("@google/genai");
@@ -108,6 +109,10 @@ const {
   updatePersonalProfileHandler,
 } = require("./businessSettings");
 const {
+  resolverVerificacionEmpresaHandler,
+  solicitarVerificacionEmpresaHandler,
+} = require("./businessVerification");
+const {
   actualizarMembresiaNegocioHandler,
   asociarUsuarioExistenteHandler,
   listarMiembrosNegocioHandler,
@@ -135,6 +140,7 @@ const {obtenerBalanceTrabajoHandler} = require("./workBalance");
 initializeApp();
 const db = getFirestore();
 const adminAuth = getAuth();
+const adminStorageBucket = getStorage().bucket();
 
 /**
  * La API key de Gemini no debe guardarse en el repositorio.
@@ -3757,6 +3763,13 @@ const businessSettingsDependencies = {
   requireBusinessAccess,
   validateBusinessProfileInput,
 };
+const businessVerificationDependencies = {
+  bucket: adminStorageBucket,
+  db,
+  HttpsError,
+  FieldValue,
+  requireBusinessAccess,
+};
 const businessMembershipDependencies = {
   db,
   auth: adminAuth,
@@ -3862,6 +3875,34 @@ exports.updatePersonalProfile = onCall(
   },
   async (request) =>
     updatePersonalProfileHandler(request, businessSettingsDependencies)
+);
+
+exports.solicitarVerificacionEmpresa = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    solicitarVerificacionEmpresaHandler(
+      request,
+      businessVerificationDependencies
+    )
+);
+
+exports.resolverVerificacionEmpresa = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    resolverVerificacionEmpresaHandler(
+      request,
+      businessVerificationDependencies
+    )
 );
 
 exports.listarMiembrosNegocio = onCall(

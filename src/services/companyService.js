@@ -23,6 +23,7 @@ import {
   userConfigDocPath,
 } from "../firebase/firestorePaths";
 import { adaptBusinessLocalization } from "../domain/localization.mjs";
+import {normalizeBusinessVerification} from "./businessVerificationService";
 
 const functions = getFirebaseFunctions("us-central1");
 
@@ -242,6 +243,7 @@ export function normalizeCompanyProfile(raw = {}) {
     logoPath: safeString(raw.logoPath),
     logoNombreOriginal: safeString(raw.logoNombreOriginal),
     logoActualizadoEn: raw.logoActualizadoEn || null,
+    verificacionEmpresa: normalizeBusinessVerification(raw.verificacionEmpresa),
     condicionesPago:
       safeString(raw.condicionesPago) ||
       DEFAULT_COMPANY_PROFILE.condicionesPago,

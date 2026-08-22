@@ -10,6 +10,11 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
+    function isPlatformSuperadmin() {
+      return isSignedIn()
+        && request.auth.token.platformRole == "PLATFORM_SUPERADMIN";
+    }
+
     function membershipPath(businessId, uid) {
       return /databases/$(database)/documents/membresias/$(businessId + "__" + uid);
     }
@@ -846,6 +851,28 @@ service cloud.firestore {
         allow create, update, delete: if false;
       }
 
+      match /solicitudesVerificacionEmpresa/{solicitudId} {
+        allow read: if isPlatformSuperadmin()
+          || (hasBusinessRole(businessId, ["OWNER"])
+            && resource.data.negocioId == businessId);
+        allow create, update, delete: if false;
+      }
+
+      match /eventosVerificacionEmpresa/{eventoId} {
+        allow read: if isPlatformSuperadmin()
+          || (hasBusinessRole(businessId, ["OWNER"])
+            && resource.data.negocioId == businessId);
+        allow create, update, delete: if false;
+      }
+
+      match /businessVerificationRequests/{requestId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /platformVerificationDecisionRequests/{requestId} {
+        allow read, create, update, delete: if false;
+      }
+
       match /receptionCounters/{counterId} {
         allow read, create, update, delete: if false;
       }
@@ -964,6 +991,10 @@ service cloud.firestore {
 
     match /quotePublicTokens/{tokenHash} {
       allow read, write: if false;
+    }
+
+    match /identidadesFiscalesVerificadas/{identidadId} {
+      allow read, create, update, delete: if false;
     }
 
     match /paises/{countryCode} {
