@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 import {useNavigate} from "react-router-dom";
 import DashboardDonutChart from "../components/DashboardDonutChart";
-import FinancialMetricCard from "../components/finance/FinancialMetricCard";
 import FinancialPeriodSelector from "../components/finance/FinancialPeriodSelector";
 import OperationalComparisonChart from "../components/reports/OperationalComparisonChart";
 import Button from "../components/ui/Button";
@@ -39,7 +38,7 @@ import {
   getCompanyProfileCompletion,
 } from "../services/companyService";
 import {loadReportData} from "../services/reportService";
-import {formatCLP, formatDate, formatPercent} from "../utils/formatters";
+import {formatCLP, formatDate, formatMoney, formatPercent} from "../utils/formatters";
 
 const QUOTE_CHART = [
   ["borrador", getQuoteStatusLabel("borrador"), "#94a3b8"],
@@ -131,7 +130,7 @@ function RecentActivity({items, navigate}) {
                 <strong>{item.number}</strong>
                 <span>{formatDate(item.date)} · {item.counterparty}</span>
               </div>
-              <strong className="dashboard-activity-v2-amount">{formatCLP(item.amount)}</strong>
+              <strong className="dashboard-activity-v2-amount">{formatMoney(item.amount, item.currency)}</strong>
               <button type="button" onClick={() => navigate(item.route)}>Ver</button>
             </article>
           ))}
@@ -175,7 +174,13 @@ function RequiredAttention({companyProfilePending, lowStockProducts, navigate}) 
   );
 }
 
-export default function DashboardPage({businessId, role}) {
+function formatCurrencyGroups(groups, fallbackCurrency) {
+  return groups.length
+    ? groups.map((group) => formatMoney(group.total, group.currency)).join(" · ")
+    : formatMoney(0, fallbackCurrency);
+}
+
+export default function DashboardPage({businessId, currencyCode = "CLP", role}) {
   const navigate = useNavigate();
   const today = getSantiagoDateKey();
   const [period, setPeriod] = useState("month");
@@ -199,7 +204,7 @@ export default function DashboardPage({businessId, role}) {
   useEffect(() => {
     let active = true;
     setReportState((current) => ({...current, loading: true, error: ""}));
-    loadReportData(businessId)
+    loadReportData(businessId, {fallbackCurrency: currencyCode})
       .then((data) => active && setReportState({data, loading: false, error: ""}))
       .catch((error) => active && setReportState((current) => ({
         ...current,
@@ -207,7 +212,7 @@ export default function DashboardPage({businessId, role}) {
         error: error?.message || "No pudimos cargar el resumen operacional.",
       })));
     return () => { active = false; };
-  }, [businessId]);
+  }, [businessId, currencyCode]);
 
   useEffect(() => {
     let active = true;
@@ -225,26 +230,27 @@ export default function DashboardPage({businessId, role}) {
   }, [businessId]);
 
   const {sales, purchases, quotes, inventory} = reportState.data;
-  const salesMetrics = useMemo(() => getSalesMetrics(sales, range), [range, sales]);
-  const purchaseMetrics = useMemo(() => getPurchaseMetrics(purchases, range), [purchases, range]);
-  const quoteMetrics = useMemo(() => getQuoteMetrics(quotes, range), [quotes, range]);
-  const inventoryMetrics = useMemo(() => getInventoryMetrics(inventory), [inventory]);
+  const salesMetrics = useMemo(() => getSalesMetrics(sales, range, {fallbackCurrency: currencyCode}), [currencyCode, range, sales]);
+  const purchaseMetrics = useMemo(() => getPurchaseMetrics(purchases, range, {fallbackCurrency: currencyCode}), [currencyCode, purchases, range]);
+  const quoteMetrics = useMemo(() => getQuoteMetrics(quotes, range, {fallbackCurrency: currencyCode}), [currencyCode, quotes, range]);
+  const inventoryMetrics = useMemo(() => getInventoryMetrics(inventory, {fallbackCurrency: currencyCode}), [currencyCode, inventory]);
   const recentActivity = useMemo(
     () => getRecentOperationalActivity(sales, purchases, range, 5),
     [purchases, range, sales]
   );
   const salesTimeline = useMemo(
-    () => aggregateOperationalTimeline(salesMetrics.confirmed, {range, dateField: "fechaVenta"}),
-    [range, salesMetrics.confirmed]
+    () => aggregateOperationalTimeline(salesMetrics.confirmed, {range, dateField: "fechaVenta", fallbackCurrency: currencyCode}),
+    [currencyCode, range, salesMetrics.confirmed]
   );
   const purchaseTimeline = useMemo(
-    () => aggregateOperationalTimeline(purchaseMetrics.confirmed, {range, dateField: "fechaCompra"}),
-    [purchaseMetrics.confirmed, range]
+    () => aggregateOperationalTimeline(purchaseMetrics.confirmed, {range, dateField: "fechaCompra", fallbackCurrency: currencyCode}),
+    [currencyCode, purchaseMetrics.confirmed, range]
   );
   const operationalTimeline = useMemo(
     () => combineOperationalTimelines(salesTimeline, purchaseTimeline),
     [purchaseTimeline, salesTimeline]
   );
+  const operationalCurrencies = [...new Set(operationalTimeline.map((item) => item.currency))];
   const quoteChartItems = QUOTE_CHART.map(([id, label, color]) => ({
     label,
     color,
@@ -292,8 +298,8 @@ export default function DashboardPage({businessId, role}) {
       {!reportState.loading && !reportState.error && (
         <>
           <section className="financial-metric-grid dashboard-v2-metrics" aria-label="Indicadores principales">
-            <FinancialMetricCard icon={ShoppingCart} label="Total vendido" value={salesMetrics.total} tone="income" note={`${salesMetrics.count} ventas confirmadas`} />
-            <FinancialMetricCard icon={Truck} label="Total comprado" value={purchaseMetrics.total} tone="expense" note={`${purchaseMetrics.count} compras confirmadas`} />
+            <DashboardCountCard icon={ShoppingCart} label="Total vendido" value={formatCurrencyGroups(salesMetrics.totalsByCurrency, currencyCode)} tone="income" note={`${salesMetrics.count} ventas confirmadas`} />
+            <DashboardCountCard icon={Truck} label="Total comprado" value={formatCurrencyGroups(purchaseMetrics.totalsByCurrency, currencyCode)} tone="expense" note={`${purchaseMetrics.count} compras confirmadas`} />
             <DashboardCountCard icon={ReceiptText} label="Cotizaciones" value={quoteMetrics.count.toLocaleString("es-CL")} note={`${quoteMetrics.counts.aceptada} aceptadas · ${quoteMetrics.conversion === null ? "Sin base de conversión" : formatPercent(quoteMetrics.conversion)}`} />
             <DashboardCountCard icon={Boxes} label="Inventario actual" value={inventoryMetrics.activeProducts.length.toLocaleString("es-CL")} tone={inventoryMetrics.lowStockProducts.length ? "pending" : "neutral"} note={`Estado actual · ${inventoryMetrics.lowStockProducts.length} productos con stock bajo`} />
             <DashboardCountCard icon={WalletCards} label="Saldo financiero registrado" value={financial.loading || financial.error ? "—" : formatCLP(financial.summary.netResult)} tone="net" note={financial.error ? "Finanzas no disponible" : financial.loading ? "Actualizando movimientos registrados" : `Por cobrar ${formatCLP(financial.summary.receivable)} · Por pagar ${formatCLP(financial.summary.payable)}`} />
@@ -307,7 +313,7 @@ export default function DashboardPage({businessId, role}) {
           <div className="dashboard-v2-visual-grid">
             <section className="erp-panel financial-chart-panel">
               <div className="financial-chart-panel__header"><h2>Evolución operacional</h2><p>Ventas y compras confirmadas según su fecha comercial.</p></div>
-              <OperationalComparisonChart items={operationalTimeline} />
+              {operationalCurrencies.length ? operationalCurrencies.map((currency) => <OperationalComparisonChart currency={currency} items={operationalTimeline.filter((item) => item.currency === currency)} key={currency} />) : <OperationalComparisonChart items={[]} />}
             </section>
             <section className="erp-panel financial-chart-panel">
               <div className="financial-chart-panel__header"><h2>Cotizaciones por estado actual</h2><p>Documentos fechados dentro del periodo seleccionado. No son ingresos.</p></div>

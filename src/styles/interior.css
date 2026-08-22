@@ -1563,7 +1563,7 @@
 }
 
 .report-filters {
-  grid-template-columns: minmax(220px, 1.5fr) minmax(170px, 0.7fr);
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   margin-bottom: var(--space-3);
 }
 
@@ -1629,6 +1629,7 @@
 
 .report-status--confirmada,
 .report-status--aceptada,
+.report-movement-type--entrada,
 .report-movement-type--entrada_compra {
   background: var(--color-success-50);
   border-color: #a7f3d0;
@@ -1637,6 +1638,7 @@
 
 .report-status--cancelada,
 .report-status--rechazada,
+.report-movement-type--salida,
 .report-movement-type--salida_venta {
   background: var(--color-danger-50);
   border-color: #fecaca;

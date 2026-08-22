@@ -207,6 +207,7 @@ function AppRoutes({
               key={businessId}
               usuario={usuario}
               businessId={businessId}
+              currencyCode={activeBusiness?.monedaCodigo}
               role={activeBusiness?.role}
             />
           }
@@ -225,7 +226,12 @@ function AppRoutes({
         <Route
           path="/reportes"
           element={
-            <StatisticsPage key={businessId} businessId={businessId} />
+            <StatisticsPage
+              key={businessId}
+              businessId={businessId}
+              currencyCode={activeBusiness?.monedaCodigo}
+              role={activeBusiness?.role}
+            />
           }
         />
         <Route path="/estadisticas" element={<Navigate to="/reportes" replace />} />

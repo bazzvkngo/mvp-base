@@ -8,7 +8,7 @@ import {
   Tooltip,
 } from "chart.js";
 import {Bar} from "react-chartjs-2";
-import {formatCLP} from "../../utils/formatters";
+import {formatMoney} from "../../utils/formatters";
 
 ChartJS.register(BarElement, CategoryScale, Legend, LinearScale, Tooltip);
 
@@ -33,7 +33,7 @@ function formatLabel(key) {
     .replace(" de ", " ");
 }
 
-export default function OperationalComparisonChart({items}) {
+export default function OperationalComparisonChart({currency = "CLP", items}) {
   if (!items.length) {
     return (
       <div className="financial-chart-empty">
@@ -45,7 +45,7 @@ export default function OperationalComparisonChart({items}) {
   const description = items
     .map(
       (item) =>
-        `${item.key}: ventas ${formatCLP(item.sales)}, compras ${formatCLP(item.purchases)}`
+        `${item.key}: ventas ${formatMoney(item.sales, currency)}, compras ${formatMoney(item.purchases, currency)}`
     )
     .join(". ");
 
@@ -85,7 +85,7 @@ export default function OperationalComparisonChart({items}) {
             tooltip: {
               callbacks: {
                 label(context) {
-                  return `${context.dataset.label}: ${formatCLP(context.parsed.y)}`;
+                  return `${context.dataset.label}: ${formatMoney(context.parsed.y, currency)}`;
                 },
               },
             },

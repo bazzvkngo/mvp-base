@@ -2,16 +2,23 @@ import assert from "node:assert/strict";
 import {
   buildReportCsv,
   combineOperationalTimelines,
+  filterInventoryAcquisitions,
   filterInventoryMovements,
   filterQuotes,
   filterSales,
+  filterWorkCosts,
+  groupAmountsByCurrency,
   getInventoryMetrics,
   getPurchaseMetrics,
   getQuoteMetrics,
   getSalesMetrics,
   getRecentOperationalActivity,
   normalizeInventoryMovement,
+  normalizeInventoryAcquisition,
+  normalizeWorkCost,
+  resolveReportCurrency,
 } from "../src/domain/reportModel.mjs";
+import {canViewWorkProfitability} from "../src/domain/workModel.mjs";
 
 const range = {start: "2026-08-01", end: "2026-08-31", days: 31};
 
@@ -28,6 +35,19 @@ assert.equal(salesMetrics.total, 4000);
 assert.equal(salesMetrics.average, 2000);
 assert.equal(salesMetrics.distinctCustomers, 1);
 assert.equal(filterSales(sales, {range, status: "borrador"}).length, 1);
+
+const mixedSalesMetrics = getSalesMetrics([
+  {...sales[0], id: "clp", moneda: "CLP", total: 1000},
+  {...sales[1], id: "usd", moneda: "USD", total: 20},
+], range);
+assert.equal(mixedSalesMetrics.total, null);
+assert.deepEqual(mixedSalesMetrics.totalsByCurrency.map(({currency, total}) => ({currency, total})), [
+  {currency: "CLP", total: 1000},
+  {currency: "USD", total: 20},
+]);
+assert.equal(getSalesMetrics(mixedSalesMetrics.confirmed, range, {currency: "USD"}).total, 20);
+assert.equal(resolveReportCurrency({}, "BOB"), "BOB");
+assert.deepEqual(groupAmountsByCurrency([{amount: 5}, {amount: 7}], {amountField: "amount", fallbackCurrency: "USD"})[0], {currency: "USD", count: 2, total: 12, average: 6});
 
 const purchases = [
   {fechaCompra: "2026-08-06", estado: "confirmada", total: 2000, proveedorId: "p1"},
@@ -84,6 +104,59 @@ assert.equal(purchaseMovement.date, "2026-08-10");
 assert.equal(saleMovement.date, "2026-08-11");
 assert.equal(filterInventoryMovements([purchaseMovement, saleMovement], {range, type: "salida_venta"}).length, 1);
 
+const acquisition = normalizeInventoryAcquisition({
+  adquisicionId: "a1",
+  movimientoInventarioId: "m3",
+  fechaAdquisicion: "2026-08-12",
+  cantidad: 3,
+  costoPagadoUnitario: 120,
+  costoPagadoTotal: 360,
+  moneda: "USD",
+  proveedorId: "provider-1",
+  proveedorSnapshot: {razonSocial: "Proveedor trazable"},
+  productoSnapshot: {nombre: "Producto recepción", unidad: "unidad"},
+  ordenCompraNumero: "OC-1",
+  recepcionNumero: "REC-1",
+  compraNumero: "COM-1",
+  registradoPorUid: "owner-1",
+});
+const receptionMovement = normalizeInventoryMovement({
+  movimientoId: "m3",
+  tipo: "entrada_recepcion",
+  recepcionId: "rec-1",
+  recepcionNumero: "REC-1",
+  cantidad: 3,
+  costoTotal: 360,
+  moneda: "USD",
+  creadoPorUid: "owner-1",
+  creadoEn: {toDate: () => new Date("2026-08-12T15:00:00Z")},
+}, {acquisition});
+const projectExit = normalizeInventoryMovement({
+  movimientoId: "m4",
+  tipo: "SALIDA_PROYECTO",
+  trabajoId: "work-1",
+  cantidad: 1,
+  costoTotal: 120,
+  moneda: "USD",
+  fecha: "2026-08-13",
+  productoSnapshot: {nombre: "Producto recepción", unidad: "unidad"},
+  usuarioUid: "tech-1",
+}, {work: {numero: "TRB-1", titulo: "Proyecto trazable"}});
+assert.equal(receptionMovement.direction, "ENTRADA");
+assert.equal(receptionMovement.providerName, "Proveedor trazable");
+assert.equal(receptionMovement.sourceType, "recepcion");
+assert.equal(projectExit.direction, "SALIDA");
+assert.equal(projectExit.projectNumber, "TRB-1");
+assert.equal(filterInventoryMovements([receptionMovement, projectExit], {range, type: "ENTRADA", providerId: "provider-1", currency: "USD"}).length, 1);
+assert.equal(filterInventoryAcquisitions([acquisition], {range, providerId: "provider-1", currency: "USD"}).length, 1);
+assert.equal(normalizeInventoryAcquisition({fechaAdquisicion: "2026-08-12"}, {fallbackCurrency: "BOB"}).currency, "BOB");
+
+const expense = normalizeWorkCost({id: "g1", trabajoId: "work-1", fecha: "2026-08-14", concepto: "Traslado", categoria: "OPERATIVO", monto: 40, moneda: "USD", estado: "vigente", registradoPorUid: "tech-1"}, {kind: "GASTO", work: {id: "work-1", numero: "TRB-1"}});
+const labor = normalizeWorkCost({id: "h1", trabajoId: "work-1", fecha: "2026-08-15", concepto: "Diagnóstico", horas: 2, total: 60, moneda: "USD", estado: "vigente", tecnicoUid: "tech-1"}, {kind: "HH", work: {id: "work-1", numero: "TRB-1"}});
+assert.deepEqual(filterWorkCosts([expense, labor], {range, projectId: "work-1", userId: "tech-1", currency: "USD"}).map((entry) => entry.kind), ["HH", "GASTO"]);
+assert.equal(canViewWorkProfitability("MEMBER"), false);
+assert.equal(canViewWorkProfitability("ADMIN"), true);
+
 const salesCsv = buildReportCsv("sales", {items: sales.slice(0, 1)});
 assert.match(salesCsv, /"Número";"Fecha";"Cliente"/);
 assert.match(salesCsv, /"Cliente; Uno"/);
@@ -111,8 +184,8 @@ assert.deepEqual(
     [{key: "2026-08-02", value: 500}, {key: "2026-08-01", value: 300}]
   ),
   [
-    {key: "2026-08-01", sales: 1000, purchases: 300},
-    {key: "2026-08-02", sales: 0, purchases: 500},
+    {key: "2026-08-01", currency: "CLP", sales: 1000, purchases: 300},
+    {key: "2026-08-02", currency: "CLP", sales: 0, purchases: 500},
   ]
 );
 assert.deepEqual(combineOperationalTimelines([], []), []);

@@ -12,7 +12,7 @@ import {
   Tooltip,
 } from "chart.js";
 import { Bar, Doughnut, Line } from "react-chartjs-2";
-import { formatCLP } from "../../utils/formatters";
+import { formatMoney } from "../../utils/formatters";
 
 ChartJS.register(
   ArcElement,
@@ -45,11 +45,11 @@ function formatTimelineLabel(key) {
     .replace(" de ", " ");
 }
 
-function currencyTooltip(context) {
-  return `${context.dataset.label || "Valor"}: ${formatCLP(context.parsed?.y ?? context.parsed ?? 0)}`;
+function currencyTooltip(currency) {
+  return (context) => `${context.dataset.label || "Valor"}: ${formatMoney(context.parsed?.y ?? context.parsed ?? 0, currency)}`;
 }
 
-function baseOptions() {
+function baseOptions(currency = "CLP") {
   return {
     animation: { duration: 300 },
     maintainAspectRatio: false,
@@ -59,7 +59,7 @@ function baseOptions() {
         labels: { color: "#475569", boxWidth: 12, boxHeight: 12, usePointStyle: true },
         position: "bottom",
       },
-      tooltip: { callbacks: { label: currencyTooltip } },
+      tooltip: { callbacks: { label: currencyTooltip(currency) } },
     },
     scales: {
       x: { grid: { display: false }, ticks: { color: "#64748b" } },
@@ -81,7 +81,7 @@ function ChartEmptyState({ children }) {
   return <div className="financial-chart-empty">{children}</div>;
 }
 
-export function FinancialTimelineChart({ data, mode = "cashflow" }) {
+export function FinancialTimelineChart({ currency = "CLP", data, mode = "cashflow" }) {
   if (!data.length) {
     return <ChartEmptyState>Aún no hay movimientos para construir esta evolución.</ChartEmptyState>;
   }
@@ -113,29 +113,29 @@ export function FinancialTimelineChart({ data, mode = "cashflow" }) {
           },
         ];
   const description = data
-    .map((item) => `${item.key}: ingresos ${formatCLP(item.income)}, egresos ${formatCLP(item.expense)}, resultado ${formatCLP(item.net)}`)
+    .map((item) => `${item.key}: ingresos ${formatMoney(item.income, currency)}, egresos ${formatMoney(item.expense, currency)}, resultado ${formatMoney(item.net, currency)}`)
     .join(". ");
 
   return (
     <div className="financial-chart" role="img" aria-label={description}>
       {mode === "net" ? (
-        <Line data={{ labels, datasets }} options={baseOptions()} />
+        <Line data={{ labels, datasets }} options={baseOptions(currency)} />
       ) : (
-        <Bar data={{ labels, datasets }} options={baseOptions()} />
+        <Bar data={{ labels, datasets }} options={baseOptions(currency)} />
       )}
     </div>
   );
 }
 
-export function FinancialCategoryChart({ data, label }) {
+export function FinancialCategoryChart({ currency = "CLP", data, label }) {
   if (!data.length) {
     return <ChartEmptyState>Sin datos por categoría en este periodo.</ChartEmptyState>;
   }
   const visible = data.slice(0, 7);
-  const options = baseOptions();
+  const options = baseOptions(currency);
   options.indexAxis = "y";
   const description = visible
-    .map((item) => `${item.label}: ${formatCLP(item.value)}`)
+    .map((item) => `${item.label}: ${formatMoney(item.value, currency)}`)
     .join(". ");
   return (
     <div className="financial-chart financial-chart--category" role="img" aria-label={`${label}. ${description}`}>
@@ -155,7 +155,7 @@ export function FinancialCategoryChart({ data, label }) {
   );
 }
 
-export function FinancialStatusChart({ movements }) {
+export function FinancialStatusChart({ currency = "CLP", movements }) {
   const paid = movements
     .filter((movement) => movement.status === "paid")
     .reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
@@ -169,7 +169,7 @@ export function FinancialStatusChart({ movements }) {
     <div
       className="financial-chart financial-chart--donut"
       role="img"
-      aria-label={`Movimientos pagados: ${formatCLP(paid)}. Movimientos pendientes: ${formatCLP(pending)}.`}
+      aria-label={`Movimientos pagados: ${formatMoney(paid, currency)}. Movimientos pendientes: ${formatMoney(pending, currency)}.`}
     >
       <Doughnut
         data={{
@@ -188,7 +188,7 @@ export function FinancialStatusChart({ movements }) {
           responsive: true,
           plugins: {
             legend: { position: "bottom", labels: { usePointStyle: true, color: "#475569" } },
-            tooltip: { callbacks: { label: currencyTooltip } },
+            tooltip: { callbacks: { label: currencyTooltip(currency) } },
           },
         }}
       />

@@ -3,6 +3,7 @@ export const REPORT_TABS = Object.freeze([
   "sales",
   "purchases",
   "inventory",
+  "projects",
   "quotes",
   "finances",
 ]);
@@ -33,7 +34,11 @@ export const QUOTE_STATUSES = Object.freeze([
 
 export const INVENTORY_MOVEMENT_TYPES = Object.freeze([
   "entrada_compra",
+  "entrada_recepcion",
   "salida_venta",
+  "SALIDA_PROYECTO",
+  "DEVOLUCION_PROYECTO",
+  "AJUSTE_STOCK",
 ]);
 
 const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -56,6 +61,53 @@ function safeAmount(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
+export function normalizeReportCurrency(value, fallback = "CLP") {
+  const normalized = text(value).toUpperCase();
+  if (/^[A-Z]{3}$/.test(normalized)) return normalized;
+  const compatibleFallback = text(fallback).toUpperCase();
+  return /^[A-Z]{3}$/.test(compatibleFallback) ? compatibleFallback : "CLP";
+}
+
+export function resolveReportCurrency(record = {}, fallback = "CLP") {
+  return normalizeReportCurrency(
+    record.moneda ||
+      record.monedaCodigo ||
+      record.currency ||
+      record.empresaSnapshot?.monedaCodigo ||
+      record.empresa?.monedaCodigo,
+    fallback
+  );
+}
+
+export function groupAmountsByCurrency(
+  records,
+  {amountField = "total", fallbackCurrency = "CLP"} = {}
+) {
+  const buckets = new Map();
+  (Array.isArray(records) ? records : []).forEach((record) => {
+    const currency = resolveReportCurrency(record, fallbackCurrency);
+    const current = buckets.get(currency) || {currency, count: 0, total: 0};
+    current.count += 1;
+    current.total += safeAmount(record?.[amountField]);
+    buckets.set(currency, current);
+  });
+  return [...buckets.values()]
+    .map((bucket) => ({
+      ...bucket,
+      average: bucket.count ? bucket.total / bucket.count : 0,
+    }))
+    .sort((left, right) => left.currency.localeCompare(right.currency));
+}
+
+function singleCurrencyValue(groups, field = "total") {
+  return groups.length === 1 ? safeAmount(groups[0]?.[field]) : null;
+}
+
+function currencyMatches(record, currency, fallbackCurrency) {
+  return !currency || currency === "todos" ||
+    resolveReportCurrency(record, fallbackCurrency) === currency;
+}
+
 export function isDateInRange(date, range) {
   const value = text(date).slice(0, 10);
   if (!DATE_KEY_PATTERN.test(value)) return false;
@@ -68,11 +120,15 @@ function matchesSearch(values, search) {
   return searchText(values.filter(Boolean).join(" ")).includes(needle);
 }
 
-export function filterSales(sales, {range, status = "todos", search = ""} = {}) {
+export function filterSales(
+  sales,
+  {range, status = "todos", search = "", currency = "todos", fallbackCurrency = "CLP"} = {}
+) {
   return (Array.isArray(sales) ? sales : []).filter(
     (sale) =>
       isDateInRange(sale.fechaVenta, range) &&
       (status === "todos" || sale.estado === status) &&
+      currencyMatches(sale, currency, fallbackCurrency) &&
       matchesSearch(
         [
           sale.numero,
@@ -85,14 +141,16 @@ export function filterSales(sales, {range, status = "todos", search = ""} = {}) 
   );
 }
 
-export function getSalesMetrics(sales, range) {
-  const confirmed = filterSales(sales, {range, status: "confirmada"});
-  const total = confirmed.reduce((sum, sale) => sum + safeAmount(sale.total), 0);
+export function getSalesMetrics(sales, range, options = {}) {
+  const confirmed = filterSales(sales, {range, status: "confirmada", ...options});
+  const totalsByCurrency = groupAmountsByCurrency(confirmed, options);
+  const total = singleCurrencyValue(totalsByCurrency);
   return {
     confirmed,
     count: confirmed.length,
     total,
-    average: confirmed.length ? Math.round(total / confirmed.length) : 0,
+    average: singleCurrencyValue(totalsByCurrency, "average"),
+    totalsByCurrency,
     distinctCustomers: new Set(
       confirmed
         .map((sale) => text(sale.clienteId || sale.clienteSnapshot?.clienteId))
@@ -103,12 +161,13 @@ export function getSalesMetrics(sales, range) {
 
 export function filterPurchases(
   purchases,
-  {range, status = "todos", search = ""} = {}
+  {range, status = "todos", search = "", currency = "todos", fallbackCurrency = "CLP"} = {}
 ) {
   return (Array.isArray(purchases) ? purchases : []).filter(
     (purchase) =>
       isDateInRange(purchase.fechaCompra, range) &&
       (status === "todos" || purchase.estado === status) &&
+      currencyMatches(purchase, currency, fallbackCurrency) &&
       matchesSearch(
         [
           purchase.numero,
@@ -121,17 +180,16 @@ export function filterPurchases(
   );
 }
 
-export function getPurchaseMetrics(purchases, range) {
-  const confirmed = filterPurchases(purchases, {range, status: "confirmada"});
-  const total = confirmed.reduce(
-    (sum, purchase) => sum + safeAmount(purchase.total),
-    0
-  );
+export function getPurchaseMetrics(purchases, range, options = {}) {
+  const confirmed = filterPurchases(purchases, {range, status: "confirmada", ...options});
+  const totalsByCurrency = groupAmountsByCurrency(confirmed, options);
+  const total = singleCurrencyValue(totalsByCurrency);
   return {
     confirmed,
     count: confirmed.length,
     total,
-    average: confirmed.length ? Math.round(total / confirmed.length) : 0,
+    average: singleCurrencyValue(totalsByCurrency, "average"),
+    totalsByCurrency,
     distinctProviders: new Set(
       confirmed
         .map((purchase) =>
@@ -144,26 +202,37 @@ export function getPurchaseMetrics(purchases, range) {
 
 export function filterQuotes(
   quotes,
-  {range, status = "todos", search = ""} = {}
+  {range, status = "todos", search = "", currency = "todos", fallbackCurrency = "CLP"} = {}
 ) {
   return (Array.isArray(quotes) ? quotes : []).filter(
     (quote) =>
       isDateInRange(quote.fecha, range) &&
       (status === "todos" || quote.estado === status) &&
+      currencyMatches(quote, currency, fallbackCurrency) &&
       matchesSearch([quote.numero, quote.clienteNombre, quote.clienteRut], search)
   );
 }
 
-export function getQuoteMetrics(quotes, range) {
-  const periodQuotes = filterQuotes(quotes, {range});
+export function getQuoteMetrics(quotes, range, options = {}) {
+  const periodQuotes = filterQuotes(quotes, {range, ...options});
   const counts = Object.fromEntries(QUOTE_STATUSES.map((status) => [status, 0]));
-  const amounts = Object.fromEntries(QUOTE_STATUSES.map((status) => [status, 0]));
+  const recordsByStatus = Object.fromEntries(QUOTE_STATUSES.map((status) => [status, []]));
 
   periodQuotes.forEach((quote) => {
     const status = QUOTE_STATUSES.includes(quote.estado) ? quote.estado : "borrador";
     counts[status] += 1;
-    amounts[status] += safeAmount(quote.total);
+    recordsByStatus[status].push(quote);
   });
+
+  const amountsByCurrency = Object.fromEntries(
+    QUOTE_STATUSES.map((status) => [
+      status,
+      groupAmountsByCurrency(recordsByStatus[status], options),
+    ])
+  );
+  const amounts = Object.fromEntries(
+    QUOTE_STATUSES.map((status) => [status, singleCurrencyValue(amountsByCurrency[status])])
+  );
 
   const decided = counts.aceptada + counts.rechazada;
   return {
@@ -171,17 +240,18 @@ export function getQuoteMetrics(quotes, range) {
     count: periodQuotes.length,
     counts,
     amounts,
+    amountsByCurrency,
     conversion: decided ? (counts.aceptada / decided) * 100 : null,
   };
 }
 
-export function getInventoryMetrics(items) {
+export function getInventoryMetrics(items, {fallbackCurrency = "CLP"} = {}) {
   const activeProducts = (Array.isArray(items) ? items : []).filter(
     (item) =>
       item.tipoItem === "producto" && (item.estado || "activo") === "activo"
   );
   const coveredProducts = activeProducts.filter((item) => {
-    const cost = Number(item.costoBase);
+    const cost = Number(item.costoPromedio ?? item.costoBase);
     const stock = Number(item.stock);
     return Number.isFinite(cost) && cost > 0 && Number.isFinite(stock) && stock >= 0;
   });
@@ -193,9 +263,12 @@ export function getInventoryMetrics(items) {
   const coverage = activeProducts.length
     ? (coveredProducts.length / activeProducts.length) * 100
     : 0;
-  const inventoryValue = coveredProducts.reduce(
-    (sum, item) => sum + Number(item.costoBase) * Number(item.stock),
-    0
+  const inventoryValuesByCurrency = groupAmountsByCurrency(
+    coveredProducts.map((item) => ({
+      moneda: item.costoPromedioMoneda || item.moneda,
+      total: Number(item.costoPromedio ?? item.costoBase) * Number(item.stock),
+    })),
+    {fallbackCurrency}
   );
 
   return {
@@ -203,7 +276,10 @@ export function getInventoryMetrics(items) {
     lowStockProducts,
     coveredProducts,
     coverage,
-    inventoryValue: coverage === 100 && activeProducts.length ? inventoryValue : null,
+    inventoryValuesByCurrency,
+    inventoryValue: coverage === 100 && activeProducts.length
+      ? singleCurrencyValue(inventoryValuesByCurrency)
+      : null,
   };
 }
 
@@ -230,39 +306,159 @@ function dateToSantiagoKey(date) {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
-export function normalizeInventoryMovement(raw = {}) {
+function movementDirection(type, raw = {}) {
+  if (["entrada_compra", "entrada_recepcion", "DEVOLUCION_PROYECTO"].includes(type)) return "ENTRADA";
+  if (["salida_venta", "SALIDA_PROYECTO"].includes(type)) return "SALIDA";
+  if (type === "AJUSTE_STOCK") return raw.direccion === "SALIDA" ? "SALIDA" : "ENTRADA";
+  return "";
+}
+
+function movementOrigin(type, raw = {}) {
+  if (type === "entrada_recepcion") return {sourceType: "recepcion", sourceId: raw.recepcionId, documentNumber: raw.recepcionNumero};
+  if (type === "entrada_compra") return {sourceType: "compra", sourceId: raw.compraId, documentNumber: raw.compraNumero};
+  if (type === "salida_venta") return {sourceType: "venta", sourceId: raw.ventaId, documentNumber: raw.ventaNumero};
+  if (["SALIDA_PROYECTO", "DEVOLUCION_PROYECTO"].includes(type)) return {sourceType: "proyecto", sourceId: raw.trabajoId, documentNumber: raw.trabajoNumero};
+  if (type === "AJUSTE_STOCK") return {sourceType: "ajuste", sourceId: raw.itemId, documentNumber: "Ajuste manual"};
+  return {sourceType: text(raw.tipoOrigen), sourceId: "", documentNumber: ""};
+}
+
+export function normalizeInventoryMovement(
+  raw = {},
+  {acquisition = null, fallbackCurrency = "CLP", purchase = null, work = null} = {}
+) {
   const timestamp = timestampToDate(raw.creadoEn || raw.createdAt);
   const type = INVENTORY_MOVEMENT_TYPES.includes(raw.tipo) ? raw.tipo : "";
+  const origin = movementOrigin(type, raw);
+  const productSnapshot = raw.productoSnapshot || acquisition?.productoSnapshot || {};
+  const providerSnapshot = acquisition?.proveedorSnapshot || purchase?.proveedorSnapshot || raw.proveedorSnapshot || null;
   return {
     ...raw,
     id: text(raw.id || raw.movimientoId),
     type,
-    date: dateToSantiagoKey(timestamp),
+    direction: movementDirection(type, raw),
+    date: text(raw.fecha) || dateToSantiagoKey(timestamp),
     timestampMillis: timestamp?.getTime?.() || 0,
-    productName: text(raw.nombre) || "Producto histórico",
+    productName: text(raw.nombre || productSnapshot.nombre) || "Producto histórico",
     quantity: safeAmount(raw.cantidad),
-    unit: text(raw.unidad),
-    documentNumber: text(raw.compraNumero || raw.ventaNumero),
-    sourceId: text(raw.compraId || raw.ventaId),
+    unit: text(raw.unidad || productSnapshot.unidad),
+    documentNumber: text(origin.documentNumber || raw.ordenCompraNumero),
+    sourceType: origin.sourceType,
+    sourceId: text(origin.sourceId),
+    providerId: text(acquisition?.proveedorId || purchase?.proveedorId || providerSnapshot?.proveedorId),
+    providerName: text(providerSnapshot?.razonSocial),
+    projectId: text(raw.trabajoId),
+    projectNumber: text(work?.numero || raw.trabajoNumero),
+    projectTitle: text(work?.titulo || raw.trabajoTitulo),
+    userId: text(raw.usuarioUid || raw.creadoPorUid || raw.registradoPorUid),
+    userName: text(raw.usuarioSnapshot?.nombre || raw.registradoPorSnapshot?.nombre),
+    unitCost: safeAmount(raw.costoUnitario ?? raw.costoUnitarioAplicado),
+    totalCost: safeAmount(raw.costoTotal),
+    currency: resolveReportCurrency(raw, acquisition?.moneda || fallbackCurrency),
   };
 }
 
 export function filterInventoryMovements(
   movements,
-  {range, type = "todos"} = {}
+  {
+    range,
+    type = "todos",
+    sourceType = "todos",
+    currency = "todos",
+    providerId = "todos",
+    projectId = "todos",
+    userId = "todos",
+    fallbackCurrency = "CLP",
+  } = {}
 ) {
   return (Array.isArray(movements) ? movements : [])
     .filter(
       (movement) =>
         isDateInRange(movement.date, range) &&
-        (type === "todos" || movement.type === type)
+        (type === "todos" || movement.direction === type || movement.type === type) &&
+        (sourceType === "todos" || movement.sourceType === sourceType) &&
+        currencyMatches(movement, currency, fallbackCurrency) &&
+        (providerId === "todos" || movement.providerId === providerId) &&
+        (projectId === "todos" || movement.projectId === projectId) &&
+        (userId === "todos" || movement.userId === userId)
     )
     .sort((left, right) => right.timestampMillis - left.timestampMillis);
 }
 
+export function normalizeInventoryAcquisition(raw = {}, {fallbackCurrency = "CLP"} = {}) {
+  const timestamp = timestampToDate(raw.creadoEn);
+  return {
+    ...raw,
+    id: text(raw.id || raw.adquisicionId),
+    date: text(raw.fechaAdquisicion) || dateToSantiagoKey(timestamp),
+    timestampMillis: timestamp?.getTime?.() || 0,
+    productName: text(raw.productoSnapshot?.nombre) || "Producto histórico",
+    unit: text(raw.productoSnapshot?.unidad),
+    quantity: safeAmount(raw.cantidad),
+    unitCost: safeAmount(raw.costoPagadoUnitario ?? raw.costoUnitario),
+    totalCost: safeAmount(raw.costoPagadoTotal ?? raw.costoPagado),
+    taxAmount: safeAmount(raw.impuestoCompraTotal ?? raw.impuestoCompra),
+    currency: resolveReportCurrency(raw, fallbackCurrency),
+    providerId: text(raw.proveedorId || raw.proveedorSnapshot?.proveedorId),
+    providerName: text(raw.proveedorSnapshot?.razonSocial),
+    userId: text(raw.registradoPorUid || raw.creadoPorUid),
+    documentNumber: text(raw.recepcionNumero || raw.ordenCompraNumero || raw.compraNumero),
+  };
+}
+
+export function filterInventoryAcquisitions(
+  acquisitions,
+  {range, currency = "todos", providerId = "todos", userId = "todos", fallbackCurrency = "CLP"} = {}
+) {
+  return (Array.isArray(acquisitions) ? acquisitions : [])
+    .filter((entry) =>
+      isDateInRange(entry.date, range) &&
+      currencyMatches(entry, currency, fallbackCurrency) &&
+      (providerId === "todos" || entry.providerId === providerId) &&
+      (userId === "todos" || entry.userId === userId)
+    )
+    .sort((left, right) => right.timestampMillis - left.timestampMillis || right.date.localeCompare(left.date));
+}
+
+export function normalizeWorkCost(raw = {}, {fallbackCurrency = "CLP", kind, work} = {}) {
+  const isLabor = kind === "HH";
+  return {
+    ...raw,
+    id: text(raw.id || raw.gastoId || raw.horasHombreId),
+    kind: isLabor ? "HH" : "GASTO",
+    date: text(raw.fecha),
+    projectId: text(raw.trabajoId || work?.trabajoId || work?.id),
+    projectNumber: text(work?.numero),
+    projectTitle: text(work?.titulo),
+    concept: text(raw.concepto),
+    category: isLabor ? "MANO_DE_OBRA" : text(raw.categoria || "OTRO").toUpperCase(),
+    status: raw.estado === "anulado" ? "anulado" : "vigente",
+    hours: isLabor ? safeAmount(raw.horas) : null,
+    amount: safeAmount(isLabor ? raw.total : raw.monto),
+    currency: resolveReportCurrency(raw, work?.moneda || fallbackCurrency),
+    userId: text(raw.registradoPorUid || raw.tecnicoUid || raw.responsableDelGastoUid),
+    userName: text(raw.registradoPorSnapshot?.nombre || raw.tecnicoSnapshot?.nombre || raw.responsableDelGastoSnapshot?.nombre),
+  };
+}
+
+export function filterWorkCosts(
+  costs,
+  {range, kind = "todos", currency = "todos", projectId = "todos", userId = "todos", fallbackCurrency = "CLP"} = {}
+) {
+  return (Array.isArray(costs) ? costs : [])
+    .filter((entry) =>
+      isDateInRange(entry.date, range) &&
+      entry.status === "vigente" &&
+      (kind === "todos" || entry.kind === kind) &&
+      currencyMatches(entry, currency, fallbackCurrency) &&
+      (projectId === "todos" || entry.projectId === projectId) &&
+      (userId === "todos" || entry.userId === userId)
+    )
+    .sort((left, right) => right.date.localeCompare(left.date));
+}
+
 export function aggregateOperationalTimeline(
   documents,
-  {range, dateField, amountField = "total"}
+  {range, dateField, amountField = "total", fallbackCurrency = "CLP"}
 ) {
   const byKey = new Map();
   const useMonths = Number(range?.days || 0) > 92;
@@ -270,29 +466,40 @@ export function aggregateOperationalTimeline(
     const date = text(document?.[dateField]).slice(0, 10);
     if (!isDateInRange(date, range)) return;
     const key = useMonths ? date.slice(0, 7) : date;
-    const current = byKey.get(key) || {key, count: 0, value: 0};
+    const currency = resolveReportCurrency(document, fallbackCurrency);
+    const bucketKey = `${currency}__${key}`;
+    const current = byKey.get(bucketKey) || {key, currency, count: 0, value: 0};
     current.count += 1;
     current.value += safeAmount(document?.[amountField]);
-    byKey.set(key, current);
+    byKey.set(bucketKey, current);
   });
-  return [...byKey.values()].sort((left, right) => left.key.localeCompare(right.key));
+  return [...byKey.values()].sort((left, right) =>
+    left.currency.localeCompare(right.currency) || left.key.localeCompare(right.key)
+  );
 }
 
 export function combineOperationalTimelines(salesTimeline, purchasesTimeline) {
   const combined = new Map();
   (Array.isArray(salesTimeline) ? salesTimeline : []).forEach((item) => {
-    combined.set(item.key, {
+    const currency = normalizeReportCurrency(item.currency);
+    const bucketKey = `${currency}__${item.key}`;
+    combined.set(bucketKey, {
       key: item.key,
+      currency,
       sales: safeAmount(item.value),
       purchases: 0,
     });
   });
   (Array.isArray(purchasesTimeline) ? purchasesTimeline : []).forEach((item) => {
-    const current = combined.get(item.key) || {key: item.key, sales: 0, purchases: 0};
+    const currency = normalizeReportCurrency(item.currency);
+    const bucketKey = `${currency}__${item.key}`;
+    const current = combined.get(bucketKey) || {key: item.key, currency, sales: 0, purchases: 0};
     current.purchases = safeAmount(item.value);
-    combined.set(item.key, current);
+    combined.set(bucketKey, current);
   });
-  return [...combined.values()].sort((left, right) => left.key.localeCompare(right.key));
+  return [...combined.values()].sort((left, right) =>
+    left.currency.localeCompare(right.currency) || left.key.localeCompare(right.key)
+  );
 }
 
 export function getRecentOperationalActivity(sales, purchases, range, limit = 5) {
@@ -304,6 +511,7 @@ export function getRecentOperationalActivity(sales, purchases, range, limit = 5)
     date: text(sale.fechaVenta).slice(0, 10),
     counterparty: text(sale.clienteSnapshot?.nombreRazonSocial) || "Cliente histórico",
     amount: safeAmount(sale.total),
+    currency: resolveReportCurrency(sale),
     route: `/ventas/${text(sale.id || sale.ventaId)}`,
   }));
   const purchasesActivity = getPurchaseMetrics(purchases, range).confirmed.map(
@@ -316,6 +524,7 @@ export function getRecentOperationalActivity(sales, purchases, range, limit = 5)
       counterparty:
         text(purchase.proveedorSnapshot?.razonSocial) || "Proveedor histórico",
       amount: safeAmount(purchase.total),
+      currency: resolveReportCurrency(purchase),
       route: `/compras/${text(purchase.id || purchase.compraId)}`,
     })
   );
@@ -342,29 +551,32 @@ function csv(rows) {
 
 export function buildReportCsv(tab, data = {}) {
   if (tab === "summary") {
+    const monetaryRows = (area, indicator, groups, field = "total") =>
+      (groups || []).map((group) => [area, indicator, group.currency, group[field]]);
     return csv([
-      ["Área", "Indicador", "Valor"],
-      ["Ventas", "Total vendido confirmado", data.sales?.total || 0],
-      ["Ventas", "Cantidad confirmada", data.sales?.count || 0],
-      ["Compras", "Total comprado confirmado", data.purchases?.total || 0],
-      ["Compras", "Cantidad confirmada", data.purchases?.count || 0],
-      ["Cotizaciones", "Cantidad del periodo", data.quotes?.count || 0],
-      ["Cotizaciones", "Aceptadas (estado actual)", data.quotes?.counts?.aceptada || 0],
-      ["Inventario", "Productos activos", data.inventory?.activeProducts?.length || 0],
-      ["Inventario", "Productos con stock bajo", data.inventory?.lowStockProducts?.length || 0],
-      ["Finanzas", "Resultado de movimientos registrados", data.financial?.netResult || 0],
+      ["Área", "Indicador", "Moneda", "Valor"],
+      ...monetaryRows("Ventas", "Total vendido confirmado", data.sales?.totalsByCurrency),
+      ["Ventas", "Cantidad confirmada", "", data.sales?.count || 0],
+      ...monetaryRows("Compras", "Total comprado confirmado", data.purchases?.totalsByCurrency),
+      ["Compras", "Cantidad confirmada", "", data.purchases?.count || 0],
+      ["Cotizaciones", "Cantidad del periodo", "", data.quotes?.count || 0],
+      ["Cotizaciones", "Aceptadas (estado actual)", "", data.quotes?.counts?.aceptada || 0],
+      ["Inventario", "Productos activos", "", data.inventory?.activeProducts?.length || 0],
+      ["Inventario", "Productos con stock bajo", "", data.inventory?.lowStockProducts?.length || 0],
+      ...(data.financial || []).map((group) => ["Finanzas", "Resultado registrado", group.currency, group.summary?.netResult || 0]),
     ]);
   }
 
   if (tab === "sales") {
     return csv([
-      ["Número", "Fecha", "Cliente", "RUT", "Estado", "Total"],
+      ["Número", "Fecha", "Cliente", "Identificación fiscal", "Estado", "Moneda", "Total"],
       ...(data.items || []).map((sale) => [
         sale.numero,
         sale.fechaVenta,
         sale.clienteSnapshot?.nombreRazonSocial,
-        sale.clienteSnapshot?.rut,
+        sale.clienteSnapshot?.identificadorFiscalValor || sale.clienteSnapshot?.rut,
         sale.estado,
+        resolveReportCurrency(sale, data.fallbackCurrency),
         safeAmount(sale.total),
       ]),
     ]);
@@ -372,13 +584,14 @@ export function buildReportCsv(tab, data = {}) {
 
   if (tab === "purchases") {
     return csv([
-      ["Número", "Fecha", "Proveedor", "RUT", "Estado", "Total"],
+      ["Número", "Fecha", "Proveedor", "Identificación fiscal", "Estado", "Moneda", "Total"],
       ...(data.items || []).map((purchase) => [
         purchase.numero,
         purchase.fechaCompra,
         purchase.proveedorSnapshot?.razonSocial,
-        purchase.proveedorSnapshot?.rut,
+        purchase.proveedorSnapshot?.identificadorFiscalValor || purchase.proveedorSnapshot?.rut,
         purchase.estado,
+        resolveReportCurrency(purchase, data.fallbackCurrency),
         safeAmount(purchase.total),
       ]),
     ]);
@@ -386,29 +599,66 @@ export function buildReportCsv(tab, data = {}) {
 
   if (tab === "inventory") {
     return csv([
-      ["Fecha", "Tipo", "Producto", "Cantidad", "Unidad", "Documento/origen"],
+      ["Registro", "Fecha", "Tipo", "Producto", "Cantidad", "Unidad", "Documento/origen", "Proveedor", "Proyecto", "Usuario", "Moneda", "Costo"],
       ...(data.items || []).map((movement) => [
+        "MOVIMIENTO",
         movement.date,
         movement.type,
         movement.productName,
         movement.quantity,
         movement.unit,
         movement.documentNumber,
+        movement.providerName,
+        movement.projectNumber || movement.projectTitle,
+        movement.userName || movement.userId,
+        movement.currency,
+        movement.totalCost,
       ]),
+      ...(data.acquisitions || []).map((entry) => [
+        "ADQUISICIÓN",
+        entry.date,
+        "entrada_recepcion",
+        entry.productName,
+        entry.quantity,
+        entry.unit,
+        [entry.ordenCompraNumero, entry.recepcionNumero, entry.compraNumero].filter(Boolean).join(" / "),
+        entry.providerName,
+        "",
+        entry.userId,
+        entry.currency,
+        entry.totalCost,
+      ]),
+    ]);
+  }
+
+  if (tab === "projects") {
+    return csv([
+      ["Registro", "Fecha", "Proyecto", "Concepto", "Categoría/estado", "Usuario", "Moneda", "Monto", "Resultado", "Rentabilidad %"],
+      ...(data.items || []).map((entry) => ["COSTO", entry.date, entry.projectNumber || entry.projectTitle || entry.projectId, entry.concept, entry.category, entry.userName || entry.userId, entry.currency, entry.amount, "", ""]),
+      ...(data.balances || []).map((entry) => ["BALANCE", "", entry.numero || entry.titulo, "Balance autoritativo", entry.balance?.estado, "", entry.balance?.moneda, entry.balance?.costoTotal, entry.balance?.resultado, entry.balance?.rentabilidadPct]),
     ]);
   }
 
   if (tab === "quotes") {
     return csv([
-      ["Número", "Fecha", "Cliente", "RUT", "Estado actual", "Total"],
+      ["Número", "Fecha", "Cliente", "Identificación fiscal", "Estado actual", "Moneda", "Total"],
       ...(data.items || []).map((quote) => [
         quote.numero,
         quote.fecha,
         quote.clienteNombre,
-        quote.clienteRut,
+        quote.cliente?.identificadorFiscalValor || quote.clienteRut,
         quote.estado,
+        resolveReportCurrency(quote, data.fallbackCurrency),
         safeAmount(quote.total),
       ]),
+    ]);
+  }
+
+
+  if (tab === "finances") {
+    return csv([
+      ["Fecha", "Concepto", "Tipo", "Estado", "Contraparte", "Origen", "Moneda", "Monto"],
+      ...(data.items || []).map((entry) => [entry.date, entry.concept, entry.type, entry.status, entry.counterpartyName, entry.sourceType, resolveReportCurrency(entry, data.fallbackCurrency), safeAmount(entry.amount)]),
     ]);
   }
 
