@@ -1,7 +1,5 @@
 import {
-  BadgeDollarSign,
   BarChart3,
-  BookOpenCheck,
   Boxes,
   Building2,
   ClipboardCheck,
@@ -117,18 +115,6 @@ export const navigationSections = [
         title: "Reportes",
         icon: BarChart3,
       },
-      {
-        to: "/valorizacion",
-        label: "Valorización",
-        title: "Valorización",
-        icon: BadgeDollarSign,
-      },
-      {
-        to: "/referencias",
-        label: "Referencias",
-        title: "Referencias de mercado",
-        icon: BookOpenCheck,
-      },
     ],
   },
   {
@@ -164,6 +150,8 @@ export const navigationSections = [
 const navigationItems = navigationSections.flatMap((section) => section.items);
 const hiddenRouteMeta = Object.freeze({
   "/finanzas": { title: "Finanzas" },
+  "/valorizacion": { title: "Valorización" },
+  "/referencias": { title: "Referencias de mercado" },
   "/tareas-referencias": { title: "Tareas de referencias" },
 });
 
