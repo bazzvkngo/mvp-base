@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-Registrar, asignar y seguir trabajos operativos genéricos por empresa, conservando una trazabilidad legible de cambios, tareas, costos y notas. El módulo no administra todavía rentabilidad, facturación ni pagos.
+Registrar, asignar y seguir trabajos operativos genéricos por empresa, conservando una trazabilidad legible de cambios, tareas, costos, balance y notas. El módulo no administra todavía facturación ni pagos.
 
 ## Modelo
 
@@ -59,6 +59,16 @@ Functions ejecuta movimiento y stock en una misma transacción. Sólo admite `ti
 
 `workMaterialRequests/{requestId}` hace idempotentes las operaciones. `workMaterialBalances/{movimientoOrigenId}` es un control interno mutable para impedir sobre-devoluciones concurrentes sin reescribir el movimiento original. Rules niega todo acceso SDK a ambos; el libro de movimientos sólo admite lectura empresarial y ninguna escritura directa. MEMBER activo puede registrar consumos propios en la transición RBAC actual; sólo OWNER/ADMIN devuelve y gestiona. TRB legacy adapta contadores y costo de materiales a cero.
 
+## Balance y rentabilidad / fase 5
+
+`obtenerBalanceTrabajo` recalcula bajo demanda y no persiste el margen. Sólo OWNER/ADMIN puede invocarla. La fuente de ingreso son exclusivamente Ventas canónicas `confirmada` vinculadas por `trabajoId`; las COT, incluidas las rechazadas, nunca constituyen ingreso. Sin Venta confirmada el balance queda `PARCIAL_SIN_VENTA`: los costos se muestran, pero valor comercial, resultado y rentabilidad permanecen `null`.
+
+La fórmula coherente es `costoTotal = materiales netos + HH vigentes + gastos directos vigentes + gastos indirectos vigentes`, `resultado = valorComercial - costoTotal` y `rentabilidadPct = resultado / valorComercial × 100`. Cuando existe al menos una salida de Inventario, ese libro es la autoridad de materiales y los gastos vigentes con categoría `MATERIAL` quedan informados pero excluidos del costo para evitar doble imputación. Sin libro de materiales se conservan como costo directo legacy.
+
+La moneda base es el snapshot del TRB o, para legacy, la moneda del negocio. Una moneda incluida distinta produce `INCONSISTENTE_MONEDA`: todos los agregados quedan `null` y sólo se entrega desglose separado por moneda, sin FX. MEMBER no recibe la respuesta de balance ni ve su componente en la ficha.
+
+El historial mantiene referencias mínimas append-only y ahora expresa montos/origen en gastos, HH, materiales, devoluciones y Ventas. La confirmación de una Venta vinculada agrega `venta_confirmada`; creación, cambios, tareas/documentación, COT/respuestas y cierre conservan sus eventos existentes.
+
 El contador anual y la idempotencia de creación son internos:
 
 ```text
@@ -88,6 +98,6 @@ La ruta `/trabajos` ofrece búsqueda y filtros, lista responsive y tablero sin d
 
 ## Límites
 
-- Sin balance, rentabilidad, facturación o pagos.
+- Sin facturación, pagos ni conversión FX.
 - Sin archivos adjuntos, comentarios anidados, subtareas o dependencias.
 - Sin drag-and-drop.

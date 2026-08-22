@@ -2,7 +2,7 @@
   "name": "functions",
   "description": "Cloud Functions for Firebase",
   "scripts": {
-    "lint": "eslint index.js quoteEmail.js purchaseOrderEmail.js quotePublicProposal.js quoteLifecycle.js inventoryDocumentImport.js inventoryModel.js localization.js companySnapshot.js fiscalIdentifier.js quotePersistence.js clientPersistence.js providerPersistence.js purchaseOrderPersistence.js purchasePersistence.js receptionPersistence.js salePersistence.js workPersistence.js businessOnboarding.js businessSettings.js businessMemberships.js aiConfig.js aiRateLimiter.js",
+    "lint": "eslint index.js quoteEmail.js purchaseOrderEmail.js quotePublicProposal.js quoteLifecycle.js inventoryDocumentImport.js inventoryModel.js localization.js companySnapshot.js fiscalIdentifier.js quotePersistence.js clientPersistence.js providerPersistence.js purchaseOrderPersistence.js purchasePersistence.js receptionPersistence.js salePersistence.js workPersistence.js workBalance.js businessOnboarding.js businessSettings.js businessMemberships.js aiConfig.js aiRateLimiter.js",
     "serve": "firebase emulators:start --only functions",
     "shell": "firebase functions:shell",
     "start": "npm run shell",

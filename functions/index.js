@@ -129,6 +129,7 @@ const {
   registrarDevolucionMaterialTrabajoHandler,
   registrarSalidaMaterialTrabajoHandler,
 } = require("./workPersistence");
+const {obtenerBalanceTrabajoHandler} = require("./workBalance");
 
 // Inicializar Admin SDK (una sola vez)
 initializeApp();
@@ -2290,6 +2291,10 @@ exports.registrarSalidaMaterialTrabajo = onCall(workCallableOptions, async (requ
 
 exports.registrarDevolucionMaterialTrabajo = onCall(workCallableOptions, async (request) =>
   registrarDevolucionMaterialTrabajoHandler(request, workPersistenceDependencies)
+);
+
+exports.obtenerBalanceTrabajo = onCall(workCallableOptions, async (request) =>
+  obtenerBalanceTrabajoHandler(request, workPersistenceDependencies)
 );
 
 exports.agregarNotaTrabajo = onCall(workCallableOptions, async (request) =>

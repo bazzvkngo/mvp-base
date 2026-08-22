@@ -2,7 +2,7 @@ const {createHash} = require("node:crypto");
 const {adaptDocumentLocalization, documentLocalizationSnapshot} = require("./localization");
 const {buildAuthoritativeCompanySnapshot, resolveCompanySnapshot} = require("./companySnapshot");
 const {fiscalSnapshotFields} = require("./fiscalIdentifier");
-const {linkedWorkFields, writeCommercialLink} = require("./workPersistence");
+const {linkedWorkFields, writeCommercialLink, writeSaleConfirmationEvent} = require("./workPersistence");
 
 const MODEL_VERSION = 1;
 const VAT_RATE = 0.19;
@@ -237,7 +237,7 @@ async function actualizarVentaBorradorHandler(request, dependencies) {
 }
 
 async function confirmarVentaHandler(request, dependencies) {
-  const {db, FieldValue, HttpsError} = dependencies; const {uid, businessId, businessRef} = await access(request, dependencies);
+  const {db, FieldValue, HttpsError} = dependencies; const context = await access(request, dependencies); const {uid, businessId, businessRef} = context;
   const ventaId = id(request?.data?.ventaId, "La venta", HttpsError); const reqId = requestId(request?.data?.requestId, HttpsError);
   const saleRef = businessRef.collection("ventas").doc(ventaId); const requestRef = businessRef.collection("saleConfirmRequests").doc(reqId);
   return transactionRetry(db, async (transaction) => {
@@ -247,6 +247,8 @@ async function confirmarVentaHandler(request, dependencies) {
     if (sale.negocioId !== businessId) fail(HttpsError, "permission-denied", "No puedes confirmar esta venta.");
     if (sale.estado === "confirmada" || sale.stockAplicado === true) { transaction.set(requestRef, {negocioId: businessId, ventaId, uidUsuario: uid, productosActualizados: 0, creadoEn: FieldValue.serverTimestamp()}); return {venta: {id: ventaId, ...sale}, requestId: reqId, idempotent: true, productosActualizados: 0}; }
     if (sale.estado !== "borrador") fail(HttpsError, "failed-precondition", "La venta no puede confirmarse.");
+    const workRef = sale.trabajoId ? businessRef.collection("trabajos").doc(id(sale.trabajoId, "El proyecto", HttpsError)) : null;
+    if (workRef) linkedWorkFields(await transaction.get(workRef), businessId, HttpsError);
     const lines = Array.isArray(sale.items) ? sale.items : []; const productLines = lines.filter((line) => line.tipoItem === "producto"); const toValidate = sale.cotizacionId ? productLines : lines;
     const groupMap = new Map(); toValidate.forEach((line) => { if (!line.itemId) fail(HttpsError, "failed-precondition", `El ítem ${line.nombre} no está vinculado al inventario.`); const group = groupMap.get(line.itemId) || {itemId: line.itemId, lines: []}; group.lines.push(line); groupMap.set(line.itemId, group); });
     const groups = [...groupMap.values()]; const clientRef = sale.cotizacionId ? null : businessRef.collection("clientes").doc(sale.clienteId); const itemRefs = groups.map((group) => businessRef.collection("inventario").doc(group.itemId)); const refs = clientRef ? [clientRef, ...itemRefs] : itemRefs;
@@ -257,6 +259,7 @@ async function confirmarVentaHandler(request, dependencies) {
       transaction.update(itemRefs[index], {stock: runningStock, actualizadoEn: timestamp, actualizadoPorUid: uid});
     });
     const update = {estado: "confirmada", stockAplicado: true, stockAplicadoAt: timestamp, confirmadoPorUid: uid, confirmedAt: timestamp, actualizadoPorUid: uid, updatedAt: timestamp}; transaction.update(saleRef, update);
+    if (workRef) writeSaleConfirmationEvent(transaction, workRef, {actor: {nombre: text(context.membership?.nombre || context.membership?.correo, 200) || "Persona del equipo", correo: text(context.membership?.correo, 240)}, actorUid: uid, businessId, currency: sale.moneda, quoteNumber: sale.cotizacionNumero, saleId: ventaId, saleNumber: sale.numero, timestamp, total: sale.total});
     transaction.set(requestRef, {negocioId: businessId, ventaId, uidUsuario: uid, productosActualizados: productLines.length, creadoEn: timestamp});
     return {venta: {id: ventaId, ...sale, ...update, confirmedAt: null, updatedAt: null}, requestId: reqId, idempotent: false, productosActualizados: productLines.length};
   });

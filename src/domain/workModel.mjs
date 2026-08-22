@@ -53,6 +53,34 @@ export function canManageWorks(role) {
   return ["OWNER", "ADMIN"].includes(String(role || "").toUpperCase());
 }
 
+export function canViewWorkProfitability(role) {
+  return canManageWorks(role);
+}
+
+export function adaptWorkBalance(raw = {}) {
+  const numericOrNull = (value) => value == null ? null : Number(value);
+  return {
+    ...raw,
+    modeloBalanceVersion: Number(raw.modeloBalanceVersion || 1),
+    trabajoId: String(raw.trabajoId || "").trim(),
+    moneda: String(raw.moneda || "").trim().toUpperCase(),
+    estado: ["COMPLETO", "PARCIAL_SIN_VENTA", "INCONSISTENTE_MONEDA"].includes(raw.estado) ? raw.estado : "PARCIAL_SIN_VENTA",
+    consistenteMoneda: raw.consistenteMoneda !== false,
+    monedasIncompatibles: Array.isArray(raw.monedasIncompatibles) ? raw.monedasIncompatibles : [],
+    valorComercial: numericOrNull(raw.valorComercial),
+    materiales: numericOrNull(raw.materiales),
+    horasHombre: numericOrNull(raw.horasHombre),
+    gastosDirectos: numericOrNull(raw.gastosDirectos),
+    gastosIndirectos: numericOrNull(raw.gastosIndirectos),
+    costoTotal: numericOrNull(raw.costoTotal),
+    resultado: numericOrNull(raw.resultado),
+    rentabilidadPct: numericOrNull(raw.rentabilidadPct),
+    gastosMaterialExcluido: numericOrNull(raw.gastosMaterialExcluido),
+    desglosePorMoneda: Array.isArray(raw.desglosePorMoneda) ? raw.desglosePorMoneda : [],
+    fuentes: raw.fuentes || {},
+  };
+}
+
 function dateValue(value) {
   if (!value) return null;
   if (typeof value?.toDate === "function") return value.toDate().toISOString();
@@ -271,9 +299,15 @@ export function getWorkTaskProgress(work) {
   return {total, completed};
 }
 
-export function humanizeWorkEvent(event = {}) {
+export function humanizeWorkEvent(event = {}, {includeAmounts = true} = {}) {
   const actor = event.actorSnapshot?.nombre || "Una persona del equipo";
   const detail = event.detalle || {};
+  const eventMoney = (value) => {
+    const currency = /^[A-Z]{3}$/.test(String(detail.moneda || "")) ? detail.moneda : "";
+    if (!currency) return Number(value || 0).toLocaleString("es-CL", {maximumFractionDigits: 2});
+    return new Intl.NumberFormat("es-CL", {style: "currency", currency, maximumFractionDigits: currency === "CLP" ? 0 : 2}).format(Number(value || 0));
+  };
+  const amountText = (value) => includeAmounts ? ` por ${eventMoney(value)}` : "";
   const messages = {
     trabajo_creado: `${actor} creó el trabajo.`,
     estado_cambiado: `${actor} cambió el estado de ${getWorkStatusLabel(detail.estadoAnterior)} a ${getWorkStatusLabel(detail.estadoNuevo)}.`,
@@ -287,19 +321,20 @@ export function humanizeWorkEvent(event = {}) {
     tarea_reasignada: `${actor} reasignó la tarea “${detail.tareaTitulo || "Sin título"}” de ${detail.responsableAnteriorNombre || "Sin responsable"} a ${detail.responsableNombre || "Sin responsable"}.`,
     tarea_documentacion_agregada: `${actor} agregó documentación a la tarea “${detail.tareaTitulo || "Sin título"}”.`,
     tarea_eliminada: `${actor} eliminó la tarea “${detail.tareaTitulo || "Sin título"}”.`,
-    gasto_registrado: `${actor} registró el gasto “${detail.concepto || "Sin concepto"}”.`,
-    gasto_anulado: `${actor} anuló el gasto “${detail.concepto || "Sin concepto"}”.`,
-    horas_hombre_registradas: `${actor} registró ${Number(detail.horas || 0)} HH para ${detail.tecnicoNombre || "un técnico"}.`,
-    horas_hombre_anuladas: `${actor} anuló ${Number(detail.horas || 0)} HH de “${detail.concepto || "Sin concepto"}”.`,
-    material_salida_registrada: `${actor} registró la salida de ${Number(detail.cantidad || 0)} ${detail.productoNombre || "material"}.`,
-    material_devolucion_registrada: `${actor} registró la devolución de ${Number(detail.cantidad || 0)} ${detail.productoNombre || "material"}.`,
+    gasto_registrado: `${actor} registró el gasto “${detail.concepto || "Sin concepto"}”${amountText(detail.monto)}.`,
+    gasto_anulado: `${actor} anuló el gasto “${detail.concepto || "Sin concepto"}”${amountText(detail.monto)}.`,
+    horas_hombre_registradas: `${actor} registró ${Number(detail.horas || 0)} HH para ${detail.tecnicoNombre || "un técnico"}${amountText(detail.total)}.`,
+    horas_hombre_anuladas: `${actor} anuló ${Number(detail.horas || 0)} HH de “${detail.concepto || "Sin concepto"}”${amountText(detail.total)}.`,
+    material_salida_registrada: `${actor} registró la salida de ${Number(detail.cantidad || 0)} ${detail.productoNombre || "material"}${amountText(detail.costoTotal)}.`,
+    material_devolucion_registrada: `${actor} registró la devolución de ${Number(detail.cantidad || 0)} ${detail.productoNombre || "material"}${amountText(detail.costoTotal)}, asociada a su salida original.`,
     nota_agregada: `${actor} agregó una nota.`,
     trabajo_completado: `${actor} completó el trabajo.`,
     trabajo_cancelado: `${actor} canceló el trabajo.`,
     trabajo_reabierto: `${actor} reabrió el trabajo como ${getWorkStatusLabel(detail.estadoNuevo)}.`,
     cotizacion_vinculada: `${actor} vinculó la cotización ${detail.numero || "sin número"}.`,
     cotizacion_respuesta: `La cotización ${detail.cotizacionNumero || "sin número"} fue ${detail.respuesta || "respondida"}.`,
-    venta_vinculada: `${actor} vinculó la venta ${detail.numero || "sin número"}.`,
+    venta_vinculada: `${actor} vinculó la venta ${detail.numero || "sin número"}${detail.cotizacionNumero ? ` desde ${detail.cotizacionNumero}` : ""}${amountText(detail.total)}.`,
+    venta_confirmada: `${actor} confirmó la venta ${detail.numero || "sin número"}${detail.cotizacionNumero ? ` originada en ${detail.cotizacionNumero}` : ""}${amountText(detail.total)}.`,
   };
   return messages[event.tipo] || `${actor} actualizó el trabajo.`;
 }

@@ -409,6 +409,37 @@ function writeQuoteResponseEvent(transaction, workRef, {
   });
 }
 
+function writeSaleConfirmationEvent(transaction, workRef, {
+  actor = {},
+  actorUid = "",
+  businessId,
+  currency = "",
+  quoteNumber = "",
+  saleId,
+  saleNumber = "",
+  timestamp,
+  total = 0,
+}) {
+  const eventRef = workRef.collection("historial").doc(`venta_confirmada__${saleId}`);
+  transaction.create(eventRef, eventPayload({
+    eventRef,
+    businessId,
+    workId: workRef.id,
+    type: "venta_confirmada",
+    actorUid: String(actorUid || "").trim(),
+    actor: commercialActor(actor),
+    detail: {
+      ventaId: saleId,
+      numero: String(saleNumber || "").trim(),
+      cotizacionNumero: String(quoteNumber || "").trim(),
+      total: Number(total || 0),
+      moneda: String(currency || "").trim().toUpperCase(),
+    },
+    timestamp,
+  }));
+  transaction.update(workRef, {modeloTrabajoVersion: WORK_MODEL_VERSION, actualizadoEn: timestamp});
+}
+
 async function requireWriteAccess(request, dependencies) {
   return dependencies.requireBusinessAccess(request, {db: dependencies.db, HttpsError: dependencies.HttpsError}, {roles: WRITE_ROLES});
 }
@@ -1140,4 +1171,5 @@ module.exports = {
   registrarSalidaMaterialTrabajoHandler,
   writeCommercialLink,
   writeQuoteResponseEvent,
+  writeSaleConfirmationEvent,
 };

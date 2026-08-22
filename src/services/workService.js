@@ -3,7 +3,7 @@ import {httpsCallable} from "firebase/functions";
 import {assertCloudFunctionAllowed} from "../config/firebaseEnvironment.mjs";
 import {adaptStoredQuote} from "../domain/quoteModel.mjs";
 import {adaptStoredSale} from "../domain/saleModel.mjs";
-import {adaptStoredWork, adaptWorkEvent, adaptWorkExpense, adaptWorkLabor, adaptWorkLink, adaptWorkMaterialMovement, adaptWorkNote, adaptWorkTask, adaptWorkTaskDocumentation, buildWorkMutationPayload} from "../domain/workModel.mjs";
+import {adaptStoredWork, adaptWorkBalance, adaptWorkEvent, adaptWorkExpense, adaptWorkLabor, adaptWorkLink, adaptWorkMaterialMovement, adaptWorkNote, adaptWorkTask, adaptWorkTaskDocumentation, buildWorkMutationPayload} from "../domain/workModel.mjs";
 import {db, getFirebaseFunctions} from "../firebase/firebaseConfig";
 import {inventoryMovementsCollectionPath, quoteDocPath, saleDocPath, workExpensesCollectionPath, workHistoryCollectionPath, workLaborCollectionPath, workLinksCollectionPath, workNotesCollectionPath, worksCollectionPath, workTaskDocumentationCollectionPath, workTasksCollectionPath} from "../firebase/firestorePaths";
 
@@ -50,6 +50,11 @@ export async function listarTrabajos(rawBusinessId) {
   const id = businessId(rawBusinessId);
   const snapshot = await getDocs(query(collection(db, ...worksCollectionPath(id)), where("negocioId", "==", id)));
   return snapshot.docs.map((entry) => adaptStoredWork({...entry.data(), id: entry.id})).sort((left, right) => String(right.actualizadoEn || "").localeCompare(String(left.actualizadoEn || "")));
+}
+
+export async function obtenerBalanceTrabajo(rawBusinessId, rawWorkId) {
+  const response = await call("obtenerBalanceTrabajo", {businessId: businessId(rawBusinessId), trabajoId: workId(rawWorkId)}, "consultar balances de trabajos");
+  return adaptWorkBalance(response.data);
 }
 
 export async function cargarFichaTrabajo(rawBusinessId, rawWorkId) {

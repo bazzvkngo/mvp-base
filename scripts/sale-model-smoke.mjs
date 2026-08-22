@@ -76,6 +76,7 @@ const saleItems = fs.readFileSync(new URL("../src/features/sales/SaleItemsEditor
 const salePrint = fs.readFileSync(new URL("../src/features/sales/SalePrintView.jsx", import.meta.url), "utf8");
 const rules = fs.readFileSync(new URL("../firestore.rules", import.meta.url), "utf8");
 for (const token of ["saleCreateRequests", "saleConfirmRequests", "quoteSaleConversionRequests", "movimientosInventario", "salida_venta", "stockAplicado"]) assert.match(backend, new RegExp(token));
+assert.match(backend, /writeSaleConfirmationEvent/);
 for (const name of ["ventas", "saleCounters", "saleCreateRequests", "saleConfirmRequests", "quoteSaleConversionRequests"]) assert.match(rules, new RegExp(`match /${name}/`));
 assert.match(salePage, /pendingConfirmationSaleId/);
 assert.match(salePage, /obtenerVenta\(businessId, stored\.id\)/);
