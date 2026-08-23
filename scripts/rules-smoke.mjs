@@ -658,6 +658,15 @@ async function main() {
       throw new Error("La consulta filtrada no devolvió el trabajo esperado.");
     }
     console.log("OK permitido: consulta de trabajos filtrada por negocioId");
+    const ownerTasksSnapshot = await getDocs(query(
+      collection(ownerClient.db, businessWorkPath, "tareas"),
+      where("negocioId", "==", businessId),
+      where("trabajoId", "==", "work-rules-smoke")
+    ));
+    if (ownerTasksSnapshot.size !== 1) {
+      throw new Error("OWNER no pudo listar las tareas del trabajo.");
+    }
+    console.log("OK permitido: OWNER lista tareas con la consulta usada por la ficha");
     await expectDenied("OWNER crea trabajo directamente", () =>
       setDoc(doc(ownerClient.db, `negocios/${businessId}/trabajos/direct-work`), {negocioId: businessId, titulo: "Directo"})
     );
@@ -1040,6 +1049,13 @@ async function main() {
       where("responsableUid", "==", otherUid)
     ));
     if (assignedTasks.size !== 1) throw new Error("TECNICO no pudo listar sus tareas asignadas");
+    await expectDenied("TECNICO no lista tareas sin filtro de asignación", () =>
+      getDocs(query(
+        collection(otherClient.db, businessWorkPath, "tareas"),
+        where("negocioId", "==", businessId),
+        where("trabajoId", "==", "work-rules-smoke")
+      ))
+    );
     await expectDenied("TECNICO no consulta proyectos no asignados", () => getDoc(doc(otherClient.db, unassignedWorkPath)));
     await expectDenied("TECNICO no consulta ventas", () => getDoc(doc(otherClient.db, businessSalePath)));
     await expectDenied("TECNICO no consulta finanzas", () => getDoc(doc(otherClient.db, ownerMovementPath)));
@@ -1057,6 +1073,12 @@ async function main() {
 
     await adminDb.doc(`membresias/${businessId}__${otherUid}`).update({rol: "MEMBER"});
     if (!(await getDoc(doc(otherClient.db, businessClientPath))).exists()) throw new Error("MEMBER legacy perdió su lectura histórica");
+    const memberTasksSnapshot = await getDocs(query(
+      collection(otherClient.db, businessWorkPath, "tareas"),
+      where("negocioId", "==", businessId),
+      where("trabajoId", "==", "work-rules-smoke")
+    ));
+    if (memberTasksSnapshot.size !== 1) throw new Error("MEMBER no pudo listar las tareas del trabajo");
     console.log("OK RBAC Rules: MEMBER legacy conserva lectura compatible");
 
     const automaticMovementPath =

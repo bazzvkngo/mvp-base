@@ -70,9 +70,12 @@ export async function cargarFichaTrabajo(rawBusinessId, rawWorkId, {role = "", c
   const isTechnician = String(role).toUpperCase() === "TECNICO";
   const emptySnapshot = {docs: []};
   const [tasks, notes, history, linksSnapshot, expensesSnapshot, laborSnapshot, materialMovementsSnapshot] = await Promise.all([
-    getDocs(isTechnician
-      ? query(collection(db, ...workTasksCollectionPath(id, selectedWorkId)), where("negocioId", "==", id), where("trabajoId", "==", selectedWorkId), where("responsableUid", "==", currentUserUid))
-      : collection(db, ...workTasksCollectionPath(id, selectedWorkId))),
+    getDocs(query(
+      collection(db, ...workTasksCollectionPath(id, selectedWorkId)),
+      where("negocioId", "==", id),
+      where("trabajoId", "==", selectedWorkId),
+      ...(isTechnician ? [where("responsableUid", "==", currentUserUid)] : []),
+    )),
     getDocs(query(collection(db, ...workNotesCollectionPath(id, selectedWorkId)), where("negocioId", "==", id), where("trabajoId", "==", selectedWorkId))),
     getDocs(query(collection(db, ...workHistoryCollectionPath(id, selectedWorkId)), where("negocioId", "==", id), where("trabajoId", "==", selectedWorkId))),
     isTechnician ? Promise.resolve(emptySnapshot) : getDocs(query(collection(db, ...workLinksCollectionPath(id, selectedWorkId)), where("negocioId", "==", id), where("trabajoId", "==", selectedWorkId))),
