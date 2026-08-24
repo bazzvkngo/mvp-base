@@ -112,7 +112,7 @@ function clientPayload({body, name, email}) {
     tipoCliente: "empresa",
     rut: rutFromBody(body),
     nombreRazonSocial: name,
-    giro: "Servicios profesionales",
+    giro: "Ingeniería y consultoría técnica",
     email,
     telefono: "+56 9 1234 5678",
     direccion: "Av. Principal 123",
@@ -218,13 +218,13 @@ const adminDb = getAdminFirestore(adminApp);
 try {
   const ownerBusiness = await callable(owner, "createFirstBusiness")({
     nombreComercial: "Empresa cotizaciones local",
-    rubroCodigo: "SERVICIOS_PROFESIONALES",
+    rubroCodigo: "INGENIERIA_CONSULTORIA",
     regionCodigo: "13",
     requestId: `business-owner-${RUN_ID}`,
   });
   const outsiderBusiness = await callable(outsider, "createFirstBusiness")({
     nombreComercial: "Empresa cotizaciones externa",
-    rubroCodigo: "SERVICIOS_PROFESIONALES",
+    rubroCodigo: "INGENIERIA_CONSULTORIA",
     regionCodigo: "13",
     requestId: `business-outsider-${RUN_ID}`,
   });

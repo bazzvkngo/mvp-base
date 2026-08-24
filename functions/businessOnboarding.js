@@ -87,7 +87,9 @@ function validateBusinessCategory(
   if (
     category &&
     category.active !== false &&
-    (category.selectable !== false || preservesExistingCode)
+    ((category.catalogVersion === catalog.businessCategoryCatalogVersion &&
+      category.selectable !== false) ||
+      preservesExistingCode)
   ) {
     if (category.code !== "OTRO") {
       return {
@@ -109,7 +111,7 @@ function validateBusinessCategory(
     if (customName.length < 2) {
       throw new HttpsError(
         "invalid-argument",
-        "Describe la categoría de tu negocio."
+        "Describe el rubro de tu negocio."
       );
     }
     return {

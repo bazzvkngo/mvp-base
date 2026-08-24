@@ -2,14 +2,14 @@ import React from "react";
 import { CHILE_REGIONS } from "../domain/businessCatalog";
 import BusinessCategoryPicker from "./BusinessCategoryPicker";
 
-function FieldMessage({ error, id }) {
+function FieldMessage({ error, help = "", id }) {
   return (
     <div className="quick-business-field__message">
-      {error && (
+      {error ? (
         <p id={id} className="quick-business-field__error" role="alert">
           {error}
         </p>
-      )}
+      ) : help ? <p id={id} className="quick-business-field__hint">{help}</p> : null}
     </div>
   );
 }
@@ -79,7 +79,7 @@ function QuickBusinessFields({
                 }
                 onTouched={(patch) => onBlur(field, patch)}
               />
-              <FieldMessage id={messageId} error={errors.rubroCodigo} />
+              <FieldMessage id={messageId} error={errors.rubroCodigo} help="Selecciona la actividad que mejor representa los servicios de tu empresa." />
             </div>
           );
         }

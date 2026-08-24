@@ -56,7 +56,7 @@ assert.match(drawer, /Crear negocio/);
 assert.deepEqual(
   normalizeQuickBusinessPayload({
     nombreComercial: "  Mauricio   SPA ",
-    rubroCodigo: "TECNOLOGIA_SOFTWARE",
+    rubroCodigo: "SOFTWARE_SOLUCIONES_DIGITALES",
     rubroOtro: "",
     regionCodigo: "01",
     comunaCodigo: "",
@@ -67,21 +67,20 @@ assert.deepEqual(
   }),
   {
     nombreComercial: "Mauricio SPA",
-    rubroCodigo: "TECNOLOGIA_SOFTWARE",
+    rubroCodigo: "SOFTWARE_SOLUCIONES_DIGITALES",
     regionCodigo: "01",
   }
 );
 assert.deepEqual(
   normalizeQuickBusinessPayload({
     nombreComercial: "Otro negocio",
-    rubroCodigo: "OTRO",
-    rubroOtro: "  Reparación   de drones  ",
+    rubroCodigo: "OTRO_SERVICIO_PROYECTOS",
+    rubroOtro: "",
     regionCodigo: "01",
   }),
   {
     nombreComercial: "Otro negocio",
-    rubroCodigo: "OTRO",
-    rubroOtro: "Reparación de drones",
+    rubroCodigo: "OTRO_SERVICIO_PROYECTOS",
     regionCodigo: "01",
   }
 );

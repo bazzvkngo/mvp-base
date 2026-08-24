@@ -7,15 +7,19 @@ export function normalizeCategorySearch(value) {
     .replace(/\s+/g, " ");
 }
 
-export function isSelectableBusinessCategory(category) {
-  return Boolean(category?.active && category?.selectable !== false);
+export function isSelectableBusinessCategory(category, catalogVersion = 1) {
+  return Boolean(
+    category?.active &&
+      category?.catalogVersion === catalogVersion &&
+      category?.selectable !== false
+  );
 }
 
-export function filterBusinessCategories(categories, query) {
+export function filterBusinessCategories(categories, query, catalogVersion = 1) {
   const normalizedQuery = normalizeCategorySearch(query);
 
   return categories.filter((category) => {
-    if (!isSelectableBusinessCategory(category)) return false;
+    if (!isSelectableBusinessCategory(category, catalogVersion)) return false;
     if (!normalizedQuery) return true;
 
     const searchableText = normalizeCategorySearch(

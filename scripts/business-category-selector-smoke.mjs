@@ -27,17 +27,20 @@ const [picker, quickFields, company, dialog] = await Promise.all([
 
 assert.equal(normalizeCategorySearch("  TECNOLOGÍA  "), "tecnologia");
 assert.equal(normalizeCategorySearch("Cafetería"), "cafeteria");
+const visibleCategories = filterBusinessCategories(catalog.businessCategories, "");
+assert.equal(visibleCategories.length, 11);
+assert.equal(visibleCategories.some(({ code }) => code === "RESTAURANTE"), false);
 
 const technologyResults = filterBusinessCategories(
   catalog.businessCategories,
   "PROGRAMACIÓN"
 );
-assert.ok(technologyResults.some(({ code }) => code === "TECNOLOGIA_SOFTWARE"));
+assert.ok(technologyResults.some(({ code }) => code === "SOFTWARE_SOLUCIONES_DIGITALES"));
 const computingResults = filterBusinessCategories(
   catalog.businessCategories,
   "computacion"
 );
-assert.ok(computingResults.some(({ code }) => code === "ELECTRONICA_INFORMATICA"));
+assert.ok(computingResults.some(({ code }) => code === "TECNOLOGIA_INFORMATICA"));
 assert.equal(
   filterBusinessCategories(catalog.businessCategories, "venta al detalle").some(
     ({ code }) => code === "COMERCIO_MINORISTA"
@@ -47,16 +50,20 @@ assert.equal(
 
 assert.match(quickFields, /<BusinessCategoryPicker/);
 assert.match(company, /<BusinessCategoryPicker/);
+assert.match(quickFields, /Rubro principal/);
+assert.match(company, /Rubro principal/);
+assert.match(quickFields, /Selecciona la actividad que mejor representa los servicios de tu empresa\./);
+assert.match(company, /Selecciona la actividad que mejor representa los servicios de tu empresa\./);
 assert.doesNotMatch(quickFields, /BUSINESS_CATEGORIES\.filter/);
 assert.doesNotMatch(company, /BUSINESS_CATEGORIES\.filter/);
-assert.match(picker, /title="Selecciona una categoría"/);
-assert.match(picker, /placeholder="Buscar categoría"/);
+assert.match(picker, /title="Selecciona un rubro"/);
+assert.match(picker, /placeholder="Buscar rubro"/);
 assert.match(picker, /role="radiogroup"/);
 assert.match(picker, /role="radio"/);
 assert.match(picker, /draftCode/);
 assert.match(picker, /confirmSelection/);
 assert.match(picker, /draftCode === "OTRO"/);
-assert.match(picker, /Describe la categoría de tu negocio/);
+assert.match(picker, /Describe el rubro de tu negocio/);
 assert.match(picker, /ArrowDown/);
 assert.match(dialog, /event\.key === "Escape"/);
 assert.match(dialog, /openDialogStack\.at\(-1\)/);

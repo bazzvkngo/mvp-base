@@ -235,9 +235,9 @@ function BusinessInformationSection({ businessId, canEdit, onBusinessUpdated }) 
   const fieldErrors = React.useMemo(() => {
     const errors = {};
     if (!form.nombreComercial.trim()) errors.nombreComercial = "Ingresa el nombre comercial.";
-    if (!form.rubroCodigo && !form.rubroNombre) errors.rubroCodigo = "Selecciona una categoría.";
+    if (!form.rubroCodigo && !form.rubroNombre) errors.rubroCodigo = "Selecciona un rubro.";
     if (form.rubroCodigo === "OTRO" && form.rubroOtro.trim().length < 2) {
-      errors.rubroCodigo = "Describe la categoría del negocio.";
+      errors.rubroCodigo = "Describe el rubro del negocio.";
     }
     if (form.paisCodigo === "CL" && !getRegionByCode(form.regionCodigo)) errors.regionCodigo = "Selecciona una región.";
     if (form.paisCodigo !== "CL" && !form.regionEstado.trim()) errors.regionEstado = "Ingresa la región o estado.";
@@ -471,7 +471,7 @@ function BusinessInformationSection({ businessId, canEdit, onBusinessUpdated }) 
                 <input name="nombreComercial" value={form.nombreComercial} onChange={change} onBlur={() => touch("nombreComercial")} aria-invalid={Boolean(touched.nombreComercial && fieldErrors.nombreComercial)} />
               </SettingsField>
               <div className="settings-field">
-                <span className="settings-field__label">Categoría del negocio <span aria-hidden="true">*</span></span>
+                <span className="settings-field__label">Rubro principal <span aria-hidden="true">*</span></span>
                 <BusinessCategoryPicker
                   id="company-category"
                   value={form.rubroCodigo}
@@ -489,7 +489,7 @@ function BusinessInformationSection({ businessId, canEdit, onBusinessUpdated }) 
                 <span className="settings-field__support">
                   {touched.rubroCodigo && fieldErrors.rubroCodigo ? (
                     <span id="company-category-error" className="settings-field__error">{fieldErrors.rubroCodigo}</span>
-                  ) : "\u00a0"}
+                  ) : "Selecciona la actividad que mejor representa los servicios de tu empresa."}
                 </span>
               </div>
               <SettingsField label="Razón social" optional>

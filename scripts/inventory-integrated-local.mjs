@@ -79,7 +79,7 @@ async function main() {
     const invoke = (name, data = {}) => httpsCallable(functions, name)(data);
     const businessResponse = await invoke("createFirstBusiness", {
       nombreComercial: "Inventario integrado",
-      rubroCodigo: "SERVICIOS_PROFESIONALES",
+      rubroCodigo: "INGENIERIA_CONSULTORIA",
       regionCodigo: "13",
       requestId: `business_inventory_${uid}`,
     });

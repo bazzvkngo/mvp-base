@@ -124,7 +124,14 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
     setDraft((current) => ({...current, responsableUid, participanteUids: current.participanteUids.filter((uid) => uid !== responsableUid)}));
     setFieldErrors((current) => ({...current, responsableUid: ""}));
   };
-  const openNew = () => { setEditingWork(null); setDraft(buildQuickWorkCreationPayload({...EMPTY_WORK}, chileToday())); setFieldErrors({}); createRequestRef.current = createWorkRequestId(); setFormOpen(true); };
+  const openNew = () => {
+    const currentMember = canManage ? members.find((member) => member.uid === currentUserUid && member.estado === "activo") : null;
+    setEditingWork(null);
+    setDraft(buildQuickWorkCreationPayload({...EMPTY_WORK, responsableUid: currentMember?.uid || ""}, chileToday()));
+    setFieldErrors({});
+    createRequestRef.current = createWorkRequestId();
+    setFormOpen(true);
+  };
   const openEdit = (work) => { setSelectedWork(null); setEditingWork(work); setDraft({titulo: work.titulo, descripcion: work.descripcion, clienteId: work.clienteId, responsableUid: work.responsableUid, participanteUids: work.participanteUids, estado: work.estado, prioridad: work.prioridad, fechaInicio: work.fechaInicio, fechaPrevista: work.fechaPrevista}); setFieldErrors({}); setFormOpen(true); };
   const selectClient = (event) => {
     if (event.target.value === NEW_CLIENT_VALUE) {
@@ -156,6 +163,16 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
   };
 
   const addNote = (event) => { event.preventDefault(); const value = noteText.trim(); if (!value) return; runDetailAction("note-new", () => agregarNotaTrabajo(businessId, selectedWork.id, value)).then((success) => {if (success) setNoteText("");}); };
+  const openNewQuote = () => {
+    if (!selectedWork) return;
+    navigate("/cotizaciones/nueva", {state: {projectContext: {
+      trabajoId: selectedWork.id,
+      trabajoNumero: selectedWork.numero,
+      trabajoTitulo: selectedWork.titulo,
+      clienteId: selectedWork.clienteId,
+      clienteSnapshot: selectedWork.clienteSnapshot,
+    }}});
+  };
   const terminal = ["completado", "cancelado"].includes(selectedWork?.estado);
 
   return <main className="erp-page works-page">
@@ -167,9 +184,76 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
       {loading ? <div className="erp-empty-state">Cargando trabajos...</div> : view === "board" ? <WorkBoard works={visibleWorks} onOpen={openDetail} /> : <WorkList works={visibleWorks} canManage={canManage} onEdit={openEdit} onOpen={openDetail} />}
     </section>
 
-    <ResponsiveDialog className="works-form-dialog" open={formOpen} onClose={() => !saving && setFormOpen(false)} size="large" eyebrow="Proyectos y trabajos" title={editingWork ? `Editar ${editingWork.numero}` : "Nuevo trabajo"} description="Registra la información y planificación operativa." footer={<><Button type="button" variant="secondary" disabled={saving} onClick={() => setFormOpen(false)}>Cancelar</Button><Button type="submit" form="work-form" disabled={saving}>{saving ? "Guardando..." : editingWork ? "Guardar cambios" : "Crear trabajo"}</Button></>}><form id="work-form" className="works-form" onSubmit={save}><FormSection title="Información"><div className="works-form-grid"><Field className="works-field--wide" label="Título" required error={fieldErrors.titulo}><input autoFocus className="erp-control" maxLength="180" value={draft.titulo} onChange={(event) => updateDraft("titulo", event.target.value)} /></Field><Field className="works-field--wide" label="Descripción" error={fieldErrors.descripcion}><textarea className="erp-control" rows="3" maxLength="5000" value={draft.descripcion} onChange={(event) => updateDraft("descripcion", event.target.value)} /></Field><Field className="works-field--wide" label="Cliente"><select className="erp-control" value={draft.clienteId} onChange={selectClient}><option value="">Sin cliente</option>{clients.map((client) => <option key={client.clienteId} value={client.clienteId}>{client.nombreRazonSocial} · {client.rut}</option>)}<option value={NEW_CLIENT_VALUE}>+ Nuevo cliente</option></select></Field></div></FormSection><FormSection title="Planificación"><div className="works-form-grid"><Field label="Responsable principal"><select className="erp-control" value={draft.responsableUid} onChange={selectPrincipal}><option value="">Sin responsable principal</option>{members.map((member) => <option key={member.uid} value={member.uid}>{editingWork ? getWorkMemberIdentity(member) : getWorkMemberOptionLabel(member, currentUserUid)}</option>)}</select></Field><Field label="Prioridad" required error={fieldErrors.prioridad}><select className="erp-control" value={draft.prioridad} onChange={(event) => updateDraft("prioridad", event.target.value)}>{WORK_PRIORITIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field><Field label="Fecha prevista" error={fieldErrors.fechaPrevista}><input className="erp-control" type="date" value={draft.fechaPrevista} onChange={(event) => updateDraft("fechaPrevista", event.target.value)} /></Field>{editingWork && <><Field label="Estado" required error={fieldErrors.estado}><select className="erp-control" value={draft.estado} onChange={(event) => updateDraft("estado", event.target.value)}>{WORK_STATUSES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field><Field label="Fecha de inicio" error={fieldErrors.fechaInicio}><input className="erp-control" type="date" value={draft.fechaInicio} onChange={(event) => updateDraft("fechaInicio", event.target.value)} /></Field></>}{(editingWork || hasAdditionalMembers) && <fieldset className="works-participants works-field--wide"><legend>Equipo de trabajo</legend><div>{members.filter((member) => member.uid !== draft.responsableUid).map((member) => <label key={member.uid}><input type="checkbox" checked={draft.participanteUids.includes(member.uid)} onChange={(event) => updateDraft("participanteUids", event.target.checked ? [...draft.participanteUids, member.uid] : draft.participanteUids.filter((uid) => uid !== member.uid))} />{getWorkMemberIdentity(member)}</label>)}{!members.length && <span>No hay miembros activos disponibles.</span>}</div></fieldset>}</div></FormSection></form></ResponsiveDialog>
+    <ResponsiveDialog className="works-form-dialog" open={formOpen} onClose={() => !saving && setFormOpen(false)} size="large" eyebrow="Proyectos y trabajos" title={editingWork ? `Editar ${editingWork.numero}` : "Nuevo trabajo"} description="Registra los datos principales para iniciar el trabajo." footer={<><Button type="button" variant="secondary" disabled={saving} onClick={() => setFormOpen(false)}>Cancelar</Button><Button type="submit" form="work-form" disabled={saving}>{saving ? "Guardando..." : editingWork ? "Guardar cambios" : "Crear trabajo"}</Button></>}><form id="work-form" className="works-form" onSubmit={save}><FormSection title="Información"><div className="works-form-grid"><Field className="works-field--wide" label="Nombre del trabajo" required error={fieldErrors.titulo}><input autoFocus className="erp-control" maxLength="180" placeholder="Escribe un nombre breve para identificar el trabajo" value={draft.titulo} onChange={(event) => updateDraft("titulo", event.target.value)} /></Field><Field className="works-field--wide" label="Descripción" optional error={fieldErrors.descripcion}><textarea className="erp-control" rows="2" maxLength="5000" placeholder="Describe el requerimiento o lo informado por el cliente" value={draft.descripcion} onChange={(event) => updateDraft("descripcion", event.target.value)} /></Field><Field className="works-field--wide" label="Cliente" optional><select className="erp-control" value={draft.clienteId} onChange={selectClient}><option value="">Sin cliente</option>{clients.map((client) => <option key={client.clienteId} value={client.clienteId}>{client.nombreRazonSocial} · {client.rut}</option>)}<option value={NEW_CLIENT_VALUE}>+ Nuevo cliente</option></select></Field></div></FormSection><FormSection title="Planificación"><div className="works-form-grid"><Field label="Responsable principal" optional><select className="erp-control" value={draft.responsableUid} onChange={selectPrincipal}><option value="">Sin responsable principal</option>{members.map((member) => <option key={member.uid} value={member.uid}>{editingWork ? getWorkMemberIdentity(member) : getWorkMemberOptionLabel(member, currentUserUid)}</option>)}</select></Field><Field label="Prioridad" required error={fieldErrors.prioridad}><select className="erp-control" value={draft.prioridad} onChange={(event) => updateDraft("prioridad", event.target.value)}>{WORK_PRIORITIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field><Field label="Fecha prevista" optional error={fieldErrors.fechaPrevista}><input className="erp-control" type="date" value={draft.fechaPrevista} onChange={(event) => updateDraft("fechaPrevista", event.target.value)} /></Field>{editingWork && <><Field label="Estado" required error={fieldErrors.estado}><select className="erp-control" value={draft.estado} onChange={(event) => updateDraft("estado", event.target.value)}>{WORK_STATUSES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field><Field label="Fecha de inicio" error={fieldErrors.fechaInicio}><input className="erp-control" type="date" value={draft.fechaInicio} onChange={(event) => updateDraft("fechaInicio", event.target.value)} /></Field></>}{(editingWork || hasAdditionalMembers) && <fieldset className="works-participants works-field--wide"><legend>Equipo de trabajo</legend><div>{members.filter((member) => member.uid !== draft.responsableUid).map((member) => <label key={member.uid}><input type="checkbox" checked={draft.participanteUids.includes(member.uid)} onChange={(event) => updateDraft("participanteUids", event.target.checked ? [...draft.participanteUids, member.uid] : draft.participanteUids.filter((uid) => uid !== member.uid))} />{getWorkMemberIdentity(member)}</label>)}{!members.length && <span>No hay miembros activos disponibles.</span>}</div></fieldset>}</div></FormSection>{!editingWork && <p className="works-form-automatic-note">El número TRB, estado Pendiente y fecha de ingreso se asignarán automáticamente.</p>}</form></ResponsiveDialog>
 
-    <ResponsiveDialog className="works-detail-dialog" open={Boolean(selectedWork)} onClose={() => setSelectedWork(null)} size="large" eyebrow={selectedWork?.numero} title={selectedWork?.titulo} description="Ficha operativa e historial del trabajo."><>{selectedWork && <div className="works-detail"><div className="works-detail-actions"><Status value={selectedWork.estado} />{canManage && <><Button type="button" variant="secondary" icon={Pencil} onClick={() => openEdit(selectedWork)}>Editar</Button><label><span className="sr-only">Cambiar estado</span><select className="erp-control" disabled={Boolean(processing)} value={selectedWork.estado} onChange={(event) => { const next = event.target.value; if (next === "cancelado") setCancelWork(selectedWork); else runDetailAction("state", () => cambiarEstadoTrabajo(businessId, selectedWork.id, next)); }}>{WORK_STATUSES.filter((item) => item.value !== "cancelado").map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}{selectedWork.estado === "cancelado" && <option value="cancelado">Cancelado</option>}</select></label>{selectedWork.estado !== "cancelado" && <Button type="button" variant="ghost-danger" onClick={() => setCancelWork(selectedWork)}>Cancelar trabajo</Button>}</>}</div><WorkSummary work={selectedWork} /><section className="works-detail-section"><h3>Descripción</h3><p>{selectedWork.descripcion || "Sin descripción registrada."}</p></section><CommercialFile canManage={canManage} detail={detail} loading={detailLoading} navigate={navigate} work={selectedWork} />{canManage && <WorkBalanceSection balance={detail.balance} loading={detailLoading} />}<TaskSection key={selectedWork.id} businessId={businessId} canManage={canManage} currentUserUid={currentUserUid} loading={detailLoading} members={members} processing={processing} role={role} runAction={runDetailAction} tasks={detail.tareas} terminal={terminal} workId={selectedWork.id} /><FinancialSection key={`costs-${selectedWork.id}`} businessId={businessId} canManage={canManage} currency={selectedWork.moneda || currencyCode || "CLP"} currentUserUid={currentUserUid} expenses={detail.gastos} labor={detail.horasHombre} loading={detailLoading} members={members} processing={processing} role={role} runAction={runDetailAction} workId={selectedWork.id} /><MaterialsSection key={`materials-${selectedWork.id}`} businessId={businessId} canManage={canManage} currency={selectedWork.moneda || currencyCode || "CLP"} currentUserUid={currentUserUid} loading={detailLoading} movements={detail.materiales} processing={processing} products={inventoryProducts} role={role} runAction={runDetailAction} workId={selectedWork.id} /><section className="works-detail-section"><h3>Notas</h3>{canManage && <form className="works-note-form" onSubmit={addNote}><textarea className="erp-control" rows="2" maxLength="4000" value={noteText} onChange={(event) => setNoteText(event.target.value)} placeholder="Agrega una actualización o antecedente relevante." /><Button type="submit" disabled={processing === "note-new"}>Agregar nota</Button></form>}<div className="works-notes">{detail.notas.map((note) => <article key={note.id}><header><strong>{note.autorSnapshot?.nombre || "Persona del equipo"}</strong><time>{dateLabel(note.creadoEn, true)}</time></header><p>{note.texto}</p></article>)}{!detail.notas.length && <p className="works-empty-copy">Aún no hay notas.</p>}</div></section><section className="works-detail-section"><h3>Historial del trabajo</h3><ol className="works-timeline">{detail.historial.map((event) => <li key={event.id}><time>{dateLabel(event.fecha, true)}</time><p>{humanizeWorkEvent(event, {includeAmounts: canManage})}</p>{event.tipo === "nota_agregada" && event.detalle?.texto && <blockquote>{event.detalle.texto}</blockquote>}</li>)}</ol></section></div>}</></ResponsiveDialog>
+    <ResponsiveDialog className="works-detail-dialog" open={Boolean(selectedWork)} onClose={() => setSelectedWork(null)} size="large" eyebrow={selectedWork?.numero} title={selectedWork?.titulo} description="Ficha operativa e historial del trabajo.">
+      <>
+        {selectedWork && <div className="works-detail">
+          <div className="works-detail-header">
+            <div className="works-detail-actions">
+              <Status value={selectedWork.estado} />
+              {canManage && <>
+                <Button type="button" variant="secondary" icon={Pencil} onClick={() => openEdit(selectedWork)}>Editar</Button>
+                <label className="works-status-control">
+                  <span className="sr-only">Cambiar estado</span>
+                  <select className="erp-control" disabled={Boolean(processing)} value={selectedWork.estado} onChange={(event) => {
+                    const next = event.target.value;
+                    if (next === "cancelado") setCancelWork(selectedWork);
+                    else runDetailAction("state", () => cambiarEstadoTrabajo(businessId, selectedWork.id, next));
+                  }}>
+                    {WORK_STATUSES.filter((item) => item.value !== "cancelado").map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                    {selectedWork.estado === "cancelado" && <option value="cancelado">Cancelado</option>}
+                  </select>
+                </label>
+                <Button type="button" icon={Plus} onClick={openNewQuote}>Nueva cotización</Button>
+                {selectedWork.estado !== "cancelado" && <Button type="button" variant="ghost-danger" onClick={() => setCancelWork(selectedWork)}>Cancelar trabajo</Button>}
+              </>}
+            </div>
+            <WorkSummary work={selectedWork} />
+          </div>
+
+          <section className="works-detail-section works-overview">
+            <h3>Resumen</h3>
+            <div className="works-overview-description">
+              <h4>Descripción</h4>
+              <p>{selectedWork.descripcion || "Sin descripción registrada."}</p>
+            </div>
+            <dl className="works-overview-meta">
+              <div><dt>Equipo de trabajo</dt><dd>{selectedWork.participantesSnapshot?.map((person) => person.nombre).join(", ") || "Sin equipo de trabajo"}</dd></div>
+              <div><dt>Fecha de ingreso</dt><dd>{dateLabel(selectedWork.fechaInicio)}</dd></div>
+              {selectedWork.fechaCompletado && <div><dt>Completado</dt><dd>{dateLabel(selectedWork.fechaCompletado, true)}</dd></div>}
+            </dl>
+            <CommercialFile canManage={canManage} detail={detail} loading={detailLoading} navigate={navigate} />
+          </section>
+
+          <TaskSection key={selectedWork.id} businessId={businessId} canManage={canManage} currentUserUid={currentUserUid} loading={detailLoading} members={members} processing={processing} role={role} runAction={runDetailAction} tasks={detail.tareas} terminal={terminal} workId={selectedWork.id} />
+
+          <section className="works-detail-section works-notes-section">
+            <h3>Notas</h3>
+            {canManage && <form className="works-note-form" onSubmit={addNote}>
+              <textarea className="erp-control" rows="2" maxLength="4000" value={noteText} onChange={(event) => setNoteText(event.target.value)} placeholder="Agrega una actualización o antecedente relevante." />
+              <Button type="submit" disabled={processing === "note-new"}>Agregar nota</Button>
+            </form>}
+            <div className="works-notes">
+              {detail.notas.map((note) => <article key={note.id}><header><strong>{note.autorSnapshot?.nombre || "Persona del equipo"}</strong><time>{dateLabel(note.creadoEn, true)}</time></header><p>{note.texto}</p></article>)}
+              {!detail.notas.length && <p className="works-empty-copy">Aún no hay notas.</p>}
+            </div>
+          </section>
+
+          <DetailDisclosure key={`resources-${selectedWork.id}`} title="Recursos y costos" summary="Materiales, gastos, horas hombre y balance">
+            <div className="works-resources">
+              <MaterialsSection key={`materials-${selectedWork.id}`} businessId={businessId} canManage={canManage} currency={selectedWork.moneda || currencyCode || "CLP"} currentUserUid={currentUserUid} loading={detailLoading} movements={detail.materiales} processing={processing} products={inventoryProducts} role={role} runAction={runDetailAction} workId={selectedWork.id} />
+              <FinancialSection key={`costs-${selectedWork.id}`} businessId={businessId} canManage={canManage} currency={selectedWork.moneda || currencyCode || "CLP"} currentUserUid={currentUserUid} expenses={detail.gastos} labor={detail.horasHombre} loading={detailLoading} members={members} processing={processing} role={role} runAction={runDetailAction} workId={selectedWork.id} />
+              {canManage && <WorkBalanceSection balance={detail.balance} loading={detailLoading} />}
+            </div>
+          </DetailDisclosure>
+
+          <DetailDisclosure key={`history-${selectedWork.id}`} title="Historial del trabajo" summary={`${detail.historial.length} evento${detail.historial.length === 1 ? "" : "s"}`}>
+            {detailLoading ? <p className="works-empty-copy">Cargando historial...</p> : <ol className="works-timeline">{detail.historial.map((event) => <li key={event.id}><time>{dateLabel(event.fecha, true)}</time><p>{humanizeWorkEvent(event, {includeAmounts: canManage})}</p>{event.tipo === "nota_agregada" && event.detalle?.texto && <blockquote>{event.detalle.texto}</blockquote>}</li>)}</ol>}
+          </DetailDisclosure>
+        </div>}
+      </>
+    </ResponsiveDialog>
 
     <ResponsiveDialog open={Boolean(cancelWork)} onClose={() => !processing && setCancelWork(null)} size="small" eyebrow="Proyectos y trabajos" title="Cancelar trabajo" description="El registro y su historial se conservarán." footer={<><Button type="button" variant="secondary" disabled={Boolean(processing)} onClick={() => setCancelWork(null)}>Volver</Button><Button type="button" variant="danger" disabled={Boolean(processing)} onClick={() => runDetailAction("cancel", () => cambiarEstadoTrabajo(businessId, cancelWork.id, "cancelado")).then(() => setCancelWork(null))}>{processing ? "Cancelando..." : "Cancelar trabajo"}</Button></>}><p>¿Confirmas que deseas cancelar {cancelWork?.numero}?</p></ResponsiveDialog>
   </main>;
@@ -276,7 +360,7 @@ function FinancialSection({businessId, canManage, currency, currentUserUid, expe
     <p className="works-financial-note">Los registros no se editan ni eliminan: para corregir, anula el original y crea el reemplazo.</p>
     <div className="works-financial-columns">
       <section><header><div><h4>Gastos</h4><strong>{formatMoney(expenseTotal, currency)}</strong></div><small>Directos e indirectos, sin balance final.</small></header>
-        <dl className="works-cost-subtotals"><div><dt><strong>Costos directos</strong></dt><dd>{formatMoney(directExpenseTotal, currency)}</dd></div><div><dt><strong>Costos indirectos</strong></dt><dd>{formatMoney(indirectExpenseTotal, currency)}</dd></div>{WORK_EXPENSE_CATEGORIES.map((category) => <div key={category.value}><dt>{category.label}</dt><dd>{formatMoney(activeExpenses.filter((entry) => entry.categoria === category.value).reduce((sum, entry) => sum + entry.monto, 0), currency)}</dd></div>)}</dl>
+        {activeExpenses.length > 0 && <dl className="works-cost-subtotals"><div><dt><strong>Costos directos</strong></dt><dd>{formatMoney(directExpenseTotal, currency)}</dd></div><div><dt><strong>Costos indirectos</strong></dt><dd>{formatMoney(indirectExpenseTotal, currency)}</dd></div>{WORK_EXPENSE_CATEGORIES.map((category) => <div key={category.value}><dt>{category.label}</dt><dd>{formatMoney(activeExpenses.filter((entry) => entry.categoria === category.value).reduce((sum, entry) => sum + entry.monto, 0), currency)}</dd></div>)}</dl>}
         {canRegister && <form className="works-cost-form" onSubmit={saveExpense}>
           <input className="erp-control" maxLength="240" required value={expenseDraft.concepto} onChange={(event) => setExpenseDraft((current) => ({...current, concepto: event.target.value}))} placeholder="Concepto del gasto" />
           <input className="erp-control" type="number" min="0.01" max="999999999999.99" step="0.01" required value={expenseDraft.monto} onChange={(event) => setExpenseDraft((current) => ({...current, monto: event.target.value}))} placeholder="Monto" />
@@ -286,7 +370,7 @@ function FinancialSection({businessId, canManage, currency, currentUserUid, expe
           <textarea className="erp-control" maxLength="4000" rows="2" value={expenseDraft.observacion} onChange={(event) => setExpenseDraft((current) => ({...current, observacion: event.target.value}))} placeholder="Observación" />
           <Button type="submit" disabled={Boolean(processing)}>Registrar gasto</Button>
         </form>}
-        {loading ? <p>Cargando gastos...</p> : <div className="works-cost-list">{visibleExpenses.map((entry) => { const key = `expense-${entry.id}`; return <article key={entry.id} className={entry.estado === "anulado" ? "is-annulled" : ""}><div><strong>{entry.concepto}</strong><span>{formatMoney(entry.monto, entry.moneda || currency)} · {WORK_EXPENSE_CATEGORIES.find((item) => item.value === entry.categoria)?.label || entry.categoria} · {entry.clasificacionCosto === "INDIRECTO" ? "Indirecto" : "Directo"}</span><small>{dateLabel(entry.fecha)} · {entry.responsableDelGastoSnapshot?.nombre || entry.registradoPorSnapshot?.nombre || "Equipo"}</small>{entry.observacion && <p>{entry.observacion}</p>}{entry.estado === "anulado" && <small>Anulado: {entry.motivoAnulacion}</small>}</div>{canManage && entry.estado !== "anulado" && <form className="works-annul-form" onSubmit={(event) => annul(event, "expense", entry.id)}><input className="erp-control" maxLength="1000" required value={annulReasons[key] || ""} onChange={(event) => setAnnulReasons((current) => ({...current, [key]: event.target.value}))} placeholder="Motivo de anulación" /><Button type="submit" variant="ghost-danger" disabled={Boolean(processing)}>Anular</Button></form>}</article>;})}{!visibleExpenses.length && <p className="works-empty-copy">Sin gastos propios registrados.</p>}</div>}
+        {loading ? <p>Cargando gastos...</p> : <div className="works-cost-list">{visibleExpenses.map((entry) => { const key = `expense-${entry.id}`; return <article key={entry.id} className={entry.estado === "anulado" ? "is-annulled" : ""}><div><strong>{entry.concepto}</strong><span>{formatMoney(entry.monto, entry.moneda || currency)} · {WORK_EXPENSE_CATEGORIES.find((item) => item.value === entry.categoria)?.label || entry.categoria} · {entry.clasificacionCosto === "INDIRECTO" ? "Indirecto" : "Directo"}</span><small>{dateLabel(entry.fecha)} · {entry.responsableDelGastoSnapshot?.nombre || entry.registradoPorSnapshot?.nombre || "Equipo"}</small>{entry.observacion && <p>{entry.observacion}</p>}{entry.estado === "anulado" && <small>Anulado: {entry.motivoAnulacion}</small>}</div>{canManage && entry.estado !== "anulado" && <form className="works-annul-form" onSubmit={(event) => annul(event, "expense", entry.id)}><input className="erp-control" maxLength="1000" required value={annulReasons[key] || ""} onChange={(event) => setAnnulReasons((current) => ({...current, [key]: event.target.value}))} placeholder="Motivo de anulación" /><Button type="submit" variant="ghost-danger" disabled={Boolean(processing)}>Anular</Button></form>}</article>;})}{!visibleExpenses.length && <p className="works-empty-copy">Aún no se han registrado gastos.</p>}</div>}
       </section>
       <section><header><div><h4>Horas hombre</h4><strong>{laborHours} HH · {formatMoney(laborTotal, currency)}</strong></div><small>El total se calcula en backend.</small></header>
         {canRegister && <form className="works-cost-form" onSubmit={saveLabor}>
@@ -297,7 +381,7 @@ function FinancialSection({businessId, canManage, currency, currentUserUid, expe
           <input className="erp-control" type="date" required value={laborDraft.fecha} onChange={(event) => setLaborDraft((current) => ({...current, fecha: event.target.value}))} />
           <Button type="submit" disabled={Boolean(processing)}>Registrar HH</Button>
         </form>}
-        {loading ? <p>Cargando HH...</p> : <div className="works-cost-list">{visibleLabor.map((entry) => { const key = `labor-${entry.id}`; return <article key={entry.id} className={entry.estado === "anulado" ? "is-annulled" : ""}><div><strong>{entry.concepto}</strong><span>{entry.horas} HH × {formatMoney(entry.costoHora, entry.moneda || currency)} = {formatMoney(entry.total, entry.moneda || currency)}</span><small>{dateLabel(entry.fecha)} · {entry.tecnicoSnapshot?.nombre || "Técnico"}</small>{entry.estado === "anulado" && <small>Anulado: {entry.motivoAnulacion}</small>}</div>{canManage && entry.estado !== "anulado" && <form className="works-annul-form" onSubmit={(event) => annul(event, "labor", entry.id)}><input className="erp-control" maxLength="1000" required value={annulReasons[key] || ""} onChange={(event) => setAnnulReasons((current) => ({...current, [key]: event.target.value}))} placeholder="Motivo de anulación" /><Button type="submit" variant="ghost-danger" disabled={Boolean(processing)}>Anular</Button></form>}</article>;})}{!visibleLabor.length && <p className="works-empty-copy">Sin HH propias registradas.</p>}</div>}
+        {loading ? <p>Cargando HH...</p> : <div className="works-cost-list">{visibleLabor.map((entry) => { const key = `labor-${entry.id}`; return <article key={entry.id} className={entry.estado === "anulado" ? "is-annulled" : ""}><div><strong>{entry.concepto}</strong><span>{entry.horas} HH × {formatMoney(entry.costoHora, entry.moneda || currency)} = {formatMoney(entry.total, entry.moneda || currency)}</span><small>{dateLabel(entry.fecha)} · {entry.tecnicoSnapshot?.nombre || "Técnico"}</small>{entry.estado === "anulado" && <small>Anulado: {entry.motivoAnulacion}</small>}</div>{canManage && entry.estado !== "anulado" && <form className="works-annul-form" onSubmit={(event) => annul(event, "labor", entry.id)}><input className="erp-control" maxLength="1000" required value={annulReasons[key] || ""} onChange={(event) => setAnnulReasons((current) => ({...current, [key]: event.target.value}))} placeholder="Motivo de anulación" /><Button type="submit" variant="ghost-danger" disabled={Boolean(processing)}>Anular</Button></form>}</article>;})}{!visibleLabor.length && <p className="works-empty-copy">Aún no se han registrado horas hombre.</p>}</div>}
       </section>
     </div>
   </section>;
@@ -347,7 +431,7 @@ function MaterialsSection({businessId, canManage, currency, currentUserUid, load
         <div><strong>{exit.productoSnapshot?.nombre || "Producto"}</strong><span>{exit.cantidad} {exit.productoSnapshot?.unidad || "unidad"} × {formatMoney(exit.costoUnitario, exit.moneda || currency)} = {formatMoney(exit.costoTotal, exit.moneda || currency)}</span><small>{dateLabel(exit.fecha)} · {exit.usuarioSnapshot?.nombre || "Equipo"} · devuelto {returned}, pendiente {remaining}</small></div>
         {canManage && remaining > 0 && <form className="works-annul-form" onSubmit={(event) => saveReturn(event, exit)}><input className="erp-control" type="number" min="0.01" max={remaining} step="0.01" required value={returnValue.cantidad} onChange={(event) => updateReturn(exit.id, "cantidad", event.target.value)} placeholder="Cantidad a devolver" /><input className="erp-control" type="date" required value={returnValue.fecha} onChange={(event) => updateReturn(exit.id, "fecha", event.target.value)} /><Button type="submit" variant="secondary" disabled={Boolean(processing)}>Devolver</Button></form>}
       </article>;
-    })}{!exits.length && <p className="works-empty-copy">Sin materiales utilizados. Los proyectos legacy parten en costo cero.</p>}</div>}
+    })}{!exits.length && <p className="works-empty-copy">Aún no se han registrado materiales.</p>}</div>}
   </section>;
 }
 
@@ -356,16 +440,9 @@ function commercialTotal(document) {
   return new Intl.NumberFormat("es-CL", {style: "currency", currency, maximumFractionDigits: currency === "CLP" ? 0 : 2}).format(Number(document?.total || 0));
 }
 
-function CommercialFile({canManage, detail, loading, navigate, work}) {
-  const newQuote = () => navigate("/cotizaciones/nueva", {state: {projectContext: {
-    trabajoId: work.id,
-    trabajoNumero: work.numero,
-    trabajoTitulo: work.titulo,
-    clienteId: work.clienteId,
-    clienteSnapshot: work.clienteSnapshot,
-  }}});
-  return <section className="works-detail-section works-commercial-file">
-    <div className="works-commercial-heading"><div><h3>Expediente comercial</h3><span>{detail.cotizaciones.length} cotización{detail.cotizaciones.length === 1 ? "" : "es"} · {detail.ventas.length} venta{detail.ventas.length === 1 ? "" : "s"}</span></div>{canManage && <Button type="button" icon={Plus} onClick={newQuote}>Nueva cotización</Button>}</div>
+function CommercialFile({canManage, detail, loading, navigate}) {
+  return <div className="works-commercial-file">
+    <div className="works-commercial-heading"><div><h4>Resumen comercial</h4><span>{detail.cotizaciones.length} cotización{detail.cotizaciones.length === 1 ? "" : "es"} · {detail.ventas.length} venta{detail.ventas.length === 1 ? "" : "s"}</span></div></div>
     {loading ? <p>Cargando expediente...</p> : <div className="works-commercial-list">
       {detail.cotizaciones.map((quote) => {
         const relatedSale = detail.ventas.find((sale) => sale.cotizacionId === quote.id);
@@ -375,12 +452,13 @@ function CommercialFile({canManage, detail, loading, navigate, work}) {
       {detail.ventas.filter((sale) => !detail.cotizaciones.some((quote) => quote.id === sale.cotizacionId)).map((sale) => <article key={sale.id}><div><strong>{sale.numero || "Venta"}</strong><span>{commercialStatusLabel(sale.estado)}{canManage ? ` · ${commercialTotal(sale)}` : ""}</span></div><div><button type="button" onClick={() => navigate(`/ventas/${sale.id}/editar`)}>Abrir venta</button></div></article>)}
       {!detail.cotizaciones.length && !detail.ventas.length && <p className="works-empty-copy">Este proyecto aún no tiene cotizaciones ni ventas vinculadas.</p>}
     </div>}
-  </section>;
+  </div>;
 }
 
 function Filter({children, label, onChange, value}) { return <label className="erp-field"><span className="erp-field__label">{label}</span><select className="erp-control" value={value} onChange={(event) => onChange(event.target.value)}>{children}</select></label>; }
-function Field({children, className = "", error, label, required}) { return <label className={`erp-field ${className}`}><span className="erp-field__label">{label}{required ? " *" : ""}</span>{children}{error && <small className="works-field-error">{error}</small>}</label>; }
+function Field({children, className = "", error, label, optional = false, required}) { return <label className={`erp-field ${className}`}><span className="erp-field__label">{label}{required ? " *" : optional ? <span className="works-field-optional">Opcional</span> : ""}</span>{children}{error && <small className="works-field-error">{error}</small>}</label>; }
 function FormSection({children, title}) { return <section className="works-form-section"><h3>{title}</h3>{children}</section>; }
+function DetailDisclosure({children, summary, title}) { return <details className="works-detail-disclosure"><summary><span><strong>{title}</strong><small>{summary}</small></span></summary><div className="works-detail-disclosure__content">{children}</div></details>; }
 
 function WorkList({canManage, onEdit, onOpen, works}) {
   if (!works.length) return <div className="erp-empty-state"><AppIcon icon={BriefcaseBusiness} size={30} /><p>No hay trabajos coincidentes.</p></div>;
@@ -389,11 +467,12 @@ function WorkList({canManage, onEdit, onOpen, works}) {
 
 function WorkBoard({onOpen, works}) { return <div className="works-board">{BOARD_STATUSES.map((status) => { const columnWorks = works.filter((work) => work.estado === status); return <section key={status}><header><h3>{getWorkStatusLabel(status)}</h3><span>{columnWorks.length}</span></header><div>{columnWorks.map((work) => <button type="button" className="works-board-card" key={work.id} onClick={() => onOpen(work)}><span className="works-number">{work.numero}</span><strong>{work.titulo}</strong><small>{work.clienteSnapshot?.nombreRazonSocial || "Sin cliente"}</small><dl><div><dt>Responsable principal</dt><dd>{work.responsableSnapshot?.nombre || "Sin responsable principal"}</dd></div><div><dt>Prioridad</dt><dd><Priority value={work.prioridad} /></dd></div><div><dt>Prevista</dt><dd>{dateLabel(work.fechaPrevista)}</dd></div></dl></button>)}{!columnWorks.length && <p>Sin trabajos</p>}</div></section>; })}</div>; }
 
-function WorkSummary({work}) { return <dl className="works-summary"><div><dt>Cliente</dt><dd>{work.clienteSnapshot?.nombreRazonSocial || "Sin cliente"}</dd></div><div><dt>Responsable principal</dt><dd>{work.responsableSnapshot?.nombre || "Sin responsable principal"}</dd></div><div><dt>Equipo de trabajo</dt><dd>{work.participantesSnapshot?.map((person) => person.nombre).join(", ") || "Sin equipo de trabajo"}</dd></div><div><dt>Prioridad</dt><dd><Priority value={work.prioridad} /></dd></div><div><dt>Inicio</dt><dd>{dateLabel(work.fechaInicio)}</dd></div><div><dt>Fecha prevista</dt><dd>{dateLabel(work.fechaPrevista)}</dd></div>{work.fechaCompletado && <div><dt>Completado</dt><dd>{dateLabel(work.fechaCompletado, true)}</dd></div>}</dl>; }
+function WorkSummary({work}) { return <dl className="works-summary"><div><dt>Cliente</dt><dd>{work.clienteSnapshot?.nombreRazonSocial || "Sin cliente"}</dd></div><div><dt>Responsable principal</dt><dd>{work.responsableSnapshot?.nombre || "Sin responsable principal"}</dd></div><div><dt>Prioridad</dt><dd><Priority value={work.prioridad} /></dd></div><div><dt>Fecha prevista</dt><dd>{dateLabel(work.fechaPrevista)}</dd></div></dl>; }
 
 function WorkBalanceSection({balance, loading}) {
   if (loading) return <section className="works-detail-section"><h3>Balance y rentabilidad</h3><p>Calculando desde fuentes autoritativas...</p></section>;
   if (!balance) return null;
+  if (balance.estado === "PARCIAL_SIN_VENTA") return <section className="works-detail-section works-balance works-balance--partial"><h3>Balance y rentabilidad</h3><p className="works-empty-copy">Aún no hay venta confirmada para calcular resultado y rentabilidad.</p></section>;
   const money = (value) => value == null ? "No disponible" : formatMoney(value, balance.moneda);
   const inconsistent = balance.estado === "INCONSISTENTE_MONEDA";
   return <section className="works-detail-section works-balance">

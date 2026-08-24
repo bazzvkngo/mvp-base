@@ -36,8 +36,8 @@ async function rejected(label, operation, codes) {
 }
 const profile = (name, fiscalValue) => ({
   nombreComercial: name,
-  rubroCodigo: "SERVICIOS_PROFESIONALES",
-  rubroNombre: "Servicios profesionales",
+  rubroCodigo: "INGENIERIA_CONSULTORIA",
+  rubroNombre: "Ingeniería y consultoría técnica",
   rubroOtro: "",
   paisCodigo: "CL",
   monedaCodigo: "CLP",
@@ -77,7 +77,7 @@ const adminApp = initializeAdminApp({projectId: PROJECT_ID}, `verification-admin
 const adminDb = getAdminFirestore(adminApp); const adminAuth = getAdminAuth(adminApp);
 
 try {
-  const firstCreated = await call(owner, "createFirstBusiness")({nombreComercial: "Empresa Uno", rubroCodigo: "SERVICIOS_PROFESIONALES", regionCodigo: "13", requestId: requestId("business_one")});
+  const firstCreated = await call(owner, "createFirstBusiness")({nombreComercial: "Empresa Uno", rubroCodigo: "INGENIERIA_CONSULTORIA", regionCodigo: "13", requestId: requestId("business_one")});
   const businessId = firstCreated.data.business.id;
   const firstProfile = profile("Empresa Uno", "76.000.000-0");
   await call(owner, "updateBusinessInformation")({businessId, profile: firstProfile});
@@ -130,7 +130,7 @@ try {
   await call(owner, "updateBusinessInformation")({businessId, profile: {...firstProfile, telefono: "+56 9 9999 9999"}});
   assert.equal((await adminDb.doc(`negocios/${businessId}`).get()).data().verificacionEmpresa.estado, "VERIFICADA");
 
-  const secondCreated = await call(secondOwner, "createFirstBusiness")({nombreComercial: "Empresa Dos", rubroCodigo: "SERVICIOS_PROFESIONALES", regionCodigo: "13", requestId: requestId("business_two")});
+  const secondCreated = await call(secondOwner, "createFirstBusiness")({nombreComercial: "Empresa Dos", rubroCodigo: "INGENIERIA_CONSULTORIA", regionCodigo: "13", requestId: requestId("business_two")});
   const secondBusinessId = secondCreated.data.business.id;
   const secondProfile = profile("Empresa Dos", "76.000.000-0");
   await call(secondOwner, "updateBusinessInformation")({businessId: secondBusinessId, profile: secondProfile});

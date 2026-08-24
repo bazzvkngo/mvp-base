@@ -107,7 +107,7 @@ function clientPayload({ rut, nombre, tipoCliente = "empresa" }) {
     tipoCliente,
     rut,
     nombreRazonSocial: nombre,
-    giro: tipoCliente === "empresa" ? "Servicios profesionales" : "",
+    giro: tipoCliente === "empresa" ? "Ingeniería y consultoría técnica" : "",
     email: `${nombre.toLowerCase().replace(/[^a-z0-9]+/g, ".")}@example.test`,
     telefono: "+56 9 1234 5678",
     direccion: "Av. Principal 123",
@@ -152,7 +152,7 @@ const adminDb = getAdminFirestore(adminApp);
 try {
   const ownerBusinessResponse = await callable(owner, "createFirstBusiness")({
     nombreComercial: "Negocio clientes principal",
-    rubroCodigo: "SERVICIOS_PROFESIONALES",
+    rubroCodigo: "INGENIERIA_CONSULTORIA",
     regionCodigo: "13",
     requestId: `business-owner-${RUN_ID}`,
   });
@@ -162,7 +162,7 @@ try {
     "createFirstBusiness"
   )({
     nombreComercial: "Negocio externo",
-    rubroCodigo: "SERVICIOS_PROFESIONALES",
+    rubroCodigo: "INGENIERIA_CONSULTORIA",
     regionCodigo: "13",
     requestId: `business-outsider-${RUN_ID}`,
   });

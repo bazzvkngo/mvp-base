@@ -128,14 +128,14 @@ const adminDb = getAdminFirestore(adminApp);
 try {
   const businessResponse = await call(owner, "createFirstBusiness")({
     nombreComercial: "Negocio órdenes principal",
-    rubroCodigo: "SERVICIOS_PROFESIONALES",
+    rubroCodigo: "INGENIERIA_CONSULTORIA",
     regionCodigo: "13",
     requestId: `business-main-${RUN_ID}`,
   });
   const businessId = businessResponse.data.business.id;
   const otherResponse = await call(outsider, "createFirstBusiness")({
     nombreComercial: "Negocio órdenes externo",
-    rubroCodigo: "SERVICIOS_PROFESIONALES",
+    rubroCodigo: "INGENIERIA_CONSULTORIA",
     regionCodigo: "13",
     requestId: `business-other-${RUN_ID}`,
   });

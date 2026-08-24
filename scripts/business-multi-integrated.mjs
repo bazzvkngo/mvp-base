@@ -55,7 +55,7 @@ function createClient(name) {
 }
 
 const baseBusiness = Object.freeze({
-  rubroCodigo: "SERVICIOS_PROFESIONALES",
+  rubroCodigo: "INGENIERIA_CONSULTORIA",
   regionCodigo: "13",
 });
 
@@ -116,7 +116,7 @@ async function main() {
 
     const additionalPayload = {
       nombreComercial: "Mauricio SPA",
-      rubroCodigo: "TECNOLOGIA_SOFTWARE",
+      rubroCodigo: "SOFTWARE_SOLUCIONES_DIGITALES",
       regionCodigo: "01",
       requestId: "multi_owner_additional_001",
     };
@@ -153,13 +153,13 @@ async function main() {
     assert.equal(secondBusiness.exists, true);
     assert.equal(secondMembership.data()?.rol, "OWNER");
     assert.equal(secondProfile.data()?.nombreComercial, "Mauricio SPA");
-    assert.equal(secondProfile.data()?.rubroCodigo, "TECNOLOGIA_SOFTWARE");
+    assert.equal(secondProfile.data()?.rubroCodigo, "SOFTWARE_SOLUCIONES_DIGITALES");
     assert.equal(secondProfile.data()?.regionCodigo, "01");
     assert.equal(secondProfile.data()?.rut, undefined);
     assert.equal(secondProfile.data()?.comunaCodigo, undefined);
     assert.equal(ownerUser.data()?.negocioActivoId, secondBusinessId);
     assert.equal(firstBusiness.data()?.rubroCodigo, baseBusiness.rubroCodigo);
-    assert.equal(secondBusiness.data()?.rubroCodigo, "TECNOLOGIA_SOFTWARE");
+    assert.equal(secondBusiness.data()?.rubroCodigo, "SOFTWARE_SOLUCIONES_DIGITALES");
     assert.equal(secondBusiness.data()?.comunaCodigo, undefined);
 
     const outsiderBusiness = await callable(outsider, "createFirstBusiness", {

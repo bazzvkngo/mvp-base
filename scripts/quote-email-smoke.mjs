@@ -160,7 +160,7 @@ function baseDependencies(overrides = {}, storedQuote = validQuote) {
 {
   const { dependencies } = baseDependencies({
     requireBusinessAccess: async (_request, _deps, options) => {
-      assert.deepEqual(options.roles, ["OWNER", "ADMIN"]);
+      assert.deepEqual(options.roles, ["OWNER", "ADMIN", "VENTAS"]);
       throw new TestHttpsError("permission-denied", "Sin acceso");
     },
   });
@@ -181,7 +181,7 @@ function baseDependencies(overrides = {}, storedQuote = validQuote) {
     baseDependencies();
   const result = await sendQuoteEmailHandler(request, dependencies);
   assert.equal(result.success, true);
-  assert.deepEqual(calls.roles, [["OWNER", "ADMIN"]]);
+  assert.deepEqual(calls.roles, [["OWNER", "ADMIN", "VENTAS"]]);
   assert.equal(calls.provider.length, 1);
   assert.equal(calls.provider[0].to, "cliente@example.com");
   assert.equal(result.quoteEmailStatus.destinatarioAlternativo, false);

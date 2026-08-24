@@ -34,7 +34,7 @@ assert.deepEqual(
 const brazilUsd = validateBusinessProfileInput(
   {
     nombreComercial: "Empresa Brasil",
-    rubroCodigo: "SERVICIOS_PROFESIONALES",
+    rubroCodigo: "INGENIERIA_CONSULTORIA",
     paisCodigo: "BR",
     monedaCodigo: "USD",
     regionEstado: "São Paulo",

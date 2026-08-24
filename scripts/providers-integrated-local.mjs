@@ -151,14 +151,14 @@ const adminDb = getAdminFirestore(adminApp);
 try {
   const ownerBusinessResponse = await callable(owner, "createFirstBusiness")({
     nombreComercial: "Negocio proveedores principal",
-    rubroCodigo: "SERVICIOS_PROFESIONALES",
+    rubroCodigo: "INGENIERIA_CONSULTORIA",
     regionCodigo: "13",
     requestId: `business-owner-${RUN_ID}`,
   });
   const businessId = ownerBusinessResponse.data.business.id;
   const outsiderBusinessResponse = await callable(outsider, "createFirstBusiness")({
     nombreComercial: "Negocio proveedores externo",
-    rubroCodigo: "SERVICIOS_PROFESIONALES",
+    rubroCodigo: "INGENIERIA_CONSULTORIA",
     regionCodigo: "13",
     requestId: `business-outsider-${RUN_ID}`,
   });

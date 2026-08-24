@@ -114,13 +114,13 @@ const adminAuth = getAdminAuth(adminApp);
 try {
   const mainBusiness = await call(owner, "createFirstBusiness")({
     nombreComercial: "Negocio miembros",
-    rubroCodigo: "SERVICIOS_PROFESIONALES",
+    rubroCodigo: "INGENIERIA_CONSULTORIA",
     regionCodigo: "13",
     requestId: requestId("business-main"),
   });
   const otherBusiness = await call(outsider, "createFirstBusiness")({
     nombreComercial: "Negocio externo",
-    rubroCodigo: "SERVICIOS_PROFESIONALES",
+    rubroCodigo: "INGENIERIA_CONSULTORIA",
     regionCodigo: "13",
     requestId: requestId("business-other"),
   });

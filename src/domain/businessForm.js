@@ -1,4 +1,5 @@
 import {
+  BUSINESS_CATEGORY_CATALOG_VERSION,
   getBusinessCategoryByCode,
   getRegionByCode,
 } from "./businessCatalog";
@@ -63,13 +64,13 @@ export function validateQuickBusiness(values) {
   }
 
   const category = getBusinessCategoryByCode(values.rubroCodigo);
-  if (!isSelectableBusinessCategory(category)) {
+  if (!isSelectableBusinessCategory(category, BUSINESS_CATEGORY_CATALOG_VERSION)) {
     errors.rubroCodigo = "Selecciona el rubro principal.";
   } else if (
     category.code === "OTRO" &&
     normalizeBusinessText(values.rubroOtro).length < 2
   ) {
-    errors.rubroCodigo = "Describe la categoría de tu negocio.";
+    errors.rubroCodigo = "Describe el rubro de tu negocio.";
   }
   if (!getRegionByCode(values.regionCodigo)) {
     errors.regionCodigo = "Selecciona una región.";

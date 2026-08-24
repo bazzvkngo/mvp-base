@@ -354,7 +354,7 @@ async function main() {
     await Promise.all([
       adminDb.doc(`negocios/${businessId}`).set({
         nombreComercial: "Empresa de reglas",
-        rubroCodigo: "SERVICIOS_PROFESIONALES",
+        rubroCodigo: "INGENIERIA_CONSULTORIA",
         paisCodigo: "CL",
         monedaCodigo: "CLP",
         regionCodigo: "13",

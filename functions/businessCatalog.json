@@ -1,5 +1,6 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
+  "businessCategoryCatalogVersion": 1,
   "source": {
     "organization": "Subsecretaría de Desarrollo Regional y Administrativo (SUBDERE)",
     "title": "Códigos Únicos Territoriales - Actualizado al 2018",
@@ -45,6 +46,7 @@
     { "code": "EUR", "name": "Euro", "symbol": "€", "decimals": 2, "active": true }
   ],
   "businessCategorySectors": [
+    { "code": "SERVICIOS_PROYECTOS", "name": "Servicios por proyectos", "order": 1 },
     { "code": "COMERCIO", "name": "Comercio y tiendas", "order": 10 },
     { "code": "GASTRONOMIA", "name": "Gastronomía y alimentos", "order": 20 },
     { "code": "AUTOMOTRIZ_TRANSPORTE", "name": "Automotriz y transporte", "order": 30 },
@@ -53,6 +55,18 @@
     { "code": "OTROS", "name": "Otros", "order": 60 }
   ],
   "businessCategories": [
+    { "code": "TECNOLOGIA_INFORMATICA", "name": "Tecnología e informática", "sectorCode": "SERVICIOS_PROYECTOS", "catalogVersion": 1, "active": true, "searchTerms": ["tecnologia", "informatica", "computacion", "soporte tecnico", "hardware"] },
+    { "code": "SOFTWARE_SOLUCIONES_DIGITALES", "name": "Software y soluciones digitales", "sectorCode": "SERVICIOS_PROYECTOS", "catalogVersion": 1, "active": true, "searchTerms": ["software", "programacion", "desarrollo", "sistemas", "soluciones digitales"] },
+    { "code": "SEGURIDAD_TELECOMUNICACIONES", "name": "Seguridad electrónica y telecomunicaciones", "sectorCode": "SERVICIOS_PROYECTOS", "catalogVersion": 1, "active": true, "searchTerms": ["seguridad", "cctv", "alarmas", "telecomunicaciones", "redes"] },
+    { "code": "ELECTRICIDAD_ENERGIA_CLIMATIZACION", "name": "Electricidad, energía y climatización", "sectorCode": "SERVICIOS_PROYECTOS", "catalogVersion": 1, "active": true, "searchTerms": ["electricidad", "energia", "climatizacion", "aire acondicionado", "calefaccion"] },
+    { "code": "AUTOMATIZACION_CONTROL", "name": "Automatización y control", "sectorCode": "SERVICIOS_PROYECTOS", "catalogVersion": 1, "active": true, "searchTerms": ["automatizacion", "control", "domotica", "industrial", "instrumentacion"] },
+    { "code": "MANTENIMIENTO_INSTALACIONES", "name": "Mantenimiento e instalaciones técnicas", "sectorCode": "SERVICIOS_PROYECTOS", "catalogVersion": 1, "active": true, "searchTerms": ["mantenimiento", "mantencion", "instalaciones", "reparacion", "servicio tecnico"] },
+    { "code": "CONSTRUCCION_OBRAS", "name": "Construcción y obras especializadas", "sectorCode": "SERVICIOS_PROYECTOS", "catalogVersion": 1, "active": true, "searchTerms": ["construccion", "obras", "edificacion", "remodelacion", "especialidades"] },
+    { "code": "AUTOMOTRIZ_MOVILIDAD", "name": "Automotriz y movilidad", "sectorCode": "SERVICIOS_PROYECTOS", "catalogVersion": 1, "active": true, "searchTerms": ["automotriz", "vehiculos", "movilidad", "mecanica", "taller"] },
+    { "code": "INGENIERIA_CONSULTORIA", "name": "Ingeniería y consultoría técnica", "sectorCode": "SERVICIOS_PROYECTOS", "catalogVersion": 1, "active": true, "searchTerms": ["ingenieria", "consultoria", "asesoria tecnica", "proyectos", "profesionales"] },
+    { "code": "SERVICIOS_DIGITALES_CREATIVOS", "name": "Servicios digitales y creativos", "sectorCode": "SERVICIOS_PROYECTOS", "catalogVersion": 1, "active": true, "searchTerms": ["digital", "creativo", "diseno", "marketing", "audiovisual"] },
+    { "code": "OTRO_SERVICIO_PROYECTOS", "name": "Otro servicio por proyectos", "sectorCode": "SERVICIOS_PROYECTOS", "catalogVersion": 1, "active": true, "searchTerms": ["otro", "servicio", "proyectos"] },
+
     { "code": "ROPA_VESTUARIO", "name": "Ropa y vestuario", "sectorCode": "COMERCIO", "active": true, "searchTerms": ["ropa", "vestuario", "moda", "boutique"] },
     { "code": "CALZADO", "name": "Calzado", "sectorCode": "COMERCIO", "active": true, "searchTerms": ["zapatos", "zapatillas", "botas"] },
     { "code": "ACCESORIOS_BISUTERIA", "name": "Accesorios y bisutería", "sectorCode": "COMERCIO", "active": true, "searchTerms": ["accesorios", "bisuteria", "carteras"] },

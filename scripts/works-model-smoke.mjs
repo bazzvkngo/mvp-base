@@ -295,6 +295,7 @@ console.log("OK frontend: búsqueda, payload restringido y eventos sin UID crudo
 
 const rules = fs.readFileSync("firestore.rules", "utf8");
 const page = fs.readFileSync("src/pages/WorksPage.jsx", "utf8");
+const styles = fs.readFileSync("src/features/works/works.css", "utf8");
 const backend = fs.readFileSync("functions/workPersistence.js", "utf8");
 assert.match(rules, /match \/trabajos\/\{trabajoId\}/); assert.match(rules, /match \/historial\/\{eventoId\}[\s\S]*allow create, update, delete: if false/); assert.match(rules, /match \/documentacion\/\{documentacionId\}/);
 assert.match(backend, /workCounters/); assert.match(backend, /workCreateRequests/); assert.match(backend, /workTaskRequests/); assert.match(backend, /workCostRequests/); assert.match(backend, /requireBusinessAccess/);
@@ -302,6 +303,14 @@ assert.match(backend, /runTransaction[\s\S]*transaction\.get\(counterRef\)[\s\S]
 assert.match(page, /ResponsiveDialog/); assert.doesNotMatch(page, /window\.confirm|actorUid/); assert.match(page, /works-board/); assert.match(page, /Historial del trabajo/); assert.match(page, /TaskSection/); assert.match(page, /FinancialSection/); assert.match(page, /No tienes tareas asignadas/);
 assert.match(page, /\+ Nuevo cliente/); assert.match(page, /openCreateClient/); assert.match(page, /editingWork \|\| hasAdditionalMembers/);
 assert.match(page, /Responsable principal/); assert.match(page, /Equipo de trabajo/); assert.doesNotMatch(page, /<Field[^>]+label="Número"/);
+assert.match(page, /member\.uid === currentUserUid && member\.estado === "activo"/); assert.match(page, /responsableUid: currentMember\?\.uid \|\| ""/);
+assert.match(page, /label="Descripción" optional/); assert.match(page, /label="Cliente" optional/); assert.match(page, /label="Responsable principal" optional/); assert.match(page, /label="Fecha prevista" optional/);
+assert.match(page, /Escribe un nombre breve para identificar el trabajo/); assert.match(page, /Describe el requerimiento o lo informado por el cliente/); assert.match(page, /El número TRB, estado Pendiente y fecha de ingreso se asignarán automáticamente\./);
+assert.match(styles, /works-form-automatic-note/); assert.match(styles, /@media\(min-width:768px\)[\s\S]*works-form-dialog \.responsive-dialog__body/);
+assert.match(page, /function DetailDisclosure[\s\S]*<details className="works-detail-disclosure">/); assert.match(page, /title="Recursos y costos" summary="Materiales, gastos, horas hombre y balance"/); assert.match(page, /title="Historial del trabajo"/);
+assert.match(page, /<h3>Resumen<\/h3>[\s\S]*<TaskSection[\s\S]*<h3>Notas<\/h3>[\s\S]*title="Recursos y costos"[\s\S]*title="Historial del trabajo"/);
+assert.match(page, /Aún no hay venta confirmada para calcular resultado y rentabilidad\./); assert.match(page, /Aún no se han registrado materiales\./); assert.match(page, /Aún no se han registrado gastos\./); assert.match(page, /Aún no se han registrado horas hombre\./);
+assert.match(styles, /works-detail-disclosure\[open\]/); assert.match(styles, /works-commercial-list[\s\S]*grid-template-columns/);
 console.log("OK integración: Rules, autoridad backend, lista/tablero y confirmación segura");
 
 console.log("WORKS_MODEL_SMOKE_OK");

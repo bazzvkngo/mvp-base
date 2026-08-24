@@ -1,17 +1,14 @@
 import React from "react";
 import {
   BriefcaseBusiness,
-  CarFront,
   Check,
   ChevronDown,
-  Factory,
   Search,
   Shapes,
-  Store,
-  UtensilsCrossed,
   X,
 } from "lucide-react";
 import {
+  BUSINESS_CATEGORY_CATALOG_VERSION,
   BUSINESS_CATEGORIES,
   BUSINESS_CATEGORY_SECTORS,
   getBusinessCategoryByCode,
@@ -20,6 +17,7 @@ import {
 import {
   filterBusinessCategories,
   groupBusinessCategories,
+  isSelectableBusinessCategory,
   normalizeCategorySearch,
 } from "../domain/businessCategorySearch.mjs";
 import AppIcon from "./ui/AppIcon";
@@ -27,12 +25,7 @@ import Button from "./ui/Button";
 import ResponsiveDialog from "./ui/ResponsiveDialog";
 
 const SECTOR_ICONS = {
-  COMERCIO: Store,
-  GASTRONOMIA: UtensilsCrossed,
-  AUTOMOTRIZ_TRANSPORTE: CarFront,
-  SERVICIOS: BriefcaseBusiness,
-  PRODUCCION: Factory,
-  OTROS: Shapes,
+  SERVICIOS_PROYECTOS: BriefcaseBusiness,
   HISTORICO: Shapes,
 };
 
@@ -73,8 +66,10 @@ const BusinessCategoryPicker = React.forwardRef(
     const isHistoricalSelection = Boolean(
       selectedName &&
         (!selectedCategory ||
-          selectedCategory.active === false ||
-          selectedCategory.selectable === false)
+          !isSelectableBusinessCategory(
+            selectedCategory,
+            BUSINESS_CATEGORY_CATALOG_VERSION
+          ))
     );
 
     const openPicker = () => {
@@ -92,7 +87,11 @@ const BusinessCategoryPicker = React.forwardRef(
     };
 
     const visibleCategories = React.useMemo(
-      () => filterBusinessCategories(BUSINESS_CATEGORIES, query),
+      () => filterBusinessCategories(
+        BUSINESS_CATEGORIES,
+        query,
+        BUSINESS_CATEGORY_CATALOG_VERSION
+      ),
       [query]
     );
 
@@ -120,7 +119,7 @@ const BusinessCategoryPicker = React.forwardRef(
             {
               sector: {
                 code: "HISTORICO",
-                name: "Categoría histórica",
+                name: "Rubro histórico",
                 order: 0,
               },
               categories: [historicalOption],
@@ -166,7 +165,7 @@ const BusinessCategoryPicker = React.forwardRef(
       if (!draftCode) return;
       const normalizedCustomValue = normalizeCustomCategory(draftCustomValue);
       if (draftCode === "OTRO" && normalizedCustomValue.length < 2) {
-        setCustomError("Describe la categoría de tu negocio.");
+        setCustomError("Describe el rubro de tu negocio.");
         window.requestAnimationFrame(() =>
           document.getElementById(`${id}-other`)?.focus()
         );
@@ -207,7 +206,7 @@ const BusinessCategoryPicker = React.forwardRef(
                 : "business-category-picker__placeholder"
             }
           >
-            {selectedName || "Selecciona una categoría"}
+            {selectedName || "Selecciona un rubro"}
           </span>
           {isHistoricalSelection && (
             <span className="business-category-picker__legacy">Histórica</span>
@@ -219,8 +218,8 @@ const BusinessCategoryPicker = React.forwardRef(
           open={open}
           onClose={closePicker}
           initialFocusRef={searchRef}
-          title="Selecciona una categoría"
-          description="Elige la actividad que mejor representa a este negocio."
+          title="Selecciona un rubro"
+          description="Selecciona la actividad que mejor representa los servicios de tu empresa."
           eyebrow="Rubro principal"
           size="medium"
           className="business-category-dialog"
@@ -247,8 +246,8 @@ const BusinessCategoryPicker = React.forwardRef(
                 ref={searchRef}
                 type="search"
                 value={query}
-                placeholder="Buscar categoría"
-                aria-label="Buscar categoría"
+                placeholder="Buscar rubro"
+                aria-label="Buscar rubro"
                 onChange={(event) => setQuery(event.target.value)}
               />
               {query && (
@@ -268,7 +267,7 @@ const BusinessCategoryPicker = React.forwardRef(
             <div
               className="business-category-options"
               role="radiogroup"
-              aria-label="Categorías disponibles"
+              aria-label="Rubros disponibles"
             >
               {groups.map((group) => {
                 const SectorIcon = SECTOR_ICONS[group.sector.code] || Shapes;
@@ -330,7 +329,7 @@ const BusinessCategoryPicker = React.forwardRef(
               {groups.length === 0 && (
                 <div className="business-category-empty" role="status">
                   <AppIcon icon={Search} size={22} />
-                  <strong>No encontramos categorías</strong>
+                  <strong>No encontramos rubros</strong>
                   <span>Prueba con otro nombre o limpia la búsqueda.</span>
                 </div>
               )}
@@ -339,7 +338,7 @@ const BusinessCategoryPicker = React.forwardRef(
             {draftCode === "OTRO" && (
               <div className="business-category-other">
                 <label htmlFor={`${id}-other`}>
-                  ¿Cuál es la categoría de tu negocio?
+                  ¿Cuál es el rubro de tu negocio?
                   <span aria-hidden="true"> *</span>
                 </label>
                 <input

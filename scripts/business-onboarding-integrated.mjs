@@ -79,7 +79,7 @@ async function expectCallableCode(expectedCode, operation) {
 
 const validPayload = Object.freeze({
   nombreComercial: "Mauricio SPA",
-  rubroCodigo: "TECNOLOGIA_SOFTWARE",
+  rubroCodigo: "SOFTWARE_SOLUCIONES_DIGITALES",
   regionCodigo: "01",
 });
 
@@ -340,6 +340,24 @@ async function main() {
     assert.equal(textOnlyHistoricalUpdate.data.profile.rubroNombre, "Oficio ancestral");
     assert.equal(textOnlyHistoricalUpdate.data.completion.minimumComplete, true);
 
+    const upgradedHistoricalBusiness = await ownerCall("updateBusinessProfile", {
+      businessId,
+      profile: {
+        nombreComercial: validPayload.nombreComercial,
+        rubroCodigo: "AUTOMOTRIZ_MOVILIDAD",
+        regionCodigo: "02",
+        validezCotizacionDias: 15,
+      },
+    });
+    assert.equal(upgradedHistoricalBusiness.data.profile.rubroCodigo, "AUTOMOTRIZ_MOVILIDAD");
+    assert.equal(upgradedHistoricalBusiness.data.profile.rubroNombre, "Automotriz y movilidad");
+    const [upgradedBusiness, upgradedProfile] = await Promise.all([
+      adminDb.collection("negocios").doc(businessId).get(),
+      adminDb.doc(`negocios/${businessId}/empresa/perfil`).get(),
+    ]);
+    assert.equal(upgradedBusiness.data()?.rubroCodigo, "AUTOMOTRIZ_MOVILIDAD");
+    assert.equal(upgradedProfile.data()?.rubroCodigo, "AUTOMOTRIZ_MOVILIDAD");
+
     const secondRequest = await ownerCall("createFirstBusiness", {
       ...validPayload,
       nombreComercial: "Intento de duplicado",
@@ -394,19 +412,19 @@ async function main() {
 
     const otherBusiness = await outsiderCall("createFirstBusiness", {
       nombreComercial: "Taller Experimental",
-      rubroCodigo: "OTRO",
-      rubroOtro: "  Reparación de drones  ",
+      rubroCodigo: "OTRO_SERVICIO_PROYECTOS",
       regionCodigo: "01",
       comunaCodigo: "",
       requestId: "business_other_category_001",
     });
-    assert.equal(otherBusiness.data.business.rubroCodigo, "OTRO");
-    assert.equal(otherBusiness.data.business.rubroOtro, "Reparación de drones");
+    assert.equal(otherBusiness.data.business.rubroCodigo, "OTRO_SERVICIO_PROYECTOS");
+    assert.equal(otherBusiness.data.business.rubroNombre, "Otro servicio por proyectos");
     const storedOtherBusiness = await adminDb
       .collection("negocios")
       .doc(otherBusiness.data.business.id)
       .get();
-    assert.equal(storedOtherBusiness.data()?.rubroNombre, "Reparación de drones");
+    assert.equal(storedOtherBusiness.data()?.rubroNombre, "Otro servicio por proyectos");
+    assert.equal(storedOtherBusiness.data()?.rubroOtro, undefined);
     assert.equal(storedOtherBusiness.data()?.comunaCodigo, undefined);
 
     const fallbackBusinessRef = adminDb.collection("negocios").doc();
@@ -416,7 +434,7 @@ async function main() {
     await Promise.all([
       fallbackBusinessRef.set({
         ...validPayload,
-        rubroNombre: "Servicios profesionales",
+        rubroNombre: "Ingeniería y consultoría técnica",
         paisNombre: "Chile",
         regionNombre: "Metropolitana de Santiago",
         comunaNombre: "Santiago",

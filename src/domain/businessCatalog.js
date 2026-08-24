@@ -1,6 +1,7 @@
 import catalog from "../../functions/businessCatalog.json" with { type: "json" };
 
 export const BUSINESS_CATALOG_VERSION = catalog.schemaVersion;
+export const BUSINESS_CATEGORY_CATALOG_VERSION = catalog.businessCategoryCatalogVersion;
 export const COUNTRIES = Object.freeze(catalog.countries);
 export const CURRENCIES = Object.freeze(catalog.currencies);
 export const LOCALE_CONFIG = Object.freeze(

@@ -37,8 +37,8 @@ const adminApp = initializeAdminApp({projectId: PROJECT_ID}, `sales-admin-${RUN_
 const adminDb = getAdminFirestore(adminApp);
 
 try {
-  const main = await call(owner, "createFirstBusiness")({nombreComercial: "Negocio ventas", rubroCodigo: "SERVICIOS_PROFESIONALES", regionCodigo: "13", requestId: requestId("business-main")});
-  const other = await call(outsider, "createFirstBusiness")({nombreComercial: "Negocio externo", rubroCodigo: "SERVICIOS_PROFESIONALES", regionCodigo: "13", requestId: requestId("business-other")});
+  const main = await call(owner, "createFirstBusiness")({nombreComercial: "Negocio ventas", rubroCodigo: "INGENIERIA_CONSULTORIA", regionCodigo: "13", requestId: requestId("business-main")});
+  const other = await call(outsider, "createFirstBusiness")({nombreComercial: "Negocio externo", rubroCodigo: "INGENIERIA_CONSULTORIA", regionCodigo: "13", requestId: requestId("business-other")});
   const businessId = main.data.business.id; const otherBusinessId = other.data.business.id;
   const companyProfileA = {negocioId: businessId, nombreComercial: "Empresa A", razonSocial: "Empresa Histórica A SpA", identificadorFiscalTipo: "RUT", identificadorFiscalValor: "76.200.200-2", email: "empresa-a@example.test"};
   const companyProfileB = {...companyProfileA, nombreComercial: "Empresa B", razonSocial: "Empresa Vigente B SpA", email: "empresa-b@example.test"};

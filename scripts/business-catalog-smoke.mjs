@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import catalog from "../functions/businessCatalog.json" with { type: "json" };
+import { isSelectableBusinessCategory } from "../src/domain/businessCategorySearch.mjs";
 
-assert.equal(catalog.schemaVersion, 3);
+assert.equal(catalog.schemaVersion, 4);
+assert.equal(catalog.businessCategoryCatalogVersion, 1);
 assert.equal(catalog.countries.length, 11);
 assert.equal(catalog.countries[0].code, "CL");
 assert.equal(catalog.countries.find((country) => country.code === "BR").defaultLocale, "pt-BR");
@@ -11,9 +13,8 @@ assert.ok(catalog.currencies.some((currency) => currency.code === "BOB"));
 assert.ok(catalog.currencies.some((currency) => currency.code === "BRL"));
 assert.ok(catalog.currencies.some((currency) => currency.code === "PEN"));
 assert.ok(catalog.currencies.some((currency) => currency.code === "USD"));
-assert.ok(catalog.businessCategories.some((category) => category.code === "OTRO"));
-assert.equal(catalog.businessCategorySectors.length, 6);
-assert.ok(catalog.businessCategories.length >= 68);
+assert.equal(catalog.businessCategorySectors.length, 7);
+assert.ok(catalog.businessCategories.length >= 79);
 assert.equal(
   new Set(catalog.businessCategories.map((category) => category.code)).size,
   catalog.businessCategories.length
@@ -25,17 +26,30 @@ for (const category of catalog.businessCategories) {
   assert.equal(typeof category.active, "boolean");
   assert.ok(Array.isArray(category.searchTerms));
 }
-for (const expectedCode of [
-  "ROPA_VESTUARIO",
-  "RESTAURANTE",
-  "TALLER_MECANICO",
-  "TECNOLOGIA_SOFTWARE",
-  "EDUCACION_CAPACITACION",
-  "INDUSTRIA_MANUFACTURA",
-  "GANADERIA",
-  "OTRO",
-]) {
-  assert.ok(catalog.businessCategories.some(({ code }) => code === expectedCode));
+const expectedV1Categories = [
+  ["TECNOLOGIA_INFORMATICA", "Tecnología e informática"],
+  ["SOFTWARE_SOLUCIONES_DIGITALES", "Software y soluciones digitales"],
+  ["SEGURIDAD_TELECOMUNICACIONES", "Seguridad electrónica y telecomunicaciones"],
+  ["ELECTRICIDAD_ENERGIA_CLIMATIZACION", "Electricidad, energía y climatización"],
+  ["AUTOMATIZACION_CONTROL", "Automatización y control"],
+  ["MANTENIMIENTO_INSTALACIONES", "Mantenimiento e instalaciones técnicas"],
+  ["CONSTRUCCION_OBRAS", "Construcción y obras especializadas"],
+  ["AUTOMOTRIZ_MOVILIDAD", "Automotriz y movilidad"],
+  ["INGENIERIA_CONSULTORIA", "Ingeniería y consultoría técnica"],
+  ["SERVICIOS_DIGITALES_CREATIVOS", "Servicios digitales y creativos"],
+  ["OTRO_SERVICIO_PROYECTOS", "Otro servicio por proyectos"],
+];
+const selectableCategories = catalog.businessCategories.filter((category) =>
+  isSelectableBusinessCategory(category, catalog.businessCategoryCatalogVersion)
+);
+assert.deepEqual(
+  selectableCategories.map(({ code, name }) => [code, name]),
+  expectedV1Categories
+);
+for (const legacyCode of ["RESTAURANTE", "TECNOLOGIA_SOFTWARE", "OTRO"]) {
+  const legacyCategory = catalog.businessCategories.find(({ code }) => code === legacyCode);
+  assert.ok(legacyCategory);
+  assert.equal(isSelectableBusinessCategory(legacyCategory, catalog.businessCategoryCatalogVersion), false);
 }
 const legacyRetail = catalog.businessCategories.find(
   ({ code }) => code === "COMERCIO_MINORISTA"

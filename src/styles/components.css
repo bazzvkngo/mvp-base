@@ -1737,6 +1737,13 @@
   margin: 0;
 }
 
+.quick-business-field__hint {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.35;
+  margin: 0;
+}
+
 .onboarding-form__defaults,
 .business-drawer-form__defaults {
   color: var(--color-text-muted);

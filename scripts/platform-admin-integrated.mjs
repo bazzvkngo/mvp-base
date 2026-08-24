@@ -22,6 +22,9 @@ import {connectFunctionsEmulator, getFunctions, httpsCallable} from "firebase/fu
 
 const PROJECT_ID = "tesis-inventario-ia";
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const AUTH_EMULATOR_PORT = Number(process.env.VALORA_AUTH_EMULATOR_PORT || 9099);
+const FIRESTORE_EMULATOR_PORT = Number(process.env.VALORA_FIRESTORE_EMULATOR_PORT || 8080);
+const FUNCTIONS_EMULATOR_PORT = Number(process.env.VALORA_FUNCTIONS_EMULATOR_PORT || 5001);
 const requireFromFunctions = createRequire(new URL("../functions/package.json", import.meta.url));
 const {deleteApp: deleteAdminApp, initializeApp: initializeAdminApp} = requireFromFunctions("firebase-admin/app");
 const {getAuth: getAdminAuth} = requireFromFunctions("firebase-admin/auth");
@@ -30,8 +33,9 @@ const {getFirestore: getAdminFirestore} = requireFromFunctions("firebase-admin/f
 function client(name) {
   const app = initializeApp({apiKey: "demo", authDomain: `${PROJECT_ID}.firebaseapp.com`, projectId: PROJECT_ID, appId: `platform-${name}-${RUN_ID}`}, `platform-${name}-${RUN_ID}`);
   const auth = getAuth(app); const db = getFirestore(app); const functions = getFunctions(app, "us-central1");
-  connectAuthEmulator(auth, "http://127.0.0.1:9099", {disableWarnings: true});
-  connectFirestoreEmulator(db, "127.0.0.1", 8080); connectFunctionsEmulator(functions, "127.0.0.1", 5001);
+  connectAuthEmulator(auth, `http://127.0.0.1:${AUTH_EMULATOR_PORT}`, {disableWarnings: true});
+  connectFirestoreEmulator(db, "127.0.0.1", FIRESTORE_EMULATOR_PORT);
+  connectFunctionsEmulator(functions, "127.0.0.1", FUNCTIONS_EMULATOR_PORT);
   return {app, auth, db, functions};
 }
 
@@ -53,9 +57,9 @@ async function rejected(label, operation, codes) {
   throw new Error(`Se esperaba rechazo: ${label}`);
 }
 
-const businessInput = (name, suffix) => ({nombreComercial: name, rubroCodigo: "SERVICIOS_PROFESIONALES", regionCodigo: "13", requestId: requestId(`business_${suffix}`)});
+const businessInput = (name, suffix) => ({nombreComercial: name, rubroCodigo: "INGENIERIA_CONSULTORIA", regionCodigo: "13", requestId: requestId(`business_${suffix}`)});
 const profile = (name, rut) => ({
-  nombreComercial: name, rubroCodigo: "SERVICIOS_PROFESIONALES", rubroNombre: "Servicios profesionales", rubroOtro: "",
+  nombreComercial: name, rubroCodigo: "INGENIERIA_CONSULTORIA", rubroNombre: "Ingeniería y consultoría técnica", rubroOtro: "",
   paisCodigo: "CL", monedaCodigo: "CLP", locale: "es-CL", identificadorFiscalTipo: "RUT", identificadorFiscalValor: rut,
   regionCodigo: "13", comunaCodigo: "13101", razonSocial: `${name} SpA`, giro: "Servicios", email: `${name.toLowerCase().replace(/\s+/g, "-")}@example.test`,
   telefono: "+56 9 1234 5678", direccion: "Direccion 123", ciudad: "Santiago", regionEstado: "Region Metropolitana", codigoPostal: "8320000", sitioWeb: "",
@@ -87,9 +91,20 @@ try {
   const secondRequest = await call(secondOwner, "solicitarVerificacionEmpresa")({businessId: secondId, requestId: requestId("verification_two"), solicitud: verification(secondProfile)});
 
   const summary = await call(platform, "obtenerResumenPlataforma")({});
-  assert.ok(summary.data.empresas.total >= 2); assert.ok(summary.data.usuarios.total >= 3);
+  assert.equal(summary.data.empresas.total, 2); assert.equal(summary.data.usuarios.total, 3);
   const businesses = await call(platform, "listarEmpresasPlataforma")({limite: 20, verificacion: "TODAS"});
   assert.ok(businesses.data.empresas.some((item) => item.id === firstId));
+  const firstPage = await call(platform, "listarEmpresasPlataforma")({limite: 1, verificacion: "TODAS"});
+  assert.equal(firstPage.data.empresas.length, 1);
+  assert.ok(firstPage.data.cursor);
+  const secondPage = await call(platform, "listarEmpresasPlataforma")({
+    limite: 1,
+    cursor: firstPage.data.cursor,
+    verificacion: "TODAS",
+  });
+  assert.equal(secondPage.data.empresas.length, 1);
+  assert.notEqual(secondPage.data.empresas[0].id, firstPage.data.empresas[0].id);
+  assert.equal(secondPage.data.cursor, null);
   const pending = await call(platform, "listarEmpresasPlataforma")({limite: 20, verificacion: "PENDIENTE"});
   assert.ok(pending.data.empresas.some((item) => item.id === firstId));
   assert.ok(pending.data.empresas.some((item) => item.id === secondId));

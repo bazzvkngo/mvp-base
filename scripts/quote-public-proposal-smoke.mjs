@@ -326,7 +326,10 @@ async function createProposalFixture(overrides = {}, { channel = "" } = {}) {
     },
     dependencies
   );
-  assert.deepEqual(roles, [["OWNER", "ADMIN"], ["OWNER", "ADMIN"]]);
+  assert.deepEqual(roles, [
+    ["OWNER", "ADMIN", "VENTAS"],
+    ["OWNER", "ADMIN", "VENTAS"],
+  ]);
   assert.equal(shared.quoteStatus.estado, "emitida");
   assert.equal(db.read(quotePath).estado, "emitida");
   assert.equal(db.read(quotePath).canalEmision, "whatsapp");
@@ -348,7 +351,7 @@ async function createProposalFixture(overrides = {}, { channel = "" } = {}) {
     HttpsError: TestHttpsError,
     now: () => now.getTime(),
     requireBusinessAccess: async (_request, _dependencies, options) => {
-      assert.deepEqual(options.roles, ["OWNER", "ADMIN"]);
+      assert.deepEqual(options.roles, ["OWNER", "ADMIN", "VENTAS"]);
       return { businessId: "business-1", businessRef, uid: "owner-1" };
     },
   };
