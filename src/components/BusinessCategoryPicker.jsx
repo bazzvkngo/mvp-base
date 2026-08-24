@@ -3,9 +3,7 @@ import {
   BriefcaseBusiness,
   Check,
   ChevronDown,
-  Search,
   Shapes,
-  X,
 } from "lucide-react";
 import {
   BUSINESS_CATEGORY_CATALOG_VERSION,
@@ -18,7 +16,6 @@ import {
   filterBusinessCategories,
   groupBusinessCategories,
   isSelectableBusinessCategory,
-  normalizeCategorySearch,
 } from "../domain/businessCategorySearch.mjs";
 import AppIcon from "./ui/AppIcon";
 import Button from "./ui/Button";
@@ -28,6 +25,14 @@ const SECTOR_ICONS = {
   SERVICIOS_PROYECTOS: BriefcaseBusiness,
   HISTORICO: Shapes,
 };
+
+const CATEGORY_DISPLAY_NAMES = Object.freeze({
+  OTRO_SERVICIO_PROYECTOS: "Otro servicio técnico o profesional",
+});
+
+function getPickerCategoryName(category) {
+  return CATEGORY_DISPLAY_NAMES[category?.code] || category?.name || "";
+}
 
 function normalizeCustomCategory(value) {
   return String(value || "").trim().replace(/\s+/g, " ").slice(0, 120);
@@ -51,18 +56,19 @@ const BusinessCategoryPicker = React.forwardRef(
     ref
   ) {
     const [open, setOpen] = React.useState(false);
-    const [query, setQuery] = React.useState("");
     const [draftCode, setDraftCode] = React.useState("");
     const [draftCustomValue, setDraftCustomValue] = React.useState("");
     const [customError, setCustomError] = React.useState("");
-    const searchRef = React.useRef(null);
+    const initialOptionRef = React.useRef(null);
     const optionRefs = React.useRef(new Map());
     const selectedCategory = getBusinessCategoryByCode(value);
-    const selectedName = getBusinessCategoryDisplayName(
+    const storedSelectedName = getBusinessCategoryDisplayName(
       value,
       customValue,
       fallbackName
     );
+    const selectedName =
+      CATEGORY_DISPLAY_NAMES[value] || storedSelectedName;
     const isHistoricalSelection = Boolean(
       selectedName &&
         (!selectedCategory ||
@@ -77,7 +83,6 @@ const BusinessCategoryPicker = React.forwardRef(
       setDraftCode(value);
       setDraftCustomValue(customValue);
       setCustomError("");
-      setQuery("");
       setOpen(true);
     };
 
@@ -89,17 +94,14 @@ const BusinessCategoryPicker = React.forwardRef(
     const visibleCategories = React.useMemo(
       () => filterBusinessCategories(
         BUSINESS_CATEGORIES,
-        query,
+        "",
         BUSINESS_CATEGORY_CATALOG_VERSION
       ),
-      [query]
+      []
     );
 
     const historicalOption = React.useMemo(() => {
       if (!isHistoricalSelection || !value) return null;
-      const searchable = normalizeCategorySearch(selectedName);
-      const normalizedQuery = normalizeCategorySearch(query);
-      if (normalizedQuery && !searchable.includes(normalizedQuery)) return null;
       return {
         ...(selectedCategory || {}),
         code: value,
@@ -107,7 +109,7 @@ const BusinessCategoryPicker = React.forwardRef(
         sectorCode: "HISTORICO",
         historical: true,
       };
-    }, [isHistoricalSelection, query, selectedCategory, selectedName, value]);
+    }, [isHistoricalSelection, selectedCategory, selectedName, value]);
 
     const groups = React.useMemo(() => {
       const currentGroups = groupBusinessCategories(
@@ -206,7 +208,7 @@ const BusinessCategoryPicker = React.forwardRef(
                 : "business-category-picker__placeholder"
             }
           >
-            {selectedName || "Selecciona un rubro"}
+            {selectedName || "Selecciona el rubro de tu negocio"}
           </span>
           {isHistoricalSelection && (
             <span className="business-category-picker__legacy">Histórica</span>
@@ -217,10 +219,9 @@ const BusinessCategoryPicker = React.forwardRef(
         <ResponsiveDialog
           open={open}
           onClose={closePicker}
-          initialFocusRef={searchRef}
+          initialFocusRef={initialOptionRef}
           title="Selecciona un rubro"
-          description="Selecciona la actividad que mejor representa los servicios de tu empresa."
-          eyebrow="Rubro principal"
+          description="Elige la actividad principal de tu negocio."
           size="medium"
           className="business-category-dialog"
           layerClassName="business-category-dialog-layer"
@@ -240,30 +241,6 @@ const BusinessCategoryPicker = React.forwardRef(
           }
         >
           <div className="business-category-dialog__content">
-            <div className="business-category-search">
-              <AppIcon icon={Search} size={18} />
-              <input
-                ref={searchRef}
-                type="search"
-                value={query}
-                placeholder="Buscar rubro"
-                aria-label="Buscar rubro"
-                onChange={(event) => setQuery(event.target.value)}
-              />
-              {query && (
-                <button
-                  type="button"
-                  aria-label="Limpiar búsqueda"
-                  onClick={() => {
-                    setQuery("");
-                    searchRef.current?.focus();
-                  }}
-                >
-                  <AppIcon icon={X} size={17} />
-                </button>
-              )}
-            </div>
-
             <div
               className="business-category-options"
               role="radiogroup"
@@ -295,6 +272,12 @@ const BusinessCategoryPicker = React.forwardRef(
                             ref={(node) => {
                               if (node) optionRefs.current.set(category.code, node);
                               else optionRefs.current.delete(category.code);
+                              if (
+                                selected ||
+                                (!draftCode && optionIndex === 0)
+                              ) {
+                                initialOptionRef.current = node;
+                              }
                             }}
                             type="button"
                             role="radio"
@@ -304,20 +287,29 @@ const BusinessCategoryPicker = React.forwardRef(
                                 ? 0
                                 : -1
                             }
-                            className="business-category-option"
+                            className={[
+                              "business-category-option",
+                              category.code === "OTRO_SERVICIO_PROYECTOS"
+                                ? "business-category-option--wide"
+                                : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" ")}
                             key={category.code}
                             onClick={() => chooseOption(category)}
                             onKeyDown={(event) =>
                               handleOptionKeyDown(event, category)
                             }
                           >
-                            <span>{category.name}</span>
-                            <span
-                              className="business-category-option__indicator"
-                              aria-hidden="true"
-                            >
-                              {selected && <AppIcon icon={Check} size={16} />}
-                            </span>
+                            <span>{getPickerCategoryName(category)}</span>
+                            {selected && (
+                              <span
+                                className="business-category-option__indicator"
+                                aria-hidden="true"
+                              >
+                                <AppIcon icon={Check} size={16} />
+                              </span>
+                            )}
                           </button>
                         );
                       })}
@@ -325,14 +317,6 @@ const BusinessCategoryPicker = React.forwardRef(
                   </section>
                 );
               })}
-
-              {groups.length === 0 && (
-                <div className="business-category-empty" role="status">
-                  <AppIcon icon={Search} size={22} />
-                  <strong>No encontramos rubros</strong>
-                  <span>Prueba con otro nombre o limpia la búsqueda.</span>
-                </div>
-              )}
             </div>
 
             {draftCode === "OTRO" && (

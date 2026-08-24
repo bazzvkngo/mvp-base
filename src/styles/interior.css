@@ -2852,6 +2852,14 @@
   font-size: var(--font-size-md);
 }
 
+.quote-history-empty__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: center;
+  margin-top: var(--space-2);
+}
+
 @media (max-width: 767px) {
   .clients-page-heading,
   .client-message {
@@ -2870,6 +2878,11 @@
   .quote-history-filters,
   .client-form-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .quote-history-empty__actions {
+    display: grid;
+    width: 100%;
   }
 
   .client-form-field--wide {

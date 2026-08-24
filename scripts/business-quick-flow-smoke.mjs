@@ -12,6 +12,8 @@ const [
   businessService,
   appLayout,
   navigation,
+  activation,
+  componentStyles,
 ] = await Promise.all([
   readFile(new URL("../src/pages/OnboardingPage.jsx", import.meta.url), "utf8"),
   readFile(
@@ -31,9 +33,19 @@ const [
   readFile(new URL("../src/services/businessService.js", import.meta.url), "utf8"),
   readFile(new URL("../src/layout/AppLayout.jsx", import.meta.url), "utf8"),
   readFile(new URL("../src/app/navigation.js", import.meta.url), "utf8"),
+  readFile(
+    new URL("../src/pages/InitialBusinessActivationPage.jsx", import.meta.url),
+    "utf8"
+  ),
+  readFile(new URL("../src/styles/components.css", import.meta.url), "utf8"),
 ]);
 
-for (const field of ["nombreComercial", "rubroCodigo", "regionCodigo"]) {
+for (const field of [
+  "nombreComercial",
+  "rubroCodigo",
+  "paisCodigo",
+  "regionCodigo",
+]) {
   assert.match(fields, new RegExp(`field: ["']${field}["']`));
   assert.match(formModel, new RegExp(`["']${field}["']`));
 }
@@ -50,9 +62,34 @@ for (const forbidden of [
 }
 
 assert.match(onboarding, /<QuickBusinessFields/);
+assert.match(onboarding, /showCountry/);
+assert.match(onboarding, /showRegion=\{false\}/);
+assert.match(fields, /NEW_BUSINESS_COUNTRIES/);
+assert.doesNotMatch(fields, /COUNTRIES\.filter/);
+assert.match(onboarding, /ONBOARDING_BUSINESS_FIELD_ORDER/);
+assert.match(onboarding, /Ingresa lo esencial para comenzar/);
+assert.match(onboarding, /selectedCountry\.name/);
+assert.match(onboarding, /selectedCurrency\.code/);
+assert.doesNotMatch(onboarding, /más adelante/);
+assert.doesNotMatch(onboarding, /onboarding-form__footnote/);
 assert.match(drawer, /<QuickBusinessFields/);
 assert.match(onboarding, /Crear mi negocio/);
+assert.match(fields, /placeholder="Escribe el nombre de tu negocio"/);
 assert.match(drawer, /Crear negocio/);
+assert.deepEqual(
+  normalizeQuickBusinessPayload({
+    nombreComercial: "  Bagner   Servicios Integrales ",
+    rubroCodigo: "INGENIERIA_CONSULTORIA",
+    rubroOtro: "",
+    regionCodigo: "",
+    paisCodigo: "BO",
+  }),
+  {
+    nombreComercial: "Bagner Servicios Integrales",
+    rubroCodigo: "INGENIERIA_CONSULTORIA",
+    paisCodigo: "BO",
+  }
+);
 assert.deepEqual(
   normalizeQuickBusinessPayload({
     nombreComercial: "  Mauricio   SPA ",
@@ -88,11 +125,27 @@ assert.match(onboarding, /setSubmitError\(getBusinessCreationErrorMessage\(error
 assert.doesNotMatch(onboarding, /catch[\s\S]*setValues\(INITIAL_QUICK_BUSINESS_VALUES\)/);
 assert.doesNotMatch(drawer, /catch[\s\S]*setValues\(INITIAL_QUICK_BUSINESS_VALUES\)/);
 assert.match(app, /businessSession\?\.needsOnboarding/);
-assert.match(app, /<Navigate to="\/cotizaciones" replace/);
-assert.match(app, /path="\/dashboard" element=\{<Navigate to="\/cotizaciones" replace \/>\}/);
+assert.match(app, /initialActivationBusinessId === businessId/);
+assert.match(app, /onFirstBusinessCreated=\{handleFirstBusinessCreated\}/);
+assert.match(activation, /Tu negocio ya está creado/);
+assert.match(activation, /Completar ahora/);
+assert.match(activation, /Hacerlo después/);
+assert.match(activation, /getCompanyProfile/);
+assert.match(activation, /getDefaultBusinessPath/);
+assert.match(activation, /canAccessBusinessPath\(business\?\.role, "\/empresa"\)[\s\S]*?"\/empresa"/);
+assert.match(activation, /navigate\(path, \{ replace: true \}\);\s+onFinish\?\.\(\);/);
+assert.match(app, /path="\/login"[\s\S]*?Navigate to=\{safeLanding\} replace/);
+assert.match(app, /path="\/onboarding" element=\{<Navigate to=\{safeLanding\} replace \/>\}/);
+assert.match(app, /path="\/" element=\{<Navigate to=\{safeLanding\} replace \/>\}/);
+assert.match(app, /path="\/dashboard" element=\{<Navigate to=\{safeLanding\} replace \/>\}/);
+assert.match(app, /path="\/resumen" element=\{<Navigate to=\{safeLanding\} replace \/>\}/);
+assert.match(appLayout, /navigate\(\s*getDefaultBusinessPath\(session\?\.activeBusiness\?\.role \|\| business\.role\)\s*\)/);
+assert.match(componentStyles, /\.activation-checklist li:last-child:nth-child\(odd\)[\s\S]*?grid-column: 1 \/ -1/);
+assert.match(componentStyles, /@media \(max-width: 640px\)[\s\S]*?\.activation-checklist li:last-child:nth-child\(odd\)[\s\S]*?grid-column: auto/);
 assert.doesNotMatch(navigation, /to: "\/dashboard"/);
 assert.match(app, /key=\{businessId\}/);
 assert.match(companyConfig, /ownerOnly: true/);
+assert.match(companyConfig, /isSelectableNewBusinessCountry\(country\) \|\| country\.code === form\.paisCodigo/);
 assert.match(companyConfig, /confirmation\.trim\(\) === expectedName/);
 assert.match(companyConfig, /Eliminar definitivamente/);
 assert.match(businessService, /httpsCallable\(functions, "deleteBusiness"\)/);

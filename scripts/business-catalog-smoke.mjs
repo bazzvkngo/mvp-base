@@ -7,6 +7,28 @@ assert.equal(catalog.businessCategoryCatalogVersion, 1);
 assert.equal(catalog.countries.length, 11);
 assert.equal(catalog.countries[0].code, "CL");
 assert.equal(catalog.countries.find((country) => country.code === "BR").defaultLocale, "pt-BR");
+const expectedNewBusinessCountries = [
+  ["CL", "CLP"],
+  ["BO", "BOB"],
+  ["BR", "BRL"],
+  ["PE", "PEN"],
+  ["AR", "ARS"],
+  ["CO", "COP"],
+  ["EC", "USD"],
+  ["PY", "PYG"],
+  ["UY", "UYU"],
+  ["MX", "MXN"],
+];
+assert.deepEqual(
+  catalog.countries
+    .filter((country) => country.active !== false && country.selectableForNewBusiness !== false)
+    .map(({code, defaultCurrencyCode}) => [code, defaultCurrencyCode]),
+  expectedNewBusinessCountries
+);
+const legacyOtherCountry = catalog.countries.find((country) => country.code === "OTHER");
+assert.equal(legacyOtherCountry?.active, true);
+assert.equal(legacyOtherCountry?.selectableForNewBusiness, false);
+assert.equal(legacyOtherCountry?.legacy, true);
 assert.equal(catalog.currencies.length, 11);
 assert.equal(catalog.currencies[0].code, "CLP");
 assert.ok(catalog.currencies.some((currency) => currency.code === "BOB"));
@@ -95,5 +117,9 @@ assert.ok(nuble.communes.some((commune) => commune.name === "Chillán"));
 
 console.log(
   "BUSINESS_CATALOG_SMOKE_OK",
-  JSON.stringify({ regions: catalog.regions.length, communes: communes.length })
+  JSON.stringify({
+    newBusinessCountries: expectedNewBusinessCountries.length,
+    regions: catalog.regions.length,
+    communes: communes.length,
+  })
 );

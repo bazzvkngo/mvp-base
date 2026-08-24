@@ -20,6 +20,7 @@ import LoginPage from "../pages/LoginPage";
 import MarketReferencesPage from "../pages/MarketReferencesPage";
 import NewQuotePage from "../pages/NewQuotePage";
 import OnboardingPage from "../pages/OnboardingPage";
+import InitialBusinessActivationPage from "../pages/InitialBusinessActivationPage";
 import PricingPage from "../pages/PricingPage";
 import QuoteHistoryPage from "../pages/QuoteHistoryPage";
 import PublicQuoteProposalPage from "../pages/PublicQuoteProposalPage";
@@ -93,8 +94,11 @@ function AppRoutes({
   businessError,
   businessChanging,
   businessSession,
+  initialActivationBusinessId,
   onBusinessChanged,
   onBusinessCreated,
+  onFirstBusinessCreated,
+  onInitialActivationFinished,
   onRetry,
   platformAccess,
 }) {
@@ -172,7 +176,7 @@ function AppRoutes({
           element={
             <OnboardingPage
               usuario={usuario}
-              onBusinessCreated={onBusinessCreated}
+              onBusinessCreated={onFirstBusinessCreated}
             />
           }
         />
@@ -185,6 +189,14 @@ function AppRoutes({
   const businessId = activeBusiness?.id;
   const role = activeBusiness?.role;
   const safeLanding = getDefaultBusinessPath(role);
+  if (initialActivationBusinessId === businessId) {
+    return (
+      <InitialBusinessActivationPage
+        business={activeBusiness}
+        onFinish={onInitialActivationFinished}
+      />
+    );
+  }
   if (!["/", "/login", "/onboarding"].includes(location.pathname) &&
       !canAccessBusinessPath(role, location.pathname)) {
     return <Navigate to={safeLanding} replace />;
@@ -194,10 +206,10 @@ function AppRoutes({
     <Routes>
       <Route
         path="/login"
-        element={<Navigate to="/cotizaciones" replace />}
+        element={<Navigate to={safeLanding} replace />}
       />
-      <Route path="/onboarding" element={<Navigate to="/cotizaciones" replace />} />
-      <Route path="/" element={<Navigate to="/cotizaciones" replace />} />
+      <Route path="/onboarding" element={<Navigate to={safeLanding} replace />} />
+      <Route path="/" element={<Navigate to={safeLanding} replace />} />
       <Route
         element={
           <AppLayout
@@ -211,8 +223,8 @@ function AppRoutes({
           />
         }
       >
-        <Route path="/dashboard" element={<Navigate to="/cotizaciones" replace />} />
-        <Route path="/resumen" element={<Navigate to="/cotizaciones" replace />} />
+        <Route path="/dashboard" element={<Navigate to={safeLanding} replace />} />
+        <Route path="/resumen" element={<Navigate to={safeLanding} replace />} />
         <Route
           path="/finanzas"
           element={
@@ -522,6 +534,8 @@ function App() {
   });
   const [businessChanging, setBusinessChanging] = useState(false);
   const [platformState, setPlatformState] = useState({loading: false, data: null});
+  const [initialActivationBusinessId, setInitialActivationBusinessId] =
+    useState("");
 
   const refreshBusinessSession = useCallback(async () => {
     setBusinessState((current) => ({ ...current, loading: true, error: null }));
@@ -558,9 +572,20 @@ function App() {
     }
   }, []);
 
+  const handleFirstBusinessCreated = useCallback(
+    async (createdBusiness) => {
+      const data = await refreshBusinessSession();
+      const businessId = createdBusiness?.id || data?.activeBusiness?.id || "";
+      setInitialActivationBusinessId(businessId);
+      return data;
+    },
+    [refreshBusinessSession]
+  );
+
   useEffect(() => {
     const unsubscribe = subscribeToAuth((user) => {
       setUsuario(user);
+      setInitialActivationBusinessId("");
       setCargando(false);
       setPlatformState({loading: Boolean(user), data: null});
       setBusinessState({
@@ -620,8 +645,11 @@ function App() {
         businessError={businessState.error}
         businessChanging={businessChanging}
         businessSession={businessState.data}
+        initialActivationBusinessId={initialActivationBusinessId}
         onBusinessChanged={changeActiveBusiness}
         onBusinessCreated={refreshBusinessSession}
+        onFirstBusinessCreated={handleFirstBusinessCreated}
+        onInitialActivationFinished={() => setInitialActivationBusinessId("")}
         onRetry={() => refreshBusinessSession().catch(() => {})}
         platformAccess={platformState.data}
       />

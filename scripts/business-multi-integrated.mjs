@@ -24,6 +24,15 @@ import {
 
 const PROJECT_ID = "tesis-inventario-ia";
 const RUN_ID = Date.now().toString(36);
+const emulatorEndpoint = (environmentName, fallbackPort) => {
+  const [host = "127.0.0.1", port = fallbackPort] = String(
+    process.env[environmentName] || `127.0.0.1:${fallbackPort}`
+  ).split(":");
+  return {host, port: Number(port)};
+};
+const authEmulator = emulatorEndpoint("FIREBASE_AUTH_EMULATOR_HOST", 9099);
+const firestoreEmulator = emulatorEndpoint("FIRESTORE_EMULATOR_HOST", 8080);
+const functionsEmulator = emulatorEndpoint("FUNCTIONS_EMULATOR_HOST", 5001);
 const requireFromFunctions = createRequire(
   new URL("../functions/package.json", import.meta.url)
 );
@@ -48,9 +57,19 @@ function createClient(name) {
   const auth = getAuth(app);
   const db = getFirestore(app);
   const functions = getFunctions(app, "us-central1");
-  connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
-  connectFirestoreEmulator(db, "127.0.0.1", 8080);
-  connectFunctionsEmulator(functions, "127.0.0.1", 5001);
+  connectAuthEmulator(auth, `http://${authEmulator.host}:${authEmulator.port}`, {
+    disableWarnings: true,
+  });
+  connectFirestoreEmulator(
+    db,
+    firestoreEmulator.host,
+    firestoreEmulator.port
+  );
+  connectFunctionsEmulator(
+    functions,
+    functionsEmulator.host,
+    functionsEmulator.port
+  );
   return { app, auth, db, functions };
 }
 
@@ -114,10 +133,22 @@ async function main() {
     });
     const firstBusinessId = first.data.business.id;
 
+    await expectCallableCode("invalid-argument", () =>
+      callable(owner, "createAdditionalBusiness", {
+        nombreComercial: "Empresa exterior nueva",
+        rubroCodigo: "INGENIERIA_CONSULTORIA",
+        paisCodigo: "OTHER",
+        regionEstado: "Exterior",
+        requestId: "multi_owner_other_rejected_001",
+      })
+    );
+
     const additionalPayload = {
       nombreComercial: "Mauricio SPA",
       rubroCodigo: "SOFTWARE_SOLUCIONES_DIGITALES",
-      regionCodigo: "01",
+      paisCodigo: "BO",
+      monedaCodigo: "USD",
+      regionEstado: "La Paz",
       requestId: "multi_owner_additional_001",
     };
     const second = await callable(
@@ -128,8 +159,8 @@ async function main() {
     const secondBusinessId = second.data.business.id;
     assert.notEqual(secondBusinessId, firstBusinessId);
     assert.equal(second.data.business.role, "OWNER");
-    assert.equal(second.data.business.paisCodigo, "CL");
-    assert.equal(second.data.business.monedaCodigo, "CLP");
+    assert.equal(second.data.business.paisCodigo, "BO");
+    assert.equal(second.data.business.monedaCodigo, "BOB");
     assert.equal(second.data.business.comunaCodigo, undefined);
 
     const retry = await callable(
@@ -154,7 +185,9 @@ async function main() {
     assert.equal(secondMembership.data()?.rol, "OWNER");
     assert.equal(secondProfile.data()?.nombreComercial, "Mauricio SPA");
     assert.equal(secondProfile.data()?.rubroCodigo, "SOFTWARE_SOLUCIONES_DIGITALES");
-    assert.equal(secondProfile.data()?.regionCodigo, "01");
+    assert.equal(secondProfile.data()?.paisCodigo, "BO");
+    assert.equal(secondProfile.data()?.monedaCodigo, "BOB");
+    assert.equal(secondProfile.data()?.regionEstado, "La Paz");
     assert.equal(secondProfile.data()?.rut, undefined);
     assert.equal(secondProfile.data()?.comunaCodigo, undefined);
     assert.equal(ownerUser.data()?.negocioActivoId, secondBusinessId);

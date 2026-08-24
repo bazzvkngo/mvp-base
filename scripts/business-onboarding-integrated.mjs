@@ -27,6 +27,15 @@ import {
 
 const PROJECT_ID = "tesis-inventario-ia";
 const RUN_ID = Date.now().toString(36);
+const emulatorEndpoint = (environmentName, fallbackPort) => {
+  const [host = "127.0.0.1", port = fallbackPort] = String(
+    process.env[environmentName] || `127.0.0.1:${fallbackPort}`
+  ).split(":");
+  return {host, port: Number(port)};
+};
+const authEmulator = emulatorEndpoint("FIREBASE_AUTH_EMULATOR_HOST", 9099);
+const firestoreEmulator = emulatorEndpoint("FIRESTORE_EMULATOR_HOST", 8080);
+const functionsEmulator = emulatorEndpoint("FUNCTIONS_EMULATOR_HOST", 5001);
 const requireFromFunctions = createRequire(
   new URL("../functions/package.json", import.meta.url)
 );
@@ -57,11 +66,19 @@ function createClient(name) {
   const auth = getAuth(app);
   const db = getFirestore(app);
   const functions = getFunctions(app, "us-central1");
-  connectAuthEmulator(auth, "http://127.0.0.1:9099", {
+  connectAuthEmulator(auth, `http://${authEmulator.host}:${authEmulator.port}`, {
     disableWarnings: true,
   });
-  connectFirestoreEmulator(db, "127.0.0.1", 8080);
-  connectFunctionsEmulator(functions, "127.0.0.1", 5001);
+  connectFirestoreEmulator(
+    db,
+    firestoreEmulator.host,
+    firestoreEmulator.port
+  );
+  connectFunctionsEmulator(
+    functions,
+    functionsEmulator.host,
+    functionsEmulator.port
+  );
   return { app, auth, db, functions };
 }
 
@@ -125,9 +142,9 @@ async function main() {
 
     await expectCallableCode("invalid-argument", () =>
       ownerCall("createFirstBusiness", {
-        nombreComercial: validPayload.nombreComercial,
+        nombreComercial: "",
         rubroCodigo: validPayload.rubroCodigo,
-        requestId: "business_missing_region_001",
+        requestId: "business_missing_name_001",
       })
     );
     await expectCallableCode("invalid-argument", () =>
@@ -147,6 +164,14 @@ async function main() {
         requestId: "business_empty_other_001",
       })
     );
+    await expectCallableCode("invalid-argument", () =>
+      ownerCall("createFirstBusiness", {
+        nombreComercial: "Empresa exterior nueva",
+        rubroCodigo: validPayload.rubroCodigo,
+        paisCodigo: "OTHER",
+        requestId: "business_legacy_country_rejected_001",
+      })
+    );
     assert.equal(
       (
         await adminDb
@@ -158,7 +183,9 @@ async function main() {
     );
 
     const requestPayload = {
-      ...validPayload,
+      nombreComercial: validPayload.nombreComercial,
+      rubroCodigo: validPayload.rubroCodigo,
+      paisCodigo: "BO",
       requestId: "business_create_retry_001",
     };
     const [firstResponse, duplicateResponse] = await Promise.all([
@@ -178,11 +205,11 @@ async function main() {
     assert.equal(createdBusinesses.size, 1);
     const createdBusiness = createdBusinesses.docs[0].data();
     assert.equal(createdBusiness.nombreComercial, validPayload.nombreComercial);
-    assert.equal(createdBusiness.regionCodigo, "01");
+    assert.equal(createdBusiness.regionCodigo, "");
     assert.equal(Object.hasOwn(createdBusiness, "comunaCodigo"), false);
     assert.equal(Object.hasOwn(createdBusiness, "comunaNombre"), false);
-    assert.equal(createdBusiness.paisCodigo, "CL");
-    assert.equal(createdBusiness.monedaCodigo, "CLP");
+    assert.equal(createdBusiness.paisCodigo, "BO");
+    assert.equal(createdBusiness.monedaCodigo, "BOB");
     assert.equal(createdBusiness.estado, "activo");
 
     const membershipId = `${businessId}__${ownerUid}`;
@@ -205,11 +232,15 @@ async function main() {
       .get();
     assert.equal(quickProfile.data()?.nombreComercial, validPayload.nombreComercial);
     assert.equal(quickProfile.data()?.rubroCodigo, validPayload.rubroCodigo);
-    assert.equal(quickProfile.data()?.regionCodigo, "01");
-    assert.equal(quickProfile.data()?.paisCodigo, "CL");
-    assert.equal(quickProfile.data()?.monedaCodigo, "CLP");
+    assert.equal(quickProfile.data()?.regionCodigo, "");
+    assert.equal(quickProfile.data()?.paisCodigo, "BO");
+    assert.equal(quickProfile.data()?.monedaCodigo, "BOB");
     assert.equal(quickProfile.data()?.rut, undefined);
     assert.equal(quickProfile.data()?.comunaCodigo, undefined);
+    assert.equal(
+      getBusinessProfileCompletion(quickProfile.data()).minimumComplete,
+      false
+    );
     assert.equal(
       getBusinessProfileCompletion(quickProfile.data()).recommendedComplete,
       false
@@ -220,6 +251,8 @@ async function main() {
     assert.equal(activeSession.data.needsOnboarding, false);
     assert.equal(activeSession.data.activeBusiness.id, businessId);
     assert.equal(activeSession.data.activeBusiness.role, "OWNER");
+    assert.equal(activeSession.data.activeBusiness.paisCodigo, "BO");
+    assert.equal(activeSession.data.activeBusiness.monedaCodigo, "BOB");
 
     const profileUpdate = await ownerCall("updateBusinessProfile", {
       businessId,
@@ -292,6 +325,46 @@ async function main() {
     assert.equal(profileAfterRegionChange.data()?.comunaNombre, undefined);
     assert.equal(profileAfterRegionChange.data()?.ciudad, undefined);
     assert.equal(businessAfterRegionChange.data()?.comunaCodigo, undefined);
+
+    const legacyCountryPatch = {
+      paisCodigo: "OTHER",
+      paisNombre: "Otro país",
+      monedaCodigo: "EUR",
+      monedaNombre: "Euro",
+      locale: "es",
+      regionCodigo: "",
+      regionNombre: "Exterior",
+      regionEstado: "Exterior",
+    };
+    await Promise.all([
+      adminDb.collection("negocios").doc(businessId).update(legacyCountryPatch),
+      adminDb.doc(`negocios/${businessId}/empresa/perfil`).update(legacyCountryPatch),
+    ]);
+    const preservedLegacyCountry = await ownerCall("updateBusinessProfile", {
+      businessId,
+      profile: {
+        nombreComercial: "Mauricio SPA actualizado",
+        rubroCodigo: validPayload.rubroCodigo,
+        paisCodigo: "OTHER",
+        monedaCodigo: "EUR",
+        locale: "es",
+        regionEstado: "Exterior",
+        telefono: "+00 123456",
+      },
+    });
+    assert.equal(preservedLegacyCountry.data.profile.paisCodigo, "OTHER");
+    assert.equal(preservedLegacyCountry.data.profile.monedaCodigo, "EUR");
+    assert.equal(preservedLegacyCountry.data.profile.telefono, "+00 123456");
+    const migratedLegacyCountry = await ownerCall("updateBusinessProfile", {
+      businessId,
+      profile: {
+        ...validPayload,
+        paisCodigo: "CL",
+        monedaCodigo: "CLP",
+      },
+    });
+    assert.equal(migratedLegacyCountry.data.profile.paisCodigo, "CL");
+    assert.equal(migratedLegacyCountry.data.profile.monedaCodigo, "CLP");
 
     await Promise.all([
       adminDb.collection("negocios").doc(businessId).update({

@@ -25,6 +25,7 @@ import {
   getRegionByCode,
   getDefaultFiscalIdentifierLabel,
   getDefaultLocaleForCountry,
+  isSelectableNewBusinessCountry,
 } from "../../domain/businessCatalog";
 import {
   isValidBusinessEmail,
@@ -441,7 +442,9 @@ function BusinessInformationSection({ businessId, canEdit, onBusinessUpdated }) 
             <div className="settings-form-grid">
               <SettingsField label="País" required>
                 <select name="paisCodigo" value={form.paisCodigo} onChange={change}>
-                  {COUNTRIES.filter((country) => country.active !== false).map((country) => (
+                  {COUNTRIES.filter((country) =>
+                    isSelectableNewBusinessCountry(country) || country.code === form.paisCodigo
+                  ).map((country) => (
                     <option key={country.code} value={country.code}>{country.name}</option>
                   ))}
                 </select>

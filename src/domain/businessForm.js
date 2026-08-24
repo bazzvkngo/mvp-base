@@ -1,7 +1,9 @@
 import {
   BUSINESS_CATEGORY_CATALOG_VERSION,
   getBusinessCategoryByCode,
+  getCountryByCode,
   getRegionByCode,
+  isSelectableNewBusinessCountry,
 } from "./businessCatalog";
 import {
   normalizeBusinessText,
@@ -18,10 +20,21 @@ export const INITIAL_QUICK_BUSINESS_VALUES = Object.freeze({
   regionCodigo: "",
 });
 
+export const INITIAL_ONBOARDING_BUSINESS_VALUES = Object.freeze({
+  ...INITIAL_QUICK_BUSINESS_VALUES,
+  paisCodigo: "CL",
+});
+
 export const QUICK_BUSINESS_FIELD_ORDER = Object.freeze([
   "nombreComercial",
   "rubroCodigo",
   "regionCodigo",
+]);
+
+export const ONBOARDING_BUSINESS_FIELD_ORDER = Object.freeze([
+  "nombreComercial",
+  "rubroCodigo",
+  "paisCodigo",
 ]);
 
 export function normalizeChileanRut(value) {
@@ -52,7 +65,10 @@ export function isValidBusinessEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
 }
 
-export function validateQuickBusiness(values) {
+export function validateQuickBusiness(
+  values,
+  { requireCountry = false, requireRegion = true } = {}
+) {
   const errors = {};
   const name = normalizeBusinessText(values.nombreComercial);
 
@@ -72,8 +88,12 @@ export function validateQuickBusiness(values) {
   ) {
     errors.rubroCodigo = "Describe el rubro de tu negocio.";
   }
-  if (!getRegionByCode(values.regionCodigo)) {
+  if (requireRegion && !getRegionByCode(values.regionCodigo)) {
     errors.regionCodigo = "Selecciona una región.";
+  }
+  const country = getCountryByCode(values.paisCodigo);
+  if (requireCountry && !isSelectableNewBusinessCountry(country)) {
+    errors.paisCodigo = "Selecciona un país válido.";
   }
 
   return errors;

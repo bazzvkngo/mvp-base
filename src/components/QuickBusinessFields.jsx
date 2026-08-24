@@ -1,5 +1,8 @@
 import React from "react";
-import { CHILE_REGIONS } from "../domain/businessCatalog";
+import {
+  CHILE_REGIONS,
+  NEW_BUSINESS_COUNTRIES,
+} from "../domain/businessCatalog";
 import BusinessCategoryPicker from "./BusinessCategoryPicker";
 
 function FieldMessage({ error, help = "", id }) {
@@ -21,6 +24,8 @@ function QuickBusinessFields({
   onBlur,
   onChange,
   setFieldRef,
+  showCountry = false,
+  showRegion = true,
   values,
 }) {
   return (
@@ -34,7 +39,7 @@ function QuickBusinessFields({
               type="text"
               autoComplete="organization"
               maxLength="120"
-              placeholder="Ej. Servicios Técnicos Andes"
+              placeholder="Escribe el nombre de tu negocio"
             />
           ),
         },
@@ -42,6 +47,20 @@ function QuickBusinessFields({
           field: "rubroCodigo",
           label: "Rubro principal",
           category: true,
+        },
+        {
+          field: "paisCodigo",
+          label: "País",
+          control: (
+            <select>
+              <option value="">Selecciona el país de tu negocio</option>
+              {NEW_BUSINESS_COUNTRIES.map((country) => (
+                  <option key={country.code} value={country.code}>
+                    {country.name}
+                  </option>
+                ))}
+            </select>
+          ),
         },
         {
           field: "regionCodigo",
@@ -57,11 +76,14 @@ function QuickBusinessFields({
             </select>
           ),
         },
-      ].map(({ category, field, label, control }) => {
-        const controlId = `${idPrefix}-${field}`;
-        const messageId = `${controlId}-message`;
-        if (category) {
-          return (
+      ]
+        .filter(({ field }) => showCountry || field !== "paisCodigo")
+        .filter(({ field }) => showRegion || field !== "regionCodigo")
+        .map(({ category, field, label, control }) => {
+          const controlId = `${idPrefix}-${field}`;
+          const messageId = `${controlId}-message`;
+          if (category) {
+            return (
             <div className="quick-business-field" key={field}>
               <label htmlFor={controlId}>
                 {label}<span aria-hidden="true"> *</span>
@@ -79,11 +101,15 @@ function QuickBusinessFields({
                 }
                 onTouched={(patch) => onBlur(field, patch)}
               />
-              <FieldMessage id={messageId} error={errors.rubroCodigo} help="Selecciona la actividad que mejor representa los servicios de tu empresa." />
+              <FieldMessage
+                id={messageId}
+                error={errors.rubroCodigo}
+                help="Elige la actividad que mejor representa tu servicio principal."
+              />
             </div>
-          );
-        }
-        return (
+            );
+          }
+          return (
           <div className="quick-business-field" key={field}>
             <label htmlFor={controlId}>
               {label}<span aria-hidden="true"> *</span>
@@ -102,8 +128,8 @@ function QuickBusinessFields({
             })}
             <FieldMessage id={messageId} error={errors[field]} />
           </div>
-        );
-      })}
+          );
+        })}
     </div>
   );
 }

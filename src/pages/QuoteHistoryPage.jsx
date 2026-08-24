@@ -43,6 +43,10 @@ import {
 } from "../services/saleService";
 import { formatDate, formatMoney } from "../utils/formatters";
 import { downloadQuotePdf, shareQuotePdf } from "../utils/quotePdf";
+import {
+  BUSINESS_PERMISSIONS,
+  hasBusinessPermission,
+} from "../domain/rbac.mjs";
 
 const STATUS_OPTIONS = [
   "borrador",
@@ -161,6 +165,14 @@ function QuoteHistoryPage({ userId, role }) {
   const [quoteEventsById, setQuoteEventsById] = useState({});
   const reopenRequestIdsRef = useRef(new Map());
   const canDuplicate = canDuplicateQuotes(role);
+  const canCreateClients = hasBusinessPermission(
+    role,
+    BUSINESS_PERMISSIONS.CLIENTS_WRITE
+  );
+  const canWriteInventory = hasBusinessPermission(
+    role,
+    BUSINESS_PERMISSIONS.INVENTORY_WRITE
+  );
 
   useEffect(() => {
     if (!userId) {
@@ -567,7 +579,7 @@ function QuoteHistoryPage({ userId, role }) {
         <div className="erp-page-intro">
           <p>Consulta y administra las cotizaciones del negocio.</p>
         </div>
-        {canDuplicate && (
+        {canDuplicate && quotes.length > 0 && (
           <Button type="button" icon={Plus} onClick={() => navigate("/cotizaciones/nueva")}>
             Nueva cotización
           </Button>
@@ -585,8 +597,9 @@ function QuoteHistoryPage({ userId, role }) {
           </div>
         </div>
 
-        <div className="erp-filters erp-history-filters erp-history-filters--two clients-filters quote-history-filters">
-          <label className="erp-field erp-history-search-field">
+        {quotes.length > 0 && (
+          <div className="erp-filters erp-history-filters erp-history-filters--two clients-filters quote-history-filters">
+            <label className="erp-field erp-history-search-field">
             <span className="erp-field__label">Buscar por número o cliente</span>
             <span className="clients-search-control">
               <AppIcon icon={Search} size={18} />
@@ -597,8 +610,8 @@ function QuoteHistoryPage({ userId, role }) {
                 placeholder="Ej.: COT-2026-0001 o cliente"
               />
             </span>
-          </label>
-          <label className="erp-field">
+            </label>
+            <label className="erp-field">
             <span className="erp-field__label">Estado</span>
             <select
               className="erp-control"
@@ -612,15 +625,49 @@ function QuoteHistoryPage({ userId, role }) {
                 </option>
               ))}
             </select>
-          </label>
-        </div>
+            </label>
+          </div>
+        )}
 
         {loading ? (
           <div className="erp-empty-state" role="status">Cargando cotizaciones...</div>
         ) : quotes.length === 0 ? (
           <div className="erp-empty-state quote-history-empty">
-            <h3>No hay cotizaciones guardadas</h3>
-            <p>Crea una nueva cotización para comenzar.</p>
+            <h3>Ya puedes comenzar a trabajar con ValoraCloud.</h3>
+            <p>
+              Prepara los datos básicos o crea directamente tu primera
+              cotización.
+            </p>
+            <div className="quote-history-empty__actions">
+              {canCreateClients && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() =>
+                    navigate("/clientes", { state: { openCreateClient: true } })
+                  }
+                >
+                  Crear cliente
+                </Button>
+              )}
+              {canWriteInventory && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => navigate("/inventario")}
+                >
+                  Agregar productos o servicios
+                </Button>
+              )}
+              {canDuplicate && (
+                <Button
+                  type="button"
+                  onClick={() => navigate("/cotizaciones/nueva")}
+                >
+                  Crear cotización
+                </Button>
+              )}
+            </div>
           </div>
         ) : filteredQuotes.length === 0 ? (
           <div className="erp-empty-state">No hay cotizaciones con esos filtros.</div>

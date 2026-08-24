@@ -6,11 +6,15 @@ import Button from "../components/ui/Button";
 import SkipLink from "../components/ui/SkipLink";
 import {
   getBusinessCreationErrorMessage,
-  INITIAL_QUICK_BUSINESS_VALUES,
+  INITIAL_ONBOARDING_BUSINESS_VALUES,
   normalizeQuickBusinessPayload,
-  QUICK_BUSINESS_FIELD_ORDER,
+  ONBOARDING_BUSINESS_FIELD_ORDER,
   validateQuickBusiness,
 } from "../domain/businessForm";
+import {
+  getCountryByCode,
+  getCurrencyByCode,
+} from "../domain/businessCatalog";
 import { logout } from "../services/authService";
 import {
   clearBusinessCreationRequestId,
@@ -19,7 +23,9 @@ import {
 } from "../services/businessService";
 
 function OnboardingPage({ usuario, onBusinessCreated }) {
-  const [values, setValues] = React.useState(INITIAL_QUICK_BUSINESS_VALUES);
+  const [values, setValues] = React.useState(
+    INITIAL_ONBOARDING_BUSINESS_VALUES
+  );
   const [errors, setErrors] = React.useState({});
   const [touched, setTouched] = React.useState({});
   const [submitted, setSubmitted] = React.useState(false);
@@ -27,12 +33,19 @@ function OnboardingPage({ usuario, onBusinessCreated }) {
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const fieldRefs = React.useRef({});
   const requestIdRef = React.useRef(null);
+  const selectedCountry = getCountryByCode(values.paisCodigo);
+  const selectedCurrency = getCurrencyByCode(
+    selectedCountry?.defaultCurrencyCode
+  );
 
   const updateValue = (field, value) => {
     const patch =
       field && typeof field === "object" ? field : { [field]: value };
     const nextValues = { ...values, ...patch };
-    const nextErrors = validateQuickBusiness(nextValues);
+    const nextErrors = validateQuickBusiness(nextValues, {
+      requireCountry: true,
+      requireRegion: false,
+    });
     setValues(nextValues);
     setErrors((current) => {
       if (submitted) return nextErrors;
@@ -49,7 +62,10 @@ function OnboardingPage({ usuario, onBusinessCreated }) {
   };
 
   const validateField = (field, patch = {}) => {
-    const nextErrors = validateQuickBusiness({ ...values, ...patch });
+    const nextErrors = validateQuickBusiness(
+      { ...values, ...patch },
+      { requireCountry: true, requireRegion: false }
+    );
     setTouched((current) => ({ ...current, [field]: true }));
     setErrors((current) => ({ ...current, [field]: nextErrors[field] }));
   };
@@ -58,10 +74,13 @@ function OnboardingPage({ usuario, onBusinessCreated }) {
     event.preventDefault();
     if (isSubmitting) return;
 
-    const nextErrors = validateQuickBusiness(values);
+    const nextErrors = validateQuickBusiness(values, {
+      requireCountry: true,
+      requireRegion: false,
+    });
     setSubmitted(true);
     setTouched(
-      QUICK_BUSINESS_FIELD_ORDER.reduce(
+      ONBOARDING_BUSINESS_FIELD_ORDER.reduce(
         (result, field) => ({ ...result, [field]: true }),
         {}
       )
@@ -69,7 +88,7 @@ function OnboardingPage({ usuario, onBusinessCreated }) {
     setErrors(nextErrors);
     setSubmitError("");
 
-    const firstInvalidField = QUICK_BUSINESS_FIELD_ORDER.find(
+    const firstInvalidField = ONBOARDING_BUSINESS_FIELD_ORDER.find(
       (field) => nextErrors[field]
     );
     if (firstInvalidField) {
@@ -84,13 +103,13 @@ function OnboardingPage({ usuario, onBusinessCreated }) {
       if (!requestIdRef.current) {
         requestIdRef.current = getBusinessCreationRequestId(usuario.uid);
       }
-      await createFirstBusiness(
+      const result = await createFirstBusiness(
         normalizeQuickBusinessPayload(values),
         requestIdRef.current
       );
       clearBusinessCreationRequestId(usuario.uid);
       requestIdRef.current = null;
-      await onBusinessCreated();
+      await onBusinessCreated(result.business);
     } catch (error) {
       if (import.meta.env.DEV) {
         console.error(
@@ -138,10 +157,7 @@ function OnboardingPage({ usuario, onBusinessCreated }) {
             <div className="onboarding-card__intro">
               <span className="onboarding-step">Comencemos</span>
               <h1 id="onboarding-title">Crea tu primer negocio</h1>
-              <p>
-                Ingresa los datos principales para comenzar. Podrás completar el
-                resto de la información más adelante.
-              </p>
+              <p>Ingresa lo esencial para comenzar.</p>
             </div>
 
             <form
@@ -164,13 +180,17 @@ function OnboardingPage({ usuario, onBusinessCreated }) {
                 disabled={isSubmitting}
                 onChange={updateValue}
                 onBlur={validateField}
+                showCountry
+                showRegion={false}
                 setFieldRef={(field, node) => {
                   fieldRefs.current[field] = node;
                 }}
               />
 
               <p className="onboarding-form__defaults">
-                El negocio se creará en Chile y utilizará CLP como moneda inicial.
+                {selectedCountry && selectedCurrency
+                  ? `${selectedCountry.name} · ${selectedCurrency.code}`
+                  : "La moneda inicial se asignará según el país."}
               </p>
 
               <div className="onboarding-form__actions">
@@ -183,10 +203,6 @@ function OnboardingPage({ usuario, onBusinessCreated }) {
                 >
                   {isSubmitting ? "Creando negocio..." : "Crear mi negocio"}
                 </Button>
-                <p className="onboarding-form__footnote">
-                  Completa después el RUT, contacto y ubicación detallada desde
-                  Empresa.
-                </p>
               </div>
             </form>
           </section>

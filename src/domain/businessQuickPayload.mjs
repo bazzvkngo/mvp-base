@@ -7,8 +7,13 @@ export function normalizeQuickBusinessPayload(values) {
   const payload = {
     nombreComercial: normalizeBusinessText(values.nombreComercial),
     rubroCodigo,
-    regionCodigo: String(values.regionCodigo || ""),
   };
+  if (values.regionCodigo) {
+    payload.regionCodigo = String(values.regionCodigo);
+  }
+  if (values.paisCodigo) {
+    payload.paisCodigo = String(values.paisCodigo).toUpperCase();
+  }
   if (rubroCodigo === "OTRO") {
     payload.rubroOtro = normalizeBusinessText(values.rubroOtro).slice(0, 120);
   }

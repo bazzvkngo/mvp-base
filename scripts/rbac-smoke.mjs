@@ -43,9 +43,16 @@ assert.equal(canAccessBusinessPath("TECNICO", "/trabajos"), true);
 assert.equal(canAccessBusinessPath("TECNICO", "/reportes"), false);
 assert.equal(canAccessBusinessPath("FINANZAS", "/reportes"), true);
 assert.equal(canAccessBusinessPath("FINANZAS", "/empresa"), false);
-assert.equal(getDefaultBusinessPath("OWNER"), "/cotizaciones");
+assert.equal(getDefaultBusinessPath("OWNER"), "/reportes");
+assert.equal(getDefaultBusinessPath("ADMIN"), "/reportes");
+assert.equal(getDefaultBusinessPath("FINANZAS"), "/reportes");
 assert.equal(getDefaultBusinessPath("VENTAS"), "/cotizaciones");
+assert.equal(getDefaultBusinessPath("COMPRAS"), "/ordenes-compra");
 assert.equal(getDefaultBusinessPath("TECNICO"), "/trabajos");
+assert.equal(getDefaultBusinessPath("MEMBER"), "/cotizaciones");
+for (const role of BUSINESS_ROLES) {
+  assert.equal(canAccessBusinessPath(role, getDefaultBusinessPath(role)), true);
+}
 console.log("OK RBAC: rutas y redirecciones seguras por rol");
 
 function rejectingDependencies(role) {

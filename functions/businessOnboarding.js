@@ -144,7 +144,11 @@ function validateBusinessCategory(
 function validateRequiredBusinessFields(
   rawData,
   HttpsError,
-  { existingBusiness = null } = {}
+  {
+    deriveCurrencyFromCountry = false,
+    existingBusiness = null,
+    regionRequired = true,
+  } = {}
 ) {
   const data = rawData && typeof rawData === "object" ? rawData : {};
   const nombreComercial = safeText(data.nombreComercial, 120);
@@ -156,10 +160,26 @@ function validateRequiredBusinessFields(
   }
 
   const requestedCountryCode = safeText(data.paisCodigo, 10).toUpperCase() || "CL";
-  const requestedCurrencyCode = safeText(data.monedaCodigo, 10).toUpperCase() || "CLP";
   const country = countriesByCode.get(requestedCountryCode);
+  const preservesExistingLegacyCountry = Boolean(
+    existingBusiness &&
+    country?.selectableForNewBusiness === false &&
+    requestedCountryCode === safeText(existingBusiness.paisCodigo, 10).toUpperCase()
+  );
+  if (
+    !country?.active ||
+    (country.selectableForNewBusiness === false && !preservesExistingLegacyCountry)
+  ) {
+    throw new HttpsError("invalid-argument", "Selecciona un país válido.");
+  }
+  const requestedCurrencyCode =
+    (deriveCurrencyFromCountry
+      ? country.defaultCurrencyCode
+      : safeText(data.monedaCodigo, 10).toUpperCase()) ||
+    country?.defaultCurrencyCode ||
+    "CLP";
   const currency = currenciesByCode.get(requestedCurrencyCode);
-  if (!country?.active || !currency?.active) {
+  if (!currency?.active) {
     throw new HttpsError("invalid-argument", "Selecciona un país y una moneda válidos.");
   }
   const categoryFields = validateBusinessCategory(data, HttpsError, {
@@ -167,9 +187,15 @@ function validateRequiredBusinessFields(
   });
   const regionCode = safeText(data.regionCodigo, 2);
   const region = country.code === "CL"
-    ? regionsByCode.get(regionCode)
+    ? regionsByCode.get(regionCode) ||
+      (!regionRequired && !regionCode
+        ? {code: "", name: "", communes: []}
+        : null)
     : { code: "", name: safeText(data.regionEstado, 120), communes: [] };
-  if (!region || (country.code !== "CL" && !region.name)) {
+  if (
+    !region ||
+    (country.code !== "CL" && regionRequired && !region.name)
+  ) {
     throw new HttpsError("invalid-argument", "Selecciona una región válida.");
   }
   const communeCode = safeText(data.comunaCodigo, 5);
@@ -212,8 +238,11 @@ function validateRequiredBusinessFields(
   return normalized;
 }
 
-function validateBusinessCreationInput(rawData, HttpsError) {
-  return validateRequiredBusinessFields(rawData, HttpsError);
+function validateBusinessCreationInput(rawData, HttpsError, options = {}) {
+  return validateRequiredBusinessFields(rawData, HttpsError, {
+    ...options,
+    deriveCurrencyFromCountry: true,
+  });
 }
 
 function normalizeHttpUrl(value, fieldLabel, HttpsError) {
@@ -506,7 +535,9 @@ async function createFirstBusinessHandler(
 ) {
   const uid = requireAuthenticatedUid(request, HttpsError);
   const requestId = validateRequestId(request?.data?.requestId, HttpsError);
-  const input = validateBusinessCreationInput(request?.data, HttpsError);
+  const input = validateBusinessCreationInput(request?.data, HttpsError, {
+    regionRequired: false,
+  });
   const fingerprint = fingerprintBusinessInput(input);
   const userRef = db.collection("usuarios").doc(uid);
   const lockRef = userRef.collection("sistema").doc("primerNegocio");

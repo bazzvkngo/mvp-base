@@ -6,22 +6,39 @@
 2. `getBusinessSession` resuelve las membresías del UID y el negocio activo.
 3. Una cuenta sin una membresía válida sobre un negocio activo es enviada a
    `/onboarding`.
-4. El onboarding solicita solamente nombre, rubro y región. Chile y CLP se
-   asignan en el backend, sin depender de valores editables del cliente.
+4. El onboarding solicita solamente nombre, rubro y país. El backend deriva la
+   moneda inicial desde `defaultCurrencyCode`; la región queda pendiente para
+   completarla desde `Empresa`.
 5. `createFirstBusiness` valida los códigos de catálogo y ejecuta una sola
    transacción para crear negocio, membresía `OWNER`, bloqueo de primer negocio,
    registro idempotente y contexto activo del usuario.
-6. La sesión se vuelve a resolver y el usuario entra a `/dashboard` aunque el
-   RUT, comuna, dirección o contacto todavía estén pendientes.
+6. La sesión se vuelve a resolver y, sólo tras crear la primera empresa en esa
+   sesión, se muestra una activación ligera derivada del perfil real. Desde allí
+   el usuario puede abrir `Empresa` o continuar a su landing autorizado.
 
-El request de creación contiene únicamente `nombreComercial`, `rubroCodigo`,
-`regionCodigo` y, cuando corresponde, `rubroOtro`. El backend fija Chile y CLP.
+Los redirects genéricos de entrada, `/dashboard`, `/resumen` y el cambio de
+empresa usan un único landing por rol: OWNER, ADMIN y FINANZAS abren Reportes;
+VENTAS abre Cotizaciones; COMPRAS abre Órdenes de compra; TECNICO abre Trabajos;
+MEMBER conserva Cotizaciones como fallback legacy compatible.
+
+El request de la primera creación contiene únicamente `nombreComercial`,
+`rubroCodigo`, `paisCodigo` y, cuando corresponde, `rubroOtro`. No se envía un
+selector de moneda: el backend usa la moneda inicial canónica del país.
+Las altas nuevas admiten Chile, Bolivia, Brasil, Perú, Argentina, Colombia,
+Ecuador, Paraguay, Uruguay y México. `OTHER` permanece en el catálogo únicamente
+para leer y guardar sin migración empresas históricas que ya lo utilizan; no se
+ofrece ni se acepta en la creación de una empresa nueva.
+La creación adicional conserva `regionCodigo` como dato obligatorio.
 Una comuna vacía se trata como ausente y no se persiste; si una operación de
 perfil envía una comuna real, se valida que pertenezca a la región elegida.
 
 El mismo `requestId` puede reenviarse sin duplicar datos. Un `requestId` usado
 con un contenido diferente se rechaza. Un segundo intento con otro identificador
 también devuelve el primer negocio ya creado.
+
+La activación no persiste un checklist paralelo. Nombre, rubro, país,
+identificación fiscal, contacto, ubicación y logo se evalúan desde el perfil
+actual; una recarga o una empresa existente no vuelve a activar este paso.
 
 ## Esquema Firestore
 
@@ -50,7 +67,9 @@ ejecuta una migración remota automática.
 
 - `BusinessCategoryPicker` es el selector compartido por onboarding, creación
   adicional y `Empresa`. La selección permanece provisional hasta confirmar.
-  La búsqueda ignora mayúsculas y tildes y consulta nombre y alias.
+  Los 11 rubros seleccionables se presentan como tarjetas en una grilla compacta.
+  `OTRO_SERVICIO_PROYECTOS` conserva su ID y nombre canónicos, aunque el selector
+  usa la etiqueta visible "Otro servicio técnico o profesional".
 - `OTRO` conserva el código canónico y guarda el nombre personalizado en
   `rubroOtro`; este texto no modifica el catálogo global.
 

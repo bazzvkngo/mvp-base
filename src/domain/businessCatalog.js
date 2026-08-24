@@ -3,6 +3,9 @@ import catalog from "../../functions/businessCatalog.json" with { type: "json" }
 export const BUSINESS_CATALOG_VERSION = catalog.schemaVersion;
 export const BUSINESS_CATEGORY_CATALOG_VERSION = catalog.businessCategoryCatalogVersion;
 export const COUNTRIES = Object.freeze(catalog.countries);
+export const NEW_BUSINESS_COUNTRIES = Object.freeze(
+  catalog.countries.filter(isSelectableNewBusinessCountry)
+);
 export const CURRENCIES = Object.freeze(catalog.currencies);
 export const LOCALE_CONFIG = Object.freeze(
   Object.fromEntries(
@@ -24,6 +27,12 @@ const regionsByCode = new Map(CHILE_REGIONS.map((region) => [region.code, region
 
 export function getCountryByCode(code) {
   return countriesByCode.get(String(code || "")) || null;
+}
+
+export function isSelectableNewBusinessCountry(country) {
+  return Boolean(
+    country?.active !== false && country?.selectableForNewBusiness !== false
+  );
 }
 
 export function getCurrencyByCode(code) {

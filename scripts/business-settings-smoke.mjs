@@ -38,6 +38,76 @@ assert.equal(quickBusiness.regionNombre, "Tarapacá");
 assert.equal(quickBusiness.paisCodigo, "CL");
 assert.equal(quickBusiness.monedaCodigo, "CLP");
 assert.equal("comunaCodigo" in quickBusiness, false);
+const firstBusinessWithoutRegion = validateBusinessCreationInput(
+  {
+    nombreComercial: "Bagner Servicios Integrales",
+    rubroCodigo: "INGENIERIA_CONSULTORIA",
+  },
+  TestHttpsError,
+  {regionRequired: false}
+);
+assert.equal(firstBusinessWithoutRegion.regionCodigo, "");
+assert.equal(firstBusinessWithoutRegion.regionNombre, "");
+const bolivianFirstBusiness = validateBusinessCreationInput(
+  {
+    nombreComercial: "Servicios Bolivia",
+    rubroCodigo: "INGENIERIA_CONSULTORIA",
+    paisCodigo: "BO",
+  },
+  TestHttpsError,
+  {regionRequired: false}
+);
+assert.equal(bolivianFirstBusiness.paisCodigo, "BO");
+assert.equal(bolivianFirstBusiness.monedaCodigo, "BOB");
+assert.equal(bolivianFirstBusiness.regionEstado, "");
+for (const [paisCodigo, monedaCodigo] of [
+  ["CL", "CLP"],
+  ["BO", "BOB"],
+  ["BR", "BRL"],
+  ["PE", "PEN"],
+  ["AR", "ARS"],
+  ["CO", "COP"],
+  ["EC", "USD"],
+  ["PY", "PYG"],
+  ["UY", "UYU"],
+  ["MX", "MXN"],
+]) {
+  const business = validateBusinessCreationInput(
+    {
+      nombreComercial: `Negocio ${paisCodigo}`,
+      rubroCodigo: "INGENIERIA_CONSULTORIA",
+      paisCodigo,
+      monedaCodigo: "USD",
+    },
+    TestHttpsError,
+    {regionRequired: false}
+  );
+  assert.equal(business.paisCodigo, paisCodigo);
+  assert.equal(business.monedaCodigo, monedaCodigo);
+}
+rejectsWithCode(
+  () => validateBusinessCreationInput(
+    {
+      nombreComercial: "Alta no soportada",
+      rubroCodigo: "INGENIERIA_CONSULTORIA",
+      paisCodigo: "OTHER",
+    },
+    TestHttpsError,
+    {regionRequired: false}
+  ),
+  "invalid-argument"
+);
+rejectsWithCode(
+  () =>
+    validateBusinessCreationInput(
+      {
+        nombreComercial: "Negocio adicional",
+        rubroCodigo: "INGENIERIA_CONSULTORIA",
+      },
+      TestHttpsError
+    ),
+  "invalid-argument"
+);
 rejectsWithCode(
   () => validateBusinessCreationInput({nombreComercial: "Legacy", rubroCodigo: "TECNOLOGIA_SOFTWARE", regionCodigo: "01"}, TestHttpsError),
   "invalid-argument"
@@ -55,6 +125,37 @@ const preservedLegacyProfile = validateBusinessProfileInput(
 );
 assert.equal(preservedLegacyProfile.rubroCodigo, "RUBRO_HISTORICO");
 assert.equal(preservedLegacyProfile.rubroNombre, "Oficio histórico");
+
+const preservedLegacyCountryProfile = validateBusinessProfileInput(
+  {
+    nombreComercial: "Empresa exterior histórica",
+    rubroCodigo: "INGENIERIA_CONSULTORIA",
+    paisCodigo: "OTHER",
+    monedaCodigo: "EUR",
+    locale: "es",
+    regionEstado: "Exterior",
+    telefono: "+00 123456",
+  },
+  TestHttpsError,
+  {existingBusiness: {paisCodigo: "OTHER"}}
+);
+assert.equal(preservedLegacyCountryProfile.paisCodigo, "OTHER");
+assert.equal(preservedLegacyCountryProfile.monedaCodigo, "EUR");
+assert.equal(preservedLegacyCountryProfile.telefono, "+00 123456");
+rejectsWithCode(
+  () => validateBusinessProfileInput(
+    {
+      nombreComercial: "Empresa nueva",
+      rubroCodigo: "INGENIERIA_CONSULTORIA",
+      paisCodigo: "OTHER",
+      monedaCodigo: "USD",
+      regionEstado: "Exterior",
+    },
+    TestHttpsError,
+    {existingBusiness: {paisCodigo: "CL"}}
+  ),
+  "invalid-argument"
+);
 
 const profileWithoutOptionals = validateBusinessProfileInput(
   {

@@ -24,7 +24,7 @@
     { "code": "PY", "name": "Paraguay", "defaultCurrencyCode": "PYG", "defaultLocale": "es-PY", "defaultFiscalIdentifierLabel": "RUC", "active": true },
     { "code": "UY", "name": "Uruguay", "defaultCurrencyCode": "UYU", "defaultLocale": "es-UY", "defaultFiscalIdentifierLabel": "RUT", "active": true },
     { "code": "MX", "name": "México", "defaultCurrencyCode": "MXN", "defaultLocale": "es-MX", "defaultFiscalIdentifierLabel": "RFC", "active": true },
-    { "code": "OTHER", "name": "Otro país", "defaultCurrencyCode": "USD", "defaultLocale": "es", "defaultFiscalIdentifierLabel": "Identificación fiscal", "active": true }
+    { "code": "OTHER", "name": "Otro país", "defaultCurrencyCode": "USD", "defaultLocale": "es", "defaultFiscalIdentifierLabel": "Identificación fiscal", "active": true, "selectableForNewBusiness": false, "legacy": true }
   ],
   "currencies": [
     {

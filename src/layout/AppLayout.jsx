@@ -11,7 +11,10 @@ import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import SkipLink from "../components/ui/SkipLink";
 import StatusBadge from "../components/ui/StatusBadge";
 import { getRouteMeta, navigationSections } from "../app/navigation";
-import {filterNavigationSections} from "../domain/rbac.mjs";
+import {
+  filterNavigationSections,
+  getDefaultBusinessPath,
+} from "../domain/rbac.mjs";
 import {
   logout,
   refreshCurrentUser,
@@ -314,8 +317,10 @@ function AppLayout({
   };
 
   const handleBusinessChanged = async (business) => {
-    await onBusinessChanged(business.id);
-    navigate("/cotizaciones");
+    const session = await onBusinessChanged(business.id);
+    navigate(
+      getDefaultBusinessPath(session?.activeBusiness?.role || business.role)
+    );
     setMobileNavigationOpen(false);
     setBusinessNotice(
       `Ahora estás trabajando en ${business.nombreComercial}`
@@ -323,8 +328,10 @@ function AppLayout({
   };
 
   const handleBusinessCreated = async (business) => {
-    await onBusinessCreated();
-    navigate("/cotizaciones");
+    const session = await onBusinessCreated();
+    navigate(
+      getDefaultBusinessPath(session?.activeBusiness?.role || business.role)
+    );
     setBusinessNotice(`${business.nombreComercial} fue creado correctamente`);
   };
 

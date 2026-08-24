@@ -119,10 +119,10 @@ export function canAccessBusinessPath(role, pathname) {
 
 export function getDefaultBusinessPath(role) {
   const normalizedRole = normalizeBusinessRole(role);
+  if (["OWNER", "ADMIN", "FINANZAS"].includes(normalizedRole)) return "/reportes";
   if (normalizedRole === "VENTAS") return "/cotizaciones";
-  if (normalizedRole === "COMPRAS") return "/compras";
+  if (normalizedRole === "COMPRAS") return "/ordenes-compra";
   if (normalizedRole === "TECNICO") return "/trabajos";
-  if (normalizedRole === "FINANZAS") return "/reportes";
   return "/cotizaciones";
 }
 
