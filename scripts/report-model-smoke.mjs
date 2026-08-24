@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  REPORT_TABS,
   buildReportCsv,
   combineOperationalTimelines,
   filterInventoryAcquisitions,
@@ -21,6 +22,14 @@ import {
 import {canViewWorkProfitability} from "../src/domain/workModel.mjs";
 
 const range = {start: "2026-08-01", end: "2026-08-31", days: 31};
+
+assert.deepEqual(REPORT_TABS, [
+  "overview",
+  "commercial",
+  "operations",
+  "supply",
+  "finances",
+]);
 
 const sales = [
   {id: "v1", numero: "VTA-2026-0001", fechaVenta: "2026-08-02", estado: "confirmada", total: 1000, clienteId: "c1", clienteSnapshot: {nombreRazonSocial: "Cliente; Uno", rut: "1-9"}},
@@ -163,6 +172,20 @@ assert.match(salesCsv, /"Cliente; Uno"/);
 const inventoryCsv = buildReportCsv("inventory", {items: [purchaseMovement]});
 assert.match(inventoryCsv, /"Documento\/origen"/);
 assert.match(inventoryCsv, /"entrada_compra"/);
+const commercialCsv = buildReportCsv("commercial", {
+  sales: sales.slice(0, 1),
+  quotes: quotes.slice(0, 1),
+});
+assert.match(commercialCsv, /"Tipo";"Número";"Fecha";"Cliente"/);
+assert.match(commercialCsv, /"Venta"/);
+assert.match(commercialCsv, /"Cotización"/);
+const supplyCsv = buildReportCsv("supply", {
+  purchases: purchases.slice(0, 1),
+  purchaseOrders: [{numero: "OC-1", fechaEmision: "2026-08-09", estado: "emitida", moneda: "USD", total: 20}],
+  receptions: [{numero: "REC-1", fechaRecepcion: "2026-08-10", estado: "borrador"}],
+});
+assert.match(supplyCsv, /"Orden de compra"/);
+assert.match(supplyCsv, /"Recepción"/);
 
 const activity = getRecentOperationalActivity(
   sales,

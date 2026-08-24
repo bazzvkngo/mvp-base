@@ -19,7 +19,9 @@ import {
 } from "../firebase/firestorePaths";
 import {getInventoryItems} from "./inventoryService";
 import {listarCompras} from "./purchaseService";
+import {listarOrdenesCompra} from "./purchaseOrderService";
 import {getQuotes} from "./quoteService";
+import {listarRecepciones} from "./receptionService";
 import {listarVentas} from "./saleService";
 import {listarTrabajos, obtenerBalanceTrabajo} from "./workService";
 
@@ -75,10 +77,26 @@ export async function loadReportData(
 ) {
   const businessId = requireBusinessId(value);
   const can = (permission) => hasBusinessPermission(role, permission);
-  const [sales, purchases, quotes, inventory, rawMovements, rawAcquisitions, works] =
+  const [
+    sales,
+    purchases,
+    purchaseOrders,
+    receptions,
+    quotes,
+    inventory,
+    rawMovements,
+    rawAcquisitions,
+    works,
+  ] =
     await Promise.all([
       can(BUSINESS_PERMISSIONS.SALES_READ) ? listarVentas(businessId) : Promise.resolve([]),
       can(BUSINESS_PERMISSIONS.PURCHASES_READ) ? listarCompras(businessId) : Promise.resolve([]),
+      can(BUSINESS_PERMISSIONS.PURCHASES_READ)
+        ? listarOrdenesCompra(businessId)
+        : Promise.resolve([]),
+      can(BUSINESS_PERMISSIONS.PURCHASES_READ)
+        ? listarRecepciones(businessId)
+        : Promise.resolve([]),
       can(BUSINESS_PERMISSIONS.QUOTES_READ) ? getQuotes(businessId) : Promise.resolve([]),
       can(BUSINESS_PERMISSIONS.INVENTORY_READ) ? getInventoryItems(businessId) : Promise.resolve([]),
       can(BUSINESS_PERMISSIONS.INVENTORY_READ)
@@ -119,6 +137,8 @@ export async function loadReportData(
   return {
     sales,
     purchases,
+    purchaseOrders,
+    receptions,
     quotes,
     inventory,
     inventoryMovements,

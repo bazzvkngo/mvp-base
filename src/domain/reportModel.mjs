@@ -1,10 +1,8 @@
 export const REPORT_TABS = Object.freeze([
-  "summary",
-  "sales",
-  "purchases",
-  "inventory",
-  "projects",
-  "quotes",
+  "overview",
+  "commercial",
+  "operations",
+  "supply",
   "finances",
 ]);
 
@@ -550,6 +548,109 @@ function csv(rows) {
 }
 
 export function buildReportCsv(tab, data = {}) {
+  if (tab === "overview") {
+    return buildReportCsv("summary", data);
+  }
+
+  if (tab === "commercial") {
+    return csv([
+      ["Tipo", "Número", "Fecha", "Cliente", "Estado", "Moneda", "Monto"],
+      ...(data.sales || []).map((sale) => [
+        "Venta",
+        sale.numero,
+        sale.fechaVenta,
+        sale.clienteSnapshot?.nombreRazonSocial,
+        sale.estado,
+        resolveReportCurrency(sale, data.fallbackCurrency),
+        safeAmount(sale.total),
+      ]),
+      ...(data.quotes || []).map((quote) => [
+        "Cotización",
+        quote.numero,
+        quote.fecha,
+        quote.clienteNombre,
+        quote.estado,
+        resolveReportCurrency(quote, data.fallbackCurrency),
+        safeAmount(quote.total),
+      ]),
+    ]);
+  }
+
+  if (tab === "operations") {
+    return csv([
+      ["Tipo", "Fecha", "Registro", "Detalle", "Estado o movimiento", "Moneda", "Valor"],
+      ...(data.movements || []).map((movement) => [
+        "Inventario",
+        movement.date,
+        movement.documentNumber || movement.projectNumber,
+        movement.productName,
+        movement.type,
+        movement.currency,
+        movement.totalCost,
+      ]),
+      ...(data.costs || []).map((entry) => [
+        entry.kind === "HH" ? "Horas hombre" : "Gasto de trabajo",
+        entry.date,
+        entry.projectNumber || entry.projectTitle || entry.projectId,
+        entry.concept,
+        entry.category,
+        entry.currency,
+        entry.amount,
+      ]),
+      ...(data.balances || []).map((entry) => [
+        "Balance de trabajo",
+        "",
+        entry.numero || entry.titulo,
+        "Resultado del trabajo",
+        entry.balance?.estado,
+        entry.balance?.moneda,
+        entry.balance?.resultado,
+      ]),
+    ]);
+  }
+
+  if (tab === "supply") {
+    return csv([
+      ["Tipo", "Número", "Fecha", "Proveedor", "Estado", "Moneda", "Monto"],
+      ...(data.purchases || []).map((purchase) => [
+        "Compra",
+        purchase.numero,
+        purchase.fechaCompra,
+        purchase.proveedorSnapshot?.razonSocial,
+        purchase.estado,
+        resolveReportCurrency(purchase, data.fallbackCurrency),
+        safeAmount(purchase.total),
+      ]),
+      ...(data.purchaseOrders || []).map((order) => [
+        "Orden de compra",
+        order.numero,
+        order.fechaEmision,
+        order.proveedorSnapshot?.razonSocial,
+        order.estado,
+        resolveReportCurrency(order, data.fallbackCurrency),
+        safeAmount(order.total),
+      ]),
+      ...(data.receptions || []).map((reception) => [
+        "Recepción",
+        reception.numero,
+        reception.fechaRecepcion,
+        reception.proveedorSnapshot?.razonSocial,
+        reception.estado,
+        "",
+        "",
+      ]),
+      ...(data.acquisitions || []).map((entry) => [
+        "Adquisición",
+        entry.documentNumber,
+        entry.date,
+        entry.providerName,
+        "registrada",
+        entry.currency,
+        entry.totalCost,
+      ]),
+    ]);
+  }
+
   if (tab === "summary") {
     const monetaryRows = (area, indicator, groups, field = "total") =>
       (groups || []).map((group) => [area, indicator, group.currency, group[field]]);
