@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { normalizeQuickBusinessPayload } from "../src/domain/businessQuickPayload.mjs";
+import { resolveInitialActivationRoute } from "../src/domain/initialActivationNavigation.mjs";
 import { filterNavigationSections } from "../src/domain/rbac.mjs";
 
 const [
@@ -126,7 +127,7 @@ assert.match(onboarding, /setSubmitError\(getBusinessCreationErrorMessage\(error
 assert.doesNotMatch(onboarding, /catch[\s\S]*setValues\(INITIAL_QUICK_BUSINESS_VALUES\)/);
 assert.doesNotMatch(drawer, /catch[\s\S]*setValues\(INITIAL_QUICK_BUSINESS_VALUES\)/);
 assert.match(app, /businessSession\?\.needsOnboarding/);
-assert.match(app, /initialActivationBusinessId === businessId/);
+assert.match(app, /resolveInitialActivationRoute/);
 assert.match(app, /onFirstBusinessCreated=\{handleFirstBusinessCreated\}/);
 assert.match(activation, /Tu negocio ya está creado/);
 assert.match(activation, /Completar ahora/);
@@ -134,7 +135,57 @@ assert.match(activation, /Hacerlo después/);
 assert.match(activation, /getCompanyProfile/);
 assert.match(activation, /getDefaultBusinessPath/);
 assert.match(activation, /canAccessBusinessPath\(business\?\.role, "\/empresa"\)[\s\S]*?"\/empresa"/);
-assert.match(activation, /navigate\(path, \{ replace: true \}\);\s+onFinish\?\.\(\);/);
+assert.match(activation, /onFinish\?\.\(path\)/);
+assert.doesNotMatch(activation, /useNavigate|navigate\(/);
+assert.deepEqual(
+  resolveInitialActivationRoute({
+    activeBusinessId: "business-1",
+    destination: "",
+    initialBusinessId: "business-1",
+    pathname: "/onboarding",
+  }),
+  { status: "prompt", destination: "" }
+);
+assert.deepEqual(
+  resolveInitialActivationRoute({
+    activeBusinessId: "business-1",
+    destination: "/empresa",
+    initialBusinessId: "business-1",
+    pathname: "/onboarding",
+  }),
+  { status: "redirect", destination: "/empresa" }
+);
+assert.deepEqual(
+  resolveInitialActivationRoute({
+    activeBusinessId: "business-1",
+    destination: "/empresa",
+    initialBusinessId: "business-1",
+    pathname: "/empresa",
+  }),
+  { status: "settled", destination: "/empresa" }
+);
+assert.deepEqual(
+  resolveInitialActivationRoute({
+    activeBusinessId: "business-1",
+    destination: "/reportes",
+    initialBusinessId: "business-1",
+    pathname: "/onboarding",
+  }),
+  { status: "redirect", destination: "/reportes" }
+);
+assert.deepEqual(
+  resolveInitialActivationRoute({
+    activeBusinessId: "business-1",
+    destination: "",
+    initialBusinessId: "",
+    pathname: "/empresa",
+  }),
+  { status: "inactive", destination: "" }
+);
+assert.match(
+  app,
+  /initialActivationRoute\.status === "redirect"[\s\S]*?<Navigate to=\{initialActivationRoute\.destination\} replace \/>[\s\S]*?!canAccessBusinessPath/
+);
 assert.match(app, /path="\/login"[\s\S]*?Navigate to=\{safeLanding\} replace/);
 assert.match(app, /path="\/onboarding" element=\{<Navigate to=\{safeLanding\} replace \/>\}/);
 assert.match(app, /path="\/" element=\{<Navigate to=\{safeLanding\} replace \/>\}/);

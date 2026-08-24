@@ -1,6 +1,5 @@
 import React from "react";
 import { Check, Circle } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import BrandLogo from "../components/BrandLogo";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
@@ -52,7 +51,6 @@ function getActivationItems(profile = {}) {
 }
 
 function InitialBusinessActivationPage({ business, onFinish }) {
-  const navigate = useNavigate();
   const [profile, setProfile] = React.useState(business || {});
 
   React.useEffect(() => {
@@ -75,8 +73,7 @@ function InitialBusinessActivationPage({ business, onFinish }) {
     : landingPath;
 
   const finish = (path) => {
-    navigate(path, { replace: true });
-    onFinish?.();
+    onFinish?.(path);
   };
 
   return (
