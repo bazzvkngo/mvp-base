@@ -72,6 +72,7 @@ function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open})
   const isEditing = Boolean(client?.clienteId);
   const country = normalizeCountryCode(countryCode);
   const isChile = country === "CL";
+  const isCompany = values.tipoCliente === "empresa";
   const fiscalLabel = getFiscalIdentifierLabel(country);
   const communes = useMemo(
     () => getCommunesForRegion(values.regionCodigo),
@@ -264,22 +265,24 @@ function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open})
             />
           </ClientField>
 
-          <ClientField error={errors.giro} field="giro" label="Giro">
-            <input
-              ref={(node) => setFieldRef("giro", node)}
-              value={values.giro}
-              onChange={(event) => updateField("giro", event.target.value)}
-            />
-          </ClientField>
+          {isCompany && <>
+            <ClientField error={errors.giro} field="giro" label="Giro">
+              <input
+                ref={(node) => setFieldRef("giro", node)}
+                value={values.giro}
+                onChange={(event) => updateField("giro", event.target.value)}
+              />
+            </ClientField>
 
-          <ClientField error={errors.personaContacto} field="personaContacto" label="Persona de contacto">
-            <input
-              ref={(node) => setFieldRef("personaContacto", node)}
-              value={values.personaContacto}
-              onChange={(event) => updateField("personaContacto", event.target.value)}
-              autoComplete="name"
-            />
-          </ClientField>
+            <ClientField error={errors.personaContacto} field="personaContacto" label="Persona de contacto">
+              <input
+                ref={(node) => setFieldRef("personaContacto", node)}
+                value={values.personaContacto}
+                onChange={(event) => updateField("personaContacto", event.target.value)}
+                autoComplete="name"
+              />
+            </ClientField>
+          </>}
 
           <ClientField error={errors.email} field="email" label="Correo">
             <input

@@ -284,7 +284,7 @@ function clientSnapshot(snapshot, businessId, HttpsError) {
 }
 
 function profileName(profile, authUser) {
-  return [profile?.nombres, profile?.apellidos].map((part) => String(part || "").trim()).filter(Boolean).join(" ") || String(authUser?.displayName || "").trim() || "Sin nombre registrado";
+  return [profile?.nombres, profile?.apellidos].map((part) => String(part || "").trim()).filter(Boolean).join(" ") || String(authUser?.displayName || "").trim() || String(authUser?.email || "").trim() || "Usuario sin identificar";
 }
 
 async function defaultResolveUserSnapshots(db, auth, uids) {
@@ -305,7 +305,9 @@ async function userSnapshots(dependencies, uids) {
 
 function publicPerson(snapshot, uid) {
   const value = snapshot.get(uid) || {};
-  return {uid, nombre: String(value.nombre || "Sin nombre registrado"), correo: String(value.correo || "")};
+  const correo = String(value.correo || "").trim();
+  const nombre = String(value.nombre || "").trim();
+  return {uid, nombre: nombre && nombre !== "Sin nombre registrado" ? nombre : correo || "Usuario sin identificar", correo};
 }
 
 function taskAssigneeWorkAccess(work, uid, person) {

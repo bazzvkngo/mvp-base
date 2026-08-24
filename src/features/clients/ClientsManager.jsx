@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {useLocation, useNavigate} from "react-router-dom";
 import {
   Archive,
   Pencil,
@@ -75,6 +76,9 @@ function ClientActions({canManage, client, onArchive, onEdit, onReactivate}) {
 }
 
 function ClientsManager({businessId, countryCode = "CL", role}) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const createRequested = Boolean(location.state?.openCreateClient);
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -82,7 +86,7 @@ function ClientsManager({businessId, countryCode = "CL", role}) {
   const [feedbackIsError, setFeedbackIsError] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [formState, setFormState] = useState({open: false, client: null});
+  const [formState, setFormState] = useState({open: createRequested && WRITE_ROLES.has(role), client: null});
   const [confirmation, setConfirmation] = useState(null);
   const [changingStatus, setChangingStatus] = useState(false);
   const canRead = READ_ROLES.has(role);
@@ -109,6 +113,10 @@ function ClientsManager({businessId, countryCode = "CL", role}) {
   useEffect(() => {
     loadClients();
   }, [loadClients]);
+
+  useEffect(() => {
+    if (createRequested) navigate("/clientes", {replace: true, state: {}});
+  }, [createRequested, navigate]);
 
   const visibleClients = useMemo(
     () =>

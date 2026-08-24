@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {createRequire} from "node:module";
-import {adaptStoredWork, adaptWorkExpense, adaptWorkLabor, adaptWorkLink, adaptWorkMaterialMovement, adaptWorkTask, adaptWorkTaskDocumentation, buildWorkMutationPayload, canManageWorks, formatWorkNumber as formatFrontendNumber, getWorkDraftErrors, humanizeWorkEvent, matchesWorkFilters, WORK_MODEL_VERSION} from "../src/domain/workModel.mjs";
+import {adaptStoredWork, adaptWorkExpense, adaptWorkLabor, adaptWorkLink, adaptWorkMaterialMovement, adaptWorkTask, adaptWorkTaskDocumentation, buildQuickWorkCreationPayload, buildWorkMutationPayload, canManageWorks, formatWorkNumber as formatFrontendNumber, getWorkDraftErrors, getWorkMemberIdentity, getWorkMemberOptionLabel, hasAdditionalWorkMembers, humanizeWorkEvent, matchesWorkFilters, WORK_MODEL_VERSION} from "../src/domain/workModel.mjs";
 
 const require = createRequire(import.meta.url);
 const {actualizarTrabajoHandler, agregarNotaTrabajoHandler, anularGastoTrabajoHandler, anularHorasHombreTrabajoHandler, asignarTareaTrabajoHandler, cambiarEstadoTareaTrabajoV2Handler, cambiarEstadoTrabajoHandler, crearTareaTrabajoV2Handler, crearTrabajoHandler, documentarTareaTrabajoHandler, eliminarTareaTrabajoV2Handler, formatWorkNumber, normalizeWorkInput, registrarDevolucionMaterialTrabajoHandler, registrarGastoTrabajoHandler, registrarHorasHombreTrabajoHandler, registrarSalidaMaterialTrabajoHandler, WORK_EXPENSE_CATEGORIES, writeCommercialLink, writeQuoteResponseEvent, writeSaleConfirmationEvent} = require("../functions/workPersistence.js");
@@ -11,21 +11,28 @@ class Snapshot { constructor(ref, value) { this.id = ref.id; this.exists = value
 class DocRef { constructor(db, path) { this.db = db; this.path = path; this.id = path.split("/").at(-1); } collection(name) { return new CollectionRef(this.db, `${this.path}/${name}`); } }
 class CollectionRef { constructor(db, path) { this.db = db; this.path = path; } doc(id) { return new DocRef(this.db, `${this.path}/${id || `auto_${++this.db.autoId}`}`); } }
 class FakeDb {
-  constructor() { this.documents = new Map(); this.autoId = 0; }
+  constructor() { this.documents = new Map(); this.autoId = 0; this.transactionQueue = Promise.resolve(); }
   collection(name) { return new CollectionRef(this, name); }
   seed(path, value) { this.documents.set(path, structuredClone(value)); }
   read(path) { return this.documents.get(path); }
   matching(prefix) { return [...this.documents.entries()].filter(([path]) => path.startsWith(prefix)); }
   runTransaction(callback) {
-    const working = new Map([...this.documents.entries()].map(([path, value]) => [path, structuredClone(value)]));
-    const transaction = {
-      get: async (ref) => new Snapshot(ref, working.has(ref.path) ? structuredClone(working.get(ref.path)) : undefined),
-      create: (ref, value) => { if (working.has(ref.path)) throw new Error("already exists"); working.set(ref.path, structuredClone(value)); },
-      set: (ref, value, options = {}) => working.set(ref.path, options.merge ? {...(working.get(ref.path) || {}), ...structuredClone(value)} : structuredClone(value)),
-      update: (ref, value) => { if (!working.has(ref.path)) throw new Error("missing"); working.set(ref.path, {...working.get(ref.path), ...structuredClone(value)}); },
-      delete: (ref) => working.delete(ref.path),
+    const execute = async () => {
+      const working = new Map([...this.documents.entries()].map(([path, value]) => [path, structuredClone(value)]));
+      const transaction = {
+        get: async (ref) => new Snapshot(ref, working.has(ref.path) ? structuredClone(working.get(ref.path)) : undefined),
+        create: (ref, value) => { if (working.has(ref.path)) throw new Error("already exists"); working.set(ref.path, structuredClone(value)); },
+        set: (ref, value, options = {}) => working.set(ref.path, options.merge ? {...(working.get(ref.path) || {}), ...structuredClone(value)} : structuredClone(value)),
+        update: (ref, value) => { if (!working.has(ref.path)) throw new Error("missing"); working.set(ref.path, {...working.get(ref.path), ...structuredClone(value)}); },
+        delete: (ref) => working.delete(ref.path),
+      };
+      const result = await callback(transaction);
+      this.documents = working;
+      return result;
     };
-    return Promise.resolve(callback(transaction)).then((result) => { this.documents = working; return result; });
+    const pending = this.transactionQueue.then(execute, execute);
+    this.transactionQueue = pending.then(() => undefined, () => undefined);
+    return pending;
   }
 }
 
@@ -36,9 +43,10 @@ const profiles = new Map([
   ["worker-a", {uid: "worker-a", nombre: "Ana Operaciones", correo: "ana@example.cl"}],
   ["worker-b", {uid: "worker-b", nombre: "Luis Terreno", correo: "luis@example.cl"}],
   ["worker-c", {uid: "worker-c", nombre: "Camila Técnica", correo: "camila@example.cl"}],
+  ["worker-d", {uid: "worker-d", nombre: "Sin nombre registrado", correo: "identidad@example.cl"}],
 ]);
 
-for (const [uid, role] of [["owner-a", "OWNER"], ["worker-a", "TECNICO"], ["worker-b", "ADMIN"], ["worker-c", "TECNICO"]]) {
+for (const [uid, role] of [["owner-a", "OWNER"], ["worker-a", "TECNICO"], ["worker-b", "ADMIN"], ["worker-c", "TECNICO"], ["worker-d", "TECNICO"]]) {
   db.seed(`membresias/business-a__${uid}`, {negocioId: "business-a", uid, rol: role, estado: "activo"});
 }
 db.seed("negocios/business-a", {nombreComercial: "Empresa A", estado: "activo", monedaCodigo: "USD"});
@@ -67,6 +75,20 @@ assert.equal(canManageWorks("MEMBER"), false);
 assert.equal(WORK_EXPENSE_CATEGORIES.has("ADMINISTRATIVO"), true);
 console.log("OK contrato: estados, prioridades, formato y roles canónicos");
 
+const ownerOnly = [{uid: "owner-a", nombre: "Sin nombre registrado", correo: "owner@example.cl", estado: "activo"}];
+assert.equal(getWorkMemberIdentity(ownerOnly[0]), "owner@example.cl");
+assert.equal(getWorkMemberOptionLabel(ownerOnly[0], "owner-a"), "Yo (owner@example.cl)");
+assert.equal(getWorkMemberIdentity({uid: "unknown", nombre: "", correo: ""}), "Usuario sin identificar");
+assert.equal(hasAdditionalWorkMembers(ownerOnly, "owner-a"), false);
+assert.equal(hasAdditionalWorkMembers([...ownerOnly, {uid: "worker-a"}], "owner-a"), true);
+const quickPayload = buildQuickWorkCreationPayload(input({estado: "en_progreso", fechaInicio: ""}), "2026-08-24");
+assert.equal(quickPayload.estado, "pendiente");
+assert.equal(quickPayload.fechaInicio, "2026-08-24");
+assert.equal(quickPayload.fechaPrevista, "2026-08-20");
+const teamPayload = buildWorkMutationPayload(input({responsableUid: "worker-a", participanteUids: ["worker-a", "worker-b", "worker-c", "worker-b"]}));
+assert.deepEqual(teamPayload.participanteUids, ["worker-b", "worker-c"]);
+console.log("OK creación rápida: identidad, propietario único, estado y fecha de inicio automáticos");
+
 const created = await crearTrabajoHandler(request("owner-a", {businessId: "business-a", requestId: "work-request-0001", trabajo: input()}), dependencies, new Date("2026-08-14T12:00:00Z"));
 assert.equal(created.numero, "TRB-2026-0001");
 const workPath = `negocios/business-a/trabajos/${created.trabajoId}`;
@@ -74,6 +96,8 @@ let stored = db.read(workPath);
 assert.equal(stored.clienteSnapshot.nombreRazonSocial, "Constructora Sur");
 assert.equal(stored.responsableSnapshot.nombre, "Ana Operaciones");
 assert.equal(stored.participantesSnapshot[0].nombre, "Luis Terreno");
+assert.equal(stored.creadoPorUid, "owner-a");
+assert.equal(stored.numero, "TRB-2026-0001");
 assert.equal(db.matching(`${workPath}/historial/`).some(([, value]) => value.tipo === "trabajo_creado"), true);
 console.log("OK creación: correlativo, cliente, responsables e historial autoritativos");
 
@@ -93,7 +117,21 @@ const retry = await crearTrabajoHandler(request("owner-a", {businessId: "busines
 assert.equal(retry.trabajoId, created.trabajoId); assert.equal(retry.sinCambios, true);
 const noClient = await crearTrabajoHandler(request("owner-a", {businessId: "business-a", requestId: "work-request-0002", trabajo: input({titulo: "Trabajo interno", clienteId: "", responsableUid: "", participanteUids: []})}), dependencies, new Date("2026-08-14T12:00:00Z"));
 assert.equal(noClient.numero, "TRB-2026-0002"); assert.equal(db.read(`negocios/business-a/trabajos/${noClient.trabajoId}`).clienteId, "");
-console.log("OK creación: idempotencia y cliente opcional");
+const emailFallback = await crearTrabajoHandler(request("owner-a", {businessId: "business-a", requestId: "work-request-0003", trabajo: input({titulo: "Trabajo urgente", clienteId: "", responsableUid: "worker-d", participanteUids: []})}), dependencies, new Date("2026-08-14T12:00:00Z"));
+assert.equal(emailFallback.numero, "TRB-2026-0003");
+assert.equal(db.read(`negocios/business-a/trabajos/${emailFallback.trabajoId}`).responsableSnapshot.nombre, "identidad@example.cl");
+console.log("OK creación: idempotencia, cliente opcional y fallback de identidad autoritativo");
+
+const concurrent = await Promise.all([
+  crearTrabajoHandler(request("owner-a", {businessId: "business-a", requestId: "work-request-0004", trabajo: input({titulo: "Trabajo con equipo", responsableUid: "worker-a", participanteUids: ["worker-a", "worker-b", "worker-c", "worker-b"]})}), dependencies, new Date("2026-08-14T12:00:00Z")),
+  crearTrabajoHandler(request("owner-a", {businessId: "business-a", requestId: "work-request-0005", trabajo: input({titulo: "Trabajo sin responsable", clienteId: "", responsableUid: "", participanteUids: []})}), dependencies, new Date("2026-08-14T12:00:00Z")),
+]);
+assert.deepEqual(concurrent.map((result) => result.numero).sort(), ["TRB-2026-0004", "TRB-2026-0005"]);
+const concurrentTeam = db.read(`negocios/business-a/trabajos/${concurrent[0].trabajoId}`);
+assert.equal(concurrentTeam.responsableUid, "worker-a");
+assert.deepEqual(concurrentTeam.participanteUids, ["worker-b", "worker-c"]);
+assert.equal(concurrentTeam.participantesSnapshot.length, 2);
+console.log("OK correlativo: consecutivo y único ante creaciones concurrentes transaccionales");
 
 await assert.rejects(() => crearTrabajoHandler(request("worker-a", {businessId: "business-a", requestId: "work-request-member", trabajo: input()}), dependencies), (error) => error.code === "permission-denied");
 await assert.rejects(() => crearTrabajoHandler(request("owner-a", {businessId: "business-b", requestId: "work-request-cross", trabajo: input()}), dependencies), (error) => error.code === "permission-denied");
@@ -101,7 +139,7 @@ await assert.rejects(() => crearTrabajoHandler(request("", {businessId: "busines
 console.log("OK seguridad: autenticación, rol y aislamiento multiempresa");
 
 await actualizarTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, trabajo: input({responsableUid: "worker-b", participanteUids: ["worker-a"], estado: "en_progreso"})}), dependencies);
-stored = db.read(workPath); assert.equal(stored.responsableUid, "worker-b"); assert.deepEqual(stored.participanteUids, ["worker-a"]); assert.equal(stored.estado, "en_progreso");
+stored = db.read(workPath); assert.equal(stored.responsableUid, "worker-b"); assert.deepEqual(stored.participanteUids, ["worker-a"]); assert.equal(stored.estado, "en_progreso"); assert.equal(stored.numero, "TRB-2026-0001");
 const updateEvents = db.matching(`${workPath}/historial/`).map(([, value]) => value.tipo);
 assert.equal(updateEvents.includes("responsable_cambiado"), true); assert.equal(updateEvents.includes("participante_agregado"), true); assert.equal(updateEvents.includes("participante_retirado"), true); assert.equal(updateEvents.includes("estado_cambiado"), true);
 console.log("OK edición: responsable, participantes y estado generan trazabilidad");
@@ -260,7 +298,10 @@ const page = fs.readFileSync("src/pages/WorksPage.jsx", "utf8");
 const backend = fs.readFileSync("functions/workPersistence.js", "utf8");
 assert.match(rules, /match \/trabajos\/\{trabajoId\}/); assert.match(rules, /match \/historial\/\{eventoId\}[\s\S]*allow create, update, delete: if false/); assert.match(rules, /match \/documentacion\/\{documentacionId\}/);
 assert.match(backend, /workCounters/); assert.match(backend, /workCreateRequests/); assert.match(backend, /workTaskRequests/); assert.match(backend, /workCostRequests/); assert.match(backend, /requireBusinessAccess/);
+assert.match(backend, /runTransaction[\s\S]*transaction\.get\(counterRef\)[\s\S]*transaction\.set\(counterRef/);
 assert.match(page, /ResponsiveDialog/); assert.doesNotMatch(page, /window\.confirm|actorUid/); assert.match(page, /works-board/); assert.match(page, /Historial del trabajo/); assert.match(page, /TaskSection/); assert.match(page, /FinancialSection/); assert.match(page, /No tienes tareas asignadas/);
+assert.match(page, /\+ Nuevo cliente/); assert.match(page, /openCreateClient/); assert.match(page, /editingWork \|\| hasAdditionalMembers/);
+assert.match(page, /Responsable principal/); assert.match(page, /Equipo de trabajo/); assert.doesNotMatch(page, /<Field[^>]+label="Número"/);
 console.log("OK integración: Rules, autoridad backend, lista/tablero y confirmación segura");
 
 console.log("WORKS_MODEL_SMOKE_OK");

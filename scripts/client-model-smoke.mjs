@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import {
   adaptStoredClient,
   buildClientMutationPayload,
@@ -164,5 +165,25 @@ assert.equal(matchesClientSearch(adapted, null), true);
 assert.equal(matchesClientSearch(adapted, undefined), true);
 console.log("OK compatibilidad: clientId solo se lee como alias y la búsqueda usa nombre/RUT");
 console.log("OK búsqueda: entradas extensas, null y undefined son toleradas");
+
+const clientsManager = fs.readFileSync("src/features/clients/ClientsManager.jsx", "utf8");
+assert.match(clientsManager, /openCreateClient/);
+assert.match(clientsManager, /<ClientFormDialog/);
+console.log("OK navegación: Proyectos puede abrir el formulario existente de Nuevo cliente");
+
+const legacyPersonPayload = buildClientMutationPayload({
+  tipoCliente: "persona",
+  rut: "6.000.000-K",
+  nombreRazonSocial: "Persona legacy",
+  giro: "Dato empresarial histórico",
+  personaContacto: "Contacto histórico",
+});
+assert.equal(legacyPersonPayload.giro, "Dato empresarial histórico");
+assert.equal(legacyPersonPayload.personaContacto, "Contacto histórico");
+const clientForm = fs.readFileSync("src/features/clients/ClientFormDialog.jsx", "utf8");
+assert.match(clientForm, /const isCompany = values\.tipoCliente === "empresa"/);
+assert.match(clientForm, /\{isCompany && <>[\s\S]*label="Giro"[\s\S]*label="Persona de contacto"[\s\S]*<\/>\}/);
+assert.match(clientForm, /label=\{values\.tipoCliente === "persona" \? "Nombre completo" : "Razón social"\}/);
+console.log("OK formulario: campos empresariales condicionales y datos legacy preservados");
 
 console.log("CLIENT_MODEL_SMOKE_OK");

@@ -53,6 +53,31 @@ export function canManageWorks(role) {
   return ["OWNER", "ADMIN"].includes(String(role || "").toUpperCase());
 }
 
+export function getWorkMemberIdentity(member = {}) {
+  const name = String(member.nombre || "").trim();
+  if (name && name !== "Sin nombre registrado") return name;
+  const email = String(member.correo || "").trim();
+  if (email && email !== "Sin correo disponible") return email;
+  return "Usuario sin identificar";
+}
+
+export function getWorkMemberOptionLabel(member = {}, currentUserUid = "") {
+  const identity = getWorkMemberIdentity(member);
+  return member.uid && member.uid === currentUserUid ? `Yo (${identity})` : identity;
+}
+
+export function hasAdditionalWorkMembers(members = [], currentUserUid = "") {
+  return members.some((member) => member?.uid && member.uid !== currentUserUid);
+}
+
+export function buildQuickWorkCreationPayload(raw = {}, currentDate = "") {
+  return {
+    ...raw,
+    estado: "pendiente",
+    fechaInicio: String(currentDate || "").trim(),
+  };
+}
+
 export function canViewWorkProfitability(role) {
   return ["OWNER", "ADMIN", "FINANZAS"].includes(String(role || "").toUpperCase());
 }
@@ -259,12 +284,16 @@ export function adaptWorkEvent(raw = {}) {
 }
 
 export function buildWorkMutationPayload(raw = {}) {
+  const responsableUid = String(raw.responsableUid || "").trim();
+  const participanteUids = [...new Set((Array.isArray(raw.participanteUids) ? raw.participanteUids : [])
+    .map((value) => String(value || "").trim())
+    .filter((value) => value && value !== responsableUid))];
   return {
     titulo: String(raw.titulo || "").trim(),
     descripcion: String(raw.descripcion || "").trim(),
     clienteId: String(raw.clienteId || "").trim(),
-    responsableUid: String(raw.responsableUid || "").trim(),
-    participanteUids: [...new Set((Array.isArray(raw.participanteUids) ? raw.participanteUids : []).map((value) => String(value || "").trim()).filter(Boolean))],
+    responsableUid,
+    participanteUids,
     estado: String(raw.estado || "pendiente"),
     prioridad: String(raw.prioridad || "normal"),
     fechaInicio: String(raw.fechaInicio || ""),
