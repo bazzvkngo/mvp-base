@@ -68,6 +68,15 @@ const SECTIONS = [
   { id: "eliminacion", label: "Eliminar empresa", icon: Trash2, ownerOnly: true },
 ];
 
+const COMPLETION_TARGETS = Object.freeze({
+  identity: "identidad",
+  commercialConfiguration: "configuracion",
+  fiscalIdentity: "fiscal",
+  contact: "contacto",
+  address: "direccion",
+  logo: "logo",
+});
+
 const EMPTY_INFORMATION = {
   nombreComercial: "",
   rubroCodigo: "",
@@ -157,10 +166,11 @@ function SettingsField({
   label,
   optional = false,
   required = false,
+  targetId,
   wide = false,
 }) {
   return (
-    <label className={`settings-field${wide ? " settings-field--wide" : ""}`}>
+    <label id={targetId} className={`settings-field${wide ? " settings-field--wide" : ""}`}>
       <span className="settings-field__label">
         {label}
         {required && <span aria-hidden="true"> *</span>}
@@ -178,7 +188,7 @@ function SectionFrame({ children, description, title }) {
   return (
     <section className="settings-section" aria-labelledby={`settings-${title.replaceAll(" ", "-")}`}>
       <header className="settings-section__header">
-        <h2 id={`settings-${title.replaceAll(" ", "-")}`}>{title}</h2>
+        <h2 id={`settings-${title.replaceAll(" ", "-")}`} tabIndex="-1">{title}</h2>
         <p>{description}</p>
       </header>
       {children}
@@ -186,7 +196,17 @@ function SectionFrame({ children, description, title }) {
   );
 }
 
-function BusinessInformationSection({ businessId, canEdit, onBusinessUpdated }) {
+function focusCompanyTarget(target) {
+  const container = document.getElementById(`empresa-${target}`);
+  if (!container) return;
+  container.scrollIntoView({ behavior: "smooth", block: "center" });
+  const control = container.matches("input, select, textarea, button")
+    ? container
+    : container.querySelector("input, select, textarea, button");
+  control?.focus({ preventScroll: true });
+}
+
+function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusinessUpdated }) {
   const fileInputRef = React.useRef(null);
   const [form, setForm] = React.useState(EMPTY_INFORMATION);
   const [loading, setLoading] = React.useState(true);
@@ -223,6 +243,12 @@ function BusinessInformationSection({ businessId, canEdit, onBusinessUpdated }) 
       active = false;
     };
   }, [businessId]);
+
+  React.useEffect(() => {
+    if (loading || !focusTarget) return undefined;
+    const frameId = window.requestAnimationFrame(() => focusCompanyTarget(focusTarget));
+    return () => window.cancelAnimationFrame(frameId);
+  }, [focusTarget, loading]);
 
   React.useEffect(() => {
     if (!logoFile) {
@@ -397,7 +423,7 @@ function BusinessInformationSection({ businessId, canEdit, onBusinessUpdated }) 
       <form onSubmit={save} noValidate>
         <fieldset className="settings-fieldset" disabled={!canEdit || saving}>
           <legend className="sr-only">Datos comerciales y logo</legend>
-          <div className="settings-card settings-logo-card">
+          <div id="empresa-logo" className="settings-card settings-logo-card">
             <div className="settings-logo-preview">
               {logoPreview || form.logoUrl ? (
                 <img src={logoPreview || form.logoUrl} alt="Vista previa del logo de la empresa" />
@@ -441,7 +467,7 @@ function BusinessInformationSection({ businessId, canEdit, onBusinessUpdated }) 
           <div className="settings-card">
             <h3>Localización y configuración comercial</h3>
             <div className="settings-form-grid">
-              <SettingsField label="País" required>
+              <SettingsField label="País" required targetId="empresa-configuracion">
                 <select name="paisCodigo" value={form.paisCodigo} onChange={change}>
                   {COUNTRIES.filter((country) =>
                     isSelectableNewBusinessCountry(country) || country.code === form.paisCodigo
@@ -463,7 +489,7 @@ function BusinessInformationSection({ businessId, canEdit, onBusinessUpdated }) 
               <SettingsField label="Tipo / etiqueta fiscal" optional hint={form.paisCodigo === "BR" ? "Puedes usar CNPJ o CPF." : "Configurable según el país."}>
                 <input name="identificadorFiscalTipo" value={form.identificadorFiscalTipo} onChange={change} />
               </SettingsField>
-              <SettingsField label={form.identificadorFiscalTipo || "Identificación fiscal"} optional error={touched.rut ? fieldErrors.rut : ""}>
+              <SettingsField label={form.identificadorFiscalTipo || "Identificación fiscal"} optional error={touched.rut ? fieldErrors.rut : ""} targetId="empresa-fiscal">
                 <input name="identificadorFiscalValor" value={form.identificadorFiscalValor} onChange={change} onBlur={() => touch("rut")} />
               </SettingsField>
             </div>
@@ -471,7 +497,7 @@ function BusinessInformationSection({ businessId, canEdit, onBusinessUpdated }) 
 
           <div className="settings-card">
             <div className="settings-form-grid">
-              <SettingsField label="Nombre comercial" required error={touched.nombreComercial ? fieldErrors.nombreComercial : ""}>
+              <SettingsField label="Nombre comercial" required error={touched.nombreComercial ? fieldErrors.nombreComercial : ""} targetId="empresa-identidad">
                 <input name="nombreComercial" value={form.nombreComercial} onChange={change} onBlur={() => touch("nombreComercial")} aria-invalid={Boolean(touched.nombreComercial && fieldErrors.nombreComercial)} />
               </SettingsField>
               <div className="settings-field">
@@ -530,10 +556,10 @@ function BusinessInformationSection({ businessId, canEdit, onBusinessUpdated }) 
               <SettingsField label="Código postal" optional>
                 <input name="codigoPostal" value={form.codigoPostal} onChange={change} />
               </SettingsField>
-              <SettingsField label="Dirección comercial" optional wide>
+              <SettingsField label="Dirección comercial" optional targetId="empresa-direccion" wide>
                 <input name="direccion" value={form.direccion} onChange={change} />
               </SettingsField>
-              <SettingsField label="Teléfono comercial" optional>
+              <SettingsField label="Teléfono comercial" optional targetId="empresa-contacto">
                 <input name="telefono" type="tel" value={form.telefono} onChange={change} />
               </SettingsField>
               <SettingsField label="Correo comercial" optional error={touched.email ? fieldErrors.email : ""}>
@@ -1014,6 +1040,7 @@ function CompanyConfig({
 }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const settingsContentRef = React.useRef(null);
   const requestedSection = searchParams.get("seccion") || "informacion";
   const availableSections = SECTIONS.filter(
     (section) => !section.ownerOnly || role === "OWNER"
@@ -1021,13 +1048,43 @@ function CompanyConfig({
   const activeSection = availableSections.some((section) => section.id === requestedSection)
     ? requestedSection
     : "informacion";
+  const focusTarget = searchParams.get("objetivo") || "";
   const canEdit = role === "OWNER" || role === "ADMIN";
+  const canActOnCompletionItem = (item) =>
+    item.id !== "ownerEmail" || role === "OWNER";
+  const focusActiveSection = React.useCallback(() => {
+    const content = settingsContentRef.current;
+    if (!content) return;
+    content.scrollIntoView({ behavior: "smooth", block: "start" });
+    content.querySelector("h2")?.focus({ preventScroll: true });
+  }, []);
+
+  React.useEffect(() => {
+    if (!searchParams.has("seccion") || (activeSection === "informacion" && focusTarget)) {
+      return undefined;
+    }
+    const frameId = window.requestAnimationFrame(focusActiveSection);
+    return () => window.cancelAnimationFrame(frameId);
+  }, [activeSection, focusActiveSection, focusTarget, searchParams]);
+
   const handleCompletionAction = (item) => {
     if (item.path) {
+      if (!canActOnCompletionItem(item)) return;
       navigate(item.path);
       return;
     }
-    if (item.section) setSearchParams({ seccion: item.section });
+    if (item.section) {
+      const target = COMPLETION_TARGETS[item.id];
+      setSearchParams({
+        seccion: item.section,
+        ...(target ? { objetivo: target } : {}),
+      });
+      if (item.section === activeSection && target) {
+        window.requestAnimationFrame(() => focusCompanyTarget(target));
+      } else if (item.section === activeSection) {
+        window.requestAnimationFrame(focusActiveSection);
+      }
+    }
   };
 
   if (!businessId) return <p className="settings-message settings-message--error">No hay un negocio activo.</p>;
@@ -1046,6 +1103,7 @@ function CompanyConfig({
       {canEdit && businessCompletionStatus && (
         <BusinessCompletionCard
           status={businessCompletionStatus}
+          canActOnItem={canActOnCompletionItem}
           onAction={handleCompletionAction}
         />
       )}
@@ -1065,8 +1123,8 @@ function CompanyConfig({
             </button>
           ))}
         </nav>
-        <div className="settings-content">
-          {activeSection === "informacion" && <BusinessInformationSection businessId={businessId} canEdit={canEdit} onBusinessUpdated={onBusinessUpdated} />}
+        <div ref={settingsContentRef} className="settings-content">
+          {activeSection === "informacion" && <BusinessInformationSection businessId={businessId} canEdit={canEdit} focusTarget={focusTarget} onBusinessUpdated={onBusinessUpdated} />}
           {activeSection === "verificacion" && <BusinessVerificationSection businessId={businessId} currentUserUid={currentUserUid} role={role} />}
           {activeSection === "impuestos" && <TaxSection businessId={businessId} canEdit={canEdit} />}
           {activeSection === "inventario" && <InventorySection businessId={businessId} canEdit={canEdit} />}

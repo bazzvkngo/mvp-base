@@ -1,19 +1,64 @@
 import React from "react";
-import { Save, ShieldCheck, UserRound } from "lucide-react";
+import {
+  KeyRound,
+  MailCheck,
+  MailWarning,
+  RefreshCw,
+  Save,
+  Send,
+  UserRound,
+} from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
+import StatusBadge from "../components/ui/StatusBadge";
+import {
+  refreshCurrentUser,
+  resetPassword,
+  sendVerificationEmail,
+} from "../services/authService";
 import {
   DEFAULT_PERSONAL_PROFILE,
   getPersonalProfile,
   savePersonalProfile,
 } from "../services/companyService";
 
-function AccountPage({ usuario }) {
+const ACCOUNT_SECTIONS = [
+  { id: "perfil", label: "Perfil personal", icon: UserRound },
+  { id: "acceso", label: "Acceso y seguridad", icon: KeyRound },
+];
+const RESEND_COOLDOWN_SECONDS = 60;
+
+function authErrorMessage(error, fallback) {
+  if (error?.code === "auth/too-many-requests") {
+    return "Se realizaron demasiados intentos. Espera unos minutos antes de volver a intentarlo.";
+  }
+  if (error?.code === "auth/user-token-expired") {
+    return "Tu sesión expiró. Inicia sesión nuevamente para continuar.";
+  }
+  return fallback;
+}
+
+function AccountPage({ onSessionRefresh, usuario }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedSection = searchParams.get("seccion") || "perfil";
+  const activeSection = ACCOUNT_SECTIONS.some(({ id }) => id === requestedSection)
+    ? requestedSection
+    : "perfil";
   const [form, setForm] = React.useState(DEFAULT_PERSONAL_PROFILE);
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState("");
   const [success, setSuccess] = React.useState("");
+  const [emailVerified, setEmailVerified] = React.useState(
+    usuario?.emailVerified === true
+  );
+  const [securityError, setSecurityError] = React.useState("");
+  const [securityMessage, setSecurityMessage] = React.useState("");
+  const [resending, setResending] = React.useState(false);
+  const [refreshing, setRefreshing] = React.useState(false);
+  const [resettingPassword, setResettingPassword] = React.useState(false);
+  const [resendCooldown, setResendCooldown] = React.useState(0);
 
   React.useEffect(() => {
     let active = true;
@@ -31,6 +76,30 @@ function AccountPage({ usuario }) {
       .finally(() => active && setLoading(false));
     return () => { active = false; };
   }, [usuario?.displayName, usuario?.uid]);
+
+  React.useEffect(() => {
+    setEmailVerified(usuario?.emailVerified === true);
+    setSecurityError("");
+    setSecurityMessage("");
+    setResendCooldown(0);
+  }, [usuario?.emailVerified, usuario?.uid]);
+
+  React.useEffect(() => {
+    if (resendCooldown <= 0) return undefined;
+    const timerId = window.setTimeout(() => {
+      setResendCooldown((current) => Math.max(current - 1, 0));
+    }, 1000);
+    return () => window.clearTimeout(timerId);
+  }, [resendCooldown]);
+
+  React.useEffect(() => {
+    const frameId = window.requestAnimationFrame(() => {
+      const section = document.getElementById(`cuenta-${activeSection}`);
+      section?.scrollIntoView({ block: "start" });
+      section?.querySelector("h2")?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, [activeSection]);
 
   const change = (event) => {
     const { name, value } = event.target;
@@ -59,77 +128,211 @@ function AccountPage({ usuario }) {
     }
   };
 
+  const resendVerification = async () => {
+    if (resendCooldown > 0) return;
+    setResending(true);
+    setSecurityError("");
+    setSecurityMessage("");
+    try {
+      await sendVerificationEmail();
+      setSecurityMessage("Correo de verificación enviado. Revisa tu bandeja de entrada y spam.");
+      setResendCooldown(RESEND_COOLDOWN_SECONDS);
+    } catch (sendError) {
+      setSecurityError(authErrorMessage(
+        sendError,
+        "No pudimos enviar el correo de verificación. Inténtalo nuevamente."
+      ));
+    } finally {
+      setResending(false);
+    }
+  };
+
+  const refreshVerification = async () => {
+    setRefreshing(true);
+    setSecurityError("");
+    setSecurityMessage("");
+    try {
+      const refreshedUser = await refreshCurrentUser();
+      const verified = refreshedUser?.emailVerified === true;
+      setEmailVerified(verified);
+      setSecurityMessage(
+        verified
+          ? "Correo verificado correctamente."
+          : "Tu correo aún figura pendiente de verificación."
+      );
+      if (verified) await onSessionRefresh?.();
+    } catch (refreshError) {
+      setSecurityError(authErrorMessage(
+        refreshError,
+        "No pudimos actualizar el estado del correo. Inténtalo nuevamente."
+      ));
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const changePassword = async () => {
+    setResettingPassword(true);
+    setSecurityError("");
+    setSecurityMessage("");
+    try {
+      await resetPassword(usuario?.email);
+      setSecurityMessage("Te enviamos un enlace para cambiar tu contraseña.");
+    } catch (resetError) {
+      setSecurityError(authErrorMessage(
+        resetError,
+        "No pudimos enviar el enlace para cambiar tu contraseña."
+      ));
+    } finally {
+      setResettingPassword(false);
+    }
+  };
+
   return (
     <section className="erp-page account-settings-page">
       <div className="settings-page-intro">
         <div>
-          <h1>Cuenta</h1>
+          <h1>Mi cuenta</h1>
           <p>Estos datos te identifican a ti y no pertenecen a ninguna empresa.</p>
         </div>
-        <span className="settings-role-badge"><AppIcon icon={ShieldCheck} size={14} /> Perfil privado</span>
       </div>
       <div className="settings-layout settings-layout--account">
         <nav className="settings-subnav" aria-label="Secciones de cuenta">
           <span className="settings-subnav__label">Mi cuenta</span>
-          <button type="button" className="is-active" aria-current="page">
-            <AppIcon icon={UserRound} size={18} />
-            <span>Perfil personal</span>
-          </button>
+          {ACCOUNT_SECTIONS.map((section) => (
+            <button
+              type="button"
+              key={section.id}
+              className={activeSection === section.id ? "is-active" : ""}
+              aria-current={activeSection === section.id ? "page" : undefined}
+              onClick={() => setSearchParams({ seccion: section.id })}
+            >
+              <AppIcon icon={section.icon} size={18} />
+              <span>{section.label}</span>
+            </button>
+          ))}
         </nav>
-        <section className="settings-section" aria-labelledby="personal-profile-title">
-          <header className="settings-section__header">
-            <h2 id="personal-profile-title">Perfil personal</h2>
-            <p>La información se guarda únicamente en tu cuenta de usuario.</p>
-          </header>
-          {loading ? <p className="settings-loading">Cargando perfil...</p> : (
-            <form onSubmit={submit} noValidate>
-              <fieldset className="settings-fieldset settings-card" disabled={saving}>
-                <legend className="sr-only">Datos personales</legend>
-                <div className="settings-form-grid">
-                  <label className="settings-field">
-                    <span className="settings-field__label">Nombres *</span>
-                    <input name="nombres" value={form.nombres} onChange={change} required />
-                    <span className="settings-field__support">Nombre con el que aparecerás en ValoraCloud.</span>
-                  </label>
-                  <label className="settings-field">
-                    <span className="settings-field__label">Apellidos <span className="settings-field__optional">Opcional</span></span>
-                    <input name="apellidos" value={form.apellidos} onChange={change} />
-                    <span className="settings-field__support">&nbsp;</span>
-                  </label>
-                  <label className="settings-field">
-                    <span className="settings-field__label">Tipo de documento <span className="settings-field__optional">Opcional</span></span>
-                    <select name="tipoDocumento" value={form.tipoDocumento} onChange={change}>
-                      <option value="">Sin especificar</option>
-                      <option value="RUT">RUT</option>
-                      <option value="CI">Cédula de identidad</option>
-                      <option value="PASAPORTE">Pasaporte</option>
-                      <option value="OTRO">Otro</option>
-                    </select>
-                    <span className="settings-field__support">&nbsp;</span>
-                  </label>
-                  <label className="settings-field">
-                    <span className="settings-field__label">Número de documento <span className="settings-field__optional">Opcional</span></span>
-                    <input name="numeroDocumento" value={form.numeroDocumento} onChange={change} />
-                    <span className="settings-field__support">&nbsp;</span>
-                  </label>
-                  <label className="settings-field">
-                    <span className="settings-field__label">Teléfono personal <span className="settings-field__optional">Opcional</span></span>
-                    <input name="telefonoPersonal" type="tel" value={form.telefonoPersonal} onChange={change} />
-                    <span className="settings-field__support">No se comparte entre empresas.</span>
-                  </label>
-                  <label className="settings-field">
-                    <span className="settings-field__label">Correo de acceso</span>
-                    <input value={usuario?.email || ""} readOnly aria-readonly="true" />
-                    <span className="settings-field__support">Solo lectura. Cambiarlo requiere un flujo seguro de autenticación.</span>
-                  </label>
+
+        {activeSection === "perfil" && (
+          <section id="cuenta-perfil" className="settings-section" aria-labelledby="personal-profile-title">
+            <header className="settings-section__header">
+              <h2 id="personal-profile-title" tabIndex="-1">Perfil personal</h2>
+              <p>La información se guarda únicamente en tu cuenta de usuario.</p>
+            </header>
+            {loading ? <p className="settings-loading">Cargando perfil...</p> : (
+              <form onSubmit={submit} noValidate>
+                <fieldset className="settings-fieldset settings-card" disabled={saving}>
+                  <legend className="sr-only">Datos personales</legend>
+                  <div className="settings-form-grid">
+                    <label className="settings-field">
+                      <span className="settings-field__label">Nombres *</span>
+                      <input name="nombres" value={form.nombres} onChange={change} required />
+                      <span className="settings-field__support">Nombre con el que aparecerás en ValoraCloud.</span>
+                    </label>
+                    <label className="settings-field">
+                      <span className="settings-field__label">Apellidos <span className="settings-field__optional">Opcional</span></span>
+                      <input name="apellidos" value={form.apellidos} onChange={change} />
+                      <span className="settings-field__support">&nbsp;</span>
+                    </label>
+                    <label className="settings-field">
+                      <span className="settings-field__label">Tipo de documento <span className="settings-field__optional">Opcional</span></span>
+                      <select name="tipoDocumento" value={form.tipoDocumento} onChange={change}>
+                        <option value="">Sin especificar</option>
+                        <option value="RUT">RUT</option>
+                        <option value="CI">Cédula de identidad</option>
+                        <option value="PASAPORTE">Pasaporte</option>
+                        <option value="OTRO">Otro</option>
+                      </select>
+                      <span className="settings-field__support">&nbsp;</span>
+                    </label>
+                    <label className="settings-field">
+                      <span className="settings-field__label">Número de documento <span className="settings-field__optional">Opcional</span></span>
+                      <input name="numeroDocumento" value={form.numeroDocumento} onChange={change} />
+                      <span className="settings-field__support">&nbsp;</span>
+                    </label>
+                    <label className="settings-field">
+                      <span className="settings-field__label">Teléfono personal <span className="settings-field__optional">Opcional</span></span>
+                      <input name="telefonoPersonal" type="tel" value={form.telefonoPersonal} onChange={change} />
+                      <span className="settings-field__support">No se comparte entre empresas.</span>
+                    </label>
+                  </div>
+                </fieldset>
+                {error && <p className="settings-message settings-message--error" role="alert">{error}</p>}
+                {success && <p className="settings-message settings-message--success" role="status">{success}</p>}
+                <div className="settings-save-row"><Button type="submit" icon={Save} disabled={saving}>{saving ? "Guardando..." : "Guardar perfil"}</Button></div>
+              </form>
+            )}
+          </section>
+        )}
+
+        {activeSection === "acceso" && (
+          <section id="cuenta-acceso" className="settings-section" aria-labelledby="account-access-title">
+            <header className="settings-section__header">
+              <h2 id="account-access-title" tabIndex="-1">Acceso y seguridad</h2>
+              <p>Administra el acceso de tu usuario, independiente del negocio activo.</p>
+            </header>
+            <div className="settings-card account-security-card">
+              <div className="account-security-row">
+                <div className="account-security-row__icon" aria-hidden="true">
+                  <AppIcon icon={emailVerified ? MailCheck : MailWarning} size={20} />
                 </div>
-              </fieldset>
-              {error && <p className="settings-message settings-message--error" role="alert">{error}</p>}
-              {success && <p className="settings-message settings-message--success" role="status">{success}</p>}
-              <div className="settings-save-row"><Button type="submit" icon={Save} disabled={saving}>{saving ? "Guardando..." : "Guardar perfil"}</Button></div>
-            </form>
-          )}
-        </section>
+                <div className="account-security-row__copy">
+                  <span>Correo de acceso</span>
+                  <strong>{usuario?.email || "Correo no disponible"}</strong>
+                  <small>Este correo pertenece a tu cuenta de usuario.</small>
+                </div>
+                <StatusBadge variant={emailVerified ? "success" : "warning"}>
+                  {emailVerified ? "Correo verificado" : "Correo sin verificar"}
+                </StatusBadge>
+              </div>
+              {!emailVerified && (
+                <div className="account-security-actions">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    icon={RefreshCw}
+                    disabled={refreshing || resending}
+                    onClick={refreshVerification}
+                  >
+                    {refreshing ? "Comprobando..." : "Ya verifiqué mi correo"}
+                  </Button>
+                  <Button
+                    type="button"
+                    icon={Send}
+                    disabled={resending || refreshing || resendCooldown > 0}
+                    onClick={resendVerification}
+                  >
+                    {resending
+                      ? "Enviando..."
+                      : resendCooldown > 0
+                        ? `Reenviar en ${resendCooldown} s`
+                        : "Reenviar verificación"}
+                  </Button>
+                </div>
+              )}
+              <div className="account-security-row account-security-row--password">
+                <div className="account-security-row__icon" aria-hidden="true">
+                  <AppIcon icon={KeyRound} size={20} />
+                </div>
+                <div className="account-security-row__copy">
+                  <span>Contraseña</span>
+                  <strong>Acceso con contraseña</strong>
+                  <small>Recibirás un enlace seguro en tu correo de acceso.</small>
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={resettingPassword}
+                  onClick={changePassword}
+                >
+                  {resettingPassword ? "Enviando..." : "Cambiar contraseña"}
+                </Button>
+              </div>
+              {securityError && <p className="settings-message settings-message--error" role="alert">{securityError}</p>}
+              {securityMessage && <p className="settings-message settings-message--success" role="status">{securityMessage}</p>}
+            </div>
+          </section>
+        )}
       </div>
     </section>
   );

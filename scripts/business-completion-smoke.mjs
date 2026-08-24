@@ -22,7 +22,13 @@ const initial = getBusinessCompletionStatus(initialProfile);
 assert.equal(initial.percent, 25);
 assert.equal(initial.label, "Configuración inicial");
 assert.equal(initial.verificationStatus, "NO_VERIFICADA");
+assert.equal(initial.verificationLabel, "Empresa no verificada");
 assert.equal(initial.nextRecommendedAction.id, "fiscalIdentity");
+assert.equal(initial.nextRecommendedAction.actionLabel, "Completar");
+assert.equal(
+  initial.pendingItems.find((item) => item.id === "ownerEmail")?.path,
+  "/cuenta?seccion=acceso"
+);
 
 const fiscal = getBusinessCompletionStatus({
   ...initialProfile,
@@ -65,6 +71,7 @@ const complete = getBusinessCompletionStatus(completeProfile, {
 });
 assert.equal(complete.percent, 100);
 assert.equal(complete.label, "Empresa completa y verificada");
+assert.equal(complete.verificationLabel, "Empresa verificada");
 assert.equal(complete.pendingItems.length, 0);
 
 const otherBusiness = getBusinessCompletionStatus({
@@ -92,12 +99,15 @@ const legacy = getBusinessCompletionStatus({
 }, { ownerEmailVerified: true });
 assert.equal(legacy.percent, 100);
 
-const [layout, company, activation, hook, sessionBackend] = await Promise.all([
+const [layout, company, activation, hook, sessionBackend, account, completionCard, app] = await Promise.all([
   readFile(new URL("../src/layout/AppLayout.jsx", import.meta.url), "utf8"),
   readFile(new URL("../src/features/company/CompanyConfig.jsx", import.meta.url), "utf8"),
   readFile(new URL("../src/pages/InitialBusinessActivationPage.jsx", import.meta.url), "utf8"),
   readFile(new URL("../src/hooks/useBusinessCompletionStatus.js", import.meta.url), "utf8"),
   readFile(new URL("../functions/businessOnboarding.js", import.meta.url), "utf8"),
+  readFile(new URL("../src/pages/AccountPage.jsx", import.meta.url), "utf8"),
+  readFile(new URL("../src/features/company/BusinessCompletionCard.jsx", import.meta.url), "utf8"),
+  readFile(new URL("../src/app/App.jsx", import.meta.url), "utf8"),
 ]);
 assert.match(layout, /\["OWNER", "ADMIN"\]\.includes/);
 assert.match(layout, /businessCompletionStatus\.percent/);
@@ -107,12 +117,27 @@ assert.doesNotMatch(
   /ownerEmailVerified = negocioActivo\?\.role === "OWNER"/
 );
 assert.match(layout, /<Outlet context=\{\{ businessCompletionStatus \}\}/);
+assert.doesNotMatch(layout, /verification-banner|handleResendVerification|Estado de verificación/);
 assert.match(company, /<BusinessCompletionCard/);
+assert.match(company, /searchParams\.get\("objetivo"\)/);
+assert.match(company, /item\.id !== "ownerEmail" \|\| role === "OWNER"/);
+for (const target of ["logo", "fiscal", "contacto", "direccion"]) {
+  assert.match(company, new RegExp(`empresa-${target}`));
+}
 assert.match(activation, /<BusinessCompletionCard/);
 assert.match(activation, /useBusinessCompletionStatus/);
 assert.match(hook, /getBusinessCompletionStatus/);
 assert.match(hook, /subscribeToCompanyProfile/);
 assert.match(sessionBackend, /auth\.getUser\(ownerUid\)/);
 assert.match(sessionBackend, /ownerEmailVerified/);
+assert.match(account, /Acceso y seguridad/);
+assert.match(account, /Correo verificado/);
+assert.match(account, /Correo sin verificar/);
+assert.match(account, /sendVerificationEmail/);
+assert.match(account, /refreshCurrentUser/);
+assert.match(account, /resetPassword/);
+assert.doesNotMatch(account, /Perfil privado/);
+assert.match(completionCard, /canActOnItem\(item\)/);
+assert.match(app, /onSessionRefresh=\{onBusinessCreated\}/);
 
 console.log("BUSINESS_COMPLETION_SMOKE_OK");

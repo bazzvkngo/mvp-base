@@ -412,10 +412,10 @@
   background: var(--color-surface-panel);
   border-bottom: 1px solid var(--color-border-subtle);
   display: grid;
-  gap: var(--space-4);
+  gap: var(--space-3);
   grid-template-columns: minmax(0, 1fr) auto;
   min-height: var(--shell-topbar-height);
-  padding: var(--space-3) var(--space-6);
+  padding: var(--space-2) var(--space-6);
   position: sticky;
   top: 0;
   z-index: calc(var(--z-sticky) + 1);
@@ -456,25 +456,51 @@
 .topbar-user {
   align-items: center;
   display: flex;
-  gap: var(--space-3);
+  gap: var(--space-2);
   min-width: 0;
 }
 
-.topbar-identity {
+.topbar .ui-page-header {
   align-items: center;
   display: flex;
   gap: var(--space-2);
   min-width: 0;
 }
 
-.topbar-user-email {
+.topbar .ui-page-header__eyebrow {
   color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
+  flex: 0 1 auto;
+  margin: 0;
   max-width: 240px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.topbar .ui-page-header__eyebrow::after {
+  color: var(--color-border-control);
+  content: "·";
+  margin-left: var(--space-2);
+}
+
+.topbar .ui-page-header__title {
+  font-size: var(--font-size-sm);
+}
+
+.topbar-context {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-logout-button.ui-button {
+  min-height: 34px;
+  padding: 0.4375rem 0.6875rem;
 }
 
 .account-dialog-content {
@@ -571,7 +597,7 @@
   margin-inline: auto;
   max-width: var(--shell-content-max);
   min-width: 0;
-  padding: var(--space-6) var(--space-6) var(--space-10);
+  padding: var(--space-4) var(--space-6) var(--space-10);
   width: 100%;
 }
 

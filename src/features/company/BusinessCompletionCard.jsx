@@ -3,6 +3,7 @@ import { Check, Circle } from "lucide-react";
 import AppIcon from "../../components/ui/AppIcon";
 
 function BusinessCompletionCard({
+  canActOnItem,
   className = "",
   description = "Completa tu perfil para dejar tus documentos y operaciones listos.",
   loading = false,
@@ -46,7 +47,8 @@ function BusinessCompletionCard({
               <AppIcon icon={item.completed ? Check : Circle} size={17} />
               <span>{item.label}</span>
             </span>
-            {!item.completed && onAction && (
+            {!item.completed && item.actionLabel && onAction &&
+              (!canActOnItem || canActOnItem(item)) && (
               <button type="button" onClick={() => onAction(item)}>
                 {item.actionLabel}
               </button>

@@ -1709,7 +1709,14 @@
 
 /* Centro ejecutivo de Reportes V3 */
 .reports-v3 {
-  gap: var(--space-4);
+  gap: var(--space-3);
+}
+
+.reports-v3-header {
+  align-items: end;
+  display: grid;
+  gap: var(--space-1) var(--space-4);
+  grid-template-columns: minmax(190px, 1fr) auto;
 }
 
 .reports-v3-heading {
@@ -1718,34 +1725,79 @@
   justify-content: space-between;
 }
 
-.reports-v3-toolbar {
-  align-items: end;
-  background: var(--color-surface-panel);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
-  display: grid;
-  gap: var(--space-3);
-  grid-template-columns: minmax(260px, 1fr) minmax(170px, 220px) auto;
-  padding: var(--space-3);
+.reports-v3-heading .erp-page-intro {
+  padding: var(--space-1) var(--space-3);
 }
 
-.reports-v3-toolbar > .erp-field {
+.reports-v3-heading h1 {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-xl);
+  line-height: var(--line-height-tight);
+  margin: 0 0 2px;
+}
+
+.reports-v3-heading .erp-page-intro p {
+  font-size: var(--font-size-xs);
+}
+
+.reports-v3-toolbar {
+  align-items: end;
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
   min-width: 0;
 }
 
+.reports-v3-toolbar > .erp-field {
+  flex: 0 0 176px;
+  min-width: 0;
+}
+
+.reports-v3-toolbar .financial-period-control {
+  flex: 0 1 auto;
+  gap: var(--space-2);
+}
+
+.reports-v3-toolbar .financial-period-control .erp-field,
+.reports-v3-toolbar .financial-period-control .erp-field:first-child {
+  flex: 0 0 156px;
+}
+
+.reports-v3-toolbar .erp-field {
+  gap: var(--space-1);
+}
+
+.reports-v3-toolbar .erp-control,
 .reports-v3-toolbar > .ui-button {
-  margin-bottom: 1px;
+  min-height: 36px;
+}
+
+.reports-v3-toolbar .erp-control {
+  padding-bottom: 0.4375rem;
+  padding-top: 0.4375rem;
+}
+
+.reports-v3-toolbar > .ui-button {
+  padding: 0.5rem 0.75rem;
 }
 
 .reports-v3-currency-help {
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
-  grid-column: 1 / -1;
-  margin: calc(var(--space-2) * -1) 0 0;
+  grid-column: 2;
+  justify-self: start;
+  margin: 0;
 }
 
 .reports-v3-tabs {
+  padding: 0 var(--space-2);
   scrollbar-width: thin;
+}
+
+.reports-v3-tabs .financial-tab {
+  min-height: 40px;
+  padding-left: var(--space-3);
+  padding-right: var(--space-3);
 }
 
 .reports-v3-advanced {
@@ -1969,9 +2021,9 @@
 .reports-v3-empty-business {
   align-items: center;
   display: grid;
-  gap: var(--space-4);
+  gap: var(--space-3);
   justify-items: center;
-  padding: clamp(var(--space-5), 5vw, var(--space-8));
+  padding: var(--space-4);
   text-align: center;
 }
 
@@ -1981,9 +2033,9 @@
   border-radius: 999px;
   color: var(--color-brand-700);
   display: inline-flex;
-  height: 62px;
+  height: 48px;
   justify-content: center;
-  width: 62px;
+  width: 48px;
 }
 
 .reports-v3-completion {
@@ -1992,10 +2044,10 @@
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-md);
   display: flex;
-  gap: var(--space-4);
+  gap: var(--space-3);
   justify-content: space-between;
-  max-width: 720px;
-  padding: var(--space-3);
+  max-width: 760px;
+  padding: var(--space-2) var(--space-3);
   text-align: left;
   width: 100%;
 }
@@ -2053,6 +2105,19 @@
   .report-quote-metrics {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
+  .reports-v3-header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .reports-v3-toolbar {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .reports-v3-currency-help {
+    grid-column: 1;
+  }
 }
 
 @media (max-width: 1350px) {
@@ -2084,10 +2149,6 @@
 
   .report-four-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .reports-v3-toolbar {
-    grid-template-columns: minmax(0, 1fr) minmax(160px, 210px) auto;
   }
 
   .reports-v3-main-grid,
@@ -2122,11 +2183,23 @@
 
   .reports-v3-toolbar {
     align-items: stretch;
-    grid-template-columns: minmax(0, 1fr);
+    flex-direction: column;
   }
 
   .reports-v3-toolbar > *,
   .reports-v3-toolbar > .ui-button {
+    width: 100%;
+  }
+
+  .reports-v3-toolbar .financial-period-control {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .reports-v3-toolbar .financial-period-control .erp-field,
+  .reports-v3-toolbar .financial-period-control .erp-field:first-child,
+  .reports-v3-toolbar > .erp-field {
+    flex: 1 1 auto;
     width: 100%;
   }
 
@@ -2445,6 +2518,59 @@
   padding: var(--space-5);
 }
 
+.account-security-card {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.account-security-row {
+  align-items: center;
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-width: 0;
+}
+
+.account-security-row--password {
+  border-top: 1px solid var(--color-border-subtle);
+  padding-top: var(--space-4);
+}
+
+.account-security-row__icon {
+  align-items: center;
+  background: var(--color-surface-selected);
+  border-radius: var(--radius-md);
+  color: var(--color-brand-700);
+  display: flex;
+  height: 40px;
+  justify-content: center;
+  width: 40px;
+}
+
+.account-security-row__copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.account-security-row__copy > span,
+.account-security-row__copy > small {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.account-security-row__copy > strong {
+  color: var(--color-text-strong);
+  overflow-wrap: anywhere;
+}
+
+.account-security-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
 .settings-form-grid {
   display: grid;
   gap: var(--space-3) var(--space-4);
@@ -2741,6 +2867,25 @@
 
   .settings-card {
     padding: var(--space-3);
+  }
+
+  .account-security-row {
+    align-items: start;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .account-security-row > .ui-button,
+  .account-security-row > .ui-status-badge {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .account-security-actions {
+    justify-content: stretch;
+  }
+
+  .account-security-actions .ui-button {
+    flex: 1 1 180px;
   }
 
   .settings-form-grid,

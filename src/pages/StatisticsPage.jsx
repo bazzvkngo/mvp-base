@@ -526,13 +526,15 @@ function StatisticsPage({businessId, currencyCode = "CLP", role = ""}) {
   };
 
   return <section className="erp-page statistics-page reports-page reports-v3">
-    <div className="reports-v3-heading"><div className="erp-page-intro"><h1>Reportes</h1><p>Vista general de tu negocio.</p></div></div>
-    <div className="reports-v3-toolbar no-print">
-      <FinancialPeriodSelector period={period} customStart={customStart} customEnd={customEnd} options={REPORT_PERIOD_OPTIONS} onPeriodChange={(value) => setParam("period", value === "month" ? "" : value)} onCustomStartChange={(value) => setParam("from", value)} onCustomEndChange={(value) => setParam("to", value)} idPrefix="reports-period" />
-      <Field label="Moneda"><select className="erp-control" value={selectedCurrency} onChange={(event) => setParam("currency", event.target.value === "todos" ? "" : event.target.value)}><option value="todos">Todas, separadas</option>{currencyOptions.map((currency) => <option key={currency} value={currency}>{currency}</option>)}</select></Field>
-      <Button variant="secondary" icon={Download} disabled={reportState.loading || financial.loading} onClick={handleExport}>Exportar</Button>
-      <p className="reports-v3-currency-help">Los montos se muestran separados por moneda. No se realizan conversiones.</p>
-    </div>
+    <header className="reports-v3-header">
+      <div className="reports-v3-heading"><div className="erp-page-intro"><h1>Reportes</h1><p>Vista general de tu negocio.</p></div></div>
+      <div className="reports-v3-toolbar no-print">
+        <FinancialPeriodSelector period={period} customStart={customStart} customEnd={customEnd} options={REPORT_PERIOD_OPTIONS} onPeriodChange={(value) => setParam("period", value === "month" ? "" : value)} onCustomStartChange={(value) => setParam("from", value)} onCustomEndChange={(value) => setParam("to", value)} idPrefix="reports-period" />
+        <Field label="Moneda"><select className="erp-control" value={selectedCurrency} onChange={(event) => setParam("currency", event.target.value === "todos" ? "" : event.target.value)}><option value="todos">Todas, separadas</option>{currencyOptions.map((currency) => <option key={currency} value={currency}>{currency}</option>)}</select></Field>
+        <Button variant="secondary" icon={Download} disabled={reportState.loading || financial.loading} onClick={handleExport}>Exportar</Button>
+      </div>
+      {selectedCurrency === "todos" && <p className="reports-v3-currency-help">Los montos se muestran separados por moneda. No se realizan conversiones.</p>}
+    </header>
     <div className="financial-tabs statistics-tabs reports-v3-tabs" role="tablist" aria-label="Secciones de Reportes">
       {TABS.map(([id, label]) => <button className={`financial-tab${activeTab === id ? " financial-tab--active" : ""}`} role="tab" aria-selected={activeTab === id} type="button" key={id} onClick={() => { setParam("tab", id === "overview" ? "" : id); setAdvancedOpen(false); }}>{label}</button>)}
     </div>

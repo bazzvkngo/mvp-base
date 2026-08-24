@@ -10,10 +10,10 @@ export const BUSINESS_VERIFICATION_STATES = Object.freeze({
   REJECTED: "RECHAZADA",
 });
 export const BUSINESS_VERIFICATION_STATUS_LABELS = Object.freeze({
-  NO_VERIFICADA: "No verificada",
-  PENDIENTE: "Pendiente",
-  VERIFICADA: "Verificada",
-  RECHAZADA: "Rechazada",
+  NO_VERIFICADA: "Empresa no verificada",
+  PENDIENTE: "Verificación empresarial pendiente",
+  VERIFICADA: "Empresa verificada",
+  RECHAZADA: "Verificación empresarial rechazada",
 });
 export const VERIFICATION_EVIDENCE_TYPES = Object.freeze([
   "application/pdf",

@@ -17,10 +17,10 @@ export const BUSINESS_VERIFICATION_STATES = Object.freeze({
 });
 
 const VERIFICATION_LABELS = Object.freeze({
-  NO_VERIFICADA: "No verificada",
-  PENDIENTE: "Verificación pendiente",
-  VERIFICADA: "Verificada",
-  RECHAZADA: "Verificación rechazada",
+  NO_VERIFICADA: "Empresa no verificada",
+  PENDIENTE: "Verificación empresarial pendiente",
+  VERIFICADA: "Empresa verificada",
+  RECHAZADA: "Verificación empresarial rechazada",
 });
 
 function hasText(value) {
@@ -62,7 +62,7 @@ export function getBusinessCompletionStatus(
       completed:
         hasText(profile.nombreComercial) &&
         hasText(profile.rubroCodigo || profile.rubroNombre),
-      actionLabel: "Completar información",
+      actionLabel: "Completar",
       section: "informacion",
     },
     {
@@ -73,7 +73,7 @@ export function getBusinessCompletionStatus(
         hasText(profile.paisCodigo) &&
         hasText(profile.monedaCodigo) &&
         hasText(profile.locale),
-      actionLabel: "Completar configuración",
+      actionLabel: "Completar",
       section: "informacion",
     },
     {
@@ -83,7 +83,7 @@ export function getBusinessCompletionStatus(
       completed:
         hasText(profile.identificadorFiscalValor || profile.rut) &&
         hasText(profile.razonSocial),
-      actionLabel: "Completar datos fiscales",
+      actionLabel: "Completar",
       section: "informacion",
     },
     {
@@ -91,7 +91,7 @@ export function getBusinessCompletionStatus(
       label: "Datos de contacto",
       weight: BUSINESS_COMPLETION_WEIGHTS.contact,
       completed: hasText(profile.email || profile.telefono),
-      actionLabel: "Agregar contacto",
+      actionLabel: "Agregar",
       section: "informacion",
     },
     {
@@ -99,7 +99,7 @@ export function getBusinessCompletionStatus(
       label: "Dirección",
       weight: BUSINESS_COMPLETION_WEIGHTS.address,
       completed: hasText(profile.direccion) && hasRegion && hasCity,
-      actionLabel: "Completar ubicación",
+      actionLabel: "Completar",
       section: "informacion",
     },
     {
@@ -107,7 +107,7 @@ export function getBusinessCompletionStatus(
       label: "Logo",
       weight: BUSINESS_COMPLETION_WEIGHTS.logo,
       completed: hasText(profile.logoUrl || profile.logoPath),
-      actionLabel: "Agregar logo",
+      actionLabel: "Agregar",
       section: "informacion",
     },
     {
@@ -116,7 +116,7 @@ export function getBusinessCompletionStatus(
       weight: BUSINESS_COMPLETION_WEIGHTS.ownerEmail,
       completed: ownerEmailVerified === true,
       actionLabel: "Verificar correo",
-      path: "/cuenta",
+      path: "/cuenta?seccion=acceso",
     },
     {
       id: "businessVerification",
@@ -124,7 +124,7 @@ export function getBusinessCompletionStatus(
       weight: BUSINESS_COMPLETION_WEIGHTS.businessVerification,
       completed:
         resolvedVerificationStatus === BUSINESS_VERIFICATION_STATES.VERIFIED,
-      actionLabel: "Revisar verificación",
+      actionLabel: "Revisar",
       section: "verificacion",
     },
   ];

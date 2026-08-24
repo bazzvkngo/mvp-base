@@ -305,7 +305,13 @@ function AppRoutes({
         />
         <Route
           path="/cuenta"
-          element={<AccountPage key={usuario?.uid} usuario={usuario} />}
+          element={
+            <AccountPage
+              key={usuario?.uid}
+              usuario={usuario}
+              onSessionRefresh={onBusinessCreated}
+            />
+          }
         />
         <Route
           path="/inventario"

@@ -76,7 +76,7 @@
 
   /* Shell */
   --shell-sidebar-width: 248px;
-  --shell-topbar-height: 68px;
+  --shell-topbar-height: 52px;
   --shell-content-max: 1600px;
   --z-sticky: 20;
   --z-overlay: 80;

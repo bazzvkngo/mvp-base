@@ -1,5 +1,5 @@
 import React from "react";
-import { LogOut, MailCheck, MailWarning, Menu, ShieldCheck, UserRound, X } from "lucide-react";
+import { LogOut, Menu, ShieldCheck, UserRound, X } from "lucide-react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import AdditionalBusinessDrawer from "../components/AdditionalBusinessDrawer";
 import BrandLogo from "../components/BrandLogo";
@@ -9,21 +9,13 @@ import Button from "../components/ui/Button";
 import PageHeader from "../components/ui/PageHeader";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import SkipLink from "../components/ui/SkipLink";
-import StatusBadge from "../components/ui/StatusBadge";
 import { getRouteMeta, navigationSections } from "../app/navigation";
 import {
   filterNavigationSections,
   getDefaultBusinessPath,
 } from "../domain/rbac.mjs";
-import {
-  logout,
-  refreshCurrentUser,
-  sendVerificationEmail,
-} from "../services/authService";
+import { logout } from "../services/authService";
 import useBusinessCompletionStatus from "../hooks/useBusinessCompletionStatus";
-
-const VERIFICATION_NOTICE_KEY = "valoracloud.verificationNotice";
-const RESEND_COOLDOWN_SECONDS = 60;
 
 function PrimaryNavigation({
   ariaLabel = "Navegación principal",
@@ -93,16 +85,6 @@ function AppLayout({
 }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const [emailVerified, setEmailVerified] = React.useState(
-    usuario?.emailVerified ?? true
-  );
-  const [resendMessage, setResendMessage] = React.useState("");
-  const [resendError, setResendError] = React.useState("");
-  const [checkMessage, setCheckMessage] = React.useState("");
-  const [checkError, setCheckError] = React.useState("");
-  const [resendingVerification, setResendingVerification] = React.useState(false);
-  const [refreshingVerification, setRefreshingVerification] = React.useState(false);
-  const [resendCooldown, setResendCooldown] = React.useState(0);
   const [mobileNavigationOpen, setMobileNavigationOpen] = React.useState(false);
   const [mobileAccountOpen, setMobileAccountOpen] = React.useState(false);
   const [businessDrawerOpen, setBusinessDrawerOpen] = React.useState(false);
@@ -127,44 +109,6 @@ function AppLayout({
   const accountNavigationSections = allowedNavigationSections.filter(
     (section) => section.label === "Cuenta"
   );
-
-  React.useEffect(() => {
-    setEmailVerified(usuario?.emailVerified ?? true);
-    setResendError("");
-    setCheckError("");
-    setCheckMessage("");
-    setResendCooldown(0);
-
-    const storedMessage = window.sessionStorage.getItem(VERIFICATION_NOTICE_KEY);
-    if (storedMessage) {
-      setResendMessage(storedMessage);
-      window.sessionStorage.removeItem(VERIFICATION_NOTICE_KEY);
-    } else {
-      setResendMessage("");
-    }
-  }, [usuario?.uid, usuario?.emailVerified]);
-
-  React.useEffect(() => {
-    if (resendCooldown <= 0) return undefined;
-
-    const timerId = window.setTimeout(() => {
-      setResendCooldown((current) => Math.max(current - 1, 0));
-    }, 1000);
-
-    return () => window.clearTimeout(timerId);
-  }, [resendCooldown]);
-
-  React.useEffect(() => {
-    if (!emailVerified || checkMessage !== "Correo verificado correctamente.") {
-      return undefined;
-    }
-
-    const timerId = window.setTimeout(() => {
-      setCheckMessage("");
-    }, 5000);
-
-    return () => window.clearTimeout(timerId);
-  }, [checkMessage, emailVerified]);
 
   React.useEffect(() => {
     if (!mobileNavigationOpen) return undefined;
@@ -248,82 +192,8 @@ function AppLayout({
       );
   }, []);
 
-  const logAuthError = (message, error) => {
-    if (import.meta.env.DEV) {
-      console.error(message, error?.code, error?.message);
-    }
-  };
-
-  const handleResendVerification = async () => {
-    if (resendCooldown > 0) return;
-
-    setCheckMessage("");
-    setCheckError("");
-    setResendError("");
-    setResendMessage("");
-    setResendingVerification(true);
-
-    try {
-      await sendVerificationEmail();
-      setResendMessage(
-        "Correo de verificación enviado. Revisa tu bandeja de entrada y la carpeta de spam."
-      );
-      setResendCooldown(RESEND_COOLDOWN_SECONDS);
-    } catch (error) {
-      logAuthError("Error reenviando correo de verificación:", error);
-      if (error.code === "auth/too-many-requests") {
-        setResendError(
-          "Se realizaron demasiados intentos. Espera unos minutos antes de reenviar."
-        );
-      } else {
-        setResendError(
-          "No fue posible enviar el correo de verificación. Revisa tu conexión e inténtalo nuevamente."
-        );
-      }
-    } finally {
-      setResendingVerification(false);
-    }
-  };
-
-  const handleRefreshVerification = async () => {
-    setResendMessage("");
-    setResendError("");
-    setCheckMessage("");
-    setCheckError("");
-    setRefreshingVerification(true);
-
-    try {
-      const refreshedUser = await refreshCurrentUser();
-      const isVerified = Boolean(refreshedUser?.emailVerified);
-      setEmailVerified(isVerified);
-
-      if (!isVerified) {
-        setCheckMessage("Tu correo aún figura pendiente de verificación.");
-      } else {
-        await onBusinessCreated?.();
-        setCheckMessage("Correo verificado correctamente.");
-      }
-    } catch (error) {
-      logAuthError("Error actualizando estado de verificación:", error);
-      setCheckError(
-        "No se pudo actualizar el estado de verificación. Inténtalo nuevamente."
-      );
-    } finally {
-      setRefreshingVerification(false);
-    }
-  };
-
-  const showVerificationBanner = usuario && !emailVerified;
-  const showVerifiedNotice =
-    usuario && emailVerified && checkMessage === "Correo verificado correctamente.";
-  const resendButtonDisabled =
-    resendingVerification || refreshingVerification || resendCooldown > 0;
-  const resendButtonLabel = resendingVerification
-    ? "Enviando..."
-    : resendCooldown > 0
-    ? `Reenviar en ${resendCooldown} s`
-    : "Reenviar verificación";
   const routeMeta = getRouteMeta(location.pathname);
+  const pageProvidesHeading = location.pathname === "/reportes";
 
   const handleOpenBusinessDrawer = () => {
     if (mobileNavigationOpen) {
@@ -403,35 +273,26 @@ function AppLayout({
             <AppIcon icon={Menu} size={21} />
           </button>
 
-          <PageHeader
-            eyebrow={negocioActivo?.nombreComercial || "Módulo activo"}
-            title={routeMeta.title}
-          />
+          {pageProvidesHeading ? (
+            <div className="topbar-context" aria-label="Negocio activo">
+              <span>{negocioActivo?.nombreComercial || "Módulo activo"}</span>
+            </div>
+          ) : (
+            <PageHeader
+              eyebrow={negocioActivo?.nombreComercial || "Módulo activo"}
+              title={routeMeta.title}
+            />
+          )}
 
           <div className="topbar-user topbar-user--desktop">
-            <div className="topbar-identity" title={usuario?.email || undefined}>
-              <span className="sr-only">Usuario:</span>
-              <span className="topbar-user-email">{usuario?.email}</span>
-              <StatusBadge
-                variant={emailVerified ? "success" : "warning"}
-                title={
-                  emailVerified
-                    ? "Correo electrónico verificado"
-                    : "Correo electrónico pendiente de verificación"
-                }
-              >
-                <AppIcon
-                  icon={emailVerified ? MailCheck : MailWarning}
-                  size={14}
-                />
-                {emailVerified ? "Verificado" : "Pendiente"}
-              </StatusBadge>
-            </div>
             {platformSuperadmin && <Button type="button" variant="secondary" icon={ShieldCheck} onClick={() => navigate("/admin/dashboard")}>Panel plataforma</Button>}
             <Button
               type="button"
               variant="ghost-danger"
               icon={LogOut}
+              className="topbar-logout-button no-print"
+              aria-label="Cerrar sesión"
+              title="Salir de ValoraCloud"
               onClick={() => logout()}
             >
               Salir
@@ -450,86 +311,10 @@ function AppLayout({
           </button>
         </header>
 
-        {showVerifiedNotice && (
-          <section
-            className="verification-notice no-print"
-            role="status"
-            aria-live="polite"
-          >
-            {checkMessage}
-          </section>
-        )}
-
         {businessNotice && (
           <div className="business-toast no-print" role="status" aria-live="polite">
             {businessNotice}
           </div>
-        )}
-
-        {showVerificationBanner && (
-          <section
-            className="verification-banner no-print"
-            aria-labelledby="verification-banner-title"
-          >
-            <div className="verification-banner__content">
-              <strong
-                id="verification-banner-title"
-                className="verification-banner__title"
-              >
-                Correo pendiente de verificación
-              </strong>
-              <p className="verification-banner__text">
-                Tu correo aún no está verificado. Revisa tu correo o reenvía la
-                verificación.
-              </p>
-              {resendMessage && (
-                <p
-                  className="verification-message verification-message--success"
-                  role="status"
-                >
-                  {resendMessage}
-                </p>
-              )}
-              {resendError && (
-                <p
-                  className="verification-message verification-message--error"
-                  role="alert"
-                >
-                  {resendError}
-                </p>
-              )}
-              {checkMessage && (
-                <p className="verification-message" role="status">
-                  {checkMessage}
-                </p>
-              )}
-              {checkError && (
-                <p
-                  className="verification-message verification-message--error"
-                  role="alert"
-                >
-                  {checkError}
-                </p>
-              )}
-            </div>
-            <div className="verification-banner__actions">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={handleRefreshVerification}
-                disabled={refreshingVerification || resendingVerification}
-              >
-                {refreshingVerification ? "Verificando..." : "Ya verifiqué"}
-              </Button>
-              <Button
-                type="button"
-                onClick={handleResendVerification}
-                disabled={resendButtonDisabled}
-              >
-                {resendButtonLabel}
-              </Button>
-            </div>
-          </section>
         )}
 
         <main
@@ -569,16 +354,6 @@ function AppLayout({
               </strong>
             </div>
           )}
-          <div className="account-dialog-status">
-            <span className="account-dialog-label">Estado de verificación</span>
-            <StatusBadge variant={emailVerified ? "success" : "warning"}>
-              <AppIcon
-                icon={emailVerified ? MailCheck : MailWarning}
-                size={14}
-              />
-              {emailVerified ? "Verificado" : "Pendiente"}
-            </StatusBadge>
-          </div>
           <Button
             type="button"
             variant="secondary"
