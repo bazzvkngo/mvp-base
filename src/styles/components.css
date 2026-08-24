@@ -1446,6 +1446,124 @@
   max-width: 580px;
 }
 
+.business-completion-card {
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.business-completion-card__heading {
+  align-items: flex-start;
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+}
+
+.business-completion-card__heading h2,
+.business-completion-card__heading p,
+.business-completion-card__summary {
+  margin: 0;
+}
+
+.business-completion-card__heading h2 {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-lg);
+}
+
+.business-completion-card__heading p,
+.business-completion-card__summary {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.business-completion-card__heading p {
+  margin-top: var(--space-1);
+}
+
+.business-completion-card__heading > strong {
+  color: var(--color-brand-700);
+  font-size: var(--font-size-xl);
+  line-height: 1;
+}
+
+.business-completion-progress {
+  background: var(--color-surface-subtle);
+  border-radius: var(--radius-pill);
+  height: 8px;
+  overflow: hidden;
+}
+
+.business-completion-progress > span {
+  background: var(--color-brand-600);
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+  transition: width 180ms ease;
+}
+
+.business-completion-checklist {
+  display: grid;
+  gap: var(--space-2) var(--space-4);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: var(--space-2) 0 0;
+}
+
+.business-completion-checklist li,
+.business-completion-checklist__item {
+  align-items: center;
+  display: flex;
+  min-width: 0;
+}
+
+.business-completion-checklist li {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  gap: var(--space-2);
+  justify-content: space-between;
+}
+
+.business-completion-checklist__item {
+  gap: var(--space-2);
+}
+
+.business-completion-checklist__item svg {
+  flex: 0 0 auto;
+}
+
+.business-completion-checklist li.is-complete {
+  color: var(--color-text-default);
+}
+
+.business-completion-checklist li.is-complete svg {
+  color: var(--color-success-700);
+}
+
+.business-completion-checklist button {
+  background: transparent;
+  border: 0;
+  color: var(--color-brand-700);
+  cursor: pointer;
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  padding: var(--space-1);
+}
+
+.business-completion-checklist button:hover {
+  color: var(--color-brand-900);
+  text-decoration: underline;
+}
+
+.business-completion-card--activation {
+  background: var(--color-surface-subtle);
+}
+
 .activation-checklist {
   background: var(--color-border-subtle);
   border: 1px solid var(--color-border-subtle);
@@ -1772,12 +1890,26 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .business-completion-checklist {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .activation-checklist li:last-child:nth-child(odd) {
     grid-column: auto;
   }
 
   .activation-actions {
     display: grid;
+  }
+}
+
+@media (max-width: 520px) {
+  .business-completion-card__heading {
+    gap: var(--space-2);
+  }
+
+  .business-completion-checklist li {
+    align-items: flex-start;
   }
 }
 

@@ -3786,7 +3786,12 @@ const inventoryModelDependencies = {
   FieldValue,
   requireBusinessAccess,
 };
-const businessOnboardingDependencies = { db, HttpsError, FieldValue };
+const businessOnboardingDependencies = {
+  auth: adminAuth,
+  db,
+  HttpsError,
+  FieldValue,
+};
 const businessSettingsDependencies = {
   db,
   HttpsError,

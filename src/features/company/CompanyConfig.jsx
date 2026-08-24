@@ -10,7 +10,7 @@ import {
   ShieldCheck,
   Trash2,
 } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import BusinessCategoryPicker from "../../components/BusinessCategoryPicker";
 import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
@@ -57,6 +57,7 @@ import {
   createBusinessVerificationRequestId,
   requestBusinessVerification,
 } from "../../services/businessVerificationService";
+import BusinessCompletionCard from "./BusinessCompletionCard";
 
 const SECTIONS = [
   { id: "informacion", label: "Información empresa", icon: Building2 },
@@ -1004,12 +1005,14 @@ function BusinessDeletionSection({
 
 function CompanyConfig({
   businessId,
+  businessCompletionStatus,
   businessName,
   currentUserUid,
   onBusinessDeleted,
   onBusinessUpdated,
   role,
 }) {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedSection = searchParams.get("seccion") || "informacion";
   const availableSections = SECTIONS.filter(
@@ -1019,6 +1022,13 @@ function CompanyConfig({
     ? requestedSection
     : "informacion";
   const canEdit = role === "OWNER" || role === "ADMIN";
+  const handleCompletionAction = (item) => {
+    if (item.path) {
+      navigate(item.path);
+      return;
+    }
+    if (item.section) setSearchParams({ seccion: item.section });
+  };
 
   if (!businessId) return <p className="settings-message settings-message--error">No hay un negocio activo.</p>;
 
@@ -1033,6 +1043,12 @@ function CompanyConfig({
           {canEdit ? `${role} · Puede editar` : "MEMBER · Solo lectura"}
         </span>
       </div>
+      {canEdit && businessCompletionStatus && (
+        <BusinessCompletionCard
+          status={businessCompletionStatus}
+          onAction={handleCompletionAction}
+        />
+      )}
       <div className="settings-layout">
         <nav className="settings-subnav" aria-label="Secciones de empresa">
           <span className="settings-subnav__label">Empresa</span>

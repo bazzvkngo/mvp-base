@@ -220,6 +220,7 @@ const sanitized = sanitizeInventoryDocumentResult({
       stock: 20,
       stockMinimo: 5,
       codigoBarras: "780000000123",
+      tasaImpuestoCompra: 19,
     },
   ],
   warnings: [],
@@ -237,6 +238,7 @@ assert.equal(sanitized.items[1].areaPropuesta, "Informática");
 assert.equal(sanitized.items[1].categoriaPropuesta, "Redes");
 assert.equal(sanitized.items[1].marca, "Furukawa");
 assert.equal(sanitized.items[1].stockMinimo, 5);
+assert.equal(sanitized.items[1].tasaImpuestoCompra, 19);
 assert.ok(!sanitized.items.some((item) => /iva|subtotal|total/i.test(item.nombre)));
 console.log("OK sanitización: IVA, subtotal y total no se importan como items");
 

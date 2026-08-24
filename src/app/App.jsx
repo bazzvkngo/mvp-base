@@ -44,6 +44,7 @@ import {
   setActiveBusiness,
 } from "../services/businessService";
 import {isPlatformRoute} from "../domain/platformAccess.mjs";
+import {resolveInitialActivationRoute} from "../domain/initialActivationNavigation.mjs";
 import {
   BUSINESS_PERMISSIONS,
   canAccessBusinessPath,
@@ -95,14 +96,29 @@ function AppRoutes({
   businessChanging,
   businessSession,
   initialActivationBusinessId,
+  initialActivationDestination,
   onBusinessChanged,
   onBusinessCreated,
   onFirstBusinessCreated,
   onInitialActivationFinished,
+  onInitialActivationSettled,
   onRetry,
   platformAccess,
 }) {
   const location = useLocation();
+  const initialActivationRoute = resolveInitialActivationRoute({
+    activeBusinessId: businessSession?.activeBusiness?.id || "",
+    destination: initialActivationDestination,
+    initialBusinessId: initialActivationBusinessId,
+    pathname: location.pathname,
+  });
+
+  useEffect(() => {
+    if (initialActivationRoute.status === "settled") {
+      onInitialActivationSettled();
+    }
+  }, [initialActivationRoute.status, onInitialActivationSettled]);
+
   if (/^\/propuesta\/[^/]+\/?$/.test(location.pathname)) {
     return (
       <Routes>
@@ -189,13 +205,17 @@ function AppRoutes({
   const businessId = activeBusiness?.id;
   const role = activeBusiness?.role;
   const safeLanding = getDefaultBusinessPath(role);
-  if (initialActivationBusinessId === businessId) {
+  if (initialActivationRoute.status === "prompt") {
     return (
       <InitialBusinessActivationPage
         business={activeBusiness}
+        ownerEmailVerified={usuario?.emailVerified === true}
         onFinish={onInitialActivationFinished}
       />
     );
+  }
+  if (initialActivationRoute.status === "redirect") {
+    return <Navigate to={initialActivationRoute.destination} replace />;
   }
   if (!["/", "/login", "/onboarding"].includes(location.pathname) &&
       !canAccessBusinessPath(role, location.pathname)) {
@@ -536,6 +556,8 @@ function App() {
   const [platformState, setPlatformState] = useState({loading: false, data: null});
   const [initialActivationBusinessId, setInitialActivationBusinessId] =
     useState("");
+  const [initialActivationDestination, setInitialActivationDestination] =
+    useState("");
 
   const refreshBusinessSession = useCallback(async () => {
     setBusinessState((current) => ({ ...current, loading: true, error: null }));
@@ -576,6 +598,7 @@ function App() {
     async (createdBusiness) => {
       const data = await refreshBusinessSession();
       const businessId = createdBusiness?.id || data?.activeBusiness?.id || "";
+      setInitialActivationDestination("");
       setInitialActivationBusinessId(businessId);
       return data;
     },
@@ -586,6 +609,7 @@ function App() {
     const unsubscribe = subscribeToAuth((user) => {
       setUsuario(user);
       setInitialActivationBusinessId("");
+      setInitialActivationDestination("");
       setCargando(false);
       setPlatformState({loading: Boolean(user), data: null});
       setBusinessState({
@@ -632,6 +656,15 @@ function App() {
     };
   }, [usuario?.uid]);
 
+  const finishInitialActivation = useCallback((destination) => {
+    setInitialActivationDestination(destination);
+  }, []);
+
+  const settleInitialActivation = useCallback(() => {
+    setInitialActivationBusinessId("");
+    setInitialActivationDestination("");
+  }, []);
+
   return (
     <BrowserRouter>
       <ToastRouteSync />
@@ -646,10 +679,12 @@ function App() {
         businessChanging={businessChanging}
         businessSession={businessState.data}
         initialActivationBusinessId={initialActivationBusinessId}
+        initialActivationDestination={initialActivationDestination}
         onBusinessChanged={changeActiveBusiness}
         onBusinessCreated={refreshBusinessSession}
         onFirstBusinessCreated={handleFirstBusinessCreated}
-        onInitialActivationFinished={() => setInitialActivationBusinessId("")}
+        onInitialActivationFinished={finishInitialActivation}
+        onInitialActivationSettled={settleInitialActivation}
         onRetry={() => refreshBusinessSession().catch(() => {})}
         platformAccess={platformState.data}
       />

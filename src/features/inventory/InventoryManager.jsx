@@ -416,7 +416,7 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
           <p>Administra productos, servicios y actividades del negocio activo.</p>
         </div>
         {!cannotWrite && <div className="erp-module-actions inventory-header-actions">
-          <button type="button" className="inventory-button inventory-button--secondary" onClick={() => setImportOpen(true)}><AppIcon icon={FileSpreadsheet} size={18} />Importar Excel</button>
+          <button type="button" className="inventory-button inventory-button--secondary" onClick={() => setImportOpen(true)}><AppIcon icon={FileSpreadsheet} size={18} />Importar inventario</button>
           <button type="button" className="inventory-button inventory-button--primary" onClick={openNewItem}><AppIcon icon={PackagePlus} size={18} />Nuevo ítem</button>
         </div>}
       </div>

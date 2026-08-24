@@ -20,12 +20,14 @@ import {
   refreshCurrentUser,
   sendVerificationEmail,
 } from "../services/authService";
+import useBusinessCompletionStatus from "../hooks/useBusinessCompletionStatus";
 
 const VERIFICATION_NOTICE_KEY = "valoracloud.verificationNotice";
 const RESEND_COOLDOWN_SECONDS = 60;
 
 function PrimaryNavigation({
   ariaLabel = "Navegación principal",
+  businessCompletionStatus,
   idPrefix,
   onNavigate,
   pathname,
@@ -62,6 +64,14 @@ function PrimaryNavigation({
                 >
                   <AppIcon icon={item.icon} size={18} />
                   <span className="nav-link__label">{item.label}</span>
+                  {item.to === "/empresa" && businessCompletionStatus && (
+                    <span
+                      className="nav-link__completion"
+                      aria-label={`Empresa ${businessCompletionStatus.percent}% completa`}
+                    >
+                      {businessCompletionStatus.percent}%
+                    </span>
+                  )}
                 </NavLink>
               );
             })}
@@ -100,6 +110,13 @@ function AppLayout({
   const menuButtonRef = React.useRef(null);
   const drawerRef = React.useRef(null);
   const closeButtonRef = React.useRef(null);
+  const canManageBusiness = ["OWNER", "ADMIN"].includes(negocioActivo?.role);
+  const ownerEmailVerified = negocioActivo?.ownerEmailVerified === true;
+  const { status: businessCompletionStatus } = useBusinessCompletionStatus({
+    businessId: canManageBusiness ? negocioActivo?.id : "",
+    ownerEmailVerified,
+    initialProfile: negocioActivo || {},
+  });
   const allowedNavigationSections = React.useMemo(
     () => filterNavigationSections(navigationSections, negocioActivo?.role),
     [negocioActivo?.role]
@@ -283,6 +300,7 @@ function AppLayout({
       if (!isVerified) {
         setCheckMessage("Tu correo aún figura pendiente de verificación.");
       } else {
+        await onBusinessCreated?.();
         setCheckMessage("Correo verificado correctamente.");
       }
     } catch (error) {
@@ -355,6 +373,7 @@ function AppLayout({
         </div>
         <div className="sidebar__navigation">
           <PrimaryNavigation
+            businessCompletionStatus={canManageBusiness ? businessCompletionStatus : null}
             idPrefix="desktop"
             pathname={location.pathname}
             sections={mainNavigationSections}
@@ -524,7 +543,9 @@ function AppLayout({
               Cambiando de negocio...
             </div>
           )}
-          {!businessChanging && <Outlet />}
+          {!businessChanging && (
+            <Outlet context={{ businessCompletionStatus }} />
+          )}
         </main>
       </div>
 
@@ -618,6 +639,7 @@ function AppLayout({
             </div>
             <div className="sidebar__navigation">
               <PrimaryNavigation
+                businessCompletionStatus={canManageBusiness ? businessCompletionStatus : null}
                 idPrefix="mobile"
                 pathname={location.pathname}
                 sections={mainNavigationSections}

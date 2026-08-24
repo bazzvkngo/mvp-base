@@ -87,6 +87,7 @@ const INVENTORY_DOCUMENT_RESPONSE_SCHEMA = {
           precioUnitario: nullableNumber(),
           totalLinea: nullableNumber(),
           costoBase: nullableNumber(),
+          tasaImpuestoCompra: nullableNumber(),
           margenDeseado: nullableNumber(),
           marca: nullableString(),
           modelo: nullableString(),
@@ -526,6 +527,16 @@ function normalizeInventoryDocumentItem(rawItem, index) {
   const revisionRequerida =
     confianza === null || confianza < 50 || costoBase <= 0 || advertencias.length > 0;
   const itemWarnings = dedupeWarnings(advertencias);
+  const detectedPurchaseTaxRate = parsePositiveDecimal(
+    rawItem?.tasaImpuestoCompra ?? rawItem?.tasaImpuesto ?? rawItem?.iva
+  );
+  const purchaseTaxRate =
+    detectedPurchaseTaxRate !== null && detectedPurchaseTaxRate <= 100
+      ? detectedPurchaseTaxRate
+      : null;
+  if (detectedPurchaseTaxRate > 100) {
+    itemWarnings.push("Tasa de impuesto fuera de rango; revisar manualmente.");
+  }
   const productFields =
     tipoItem === "producto"
       ? {
@@ -541,6 +552,9 @@ function normalizeInventoryDocumentItem(rawItem, index) {
             rawItem?.codigoBarras || rawItem?.ean || rawItem?.upc,
             120
           ),
+          ...(purchaseTaxRate === null
+            ? {}
+            : { tasaImpuestoCompra: purchaseTaxRate }),
         }
       : {};
 
@@ -645,6 +659,7 @@ function buildInventoryDocumentPrompt() {
     "- Nunca uses subtotal, IVA, descuento general o total final como costo de un item.\n" +
     "- Si hay cantidad y total de linea pero no precio unitario, calcula costoBase como totalLinea / cantidad y marca valorCalculado true.\n" +
     "- Si no sabes si el precio incluye impuestos, agrega advertencia.\n" +
+    "- tasaImpuestoCompra solo puede informarse si el documento muestra explícitamente la tasa y deja claro que el costo unitario es neto; en cualquier otro caso usa null y agrega advertencia.\n" +
     "- No asumas margen. margenDeseado debe ser null salvo que exista en el documento.\n" +
     "- areaPropuesta y categoriaPropuesta solo pueden contener nombres; nunca areaId ni categoriaId.\n" +
     "- No asumas Área o Categoría. Usa null salvo que estén explícitas o sean evidentes en la línea.\n" +
@@ -654,7 +669,7 @@ function buildInventoryDocumentPrompt() {
     "- Mantiene el orden original de las lineas comerciales.\n" +
     "- Trabaja en espanol aunque existan terminos tecnicos en ingles.\n" +
     "- Devuelve exclusivamente JSON valido siguiendo el schema solicitado.\n\n" +
-    "Campos esperados por item: nombre, tipoItem, areaPropuesta, categoriaPropuesta, descripcion, unidad, sku, cantidadOrigen, precioUnitario, totalLinea, costoBase, margenDeseado, marca, modelo, stock, stockMinimo, codigoBarras, confianza, evidenciaOrigen, pagina, valorCalculado y advertencias."
+    "Campos esperados por item: nombre, tipoItem, areaPropuesta, categoriaPropuesta, descripcion, unidad, sku, cantidadOrigen, precioUnitario, totalLinea, costoBase, tasaImpuestoCompra, margenDeseado, marca, modelo, stock, stockMinimo, codigoBarras, confianza, evidenciaOrigen, pagina, valorCalculado y advertencias."
   );
 }
 

@@ -2,6 +2,7 @@ import {
   deleteField,
   doc,
   getDoc,
+  onSnapshot,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -23,6 +24,7 @@ import {
   userConfigDocPath,
 } from "../firebase/firestorePaths";
 import { adaptBusinessLocalization } from "../domain/localization.mjs";
+import { getBusinessCompletionStatus } from "../domain/businessCompletion.mjs";
 import {normalizeBusinessVerification} from "./businessVerificationService";
 
 const functions = getFirebaseFunctions("us-central1");
@@ -326,25 +328,20 @@ export function normalizePersonalProfile(raw = {}) {
 }
 
 export function getCompanyProfileCompletion(profile = {}) {
-  const missingMinimum = [];
-  const missingRecommended = [];
-
-  if (!safeString(profile.nombreComercial)) missingMinimum.push("Nombre comercial");
-  if (!safeString(profile.rubroCodigo || profile.rubroNombre)) {
-    missingMinimum.push("Rubro principal");
-  }
-  if (!safeString(profile.regionCodigo || profile.regionEstado)) missingMinimum.push("Región / Estado");
-  if (!safeString(profile.paisCodigo)) missingMinimum.push("País");
-  if (!safeString(profile.monedaCodigo)) missingMinimum.push("Moneda");
-
-  if (!safeString(profile.identificadorFiscalValor || profile.rut)) missingRecommended.push("Identificación fiscal");
-  if (!safeString(profile.comunaCodigo || profile.ciudad)) {
-    missingRecommended.push("Comuna");
-  }
-  if (!safeString(profile.direccion)) missingRecommended.push("Dirección");
-  if (!safeString(profile.telefono) && !safeString(profile.email)) {
-    missingRecommended.push("Teléfono o correo comercial");
-  }
+  const status = getBusinessCompletionStatus(profile, {
+    ownerEmailVerified: true,
+    verificationStatus: "VERIFICADA",
+  });
+  const minimumIds = new Set(["identity", "commercialConfiguration"]);
+  const profileItems = status.items.filter(
+    (item) => !["ownerEmail", "businessVerification"].includes(item.id)
+  );
+  const missingMinimum = profileItems
+    .filter((item) => minimumIds.has(item.id) && !item.completed)
+    .map((item) => item.label);
+  const missingRecommended = profileItems
+    .filter((item) => !minimumIds.has(item.id) && !item.completed)
+    .map((item) => item.label);
 
   return {
     minimumComplete: missingMinimum.length === 0,
@@ -414,6 +411,22 @@ export async function getCompanyProfile(userId) {
     : {};
   const taxSettings = normalizeTaxSettings(taxSettingsSnapshot.data() || {});
 
+  return mergeCompanyProfileSources({
+    business,
+    profile,
+    quoteSettings,
+    taxSettings,
+    businessId: userId,
+  });
+}
+
+function mergeCompanyProfileSources({
+  business = {},
+  profile = {},
+  quoteSettings = {},
+  taxSettings = {},
+  businessId = "",
+}) {
   return normalizeCompanyProfile({
     ...DEFAULT_COMPANY_PROFILE,
     ...business,
@@ -444,10 +457,51 @@ export async function getCompanyProfile(userId) {
     comunaCodigo: profile.comunaCodigo || business.comunaCodigo || "",
     comunaNombre:
       profile.comunaNombre || profile.ciudad || business.comunaNombre || "",
+    verificacionEmpresa:
+      business.verificacionEmpresa || profile.verificacionEmpresa,
     ...quoteSettings,
     ...taxSettings,
-    negocioId: userId,
+    negocioId: businessId,
   });
+}
+
+export function subscribeToCompanyProfile(businessId, onNext, onError) {
+  if (!businessId) {
+    throw new Error("businessId es requerido para observar el perfil de empresa.");
+  }
+
+  let business = null;
+  let profile = null;
+  let stopped = false;
+  const publish = () => {
+    if (stopped || business === null || profile === null) return;
+    onNext?.(mergeCompanyProfileSources({ business, profile, businessId }));
+  };
+  const fail = (error) => {
+    if (!stopped) onError?.(error);
+  };
+  const unsubscribeBusiness = onSnapshot(
+    doc(db, ...businessDocPath(businessId)),
+    (snapshot) => {
+      business = snapshot.data() || {};
+      publish();
+    },
+    fail
+  );
+  const unsubscribeProfile = onSnapshot(
+    doc(db, ...companyProfileDocPath(businessId)),
+    (snapshot) => {
+      profile = snapshot.data() || {};
+      publish();
+    },
+    fail
+  );
+
+  return () => {
+    stopped = true;
+    unsubscribeBusiness();
+    unsubscribeProfile();
+  };
 }
 
 export async function getBusinessSettings(businessId, section) {

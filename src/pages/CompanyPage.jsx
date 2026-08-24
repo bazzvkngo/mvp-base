@@ -1,4 +1,5 @@
 import React from "react";
+import { useOutletContext } from "react-router-dom";
 import CompanyConfig from "../features/company/CompanyConfig";
 
 function CompanyPage({
@@ -9,8 +10,11 @@ function CompanyPage({
   onBusinessUpdated,
   role,
 }) {
+  const { businessCompletionStatus } = useOutletContext() || {};
+
   return (
     <CompanyConfig
+      businessCompletionStatus={businessCompletionStatus}
       businessId={businessId}
       businessName={businessName}
       currentUserUid={currentUserUid}

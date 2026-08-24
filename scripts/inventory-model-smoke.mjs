@@ -648,7 +648,7 @@ async function main() {
   assert.match(managerSource, /readOnly/);
   assert.doesNotMatch(managerSource, /initializeInventoryCatalog\s*\(/);
   assert.match(managerSource, /ResponsiveDialog/);
-  assert.match(managerSource, /Importar Excel/);
+  assert.match(managerSource, /Importar inventario/);
   assert.match(managerSource, /inventory-type-selector/);
   assert.doesNotMatch(managerSource, /← Cambiar tipo/);
   assert.match(managerSource, /tipoItem:\s*"producto"/);

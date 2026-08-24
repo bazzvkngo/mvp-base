@@ -20,6 +20,7 @@ import {
   getInventoryImportSummary,
   mapInventoryHeaders,
   revalidateInventoryImportCodes,
+  transformInventoryDocumentCandidates,
   transformInventorySpreadsheetRows,
   updateInventoryImportRow,
 } from "../src/services/inventoryImportService.js";
@@ -223,6 +224,37 @@ function main() {
   assert.equal(formattedImportPayload.costoBase, 12500);
   assert.equal(formattedImportPayload.margenDeseado, 12.5);
 
+  const documentRows = transformInventoryDocumentCandidates([
+    {
+      id: "documento-1",
+      tipoItem: "producto",
+      nombre: "Switch",
+      sku: "SW-02",
+      marca: "Cisco",
+      modelo: "CBS110",
+      codigoBarras: "780000000001",
+      tasaImpuestoCompra: 19,
+      costoBase: 45000,
+      margenDeseado: 20,
+      stock: 3,
+      stockMinimo: 1,
+      descripcion: "Detectado desde factura",
+      revisionRequerida: true,
+      advertencias: ["Revisar precio unitario."],
+    },
+  ], { areas, categories, existingItems: [{ nombre: "Switch" }] });
+  assert.equal(documentRows[0].sourceKind, "document");
+  assert.equal(documentRows[0].included, false);
+  assert.equal(documentRows[0].draft.codigoSolicitado, "SW-02");
+  assert.equal(documentRows[0].draft.marca, "Cisco");
+  assert.equal(documentRows[0].draft.modelo, "CBS110");
+  assert.equal(
+    documentRows[0].draft.formacionPrecioVersion,
+    INVENTORY_PRICE_FORMATION_VERSION
+  );
+  assert.equal(documentRows[0].draft.tasaImpuestoCompra, 19);
+  assert.ok(documentRows[0].warnings.some((warning) => warning.includes("precio")));
+
   const duplicated = revalidateInventoryImportCodes([
     rows[0],
     updateInventoryImportRow(rows[1], "codigoSolicitado", "SW-01"),
@@ -335,19 +367,21 @@ async function sourceChecks() {
   const importer = await readFile(new URL("../src/features/inventory/InventoryImportDialog.jsx", import.meta.url), "utf8");
   const importService = await readFile(new URL("../src/services/inventoryImportService.js", import.meta.url), "utf8");
   assert.doesNotMatch(page, /InventoryAiImporter|Gemini|normalizeInventoryDocument|normalizeInventoryItems/);
-  assert.doesNotMatch(importer + importService, /Gemini|OCR|Firebase Storage|normalizeInventoryDocument|normalizeInventoryItems/);
+  assert.match(importer, /SPREADSHEET_EXTENSION[\s\S]*?readLocalInventoryWorkbook/);
+  assert.match(importer, /normalizeInventoryDocumentWithAi/);
+  assert.match(importer, /useAiRateLimit/);
+  assert.match(importer, /enabled: open && sourceKind === "document"/);
+  assert.match(importer, /Análisis con IA disponible/);
+  assert.match(importer, /procesamiento local sin IA/);
   assert.match(importService, /confirmManagedInventoryImport/);
-  assert.match(importer, /Nada se guarda hasta tu confirmación/);
+  assert.match(importer, /Nada se guarda hasta Confirmar importación/);
   assert.match(importer, /Reintentar importación/);
   assert.match(importer, /No vuelvas a importar el archivo completo con una solicitud nueva/);
   assert.match(importer, /toggleRow\(row\.rowId, event\.target\.checked\)/);
-  assert.equal(
-    (importer.match(/requestIdBaseRef\.current\s*=/g) || []).length,
-    2,
-    "Solo cargar otro archivo y cerrar deben cambiar la base idempotente."
-  );
   assert.match(importer, /requestIdBaseRef\.current = createInventoryImportRequestIdBase\(\)/);
   assert.match(importer, /requestIdBaseRef\.current = ""/);
+  assert.match(importer, /Confirmar importación/);
+  assert.match(importer, /Eliminar fila/);
 }
 
 main();

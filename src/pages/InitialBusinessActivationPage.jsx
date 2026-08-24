@@ -1,72 +1,20 @@
 import React from "react";
-import { Check, Circle } from "lucide-react";
 import BrandLogo from "../components/BrandLogo";
-import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import SkipLink from "../components/ui/SkipLink";
 import {
   canAccessBusinessPath,
   getDefaultBusinessPath,
 } from "../domain/rbac.mjs";
-import { getCompanyProfile } from "../services/companyService";
+import BusinessCompletionCard from "../features/company/BusinessCompletionCard";
+import useBusinessCompletionStatus from "../hooks/useBusinessCompletionStatus";
 
-function hasText(value) {
-  return Boolean(String(value || "").trim());
-}
-
-function getActivationItems(profile = {}) {
-  return [
-    {
-      label: "Nombre del negocio",
-      done: hasText(profile.nombreComercial),
-    },
-    {
-      label: "Rubro principal",
-      done: hasText(profile.rubroCodigo || profile.rubroNombre),
-    },
-    { label: "País", done: hasText(profile.paisCodigo) },
-    {
-      label: "Identificación fiscal",
-      done: hasText(profile.identificadorFiscalValor || profile.rut),
-    },
-    {
-      label: "Datos de contacto",
-      done: hasText(profile.telefono || profile.email),
-    },
-    {
-      label: "Dirección / ubicación",
-      done: hasText(
-        profile.direccion ||
-          profile.regionCodigo ||
-          profile.regionEstado ||
-          profile.comunaCodigo ||
-          profile.ciudad
-      ),
-    },
-    {
-      label: "Logo",
-      done: hasText(profile.logoUrl || profile.logoPath),
-    },
-  ];
-}
-
-function InitialBusinessActivationPage({ business, onFinish }) {
-  const [profile, setProfile] = React.useState(business || {});
-
-  React.useEffect(() => {
-    if (!business?.id) return undefined;
-    let active = true;
-    getCompanyProfile(business.id)
-      .then((value) => {
-        if (active) setProfile(value);
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, [business]);
-
-  const activationItems = getActivationItems(profile);
+function InitialBusinessActivationPage({ business, ownerEmailVerified, onFinish }) {
+  const { loading, status } = useBusinessCompletionStatus({
+    businessId: business?.id,
+    ownerEmailVerified,
+    initialProfile: business || {},
+  });
   const landingPath = getDefaultBusinessPath(business?.role);
   const companyPath = canAccessBusinessPath(business?.role, "/empresa")
     ? "/empresa"
@@ -104,14 +52,13 @@ function InitialBusinessActivationPage({ business, onFinish }) {
               </p>
             </div>
 
-            <ul className="activation-checklist" aria-label="Estado de activación">
-              {activationItems.map((item) => (
-                <li className={item.done ? "is-complete" : ""} key={item.label}>
-                  <AppIcon icon={item.done ? Check : Circle} size={18} />
-                  <span>{item.label}</span>
-                </li>
-              ))}
-            </ul>
+            <BusinessCompletionCard
+              className="business-completion-card--activation"
+              description="Estos son los datos que dejan tu empresa lista para operar."
+              loading={loading}
+              status={status}
+              title="Estado inicial de tu empresa"
+            />
 
             <div className="activation-actions">
               <Button type="button" onClick={() => finish(companyPath)}>
@@ -132,5 +79,4 @@ function InitialBusinessActivationPage({ business, onFinish }) {
   );
 }
 
-export { getActivationItems };
 export default InitialBusinessActivationPage;

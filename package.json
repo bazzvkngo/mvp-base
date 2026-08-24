@@ -63,6 +63,7 @@
     "test:business-category-selector": "node scripts/business-category-selector-smoke.mjs",
     "test:business-quick-flow": "node scripts/business-quick-flow-smoke.mjs",
     "test:business-settings": "node scripts/business-settings-smoke.mjs",
+    "test:business-completion": "node scripts/business-completion-smoke.mjs",
     "test:business-verification": "node scripts/business-verification-smoke.mjs",
     "test:business-verification-integrated": "firebase emulators:exec --only auth,firestore,functions,storage \"node scripts/business-verification-integrated.mjs\"",
     "test:platform-admin": "node scripts/platform-admin-smoke.mjs",

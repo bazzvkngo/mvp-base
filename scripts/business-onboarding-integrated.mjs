@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
+import { getBusinessCompletionStatus } from "../src/domain/businessCompletion.mjs";
 import { deleteApp, initializeApp } from "firebase/app";
 import {
   connectAuthEmulator,
@@ -46,6 +47,7 @@ const {
 const { getFirestore: getAdminFirestore } = requireFromFunctions(
   "firebase-admin/firestore"
 );
+const { getAuth: getAdminAuth } = requireFromFunctions("firebase-admin/auth");
 const { FieldValue: AdminFieldValue } = requireFromFunctions(
   "firebase-admin/firestore"
 );
@@ -102,18 +104,25 @@ const validPayload = Object.freeze({
 
 async function main() {
   const owner = createClient("business-owner");
+  const businessAdmin = createClient("business-admin");
   const outsider = createClient("business-outsider");
   const adminApp = initializeAdminApp(
     { projectId: PROJECT_ID },
     "business-onboarding-admin"
   );
   const adminDb = getAdminFirestore(adminApp);
+  const adminAuth = getAdminAuth(adminApp);
 
   try {
-    const [ownerCredential, outsiderCredential] = await Promise.all([
+    const [ownerCredential, businessAdminCredential, outsiderCredential] = await Promise.all([
       createUserWithEmailAndPassword(
         owner.auth,
         `owner-onboarding-${RUN_ID}@example.test`,
+        "test-password-123"
+      ),
+      createUserWithEmailAndPassword(
+        businessAdmin.auth,
+        `admin-onboarding-${RUN_ID}@example.test`,
         "test-password-123"
       ),
       createUserWithEmailAndPassword(
@@ -123,9 +132,12 @@ async function main() {
       ),
     ]);
     const ownerUid = ownerCredential.user.uid;
+    const businessAdminUid = businessAdminCredential.user.uid;
     const outsiderUid = outsiderCredential.user.uid;
     const ownerCall = (name, data = {}) =>
       httpsCallable(owner.functions, name)(data);
+    const businessAdminCall = (name, data = {}) =>
+      httpsCallable(businessAdmin.functions, name)(data);
     const outsiderCall = (name, data = {}) =>
       httpsCallable(outsider.functions, name)(data);
 
@@ -227,6 +239,22 @@ async function main() {
     assert.equal(userSnapshot.data().regionCodigo, undefined);
     assert.equal(userSnapshot.data().rut, undefined);
 
+    await Promise.all([
+      adminDb.collection("usuarios").doc(businessAdminUid).set({
+        email: businessAdminCredential.user.email,
+        negocioActivoId: businessId,
+        estado: "activo",
+      }),
+      adminDb.collection("membresias")
+        .doc(`${businessId}__${businessAdminUid}`)
+        .set({
+          negocioId: businessId,
+          uid: businessAdminUid,
+          rol: "ADMIN",
+          estado: "activo",
+        }),
+    ]);
+
     const quickProfile = await adminDb
       .doc(`negocios/${businessId}/empresa/perfil`)
       .get();
@@ -251,8 +279,43 @@ async function main() {
     assert.equal(activeSession.data.needsOnboarding, false);
     assert.equal(activeSession.data.activeBusiness.id, businessId);
     assert.equal(activeSession.data.activeBusiness.role, "OWNER");
+    assert.equal(activeSession.data.activeBusiness.ownerEmailVerified, false);
     assert.equal(activeSession.data.activeBusiness.paisCodigo, "BO");
     assert.equal(activeSession.data.activeBusiness.monedaCodigo, "BOB");
+    const adminSession = await businessAdminCall("getBusinessSession");
+    assert.equal(adminSession.data.activeBusiness.role, "ADMIN");
+    assert.equal(adminSession.data.activeBusiness.ownerEmailVerified, false);
+    const ownerPendingCompletion = getBusinessCompletionStatus(
+      quickProfile.data(),
+      {ownerEmailVerified: activeSession.data.activeBusiness.ownerEmailVerified}
+    );
+    const adminPendingCompletion = getBusinessCompletionStatus(
+      quickProfile.data(),
+      {ownerEmailVerified: adminSession.data.activeBusiness.ownerEmailVerified}
+    );
+    assert.equal(ownerPendingCompletion.percent, adminPendingCompletion.percent);
+    assert.equal(
+      ownerPendingCompletion.pendingItems.some((item) => item.id === "ownerEmail"),
+      true
+    );
+
+    await adminAuth.updateUser(ownerUid, {emailVerified: true});
+    const [verifiedOwnerSession, verifiedAdminSession] = await Promise.all([
+      ownerCall("getBusinessSession"),
+      businessAdminCall("getBusinessSession"),
+    ]);
+    assert.equal(verifiedOwnerSession.data.activeBusiness.ownerEmailVerified, true);
+    assert.equal(verifiedAdminSession.data.activeBusiness.ownerEmailVerified, true);
+    const ownerVerifiedCompletion = getBusinessCompletionStatus(
+      quickProfile.data(),
+      {ownerEmailVerified: verifiedOwnerSession.data.activeBusiness.ownerEmailVerified}
+    );
+    const adminVerifiedCompletion = getBusinessCompletionStatus(
+      quickProfile.data(),
+      {ownerEmailVerified: verifiedAdminSession.data.activeBusiness.ownerEmailVerified}
+    );
+    assert.equal(ownerVerifiedCompletion.percent, adminVerifiedCompletion.percent);
+    assert.equal(ownerVerifiedCompletion.percent, ownerPendingCompletion.percent + 10);
 
     const profileUpdate = await ownerCall("updateBusinessProfile", {
       businessId,
@@ -579,10 +642,14 @@ async function main() {
   } finally {
     await Promise.all([
       owner.auth.currentUser ? signOut(owner.auth) : Promise.resolve(),
+      businessAdmin.auth.currentUser
+        ? signOut(businessAdmin.auth)
+        : Promise.resolve(),
       outsider.auth.currentUser ? signOut(outsider.auth) : Promise.resolve(),
     ]);
     await Promise.all([
       deleteApp(owner.app),
+      deleteApp(businessAdmin.app),
       deleteApp(outsider.app),
       deleteAdminApp(adminApp),
     ]);

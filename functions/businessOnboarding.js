@@ -434,6 +434,44 @@ function businessResponse(snapshot, membershipData = null) {
   };
 }
 
+async function getOwnerEmailVerified({
+  auth,
+  business,
+  businessId,
+  db,
+  membership,
+}) {
+  if (!auth) return false;
+  let ownerUid = safeText(
+    business.creadoPorUid || business.ownerUid || business.uidUsuario,
+    160
+  );
+  if (!ownerUid && membership?.rol === "OWNER") {
+    ownerUid = safeText(membership.uid, 160);
+  }
+  if (!ownerUid) {
+    const ownerMemberships = await db
+      .collection("membresias")
+      .where("negocioId", "==", businessId)
+      .get();
+    ownerUid = safeText(
+      ownerMemberships.docs
+        .map((snapshot) => snapshot.data() || {})
+        .find(
+          (item) => item.rol === "OWNER" && item.estado === ACTIVE_STATUS
+        )?.uid,
+      160
+    );
+  }
+  if (!ownerUid) return false;
+
+  try {
+    return (await auth.getUser(ownerUid)).emailVerified === true;
+  } catch {
+    return false;
+  }
+}
+
 function planResponse(ownedBusinessCount) {
   const normalizedCount = Math.max(Number(ownedBusinessCount || 0), 0);
   return {
@@ -1210,7 +1248,7 @@ async function setActiveBusinessHandler(
 
 async function getBusinessSessionHandler(
   request,
-  { db, HttpsError, FieldValue }
+  { auth, db, HttpsError, FieldValue }
 ) {
   const uid = requireAuthenticatedUid(request, HttpsError);
   const userRef = db.collection("usuarios").doc(uid);
@@ -1274,13 +1312,21 @@ async function getBusinessSessionHandler(
         { merge: true }
       );
     }
+    const selectedBusiness = selected.snapshot.data() || {};
+    const ownerEmailVerified = await getOwnerEmailVerified({
+      auth,
+      business: selectedBusiness,
+      businessId: selected.snapshot.id,
+      db,
+      membership: selected.membership,
+    });
     return {
       accessState: "active",
       needsOnboarding: false,
-      activeBusiness: businessResponse(
-        selected.snapshot,
-        selected.membership
-      ),
+      activeBusiness: {
+        ...businessResponse(selected.snapshot, selected.membership),
+        ownerEmailVerified,
+      },
       businesses: availableBusinesses,
       membershipCount: memberships.length,
       plan: planResponse(ownedBusinessCount),
