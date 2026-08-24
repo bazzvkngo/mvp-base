@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { normalizeQuickBusinessPayload } from "../src/domain/businessQuickPayload.mjs";
+import { filterNavigationSections } from "../src/domain/rbac.mjs";
 
 const [
   onboarding,
@@ -143,6 +144,65 @@ assert.match(appLayout, /navigate\(\s*getDefaultBusinessPath\(session\?\.activeB
 assert.match(componentStyles, /\.activation-checklist li:last-child:nth-child\(odd\)[\s\S]*?grid-column: 1 \/ -1/);
 assert.match(componentStyles, /@media \(max-width: 640px\)[\s\S]*?\.activation-checklist li:last-child:nth-child\(odd\)[\s\S]*?grid-column: auto/);
 assert.doesNotMatch(navigation, /to: "\/dashboard"/);
+const sidebarRoutes = [...navigation.matchAll(/\bto: "(\/[^\"]+)"/g)].map(
+  ([, route]) => route
+);
+assert.deepEqual(sidebarRoutes, [
+  "/reportes",
+  "/trabajos",
+  "/inventario",
+  "/clientes",
+  "/cotizaciones",
+  "/ventas",
+  "/proveedores",
+  "/ordenes-compra",
+  "/recepciones",
+  "/compras",
+  "/empresa",
+  "/empleados",
+  "/cuenta",
+]);
+assert.doesNotMatch(navigation, /label: "Análisis"/);
+assert.deepEqual(
+  [...navigation.matchAll(/\blabel: "(Inicio|Operación|Comercial|Abastecimiento|Gestión|Cuenta)"/g)]
+    .map(([, label]) => label),
+  ["Inicio", "Operación", "Comercial", "Abastecimiento", "Gestión", "Cuenta"]
+);
+const sidebarSections = [{ items: sidebarRoutes.map((to) => ({ to })) }];
+const visibleRoutesFor = (role) =>
+  filterNavigationSections(sidebarSections, role).flatMap((section) =>
+    section.items.map((item) => item.to)
+  );
+assert.deepEqual(visibleRoutesFor("OWNER"), sidebarRoutes);
+assert.deepEqual(visibleRoutesFor("VENTAS"), [
+  "/inventario",
+  "/clientes",
+  "/cotizaciones",
+  "/ventas",
+  "/cuenta",
+]);
+assert.deepEqual(visibleRoutesFor("COMPRAS"), [
+  "/inventario",
+  "/proveedores",
+  "/ordenes-compra",
+  "/recepciones",
+  "/compras",
+  "/cuenta",
+]);
+assert.deepEqual(visibleRoutesFor("TECNICO"), [
+  "/trabajos",
+  "/inventario",
+  "/cuenta",
+]);
+assert.deepEqual(visibleRoutesFor("FINANZAS"), [
+  "/reportes",
+  "/inventario",
+  "/ventas",
+  "/ordenes-compra",
+  "/recepciones",
+  "/compras",
+  "/cuenta",
+]);
 assert.match(app, /key=\{businessId\}/);
 assert.match(companyConfig, /ownerOnly: true/);
 assert.match(companyConfig, /isSelectableNewBusinessCountry\(country\) \|\| country\.code === form\.paisCodigo/);

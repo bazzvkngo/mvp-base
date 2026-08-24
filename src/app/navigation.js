@@ -15,6 +15,34 @@ import {
 
 export const navigationSections = [
   {
+    label: "Inicio",
+    items: [
+      {
+        to: "/reportes",
+        label: "Reportes",
+        title: "Reportes",
+        icon: BarChart3,
+      },
+    ],
+  },
+  {
+    label: "Operación",
+    items: [
+      {
+        to: "/trabajos",
+        label: "Proyectos y trabajos",
+        title: "Proyectos y trabajos",
+        icon: BriefcaseBusiness,
+      },
+      {
+        to: "/inventario",
+        label: "Inventario",
+        title: "Inventario",
+        icon: Boxes,
+      },
+    ],
+  },
+  {
     label: "Comercial",
     items: [
       {
@@ -74,34 +102,6 @@ export const navigationSections = [
         icon: ShoppingCart,
         activeWhen: (pathname) =>
           pathname === "/compras" || pathname.startsWith("/compras/"),
-      },
-    ],
-  },
-  {
-    label: "Operación",
-    items: [
-      {
-        to: "/inventario",
-        label: "Inventario",
-        title: "Inventario",
-        icon: Boxes,
-      },
-      {
-        to: "/trabajos",
-        label: "Proyectos y trabajos",
-        title: "Proyectos y trabajos",
-        icon: BriefcaseBusiness,
-      },
-    ],
-  },
-  {
-    label: "Análisis",
-    items: [
-      {
-        to: "/reportes",
-        label: "Reportes",
-        title: "Reportes",
-        icon: BarChart3,
       },
     ],
   },
