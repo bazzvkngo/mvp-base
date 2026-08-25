@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -455,5 +456,25 @@ try {
   assert.equal(validationGeminiCalls, 0);
   console.log("OK validación: una entrada inválida no invoca Gemini");
 }
+
+const functionsSource = readFileSync(
+  new URL("../functions/index.js", import.meta.url),
+  "utf8"
+);
+assert.match(functionsSource, /const GENERATIVE_AI_ENABLED = false;/);
+assert.match(functionsSource, /const DOCUMENT_GENERATIVE_AI_ENABLED = true;/);
+assert.match(
+  functionsSource,
+  /generateGeminiContent: generateInventoryDocumentContent/
+);
+assert.match(
+  functionsSource,
+  /enabled: DOCUMENT_GENERATIVE_AI_ENABLED/
+);
+assert.match(
+  functionsSource,
+  /const assistantMode = GENERATIVE_AI_ENABLED\s+\? normalizeAssistantMode\(data\.assistantMode\)\s+: "local";/
+);
+console.log("OK aislamiento: Gemini se habilita sólo para importación documental");
 
 console.log("INVENTORY_DOCUMENT_IMPORT_SMOKE_OK");

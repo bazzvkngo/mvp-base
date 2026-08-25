@@ -185,6 +185,7 @@ const RESEND_FROM_EMAIL_SECRET = defineSecret("RESEND_FROM_EMAIL");
 const ALLOWED_QUOTE_ITEM_TYPES = ["producto", "servicio", "actividad"];
 const DEFAULT_FUNCTION_REGION = "us-central1";
 const GENERATIVE_AI_ENABLED = false;
+const DOCUMENT_GENERATIVE_AI_ENABLED = true;
 const REFERENCE_REVIEW_STALE_DAYS = 30;
 const PRIMARY_QUOTE_GEMINI_MODEL = AI_MODELS.QUOTE_SUGGESTIONS;
 const QUOTE_GEMINI_MODELS = [PRIMARY_QUOTE_GEMINI_MODEL];
@@ -219,8 +220,8 @@ function getGeminiApiKey() {
   }
 }
 
-function getGeminiClient() {
-  if (!GENERATIVE_AI_ENABLED) return null;
+function getGeminiClient({ enabled = GENERATIVE_AI_ENABLED } = {}) {
+  if (!enabled) return null;
   if (cachedGeminiClient) return cachedGeminiClient;
   const apiKey = getGeminiApiKey();
   if (!apiKey) {
@@ -267,9 +268,17 @@ function createAiHttpsError(details) {
   });
 }
 
-async function generateGeminiContent({ model, functionName, contents, config }) {
-  const client = getGeminiClient();
+async function generateGeminiContent(
+  { model, functionName, contents, config },
+  { enabled = GENERATIVE_AI_ENABLED } = {}
+) {
+  const client = getGeminiClient({ enabled });
   if (!client) {
+    if (functionName === "normalizeInventoryDocument") {
+      console.warn("normalizeInventoryDocument: Gemini documental no disponible", {
+        reason: enabled ? "configuration_missing" : "feature_disabled",
+      });
+    }
     throw createAiHttpsError({
       allowed: false,
       reason: "provider_error",
@@ -4305,6 +4314,12 @@ exports.normalizeInventoryItems = onCall(
   })
 );
 
+function generateInventoryDocumentContent(options) {
+  return generateGeminiContent(options, {
+    enabled: DOCUMENT_GENERATIVE_AI_ENABLED,
+  });
+}
+
 exports.normalizeInventoryDocument = onCall(
   {
     maxInstances: 3,
@@ -4314,7 +4329,10 @@ exports.normalizeInventoryDocument = onCall(
     timeoutSeconds: 180,
   },
   async (request) => {
-  if (!GENERATIVE_AI_ENABLED) {
+  if (!DOCUMENT_GENERATIVE_AI_ENABLED) {
+    console.warn("normalizeInventoryDocument: Gemini documental no disponible", {
+      reason: "feature_disabled",
+    });
     throw new HttpsError(
       "failed-precondition",
       "El análisis inteligente de documentos está temporalmente deshabilitado."
@@ -4322,7 +4340,7 @@ exports.normalizeInventoryDocument = onCall(
   }
 
   return normalizeInventoryDocumentHandler(request, {
-    generateGeminiContent,
+    generateGeminiContent: generateInventoryDocumentContent,
     HttpsError,
   });
 }
