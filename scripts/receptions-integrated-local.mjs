@@ -73,27 +73,41 @@ try {
   assert.equal(first.data.recepcion.id, retryCreate.data.recepcion.id); assert.equal(retryCreate.data.idempotent, true);
   assert.equal(first.data.recepcion.numero, "REC-2026-0001"); assert.equal(first.data.recepcion.stockAplicado, false);
   assert.equal(first.data.recepcion.empresaSnapshot.razonSocial, companySnapshotA.razonSocial);
-  const firstItems = first.data.recepcion.items.map((line) => ({lineaId: line.lineaId, cantidad: line.tipoItem === "producto" ? 4 : 1}));
-  await call(owner, "actualizarRecepcionBorrador")({businessId, recepcionId: first.data.recepcion.id, recepcion: {fechaRecepcion: "2026-08-14", observaciones: "Parcial", items: firstItems}});
+  const firstItems = first.data.recepcion.items.map((line) => ({
+    lineaId: line.lineaId,
+    cantidad: line.tipoItem === "producto" ? 4 : 1,
+    costoUnitario: line.tipoItem === "producto" ? 1200 : 750,
+    descuentoPct: 0,
+    documentoLineas: [{nombre: line.nombre, codigo: line.tipoItem === "producto" ? "SKU-A" : "SV-A", unidad: line.unidad, cantidad: line.tipoItem === "producto" ? 4 : 1, costoUnitario: line.tipoItem === "producto" ? 1200 : 750, descuentoPct: 0}],
+  }));
+  const documentoOrigen = {origen: "importador_documental", nombreArchivo: "factura-sintetica.pdf", tipoArchivo: "application/pdf", extension: "pdf", tamanoBytes: 2048, tipoDocumento: "factura", numeroDocumento: "QA-123", fechaDocumento: "2026-08-13", fechaVencimiento: "2026-09-13", condicionesPago: "30 dias", lineasDetectadas: 3, lineasAplicadas: 2, advertencias: ["Fixture sintetico"]};
+  await call(owner, "actualizarRecepcionBorrador")({businessId, recepcionId: first.data.recepcion.id, recepcion: {fechaRecepcion: "2026-08-14", observaciones: "Parcial", documentoOrigen, items: firstItems}});
+  const importedDraft = (await adminDb.doc(`negocios/${businessId}/recepciones/${first.data.recepcion.id}`).get()).data();
+  assert.equal(importedDraft.documentoOrigen.nombreArchivo, "factura-sintetica.pdf");
+  assert.equal(importedDraft.items.find((line) => line.tipoItem === "producto").costoUnitario, 1200);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data().stock, 0);
   const confirmId = requestId("confirm-first");
   const confirmed = await call(owner, "confirmarRecepcion")({businessId, recepcionId: first.data.recepcion.id, requestId: confirmId});
   assert.equal(confirmed.data.recepcion.estado, "confirmada"); assert.equal(confirmed.data.productosActualizados, 1);
   assert.equal(confirmed.data.compra.estado, "confirmada");
   assert.equal(confirmed.data.compra.registroAutomatico, true);
   assert.equal(confirmed.data.compra.recepcionId, first.data.recepcion.id);
+  assert.equal(confirmed.data.compra.tipoDocumento, "factura");
+  assert.equal(confirmed.data.compra.numeroDocumentoProveedor, "QA-123");
+  assert.equal(confirmed.data.compra.documentoOrigen.nombreArchivo, "factura-sintetica.pdf");
   assert.equal(confirmed.data.compra.items.find((line) => line.tipoItem === "producto").cantidad, 4);
   assert.equal(confirmed.data.compra.items.find((line) => line.tipoItem === "servicio").cantidad, 1);
   const productAfterFirst = (await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data();
   assert.equal(productAfterFirst.stock, 4);
-  assert.equal(productAfterFirst.costoPromedio, 1190);
-  assert.equal(productAfterFirst.ultimoCosto, 1190);
+  assert.equal(productAfterFirst.costoPromedio, 1428);
+  assert.equal(productAfterFirst.ultimoCosto, 1428);
   assert.equal(productAfterFirst.ultimoProveedor.razonSocial, provider.razonSocial);
   assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${serviceId}`).get()).data().stock, undefined);
   const movements = await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("recepcionId", "==", first.data.recepcion.id).get();
   assert.equal(movements.size, 1); assert.equal(movements.docs[0].data().tipo, "entrada_recepcion");
   const firstAcquisitions = await adminDb.collection(`negocios/${businessId}/adquisicionesInventario`).where("recepcionId", "==", first.data.recepcion.id).get();
   assert.equal(firstAcquisitions.size, 1);
-  assert.equal(firstAcquisitions.docs[0].data().costoPagadoTotal, 4760);
+  assert.equal(firstAcquisitions.docs[0].data().costoPagadoTotal, 5712);
   assert.equal(firstAcquisitions.docs[0].data().proveedorId, providerId);
   assert.equal(firstAcquisitions.docs[0].data().ordenCompraId, orderId);
   assert.equal(firstAcquisitions.docs[0].data().compraId, confirmed.data.compra.id);
@@ -149,7 +163,7 @@ try {
   const productAfterSecondCost = (await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data();
   assert.equal(productAfterSecondCost.stock, 7);
   assert.equal(productAfterSecondCost.ultimoCosto, 1428);
-  assert.equal(productAfterSecondCost.costoPromedio, 1224);
+  assert.equal(productAfterSecondCost.costoPromedio, 1305.6);
   console.log("OK segunda adquisición recalcula costo promedio ponderado");
 
   const incompatibleOrderId = `currency-${RUN_ID}`; await seedOrder(incompatibleOrderId, 1, "pendiente", 1000, "USD");

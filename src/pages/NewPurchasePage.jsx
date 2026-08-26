@@ -314,6 +314,7 @@ export default function NewPurchasePage({businessId, role}) {
           <div className="purchase-document-grid">
             <p><strong>Compra registrada</strong><br />{timestampLabel(purchase.registradoEn)} desde la recepción {purchase.recepcionNumero}.</p>
             <p><strong>Inventario relacionado</strong><br />{purchase.efectosInventario.length ? `${purchase.efectosInventario.length} movimiento(s) de entrada trazable(s).` : "Sin movimientos físicos: sólo servicios o actividades."}</p>
+            {purchase.documentoOrigen?.nombreArchivo && <p><strong>Documento importado</strong><br />{purchase.documentoOrigen.nombreArchivo}{purchase.documentoOrigen.numeroDocumento ? ` · N° ${purchase.documentoOrigen.numeroDocumento}` : ""}</p>}
             {purchase.estado === "revertida" && <p className="purchase-field-wide"><strong>Compra revertida</strong><br />{timestampLabel(purchase.revertidaEn)} · {purchase.reversionMotivo}</p>}
           </div>
           {purchase.efectosInventario.length > 0 && <ul className="purchase-movement-list">{purchase.efectosInventario.map((effect) => <li key={effect.movimientoEntradaId}><strong>{effect.nombre}</strong><span>Entrada {effect.cantidad} {effect.unidad} · {effect.movimientoEntradaId}</span>{purchase.estado === "revertida" && <span>Compensación · {effect.movimientoReversionId}</span>}</li>)}</ul>}

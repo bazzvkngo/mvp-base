@@ -1,6 +1,8 @@
 const {PURCHASE_WRITE_ROLES: WRITE_ROLES} = require("./rbac");
 const ITEM_TYPES = new Set(["producto", "servicio", "actividad"]);
+const DOCUMENT_TYPES = new Set(["factura", "boleta", "otro", "sin_documento"]);
 const EPSILON = 0.000001;
+const MAX_DOCUMENT_SIZE_BYTES = 5 * 1024 * 1024;
 const {adaptDocumentLocalization} = require("./localization");
 const {buildAuthoritativeCompanySnapshot, resolveCompanySnapshot} = require("./companySnapshot");
 const {buildConfirmedPurchaseFromReception, formatPurchaseNumber} = require("./purchasePersistence");
@@ -40,6 +42,66 @@ function quantity(value, label, HttpsError) {
     fail(HttpsError, "invalid-argument", `${label} debe ser una cantidad valida.`);
   }
   return result;
+}
+
+function percentage(value, label, HttpsError) {
+  const result = quantity(value, label, HttpsError);
+  if (result > 100) fail(HttpsError, "invalid-argument", `${label} no puede superar 100%.`);
+  return result;
+}
+
+function optionalDate(value, label, HttpsError) {
+  const result = text(value, 10);
+  if (result && !/^\d{4}-\d{2}-\d{2}$/.test(result)) {
+    fail(HttpsError, "invalid-argument", `${label} no es valida.`);
+  }
+  return result;
+}
+
+function boundedDocumentCount(value) {
+  const result = Number(value || 0);
+  return Number.isFinite(result) ? Math.min(200, Math.max(0, Math.trunc(result))) : 0;
+}
+
+function normalizeDocumentLines(raw, HttpsError) {
+  return (Array.isArray(raw) ? raw : []).slice(0, 20).map((line, index) => ({
+    nombre: text(line?.nombre, 240),
+    codigo: text(line?.codigo, 100),
+    unidad: text(line?.unidad, 80),
+    cantidad: quantity(line?.cantidad, `Linea documental ${index + 1}`, HttpsError),
+    costoUnitario: quantity(line?.costoUnitario, `Costo documental ${index + 1}`, HttpsError),
+    descuentoPct: percentage(line?.descuentoPct, `Descuento documental ${index + 1}`, HttpsError),
+  }));
+}
+
+function normalizeDocumentSource(raw, HttpsError) {
+  if (!raw) return null;
+  if (typeof raw !== "object" || Array.isArray(raw) || raw.base64) {
+    fail(HttpsError, "invalid-argument", "Los metadatos del documento no son validos.");
+  }
+  const nombreArchivo = text(raw.nombreArchivo, 240);
+  if (!nombreArchivo) fail(HttpsError, "invalid-argument", "Falta el nombre del documento importado.");
+  const size = Number(raw.tamanoBytes || 0);
+  if (!Number.isSafeInteger(size) || size < 0 || size > MAX_DOCUMENT_SIZE_BYTES) {
+    fail(HttpsError, "invalid-argument", "El tamano del documento no es valido.");
+  }
+  const type = text(raw.tipoDocumento, 40).toLowerCase();
+  return {
+    origen: "importador_documental",
+    nombreArchivo,
+    tipoArchivo: text(raw.tipoArchivo, 120),
+    extension: text(raw.extension, 12).toLowerCase(),
+    tamanoBytes: size,
+    tipoDocumento: DOCUMENT_TYPES.has(type) ? type : "otro",
+    numeroDocumento: text(raw.numeroDocumento, 120),
+    fechaDocumento: optionalDate(raw.fechaDocumento, "La fecha del documento", HttpsError),
+    fechaVencimiento: optionalDate(raw.fechaVencimiento, "La fecha de vencimiento", HttpsError),
+    condicionesPago: text(raw.condicionesPago, 1000),
+    lineasDetectadas: boundedDocumentCount(raw.lineasDetectadas),
+    lineasAplicadas: boundedDocumentCount(raw.lineasAplicadas),
+    advertencias: (Array.isArray(raw.advertencias) ? raw.advertencias : [])
+      .map((warning) => text(warning, 300)).filter(Boolean).slice(0, 20),
+  };
 }
 
 function chileDate(date) {
@@ -147,20 +209,44 @@ function normalizeDraft(raw, reception, HttpsError) {
     fail(HttpsError, "invalid-argument", "La fecha de recepcion no es valida.");
   }
   const supplied = Array.isArray(raw?.items) ? raw.items : [];
-  const amounts = new Map(supplied.map((line, index) => [
-    id(line?.lineaId || line?.ordenLineaId, `Linea ${index + 1}`, HttpsError),
-    quantity(line?.cantidad, `Linea ${index + 1}`, HttpsError),
-  ]));
-  const items = (reception.items || []).map((line) => ({
-    ...line,
-    cantidad: amounts.has(line.lineaId) ? amounts.get(line.lineaId) : 0,
+  const suppliedLines = new Map(supplied.map((line, index) => {
+    const suppliedId = id(line?.lineaId || line?.ordenLineaId, `Linea ${index + 1}`, HttpsError);
+    return [suppliedId, {
+      cantidad: quantity(line?.cantidad, `Linea ${index + 1}`, HttpsError),
+      costoUnitario: Object.prototype.hasOwnProperty.call(line || {}, "costoUnitario")
+        ? quantity(line.costoUnitario, `Costo ${index + 1}`, HttpsError)
+        : null,
+      descuentoPct: Object.prototype.hasOwnProperty.call(line || {}, "descuentoPct")
+        ? percentage(line.descuentoPct, `Descuento ${index + 1}`, HttpsError)
+        : null,
+      documentoLineas: Object.prototype.hasOwnProperty.call(line || {}, "documentoLineas")
+        ? normalizeDocumentLines(line.documentoLineas, HttpsError)
+        : null,
+    }];
   }));
+  const validLineIds = new Set((reception.items || []).map((line) => text(line.lineaId, 160)));
+  if ([...suppliedLines.keys()].some((suppliedId) => !validLineIds.has(suppliedId))) {
+    fail(HttpsError, "invalid-argument", "Una linea no pertenece a esta recepcion.");
+  }
+  const items = (reception.items || []).map((line) => {
+    const suppliedLine = suppliedLines.get(line.lineaId);
+    return {
+      ...line,
+      cantidad: suppliedLine ? suppliedLine.cantidad : 0,
+      costoUnitario: suppliedLine?.costoUnitario ?? Number(line.costoUnitario || 0),
+      descuentoPct: suppliedLine?.descuentoPct ?? Number(line.descuentoPct || 0),
+      documentoLineas: suppliedLine?.documentoLineas ?? line.documentoLineas ?? [],
+    };
+  });
   if (!items.some((line) => line.cantidad > EPSILON)) {
     fail(HttpsError, "invalid-argument", "Registra al menos una cantidad recibida.");
   }
   return {
     fechaRecepcion: date,
     observaciones: text(raw?.observaciones, 4000),
+    documentoOrigen: Object.prototype.hasOwnProperty.call(raw || {}, "documentoOrigen")
+      ? normalizeDocumentSource(raw.documentoOrigen, HttpsError)
+      : reception.documentoOrigen || null,
     items,
   };
 }
@@ -313,11 +399,18 @@ async function actualizarRecepcionBorradorHandler(request, dependencies) {
     assertReceivableOrder(order, businessId, HttpsError);
     const normalized = normalizeDraft(request?.data?.recepcion, reception, HttpsError);
     assertNoOverreceipt(order, normalized.items, confirmedTotals(receptions, receptionId), HttpsError);
+    const timestamp = FieldValue.serverTimestamp();
+    const documentoOrigen = normalized.documentoOrigen ? {
+      ...normalized.documentoOrigen,
+      importadoEn: reception.documentoOrigen?.importadoEn || timestamp,
+      actualizadoEn: timestamp,
+    } : null;
     const update = {
       ...normalized,
+      documentoOrigen,
       respuestaProveedorEstado: responseState(order),
       actualizadoPorUid: uid,
-      actualizadoEn: FieldValue.serverTimestamp(),
+      actualizadoEn: timestamp,
     };
     transaction.update(receptionRef, update);
     return {recepcion: {id: receptionId, ...reception, ...update, actualizadoEn: null}};

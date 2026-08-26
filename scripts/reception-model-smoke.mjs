@@ -35,11 +35,13 @@ assert.equal(getOrderReceptionStatus(order, [
 assert.deepEqual(buildReceptionMutationPayload({
   fechaRecepcion: "2026-08-14",
   observaciones: "  bodega central  ",
-  items: [{lineaId: "l1", cantidad: 3}, {lineaId: "l2", cantidad: 0}],
+  documentoOrigen: {nombreArchivo: "factura.pdf", tipoArchivo: "application/pdf", extension: "pdf", tamanoBytes: 1000, tipoDocumento: "factura", numeroDocumento: "123"},
+  items: [{lineaId: "l1", cantidad: 3, costoUnitario: 1200, descuentoPct: 5}, {lineaId: "l2", cantidad: 0, costoUnitario: 800, descuentoPct: 0}],
 }), {
   fechaRecepcion: "2026-08-14",
   observaciones: "bodega central",
-  items: [{lineaId: "l1", cantidad: 3}, {lineaId: "l2", cantidad: 0}],
+  documentoOrigen: {origen: "importador_documental", nombreArchivo: "factura.pdf", tipoArchivo: "application/pdf", extension: "pdf", tamanoBytes: 1000, tipoDocumento: "factura", numeroDocumento: "123", fechaDocumento: "", fechaVencimiento: "", condicionesPago: "", lineasDetectadas: 0, lineasAplicadas: 0, advertencias: [], importadoEn: null, actualizadoEn: null},
+  items: [{lineaId: "l1", cantidad: 3, costoUnitario: 1200, descuentoPct: 5, documentoLineas: []}, {lineaId: "l2", cantidad: 0, costoUnitario: 800, descuentoPct: 0, documentoLineas: []}],
 });
 assert.throws(() => buildReceptionMutationPayload({
   fechaRecepcion: "2026-08-14",

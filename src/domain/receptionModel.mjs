@@ -4,6 +4,41 @@ export const RECEPTION_STATUSES = Object.freeze(["borrador", "confirmada", "canc
 const text = (value, max = 2000) => String(value ?? "").trim()
   .replace(/\s+/g, " ").slice(0, max);
 
+function adaptReceptionDocumentSource(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const nombreArchivo = text(raw.nombreArchivo, 240);
+  if (!nombreArchivo) return null;
+  return {
+    origen: "importador_documental",
+    nombreArchivo,
+    tipoArchivo: text(raw.tipoArchivo, 120),
+    extension: text(raw.extension, 12).toLowerCase(),
+    tamanoBytes: Number(raw.tamanoBytes || 0),
+    tipoDocumento: text(raw.tipoDocumento, 40) || "otro",
+    numeroDocumento: text(raw.numeroDocumento, 120),
+    fechaDocumento: text(raw.fechaDocumento, 10),
+    fechaVencimiento: text(raw.fechaVencimiento, 10),
+    condicionesPago: text(raw.condicionesPago, 1000),
+    lineasDetectadas: Number(raw.lineasDetectadas || 0),
+    lineasAplicadas: Number(raw.lineasAplicadas || 0),
+    advertencias: (Array.isArray(raw.advertencias) ? raw.advertencias : [])
+      .map((warning) => text(warning, 300)).filter(Boolean).slice(0, 20),
+    importadoEn: raw.importadoEn || null,
+    actualizadoEn: raw.actualizadoEn || null,
+  };
+}
+
+function adaptDocumentLines(raw) {
+  return (Array.isArray(raw) ? raw : []).slice(0, 20).map((line) => ({
+    nombre: text(line?.nombre, 240),
+    codigo: text(line?.codigo, 100),
+    unidad: text(line?.unidad, 80),
+    cantidad: Number(line?.cantidad || 0),
+    costoUnitario: Number(line?.costoUnitario || 0),
+    descuentoPct: Number(line?.descuentoPct || 0),
+  }));
+}
+
 export function getReceptionStatusLabel(value) {
   return ({borrador: "Preparada", confirmada: "Recibida", cancelada: "Cancelada"})[value] || "Preparada";
 }
@@ -34,6 +69,7 @@ export function adaptStoredReception(raw = {}) {
     proveedorSnapshot: raw.proveedorSnapshot || {},
     respuestaProveedorEstado: text(raw.respuestaProveedorEstado, 20) || "pendiente",
     observaciones: text(raw.observaciones, 4000),
+    documentoOrigen: adaptReceptionDocumentSource(raw.documentoOrigen),
     compraId: text(raw.compraId, 160),
     compraNumero: text(raw.compraNumero, 120),
     compraEstado: text(raw.compraEstado, 20),
@@ -55,6 +91,7 @@ export function adaptStoredReception(raw = {}) {
       cantidad: Number(line.cantidad || 0),
       costoUnitario: Number(line.costoUnitario || 0),
       descuentoPct: Number(line.descuentoPct || 0),
+      documentoLineas: adaptDocumentLines(line.documentoLineas),
     })),
   };
 }
@@ -67,6 +104,9 @@ export function buildReceptionMutationPayload(raw = {}) {
   const items = (Array.isArray(raw.items) ? raw.items : []).map((line) => ({
     lineaId: text(line.lineaId || line.ordenLineaId, 160),
     cantidad: Number(line.cantidad || 0),
+    costoUnitario: Number(line.costoUnitario || 0),
+    descuentoPct: Number(line.descuentoPct || 0),
+    documentoLineas: adaptDocumentLines(line.documentoLineas),
   }));
   if (!items.some((line) => Number.isFinite(line.cantidad) && line.cantidad > 0)) {
     throw new Error("Registra al menos una cantidad recibida.");
@@ -74,7 +114,16 @@ export function buildReceptionMutationPayload(raw = {}) {
   if (items.some((line) => !line.lineaId || !Number.isFinite(line.cantidad) || line.cantidad < 0)) {
     throw new Error("Las cantidades de la recepcion no son validas.");
   }
-  return {fechaRecepcion, observaciones: text(raw.observaciones, 4000), items};
+  if (items.some((line) => !Number.isFinite(line.costoUnitario) || line.costoUnitario < 0 ||
+    !Number.isFinite(line.descuentoPct) || line.descuentoPct < 0 || line.descuentoPct > 100)) {
+    throw new Error("Los costos o descuentos de la recepcion no son validos.");
+  }
+  return {
+    fechaRecepcion,
+    observaciones: text(raw.observaciones, 4000),
+    documentoOrigen: adaptReceptionDocumentSource(raw.documentoOrigen),
+    items,
+  };
 }
 
 export function getOrderReceptionStatus(order, receptions = []) {

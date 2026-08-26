@@ -133,18 +133,25 @@ function buildConfirmedPurchaseFromReception({
   year,
 }) {
   const sourceItems = (reception.items || []).filter((line) => Number(line.cantidad) > 0);
+  const sourceDocument = reception.documentoOrigen || {};
+  const sourceDocumentType = text(sourceDocument.tipoDocumento, 40).toLowerCase();
   const normalized = input({
     proveedorId: reception.proveedorId,
     fechaCompra: text(reception.fechaRecepcion, 10),
-    fechaDocumento: "",
-    tipoDocumento: "sin_documento",
-    numeroDocumentoProveedor: "",
-    condicionesPago: text(order.condicionesPago, 2000),
+    fechaDocumento: text(sourceDocument.fechaDocumento, 10),
+    tipoDocumento: DOCUMENT_TYPES.has(sourceDocumentType) ? sourceDocumentType : "sin_documento",
+    numeroDocumentoProveedor: text(sourceDocument.numeroDocumento, 120),
+    condicionesPago: text(sourceDocument.condicionesPago, 2000) || text(order.condicionesPago, 2000),
     observaciones: text(reception.observaciones, 4000) ||
       `Originada desde ${reception.numero || "recepcion"}`,
     items: sourceItems,
   }, HttpsError);
-  const items = sourceItems.map((line, index) => ocSnapshotLine(line, index, HttpsError));
+  const items = sourceItems.map((line, index) => ({
+    ...ocSnapshotLine(line, index, HttpsError),
+    ...(Array.isArray(line.documentoLineas) && line.documentoLineas.length
+      ? {documentoLineas: line.documentoLineas}
+      : {}),
+  }));
   const empresaSnapshot = resolveCompanySnapshot(
     reception,
     resolveCompanySnapshot(
@@ -169,6 +176,7 @@ function buildConfirmedPurchaseFromReception({
       recepcionNumero: text(reception.numero, 120),
       ordenCompraId: text(reception.ordenCompraId, 160),
       ordenCompraNumero: text(reception.ordenCompraNumero, 120),
+      documentoOrigen: reception.documentoOrigen || null,
     },
     timestamp,
     HttpsError,

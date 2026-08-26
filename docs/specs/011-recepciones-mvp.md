@@ -1,5 +1,10 @@
 # SPEC 011 — Recepciones MVP
 
+> Actualización BRUNO-06: un borrador de Recepción puede usar el importador
+> documental existente para generar una propuesta editable y reconciliarla con
+> las líneas de la OC. Importar o aplicar la propuesta no modifica inventario;
+> sólo `confirmarRecepcion` conserva la autoridad para stock y Compra automática.
+
 > Actualización BRUNO-05: confirmar una Recepción actualiza inventario y crea en
 > la misma transacción una Compra modelo 2 ya confirmada por las cantidades
 > efectivamente recibidas. Cada Recepción confirmada genera como máximo una
@@ -25,6 +30,11 @@ Las recepciones viven en `negocios/{businessId}/recepciones/{recepcionId}` y usa
 Sus estados internos son `borrador`, `confirmada` y `cancelada`; en UI: Preparada, Recibida y Cancelada.
 
 Una recepción guarda snapshots del proveedor, OC y líneas, además de cantidades solicitadas, recibidas anteriormente y recibidas ahora. No modifica la OC histórica.
+
+Cuando se usa el importador, `documentoOrigen` conserva únicamente metadatos
+sanitizados (nombre, tipo, tamaño, datos económicos ingresados y resumen de
+reconciliación). El Base64 temporal nunca se persiste. Las líneas sin asociación
+válida con la OC quedan fuera de la propuesta aplicada.
 
 ## Invariantes autoritativas
 

@@ -2,6 +2,12 @@
 
 ## Alcance
 
+Desde BRUNO-06 la misma lectura y normalización también puede abrirse desde un
+borrador de Recepción. En ese contexto los candidatos no crean inventario: un
+adaptador los reconcilia con la OC, permite revisión humana y sólo rellena
+cantidades, costos y metadatos del borrador. La confirmación autoritativa de la
+Recepción sigue siendo el único paso que actualiza stock y registra la Compra.
+
 El importador inteligente multiformato permite cargar documentos comerciales en
 CSV, XLS, XLSX, PDF, JPG, JPEG, PNG y WebP. No promete aceptar cualquier
 extensión informática: el alcance se limita a los formatos empresariales más

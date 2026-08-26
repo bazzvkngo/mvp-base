@@ -229,7 +229,7 @@ assert.equal(safeLog.rowCount, 12);
 console.log("OK registros: solo incluyen metadatos técnicos seguros");
 
 assert.ok(serviceSource.includes('fileData?.kind === "document"'));
-assert.ok(serviceSource.includes("return normalizeInventoryDocumentWithAi({ fileData });"));
+assert.ok(serviceSource.includes("return normalizeInventoryDocumentWithAi({ businessId, fileData });"));
 assert.ok(serviceSource.includes("normalizeInventoryAiResponse(response.data)"));
 assert.ok(serviceSource.includes('invokeInventoryCallable("getAiRateLimitStatus"'));
 assert.ok(serviceSource.includes('invokeInventoryCallable("normalizeInventoryItems"'));
