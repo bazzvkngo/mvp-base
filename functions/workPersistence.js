@@ -14,7 +14,7 @@ const WRITE_ROLES = WORK_MANAGEMENT_ROLES;
 const WORK_STATUSES = new Set(["pendiente", "en_progreso", "en_espera", "completado", "cancelado"]);
 const WORK_PRIORITIES = new Set(["baja", "normal", "alta", "urgente"]);
 const WORK_EXPENSE_CATEGORIES = new Set(["MATERIAL", "MANO_DE_OBRA", "OPERATIVO", "SERVICIO_EXTERNO", "ADMINISTRATIVO", "OTRO"]);
-const WORK_INPUT_FIELDS = new Set(["titulo", "descripcion", "clienteId", "responsableUid", "participanteUids", "estado", "prioridad", "fechaInicio", "fechaPrevista"]);
+const WORK_INPUT_FIELDS = new Set(["titulo", "descripcion", "clienteId", "cotizacionId", "responsableUid", "participanteUids", "estado", "prioridad", "fechaInicio", "fechaPrevista"]);
 
 function fail(HttpsError, code, message) {
   throw new HttpsError(code, message);
@@ -44,7 +44,7 @@ function requestIdentifier(value, HttpsError) {
 
 function optionalDate(value, label, HttpsError) {
   const normalized = text(value, label, 10, HttpsError);
-  if (!normalized) return "";
+  if (!normalized) return null;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized) || Number.isNaN(new Date(`${normalized}T12:00:00Z`).getTime())) {
     fail(HttpsError, "invalid-argument", `${label} no es válida.`);
   }
@@ -63,16 +63,22 @@ function normalizeWorkInput(raw = {}, HttpsError) {
   if (raw.participanteUids != null && !Array.isArray(raw.participanteUids)) fail(HttpsError, "invalid-argument", "Los participantes deben enviarse como una lista.");
   const participanteUids = [...new Set((raw.participanteUids || []).map((uid) => identifier(uid, "El participante", HttpsError)))].filter((uid) => uid !== responsableUid);
   if (participanteUids.length > 30) fail(HttpsError, "invalid-argument", "Un trabajo admite hasta 30 participantes.");
+  const fechaInicio = optionalDate(raw.fechaInicio, "La fecha de inicio", HttpsError);
+  const fechaPrevista = optionalDate(raw.fechaPrevista, "La fecha prevista", HttpsError);
+  if (fechaInicio && fechaPrevista && fechaPrevista < fechaInicio) {
+    fail(HttpsError, "invalid-argument", "La fecha de término no puede ser anterior a la fecha de inicio.");
+  }
   return {
     titulo: text(raw.titulo, "El título", 180, HttpsError, {required: true}),
     descripcion: text(raw.descripcion, "La descripción", 5000, HttpsError),
     clienteId: identifier(raw.clienteId, "El cliente", HttpsError, {optional: true}),
+    cotizacionId: identifier(raw.cotizacionId, "La cotización", HttpsError, {optional: true}),
     responsableUid,
     participanteUids,
     estado,
     prioridad,
-    fechaInicio: optionalDate(raw.fechaInicio, "La fecha de inicio", HttpsError),
-    fechaPrevista: optionalDate(raw.fechaPrevista, "La fecha prevista", HttpsError),
+    fechaInicio,
+    fechaPrevista,
   };
 }
 
@@ -349,6 +355,7 @@ function writeCommercialLink(transaction, workRef, {
   extra = {},
   timestamp,
   total = 0,
+  updateWork = true,
 }) {
   const isQuote = documentType === "cotizacion";
   const prefix = isQuote ? "cotizacion" : "venta";
@@ -392,11 +399,90 @@ function writeCommercialLink(transaction, workRef, {
     },
     timestamp,
   }));
-  transaction.update(workRef, {
-    modeloTrabajoVersion: WORK_MODEL_VERSION,
-    modeloExpedienteVersion: WORK_FILE_MODEL_VERSION,
-    [counterField]: Number(currentCount || 0) + 1,
-    actualizadoEn: timestamp,
+  if (updateWork) {
+    transaction.update(workRef, {
+      modeloTrabajoVersion: WORK_MODEL_VERSION,
+      modeloExpedienteVersion: WORK_FILE_MODEL_VERSION,
+      [counterField]: Number(currentCount || 0) + 1,
+      actualizadoEn: timestamp,
+    });
+  }
+}
+
+async function readCommercialSelection(transaction, businessRef, businessId, quoteId, workId, HttpsError) {
+  if (!quoteId) return null;
+  const quoteRef = businessRef.collection("cotizaciones").doc(quoteId);
+  const quoteSnapshot = await transaction.get(quoteRef);
+  if (!quoteSnapshot.exists) fail(HttpsError, "not-found", "No se encontró la cotización seleccionada.");
+  const quote = quoteSnapshot.data() || {};
+  if (quote.negocioId && quote.negocioId !== businessId) fail(HttpsError, "permission-denied", "La cotización no pertenece al negocio.");
+  if (quote.estado !== "aceptada") fail(HttpsError, "failed-precondition", "Sólo puedes asociar una cotización aceptada.");
+  const saleId = identifier(quote.ventaId, "La venta asociada", HttpsError);
+  const saleRef = businessRef.collection("ventas").doc(saleId);
+  const saleSnapshot = await transaction.get(saleRef);
+  if (!saleSnapshot.exists) fail(HttpsError, "failed-precondition", "La cotización no tiene una venta activa asociada.");
+  const sale = saleSnapshot.data() || {};
+  if (sale.negocioId && sale.negocioId !== businessId) fail(HttpsError, "permission-denied", "La venta no pertenece al negocio.");
+  if (sale.estado !== "confirmada") fail(HttpsError, "failed-precondition", "La venta asociada debe estar confirmada y no cancelada.");
+  if (String(sale.cotizacionId || "") !== quoteId) fail(HttpsError, "failed-precondition", "El vínculo entre la cotización y la venta es inconsistente.");
+  const quoteClientId = identifier(quote.clienteId, "El cliente de la cotización", HttpsError);
+  const saleClientId = identifier(sale.clienteId, "El cliente de la venta", HttpsError);
+  if (quoteClientId !== saleClientId) fail(HttpsError, "failed-precondition", "La cotización y la venta no corresponden al mismo cliente.");
+  const linkedWorkIds = [quote.trabajoId, sale.trabajoId].map((value) => String(value || "").trim()).filter(Boolean);
+  if (linkedWorkIds.some((linkedWorkId) => linkedWorkId !== workId)) {
+    fail(HttpsError, "failed-precondition", "La cotización o su venta ya están asociadas a otro proyecto.");
+  }
+  return {
+    clienteId: quoteClientId,
+    quote,
+    quoteId,
+    quoteRef,
+    sale,
+    saleId,
+    saleRef,
+    fields: {
+      cotizacionId: quoteId,
+      cotizacionNumero: text(quote.numero, "El número de la cotización", 120, HttpsError, {required: true}),
+      ventaId: saleId,
+      ventaNumero: text(sale.numero, "El número de la venta", 120, HttpsError, {required: true}),
+    },
+  };
+}
+
+function writeCommercialSelection(transaction, workRef, selection, {actor, actorUid, businessId, currentQuoteCount = 0, currentSaleCount = 0, timestamp, updateWork = true}) {
+  const workFields = {
+    trabajoId: workRef.id,
+    trabajoNumero: String(selection.workNumber || "").trim(),
+    trabajoTitulo: String(selection.workTitle || "").trim(),
+  };
+  transaction.update(selection.quoteRef, {...workFields, actualizadoEn: timestamp});
+  transaction.update(selection.saleRef, {...workFields, updatedAt: timestamp});
+  writeCommercialLink(transaction, workRef, {
+    actor,
+    actorUid,
+    businessId,
+    currentCount: currentQuoteCount,
+    documentId: selection.quoteId,
+    documentNumber: selection.fields.cotizacionNumero,
+    documentStatus: selection.quote.estado,
+    documentType: "cotizacion",
+    timestamp,
+    total: selection.quote.total,
+    updateWork,
+  });
+  writeCommercialLink(transaction, workRef, {
+    actor,
+    actorUid,
+    businessId,
+    currentCount: currentSaleCount,
+    documentId: selection.saleId,
+    documentNumber: selection.fields.ventaNumero,
+    documentStatus: selection.sale.estado,
+    documentType: "venta",
+    extra: {cotizacionId: selection.quoteId, cotizacionNumero: selection.fields.cotizacionNumero},
+    timestamp,
+    total: selection.sale.total,
+    updateWork,
   });
 }
 
@@ -491,17 +577,25 @@ async function crearTrabajoHandler(request, dependencies, now = new Date()) {
   const workRef = context.businessRef.collection("trabajos").doc();
   const counterRef = context.businessRef.collection("workCounters").doc(String(year));
   const requestRef = context.businessRef.collection("workCreateRequests").doc(requestId);
-  const clientRef = input.clienteId ? context.businessRef.collection("clientes").doc(input.clienteId) : null;
   const inputFingerprint = fingerprint(input);
+  const legacyInput = {...input, fechaInicio: input.fechaInicio || "", fechaPrevista: input.fechaPrevista || ""};
+  delete legacyInput.cotizacionId;
+  const compatibleFingerprints = new Set([inputFingerprint, fingerprint(legacyInput)]);
 
   return db.runTransaction(async (transaction) => {
     const requestSnapshot = await transaction.get(requestRef);
     if (requestSnapshot.exists) {
       const existing = requestSnapshot.data() || {};
-      if (existing.creadoPorUid !== context.uid || existing.fingerprint !== inputFingerprint) fail(HttpsError, "already-exists", "La solicitud ya fue usada con otros datos.");
+      if (existing.creadoPorUid !== context.uid || !compatibleFingerprints.has(existing.fingerprint)) fail(HttpsError, "already-exists", "La solicitud ya fue usada con otros datos.");
       return {trabajoId: existing.trabajoId, numero: existing.numero, sinCambios: true};
     }
     const counterSnapshot = await transaction.get(counterRef);
+    const commercialSelection = await readCommercialSelection(transaction, context.businessRef, context.businessId, input.cotizacionId, workRef.id, HttpsError);
+    if (commercialSelection && input.clienteId && input.clienteId !== commercialSelection.clienteId) {
+      fail(HttpsError, "failed-precondition", "El cliente debe corresponder a la cotización seleccionada.");
+    }
+    const selectedClientId = commercialSelection?.clienteId || input.clienteId;
+    const clientRef = selectedClientId ? context.businessRef.collection("clientes").doc(selectedClientId) : null;
     const selectedClient = clientRef ? clientSnapshot(await transaction.get(clientRef), context.businessId, HttpsError) : null;
     await readAssignments(transaction, db, context.businessId, [input.responsableUid, ...input.participanteUids], HttpsError);
     const current = Number(counterSnapshot.data()?.ultimoNumero || 0);
@@ -516,15 +610,17 @@ async function crearTrabajoHandler(request, dependencies, now = new Date()) {
       anio: year,
       correlativo: sequence,
       ...input,
-      ...(input.clienteId ? {clienteSnapshot: selectedClient} : {}),
+      clienteId: selectedClientId,
+      ...(commercialSelection?.fields || {}),
+      ...(selectedClientId ? {clienteSnapshot: selectedClient} : {}),
       ...(input.responsableUid ? {responsableSnapshot: publicPerson(people, input.responsableUid)} : {}),
       participantesSnapshot: input.participanteUids.map((uid) => publicPerson(people, uid)),
       fechaCompletado: input.estado === "completado" ? timestamp : null,
       tareasTotal: 0,
       tareasCompletadas: 0,
       modeloExpedienteVersion: WORK_FILE_MODEL_VERSION,
-      cotizacionesVinculadas: 0,
-      ventasVinculadas: 0,
+      cotizacionesVinculadas: commercialSelection ? 1 : 0,
+      ventasVinculadas: commercialSelection ? 1 : 0,
       gastosVigentesTotal: 0,
       gastosMontoTotal: 0,
       gastosMontoDirecto: 0,
@@ -544,6 +640,7 @@ async function crearTrabajoHandler(request, dependencies, now = new Date()) {
     transaction.set(counterRef, {negocioId: context.businessId, anio: year, ultimoNumero: sequence, actualizadoEn: timestamp}, {merge: true});
     transaction.create(requestRef, {negocioId: context.businessId, trabajoId: workRef.id, numero, fingerprint: inputFingerprint, creadoPorUid: context.uid, creadoEn: timestamp});
     writeEvent(transaction, workRef, {businessId: context.businessId, type: "trabajo_creado", actorUid: context.uid, actor, detail: {numero, estado: input.estado}, timestamp});
+    if (commercialSelection) writeCommercialSelection(transaction, workRef, {...commercialSelection, workNumber: numero, workTitle: input.titulo}, {actor, actorUid: context.uid, businessId: context.businessId, timestamp, updateWork: false});
     if (input.estado === "completado") writeEvent(transaction, workRef, {businessId: context.businessId, type: "trabajo_completado", actorUid: context.uid, actor, timestamp});
     if (input.estado === "cancelado") writeEvent(transaction, workRef, {businessId: context.businessId, type: "trabajo_cancelado", actorUid: context.uid, actor, timestamp});
     return {trabajoId: workRef.id, numero, sinCambios: false};
@@ -565,16 +662,41 @@ async function actualizarTrabajoHandler(request, dependencies) {
   const people = await userSnapshots(dependencies, [context.uid, input.responsableUid, ...input.participanteUids]);
   const actor = publicPerson(people, context.uid);
   const workRef = context.businessRef.collection("trabajos").doc(workId);
-  const clientRef = input.clienteId ? context.businessRef.collection("clientes").doc(input.clienteId) : null;
 
   await db.runTransaction(async (transaction) => {
     const stored = assertWork(await transaction.get(workRef), context.businessId, HttpsError);
+    const storedQuoteId = String(stored.cotizacionId || "").trim();
+    if (storedQuoteId && input.cotizacionId && input.cotizacionId !== storedQuoteId) {
+      fail(HttpsError, "failed-precondition", "La cotización asociada al proyecto no se puede reemplazar.");
+    }
+    if (!storedQuoteId && input.cotizacionId && (Number(stored.cotizacionesVinculadas || 0) > 0 || Number(stored.ventasVinculadas || 0) > 0)) {
+      fail(HttpsError, "failed-precondition", "El proyecto ya tiene un vínculo comercial y no admite otra cotización.");
+    }
+    const commercialSelection = !storedQuoteId && input.cotizacionId
+      ? await readCommercialSelection(transaction, context.businessRef, context.businessId, input.cotizacionId, workId, HttpsError)
+      : null;
+    const linkedClientId = commercialSelection?.clienteId || (storedQuoteId ? String(stored.clienteId || "").trim() : "");
+    if (linkedClientId && input.clienteId && input.clienteId !== linkedClientId) {
+      fail(HttpsError, "failed-precondition", "El cliente debe corresponder a la cotización seleccionada.");
+    }
+    const selectedClientId = linkedClientId || input.clienteId;
+    const clientRef = selectedClientId ? context.businessRef.collection("clientes").doc(selectedClientId) : null;
     let selectedClient = stored.clienteSnapshot || null;
-    if (input.clienteId !== String(stored.clienteId || "")) selectedClient = clientRef ? clientSnapshot(await transaction.get(clientRef), context.businessId, HttpsError) : null;
+    if (commercialSelection || selectedClientId !== String(stored.clienteId || "")) selectedClient = clientRef ? clientSnapshot(await transaction.get(clientRef), context.businessId, HttpsError) : null;
     await readAssignments(transaction, db, context.businessId, [input.responsableUid, ...input.participanteUids], HttpsError);
     const timestamp = FieldValue.serverTimestamp();
     const next = {
       ...input,
+      clienteId: selectedClientId,
+      cotizacionId: storedQuoteId || commercialSelection?.fields.cotizacionId || "",
+      cotizacionNumero: String(stored.cotizacionNumero || commercialSelection?.fields.cotizacionNumero || "").trim(),
+      ventaId: String(stored.ventaId || commercialSelection?.fields.ventaId || "").trim(),
+      ventaNumero: String(stored.ventaNumero || commercialSelection?.fields.ventaNumero || "").trim(),
+      ...(commercialSelection ? {
+        cotizacionesVinculadas: Number(stored.cotizacionesVinculadas || 0) + 1,
+        ventasVinculadas: Number(stored.ventasVinculadas || 0) + 1,
+        modeloExpedienteVersion: WORK_FILE_MODEL_VERSION,
+      } : {}),
       clienteSnapshot: selectedClient,
       responsableSnapshot: input.responsableUid ? publicPerson(people, input.responsableUid) : null,
       participantesSnapshot: input.participanteUids.map((uid) => publicPerson(people, uid)),
@@ -583,6 +705,7 @@ async function actualizarTrabajoHandler(request, dependencies) {
       actualizadoEn: timestamp,
     };
     transaction.update(workRef, next);
+    if (commercialSelection) writeCommercialSelection(transaction, workRef, {...commercialSelection, workNumber: stored.numero, workTitle: input.titulo}, {actor, actorUid: context.uid, businessId: context.businessId, currentQuoteCount: stored.cotizacionesVinculadas, currentSaleCount: stored.ventasVinculadas, timestamp, updateWork: false});
     if (stored.estado !== input.estado) writeEvent(transaction, workRef, {businessId: context.businessId, type: stateEvent(stored.estado, input.estado), actorUid: context.uid, actor, detail: {estadoAnterior: stored.estado, estadoNuevo: input.estado}, timestamp});
     if (String(stored.responsableUid || "") !== input.responsableUid) writeEvent(transaction, workRef, {businessId: context.businessId, type: "responsable_cambiado", actorUid: context.uid, actor, detail: {responsableNombre: next.responsableSnapshot?.nombre || "Sin responsable"}, timestamp});
     const previousParticipants = new Map((stored.participantesSnapshot || []).map((person) => [person.uid, person]));

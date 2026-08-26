@@ -70,12 +70,29 @@ export function hasAdditionalWorkMembers(members = [], currentUserUid = "") {
   return members.some((member) => member?.uid && member.uid !== currentUserUid);
 }
 
-export function buildQuickWorkCreationPayload(raw = {}, currentDate = "") {
+export function buildQuickWorkCreationPayload(raw = {}) {
   return {
     ...raw,
     estado: "pendiente",
-    fechaInicio: String(currentDate || "").trim(),
+    fechaInicio: String(raw.fechaInicio || "").trim(),
   };
+}
+
+export function getEligibleWorkQuoteOptions(quotes = [], sales = [], {workId = ""} = {}) {
+  const currentWorkId = String(workId || "").trim();
+  const salesById = new Map((Array.isArray(sales) ? sales : []).map((sale) => [String(sale?.id || sale?.ventaId || "").trim(), sale]));
+  return (Array.isArray(quotes) ? quotes : []).flatMap((quote) => {
+    const quoteId = String(quote?.id || quote?.cotizacionId || "").trim();
+    const saleId = String(quote?.ventaId || "").trim();
+    const sale = salesById.get(saleId);
+    const quoteWorkId = String(quote?.trabajoId || "").trim();
+    const saleWorkId = String(sale?.trabajoId || "").trim();
+    const quoteClientId = String(quote?.clienteId || "").trim();
+    const saleClientId = String(sale?.clienteId || "").trim();
+    const linkedElsewhere = [quoteWorkId, saleWorkId].some((linkedId) => linkedId && linkedId !== currentWorkId);
+    if (!quoteId || quote?.estado !== "aceptada" || !sale || sale?.estado !== "confirmada" || sale?.cotizacionId !== quoteId || linkedElsewhere || !quoteClientId || quoteClientId !== saleClientId) return [];
+    return [{quote, sale}];
+  });
 }
 
 export function canViewWorkProfitability(role) {
@@ -126,6 +143,10 @@ export function adaptStoredWork(raw = {}) {
     descripcion: String(raw.descripcion || "").trim(),
     clienteId: String(raw.clienteId || "").trim(),
     clienteSnapshot: raw.clienteSnapshot || null,
+    cotizacionId: String(raw.cotizacionId || "").trim(),
+    cotizacionNumero: String(raw.cotizacionNumero || "").trim(),
+    ventaId: String(raw.ventaId || "").trim(),
+    ventaNumero: String(raw.ventaNumero || "").trim(),
     responsableUid: String(raw.responsableUid || "").trim(),
     responsableSnapshot: raw.responsableSnapshot || null,
     participanteUids: Array.isArray(raw.participanteUids) ? raw.participanteUids : [],
@@ -292,12 +313,13 @@ export function buildWorkMutationPayload(raw = {}) {
     titulo: String(raw.titulo || "").trim(),
     descripcion: String(raw.descripcion || "").trim(),
     clienteId: String(raw.clienteId || "").trim(),
+    cotizacionId: String(raw.cotizacionId || "").trim(),
     responsableUid,
     participanteUids,
     estado: String(raw.estado || "pendiente"),
     prioridad: String(raw.prioridad || "normal"),
-    fechaInicio: String(raw.fechaInicio || ""),
-    fechaPrevista: String(raw.fechaPrevista || ""),
+    fechaInicio: raw.fechaInicio ? String(raw.fechaInicio) : null,
+    fechaPrevista: raw.fechaPrevista ? String(raw.fechaPrevista) : null,
   };
 }
 
@@ -310,6 +332,7 @@ export function getWorkDraftErrors(raw = {}) {
   if (!PRIORITY_VALUES.has(String(raw.prioridad || ""))) errors.prioridad = "Selecciona una prioridad válida.";
   if (raw.fechaInicio && !/^\d{4}-\d{2}-\d{2}$/.test(raw.fechaInicio)) errors.fechaInicio = "Selecciona una fecha válida.";
   if (raw.fechaPrevista && !/^\d{4}-\d{2}-\d{2}$/.test(raw.fechaPrevista)) errors.fechaPrevista = "Selecciona una fecha válida.";
+  if (raw.fechaInicio && raw.fechaPrevista && raw.fechaPrevista < raw.fechaInicio) errors.fechaPrevista = "La fecha de término no puede ser anterior a la fecha de inicio.";
   return errors;
 }
 

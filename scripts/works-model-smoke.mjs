@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {createRequire} from "node:module";
-import {adaptStoredWork, adaptWorkExpense, adaptWorkLabor, adaptWorkLink, adaptWorkMaterialMovement, adaptWorkTask, adaptWorkTaskDocumentation, buildQuickWorkCreationPayload, buildWorkMutationPayload, canManageWorks, formatWorkNumber as formatFrontendNumber, getWorkDraftErrors, getWorkMemberIdentity, getWorkMemberOptionLabel, hasAdditionalWorkMembers, humanizeWorkEvent, matchesWorkFilters, WORK_MODEL_VERSION} from "../src/domain/workModel.mjs";
+import {adaptStoredWork, adaptWorkExpense, adaptWorkLabor, adaptWorkLink, adaptWorkMaterialMovement, adaptWorkTask, adaptWorkTaskDocumentation, buildQuickWorkCreationPayload, buildWorkMutationPayload, canManageWorks, formatWorkNumber as formatFrontendNumber, getEligibleWorkQuoteOptions, getWorkDraftErrors, getWorkMemberIdentity, getWorkMemberOptionLabel, hasAdditionalWorkMembers, humanizeWorkEvent, matchesWorkFilters, WORK_MODEL_VERSION} from "../src/domain/workModel.mjs";
 
 const require = createRequire(import.meta.url);
 const {actualizarTrabajoHandler, agregarNotaTrabajoHandler, anularGastoTrabajoHandler, anularHorasHombreTrabajoHandler, asignarTareaTrabajoHandler, cambiarEstadoTareaTrabajoV2Handler, cambiarEstadoTrabajoHandler, crearTareaTrabajoV2Handler, crearTrabajoHandler, documentarTareaTrabajoHandler, eliminarTareaTrabajoV2Handler, formatWorkNumber, normalizeWorkInput, registrarDevolucionMaterialTrabajoHandler, registrarGastoTrabajoHandler, registrarHorasHombreTrabajoHandler, registrarSalidaMaterialTrabajoHandler, WORK_EXPENSE_CATEGORIES, writeCommercialLink, writeQuoteResponseEvent, writeSaleConfirmationEvent} = require("../functions/workPersistence.js");
@@ -52,6 +52,21 @@ for (const [uid, role] of [["owner-a", "OWNER"], ["worker-a", "TECNICO"], ["work
 db.seed("negocios/business-a", {nombreComercial: "Empresa A", estado: "activo", monedaCodigo: "USD"});
 db.seed("negocios/business-a/clientes/client-a", {negocioId: "business-a", clienteId: "client-a", estado: "activo", nombreRazonSocial: "Constructora Sur", rut: "12.345.678-5", email: "cliente@example.cl", telefono: "+56911111111", personaContacto: "Paula"});
 
+function seedCommercialPair(key, {quoteStatus = "aceptada", saleStatus = "confirmada", businessId = "business-a", quoteWorkId = "", saleWorkId = ""} = {}) {
+  const quoteId = `quote-${key}`;
+  const saleId = `sale-${key}`;
+  db.seed(`negocios/business-a/cotizaciones/${quoteId}`, {cotizacionId: quoteId, negocioId: businessId, numero: `COT-2026-${key}`, estado: quoteStatus, clienteId: "client-a", clienteNombre: "Constructora Sur", total: 119000, moneda: "USD", ventaId: saleId, trabajoId: quoteWorkId});
+  db.seed(`negocios/business-a/ventas/${saleId}`, {ventaId: saleId, negocioId: businessId, numero: `VTA-2026-${key}`, estado: saleStatus, clienteId: "client-a", clienteSnapshot: {clienteId: "client-a", nombreRazonSocial: "Constructora Sur"}, cotizacionId: quoteId, total: 119000, moneda: "USD", trabajoId: saleWorkId});
+  return {quoteId, saleId};
+}
+
+const eligiblePair = seedCommercialPair("0101");
+const laterPair = seedCommercialPair("0102");
+const draftPair = seedCommercialPair("0103", {quoteStatus: "borrador"});
+const emittedPair = seedCommercialPair("0104", {quoteStatus: "emitida"});
+const canceledPair = seedCommercialPair("0105", {saleStatus: "cancelada"});
+const foreignPair = seedCommercialPair("0106", {businessId: "business-b"});
+
 const requireBusinessAccess = async (request, _deps, options = {}) => {
   if (!request.auth?.uid) throw new TestHttpsError("unauthenticated", "auth");
   const businessId = String(request.data?.businessId || "");
@@ -73,6 +88,9 @@ assert.equal(canManageWorks("ADMIN"), true);
 assert.equal(canManageWorks("TECNICO"), false);
 assert.equal(canManageWorks("MEMBER"), false);
 assert.equal(WORK_EXPENSE_CATEGORIES.has("ADMINISTRATIVO"), true);
+const optionQuotes = [eligiblePair, draftPair, emittedPair, canceledPair].map(({quoteId}) => ({id: quoteId, ...db.read(`negocios/business-a/cotizaciones/${quoteId}`)}));
+const optionSales = [eligiblePair, draftPair, emittedPair, canceledPair].map(({saleId}) => ({id: saleId, ...db.read(`negocios/business-a/ventas/${saleId}`)}));
+assert.deepEqual(getEligibleWorkQuoteOptions(optionQuotes, optionSales).map(({quote}) => quote.id), [eligiblePair.quoteId]);
 console.log("OK contrato: estados, prioridades, formato y roles canónicos");
 
 const ownerOnly = [{uid: "owner-a", nombre: "Sin nombre registrado", correo: "owner@example.cl", estado: "activo"}];
@@ -81,13 +99,14 @@ assert.equal(getWorkMemberOptionLabel(ownerOnly[0], "owner-a"), "Yo (owner@examp
 assert.equal(getWorkMemberIdentity({uid: "unknown", nombre: "", correo: ""}), "Usuario sin identificar");
 assert.equal(hasAdditionalWorkMembers(ownerOnly, "owner-a"), false);
 assert.equal(hasAdditionalWorkMembers([...ownerOnly, {uid: "worker-a"}], "owner-a"), true);
-const quickPayload = buildQuickWorkCreationPayload(input({estado: "en_progreso", fechaInicio: ""}), "2026-08-24");
+const quickPayload = buildQuickWorkCreationPayload(input({estado: "en_progreso", fechaInicio: ""}));
 assert.equal(quickPayload.estado, "pendiente");
-assert.equal(quickPayload.fechaInicio, "2026-08-24");
+assert.equal(quickPayload.fechaInicio, "");
 assert.equal(quickPayload.fechaPrevista, "2026-08-20");
 const teamPayload = buildWorkMutationPayload(input({responsableUid: "worker-a", participanteUids: ["worker-a", "worker-b", "worker-c", "worker-b"]}));
 assert.deepEqual(teamPayload.participanteUids, ["worker-b", "worker-c"]);
-console.log("OK creación rápida: identidad, propietario único, estado y fecha de inicio automáticos");
+assert.equal(getWorkDraftErrors(input({fechaInicio: "2026-09-02", fechaPrevista: "2026-09-01"})).fechaPrevista, "La fecha de término no puede ser anterior a la fecha de inicio.");
+console.log("OK creación: identidad, propietario único, estado fijo y fechas planificadas opcionales");
 
 const created = await crearTrabajoHandler(request("owner-a", {businessId: "business-a", requestId: "work-request-0001", trabajo: input()}), dependencies, new Date("2026-08-14T12:00:00Z"));
 assert.equal(created.numero, "TRB-2026-0001");
@@ -115,8 +134,10 @@ console.log("OK expediente: vínculo mínimo inmutable y respuesta append-only")
 
 const retry = await crearTrabajoHandler(request("owner-a", {businessId: "business-a", requestId: "work-request-0001", trabajo: input()}), dependencies, new Date("2026-08-14T12:00:00Z"));
 assert.equal(retry.trabajoId, created.trabajoId); assert.equal(retry.sinCambios, true);
-const noClient = await crearTrabajoHandler(request("owner-a", {businessId: "business-a", requestId: "work-request-0002", trabajo: input({titulo: "Trabajo interno", clienteId: "", responsableUid: "", participanteUids: []})}), dependencies, new Date("2026-08-14T12:00:00Z"));
-assert.equal(noClient.numero, "TRB-2026-0002"); assert.equal(db.read(`negocios/business-a/trabajos/${noClient.trabajoId}`).clienteId, "");
+const noClient = await crearTrabajoHandler(request("owner-a", {businessId: "business-a", requestId: "work-request-0002", trabajo: input({titulo: "Trabajo interno", clienteId: "", responsableUid: "", participanteUids: [], fechaInicio: "", fechaPrevista: ""})}), dependencies, new Date("2026-08-14T12:00:00Z"));
+assert.equal(noClient.numero, "TRB-2026-0002");
+const noClientStored = db.read(`negocios/business-a/trabajos/${noClient.trabajoId}`);
+assert.equal(noClientStored.clienteId, ""); assert.equal(noClientStored.fechaInicio, null); assert.equal(noClientStored.fechaPrevista, null); assert.notEqual(noClientStored.creadoEn, noClientStored.fechaInicio);
 const emailFallback = await crearTrabajoHandler(request("owner-a", {businessId: "business-a", requestId: "work-request-0003", trabajo: input({titulo: "Trabajo urgente", clienteId: "", responsableUid: "worker-d", participanteUids: []})}), dependencies, new Date("2026-08-14T12:00:00Z"));
 assert.equal(emailFallback.numero, "TRB-2026-0003");
 assert.equal(db.read(`negocios/business-a/trabajos/${emailFallback.trabajoId}`).responsableSnapshot.nombre, "identidad@example.cl");
@@ -137,6 +158,34 @@ await assert.rejects(() => crearTrabajoHandler(request("worker-a", {businessId: 
 await assert.rejects(() => crearTrabajoHandler(request("owner-a", {businessId: "business-b", requestId: "work-request-cross", trabajo: input()}), dependencies), (error) => error.code === "permission-denied");
 await assert.rejects(() => crearTrabajoHandler(request("", {businessId: "business-a", requestId: "work-request-anon", trabajo: input()}), dependencies), (error) => error.code === "unauthenticated");
 console.log("OK seguridad: autenticación, rol y aislamiento multiempresa");
+
+const quotedRequest = request("owner-a", {businessId: "business-a", requestId: "work-quoted-0001", trabajo: input({titulo: "Proyecto cotizado", clienteId: "", cotizacionId: eligiblePair.quoteId, fechaInicio: "2026-09-10", fechaPrevista: ""})});
+const quotedWork = await crearTrabajoHandler(quotedRequest, dependencies, new Date("2026-08-14T12:00:00Z"));
+const quotedPath = `negocios/business-a/trabajos/${quotedWork.trabajoId}`;
+const storedQuotedWork = db.read(quotedPath);
+assert.equal(storedQuotedWork.clienteId, "client-a"); assert.equal(storedQuotedWork.clienteSnapshot.nombreRazonSocial, "Constructora Sur");
+assert.equal(storedQuotedWork.cotizacionId, eligiblePair.quoteId); assert.equal(storedQuotedWork.ventaId, eligiblePair.saleId); assert.equal(storedQuotedWork.fechaInicio, "2026-09-10"); assert.equal(storedQuotedWork.fechaPrevista, null);
+assert.equal(db.read(`negocios/business-a/cotizaciones/${eligiblePair.quoteId}`).trabajoId, quotedWork.trabajoId);
+assert.equal(db.read(`negocios/business-a/ventas/${eligiblePair.saleId}`).trabajoId, quotedWork.trabajoId);
+assert.equal(db.matching(`${quotedPath}/vinculos/`).length, 2);
+const quotedRetry = await crearTrabajoHandler(quotedRequest, dependencies, new Date("2026-08-14T12:00:00Z"));
+assert.equal(quotedRetry.sinCambios, true); assert.equal(db.matching(`${quotedPath}/vinculos/`).length, 2);
+await actualizarTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: quotedWork.trabajoId, trabajo: input({titulo: "Proyecto cotizado replanificado", clienteId: "", cotizacionId: "", fechaInicio: "2026-09-12", fechaPrevista: "2026-09-30"})}), dependencies);
+assert.equal(db.read(quotedPath).cotizacionId, eligiblePair.quoteId); assert.equal(db.read(quotedPath).clienteId, "client-a"); assert.equal(db.read(quotedPath).fechaInicio, "2026-09-12");
+await assert.rejects(() => actualizarTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: quotedWork.trabajoId, trabajo: input({cotizacionId: laterPair.quoteId})}), dependencies), (error) => error.code === "failed-precondition");
+await assert.rejects(() => crearTrabajoHandler(request("owner-a", {businessId: "business-a", requestId: "work-quoted-0002", trabajo: input({cotizacionId: eligiblePair.quoteId})}), dependencies), (error) => error.code === "failed-precondition");
+await assert.rejects(() => crearTrabajoHandler(request("owner-a", {businessId: "business-a", requestId: "work-draft-0001", trabajo: input({cotizacionId: draftPair.quoteId})}), dependencies), (error) => error.code === "failed-precondition");
+await assert.rejects(() => crearTrabajoHandler(request("owner-a", {businessId: "business-a", requestId: "work-emitted-001", trabajo: input({cotizacionId: emittedPair.quoteId})}), dependencies), (error) => error.code === "failed-precondition");
+await assert.rejects(() => crearTrabajoHandler(request("owner-a", {businessId: "business-a", requestId: "work-canceled-01", trabajo: input({cotizacionId: canceledPair.quoteId})}), dependencies), (error) => error.code === "failed-precondition");
+await assert.rejects(() => crearTrabajoHandler(request("owner-a", {businessId: "business-a", requestId: "work-foreign-001", trabajo: input({cotizacionId: foreignPair.quoteId})}), dependencies), (error) => error.code === "permission-denied");
+await assert.rejects(() => crearTrabajoHandler(request("owner-a", {businessId: "business-a", requestId: "work-client-bad", trabajo: input({clienteId: "client-other", cotizacionId: laterPair.quoteId})}), dependencies), (error) => error.code === "failed-precondition");
+await assert.rejects(() => crearTrabajoHandler(request("owner-a", {businessId: "business-a", requestId: "work-dates-bad1", trabajo: input({fechaInicio: "2026-09-02", fechaPrevista: "2026-09-01"})}), dependencies), (error) => error.code === "invalid-argument");
+const futureWork = await crearTrabajoHandler(request("owner-a", {businessId: "business-a", requestId: "work-future-001", trabajo: input({titulo: "Plan futuro", clienteId: "", fechaInicio: "2027-01-10", fechaPrevista: ""})}), dependencies);
+assert.equal(db.read(`negocios/business-a/trabajos/${futureWork.trabajoId}`).fechaInicio, "2027-01-10");
+await actualizarTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: noClient.trabajoId, trabajo: input({titulo: "Trabajo interno cotizado", clienteId: "", cotizacionId: laterPair.quoteId, responsableUid: "", participanteUids: [], fechaInicio: "", fechaPrevista: "2026-10-30"})}), dependencies);
+const laterLinkedWork = db.read(`negocios/business-a/trabajos/${noClient.trabajoId}`);
+assert.equal(laterLinkedWork.cotizacionId, laterPair.quoteId); assert.equal(laterLinkedWork.clienteId, "client-a"); assert.equal(laterLinkedWork.fechaInicio, null); assert.equal(laterLinkedWork.fechaPrevista, "2026-10-30");
+console.log("OK BRUNO-03: elegibilidad COT/VEN, cliente autoritativo, fechas reales, vínculo doble, retry y unicidad");
 
 await actualizarTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, trabajo: input({responsableUid: "worker-b", participanteUids: ["worker-a"], estado: "en_progreso"})}), dependencies);
 stored = db.read(workPath); assert.equal(stored.responsableUid, "worker-b"); assert.deepEqual(stored.participanteUids, ["worker-a"]); assert.equal(stored.estado, "en_progreso"); assert.equal(stored.numero, "TRB-2026-0001");
@@ -283,9 +332,10 @@ assert.equal(terminalEvents.includes("trabajo_completado"), true); assert.equal(
 console.log("OK transiciones: completado, reapertura, cancelación y fecha de término");
 
 const adapted = adaptStoredWork({...stored, id: created.trabajoId});
-const legacyAdapted = adaptStoredWork({id: "legacy-work", titulo: "Legacy"});
+const legacyAdapted = adaptStoredWork({id: "legacy-work", titulo: "Legacy", creadoEn: "2025-01-02T12:00:00.000Z"});
 assert.equal(legacyAdapted.cotizacionesVinculadas, 0); assert.equal(legacyAdapted.ventasVinculadas, 0); assert.equal(legacyAdapted.modeloExpedienteVersion, 0);
 assert.equal(legacyAdapted.gastosMontoTotal, 0); assert.equal(legacyAdapted.horasHombreCantidadTotal, 0); assert.equal(legacyAdapted.horasHombreCostoTotal, 0);
+assert.equal(legacyAdapted.fechaInicio, ""); assert.equal(legacyAdapted.creadoEn, "2025-01-02T12:00:00.000Z");
 assert.equal(matchesWorkFilters(adapted, {query: "constructora sur", estado: "todos", prioridad: "todas", responsableUid: "todos"}), true);
 const mutation = buildWorkMutationPayload({...input(), numero: "TRB-FAKE", clienteSnapshot: {nombre: "Falso"}, creadoPorUid: "fake"});
 assert.equal("numero" in mutation, false); assert.equal("clienteSnapshot" in mutation, false); assert.equal("creadoPorUid" in mutation, false);
@@ -304,8 +354,10 @@ assert.match(page, /ResponsiveDialog/); assert.doesNotMatch(page, /window\.confi
 assert.match(page, /\+ Nuevo cliente/); assert.match(page, /openCreateClient/); assert.match(page, /editingWork \|\| hasAdditionalMembers/);
 assert.match(page, /Responsable principal/); assert.match(page, /Equipo de trabajo/); assert.doesNotMatch(page, /<Field[^>]+label="Número"/);
 assert.match(page, /member\.uid === currentUserUid && member\.estado === "activo"/); assert.match(page, /responsableUid: currentMember\?\.uid \|\| ""/);
-assert.match(page, /label="Descripción" optional/); assert.match(page, /label="Cliente" optional/); assert.match(page, /label="Responsable principal" optional/); assert.match(page, /label="Fecha prevista" optional/);
-assert.match(page, /Escribe un nombre breve para identificar el trabajo/); assert.match(page, /Describe el requerimiento o lo informado por el cliente/); assert.match(page, /El número TRB, estado Pendiente y fecha de ingreso se asignarán automáticamente\./);
+assert.match(page, /label="Cotización asociada" optional/); assert.match(page, /Sin cotización/); assert.match(page, /getEligibleWorkQuoteOptions/);
+assert.match(page, /label="Descripción" optional/); assert.match(page, /label="Cliente" optional/); assert.match(page, /label="Responsable" optional/); assert.match(page, /label="Fecha de inicio" optional/); assert.match(page, /label="Fecha de término" optional/);
+assert.match(page, /Escribe un nombre breve para identificar el proyecto/); assert.match(page, /Describe el requerimiento o lo informado por el cliente/); assert.match(page, /El número TRB y el estado Pendiente se asignarán automáticamente\./);
+assert.doesNotMatch(page, /Nueva cotización/); assert.doesNotMatch(page, /fecha de ingreso se asignarán automáticamente/);
 assert.match(styles, /works-form-automatic-note/); assert.match(styles, /@media\(min-width:768px\)[\s\S]*works-form-dialog \.responsive-dialog__body/);
 assert.match(page, /function DetailDisclosure[\s\S]*<details className="works-detail-disclosure">/); assert.match(page, /title="Recursos y costos" summary="Materiales, gastos, horas hombre y balance"/); assert.match(page, /title="Historial del trabajo"/);
 assert.match(page, /<h3>Resumen<\/h3>[\s\S]*<TaskSection[\s\S]*<h3>Notas<\/h3>[\s\S]*title="Recursos y costos"[\s\S]*title="Historial del trabajo"/);
