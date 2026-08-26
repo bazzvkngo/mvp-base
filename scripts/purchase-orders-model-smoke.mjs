@@ -194,6 +194,7 @@ const providerSelectorSource = fs.readFileSync(
   "utf8"
 );
 const historySource = fs.readFileSync("src/pages/PurchaseOrdersPage.jsx", "utf8");
+const printViewSource = fs.readFileSync("src/features/purchaseOrders/PurchaseOrderPrintView.jsx", "utf8");
 const purchaseOrderCssSource = fs.readFileSync(
   "src/features/purchaseOrders/purchase-orders.css",
   "utf8"
@@ -209,11 +210,26 @@ assert.match(rulesSource, /match \/ordenesCompra\/\{ordenCompraId\}/);
 assert.match(rulesSource, /allow create, update, delete: if false/);
 assert.match(pageSource, /PurchaseOrderPrintView/);
 assert.doesNotMatch(pageSource, /Quote[A-Z]/);
+assert.match(pageSource, /navigate\("\/ordenes-compra", \{[\s\S]*createdOrder: saved[\s\S]*openOrderId: saved\.id/);
 assert.match(providerSelectorSource, /isHistorical \? originalSnapshot : selected/);
 assert.match(historySource, /po-history__cards/);
 assert.match(historySource, /<OrderActions/);
 assert.match(historySource, /Duplicar como pendiente/);
+assert.match(historySource, /PurchaseOrderPreviewBoundary/);
+assert.match(historySource, /className="po-order-preview-dialog"/);
+assert.match(historySource, /PurchaseOrderPrintView company=\{company\} order=\{selectedOrder\}/);
+assert.match(historySource, /Correo<\/Button>[\s\S]*WhatsApp<\/Button>[\s\S]*Descargar PDF<\/Button>[\s\S]*Imprimir<\/Button>/);
+assert.match(historySource, /onClick=\{\(\) => setSelectedOrder\(null\)\}>Volver al listado/);
+assert.match(historySource, /createdOrder\?\.negocioId === businessId/);
+assert.match(printViewSource, /ORDEN DE COMPRA/);
+assert.match(printViewSource, /proveedorSnapshot/);
+assert.match(printViewSource, /order\.items\.map/);
+assert.match(printViewSource, /order\.neto/);
+assert.match(printViewSource, /order\.iva/);
+assert.match(printViewSource, /order\.total/);
 assert.match(purchaseOrderCssSource, /@media\(max-width:767px\)/);
+assert.match(purchaseOrderCssSource, /po-order-preview-dialog/);
+assert.match(purchaseOrderCssSource, /po-history__recent/);
 assert.doesNotMatch(purchaseOrderCssSource, /po-history__table\{min-width:800px\}/);
 console.log("OK integración estática: persistencia, reglas, vista imprimible y desacoplamiento");
 

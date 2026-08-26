@@ -1227,6 +1227,31 @@
   white-space: nowrap;
 }
 
+.po-history__table tr.po-history__recent > td {
+  background: #eef8f7;
+}
+
+.po-history-card.po-history__recent {
+  border-color: #5aa8a1;
+  box-shadow: 0 0 0 2px rgb(32 122 113 / 12%);
+}
+
+.po-order-preview-dialog .responsive-dialog__body {
+  background: #eef2f6;
+  padding: 18px;
+}
+
+.po-order-preview-dialog .po-preview-body {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.po-order-preview-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .print-only {
   display: none;
 }

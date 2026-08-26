@@ -230,9 +230,12 @@ export default function NewPurchaseOrderPage({businessId, role}) {
       requestIdRef.current = createPurchaseOrderRequestId();
       setOrder(saved);
       if (!ordenCompraId) {
-        navigate(`/ordenes-compra/${saved.id}/editar`, {
-          replace: true,
-          state: {message: "Orden de compra creada"},
+        navigate("/ordenes-compra", {
+          state: {
+            createdOrder: saved,
+            createdOrderNumber: saved.numero,
+            openOrderId: saved.id,
+          },
         });
       } else {
         sileo.success({title: "Orden de compra actualizada", description: `${saved.numero} continúa pendiente de emisión.`});
