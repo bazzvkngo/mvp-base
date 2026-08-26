@@ -1,6 +1,11 @@
 # Compras MVP
 
 > Actualización: las compras nuevas (`modeloCompraVersion: 2`) son documentos económicos y no modifican stock. La entrada física ocurre al confirmar una Recepción. El comportamiento anterior se conserva para documentos históricos de modelo 1. Ver `011-recepciones-mvp.md`.
+>
+> Actualización BRUNO-05: la misma confirmación de Recepción crea la Compra
+> correspondiente directamente en estado `confirmada`; ya no existe una segunda
+> preparación o confirmación económica para este origen. Una recepción parcial
+> produce sólo su Compra y varias recepciones de una OC producen Compras distintas.
 
 ## Objetivo
 
@@ -49,7 +54,11 @@ Una compra originada desde una Recepción usa exclusivamente el proveedor, los �
 
 ## Creación desde Recepción y compatibilidad desde OC
 
-El flujo V1 canónico prepara la Compra desde una Recepción confirmada y con stock aplicado. Cada Recepción conserva su propio `compraId`, por lo que repetir la operación con el mismo u otro `requestId` devuelve la misma Compra. Recepciones parciales diferentes de una misma OC pueden producir Compras económicas diferentes; no existe una regla general `una OC = una Compra`.
+El flujo canónico crea la Compra confirmada dentro de la transacción que confirma la Recepción y aplica stock. Cada Recepción conserva su propio `compraId`, por lo que repetir la operación con el mismo u otro `requestId` devuelve la misma Compra. Recepciones parciales diferentes de una misma OC producen Compras económicas diferentes; no existe una regla general `una OC = una Compra`.
+
+## Reversión
+
+`revertirCompra` exige un rol de escritura autorizado por el RBAC de Compras, motivo y `requestId`. Una transacción marca la Compra `revertida`, conserva sus documentos de origen y genera una salida compensatoria determinista por cada entrada física asociada. `purchaseReversalRequests` y el estado final impiden dobles descuentos. La Recepción permanece `confirmada` y evidencia el estado revertido de su Compra. Si cualquier producto no dispone de toda la cantidad original, la reversión completa se rechaza sin escrituras parciales ni stock negativo. No existen reversiones parciales en V1.
 
 La Callable legacy `crearCompraDesdeOrden` se conserva como compatibilidad controlada:
 

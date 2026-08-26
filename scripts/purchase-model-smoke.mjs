@@ -117,8 +117,9 @@ assert.equal(canManagePurchases("ADMIN"), true);
 assert.equal(canManagePurchases("COMPRAS"), true);
 assert.equal(canManagePurchases("VENTAS"), false);
 assert.equal(canManagePurchases("MEMBER"), false);
-assert.deepEqual(PURCHASE_STATUSES, ["borrador", "confirmada", "cancelada"]);
+assert.deepEqual(PURCHASE_STATUSES, ["borrador", "confirmada", "cancelada", "revertida"]);
 assert.equal(getPurchaseStatusLabel("borrador"), "Preparada");
+assert.equal(getPurchaseStatusLabel("revertida"), "Revertida");
 assert.equal(getPurchaseDocumentTypeLabel("sin_documento"), "Sin documento");
 assert.equal(shouldReconcilePurchaseConfirmation({code: "unavailable"}), true);
 assert.equal(shouldReconcilePurchaseConfirmation({code: "permission-denied"}), false);
@@ -126,14 +127,19 @@ console.log("OK compras modelo: adaptación, búsqueda y roles");
 
 const backend = fs.readFileSync(new URL("../functions/purchasePersistence.js", import.meta.url), "utf8");
 const rules = fs.readFileSync(new URL("../firestore.rules", import.meta.url), "utf8");
+const purchasesPage = fs.readFileSync(new URL("../src/pages/PurchasesPage.jsx", import.meta.url), "utf8");
 assert.match(backend, /purchaseConfirmRequests/);
 assert.match(backend, /movimientosInventario/);
 assert.match(backend, /stockAplicado/);
+assert.match(backend, /purchaseReversalRequests/);
+assert.match(backend, /salida_reversion_compra/);
 assert.doesNotMatch(backend, /cost[oe]Base\s*:/i);
+assert.match(purchasesPage, /Revertir compra/);
+assert.match(purchasesPage, /Motivo de reversión \*/);
 for (const collectionName of [
   "compras", "movimientosInventario", "purchaseCounters",
   "purchaseCreateRequests", "purchaseConfirmRequests",
-  "purchaseOrderConversionRequests",
+  "purchaseOrderConversionRequests", "purchaseReversalRequests",
 ]) assert.match(rules, new RegExp(`match /${collectionName}/`));
 console.log("OK compras modelo: defensas backend y reglas declaradas");
 

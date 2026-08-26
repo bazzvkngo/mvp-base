@@ -1,5 +1,10 @@
 # SPEC 011 — Recepciones MVP
 
+> Actualización BRUNO-05: confirmar una Recepción actualiza inventario y crea en
+> la misma transacción una Compra modelo 2 ya confirmada por las cantidades
+> efectivamente recibidas. Cada Recepción confirmada genera como máximo una
+> Compra; los reintentos devuelven ambos documentos sin duplicar stock.
+
 ## Objetivo
 
 Separar lo solicitado, lo recibido físicamente y el documento económico:
@@ -41,7 +46,9 @@ Una recepción guarda snapshots del proveedor, OC y líneas, además de cantidad
 
 ## Compras y compatibilidad
 
-Una recepción confirmada puede preparar una compra con cantidades efectivamente recibidas. El usuario completa documento, costo real y descuentos. Confirmar una compra modelo 2 es exclusivamente económico y no vuelve a sumar stock. Al prepararla, Functions agrega su referencia a las adquisiciones de la Recepción sin reescribir cantidad, costo, moneda, proveedor, OC, REC ni autoría.
+Una recepción nueva confirmada registra automáticamente una compra confirmada con las cantidades y valores de su snapshot. Functions enlaza Compra, Recepción, OC, adquisiciones y movimientos dentro de la misma transacción. La conversión manual se conserva únicamente para recepciones históricas confirmadas sin Compra.
+
+Una Compra confirmada puede revertirse completamente con motivo obligatorio. La reversión conserva OC, Recepción y Compra, crea movimientos compensatorios deterministas y marca la evidencia económica como revertida. Si el stock disponible de cualquier producto es menor que lo ingresado por esa Recepción, la transacción completa se bloquea.
 
 La compra directa sigue disponible, pero tampoco representa entrada física en el modelo 2. La recepción directa o ajuste queda fuera de este MVP.
 

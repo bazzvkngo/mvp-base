@@ -1015,6 +1015,10 @@ service cloud.firestore {
         allow read, create, update, delete: if false;
       }
 
+      match /purchaseReversalRequests/{requestId} {
+        allow read, create, update, delete: if false;
+      }
+
       match /purchaseOrderConversionRequests/{requestId} {
         allow read, create, update, delete: if false;
       }

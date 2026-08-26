@@ -10,8 +10,8 @@ export function getReceptionStatusLabel(value) {
 
 export function getReceptionPurchaseAction(reception = {}, purchase = null, canManage = false) {
   if (!reception || reception.estado !== "confirmada") return "";
-  if (!reception.compraId) return canManage ? "prepare" : "";
-  return canManage && purchase?.estado === "borrador" ? "continue" : "view";
+  if (!reception.compraId) return "";
+  return "view";
 }
 
 export function getSupplierResponseLabel(value) {
@@ -36,6 +36,9 @@ export function adaptStoredReception(raw = {}) {
     observaciones: text(raw.observaciones, 4000),
     compraId: text(raw.compraId, 160),
     compraNumero: text(raw.compraNumero, 120),
+    compraEstado: text(raw.compraEstado, 20),
+    compraReversionMotivo: text(raw.compraReversionMotivo, 1000),
+    compraRevertidaEn: raw.compraRevertidaEn || null,
     items: (Array.isArray(raw.items) ? raw.items : []).map((line, index) => ({
       ...line,
       lineaId: text(line.lineaId || line.ordenLineaId, 160) || `linea-${index + 1}`,

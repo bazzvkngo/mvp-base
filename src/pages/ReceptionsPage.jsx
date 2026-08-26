@@ -60,7 +60,7 @@ export default function ReceptionsPage({businessId, role}) {
   return (
     <main className="erp-page po-history">
       <div className="erp-module-intro">
-        <div className="erp-page-intro"><p>Controla la recepcion fisica antes de registrar el documento economico.</p></div>
+        <div className="erp-page-intro"><p>Confirma la recepción física; el inventario y la compra se registran automáticamente.</p></div>
         {canManage && <Button type="button" onClick={() => navigate("/ordenes-compra")}>Ver ordenes emitidas</Button>}
       </div>
       <div className="reception-callout">
@@ -83,7 +83,7 @@ export default function ReceptionsPage({businessId, role}) {
               <td>{entry.fechaRecepcion || "—"}</td>
               <td>{receptionProgressLabel(entry)}</td>
               <td><span className={`po-status po-status--${entry.estado}`}>{getReceptionStatusLabel(entry.estado)}</span></td>
-              <td><div className="po-history__actions"><button type="button" onClick={() => open(entry)}>{entry.estado === "borrador" && canManage ? "Editar" : "Ver"}</button>{entry.estado === "confirmada" && !entry.compraId && canManage && <button type="button" onClick={() => open(entry)}>Preparar compra</button>}{entry.compraId && <button type="button" onClick={() => navigate(`/compras/${entry.compraId}`)}>Abrir compra</button>}</div></td>
+              <td><div className="po-history__actions"><button type="button" onClick={() => open(entry)}>{entry.estado === "borrador" && canManage ? "Editar" : "Ver"}</button>{entry.compraId && <button type="button" onClick={() => navigate(`/compras/${entry.compraId}`)}>Abrir compra</button>}</div></td>
             </tr>)}
             {!filtered.length && <tr><td colSpan="7" className="po-history__empty">No hay recepciones coincidentes.</td></tr>}
           </tbody></table>

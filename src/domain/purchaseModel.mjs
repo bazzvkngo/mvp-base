@@ -2,11 +2,11 @@ import {adaptStoredFiscalIdentifier} from "./fiscalIdentifier.mjs";
 
 export const PURCHASE_MODEL_VERSION = 2;
 export const PURCHASE_VAT_RATE = 0.19;
-export const PURCHASE_STATUSES = Object.freeze(["borrador", "confirmada", "cancelada"]);
+export const PURCHASE_STATUSES = Object.freeze(["borrador", "confirmada", "cancelada", "revertida"]);
 export const PURCHASE_DOCUMENT_TYPES = Object.freeze(["factura", "boleta", "otro", "sin_documento"]);
 
 export function getPurchaseStatusLabel(value) {
-  return ({borrador: "Preparada", confirmada: "Confirmada", cancelada: "Cancelada"})[value] || "Preparada";
+  return ({borrador: "Preparada", confirmada: "Confirmada", cancelada: "Cancelada", revertida: "Revertida"})[value] || "Preparada";
 }
 
 export function getPurchaseDocumentTypeLabel(value) {
@@ -132,6 +132,12 @@ export function adaptStoredPurchase(raw = {}) {
     ordenCompraId: text(raw.ordenCompraId, 160), ordenCompraNumero: text(raw.ordenCompraNumero, 120),
     recepcionId: text(raw.recepcionId, 160), recepcionNumero: text(raw.recepcionNumero, 120),
     stockGestionadoPor: text(raw.stockGestionadoPor, 40),
+    registroAutomatico: raw.registroAutomatico === true,
+    efectosInventario: Array.isArray(raw.efectosInventario) ? raw.efectosInventario : [],
+    reversionMotivo: text(raw.reversionMotivo, 1000),
+    revertidaPorUid: text(raw.revertidaPorUid, 160),
+    revertidaEn: raw.revertidaEn || null,
+    registradoEn: raw.registradoEn || raw.confirmadoEn || null,
     fechaCompra: text(raw.fechaCompra, 10), fechaDocumento: text(raw.fechaDocumento, 10),
     tipoDocumento: DOCUMENT_SET.has(raw.tipoDocumento) ? raw.tipoDocumento : "sin_documento",
     numeroDocumentoProveedor: text(raw.numeroDocumentoProveedor, 120),

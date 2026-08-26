@@ -60,6 +60,7 @@ const {
   crearCompraDesdeOrdenHandler,
   crearCompraDesdeRecepcionHandler,
   crearCompraHandler,
+  revertirCompraHandler,
 } = require("./purchasePersistence");
 const {
   actualizarRecepcionBorradorHandler,
@@ -2189,6 +2190,11 @@ exports.confirmarCompra = onCall(
 exports.cancelarCompraBorrador = onCall(
   {maxInstances: 20, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
   async (request) => cancelarCompraBorradorHandler(request, purchasePersistenceDependencies)
+);
+
+exports.revertirCompra = onCall(
+  {maxInstances: 20, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => revertirCompraHandler(request, purchasePersistenceDependencies)
 );
 
 const salePersistenceDependencies = {

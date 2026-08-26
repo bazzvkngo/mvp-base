@@ -2,6 +2,7 @@ import {collection, doc, getDoc, getDocs, query, where} from "firebase/firestore
 import {httpsCallable} from "firebase/functions";
 import {assertCloudFunctionAllowed} from "../config/firebaseEnvironment.mjs";
 import {adaptStoredReception, buildReceptionMutationPayload} from "../domain/receptionModel.mjs";
+import {adaptStoredPurchase} from "../domain/purchaseModel.mjs";
 import {db, getFirebaseFunctions} from "../firebase/firebaseConfig";
 import {receptionDocPath, receptionsCollectionPath} from "../firebase/firestorePaths";
 
@@ -21,7 +22,11 @@ async function call(name, payload, fallback) {
   assertCloudFunctionAllowed(name);
   try {
     const response = await httpsCallable(functions, name)(payload);
-    return {...response.data, recepcion: adaptStoredReception(response.data?.recepcion || {})};
+    return {
+      ...response.data,
+      recepcion: adaptStoredReception(response.data?.recepcion || {}),
+      compra: response.data?.compra ? adaptStoredPurchase(response.data.compra) : null,
+    };
   } catch (error) {
     const value = String(error?.message || "").trim();
     const normalized = new Error(value || fallback);

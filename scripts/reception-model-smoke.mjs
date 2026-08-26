@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import {
   adaptStoredReception,
   buildReceptionMutationPayload,
@@ -53,10 +54,16 @@ assert.equal(shouldReconcileReceptionConfirmation({code: "functions/failed-preco
 
 assert.equal(getReceptionPurchaseAction(null, null, true), "");
 assert.equal(getReceptionPurchaseAction({estado: "borrador"}, null, true), "");
-assert.equal(getReceptionPurchaseAction({estado: "confirmada"}, null, true), "prepare");
-assert.equal(getReceptionPurchaseAction({estado: "confirmada", compraId: "com-1"}, {estado: "borrador"}, true), "continue");
+assert.equal(getReceptionPurchaseAction({estado: "confirmada"}, null, true), "");
+assert.equal(getReceptionPurchaseAction({estado: "confirmada", compraId: "com-1"}, {estado: "borrador"}, true), "view");
 assert.equal(getReceptionPurchaseAction({estado: "confirmada", compraId: "com-1"}, {estado: "confirmada"}, true), "view");
 assert.equal(getReceptionPurchaseAction({estado: "confirmada", compraId: "com-1"}, {estado: "borrador"}, false), "view");
 assert.equal(getReceptionPurchaseAction({estado: "confirmada"}, null, false), "");
+
+const receptionDetailSource = fs.readFileSync("src/pages/NewReceptionPage.jsx", "utf8");
+const receptionListSource = fs.readFileSync("src/pages/ReceptionsPage.jsx", "utf8");
+assert.doesNotMatch(receptionDetailSource, /Preparar compra|Continuar compra/);
+assert.doesNotMatch(receptionListSource, /Preparar compra|Continuar compra/);
+assert.match(receptionDetailSource, /registrará automáticamente la compra/);
 
 console.log("Reception model smoke: OK");

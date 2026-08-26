@@ -3,6 +3,7 @@ const ITEM_TYPES = new Set(["producto", "servicio", "actividad"]);
 const EPSILON = 0.000001;
 const {adaptDocumentLocalization} = require("./localization");
 const {buildAuthoritativeCompanySnapshot, resolveCompanySnapshot} = require("./companySnapshot");
+const {buildConfirmedPurchaseFromReception, formatPurchaseNumber} = require("./purchasePersistence");
 const {
   calculateAcquisitionAmounts,
   calculateWeightedAverage,
@@ -323,13 +324,17 @@ async function actualizarRecepcionBorradorHandler(request, dependencies) {
   });
 }
 
-async function confirmarRecepcionHandler(request, dependencies) {
+async function confirmarRecepcionHandler(request, dependencies, now = new Date()) {
   const {db, FieldValue, HttpsError} = dependencies;
   const {uid, businessId, businessRef} = await access(request, dependencies);
   const receptionId = id(request?.data?.recepcionId, "La recepcion", HttpsError);
   const operationId = requestId(request?.data?.requestId, HttpsError);
   const receptionRef = businessRef.collection("recepciones").doc(receptionId);
   const operationRef = businessRef.collection("receptionConfirmRequests").doc(operationId);
+  const purchaseRef = businessRef.collection("compras").doc();
+  const purchaseYear = chileYear(now);
+  const purchaseCounterRef = businessRef.collection("purchaseCounters")
+    .doc(String(purchaseYear));
   return transactionRetry(db, async (transaction) => {
     const operation = await transaction.get(operationRef);
     if (operation.exists) {
@@ -338,14 +343,40 @@ async function confirmarRecepcionHandler(request, dependencies) {
         fail(HttpsError, "already-exists", "La solicitud ya fue usada.");
       }
       const existing = await transaction.get(receptionRef);
-      return {recepcion: {id: existing.id, ...existing.data()}, idempotent: true};
+      const existingReception = existing.data() || {};
+      const existingPurchase = existingReception.compraId
+        ? await transaction.get(businessRef.collection("compras").doc(existingReception.compraId))
+        : null;
+      return {
+        recepcion: {id: existing.id, ...existingReception},
+        compra: existingPurchase?.exists
+          ? {id: existingPurchase.id, ...existingPurchase.data()}
+          : null,
+        idempotent: true,
+      };
     }
     const snapshot = await transaction.get(receptionRef);
     if (!snapshot.exists) fail(HttpsError, "not-found", "No se encontro la recepcion.");
     const reception = snapshot.data() || {};
     if (reception.negocioId !== businessId) fail(HttpsError, "permission-denied", "No puedes confirmar esta recepcion.");
     if (reception.estado === "confirmada" && reception.stockAplicado) {
-      return {recepcion: {id: receptionId, ...reception}, idempotent: true};
+      const existingPurchase = reception.compraId
+        ? await transaction.get(businessRef.collection("compras").doc(reception.compraId))
+        : null;
+      transaction.set(operationRef, {
+        negocioId: businessId,
+        recepcionId: receptionId,
+        compraId: text(reception.compraId, 160),
+        uidUsuario: uid,
+        creadoEn: FieldValue.serverTimestamp(),
+      });
+      return {
+        recepcion: {id: receptionId, ...reception},
+        compra: existingPurchase?.exists
+          ? {id: existingPurchase.id, ...existingPurchase.data()}
+          : null,
+        idempotent: true,
+      };
     }
     if (reception.estado !== "borrador" || reception.stockAplicado) {
       fail(HttpsError, "failed-precondition", "La recepcion no esta preparada.");
@@ -353,13 +384,40 @@ async function confirmarRecepcionHandler(request, dependencies) {
     const orderRef = businessRef.collection("ordenesCompra").doc(reception.ordenCompraId);
     const receptionsQuery = businessRef.collection("recepciones")
       .where("ordenCompraId", "==", reception.ordenCompraId);
-    const [orderSnapshot, receptions] = await Promise.all([
+    const [orderSnapshot, receptions, counterSnapshot, businessSnapshot, companyProfileSnapshot] = await Promise.all([
       transaction.get(orderRef),
       transaction.get(receptionsQuery),
+      transaction.get(purchaseCounterRef),
+      transaction.get(businessRef),
+      transaction.get(businessRef.collection("empresa").doc("perfil")),
     ]);
     const order = orderSnapshot.data();
     assertReceivableOrder(order, businessId, HttpsError);
+    if (text(reception.proveedorId, 160) !== text(order.proveedorId, 160)) {
+      fail(HttpsError, "failed-precondition", "El proveedor de la recepcion no coincide con la orden de compra.");
+    }
     assertNoOverreceipt(order, reception.items || [], confirmedTotals(receptions, receptionId), HttpsError);
+    const createsAutomaticPurchase = !text(order.compraId, 160);
+    const currentPurchaseNumber = Number(counterSnapshot.data()?.lastNumber || 0);
+    const purchaseSequence = Number.isSafeInteger(currentPurchaseNumber) &&
+      currentPurchaseNumber >= 0 ? currentPurchaseNumber + 1 : 1;
+    const purchaseNumber = formatPurchaseNumber(purchaseYear, purchaseSequence);
+    const confirmedPurchase = createsAutomaticPurchase
+      ? buildConfirmedPurchaseFromReception({
+        business: businessSnapshot.data() || {},
+        businessId,
+        companyProfile: companyProfileSnapshot.data() || {},
+        HttpsError,
+        numero: purchaseNumber,
+        order,
+        purchaseId: purchaseRef.id,
+        reception: {...reception, recepcionId: receptionId},
+        sequence: purchaseSequence,
+        timestamp: FieldValue.serverTimestamp(),
+        uid,
+        year: purchaseYear,
+      })
+      : null;
     const productLines = (reception.items || []).filter((line) =>
       line.tipoItem === "producto" && Number(line.cantidad) > EPSILON
     );
@@ -432,6 +490,8 @@ async function confirmarRecepcionHandler(request, dependencies) {
         recepcionNumero: reception.numero,
         ordenCompraId: reception.ordenCompraId,
         ordenCompraNumero: reception.ordenCompraNumero,
+        compraId: confirmedPurchase?.compraId || "",
+        compraNumero: confirmedPurchase?.numero || "",
         itemId: line.itemId,
         lineaId: line.lineaId,
         adquisicionId: acquisitionRef.id,
@@ -486,8 +546,8 @@ async function confirmarRecepcionHandler(request, dependencies) {
         ordenCompraNumero: text(reception.ordenCompraNumero, 120),
         recepcionId: receptionId,
         recepcionNumero: text(reception.numero, 120),
-        compraId: text(reception.compraId, 160),
-        compraNumero: text(reception.compraNumero, 120),
+        compraId: confirmedPurchase?.compraId || "",
+        compraNumero: confirmedPurchase?.numero || "",
         movimientoInventarioId: movementRef.id,
         registradoPorUid: uid,
         creadoEn: timestamp,
@@ -519,16 +579,65 @@ async function confirmarRecepcionHandler(request, dependencies) {
       confirmadoEn: timestamp,
       actualizadoPorUid: uid,
       actualizadoEn: timestamp,
+      compraId: confirmedPurchase?.compraId || "",
+      compraNumero: confirmedPurchase?.numero || "",
+      compraEstado: confirmedPurchase?.estado || "",
     };
+    const totalsWithCurrent = confirmedTotals(receptions, receptionId);
+    (reception.items || []).forEach((line) => {
+      const lineId = text(line.ordenLineaId || line.lineaId, 160);
+      totalsWithCurrent.set(lineId, (totalsWithCurrent.get(lineId) || 0) +
+        Number(line.cantidad || 0));
+    });
+    const completedLines = (order.items || []).filter((line) =>
+      Number(totalsWithCurrent.get(line.lineaId) || 0) >=
+        Number(line.cantidad || 0) - EPSILON
+    ).length;
+    const receptionState = completedLines === (order.items || []).length
+      ? "recibida_total"
+      : "recibida_parcial";
     transaction.update(receptionRef, update);
+    const orderUpdate = {
+      estadoRecepcion: receptionState,
+      recepcionResumen: {
+        estado: receptionState,
+        lineasCompletas: completedLines,
+        lineasTotales: (order.items || []).length,
+      },
+      recepcionActualizadaEn: timestamp,
+      actualizadoEn: timestamp,
+      actualizadoPorUid: uid,
+    };
+    if (confirmedPurchase) {
+      orderUpdate.comprasDesdeRecepciones = FieldValue.arrayUnion({
+        compraId: confirmedPurchase.compraId,
+        compraNumero: confirmedPurchase.numero,
+        recepcionId: receptionId,
+        recepcionNumero: text(reception.numero, 120),
+      });
+    }
+    transaction.update(orderRef, orderUpdate);
+    if (confirmedPurchase) {
+      transaction.set(purchaseCounterRef, {
+        negocioId: businessId,
+        year: purchaseYear,
+        lastNumber: purchaseSequence,
+        actualizadoEn: timestamp,
+      });
+      transaction.create(purchaseRef, confirmedPurchase);
+    }
     transaction.set(operationRef, {
       negocioId: businessId,
       recepcionId: receptionId,
+      compraId: confirmedPurchase?.compraId || "",
       uidUsuario: uid,
       creadoEn: timestamp,
     });
     return {
       recepcion: {id: receptionId, ...reception, ...update, actualizadoEn: null},
+      compra: confirmedPurchase
+        ? {id: purchaseRef.id, ...confirmedPurchase, creadoEn: null, actualizadoEn: null}
+        : null,
       productosActualizados: running.size,
       idempotent: false,
     };

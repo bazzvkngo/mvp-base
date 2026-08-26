@@ -51,3 +51,9 @@ export const crearCompraDesdeRecepcion = (value, recepcionId, options = {}) => c
 export const actualizarCompraBorrador = (value, compraId, raw) => call("actualizarCompraBorrador", {businessId: businessId(value), compraId: purchaseId(compraId), compra: buildPurchaseMutationPayload(raw)}, "No pudimos guardar el borrador.");
 export const confirmarCompra = (value, compraId, options = {}) => call("confirmarCompra", {businessId: businessId(value), compraId: purchaseId(compraId), requestId: options.requestId || createPurchaseRequestId("purchase-confirm")}, "No pudimos confirmar la compra.");
 export const cancelarCompraBorrador = (value, compraId) => call("cancelarCompraBorrador", {businessId: businessId(value), compraId: purchaseId(compraId)}, "No pudimos cancelar la compra.");
+export const revertirCompra = (value, compraId, motivo, options = {}) => call("revertirCompra", {
+  businessId: businessId(value),
+  compraId: purchaseId(compraId),
+  motivo: String(motivo || "").trim(),
+  requestId: options.requestId || createPurchaseRequestId("purchase-reversal"),
+}, "No pudimos revertir la compra.");

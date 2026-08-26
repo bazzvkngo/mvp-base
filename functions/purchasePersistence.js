@@ -117,6 +117,88 @@ function baseStored({businessId, uid, purchaseId, numero, sequence, now, normali
   const location = localization || adaptDocumentLocalization({});
   return {modeloCompraVersion: MODEL_VERSION, compraId: purchaseId, negocioId: businessId, numero, anio: now.year, correlativo: sequence, estado: "borrador", paisCodigo: location.paisCodigo, moneda: location.moneda, locale: location.locale, impuestoNombre: location.impuestoNombre, tasaIva: location.tasaIva, empresaSnapshot, proveedorId: normalized.proveedorId, proveedorSnapshot, ...origin, items, ...totals(items, HttpsError, location.tasaIva), fechaCompra: normalized.fechaCompra, fechaDocumento: normalized.fechaDocumento, tipoDocumento: normalized.tipoDocumento, numeroDocumentoProveedor: normalized.numeroDocumentoProveedor, condicionesPago: normalized.condicionesPago || text(proveedorSnapshot.condicionesPago, 2000), observaciones: normalized.observaciones, stockGestionadoPor: "recepcion", stockAplicado: false, stockAplicadoEn: null, creadoPorUid: uid, actualizadoPorUid: uid, creadoEn: timestamp, actualizadoEn: timestamp};
 }
+
+function buildConfirmedPurchaseFromReception({
+  business,
+  businessId,
+  companyProfile,
+  HttpsError,
+  numero,
+  order,
+  purchaseId,
+  reception,
+  sequence,
+  timestamp,
+  uid,
+  year,
+}) {
+  const sourceItems = (reception.items || []).filter((line) => Number(line.cantidad) > 0);
+  const normalized = input({
+    proveedorId: reception.proveedorId,
+    fechaCompra: text(reception.fechaRecepcion, 10),
+    fechaDocumento: "",
+    tipoDocumento: "sin_documento",
+    numeroDocumentoProveedor: "",
+    condicionesPago: text(order.condicionesPago, 2000),
+    observaciones: text(reception.observaciones, 4000) ||
+      `Originada desde ${reception.numero || "recepcion"}`,
+    items: sourceItems,
+  }, HttpsError);
+  const items = sourceItems.map((line, index) => ocSnapshotLine(line, index, HttpsError));
+  const empresaSnapshot = resolveCompanySnapshot(
+    reception,
+    resolveCompanySnapshot(
+      order,
+      buildAuthoritativeCompanySnapshot({businessId, business, profile: companyProfile})
+    )
+  );
+  const stored = baseStored({
+    businessId,
+    uid,
+    purchaseId,
+    numero,
+    sequence,
+    now: {year, value: normalized.fechaCompra},
+    normalized,
+    proveedorSnapshot: reception.proveedorSnapshot || {},
+    items,
+    localization: adaptDocumentLocalization(reception),
+    empresaSnapshot,
+    origin: {
+      recepcionId: reception.recepcionId,
+      recepcionNumero: text(reception.numero, 120),
+      ordenCompraId: text(reception.ordenCompraId, 160),
+      ordenCompraNumero: text(reception.ordenCompraNumero, 120),
+    },
+    timestamp,
+    HttpsError,
+  });
+  const efectosInventario = items
+    .filter((line) => line.tipoItem === "producto")
+    .map((line) => ({
+      itemId: line.itemId,
+      lineaId: line.lineaId,
+      nombre: line.nombre,
+      unidad: line.unidad,
+      cantidad: line.cantidad,
+      movimientoEntradaId: `${reception.recepcionId}__${line.lineaId}`,
+      movimientoReversionId: `${purchaseId}__reversion__${line.lineaId}`,
+      adquisicionId: `${reception.recepcionId}__${line.lineaId}`,
+    }));
+  return {
+    ...stored,
+    estado: "confirmada",
+    registroAutomatico: true,
+    stockGestionadoPor: "recepcion",
+    stockAplicado: false,
+    inventarioAplicadoEnRecepcion: true,
+    efectosInventario,
+    registradoPorUid: uid,
+    registradoEn: timestamp,
+    confirmadoPorUid: uid,
+    confirmadoEn: timestamp,
+  };
+}
 function retryable(error) { return Number(error?.code) === 10 || String(error?.message || "").toLowerCase().includes("transaction is invalid"); }
 async function transactionRetry(db, callback) {
   let last;
@@ -465,6 +547,230 @@ async function confirmarCompraHandler(request, dependencies) {
   });
 }
 
+function purchaseReversalEffects(purchase) {
+  if (Array.isArray(purchase.efectosInventario)) {
+    return purchase.efectosInventario.filter((effect) =>
+      text(effect?.itemId, 160) && Number(effect?.cantidad) > 0
+    );
+  }
+  if (purchase.stockAplicado !== true) return [];
+  return (purchase.items || [])
+    .filter((line) => line.tipoItem === "producto" && Number(line.cantidad) > 0)
+    .map((line) => ({
+      itemId: line.itemId,
+      lineaId: line.lineaId,
+      nombre: line.nombre,
+      unidad: line.unidad,
+      cantidad: line.cantidad,
+      movimientoEntradaId: `${purchase.compraId}__${line.lineaId}`,
+      movimientoReversionId: `${purchase.compraId}__reversion__${line.lineaId}`,
+      adquisicionId: "",
+    }));
+}
+
+async function revertirCompraHandler(request, dependencies) {
+  const {db, FieldValue, HttpsError} = dependencies;
+  const {uid, businessId, businessRef} = await access(request, dependencies);
+  const purchaseId = id(request?.data?.compraId, "La compra", HttpsError);
+  const reqId = requestId(request?.data?.requestId, HttpsError);
+  const reason = text(request?.data?.motivo, 1000);
+  if (!reason) fail(HttpsError, "invalid-argument", "El motivo de reversión es obligatorio.");
+  const reasonFingerprint = hash(reason);
+  const purchaseRef = businessRef.collection("compras").doc(purchaseId);
+  const requestRef = businessRef.collection("purchaseReversalRequests").doc(reqId);
+  return transactionRetry(db, async (transaction) => {
+    const previousRequest = await transaction.get(requestRef);
+    if (previousRequest.exists) {
+      const data = previousRequest.data() || {};
+      if (
+        data.uidUsuario !== uid ||
+        data.compraId !== purchaseId ||
+        data.motivoFingerprint !== reasonFingerprint
+      ) {
+        fail(HttpsError, "already-exists", "La solicitud ya fue usada para otra reversión.");
+      }
+      const existing = await transaction.get(purchaseRef);
+      return {
+        compra: {id: existing.id, ...existing.data()},
+        idempotent: true,
+        productosRevertidos: Number(data.productosRevertidos || 0),
+      };
+    }
+    const purchaseSnapshot = await transaction.get(purchaseRef);
+    if (!purchaseSnapshot.exists) fail(HttpsError, "not-found", "No se encontró la compra.");
+    const purchase = purchaseSnapshot.data() || {};
+    if (purchase.negocioId !== businessId) {
+      fail(HttpsError, "permission-denied", "No puedes revertir esta compra.");
+    }
+    if (purchase.estado === "revertida") {
+      transaction.set(requestRef, {
+        negocioId: businessId,
+        compraId: purchaseId,
+        uidUsuario: uid,
+        motivoFingerprint: reasonFingerprint,
+        productosRevertidos: 0,
+        creadoEn: FieldValue.serverTimestamp(),
+      });
+      return {compra: {id: purchaseId, ...purchase}, idempotent: true, productosRevertidos: 0};
+    }
+    if (purchase.estado !== "confirmada") {
+      fail(HttpsError, "failed-precondition", "Sólo una compra confirmada puede revertirse.");
+    }
+    const effects = purchaseReversalEffects({...purchase, compraId: purchaseId});
+    const inventoryIds = [...new Set(effects.map((effect) => text(effect.itemId, 160)))];
+    const inventoryRefs = inventoryIds.map((itemId) =>
+      businessRef.collection("inventario").doc(itemId)
+    );
+    const movementRefs = effects.map((effect) =>
+      businessRef.collection("movimientosInventario")
+        .doc(text(effect.movimientoEntradaId, 160))
+    );
+    const acquisitionEffects = effects.filter((effect) => text(effect.adquisicionId, 160));
+    const acquisitionRefs = acquisitionEffects.map((effect) =>
+      businessRef.collection("adquisicionesInventario")
+        .doc(text(effect.adquisicionId, 160))
+    );
+    const receptionRef = purchase.recepcionId
+      ? businessRef.collection("recepciones").doc(id(purchase.recepcionId, "La recepcion", HttpsError))
+      : null;
+    const [inventorySnapshots, movementSnapshots, acquisitionSnapshots, receptionSnapshot] = await Promise.all([
+      inventoryRefs.length ? transaction.getAll(...inventoryRefs) : [],
+      movementRefs.length ? transaction.getAll(...movementRefs) : [],
+      acquisitionRefs.length ? transaction.getAll(...acquisitionRefs) : [],
+      receptionRef ? transaction.get(receptionRef) : null,
+    ]);
+    movementSnapshots.forEach((snapshot, index) => {
+      if (!snapshot.exists || snapshot.data()?.negocioId !== businessId) {
+        fail(
+          HttpsError,
+          "failed-precondition",
+          `No se encontró el movimiento original de ${effects[index].nombre || "un producto"}.`
+        );
+      }
+    });
+    if (receptionSnapshot && (!receptionSnapshot.exists || receptionSnapshot.data()?.negocioId !== businessId)) {
+      fail(HttpsError, "failed-precondition", "La recepción vinculada es inconsistente.");
+    }
+    const stockByItem = new Map();
+    inventorySnapshots.forEach((snapshot) => {
+      if (!snapshot.exists || snapshot.data()?.negocioId !== businessId) {
+        fail(HttpsError, "failed-precondition", "Un producto de la compra ya no está disponible.");
+      }
+      const stock = Number(snapshot.data()?.stock || 0);
+      if (!Number.isFinite(stock)) {
+        fail(HttpsError, "failed-precondition", "El stock no pudo revertirse de forma segura.");
+      }
+      stockByItem.set(snapshot.id, stock);
+    });
+    const requiredByItem = new Map();
+    effects.forEach((effect) => {
+      const itemId = text(effect.itemId, 160);
+      requiredByItem.set(itemId, (requiredByItem.get(itemId) || 0) + Number(effect.cantidad));
+    });
+    const unavailable = inventoryIds.flatMap((itemId) => {
+      const available = stockByItem.get(itemId) || 0;
+      const required = requiredByItem.get(itemId) || 0;
+      if (available + 0.000001 >= required) return [];
+      const sample = effects.find((effect) => effect.itemId === itemId) || {};
+      return [`${text(sample.nombre, 120) || itemId}: disponible ${available}, requerido ${required}`];
+    });
+    if (unavailable.length) {
+      fail(
+        HttpsError,
+        "failed-precondition",
+        `No se puede revertir la compra por stock insuficiente. ${unavailable.join("; ")}.`
+      );
+    }
+    const timestamp = FieldValue.serverTimestamp();
+    const runningStock = new Map(stockByItem);
+    effects.forEach((effect) => {
+      const itemId = text(effect.itemId, 160);
+      const quantity = Number(effect.cantidad);
+      const before = runningStock.get(itemId);
+      const after = before - quantity;
+      const reversalMovementId = text(
+        effect.movimientoReversionId || `${purchaseId}__reversion__${effect.lineaId}`,
+        160
+      );
+      transaction.create(
+        businessRef.collection("movimientosInventario").doc(reversalMovementId),
+        {
+          movimientoId: reversalMovementId,
+          negocioId: businessId,
+          tipo: "salida_reversion_compra",
+          tipoOrigen: "reversion_compra",
+          compraId: purchaseId,
+          compraNumero: text(purchase.numero, 120),
+          recepcionId: text(purchase.recepcionId, 160),
+          recepcionNumero: text(purchase.recepcionNumero, 120),
+          ordenCompraId: text(purchase.ordenCompraId, 160),
+          ordenCompraNumero: text(purchase.ordenCompraNumero, 120),
+          itemId,
+          lineaId: text(effect.lineaId, 160),
+          movimientoOrigenId: text(effect.movimientoEntradaId, 160),
+          cantidad: quantity,
+          stockAnterior: before,
+          stockResultante: after,
+          motivo: reason,
+          creadoPorUid: uid,
+          creadoEn: timestamp,
+        }
+      );
+      runningStock.set(itemId, after);
+    });
+    runningStock.forEach((stock, itemId) => {
+      transaction.update(businessRef.collection("inventario").doc(itemId), {
+        stock,
+        actualizadoEn: timestamp,
+        actualizadoPorUid: uid,
+      });
+    });
+    acquisitionSnapshots.forEach((snapshot) => {
+      if (snapshot.exists) {
+        transaction.update(snapshot.ref, {
+          estado: "revertida",
+          compraRevertidaEn: timestamp,
+          compraRevertidaPorUid: uid,
+          compraReversionMotivo: reason,
+        });
+      }
+    });
+    const update = {
+      estado: "revertida",
+      reversionMotivo: reason,
+      revertidaPorUid: uid,
+      revertidaEn: timestamp,
+      stockRevertido: effects.length > 0,
+      stockRevertidoEn: effects.length ? timestamp : null,
+      actualizadoPorUid: uid,
+      actualizadoEn: timestamp,
+    };
+    transaction.update(purchaseRef, update);
+    if (receptionRef) {
+      transaction.update(receptionRef, {
+        compraEstado: "revertida",
+        compraRevertidaEn: timestamp,
+        compraReversionMotivo: reason,
+        actualizadoPorUid: uid,
+        actualizadoEn: timestamp,
+      });
+    }
+    transaction.set(requestRef, {
+      negocioId: businessId,
+      compraId: purchaseId,
+      uidUsuario: uid,
+      motivoFingerprint: reasonFingerprint,
+      productosRevertidos: inventoryIds.length,
+      creadoEn: timestamp,
+    });
+    return {
+      compra: {id: purchaseId, ...purchase, ...update, actualizadoEn: null},
+      idempotent: false,
+      productosRevertidos: inventoryIds.length,
+    };
+  });
+}
+
 async function cancelarCompraBorradorHandler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
   const {uid, businessId, businessRef} = await access(request, dependencies);
@@ -484,4 +790,4 @@ async function cancelarCompraBorradorHandler(request, dependencies) {
   });
 }
 
-module.exports = {actualizarCompraBorradorHandler, cancelarCompraBorradorHandler, confirmarCompraHandler, crearCompraDesdeOrdenHandler, crearCompraDesdeRecepcionHandler, crearCompraHandler, formatPurchaseNumber: formatNumber, normalizePurchaseInput: input, calculatePurchaseTotals: totals, providerSnapshotFromDocument: provider};
+module.exports = {actualizarCompraBorradorHandler, buildConfirmedPurchaseFromReception, cancelarCompraBorradorHandler, confirmarCompraHandler, crearCompraDesdeOrdenHandler, crearCompraDesdeRecepcionHandler, crearCompraHandler, formatPurchaseNumber: formatNumber, normalizePurchaseInput: input, calculatePurchaseTotals: totals, providerSnapshotFromDocument: provider, revertirCompraHandler};

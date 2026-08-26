@@ -44,6 +44,10 @@ const emptyDraft = () => ({
 });
 const lineId = () => `linea-${globalThis.crypto?.randomUUID?.() ||
   `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
+const timestampLabel = (value) => {
+  const date = value?.toDate?.() || (value instanceof Date ? value : null);
+  return date ? date.toLocaleString("es-CL") : "Fecha registrada en servidor";
+};
 
 export default function NewPurchasePage({businessId, role}) {
   const {compraId} = useParams();
@@ -304,10 +308,22 @@ export default function NewPurchasePage({businessId, role}) {
           </button>}
         </div>
       )}
+      {purchase?.registroAutomatico && (
+        <section className="po-panel no-print">
+          <h2>Trazabilidad</h2>
+          <div className="purchase-document-grid">
+            <p><strong>Compra registrada</strong><br />{timestampLabel(purchase.registradoEn)} desde la recepción {purchase.recepcionNumero}.</p>
+            <p><strong>Inventario relacionado</strong><br />{purchase.efectosInventario.length ? `${purchase.efectosInventario.length} movimiento(s) de entrada trazable(s).` : "Sin movimientos físicos: sólo servicios o actividades."}</p>
+            {purchase.estado === "revertida" && <p className="purchase-field-wide"><strong>Compra revertida</strong><br />{timestampLabel(purchase.revertidaEn)} · {purchase.reversionMotivo}</p>}
+          </div>
+          {purchase.efectosInventario.length > 0 && <ul className="purchase-movement-list">{purchase.efectosInventario.map((effect) => <li key={effect.movimientoEntradaId}><strong>{effect.nombre}</strong><span>Entrada {effect.cantidad} {effect.unidad} · {effect.movimientoEntradaId}</span>{purchase.estado === "revertida" && <span>Compensación · {effect.movimientoReversionId}</span>}</li>)}</ul>}
+        </section>
+      )}
       {purchase?.estado === "confirmada" && purchase.stockAplicado &&
         purchase.items.some((item) => item.tipoItem === "producto") && (
         <p className="purchase-stock-note no-print">El inventario se actualizó al confirmar esta compra.</p>
       )}
+      {purchase?.estado === "revertida" && <p className="purchase-stock-note no-print">La compra permanece en el historial y sus entradas de inventario fueron compensadas cuando correspondía.</p>}
       <div className="no-print">
         <ProviderSelector
           disabled={readOnly || referencesLocked}
