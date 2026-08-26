@@ -198,6 +198,10 @@ async function main() {
       nombreComercial: validPayload.nombreComercial,
       rubroCodigo: validPayload.rubroCodigo,
       paisCodigo: "BO",
+      monedaCodigo: "USD",
+      locale: "en-US",
+      identificadorFiscalTipo: "RFC",
+      impuestoPredeterminadoTasa: 1,
       requestId: "business_create_retry_001",
     };
     const [firstResponse, duplicateResponse] = await Promise.all([
@@ -222,7 +226,16 @@ async function main() {
     assert.equal(Object.hasOwn(createdBusiness, "comunaNombre"), false);
     assert.equal(createdBusiness.paisCodigo, "BO");
     assert.equal(createdBusiness.monedaCodigo, "BOB");
+    assert.equal(createdBusiness.locale, "es-BO");
+    assert.equal(createdBusiness.identificadorFiscalTipo, "NIT");
+    assert.equal(createdBusiness.contratoJurisdiccionalVersion, 1);
     assert.equal(createdBusiness.estado, "activo");
+    const taxSettings = (await adminDb
+      .doc(`negocios/${businessId}/configuracion/impuestos`)
+      .get()).data();
+    assert.equal(taxSettings.impuestoPredeterminadoNombre, "IVA");
+    assert.equal(taxSettings.impuestoPredeterminadoTasa, 13);
+    assert.equal(taxSettings.configuracionTributariaBaseCompleta, true);
 
     const membershipId = `${businessId}__${ownerUid}`;
     const membershipSnapshot = await adminDb
@@ -254,6 +267,38 @@ async function main() {
           estado: "activo",
         }),
     ]);
+
+    const blockedOperationalCalls = [
+      ["crearCliente", {businessId, cliente: {nombreRazonSocial: "Bloqueado"}}],
+      ["crearProveedor", {businessId, requestId: `blocked-provider-${RUN_ID}`, proveedor: {razonSocial: "Bloqueado"}}],
+      ["listarMiembrosNegocio", {businessId}],
+      ["obtenerBalanceTrabajo", {businessId, trabajoId: "blocked-work"}],
+      ["initializeInventoryCatalog", {businessId}],
+      ["normalizeInventoryItems", {businessId, fileData: {hojas: [{nombre: "Hoja 1", filas: [["item"]]}]}}],
+      ["suggestQuoteItems", {businessId, description: "Trabajo bloqueado"}],
+    ];
+    for (const [functionName, payload] of blockedOperationalCalls) {
+      await expectCallableCode("failed-precondition", () =>
+        ownerCall(functionName, payload)
+      );
+    }
+    for (const state of ["EN_REVISION", "RECHAZADA"]) {
+      await adminDb.collection("negocios").doc(businessId).update({
+        verificacionEmpresa: {estado: state},
+      });
+      await expectCallableCode("failed-precondition", () =>
+        ownerCall("listarMiembrosNegocio", {businessId})
+      );
+    }
+    await adminDb.collection("negocios").doc(businessId).update({
+      verificacionEmpresa: {estado: "VERIFICADA"},
+    });
+    const verifiedMembers = await ownerCall("listarMiembrosNegocio", {businessId});
+    assert.equal(verifiedMembers.data.miembros.length, 2);
+    await adminDb.collection("negocios").doc(businessId).update({
+      verificacionEmpresa: {estado: "NO_VERIFICADA"},
+    });
+    console.log("OK hard gate Functions: estados bloqueados y VERIFICADA habilita");
 
     const quickProfile = await adminDb
       .doc(`negocios/${businessId}/empresa/perfil`)
@@ -320,12 +365,10 @@ async function main() {
     const profileUpdate = await ownerCall("updateBusinessProfile", {
       businessId,
       profile: {
-        ...validPayload,
-        paisCodigo: "CL",
-        monedaCodigo: "CLP",
-        comunaCodigo: "01101",
+        nombreComercial: validPayload.nombreComercial,
+        rubroCodigo: validPayload.rubroCodigo,
+        regionEstado: "La Paz",
         razonSocial: "Mauricio SPA",
-        rut: "12.345.678-5",
         direccion: "Avenida Principal 100",
         telefono: "+56 9 1234 5678",
         email: "contacto@andes.example",
@@ -334,12 +377,15 @@ async function main() {
       },
     });
     assert.equal(profileUpdate.data.completion.minimumComplete, true);
-    assert.equal(profileUpdate.data.completion.recommendedComplete, true);
+    assert.equal(profileUpdate.data.completion.recommendedComplete, false);
     const savedProfile = await adminDb
       .doc(`negocios/${businessId}/empresa/perfil`)
       .get();
-    assert.equal(savedProfile.data()?.comunaCodigo, "01101");
-    assert.equal(savedProfile.data()?.rut, "12345678-5");
+    assert.equal(savedProfile.data()?.paisCodigo, "BO");
+    assert.equal(savedProfile.data()?.monedaCodigo, "BOB");
+    assert.equal(savedProfile.data()?.locale, "es-BO");
+    assert.equal(savedProfile.data()?.identificadorFiscalTipo, "NIT");
+    assert.equal(savedProfile.data()?.rut, undefined);
     assert.equal(savedProfile.data()?.negocioId, businessId);
     assert.equal(
       (await adminDb.collection("usuarios").doc(ownerUid).get()).data()?.rut,
@@ -355,7 +401,7 @@ async function main() {
         },
       })
     );
-    await expectCallableCode("invalid-argument", () =>
+    await expectCallableCode("failed-precondition", () =>
       ownerCall("updateBusinessProfile", {
         businessId,
         profile: {
@@ -366,18 +412,38 @@ async function main() {
         },
       })
     );
+    await expectCallableCode("failed-precondition", () =>
+      businessAdminCall("updateBusinessInformation", {
+        businessId,
+        profile: {
+          nombreComercial: validPayload.nombreComercial,
+          rubroCodigo: validPayload.rubroCodigo,
+          regionEstado: "La Paz",
+          locale: "en-US",
+        },
+      })
+    );
+    await expectCallableCode("failed-precondition", () =>
+      businessAdminCall("updateBusinessSettings", {
+        businessId,
+        section: "impuestos",
+        settings: {
+          impuestoPredeterminadoNombre: "IVA alterado",
+          impuestoPredeterminadoTasa: 1,
+        },
+      })
+    );
 
     const regionChange = await ownerCall("updateBusinessProfile", {
       businessId,
       profile: {
-        ...validPayload,
-        regionCodigo: "02",
-        paisCodigo: "CL",
-        monedaCodigo: "CLP",
+        nombreComercial: validPayload.nombreComercial,
+        rubroCodigo: validPayload.rubroCodigo,
+        regionEstado: "Santa Cruz",
         validezCotizacionDias: 15,
       },
     });
-    assert.equal(regionChange.data.profile.regionCodigo, "02");
+    assert.equal(regionChange.data.profile.regionEstado, "Santa Cruz");
     assert.equal(regionChange.data.profile.comunaCodigo, "");
     const [profileAfterRegionChange, businessAfterRegionChange] =
       await Promise.all([
@@ -400,8 +466,14 @@ async function main() {
       regionEstado: "Exterior",
     };
     await Promise.all([
-      adminDb.collection("negocios").doc(businessId).update(legacyCountryPatch),
-      adminDb.doc(`negocios/${businessId}/empresa/perfil`).update(legacyCountryPatch),
+      adminDb.collection("negocios").doc(businessId).update({
+        ...legacyCountryPatch,
+        contratoJurisdiccionalVersion: AdminFieldValue.delete(),
+      }),
+      adminDb.doc(`negocios/${businessId}/empresa/perfil`).update({
+        ...legacyCountryPatch,
+        contratoJurisdiccionalVersion: AdminFieldValue.delete(),
+      }),
     ]);
     const preservedLegacyCountry = await ownerCall("updateBusinessProfile", {
       businessId,
@@ -418,16 +490,16 @@ async function main() {
     assert.equal(preservedLegacyCountry.data.profile.paisCodigo, "OTHER");
     assert.equal(preservedLegacyCountry.data.profile.monedaCodigo, "EUR");
     assert.equal(preservedLegacyCountry.data.profile.telefono, "+00 123456");
-    const migratedLegacyCountry = await ownerCall("updateBusinessProfile", {
-      businessId,
-      profile: {
-        ...validPayload,
-        paisCodigo: "CL",
-        monedaCodigo: "CLP",
-      },
-    });
-    assert.equal(migratedLegacyCountry.data.profile.paisCodigo, "CL");
-    assert.equal(migratedLegacyCountry.data.profile.monedaCodigo, "CLP");
+    await expectCallableCode("failed-precondition", () =>
+      ownerCall("updateBusinessProfile", {
+        businessId,
+        profile: {
+          ...validPayload,
+          paisCodigo: "CL",
+          monedaCodigo: "CLP",
+        },
+      })
+    );
 
     await Promise.all([
       adminDb.collection("negocios").doc(businessId).update({
@@ -445,7 +517,7 @@ async function main() {
         nombreComercial: validPayload.nombreComercial,
         rubroCodigo: "RUBRO_HISTORICO",
         rubroNombre: "Oficio histórico",
-        regionCodigo: "02",
+        regionEstado: "Exterior",
         validezCotizacionDias: 15,
       },
     });
@@ -468,7 +540,7 @@ async function main() {
         nombreComercial: validPayload.nombreComercial,
         rubroCodigo: "",
         rubroNombre: "Oficio ancestral",
-        regionCodigo: "02",
+        regionEstado: "Exterior",
         validezCotizacionDias: 15,
       },
     });
@@ -481,7 +553,7 @@ async function main() {
       profile: {
         nombreComercial: validPayload.nombreComercial,
         rubroCodigo: "AUTOMOTRIZ_MOVILIDAD",
-        regionCodigo: "02",
+        regionEstado: "Exterior",
         validezCotizacionDias: 15,
       },
     });

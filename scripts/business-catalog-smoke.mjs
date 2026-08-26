@@ -7,6 +7,25 @@ assert.equal(catalog.businessCategoryCatalogVersion, 1);
 assert.equal(catalog.countries.length, 11);
 assert.equal(catalog.countries[0].code, "CL");
 assert.equal(catalog.countries.find((country) => country.code === "BR").defaultLocale, "pt-BR");
+for (const country of catalog.countries) {
+  assert.ok(country.baseTax?.id);
+  assert.ok(country.baseTax?.name);
+  assert.equal(typeof country.baseTax?.configured, "boolean");
+}
+assert.deepEqual(catalog.countries.find((country) => country.code === "CL")?.baseTax, {
+  id: "IVA_GENERAL",
+  name: "IVA",
+  rate: 19,
+  configured: true,
+});
+assert.deepEqual(catalog.countries.find((country) => country.code === "PE")?.baseTax, {
+  id: "IGV_GENERAL",
+  name: "IGV",
+  rate: 18,
+  configured: true,
+});
+assert.equal(catalog.countries.find((country) => country.code === "BR")?.baseTax.configured, false);
+assert.equal(catalog.countries.find((country) => country.code === "BR")?.baseTax.rate, null);
 const expectedNewBusinessCountries = [
   ["CL", "CLP"],
   ["BO", "BOB"],

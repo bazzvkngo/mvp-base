@@ -96,6 +96,23 @@ async function main() {
     const ownerUid = ownerCredential.user.uid;
     const otherUid = otherCredential.user.uid;
     const guestUid = guestCredential.user.uid;
+    const businessId = `rules-business-${ownerUid}`;
+    await Promise.all([
+      adminDb.doc(`usuarios/${ownerUid}`).set({
+        negocioActivoId: businessId,
+        estadoPlataforma: "activo",
+      }),
+      adminDb.doc(`negocios/${businessId}`).set({
+        estado: "activo",
+        verificacionEmpresa: {estado: "VERIFICADA"},
+      }),
+      adminDb.doc(`membresias/${businessId}__${ownerUid}`).set({
+        negocioId: businessId,
+        uid: ownerUid,
+        rol: "OWNER",
+        estado: "activo",
+      }),
+    ]);
     const inventoryPath = `usuarios/${ownerUid}/inventario/item-smoke`;
     const areaPath = `usuarios/${ownerUid}/areas/area-smoke`;
     const categoryPath =
@@ -349,7 +366,6 @@ async function main() {
       )
     );
 
-    const businessId = `rules-business-${ownerUid}`;
     const businessProfilePath = `negocios/${businessId}/empresa/perfil`;
     await Promise.all([
       adminDb.doc(`negocios/${businessId}`).set({
@@ -359,6 +375,7 @@ async function main() {
         monedaCodigo: "CLP",
         regionCodigo: "13",
         estado: "activo",
+        verificacionEmpresa: {estado: "VERIFICADA"},
       }),
       adminDb.doc(`membresias/${businessId}__${ownerUid}`).set({
         negocioId: businessId,
@@ -376,6 +393,73 @@ async function main() {
     }
     await expectDenied("otro usuario lee perfil de negocio ajeno", () =>
       getDoc(doc(otherClient.db, businessProfilePath))
+    );
+
+    const blockedBusinessId = `rules-blocked-${ownerUid}`;
+    const blockedProfilePath = `negocios/${blockedBusinessId}/empresa/perfil`;
+    const blockedInventoryPath =
+      `negocios/${blockedBusinessId}/inventario/item-blocked`;
+    await Promise.all([
+      adminDb.doc(`negocios/${blockedBusinessId}`).set({
+        estado: "activo",
+        verificacionEmpresa: {estado: "EN_REVISION"},
+      }),
+      adminDb.doc(`membresias/${blockedBusinessId}__${ownerUid}`).set({
+        negocioId: blockedBusinessId,
+        uid: ownerUid,
+        rol: "OWNER",
+        estado: "activo",
+      }),
+      adminDb.doc(blockedProfilePath).set({
+        negocioId: blockedBusinessId,
+        nombreComercial: "Empresa pendiente",
+      }),
+      adminDb.doc(blockedInventoryPath).set({
+        negocioId: blockedBusinessId,
+        nombre: "Item bloqueado",
+      }),
+    ]);
+    if (!(await getDoc(doc(ownerClient.db, blockedProfilePath))).exists()) {
+      throw new Error("El OWNER no pudo consultar información para verificar.");
+    }
+    await expectDenied("EN_REVISION bloquea inventario", () =>
+      getDoc(doc(ownerClient.db, blockedInventoryPath))
+    );
+    await expectDenied("EN_REVISION bloquea finanzas", () =>
+      setDoc(
+        doc(ownerClient.db, `negocios/${blockedBusinessId}/financialMovements/forged`),
+        {businessId: blockedBusinessId, sourceType: "manual"}
+      )
+    );
+    await adminDb.doc(`negocios/${blockedBusinessId}`).update({
+      "verificacionEmpresa.estado": "RECHAZADA",
+    });
+    await expectDenied("RECHAZADA bloquea inventario", () =>
+      getDoc(doc(ownerClient.db, blockedInventoryPath))
+    );
+    await adminDb.doc(`negocios/${blockedBusinessId}`).update({
+      "verificacionEmpresa.estado": "NO_VERIFICADA",
+    });
+    await expectDenied("NO_VERIFICADA bloquea inventario", () =>
+      getDoc(doc(ownerClient.db, blockedInventoryPath))
+    );
+    console.log("OK hard gate: sólo VERIFICADA habilita datos operativos");
+    await expectDenied("OWNER altera jurisdiccion en raiz por SDK", () =>
+      updateDoc(doc(ownerClient.db, `negocios/${businessId}`), {
+        paisCodigo: "PE",
+      })
+    );
+    await expectDenied("OWNER altera jurisdiccion en perfil por SDK", () =>
+      updateDoc(doc(ownerClient.db, businessProfilePath), {
+        monedaCodigo: "USD",
+      })
+    );
+    await expectDenied("OWNER altera impuesto base por SDK", () =>
+      setDoc(doc(ownerClient.db, `negocios/${businessId}/configuracion/impuestos`), {
+        negocioId: businessId,
+        impuestoPredeterminadoNombre: "IVA alterado",
+        impuestoPredeterminadoTasa: 1,
+      })
     );
 
     const businessInventoryPath =

@@ -140,6 +140,18 @@ try {
     requestId: `business-other-${RUN_ID}`,
   });
   const otherBusinessId = otherResponse.data.business.id;
+  await Promise.all([
+    adminDb.doc(`negocios/${businessId}`).set({
+      identificadorFiscalTipo: "RUT",
+      identificadorFiscalValor: "76.300.300-3",
+      verificacionEmpresa: {estado: "VERIFICADA", identificadorFiscalTipo: "RUT", identificadorFiscalValor: "76.300.300-3"},
+    }, {merge: true}),
+    adminDb.doc(`negocios/${otherBusinessId}`).set({
+      identificadorFiscalTipo: "RUT",
+      identificadorFiscalValor: "76.900.900-9",
+      verificacionEmpresa: {estado: "VERIFICADA", identificadorFiscalTipo: "RUT", identificadorFiscalValor: "76.900.900-9"},
+    }, {merge: true}),
+  ]);
   const companyProfileA = {
     negocioId: businessId,
     nombreComercial: "Empresa A",

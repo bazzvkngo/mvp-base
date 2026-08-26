@@ -15,6 +15,8 @@ const {
   linkedWorkFields,
   writeQuoteResponseEvent,
 } = require("./workPersistence");
+const {resolveBaseTaxSettings} = require("./businessJurisdiction");
+const {assertBusinessCanOperate} = require("./businessOperations");
 
 const PUBLIC_TOKEN_COLLECTION = "quotePublicTokens";
 const PUBLIC_TOKEN_BYTES = 32;
@@ -519,7 +521,7 @@ async function prepareQuoteWhatsAppShareHandler(request, dependencies) {
   const {businessId, businessRef, uid} = await requireBusinessAccess(
     request,
     dependencies,
-    { roles: SALES_WRITE_ROLES }
+    {roles: SALES_WRITE_ROLES, requiresVerifiedBusiness: true}
   );
   const quoteId = safeText(request?.data?.quoteId, 160);
   const requestId = normalizeLifecycleRequestId(
@@ -557,7 +559,7 @@ async function markQuoteEmittedManuallyHandler(request, dependencies) {
   const {businessId, businessRef, uid} = await requireBusinessAccess(
     request,
     dependencies,
-    { roles: SALES_WRITE_ROLES }
+    {roles: SALES_WRITE_ROLES, requiresVerifiedBusiness: true}
   );
   const quoteId = safeText(request?.data?.quoteId, 160);
   if (!/^[a-zA-Z0-9_-]{1,160}$/.test(quoteId)) {
@@ -648,7 +650,7 @@ async function reopenQuoteHandler(request, dependencies) {
   const {businessId, businessRef, uid} = await requireBusinessAccess(
     request,
     dependencies,
-    {roles: SALES_WRITE_ROLES}
+    {roles: SALES_WRITE_ROLES, requiresVerifiedBusiness: true}
   );
   const quoteId = safeText(request?.data?.quoteId, 160);
   const requestId = normalizeLifecycleRequestId(
@@ -824,7 +826,7 @@ async function confirmQuoteWhatsAppSentHandler(request, dependencies) {
   const { businessId, businessRef, uid } = await requireBusinessAccess(
     request,
     dependencies,
-    { roles: SALES_WRITE_ROLES }
+    {roles: SALES_WRITE_ROLES, requiresVerifiedBusiness: true}
   );
   const quoteId = safeText(request?.data?.quoteId, 160);
   const requestId = normalizeLifecycleRequestId(
@@ -983,6 +985,19 @@ async function getPublicQuoteProposalHandler(request, dependencies) {
       tokenData.estado === "active" &&
       quote.estado === "borrador" &&
       channel === "whatsapp";
+    if (emitsFromWhatsAppOpening) {
+      const businessRef = db.collection("negocios").doc(businessId);
+      const [businessSnapshot, taxSnapshot] = await Promise.all([
+        transaction.get(businessRef),
+        transaction.get(businessRef.collection("configuracion").doc("impuestos")),
+      ]);
+      const business = businessSnapshot.data() || {};
+      assertBusinessCanOperate(
+        business,
+        resolveBaseTaxSettings(business, taxSnapshot.data() || {}),
+        HttpsError
+      );
+    }
     const emissionPatch = emitsFromWhatsAppOpening
       ? buildQuoteEmissionPatch({
           channel: "whatsapp",
@@ -1173,10 +1188,24 @@ async function respondPublicQuoteProposalHandler(request, dependencies) {
     if (!businessId || !quoteId || tokenData.estado === "revoked") {
       return { outcome: "invalid" };
     }
-    const quoteRef = db.collection("negocios").doc(businessId)
-      .collection("cotizaciones").doc(quoteId);
-    const quoteSnapshot = await transaction.get(quoteRef);
+    const businessRef = db.collection("negocios").doc(businessId);
+    const quoteRef = businessRef.collection("cotizaciones").doc(quoteId);
+    const [quoteSnapshot, businessSnapshot, taxSnapshot] = await Promise.all([
+      transaction.get(quoteRef),
+      transaction.get(businessRef),
+      transaction.get(businessRef.collection("configuracion").doc("impuestos")),
+    ]);
     if (!quoteSnapshot.exists) return { outcome: "invalid" };
+    try {
+      const business = businessSnapshot.data() || {};
+      assertBusinessCanOperate(
+        business,
+        resolveBaseTaxSettings(business, taxSnapshot.data() || {}),
+        HttpsError
+      );
+    } catch {
+      return {outcome: "business_blocked"};
+    }
     const quote = quoteSnapshot.data() || {};
     if (!validateStoredTokenLink(tokenData, quote, tokenHash)) {
       return { outcome: "invalid" };
@@ -1333,6 +1362,12 @@ async function respondPublicQuoteProposalHandler(request, dependencies) {
   }
   if (result.outcome === "unavailable") {
     throw new HttpsError("failed-precondition", "Esta propuesta ya no admite respuestas.");
+  }
+  if (result.outcome === "business_blocked") {
+    throw new HttpsError(
+      "failed-precondition",
+      "La empresa emisora debe completar su verificación antes de registrar la respuesta."
+    );
   }
   return {
     success: true,

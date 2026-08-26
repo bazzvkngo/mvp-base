@@ -45,8 +45,31 @@ service cloud.firestore {
       return isActiveBusinessMember(businessId) && isActiveBusiness(businessId);
     }
 
-    function hasBusinessRole(businessId, roles) {
+    function isVerifiedBusiness(businessId) {
+      let businessPath = /databases/$(database)/documents/negocios/$(businessId);
+      return exists(businessPath)
+        && get(businessPath).data.get("verificacionEmpresa", {}).get("estado", "NO_VERIFICADA")
+          == "VERIFICADA";
+    }
+
+    function canOperateBusiness(businessId) {
+      return canAccessBusiness(businessId) && isVerifiedBusiness(businessId);
+    }
+
+    function canOperateActiveBusiness(uid) {
+      let userPath = /databases/$(database)/documents/usuarios/$(uid);
+      return isOwner(uid)
+        && exists(userPath)
+        && canOperateBusiness(get(userPath).data.get("negocioActivoId", ""));
+    }
+
+    function hasSetupBusinessRole(businessId, roles) {
       return canAccessBusiness(businessId)
+        && get(membershipPath(businessId, request.auth.uid)).data.rol in roles;
+    }
+
+    function hasBusinessRole(businessId, roles) {
+      return canOperateBusiness(businessId)
         && get(membershipPath(businessId, request.auth.uid)).data.rol in roles;
     }
 
@@ -590,12 +613,12 @@ service cloud.firestore {
       }
 
       match /inventario/{itemId} {
-        allow read: if isOwner(uid);
-        allow create: if isOwner(uid)
+        allow read: if canOperateActiveBusiness(uid);
+        allow create: if canOperateActiveBusiness(uid)
           && hasValidDocumentOwner(uid)
           && hasNoInventoryAcquisitionFields()
           && isAllowedLegacyInventoryCreate();
-        allow update: if isOwner(uid)
+        allow update: if canOperateActiveBusiness(uid)
           && hasValidDocumentOwner(uid)
           && inventoryCodesAreImmutable()
           && inventoryAuthoritativeFieldsAreImmutable()
@@ -608,12 +631,12 @@ service cloud.firestore {
       }
 
       match /areas/{areaId} {
-        allow read: if isOwner(uid);
+        allow read: if canOperateActiveBusiness(uid);
         allow create, update, delete: if false;
       }
 
       match /categoriasInventario/{categoryId} {
-        allow read: if isOwner(uid);
+        allow read: if canOperateActiveBusiness(uid);
         allow create, update, delete: if false;
       }
 
@@ -642,13 +665,13 @@ service cloud.firestore {
       }
 
       match /referencias/{referenceId} {
-        allow read: if isOwner(uid);
-        allow create, update: if isOwner(uid) && hasValidDocumentOwner(uid);
+        allow read: if canOperateActiveBusiness(uid);
+        allow create, update: if canOperateActiveBusiness(uid) && hasValidDocumentOwner(uid);
         allow delete: if false;
       }
 
       match /cotizaciones/{quoteId} {
-        allow read: if isOwner(uid);
+        allow read: if canOperateActiveBusiness(uid);
         allow create: if false;
         allow update: if false;
         allow delete: if false;
@@ -663,8 +686,8 @@ service cloud.firestore {
       }
 
       match /tareasReferencias/{taskId} {
-        allow read: if isOwner(uid);
-        allow update: if isOwner(uid) && isAllowedReferenceTaskUpdate();
+        allow read: if canOperateActiveBusiness(uid);
+        allow update: if canOperateActiveBusiness(uid) && isAllowedReferenceTaskUpdate();
         allow create, delete: if false;
       }
     }
@@ -676,7 +699,7 @@ service cloud.firestore {
       allow create, update, delete: if false;
 
       match /config/{docId} {
-        allow read: if canAccessBusiness(businessId);
+        allow read: if canOperateBusiness(businessId);
         allow create, update: if hasBusinessRole(businessId, ["OWNER", "ADMIN"])
           && hasValidBusinessDocument(businessId);
         allow delete: if false;
@@ -690,16 +713,16 @@ service cloud.firestore {
       match /empresa/{docId} {
         allow read: if canAccessBusiness(businessId);
         allow create: if docId == "perfil"
-          && hasBusinessRole(businessId, ["OWNER", "ADMIN"])
+          && hasSetupBusinessRole(businessId, ["OWNER", "ADMIN"])
           && isAllowedBusinessLogoProfileCreate(businessId);
         allow update: if docId == "perfil"
-          && hasBusinessRole(businessId, ["OWNER", "ADMIN"])
+          && hasSetupBusinessRole(businessId, ["OWNER", "ADMIN"])
           && isAllowedBusinessLogoProfileUpdate(businessId);
         allow delete: if false;
       }
 
       match /inventario/{itemId} {
-        allow read: if canAccessBusiness(businessId);
+        allow read: if canOperateBusiness(businessId);
         allow create: if hasBusinessRole(businessId, ["OWNER", "ADMIN", "COMPRAS"])
           && hasValidBusinessDocument(businessId)
           && hasNoInventoryAcquisitionFields()
@@ -717,12 +740,12 @@ service cloud.firestore {
       }
 
       match /areas/{areaId} {
-        allow read: if canAccessBusiness(businessId);
+        allow read: if canOperateBusiness(businessId);
         allow create, update, delete: if false;
       }
 
       match /categoriasInventario/{categoryId} {
-        allow read: if canAccessBusiness(businessId);
+        allow read: if canOperateBusiness(businessId);
         allow create, update, delete: if false;
       }
 
@@ -916,13 +939,13 @@ service cloud.firestore {
       }
 
       match /solicitudesVerificacionEmpresa/{solicitudId} {
-        allow read: if hasBusinessRole(businessId, ["OWNER"])
+        allow read: if hasSetupBusinessRole(businessId, ["OWNER"])
           && resource.data.negocioId == businessId;
         allow create, update, delete: if false;
       }
 
       match /eventosVerificacionEmpresa/{eventoId} {
-        allow read: if hasBusinessRole(businessId, ["OWNER"])
+        allow read: if hasSetupBusinessRole(businessId, ["OWNER"])
           && resource.data.negocioId == businessId;
         allow create, update, delete: if false;
       }

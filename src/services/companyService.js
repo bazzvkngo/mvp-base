@@ -25,9 +25,23 @@ import {
 } from "../firebase/firestorePaths";
 import { adaptBusinessLocalization } from "../domain/localization.mjs";
 import { getBusinessCompletionStatus } from "../domain/businessCompletion.mjs";
+import {getJurisdictionContract} from "../domain/businessCatalog.js";
 import {normalizeBusinessVerification} from "./businessVerificationService";
 
 const functions = getFirebaseFunctions("us-central1");
+const PROTECTED_BUSINESS_FIELDS = new Set([
+  "paisCodigo",
+  "paisNombre",
+  "monedaCodigo",
+  "monedaNombre",
+  "locale",
+  "identificadorFiscalTipo",
+  "identificadorFiscalValor",
+  "rut",
+  "impuestoPredeterminadoId",
+  "impuestoPredeterminadoNombre",
+  "impuestoPredeterminadoTasa",
+]);
 
 export const DEFAULT_COMPANY_CONFIG = {
   rubroPrincipal: "",
@@ -269,18 +283,37 @@ export function normalizeCompanyProfile(raw = {}) {
   };
 }
 
-export function normalizeTaxSettings(raw = {}) {
+export function normalizeTaxSettings(raw = {}, business = {}) {
+  const contract = getJurisdictionContract(
+    business.paisCodigo || raw.paisCodigo || "CL"
+  );
+  if (Number(business.contratoJurisdiccionalVersion) >= 1) {
+    return {
+      impuestoPredeterminadoId: contract.impuestoPredeterminadoId,
+      impuestoPredeterminadoNombre: contract.impuestoPredeterminadoNombre,
+      impuestoPredeterminadoTasa: contract.impuestoPredeterminadoTasa,
+      configuracionTributariaBaseCompleta:
+        contract.configuracionTributariaBaseCompleta,
+    };
+  }
   const rate = Number(raw.impuestoPredeterminadoTasa);
+  const hasStoredRate = raw.impuestoPredeterminadoTasa !== null &&
+    raw.impuestoPredeterminadoTasa !== undefined &&
+    raw.impuestoPredeterminadoTasa !== "" && Number.isFinite(rate);
   return {
     impuestoPredeterminadoId:
-      safeString(raw.impuestoPredeterminadoId) || "PERSONALIZADO",
+      safeString(raw.impuestoPredeterminadoId) ||
+      contract.impuestoPredeterminadoId,
     impuestoPredeterminadoNombre:
       safeString(raw.impuestoPredeterminadoNombre) ||
-      DEFAULT_TAX_SETTINGS.impuestoPredeterminadoNombre,
+      contract.impuestoPredeterminadoNombre,
     impuestoPredeterminadoTasa:
-      Number.isFinite(rate) && rate >= 0 && rate <= 100
+      hasStoredRate && rate >= 0 && rate <= 100
         ? rate
-        : DEFAULT_TAX_SETTINGS.impuestoPredeterminadoTasa,
+        : contract.impuestoPredeterminadoTasa,
+    configuracionTributariaBaseCompleta: hasStoredRate
+      ? true
+      : contract.configuracionTributariaBaseCompleta,
   };
 }
 
@@ -409,7 +442,10 @@ export async function getCompanyProfile(userId) {
   const quoteSettings = quoteSettingsSnapshot.exists()
     ? normalizeQuoteSettings(quoteSettingsSnapshot.data() || {})
     : {};
-  const taxSettings = normalizeTaxSettings(taxSettingsSnapshot.data() || {});
+  const taxSettings = normalizeTaxSettings(
+    taxSettingsSnapshot.data() || {},
+    business
+  );
 
   return mergeCompanyProfileSources({
     business,
@@ -427,6 +463,10 @@ function mergeCompanyProfileSources({
   taxSettings = {},
   businessId = "",
 }) {
+  const verification = normalizeBusinessVerification(
+    business.verificacionEmpresa || profile.verificacionEmpresa
+  );
+  const verified = verification.estado === "VERIFICADA";
   return normalizeCompanyProfile({
     ...DEFAULT_COMPANY_PROFILE,
     ...business,
@@ -436,15 +476,21 @@ function mergeCompanyProfileSources({
     rubroCodigo: profile.rubroCodigo || business.rubroCodigo || "",
     rubroNombre: profile.rubroNombre || business.rubroNombre || "",
     rubroOtro: profile.rubroOtro || business.rubroOtro || "",
-    paisCodigo: profile.paisCodigo || business.paisCodigo || "CL",
-    paisNombre: profile.paisNombre || business.paisNombre || "Chile",
-    monedaCodigo: profile.monedaCodigo || business.monedaCodigo || "CLP",
+    contratoJurisdiccionalVersion:
+      business.contratoJurisdiccionalVersion ||
+      profile.contratoJurisdiccionalVersion,
+    paisCodigo: business.paisCodigo || profile.paisCodigo || "CL",
+    paisNombre: business.paisNombre || profile.paisNombre || "Chile",
+    monedaCodigo: business.monedaCodigo || profile.monedaCodigo || "CLP",
     monedaNombre:
-      profile.monedaNombre || business.monedaNombre || "Peso chileno",
-    locale: profile.locale || business.locale || "es-CL",
+      business.monedaNombre || profile.monedaNombre || "Peso chileno",
+    locale: business.locale || profile.locale || "es-CL",
     identificadorFiscalTipo:
-      profile.identificadorFiscalTipo || business.identificadorFiscalTipo || "RUT",
+      (verified && verification.identificadorFiscalTipo) ||
+      business.identificadorFiscalTipo || profile.identificadorFiscalTipo || "RUT",
     identificadorFiscalValor:
+      (verified && (verification.identificadorFiscalValor ||
+        business.identificadorFiscalValor)) ||
       profile.identificadorFiscalValor || profile.rut ||
       business.identificadorFiscalValor || business.rut || "",
     regionCodigo: profile.regionCodigo || business.regionCodigo || "",
@@ -457,8 +503,7 @@ function mergeCompanyProfileSources({
     comunaCodigo: profile.comunaCodigo || business.comunaCodigo || "",
     comunaNombre:
       profile.comunaNombre || profile.ciudad || business.comunaNombre || "",
-    verificacionEmpresa:
-      business.verificacionEmpresa || profile.verificacionEmpresa,
+    verificacionEmpresa: verification,
     ...quoteSettings,
     ...taxSettings,
     negocioId: businessId,
@@ -506,11 +551,16 @@ export function subscribeToCompanyProfile(businessId, onNext, onError) {
 
 export async function getBusinessSettings(businessId, section) {
   if (!businessId) throw new Error("businessId es requerido para cargar ajustes.");
-  const snapshot = await getDoc(
-    doc(db, ...businessSettingsDocPath(businessId, section))
-  );
+  const [snapshot, businessSnapshot] = await Promise.all([
+    getDoc(doc(db, ...businessSettingsDocPath(businessId, section))),
+    section === "impuestos"
+      ? getDoc(doc(db, ...businessDocPath(businessId)))
+      : Promise.resolve(null),
+  ]);
   const raw = snapshot.data() || {};
-  if (section === "impuestos") return normalizeTaxSettings(raw);
+  if (section === "impuestos") {
+    return normalizeTaxSettings(raw, businessSnapshot?.data() || {});
+  }
   if (section === "inventario") return normalizeInventorySettings(raw);
   if (section === "cotizaciones") {
     if (snapshot.exists()) return normalizeQuoteSettings(raw);
@@ -523,7 +573,12 @@ export async function getBusinessSettings(businessId, section) {
 export async function saveBusinessInformation(businessId, profile) {
   assertClientWriteAllowed("guardar la información de empresa");
   const callable = httpsCallable(functions, "updateBusinessInformation");
-  const response = await callable({ businessId, profile });
+  const mutableProfile = Object.fromEntries(
+    Object.entries(profile || {}).filter(
+      ([field]) => !PROTECTED_BUSINESS_FIELDS.has(field)
+    )
+  );
+  const response = await callable({ businessId, profile: mutableProfile });
   return normalizeCompanyProfile(response.data?.profile || {});
 }
 
@@ -570,6 +625,7 @@ export async function saveCompanyProfile(userId, profilePatch) {
   ["logoUrl", "logoPath", "logoNombreOriginal", "logoActualizadoEn"].forEach(
     (field) => delete payload[field]
   );
+  PROTECTED_BUSINESS_FIELDS.forEach((field) => delete payload[field]);
 
   const callable = httpsCallable(functions, "updateBusinessProfile");
   const response = await callable({ businessId: userId, profile: payload });

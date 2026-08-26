@@ -467,7 +467,7 @@ function writeSaleConfirmationEvent(transaction, workRef, {
 }
 
 async function requireWriteAccess(request, dependencies) {
-  return dependencies.requireBusinessAccess(request, {db: dependencies.db, HttpsError: dependencies.HttpsError}, {roles: WRITE_ROLES});
+  return dependencies.requireBusinessAccess(request, {db: dependencies.db, HttpsError: dependencies.HttpsError}, {roles: WRITE_ROLES, requiresVerifiedBusiness: true});
 }
 
 function fingerprint(input) {
@@ -662,7 +662,7 @@ async function crearTareaTrabajoV2Handler(request, dependencies) {
 
 async function cambiarEstadoTareaTrabajoV2Handler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
-  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES});
+  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES, requiresVerifiedBusiness: true});
   const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError); const taskId = identifier(request?.data?.tareaId, "La tarea", HttpsError);
   if (typeof request?.data?.completada !== "boolean") fail(HttpsError, "invalid-argument", "El estado de la tarea no es válido.");
   const completed = request.data.completada;
@@ -746,7 +746,7 @@ async function asignarTareaTrabajoHandler(request, dependencies) {
 
 async function documentarTareaTrabajoHandler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
-  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES});
+  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES, requiresVerifiedBusiness: true});
   const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError); const taskId = identifier(request?.data?.tareaId, "La tarea", HttpsError);
   const documentation = text(request?.data?.texto, "La documentación", 8000, HttpsError, {required: true});
   const requestId = requestIdentifier(request?.data?.requestId, HttpsError);
@@ -799,7 +799,7 @@ async function eliminarTareaTrabajoV2Handler(request, dependencies) {
 
 async function registrarGastoTrabajoHandler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
-  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES});
+  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES, requiresVerifiedBusiness: true});
   const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError);
   const input = normalizeExpenseInput(request?.data?.gasto || {}, HttpsError);
   input.responsableDelGastoUid = memberLinkedUid(context, input.responsableDelGastoUid, "El responsable del gasto", HttpsError);
@@ -864,7 +864,7 @@ async function registrarGastoTrabajoHandler(request, dependencies) {
 
 async function registrarHorasHombreTrabajoHandler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
-  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES});
+  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES, requiresVerifiedBusiness: true});
   const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError);
   const input = normalizeLaborInput(request?.data?.horasHombre || {}, HttpsError);
   input.tecnicoUid = memberLinkedUid(context, input.tecnicoUid, "El técnico", HttpsError, {required: true});
@@ -1032,7 +1032,7 @@ async function agregarNotaTrabajoHandler(request, dependencies) {
 
 async function registrarSalidaMaterialTrabajoHandler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
-  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES});
+  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES, requiresVerifiedBusiness: true});
   const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError);
   const itemId = identifier(request?.data?.itemId, "El producto", HttpsError);
   const cantidad = positiveDecimal(request?.data?.cantidad, "La cantidad", 999999999.99, HttpsError);

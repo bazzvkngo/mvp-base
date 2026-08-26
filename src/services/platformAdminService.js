@@ -21,8 +21,23 @@ export async function getPlatformAccess(user, forceRefresh = false) {
 
 export const getPlatformSummary = () => call("obtenerResumenPlataforma");
 
-export const listPlatformBusinesses = ({cursor, limit = 20, verification = "TODAS"} = {}) =>
-  call("listarEmpresasPlataforma", {cursor: cursor || "", limite: limit, verificacion: verification});
+export const listPlatformBusinesses = ({
+  cursor,
+  limit = 20,
+  search = "",
+  country = "TODOS",
+  state = "TODOS",
+  verification = "TODAS",
+  mode = "EMPRESAS",
+} = {}) => call("listarEmpresasPlataforma", {
+  cursor: cursor || "",
+  limite: limit,
+  busqueda: search,
+  pais: country,
+  estado: state,
+  verificacion: verification,
+  modo: mode,
+});
 
 export const getPlatformBusiness = (businessId) =>
   call("obtenerEmpresaPlataforma", {businessId});
@@ -30,8 +45,19 @@ export const getPlatformBusiness = (businessId) =>
 export const getPlatformVerificationDocument = (businessId, solicitudId) =>
   call("obtenerDocumentoVerificacionPlataforma", {businessId, solicitudId});
 
-export const listPlatformUsers = ({cursor, limit = 20} = {}) =>
-  call("listarUsuariosPlataforma", {cursor: cursor || "", limite: limit});
+export const listPlatformUsers = ({
+  cursor,
+  limit = 20,
+  search = "",
+  state = "TODOS",
+  company = "TODAS",
+} = {}) => call("listarUsuariosPlataforma", {
+  cursor: cursor || "",
+  limite: limit,
+  busqueda: search,
+  estado: state,
+  empresa: company,
+});
 
 export const getPlatformUser = (uid) =>
   call("obtenerUsuarioPlataforma", {uid});
@@ -42,8 +68,31 @@ export const setPlatformBusinessStatus = ({businessId, estado, motivo, requestId
 export const setPlatformUserStatus = ({uid, estado, motivo, requestId}) =>
   call("cambiarEstadoUsuarioPlataforma", {uid, estado, motivo, requestId});
 
-export const resolvePlatformVerification = ({businessId, solicitudId, decision, motivo, requestId}) =>
-  call("resolverVerificacionEmpresa", {businessId, solicitudId, decision, motivo, requestId});
+export const permanentlyDeletePlatformBusiness = ({
+  businessId,
+  confirmationName,
+  requestId,
+}) => call("eliminarEmpresaPermanentePlataforma", {
+  businessId,
+  confirmacionNombreComercial: confirmationName,
+  requestId,
+});
+
+export const resolvePlatformVerification = ({
+  businessId,
+  solicitudId,
+  decision,
+  motivo,
+  razonSocialOficial,
+  requestId,
+}) => call("resolverVerificacionEmpresa", {
+  businessId,
+  solicitudId,
+  decision,
+  motivo,
+  razonSocialOficial,
+  requestId,
+});
 
 export function createPlatformRequestId(prefix = "platform") {
   const random = globalThis.crypto?.randomUUID?.() ||

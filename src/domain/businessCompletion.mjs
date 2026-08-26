@@ -18,7 +18,7 @@ export const BUSINESS_VERIFICATION_STATES = Object.freeze({
 
 const VERIFICATION_LABELS = Object.freeze({
   NO_VERIFICADA: "Empresa no verificada",
-  PENDIENTE: "Verificación empresarial pendiente",
+  PENDIENTE: "Verificación en revisión",
   VERIFICADA: "Empresa verificada",
   RECHAZADA: "Verificación empresarial rechazada",
 });
@@ -29,6 +29,9 @@ function hasText(value) {
 
 function normalizeVerificationStatus(value) {
   const normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "EN_REVISION") {
+    return BUSINESS_VERIFICATION_STATES.PENDING;
+  }
   return Object.values(BUSINESS_VERIFICATION_STATES).includes(normalized)
     ? normalized
     : BUSINESS_VERIFICATION_STATES.NOT_VERIFIED;
@@ -67,24 +70,28 @@ export function getBusinessCompletionStatus(
     },
     {
       id: "commercialConfiguration",
-      label: "País / configuración",
+      label: "País y configuración",
       weight: BUSINESS_COMPLETION_WEIGHTS.commercialConfiguration,
       completed:
         hasText(profile.paisCodigo) &&
         hasText(profile.monedaCodigo) &&
-        hasText(profile.locale),
+        hasText(profile.locale) &&
+        hasText(profile.identificadorFiscalTipo) &&
+        hasText(profile.impuestoPredeterminadoId) &&
+        hasText(profile.impuestoPredeterminadoNombre),
       actionLabel: "Completar",
       section: "informacion",
     },
     {
       id: "fiscalIdentity",
-      label: "Identificación fiscal",
+      label: "Identificación fiscal validada",
       weight: BUSINESS_COMPLETION_WEIGHTS.fiscalIdentity,
       completed:
+        resolvedVerificationStatus === BUSINESS_VERIFICATION_STATES.VERIFIED &&
         hasText(profile.identificadorFiscalValor || profile.rut) &&
         hasText(profile.razonSocial),
-      actionLabel: "Completar",
-      section: "informacion",
+      actionLabel: "Verificar",
+      section: "verificacion",
     },
     {
       id: "contact",
@@ -112,7 +119,7 @@ export function getBusinessCompletionStatus(
     },
     {
       id: "ownerEmail",
-      label: "Correo confirmado",
+      label: "Correo del propietario",
       weight: BUSINESS_COMPLETION_WEIGHTS.ownerEmail,
       completed: ownerEmailVerified === true,
       actionLabel: "Verificar correo",

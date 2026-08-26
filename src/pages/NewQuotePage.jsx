@@ -1210,6 +1210,7 @@ function NewQuotePage({ userId }) {
     try {
       setAssistantLoading(true);
       const result = await suggestQuoteItems({
+        businessId: userId,
         description: assistantDescription,
         valuations,
         assistantMode: assistantRequestMode,

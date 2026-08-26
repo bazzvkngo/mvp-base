@@ -38,6 +38,7 @@ import BusinessUnavailablePage from "../pages/BusinessUnavailablePage";
 import EmployeesPage from "../pages/EmployeesPage";
 import WorksPage from "../pages/WorksPage";
 import Button from "../components/ui/Button";
+import BusinessOperationGate from "../components/BusinessOperationGate";
 import { subscribeToAuth } from "../services/authService";
 import {
   getBusinessSession,
@@ -45,6 +46,10 @@ import {
 } from "../services/businessService";
 import {isPlatformRoute} from "../domain/platformAccess.mjs";
 import {resolveInitialActivationRoute} from "../domain/initialActivationNavigation.mjs";
+import {
+  canBusinessOperate,
+  isUnverifiedBusinessAllowedPath,
+} from "../domain/businessOperations.mjs";
 import {
   BUSINESS_PERMISSIONS,
   canAccessBusinessPath,
@@ -110,7 +115,7 @@ function AppRoutes({
     activeBusinessId: businessSession?.activeBusiness?.id || "",
     destination: initialActivationDestination,
     initialBusinessId: initialActivationBusinessId,
-    pathname: location.pathname,
+    pathname: `${location.pathname}${location.search}`,
   });
 
   useEffect(() => {
@@ -204,7 +209,9 @@ function AppRoutes({
   const activeBusiness = businessSession?.activeBusiness;
   const businessId = activeBusiness?.id;
   const role = activeBusiness?.role;
-  const safeLanding = getDefaultBusinessPath(role);
+  const safeLanding = canBusinessOperate(activeBusiness)
+    ? getDefaultBusinessPath(role)
+    : "/empresa?seccion=verificacion";
   if (initialActivationRoute.status === "prompt") {
     return (
       <InitialBusinessActivationPage
@@ -217,8 +224,11 @@ function AppRoutes({
   if (initialActivationRoute.status === "redirect") {
     return <Navigate to={initialActivationRoute.destination} replace />;
   }
+  const unverifiedSetupAccess = !canBusinessOperate(activeBusiness) &&
+    isUnverifiedBusinessAllowedPath(location.pathname);
   if (!["/", "/login", "/onboarding"].includes(location.pathname) &&
-      !canAccessBusinessPath(role, location.pathname)) {
+      !canAccessBusinessPath(role, location.pathname) &&
+      !unverifiedSetupAccess) {
     return <Navigate to={safeLanding} replace />;
   }
   const canWriteQuotes = hasBusinessPermission(role, BUSINESS_PERMISSIONS.QUOTES_WRITE);
@@ -243,6 +253,11 @@ function AppRoutes({
           />
         }
       >
+        <Route
+          element={
+            <BusinessOperationGate business={activeBusiness} />
+          }
+        >
         <Route path="/dashboard" element={<Navigate to={safeLanding} replace />} />
         <Route path="/resumen" element={<Navigate to={safeLanding} replace />} />
         <Route
@@ -271,9 +286,10 @@ function AppRoutes({
           path="/empresa"
           element={
             <CompanyPage
-              key={businessId}
+              key={`${businessId}:${activeBusiness?.verificacionEmpresa?.estado || ""}`}
               businessId={businessId}
               businessName={activeBusiness?.nombreComercial}
+              businessVerified={canBusinessOperate(activeBusiness)}
               currentUserUid={usuario?.uid}
               role={activeBusiness?.role}
               onBusinessDeleted={onBusinessCreated}
@@ -544,6 +560,7 @@ function AppRoutes({
             />
           }
         />
+        </Route>
       </Route>
       <Route path="*" element={<Navigate to={safeLanding} replace />} />
     </Routes>

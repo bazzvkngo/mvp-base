@@ -240,7 +240,7 @@ async function sendPurchaseOrderEmailHandler(request, dependencies) {
   const {businessId, businessRef, uid} = await requireBusinessAccess(
     request,
     dependencies,
-    {roles: PURCHASE_WRITE_ROLES}
+    {roles: PURCHASE_WRITE_ROLES, requiresVerifiedBusiness: true}
   );
   const orderId = safeText(request.data?.ordenCompraId, 160);
   if (!/^[a-zA-Z0-9_-]{1,160}$/.test(orderId)) {

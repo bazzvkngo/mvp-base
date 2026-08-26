@@ -47,6 +47,20 @@ try {
     adminDb.doc(`membresias/${businessId}__${member.uid}`).set({negocioId: businessId, uid: member.uid, rol: "MEMBER", estado: "activo"}),
     adminDb.doc(`negocios/${businessId}/empresa/perfil`).set(companyProfileA, {merge: true}),
   ]);
+  await expectCallableError("OWNER no verificado no opera", () => call(owner, "crearVenta")({businessId, requestId: requestId("unverified-owner"), venta: {}}), ["failed-precondition"]);
+  await expectCallableError("ADMIN no verificado no opera", () => call(admin, "crearVenta")({businessId, requestId: requestId("unverified-admin"), venta: {}}), ["failed-precondition"]);
+  await Promise.all([
+    adminDb.doc(`negocios/${businessId}`).set({
+      identificadorFiscalTipo: "RUT",
+      identificadorFiscalValor: "76.200.200-2",
+      verificacionEmpresa: {estado: "VERIFICADA", identificadorFiscalTipo: "RUT", identificadorFiscalValor: "76.200.200-2"},
+    }, {merge: true}),
+    adminDb.doc(`negocios/${otherBusinessId}`).set({
+      identificadorFiscalTipo: "RUT",
+      identificadorFiscalValor: "76.900.900-9",
+      verificacionEmpresa: {estado: "VERIFICADA", identificadorFiscalTipo: "RUT", identificadorFiscalValor: "76.900.900-9"},
+    }, {merge: true}),
+  ]);
   const clientId = `client-${RUN_ID}`; const crossClient = `cross-client-${RUN_ID}`;
   const product = `product-${RUN_ID}`; const insufficient = `insufficient-${RUN_ID}`; const rollbackA = `rollback-a-${RUN_ID}`; const rollbackB = `rollback-b-${RUN_ID}`; const concurrent = `concurrent-${RUN_ID}`; const historical = `historical-${RUN_ID}`; const crossItem = `cross-item-${RUN_ID}`; const service = `service-${RUN_ID}`; const activity = `activity-${RUN_ID}`;
   const clientFixture = {clienteId: clientId, negocioId: businessId, estado: "activo", tipoCliente: "empresa", rut: "76.111.111-1", nombreRazonSocial: "Cliente Autoritativo SpA", email: "cliente@example.test"};

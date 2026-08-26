@@ -397,7 +397,7 @@ async function resolveBusinessContext(
     return requireBusinessAccess(
       request,
       { db, HttpsError },
-      { roles: INVENTORY_WRITE_ROLES }
+      {roles: INVENTORY_WRITE_ROLES, requiresVerifiedBusiness: true}
     );
   }
   const uid = request?.auth?.uid;

@@ -39,10 +39,20 @@ const db = getFirestore(adminApp);
 
 async function seedBusiness(client, country, currency) {
   const businessId = `fiscal-${country.toLowerCase()}-${client.uid.slice(0, 8)}-${RUN_ID}`;
-  await Promise.all([
-    db.doc(`negocios/${businessId}`).set({negocioId: businessId, nombreComercial: `Negocio ${country}`, paisCodigo: country, monedaCodigo: currency, estado: "activo"}),
+  const writes = [
+    db.doc(`negocios/${businessId}`).set({negocioId: businessId, nombreComercial: `Negocio ${country}`, paisCodigo: country, monedaCodigo: currency, estado: "activo", verificacionEmpresa: {estado: "VERIFICADA"}}),
     db.doc(`membresias/${businessId}__${client.uid}`).set({negocioId: businessId, uid: client.uid, rol: "OWNER", estado: "activo"}),
-  ]);
+  ];
+  if (country === "BR") {
+    writes.push(db.doc(`negocios/${businessId}/configuracion/impuestos`).set({
+      negocioId: businessId,
+      impuestoPredeterminadoId: "TRIBUTO_QA",
+      impuestoPredeterminadoNombre: "Tributo configurado QA",
+      impuestoPredeterminadoTasa: 0,
+      configuracionTributariaBaseCompleta: true,
+    }));
+  }
+  await Promise.all(writes);
   return businessId;
 }
 

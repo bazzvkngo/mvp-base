@@ -3,6 +3,7 @@ import {
   getCurrencyByCode,
   getDefaultFiscalIdentifierLabel,
   getDefaultLocaleForCountry,
+  getJurisdictionContract,
 } from "./businessCatalog.js";
 
 export const DEFAULT_COUNTRY = "CL";
@@ -23,15 +24,25 @@ export function normalizeLocale(value, fallback = DEFAULT_LOCALE) {
 
 export function adaptBusinessLocalization(raw = {}) {
   const country = getCountryByCode(text(raw.paisCodigo).toUpperCase()) || getCountryByCode(DEFAULT_COUNTRY);
-  const currency = getCurrencyByCode(text(raw.monedaCodigo || raw.moneda).toUpperCase()) || getCurrencyByCode(DEFAULT_CURRENCY);
+  const jurisdiction = getJurisdictionContract(country.code);
+  const canonical = Number(raw.contratoJurisdiccionalVersion) >= 1;
+  const currency = canonical
+    ? getCurrencyByCode(jurisdiction.monedaCodigo)
+    : getCurrencyByCode(text(raw.monedaCodigo || raw.moneda).toUpperCase()) ||
+      getCurrencyByCode(DEFAULT_CURRENCY);
   return {
     paisCodigo: country.code,
     paisNombre: country.name,
     monedaCodigo: currency.code,
     monedaNombre: currency.name,
-    locale: normalizeLocale(raw.locale, getDefaultLocaleForCountry(country.code)),
+    locale: canonical
+      ? jurisdiction.locale
+      : normalizeLocale(raw.locale, getDefaultLocaleForCountry(country.code)),
     identificadorFiscalTipo:
-      text(raw.identificadorFiscalTipo) || getDefaultFiscalIdentifierLabel(country.code),
+      canonical
+        ? jurisdiction.identificadorFiscalTipo
+        : text(raw.identificadorFiscalTipo) ||
+          getDefaultFiscalIdentifierLabel(country.code),
     identificadorFiscalValor: text(raw.identificadorFiscalValor || raw.rut),
   };
 }

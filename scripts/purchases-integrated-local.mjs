@@ -67,6 +67,10 @@ try {
   const mainResult = await call(owner, "createFirstBusiness")({nombreComercial: "Negocio compras", rubroCodigo: "INGENIERIA_CONSULTORIA", regionCodigo: "13", requestId: requestId("business-main")});
   const otherResult = await call(outsider, "createFirstBusiness")({nombreComercial: "Negocio compras externo", rubroCodigo: "INGENIERIA_CONSULTORIA", regionCodigo: "13", requestId: requestId("business-other")});
   const businessId = mainResult.data.business.id; const otherBusinessId = otherResult.data.business.id;
+  await Promise.all([
+    adminDb.doc(`negocios/${businessId}`).set({identificadorFiscalTipo: "RUT", identificadorFiscalValor: "76.500.500-5", verificacionEmpresa: {estado: "VERIFICADA", identificadorFiscalTipo: "RUT", identificadorFiscalValor: "76.500.500-5"}}, {merge: true}),
+    adminDb.doc(`negocios/${otherBusinessId}`).set({identificadorFiscalTipo: "RUT", identificadorFiscalValor: "76.900.900-9", verificacionEmpresa: {estado: "VERIFICADA", identificadorFiscalTipo: "RUT", identificadorFiscalValor: "76.900.900-9"}}, {merge: true}),
+  ]);
   const companyProfile = {negocioId: businessId, nombreComercial: "Empresa Compradora", razonSocial: "Empresa Compradora SpA", identificadorFiscalTipo: "RUT", identificadorFiscalValor: "76.500.500-5"};
   await Promise.all([
     adminDb.doc(`membresias/${businessId}__${admin.uid}`).set({negocioId: businessId, uid: admin.uid, rol: "ADMIN", estado: "activo"}),

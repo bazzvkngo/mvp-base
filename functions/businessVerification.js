@@ -5,6 +5,10 @@ const {
   isValidFiscalIdentifier,
   normalizeCountryCode,
 } = require("./fiscalIdentifier");
+const {
+  authoritativeBusinessFields,
+  getJurisdictionContract,
+} = require("./businessJurisdiction");
 
 const PLATFORM_SUPERADMIN = "PLATFORM_SUPERADMIN";
 const VERIFICATION_STATES = Object.freeze({
@@ -47,20 +51,29 @@ function fingerprint(value) {
 
 function currentVerification(business = {}) {
   const verification = business.verificacionEmpresa || {};
-  const state = Object.values(VERIFICATION_STATES).includes(verification.estado)
-    ? verification.estado
+  const legacyState = text(verification.estado, 30).toUpperCase();
+  const normalizedState = legacyState === "EN_REVISION"
+    ? VERIFICATION_STATES.PENDING
+    : legacyState;
+  const state = Object.values(VERIFICATION_STATES).includes(normalizedState)
+    ? normalizedState
     : VERIFICATION_STATES.NOT_VERIFIED;
   return {...verification, estado: state};
 }
 
 function businessIdentity(business = {}, profile = {}) {
+  const verification = currentVerification(business);
   const source = {
-    paisCodigo: profile.paisCodigo || business.paisCodigo || "CL",
+    paisCodigo: business.paisCodigo || profile.paisCodigo || "CL",
     identificadorFiscalTipo:
-      profile.identificadorFiscalTipo || business.identificadorFiscalTipo,
+      verification.estado === VERIFICATION_STATES.VERIFIED
+        ? verification.identificadorFiscalTipo || business.identificadorFiscalTipo
+        : business.identificadorFiscalTipo || profile.identificadorFiscalTipo,
     identificadorFiscalValor:
-      profile.identificadorFiscalValor || profile.rut ||
-      business.identificadorFiscalValor || business.rut,
+      verification.estado === VERIFICATION_STATES.VERIFIED
+        ? verification.identificadorFiscalValor || business.identificadorFiscalValor
+        : business.identificadorFiscalValor || profile.identificadorFiscalValor ||
+          business.rut || profile.rut,
   };
   return adaptStoredFiscalIdentifier(source, source.paisCodigo);
 }
@@ -84,8 +97,7 @@ function fiscalDataChanged(business, profile, nextProfile) {
   return current.paisCodigo !== next.paisCodigo ||
     current.identificadorFiscalNormalizado !== next.identificadorFiscalNormalizado ||
     text(current.identificadorFiscalTipo, 40) !==
-      text(nextProfile.identificadorFiscalTipo || next.identificadorFiscalTipo, 40) ||
-    legalName(business, profile) !== text(nextProfile.razonSocial, 180);
+      text(nextProfile.identificadorFiscalTipo || next.identificadorFiscalTipo, 40);
 }
 
 async function buildVerificationInvalidationPlan({
@@ -201,21 +213,40 @@ async function verifyEvidence(evidence, bucket, HttpsError) {
 
 function normalizeRequestPayload(raw = {}, HttpsError) {
   const country = normalizeCountryCode(raw.paisCodigo);
-  const fiscal = buildFiscalIdentifier(country, raw.identificadorFiscalValor);
+  const fiscal = buildFiscalIdentifier(
+    country,
+    raw.identificadorFiscalValor
+  );
+
   const normalized = {
-    razonSocial: text(raw.razonSocial, 180),
     ...fiscal,
     relacionSolicitante: text(raw.relacionSolicitante, 160),
-    correoSolicitante: text(raw.correoSolicitante, 180).toLowerCase(),
+    correoSolicitante: text(
+      raw.correoSolicitante,
+      180
+    ).toLowerCase(),
     telefonoSolicitante: text(raw.telefonoSolicitante, 40),
     observaciones: text(raw.observaciones, 4000),
   };
-  if (!normalized.razonSocial || normalized.relacionSolicitante.length < 2 ||
-    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized.correoSolicitante) ||
+
+  if (
+    normalized.relacionSolicitante.length < 2 ||
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+      normalized.correoSolicitante
+    ) ||
     normalized.telefonoSolicitante.length < 6 ||
-    !isValidFiscalIdentifier(country, raw.identificadorFiscalValor)) {
-    fail(HttpsError, "invalid-argument", "Completa datos empresariales y de contacto validos.");
+    !isValidFiscalIdentifier(
+      country,
+      raw.identificadorFiscalValor
+    )
+  ) {
+    fail(
+      HttpsError,
+      "invalid-argument",
+      "Completa la identificacion fiscal y los datos de contacto validos."
+    );
   }
+
   return normalized;
 }
 
@@ -273,25 +304,29 @@ async function solicitarVerificacionEmpresaHandler(request, dependencies) {
       fail(HttpsError, "failed-precondition", "La empresa ya esta verificada.");
     }
     const profile = profileSnapshot.data() || {};
-    const authoritativeIdentity = businessIdentity(business, profile);
-    const authoritativeLegalName = legalName(business, profile);
-    if (!authoritativeLegalName || supplied.razonSocial !== authoritativeLegalName ||
-      supplied.paisCodigo !== authoritativeIdentity.paisCodigo ||
-      supplied.identificadorFiscalNormalizado !==
-        authoritativeIdentity.identificadorFiscalNormalizado) {
-      fail(HttpsError, "failed-precondition", "Guarda primero los datos fiscales vigentes de la empresa.");
+    const authoritativeFields = authoritativeBusinessFields(business, profile);
+    const jurisdiction = getJurisdictionContract(authoritativeFields.paisCodigo);
+
+    if (
+      supplied.paisCodigo !== jurisdiction.paisCodigo ||
+      supplied.identificadorFiscalTipo !== jurisdiction.identificadorFiscalTipo
+    ) {
+      fail(
+        HttpsError,
+        "failed-precondition",
+        "La identificacion declarada no corresponde a la jurisdiccion de la empresa."
+      );
     }
     const timestamp = FieldValue.serverTimestamp();
     const stored = {
       modeloVerificacionVersion: 1,
       solicitudVerificacionId: verificationRequestRef.id,
       negocioId: context.businessId,
-      razonSocial: authoritativeLegalName,
-      paisCodigo: authoritativeIdentity.paisCodigo,
-      identificadorFiscalTipo: authoritativeIdentity.identificadorFiscalTipo,
-      identificadorFiscalValor: authoritativeIdentity.identificadorFiscalValor,
+      paisCodigo: supplied.paisCodigo,
+      identificadorFiscalTipo: supplied.identificadorFiscalTipo,
+      identificadorFiscalValor: supplied.identificadorFiscalValor,
       identificadorFiscalNormalizado:
-        authoritativeIdentity.identificadorFiscalNormalizado,
+        supplied.identificadorFiscalNormalizado,
       relacionSolicitante: supplied.relacionSolicitante,
       correoSolicitante: supplied.correoSolicitante,
       telefonoSolicitante: supplied.telefonoSolicitante,
@@ -314,6 +349,11 @@ async function solicitarVerificacionEmpresaHandler(request, dependencies) {
       verificacionEmpresa: {
         estado: VERIFICATION_STATES.PENDING,
         solicitudIdActual: verificationRequestRef.id,
+        paisCodigo: supplied.paisCodigo,
+        identificadorFiscalTipo: supplied.identificadorFiscalTipo,
+        identificadorFiscalDeclaradoValor: supplied.identificadorFiscalValor,
+        identificadorFiscalDeclaradoNormalizado:
+          supplied.identificadorFiscalNormalizado,
         solicitadoPorUid: context.uid,
         solicitadoEn: timestamp,
       },
@@ -358,14 +398,26 @@ async function resolverVerificacionEmpresaHandler(request, dependencies) {
     fail(HttpsError, "invalid-argument", "Selecciona una decision valida.");
   }
   const rejectionReason = text(request?.data?.motivo, 1000);
+
+  const officialLegalName = text(request?.data?.razonSocialOficial, 180);
+
   if (decision === "RECHAZAR" && !rejectionReason) {
     fail(HttpsError, "invalid-argument", "Indica el motivo del rechazo.");
+  }
+
+  if (decision === "APROBAR" && !officialLegalName) {
+    fail(
+      HttpsError,
+      "invalid-argument",
+      "Ingresa la razon social oficial antes de aprobar."
+    );
   }
   const decisionFingerprint = fingerprint({
     businessId,
     verificationRequestId,
     decision,
     rejectionReason,
+    officialLegalName: decision === "APROBAR" ? officialLegalName : "",
   });
   const businessRef = db.collection("negocios").doc(businessId);
   const verificationRequestRef = businessRef
@@ -415,12 +467,21 @@ async function resolverVerificacionEmpresaHandler(request, dependencies) {
       fail(HttpsError, "failed-precondition", "La solicitud ya no esta pendiente.");
     }
     const requestData = verificationRequest.data() || {};
-    const currentIdentity = businessIdentity(business, profileSnapshot.data() || {});
-    if (currentIdentity.paisCodigo !== requestData.paisCodigo ||
-      currentIdentity.identificadorFiscalNormalizado !==
-        requestData.identificadorFiscalNormalizado ||
-      legalName(business, profileSnapshot.data() || {}) !== requestData.razonSocial) {
-      fail(HttpsError, "failed-precondition", "Los datos fiscales cambiaron desde la solicitud.");
+    const currentFields = authoritativeBusinessFields(
+      business,
+      profileSnapshot.data() || {}
+    );
+    const currentJurisdiction = getJurisdictionContract(currentFields.paisCodigo);
+    if (
+      currentJurisdiction.paisCodigo !== requestData.paisCodigo ||
+      currentJurisdiction.identificadorFiscalTipo !==
+        requestData.identificadorFiscalTipo
+    ) {
+      fail(
+        HttpsError,
+        "failed-precondition",
+        "Los datos fiscales cambiaron desde la solicitud."
+      );
     }
     const identityKey = verificationIdentityKey(
       requestData.paisCodigo,
@@ -458,11 +519,14 @@ async function resolverVerificacionEmpresaHandler(request, dependencies) {
       solicitadoEn: requestData.solicitadoEn,
       decididoPorUid: uid,
       decididoEn: timestamp,
+      paisCodigo: requestData.paisCodigo,
+      identificadorFiscalTipo: requestData.identificadorFiscalTipo,
+      identificadorFiscalDeclaradoValor: requestData.identificadorFiscalValor,
+      identificadorFiscalDeclaradoNormalizado:
+        requestData.identificadorFiscalNormalizado,
       ...(decision === "APROBAR"
         ? {
-            razonSocialVerificada: requestData.razonSocial,
-            paisCodigo: requestData.paisCodigo,
-            identificadorFiscalTipo: requestData.identificadorFiscalTipo,
+            razonSocialVerificada: officialLegalName,
             identificadorFiscalValor: requestData.identificadorFiscalValor,
             identificadorFiscalNormalizado:
               requestData.identificadorFiscalNormalizado,
@@ -471,8 +535,29 @@ async function resolverVerificacionEmpresaHandler(request, dependencies) {
     };
     transaction.update(businessRef, {
       verificacionEmpresa: verificationPatch,
+      ...(decision === "APROBAR"
+        ? {
+            razonSocial: officialLegalName,
+            identificadorFiscalTipo: requestData.identificadorFiscalTipo,
+            identificadorFiscalValor: requestData.identificadorFiscalValor,
+            rut: FieldValue.delete(),
+          }
+        : {}),
       actualizadoEn: timestamp,
     });
+    if (decision === "APROBAR") {
+      transaction.set(
+        profileRef,
+        {
+          razonSocial: officialLegalName,
+          identificadorFiscalTipo: requestData.identificadorFiscalTipo,
+          identificadorFiscalValor: requestData.identificadorFiscalValor,
+          rut: FieldValue.delete(),
+          actualizadoEn: timestamp,
+        },
+        {merge: true}
+      );
+    }
     transaction.create(eventRef, {
       negocioId: businessId,
       solicitudId: verificationRequestId,

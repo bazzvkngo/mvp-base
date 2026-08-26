@@ -8,6 +8,7 @@ function BusinessCompletionCard({
   description = "Completa tu perfil para dejar tus documentos y operaciones listos.",
   loading = false,
   onAction,
+  showSummary = true,
   status,
   title = "Estado de tu empresa",
 }) {
@@ -37,9 +38,11 @@ function BusinessCompletionCard({
       >
         <span style={{ width: `${status.percent}%` }} />
       </div>
-      <p className="business-completion-card__summary">
-        {status.label} · {status.verificationLabel}
-      </p>
+      {showSummary && (
+  <p className="business-completion-card__summary">
+    {status.label} · {status.verificationLabel}
+  </p>
+)}
       <ul className="business-completion-checklist">
         {status.items.map((item) => (
           <li className={item.completed ? "is-complete" : ""} key={item.id}>

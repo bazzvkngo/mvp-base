@@ -16,6 +16,9 @@ const initialProfile = {
   paisCodigo: "CL",
   monedaCodigo: "CLP",
   locale: "es-CL",
+  identificadorFiscalTipo: "RUT",
+  impuestoPredeterminadoId: "IVA_GENERAL",
+  impuestoPredeterminadoNombre: "IVA",
   verificacionEmpresa: { estado: "NO_VERIFICADA" },
 };
 const initial = getBusinessCompletionStatus(initialProfile);
@@ -24,7 +27,7 @@ assert.equal(initial.label, "Configuración inicial");
 assert.equal(initial.verificationStatus, "NO_VERIFICADA");
 assert.equal(initial.verificationLabel, "Empresa no verificada");
 assert.equal(initial.nextRecommendedAction.id, "fiscalIdentity");
-assert.equal(initial.nextRecommendedAction.actionLabel, "Completar");
+assert.equal(initial.nextRecommendedAction.actionLabel, "Verificar");
 assert.equal(
   initial.pendingItems.find((item) => item.id === "ownerEmail")?.path,
   "/cuenta?seccion=acceso"
@@ -35,8 +38,8 @@ const fiscal = getBusinessCompletionStatus({
   razonSocial: "Bagner Servicios Integrales SpA",
   identificadorFiscalValor: "12.345.678-5",
 });
-assert.equal(fiscal.percent, 40);
-assert.equal(fiscal.label, "Perfil en progreso");
+assert.equal(fiscal.percent, 25);
+assert.equal(fiscal.label, "Configuración inicial");
 
 const completeProfile = {
   ...initialProfile,
@@ -49,8 +52,8 @@ const completeProfile = {
   logoPath: "negocios/business-a/logo.png",
 };
 const profileReady = getBusinessCompletionStatus(completeProfile);
-assert.equal(profileReady.percent, 70);
-assert.equal(profileReady.label, "Empresa casi lista");
+assert.equal(profileReady.percent, 55);
+assert.equal(profileReady.label, "Perfil en progreso");
 const unverifiedEmail = getBusinessCompletionStatus(completeProfile, {
   ownerEmailVerified: false,
   verificationStatus: "VERIFICADA",
@@ -62,7 +65,7 @@ const pendingVerification = getBusinessCompletionStatus(completeProfile, {
   ownerEmailVerified: true,
   verificationStatus: "PENDIENTE",
 });
-assert.equal(pendingVerification.percent, 80);
+assert.equal(pendingVerification.percent, 65);
 assert.notEqual(pendingVerification.percent, 100);
 
 const complete = getBusinessCompletionStatus(completeProfile, {
@@ -88,6 +91,9 @@ const legacy = getBusinessCompletionStatus({
   paisCodigo: "CL",
   monedaCodigo: "CLP",
   locale: "es-CL",
+  identificadorFiscalTipo: "RUT",
+  impuestoPredeterminadoId: "IVA_GENERAL",
+  impuestoPredeterminadoNombre: "IVA",
   razonSocial: "Empresa Legacy Ltda.",
   rut: "11.111.111-1",
   telefono: "+56 2 2222 2222",

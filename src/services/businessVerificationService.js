@@ -11,7 +11,7 @@ export const BUSINESS_VERIFICATION_STATES = Object.freeze({
 });
 export const BUSINESS_VERIFICATION_STATUS_LABELS = Object.freeze({
   NO_VERIFICADA: "Empresa no verificada",
-  PENDIENTE: "Verificación empresarial pendiente",
+  PENDIENTE: "Verificación en revisión",
   VERIFICADA: "Empresa verificada",
   RECHAZADA: "Verificación empresarial rechazada",
 });
@@ -32,8 +32,12 @@ export function createBusinessVerificationRequestId() {
 }
 
 export function normalizeBusinessVerification(raw = {}) {
-  const estado = Object.values(BUSINESS_VERIFICATION_STATES).includes(raw.estado)
-    ? raw.estado
+  const legacyState = String(raw.estado || "").trim().toUpperCase();
+  const normalizedState = legacyState === "EN_REVISION"
+    ? BUSINESS_VERIFICATION_STATES.PENDING
+    : legacyState;
+  const estado = Object.values(BUSINESS_VERIFICATION_STATES).includes(normalizedState)
+    ? normalizedState
     : BUSINESS_VERIFICATION_STATES.NOT_VERIFIED;
   return {
     ...raw,

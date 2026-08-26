@@ -5,6 +5,19 @@ const {
   applyVerificationInvalidation,
   buildVerificationInvalidationPlan,
 } = require("./businessVerification");
+const {
+  JURISDICTION_CONTRACT_VERSION,
+  PROTECTED_BUSINESS_FIELDS,
+  authoritativeBusinessFields,
+  buildBaseTaxSettings,
+  buildProfileInputWithAuthoritativeFields,
+  getJurisdictionContract,
+  resolveBaseTaxSettings,
+} = require("./businessJurisdiction");
+const {
+  assertBusinessCanOperate,
+  normalizeBusinessVerificationState,
+} = require("./businessOperations");
 
 const {BUSINESS_ROLES} = require("./rbac");
 const ACTIVE_STATUS = "activo";
@@ -209,10 +222,12 @@ function validateRequiredBusinessFields(
     );
   }
 
+  const jurisdiction = getJurisdictionContract(country.code);
   let locale;
   try {
     locale = Intl.getCanonicalLocales(
-      safeText(data.locale, 40) || country.defaultLocale || "es-CL"
+      (deriveCurrencyFromCountry ? jurisdiction.locale : safeText(data.locale, 40)) ||
+        country.defaultLocale || "es-CL"
     )[0];
   } catch {
     throw new HttpsError("invalid-argument", "Ingresa un formato regional válido.");
@@ -230,6 +245,12 @@ function validateRequiredBusinessFields(
     ciudad: commune?.name || safeText(data.ciudad, 120),
     monedaCodigo: currency.code,
     monedaNombre: currency.name,
+    ...(deriveCurrencyFromCountry
+      ? {
+          identificadorFiscalTipo: jurisdiction.identificadorFiscalTipo,
+          contratoJurisdiccionalVersion: JURISDICTION_CONTRACT_VERSION,
+        }
+      : {}),
     ...(commune
       ? { comunaCodigo: commune.code, comunaNombre: commune.name }
       : {}),
@@ -385,7 +406,6 @@ function quickCompanyProfile(input, businessId) {
       input.identificadorFiscalTipo ||
       countriesByCode.get(input.paisCodigo)?.defaultFiscalIdentifierLabel ||
       "Identificación fiscal",
-    identificadorFiscalValor: input.identificadorFiscalValor || "",
     regionCodigo: input.regionCodigo,
     regionNombre: input.regionNombre,
     regionEstado: input.regionEstado || input.regionNombre,
@@ -411,6 +431,7 @@ function fingerprintBusinessInput(input) {
 function businessResponse(snapshot, membershipData = null) {
   if (!snapshot?.exists) return null;
   const data = snapshot.data() || {};
+  const verificationState = normalizeBusinessVerificationState(data);
   return {
     id: snapshot.id,
     nombreComercial: data.nombreComercial || "",
@@ -425,7 +446,20 @@ function businessResponse(snapshot, membershipData = null) {
     comunaNombre: data.comunaNombre || "",
     monedaCodigo: data.monedaCodigo || "",
     monedaNombre: data.monedaNombre || "",
-    rut: data.rut || "",
+    locale: data.locale || "",
+    identificadorFiscalTipo: data.identificadorFiscalTipo || "",
+    identificadorFiscalValor:
+      verificationState === VERIFICATION_STATES.VERIFIED
+        ? data.verificacionEmpresa?.identificadorFiscalValor ||
+          data.identificadorFiscalValor || ""
+        : "",
+    verificacionEmpresa: {
+      ...(data.verificacionEmpresa || {}),
+      estado: verificationState,
+    },
+    rut: verificationState === VERIFICATION_STATES.VERIFIED
+      ? data.identificadorFiscalValor || data.rut || ""
+      : "",
     direccion: data.direccion || "",
     telefono: data.telefono || "",
     email: data.email || "",
@@ -513,7 +547,7 @@ function sortBusinessEntries(left, right) {
 async function requireBusinessAccess(
   request,
   { db, HttpsError },
-  { roles = BUSINESS_ROLES } = {}
+  { roles = BUSINESS_ROLES, requiresVerifiedBusiness = false } = {}
 ) {
   const uid = requireAuthenticatedUid(request, HttpsError);
   const businessId = safeText(request?.data?.businessId, 160);
@@ -526,10 +560,12 @@ async function requireBusinessAccess(
   const membershipRef = db
     .collection("membresias")
     .doc(membershipDocumentId(businessId, uid));
-  const [businessSnapshot, membershipSnapshot, userSnapshot] = await Promise.all([
+  const taxSettingsRef = businessRef.collection("configuracion").doc("impuestos");
+  const [businessSnapshot, membershipSnapshot, userSnapshot, taxSettingsSnapshot] = await Promise.all([
     businessRef.get(),
     membershipRef.get(),
     userRef.get(),
+    requiresVerifiedBusiness ? taxSettingsRef.get() : Promise.resolve(null),
   ]);
   const membership = membershipSnapshot.data() || {};
   assertPlatformUserActive(userSnapshot.data() || {}, HttpsError);
@@ -556,6 +592,19 @@ async function requireBusinessAccess(
       "El negocio seleccionado ya no está disponible."
     );
   }
+  const taxSettings = requiresVerifiedBusiness
+    ? resolveBaseTaxSettings(
+        businessSnapshot.data() || {},
+        taxSettingsSnapshot?.data() || {}
+      )
+    : null;
+  if (requiresVerifiedBusiness) {
+    assertBusinessCanOperate(
+      businessSnapshot.data() || {},
+      taxSettings,
+      HttpsError
+    );
+  }
 
   return {
     uid,
@@ -564,7 +613,19 @@ async function requireBusinessAccess(
     businessSnapshot,
     membership,
     membershipRef,
+    taxSettings,
   };
+}
+
+function requireOperationalBusinessAccess(
+  request,
+  dependencies,
+  options = {}
+) {
+  return requireBusinessAccess(request, dependencies, {
+    ...options,
+    requiresVerifiedBusiness: true,
+  });
 }
 
 async function createFirstBusinessHandler(
@@ -702,6 +763,7 @@ async function createFirstBusinessHandler(
       .collection("membresias")
       .doc(membershipDocumentId(businessRef.id, uid));
     const companyProfileRef = businessRef.collection("empresa").doc("perfil");
+    const taxSettingsRef = businessRef.collection("configuracion").doc("impuestos");
     const now = FieldValue.serverTimestamp();
 
     transaction.create(businessRef, {
@@ -728,6 +790,11 @@ async function createFirstBusinessHandler(
       creadoEn: now,
       actualizadoEn: now,
     });
+    transaction.create(taxSettingsRef, buildBaseTaxSettings(
+      input.paisCodigo,
+      businessRef.id,
+      {creadoEn: now, actualizadoEn: now}
+    ));
     transaction.set(
       userRef,
       {
@@ -775,6 +842,7 @@ async function createFirstBusinessHandler(
         id: businessRef.id,
         ...input,
         estado: ACTIVE_STATUS,
+        verificacionEmpresa: {estado: VERIFICATION_STATES.NOT_VERIFIED},
         role: "OWNER",
       },
       idempotent: false,
@@ -858,6 +926,7 @@ async function createAdditionalBusinessHandler(
       .collection("membresias")
       .doc(membershipDocumentId(businessRef.id, uid));
     const companyProfileRef = businessRef.collection("empresa").doc("perfil");
+    const taxSettingsRef = businessRef.collection("configuracion").doc("impuestos");
     const now = FieldValue.serverTimestamp();
 
     transaction.create(businessRef, {
@@ -884,6 +953,11 @@ async function createAdditionalBusinessHandler(
       creadoEn: now,
       actualizadoEn: now,
     });
+    transaction.create(taxSettingsRef, buildBaseTaxSettings(
+      input.paisCodigo,
+      businessRef.id,
+      {creadoEn: now, actualizadoEn: now}
+    ));
     transaction.set(
       userRef,
       {
@@ -920,6 +994,7 @@ async function createAdditionalBusinessHandler(
         id: businessRef.id,
         ...input,
         estado: ACTIVE_STATUS,
+        verificacionEmpresa: {estado: VERIFICATION_STATES.NOT_VERIFIED},
         role: "OWNER",
       },
       idempotent: false,
@@ -1117,12 +1192,19 @@ async function updateBusinessProfileHandler(
     { db, HttpsError },
     { roles: ["OWNER", "ADMIN"] }
   );
-  const profileInput = validateBusinessProfileInput(
-    request?.data?.profile,
-    HttpsError,
-    { existingBusiness: context.businessSnapshot.data() || {} }
-  );
   const profileRef = context.businessRef.collection("empresa").doc("perfil");
+  const existingProfileSnapshot = await profileRef.get();
+  const existingBusiness = context.businessSnapshot.data() || {};
+  const existingProfile = existingProfileSnapshot.data() || {};
+  const rawProfile = buildProfileInputWithAuthoritativeFields(
+    request?.data?.profile || {},
+    existingBusiness,
+    existingProfile,
+    HttpsError
+  );
+  const profileInput = validateBusinessProfileInput(rawProfile, HttpsError, {
+    existingBusiness,
+  });
   const now = FieldValue.serverTimestamp();
   const hasCommune = Boolean(profileInput.comunaCodigo);
   const responseProfilePayload = {
@@ -1158,8 +1240,13 @@ async function updateBusinessProfileHandler(
         ...businessCommuneStoragePatch,
         ciudad: FieldValue.delete(),
       };
+  const mutableProfileInput = Object.fromEntries(
+    Object.entries(profileInput).filter(
+      ([field]) => !PROTECTED_BUSINESS_FIELDS.includes(field)
+    )
+  );
   const storedProfilePayload = {
-    ...profileInput,
+    ...mutableProfileInput,
     ...categoryStoragePatch,
     ...profileCommuneStoragePatch,
     negocioId: context.businessId,
@@ -1179,7 +1266,13 @@ async function updateBusinessProfileHandler(
       businessRef: context.businessRef,
       db,
       FieldValue,
-      nextProfile: profileInput,
+      nextProfile: {
+        ...profileInput,
+        ...authoritativeBusinessFields(
+          currentBusiness.data() || {},
+          currentProfile.data() || {}
+        ),
+      },
       profile: currentProfile.data() || {},
       transaction,
       uid: context.uid,
@@ -1187,14 +1280,6 @@ async function updateBusinessProfileHandler(
     transaction.update(context.businessRef, {
       nombreComercial: profileInput.nombreComercial,
       ...categoryStoragePatch,
-      paisCodigo: profileInput.paisCodigo,
-      paisNombre: profileInput.paisNombre,
-      monedaCodigo: profileInput.monedaCodigo,
-      monedaNombre: profileInput.monedaNombre,
-      locale: profileInput.locale,
-      identificadorFiscalTipo: profileInput.identificadorFiscalTipo,
-      identificadorFiscalValor: profileInput.identificadorFiscalValor || FieldValue.delete(),
-      rut: profileInput.rut || FieldValue.delete(),
       regionCodigo: profileInput.regionCodigo,
       regionNombre: profileInput.regionNombre,
       regionEstado: profileInput.regionEstado,
@@ -1211,7 +1296,16 @@ async function updateBusinessProfileHandler(
         ...storedProfilePayload,
         ...(currentProfile.exists
           ? {}
-          : { creadoPorUid: context.uid, creadoEn: now }),
+          : {
+              paisCodigo: profileInput.paisCodigo,
+              paisNombre: profileInput.paisNombre,
+              monedaCodigo: profileInput.monedaCodigo,
+              monedaNombre: profileInput.monedaNombre,
+              locale: profileInput.locale,
+              identificadorFiscalTipo: profileInput.identificadorFiscalTipo,
+              creadoPorUid: context.uid,
+              creadoEn: now,
+            }),
       },
       { merge: true }
     );
@@ -1420,6 +1514,7 @@ module.exports = {
   getBusinessSessionHandler,
   membershipDocumentId,
   requireBusinessAccess,
+  requireOperationalBusinessAccess,
   setActiveBusinessHandler,
   updateBusinessProfileHandler,
   validateBusinessCreationInput,

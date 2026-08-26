@@ -291,7 +291,7 @@ async function sendQuoteEmailHandler(request, dependencies) {
   const { businessId, businessRef, uid } = await requireBusinessAccess(
     request,
     dependencies,
-    { roles: SALES_WRITE_ROLES }
+    {roles: SALES_WRITE_ROLES, requiresVerifiedBusiness: true}
   );
   const data = request.data || {};
   const rawEmailCliente =

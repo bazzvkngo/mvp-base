@@ -7,13 +7,17 @@ import {
   Clock3,
   RefreshCw,
   ShieldCheck,
+  Trash2,
   UserRound,
   Users,
 } from "lucide-react";
-import {useNavigate, useParams} from "react-router-dom";
+import {useLocation, useNavigate, useParams} from "react-router-dom";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
+import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import StatusBadge from "../components/ui/StatusBadge";
+import {COUNTRIES, getCountryByCode} from "../domain/businessCatalog";
+import {formatFiscalIdentifierForDisplay} from "../domain/fiscalIdentifier.mjs";
 import {
   createPlatformRequestId,
   getPlatformBusiness,
@@ -22,6 +26,7 @@ import {
   getPlatformVerificationDocument,
   listPlatformBusinesses,
   listPlatformUsers,
+  permanentlyDeletePlatformBusiness,
   resolvePlatformVerification,
   setPlatformBusinessStatus,
   setPlatformUserStatus,
@@ -42,11 +47,37 @@ function message(error, fallback) {
   return fallback;
 }
 
+function destructiveMessage(error) {
+  const code = String(error?.code || "");
+  if (code.includes("permission-denied")) {
+    return "No tienes autorización para eliminar esta empresa.";
+  }
+  return error?.message || "No pudimos eliminar permanentemente la empresa.";
+}
+
 function date(value) {
   if (!value) return "Sin registro";
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? "Sin registro" :
     new Intl.DateTimeFormat("es-CL", {dateStyle: "medium", timeStyle: "short"}).format(parsed);
+}
+
+function countryName(code) {
+  return getCountryByCode(code)?.name || code || "Sin registro";
+}
+
+function fiscalIdentifier(countryCode, value) {
+  return value
+    ? formatFiscalIdentifierForDisplay(countryCode, value)
+    : "Sin registro";
+}
+
+function fiscalFieldLabel(type, state) {
+  const normalizedType = String(type || "").trim().toUpperCase();
+  if (!normalizedType || normalizedType === "IDENTIFICACION_FISCAL") {
+    return `Identificación fiscal ${state === "declarado" ? "declarada" : "confirmada"}`;
+  }
+  return `${normalizedType} ${state}`;
 }
 
 function verificationVariant(state) {
@@ -61,7 +92,7 @@ function stateVariant(state) {
 
 function PlatformHeading({eyebrow, title, description, action}) {
   return <header className="platform-page-heading">
-    <div><span>{eyebrow}</span><h1>{title}</h1>{description && <p>{description}</p>}</div>
+    <div><span className="platform-page-heading__eyebrow">{eyebrow}</span><h1>{title}</h1>{description && <p>{description}</p>}</div>
     {action}
   </header>;
 }
@@ -102,38 +133,111 @@ export function PlatformDashboardPage() {
   </>;
 }
 
-function BusinessesTable({businesses, emptyText = "No hay empresas para mostrar."}) {
+function BusinessesTable({
+  businesses,
+  emptyText = "No hay empresas para mostrar.",
+  verificationOnly = false,
+}) {
   const navigate = useNavigate();
   if (!businesses.length) return <div className="platform-empty">{emptyText}</div>;
   return <div className="platform-table-wrap"><table className="platform-table">
-    <thead><tr><th>Empresa</th><th>Pais</th><th>Propietario</th><th>Usuarios</th><th>Estado</th><th>Verificacion</th><th>Registro</th></tr></thead>
+    <thead><tr><th>Empresa</th><th>País</th><th>Usuarios</th><th>Estado</th><th>Verificación</th><th>{verificationOnly ? "Solicitud" : "Registro"}</th></tr></thead>
     <tbody>{businesses.map((business) => <tr key={business.id} tabIndex="0" onClick={() => navigate(`/admin/empresas/${business.id}`)} onKeyDown={(event) => event.key === "Enter" && navigate(`/admin/empresas/${business.id}`)}>
-      <td><strong>{business.nombreComercial}</strong><small>{business.id}</small></td>
-      <td>{business.paisCodigo}</td><td>{business.propietario?.nombre || "Sin propietario"}<small>{business.propietario?.correo}</small></td><td>{business.usuarios}</td>
+      <td><strong>{business.nombreComercial}</strong><small>{business.propietario?.correo || "Propietario sin correo"}</small></td>
+      <td>{countryName(business.paisCodigo)}</td><td>{business.usuarios}</td>
       <td><StatusBadge variant={stateVariant(business.estado)}>{business.estado}</StatusBadge></td>
-      <td><StatusBadge variant={verificationVariant(business.verificacion)}>{VERIFICATION_LABELS[business.verificacion] || business.verificacion}</StatusBadge></td><td>{date(business.fechaRegistro)}</td>
+      <td><StatusBadge variant={verificationVariant(business.verificacion)}>{VERIFICATION_LABELS[business.verificacion] || business.verificacion}</StatusBadge></td><td>{date(verificationOnly ? business.fechaSolicitud : business.fechaRegistro)}</td>
     </tr>)}</tbody>
   </table></div>;
 }
 
+function PlatformListFilters({
+  draft,
+  onChange,
+  onReset,
+  onSelectorChange,
+  onSubmit,
+  type,
+}) {
+  const verificationOnly = type === "verifications";
+  const users = type === "users";
+  return <form className="platform-filters" onSubmit={onSubmit}>
+    <label className="platform-filters__search">
+      <span>Buscar</span>
+      <input
+        type="search"
+        value={draft.search}
+        placeholder={users ? "Nombre, correo o UID" : verificationOnly ? "Empresa, correo, ID o identificación fiscal" : "Empresa, razón social, correo o ID"}
+        onChange={(event) => onChange({...draft, search: event.target.value})}
+      />
+    </label>
+    {!users && <label><span>País</span><select value={draft.country} onChange={(event) => onSelectorChange({...draft, country: event.target.value})}>
+      <option value="TODOS">Todos</option>
+      {COUNTRIES.map((country) => <option key={country.code} value={country.code}>{country.name}</option>)}
+    </select></label>}
+    {!users && !verificationOnly && <label><span>Estado</span><select value={draft.state} onChange={(event) => onSelectorChange({...draft, state: event.target.value})}>
+      <option value="TODOS">Todos</option><option value="ACTIVA">Activa</option><option value="SUSPENDIDA">Suspendida</option><option value="ELIMINADA">Eliminada</option>
+    </select></label>}
+    {!users && <label><span>Verificación</span><select value={draft.verification} onChange={(event) => onSelectorChange({...draft, verification: event.target.value})}>
+      <option value="TODAS">Todas</option><option value="PENDIENTE">Pendiente</option><option value="VERIFICADA">Verificada</option><option value="RECHAZADA">Rechazada</option><option value="NO_VERIFICADA">No verificada</option>
+    </select></label>}
+    {users && <label><span>Estado</span><select value={draft.state} onChange={(event) => onSelectorChange({...draft, state: event.target.value})}>
+      <option value="TODOS">Todos</option><option value="ACTIVO">Activo</option><option value="SUSPENDIDO">Suspendido</option>
+    </select></label>}
+    {users && <label><span>Empresa</span><select value={draft.company} onChange={(event) => onSelectorChange({...draft, company: event.target.value})}>
+      <option value="TODAS">Todas las cuentas</option><option value="CON_EMPRESA">Con empresa</option><option value="SIN_EMPRESA">Sin empresa</option>
+    </select></label>}
+    <div className="platform-filters__actions"><Button type="submit">Buscar</Button><Button type="button" variant="secondary" onClick={onReset}>Limpiar</Button></div>
+  </form>;
+}
+
 export function PlatformBusinessesPage({verificationOnly = false}) {
+  const location = useLocation();
+  const initialFilters = React.useMemo(() => ({
+    search: "",
+    country: "TODOS",
+    state: "TODOS",
+    verification: verificationOnly ? "PENDIENTE" : "TODAS",
+  }), [verificationOnly]);
+  const [draft, setDraft] = React.useState(initialFilters);
+  const [filters, setFilters] = React.useState(initialFilters);
   const [state, setState] = React.useState({loading: true, items: [], cursor: null, error: ""});
-  const verification = verificationOnly ? "PENDIENTE" : "TODAS";
   const load = React.useCallback(async (cursor = "", append = false) => {
     setState((current) => ({...current, loading: true, error: ""}));
     try {
-      const data = await listPlatformBusinesses({cursor, verification});
+      const data = await listPlatformBusinesses({
+        cursor,
+        search: filters.search,
+        country: filters.country,
+        state: filters.state,
+        verification: filters.verification,
+        mode: verificationOnly ? "VERIFICACIONES" : "EMPRESAS",
+      });
       setState((current) => ({loading: false, items: append ? [...current.items, ...data.empresas] : data.empresas, cursor: data.cursor, error: ""}));
     } catch (error) {
       setState((current) => ({...current, loading: false, error: message(error, "No pudimos cargar las empresas.")}));
     }
-  }, [verification]);
+  }, [filters, verificationOnly]);
   React.useEffect(() => { load(); }, [load]);
+  const applyFilters = (event) => {
+    event.preventDefault();
+    setFilters({...draft, search: draft.search.trim()});
+  };
+  const applySelector = (nextFilters) => {
+    setDraft(nextFilters);
+    setFilters({...nextFilters, search: nextFilters.search.trim()});
+  };
+  const resetFilters = () => {
+    setDraft({...initialFilters});
+    setFilters({...initialFilters});
+  };
   return <>
     <PlatformHeading eyebrow="Clientes de ValoraCloud" title={verificationOnly ? "Verificaciones" : "Empresas"} description={verificationOnly ? "Solicitudes pendientes de revision por la plataforma." : "Directorio global de empresas registradas."} action={<Button variant="secondary" icon={RefreshCw} onClick={() => load()}>Actualizar</Button>} />
+    {location.state?.platformNotice && <div className="platform-notice" role="status">{location.state.platformNotice}</div>}
+    <PlatformListFilters draft={draft} onChange={setDraft} onReset={resetFilters} onSelectorChange={applySelector} onSubmit={applyFilters} type={verificationOnly ? "verifications" : "businesses"} />
     {state.error && <ErrorState error={state.error} retry={() => load()} />}
     {!state.error && state.loading && !state.items.length && <Loading />}
-    {!state.error && Boolean(state.items.length || !state.loading) && <BusinessesTable businesses={state.items} emptyText={verificationOnly ? "No hay verificaciones pendientes." : undefined} />}
+    {!state.error && Boolean(state.items.length || !state.loading) && <BusinessesTable businesses={state.items} verificationOnly={verificationOnly} emptyText={verificationOnly ? "No hay verificaciones para los filtros seleccionados." : undefined} />}
     {state.cursor && <div className="platform-load-more"><Button variant="secondary" disabled={state.loading} onClick={() => load(state.cursor, true)}>{state.loading ? "Cargando..." : "Cargar mas"}</Button></div>}
   </>;
 }
@@ -148,10 +252,16 @@ export function PlatformBusinessDetailPage() {
   const [state, setState] = React.useState({loading: true, data: null, error: ""});
   const [reason, setReason] = React.useState("");
   const [rejectionReason, setRejectionReason] = React.useState("");
+  const [officialLegalName, setOfficialLegalName] = React.useState("");
   const [working, setWorking] = React.useState(false);
   const [notice, setNotice] = React.useState("");
-  const [evidence, setEvidence] = React.useState(null);
+  const [deleteOpen, setDeleteOpen] = React.useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = React.useState("");
+  const [deleteError, setDeleteError] = React.useState("");
+  const [deleting, setDeleting] = React.useState(false);
   const requestRef = React.useRef("");
+  const deleteRequestRef = React.useRef("");
+  const deleteInputRef = React.useRef(null);
   const load = React.useCallback(() => {
     setState((current) => ({...current, loading: true, error: ""}));
     getPlatformBusiness(businessId).then((data) => setState({loading: false, data, error: ""}))
@@ -163,62 +273,144 @@ export function PlatformBusinessDetailPage() {
     try {
       if (!requestRef.current) requestRef.current = createPlatformRequestId(prefix);
       await operation(requestRef.current);
-      requestRef.current = ""; setReason(""); setRejectionReason(""); setNotice("Accion aplicada correctamente."); load();
+      requestRef.current = "";
+      setReason("");
+      setRejectionReason("");
+      setOfficialLegalName("");
+      setNotice("Accion aplicada correctamente.");
+      load();
     } catch (error) {
       setNotice(message(error, "No pudimos completar la accion."));
     } finally { setWorking(false); }
   };
   const loadEvidence = async () => {
-    setWorking(true); setNotice("");
+    setNotice("");
+    const popup = window.open("", "_blank");
+    if (!popup) {
+      setNotice("El navegador bloqueó la nueva pestaña. Habilita las ventanas emergentes e inténtalo nuevamente.");
+      return;
+    }
+    popup.opener = null;
     try {
-      setEvidence(await getPlatformVerificationDocument(businessId, state.data.solicitudActual.id));
+      const document = await getPlatformVerificationDocument(
+        businessId,
+        state.data.solicitudActual.id
+      );
+      popup.location.replace(document.url);
+    } catch {
+      popup.close();
+      setNotice("No pudimos abrir el documento acreditativo.");
+    }
+  };
+  const deleteBusiness = async () => {
+    setDeleting(true); setDeleteError(""); setNotice("");
+    try {
+      if (!deleteRequestRef.current) {
+        deleteRequestRef.current = createPlatformRequestId("delete_business");
+      }
+      await permanentlyDeletePlatformBusiness({
+        businessId,
+        confirmationName: deleteConfirmation,
+        requestId: deleteRequestRef.current,
+      });
+      navigate("/admin/empresas", {
+        replace: true,
+        state: {platformNotice: "Empresa eliminada permanentemente."},
+      });
     } catch (error) {
-      setNotice(message(error, "No pudimos abrir el documento acreditativo."));
-    } finally { setWorking(false); }
+      setDeleteError(destructiveMessage(error));
+    } finally {
+      setDeleting(false);
+    }
   };
   if (state.loading && !state.data) return <Loading />;
   if (state.error) return <ErrorState error={state.error} retry={load} />;
   const {empresa, propietario, miembros, solicitudActual, eventos} = state.data;
   const pending = empresa.verificacion?.estado === "PENDIENTE" && solicitudActual;
+  const verified = empresa.verificacion?.estado === "VERIFICADA";
+  const verificationLabel = VERIFICATION_LABELS[empresa.verificacion?.estado] ||
+    empresa.verificacion?.estado || "No verificada";
   return <>
     <button className="platform-back" type="button" onClick={() => navigate(-1)}><AppIcon icon={ChevronLeft} size={18} />Volver</button>
-    <PlatformHeading eyebrow="Empresa" title={empresa.nombreComercial || "Empresa sin nombre"} description={`ID: ${empresa.id}`} action={<StatusBadge variant={stateVariant(empresa.estado)}>{empresa.estado}</StatusBadge>} />
+    <PlatformHeading eyebrow="Empresa" title={empresa.nombreComercial || "Empresa sin nombre"} description={<span className="platform-business-heading-meta"><span>{propietario?.correo || "Propietario sin correo"}</span><span>{countryName(empresa.paisCodigo)} · Verificación {verificationLabel.toLowerCase()}</span><small>ID: {empresa.id}</small></span>} action={<StatusBadge variant={stateVariant(empresa.estado)}>{empresa.estado}</StatusBadge>} />
     {notice && <div className="platform-notice" role="status">{notice}</div>}
-    <div className="platform-detail-columns">
-      <section className="platform-panel"><h2>Datos legales</h2><DetailGrid items={[
-        {label: "Razon social", value: empresa.razonSocial}, {label: "Pais", value: empresa.paisCodigo},
-        {label: empresa.identificadorFiscalTipo || "Identificacion fiscal", value: empresa.identificadorFiscalValor},
-        {label: "Correo", value: empresa.email}, {label: "Telefono", value: empresa.telefono}, {label: "Fecha de registro", value: date(empresa.fechaRegistro)},
-      ]} /></section>
-      <section className="platform-panel"><h2>Propietario y estado</h2><DetailGrid items={[
-        {label: "Propietario", value: propietario?.nombre}, {label: "Correo", value: propietario?.correo},
-        {label: "Estado", value: empresa.estado}, {label: "Verificacion", value: VERIFICATION_LABELS[empresa.verificacion?.estado] || empresa.verificacion?.estado},
-      ]} />
+    <section className="platform-panel"><h2>Datos de la empresa</h2><DetailGrid items={[
+      {label: "País", value: countryName(empresa.paisCodigo)},
+      {label: "Correo empresa", value: empresa.email},
+      {label: "Teléfono", value: empresa.telefono},
+      {label: "Fecha de registro", value: date(empresa.fechaRegistro)},
+      ...(verified ? [
+        {label: "Razón social oficial", value: empresa.razonSocial},
+        {label: fiscalFieldLabel(empresa.identificadorFiscalTipo, "confirmado"), value: fiscalIdentifier(empresa.paisCodigo, empresa.identificadorFiscalValor)},
+      ] : []),
+    ]} />
       {empresa.estado === "activo" ? <div className="platform-action-form"><label>Motivo de suspension<textarea rows="2" value={reason} onChange={(event) => {setReason(event.target.value); requestRef.current = "";}} /></label><Button variant="danger" disabled={working || !reason.trim()} onClick={() => run("suspend_business", (requestId) => setPlatformBusinessStatus({businessId, estado: "suspendida", motivo: reason, requestId}))}>Suspender empresa</Button></div> : empresa.estado === "suspendida" ? <Button disabled={working} onClick={() => run("reactivate_business", (requestId) => setPlatformBusinessStatus({businessId, estado: "activo", motivo: "", requestId}))}>Reactivar empresa</Button> : null}
-      </section>
-    </div>
-    <section className="platform-panel"><h2>Verificacion empresarial</h2>
-      <div className="platform-verification-summary"><StatusBadge variant={verificationVariant(empresa.verificacion?.estado)}>{VERIFICATION_LABELS[empresa.verificacion?.estado] || empresa.verificacion?.estado}</StatusBadge>{solicitudActual && <span>Solicitada por {solicitudActual.solicitadoPorUid} · {date(solicitudActual.solicitadoEn)}</span>}</div>
-      {solicitudActual?.documentoAcreditativo && <div className="platform-evidence">{evidence ? <a className="ui-button ui-button--secondary" href={evidence.url} target="_blank" rel="noreferrer">Abrir {evidence.nombre}</a> : <Button variant="secondary" disabled={working} onClick={loadEvidence}>Generar acceso temporal al documento</Button>}</div>}
-      {pending && <div className="platform-verification-actions"><Button icon={CheckCircle2} disabled={working} onClick={() => run("approve_verification", (requestId) => resolvePlatformVerification({businessId, solicitudId: solicitudActual.id, decision: "APROBAR", motivo: "", requestId}))}>Aprobar</Button><label>Motivo de rechazo<textarea rows="2" value={rejectionReason} onChange={(event) => {setRejectionReason(event.target.value); requestRef.current = "";}} /></label><Button variant="danger" disabled={working || !rejectionReason.trim()} onClick={() => run("reject_verification", (requestId) => resolvePlatformVerification({businessId, solicitudId: solicitudActual.id, decision: "RECHAZAR", motivo: rejectionReason, requestId}))}>Rechazar</Button></div>}
+    </section>
+    <section className="platform-panel"><h2>Verificación empresarial</h2>
+      <div className="platform-verification-summary"><StatusBadge variant={verificationVariant(empresa.verificacion?.estado)}>{verificationLabel}</StatusBadge>{solicitudActual && <span>{date(solicitudActual.solicitadoEn)}</span>}</div>
+      {solicitudActual && <DetailGrid items={[
+        {label: fiscalFieldLabel(solicitudActual.identificadorFiscalTipo, "declarado"), value: fiscalIdentifier(solicitudActual.paisCodigo, solicitudActual.identificadorFiscalValor)},
+        {label: "Relación o cargo", value: solicitudActual.relacionSolicitante},
+        {label: "Correo del solicitante", value: solicitudActual.correoSolicitante},
+        {label: "Teléfono del solicitante", value: solicitudActual.telefonoSolicitante},
+        {label: "Observaciones", value: solicitudActual.observaciones},
+      ]} />}
+      {solicitudActual?.documentoAcreditativo && <div className="platform-evidence"><span>Documento acreditativo: {solicitudActual.documentoAcreditativo.nombreOriginal || "Documento adjunto"}</span><Button variant="secondary" onClick={loadEvidence}>Ver documento</Button></div>}
+      {pending && <div className="platform-verification-actions">
+        <label>Razón social oficial<input required value={officialLegalName} onChange={(event) => {setOfficialLegalName(event.target.value); requestRef.current = "";}} /></label>
+        <Button icon={CheckCircle2} disabled={working || !officialLegalName.trim()} onClick={() => run("approve_verification", (requestId) => resolvePlatformVerification({businessId, solicitudId: solicitudActual.id, decision: "APROBAR", motivo: "", razonSocialOficial: officialLegalName.trim(), requestId}))}>Aprobar</Button>
+        <label>Motivo de rechazo<textarea rows="2" value={rejectionReason} onChange={(event) => {setRejectionReason(event.target.value); requestRef.current = "";}} /></label>
+        <Button variant="danger" disabled={working || !rejectionReason.trim()} onClick={() => run("reject_verification", (requestId) => resolvePlatformVerification({businessId, solicitudId: solicitudActual.id, decision: "RECHAZAR", motivo: rejectionReason.trim(), razonSocialOficial: "", requestId}))}>Rechazar</Button>
+      </div>}
     </section>
     <section className="platform-panel"><h2>Miembros ({miembros.length})</h2><div className="platform-table-wrap"><table className="platform-table"><thead><tr><th>Usuario</th><th>Correo</th><th>Rol</th><th>Estado</th></tr></thead><tbody>{miembros.map((member) => <tr key={member.uid} onClick={() => navigate(`/admin/usuarios/${member.uid}`)}><td>{member.nombre}</td><td>{member.correo}</td><td>{member.rol}</td><td>{member.estado}</td></tr>)}</tbody></table></div></section>
-    <section className="platform-panel"><h2>Eventos basicos</h2>{eventos.length ? <ol className="platform-timeline">{eventos.map((event) => <li key={`${event.origen}-${event.id}`}><span>{event.origen}</span><strong>{event.tipo}</strong><p>{event.estadoAnterior && `${event.estadoAnterior} → `}{event.estadoResultante}{event.motivo && ` · ${event.motivo}`}</p><time>{date(event.creadoEn)}</time></li>)}</ol> : <div className="platform-empty">Sin eventos registrados.</div>}</section>
+    <section className="platform-panel"><h2>Historial</h2>{eventos.length ? <ol className="platform-timeline">{eventos.map((event) => <li key={`${event.origen}-${event.id}`}><span>{event.origen}</span><strong>{event.tipo}</strong><p>{event.estadoAnterior && `${event.estadoAnterior} → `}{event.estadoResultante}{event.motivo && ` · ${event.motivo}`}</p><time>{date(event.creadoEn)}</time></li>)}</ol> : <div className="platform-empty">Sin eventos registrados.</div>}</section>
+    <section className="platform-panel platform-danger-zone"><div><h2>Zona de peligro</h2><p>Esta acción elimina permanentemente la empresa y todos sus datos exclusivos. Los usuarios de Auth no se eliminan.</p></div><Button variant="danger" icon={Trash2} onClick={() => {setDeleteConfirmation(""); setDeleteError(""); deleteRequestRef.current = ""; setDeleteOpen(true);}}>Eliminar empresa permanentemente</Button></section>
+    <ResponsiveDialog
+      open={deleteOpen}
+      title="Eliminar empresa permanentemente"
+      description="Esta acción no se puede deshacer. Escribe el nombre comercial exacto para continuar."
+      initialFocusRef={deleteInputRef}
+      onClose={() => !deleting && setDeleteOpen(false)}
+      footer={<><Button variant="secondary" disabled={deleting} onClick={() => setDeleteOpen(false)}>Cancelar</Button><Button variant="danger" icon={Trash2} disabled={deleting || deleteConfirmation !== empresa.nombreComercial} onClick={deleteBusiness}>{deleting ? "Eliminando..." : "Eliminar permanentemente"}</Button></>}
+    >
+      <div className="platform-delete-confirmation"><p>Nombre comercial: <strong>{empresa.nombreComercial}</strong></p><label>Confirmación<input ref={deleteInputRef} value={deleteConfirmation} autoComplete="off" onChange={(event) => {setDeleteConfirmation(event.target.value); setDeleteError(""); deleteRequestRef.current = "";}} /></label>{deleteError && <div className="platform-delete-error" role="alert">{deleteError}</div>}</div>
+    </ResponsiveDialog>
   </>;
 }
 
 export function PlatformUsersPage() {
   const navigate = useNavigate();
+  const initialFilters = React.useMemo(() => ({
+    search: "",
+    state: "TODOS",
+    company: "TODAS",
+  }), []);
+  const [draft, setDraft] = React.useState(initialFilters);
+  const [filters, setFilters] = React.useState(initialFilters);
   const [state, setState] = React.useState({loading: true, items: [], cursor: null, error: ""});
   const load = React.useCallback(async (cursor = "", append = false) => {
     setState((current) => ({...current, loading: true, error: ""}));
     try {
-      const data = await listPlatformUsers({cursor});
+      const data = await listPlatformUsers({cursor, ...filters});
       setState((current) => ({loading: false, items: append ? [...current.items, ...data.usuarios] : data.usuarios, cursor: data.cursor, error: ""}));
     } catch (error) { setState((current) => ({...current, loading: false, error: message(error, "No pudimos cargar los usuarios.")})); }
-  }, []);
+  }, [filters]);
   React.useEffect(() => { load(); }, [load]);
+  const applyFilters = (event) => {
+    event.preventDefault();
+    setFilters({...draft, search: draft.search.trim()});
+  };
+  const applySelector = (nextFilters) => {
+    setDraft(nextFilters);
+    setFilters({...nextFilters, search: nextFilters.search.trim()});
+  };
+  const resetFilters = () => {
+    setDraft({...initialFilters});
+    setFilters({...initialFilters});
+  };
   return <><PlatformHeading eyebrow="Clientes de ValoraCloud" title="Usuarios" description="Directorio global de cuentas y membresias." action={<Button variant="secondary" icon={RefreshCw} onClick={() => load()}>Actualizar</Button>} />
+    <PlatformListFilters draft={draft} onChange={setDraft} onReset={resetFilters} onSelectorChange={applySelector} onSubmit={applyFilters} type="users" />
     {state.error && <ErrorState error={state.error} retry={() => load()} />}{state.loading && !state.items.length && <Loading />}
     {!state.error && Boolean(state.items.length || !state.loading) && <div className="platform-table-wrap"><table className="platform-table"><thead><tr><th>Usuario</th><th>Correo</th><th>Empresas</th><th>Estado</th><th>Fecha alta</th><th>Ultimo acceso</th></tr></thead><tbody>{state.items.map((user) => <tr key={user.uid} onClick={() => navigate(`/admin/usuarios/${user.uid}`)}><td><strong>{user.nombre}</strong><small>{user.uid}</small></td><td>{user.correo}</td><td>{user.empresas}</td><td><StatusBadge variant={stateVariant(user.estado)}>{user.estado}</StatusBadge></td><td>{date(user.fechaAlta)}</td><td>{date(user.ultimoAcceso)}</td></tr>)}</tbody></table></div>}
     {state.cursor && <div className="platform-load-more"><Button variant="secondary" disabled={state.loading} onClick={() => load(state.cursor, true)}>Cargar mas</Button></div>}

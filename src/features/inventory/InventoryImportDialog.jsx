@@ -129,6 +129,7 @@ function InventoryImportDialog({
     setError("");
     try {
       const analysis = await normalizeInventoryDocumentWithAi({
+        businessId,
         fileData: documentData,
       });
       const previewRows = transformInventoryDocumentCandidates(analysis.items, {

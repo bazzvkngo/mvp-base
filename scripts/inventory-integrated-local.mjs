@@ -99,6 +99,18 @@ async function main() {
       "Consultar Inventario no debe crear documentos."
     );
 
+    await expectCallableCode("failed-precondition", () =>
+      call("initializeInventoryCatalog")
+    );
+    await adminDb.doc(`negocios/${businessId}`).set({
+      identificadorFiscalTipo: "RUT",
+      identificadorFiscalValor: "76.600.600-6",
+      verificacionEmpresa: {
+        estado: "VERIFICADA",
+        identificadorFiscalTipo: "RUT",
+        identificadorFiscalValor: "76.600.600-6",
+      },
+    }, {merge: true});
     await call("initializeInventoryCatalog");
     await call("initializeInventoryCatalog");
     const initialAreas = await getDocs(

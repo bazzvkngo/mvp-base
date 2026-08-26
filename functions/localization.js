@@ -1,4 +1,8 @@
 const catalog = require("./businessCatalog.json");
+const {
+  getJurisdictionContract,
+  resolveBaseTaxSettings,
+} = require("./businessJurisdiction");
 
 const DEFAULT_COUNTRY = "CL";
 const DEFAULT_CURRENCY = "CLP";
@@ -23,40 +27,51 @@ function canonicalLocale(value, fallback = DEFAULT_LOCALE) {
 
 function normalizeBusinessLocalization(raw = {}) {
   const country = countries.get(text(raw.paisCodigo, 10).toUpperCase()) || countries.get(DEFAULT_COUNTRY);
-  const currency = currencies.get(text(raw.monedaCodigo || raw.moneda, 10).toUpperCase()) || currencies.get(DEFAULT_CURRENCY);
-  const locale = canonicalLocale(raw.locale, country.defaultLocale || DEFAULT_LOCALE);
+  const jurisdiction = getJurisdictionContract(country.code);
+  const canonical = Number(raw.contratoJurisdiccionalVersion) >= 1;
+  const currency = canonical
+    ? currencies.get(jurisdiction.monedaCodigo)
+    : currencies.get(text(raw.monedaCodigo || raw.moneda, 10).toUpperCase()) ||
+      currencies.get(DEFAULT_CURRENCY);
+  const locale = canonical
+    ? jurisdiction.locale
+    : canonicalLocale(raw.locale, country.defaultLocale || DEFAULT_LOCALE);
   return {
     paisCodigo: country.code,
     paisNombre: country.name,
     monedaCodigo: currency.code,
     monedaNombre: currency.name,
     locale,
-    identificadorFiscalTipo: text(raw.identificadorFiscalTipo, 40) || country.defaultFiscalIdentifierLabel || "Identificación fiscal",
+    identificadorFiscalTipo: canonical
+      ? jurisdiction.identificadorFiscalTipo
+      : text(raw.identificadorFiscalTipo, 40) ||
+        country.defaultFiscalIdentifierLabel || "Identificación fiscal",
     identificadorFiscalValor: text(raw.identificadorFiscalValor || raw.rut, 80),
   };
 }
 
-function normalizeTaxSettings(raw = {}) {
-  const parsedRate = Number(raw.impuestoPredeterminadoTasa);
+function normalizeTaxSettings(raw = {}, business = {}) {
+  const resolved = resolveBaseTaxSettings(business, raw);
   return {
-    impuestoPredeterminadoId: text(raw.impuestoPredeterminadoId, 40) || "PERSONALIZADO",
-    impuestoPredeterminadoNombre: text(raw.impuestoPredeterminadoNombre, 60) || DEFAULT_TAX_NAME,
-    impuestoPredeterminadoTasa:
-      Number.isFinite(parsedRate) && parsedRate >= 0 && parsedRate <= 100
-        ? parsedRate
-        : DEFAULT_TAX_RATE_PERCENT,
+    impuestoPredeterminadoId: resolved.impuestoPredeterminadoId,
+    impuestoPredeterminadoNombre: resolved.impuestoPredeterminadoNombre,
+    impuestoPredeterminadoTasa: resolved.impuestoPredeterminadoTasa,
+    configuracionTributariaBaseCompleta:
+      resolved.configuracionTributariaBaseCompleta === true,
   };
 }
 
 function documentLocalizationSnapshot(business = {}, tax = {}) {
   const location = normalizeBusinessLocalization(business);
-  const normalizedTax = normalizeTaxSettings(tax);
+  const normalizedTax = normalizeTaxSettings(tax, business);
   return {
     paisCodigo: location.paisCodigo,
     moneda: location.monedaCodigo,
     locale: location.locale,
     impuestoNombre: normalizedTax.impuestoPredeterminadoNombre,
-    tasaIva: normalizedTax.impuestoPredeterminadoTasa / 100,
+    tasaIva: normalizedTax.impuestoPredeterminadoTasa === null
+      ? null
+      : normalizedTax.impuestoPredeterminadoTasa / 100,
   };
 }
 

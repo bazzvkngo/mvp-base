@@ -128,6 +128,12 @@ try {
   const otherBusinessId = otherBusiness.data.business.id;
   const now = FieldValue.serverTimestamp();
   await Promise.all([
+    adminDb.doc(`negocios/${businessId}`).update({
+      verificacionEmpresa: {estado: "VERIFICADA"},
+    }),
+    adminDb.doc(`negocios/${otherBusinessId}`).update({
+      verificacionEmpresa: {estado: "VERIFICADA"},
+    }),
     adminDb.doc(`membresias/${businessId}__${admin.uid}`).set({
       negocioId: businessId,
       uid: admin.uid,

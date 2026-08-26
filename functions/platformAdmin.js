@@ -1,10 +1,12 @@
-const {createHash} = require("node:crypto");
+const {createHash, randomUUID} = require("node:crypto");
 
 const PLATFORM_SUPERADMIN = "PLATFORM_SUPERADMIN";
 const ACTIVE_STATUS = "activo";
 const SUSPENDED_STATUS = "suspendido";
 const BUSINESS_SUSPENDED_STATUS = "suspendida";
 const MAX_PAGE_SIZE = 30;
+const BUSINESS_SCAN_SIZE = 60;
+const AUTH_SCAN_SIZE = 100;
 
 function fail(HttpsError, code, message) {
   throw new HttpsError(code, message);
@@ -39,6 +41,31 @@ function pageSize(value) {
 
 function fingerprint(value) {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function searchable(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function includesSearch(haystack, search) {
+  if (!search) return true;
+  if (haystack.includes(search)) return true;
+  const compactHaystack = haystack.replace(/[^a-z0-9]/g, "");
+  const compactSearch = search.replace(/[^a-z0-9]/g, "");
+  return Boolean(compactSearch) && compactHaystack.includes(compactSearch);
+}
+
+function filterValue(value, allowed, fallback, HttpsError) {
+  const normalized = text(value, 40).toUpperCase() || fallback;
+  if (!allowed.includes(normalized)) {
+    fail(HttpsError, "invalid-argument", "Selecciona un filtro valido.");
+  }
+  return normalized;
 }
 
 function timestampToIso(value) {
@@ -148,6 +175,16 @@ async function buildBusinessDtos(db, auth, businessSnapshots) {
       nombreComercial: text(business.nombreComercial, 180) || "Empresa sin nombre",
       razonSocial: text(business.razonSocial, 180),
       paisCodigo: text(business.paisCodigo, 10) || "CL",
+      identificadorFiscalTipo: text(
+        business.verificacionEmpresa?.identificadorFiscalTipo ||
+        business.identificadorFiscalTipo,
+        40
+      ),
+      identificadorFiscalValor: text(
+        business.verificacionEmpresa?.identificadorFiscalDeclaradoValor ||
+        business.identificadorFiscalValor || business.rut,
+        100
+      ),
       propietario: owner ? {
         uid: owner.uid,
         nombre: personName(profile, authUser),
@@ -159,6 +196,7 @@ async function buildBusinessDtos(db, auth, businessSnapshots) {
       estado: business.eliminadoEn ? "eliminada" : text(business.estado, 30) || ACTIVE_STATUS,
       verificacion: verificationState(business),
       fechaRegistro: timestampToIso(business.creadoEn),
+      fechaSolicitud: timestampToIso(business.verificacionEmpresa?.solicitadoEn),
     };
   });
 }
@@ -203,20 +241,74 @@ async function listarEmpresasPlataformaHandler(request, dependencies) {
   await requirePlatformSuperadmin(request, dependencies);
   const limit = pageSize(request?.data?.limite);
   const cursor = text(request?.data?.cursor, 160);
-  const verification = text(request?.data?.verificacion, 30).toUpperCase();
-  let query = db.collection("negocios").orderBy(FieldPath.documentId());
-  if (verification && verification !== "TODAS") {
-    query = query.where("verificacionEmpresa.estado", "==", verification);
-  }
+  const search = searchable(text(request?.data?.busqueda, 180));
+  const country = filterValue(
+    request?.data?.pais,
+    ["TODOS", "CL", "BO", "BR", "PE", "AR", "CO", "EC", "PY", "UY", "MX", "OTHER"],
+    "TODOS",
+    HttpsError
+  );
+  const state = filterValue(
+    request?.data?.estado,
+    ["TODOS", "ACTIVO", "ACTIVA", "SUSPENDIDA", "ELIMINADA"],
+    "TODOS",
+    HttpsError
+  ).toLowerCase();
+  const verification = filterValue(
+    request?.data?.verificacion,
+    ["TODAS", "NO_VERIFICADA", "PENDIENTE", "VERIFICADA", "RECHAZADA"],
+    "TODAS",
+    HttpsError
+  );
+  const verificationMode = text(request?.data?.modo, 30).toUpperCase() ===
+    "VERIFICACIONES";
+  const collection = db.collection("negocios");
+  let query = verificationMode && verification === "PENDIENTE"
+    ? collection.orderBy("verificacionEmpresa.solicitadoEn", "desc")
+      .orderBy(FieldPath.documentId())
+    : collection.orderBy("creadoEn", "desc").orderBy(FieldPath.documentId());
   if (cursor) {
     id(cursor, "El cursor", HttpsError);
-    query = query.startAfter(cursor);
+    const cursorSnapshot = await collection.doc(cursor).get();
+    if (!cursorSnapshot.exists) {
+      fail(HttpsError, "invalid-argument", "El cursor ya no esta disponible.");
+    }
+    query = query.startAfter(cursorSnapshot);
   }
-  const snapshot = await query.limit(limit + 1).get();
-  const pageDocs = snapshot.docs.slice(0, limit);
+
+  const matches = [];
+  let exhausted = false;
+  let scanQuery = query;
+  while (matches.length <= limit && !exhausted) {
+    const snapshot = await scanQuery.limit(BUSINESS_SCAN_SIZE).get();
+    exhausted = snapshot.size < BUSINESS_SCAN_SIZE;
+    if (!snapshot.empty) {
+      const dtos = await buildBusinessDtos(db, auth, snapshot.docs);
+      dtos.forEach((business, index) => {
+        const haystack = searchable([
+          business.nombreComercial,
+          business.razonSocial,
+          business.propietario?.correo,
+          business.id,
+          business.identificadorFiscalValor,
+        ].filter(Boolean).join(" "));
+        const normalizedState = business.estado === "activo" ? "activa" : business.estado;
+        if (
+          includesSearch(haystack, search) &&
+          (country === "TODOS" || business.paisCodigo === country) &&
+          (state === "todos" || normalizedState === state) &&
+          (verification === "TODAS" || business.verificacion === verification)
+        ) {
+          matches.push({dto: business, snapshot: snapshot.docs[index]});
+        }
+      });
+      scanQuery = query.startAfter(snapshot.docs.at(-1));
+    }
+  }
+  const page = matches.slice(0, limit);
   return {
-    empresas: await buildBusinessDtos(db, auth, pageDocs),
-    cursor: snapshot.docs.length > limit ? pageDocs.at(-1)?.id || null : null,
+    empresas: page.map((match) => match.dto),
+    cursor: matches.length > limit ? page.at(-1)?.snapshot.id || null : null,
   };
 }
 
@@ -324,15 +416,25 @@ async function obtenerDocumentoVerificacionPlataformaHandler(
   }
   const file = bucket.file(path);
   const [metadata] = await file.getMetadata();
-  const [url] = await file.getSignedUrl({
-    action: "read",
-    expires: Date.now() + 10 * 60 * 1000,
-  });
+  const expiresAt = Date.now() + 10 * 60 * 1000;
+  let url;
+  if (process.env.FUNCTIONS_EMULATOR === "true" &&
+    process.env.STORAGE_EMULATOR_HOST) {
+    const token = randomUUID();
+    await file.setMetadata({
+      metadata: {...metadata.metadata, firebaseStorageDownloadTokens: token},
+    });
+    const host = process.env.STORAGE_EMULATOR_HOST.replace(/^https?:\/\//, "");
+    url = `http://${host}/v0/b/${encodeURIComponent(bucket.name)}/o/` +
+      `${encodeURIComponent(path)}?alt=media&token=${token}`;
+  } else {
+    [url] = await file.getSignedUrl({action: "read", expires: expiresAt});
+  }
   return {
     url,
     nombre: text(evidence.nombreOriginal, 240) || "documento-acreditativo",
     tipoContenido: text(metadata.contentType, 100),
-    expiraEn: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    expiraEn: new Date(expiresAt).toISOString(),
   };
 }
 
@@ -376,16 +478,79 @@ async function buildUserDtos(db, authUsers) {
   });
 }
 
+function decodeAuthCursor(value, HttpsError) {
+  const encoded = String(value ?? "");
+  if (!encoded) return {pageToken: undefined, offset: 0};
+  if (encoded.length > 6000 || !/^[a-zA-Z0-9_-]+$/.test(encoded)) {
+    fail(HttpsError, "invalid-argument", "El cursor no es valido.");
+  }
+  try {
+    const parsed = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    if (
+      typeof parsed?.pageToken !== "string" ||
+      !Number.isInteger(parsed?.offset) ||
+      parsed.offset < 0 || parsed.offset > AUTH_SCAN_SIZE
+    ) {
+      throw new Error("invalid cursor");
+    }
+    return {pageToken: parsed.pageToken || undefined, offset: parsed.offset};
+  } catch {
+    fail(HttpsError, "invalid-argument", "El cursor no es valido.");
+  }
+}
+
+function encodeAuthCursor(pageToken, offset) {
+  return Buffer.from(JSON.stringify({pageToken: pageToken || "", offset}))
+    .toString("base64url");
+}
+
 async function listarUsuariosPlataformaHandler(request, dependencies) {
-  const {auth} = dependencies;
+  const {auth, HttpsError} = dependencies;
   await requirePlatformSuperadmin(request, dependencies);
   const limit = pageSize(request?.data?.limite);
-  const cursor = text(request?.data?.cursor, 1000) || undefined;
-  const page = await auth.listUsers(limit, cursor);
-  return {
-    usuarios: await buildUserDtos(dependencies.db, page.users),
-    cursor: page.pageToken || null,
-  };
+  const search = searchable(text(request?.data?.busqueda, 180));
+  const state = filterValue(
+    request?.data?.estado,
+    ["TODOS", "ACTIVO", "SUSPENDIDO"],
+    "TODOS",
+    HttpsError
+  ).toLowerCase();
+  const company = filterValue(
+    request?.data?.empresa,
+    ["TODAS", "CON_EMPRESA", "SIN_EMPRESA"],
+    "TODAS",
+    HttpsError
+  );
+  let {pageToken, offset} = decodeAuthCursor(request?.data?.cursor, HttpsError);
+  const users = [];
+  let continuation = null;
+  let scanning = true;
+
+  while (scanning) {
+    const currentPageToken = pageToken;
+    const page = await auth.listUsers(AUTH_SCAN_SIZE, currentPageToken);
+    const dtos = await buildUserDtos(dependencies.db, page.users);
+    for (let index = offset; index < dtos.length; index += 1) {
+      const user = dtos[index];
+      const haystack = searchable([user.nombre, user.correo, user.uid].join(" "));
+      const hasCompany = user.empresas > 0;
+      const matches =
+        includesSearch(haystack, search) &&
+        (state === "todos" || user.estado === state) &&
+        (company === "TODAS" ||
+          (company === "CON_EMPRESA" ? hasCompany : !hasCompany));
+      if (!matches) continue;
+      if (users.length === limit) {
+        return {usuarios: users, cursor: continuation};
+      }
+      users.push(user);
+      continuation = encodeAuthCursor(currentPageToken, index + 1);
+    }
+    if (!page.pageToken) return {usuarios: users, cursor: null};
+    pageToken = page.pageToken;
+    offset = 0;
+  }
+  return {usuarios: users, cursor: null};
 }
 
 async function obtenerUsuarioPlataformaHandler(request, dependencies) {
@@ -597,6 +762,216 @@ async function cambiarEstadoUsuarioPlataformaHandler(request, dependencies) {
   return result;
 }
 
+async function deleteDocuments(db, documents) {
+  for (const group of chunks(documents, 400)) {
+    if (!group.length) continue;
+    const batch = db.batch();
+    group.forEach((snapshot) => batch.delete(snapshot.ref));
+    await batch.commit();
+  }
+}
+
+async function repairUsersAfterBusinessDeletion(
+  db,
+  deletedBusinessId,
+  deletedMemberships,
+  FieldValue
+) {
+  const byUid = new Map();
+  deletedMemberships.forEach((snapshot) => {
+    const membership = snapshot.data() || {};
+    if (membership.uid) byUid.set(membership.uid, membership);
+  });
+
+  for (const [uid, deletedMembership] of byUid) {
+    const userRef = db.collection("usuarios").doc(uid);
+    const [userSnapshot, membershipsSnapshot] = await Promise.all([
+      userRef.get(),
+      db.collection("membresias").where("uid", "==", uid).get(),
+    ]);
+    const remaining = membershipsSnapshot.docs
+      .map((snapshot) => snapshot.data() || {})
+      .filter((membership) =>
+        membership.negocioId && membership.negocioId !== deletedBusinessId
+      );
+    const businessIds = [...new Set(remaining.map((item) => item.negocioId))];
+    const businessSnapshots = businessIds.length
+      ? await db.getAll(...businessIds.map((currentBusinessId) =>
+        db.collection("negocios").doc(currentBusinessId)
+      ))
+      : [];
+    const availableIds = businessSnapshots
+      .filter((snapshot) => {
+        const business = snapshot.data() || {};
+        const membership = remaining.find((item) =>
+          item.negocioId === snapshot.id
+        );
+        return snapshot.exists && membership?.estado === ACTIVE_STATUS &&
+          !business.eliminadoEn && business.estado === ACTIVE_STATUS;
+      })
+      .map((snapshot) => snapshot.id);
+    const user = userSnapshot.data() || {};
+    const nextBusinessId = availableIds.includes(user.negocioActivoId)
+      ? user.negocioActivoId
+      : availableIds[0] || null;
+    const patch = {actualizadoEn: FieldValue.serverTimestamp()};
+    if (user.negocioActivoId === deletedBusinessId) {
+      patch.negocioActivoId = nextBusinessId || FieldValue.delete();
+    }
+    if (user.primerNegocioId === deletedBusinessId) {
+      patch.primerNegocioId = availableIds[0] || FieldValue.delete();
+    }
+    if (userSnapshot.exists && Object.keys(patch).length > 1) {
+      await userRef.set(patch, {merge: true});
+    }
+
+    if (deletedMembership.rol === "OWNER") {
+      const activeOwnedCount = remaining.filter((membership) =>
+        membership.rol === "OWNER" &&
+        membership.estado === ACTIVE_STATUS &&
+        availableIds.includes(membership.negocioId)
+      ).length;
+      await userRef.collection("sistema").doc("negociosPropios").set({
+        cantidad: activeOwnedCount,
+        actualizadoEn: FieldValue.serverTimestamp(),
+      }, {merge: true});
+    }
+  }
+}
+
+async function eliminarEmpresaPermanentePlataformaHandler(
+  request,
+  dependencies
+) {
+  const {bucket, db, FieldValue, HttpsError} = dependencies;
+  const actor = await requirePlatformSuperadmin(request, dependencies);
+  const businessId = id(request?.data?.businessId, "La empresa", HttpsError);
+  const requestId = operationId(request?.data?.requestId, HttpsError);
+  const confirmation = String(request?.data?.confirmacionNombreComercial ?? "");
+  if (!confirmation || confirmation.length > 180) {
+    fail(
+      HttpsError,
+      "invalid-argument",
+      "Escribe el nombre comercial exacto para confirmar la eliminacion."
+    );
+  }
+  const requestFingerprint = fingerprint({businessId, confirmation});
+  const businessRef = db.collection("negocios").doc(businessId);
+  const operationRef = db.collection("platformBusinessPermanentDeleteRequests")
+    .doc(requestId);
+  const auditRef = db.collection("auditoriaPlataforma").doc(requestId);
+
+  const reservation = await db.runTransaction(async (transaction) => {
+    const [operationSnapshot, businessSnapshot, profileSnapshot] =
+      await Promise.all([
+        transaction.get(operationRef),
+        transaction.get(businessRef),
+        transaction.get(businessRef.collection("empresa").doc("perfil")),
+      ]);
+    if (operationSnapshot.exists) {
+      const operation = operationSnapshot.data() || {};
+      if (
+        operation.negocioId !== businessId ||
+        operation.creadoPorUid !== actor.uid ||
+        operation.fingerprint !== requestFingerprint
+      ) {
+        fail(
+          HttpsError,
+          "already-exists",
+          "La operacion ya fue utilizada con otros datos."
+        );
+      }
+      return {
+        completed: operation.estado === "COMPLETADA",
+        nombreComercial: operation.nombreComercial,
+      };
+    }
+    if (!businessSnapshot.exists) {
+      fail(HttpsError, "not-found", "No se encontro la empresa.");
+    }
+    const business = businessSnapshot.data() || {};
+    const profile = profileSnapshot.data() || {};
+    const currentName = String(
+      profile.nombreComercial || business.nombreComercial || ""
+    );
+    if (!currentName || confirmation !== currentName) {
+      fail(
+        HttpsError,
+        "failed-precondition",
+        "El nombre comercial ingresado no coincide con la empresa."
+      );
+    }
+    const now = FieldValue.serverTimestamp();
+    transaction.create(operationRef, {
+      negocioId: businessId,
+      nombreComercial: currentName,
+      estado: "EN_PROCESO",
+      creadoPorUid: actor.uid,
+      fingerprint: requestFingerprint,
+      creadoEn: now,
+      actualizadoEn: now,
+    });
+    transaction.create(auditRef, {
+      tipo: "EMPRESA_ELIMINACION_PERMANENTE_INICIADA",
+      negocioId: businessId,
+      nombreComercial: currentName,
+      creadoPorUid: actor.uid,
+      creadoEn: now,
+    });
+    return {completed: false, nombreComercial: currentName};
+  });
+
+  if (reservation.completed) {
+    return {businessId, estado: "eliminada", idempotent: true};
+  }
+
+  try {
+    const [memberships, publicTokens, fiscalReservations] = await Promise.all([
+      db.collection("membresias").where("negocioId", "==", businessId).get(),
+      db.collection("quotePublicTokens").where("negocioId", "==", businessId).get(),
+      db.collection("identidadesFiscalesVerificadas")
+        .where("negocioId", "==", businessId).get(),
+    ]);
+    await bucket.deleteFiles({prefix: `negocios/${businessId}/`});
+    await repairUsersAfterBusinessDeletion(
+      db,
+      businessId,
+      memberships.docs,
+      FieldValue
+    );
+    await deleteDocuments(db, [
+      ...memberships.docs,
+      ...publicTokens.docs,
+      ...fiscalReservations.docs,
+    ]);
+    if ((await businessRef.get()).exists) await db.recursiveDelete(businessRef);
+    const now = FieldValue.serverTimestamp();
+    await Promise.all([
+      operationRef.set({
+        estado: "COMPLETADA",
+        actualizadoEn: now,
+        completadaEn: now,
+      }, {merge: true}),
+      auditRef.set({
+        tipo: "EMPRESA_ELIMINADA_PERMANENTEMENTE",
+        estado: "COMPLETADA",
+        membresiasEliminadas: memberships.size,
+        tokensPublicosEliminados: publicTokens.size,
+        reservasFiscalesEliminadas: fiscalReservations.size,
+        actualizadoEn: now,
+      }, {merge: true}),
+    ]);
+    return {businessId, estado: "eliminada", idempotent: false};
+  } catch (error) {
+    await operationRef.set({
+      estado: "FALLIDA",
+      ultimoError: text(error?.message, 500),
+      actualizadoEn: FieldValue.serverTimestamp(),
+    }, {merge: true});
+    throw error;
+  }
+}
+
 module.exports = {
   ACTIVE_STATUS,
   BUSINESS_SUSPENDED_STATUS,
@@ -604,6 +979,7 @@ module.exports = {
   SUSPENDED_STATUS,
   cambiarEstadoEmpresaPlataformaHandler,
   cambiarEstadoUsuarioPlataformaHandler,
+  eliminarEmpresaPermanentePlataformaHandler,
   listarEmpresasPlataformaHandler,
   listarUsuariosPlataformaHandler,
   obtenerEmpresaPlataformaHandler,

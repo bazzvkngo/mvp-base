@@ -47,6 +47,30 @@ export function getDefaultFiscalIdentifierLabel(code) {
   return getCountryByCode(code)?.defaultFiscalIdentifierLabel || "RUT";
 }
 
+export function getJurisdictionContract(code) {
+  const country = getCountryByCode(code) || getCountryByCode("CL");
+  const currency = getCurrencyByCode(country.defaultCurrencyCode);
+  const tax = country.baseTax || {};
+  return {
+    paisCodigo: country.code,
+    paisNombre: country.name,
+    monedaCodigo: currency?.code || country.defaultCurrencyCode,
+    monedaNombre: currency?.name || country.defaultCurrencyCode,
+    locale: country.defaultLocale || "es-CL",
+    identificadorFiscalTipo:
+      country.defaultFiscalIdentifierLabel || "Identificación fiscal",
+    impuestoPredeterminadoId:
+      tax.id || "CONFIGURACION_TRIBUTARIA_ESPECIFICA",
+    impuestoPredeterminadoNombre:
+      tax.name || "Configuración tributaria específica",
+    impuestoPredeterminadoTasa:
+      Number.isFinite(Number(tax.rate)) && tax.rate !== null
+        ? Number(tax.rate)
+        : null,
+    configuracionTributariaBaseCompleta: tax.configured === true,
+  };
+}
+
 export function getBusinessCategoryByCode(code) {
   return categoriesByCode.get(String(code || "")) || null;
 }

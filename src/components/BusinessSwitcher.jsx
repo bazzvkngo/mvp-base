@@ -203,21 +203,23 @@ function BusinessSwitcher({
         )}
       </div>
 
-      <button
-        type="button"
-        className="business-switcher__add"
-        aria-label="Agregar otro negocio"
-        title="Agregar otro negocio"
-        onClick={() => {
-          setOpen(false);
-          onAddBusiness();
-        }}
-      >
-        <span className="business-switcher__add-icon" aria-hidden="true">
-          <AppIcon icon={Plus} size={16} />
-        </span>
-        <span>Agregar otro negocio</span>
-      </button>
+      {onAddBusiness && (
+        <button
+          type="button"
+          className="business-switcher__add"
+          aria-label="Agregar otro negocio"
+          title="Agregar otro negocio"
+          onClick={() => {
+            setOpen(false);
+            onAddBusiness();
+          }}
+        >
+          <span className="business-switcher__add-icon" aria-hidden="true">
+            <AppIcon icon={Plus} size={16} />
+          </span>
+          <span>Agregar otro negocio</span>
+        </button>
+      )}
     </section>
   );
 }

@@ -107,7 +107,7 @@ function totals(items, HttpsError, {descuentoGeneral = 0, afectaIva = true, tasa
   return {subtotal, descuentoItems, descuento, descuentoTotal, neto, afectaIva, tasaIva: effectiveTaxRate, iva, total};
 }
 function hash(value) { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
-async function access(request, dependencies) { return dependencies.requireBusinessAccess(request, {db: dependencies.db, HttpsError: dependencies.HttpsError}, {roles: WRITE_ROLES}); }
+async function access(request, dependencies) { return dependencies.requireBusinessAccess(request, {db: dependencies.db, HttpsError: dependencies.HttpsError}, {roles: WRITE_ROLES, requiresVerifiedBusiness: true}); }
 function formatNumber(year, sequence) { return `VTA-${year}-${String(sequence).padStart(4, "0")}`; }
 function baseStored({businessId, uid, ventaId, numero, sequence, now, normalized, clienteSnapshot, items, localization, empresaSnapshot, origin = {}, timestamp, HttpsError}) {
   const location = localization || adaptDocumentLocalization({});

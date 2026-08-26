@@ -9,6 +9,10 @@ const {
   applyVerificationInvalidation,
   buildVerificationInvalidationPlan,
 } = require("./businessVerification");
+const {
+  authoritativeBusinessFields,
+  buildProfileInputWithAuthoritativeFields,
+} = require("./businessJurisdiction");
 
 function safeText(value, maxLength = 180) {
   return String(value || "").trim().replace(/\s+/g, " ").slice(0, maxLength);
@@ -142,11 +146,19 @@ async function updateBusinessInformationHandler(
     { db, HttpsError },
     { roles: ["OWNER", "ADMIN"] }
   );
-  const input = validateBusinessProfileInput(request?.data?.profile, HttpsError, {
-    existingBusiness: context.businessSnapshot.data() || {},
-  });
   const now = FieldValue.serverTimestamp();
   const profileRef = context.businessRef.collection("empresa").doc("perfil");
+  const existingProfileSnapshot = await profileRef.get();
+  const existingBusiness = context.businessSnapshot.data() || {};
+  const rawProfile = buildProfileInputWithAuthoritativeFields(
+    request?.data?.profile || {},
+    existingBusiness,
+    existingProfileSnapshot.data() || {},
+    HttpsError
+  );
+  const input = validateBusinessProfileInput(rawProfile, HttpsError, {
+    existingBusiness,
+  });
   const categoryPatch = {
     rubroCodigo: optionalPatch(FieldValue, input.rubroCodigo),
     rubroNombre: input.rubroNombre,
@@ -158,7 +170,6 @@ async function updateBusinessInformationHandler(
   };
   const optionalFields = {
     razonSocial: optionalPatch(FieldValue, input.razonSocial),
-    rut: optionalPatch(FieldValue, input.rut),
     giro: optionalPatch(FieldValue, input.giro),
     email: optionalPatch(FieldValue, input.email),
     telefono: optionalPatch(FieldValue, input.telefono),
@@ -167,8 +178,6 @@ async function updateBusinessInformationHandler(
     ciudad: optionalPatch(FieldValue, input.ciudad || input.comunaNombre),
     regionEstado: optionalPatch(FieldValue, input.regionEstado),
     codigoPostal: optionalPatch(FieldValue, input.codigoPostal),
-    identificadorFiscalTipo: optionalPatch(FieldValue, input.identificadorFiscalTipo),
-    identificadorFiscalValor: optionalPatch(FieldValue, input.identificadorFiscalValor),
   };
 
   await db.runTransaction(async (transaction) => {
@@ -182,7 +191,13 @@ async function updateBusinessInformationHandler(
       businessRef: context.businessRef,
       db,
       FieldValue,
-      nextProfile: input,
+      nextProfile: {
+        ...input,
+        ...authoritativeBusinessFields(
+          currentBusiness.data() || {},
+          currentProfile.data() || {}
+        ),
+      },
       profile: currentProfile.data() || {},
       transaction,
       uid: context.uid,
@@ -190,14 +205,6 @@ async function updateBusinessInformationHandler(
     transaction.update(context.businessRef, {
       nombreComercial: input.nombreComercial,
       ...categoryPatch,
-      paisCodigo: input.paisCodigo,
-      paisNombre: input.paisNombre,
-      monedaCodigo: input.monedaCodigo,
-      monedaNombre: input.monedaNombre,
-      locale: input.locale,
-      identificadorFiscalTipo: input.identificadorFiscalTipo,
-      identificadorFiscalValor: optionalPatch(FieldValue, input.identificadorFiscalValor),
-      rut: optionalPatch(FieldValue, input.rut),
       regionCodigo: input.regionCodigo,
       regionNombre: input.regionNombre,
       ...communePatch,
@@ -211,11 +218,6 @@ async function updateBusinessInformationHandler(
         negocioId: context.businessId,
         nombreComercial: input.nombreComercial,
         ...categoryPatch,
-        paisCodigo: input.paisCodigo,
-        paisNombre: input.paisNombre,
-        monedaCodigo: input.monedaCodigo,
-        monedaNombre: input.monedaNombre,
-        locale: input.locale,
         regionCodigo: input.regionCodigo,
         regionNombre: input.regionNombre,
         region: input.regionNombre,
@@ -270,6 +272,12 @@ async function updateBusinessSettingsHandler(
     { roles: ["OWNER", "ADMIN"] }
   );
   const section = safeText(request?.data?.section, 40).toLowerCase();
+  if (section === "impuestos") {
+    throw new HttpsError(
+      "failed-precondition",
+      "La configuración tributaria base se determina por el país y no admite edición directa."
+    );
+  }
   const settings = sectionValidator(section, request?.data?.settings, HttpsError);
   const ref = context.businessRef.collection("configuracion").doc(section);
   await ref.set({

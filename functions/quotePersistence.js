@@ -469,7 +469,7 @@ async function createQuoteWithNumberHandler({
   await requireBusinessAccess(
     request,
     { db, HttpsError },
-    { roles: QUOTE_WRITE_ROLES }
+    {roles: QUOTE_WRITE_ROLES, requiresVerifiedBusiness: true}
   );
   if (!uid) throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
   const requestId = validateRequestId(request?.data?.requestId, HttpsError);
@@ -666,7 +666,7 @@ async function duplicateQuoteAsDraftHandler({
   const {businessId, businessRef} = await requireBusinessAccess(
     request,
     {db, HttpsError},
-    {roles: QUOTE_WRITE_ROLES}
+    {roles: QUOTE_WRITE_ROLES, requiresVerifiedBusiness: true}
   );
   if (!uid) throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
   const requestId = validateRequestId(request?.data?.requestId, HttpsError);
@@ -862,7 +862,7 @@ async function updateQuoteDraftHandler({
   const { businessId, businessRef } = await requireBusinessAccess(
   request,
   { db, HttpsError },
-  { roles: QUOTE_WRITE_ROLES }
+  {roles: QUOTE_WRITE_ROLES, requiresVerifiedBusiness: true}
 );
   if (!uid) throw new HttpsError("unauthenticated", "Debes iniciar sesiÃ³n.");
   const quoteId = safeText(request?.data?.quoteId, 160);

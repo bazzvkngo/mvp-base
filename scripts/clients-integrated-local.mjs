@@ -169,6 +169,12 @@ try {
   const outsiderBusinessId = outsiderBusinessResponse.data.business.id;
 
   await Promise.all([
+    adminDb.doc(`negocios/${businessId}`).update({
+      verificacionEmpresa: {estado: "VERIFICADA"},
+    }),
+    adminDb.doc(`negocios/${outsiderBusinessId}`).update({
+      verificacionEmpresa: {estado: "VERIFICADA"},
+    }),
     adminDb.doc(`membresias/${businessId}__${admin.uid}`).set({
       negocioId: businessId,
       uid: admin.uid,

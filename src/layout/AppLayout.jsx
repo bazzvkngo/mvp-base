@@ -14,6 +14,11 @@ import {
   filterNavigationSections,
   getDefaultBusinessPath,
 } from "../domain/rbac.mjs";
+import {
+  canBusinessOperate,
+  filterNavigationForBusinessVerification,
+  normalizeBusinessVerificationState,
+} from "../domain/businessOperations.mjs";
 import { logout } from "../services/authService";
 import useBusinessCompletionStatus from "../hooks/useBusinessCompletionStatus";
 
@@ -92,16 +97,23 @@ function AppLayout({
   const menuButtonRef = React.useRef(null);
   const drawerRef = React.useRef(null);
   const closeButtonRef = React.useRef(null);
+  const activationRefreshRef = React.useRef("");
   const canManageBusiness = ["OWNER", "ADMIN"].includes(negocioActivo?.role);
+  const businessVerified = canBusinessOperate(negocioActivo);
   const ownerEmailVerified = negocioActivo?.ownerEmailVerified === true;
-  const { status: businessCompletionStatus } = useBusinessCompletionStatus({
-    businessId: canManageBusiness ? negocioActivo?.id : "",
+  const {
+    profile: observedBusinessProfile,
+    status: businessCompletionStatus,
+  } = useBusinessCompletionStatus({
+    businessId: negocioActivo?.id || "",
     ownerEmailVerified,
     initialProfile: negocioActivo || {},
   });
   const allowedNavigationSections = React.useMemo(
-    () => filterNavigationSections(navigationSections, negocioActivo?.role),
-    [negocioActivo?.role]
+    () => businessVerified
+      ? filterNavigationSections(navigationSections, negocioActivo?.role)
+      : filterNavigationForBusinessVerification(navigationSections, negocioActivo),
+    [negocioActivo]
   );
   const mainNavigationSections = allowedNavigationSections.filter(
     (section) => section.label !== "Cuenta"
@@ -176,6 +188,44 @@ function AppLayout({
   }, [businessNotice]);
 
   React.useEffect(() => {
+    const businessId = negocioActivo?.id || "";
+    const observedBusinessId =
+      observedBusinessProfile?.negocioId || observedBusinessProfile?.id || "";
+    if (!businessId || observedBusinessId !== businessId) return undefined;
+
+    const sessionState = normalizeBusinessVerificationState(
+      negocioActivo?.verificacionEmpresa?.estado
+    );
+    const observedState = normalizeBusinessVerificationState(
+      observedBusinessProfile?.verificacionEmpresa?.estado
+    );
+    if (sessionState === observedState) {
+      activationRefreshRef.current = "";
+      return undefined;
+    }
+
+    const refreshKey = `${businessId}:${sessionState}:${observedState}`;
+    if (activationRefreshRef.current === refreshKey) return undefined;
+    activationRefreshRef.current = refreshKey;
+    let cancelled = false;
+    Promise.resolve(onBusinessCreated())
+      .then((session) => {
+        if (cancelled) return;
+        const nextBusiness = session?.activeBusiness;
+        if (canBusinessOperate(nextBusiness)) {
+          navigate(getDefaultBusinessPath(nextBusiness.role), { replace: true });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) activationRefreshRef.current = "";
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate, negocioActivo, observedBusinessProfile, onBusinessCreated]);
+
+  React.useEffect(() => {
     const expandedTopbarMediaQuery = window.matchMedia("(min-width: 641px)");
     const closeAccountOnExpandedTopbar = (event) => {
       if (event.matches) setMobileAccountOpen(false);
@@ -206,9 +256,10 @@ function AppLayout({
 
   const handleBusinessChanged = async (business) => {
     const session = await onBusinessChanged(business.id);
-    navigate(
-      getDefaultBusinessPath(session?.activeBusiness?.role || business.role)
-    );
+    const nextBusiness = session?.activeBusiness || business;
+    navigate(canBusinessOperate(nextBusiness)
+      ? getDefaultBusinessPath(nextBusiness.role)
+      : "/empresa?seccion=verificacion");
     setMobileNavigationOpen(false);
     setBusinessNotice(
       `Ahora estás trabajando en ${business.nombreComercial}`
@@ -217,9 +268,10 @@ function AppLayout({
 
   const handleBusinessCreated = async (business) => {
     const session = await onBusinessCreated();
-    navigate(
-      getDefaultBusinessPath(session?.activeBusiness?.role || business.role)
-    );
+    const nextBusiness = session?.activeBusiness || business;
+    navigate(canBusinessOperate(nextBusiness)
+      ? getDefaultBusinessPath(nextBusiness.role)
+      : "/empresa?seccion=verificacion");
     setBusinessNotice(`${business.nombreComercial} fue creado correctamente`);
   };
 
@@ -227,7 +279,7 @@ function AppLayout({
     <BusinessSwitcher
       activeBusiness={negocioActivo}
       businesses={businessSession?.businesses || []}
-      onAddBusiness={handleOpenBusinessDrawer}
+      onAddBusiness={businessVerified ? handleOpenBusinessDrawer : null}
       onBusinessChanged={handleBusinessChanged}
     />
   );

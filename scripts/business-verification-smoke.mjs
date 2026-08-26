@@ -32,6 +32,6 @@ assert.equal(fiscalDataChanged(business, profile, {
 assert.equal(fiscalDataChanged(business, profile, {
   ...unchanged,
   razonSocial: "Otra Razón Social SpA",
-}), true);
+}), false);
 
 console.log("Business verification smoke: OK");

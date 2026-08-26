@@ -145,9 +145,54 @@ function quoteFixture(overrides = {}) {
   };
 }
 
-async function createProposalFixture(overrides = {}, { channel = "" } = {}) {
+function verifiedBusinessFixture(overrides = {}) {
+  return {
+    estado: "activo",
+    paisCodigo: "CL",
+    paisNombre: "Chile",
+    monedaCodigo: "CLP",
+    monedaNombre: "Peso chileno",
+    locale: "es-CL",
+    contratoJurisdiccionalVersion: 1,
+    identificadorFiscalTipo: "RUT",
+    identificadorFiscalValor: "76.123.456-7",
+    verificacionEmpresa: {
+      estado: "VERIFICADA",
+      identificadorFiscalTipo: "RUT",
+      identificadorFiscalValor: "76.123.456-7",
+    },
+    ...overrides,
+  };
+}
+
+function taxSettingsFixture() {
+  return {
+    negocioId: "business-1",
+    impuestoPredeterminadoId: "IVA",
+    impuestoPredeterminadoNombre: "IVA",
+    impuestoPredeterminadoTasa: 19,
+    configuracionTributariaBaseCompleta: true,
+    derivadoDePaisCodigo: "CL",
+    contratoJurisdiccionalVersion: 1,
+  };
+}
+
+function verifiedBusinessEntries(business = verifiedBusinessFixture()) {
+  return [
+    ["negocios/business-1", business],
+    ["negocios/business-1/configuracion/impuestos", taxSettingsFixture()],
+  ];
+}
+
+async function createProposalFixture(
+  overrides = {},
+  { channel = "", business = verifiedBusinessFixture() } = {}
+) {
   const quotePath = "negocios/business-1/cotizaciones/quote-1";
-  const db = createFakeDb([[quotePath, quoteFixture(overrides)]]);
+  const db = createFakeDb([
+    ...verifiedBusinessEntries(business),
+    [quotePath, quoteFixture(overrides)],
+  ]);
   const quoteRef = db.collection("negocios").doc("business-1")
     .collection("cotizaciones").doc("quote-1");
   const created = await createPublicQuoteToken({
@@ -233,6 +278,24 @@ async function createProposalFixture(overrides = {}, { channel = "" } = {}) {
     ),
     (error) => error.code === "failed-precondition"
   );
+}
+
+{
+  const { db, quotePath, rawToken } = await createProposalFixture({}, {
+    business: verifiedBusinessFixture({
+      identificadorFiscalValor: "",
+      verificacionEmpresa: {estado: "EN_REVISION"},
+    }),
+  });
+  await assert.rejects(
+    respondPublicQuoteProposalHandler(
+      { data: { token: rawToken, action: "accept" } },
+      {db, FieldValue, HttpsError: TestHttpsError, now: () => now.getTime()}
+    ),
+    (error) => error.code === "failed-precondition" &&
+      /empresa emisora/.test(error.message)
+  );
+  assert.equal(db.read(quotePath).estado, "emitida");
 }
 
 {
@@ -630,13 +693,16 @@ assert.equal(
 
 {
   const quotePath = "negocios/business-1/cotizaciones/quote-reopen";
-  const db = createFakeDb([[quotePath, quoteFixture({
-    estado: "rechazada",
-    respuestaCliente: "rechazada",
-    respuestaClienteOrigen: "portal_publico",
-    motivoRechazoCliente: "precio",
-    comentarioRechazoCliente: "Respuesta anterior",
-  })]]);
+  const db = createFakeDb([
+    ...verifiedBusinessEntries(),
+    [quotePath, quoteFixture({
+      estado: "rechazada",
+      respuestaCliente: "rechazada",
+      respuestaClienteOrigen: "portal_publico",
+      motivoRechazoCliente: "precio",
+      comentarioRechazoCliente: "Respuesta anterior",
+    })],
+  ]);
   const businessRef = db.collection("negocios").doc("business-1");
   const dependencies = {
     db,
@@ -721,7 +787,10 @@ assert.equal(
 
 {
   const quotePath = "negocios/business-1/cotizaciones/quote-copy";
-  const db = createFakeDb([[quotePath, quoteFixture({estado: "rechazada"})]]);
+  const db = createFakeDb([
+    ...verifiedBusinessEntries(),
+    [quotePath, quoteFixture({estado: "rechazada"})],
+  ]);
   const quoteRef = db.collection("negocios").doc("business-1")
     .collection("cotizaciones").doc("quote-copy");
   const copy = await createPublicQuoteToken({

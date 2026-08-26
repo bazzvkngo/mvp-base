@@ -16,7 +16,7 @@ function summarizeInventoryItem(valuation) {
   };
 }
 
-export async function suggestQuoteItems({ description, valuations, assistantMode }) {
+export async function suggestQuoteItems({ businessId, description, valuations, assistantMode }) {
   assertCloudFunctionAllowed("las sugerencias de cotización");
   const cleanDescription = String(description || "").trim();
   const requestedMode = ["local", "gemini"].includes(assistantMode)
@@ -38,6 +38,7 @@ export async function suggestQuoteItems({ description, valuations, assistantMode
   const functions = getFirebaseFunctions(FUNCTIONS_REGION);
   const callable = httpsCallable(functions, "suggestQuoteItems");
   const response = await callable({
+    businessId,
     description: cleanDescription,
     inventoryItems,
     assistantMode: requestedMode,

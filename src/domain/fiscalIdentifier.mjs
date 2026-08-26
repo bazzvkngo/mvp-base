@@ -69,6 +69,21 @@ export const buildFiscalIdentifier = (countryCode, value) => {
   if (paisCodigo === "BR" && identificadorFiscalNormalizado.length === 14) identificadorFiscalValor = identificadorFiscalNormalizado.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
   return {paisCodigo, identificadorFiscalTipo, identificadorFiscalValor, identificadorFiscalNormalizado};
 };
+export const formatFiscalIdentifierForDisplay = (countryCode, value) => {
+  const country = normalizeCountryCode(countryCode);
+  const normalized = normalizedValue(country, value);
+  if (country === "CL") return formatChileanRut(normalized);
+  if (country === "AR" && /^\d{11}$/.test(normalized)) {
+    return normalized.replace(/^(\d{2})(\d{8})(\d)$/, "$1-$2-$3");
+  }
+  if (country === "BR" && /^\d{11}$/.test(normalized)) {
+    return normalized.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
+  }
+  if (country === "BR" && /^\d{14}$/.test(normalized)) {
+    return normalized.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
+  }
+  return String(value ?? "").trim();
+};
 export const adaptStoredFiscalIdentifier = (raw = {}, defaultCountry = "CL") => {
   const paisCodigo = normalizeCountryCode(raw.paisCodigo || defaultCountry);
   const value = raw.identificadorFiscalValor || raw.identificadorFiscalNormalizado || raw.rut || raw.rutNormalizado || "";

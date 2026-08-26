@@ -288,6 +288,7 @@ export function stripInventoryDocumentPayload(fileData) {
 }
 
 export async function normalizeInventoryItemsWithAi({
+  businessId,
   fileData,
   assistantMode = "auto",
 }) {
@@ -300,6 +301,7 @@ export async function normalizeInventoryItemsWithAi({
   }
 
   const response = await invokeInventoryCallable("normalizeInventoryItems", {
+    businessId,
     fileData,
     assistantMode: mode,
   });
@@ -320,12 +322,13 @@ export async function normalizeInventoryItemsWithAi({
   };
 }
 
-export async function normalizeInventoryDocumentWithAi({ fileData }) {
+export async function normalizeInventoryDocumentWithAi({ businessId, fileData }) {
   if (!fileData || fileData.kind !== "document" || !fileData.base64) {
     throw new Error("Selecciona un documento antes de analizar.");
   }
 
   const response = await invokeInventoryCallable("normalizeInventoryDocument", {
+    businessId,
     document: {
       nombreArchivo: fileData.nombreArchivo,
       tipoArchivo: fileData.tipoArchivo,
@@ -354,13 +357,14 @@ export async function normalizeInventoryDocumentWithAi({ fileData }) {
 }
 
 export async function normalizeInventorySourceWithAi({
+  businessId,
   fileData,
   assistantMode = "auto",
 }) {
   if (fileData?.kind === "document") {
-    return normalizeInventoryDocumentWithAi({ fileData });
+    return normalizeInventoryDocumentWithAi({ businessId, fileData });
   }
-  return normalizeInventoryItemsWithAi({ fileData, assistantMode });
+  return normalizeInventoryItemsWithAi({ businessId, fileData, assistantMode });
 }
 
 export async function confirmInventoryImportV2({ businessId, requestId, rows }) {

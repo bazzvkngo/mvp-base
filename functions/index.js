@@ -94,12 +94,14 @@ const {
   respondPublicQuoteProposalHandler,
 } = require("./quotePublicProposal");
 const {transitionQuoteStatusHandler} = require("./quoteLifecycle");
+const {normalizeBusinessVerificationState} = require("./businessOperations");
 const {
   createAdditionalBusinessHandler,
   createFirstBusinessHandler,
   deleteBusinessHandler,
   getBusinessSessionHandler,
   requireBusinessAccess,
+  requireOperationalBusinessAccess,
   setActiveBusinessHandler,
   updateBusinessProfileHandler,
   validateBusinessProfileInput,
@@ -116,6 +118,7 @@ const {
 const {
   cambiarEstadoEmpresaPlataformaHandler,
   cambiarEstadoUsuarioPlataformaHandler,
+  eliminarEmpresaPermanentePlataformaHandler,
   listarEmpresasPlataformaHandler,
   listarUsuariosPlataformaHandler,
   obtenerEmpresaPlataformaHandler,
@@ -1448,6 +1451,9 @@ exports.nightlyInventoryReferenceReview = onSchedule(
 
     for (const businessDoc of businessesSnapshot.docs) {
       if (businessDoc.data()?.eliminadoEn) continue;
+      if (normalizeBusinessVerificationState(businessDoc.data()) !== "VERIFICADA") {
+        continue;
+      }
       try {
         const result = await reviewBusinessInventoryReferences(businessDoc);
         businessesChecked += 1;
@@ -2014,7 +2020,7 @@ exports.createQuoteWithNumber = onCall(
       db,
       FieldValue,
       HttpsError,
-      requireBusinessAccess,
+      requireBusinessAccess: requireOperationalBusinessAccess,
     })
 );
 
@@ -2031,7 +2037,7 @@ exports.updateQuoteDraft = onCall(
       db,
       FieldValue,
       HttpsError,
-      requireBusinessAccess,
+      requireBusinessAccess: requireOperationalBusinessAccess,
     })
 );
 
@@ -2048,7 +2054,7 @@ exports.duplicateQuoteAsDraft = onCall(
       db,
       FieldValue,
       HttpsError,
-      requireBusinessAccess,
+      requireBusinessAccess: requireOperationalBusinessAccess,
     })
 );
 
@@ -2056,7 +2062,7 @@ const purchaseOrderPersistenceDependencies = {
   db,
   FieldValue,
   HttpsError,
-  requireBusinessAccess,
+  requireBusinessAccess: requireOperationalBusinessAccess,
 };
 
 exports.crearOrdenCompra = onCall(
@@ -2130,7 +2136,7 @@ const receptionPersistenceDependencies = {
   db,
   FieldValue,
   HttpsError,
-  requireBusinessAccess,
+  requireBusinessAccess: requireOperationalBusinessAccess,
 };
 
 exports.crearRecepcionDesdeOrden = onCall(
@@ -2157,7 +2163,7 @@ const purchasePersistenceDependencies = {
   db,
   FieldValue,
   HttpsError,
-  requireBusinessAccess,
+  requireBusinessAccess: requireOperationalBusinessAccess,
 };
 
 exports.crearCompra = onCall(
@@ -2189,7 +2195,7 @@ const salePersistenceDependencies = {
   db,
   FieldValue,
   HttpsError,
-  requireBusinessAccess,
+  requireBusinessAccess: requireOperationalBusinessAccess,
 };
 
 exports.crearVenta = onCall(
@@ -2221,7 +2227,7 @@ const clientPersistenceDependencies = {
   db,
   HttpsError,
   FieldValue,
-  requireBusinessAccess,
+  requireBusinessAccess: requireOperationalBusinessAccess,
 };
 
 exports.crearCliente = onCall(
@@ -2273,7 +2279,7 @@ const workPersistenceDependencies = {
   auth: adminAuth,
   HttpsError,
   FieldValue,
-  requireBusinessAccess,
+  requireBusinessAccess: requireOperationalBusinessAccess,
 };
 
 const workCallableOptions = {
@@ -2351,7 +2357,7 @@ const providerPersistenceDependencies = {
   db,
   HttpsError,
   FieldValue,
-  requireBusinessAccess,
+  requireBusinessAccess: requireOperationalBusinessAccess,
 };
 
 exports.crearProveedor = onCall(
@@ -2657,7 +2663,7 @@ exports.sendQuoteEmail = onCall(
       getResendApiKey,
       isEmulatorEnvironment,
       normalizePdfAttachment,
-      requireBusinessAccess,
+      requireBusinessAccess: requireOperationalBusinessAccess,
       safeText,
       sendQuoteEmailWithProvider: sendEmailWithResend,
       Timestamp,
@@ -2686,7 +2692,7 @@ exports.sendPurchaseOrderEmail = onCall(
       getResendApiKey,
       isEmulatorEnvironment,
       normalizePdfAttachment,
-      requireBusinessAccess,
+      requireBusinessAccess: requireOperationalBusinessAccess,
       sendEmailWithProvider: sendEmailWithResend,
     })
 );
@@ -2734,7 +2740,7 @@ exports.prepareQuoteWhatsAppShare = onCall(
     prepareQuoteWhatsAppShareHandler(request, {
       ...businessOnboardingDependencies,
       getPublicBaseUrl,
-      requireBusinessAccess,
+      requireBusinessAccess: requireOperationalBusinessAccess,
       Timestamp,
     })
 );
@@ -2749,7 +2755,7 @@ exports.markQuoteEmittedManually = onCall(
   async (request) =>
     markQuoteEmittedManuallyHandler(request, {
       ...businessOnboardingDependencies,
-      requireBusinessAccess,
+      requireBusinessAccess: requireOperationalBusinessAccess,
     })
 );
 
@@ -2764,7 +2770,7 @@ exports.transitionQuoteStatus = onCall(
     transitionQuoteStatusHandler(request, {
       ...businessOnboardingDependencies,
       buildQuoteEmissionPatch,
-      requireBusinessAccess,
+      requireBusinessAccess: requireOperationalBusinessAccess,
     })
 );
 
@@ -2779,7 +2785,7 @@ exports.reopenQuote = onCall(
     reopenQuoteHandler(request, {
       ...businessOnboardingDependencies,
       getPublicBaseUrl,
-      requireBusinessAccess,
+      requireBusinessAccess: requireOperationalBusinessAccess,
       Timestamp,
     })
 );
@@ -2794,7 +2800,7 @@ exports.confirmQuoteWhatsAppSent = onCall(
   async (request) =>
     confirmQuoteWhatsAppSentHandler(request, {
       ...businessOnboardingDependencies,
-      requireBusinessAccess,
+      requireBusinessAccess: requireOperationalBusinessAccess,
       Timestamp,
     })
 );
@@ -3793,7 +3799,7 @@ const inventoryModelDependencies = {
   db,
   HttpsError,
   FieldValue,
-  requireBusinessAccess,
+  requireBusinessAccess: requireOperationalBusinessAccess,
 };
 const businessOnboardingDependencies = {
   auth: adminAuth,
@@ -3807,6 +3813,10 @@ const businessSettingsDependencies = {
   FieldValue,
   requireBusinessAccess,
   validateBusinessProfileInput,
+};
+const operationalBusinessSettingsDependencies = {
+  ...businessSettingsDependencies,
+  requireBusinessAccess: requireOperationalBusinessAccess,
 };
 const businessVerificationDependencies = {
   bucket: adminStorageBucket,
@@ -3828,7 +3838,7 @@ const businessMembershipDependencies = {
   auth: adminAuth,
   HttpsError,
   FieldValue,
-  requireBusinessAccess,
+  requireBusinessAccess: requireOperationalBusinessAccess,
 };
 
 exports.getBusinessSession = onCall(
@@ -3916,7 +3926,7 @@ exports.updateBusinessSettings = onCall(
     timeoutSeconds: 30,
   },
   async (request) =>
-    updateBusinessSettingsHandler(request, businessSettingsDependencies)
+    updateBusinessSettingsHandler(request, operationalBusinessSettingsDependencies)
 );
 
 exports.updatePersonalProfile = onCall(
@@ -3996,6 +4006,14 @@ exports.cambiarEstadoEmpresaPlataforma = onCall(
 exports.cambiarEstadoUsuarioPlataforma = onCall(
   {maxInstances: 10, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
   async (request) => cambiarEstadoUsuarioPlataformaHandler(request, platformAdminDependencies)
+);
+
+exports.eliminarEmpresaPermanentePlataforma = onCall(
+  {maxInstances: 2, memory: "512MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 300},
+  async (request) => eliminarEmpresaPermanentePlataformaHandler(
+    request,
+    platformAdminDependencies
+  )
 );
 
 exports.listarMiembrosNegocio = onCall(
@@ -4185,6 +4203,7 @@ exports.normalizeInventoryItems = onCall(
     if (!request.auth || !request.auth.uid) {
       throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
     }
+    await requireOperationalBusinessAccess(request, {db, HttpsError});
 
     const data = request.data || {};
     const fileData =
@@ -4329,6 +4348,7 @@ exports.normalizeInventoryDocument = onCall(
     timeoutSeconds: 180,
   },
   async (request) => {
+  await requireOperationalBusinessAccess(request, {db, HttpsError});
   if (!DOCUMENT_GENERATIVE_AI_ENABLED) {
     console.warn("normalizeInventoryDocument: Gemini documental no disponible", {
       reason: "feature_disabled",
@@ -4364,6 +4384,7 @@ exports.suggestQuoteItems = onCall(
   if (!request.auth || !request.auth.uid) {
     throw new HttpsError("unauthenticated", "Debes iniciar sesion.");
   }
+  await requireOperationalBusinessAccess(request, {db, HttpsError});
 
   const data = request.data || {};
   const description = safeText(data.description, 1200);

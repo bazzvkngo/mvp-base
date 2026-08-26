@@ -581,6 +581,7 @@ function InventoryAiImporter({ userId, onImported }) {
           setCatalogError("");
           setProcessingStatus("Analizando documento...");
           const analysis = await normalizeInventorySourceWithAi({
+            businessId: userId,
             fileData,
             assistantMode,
           });

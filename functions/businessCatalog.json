@@ -7,24 +7,17 @@
     "url": "https://www.subdere.gov.cl/documentacion/c%C3%B3digos-%C3%BAnicos-territoriales-actualizados-al-06-de-septiembre-2018"
   },
   "countries": [
-    {
-      "code": "CL",
-      "name": "Chile",
-      "defaultCurrencyCode": "CLP",
-      "defaultLocale": "es-CL",
-      "defaultFiscalIdentifierLabel": "RUT",
-      "active": true
-    },
-    { "code": "BO", "name": "Bolivia", "defaultCurrencyCode": "BOB", "defaultLocale": "es-BO", "defaultFiscalIdentifierLabel": "NIT", "active": true },
-    { "code": "BR", "name": "Brasil", "defaultCurrencyCode": "BRL", "defaultLocale": "pt-BR", "defaultFiscalIdentifierLabel": "CNPJ", "fiscalIdentifierLabels": ["CNPJ", "CPF"], "active": true },
-    { "code": "PE", "name": "Perú", "defaultCurrencyCode": "PEN", "defaultLocale": "es-PE", "defaultFiscalIdentifierLabel": "RUC", "active": true },
-    { "code": "AR", "name": "Argentina", "defaultCurrencyCode": "ARS", "defaultLocale": "es-AR", "defaultFiscalIdentifierLabel": "CUIT", "active": true },
-    { "code": "CO", "name": "Colombia", "defaultCurrencyCode": "COP", "defaultLocale": "es-CO", "defaultFiscalIdentifierLabel": "NIT", "active": true },
-    { "code": "EC", "name": "Ecuador", "defaultCurrencyCode": "USD", "defaultLocale": "es-EC", "defaultFiscalIdentifierLabel": "RUC", "active": true },
-    { "code": "PY", "name": "Paraguay", "defaultCurrencyCode": "PYG", "defaultLocale": "es-PY", "defaultFiscalIdentifierLabel": "RUC", "active": true },
-    { "code": "UY", "name": "Uruguay", "defaultCurrencyCode": "UYU", "defaultLocale": "es-UY", "defaultFiscalIdentifierLabel": "RUT", "active": true },
-    { "code": "MX", "name": "México", "defaultCurrencyCode": "MXN", "defaultLocale": "es-MX", "defaultFiscalIdentifierLabel": "RFC", "active": true },
-    { "code": "OTHER", "name": "Otro país", "defaultCurrencyCode": "USD", "defaultLocale": "es", "defaultFiscalIdentifierLabel": "Identificación fiscal", "active": true, "selectableForNewBusiness": false, "legacy": true }
+    { "code": "CL", "name": "Chile", "defaultCurrencyCode": "CLP", "defaultLocale": "es-CL", "defaultFiscalIdentifierLabel": "RUT", "baseTax": { "id": "IVA_GENERAL", "name": "IVA", "rate": 19, "configured": true }, "active": true },
+    { "code": "BO", "name": "Bolivia", "defaultCurrencyCode": "BOB", "defaultLocale": "es-BO", "defaultFiscalIdentifierLabel": "NIT", "baseTax": { "id": "IVA_GENERAL", "name": "IVA", "rate": 13, "configured": true }, "active": true },
+    { "code": "BR", "name": "Brasil", "defaultCurrencyCode": "BRL", "defaultLocale": "pt-BR", "defaultFiscalIdentifierLabel": "CNPJ", "fiscalIdentifierLabels": ["CNPJ", "CPF"], "baseTax": { "id": "CONFIGURACION_TRIBUTARIA_ESPECIFICA", "name": "Configuración tributaria específica", "rate": null, "configured": false }, "active": true },
+    { "code": "PE", "name": "Perú", "defaultCurrencyCode": "PEN", "defaultLocale": "es-PE", "defaultFiscalIdentifierLabel": "RUC", "baseTax": { "id": "IGV_GENERAL", "name": "IGV", "rate": 18, "configured": true }, "active": true },
+    { "code": "AR", "name": "Argentina", "defaultCurrencyCode": "ARS", "defaultLocale": "es-AR", "defaultFiscalIdentifierLabel": "CUIT", "baseTax": { "id": "IVA_GENERAL", "name": "IVA", "rate": 21, "configured": true }, "active": true },
+    { "code": "CO", "name": "Colombia", "defaultCurrencyCode": "COP", "defaultLocale": "es-CO", "defaultFiscalIdentifierLabel": "NIT", "baseTax": { "id": "IVA_GENERAL", "name": "IVA", "rate": 19, "configured": true }, "active": true },
+    { "code": "EC", "name": "Ecuador", "defaultCurrencyCode": "USD", "defaultLocale": "es-EC", "defaultFiscalIdentifierLabel": "RUC", "baseTax": { "id": "IVA_GENERAL", "name": "IVA", "rate": 15, "configured": true }, "active": true },
+    { "code": "PY", "name": "Paraguay", "defaultCurrencyCode": "PYG", "defaultLocale": "es-PY", "defaultFiscalIdentifierLabel": "RUC", "baseTax": { "id": "IVA_GENERAL", "name": "IVA", "rate": 10, "configured": true }, "active": true },
+    { "code": "UY", "name": "Uruguay", "defaultCurrencyCode": "UYU", "defaultLocale": "es-UY", "defaultFiscalIdentifierLabel": "RUT", "baseTax": { "id": "IVA_TASA_BASICA", "name": "IVA", "rate": 22, "configured": true }, "active": true },
+    { "code": "MX", "name": "México", "defaultCurrencyCode": "MXN", "defaultLocale": "es-MX", "defaultFiscalIdentifierLabel": "RFC", "baseTax": { "id": "IVA_GENERAL", "name": "IVA", "rate": 16, "configured": true }, "active": true },
+    { "code": "OTHER", "name": "Otro país", "defaultCurrencyCode": "USD", "defaultLocale": "es", "defaultFiscalIdentifierLabel": "Identificación fiscal", "baseTax": { "id": "CONFIGURACION_TRIBUTARIA_LEGACY", "name": "Configuración tributaria legacy", "rate": null, "configured": false }, "active": true, "selectableForNewBusiness": false, "legacy": true }
   ],
   "currencies": [
     {

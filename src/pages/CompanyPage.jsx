@@ -5,6 +5,7 @@ import CompanyConfig from "../features/company/CompanyConfig";
 function CompanyPage({
   businessId,
   businessName,
+  businessVerified,
   currentUserUid,
   onBusinessDeleted,
   onBusinessUpdated,
@@ -17,6 +18,7 @@ function CompanyPage({
       businessCompletionStatus={businessCompletionStatus}
       businessId={businessId}
       businessName={businessName}
+      businessVerified={businessVerified}
       currentUserUid={currentUserUid}
       onBusinessDeleted={onBusinessDeleted}
       onBusinessUpdated={onBusinessUpdated}

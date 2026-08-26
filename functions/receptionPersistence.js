@@ -82,7 +82,7 @@ async function access(request, dependencies) {
   return dependencies.requireBusinessAccess(
     request,
     {db: dependencies.db, HttpsError: dependencies.HttpsError},
-    {roles: WRITE_ROLES}
+    {roles: WRITE_ROLES, requiresVerifiedBusiness: true}
   );
 }
 

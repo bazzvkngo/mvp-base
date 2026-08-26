@@ -29,7 +29,19 @@ function normalizeCompanySnapshot(raw = {}, businessId = "") {
 }
 
 function buildAuthoritativeCompanySnapshot({businessId, business = {}, profile = {}} = {}) {
-  return normalizeCompanySnapshot({...business, ...profile}, businessId);
+  const verification = business.verificacionEmpresa || {};
+  const verifiedFiscal = verification.estado === "VERIFICADA"
+    ? {
+        identificadorFiscalTipo:
+          verification.identificadorFiscalTipo || business.identificadorFiscalTipo,
+        identificadorFiscalValor:
+          verification.identificadorFiscalValor || business.identificadorFiscalValor,
+      }
+    : {};
+  return normalizeCompanySnapshot(
+    {...business, ...profile, ...verifiedFiscal},
+    businessId
+  );
 }
 
 function getHistoricalCompanySnapshot(document = {}) {

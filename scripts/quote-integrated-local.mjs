@@ -230,6 +230,18 @@ try {
   });
   const businessId = ownerBusiness.data.business.id;
   const outsiderBusinessId = outsiderBusiness.data.business.id;
+  await Promise.all([
+    adminDb.doc(`negocios/${businessId}`).set({
+      identificadorFiscalTipo: "RUT",
+      identificadorFiscalValor: "76.100.100-1",
+      verificacionEmpresa: {estado: "VERIFICADA", identificadorFiscalTipo: "RUT", identificadorFiscalValor: "76.100.100-1"},
+    }, {merge: true}),
+    adminDb.doc(`negocios/${outsiderBusinessId}`).set({
+      identificadorFiscalTipo: "RUT",
+      identificadorFiscalValor: "76.900.900-9",
+      verificacionEmpresa: {estado: "VERIFICADA", identificadorFiscalTipo: "RUT", identificadorFiscalValor: "76.900.900-9"},
+    }, {merge: true}),
+  ]);
   const companyProfileA = {
     negocioId: businessId,
     nombreComercial: "Empresa Histórica A",

@@ -157,6 +157,14 @@ async function main() {
       additionalPayload
     );
     const secondBusinessId = second.data.business.id;
+    await Promise.all([
+      adminDb.doc(`negocios/${firstBusinessId}`).update({
+        verificacionEmpresa: {estado: "VERIFICADA"},
+      }),
+      adminDb.doc(`negocios/${secondBusinessId}`).update({
+        verificacionEmpresa: {estado: "VERIFICADA"},
+      }),
+    ]);
     assert.notEqual(secondBusinessId, firstBusinessId);
     assert.equal(second.data.business.role, "OWNER");
     assert.equal(second.data.business.paisCodigo, "BO");
