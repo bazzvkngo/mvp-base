@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {createRequire} from "node:module";
-import {adaptStoredWork, adaptWorkExpense, adaptWorkLabor, adaptWorkLink, adaptWorkMaterialMovement, adaptWorkTask, adaptWorkTaskDocumentation, buildQuickWorkCreationPayload, buildWorkMutationPayload, canManageWorks, formatWorkNumber as formatFrontendNumber, getEligibleWorkQuoteOptions, getWorkDraftErrors, getWorkMemberIdentity, getWorkMemberOptionLabel, hasAdditionalWorkMembers, humanizeWorkEvent, matchesWorkFilters, WORK_MODEL_VERSION} from "../src/domain/workModel.mjs";
+import {adaptStoredWork, adaptWorkExpense, adaptWorkLabor, adaptWorkLink, adaptWorkMaterialMovement, adaptWorkTask, adaptWorkTaskDocumentation, buildQuickWorkCreationPayload, buildWorkDailyCostSummary, buildWorkMutationPayload, canManageWorks, formatWorkNumber as formatFrontendNumber, getEligibleWorkQuoteOptions, getTaskProgress, getWorkCostSummary, getWorkDraftErrors, getWorkMemberIdentity, getWorkMemberOptionLabel, getWorkOperationalIndicators, getWorkTaskProgress, hasAdditionalWorkMembers, humanizeWorkEvent, matchesWorkFilters, WORK_MODEL_VERSION} from "../src/domain/workModel.mjs";
 
 const require = createRequire(import.meta.url);
-const {actualizarTrabajoHandler, agregarNotaTrabajoHandler, anularGastoTrabajoHandler, anularHorasHombreTrabajoHandler, asignarTareaTrabajoHandler, cambiarEstadoTareaTrabajoV2Handler, cambiarEstadoTrabajoHandler, crearTareaTrabajoV2Handler, crearTrabajoHandler, documentarTareaTrabajoHandler, eliminarTareaTrabajoV2Handler, formatWorkNumber, normalizeWorkInput, registrarDevolucionMaterialTrabajoHandler, registrarGastoTrabajoHandler, registrarHorasHombreTrabajoHandler, registrarSalidaMaterialTrabajoHandler, WORK_EXPENSE_CATEGORIES, writeCommercialLink, writeQuoteResponseEvent, writeSaleConfirmationEvent} = require("../functions/workPersistence.js");
+const {actualizarSubtareaTrabajoHandler, actualizarTrabajoHandler, agregarNotaTrabajoHandler, agregarSubtareaTrabajoHandler, anularGastoTrabajoHandler, anularHorasHombreTrabajoHandler, asignarTareaTrabajoHandler, cambiarEstadoTareaTrabajoV2Handler, cambiarEstadoTrabajoHandler, crearTareaTrabajoV2Handler, crearTrabajoHandler, documentarTareaTrabajoHandler, eliminarSubtareaTrabajoHandler, eliminarTareaTrabajoV2Handler, formatWorkNumber, normalizeWorkInput, registrarDevolucionMaterialTrabajoHandler, registrarGastoTrabajoHandler, registrarHorasHombreTrabajoHandler, registrarSalidaMaterialTrabajoHandler, WORK_EXPENSE_CATEGORIES, writeCommercialLink, writeQuoteResponseEvent, writeSaleConfirmationEvent} = require("../functions/workPersistence.js");
 
 class TestHttpsError extends Error { constructor(code, message) { super(message); this.code = code; } }
 class Snapshot { constructor(ref, value) { this.id = ref.id; this.exists = value !== undefined; this.value = value; } data() { return this.value; } }
@@ -75,7 +75,7 @@ const requireBusinessAccess = async (request, _deps, options = {}) => {
   if (options.roles && !options.roles.includes(membership.rol)) throw new TestHttpsError("permission-denied", "role");
   return {uid: request.auth.uid, businessId, membership, businessRef: db.collection("negocios").doc(businessId)};
 };
-const dependencies = {db, FieldValue, HttpsError: TestHttpsError, requireBusinessAccess, resolveUserSnapshots: async (uids) => new Map(uids.map((uid) => [uid, profiles.get(uid) || {uid, nombre: "Sin nombre registrado", correo: ""}]))};
+const dependencies = {db, FieldValue, HttpsError: TestHttpsError, now: () => new Date("2026-08-14T20:05:00.000Z"), requireBusinessAccess, resolveUserSnapshots: async (uids) => new Map(uids.map((uid) => [uid, profiles.get(uid) || {uid, nombre: "Sin nombre registrado", correo: ""}]))};
 const request = (uid, data) => ({auth: uid ? {uid} : null, data});
 const input = (overrides = {}) => ({titulo: "Mantención preventiva", descripcion: "Visita programada", clienteId: "client-a", responsableUid: "worker-a", participanteUids: ["worker-b"], estado: "pendiente", prioridad: "alta", fechaInicio: "2026-08-14", fechaPrevista: "2026-08-20", ...overrides});
 
@@ -229,6 +229,30 @@ await assert.rejects(() => eliminarTareaTrabajoV2Handler(request("owner-a", {bus
 const taskEvents = db.matching(`${workPath}/historial/`).map(([, value]) => value.tipo);
 assert.equal(taskEvents.includes("tarea_reasignada"), true); assert.equal(taskEvents.includes("tarea_reabierta"), true); assert.equal(taskEvents.includes("tarea_completada"), true); assert.equal(taskEvents.includes("tarea_documentacion_agregada"), true);
 
+const firstSubtaskRequest = request("worker-c", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId, titulo: "Montar cámaras", requestId: "subtask-create-0001"});
+const firstSubtask = await agregarSubtareaTrabajoHandler(firstSubtaskRequest, dependencies);
+const firstSubtaskRetry = await agregarSubtareaTrabajoHandler(firstSubtaskRequest, dependencies);
+assert.equal(firstSubtaskRetry.subtareaId, firstSubtask.subtareaId); assert.equal(firstSubtaskRetry.idempotent, true);
+const secondSubtask = await agregarSubtareaTrabajoHandler(request("worker-c", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId, titulo: "Conectar red", requestId: "subtask-create-0002"}), dependencies);
+const temporarySubtask = await agregarSubtareaTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId, titulo: "Revisar título", requestId: "subtask-create-0003"}), dependencies);
+await actualizarSubtareaTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId, subtareaId: temporarySubtask.subtareaId, titulo: "Revisar rotulación", requestId: "subtask-title-0001"}), dependencies);
+await actualizarSubtareaTrabajoHandler(request("worker-c", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId, subtareaId: firstSubtask.subtareaId, completada: true, requestId: "subtask-check-0001"}), dependencies);
+await actualizarSubtareaTrabajoHandler(request("worker-c", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId, subtareaId: secondSubtask.subtareaId, completada: true, requestId: "subtask-check-0002"}), dependencies);
+storedTask = db.read(`${workPath}/tareas/${task.tareaId}`);
+assert.deepEqual(getTaskProgress(adaptWorkTask(storedTask)), {total: 3, completed: 2, percent: 66.67});
+assert.equal(getWorkTaskProgress(adaptStoredWork(db.read(workPath))).percent, 66.67);
+await actualizarSubtareaTrabajoHandler(request("worker-c", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId, subtareaId: secondSubtask.subtareaId, completada: false, requestId: "subtask-uncheck-0001"}), dependencies);
+assert.equal(getTaskProgress(adaptWorkTask(db.read(`${workPath}/tareas/${task.tareaId}`))).percent, 33.33);
+await eliminarSubtareaTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId, subtareaId: temporarySubtask.subtareaId, requestId: "subtask-delete-0001"}), dependencies);
+assert.equal(getTaskProgress(adaptWorkTask(db.read(`${workPath}/tareas/${task.tareaId}`))).percent, 50);
+await assert.rejects(() => eliminarSubtareaTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId, subtareaId: firstSubtask.subtareaId, requestId: "subtask-delete-completed"}), dependencies), (error) => error.code === "failed-precondition");
+await assert.rejects(() => cambiarEstadoTareaTrabajoV2Handler(request("worker-c", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId, estado: "en_espera", motivoEspera: "", requestId: "task-wait-no-reason"}), dependencies), (error) => error.code === "invalid-argument");
+await cambiarEstadoTareaTrabajoV2Handler(request("worker-c", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId, estado: "en_espera", motivoEspera: "Esperando acceso al recinto", requestId: "task-wait-0001"}), dependencies);
+assert.equal(db.read(`${workPath}/tareas/${task.tareaId}`).motivoEspera, "Esperando acceso al recinto");
+await cambiarEstadoTareaTrabajoV2Handler(request("worker-c", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId, estado: "en_progreso", requestId: "task-resume-0001"}), dependencies);
+assert.equal(db.matching(`${workPath}/historial/`).some(([, value]) => value.tipo === "tarea_en_espera" && value.detalle.motivoEspera === "Esperando acceso al recinto"), true);
+console.log("OK BRUNO-07 tareas: subtareas idempotentes, edición segura, check/uncheck, progreso derivado y espera con historial");
+
 const legacyTaskId = "legacy-task";
 db.seed(`${workPath}/tareas/${legacyTaskId}`, {tareaId: legacyTaskId, negocioId: "business-a", trabajoId: created.trabajoId, titulo: "Checklist legacy", completada: false, creadoEn: "2026-08-14T20:05:00.000Z"});
 db.seed(workPath, {...db.read(workPath), tareasTotal: 2});
@@ -238,7 +262,7 @@ assert.equal(adaptWorkTask({tareaId: "old", titulo: "Antigua", completada: false
 assert.equal(adaptWorkTaskDocumentation({documentacionId: "doc", texto: "Informe"}).texto, "Informe");
 console.log("OK tareas V2: asignación, documentación, técnico, idempotencia, reapertura, aislamiento y legacy");
 
-const expenseRequest = request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, requestId: "expense-create-0001", gasto: {concepto: "Material eléctrico", monto: 100000, categoria: "MATERIAL", responsableDelGastoUid: "worker-a", fecha: "2026-08-14", observacion: "Compra en terreno"}});
+const expenseRequest = request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, requestId: "expense-create-0001", gasto: {concepto: "Material eléctrico", monto: 100000, categoria: "MATERIAL", responsableDelGastoUid: "worker-a", fecha: "2026-08-14", observacion: "Compra en terreno", tareaId: task.tareaId}});
 const expense = await registrarGastoTrabajoHandler(expenseRequest, dependencies);
 const expenseRetry = await registrarGastoTrabajoHandler(expenseRequest, dependencies);
 assert.equal(expenseRetry.gastoId, expense.gastoId); assert.equal(expenseRetry.idempotent, true);
@@ -256,8 +280,9 @@ const annulExpenseRetry = await anularGastoTrabajoHandler(annulExpenseRequest, d
 assert.equal(annulExpenseRetry.idempotent, true); assert.equal(db.read(`${workPath}/gastos/${expense.gastoId}`).estado, "anulado"); assert.equal(db.read(workPath).gastosMontoTotal, 0);
 const correctedExpense = await registrarGastoTrabajoHandler(request("worker-a", {businessId: "business-a", trabajoId: created.trabajoId, requestId: "expense-corrected-01", gasto: {concepto: "Material eléctrico corregido", monto: 120000, categoria: "MATERIAL", responsableDelGastoUid: "", fecha: "2026-08-14", observacion: "Reemplaza registro anulado"}}), dependencies);
 assert.notEqual(correctedExpense.gastoId, expense.gastoId); assert.equal(db.read(`${workPath}/gastos/${correctedExpense.gastoId}`).responsableDelGastoUid, "worker-a"); assert.equal(db.matching(`${workPath}/gastos/`).length, 2);
-const indirectExpense = await registrarGastoTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, requestId: "expense-indirect-01", gasto: {concepto: "Administración del proyecto", monto: 5000, categoria: "ADMINISTRATIVO", responsableDelGastoUid: "", fecha: "2026-08-14", observacion: ""}}), dependencies);
+const indirectExpense = await registrarGastoTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, requestId: "expense-indirect-01", gasto: {concepto: "Administración del proyecto", monto: 5000, categoria: "ADMINISTRATIVO", responsableDelGastoUid: "", fecha: "2026-08-14", observacion: "", tareaId: task.tareaId}}), dependencies);
 assert.equal(db.read(`${workPath}/gastos/${indirectExpense.gastoId}`).clasificacionCosto, "INDIRECTO"); assert.equal(db.read(workPath).gastosMontoIndirecto, 5000);
+await registrarGastoTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, requestId: "expense-project-01", gasto: {concepto: "Traslado general", monto: 3000, categoria: "OPERATIVO", responsableDelGastoUid: "", fecha: "2026-08-14", observacion: ""}}), dependencies);
 
 db.seed("negocios/business-a", {...db.read("negocios/business-a"), monedaCodigo: "CLP"});
 const laborRequest = request("worker-a", {businessId: "business-a", trabajoId: created.trabajoId, requestId: "labor-create-0001", horasHombre: {tecnicoUid: "", horas: 4, costoHora: 10000, total: 1, fecha: "2026-08-14", concepto: "Instalación en terreno"}});
@@ -266,12 +291,14 @@ const laborRetry = await registrarHorasHombreTrabajoHandler(laborRequest, depend
 assert.equal(labor.total, 40000); assert.equal(laborRetry.idempotent, true); assert.equal(db.matching(`${workPath}/horasHombre/`).length, 1);
 let storedLabor = db.read(`${workPath}/horasHombre/${labor.horasHombreId}`);
 assert.equal(storedLabor.total, 40000); assert.equal(storedLabor.moneda, "USD"); assert.equal(storedLabor.tecnicoUid, "worker-a"); assert.equal(db.read(workPath).horasHombreCostoTotal, 40000);
+const taskLabor = await registrarHorasHombreTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, requestId: "labor-task-0001", horasHombre: {tecnicoUid: "worker-c", horas: 2, costoHora: 5000, fecha: "2026-08-15", concepto: "Configuración", tareaId: task.tareaId}}), dependencies);
+assert.equal(db.read(`${workPath}/horasHombre/${taskLabor.horasHombreId}`).tareaId, task.tareaId);
 await assert.rejects(() => registrarHorasHombreTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, requestId: "labor-member-invalid", horasHombre: {tecnicoUid: "ghost-user", horas: 1, costoHora: 1000, fecha: "2026-08-14", concepto: "Inválida"}}), dependencies), (error) => error.code === "failed-precondition");
 await assert.rejects(() => registrarHorasHombreTrabajoHandler(request("worker-a", {businessId: "business-a", trabajoId: created.trabajoId, requestId: "labor-member-forged", horasHombre: {tecnicoUid: "worker-c", horas: 1, costoHora: 1000, fecha: "2026-08-14", concepto: "Ajena"}}), dependencies), (error) => error.code === "permission-denied");
 const annulLaborRequest = request("worker-b", {businessId: "business-a", trabajoId: created.trabajoId, horasHombreId: labor.horasHombreId, motivo: "Registro duplicado", requestId: "labor-annul-0001"});
 await anularHorasHombreTrabajoHandler(annulLaborRequest, dependencies);
 await anularHorasHombreTrabajoHandler(annulLaborRequest, dependencies);
-storedLabor = db.read(`${workPath}/horasHombre/${labor.horasHombreId}`); assert.equal(storedLabor.estado, "anulado"); assert.equal(db.read(workPath).horasHombreCostoTotal, 0);
+storedLabor = db.read(`${workPath}/horasHombre/${labor.horasHombreId}`); assert.equal(storedLabor.estado, "anulado"); assert.equal(db.read(workPath).horasHombreCostoTotal, 10000);
 const costEvents = db.matching(`${workPath}/historial/`).map(([, value]) => value.tipo);
 for (const event of ["gasto_registrado", "gasto_anulado", "horas_hombre_registradas", "horas_hombre_anuladas"]) assert.equal(costEvents.includes(event), true);
 assert.equal(adaptWorkExpense(storedExpense).monto, 100000); assert.equal(adaptWorkLabor(storedLabor).total, 40000);
@@ -308,8 +335,19 @@ assert.equal(materialMovements.length, 3); assert.equal(materialMovements.filter
 assert.equal(materialMovements.find((value) => value.movimientoId === materialExit.movimientoId).cantidadDevuelta, undefined);
 assert.equal(adaptWorkMaterialMovement(materialMovements[1]).movimientoOrigenId, materialExit.movimientoId);
 db.seed("negocios/business-a/inventario/product-base", {negocioId: "business-a", itemId: "product-base", tipoItem: "producto", estado: "activo", nombre: "Conector", unidad: "unidad", stock: 2, costoBase: 250});
-const baseCostExit = await registrarSalidaMaterialTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, itemId: "product-base", cantidad: 1, fecha: "2026-08-16", requestId: "material-base-cost"}), dependencies);
+const baseCostExit = await registrarSalidaMaterialTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, itemId: "product-base", cantidad: 1, fecha: "2026-08-16", tareaId: task.tareaId, requestId: "material-base-cost"}), dependencies);
 assert.equal(baseCostExit.costoUnitario, 250); assert.equal(baseCostExit.costoTotal, 250);
+const costInput = {
+  expenses: db.matching(`${workPath}/gastos/`).map(([, value]) => adaptWorkExpense(value)),
+  labor: db.matching(`${workPath}/horasHombre/`).map(([, value]) => adaptWorkLabor(value)),
+  materials: db.matching("negocios/business-a/movimientosInventario/").map(([, value]) => adaptWorkMaterialMovement(value)).filter((value) => value.trabajoId === created.trabajoId),
+};
+const taskCosts = getWorkCostSummary({...costInput, taskId: task.tareaId});
+const projectCosts = getWorkCostSummary(costInput);
+assert.deepEqual(taskCosts, {materials: 250, labor: 10000, expenses: 5000, total: 15250});
+assert.equal(projectCosts.total, 18250); assert.equal(projectCosts.total > taskCosts.total, true);
+const dailyCosts = buildWorkDailyCostSummary({...costInput, events: db.matching(`${workPath}/historial/`).map(([, value]) => ({...value, fecha: value.fecha}))});
+assert.deepEqual(dailyCosts.map(({date, total}) => [date, total]), [["2026-08-16", 250], ["2026-08-15", 6000], ["2026-08-14", 12000]]);
 const materialEvents = db.matching(`${workPath}/historial/`).map(([, value]) => value.tipo);
 assert.equal(materialEvents.includes("material_salida_registrada"), true); assert.equal(materialEvents.includes("material_devolucion_registrada"), true);
 const legacyWork = adaptStoredWork({trabajoId: "legacy-work", titulo: "Legacy"});
@@ -320,6 +358,16 @@ const note = await agregarNotaTrabajoHandler(request("owner-a", {businessId: "bu
 assert.equal(db.read(`${workPath}/notas/${note.notaId}`).autorSnapshot.nombre, "Mauricio");
 assert.equal(db.matching(`${workPath}/historial/`).some(([, value]) => value.tipo === "nota_agregada" && value.detalle.texto.includes("Configuración")), true);
 console.log("OK notas: autor, fecha y evento append-only");
+
+assert.equal(getWorkOperationalIndicators({estado: "en_progreso", ultimaActividadEn: "2026-08-20T12:00:00.000Z"}, {now: new Date("2026-08-24T12:00:00.000Z")}).noRecentActivity, true);
+assert.equal(getWorkOperationalIndicators({estado: "en_espera", ultimaActividadEn: "2026-08-20T12:00:00.000Z"}, {now: new Date("2026-08-24T12:00:00.000Z")}).noRecentActivity, false);
+await assert.rejects(() => cambiarEstadoTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, estado: "en_espera", motivoEspera: ""}), dependencies), (error) => error.code === "invalid-argument");
+await cambiarEstadoTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, estado: "en_espera", motivoEspera: "Esperando aprobación del cliente"}), dependencies);
+assert.equal(db.read(workPath).motivoEspera, "Esperando aprobación del cliente");
+await cambiarEstadoTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, estado: "en_progreso"}), dependencies);
+assert.equal(db.read(workPath).motivoEspera, "");
+assert.equal(db.matching(`${workPath}/historial/`).some(([, value]) => value.detalle?.motivoEspera === "Esperando aprobación del cliente"), true);
+console.log("OK BRUNO-07 operación: espera con motivo/historial e indicador determinista de 3 días");
 
 await cambiarEstadoTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, estado: "completado"}), dependencies);
 assert.equal(db.read(workPath).estado, "completado"); assert.ok(db.read(workPath).fechaCompletado);
@@ -359,9 +407,12 @@ assert.match(page, /label="Descripción" optional/); assert.match(page, /label="
 assert.match(page, /Escribe un nombre breve para identificar el proyecto/); assert.match(page, /Describe el requerimiento o lo informado por el cliente/); assert.match(page, /El número TRB y el estado Pendiente se asignarán automáticamente\./);
 assert.doesNotMatch(page, /Nueva cotización/); assert.doesNotMatch(page, /fecha de ingreso se asignarán automáticamente/);
 assert.match(styles, /works-form-automatic-note/); assert.match(styles, /@media\(min-width:768px\)[\s\S]*works-form-dialog \.responsive-dialog__body/);
-assert.match(page, /function DetailDisclosure[\s\S]*<details className="works-detail-disclosure">/); assert.match(page, /title="Recursos y costos" summary="Materiales, gastos, horas hombre y balance"/); assert.match(page, /title="Historial del trabajo"/);
-assert.match(page, /<h3>Resumen<\/h3>[\s\S]*<TaskSection[\s\S]*<h3>Notas<\/h3>[\s\S]*title="Recursos y costos"[\s\S]*title="Historial del trabajo"/);
+assert.match(page, /function DetailDisclosure[\s\S]*<details className="works-detail-disclosure">/); assert.match(page, /className="works-costs-focus"/); assert.match(page, /title="Notas y documentación"/); assert.match(page, /title="Historial del trabajo"/);
+assert.match(page, /<h3>Resumen<\/h3>[\s\S]*<TaskSection[\s\S]*<h3>Costos<\/h3>[\s\S]*title="Notas y documentación"[\s\S]*title="Historial del trabajo"/);
 assert.match(page, /Aún no hay venta confirmada para calcular resultado y rentabilidad\./); assert.match(page, /Aún no se han registrado materiales\./); assert.match(page, /Aún no se han registrado gastos\./); assert.match(page, /Aún no se han registrado horas hombre\./);
+assert.match(page, /Costo acumulado/); assert.match(page, /Último avance/); assert.match(page, /Sin actividad reciente/); assert.match(page, /Completar igualmente/); assert.match(page, /Motivo de espera/);
+assert.match(page, /TaskCostSelect/); assert.match(page, /Costos por día/); assert.match(page, /Nueva subtarea/); assert.match(page, /subtask\.completada/);
+assert.match(backend, /agregarSubtareaTrabajoHandler/); assert.match(backend, /actualizarSubtareaTrabajoHandler/); assert.match(backend, /eliminarSubtareaTrabajoHandler/); assert.match(backend, /tareaId: taskId/);
 assert.match(styles, /works-detail-disclosure\[open\]/); assert.match(styles, /works-commercial-list[\s\S]*grid-template-columns/);
 console.log("OK integración: Rules, autoridad backend, lista/tablero y confirmación segura");
 

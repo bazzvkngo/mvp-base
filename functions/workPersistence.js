@@ -14,6 +14,7 @@ const WRITE_ROLES = WORK_MANAGEMENT_ROLES;
 const WORK_STATUSES = new Set(["pendiente", "en_progreso", "en_espera", "completado", "cancelado"]);
 const WORK_PRIORITIES = new Set(["baja", "normal", "alta", "urgente"]);
 const WORK_EXPENSE_CATEGORIES = new Set(["MATERIAL", "MANO_DE_OBRA", "OPERATIVO", "SERVICIO_EXTERNO", "ADMINISTRATIVO", "OTRO"]);
+const WORK_TASK_STATUSES = new Set(["pendiente", "en_progreso", "en_espera", "completada"]);
 const WORK_INPUT_FIELDS = new Set(["titulo", "descripcion", "clienteId", "cotizacionId", "responsableUid", "participanteUids", "estado", "prioridad", "fechaInicio", "fechaPrevista"]);
 
 function fail(HttpsError, code, message) {
@@ -130,6 +131,10 @@ function normalizeTaskInput(raw = {}, HttpsError) {
   };
 }
 
+function normalizeSubtaskTitle(value, HttpsError) {
+  return text(value, "El título de la subtarea", 240, HttpsError, {required: true});
+}
+
 function assertTask(snapshot, businessId, workId, HttpsError) {
   const task = snapshot.data() || {};
   if (!snapshot.exists || task.negocioId !== businessId || task.trabajoId !== workId) fail(HttpsError, "not-found", "No se encontró la tarea.");
@@ -138,6 +143,35 @@ function assertTask(snapshot, businessId, workId, HttpsError) {
 
 function taskIsCompleted(task) {
   return task.estado === "completada" || task.completada === true;
+}
+
+function taskSubtasks(task) {
+  return Array.isArray(task.subtareas) ? task.subtareas : [];
+}
+
+function taskProgressPoints(task) {
+  const subtasks = taskSubtasks(task);
+  if (!subtasks.length) return taskIsCompleted(task) ? 100 : 0;
+  return Math.round((subtasks.filter((entry) => entry?.completada === true).length / subtasks.length) * 10000) / 100;
+}
+
+function storedProgressPoints(work) {
+  const stored = Number(work.progresoAcumulado);
+  return Number.isFinite(stored) ? stored : Math.max(0, Number(work.tareasCompletadas || 0)) * 100;
+}
+
+function progressWorkPatch(work, previousTask, nextTask, timestamp, uid) {
+  const total = Math.max(0, Number(work.tareasTotal || 0));
+  const points = Math.max(0, roundMoney(storedProgressPoints(work) - taskProgressPoints(previousTask) + taskProgressPoints(nextTask)));
+  return {
+    progresoAcumulado: points,
+    progresoPct: total ? Math.round((points / total) * 100) / 100 : 0,
+    ultimoAvanceEn: timestamp,
+    ultimaActividadEn: timestamp,
+    modeloTrabajoVersion: WORK_MODEL_VERSION,
+    actualizadoPorUid: uid,
+    actualizadoEn: timestamp,
+  };
 }
 
 function assertTaskOperator(task, context, HttpsError) {
@@ -196,6 +230,7 @@ function normalizeExpenseInput(raw = {}, HttpsError) {
     responsableDelGastoUid: identifier(raw.responsableDelGastoUid, "El responsable del gasto", HttpsError, {optional: true}),
     fecha: requiredDate(raw.fecha, "La fecha", HttpsError),
     observacion: text(raw.observacion, "La observación", 4000, HttpsError),
+    tareaId: identifier(raw.tareaId, "La tarea", HttpsError, {optional: true}),
   };
 }
 
@@ -207,6 +242,7 @@ function normalizeLaborInput(raw = {}, HttpsError) {
     costoHora: positiveDecimal(raw.costoHora, "El costo por hora", 999999999999.99, HttpsError),
     fecha: requiredDate(raw.fecha, "La fecha", HttpsError),
     concepto: text(raw.concepto, "El concepto", 240, HttpsError, {required: true}),
+    tareaId: identifier(raw.tareaId, "La tarea", HttpsError, {optional: true}),
   };
 }
 
@@ -263,6 +299,13 @@ function workCurrency(work, business, HttpsError) {
   const currency = String(work.moneda || business.monedaCodigo || business.moneda || "").trim().toUpperCase();
   if (!/^[A-Z]{3}$/.test(currency)) fail(HttpsError, "failed-precondition", "El negocio no tiene una moneda válida configurada.");
   return currency;
+}
+
+async function assertOptionalCostTask(transaction, workRef, taskId, context, HttpsError) {
+  if (!taskId) return null;
+  const task = assertTask(await transaction.get(workRef.collection("tareas").doc(taskId)), context.businessId, workRef.id, HttpsError);
+  assertTaskOperator(task, context, HttpsError);
+  return task;
 }
 
 function previousCostRequest(snapshot, {fingerprint: expectedFingerprint, operation, uid}, HttpsError) {
@@ -618,6 +661,8 @@ async function crearTrabajoHandler(request, dependencies, now = new Date()) {
       fechaCompletado: input.estado === "completado" ? timestamp : null,
       tareasTotal: 0,
       tareasCompletadas: 0,
+      progresoAcumulado: 0,
+      progresoPct: 0,
       modeloExpedienteVersion: WORK_FILE_MODEL_VERSION,
       cotizacionesVinculadas: commercialSelection ? 1 : 0,
       ventasVinculadas: commercialSelection ? 1 : 0,
@@ -625,6 +670,7 @@ async function crearTrabajoHandler(request, dependencies, now = new Date()) {
       gastosMontoTotal: 0,
       gastosMontoDirecto: 0,
       gastosMontoIndirecto: 0,
+      gastosMaterialMontoTotal: 0,
       horasHombreVigentesTotal: 0,
       horasHombreCantidadTotal: 0,
       horasHombreCostoTotal: 0,
@@ -635,6 +681,8 @@ async function crearTrabajoHandler(request, dependencies, now = new Date()) {
       actualizadoPorUid: context.uid,
       creadoEn: timestamp,
       actualizadoEn: timestamp,
+      ultimaActividadEn: timestamp,
+      ultimoAvanceEn: null,
     };
     transaction.create(workRef, stored);
     transaction.set(counterRef, {negocioId: context.businessId, anio: year, ultimoNumero: sequence, actualizadoEn: timestamp}, {merge: true});
@@ -665,6 +713,7 @@ async function actualizarTrabajoHandler(request, dependencies) {
 
   await db.runTransaction(async (transaction) => {
     const stored = assertWork(await transaction.get(workRef), context.businessId, HttpsError);
+    if (stored.estado !== input.estado && [stored.estado, input.estado].includes("en_espera")) fail(HttpsError, "failed-precondition", "Cambia el estado de espera desde el control operativo del proyecto.");
     const storedQuoteId = String(stored.cotizacionId || "").trim();
     if (storedQuoteId && input.cotizacionId && input.cotizacionId !== storedQuoteId) {
       fail(HttpsError, "failed-precondition", "La cotización asociada al proyecto no se puede reemplazar.");
@@ -722,6 +771,8 @@ async function cambiarEstadoTrabajoHandler(request, dependencies) {
   const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError);
   const estado = text(request?.data?.estado, "El estado", 30, HttpsError).toLowerCase();
   if (!WORK_STATUSES.has(estado)) fail(HttpsError, "invalid-argument", "Selecciona un estado válido.");
+  const motivoEspera = text(request?.data?.motivoEspera, "El motivo de espera", 1000, HttpsError);
+  if (estado === "en_espera" && !motivoEspera) fail(HttpsError, "invalid-argument", "Ingresa el motivo de espera.");
   const people = await userSnapshots(dependencies, [context.uid]);
   const actor = publicPerson(people, context.uid);
   const workRef = context.businessRef.collection("trabajos").doc(workId);
@@ -729,8 +780,17 @@ async function cambiarEstadoTrabajoHandler(request, dependencies) {
     const stored = assertWork(await transaction.get(workRef), context.businessId, HttpsError);
     if (stored.estado === estado) return;
     const timestamp = FieldValue.serverTimestamp();
-    transaction.update(workRef, {estado, fechaCompletado: estado === "completado" ? stored.fechaCompletado || timestamp : null, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
-    writeEvent(transaction, workRef, {businessId: context.businessId, type: stateEvent(stored.estado, estado), actorUid: context.uid, actor, detail: {estadoAnterior: stored.estado, estadoNuevo: estado}, timestamp});
+    transaction.update(workRef, {
+      estado,
+      fechaCompletado: estado === "completado" ? stored.fechaCompletado || timestamp : null,
+      motivoEspera: estado === "en_espera" ? motivoEspera : "",
+      esperaDesde: estado === "en_espera" ? timestamp : null,
+      esperaPorUid: estado === "en_espera" ? context.uid : null,
+      ultimaActividadEn: timestamp,
+      actualizadoPorUid: context.uid,
+      actualizadoEn: timestamp,
+    });
+    writeEvent(transaction, workRef, {businessId: context.businessId, type: stateEvent(stored.estado, estado), actorUid: context.uid, actor, detail: {estadoAnterior: stored.estado, estadoNuevo: estado, motivoEspera: estado === "en_espera" ? motivoEspera : String(stored.motivoEspera || "")}, timestamp});
   });
   return {trabajoId: workId, estado};
 }
@@ -769,12 +829,14 @@ async function crearTareaTrabajoV2Handler(request, dependencies) {
       completadaEn: null,
       completadaPorUid: null,
       completadaPorSnapshot: null,
+      subtareas: [],
       documentacionTotal: 0,
       creadoPorUid: context.uid,
       creadoEn: timestamp,
       actualizadoEn: timestamp,
     });
-    transaction.update(workRef, {...taskAssigneeWorkAccess(work, input.responsableUid, assignedPerson), tareasTotal: Number(work.tareasTotal || 0) + 1, modeloTrabajoVersion: WORK_MODEL_VERSION, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
+    const nextTotal = Number(work.tareasTotal || 0) + 1;
+    transaction.update(workRef, {...taskAssigneeWorkAccess(work, input.responsableUid, assignedPerson), tareasTotal: nextTotal, progresoAcumulado: storedProgressPoints(work), progresoPct: nextTotal ? Math.round((storedProgressPoints(work) / nextTotal) * 100) / 100 : 0, modeloTrabajoVersion: WORK_MODEL_VERSION, ultimaActividadEn: timestamp, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
     writeEvent(transaction, workRef, {businessId: context.businessId, type: "tarea_creada", actorUid: context.uid, actor, detail: {tareaId: taskRef.id, tareaTitulo: input.titulo}, timestamp});
     if (assignedPerson) writeEvent(transaction, workRef, {businessId: context.businessId, type: "tarea_asignada", actorUid: context.uid, actor, detail: {tareaId: taskRef.id, tareaTitulo: input.titulo, responsableNombre: assignedPerson.nombre}, timestamp});
     result = {tareaId: taskRef.id, idempotent: false};
@@ -787,13 +849,18 @@ async function cambiarEstadoTareaTrabajoV2Handler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
   const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES, requiresVerifiedBusiness: true});
   const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError); const taskId = identifier(request?.data?.tareaId, "La tarea", HttpsError);
-  if (typeof request?.data?.completada !== "boolean") fail(HttpsError, "invalid-argument", "El estado de la tarea no es válido.");
-  const completed = request.data.completada;
-  if (!completed && !WRITE_ROLES.includes(context.membership?.rol)) fail(HttpsError, "permission-denied", "Sólo OWNER o ADMIN puede reabrir tareas.");
+  const legacyCompleted = request?.data?.completada;
+  const requestedStatus = request?.data?.estado == null
+    ? (legacyCompleted === true ? "completada" : legacyCompleted === false ? "pendiente" : "")
+    : text(request.data.estado, "El estado de la tarea", 30, HttpsError).toLowerCase();
+  if (!WORK_TASK_STATUSES.has(requestedStatus)) fail(HttpsError, "invalid-argument", "El estado de la tarea no es válido.");
+  const completed = requestedStatus === "completada";
+  const motivoEspera = text(request?.data?.motivoEspera, "El motivo de espera", 1000, HttpsError);
+  if (requestedStatus === "en_espera" && !motivoEspera) fail(HttpsError, "invalid-argument", "Ingresa el motivo de espera de la tarea.");
   const documentation = text(request?.data?.documentacionCierre, "La documentación de cierre", 8000, HttpsError);
   const requestId = requestIdentifier(request?.data?.requestId, HttpsError);
-  const operation = completed ? "completar" : "reabrir";
-  const requestFingerprint = fingerprint({workId, taskId, completed, documentation});
+  const operation = `estado_${requestedStatus}`;
+  const requestFingerprint = fingerprint({workId, taskId, requestedStatus, motivoEspera, documentation});
   const people = await userSnapshots(dependencies, [context.uid]); const actor = publicPerson(people, context.uid);
   const workRef = context.businessRef.collection("trabajos").doc(workId); const taskRef = workRef.collection("tareas").doc(taskId);
   const documentationRef = documentation ? taskRef.collection("documentacion").doc() : null;
@@ -804,9 +871,11 @@ async function cambiarEstadoTareaTrabajoV2Handler(request, dependencies) {
     if (previous) { result = previous; return; }
     const work = assertWork(await transaction.get(workRef), context.businessId, HttpsError); assertWorkOperator(work, context, HttpsError); assertTaskMutable(work, HttpsError);
     const task = assertTask(await transaction.get(taskRef), context.businessId, workId, HttpsError); assertTaskOperator(task, context, HttpsError);
+    if (taskIsCompleted(task) && !completed && !WRITE_ROLES.includes(context.membership?.rol)) fail(HttpsError, "permission-denied", "Sólo OWNER o ADMIN puede reabrir tareas.");
     const timestamp = FieldValue.serverTimestamp();
-    if (taskIsCompleted(task) === completed) {
-      result = {tareaId: taskId, completada: completed, sinCambios: true, idempotent: false};
+    const previousStatus = taskIsCompleted(task) ? "completada" : WORK_TASK_STATUSES.has(task.estado) ? task.estado : "pendiente";
+    if (previousStatus === requestedStatus && (requestedStatus !== "en_espera" || String(task.motivoEspera || "") === motivoEspera)) {
+      result = {tareaId: taskId, estado: requestedStatus, completada: completed, sinCambios: true, idempotent: false};
       transaction.create(requestRef, taskRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation, result, timestamp, uid: context.uid, workId, taskId}));
       return;
     }
@@ -814,21 +883,123 @@ async function cambiarEstadoTareaTrabajoV2Handler(request, dependencies) {
       transaction.create(documentationRef, {documentacionId: documentationRef.id, negocioId: context.businessId, trabajoId: workId, tareaId: taskId, tipo: "cierre", texto: documentation, autorUid: context.uid, autorSnapshot: {nombre: actor.nombre, correo: actor.correo}, creadoEn: timestamp});
       writeEvent(transaction, workRef, {businessId: context.businessId, type: "tarea_documentacion_agregada", actorUid: context.uid, actor, detail: {tareaId: taskId, tareaTitulo: task.titulo, documentacionId: documentationRef.id, resumen: documentation.slice(0, 500)}, timestamp});
     }
-    transaction.update(taskRef, {
+    const nextTask = {
+      ...task,
       modeloTareaVersion: WORK_TASK_MODEL_VERSION,
-      estado: completed ? "completada" : "pendiente",
+      estado: requestedStatus,
       completada: completed,
       completadaEn: completed ? timestamp : null,
       completadaPorUid: completed ? context.uid : null,
       completadaPorSnapshot: completed ? {nombre: actor.nombre, correo: actor.correo} : null,
+      motivoEspera: requestedStatus === "en_espera" ? motivoEspera : "",
+      esperaDesde: requestedStatus === "en_espera" ? timestamp : null,
+      esperaPorUid: requestedStatus === "en_espera" ? context.uid : null,
       ...(documentationRef ? {documentacionTotal: Number(task.documentacionTotal || 0) + 1, ultimaDocumentacionEn: timestamp} : {}),
       actualizadoEn: timestamp,
-    });
-    const count = Math.max(0, Number(work.tareasCompletadas || 0) + (completed ? 1 : -1));
-    transaction.update(workRef, {tareasCompletadas: Math.min(Number(work.tareasTotal || 0), count), modeloTrabajoVersion: WORK_MODEL_VERSION, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
-    writeEvent(transaction, workRef, {businessId: context.businessId, type: completed ? "tarea_completada" : "tarea_reabierta", actorUid: context.uid, actor, detail: {tareaId: taskId, tareaTitulo: task.titulo}, timestamp});
-    result = {tareaId: taskId, completada: completed, idempotent: false};
+    };
+    transaction.update(taskRef, nextTask);
+    const count = Math.max(0, Number(work.tareasCompletadas || 0) + (completed && !taskIsCompleted(task) ? 1 : !completed && taskIsCompleted(task) ? -1 : 0));
+    transaction.update(workRef, {...progressWorkPatch(work, task, nextTask, timestamp, context.uid), tareasCompletadas: Math.min(Number(work.tareasTotal || 0), count)});
+    const eventType = completed ? "tarea_completada" : taskIsCompleted(task) ? "tarea_reabierta" : requestedStatus === "en_espera" ? "tarea_en_espera" : "estado_tarea_cambiado";
+    writeEvent(transaction, workRef, {businessId: context.businessId, type: eventType, actorUid: context.uid, actor, detail: {tareaId: taskId, tareaTitulo: task.titulo, estadoAnterior: previousStatus, estadoNuevo: requestedStatus, motivoEspera: requestedStatus === "en_espera" ? motivoEspera : String(task.motivoEspera || "")}, timestamp});
+    result = {tareaId: taskId, estado: requestedStatus, completada: completed, idempotent: false};
     transaction.create(requestRef, taskRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation, result, timestamp, uid: context.uid, workId, taskId}));
+  });
+  return result;
+}
+
+async function agregarSubtareaTrabajoHandler(request, dependencies) {
+  const {db, FieldValue, HttpsError} = dependencies;
+  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES, requiresVerifiedBusiness: true});
+  const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError);
+  const taskId = identifier(request?.data?.tareaId, "La tarea", HttpsError);
+  const titulo = normalizeSubtaskTitle(request?.data?.titulo, HttpsError);
+  const requestId = requestIdentifier(request?.data?.requestId, HttpsError);
+  const requestFingerprint = fingerprint({workId, taskId, titulo});
+  const subtaskId = `sub_${fingerprint({requestId, taskId}).slice(0, 20)}`;
+  const people = await userSnapshots(dependencies, [context.uid]); const actor = publicPerson(people, context.uid);
+  const workRef = context.businessRef.collection("trabajos").doc(workId); const taskRef = workRef.collection("tareas").doc(taskId);
+  const requestRef = context.businessRef.collection("workTaskRequests").doc(requestId);
+  let result;
+  await db.runTransaction(async (transaction) => {
+    const previous = previousTaskRequest(await transaction.get(requestRef), {fingerprint: requestFingerprint, operation: "agregar_subtarea", uid: context.uid}, HttpsError);
+    if (previous) { result = previous; return; }
+    const work = assertWork(await transaction.get(workRef), context.businessId, HttpsError); assertWorkOperator(work, context, HttpsError); assertTaskMutable(work, HttpsError);
+    const task = assertTask(await transaction.get(taskRef), context.businessId, workId, HttpsError); assertTaskOperator(task, context, HttpsError);
+    if (taskIsCompleted(task)) fail(HttpsError, "failed-precondition", "Reabre la tarea antes de agregar subtareas.");
+    const subtareas = taskSubtasks(task);
+    if (subtareas.length >= 100) fail(HttpsError, "failed-precondition", "Una tarea admite hasta 100 subtareas.");
+    const timestamp = FieldValue.serverTimestamp();
+    const nextTask = {...task, subtareas: [...subtareas, {id: subtaskId, titulo, completada: false, completadaEn: null, completadaPorUid: null}], actualizadoEn: timestamp};
+    transaction.update(taskRef, {modeloTareaVersion: WORK_TASK_MODEL_VERSION, subtareas: nextTask.subtareas, actualizadoEn: timestamp});
+    transaction.update(workRef, progressWorkPatch(work, task, nextTask, timestamp, context.uid));
+    writeEvent(transaction, workRef, {businessId: context.businessId, type: "subtarea_agregada", actorUid: context.uid, actor, detail: {tareaId: taskId, tareaTitulo: task.titulo, subtareaId: subtaskId, subtareaTitulo: titulo}, timestamp});
+    result = {tareaId: taskId, subtareaId: subtaskId, idempotent: false};
+    transaction.create(requestRef, taskRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "agregar_subtarea", result, timestamp, uid: context.uid, workId, taskId}));
+  });
+  return result;
+}
+
+async function actualizarSubtareaTrabajoHandler(request, dependencies) {
+  const {db, FieldValue, HttpsError} = dependencies;
+  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES, requiresVerifiedBusiness: true});
+  const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError);
+  const taskId = identifier(request?.data?.tareaId, "La tarea", HttpsError);
+  const subtaskId = identifier(request?.data?.subtareaId, "La subtarea", HttpsError);
+  const hasTitle = request?.data?.titulo != null;
+  const hasCompleted = typeof request?.data?.completada === "boolean";
+  if (!hasTitle && !hasCompleted) fail(HttpsError, "invalid-argument", "No se enviaron cambios para la subtarea.");
+  const titulo = hasTitle ? normalizeSubtaskTitle(request.data.titulo, HttpsError) : "";
+  const requestId = requestIdentifier(request?.data?.requestId, HttpsError);
+  const requestFingerprint = fingerprint({workId, taskId, subtaskId, hasTitle, titulo, hasCompleted, completada: request?.data?.completada});
+  const people = await userSnapshots(dependencies, [context.uid]); const actor = publicPerson(people, context.uid);
+  const workRef = context.businessRef.collection("trabajos").doc(workId); const taskRef = workRef.collection("tareas").doc(taskId);
+  const requestRef = context.businessRef.collection("workTaskRequests").doc(requestId);
+  let result;
+  await db.runTransaction(async (transaction) => {
+    const previous = previousTaskRequest(await transaction.get(requestRef), {fingerprint: requestFingerprint, operation: "actualizar_subtarea", uid: context.uid}, HttpsError);
+    if (previous) { result = previous; return; }
+    const work = assertWork(await transaction.get(workRef), context.businessId, HttpsError); assertWorkOperator(work, context, HttpsError); assertTaskMutable(work, HttpsError);
+    const task = assertTask(await transaction.get(taskRef), context.businessId, workId, HttpsError); assertTaskOperator(task, context, HttpsError);
+    const subtareas = taskSubtasks(task); const index = subtareas.findIndex((entry) => entry?.id === subtaskId);
+    if (index < 0) fail(HttpsError, "not-found", "No se encontró la subtarea.");
+    const current = subtareas[index];
+    if (hasTitle && current.completada) fail(HttpsError, "failed-precondition", "Desmarca la subtarea antes de editar su título.");
+    const completedAt = (dependencies.now ? dependencies.now() : new Date()).toISOString();
+    const nextSubtask = {...current, ...(hasTitle ? {titulo} : {}), ...(hasCompleted ? {completada: request.data.completada, completadaEn: request.data.completada ? completedAt : null, completadaPorUid: request.data.completada ? context.uid : null} : {})};
+    const nextSubtasks = subtareas.map((entry, currentIndex) => currentIndex === index ? nextSubtask : entry);
+    const timestamp = FieldValue.serverTimestamp(); const nextTask = {...task, subtareas: nextSubtasks, actualizadoEn: timestamp};
+    transaction.update(taskRef, {modeloTareaVersion: WORK_TASK_MODEL_VERSION, subtareas: nextSubtasks, actualizadoEn: timestamp});
+    transaction.update(workRef, progressWorkPatch(work, task, nextTask, timestamp, context.uid));
+    writeEvent(transaction, workRef, {businessId: context.businessId, type: hasCompleted ? (request.data.completada ? "subtarea_completada" : "subtarea_reabierta") : "subtarea_editada", actorUid: context.uid, actor, detail: {tareaId: taskId, tareaTitulo: task.titulo, subtareaId: subtaskId, subtareaTitulo: nextSubtask.titulo}, timestamp});
+    result = {tareaId: taskId, subtareaId: subtaskId, completada: nextSubtask.completada, idempotent: false};
+    transaction.create(requestRef, taskRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "actualizar_subtarea", result, timestamp, uid: context.uid, workId, taskId}));
+  });
+  return result;
+}
+
+async function eliminarSubtareaTrabajoHandler(request, dependencies) {
+  const {db, FieldValue, HttpsError} = dependencies;
+  const context = await requireWriteAccess(request, dependencies);
+  const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError); const taskId = identifier(request?.data?.tareaId, "La tarea", HttpsError); const subtaskId = identifier(request?.data?.subtareaId, "La subtarea", HttpsError);
+  const requestId = requestIdentifier(request?.data?.requestId, HttpsError); const requestFingerprint = fingerprint({workId, taskId, subtaskId});
+  const people = await userSnapshots(dependencies, [context.uid]); const actor = publicPerson(people, context.uid);
+  const workRef = context.businessRef.collection("trabajos").doc(workId); const taskRef = workRef.collection("tareas").doc(taskId); const requestRef = context.businessRef.collection("workTaskRequests").doc(requestId);
+  let result;
+  await db.runTransaction(async (transaction) => {
+    const previous = previousTaskRequest(await transaction.get(requestRef), {fingerprint: requestFingerprint, operation: "eliminar_subtarea", uid: context.uid}, HttpsError);
+    if (previous) { result = previous; return; }
+    const work = assertWork(await transaction.get(workRef), context.businessId, HttpsError); assertTaskMutable(work, HttpsError);
+    const task = assertTask(await transaction.get(taskRef), context.businessId, workId, HttpsError);
+    const subtareas = taskSubtasks(task); const current = subtareas.find((entry) => entry?.id === subtaskId);
+    if (!current) fail(HttpsError, "not-found", "No se encontró la subtarea.");
+    if (current.completada) fail(HttpsError, "failed-precondition", "Las subtareas completadas se conservan para mantener su historial.");
+    const nextTask = {...task, subtareas: subtareas.filter((entry) => entry?.id !== subtaskId)}; const timestamp = FieldValue.serverTimestamp();
+    transaction.update(taskRef, {modeloTareaVersion: WORK_TASK_MODEL_VERSION, subtareas: nextTask.subtareas, actualizadoEn: timestamp});
+    transaction.update(workRef, progressWorkPatch(work, task, nextTask, timestamp, context.uid));
+    writeEvent(transaction, workRef, {businessId: context.businessId, type: "subtarea_eliminada", actorUid: context.uid, actor, detail: {tareaId: taskId, tareaTitulo: task.titulo, subtareaId: subtaskId, subtareaTitulo: current.titulo}, timestamp});
+    result = {tareaId: taskId, subtareaId: subtaskId, idempotent: false};
+    transaction.create(requestRef, taskRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "eliminar_subtarea", result, timestamp, uid: context.uid, workId, taskId}));
   });
   return result;
 }
@@ -858,8 +1029,8 @@ async function asignarTareaTrabajoHandler(request, dependencies) {
       transaction.create(requestRef, taskRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "asignar", result, timestamp, uid: context.uid, workId, taskId}));
       return;
     }
-    transaction.update(taskRef, {modeloTareaVersion: WORK_TASK_MODEL_VERSION, estado: taskIsCompleted(task) ? "completada" : "pendiente", descripcion: String(task.descripcion || ""), responsableUid, responsableSnapshot: assignedPerson, actualizadoEn: timestamp});
-    transaction.update(workRef, {...taskAssigneeWorkAccess(work, responsableUid, assignedPerson), modeloTrabajoVersion: WORK_MODEL_VERSION, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
+    transaction.update(taskRef, {modeloTareaVersion: WORK_TASK_MODEL_VERSION, estado: taskIsCompleted(task) ? "completada" : WORK_TASK_STATUSES.has(task.estado) ? task.estado : "pendiente", descripcion: String(task.descripcion || ""), responsableUid, responsableSnapshot: assignedPerson, actualizadoEn: timestamp});
+    transaction.update(workRef, {...taskAssigneeWorkAccess(work, responsableUid, assignedPerson), modeloTrabajoVersion: WORK_MODEL_VERSION, ultimaActividadEn: timestamp, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
     writeEvent(transaction, workRef, {businessId: context.businessId, type: previousUid ? "tarea_reasignada" : "tarea_asignada", actorUid: context.uid, actor, detail: {tareaId: taskId, tareaTitulo: task.titulo, responsableAnteriorNombre: task.responsableSnapshot?.nombre || "Sin responsable", responsableNombre: assignedPerson?.nombre || "Sin responsable"}, timestamp});
     result = {tareaId: taskId, responsableUid, idempotent: false};
     transaction.create(requestRef, taskRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "asignar", result, timestamp, uid: context.uid, workId, taskId}));
@@ -885,8 +1056,8 @@ async function documentarTareaTrabajoHandler(request, dependencies) {
     const task = assertTask(await transaction.get(taskRef), context.businessId, workId, HttpsError); assertTaskOperator(task, context, HttpsError);
     const timestamp = FieldValue.serverTimestamp();
     transaction.create(documentationRef, {documentacionId: documentationRef.id, negocioId: context.businessId, trabajoId: workId, tareaId: taskId, tipo: "avance", texto: documentation, autorUid: context.uid, autorSnapshot: {nombre: actor.nombre, correo: actor.correo}, creadoEn: timestamp});
-    transaction.update(taskRef, {modeloTareaVersion: WORK_TASK_MODEL_VERSION, estado: taskIsCompleted(task) ? "completada" : "pendiente", descripcion: String(task.descripcion || ""), documentacionTotal: Number(task.documentacionTotal || 0) + 1, ultimaDocumentacionEn: timestamp, actualizadoEn: timestamp});
-    transaction.update(workRef, {modeloTrabajoVersion: WORK_MODEL_VERSION, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
+    transaction.update(taskRef, {modeloTareaVersion: WORK_TASK_MODEL_VERSION, estado: taskIsCompleted(task) ? "completada" : WORK_TASK_STATUSES.has(task.estado) ? task.estado : "pendiente", descripcion: String(task.descripcion || ""), documentacionTotal: Number(task.documentacionTotal || 0) + 1, ultimaDocumentacionEn: timestamp, actualizadoEn: timestamp});
+    transaction.update(workRef, {modeloTrabajoVersion: WORK_MODEL_VERSION, ultimaActividadEn: timestamp, ultimoAvanceEn: timestamp, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
     writeEvent(transaction, workRef, {businessId: context.businessId, type: "tarea_documentacion_agregada", actorUid: context.uid, actor, detail: {tareaId: taskId, tareaTitulo: task.titulo, documentacionId: documentationRef.id, resumen: documentation.slice(0, 500)}, timestamp});
     result = {tareaId: taskId, documentacionId: documentationRef.id, idempotent: false};
     transaction.create(requestRef, taskRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "documentar", result, timestamp, uid: context.uid, workId, taskId}));
@@ -912,7 +1083,8 @@ async function eliminarTareaTrabajoV2Handler(request, dependencies) {
     if (Number(task.modeloTareaVersion || 1) >= WORK_TASK_MODEL_VERSION) fail(HttpsError, "failed-precondition", "Las tareas operativas se conservan para mantener su trazabilidad.");
     if (taskIsCompleted(task)) fail(HttpsError, "failed-precondition", "Reabre la tarea antes de eliminarla.");
     const timestamp = FieldValue.serverTimestamp(); transaction.delete(taskRef);
-    transaction.update(workRef, {tareasTotal: Math.max(0, Number(work.tareasTotal || 0) - 1), actualizadoPorUid: context.uid, actualizadoEn: timestamp});
+    const nextTotal = Math.max(0, Number(work.tareasTotal || 0) - 1); const points = Math.max(0, roundMoney(storedProgressPoints(work) - taskProgressPoints(task)));
+    transaction.update(workRef, {tareasTotal: nextTotal, progresoAcumulado: points, progresoPct: nextTotal ? Math.round((points / nextTotal) * 100) / 100 : 0, ultimaActividadEn: timestamp, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
     writeEvent(transaction, workRef, {businessId: context.businessId, type: "tarea_eliminada", actorUid: context.uid, actor, detail: {tareaId: taskId, tareaTitulo: task.titulo}, timestamp});
     result = {tareaId: taskId, idempotent: false};
     transaction.create(requestRef, taskRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "eliminar", result, timestamp, uid: context.uid, workId, taskId}));
@@ -941,6 +1113,7 @@ async function registrarGastoTrabajoHandler(request, dependencies) {
     const [workSnapshot, businessSnapshot] = await Promise.all([transaction.get(workRef), transaction.get(context.businessRef)]);
     const work = assertWork(workSnapshot, context.businessId, HttpsError);
     assertWorkOperator(work, context, HttpsError);
+    await assertOptionalCostTask(transaction, workRef, input.tareaId, context, HttpsError);
     const business = businessSnapshot.data() || {};
     if (!businessSnapshot.exists) fail(HttpsError, "failed-precondition", "El negocio seleccionado no está disponible.");
     if (input.responsableDelGastoUid) assertActiveMember(await transaction.get(db.collection("membresias").doc(membershipId(context.businessId, input.responsableDelGastoUid))), context.businessId, input.responsableDelGastoUid, HttpsError);
@@ -974,11 +1147,13 @@ async function registrarGastoTrabajoHandler(request, dependencies) {
       gastosMontoTotal: roundMoney(Number(work.gastosMontoTotal || 0) + input.monto),
       gastosMontoDirecto: roundMoney(Number(work.gastosMontoDirecto || 0) + directAmount),
       gastosMontoIndirecto: roundMoney(Number(work.gastosMontoIndirecto || 0) + indirectAmount),
+      gastosMaterialMontoTotal: roundMoney(Number(work.gastosMaterialMontoTotal || 0) + (input.categoria === "MATERIAL" ? input.monto : 0)),
       modeloTrabajoVersion: WORK_MODEL_VERSION,
+      ultimaActividadEn: timestamp,
       actualizadoPorUid: context.uid,
       actualizadoEn: timestamp,
     });
-    writeEvent(transaction, workRef, {businessId: context.businessId, type: "gasto_registrado", actorUid: context.uid, actor, detail: {gastoId: expenseRef.id, concepto: input.concepto, monto: input.monto, categoria: input.categoria, clasificacionCosto, moneda}, timestamp});
+    writeEvent(transaction, workRef, {businessId: context.businessId, type: "gasto_registrado", actorUid: context.uid, actor, detail: {gastoId: expenseRef.id, tareaId: input.tareaId, concepto: input.concepto, monto: input.monto, categoria: input.categoria, clasificacionCosto, moneda}, timestamp});
     result = {gastoId: expenseRef.id, moneda, idempotent: false};
     transaction.create(requestRef, costRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "registrar_gasto", result, timestamp, uid: context.uid, workId, recordId: expenseRef.id}));
   });
@@ -1012,6 +1187,7 @@ async function registrarHorasHombreTrabajoHandler(request, dependencies) {
     ]);
     const work = assertWork(workSnapshot, context.businessId, HttpsError);
     assertWorkOperator(work, context, HttpsError);
+    await assertOptionalCostTask(transaction, workRef, input.tareaId, context, HttpsError);
     const business = businessSnapshot.data() || {};
     if (!businessSnapshot.exists) fail(HttpsError, "failed-precondition", "El negocio seleccionado no está disponible.");
     assertActiveMember(memberSnapshot, context.businessId, input.tecnicoUid, HttpsError);
@@ -1042,10 +1218,11 @@ async function registrarHorasHombreTrabajoHandler(request, dependencies) {
       horasHombreCantidadTotal: roundMoney(Number(work.horasHombreCantidadTotal || 0) + input.horas),
       horasHombreCostoTotal: roundMoney(Number(work.horasHombreCostoTotal || 0) + total),
       modeloTrabajoVersion: WORK_MODEL_VERSION,
+      ultimaActividadEn: timestamp,
       actualizadoPorUid: context.uid,
       actualizadoEn: timestamp,
     });
-    writeEvent(transaction, workRef, {businessId: context.businessId, type: "horas_hombre_registradas", actorUid: context.uid, actor, detail: {horasHombreId: laborRef.id, concepto: input.concepto, tecnicoNombre: technician.nombre, horas: input.horas, costoHora: input.costoHora, total, moneda}, timestamp});
+    writeEvent(transaction, workRef, {businessId: context.businessId, type: "horas_hombre_registradas", actorUid: context.uid, actor, detail: {horasHombreId: laborRef.id, tareaId: input.tareaId, concepto: input.concepto, tecnicoNombre: technician.nombre, horas: input.horas, costoHora: input.costoHora, total, moneda}, timestamp});
     result = {horasHombreId: laborRef.id, total, moneda, idempotent: false};
     transaction.create(requestRef, costRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "registrar_hh", result, timestamp, uid: context.uid, workId, recordId: laborRef.id}));
   });
@@ -1086,6 +1263,8 @@ async function anularGastoTrabajoHandler(request, dependencies) {
       gastosMontoTotal: Math.max(0, roundMoney(Number(work.gastosMontoTotal || 0) - amount)),
       gastosMontoDirecto: Math.max(0, roundMoney(Number(work.gastosMontoDirecto || 0) - directAmount)),
       gastosMontoIndirecto: Math.max(0, roundMoney(Number(work.gastosMontoIndirecto || 0) - indirectAmount)),
+      gastosMaterialMontoTotal: Math.max(0, roundMoney(Number(work.gastosMaterialMontoTotal || 0) - (expense.categoria === "MATERIAL" ? amount : 0))),
+      ultimaActividadEn: timestamp,
       actualizadoPorUid: context.uid,
       actualizadoEn: timestamp,
     });
@@ -1127,6 +1306,7 @@ async function anularHorasHombreTrabajoHandler(request, dependencies) {
       horasHombreVigentesTotal: Math.max(0, Number(work.horasHombreVigentesTotal || 0) - 1),
       horasHombreCantidadTotal: Math.max(0, roundMoney(Number(work.horasHombreCantidadTotal || 0) - hours)),
       horasHombreCostoTotal: Math.max(0, roundMoney(Number(work.horasHombreCostoTotal || 0) - total)),
+      ultimaActividadEn: timestamp,
       actualizadoPorUid: context.uid,
       actualizadoEn: timestamp,
     });
@@ -1160,8 +1340,9 @@ async function registrarSalidaMaterialTrabajoHandler(request, dependencies) {
   const itemId = identifier(request?.data?.itemId, "El producto", HttpsError);
   const cantidad = positiveDecimal(request?.data?.cantidad, "La cantidad", 999999999.99, HttpsError);
   const fecha = requiredDate(request?.data?.fecha, "La fecha", HttpsError);
+  const taskId = identifier(request?.data?.tareaId, "La tarea", HttpsError, {optional: true});
   const requestId = requestIdentifier(request?.data?.requestId, HttpsError);
-  const requestFingerprint = fingerprint({workId, itemId, cantidad, fecha});
+  const requestFingerprint = fingerprint({workId, itemId, cantidad, fecha, taskId});
   const people = await userSnapshots(dependencies, [context.uid]);
   const actor = publicPerson(people, context.uid);
   const workRef = context.businessRef.collection("trabajos").doc(workId);
@@ -1178,6 +1359,7 @@ async function registrarSalidaMaterialTrabajoHandler(request, dependencies) {
     ]);
     const work = assertWork(workSnapshot, context.businessId, HttpsError);
     assertWorkOperator(work, context, HttpsError);
+    await assertOptionalCostTask(transaction, workRef, taskId, context, HttpsError);
     if (!businessSnapshot.exists) fail(HttpsError, "failed-precondition", "El negocio seleccionado no est\u00e1 disponible.");
     const item = assertInventoryProduct(itemSnapshot, context.businessId, HttpsError, {requireActive: true});
     if (item.stock < cantidad) fail(HttpsError, "failed-precondition", "No hay stock suficiente para registrar la salida.");
@@ -1194,6 +1376,7 @@ async function registrarSalidaMaterialTrabajoHandler(request, dependencies) {
       movimientoId: movementRef.id,
       negocioId: context.businessId,
       trabajoId: workId,
+      tareaId: taskId,
       tipo: "SALIDA_PROYECTO",
       itemId,
       cantidad,
@@ -1211,8 +1394,8 @@ async function registrarSalidaMaterialTrabajoHandler(request, dependencies) {
       creadoEn: timestamp,
     });
     transaction.create(balanceRef, {negocioId: context.businessId, trabajoId: workId, movimientoOrigenId: movementRef.id, itemId, cantidadSalida: cantidad, cantidadDevuelta: 0, costoSalida: costoTotal, costoDevuelto: 0, actualizadoEn: timestamp});
-    transaction.update(workRef, {moneda, materialesSalidasTotal: Number(work.materialesSalidasTotal || 0) + 1, materialesCostoTotal: roundMoney(Number(work.materialesCostoTotal || 0) + costoTotal), modeloTrabajoVersion: WORK_MODEL_VERSION, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
-    writeEvent(transaction, workRef, {businessId: context.businessId, type: "material_salida_registrada", actorUid: context.uid, actor, detail: {movimientoId: movementRef.id, itemId, productoNombre: snapshot.nombre, cantidad, costoUnitario, costoTotal, moneda}, timestamp});
+    transaction.update(workRef, {moneda, materialesSalidasTotal: Number(work.materialesSalidasTotal || 0) + 1, materialesCostoTotal: roundMoney(Number(work.materialesCostoTotal || 0) + costoTotal), modeloTrabajoVersion: WORK_MODEL_VERSION, ultimaActividadEn: timestamp, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
+    writeEvent(transaction, workRef, {businessId: context.businessId, type: "material_salida_registrada", actorUid: context.uid, actor, detail: {movimientoId: movementRef.id, tareaId: taskId, itemId, productoNombre: snapshot.nombre, cantidad, costoUnitario, costoTotal, moneda}, timestamp});
     result = {movimientoId: movementRef.id, costoUnitario, costoTotal, moneda, stockPosterior, idempotent: false};
     transaction.create(requestRef, costRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "salida_material", result, timestamp, uid: context.uid, workId, recordId: movementRef.id}));
   });
@@ -1268,6 +1451,7 @@ async function registrarDevolucionMaterialTrabajoHandler(request, dependencies) 
       movimientoId: movementRef.id,
       negocioId: context.businessId,
       trabajoId: workId,
+      tareaId: String(origin.tareaId || ""),
       tipo: "DEVOLUCION_PROYECTO",
       itemId: origin.itemId,
       cantidad,
@@ -1285,8 +1469,8 @@ async function registrarDevolucionMaterialTrabajoHandler(request, dependencies) 
       creadoEn: timestamp,
     });
     transaction.update(balanceRef, {cantidadDevuelta: roundMoney(returnedQuantity + cantidad), costoDevuelto: roundMoney(returnedCost + costoTotal), actualizadoEn: timestamp});
-    transaction.update(workRef, {materialesDevolucionesTotal: Number(work.materialesDevolucionesTotal || 0) + 1, materialesCostoTotal: Math.max(0, roundMoney(Number(work.materialesCostoTotal || 0) - costoTotal)), modeloTrabajoVersion: WORK_MODEL_VERSION, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
-    writeEvent(transaction, workRef, {businessId: context.businessId, type: "material_devolucion_registrada", actorUid: context.uid, actor, detail: {movimientoId: movementRef.id, movimientoOrigenId: originMovementId, itemId: origin.itemId, productoNombre: origin.productoSnapshot?.nombre || item.nombre, cantidad, costoUnitario, costoTotal, moneda: origin.moneda}, timestamp});
+    transaction.update(workRef, {materialesDevolucionesTotal: Number(work.materialesDevolucionesTotal || 0) + 1, materialesCostoTotal: Math.max(0, roundMoney(Number(work.materialesCostoTotal || 0) - costoTotal)), modeloTrabajoVersion: WORK_MODEL_VERSION, ultimaActividadEn: timestamp, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
+    writeEvent(transaction, workRef, {businessId: context.businessId, type: "material_devolucion_registrada", actorUid: context.uid, actor, detail: {movimientoId: movementRef.id, movimientoOrigenId: originMovementId, tareaId: String(origin.tareaId || ""), itemId: origin.itemId, productoNombre: origin.productoSnapshot?.nombre || item.nombre, cantidad, costoUnitario, costoTotal, moneda: origin.moneda}, timestamp});
     result = {movimientoId: movementRef.id, movimientoOrigenId: originMovementId, costoUnitario, costoTotal, moneda: origin.moneda, stockPosterior, cantidadPendiente: roundMoney(remainingQuantity - cantidad), idempotent: false};
     transaction.create(requestRef, costRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "devolucion_material", result, timestamp, uid: context.uid, workId, recordId: movementRef.id}));
   });
@@ -1303,7 +1487,10 @@ module.exports = {
   WORK_TASK_MODEL_VERSION,
   WORK_PRIORITIES,
   WORK_STATUSES,
+  WORK_TASK_STATUSES,
   actualizarTrabajoHandler,
+  actualizarSubtareaTrabajoHandler,
+  agregarSubtareaTrabajoHandler,
   agregarNotaTrabajoHandler,
   anularGastoTrabajoHandler,
   anularHorasHombreTrabajoHandler,
@@ -1314,6 +1501,7 @@ module.exports = {
   crearTareaTrabajoV2Handler,
   documentarTareaTrabajoHandler,
   eliminarTareaTrabajoV2Handler,
+  eliminarSubtareaTrabajoHandler,
   formatWorkNumber,
   linkedWorkFields,
   normalizeWorkInput,

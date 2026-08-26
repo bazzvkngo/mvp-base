@@ -133,8 +133,8 @@ export async function actualizarTrabajo(rawBusinessId, rawWorkId, raw) {
   return response.data;
 }
 
-export async function cambiarEstadoTrabajo(rawBusinessId, rawWorkId, estado) {
-  const response = await call("cambiarEstadoTrabajo", {businessId: businessId(rawBusinessId), trabajoId: workId(rawWorkId), estado}, "cambiar estados de trabajos");
+export async function cambiarEstadoTrabajo(rawBusinessId, rawWorkId, estado, motivoEspera = "") {
+  const response = await call("cambiarEstadoTrabajo", {businessId: businessId(rawBusinessId), trabajoId: workId(rawWorkId), estado, motivoEspera}, "cambiar estados de trabajos");
   return response.data;
 }
 
@@ -142,8 +142,21 @@ export async function agregarTareaTrabajo(rawBusinessId, rawWorkId, tarea, reque
   return (await call("agregarTareaTrabajo", {businessId: businessId(rawBusinessId), trabajoId: workId(rawWorkId), tarea, requestId}, "agregar tareas")).data;
 }
 
-export async function cambiarEstadoTareaTrabajo(rawBusinessId, rawWorkId, tareaId, completada, {documentacionCierre = "", requestId} = {}) {
-  return (await call("cambiarEstadoTareaTrabajo", {businessId: businessId(rawBusinessId), trabajoId: workId(rawWorkId), tareaId, completada, documentacionCierre, requestId}, "actualizar tareas")).data;
+export async function cambiarEstadoTareaTrabajo(rawBusinessId, rawWorkId, tareaId, estado, {documentacionCierre = "", motivoEspera = "", requestId} = {}) {
+  const payload = typeof estado === "boolean" ? {completada: estado} : {estado};
+  return (await call("cambiarEstadoTareaTrabajo", {businessId: businessId(rawBusinessId), trabajoId: workId(rawWorkId), tareaId, ...payload, motivoEspera, documentacionCierre, requestId}, "actualizar tareas")).data;
+}
+
+export async function agregarSubtareaTrabajo(rawBusinessId, rawWorkId, tareaId, titulo, requestId) {
+  return (await call("agregarSubtareaTrabajo", {businessId: businessId(rawBusinessId), trabajoId: workId(rawWorkId), tareaId, titulo, requestId}, "agregar subtareas")).data;
+}
+
+export async function actualizarSubtareaTrabajo(rawBusinessId, rawWorkId, tareaId, subtareaId, cambios, requestId) {
+  return (await call("actualizarSubtareaTrabajo", {businessId: businessId(rawBusinessId), trabajoId: workId(rawWorkId), tareaId, subtareaId, ...cambios, requestId}, "actualizar subtareas")).data;
+}
+
+export async function eliminarSubtareaTrabajo(rawBusinessId, rawWorkId, tareaId, subtareaId, requestId) {
+  return (await call("eliminarSubtareaTrabajo", {businessId: businessId(rawBusinessId), trabajoId: workId(rawWorkId), tareaId, subtareaId, requestId}, "eliminar subtareas")).data;
 }
 
 export async function asignarTareaTrabajo(rawBusinessId, rawWorkId, tareaId, responsableUid, requestId) {
@@ -174,8 +187,8 @@ export async function anularHorasHombreTrabajo(rawBusinessId, rawWorkId, horasHo
   return (await call("anularHorasHombreTrabajo", {businessId: businessId(rawBusinessId), trabajoId: workId(rawWorkId), horasHombreId, motivo, requestId}, "anular horas hombre")).data;
 }
 
-export async function registrarSalidaMaterialTrabajo(rawBusinessId, rawWorkId, {itemId, cantidad, fecha}, requestId) {
-  return (await call("registrarSalidaMaterialTrabajo", {businessId: businessId(rawBusinessId), trabajoId: workId(rawWorkId), itemId, cantidad, fecha, requestId}, "registrar salidas de materiales")).data;
+export async function registrarSalidaMaterialTrabajo(rawBusinessId, rawWorkId, {itemId, cantidad, fecha, tareaId = ""}, requestId) {
+  return (await call("registrarSalidaMaterialTrabajo", {businessId: businessId(rawBusinessId), trabajoId: workId(rawWorkId), itemId, cantidad, fecha, tareaId, requestId}, "registrar salidas de materiales")).data;
 }
 
 export async function registrarDevolucionMaterialTrabajo(rawBusinessId, rawWorkId, movimientoOrigenId, cantidad, fecha, requestId) {

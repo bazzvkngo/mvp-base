@@ -1,6 +1,7 @@
 export const WORK_MODEL_VERSION = 2;
 export const WORK_FILE_MODEL_VERSION = 1;
 export const WORK_TASK_MODEL_VERSION = 2;
+export const WORK_INACTIVITY_DAYS = 3;
 export const WORK_EXPENSE_MODEL_VERSION = 1;
 export const WORK_LABOR_MODEL_VERSION = 1;
 export const WORK_MATERIAL_MODEL_VERSION = 1;
@@ -27,6 +28,13 @@ export const WORK_PRIORITIES = Object.freeze([
   {value: "normal", label: "Normal"},
   {value: "alta", label: "Alta"},
   {value: "urgente", label: "Urgente"},
+]);
+
+export const WORK_TASK_STATUSES = Object.freeze([
+  {value: "pendiente", label: "Pendiente"},
+  {value: "en_progreso", label: "En progreso"},
+  {value: "en_espera", label: "En espera"},
+  {value: "completada", label: "Completada"},
 ]);
 
 const STATUS_VALUES = new Set(WORK_STATUSES.map(({value}) => value));
@@ -158,8 +166,15 @@ export function adaptStoredWork(raw = {}) {
     fechaCompletado: dateValue(raw.fechaCompletado),
     creadoEn: dateValue(raw.creadoEn),
     actualizadoEn: dateValue(raw.actualizadoEn),
+    ultimaActividadEn: dateValue(raw.ultimaActividadEn || raw.actualizadoEn),
+    ultimoAvanceEn: dateValue(raw.ultimoAvanceEn),
+    motivoEspera: String(raw.motivoEspera || "").trim(),
+    esperaDesde: dateValue(raw.esperaDesde),
+    esperaPorUid: String(raw.esperaPorUid || "").trim(),
     tareasTotal: Number(raw.tareasTotal || 0),
     tareasCompletadas: Number(raw.tareasCompletadas || 0),
+    progresoAcumulado: Number(raw.progresoAcumulado ?? Number(raw.tareasCompletadas || 0) * 100),
+    progresoPct: Number(raw.progresoPct ?? (Number(raw.tareasTotal || 0) ? (Number(raw.tareasCompletadas || 0) / Number(raw.tareasTotal || 0)) * 100 : 0)),
     modeloExpedienteVersion: Number(raw.modeloExpedienteVersion || 0),
     cotizacionesVinculadas: Number(raw.cotizacionesVinculadas || 0),
     ventasVinculadas: Number(raw.ventasVinculadas || 0),
@@ -168,6 +183,7 @@ export function adaptStoredWork(raw = {}) {
     gastosMontoTotal: Number(raw.gastosMontoTotal || 0),
     gastosMontoDirecto: Number(raw.gastosMontoDirecto || 0),
     gastosMontoIndirecto: Number(raw.gastosMontoIndirecto || 0),
+    gastosMaterialMontoTotal: Number(raw.gastosMaterialMontoTotal || 0),
     horasHombreVigentesTotal: Number(raw.horasHombreVigentesTotal || 0),
     horasHombreCantidadTotal: Number(raw.horasHombreCantidadTotal || 0),
     horasHombreCostoTotal: Number(raw.horasHombreCostoTotal || 0),
@@ -194,6 +210,15 @@ export function adaptWorkLink(raw = {}) {
 
 export function adaptWorkTask(raw = {}) {
   const completada = raw.estado === "completada" || raw.completada === true;
+  const allowedStatus = new Set(WORK_TASK_STATUSES.map(({value}) => value));
+  const estado = completada ? "completada" : allowedStatus.has(raw.estado) ? raw.estado : "pendiente";
+  const subtareas = (Array.isArray(raw.subtareas) ? raw.subtareas : []).map((entry) => ({
+    id: String(entry?.id || "").trim(),
+    titulo: String(entry?.titulo || "").trim(),
+    completada: entry?.completada === true,
+    completadaEn: dateValue(entry?.completadaEn),
+    completadaPorUid: String(entry?.completadaPorUid || "").trim(),
+  })).filter((entry) => entry.id && entry.titulo);
   return {
     ...raw,
     id: raw.id || raw.tareaId || "",
@@ -203,8 +228,12 @@ export function adaptWorkTask(raw = {}) {
     modeloTareaVersion: Number(raw.modeloTareaVersion || 1),
     responsableUid: String(raw.responsableUid || "").trim(),
     responsableSnapshot: raw.responsableSnapshot || null,
-    estado: completada ? "completada" : "pendiente",
+    estado,
     completada,
+    subtareas,
+    motivoEspera: String(raw.motivoEspera || "").trim(),
+    esperaDesde: dateValue(raw.esperaDesde),
+    esperaPorUid: String(raw.esperaPorUid || "").trim(),
     creadoPorUid: String(raw.creadoPorUid || "").trim(),
     creadoEn: dateValue(raw.creadoEn),
     completadaPorUid: String(raw.completadaPorUid || "").trim(),
@@ -245,6 +274,7 @@ export function adaptWorkExpense(raw = {}) {
     registradoPorSnapshot: raw.registradoPorSnapshot || null,
     fecha: String(raw.fecha || "").trim(),
     observacion: String(raw.observacion || "").trim(),
+    tareaId: String(raw.tareaId || "").trim(),
     estado: raw.estado === "anulado" ? "anulado" : "vigente",
     creadoEn: dateValue(raw.creadoEn),
     anuladoEn: dateValue(raw.anuladoEn),
@@ -266,6 +296,7 @@ export function adaptWorkLabor(raw = {}) {
     moneda: String(raw.moneda || "").trim().toUpperCase(),
     fecha: String(raw.fecha || "").trim(),
     concepto: String(raw.concepto || "").trim(),
+    tareaId: String(raw.tareaId || "").trim(),
     estado: raw.estado === "anulado" ? "anulado" : "vigente",
     creadoEn: dateValue(raw.creadoEn),
     anuladoEn: dateValue(raw.anuladoEn),
@@ -282,6 +313,7 @@ export function adaptWorkMaterialMovement(raw = {}) {
     modeloMovimientoProyectoVersion: Number(raw.modeloMovimientoProyectoVersion || 1),
     tipo,
     trabajoId: String(raw.trabajoId || "").trim(),
+    tareaId: String(raw.tareaId || "").trim(),
     itemId: String(raw.itemId || "").trim(),
     cantidad: Number(raw.cantidad || 0),
     costoUnitario: Number(raw.costoUnitario || 0),
@@ -348,7 +380,65 @@ export function matchesWorkFilters(work, filters = {}) {
 export function getWorkTaskProgress(work) {
   const total = Math.max(0, Number(work?.tareasTotal || 0));
   const completed = Math.min(total, Math.max(0, Number(work?.tareasCompletadas || 0)));
-  return {total, completed};
+  const percent = Math.min(100, Math.max(0, Number(work?.progresoPct ?? (total ? (completed / total) * 100 : 0))));
+  return {total, completed, percent: Math.round(percent * 100) / 100};
+}
+
+export function getTaskProgress(task = {}) {
+  const subtasks = Array.isArray(task.subtareas) ? task.subtareas : [];
+  if (!subtasks.length) return {total: 0, completed: 0, percent: task.completada ? 100 : 0};
+  const completed = subtasks.filter((entry) => entry.completada).length;
+  return {total: subtasks.length, completed, percent: Math.round((completed / subtasks.length) * 10000) / 100};
+}
+
+function rounded(value) {
+  return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+}
+
+export function getWorkAccumulatedCost(work = {}) {
+  const materialExpense = Number(work.materialesSalidasTotal || 0) > 0 ? Number(work.gastosMaterialMontoTotal || 0) : 0;
+  return Math.max(0, rounded(Number(work.materialesCostoTotal || 0) + Number(work.horasHombreCostoTotal || 0) + Number(work.gastosMontoTotal || 0) - materialExpense));
+}
+
+export function getWorkCostSummary({expenses = [], labor = [], materials = [], taskId} = {}) {
+  const filterTask = (entry) => taskId === undefined || String(entry.tareaId || "") === String(taskId || "");
+  const activeExpenses = expenses.filter((entry) => entry.estado !== "anulado" && filterTask(entry));
+  const activeLabor = labor.filter((entry) => entry.estado !== "anulado" && filterTask(entry));
+  const hasInventoryMaterials = materials.some((entry) => entry.tipo === "SALIDA_PROYECTO");
+  const materialMovements = materials.filter(filterTask);
+  const materialTotal = hasInventoryMaterials
+    ? materialMovements.reduce((sum, entry) => sum + (entry.tipo === "DEVOLUCION_PROYECTO" ? -1 : 1) * Number(entry.costoTotal || 0), 0)
+    : activeExpenses.filter((entry) => entry.categoria === "MATERIAL").reduce((sum, entry) => sum + Number(entry.monto || 0), 0);
+  const laborTotal = activeLabor.reduce((sum, entry) => sum + Number(entry.total || 0), 0);
+  const expenseTotal = activeExpenses.filter((entry) => !hasInventoryMaterials || entry.categoria !== "MATERIAL").reduce((sum, entry) => sum + Number(entry.monto || 0), 0);
+  return {materials: Math.max(0, rounded(materialTotal)), labor: rounded(laborTotal), expenses: rounded(expenseTotal), total: Math.max(0, rounded(materialTotal + laborTotal + expenseTotal))};
+}
+
+export function buildWorkDailyCostSummary({expenses = [], labor = [], materials = [], events = []} = {}) {
+  const dates = new Map();
+  const row = (date) => {
+    if (!date) return null;
+    if (!dates.has(date)) dates.set(date, {date, materials: 0, labor: 0, expenses: 0, total: 0, advanceRecorded: false});
+    return dates.get(date);
+  };
+  const hasInventoryMaterials = materials.some((entry) => entry.tipo === "SALIDA_PROYECTO");
+  materials.forEach((entry) => { const current = row(entry.fecha); if (current) current.materials += (entry.tipo === "DEVOLUCION_PROYECTO" ? -1 : 1) * Number(entry.costoTotal || 0); });
+  labor.filter((entry) => entry.estado !== "anulado").forEach((entry) => { const current = row(entry.fecha); if (current) current.labor += Number(entry.total || 0); });
+  expenses.filter((entry) => entry.estado !== "anulado").forEach((entry) => {
+    const current = row(entry.fecha); if (!current) return;
+    if (!hasInventoryMaterials && entry.categoria === "MATERIAL") current.materials += Number(entry.monto || 0);
+    else if (entry.categoria !== "MATERIAL" || !hasInventoryMaterials) current.expenses += Number(entry.monto || 0);
+  });
+  const progressEvents = new Set(["tarea_completada", "tarea_reabierta", "estado_tarea_cambiado", "subtarea_completada", "subtarea_reabierta", "tarea_documentacion_agregada"]);
+  events.filter((entry) => progressEvents.has(entry.tipo)).forEach((entry) => { const current = row(String(entry.fecha || "").slice(0, 10)); if (current) current.advanceRecorded = true; });
+  return [...dates.values()].map((entry) => ({...entry, materials: rounded(entry.materials), labor: rounded(entry.labor), expenses: rounded(entry.expenses), total: Math.max(0, rounded(entry.materials + entry.labor + entry.expenses))})).sort((left, right) => right.date.localeCompare(left.date));
+}
+
+export function getWorkOperationalIndicators(work = {}, {now = new Date()} = {}) {
+  const last = new Date(work.ultimaActividadEn || work.actualizadoEn || work.creadoEn || 0);
+  const current = now instanceof Date ? now : new Date(now);
+  const inactivityDays = Number.isNaN(last.getTime()) || Number.isNaN(current.getTime()) ? 0 : Math.floor((current.getTime() - last.getTime()) / 86400000);
+  return {inactivityDays, noRecentActivity: work.estado === "en_progreso" && inactivityDays >= WORK_INACTIVITY_DAYS};
 }
 
 export function humanizeWorkEvent(event = {}, {includeAmounts = true} = {}) {
@@ -362,13 +452,20 @@ export function humanizeWorkEvent(event = {}, {includeAmounts = true} = {}) {
   const amountText = (value) => includeAmounts ? ` por ${eventMoney(value)}` : "";
   const messages = {
     trabajo_creado: `${actor} creó el trabajo.`,
-    estado_cambiado: `${actor} cambió el estado de ${getWorkStatusLabel(detail.estadoAnterior)} a ${getWorkStatusLabel(detail.estadoNuevo)}.`,
+    estado_cambiado: `${actor} cambió el estado de ${getWorkStatusLabel(detail.estadoAnterior)} a ${getWorkStatusLabel(detail.estadoNuevo)}${detail.estadoNuevo === "en_espera" && detail.motivoEspera ? `: ${detail.motivoEspera}` : "."}`,
     responsable_cambiado: `${actor} cambió el responsable a ${detail.responsableNombre || "Sin responsable"}.`,
     participante_agregado: `${actor} agregó a ${detail.participanteNombre || "un participante"}.`,
     participante_retirado: `${actor} retiró a ${detail.participanteNombre || "un participante"}.`,
     tarea_creada: `${actor} agregó la tarea “${detail.tareaTitulo || "Sin título"}”.`,
     tarea_completada: `${actor} completó la tarea “${detail.tareaTitulo || "Sin título"}”.`,
     tarea_reabierta: `${actor} reabrió la tarea “${detail.tareaTitulo || "Sin título"}”.`,
+    estado_tarea_cambiado: `${actor} cambió la tarea “${detail.tareaTitulo || "Sin título"}” a ${WORK_TASK_STATUSES.find((entry) => entry.value === detail.estadoNuevo)?.label || detail.estadoNuevo}.`,
+    tarea_en_espera: `${actor} puso en espera la tarea “${detail.tareaTitulo || "Sin título"}”: ${detail.motivoEspera || "sin detalle"}.`,
+    subtarea_agregada: `${actor} agregó la subtarea “${detail.subtareaTitulo || "Sin título"}”.`,
+    subtarea_completada: `${actor} completó la subtarea “${detail.subtareaTitulo || "Sin título"}”.`,
+    subtarea_reabierta: `${actor} reabrió la subtarea “${detail.subtareaTitulo || "Sin título"}”.`,
+    subtarea_editada: `${actor} editó la subtarea “${detail.subtareaTitulo || "Sin título"}”.`,
+    subtarea_eliminada: `${actor} eliminó la subtarea “${detail.subtareaTitulo || "Sin título"}”.`,
     tarea_asignada: `${actor} asignó la tarea “${detail.tareaTitulo || "Sin título"}” a ${detail.responsableNombre || "Sin responsable"}.`,
     tarea_reasignada: `${actor} reasignó la tarea “${detail.tareaTitulo || "Sin título"}” de ${detail.responsableAnteriorNombre || "Sin responsable"} a ${detail.responsableNombre || "Sin responsable"}.`,
     tarea_documentacion_agregada: `${actor} agregó documentación a la tarea “${detail.tareaTitulo || "Sin título"}”.`,

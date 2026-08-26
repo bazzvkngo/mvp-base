@@ -134,7 +134,9 @@ const {
 } = require("./businessMemberships");
 const {
   actualizarTrabajoHandler,
+  actualizarSubtareaTrabajoHandler,
   agregarNotaTrabajoHandler,
+  agregarSubtareaTrabajoHandler,
   anularGastoTrabajoHandler,
   anularHorasHombreTrabajoHandler,
   asignarTareaTrabajoHandler,
@@ -144,6 +146,7 @@ const {
   crearTareaTrabajoV2Handler,
   documentarTareaTrabajoHandler,
   eliminarTareaTrabajoV2Handler,
+  eliminarSubtareaTrabajoHandler,
   registrarGastoTrabajoHandler,
   registrarHorasHombreTrabajoHandler,
   registrarDevolucionMaterialTrabajoHandler,
@@ -2318,6 +2321,18 @@ exports.agregarTareaTrabajo = onCall(workCallableOptions, async (request) =>
 
 exports.cambiarEstadoTareaTrabajo = onCall(workCallableOptions, async (request) =>
   cambiarEstadoTareaTrabajoV2Handler(request, workPersistenceDependencies)
+);
+
+exports.agregarSubtareaTrabajo = onCall(workCallableOptions, async (request) =>
+  agregarSubtareaTrabajoHandler(request, workPersistenceDependencies)
+);
+
+exports.actualizarSubtareaTrabajo = onCall(workCallableOptions, async (request) =>
+  actualizarSubtareaTrabajoHandler(request, workPersistenceDependencies)
+);
+
+exports.eliminarSubtareaTrabajo = onCall(workCallableOptions, async (request) =>
+  eliminarSubtareaTrabajoHandler(request, workPersistenceDependencies)
 );
 
 exports.eliminarTareaTrabajo = onCall(workCallableOptions, async (request) =>

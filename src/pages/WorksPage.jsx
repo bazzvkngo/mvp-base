@@ -5,13 +5,13 @@ import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import StatusBadge from "../components/ui/StatusBadge";
-import {WORK_EXPENSE_CATEGORIES, WORK_PRIORITIES, WORK_STATUSES, buildQuickWorkCreationPayload, canManageWorks, canViewWorkProfitability, getEligibleWorkQuoteOptions, getWorkDraftErrors, getWorkMemberIdentity, getWorkMemberOptionLabel, getWorkPriorityLabel, getWorkStatusLabel, getWorkTaskProgress, hasAdditionalWorkMembers, humanizeWorkEvent, matchesWorkFilters} from "../domain/workModel.mjs";
+import {WORK_EXPENSE_CATEGORIES, WORK_PRIORITIES, WORK_STATUSES, WORK_TASK_STATUSES, buildQuickWorkCreationPayload, buildWorkDailyCostSummary, canManageWorks, canViewWorkProfitability, getEligibleWorkQuoteOptions, getTaskProgress, getWorkAccumulatedCost, getWorkCostSummary, getWorkDraftErrors, getWorkMemberIdentity, getWorkMemberOptionLabel, getWorkOperationalIndicators, getWorkPriorityLabel, getWorkStatusLabel, getWorkTaskProgress, hasAdditionalWorkMembers, humanizeWorkEvent, matchesWorkFilters} from "../domain/workModel.mjs";
 import {listarMiembrosNegocio} from "../services/businessMemberService.js";
 import {listarClientes} from "../services/clientService.js";
 import {getInventoryItems} from "../services/inventoryService.js";
 import {getQuotes} from "../services/quoteService.js";
 import {listarVentas} from "../services/saleService.js";
-import {actualizarTrabajo, agregarNotaTrabajo, agregarTareaTrabajo, anularGastoTrabajo, anularHorasHombreTrabajo, asignarTareaTrabajo, cambiarEstadoTareaTrabajo, cambiarEstadoTrabajo, cargarFichaTrabajo, createWorkCostRequestId, createWorkRequestId, createWorkTaskRequestId, crearTrabajo, documentarTareaTrabajo, eliminarTareaTrabajo, listarTrabajos, obtenerBalanceTrabajo, registrarDevolucionMaterialTrabajo, registrarGastoTrabajo, registrarHorasHombreTrabajo, registrarSalidaMaterialTrabajo} from "../services/workService.js";
+import {actualizarSubtareaTrabajo, actualizarTrabajo, agregarNotaTrabajo, agregarSubtareaTrabajo, agregarTareaTrabajo, anularGastoTrabajo, anularHorasHombreTrabajo, asignarTareaTrabajo, cambiarEstadoTareaTrabajo, cambiarEstadoTrabajo, cargarFichaTrabajo, createWorkCostRequestId, createWorkRequestId, createWorkTaskRequestId, crearTrabajo, documentarTareaTrabajo, eliminarSubtareaTrabajo, eliminarTareaTrabajo, listarTrabajos, obtenerBalanceTrabajo, registrarDevolucionMaterialTrabajo, registrarGastoTrabajo, registrarHorasHombreTrabajo, registrarSalidaMaterialTrabajo} from "../services/workService.js";
 import {formatMoney} from "../utils/formatters.js";
 import "../features/works/works.css";
 
@@ -66,6 +66,8 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
   const [noteText, setNoteText] = useState("");
   const [processing, setProcessing] = useState("");
   const [cancelWork, setCancelWork] = useState(null);
+  const [pendingState, setPendingState] = useState(null);
+  const [waitReason, setWaitReason] = useState("");
 
   const load = useCallback(async () => {
     if (!businessId) return;
@@ -187,6 +189,17 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
 
   const addNote = (event) => { event.preventDefault(); const value = noteText.trim(); if (!value) return; runDetailAction("note-new", () => agregarNotaTrabajo(businessId, selectedWork.id, value)).then((success) => {if (success) setNoteText("");}); };
   const terminal = ["completado", "cancelado"].includes(selectedWork?.estado);
+  const projectCost = useMemo(() => getWorkCostSummary({expenses: detail.gastos, labor: detail.horasHombre, materials: detail.materiales}), [detail.gastos, detail.horasHombre, detail.materiales]);
+  const dailyCosts = useMemo(() => buildWorkDailyCostSummary({expenses: detail.gastos, labor: detail.horasHombre, materials: detail.materiales, events: detail.historial}), [detail.gastos, detail.historial, detail.horasHombre, detail.materiales]);
+  const requestStateChange = (next) => {
+    if (next === selectedWork?.estado) return;
+    if (next === "cancelado") { setCancelWork(selectedWork); return; }
+    const progress = getWorkTaskProgress(selectedWork);
+    if (next === "en_espera" || (next === "completado" && progress.percent < 100)) {
+      setWaitReason(""); setPendingState({estado: next, work: selectedWork}); return;
+    }
+    runDetailAction("state", () => cambiarEstadoTrabajo(businessId, selectedWork.id, next));
+  };
 
   return <main className="erp-page works-page">
     <header className="erp-page-header"><div className="erp-page-header__content"><h1 className="erp-page-header__title">Proyectos y trabajos</h1><p className="erp-page-header__description">Organiza y da seguimiento al trabajo operativo del negocio.</p></div>{canManage && <Button type="button" icon={Plus} onClick={openNew}>Nuevo trabajo</Button>}</header>
@@ -213,7 +226,6 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
             <Field label="Prioridad" required error={fieldErrors.prioridad}><select className="erp-control" value={draft.prioridad} onChange={(event) => updateDraft("prioridad", event.target.value)}>{WORK_PRIORITIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field>
             <Field label="Fecha de inicio" optional error={fieldErrors.fechaInicio}><input className="erp-control" type="date" value={draft.fechaInicio} onChange={(event) => updateDraft("fechaInicio", event.target.value)} /></Field>
             <Field label="Fecha de término" optional error={fieldErrors.fechaPrevista}><input className="erp-control" type="date" value={draft.fechaPrevista} onChange={(event) => updateDraft("fechaPrevista", event.target.value)} /></Field>
-            {editingWork && <Field label="Estado" required error={fieldErrors.estado}><select className="erp-control" value={draft.estado} onChange={(event) => updateDraft("estado", event.target.value)}>{WORK_STATUSES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field>}
             {(editingWork || hasAdditionalMembers) && <fieldset className="works-participants works-field--wide"><legend>Equipo de trabajo</legend><div>{members.filter((member) => member.uid !== draft.responsableUid).map((member) => <label key={member.uid}><input type="checkbox" checked={draft.participanteUids.includes(member.uid)} onChange={(event) => updateDraft("participanteUids", event.target.checked ? [...draft.participanteUids, member.uid] : draft.participanteUids.filter((uid) => uid !== member.uid))} />{getWorkMemberIdentity(member)}</label>)}{!members.length && <span>No hay miembros activos disponibles.</span>}</div></fieldset>}
           </div>
         </FormSection>
@@ -233,8 +245,7 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
                   <span className="sr-only">Cambiar estado</span>
                   <select className="erp-control" disabled={Boolean(processing)} value={selectedWork.estado} onChange={(event) => {
                     const next = event.target.value;
-                    if (next === "cancelado") setCancelWork(selectedWork);
-                    else runDetailAction("state", () => cambiarEstadoTrabajo(businessId, selectedWork.id, next));
+                    requestStateChange(next);
                   }}>
                     {WORK_STATUSES.filter((item) => item.value !== "cancelado").map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
                     {selectedWork.estado === "cancelado" && <option value="cancelado">Cancelado</option>}
@@ -243,7 +254,9 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
                 {selectedWork.estado !== "cancelado" && <Button type="button" variant="ghost-danger" onClick={() => setCancelWork(selectedWork)}>Cancelar trabajo</Button>}
               </>}
             </div>
-            <WorkSummary work={selectedWork} />
+            <WorkSummary work={selectedWork} cost={projectCost.total} />
+            {selectedWork.estado === "en_espera" && selectedWork.motivoEspera && <p className="works-wait-reason">En espera: {selectedWork.motivoEspera}</p>}
+            {getWorkOperationalIndicators(selectedWork).noRecentActivity && <p className="works-message works-message--warning">Sin actividad reciente (3 días o más).</p>}
           </div>
 
           <section className="works-detail-section works-overview">
@@ -261,26 +274,23 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
             <CommercialFile canManage={canManage} detail={detail} loading={detailLoading} navigate={navigate} />
           </section>
 
-          <TaskSection key={selectedWork.id} businessId={businessId} canManage={canManage} currentUserUid={currentUserUid} loading={detailLoading} members={members} processing={processing} role={role} runAction={runDetailAction} tasks={detail.tareas} terminal={terminal} workId={selectedWork.id} />
+          <TaskSection key={selectedWork.id} businessId={businessId} canManage={canManage} costs={{expenses: detail.gastos, labor: detail.horasHombre, materials: detail.materiales}} currency={selectedWork.moneda || currencyCode || "CLP"} currentUserUid={currentUserUid} loading={detailLoading} members={members} processing={processing} role={role} runAction={runDetailAction} tasks={detail.tareas} terminal={terminal} workId={selectedWork.id} />
 
-          <section className="works-detail-section works-notes-section">
-            <h3>Notas</h3>
-            {canManage && <form className="works-note-form" onSubmit={addNote}>
-              <textarea className="erp-control" rows="2" maxLength="4000" value={noteText} onChange={(event) => setNoteText(event.target.value)} placeholder="Agrega una actualización o antecedente relevante." />
-              <Button type="submit" disabled={processing === "note-new"}>Agregar nota</Button>
-            </form>}
-            <div className="works-notes">
-              {detail.notas.map((note) => <article key={note.id}><header><strong>{note.autorSnapshot?.nombre || "Persona del equipo"}</strong><time>{dateLabel(note.creadoEn, true)}</time></header><p>{note.texto}</p></article>)}
-              {!detail.notas.length && <p className="works-empty-copy">Aún no hay notas.</p>}
+          <section className="works-costs-focus">
+            <div className="works-section-heading"><div><h3>Costos</h3><span>Materiales, HH, gastos y resumen diario</span></div><strong>{formatMoney(projectCost.total, selectedWork.moneda || currencyCode || "CLP")}</strong></div>
+            <div className="works-resources">
+              <MaterialsSection key={`materials-${selectedWork.id}`} businessId={businessId} canManage={canManage} currency={selectedWork.moneda || currencyCode || "CLP"} currentUserUid={currentUserUid} loading={detailLoading} movements={detail.materiales} processing={processing} products={inventoryProducts} role={role} runAction={runDetailAction} tasks={detail.tareas} workId={selectedWork.id} />
+              <FinancialSection key={`costs-${selectedWork.id}`} businessId={businessId} canManage={canManage} currency={selectedWork.moneda || currencyCode || "CLP"} currentUserUid={currentUserUid} expenses={detail.gastos} labor={detail.horasHombre} loading={detailLoading} members={members} processing={processing} role={role} runAction={runDetailAction} tasks={detail.tareas} workId={selectedWork.id} />
+              <DailyCostSummary currency={selectedWork.moneda || currencyCode || "CLP"} rows={dailyCosts} />
+              {canManage && <WorkBalanceSection balance={detail.balance} loading={detailLoading} />}
             </div>
           </section>
 
-          <DetailDisclosure key={`resources-${selectedWork.id}`} title="Recursos y costos" summary="Materiales, gastos, horas hombre y balance">
-            <div className="works-resources">
-              <MaterialsSection key={`materials-${selectedWork.id}`} businessId={businessId} canManage={canManage} currency={selectedWork.moneda || currencyCode || "CLP"} currentUserUid={currentUserUid} loading={detailLoading} movements={detail.materiales} processing={processing} products={inventoryProducts} role={role} runAction={runDetailAction} workId={selectedWork.id} />
-              <FinancialSection key={`costs-${selectedWork.id}`} businessId={businessId} canManage={canManage} currency={selectedWork.moneda || currencyCode || "CLP"} currentUserUid={currentUserUid} expenses={detail.gastos} labor={detail.horasHombre} loading={detailLoading} members={members} processing={processing} role={role} runAction={runDetailAction} workId={selectedWork.id} />
-              {canManage && <WorkBalanceSection balance={detail.balance} loading={detailLoading} />}
-            </div>
+          <DetailDisclosure key={`notes-${selectedWork.id}`} title="Notas y documentación" summary={`${detail.notas.length} nota${detail.notas.length === 1 ? "" : "s"}`}>
+            <section className="works-notes-section">
+              {canManage && <form className="works-note-form" onSubmit={addNote}><textarea className="erp-control" rows="2" maxLength="4000" value={noteText} onChange={(event) => setNoteText(event.target.value)} placeholder="Agrega una actualización o antecedente relevante." /><Button type="submit" disabled={processing === "note-new"}>Agregar nota</Button></form>}
+              <div className="works-notes">{detail.notas.map((note) => <article key={note.id}><header><strong>{note.autorSnapshot?.nombre || "Persona del equipo"}</strong><time>{dateLabel(note.creadoEn, true)}</time></header><p>{note.texto}</p></article>)}{!detail.notas.length && <p className="works-empty-copy">Aún no hay notas.</p>}</div>
+            </section>
           </DetailDisclosure>
 
           <DetailDisclosure key={`history-${selectedWork.id}`} title="Historial del trabajo" summary={`${detail.historial.length} evento${detail.historial.length === 1 ? "" : "s"}`}>
@@ -291,6 +301,9 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
     </ResponsiveDialog>
 
     <ResponsiveDialog open={Boolean(cancelWork)} onClose={() => !processing && setCancelWork(null)} size="small" eyebrow="Proyectos y trabajos" title="Cancelar trabajo" description="El registro y su historial se conservarán." footer={<><Button type="button" variant="secondary" disabled={Boolean(processing)} onClick={() => setCancelWork(null)}>Volver</Button><Button type="button" variant="danger" disabled={Boolean(processing)} onClick={() => runDetailAction("cancel", () => cambiarEstadoTrabajo(businessId, cancelWork.id, "cancelado")).then(() => setCancelWork(null))}>{processing ? "Cancelando..." : "Cancelar trabajo"}</Button></>}><p>¿Confirmas que deseas cancelar {cancelWork?.numero}?</p></ResponsiveDialog>
+    <ResponsiveDialog open={Boolean(pendingState)} onClose={() => !processing && setPendingState(null)} size="small" eyebrow="Proyectos y trabajos" title={pendingState?.estado === "en_espera" ? "Poner proyecto en espera" : "Completar con pendientes"} description={pendingState?.estado === "en_espera" ? "El motivo quedará registrado en el historial." : "El progreso real y las tareas pendientes se conservarán."} footer={<><Button type="button" variant="secondary" disabled={Boolean(processing)} onClick={() => setPendingState(null)}>Volver</Button><Button type="button" disabled={Boolean(processing) || (pendingState?.estado === "en_espera" && !waitReason.trim())} onClick={() => runDetailAction("state-confirm", () => cambiarEstadoTrabajo(businessId, pendingState.work.id, pendingState.estado, waitReason.trim())).then((success) => {if (success) { setPendingState(null); setWaitReason(""); }})}>{pendingState?.estado === "en_espera" ? "Confirmar espera" : "Completar igualmente"}</Button></>}>
+      {pendingState?.estado === "en_espera" ? <Field label="Motivo de espera" required><textarea className="erp-control" rows="3" maxLength="1000" value={waitReason} onChange={(event) => setWaitReason(event.target.value)} placeholder="Ej.: esperando aprobación del cliente" /></Field> : <p>Hay tareas o subtareas pendientes. Esta acción no las completará automáticamente.</p>}
+    </ResponsiveDialog>
   </main>;
 }
 
@@ -298,9 +311,13 @@ function commercialStatusLabel(value) {
   return String(value || "borrador").replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
 }
 
-function TaskSection({businessId, canManage, currentUserUid, loading, members, processing, role, runAction, tasks, terminal, workId}) {
+function TaskSection({businessId, canManage, costs, currency, currentUserUid, loading, members, processing, role, runAction, tasks, terminal, workId}) {
   const [draft, setDraft] = useState({titulo: "", descripcion: "", responsableUid: ""});
   const [documentation, setDocumentation] = useState({});
+  const [subtaskDrafts, setSubtaskDrafts] = useState({});
+  const [subtaskTitles, setSubtaskTitles] = useState({});
+  const [waitingTask, setWaitingTask] = useState(null);
+  const [waitReason, setWaitReason] = useState("");
   const visibleTasks = canManage
     ? tasks
     : tasks.filter((task) => task.modeloTareaVersion < 2 || task.responsableUid === currentUserUid);
@@ -313,7 +330,21 @@ function TaskSection({businessId, canManage, currentUserUid, loading, members, p
   };
   const canOperate = (task) => canManage || (["TECNICO", "MEMBER"].includes(role) && task.responsableUid === currentUserUid);
   const assign = (task, responsableUid) => runAction(`task-assign-${task.id}`, () => asignarTareaTrabajo(businessId, workId, task.id, responsableUid, createWorkTaskRequestId("task-assign")));
-  const changeState = (task, completed) => runAction(`task-state-${task.id}`, () => cambiarEstadoTareaTrabajo(businessId, workId, task.id, completed, {requestId: createWorkTaskRequestId(completed ? "task-complete" : "task-reopen")}));
+  const changeState = (task, estado, motivoEspera = "") => runAction(`task-state-${task.id}`, () => cambiarEstadoTareaTrabajo(businessId, workId, task.id, estado, {motivoEspera, requestId: createWorkTaskRequestId(`task-${estado}`)}));
+  const requestTaskState = (task, estado) => {
+    if (estado === "en_espera") { setWaitingTask(task); setWaitReason(""); return; }
+    changeState(task, estado);
+  };
+  const addSubtask = (event, task) => {
+    event.preventDefault(); const titulo = String(subtaskDrafts[task.id] || "").trim(); if (!titulo) return;
+    runAction(`subtask-new-${task.id}`, () => agregarSubtareaTrabajo(businessId, workId, task.id, titulo, createWorkTaskRequestId("subtask-create"))).then((success) => {if (success) setSubtaskDrafts((current) => ({...current, [task.id]: ""}));});
+  };
+  const toggleSubtask = (task, subtask) => runAction(`subtask-toggle-${subtask.id}`, () => actualizarSubtareaTrabajo(businessId, workId, task.id, subtask.id, {completada: !subtask.completada}, createWorkTaskRequestId("subtask-toggle")));
+  const renameSubtask = (task, subtask) => {
+    const titulo = String(subtaskTitles[subtask.id] ?? subtask.titulo).trim(); if (!titulo || titulo === subtask.titulo) return;
+    runAction(`subtask-title-${subtask.id}`, () => actualizarSubtareaTrabajo(businessId, workId, task.id, subtask.id, {titulo}, createWorkTaskRequestId("subtask-title"))).then((success) => {if (success) setSubtaskTitles((current) => ({...current, [subtask.id]: titulo}));});
+  };
+  const removeSubtask = (task, subtask) => runAction(`subtask-delete-${subtask.id}`, () => eliminarSubtareaTrabajo(businessId, workId, task.id, subtask.id, createWorkTaskRequestId("subtask-delete")));
   const addDocumentation = (event, task) => {
     event.preventDefault();
     const value = String(documentation[task.id] || "").trim();
@@ -325,7 +356,7 @@ function TaskSection({businessId, canManage, currentUserUid, loading, members, p
   const removeLegacy = (task) => runAction(`task-delete-${task.id}`, () => eliminarTareaTrabajo(businessId, workId, task.id, createWorkTaskRequestId("task-delete")));
 
   return <section className="works-detail-section">
-    <div className="works-section-heading"><div><h3>Tareas operativas</h3><span>{tasks.filter((task) => task.completada).length} / {tasks.length} completadas</span></div></div>
+    <div className="works-section-heading"><div><h3>Tareas</h3><span>{tasks.filter((task) => task.completada).length} / {tasks.length} completadas</span></div></div>
     {canManage && !terminal && <form className="works-task-create" onSubmit={createTask}>
       <input className="erp-control" maxLength="240" value={draft.titulo} onChange={(event) => setDraft((current) => ({...current, titulo: event.target.value}))} placeholder="Título de la tarea" required />
       <textarea className="erp-control" maxLength="4000" rows="2" value={draft.descripcion} onChange={(event) => setDraft((current) => ({...current, descripcion: event.target.value}))} placeholder="Descripción operativa" />
@@ -333,16 +364,19 @@ function TaskSection({businessId, canManage, currentUserUid, loading, members, p
       <Button type="submit" icon={Plus} disabled={processing === "task-new"}>Crear tarea</Button>
     </form>}
     {loading ? <p>Cargando tareas...</p> : <div className="works-task-list works-task-list--v2">
-      {visibleTasks.map((task) => <article key={task.id} className={task.completada ? "is-complete" : ""}>
-        <header><div><strong>{task.titulo}</strong><span className={`works-task-state works-task-state--${task.estado}`}>{task.completada ? "Completada" : "Pendiente"}</span></div>{canManage && !terminal && <select aria-label={`Responsable de ${task.titulo}`} className="erp-control" disabled={Boolean(processing)} value={task.responsableUid} onChange={(event) => assign(task, event.target.value)}><option value="">Sin responsable</option>{members.map((member) => <option key={member.uid} value={member.uid}>{member.nombre}</option>)}</select>}</header>
+      {visibleTasks.map((task) => { const progress = getTaskProgress(task); const taskCost = getWorkCostSummary({...costs, taskId: task.id}); return <article key={task.id} className={task.completada ? "is-complete" : ""}>
+        <header><div><strong>{task.titulo}</strong><span className={`works-task-state works-task-state--${task.estado}`}>{WORK_TASK_STATUSES.find((entry) => entry.value === task.estado)?.label || "Pendiente"}</span></div>{canManage && !terminal && <select aria-label={`Responsable de ${task.titulo}`} className="erp-control" disabled={Boolean(processing)} value={task.responsableUid} onChange={(event) => assign(task, event.target.value)}><option value="">Sin responsable</option>{members.map((member) => <option key={member.uid} value={member.uid}>{member.nombre}</option>)}</select>}</header>
         {task.descripcion && <p>{task.descripcion}</p>}
-        <small>Responsable: {task.responsableSnapshot?.nombre || "Sin responsable"}{task.modeloTareaVersion < 2 ? " · Tarea legacy" : ""}</small>
-        {task.documentacion.length > 0 && <div className="works-task-documentation">{task.documentacion.map((entry) => <div key={entry.id}><p>{entry.texto}</p><small>{entry.autorSnapshot?.nombre || "Persona del equipo"} · {dateLabel(entry.creadoEn, true)}{entry.tipo === "cierre" ? " · Cierre" : ""}</small></div>)}</div>}
-        {!terminal && canOperate(task) && <form className="works-task-document-form" onSubmit={(event) => addDocumentation(event, task)}><textarea className="erp-control" maxLength="8000" rows="2" value={documentation[task.id] || ""} onChange={(event) => setDocumentation((current) => ({...current, [task.id]: event.target.value}))} placeholder="Documentar avance o cierre" /><Button type="submit" variant="secondary" disabled={Boolean(processing)}>Documentar</Button></form>}
-        {!terminal && <div className="works-task-actions">{!task.completada && canOperate(task) && <Button type="button" disabled={Boolean(processing)} onClick={() => changeState(task, true)}>Completar</Button>}{task.completada && canManage && <Button type="button" variant="secondary" disabled={Boolean(processing)} onClick={() => changeState(task, false)}>Reabrir</Button>}{canManage && task.modeloTareaVersion < 2 && !task.completada && <button type="button" aria-label={`Eliminar ${task.titulo}`} onClick={() => removeLegacy(task)}><AppIcon icon={Trash2} size={16} />Eliminar legacy</button>}</div>}
-      </article>)}
+        <div className="works-task-metrics"><span>Progreso <strong>{progress.percent}%</strong>{progress.total > 0 && ` · ${progress.completed}/${progress.total} subtareas`}</span><span>Costo acumulado <strong>{formatMoney(taskCost.total, currency)}</strong></span></div>
+        {task.estado === "en_espera" && task.motivoEspera && <p className="works-wait-reason">En espera: {task.motivoEspera}</p>}
+        <div className="works-subtask-list">{task.subtareas.map((subtask) => <div key={subtask.id} className={subtask.completada ? "is-complete" : ""}><input type="checkbox" checked={subtask.completada} disabled={terminal || !canOperate(task) || Boolean(processing)} onChange={() => toggleSubtask(task, subtask)} /><input className="erp-control" maxLength="240" disabled={terminal || !canManage || subtask.completada} value={subtaskTitles[subtask.id] ?? subtask.titulo} onChange={(event) => setSubtaskTitles((current) => ({...current, [subtask.id]: event.target.value}))} /><div>{canManage && !terminal && !subtask.completada && <><Button type="button" variant="secondary" disabled={Boolean(processing) || (subtaskTitles[subtask.id] ?? subtask.titulo).trim() === subtask.titulo} onClick={() => renameSubtask(task, subtask)}>Guardar</Button><button type="button" aria-label={`Eliminar ${subtask.titulo}`} onClick={() => removeSubtask(task, subtask)}><AppIcon icon={Trash2} size={15} /></button></>}</div></div>)}</div>
+        {canOperate(task) && !terminal && !task.completada && <form className="works-subtask-create" onSubmit={(event) => addSubtask(event, task)}><input className="erp-control" maxLength="240" required value={subtaskDrafts[task.id] || ""} onChange={(event) => setSubtaskDrafts((current) => ({...current, [task.id]: event.target.value}))} placeholder="Nueva subtarea" /><Button type="submit" variant="secondary" disabled={Boolean(processing)}>Agregar</Button></form>}
+        {!terminal && canOperate(task) && (!task.completada || canManage) && <div className="works-task-actions"><select className="erp-control" value={task.estado} disabled={Boolean(processing)} onChange={(event) => requestTaskState(task, event.target.value)}>{WORK_TASK_STATUSES.filter((entry) => canManage || entry.value !== "pendiente" || task.estado === "pendiente").map((entry) => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select>{canManage && task.modeloTareaVersion < 2 && !task.completada && <button type="button" aria-label={`Eliminar ${task.titulo}`} onClick={() => removeLegacy(task)}><AppIcon icon={Trash2} size={16} />Eliminar</button>}</div>}
+        <details className="works-task-documentation"><summary>Documentación ({task.documentacion.length})</summary>{task.documentacion.map((entry) => <div key={entry.id}><p>{entry.texto}</p><small>{entry.autorSnapshot?.nombre || "Persona del equipo"} · {dateLabel(entry.creadoEn, true)}{entry.tipo === "cierre" ? " · Cierre" : ""}</small></div>)}{!terminal && canOperate(task) && <form className="works-task-document-form" onSubmit={(event) => addDocumentation(event, task)}><textarea className="erp-control" maxLength="8000" rows="2" value={documentation[task.id] || ""} onChange={(event) => setDocumentation((current) => ({...current, [task.id]: event.target.value}))} placeholder="Comentario o evidencia" /><Button type="submit" variant="secondary" disabled={Boolean(processing)}>Agregar</Button></form>}</details>
+      </article>;})}
       {!visibleTasks.length && <p className="works-empty-copy">{canManage ? "Aún no hay tareas." : "No tienes tareas asignadas."}</p>}
     </div>}
+    <ResponsiveDialog open={Boolean(waitingTask)} onClose={() => !processing && setWaitingTask(null)} size="small" eyebrow="Tarea" title="Poner tarea en espera" description="El motivo quedará en el historial." footer={<><Button type="button" variant="secondary" onClick={() => setWaitingTask(null)}>Volver</Button><Button type="button" disabled={Boolean(processing) || !waitReason.trim()} onClick={() => changeState(waitingTask, "en_espera", waitReason.trim()).then((success) => {if (success) {setWaitingTask(null); setWaitReason("");}})}>Confirmar espera</Button></>}><Field label="Motivo" required><textarea className="erp-control" rows="3" maxLength="1000" value={waitReason} onChange={(event) => setWaitReason(event.target.value)} /></Field></ResponsiveDialog>
   </section>;
 }
 
@@ -352,9 +386,9 @@ function chileToday() {
   return `${value.year}-${value.month}-${value.day}`;
 }
 
-function FinancialSection({businessId, canManage, currency, currentUserUid, expenses, labor, loading, members, processing, role, runAction, workId}) {
-  const [expenseDraft, setExpenseDraft] = useState({concepto: "", monto: "", categoria: "MATERIAL", responsableDelGastoUid: "", fecha: chileToday(), observacion: ""});
-  const [laborDraft, setLaborDraft] = useState({tecnicoUid: "", horas: "", costoHora: "", fecha: chileToday(), concepto: ""});
+function FinancialSection({businessId, canManage, currency, currentUserUid, expenses, labor, loading, members, processing, role, runAction, tasks, workId}) {
+  const [expenseDraft, setExpenseDraft] = useState({concepto: "", monto: "", categoria: "MATERIAL", responsableDelGastoUid: "", fecha: chileToday(), observacion: "", tareaId: ""});
+  const [laborDraft, setLaborDraft] = useState({tecnicoUid: "", horas: "", costoHora: "", fecha: chileToday(), concepto: "", tareaId: ""});
   const [annulReasons, setAnnulReasons] = useState({});
   const canRegister = canManage || ["TECNICO", "MEMBER"].includes(role);
   const visibleExpenses = canManage ? expenses : expenses.filter((entry) => [entry.registradoPorUid, entry.responsableDelGastoUid].includes(currentUserUid));
@@ -370,14 +404,14 @@ function FinancialSection({businessId, canManage, currency, currentUserUid, expe
     event.preventDefault();
     const payload = {...expenseDraft, responsableDelGastoUid: canManage ? expenseDraft.responsableDelGastoUid : currentUserUid};
     runAction("expense-new", () => registrarGastoTrabajo(businessId, workId, payload, createWorkCostRequestId("expense-create"))).then((success) => {
-      if (success) setExpenseDraft({concepto: "", monto: "", categoria: "MATERIAL", responsableDelGastoUid: "", fecha: chileToday(), observacion: ""});
+      if (success) setExpenseDraft({concepto: "", monto: "", categoria: "MATERIAL", responsableDelGastoUid: "", fecha: chileToday(), observacion: "", tareaId: ""});
     });
   };
   const saveLabor = (event) => {
     event.preventDefault();
     const payload = {...laborDraft, tecnicoUid: canManage ? laborDraft.tecnicoUid : currentUserUid};
     runAction("labor-new", () => registrarHorasHombreTrabajo(businessId, workId, payload, createWorkCostRequestId("labor-create"))).then((success) => {
-      if (success) setLaborDraft({tecnicoUid: "", horas: "", costoHora: "", fecha: chileToday(), concepto: ""});
+      if (success) setLaborDraft({tecnicoUid: "", horas: "", costoHora: "", fecha: chileToday(), concepto: "", tareaId: ""});
     });
   };
   const annul = (event, kind, recordId) => {
@@ -400,30 +434,32 @@ function FinancialSection({businessId, canManage, currency, currentUserUid, expe
           <input className="erp-control" maxLength="240" required value={expenseDraft.concepto} onChange={(event) => setExpenseDraft((current) => ({...current, concepto: event.target.value}))} placeholder="Concepto del gasto" />
           <input className="erp-control" type="number" min="0.01" max="999999999999.99" step="0.01" required value={expenseDraft.monto} onChange={(event) => setExpenseDraft((current) => ({...current, monto: event.target.value}))} placeholder="Monto" />
           <select className="erp-control" value={expenseDraft.categoria} onChange={(event) => setExpenseDraft((current) => ({...current, categoria: event.target.value}))}>{WORK_EXPENSE_CATEGORIES.map((category) => <option key={category.value} value={category.value}>{category.label}{category.classification === "INDIRECTO" ? " · indirecto" : " · directo"}</option>)}</select>
+          <TaskCostSelect tasks={tasks} value={expenseDraft.tareaId} onChange={(tareaId) => setExpenseDraft((current) => ({...current, tareaId}))} />
           {canManage && <select className="erp-control" value={expenseDraft.responsableDelGastoUid} onChange={(event) => setExpenseDraft((current) => ({...current, responsableDelGastoUid: event.target.value}))}><option value="">Sin responsable específico</option>{members.map((member) => <option key={member.uid} value={member.uid}>{member.nombre}</option>)}</select>}
           <input className="erp-control" type="date" required value={expenseDraft.fecha} onChange={(event) => setExpenseDraft((current) => ({...current, fecha: event.target.value}))} />
           <textarea className="erp-control" maxLength="4000" rows="2" value={expenseDraft.observacion} onChange={(event) => setExpenseDraft((current) => ({...current, observacion: event.target.value}))} placeholder="Observación" />
           <Button type="submit" disabled={Boolean(processing)}>Registrar gasto</Button>
         </form>}
-        {loading ? <p>Cargando gastos...</p> : <div className="works-cost-list">{visibleExpenses.map((entry) => { const key = `expense-${entry.id}`; return <article key={entry.id} className={entry.estado === "anulado" ? "is-annulled" : ""}><div><strong>{entry.concepto}</strong><span>{formatMoney(entry.monto, entry.moneda || currency)} · {WORK_EXPENSE_CATEGORIES.find((item) => item.value === entry.categoria)?.label || entry.categoria} · {entry.clasificacionCosto === "INDIRECTO" ? "Indirecto" : "Directo"}</span><small>{dateLabel(entry.fecha)} · {entry.responsableDelGastoSnapshot?.nombre || entry.registradoPorSnapshot?.nombre || "Equipo"}</small>{entry.observacion && <p>{entry.observacion}</p>}{entry.estado === "anulado" && <small>Anulado: {entry.motivoAnulacion}</small>}</div>{canManage && entry.estado !== "anulado" && <form className="works-annul-form" onSubmit={(event) => annul(event, "expense", entry.id)}><input className="erp-control" maxLength="1000" required value={annulReasons[key] || ""} onChange={(event) => setAnnulReasons((current) => ({...current, [key]: event.target.value}))} placeholder="Motivo de anulación" /><Button type="submit" variant="ghost-danger" disabled={Boolean(processing)}>Anular</Button></form>}</article>;})}{!visibleExpenses.length && <p className="works-empty-copy">Aún no se han registrado gastos.</p>}</div>}
+        {loading ? <p>Cargando gastos...</p> : <div className="works-cost-list">{visibleExpenses.map((entry) => { const key = `expense-${entry.id}`; return <article key={entry.id} className={entry.estado === "anulado" ? "is-annulled" : ""}><div><strong>{entry.concepto}</strong><span>{formatMoney(entry.monto, entry.moneda || currency)} · {WORK_EXPENSE_CATEGORIES.find((item) => item.value === entry.categoria)?.label || entry.categoria} · {entry.clasificacionCosto === "INDIRECTO" ? "Indirecto" : "Directo"}</span><small>{dateLabel(entry.fecha)} · {entry.responsableDelGastoSnapshot?.nombre || entry.registradoPorSnapshot?.nombre || "Equipo"} · {taskLabel(tasks, entry.tareaId)}</small>{entry.observacion && <p>{entry.observacion}</p>}{entry.estado === "anulado" && <small>Anulado: {entry.motivoAnulacion}</small>}</div>{canManage && entry.estado !== "anulado" && <form className="works-annul-form" onSubmit={(event) => annul(event, "expense", entry.id)}><input className="erp-control" maxLength="1000" required value={annulReasons[key] || ""} onChange={(event) => setAnnulReasons((current) => ({...current, [key]: event.target.value}))} placeholder="Motivo de anulación" /><Button type="submit" variant="ghost-danger" disabled={Boolean(processing)}>Anular</Button></form>}</article>;})}{!visibleExpenses.length && <p className="works-empty-copy">Aún no se han registrado gastos.</p>}</div>}
       </section>
       <section><header><div><h4>Horas hombre</h4><strong>{laborHours} HH · {formatMoney(laborTotal, currency)}</strong></div><small>El total se calcula en backend.</small></header>
         {canRegister && <form className="works-cost-form" onSubmit={saveLabor}>
           <input className="erp-control" maxLength="240" required value={laborDraft.concepto} onChange={(event) => setLaborDraft((current) => ({...current, concepto: event.target.value}))} placeholder="Concepto o actividad" />
           {canManage && <select className="erp-control" required value={laborDraft.tecnicoUid} onChange={(event) => setLaborDraft((current) => ({...current, tecnicoUid: event.target.value}))}><option value="">Selecciona técnico</option>{members.map((member) => <option key={member.uid} value={member.uid}>{member.nombre}</option>)}</select>}
+          <TaskCostSelect tasks={tasks} value={laborDraft.tareaId} onChange={(tareaId) => setLaborDraft((current) => ({...current, tareaId}))} />
           <input className="erp-control" type="number" min="0.01" max="1000" step="0.01" required value={laborDraft.horas} onChange={(event) => setLaborDraft((current) => ({...current, horas: event.target.value}))} placeholder="Horas" />
           <input className="erp-control" type="number" min="0.01" max="999999999999.99" step="0.01" required value={laborDraft.costoHora} onChange={(event) => setLaborDraft((current) => ({...current, costoHora: event.target.value}))} placeholder="Costo por hora" />
           <input className="erp-control" type="date" required value={laborDraft.fecha} onChange={(event) => setLaborDraft((current) => ({...current, fecha: event.target.value}))} />
           <Button type="submit" disabled={Boolean(processing)}>Registrar HH</Button>
         </form>}
-        {loading ? <p>Cargando HH...</p> : <div className="works-cost-list">{visibleLabor.map((entry) => { const key = `labor-${entry.id}`; return <article key={entry.id} className={entry.estado === "anulado" ? "is-annulled" : ""}><div><strong>{entry.concepto}</strong><span>{entry.horas} HH × {formatMoney(entry.costoHora, entry.moneda || currency)} = {formatMoney(entry.total, entry.moneda || currency)}</span><small>{dateLabel(entry.fecha)} · {entry.tecnicoSnapshot?.nombre || "Técnico"}</small>{entry.estado === "anulado" && <small>Anulado: {entry.motivoAnulacion}</small>}</div>{canManage && entry.estado !== "anulado" && <form className="works-annul-form" onSubmit={(event) => annul(event, "labor", entry.id)}><input className="erp-control" maxLength="1000" required value={annulReasons[key] || ""} onChange={(event) => setAnnulReasons((current) => ({...current, [key]: event.target.value}))} placeholder="Motivo de anulación" /><Button type="submit" variant="ghost-danger" disabled={Boolean(processing)}>Anular</Button></form>}</article>;})}{!visibleLabor.length && <p className="works-empty-copy">Aún no se han registrado horas hombre.</p>}</div>}
+        {loading ? <p>Cargando HH...</p> : <div className="works-cost-list">{visibleLabor.map((entry) => { const key = `labor-${entry.id}`; return <article key={entry.id} className={entry.estado === "anulado" ? "is-annulled" : ""}><div><strong>{entry.concepto}</strong><span>{entry.horas} HH × {formatMoney(entry.costoHora, entry.moneda || currency)} = {formatMoney(entry.total, entry.moneda || currency)}</span><small>{dateLabel(entry.fecha)} · {entry.tecnicoSnapshot?.nombre || "Técnico"} · {taskLabel(tasks, entry.tareaId)}</small>{entry.estado === "anulado" && <small>Anulado: {entry.motivoAnulacion}</small>}</div>{canManage && entry.estado !== "anulado" && <form className="works-annul-form" onSubmit={(event) => annul(event, "labor", entry.id)}><input className="erp-control" maxLength="1000" required value={annulReasons[key] || ""} onChange={(event) => setAnnulReasons((current) => ({...current, [key]: event.target.value}))} placeholder="Motivo de anulación" /><Button type="submit" variant="ghost-danger" disabled={Boolean(processing)}>Anular</Button></form>}</article>;})}{!visibleLabor.length && <p className="works-empty-copy">Aún no se han registrado horas hombre.</p>}</div>}
       </section>
     </div>
   </section>;
 }
 
-function MaterialsSection({businessId, canManage, currency, currentUserUid, loading, movements, processing, products, role, runAction, workId}) {
-  const [draft, setDraft] = useState({itemId: "", cantidad: "", fecha: chileToday()});
+function MaterialsSection({businessId, canManage, currency, currentUserUid, loading, movements, processing, products, role, runAction, tasks, workId}) {
+  const [draft, setDraft] = useState({itemId: "", cantidad: "", fecha: chileToday(), tareaId: ""});
   const [returnDrafts, setReturnDrafts] = useState({});
   const canConsume = canManage || ["TECNICO", "MEMBER"].includes(role);
   const exits = movements.filter((movement) => movement.tipo === "SALIDA_PROYECTO" && (canManage || movement.usuarioUid === currentUserUid));
@@ -435,7 +471,7 @@ function MaterialsSection({businessId, canManage, currency, currentUserUid, load
   const saveExit = (event) => {
     event.preventDefault();
     runAction("material-exit", () => registrarSalidaMaterialTrabajo(businessId, workId, draft, createWorkCostRequestId("material-exit"))).then((success) => {
-      if (success) setDraft({itemId: "", cantidad: "", fecha: chileToday()});
+      if (success) setDraft({itemId: "", cantidad: "", fecha: chileToday(), tareaId: ""});
     });
   };
   const saveReturn = (event, exit) => {
@@ -455,6 +491,7 @@ function MaterialsSection({businessId, canManage, currency, currentUserUid, load
         <option value="">Selecciona producto</option>
         {products.map((product) => <option key={product.id} value={product.id}>{product.nombre} · stock {Number(product.stock || 0)} {product.unidad || product.unidadStock || "unidad"}</option>)}
       </select>
+      <TaskCostSelect tasks={tasks} value={draft.tareaId} onChange={(tareaId) => setDraft((current) => ({...current, tareaId}))} />
       <input className="erp-control" type="number" min="0.01" max="999999999.99" step="0.01" required value={draft.cantidad} onChange={(event) => setDraft((current) => ({...current, cantidad: event.target.value}))} placeholder="Cantidad" />
       <input className="erp-control" type="date" required value={draft.fecha} onChange={(event) => setDraft((current) => ({...current, fecha: event.target.value}))} />
       <Button type="submit" disabled={Boolean(processing)}>Registrar salida</Button>
@@ -463,7 +500,7 @@ function MaterialsSection({businessId, canManage, currency, currentUserUid, load
       const returned = returnedFor(exit.id); const remaining = Math.max(0, Math.round((exit.cantidad - returned) * 100) / 100);
       const returnValue = returnDrafts[exit.id] || {cantidad: "", fecha: chileToday()};
       return <article key={exit.id}>
-        <div><strong>{exit.productoSnapshot?.nombre || "Producto"}</strong><span>{exit.cantidad} {exit.productoSnapshot?.unidad || "unidad"} × {formatMoney(exit.costoUnitario, exit.moneda || currency)} = {formatMoney(exit.costoTotal, exit.moneda || currency)}</span><small>{dateLabel(exit.fecha)} · {exit.usuarioSnapshot?.nombre || "Equipo"} · devuelto {returned}, pendiente {remaining}</small></div>
+        <div><strong>{exit.productoSnapshot?.nombre || "Producto"}</strong><span>{exit.cantidad} {exit.productoSnapshot?.unidad || "unidad"} × {formatMoney(exit.costoUnitario, exit.moneda || currency)} = {formatMoney(exit.costoTotal, exit.moneda || currency)}</span><small>{dateLabel(exit.fecha)} · {exit.usuarioSnapshot?.nombre || "Equipo"} · {taskLabel(tasks, exit.tareaId)} · devuelto {returned}, pendiente {remaining}</small></div>
         {canManage && remaining > 0 && <form className="works-annul-form" onSubmit={(event) => saveReturn(event, exit)}><input className="erp-control" type="number" min="0.01" max={remaining} step="0.01" required value={returnValue.cantidad} onChange={(event) => updateReturn(exit.id, "cantidad", event.target.value)} placeholder="Cantidad a devolver" /><input className="erp-control" type="date" required value={returnValue.fecha} onChange={(event) => updateReturn(exit.id, "fecha", event.target.value)} /><Button type="submit" variant="secondary" disabled={Boolean(processing)}>Devolver</Button></form>}
       </article>;
     })}{!exits.length && <p className="works-empty-copy">Aún no se han registrado materiales.</p>}</div>}
@@ -494,15 +531,19 @@ function Filter({children, label, onChange, value}) { return <label className="e
 function Field({children, className = "", error, label, optional = false, required}) { return <label className={`erp-field ${className}`}><span className="erp-field__label">{label}{required ? " *" : optional ? <span className="works-field-optional">Opcional</span> : ""}</span>{children}{error && <small className="works-field-error">{error}</small>}</label>; }
 function FormSection({children, title}) { return <section className="works-form-section"><h3>{title}</h3>{children}</section>; }
 function DetailDisclosure({children, summary, title}) { return <details className="works-detail-disclosure"><summary><span><strong>{title}</strong><small>{summary}</small></span></summary><div className="works-detail-disclosure__content">{children}</div></details>; }
+function taskLabel(tasks, taskId) { return taskId ? tasks.find((task) => task.id === taskId)?.titulo || "Tarea no disponible" : "Proyecto completo"; }
+function TaskCostSelect({onChange, tasks, value}) { return <select className="erp-control" value={value} onChange={(event) => onChange(event.target.value)}><option value="">Costo general del proyecto</option>{tasks.map((task) => <option key={task.id} value={task.id}>{task.titulo}</option>)}</select>; }
 
 function WorkList({canManage, onEdit, onOpen, works}) {
   if (!works.length) return <div className="erp-empty-state"><AppIcon icon={BriefcaseBusiness} size={30} /><p>No hay trabajos coincidentes.</p></div>;
   return <><div className="erp-table-region erp-desktop-only"><table className="erp-table works-table"><thead><tr><th>Trabajo</th><th>Cliente</th><th>Responsable principal</th><th>Prioridad</th><th>Fecha prevista</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{works.map((work) => <tr key={work.id}><td><button className="works-link" type="button" onClick={() => onOpen(work)}><strong>{work.numero}</strong><span>{work.titulo}</span></button></td><td>{work.clienteSnapshot?.nombreRazonSocial || "Sin cliente"}</td><td>{work.responsableSnapshot?.nombre || "Sin responsable principal"}</td><td><Priority value={work.prioridad} /></td><td>{dateLabel(work.fechaPrevista)}</td><td><Status value={work.estado} /></td><td><div className="works-row-actions"><button type="button" onClick={() => onOpen(work)}>Ver</button>{canManage && <button type="button" onClick={() => onEdit(work)}>Editar</button>}</div></td></tr>)}</tbody></table></div><div className="erp-card-list erp-mobile-only">{works.map((work) => <article key={work.id} className="erp-record-card"><header className="erp-record-card__header"><div><span className="works-number">{work.numero}</span><h3 className="erp-record-card__title">{work.titulo}</h3></div><Status value={work.estado} /></header><dl className="erp-meta-grid"><div className="erp-meta"><dt className="erp-meta__label">Cliente</dt><dd className="erp-meta__value">{work.clienteSnapshot?.nombreRazonSocial || "Sin cliente"}</dd></div><div className="erp-meta"><dt className="erp-meta__label">Responsable principal</dt><dd className="erp-meta__value">{work.responsableSnapshot?.nombre || "Sin responsable principal"}</dd></div><div className="erp-meta"><dt className="erp-meta__label">Prioridad</dt><dd className="erp-meta__value"><Priority value={work.prioridad} /></dd></div><div className="erp-meta"><dt className="erp-meta__label">Fecha prevista</dt><dd className="erp-meta__value">{dateLabel(work.fechaPrevista)}</dd></div></dl><div className="works-card-actions"><Button type="button" variant="secondary" onClick={() => onOpen(work)}>Ver ficha</Button>{canManage && <Button type="button" variant="secondary" onClick={() => onEdit(work)}>Editar</Button>}</div></article>)}</div></>;
 }
 
-function WorkBoard({onOpen, works}) { return <div className="works-board">{BOARD_STATUSES.map((status) => { const columnWorks = works.filter((work) => work.estado === status); return <section key={status}><header><h3>{getWorkStatusLabel(status)}</h3><span>{columnWorks.length}</span></header><div>{columnWorks.map((work) => <button type="button" className="works-board-card" key={work.id} onClick={() => onOpen(work)}><span className="works-number">{work.numero}</span><strong>{work.titulo}</strong><small>{work.clienteSnapshot?.nombreRazonSocial || "Sin cliente"}</small><dl><div><dt>Responsable principal</dt><dd>{work.responsableSnapshot?.nombre || "Sin responsable principal"}</dd></div><div><dt>Prioridad</dt><dd><Priority value={work.prioridad} /></dd></div><div><dt>Prevista</dt><dd>{dateLabel(work.fechaPrevista)}</dd></div></dl></button>)}{!columnWorks.length && <p>Sin trabajos</p>}</div></section>; })}</div>; }
+function WorkBoard({onOpen, works}) { return <div className="works-board">{BOARD_STATUSES.map((status) => { const columnWorks = works.filter((work) => work.estado === status); return <section key={status}><header><h3>{getWorkStatusLabel(status)}</h3><span>{columnWorks.length}</span></header><div>{columnWorks.map((work) => { const progress = getWorkTaskProgress(work); const indicators = getWorkOperationalIndicators(work); return <button type="button" className="works-board-card" key={work.id} onClick={() => onOpen(work)}><span className="works-number">{work.numero}</span><strong>{work.titulo}</strong><small>{work.clienteSnapshot?.nombreRazonSocial || "Sin cliente"}</small><dl><div><dt>Responsable</dt><dd>{work.responsableSnapshot?.nombre || "Sin responsable"}</dd></div><div><dt>Prioridad</dt><dd><Priority value={work.prioridad} /></dd></div><div><dt>Progreso</dt><dd>{progress.percent}%</dd></div><div><dt>Tareas</dt><dd>{progress.completed}/{progress.total}</dd></div><div><dt>Costo acumulado</dt><dd>{formatMoney(getWorkAccumulatedCost(work), work.moneda || "CLP")}</dd></div><div><dt>Último avance</dt><dd>{dateLabel(work.ultimoAvanceEn)}</dd></div></dl>{work.estado === "en_espera" && work.motivoEspera && <span className="works-wait-reason">{work.motivoEspera}</span>}{indicators.noRecentActivity && <span className="works-alert-chip">Sin actividad reciente</span>}</button>;})}{!columnWorks.length && <p>Sin trabajos</p>}</div></section>; })}</div>; }
 
-function WorkSummary({work}) { return <dl className="works-summary"><div><dt>Cliente</dt><dd>{work.clienteSnapshot?.nombreRazonSocial || "Sin cliente"}</dd></div><div><dt>Responsable principal</dt><dd>{work.responsableSnapshot?.nombre || "Sin responsable principal"}</dd></div><div><dt>Prioridad</dt><dd><Priority value={work.prioridad} /></dd></div><div><dt>Fecha de término</dt><dd>{dateLabel(work.fechaPrevista)}</dd></div></dl>; }
+function WorkSummary({cost, work}) { const progress = getWorkTaskProgress(work); return <dl className="works-summary"><div><dt>Cliente</dt><dd>{work.clienteSnapshot?.nombreRazonSocial || "Sin cliente"}</dd></div><div><dt>Responsable principal</dt><dd>{work.responsableSnapshot?.nombre || "Sin responsable principal"}</dd></div><div><dt>Prioridad</dt><dd><Priority value={work.prioridad} /></dd></div><div><dt>Fecha de término</dt><dd>{dateLabel(work.fechaPrevista)}</dd></div><div><dt>Progreso</dt><dd>{progress.percent}% · {progress.completed}/{progress.total} tareas</dd></div><div><dt>Costo acumulado</dt><dd>{formatMoney(cost, work.moneda || "CLP")}</dd></div></dl>; }
+
+function DailyCostSummary({currency, rows}) { return <section className="works-detail-section works-daily-costs"><h3>Costos por día</h3>{rows.length ? <div className="erp-table-region"><table className="erp-table"><thead><tr><th>Fecha</th><th>Materiales</th><th>HH</th><th>Gastos</th><th>Total</th><th>Avance</th></tr></thead><tbody>{rows.map((row) => <tr key={row.date}><td>{dateLabel(row.date)}</td><td>{formatMoney(row.materials, currency)}</td><td>{formatMoney(row.labor, currency)}</td><td>{formatMoney(row.expenses, currency)}</td><td><strong>{formatMoney(row.total, currency)}</strong></td><td>{row.advanceRecorded ? "Registrado" : "Sin evidencia"}</td></tr>)}</tbody></table></div> : <p className="works-empty-copy">Aún no hay costos fechados para resumir.</p>}</section>; }
 
 function WorkBalanceSection({balance, loading}) {
   if (loading) return <section className="works-detail-section"><h3>Balance y rentabilidad</h3><p>Calculando desde fuentes autoritativas...</p></section>;
@@ -520,6 +561,7 @@ function WorkBalanceSection({balance, loading}) {
       <div><dt>Gastos directos</dt><dd>{money(balance.gastosDirectos)}</dd></div>
       <div><dt>Administrativos / indirectos</dt><dd>{money(balance.gastosIndirectos)}</dd></div>
       <div><dt>Costo total</dt><dd>{money(balance.costoTotal)}</dd></div>
+      <div><dt>Costos / ingreso</dt><dd>{balance.valorComercial > 0 && balance.costoTotal != null ? `${((balance.costoTotal / balance.valorComercial) * 100).toLocaleString("es-CL", {maximumFractionDigits: 2})}%` : "No disponible"}</dd></div>
       <div><dt>Resultado</dt><dd>{money(balance.resultado)}</dd></div>
       <div><dt>Rentabilidad</dt><dd>{balance.rentabilidadPct == null ? "No disponible" : `${balance.rentabilidadPct.toLocaleString("es-CL", {maximumFractionDigits: 2})}%`}</dd></div>
     </dl>}

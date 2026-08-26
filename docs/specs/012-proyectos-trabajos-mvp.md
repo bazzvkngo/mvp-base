@@ -12,7 +12,7 @@ El documento principal vive en:
 negocios/{businessId}/trabajos/{trabajoId}
 ```
 
-Mantiene `modeloTrabajoVersion`, `trabajoId`, `negocioId`, correlativo `TRB-AAAA-NNNN`, título, descripción, cliente y snapshot opcionales, responsable y snapshot opcionales, participantes y snapshots, estado, prioridad, fechas, contadores de tareas y auditoría.
+Mantiene `modeloTrabajoVersion`, `trabajoId`, `negocioId`, correlativo `TRB-AAAA-NNNN`, título, descripción, cliente y snapshot opcionales, responsable y snapshot opcionales, participantes y snapshots, estado, prioridad, fechas, contadores de tareas, progreso agregado derivado, última actividad/avance y auditoría.
 
 Estados canónicos: `pendiente`, `en_progreso`, `en_espera`, `completado` y `cancelado`. Prioridades: `baja`, `normal`, `alta` y `urgente`.
 
@@ -35,7 +35,9 @@ El documento raíz declara `modeloExpedienteVersion`, `cotizacionesVinculadas` y
 
 ## Tareas operativas V2 / fase 2
 
-Las tareas nuevas usan `modeloTareaVersion: 2`, título, descripción, `responsableUid` y snapshot autoritativo, estado `pendiente`/`completada`, autoría, fechas y responsable del cierre. `completada` se conserva como campo compatible. Una tarea legacy sin versión se adapta como versión 1 y OWNER/ADMIN puede completarla o reabrirla sin migración previa.
+Las tareas nuevas usan `modeloTareaVersion: 2`, título, descripción, `responsableUid` y snapshot autoritativo, estado `pendiente`/`en_progreso`/`en_espera`/`completada`, autoría, fechas y responsable del cierre. `completada` se conserva como campo compatible. `en_espera` exige motivo y conserva fecha/UID; reanudar limpia el bloqueo vigente sin borrar su evento histórico. Una tarea legacy sin versión se adapta como versión 1 sin migración previa.
+
+Cada tarea puede contener hasta 100 subtareas simples embebidas (`id`, `titulo`, `completada`, `completadaEn`, `completadaPorUid`), sin anidamiento. Las altas, cambios de título, check/uncheck y eliminaciones seguras son autoritativas e idempotentes. Una subtarea completada no se elimina ni renombra para no romper historia. El progreso de una tarea con subtareas es `completadas / total`; sin subtareas es 0% o 100% según la tarea. El proyecto agrega los porcentajes de sus tareas existentes y nunca acepta un porcentaje manual.
 
 La documentación es append-only en `tareas/{tareaId}/documentacion/{documentacionId}`. Cada alta, asignación/reasignación, documentación, completado y reapertura agrega además un evento al historial del TRB. `workTaskRequests/{requestId}` es interno y hace idempotentes las operaciones que producen eventos. Las tareas V2 no se eliminan físicamente; sólo el checklist legacy incompleto conserva la eliminación compatible.
 
@@ -43,7 +45,7 @@ OWNER/ADMIN crea, asigna, reasigna, completa y reabre. Mientras no exista RBAC t
 
 ## Costos reales / fase 3
 
-Los gastos viven en `trabajos/{trabajoId}/gastos/{gastoId}` y las horas valorizadas en `trabajos/{trabajoId}/horasHombre/{horasHombreId}`. Cada registro es inmutable salvo la transición autoritativa `vigente → anulado`; una corrección se expresa anulando el original y creando el reemplazo. Ambos documentos y sus eventos permanecen en el expediente.
+Los gastos viven en `trabajos/{trabajoId}/gastos/{gastoId}` y las horas valorizadas en `trabajos/{trabajoId}/horasHombre/{horasHombreId}`. Cada registro admite `tareaId` opcional, validado dentro del mismo TRB; sin él el costo pertenece al proyecto. Cada registro es inmutable salvo la transición autoritativa `vigente → anulado`; una corrección se expresa anulando el original y creando el reemplazo.
 
 Los gastos usan categorías `MATERIAL`, `MANO_DE_OBRA`, `OPERATIVO`, `SERVICIO_EXTERNO`, `ADMINISTRATIVO` y `OTRO`. `ADMINISTRATIVO` se clasifica como `INDIRECTO`; las demás son `DIRECTO`. HH conserva técnico, horas, costo unitario y `total` calculado por Functions con precisión de dos decimales. El frontend nunca decide el total.
 
@@ -53,7 +55,7 @@ La primera operación financiera fija `moneda` en el TRB desde la moneda autorit
 
 ## Materiales / fase 4
 
-Las salidas y devoluciones del TRB reutilizan el libro empresarial `movimientosInventario`. `SALIDA_PROYECTO` descuenta stock y `DEVOLUCION_PROYECTO` lo restituye; ambos movimientos son inmutables, conservan `trabajoId`, `itemId`, cantidad, costo unitario y total, moneda, stock anterior/posterior, actor, fecha y snapshot mínimo del producto. La devolución referencia siempre su `movimientoOrigenId`.
+Las salidas y devoluciones del TRB reutilizan el libro empresarial `movimientosInventario`. `SALIDA_PROYECTO` descuenta stock y `DEVOLUCION_PROYECTO` lo restituye; ambos movimientos son inmutables, conservan `trabajoId`, `tareaId` opcional, `itemId`, cantidad, costo unitario y total, moneda, stock anterior/posterior, actor, fecha y snapshot mínimo del producto. La devolución referencia siempre su `movimientoOrigenId` y hereda la tarea de la salida.
 
 Functions ejecuta movimiento y stock en una misma transacción. Sólo admite `tipoItem: producto`, valida stock y congela primero `costoPromedio` cuando existe; en su ausencia usa `costoBase` y fallbacks de costo legacy. La devolución usa exclusivamente el costo congelado de la salida, aunque el costo vigente cambie después.
 
@@ -64,6 +66,8 @@ Functions ejecuta movimiento y stock en una misma transacción. Sólo admite `ti
 `obtenerBalanceTrabajo` recalcula bajo demanda y no persiste el margen. Sólo OWNER/ADMIN puede invocarla. La fuente de ingreso son exclusivamente Ventas canónicas `confirmada` vinculadas por `trabajoId`; las COT, incluidas las rechazadas, nunca constituyen ingreso. Sin Venta confirmada el balance queda `PARCIAL_SIN_VENTA`: los costos se muestran, pero valor comercial, resultado y rentabilidad permanecen `null`.
 
 La fórmula coherente es `costoTotal = materiales netos + HH vigentes + gastos directos vigentes + gastos indirectos vigentes`, `resultado = valorComercial - costoTotal` y `rentabilidadPct = resultado / valorComercial × 100`. Cuando existe al menos una salida de Inventario, ese libro es la autoridad de materiales y los gastos vigentes con categoría `MATERIAL` quedan informados pero excluidos del costo para evitar doble imputación. Sin libro de materiales se conservan como costo directo legacy.
+
+El costo por tarea y el resumen por día se derivan de esas mismas fuentes, sin documentos paralelos ni totales editables. La tabla diaria usa la fecha de cada costo y sólo marca avance cuando existe un evento operativo comprobable. El aviso `Sin actividad reciente` se activa determinísticamente a los 3 días para proyectos `en_progreso`. La comparación costo/ingreso sólo usa Venta confirmada; sin ella no se inventa presupuesto, resultado ni pérdida.
 
 La moneda base es el snapshot del TRB o, para legacy, la moneda del negocio. Una moneda incluida distinta produce `INCONSISTENTE_MONEDA`: todos los agregados quedan `null` y sólo se entrega desglose separado por moneda, sin FX. MEMBER no recibe la respuesta de balance ni ve su componente en la ficha.
 
@@ -86,7 +90,8 @@ Los clientes se resuelven dentro del negocio y Functions construye el snapshot h
 
 - Crear y editar un trabajo.
 - Cambiar estado explícitamente, completando o limpiando `fechaCompletado` según corresponda.
-- Agregar, completar, reabrir y eliminar tareas incompletas mientras el trabajo no sea terminal.
+- Agregar y operar tareas/subtareas mientras el trabajo no sea terminal; las tareas V2 y subtareas completadas conservan trazabilidad.
+- Poner proyecto o tarea en espera con motivo obligatorio y reanudar conservando el evento.
 - Agregar notas sin editar ni eliminar las existentes.
 - Cancelar conservando documento y trazabilidad.
 
@@ -94,10 +99,10 @@ El historial registra creación, cambios de estado y responsable, participantes 
 
 ## Interfaz
 
-La ruta `/trabajos` ofrece búsqueda y filtros, lista responsive y tablero sin drag-and-drop. El formulario inicial contiene información y planificación. Tras crear se abre una ficha con resumen, descripción, checklist, notas e historial cronológico. Cancelar exige confirmación con `ResponsiveDialog`.
+La ruta `/trabajos` ofrece búsqueda y filtros, lista responsive y tablero sin drag-and-drop. Cada tarjeta resume responsable, prioridad, progreso, tareas, costo acumulado, último avance, espera y falta de actividad. La ficha prioriza resumen, tareas/subtareas y costos por fuente/día; documentación e historial permanecen secundarios. Completar con pendientes exige confirmación explícita y conserva el progreso real.
 
 ## Límites
 
 - Sin facturación, pagos ni conversión FX.
-- Sin archivos adjuntos, comentarios anidados, subtareas o dependencias.
+- Sin archivos adjuntos, comentarios anidados, subtareas anidadas o dependencias.
 - Sin drag-and-drop.
