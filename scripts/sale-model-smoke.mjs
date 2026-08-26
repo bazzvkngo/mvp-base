@@ -10,6 +10,7 @@ import {
   getSaleDocumentTypeLabel,
   getSaleItemTypeLabel,
   getSaleStatusLabel,
+  getSaleStockStatusLabel,
   matchesSaleSearch,
   SALE_STATUSES,
   shouldReconcileSaleConfirmation,
@@ -59,6 +60,7 @@ assert.equal(canManageSales("OWNER"), true); assert.equal(canManageSales("ADMIN"
 assert.deepEqual(SALE_STATUSES, ["borrador", "confirmada", "cancelada"]);
 assert.equal(getSaleStatusLabel("borrador"), "Preparada");
 assert.equal(getSaleStatusLabel("confirmada"), "Confirmada");
+assert.equal(getSaleStockStatusLabel("pendiente_abastecimiento", stored), "Abastecimiento pendiente");
 assert.equal(getSaleItemTypeLabel("servicio"), "Servicio");
 assert.equal(getSaleDocumentTypeLabel("sin_documento"), "Sin documento");
 assert.equal(shouldReconcileSaleConfirmation({code: "functions/unavailable"}), true);
@@ -75,22 +77,22 @@ const saleClient = fs.readFileSync(new URL("../src/features/sales/SaleClientSele
 const saleItems = fs.readFileSync(new URL("../src/features/sales/SaleItemsEditor.jsx", import.meta.url), "utf8");
 const salePrint = fs.readFileSync(new URL("../src/features/sales/SalePrintView.jsx", import.meta.url), "utf8");
 const rules = fs.readFileSync(new URL("../firestore.rules", import.meta.url), "utf8");
-for (const token of ["saleCreateRequests", "saleConfirmRequests", "quoteSaleConversionRequests", "movimientosInventario", "salida_venta", "stockAplicado"]) assert.match(backend, new RegExp(token));
+for (const token of ["saleCreateRequests", "saleConfirmRequests", "quoteSaleConversionRequests", "saleCancellationRequests", "movimientosInventario", "salida_venta", "entrada_cancelacion_venta", "efectosInventario", "stockAplicado"]) assert.match(backend, new RegExp(token));
 assert.match(backend, /writeSaleConfirmationEvent/);
-for (const name of ["ventas", "saleCounters", "saleCreateRequests", "saleConfirmRequests", "quoteSaleConversionRequests"]) assert.match(rules, new RegExp(`match /${name}/`));
+for (const name of ["ventas", "saleCounters", "saleCreateRequests", "saleConfirmRequests", "saleCancellationRequests", "quoteSaleConversionRequests"]) assert.match(rules, new RegExp(`match /${name}/`));
 assert.match(salePage, /pendingConfirmationSaleId/);
 assert.match(salePage, /obtenerVenta\(businessId, stored\.id\)/);
 assert.match(salePage, /authoritative\?\.estado === "confirmada" \|\| authoritative\?\.stockAplicado === true/);
 assert.doesNotMatch(salePage, /globalThis\.confirm|window\.confirm/);
 assert.doesNotMatch(salesHistory, /globalThis\.confirm|window\.confirm/);
 assert.match(salePage, /ResponsiveDialog/);
-assert.match(salesHistory, /ResponsiveDialog/);
 assert.match(salesHistory, /`\/ventas\/\$\{sale\.id\}\/editar`/);
 assert.match(salesHistory, /`\/cotizaciones\/\$\{sale\.cotizacionId\}\/editar`/);
 assert.doesNotMatch(salesHistory, />Editar<|>Ver</);
-assert.doesNotMatch(salesHistory, /confirmarVenta|Confirmar venta|<th>Fecha<\/th>/);
+assert.doesNotMatch(salesHistory, /confirmarVenta|Confirmar venta/);
+assert.match(salesHistory, /<th>Número<\/th><th>Cliente<\/th><th>Total<\/th><th>Origen<\/th><th>Estado<\/th><th>Stock<\/th><th>Fecha<\/th>/);
 assert.match(salesHistory, /formatDate\(sale\.fechaVenta\)/);
-assert.match(salesHistory, /Ellipsis/);
+assert.match(salesHistory, /getSaleStockStatusLabel/);
 assert.match(saleSummary, /Guardar cambios/);
 assert.match(saleSummary, /Ellipsis/);
 assert.match(saleSummary, /No puedes confirmar esta venta porque uno o más productos no tienen stock suficiente/);
@@ -103,6 +105,8 @@ assert.match(salePrint, /CubeIcon/);
 assert.match(salePrint, /sale-document-preview__header/);
 assert.match(salePrint, /sale-document-preview__info-grid/);
 assert.match(salePage, /Editar condiciones/);
+assert.match(salePage, /Motivo de cancelación/);
+assert.match(salePage, /cancelReason\.trim\(\)\.length < 3/);
 assert.match(salePage, /previewOpen \&\& <div className="sale-preview-body">/);
 assert.match(salePage, /Ver vista previa/);
 assert.doesNotMatch(salePage, />Ver cotización</);

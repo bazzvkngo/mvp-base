@@ -153,58 +153,309 @@ function quoteLine(raw, index, HttpsError) {
   return storedLine(values, snapshot, HttpsError, {cantidadCotizada: values.cantidad});
 }
 
+function quoteSaleId(quoteId) {
+  return `cotizacion__${quoteId}`;
+}
+
+function groupProductLines(items = []) {
+  const groups = new Map();
+  items.filter((line) => line.tipoItem === "producto").forEach((line) => {
+    const group = groups.get(line.itemId) || {itemId: line.itemId, lines: []};
+    group.lines.push(line);
+    groups.set(line.itemId, group);
+  });
+  return [...groups.values()];
+}
+
+async function createConfirmedSaleFromQuoteInTransaction({
+  actor = {},
+  businessId,
+  businessRef,
+  clock = new Date(),
+  dependencies,
+  quote,
+  quoteId,
+  transaction,
+}) {
+  const {FieldValue, HttpsError} = dependencies;
+  const saleRef = businessRef.collection("ventas").doc(quoteSaleId(quoteId));
+  if (quote.ventaId) {
+    const linkedSale = await transaction.get(
+      businessRef.collection("ventas").doc(id(quote.ventaId, "La venta", HttpsError))
+    );
+    if (!linkedSale.exists) {
+      fail(HttpsError, "failed-precondition", "El enlace de la cotización con su venta es inconsistente.");
+    }
+    return {
+      idempotent: true,
+      productosActualizados: 0,
+      sale: {id: linkedSale.id, ...(linkedSale.data() || {})},
+    };
+  }
+  if (!Array.isArray(quote.items) || !quote.items.length) {
+    fail(HttpsError, "failed-precondition", "La cotización no contiene ítems.");
+  }
+  if (quote.items.length > 200) {
+    fail(HttpsError, "failed-precondition", "La venta admite hasta 200 ítems.");
+  }
+
+  const now = chileParts(clock);
+  const counterRef = businessRef.collection("saleCounters").doc(String(now.year));
+  const companyProfileRef = businessRef.collection("empresa").doc("perfil");
+  const trabajoId = quote.trabajoId
+    ? id(quote.trabajoId, "El proyecto", HttpsError)
+    : "";
+  const workRef = trabajoId ? businessRef.collection("trabajos").doc(trabajoId) : null;
+  const clienteSnapshot = quoteClientSnapshot(quote, HttpsError);
+  const items = quote.items.map((item, index) => quoteLine(item, index, HttpsError));
+  const productGroups = groupProductLines(items);
+  const inventoryRefs = productGroups.map((group) =>
+    businessRef.collection("inventario").doc(group.itemId)
+  );
+  const refs = [counterRef, businessRef, companyProfileRef, ...inventoryRefs];
+  if (workRef) refs.push(workRef);
+  const snapshots = await Promise.all(refs.map((ref) => transaction.get(ref)));
+  const counterSnapshot = snapshots[0];
+  const businessSnapshot = snapshots[1];
+  const companyProfileSnapshot = snapshots[2];
+  const inventorySnapshots = snapshots.slice(3, 3 + inventoryRefs.length);
+  const workSnapshot = workRef ? snapshots.at(-1) : null;
+  const workFields = workRef ? linkedWorkFields(workSnapshot, businessId, HttpsError) : {};
+  const current = Number(counterSnapshot.data()?.lastNumber || 0);
+  const sequence = Number.isSafeInteger(current) && current >= 0 ? current + 1 : 1;
+  const numero = formatNumber(now.year, sequence);
+  const timestamp = FieldValue.serverTimestamp();
+  const actorUid = text(actor.uid, 160);
+  const normalized = input({
+    clienteId: clienteSnapshot.clienteId,
+    descuento: quote.descuento ?? quote.descuentoGeneral ?? 0,
+    afectaIva: quote.afectaIva !== false,
+    fechaVenta: now.value,
+    fechaDocumento: "",
+    tipoDocumento: "sin_documento",
+    numeroDocumento: "",
+    condicionesPago: quote.condicionesPago || quote.condiciones?.formaPago,
+    observaciones: quote.observaciones || quote.condiciones?.observaciones,
+    items,
+  }, HttpsError);
+  const currentCompanySnapshot = buildAuthoritativeCompanySnapshot({
+    businessId,
+    business: businessSnapshot.data() || {},
+    profile: companyProfileSnapshot.data() || {},
+  });
+  const base = baseStored({
+    businessId,
+    uid: actorUid,
+    ventaId: saleRef.id,
+    numero,
+    sequence,
+    now,
+    normalized,
+    clienteSnapshot,
+    items,
+    localization: adaptDocumentLocalization(quote),
+    empresaSnapshot: resolveCompanySnapshot(quote, currentCompanySnapshot),
+    origin: {
+      cotizacionId: quoteId,
+      cotizacionNumero: text(quote.numero, 120),
+      ...workFields,
+    },
+    timestamp,
+    HttpsError,
+  });
+
+  const efectosInventario = [];
+  const alertasStock = [];
+  productGroups.forEach((group, index) => {
+    const snapshot = inventorySnapshots[index];
+    const required = group.lines.reduce((sum, line) => sum + Number(line.cantidad || 0), 0);
+    const raw = snapshot.exists ? snapshot.data() || {} : {};
+    if (raw.negocioId && raw.negocioId !== businessId) {
+      fail(HttpsError, "permission-denied", "Un ítem pertenece a otro negocio.");
+    }
+    const currentType = TYPES.has(raw.tipoItem) ? raw.tipoItem : "producto";
+    const available = Number(raw.stock);
+    const validProduct = snapshot.exists && currentType === "producto" &&
+      Number.isFinite(available) && available >= 0;
+    const safeAvailable = validProduct ? available : 0;
+    if (!validProduct || available < required) {
+      alertasStock.push({
+        itemId: group.itemId,
+        nombre: text(group.lines[0]?.nombre, 240),
+        requerido: required,
+        disponible: safeAvailable,
+        faltante: Math.max(required - safeAvailable, 0),
+        motivo: !snapshot.exists
+          ? "producto_no_disponible"
+          : currentType !== "producto"
+            ? "tipo_inconsistente"
+            : "stock_insuficiente",
+      });
+    }
+    if (!validProduct || safeAvailable === 0) return;
+    let runningStock = available;
+    let pendingToApply = Math.min(safeAvailable, required);
+    group.lines.forEach((line) => {
+      const cantidadSolicitada = Number(line.cantidad);
+      const cantidad = Math.min(cantidadSolicitada, pendingToApply);
+      if (cantidad <= 0) return;
+      const stockAnterior = runningStock;
+      const stockPosterior = stockAnterior - cantidad;
+      const movementRef = businessRef.collection("movimientosInventario")
+        .doc(`${saleRef.id}__${line.lineaId}`);
+      transaction.create(movementRef, {
+        movimientoId: movementRef.id,
+        negocioId: businessId,
+        itemId: line.itemId,
+        ventaId: saleRef.id,
+        ventaNumero: numero,
+        cotizacionId: quoteId,
+        cotizacionNumero: text(quote.numero, 120),
+        tipo: "salida_venta",
+        cantidad,
+        cantidadSolicitada,
+        stockAnterior,
+        stockPosterior,
+        motivo: "Aceptación de cotización",
+        codigo: text(line.codigo, 100),
+        nombre: text(line.nombre, 240),
+        unidad: text(line.unidad, 80),
+        creadoPorUid: actorUid,
+        origenAceptacion: text(actor.origen, 80) || "manual",
+        createdAt: timestamp,
+      });
+      efectosInventario.push({
+        itemId: line.itemId,
+        lineaId: line.lineaId,
+        movimientoId: movementRef.id,
+        cantidad,
+        cantidadSolicitada,
+      });
+      runningStock = stockPosterior;
+      pendingToApply -= cantidad;
+    });
+    transaction.update(inventoryRefs[index], {
+      stock: runningStock,
+      actualizadoEn: timestamp,
+      actualizadoPorUid: actorUid,
+    });
+  });
+
+  const productLineCount = items.filter((line) => line.tipoItem === "producto").length;
+  const appliedProductCount = efectosInventario.length;
+  const estadoStock = productLineCount === 0
+    ? "no_aplica"
+    : alertasStock.length === 0
+      ? "completo"
+      : appliedProductCount > 0
+        ? "parcial_pendiente"
+        : "pendiente_abastecimiento";
+  const stored = {
+    ...base,
+    estado: "confirmada",
+    estadoStock,
+    alertasStock,
+    efectosInventario,
+    stockAplicado: alertasStock.length === 0,
+    stockAplicadoAt: appliedProductCount > 0 ? timestamp : null,
+    stockProcesadoEn: timestamp,
+    origenAceptacion: text(actor.origen, 80) || "manual",
+    aceptadaEn: timestamp,
+    confirmadoPorUid: actorUid,
+    confirmedAt: timestamp,
+  };
+  transaction.set(counterRef, {
+    negocioId: businessId,
+    year: now.year,
+    lastNumber: sequence,
+    actualizadoEn: timestamp,
+  });
+  transaction.create(saleRef, stored);
+  if (workRef) {
+    const work = workSnapshot.data() || {};
+    const eventActor = {
+      nombre: text(actor.nombre, 200) || "Persona del equipo",
+      correo: text(actor.correo, 240),
+    };
+    writeCommercialLink(transaction, workRef, {
+      actor: eventActor,
+      actorUid,
+      businessId,
+      currentCount: work.ventasVinculadas,
+      documentId: saleRef.id,
+      documentNumber: numero,
+      documentStatus: "confirmada",
+      documentType: "venta",
+      extra: {cotizacionId: quoteId, cotizacionNumero: text(quote.numero, 120)},
+      timestamp,
+      total: stored.total,
+    });
+    writeSaleConfirmationEvent(transaction, workRef, {
+      actor: eventActor,
+      actorUid,
+      businessId,
+      currency: stored.moneda,
+      quoteNumber: stored.cotizacionNumero,
+      saleId: saleRef.id,
+      saleNumber: numero,
+      timestamp,
+      total: stored.total,
+    });
+  }
+  return {
+    idempotent: false,
+    productosActualizados: appliedProductCount,
+    sale: {id: saleRef.id, ...stored, createdAt: null, updatedAt: null},
+    quotePatch: {
+      ventaId: saleRef.id,
+      ventaNumero: numero,
+      ventaEstado: "confirmada",
+      ventaRegistradaEn: timestamp,
+    },
+  };
+}
+
 async function crearVentaDesdeCotizacionHandler(request, dependencies, clock = new Date()) {
   const {db, FieldValue, HttpsError} = dependencies; const {uid, businessId, businessRef} = await access(request, dependencies);
   const reqId = requestId(request?.data?.requestId, HttpsError); const quoteId = id(request?.data?.cotizacionId, "La cotización", HttpsError);
-  const now = chileParts(clock); const saleRef = businessRef.collection("ventas").doc(); const requestRef = businessRef.collection("quoteSaleConversionRequests").doc(reqId);
-  const quoteRef = businessRef.collection("cotizaciones").doc(quoteId); const counterRef = businessRef.collection("saleCounters").doc(String(now.year));
+  const requestRef = businessRef.collection("quoteSaleConversionRequests").doc(reqId);
+  const quoteRef = businessRef.collection("cotizaciones").doc(quoteId);
   return transactionRetry(db, async (transaction) => {
     const previous = await transaction.get(requestRef);
     if (previous.exists) { const data = previous.data() || {}; if (data.uidUsuario !== uid || data.cotizacionId !== quoteId) fail(HttpsError, "already-exists", "La solicitud ya fue usada para otra cotización."); const existing = await transaction.get(businessRef.collection("ventas").doc(data.ventaId)); return {venta: {id: existing.id, ...existing.data()}, requestId: reqId, idempotent: true}; }
-    const [quoteSnapshot, counterSnapshot, businessSnapshot, companyProfileSnapshot] = await Promise.all([transaction.get(quoteRef), transaction.get(counterRef), transaction.get(businessRef), transaction.get(businessRef.collection("empresa").doc("perfil"))]);
+    const quoteSnapshot = await transaction.get(quoteRef);
     if (!quoteSnapshot.exists) fail(HttpsError, "not-found", "No se encontró la cotización."); const quote = quoteSnapshot.data() || {};
     if (quote.negocioId && quote.negocioId !== businessId) fail(HttpsError, "permission-denied", "No puedes registrar esta cotización.");
-    if (quote.ventaId) { const existing = await transaction.get(businessRef.collection("ventas").doc(quote.ventaId)); if (!existing.exists) fail(HttpsError, "failed-precondition", "El enlace de la cotización con su venta es inconsistente."); transaction.set(requestRef, {negocioId: businessId, cotizacionId: quoteId, ventaId: existing.id, numero: existing.data()?.numero || quote.ventaNumero || "", uidUsuario: uid, creadoEn: FieldValue.serverTimestamp()}); return {venta: {id: existing.id, ...existing.data()}, requestId: reqId, idempotent: true, alreadyConverted: true}; }
     if (quote.estado !== "aceptada") fail(HttpsError, "failed-precondition", "Sólo una cotización aceptada puede registrarse como venta.");
-    if (!Array.isArray(quote.items) || !quote.items.length) fail(HttpsError, "failed-precondition", "La cotización no contiene ítems.");
-    if (quote.items.length > 200) fail(HttpsError, "failed-precondition", "La venta admite hasta 200 ítems.");
-    const trabajoId = quote.trabajoId
-      ? id(quote.trabajoId, "El proyecto", HttpsError)
-      : "";
-    const workRef = trabajoId
-      ? businessRef.collection("trabajos").doc(trabajoId)
-      : null;
-    const workSnapshot = workRef ? await transaction.get(workRef) : null;
-    const workFields = workRef
-      ? linkedWorkFields(workSnapshot, businessId, HttpsError)
-      : {};
-    const clienteSnapshot = quoteClientSnapshot(quote, HttpsError); const items = quote.items.map((item, index) => quoteLine(item, index, HttpsError));
-    const normalized = input({clienteId: clienteSnapshot.clienteId, descuento: quote.descuento ?? quote.descuentoGeneral ?? 0, afectaIva: quote.afectaIva !== false, fechaVenta: now.value, fechaDocumento: "", tipoDocumento: "sin_documento", numeroDocumento: "", condicionesPago: quote.condicionesPago || quote.condiciones?.formaPago, observaciones: quote.observaciones || quote.condiciones?.observaciones, items}, HttpsError);
-    const current = Number(counterSnapshot.data()?.lastNumber || 0); const sequence = Number.isSafeInteger(current) && current >= 0 ? current + 1 : 1; const numero = formatNumber(now.year, sequence); const timestamp = FieldValue.serverTimestamp();
-    const currentCompanySnapshot = buildAuthoritativeCompanySnapshot({businessId, business: businessSnapshot.data() || {}, profile: companyProfileSnapshot.data() || {}});
-    const stored = baseStored({businessId, uid, ventaId: saleRef.id, numero, sequence, now, normalized, clienteSnapshot, items, localization: adaptDocumentLocalization(quote), empresaSnapshot: resolveCompanySnapshot(quote, currentCompanySnapshot), origin: {cotizacionId: quoteId, cotizacionNumero: text(quote.numero, 120), ...workFields}, timestamp, HttpsError});
-    transaction.set(counterRef, {negocioId: businessId, year: now.year, lastNumber: sequence, actualizadoEn: timestamp}); transaction.set(saleRef, stored);
-    transaction.update(quoteRef, {ventaId: saleRef.id, ventaNumero: numero, ventaRegistradaEn: timestamp, actualizadoEn: timestamp});
-    transaction.set(requestRef, {negocioId: businessId, cotizacionId: quoteId, ventaId: saleRef.id, numero, uidUsuario: uid, creadoEn: timestamp, ...(trabajoId ? {trabajoId} : {})});
-    if (workRef) {
-      const work = workSnapshot.data() || {};
-      writeCommercialLink(transaction, workRef, {
-        actorUid: uid,
-        businessId,
-        currentCount: work.ventasVinculadas,
-        documentId: saleRef.id,
-        documentNumber: numero,
-        documentStatus: "borrador",
-        documentType: "venta",
-        extra: {
-          cotizacionId: quoteId,
-          cotizacionNumero: text(quote.numero, 120),
-        },
-        timestamp,
-        total: stored.total,
-      });
+    const created = await createConfirmedSaleFromQuoteInTransaction({
+      actor: {uid, origen: "registro_compatibilidad"},
+      businessId,
+      businessRef,
+      clock,
+      dependencies,
+      quote,
+      quoteId,
+      transaction,
+    });
+    const timestamp = FieldValue.serverTimestamp();
+    if (created.quotePatch) {
+      transaction.update(quoteRef, {...created.quotePatch, actualizadoEn: timestamp});
     }
-    return {venta: {id: saleRef.id, ...stored, createdAt: null, updatedAt: null}, requestId: reqId, idempotent: false};
+    transaction.set(requestRef, {
+      negocioId: businessId,
+      cotizacionId: quoteId,
+      ventaId: created.sale.id,
+      numero: created.sale.numero,
+      uidUsuario: uid,
+      creadoEn: timestamp,
+    });
+    return {
+      venta: created.sale,
+      requestId: reqId,
+      idempotent: created.idempotent,
+      alreadyConverted: created.idempotent,
+      productosActualizados: created.productosActualizados,
+    };
   });
 }
 
@@ -266,8 +517,190 @@ async function confirmarVentaHandler(request, dependencies) {
 }
 
 async function cancelarVentaBorradorHandler(request, dependencies) {
-  const {db, FieldValue, HttpsError} = dependencies; const {uid, businessId, businessRef} = await access(request, dependencies); const ventaId = id(request?.data?.ventaId, "La venta", HttpsError); const saleRef = businessRef.collection("ventas").doc(ventaId);
-  return transactionRetry(db, async (transaction) => { const snapshot = await transaction.get(saleRef); if (!snapshot.exists) fail(HttpsError, "not-found", "No se encontró la venta."); const existing = snapshot.data() || {}; if (existing.negocioId !== businessId) fail(HttpsError, "permission-denied", "No puedes cancelar esta venta."); if (existing.estado === "cancelada") return {venta: {id: ventaId, ...existing}, idempotent: true}; if (existing.estado !== "borrador" || existing.stockAplicado) fail(HttpsError, "failed-precondition", "Sólo puedes cancelar ventas en borrador."); const timestamp = FieldValue.serverTimestamp(); const update = {estado: "cancelada", canceladoPorUid: uid, cancelledAt: timestamp, actualizadoPorUid: uid, updatedAt: timestamp}; transaction.update(saleRef, update); return {venta: {id: ventaId, ...existing, ...update, updatedAt: null}, idempotent: false}; });
+  const {db, FieldValue, HttpsError} = dependencies;
+  const {uid, businessId, businessRef} = await access(request, dependencies);
+  const ventaId = id(request?.data?.ventaId, "La venta", HttpsError);
+  const reqId = requestId(request?.data?.requestId, HttpsError);
+  const motivo = text(request?.data?.motivo, 500);
+  if (motivo.length < 3) {
+    fail(HttpsError, "invalid-argument", "Ingresa el motivo de cancelación.");
+  }
+  const saleRef = businessRef.collection("ventas").doc(ventaId);
+  const requestRef = businessRef.collection("saleCancellationRequests").doc(reqId);
+  const fingerprint = hash({ventaId, motivo});
+  return transactionRetry(db, async (transaction) => {
+    const previousRequest = await transaction.get(requestRef);
+    if (previousRequest.exists) {
+      const previous = previousRequest.data() || {};
+      if (previous.uidUsuario !== uid || previous.fingerprint !== fingerprint) {
+        fail(HttpsError, "already-exists", "La solicitud ya fue usada con otros datos.");
+      }
+      const existingSnapshot = await transaction.get(saleRef);
+      return {
+        venta: {id: ventaId, ...(existingSnapshot.data() || {})},
+        requestId: reqId,
+        idempotent: true,
+        productosRevertidos: Number(previous.productosRevertidos || 0),
+      };
+    }
+    const snapshot = await transaction.get(saleRef);
+    if (!snapshot.exists) fail(HttpsError, "not-found", "No se encontró la venta.");
+    const existing = snapshot.data() || {};
+    if (existing.negocioId !== businessId) {
+      fail(HttpsError, "permission-denied", "No puedes cancelar esta venta.");
+    }
+    const isQuoteConfirmed = existing.estado === "confirmada" && Boolean(existing.cotizacionId);
+    if (existing.estado !== "borrador" && !isQuoteConfirmed && existing.estado !== "cancelada") {
+      fail(HttpsError, "failed-precondition", "La venta no puede cancelarse desde este flujo.");
+    }
+    if (existing.estado === "cancelada") {
+      const timestamp = FieldValue.serverTimestamp();
+      transaction.set(requestRef, {
+        negocioId: businessId,
+        ventaId,
+        uidUsuario: uid,
+        fingerprint,
+        productosRevertidos: 0,
+        creadoEn: timestamp,
+      });
+      return {venta: {id: ventaId, ...existing}, requestId: reqId, idempotent: true, productosRevertidos: 0};
+    }
+
+    const effects = Array.isArray(existing.efectosInventario)
+      ? existing.efectosInventario
+      : [];
+    const productLines = (Array.isArray(existing.items) ? existing.items : [])
+      .filter((line) => line.tipoItem === "producto");
+    if (isQuoteConfirmed && existing.stockAplicado === true && productLines.length && !effects.length) {
+      fail(HttpsError, "failed-precondition", "Esta venta histórica no contiene el detalle necesario para revertir su stock de forma segura.");
+    }
+    const groups = new Map();
+    effects.forEach((effect, index) => {
+      const itemId = id(effect?.itemId, `Efecto ${index + 1}`, HttpsError);
+      const lineaId = id(effect?.lineaId, `Línea ${index + 1}`, HttpsError);
+      const cantidad = number(effect?.cantidad, `Efecto ${index + 1}: cantidad`, HttpsError, {minimum: Number.MIN_VALUE});
+      const group = groups.get(itemId) || {itemId, effects: []};
+      group.effects.push({cantidad, itemId, lineaId, movimientoId: text(effect?.movimientoId, 160)});
+      groups.set(itemId, group);
+    });
+    const groupedEffects = [...groups.values()];
+    const inventoryRefs = groupedEffects.map((group) =>
+      businessRef.collection("inventario").doc(group.itemId)
+    );
+    const inventorySnapshots = await Promise.all(
+      inventoryRefs.map((ref) => transaction.get(ref))
+    );
+    const timestamp = FieldValue.serverTimestamp();
+    const reversalEffects = [];
+    groupedEffects.forEach((group, index) => {
+      const inventorySnapshot = inventorySnapshots[index];
+      if (!inventorySnapshot.exists) {
+        fail(HttpsError, "failed-precondition", "No se encontró un producto necesario para revertir el stock.");
+      }
+      const raw = inventorySnapshot.data() || {};
+      if (raw.negocioId && raw.negocioId !== businessId) {
+        fail(HttpsError, "permission-denied", "Un producto pertenece a otro negocio.");
+      }
+      let runningStock = Number(raw.stock);
+      if (!Number.isFinite(runningStock)) {
+        fail(HttpsError, "failed-precondition", "El stock no pudo revertirse de forma segura.");
+      }
+      group.effects.forEach((effect) => {
+        const stockAnterior = runningStock;
+        const stockPosterior = stockAnterior + effect.cantidad;
+        const movementRef = businessRef.collection("movimientosInventario")
+          .doc(`cancelacion__${ventaId}__${effect.lineaId}`);
+        transaction.create(movementRef, {
+          movimientoId: movementRef.id,
+          movimientoOrigenId: effect.movimientoId,
+          negocioId: businessId,
+          itemId: effect.itemId,
+          ventaId,
+          ventaNumero: existing.numero,
+          cotizacionId: existing.cotizacionId || "",
+          cotizacionNumero: existing.cotizacionNumero || "",
+          tipo: "entrada_cancelacion_venta",
+          cantidad: effect.cantidad,
+          stockAnterior,
+          stockPosterior,
+          motivo,
+          creadoPorUid: uid,
+          createdAt: timestamp,
+        });
+        reversalEffects.push({
+          itemId: effect.itemId,
+          lineaId: effect.lineaId,
+          movimientoId: movementRef.id,
+          movimientoOrigenId: effect.movimientoId,
+          cantidad: effect.cantidad,
+        });
+        runningStock = stockPosterior;
+      });
+      transaction.update(inventoryRefs[index], {
+        stock: runningStock,
+        actualizadoEn: timestamp,
+        actualizadoPorUid: uid,
+      });
+    });
+    const update = {
+      estado: "cancelada",
+      motivoCancelacion: motivo,
+      canceladoPorUid: uid,
+      cancelledAt: timestamp,
+      stockRevertido: reversalEffects.length > 0,
+      stockRevertidoEn: reversalEffects.length > 0 ? timestamp : null,
+      efectosInventarioReversa: reversalEffects,
+      estadoStock: reversalEffects.length > 0 ? "revertido" : existing.estadoStock || "no_aplica",
+      actualizadoPorUid: uid,
+      updatedAt: timestamp,
+    };
+    transaction.update(saleRef, update);
+    transaction.create(saleRef.collection("eventos").doc(`cancelacion__${reqId}`), {
+      negocioId: businessId,
+      ventaId,
+      tipo: "venta_cancelada",
+      motivo,
+      uidUsuario: uid,
+      requestId: reqId,
+      productosRevertidos: reversalEffects.length,
+      creadoEn: timestamp,
+    });
+    if (existing.cotizacionId) {
+      const quoteRef = businessRef.collection("cotizaciones").doc(existing.cotizacionId);
+      transaction.update(quoteRef, {
+          ventaEstado: "cancelada",
+          ventaCanceladaEn: timestamp,
+          ventaCancelacionMotivo: motivo,
+          actualizadoEn: timestamp,
+      });
+      transaction.create(quoteRef.collection("eventos").doc(`venta_cancelada__${ventaId}`), {
+        negocioId: businessId,
+        cotizacionId: existing.cotizacionId,
+        tipo: "venta_cancelada",
+        estadoAnterior: "aceptada",
+        estadoResultante: "aceptada",
+        medio: "sistema",
+        uidUsuario: uid,
+        requestId: reqId,
+        detalle: {ventaId, ventaNumero: existing.numero || "", motivo},
+        creadoEn: timestamp,
+      });
+    }
+    transaction.set(requestRef, {
+      negocioId: businessId,
+      ventaId,
+      uidUsuario: uid,
+      fingerprint,
+      productosRevertidos: reversalEffects.length,
+      creadoEn: timestamp,
+    });
+    return {
+      venta: {id: ventaId, ...existing, ...update, updatedAt: null},
+      requestId: reqId,
+      idempotent: false,
+      productosRevertidos: reversalEffects.length,
+    };
+  });
 }
 
-module.exports = {actualizarVentaBorradorHandler, cancelarVentaBorradorHandler, confirmarVentaHandler, crearVentaDesdeCotizacionHandler, crearVentaHandler, formatSaleNumber: formatNumber, normalizeSaleInput: input, calculateSaleTotals: totals, clientSnapshotFromDocument: client, quoteClientSnapshot};
+module.exports = {actualizarVentaBorradorHandler, cancelarVentaBorradorHandler, confirmarVentaHandler, crearVentaDesdeCotizacionHandler, crearVentaHandler, createConfirmedSaleFromQuoteInTransaction, formatSaleNumber: formatNumber, normalizeSaleInput: input, calculateSaleTotals: totals, clientSnapshotFromDocument: client, quoteClientSnapshot};

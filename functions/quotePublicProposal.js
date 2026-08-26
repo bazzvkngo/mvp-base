@@ -17,6 +17,7 @@ const {
 } = require("./workPersistence");
 const {resolveBaseTaxSettings} = require("./businessJurisdiction");
 const {assertBusinessCanOperate} = require("./businessOperations");
+const {createConfirmedSaleFromQuoteInTransaction} = require("./salePersistence");
 
 const PUBLIC_TOKEN_COLLECTION = "quotePublicTokens";
 const PUBLIC_TOKEN_BYTES = 32;
@@ -1260,7 +1261,33 @@ async function respondPublicQuoteProposalHandler(request, dependencies) {
         respondidoEn: FieldValue.serverTimestamp(),
       }, { merge: true });
     }
-    if (decision.outcome !== "apply") return decision;
+    if (decision.outcome !== "apply") {
+      return {
+        ...decision,
+        ...(quote.ventaId ? {
+          ventaId: quote.ventaId,
+          ventaNumero: quote.ventaNumero || "",
+        } : {}),
+      };
+    }
+
+    const acceptedSale = decision.quoteStatus === "aceptada"
+      ? await createConfirmedSaleFromQuoteInTransaction({
+          actor: {
+            nombre: quote.clienteNombre || quote.cliente?.nombreRazonSocial ||
+              quote.cliente?.empresa || "Cliente",
+            correo: quote.clienteEmail || quote.cliente?.email || "",
+            origen: "portal_publico",
+          },
+          businessId,
+          businessRef,
+          clock: now,
+          dependencies,
+          quote,
+          quoteId,
+          transaction,
+        })
+      : null;
 
     const emissionPatch = decision.requiresWhatsAppEmission
       ? buildQuoteEmissionPatch({
@@ -1273,6 +1300,7 @@ async function respondPublicQuoteProposalHandler(request, dependencies) {
       : {};
     const quotePatch = {
       ...emissionPatch,
+      ...(acceptedSale?.quotePatch || {}),
       estado: decision.quoteStatus,
       respuestaCliente: decision.quoteStatus,
       respuestaClienteEn: FieldValue.serverTimestamp(),
@@ -1350,7 +1378,15 @@ async function respondPublicQuoteProposalHandler(request, dependencies) {
         : {}),
     };
     transaction.set(tokenRef, tokenPatch, { merge: true });
-    return decision;
+    return {
+      ...decision,
+      ...(acceptedSale ? {
+        ventaId: acceptedSale.sale.id,
+        ventaNumero: acceptedSale.sale.numero,
+        estadoStock: acceptedSale.sale.estadoStock,
+        alertasStock: acceptedSale.sale.alertasStock,
+      } : {}),
+    };
   });
 
   if (result.outcome === "invalid") throw genericPublicProposalError(HttpsError);
@@ -1373,6 +1409,12 @@ async function respondPublicQuoteProposalHandler(request, dependencies) {
     success: true,
     estado: result.quoteStatus,
     idempotent: result.outcome === "idempotent",
+    ...(result.ventaId ? {
+      ventaId: result.ventaId,
+      ventaNumero: result.ventaNumero || "",
+      estadoStock: result.estadoStock || "",
+      alertasStock: result.alertasStock || [],
+    } : {}),
   };
 }
 

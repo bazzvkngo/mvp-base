@@ -7,6 +7,7 @@ import {
   canManageSales,
   getSaleDocumentTypeLabel,
   getSaleStatusLabel,
+  getSaleStockStatusLabel,
   shouldReconcileSaleConfirmation,
 } from "../domain/saleModel.mjs";
 import SaleCatalogDialog from "../features/sales/SaleCatalogDialog";
@@ -20,7 +21,7 @@ import {getInventoryItems} from "../services/inventoryService";
 import {formatDate} from "../utils/formatters";
 import {
   actualizarVentaBorrador,
-  cancelarVentaBorrador,
+  cancelarVenta,
   confirmarVenta,
   crearVenta,
   createSaleRequestId,
@@ -46,15 +47,20 @@ export default function NewSalePage({businessId, role}) {
   const [conditionsOpen, setConditionsOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [actionDialog, setActionDialog] = useState("");
+  const [cancelReason, setCancelReason] = useState("");
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [message, setMessage] = useState("");
   const createId = useRef(createSaleRequestId("sale-create"));
   const confirmId = useRef(createSaleRequestId("sale-confirm"));
+  const cancelId = useRef(createSaleRequestId("sale-cancel"));
   const pendingConfirmationSaleId = useRef("");
   const canManage = canManageSales(role);
   const readOnly = !canManage || Boolean(sale && sale.estado !== "borrador");
   const referencesLocked = Boolean(sale?.cotizacionId);
+  const canCancelConfirmedQuote = Boolean(
+    canManage && sale?.cotizacionId && sale?.estado === "confirmada"
+  );
   const hasProducts = draft.items.some((item) => item.tipoItem === "producto");
 
   useEffect(() => {
@@ -64,15 +70,8 @@ export default function NewSalePage({businessId, role}) {
 
   useEffect(() => {
     const toastTitle = location.state?.toastTitle;
-    const legacyMessage = location.state?.message;
-    if (!toastTitle && !legacyMessage) return;
-    if (toastTitle) {
-      sileo.success({title: toastTitle, description: location.state?.toastDescription});
-    } else if (legacyMessage === "Venta creada como borrador desde la cotización.") {
-      sileo.info({title: "Venta preparada", description: "Originada desde una cotización aceptada. Revísala antes de confirmar."});
-    } else {
-      setMessage(legacyMessage);
-    }
+    if (!toastTitle) return;
+    sileo.success({title: toastTitle, description: location.state?.toastDescription});
     navigate(location.pathname, {replace: true, state: null});
   }, [location.pathname, location.state, navigate]);
 
@@ -258,12 +257,19 @@ export default function NewSalePage({businessId, role}) {
 
   const cancel = async () => {
     if (!sale) return;
-    setActionDialog("");
+    const motivo = cancelReason.trim();
+    if (motivo.length < 3) {
+      setMessage("Ingresa el motivo de cancelación.");
+      return;
+    }
     setProcessing(true);
     setMessage("");
     try {
-      const result = await cancelarVentaBorrador(businessId, sale.id);
+      const result = await cancelarVenta(businessId, sale.id, motivo, {requestId: cancelId.current});
       setSale(result.venta);
+      setActionDialog("");
+      setCancelReason("");
+      cancelId.current = createSaleRequestId("sale-cancel");
       navigate(`/ventas/${sale.id}`, {
         replace: true,
         state: {toastTitle: "Venta cancelada", toastDescription: `${sale.numero} quedó cancelada.`},
@@ -299,15 +305,17 @@ export default function NewSalePage({businessId, role}) {
               {sale?.cotizacionId ? <span>Originada desde <button type="button" className="sale-inline-link" onClick={() => navigate(`/cotizaciones/${sale.cotizacionId}/editar`)}>{sale.cotizacionNumero || "cotización aceptada"}</button></span> : <span>Venta directa</span>}
               {sale?.trabajoId && <span>Proyecto <button type="button" className="sale-inline-link" onClick={() => navigate("/trabajos", {state: {openWorkId: sale.trabajoId}})}>{sale.trabajoNumero || sale.trabajoTitulo || sale.trabajoId}</button></span>}
               <span>Fecha {formatDate(draft.fechaVenta)}</span>
+              {sale?.cotizacionId && sale?.aceptadaEn && <span>Aceptada {formatDate(sale.aceptadaEn)}</span>}
             </div>
             {!readOnly && <p className="sale-header-guidance">Revisa la venta antes de confirmarla.</p>}
+            {canCancelConfirmedQuote && <button type="button" className="po-button po-button--danger" onClick={() => setActionDialog("cancel")}>Cancelar venta</button>}
           </div>
           <SaleClientSelector clients={clients} disabled={readOnly || referencesLocked} onChange={(clienteId) => setDraft((current) => ({...current, clienteId}))} originalSnapshot={sale?.clienteSnapshot} value={draft.clienteId} />
         </div>
       </section>
 
       {message && <p className="po-message po-message--error no-print">{message}</p>}
-      {sale?.estado === "confirmada" && sale.stockAplicado && hasProducts && <p className="sale-stock-note no-print">Stock descontado al confirmar esta venta.</p>}
+      {sale?.estado === "confirmada" && <p className={`sale-stock-note no-print${sale.alertasStock?.length ? " po-message po-message--error" : ""}`} role={sale.alertasStock?.length ? "alert" : undefined}>Stock: {getSaleStockStatusLabel(sale.estadoStock, sale)}{sale.alertasStock?.length ? `. ${sale.alertasStock.map((alert) => `${alert.nombre}: faltan ${alert.faltante}`).join(" · ")}` : hasProducts && sale.stockAplicado ? ". Disponibilidad actualizada al aceptar la cotización." : "."}</p>}
 
       <div className="no-print">
         <div className="po-layout">
@@ -396,11 +404,11 @@ export default function NewSalePage({businessId, role}) {
         onClose={() => !processing && setActionDialog("")}
         eyebrow="Más acciones"
         title="Cancelar venta"
-        description="La venta preparada quedará cancelada y ya no podrá editarse."
+        description={sale?.estado === "confirmada" ? "La venta quedará cancelada y se revertirá exactamente el stock aplicado." : "La venta preparada quedará cancelada y ya no podrá editarse."}
         size="small"
-        footer={<><button type="button" className="po-button po-button--secondary" disabled={processing} onClick={() => setActionDialog("")}>Volver</button><button type="button" className="po-button po-button--danger" disabled={processing} onClick={cancel}>{processing ? "Cancelando..." : "Cancelar venta"}</button></>}
+        footer={<><button type="button" className="po-button po-button--secondary" disabled={processing} onClick={() => setActionDialog("")}>Volver</button><button type="button" className="po-button po-button--danger" disabled={processing || cancelReason.trim().length < 3} onClick={cancel}>{processing ? "Cancelando..." : "Cancelar venta"}</button></>}
       >
-        <p className="sale-dialog-copy">Esta acción no descuenta stock.</p>
+        <label className="erp-field"><span className="erp-field__label">Motivo de cancelación</span><textarea className="erp-control" rows="4" maxLength="500" required value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} /></label>
       </ResponsiveDialog>
     </main>
   );

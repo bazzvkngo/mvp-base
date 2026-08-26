@@ -9,6 +9,13 @@ export const SALE_STATUS_LABELS = Object.freeze({
   confirmada: "Confirmada",
   cancelada: "Cancelada",
 });
+export const SALE_STOCK_STATUS_LABELS = Object.freeze({
+  completo: "Stock aplicado",
+  no_aplica: "No aplica",
+  parcial_pendiente: "Abastecimiento parcial pendiente",
+  pendiente_abastecimiento: "Abastecimiento pendiente",
+  revertido: "Stock revertido",
+});
 export const SALE_ITEM_TYPE_LABELS = Object.freeze({
   producto: "Producto",
   servicio: "Servicio",
@@ -30,6 +37,14 @@ const text = (value, max = 2000) => String(value ?? "").trim().replace(/\s+/g, "
 
 export function getSaleStatusLabel(status) {
   return SALE_STATUS_LABELS[String(status || "").toLowerCase()] || String(status || "");
+}
+
+export function getSaleStockStatusLabel(status, sale = {}) {
+  const value = String(status || "").toLowerCase();
+  if (SALE_STOCK_STATUS_LABELS[value]) return SALE_STOCK_STATUS_LABELS[value];
+  if (sale.estado === "borrador") return "Pendiente de confirmación";
+  if (sale.estado === "cancelada" && sale.stockRevertido) return "Stock revertido";
+  return sale.stockAplicado ? "Stock aplicado" : "Sin movimiento de stock";
 }
 
 export function getSaleItemTypeLabel(type) {

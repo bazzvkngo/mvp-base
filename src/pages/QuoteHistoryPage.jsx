@@ -24,6 +24,7 @@ import {
 } from "../domain/quoteModel.mjs";
 import {
   createQuoteDuplicateRequestId,
+  createQuoteLifecycleRequestId,
   duplicateQuoteAsDraft,
   getQuoteEvents,
   getQuoteDisplayNumber,
@@ -37,10 +38,6 @@ import {
   createQuoteDeliveryRequestId,
   prepareQuoteWhatsAppShare,
 } from "../services/publicQuoteService";
-import {
-  crearVentaDesdeCotizacion,
-  createSaleRequestId,
-} from "../services/saleService";
 import { formatDate, formatMoney } from "../utils/formatters";
 import { downloadQuotePdf, shareQuotePdf } from "../utils/quotePdf";
 import {
@@ -147,7 +144,7 @@ function QuoteHistoryPage({ userId, role }) {
   const navigate = useNavigate();
   const location = useLocation();
   const duplicateRequestIdsRef = useRef(new Map());
-  const saleRequestIdsRef = useRef(new Map());
+  const acceptanceRequestIdsRef = useRef(new Map());
   const [quotes, setQuotes] = useState([]);
   const [companyProfile, setCompanyProfile] = useState(null);
   const [selectedQuoteId, setSelectedQuoteId] = useState("");
@@ -160,8 +157,8 @@ function QuoteHistoryPage({ userId, role }) {
   const [emailModalQuote, setEmailModalQuote] = useState(null);
   const [restoreDetailFocus, setRestoreDetailFocus] = useState(true);
   const [duplicatingQuoteId, setDuplicatingQuoteId] = useState("");
-  const [registeringSaleQuoteId, setRegisteringSaleQuoteId] = useState("");
-  const [prepareSaleQuote, setPrepareSaleQuote] = useState(null);
+  const [acceptingQuoteId, setAcceptingQuoteId] = useState("");
+  const [acceptQuote, setAcceptQuote] = useState(null);
   const [quoteEventsById, setQuoteEventsById] = useState({});
   const reopenRequestIdsRef = useRef(new Map());
   const canDuplicate = canDuplicateQuotes(role);
@@ -295,6 +292,7 @@ function QuoteHistoryPage({ userId, role }) {
       confirm = true,
       estadoAnterior,
       notify = true,
+      requestId,
       successTitle,
     } = options;
 
@@ -315,7 +313,7 @@ function QuoteHistoryPage({ userId, role }) {
         userId,
         quoteId,
         estado,
-        { estadoAnterior }
+        { estadoAnterior, requestId }
       );
       setQuotes((prev) =>
         prev.map((quote) =>
@@ -336,7 +334,7 @@ function QuoteHistoryPage({ userId, role }) {
         });
       }
       refreshQuoteEvents(quoteId);
-      return true;
+      return statusPatch;
     } catch (err) {
       console.error("Error al actualizar estado:", err);
       const message = err.message || "No se pudo actualizar el estado.";
@@ -422,7 +420,7 @@ function QuoteHistoryPage({ userId, role }) {
 
   const handleOpenSale = (quote) => {
     if (!quote?.ventaId) return;
-    navigate(`/ventas/${quote.ventaId}/editar`);
+    navigate(`/ventas/${quote.ventaId}`);
   };
 
   const handleDuplicateQuote = async (quote) => {
@@ -454,93 +452,46 @@ function QuoteHistoryPage({ userId, role }) {
     }
   };
 
-  const handleRegisterSale = async (quote, options = {}) => {
-    const { navigateAfterCreate = false } = options;
-
-    if (quote.ventaId) {
-      navigate(`/ventas/${quote.ventaId}/editar`);
-      return null;
-    }
-    const requestId = saleRequestIdsRef.current.get(quote.id) ||
-      createSaleRequestId("sale-quote");
-    saleRequestIdsRef.current.set(quote.id, requestId);
-    setRegisteringSaleQuoteId(quote.id);
-    setError("");
-    setSuccess("");
-    try {
-      const result = await sileo.promise(
-        crearVentaDesdeCotizacion(userId, quote.id, {requestId}),
-        {
-          loading: {
-            title: "Preparando venta...",
-            description: "Creando la venta en borrador.",
-          },
-          success: (created) => ({
-            title: "Venta preparada",
-            description: `${created.venta.numero} fue preparada desde ${getQuoteDisplayNumber(
-              quote,
-              quote.id || "-"
-            )}.`,
-            button: {
-              title: "Abrir venta",
-              onClick: () => navigate(`/ventas/${created.venta.id}/editar`),
-            },
-          }),
-          error: (saleError) => ({
-            title: "No se pudo preparar la venta",
-            description:
-              saleError?.message || "Puedes volver a intentarlo desde la cotización aceptada.",
-          }),
-        }
-      );
-      saleRequestIdsRef.current.delete(quote.id);
-      setQuotes((current) => current.map((item) => item.id === quote.id
-        ? {...item, ventaId: result.venta.id, ventaNumero: result.venta.numero}
-        : item));
-      if (navigateAfterCreate) {
-        navigate(`/ventas/${result.venta.id}/editar`, {
-          state: {message: "Venta creada como borrador desde la cotización."},
-        });
-      }
-      return result;
-    } catch (saleError) {
-      setError(saleError.message || "No se pudo registrar la venta.");
-      return null;
-    } finally {
-      setRegisteringSaleQuoteId("");
-    }
-  };
-
-  const handleAcceptAndPrepareSale = async (quote) => {
+  const handleAcceptQuote = (quote) => {
     if (quote.ventaId) return;
-    setPrepareSaleQuote(quote);
+    setAcceptQuote(quote);
   };
 
-  const handleConfirmPrepareSale = async () => {
+  const handleConfirmAcceptance = async () => {
     const currentQuote = quotes.find(
-      (quote) => quote.id === prepareSaleQuote?.id
+      (quote) => quote.id === acceptQuote?.id
     );
-    const quote = currentQuote || prepareSaleQuote;
+    const quote = currentQuote || acceptQuote;
     if (!quote || quote.ventaId) {
-      setPrepareSaleQuote(null);
+      setAcceptQuote(null);
       return;
     }
-
+    const requestId = acceptanceRequestIdsRef.current.get(quote.id) ||
+      createQuoteLifecycleRequestId("quote-accept");
+    acceptanceRequestIdsRef.current.set(quote.id, requestId);
+    setAcceptingQuoteId(quote.id);
     const accepted = await handleChangeStatus(quote.id, "aceptada", {
       confirm: false,
       notify: false,
+      requestId,
     });
-
-    if (!accepted) {
-      setPrepareSaleQuote(null);
-      return;
+    if (accepted) {
+      acceptanceRequestIdsRef.current.delete(quote.id);
+      const pendingSupply = ["pendiente_abastecimiento", "parcial_pendiente"]
+        .includes(accepted.estadoStock);
+      sileo.success({
+        title: "Cotización aceptada",
+        description: pendingSupply
+          ? `${accepted.ventaNumero} quedó confirmada con abastecimiento pendiente.`
+          : `${accepted.ventaNumero} quedó confirmada y vinculada a la cotización.`,
+        button: accepted.ventaId ? {
+          title: "Ver venta",
+          onClick: () => navigate(`/ventas/${accepted.ventaId}`),
+        } : undefined,
+      });
     }
-
-    await handleRegisterSale(
-      { ...quote, estado: "aceptada" },
-      { navigateAfterCreate: false }
-    );
-    setPrepareSaleQuote(null);
+    setAcceptingQuoteId("");
+    setAcceptQuote(null);
   };
 
   const handleEmailSent = (quoteId, emailPatch) => {
@@ -744,10 +695,9 @@ function QuoteHistoryPage({ userId, role }) {
                           canDuplicate={canDuplicate}
                           duplicating={duplicatingQuoteId === quote.id}
                           onDuplicate={handleDuplicateQuote}
-                          onAcceptAndPrepareSale={handleAcceptAndPrepareSale}
-                          onRegisterSale={handleRegisterSale}
+                          onAcceptQuote={handleAcceptQuote}
                           onReopen={handleReopenQuote}
-                          registeringSale={registeringSaleQuoteId === quote.id}
+                          accepting={acceptingQuoteId === quote.id}
                         /> )}
                       </div>
                     </td>
@@ -764,15 +714,14 @@ function QuoteHistoryPage({ userId, role }) {
             canDuplicate={canDuplicate}
             disabled={savingStatus}
             duplicatingQuoteId={duplicatingQuoteId}
-            onAcceptAndPrepareSale={handleAcceptAndPrepareSale}
+            onAcceptQuote={handleAcceptQuote}
             onArchive={handleArchiveQuote}
             onChangeStatus={handleChangeStatus}
             onDuplicate={handleDuplicateQuote}
             onEditDraft={handleEditDraft}
-            onRegisterSale={handleRegisterSale}
             onReopen={handleReopenQuote}
             onRestore={handleRestoreQuote}
-            registeringSaleQuoteId={registeringSaleQuoteId}
+            acceptingQuoteId={acceptingQuoteId}
           />
           </>
         )}
@@ -800,10 +749,9 @@ function QuoteHistoryPage({ userId, role }) {
               canDuplicate={canDuplicate}
               duplicating={duplicatingQuoteId === selectedQuote.id}
               onDuplicate={handleDuplicateQuote}
-              onAcceptAndPrepareSale={handleAcceptAndPrepareSale}
-              onRegisterSale={handleRegisterSale}
+              onAcceptQuote={handleAcceptQuote}
               onReopen={handleReopenQuote}
-              registeringSale={registeringSaleQuoteId === selectedQuote.id}
+              accepting={acceptingQuoteId === selectedQuote.id}
             /> )}
           </div>
         ) : null}
@@ -828,20 +776,20 @@ function QuoteHistoryPage({ userId, role }) {
       </ResponsiveDialog>
 
       <ResponsiveDialog
-        open={Boolean(prepareSaleQuote)}
+        open={Boolean(acceptQuote)}
         onClose={() => {
-          if (!savingStatus && !registeringSaleQuoteId) {
-            setPrepareSaleQuote(null);
+          if (!savingStatus && !acceptingQuoteId) {
+            setAcceptQuote(null);
           }
         }}
         size="small"
         eyebrow="Cotizaciones"
-        title="Preparar venta"
+        title="Registrar aceptación"
         description={
-          prepareSaleQuote
-            ? `Se creará una venta en borrador a partir de la cotización ${getQuoteDisplayNumber(
-                prepareSaleQuote,
-                prepareSaleQuote.id || "-"
+          acceptQuote
+            ? `Confirma la aceptación comercial de la cotización ${getQuoteDisplayNumber(
+                acceptQuote,
+                acceptQuote.id || "-"
               )}.`
             : ""
         }
@@ -850,26 +798,26 @@ function QuoteHistoryPage({ userId, role }) {
             <Button
               type="button"
               variant="secondary"
-              disabled={savingStatus || Boolean(registeringSaleQuoteId)}
-              onClick={() => setPrepareSaleQuote(null)}
+              disabled={savingStatus || Boolean(acceptingQuoteId)}
+              onClick={() => setAcceptQuote(null)}
             >
               Cancelar
             </Button>
             <Button
               type="button"
-              disabled={savingStatus || Boolean(registeringSaleQuoteId)}
-              onClick={handleConfirmPrepareSale}
+              disabled={savingStatus || Boolean(acceptingQuoteId)}
+              onClick={handleConfirmAcceptance}
             >
-              {savingStatus || registeringSaleQuoteId
-                ? "Creando venta..."
-                : "Crear venta en borrador"}
+              {savingStatus || acceptingQuoteId
+                ? "Registrando..."
+                : "Registrar aceptación"}
             </Button>
           </div>
         }
       >
         <p style={styles.prepareSaleNotice}>
-          Podrás revisarla antes de confirmarla. El inventario no se descontará
-          todavía.
+          Al aceptar se registrará una venta confirmada y se actualizará el stock
+          disponible. Si falta stock, la aceptación se conservará con abastecimiento pendiente.
         </p>
       </ResponsiveDialog>
 
@@ -943,15 +891,14 @@ function QuoteCards({
   canDuplicate,
   disabled,
   duplicatingQuoteId,
-  onAcceptAndPrepareSale,
+  onAcceptQuote,
   onArchive,
   onChangeStatus,
   onDuplicate,
   onEditDraft,
-  onRegisterSale,
   onReopen,
   onRestore,
-  registeringSaleQuoteId,
+  acceptingQuoteId,
 }) {
   return (
     <div className="erp-card-list erp-mobile-only" aria-label="Cotizaciones">
@@ -1022,10 +969,9 @@ function QuoteCards({
                 canDuplicate={canDuplicate}
                 duplicating={duplicatingQuoteId === quote.id}
                 onDuplicate={onDuplicate}
-                onAcceptAndPrepareSale={onAcceptAndPrepareSale}
-                onRegisterSale={onRegisterSale}
+                onAcceptQuote={onAcceptQuote}
                 onReopen={onReopen}
-                registeringSale={registeringSaleQuoteId === quote.id}
+                accepting={acceptingQuoteId === quote.id}
               />
             </div>
           )}
@@ -1045,10 +991,9 @@ function QuoteActions({
   canDuplicate,
   duplicating,
   onDuplicate,
-  onAcceptAndPrepareSale,
-  onRegisterSale,
+  onAcceptQuote,
   onReopen,
-  registeringSale,
+  accepting,
 }) {
   const estado = quote.estado || "borrador";
   const duplicateMenuAction = canDuplicate && estado !== "borrador"
@@ -1125,16 +1070,14 @@ function QuoteActions({
       <>
         <button
           type="button"
-          onClick={() => onAcceptAndPrepareSale(quote)}
-          disabled={disabled || registeringSale}
+          onClick={() => onAcceptQuote(quote)}
+          disabled={disabled || accepting}
           style={styles.primaryButton}
         >
-          {registeringSale
-            ? "Preparando venta..."
-            : "Aceptar y preparar venta"}
+          {accepting ? "Registrando..." : "Aceptar cotización"}
         </button>
         <MoreActionsMenu
-          disabled={disabled || registeringSale}
+          disabled={disabled || accepting}
           actions={[
             {
               label: "Rechazar",
@@ -1155,19 +1098,8 @@ function QuoteActions({
   if (estado === "aceptada") {
     return (
       <>
-        {canDuplicate && !quote.ventaId && (
-          <button
-            type="button"
-            onClick={() => onRegisterSale(quote)}
-            disabled={disabled || registeringSale}
-            style={styles.primaryButton}
-            title="Crea una venta en borrador. Todavía no descuenta stock."
-          >
-            {registeringSale ? "Preparando venta..." : "Preparar venta"}
-          </button>
-        )}
         <MoreActionsMenu
-          disabled={disabled || registeringSale}
+          disabled={disabled}
           actions={[
             {
               label: "Reabrir propuesta",

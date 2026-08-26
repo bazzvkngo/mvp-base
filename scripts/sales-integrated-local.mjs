@@ -62,7 +62,7 @@ try {
     }, {merge: true}),
   ]);
   const clientId = `client-${RUN_ID}`; const crossClient = `cross-client-${RUN_ID}`;
-  const product = `product-${RUN_ID}`; const insufficient = `insufficient-${RUN_ID}`; const rollbackA = `rollback-a-${RUN_ID}`; const rollbackB = `rollback-b-${RUN_ID}`; const concurrent = `concurrent-${RUN_ID}`; const historical = `historical-${RUN_ID}`; const crossItem = `cross-item-${RUN_ID}`; const service = `service-${RUN_ID}`; const activity = `activity-${RUN_ID}`;
+  const product = `product-${RUN_ID}`; const insufficient = `insufficient-${RUN_ID}`; const cancelProduct = `cancel-product-${RUN_ID}`; const rollbackA = `rollback-a-${RUN_ID}`; const rollbackB = `rollback-b-${RUN_ID}`; const concurrent = `concurrent-${RUN_ID}`; const historical = `historical-${RUN_ID}`; const crossItem = `cross-item-${RUN_ID}`; const service = `service-${RUN_ID}`; const activity = `activity-${RUN_ID}`;
   const clientFixture = {clienteId: clientId, negocioId: businessId, estado: "activo", tipoCliente: "empresa", rut: "76.111.111-1", nombreRazonSocial: "Cliente Autoritativo SpA", email: "cliente@example.test"};
   const itemFixture = (itemId, tipoItem, nombre, stock) => ({itemId, negocioId: businessId, estado: "activo", tipoItem, nombre, codigoInterno: itemId.toUpperCase(), unidad: tipoItem === "producto" ? "unidad" : "servicio", precioInterno: 12500, ...(tipoItem === "producto" ? {stock} : {})});
   await Promise.all([
@@ -71,6 +71,7 @@ try {
     adminDb.doc(`negocios/${otherBusinessId}/clientes/${clientId}`).set({...clientFixture, negocioId: otherBusinessId}),
     adminDb.doc(`negocios/${businessId}/inventario/${product}`).set(itemFixture(product, "producto", "Notebook Lenovo ThinkPad E13", 10)),
     adminDb.doc(`negocios/${businessId}/inventario/${insufficient}`).set(itemFixture(insufficient, "producto", "Producto escaso", 2)),
+    adminDb.doc(`negocios/${businessId}/inventario/${cancelProduct}`).set(itemFixture(cancelProduct, "producto", "Producto cancelable", 5)),
     adminDb.doc(`negocios/${businessId}/inventario/${rollbackA}`).set(itemFixture(rollbackA, "producto", "Producto A", 8)),
     adminDb.doc(`negocios/${businessId}/inventario/${rollbackB}`).set(itemFixture(rollbackB, "producto", "Producto B", 3)),
     adminDb.doc(`negocios/${businessId}/inventario/${concurrent}`).set(itemFixture(concurrent, "producto", "Producto concurrente", 5)),
@@ -93,7 +94,8 @@ try {
   assert.equal(retryCreate.data.venta.id, created.data.venta.id); assert.equal(retryCreate.data.idempotent, true);
   const adminCreated = await call(admin, "crearVenta")({businessId, requestId: requestId("admin-create"), venta: payload(clientId, [line(service, "admin-service")])});
   assert.equal(adminCreated.data.venta.numero, "VTA-2026-0002");
-  const cancelled = await call(admin, "cancelarVentaBorrador")({businessId, ventaId: adminCreated.data.venta.id});
+  await expectCallableError("cancelación exige motivo", () => call(admin, "cancelarVentaBorrador")({businessId, ventaId: adminCreated.data.venta.id, requestId: requestId("cancel-no-reason")}), ["invalid-argument"]);
+  const cancelled = await call(admin, "cancelarVentaBorrador")({businessId, ventaId: adminCreated.data.venta.id, motivo: "Registro directo anulado por QA", requestId: requestId("cancel-direct")});
   assert.equal(cancelled.data.venta.estado, "cancelada");
   const otherCreated = await call(outsider, "crearVenta")({businessId: otherBusinessId, requestId: requestId("other-create"), venta: payload(clientId, [line(product, "other-product")])});
   assert.equal(otherCreated.data.venta.numero, "VTA-2026-0001");
@@ -126,30 +128,59 @@ try {
   assert.equal(concurrentResults.filter((entry) => entry.status === "fulfilled").length, 1); assert.equal(concurrentResults.filter((entry) => entry.status === "rejected").length, 1); assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${concurrent}`).get()).data().stock, 2);
   console.log("OK concurrencia: una venta confirma y la otra falla sin stock negativo");
 
-  const quoteId = `quote-${RUN_ID}`; const exemptQuoteId = `quote-exempt-${RUN_ID}`; const rejectedQuoteId = `quote-rejected-${RUN_ID}`;
-  const quoteItem = {lineaId: "quote-product", itemId: historical, cantidad: 2, precioUnitarioEditable: 9000, descuentoPorcentaje: 5, codigo: "HIST", nombre: "Producto histórico cotizado", tipoItem: "producto", unidad: "unidad", inventarioSnapshot: {inventarioId: historical, codigoInterno: "HIST", nombre: "Producto histórico cotizado", tipoItem: "producto", unidad: "unidad"}};
-  const quoteFixture = {quoteId, negocioId: businessId, numero: "COT-2026-0900", estado: "aceptada", clienteId: clientId, cliente: {...clientFixture, nombreRazonSocial: "Cliente histórico cotizado"}, empresaSnapshot: companyProfileA, items: [quoteItem], subtotal: 18000, descuentoItems: 900, descuento: 1100, descuentoTotal: 2000, neto: 16000, afectaIva: true, tasaIva: 0.19, iva: 3040, total: 19040, condiciones: {formaPago: "30 días", observaciones: "Histórico"}};
-  const exemptQuoteFixture = {...quoteFixture, quoteId: exemptQuoteId, numero: "COT-2026-0902", afectaIva: false, tasaIva: 0, iva: 0, total: 16000};
+  const quoteId = `quote-${RUN_ID}`; const exemptQuoteId = `quote-exempt-${RUN_ID}`; const rejectedQuoteId = `quote-rejected-${RUN_ID}`; const lowQuoteId = `quote-low-${RUN_ID}`; const cancelQuoteId = `quote-cancel-${RUN_ID}`; const legacyAcceptedQuoteId = `quote-historical-${RUN_ID}`;
+  const quoteItem = (itemId, lineaId, tipoItem, nombre, cantidad = 1) => ({lineaId, itemId, cantidad, precioUnitarioEditable: 9000, descuentoPorcentaje: 5, codigo: itemId.toUpperCase(), nombre, tipoItem, unidad: tipoItem === "producto" ? "unidad" : "servicio", inventarioSnapshot: {inventarioId: itemId, codigoInterno: itemId.toUpperCase(), nombre, tipoItem, unidad: tipoItem === "producto" ? "unidad" : "servicio"}});
+  const quoteFixture = {quoteId, negocioId: businessId, numero: "COT-2026-0900", estado: "emitida", clienteId: clientId, cliente: {...clientFixture, nombreRazonSocial: "Cliente histórico cotizado"}, empresaSnapshot: companyProfileA, items: [quoteItem(historical, "quote-product", "producto", "Producto histórico cotizado", 2)], descuento: 1100, afectaIva: true, tasaIva: 0.19, condiciones: {formaPago: "30 días", observaciones: "Histórico"}};
+  const exemptQuoteFixture = {...quoteFixture, quoteId: exemptQuoteId, numero: "COT-2026-0902", items: [quoteItem(service, "quote-service", "servicio", "Servicio histórico", 2)], afectaIva: false, descuento: 0};
   delete exemptQuoteFixture.empresaSnapshot;
-  await Promise.all([adminDb.doc(`negocios/${businessId}/cotizaciones/${quoteId}`).set(quoteFixture), adminDb.doc(`negocios/${businessId}/cotizaciones/${exemptQuoteId}`).set(exemptQuoteFixture), adminDb.doc(`negocios/${businessId}/cotizaciones/${rejectedQuoteId}`).set({...quoteFixture, quoteId: rejectedQuoteId, numero: "COT-2026-0901", estado: "rechazada"})]);
+  const lowQuoteFixture = {...quoteFixture, quoteId: lowQuoteId, numero: "COT-2026-0903", items: [quoteItem(insufficient, "quote-low", "producto", "Producto escaso", 3)], descuento: 0};
+  const cancelQuoteFixture = {...quoteFixture, quoteId: cancelQuoteId, numero: "COT-2026-0904", items: [quoteItem(cancelProduct, "quote-cancel", "producto", "Producto cancelable", 3)], descuento: 0};
+  await Promise.all([
+    adminDb.doc(`negocios/${businessId}/cotizaciones/${quoteId}`).set(quoteFixture),
+    adminDb.doc(`negocios/${businessId}/cotizaciones/${exemptQuoteId}`).set(exemptQuoteFixture),
+    adminDb.doc(`negocios/${businessId}/cotizaciones/${lowQuoteId}`).set(lowQuoteFixture),
+    adminDb.doc(`negocios/${businessId}/cotizaciones/${cancelQuoteId}`).set(cancelQuoteFixture),
+    adminDb.doc(`negocios/${businessId}/cotizaciones/${rejectedQuoteId}`).set({...quoteFixture, quoteId: rejectedQuoteId, numero: "COT-2026-0901", estado: "rechazada"}),
+    adminDb.doc(`negocios/${businessId}/cotizaciones/${legacyAcceptedQuoteId}`).set({...exemptQuoteFixture, quoteId: legacyAcceptedQuoteId, numero: "COT-2026-0905", estado: "aceptada"}),
+  ]);
+  await expectCallableError("MEMBER no registra aceptación", () => call(member, "transitionQuoteStatus")({businessId, quoteId, estado: "aceptada", requestId: requestId("member-accept")}), ["permission-denied"]);
+  const acceptanceId = requestId("quote-accept");
+  const accepted = await call(owner, "transitionQuoteStatus")({businessId, quoteId, estado: "aceptada", requestId: acceptanceId});
+  const acceptedSaleId = accepted.data.quoteStatus.ventaId;
+  const acceptedSale = (await adminDb.doc(`negocios/${businessId}/ventas/${acceptedSaleId}`).get()).data();
+  assert.equal(acceptedSale.estado, "confirmada"); assert.notEqual(acceptedSale.estado, "borrador"); assert.equal(acceptedSale.cotizacionId, quoteId); assert.equal(acceptedSale.clienteSnapshot.nombreRazonSocial, "Cliente histórico cotizado"); assert.equal(acceptedSale.items[0].nombre, "Producto histórico cotizado"); assert.equal(acceptedSale.empresaSnapshot.razonSocial, companyProfileA.razonSocial); assert.equal(acceptedSale.origenAceptacion, "aceptacion_manual"); assert.ok(acceptedSale.aceptadaEn);
+  assert.deepEqual([acceptedSale.subtotal, acceptedSale.descuentoItems, acceptedSale.descuento, acceptedSale.descuentoTotal, acceptedSale.neto, acceptedSale.iva, acceptedSale.total], [18000, 900, 1100, 2000, 16000, 3040, 19040]); assert.equal(acceptedSale.condicionesPago, "30 días"); assert.equal(acceptedSale.observaciones, "Histórico");
+  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${historical}`).get()).data().stock, 2);
+  const acceptedRetry = await call(owner, "transitionQuoteStatus")({businessId, quoteId, estado: "aceptada", requestId: acceptanceId});
+  const acceptedOtherRetry = await call(owner, "transitionQuoteStatus")({businessId, quoteId, estado: "aceptada", requestId: requestId("quote-accept-other")});
+  assert.equal(acceptedRetry.data.quoteStatus.ventaId, acceptedSaleId); assert.equal(acceptedOtherRetry.data.quoteStatus.ventaId, acceptedSaleId); assert.equal((await adminDb.collection(`negocios/${businessId}/ventas`).where("cotizacionId", "==", quoteId).get()).size, 1); assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${historical}`).get()).data().stock, 2);
+  const immutablePayload = payload(clientId, [line(historical, "quote-product")], {cotizacionId: quoteId});
+  await expectCallableError("venta automática no vuelve a edición", () => call(owner, "actualizarVentaBorrador")({businessId, ventaId: acceptedSaleId, venta: immutablePayload}));
+  console.log("OK aceptación manual: venta confirmada única, snapshots, vínculo, stock e idempotencia");
+
+  const exemptAccepted = await call(owner, "transitionQuoteStatus")({businessId, quoteId: exemptQuoteId, estado: "aceptada", requestId: requestId("quote-service-accept")});
+  const exemptSale = (await adminDb.doc(`negocios/${businessId}/ventas/${exemptAccepted.data.quoteStatus.ventaId}`).get()).data();
+  assert.equal(exemptSale.estado, "confirmada"); assert.equal(exemptSale.estadoStock, "no_aplica"); assert.equal(exemptSale.stockAplicado, true); assert.equal(exemptSale.iva, 0); assert.equal(exemptSale.empresaSnapshot.razonSocial, companyProfileB.razonSocial); assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${service}`).get()).data().stock, undefined);
+  console.log("OK servicio aceptado: venta confirmada sin movimiento de stock");
+
+  const lowAccepted = await call(owner, "transitionQuoteStatus")({businessId, quoteId: lowQuoteId, estado: "aceptada", requestId: requestId("quote-low-accept")});
+  const lowAcceptedSale = (await adminDb.doc(`negocios/${businessId}/ventas/${lowAccepted.data.quoteStatus.ventaId}`).get()).data();
+  assert.equal(lowAcceptedSale.estado, "confirmada"); assert.equal(lowAcceptedSale.estadoStock, "parcial_pendiente"); assert.equal(lowAcceptedSale.alertasStock[0].faltante, 1); assert.equal(lowAcceptedSale.efectosInventario[0].cantidad, 2); assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${insufficient}`).get()).data().stock, 0); assert.equal((await adminDb.doc(`negocios/${businessId}/cotizaciones/${lowQuoteId}`).get()).data().estado, "aceptada");
+  console.log("OK stock insuficiente: aceptación preservada, stock no negativo y abastecimiento pendiente");
+
+  const cancelAccepted = await call(owner, "transitionQuoteStatus")({businessId, quoteId: cancelQuoteId, estado: "aceptada", requestId: requestId("quote-cancel-accept")});
+  const cancelSaleId = cancelAccepted.data.quoteStatus.ventaId; assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${cancelProduct}`).get()).data().stock, 2);
+  await expectCallableError("cancelación activa exige motivo", () => call(owner, "cancelarVenta")({businessId, ventaId: cancelSaleId, requestId: requestId("quote-cancel-no-reason")}), ["invalid-argument"]);
+  const cancelId = requestId("quote-cancel"); const cancelPayload = {businessId, ventaId: cancelSaleId, motivo: "Cliente desistió después de aceptar", requestId: cancelId};
+  const canceledSale = await call(owner, "cancelarVenta")(cancelPayload); const canceledRetry = await call(owner, "cancelarVenta")(cancelPayload); const canceledOtherRetry = await call(owner, "cancelarVenta")({...cancelPayload, requestId: requestId("quote-cancel-other")});
+  assert.equal(canceledSale.data.venta.estado, "cancelada"); assert.equal(canceledRetry.data.idempotent, true); assert.equal(canceledOtherRetry.data.idempotent, true); assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${cancelProduct}`).get()).data().stock, 5); assert.equal((await adminDb.doc(`negocios/${businessId}/ventas/${cancelSaleId}`).get()).data().estado, "cancelada"); const canceledQuote = (await adminDb.doc(`negocios/${businessId}/cotizaciones/${cancelQuoteId}`).get()).data(); assert.equal(canceledQuote.estado, "aceptada"); assert.equal(canceledQuote.ventaEstado, "cancelada"); assert.ok((await adminDb.doc(`negocios/${businessId}/ventas/${cancelSaleId}/eventos/cancelacion__${cancelId}`).get()).exists); assert.equal((await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("ventaId", "==", cancelSaleId).where("tipo", "==", "entrada_cancelacion_venta").get()).size, 1);
+  console.log("OK cancelación: motivo, historial, venta persistente y reversa exacta una sola vez");
+
   await expectCallableError("cotización no elegible", () => call(owner, "crearVentaDesdeCotizacion")({businessId, cotizacionId: rejectedQuoteId, requestId: requestId("rejected-quote")}));
+  const historicalConversion = await call(owner, "crearVentaDesdeCotizacion")({businessId, cotizacionId: legacyAcceptedQuoteId, requestId: requestId("historical-quote")}); assert.equal(historicalConversion.data.venta.estado, "confirmada"); assert.notEqual(historicalConversion.data.venta.estado, "borrador");
   await expectCallableError("cotización cross-business", () => call(outsider, "crearVentaDesdeCotizacion")({businessId: otherBusinessId, cotizacionId: quoteId, requestId: requestId("cross-quote")}), ["not-found", "permission-denied"]);
-  const conversionId = requestId("quote-convert"); const converted = await call(owner, "crearVentaDesdeCotizacion")({businessId, cotizacionId: quoteId, requestId: conversionId}); assert.equal(converted.data.venta.cotizacionId, quoteId); assert.equal(converted.data.venta.clienteSnapshot.nombreRazonSocial, "Cliente histórico cotizado"); assert.equal(converted.data.venta.items[0].nombre, "Producto histórico cotizado");
-  assert.equal(converted.data.venta.empresaSnapshot.razonSocial, companyProfileA.razonSocial);
-  for (const field of ["subtotal", "descuentoItems", "descuento", "descuentoTotal", "neto", "afectaIva", "tasaIva", "iva", "total"]) assert.equal(converted.data.venta[field], quoteFixture[field], `conversión afecta: ${field}`);
-  const exemptConverted = await call(owner, "crearVentaDesdeCotizacion")({businessId, cotizacionId: exemptQuoteId, requestId: requestId("quote-exempt")});
-  for (const field of ["subtotal", "descuentoItems", "descuento", "descuentoTotal", "neto", "afectaIva", "tasaIva", "iva", "total"]) assert.equal(exemptConverted.data.venta[field], exemptQuoteFixture[field], `conversión exenta: ${field}`);
-  assert.equal(exemptConverted.data.venta.iva, 0);
-  assert.equal(exemptConverted.data.venta.empresaSnapshot.razonSocial, companyProfileB.razonSocial);
-  assert.equal((await adminDb.doc(`negocios/${businessId}/cotizaciones/${quoteId}`).get()).data().total, quoteFixture.total);
-  console.log("OK conversión tributaria: descuentos y totales idénticos en cotizaciones afectas y exentas");
-  const conversionRetry = await call(owner, "crearVentaDesdeCotizacion")({businessId, cotizacionId: quoteId, requestId: conversionId}); const conversionOther = await call(owner, "crearVentaDesdeCotizacion")({businessId, cotizacionId: quoteId, requestId: requestId("quote-convert-other")}); assert.equal(conversionRetry.data.venta.id, converted.data.venta.id); assert.equal(conversionOther.data.venta.id, converted.data.venta.id); assert.equal((await adminDb.collection(`negocios/${businessId}/ventas`).where("cotizacionId", "==", quoteId).get()).size, 1);
-  const editable = {clienteId: clientId, fechaVenta: "2026-08-07", fechaDocumento: "", tipoDocumento: "sin_documento", numeroDocumento: "", condicionesPago: "45 días", observaciones: "Ajustada", items: [{lineaId: "quote-product", itemId: historical, cantidad: 1, precioUnitario: 8500, descuentoPct: 0}]};
-  await call(owner, "actualizarVentaBorrador")({businessId, ventaId: converted.data.venta.id, venta: editable});
-  await expectCallableError("cantidad supera cotización", () => call(owner, "actualizarVentaBorrador")({businessId, ventaId: converted.data.venta.id, venta: {...editable, items: [{...editable.items[0], cantidad: 3}]}}));
-  await expectCallableError("referencia de cotización bloqueada", () => call(owner, "actualizarVentaBorrador")({businessId, ventaId: converted.data.venta.id, venta: {...editable, items: [{...editable.items[0], itemId: product}]}}));
-  await adminDb.doc(`negocios/${businessId}/clientes/${clientId}`).update({estado: "archivado"}); const quoteConfirmed = await call(owner, "confirmarVenta")({businessId, ventaId: converted.data.venta.id, requestId: requestId("quote-confirm")}); assert.equal(quoteConfirmed.data.venta.estado, "confirmada"); assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${historical}`).get()).data().stock, 3); await adminDb.doc(`negocios/${businessId}/clientes/${clientId}`).update({estado: "activo"});
-  console.log("OK cotización aceptada: conversión única, snapshot histórico, referencias bloqueadas y producto archivado permitido");
+  assert.equal((await getDoc(doc(member.db, `negocios/${businessId}/ventas/${low.data.venta.id}`))).data().estado, "borrador");
+  console.log("OK históricos: venta preparada existente legible y conversión compatible ya no crea preparada");
 
   await expectDenied("escritura directa de venta", () => setDoc(doc(owner.db, `negocios/${businessId}/ventas/sdk-write`), {negocioId: businessId}));
   await expectDenied("escritura directa de movimiento", () => setDoc(doc(owner.db, `negocios/${businessId}/movimientosInventario/sdk-write`), {negocioId: businessId}));

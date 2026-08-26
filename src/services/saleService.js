@@ -73,7 +73,11 @@ export const confirmarVenta = (value, ventaId, options = {}) => call("confirmarV
   requestId: options.requestId || createSaleRequestId("sale-confirm"),
 }, "No pudimos confirmar la venta.");
 
-export const cancelarVentaBorrador = (value, ventaId) => call("cancelarVentaBorrador", {
+export const cancelarVenta = (value, ventaId, motivo, options = {}) => call("cancelarVenta", {
   businessId: businessId(value),
   ventaId: requireVentaId(ventaId),
+  motivo: String(motivo || "").trim(),
+  requestId: options.requestId || createSaleRequestId("sale-cancel"),
 }, "No pudimos cancelar la venta.");
+
+export const cancelarVentaBorrador = cancelarVenta;

@@ -254,6 +254,15 @@ async function createProposalFixture(
 
 {
   const { db, quotePath, rawToken } = await createProposalFixture();
+  const inventoryPath = "negocios/business-1/inventario/inventory-secret";
+  db.store.set(inventoryPath, {
+    negocioId: "business-1",
+    itemId: "inventory-secret",
+    tipoItem: "producto",
+    estado: "activo",
+    nombre: "Servicio comercial",
+    stock: 5,
+  });
   const dependencies = {
     db,
     FieldValue,
@@ -265,12 +274,26 @@ async function createProposalFixture(
     dependencies
   );
   assert.equal(accepted.estado, "aceptada");
+  assert.ok(accepted.ventaId);
   assert.equal(db.read(quotePath).respuestaClienteOrigen, "portal_publico");
+  assert.equal(db.read(quotePath).ventaId, accepted.ventaId);
+  const publicSalePath = `negocios/business-1/ventas/${accepted.ventaId}`;
+  assert.equal(db.read(publicSalePath).estado, "confirmada");
+  assert.equal(db.read(publicSalePath).origenAceptacion, "portal_publico");
+  assert.equal(db.read(inventoryPath).stock, 4);
   const repeated = await respondPublicQuoteProposalHandler(
     { data: { token: rawToken, action: "accept" } },
     dependencies
   );
   assert.equal(repeated.idempotent, true);
+  assert.equal(repeated.ventaId, accepted.ventaId);
+  assert.equal(db.read(inventoryPath).stock, 4);
+  assert.equal(
+    [...db.store.keys()].filter((path) =>
+      path.startsWith("negocios/business-1/ventas/") && path.split("/").length === 4
+    ).length,
+    1
+  );
   await assert.rejects(
     respondPublicQuoteProposalHandler(
       { data: { token: rawToken, action: "reject", motivo: "precio" } },
@@ -855,6 +878,44 @@ assert.equal(
   );
 }
 
+{
+  const quotePath = "negocios/business-1/cotizaciones/quote-manual-accept";
+  const inventoryPath = "negocios/business-1/inventario/inventory-secret";
+  const db = createFakeDb([
+    ...verifiedBusinessEntries(),
+    [quotePath, quoteFixture()],
+    [inventoryPath, {negocioId: "business-1", itemId: "inventory-secret", tipoItem: "producto", estado: "activo", nombre: "Producto", stock: 2}],
+  ]);
+  const businessRef = db.collection("negocios").doc("business-1");
+  const transitionRequest = {
+    auth: {uid: "owner-1"},
+    data: {
+      quoteId: "quote-manual-accept",
+      estado: "aceptada",
+      requestId: "quote-manual-accept-0001",
+    },
+  };
+  const dependencies = {
+    buildQuoteEmissionPatch,
+    FieldValue,
+    HttpsError: TestHttpsError,
+    now: () => now.getTime(),
+    requireBusinessAccess: async () => ({
+      businessId: "business-1",
+      businessRef,
+      membership: {nombre: "Owner QA", correo: "owner@example.test"},
+      uid: "owner-1",
+    }),
+  };
+  const accepted = await transitionQuoteStatusHandler(transitionRequest, dependencies);
+  const retry = await transitionQuoteStatusHandler(transitionRequest, dependencies);
+  assert.equal(accepted.quoteStatus.estado, "aceptada");
+  assert.ok(accepted.quoteStatus.ventaId);
+  assert.equal(retry.quoteStatus.ventaId, accepted.quoteStatus.ventaId);
+  assert.equal(db.read(`negocios/business-1/ventas/${accepted.quoteStatus.ventaId}`).estado, "confirmada");
+  assert.equal(db.read(inventoryPath).stock, 1);
+}
+
 const sanitized = sanitizePublicQuote(quoteFixture());
 assert.equal(sanitized.total, 1190);
 assert.equal(sanitized.items[0].precioUnitarioEditable, 1000);
@@ -869,6 +930,9 @@ const publicPageSource = fs.readFileSync(
 const quoteServiceSource = fs.readFileSync("src/services/quoteService.js", "utf8");
 const rulesSource = fs.readFileSync("firestore.rules", "utf8");
 const indexes = JSON.parse(fs.readFileSync("firestore.indexes.json", "utf8"));
+assert.match(historySource, /Aceptar cotización/);
+assert.match(historySource, /Registrar aceptación/);
+assert.doesNotMatch(historySource, /Aceptar y preparar venta|Crear venta en borrador|Preparar venta/);
 assert.ok(
   appSource.indexOf('/propuesta/:token') < appSource.indexOf("if (!usuario)"),
   "La ruta pública debe resolverse antes del guard de autenticación"

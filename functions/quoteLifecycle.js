@@ -4,6 +4,7 @@ const {
   linkedWorkFields,
   writeQuoteResponseEvent,
 } = require("./workPersistence");
+const {createConfirmedSaleFromQuoteInTransaction} = require("./salePersistence");
 const QUOTE_STATUSES = new Set([
   "borrador",
   "emitida",
@@ -106,7 +107,7 @@ async function transitionQuoteStatusHandler(request, dependencies) {
   if (!request?.auth?.uid) {
     throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
   }
-  const {businessId, businessRef, uid} = await requireBusinessAccess(
+  const {businessId, businessRef, membership, uid} = await requireBusinessAccess(
     request,
     dependencies,
     {roles: SALES_WRITE_ROLES, requiresVerifiedBusiness: true}
@@ -162,8 +163,33 @@ async function transitionQuoteStatusHandler(request, dependencies) {
     const previousStatus = safeText(quote.estado, 30) || "borrador";
     assertTransitionAllowed(quote, targetStatus, HttpsError);
     if (previousStatus === targetStatus) {
-      result = {estado: targetStatus, idempotent: true};
+      result = {
+        estado: targetStatus,
+        ...(quote.ventaId ? {
+          ventaId: quote.ventaId,
+          ventaNumero: quote.ventaNumero || "",
+          ventaEstado: quote.ventaEstado || "confirmada",
+        } : {}),
+        idempotent: true,
+      };
     } else {
+      const acceptedSale = targetStatus === "aceptada"
+        ? await createConfirmedSaleFromQuoteInTransaction({
+            actor: {
+              uid,
+              nombre: membership?.nombre || membership?.correo || "Persona del equipo",
+              correo: membership?.correo || "",
+              origen: "aceptacion_manual",
+            },
+            businessId,
+            businessRef,
+            clock: transitionNow,
+            dependencies,
+            quote,
+            quoteId,
+            transaction,
+          })
+        : null;
       const patch = targetStatus === "emitida"
         ? buildQuoteEmissionPatch({
             channel: "manual",
@@ -176,6 +202,7 @@ async function transitionQuoteStatusHandler(request, dependencies) {
       if (targetStatus === "archivada") patch.estadoAnterior = previousStatus;
       transaction.update(quoteRef, {
         ...patch,
+        ...(acceptedSale?.quotePatch || {}),
         actualizadoEn: FieldValue.serverTimestamp(),
       });
       transaction.create(eventRef, buildQuoteEvent({
@@ -203,6 +230,13 @@ async function transitionQuoteStatusHandler(request, dependencies) {
       }
       result = {
         estado: targetStatus,
+        ...(acceptedSale ? {
+          ventaId: acceptedSale.sale.id,
+          ventaNumero: acceptedSale.sale.numero,
+          ventaEstado: acceptedSale.sale.estado,
+          estadoStock: acceptedSale.sale.estadoStock,
+          alertasStock: acceptedSale.sale.alertasStock,
+        } : {}),
         ...(patch.estadoAnterior ? {estadoAnterior: patch.estadoAnterior} : {}),
         ...(patch.canalEmision ? {
           canalEmision: patch.canalEmision,

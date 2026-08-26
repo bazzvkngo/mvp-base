@@ -2223,6 +2223,11 @@ exports.cancelarVentaBorrador = onCall(
   async (request) => cancelarVentaBorradorHandler(request, salePersistenceDependencies)
 );
 
+exports.cancelarVenta = onCall(
+  {maxInstances: 20, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => cancelarVentaBorradorHandler(request, salePersistenceDependencies)
+);
+
 const clientPersistenceDependencies = {
   db,
   HttpsError,

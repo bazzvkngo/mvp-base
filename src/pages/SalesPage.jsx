@@ -1,35 +1,19 @@
 import React, {useEffect, useMemo, useState} from "react";
-import {Ellipsis, Plus, Search} from "lucide-react";
+import {Plus, Search} from "lucide-react";
 import {useNavigate} from "react-router-dom";
-import {sileo} from "sileo";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
-import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import {
   canManageSales,
-  getSaleDocumentTypeLabel,
   getSaleStatusLabel,
+  getSaleStockStatusLabel,
   matchesSaleSearch,
 } from "../domain/saleModel.mjs";
-import {cancelarVentaBorrador, listarVentas} from "../services/saleService";
+import {listarVentas} from "../services/saleService";
 import {formatDate, formatMoney} from "../utils/formatters";
 import "../features/sales/sales.css";
 
 const money = (value, document) => formatMoney(value, document?.moneda, document?.locale);
-
-function Actions({canManage, onAction, processing, sale}) {
-  const prepared = sale.estado === "borrador" && canManage;
-  if (!prepared) return <span className="sale-history-no-actions">—</span>;
-
-  return (
-    <div className="po-history__actions sale-history-actions">
-      <details className="sale-more-actions sale-more-actions--history">
-        <summary><span>Más acciones</span><AppIcon icon={Ellipsis} size={17} /></summary>
-        <button type="button" disabled={processing} onClick={() => onAction(sale)}>Cancelar venta</button>
-      </details>
-    </div>
-  );
-}
 
 export default function SalesPage({businessId, role}) {
   const navigate = useNavigate();
@@ -39,20 +23,7 @@ export default function SalesPage({businessId, role}) {
   const [origin, setOrigin] = useState("todos");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
-  const [processing, setProcessing] = useState("");
-  const [actionTarget, setActionTarget] = useState(null);
   const canManage = canManageSales(role);
-
-  const load = async () => {
-    setLoading(true);
-    try {
-      setItems(await listarVentas(businessId));
-    } catch (error) {
-      setMessage(error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   useEffect(() => {
     let active = true;
@@ -70,24 +41,6 @@ export default function SalesPage({businessId, role}) {
     && matchesSaleSearch(item, search)
   )), [items, origin, search, status]);
 
-  const action = async () => {
-    if (!actionTarget) return;
-    const sale = actionTarget;
-    setProcessing(sale.id);
-    setMessage("");
-    try {
-      await cancelarVentaBorrador(businessId, sale.id);
-      sileo.success({title: "Venta cancelada", description: `${sale.numero} quedó cancelada.`});
-      setActionTarget(null);
-      await load();
-    } catch (error) {
-      setMessage(error.message);
-      sileo.error({title: "No se pudo cancelar la venta", description: error.message});
-    } finally {
-      setProcessing("");
-    }
-  };
-
   const open = (sale) => navigate(sale.estado === "borrador" && canManage ? `/ventas/${sale.id}/editar` : `/ventas/${sale.id}`);
   const openOriginQuote = (sale) => navigate(`/cotizaciones/${sale.cotizacionId}/editar`);
 
@@ -95,7 +48,7 @@ export default function SalesPage({businessId, role}) {
     <main className="erp-page po-history sale-history">
       <div className="erp-module-intro">
         <div className="erp-page-intro">
-          <p>Administra ventas preparadas, confirmadas y canceladas del negocio.</p>
+            <p>Consulta el historial de ventas directas y originadas desde cotizaciones.</p>
         </div>
         {canManage && <Button type="button" icon={Plus} onClick={() => navigate("/ventas/nueva")}>Nueva venta</Button>}
       </div>
@@ -132,17 +85,17 @@ export default function SalesPage({businessId, role}) {
           <>
           <section className="erp-table-region po-history__desktop">
             <table className="erp-table clients-table po-history__table sale-history-table">
-              <thead><tr><th>Número</th><th>Cliente</th><th>Documento</th><th>Total</th><th>Origen</th><th>Estado</th><th>Acciones</th></tr></thead>
+              <thead><tr><th>Número</th><th>Cliente</th><th>Total</th><th>Origen</th><th>Estado</th><th>Stock</th><th>Fecha</th></tr></thead>
               <tbody>
                 {filtered.map((sale) => (
                   <tr key={sale.id}>
-                    <td><div className="sale-history-number"><button type="button" className="sale-history-link" onClick={() => open(sale)}>{sale.numero}</button><small className="clients-table__secondary">{formatDate(sale.fechaVenta)}</small></div></td>
+                    <td><div className="sale-history-number"><button type="button" className="sale-history-link" onClick={() => open(sale)}>{sale.numero}</button></div></td>
                     <td><strong className="clients-table__name">{sale.clienteSnapshot.nombreRazonSocial}</strong><small className="clients-table__secondary">{sale.clienteSnapshot.rut}</small></td>
-                    <td>{getSaleDocumentTypeLabel(sale.tipoDocumento)}{sale.tipoDocumento !== "sin_documento" && <small>{sale.numeroDocumento || "Sin número"}</small>}</td>
                     <td className="sale-history-total">{money(sale.total, sale)}</td>
                     <td>{sale.cotizacionId ? <button type="button" className="sale-history-link sale-origin-link" onClick={() => openOriginQuote(sale)}>{sale.cotizacionNumero || "Ver cotización"}</button> : "Directa"}</td>
                     <td><span className={`po-status po-status--${sale.estado}`}>{getSaleStatusLabel(sale.estado)}</span></td>
-                    <td><Actions canManage={canManage} onAction={setActionTarget} processing={processing === sale.id} sale={sale} /></td>
+                    <td>{getSaleStockStatusLabel(sale.estadoStock, sale)}</td>
+                    <td>{formatDate(sale.fechaVenta)}</td>
                   </tr>
                 ))}
                 {!filtered.length && <tr><td colSpan="7" className="po-history__empty">No hay ventas coincidentes.</td></tr>}
@@ -158,8 +111,7 @@ export default function SalesPage({businessId, role}) {
                   <span className={`po-status po-status--${sale.estado}`}>{getSaleStatusLabel(sale.estado)}</span>
                 </header>
                 <div className="po-history-card__provider"><strong>{sale.clienteSnapshot.nombreRazonSocial}</strong><span>{sale.clienteSnapshot.rut || "Sin RUT"}</span></div>
-                <dl><div><dt>Total</dt><dd>{money(sale.total)}</dd></div><div><dt>Documento</dt><dd>{sale.tipoDocumento === "sin_documento" ? "Sin documento" : sale.numeroDocumento || getSaleDocumentTypeLabel(sale.tipoDocumento)}</dd></div><div><dt>Origen</dt><dd>{sale.cotizacionId ? <button type="button" className="sale-history-link sale-origin-link" onClick={() => openOriginQuote(sale)}>{sale.cotizacionNumero || "Ver cotización"}</button> : "Directa"}</dd></div></dl>
-                <Actions canManage={canManage} onAction={setActionTarget} processing={processing === sale.id} sale={sale} />
+                <dl><div><dt>Total</dt><dd>{money(sale.total, sale)}</dd></div><div><dt>Origen</dt><dd>{sale.cotizacionId ? <button type="button" className="sale-history-link sale-origin-link" onClick={() => openOriginQuote(sale)}>{sale.cotizacionNumero || "Ver cotización"}</button> : "Directa"}</dd></div><div><dt>Stock</dt><dd>{getSaleStockStatusLabel(sale.estadoStock, sale)}</dd></div><div><dt>Fecha</dt><dd>{formatDate(sale.fechaVenta)}</dd></div></dl>
               </article>
             ))}
             {!filtered.length && <div className="po-history__cards-empty">No hay ventas coincidentes.</div>}
@@ -167,18 +119,6 @@ export default function SalesPage({businessId, role}) {
           </>
         )}
       </section>
-
-      <ResponsiveDialog
-        open={Boolean(actionTarget)}
-        onClose={() => !processing && setActionTarget(null)}
-        eyebrow="Más acciones"
-        title="Cancelar venta"
-        description="La venta preparada quedará cancelada y ya no podrá editarse."
-        size="small"
-        footer={<><button type="button" className="po-button po-button--secondary" disabled={Boolean(processing)} onClick={() => setActionTarget(null)}>Volver</button><button type="button" className="po-button po-button--danger" disabled={Boolean(processing)} onClick={action}>{processing ? "Cancelando..." : "Cancelar venta"}</button></>}
-      >
-        <p className="sale-dialog-copy">Esta acción no descuenta stock.</p>
-      </ResponsiveDialog>
     </main>
   );
 }
