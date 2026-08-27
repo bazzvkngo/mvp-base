@@ -41,6 +41,19 @@ Una cotización histórica sin `clienteId`:
 - puede guardarse como borrador sin inferir coincidencias por nombre o RUT;
 - solo pasa al contrato vinculado cuando el usuario selecciona explícitamente un cliente registrado.
 
+# Documento comercial V2
+
+La vista previa, impresión y PDF comparten la misma jerarquía documental: identidad
+de la empresa, identificación y vigencia de la cotización, snapshot del cliente,
+proyecto cuando existe, detalle valorizado, totales, alcance y condiciones. Las
+columnas de código, unidad y descuento solo aparecen cuando aportan información.
+
+El documento usa exclusivamente snapshots históricos ya almacenados de empresa,
+cliente, ítems, moneda, precios, descuentos, impuestos y condiciones. La tasa y el
+nombre del impuesto se presentan desde ese snapshot, sin asumir una tasa fija. Las
+acciones operativas y la aceptación pública permanecen fuera de la hoja comercial;
+el rediseño no modifica estados, transiciones, stock ni creación automática de venta.
+
 # Duplicación de documentos históricos
 
 Una cotización que ya no es editable directamente puede duplicarse como un borrador independiente. La operación sigue el flujo:

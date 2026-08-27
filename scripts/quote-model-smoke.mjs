@@ -425,6 +425,10 @@ const sourceHistory = fs.readFileSync("src/pages/QuoteHistoryPage.jsx", "utf8");
 const sourceQuoteService = fs.readFileSync("src/services/quoteService.js", "utf8");
 const sourceQuotePersistence = fs.readFileSync("functions/quotePersistence.js", "utf8");
 const sourceQuoteDocument = fs.readFileSync("src/domain/quoteDocument.mjs", "utf8");
+const sourceQuotePrintView = fs.readFileSync(
+  "src/features/quotes/QuotePrintView.jsx",
+  "utf8"
+);
 const sourceDashboard = fs.readFileSync("src/pages/DashboardPage.jsx", "utf8");
 const sourceCompanyService = fs.readFileSync("src/services/companyService.js", "utf8");
 const duplicateServiceSource = sourceQuoteService.slice(
@@ -501,8 +505,20 @@ assert.match(sourceQuotePersistence, /cotizacionOrigenId/);
 assert.match(sourceQuotePersistence, /storedQuote[\s\S]*estado:\s*"borrador"/);
 assert.doesNotMatch(sourceQuoteDocument, /borrador:\s*"Borrador"/);
 assert.match(sourceQuoteDocument, /getQuoteStatusLabel\(quote\.estado\)/);
+assert.match(sourceQuoteDocument, /showCode/);
+assert.match(sourceQuoteDocument, /showUnit/);
+assert.match(sourceQuoteDocument, /showDiscount/);
+assert.match(sourceQuoteDocument, /Condiciones de pago/);
+assert.doesNotMatch(sourceQuoteDocument, /19%/);
+assert.match(sourceQuotePrintView, /@page\{size:A4/);
+assert.match(sourceQuotePrintView, /showCode/);
+assert.match(sourceQuotePrintView, /showUnit/);
+assert.match(sourceQuotePrintView, /showDiscount/);
+assert.match(sourceQuotePrintView, /Estado comercial/);
+assert.doesNotMatch(sourceQuotePrintView, /19%/);
+assert.doesNotMatch(sourceQuotePrintView, /getDoc|getDocs|onSnapshot|listarClientes/);
 assert.match(sourceDashboard, /getQuoteStatusLabel\("borrador"\)/);
-console.log("OK integración: inventario v2 y PDF único para descarga, correo y compartir");
+console.log("OK documento: jerarquía común, columnas condicionales, impuesto dinámico y snapshots históricos");
 
 const outputDir = path.resolve("output/pdf/quote-validation");
 fs.mkdirSync(outputDir, { recursive: true });
@@ -523,9 +539,26 @@ const scenarios = [
   [
     "02-multiple-items",
     quoteFixture({
-      items: Array.from({ length: 9 }, (_, index) =>
-        item(index + 1, { precioUnitarioEditable: 45000 + index * 12500 })
-      ),
+      items: [
+        item(1, {
+          codigo: "PROD-0001",
+          nombre: "Cámara IP 4 MP",
+          tipoItem: "producto",
+          unidad: "unidad",
+          cantidad: 3,
+          precioUnitarioEditable: 125000,
+          descuentoPorcentaje: 8,
+        }),
+        item(2, {
+          nombre: "Instalación y configuración",
+          tipoItem: "servicio",
+          unidad: "servicio",
+          precioUnitarioEditable: 180000,
+        }),
+        ...Array.from({ length: 7 }, (_, index) =>
+          item(index + 3, { precioUnitarioEditable: 45000 + index * 12500 })
+        ),
+      ],
     }),
   ],
   [
@@ -578,6 +611,23 @@ const scenarios = [
       condiciones: { formaPago: company.condicionesPago },
       aceptacion: { habilitada: false, texto: "" },
     }),
+  ],
+  [
+    "07-multicurrency-tax-snapshot",
+    {
+      ...quoteFixture({
+        items: [item(1, { precioUnitarioEditable: 1250, descuentoPorcentaje: 5 })],
+      }),
+      moneda: "USD",
+      locale: "es-PE",
+      impuestoNombre: "IGV",
+      tasaIva: 0.18,
+      subtotal: 1250,
+      descuentoTotal: 62.5,
+      neto: 1187.5,
+      iva: 213.75,
+      total: 1401.25,
+    },
   ],
 ];
 
