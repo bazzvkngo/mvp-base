@@ -205,7 +205,7 @@ function FinancePage({ businessId, role }) {
 
       {!canManage && (
         <div className="financial-readonly-notice" role="status">
-          Tu rol MEMBER legacy conserva acceso de lectura. OWNER, ADMIN o FINANZAS gestionan movimientos.
+          Tu perfil conserva acceso de lectura. Los perfiles autorizados gestionan movimientos.
         </div>
       )}
       {feedback && <div className="financial-feedback" role="status">{feedback}</div>}

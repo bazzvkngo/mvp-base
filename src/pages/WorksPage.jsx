@@ -566,6 +566,6 @@ function WorkBalanceSection({balance, loading}) {
       <div><dt>Rentabilidad</dt><dd>{balance.rentabilidadPct == null ? "No disponible" : `${balance.rentabilidadPct.toLocaleString("es-CL", {maximumFractionDigits: 2})}%`}</dd></div>
     </dl>}
     {inconsistent && <div className="works-balance-breakdown">{balance.desglosePorMoneda.map((entry) => <article key={entry.moneda}><strong>{entry.moneda}</strong><span>Ingresos {formatMoney(entry.valorComercial, entry.moneda)} · costos {formatMoney(entry.costoTotal, entry.moneda)}</span></article>)}</div>}
-    <p className="works-financial-note">{balance.reglaMateriales === "INVENTARIO_AUTORITATIVO" ? `Inventario es la fuente de materiales; ${balance.fuentes.gastosMaterialExcluidos || 0} gasto(s) MATERIAL quedaron fuera para evitar doble imputación.` : "Sin libro de materiales: los gastos MATERIAL legacy permanecen como costo directo."}</p>
+    <p className="works-financial-note">{balance.reglaMateriales === "INVENTARIO_AUTORITATIVO" ? `Inventario es la fuente de materiales; ${balance.fuentes.gastosMaterialExcluidos || 0} gasto(s) MATERIAL quedaron fuera para evitar doble imputación.` : "Sin libro de materiales: los gastos MATERIAL históricos permanecen como costo directo."}</p>
   </section>;
 }

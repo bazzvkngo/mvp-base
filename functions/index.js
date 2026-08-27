@@ -134,6 +134,12 @@ const {
   listarMiembrosNegocioHandler,
 } = require("./businessMemberships");
 const {
+  actualizarPerfilEmpleadoHandler,
+  crearPerfilEmpleadoHandler,
+  eliminarPerfilEmpleadoHandler,
+  listarPerfilesEmpleadosHandler,
+} = require("./employeeProfiles");
+const {
   actualizarTrabajoHandler,
   actualizarSubtareaTrabajoHandler,
   agregarNotaTrabajoHandler,
@@ -4118,6 +4124,26 @@ exports.createInventoryItemWithCode = onCall(
   },
   async (request) =>
     createInventoryItemWithCodeHandler(request, inventoryModelDependencies)
+);
+
+exports.listarPerfilesEmpleados = onCall(
+  {maxInstances: 10, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => listarPerfilesEmpleadosHandler(request, businessMembershipDependencies)
+);
+
+exports.crearPerfilEmpleado = onCall(
+  {maxInstances: 10, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => crearPerfilEmpleadoHandler(request, businessMembershipDependencies)
+);
+
+exports.actualizarPerfilEmpleado = onCall(
+  {maxInstances: 10, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => actualizarPerfilEmpleadoHandler(request, businessMembershipDependencies)
+);
+
+exports.eliminarPerfilEmpleado = onCall(
+  {maxInstances: 10, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => eliminarPerfilEmpleadoHandler(request, businessMembershipDependencies)
 );
 
 exports.updateInventoryItem = onCall(

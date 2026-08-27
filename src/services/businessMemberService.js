@@ -22,10 +22,10 @@ export async function listarMiembrosNegocio(businessId) {
   return (response.data?.miembros || []).map(adaptBusinessMember);
 }
 
-export async function asociarUsuarioExistente(businessId, correo, rol) {
+export async function asociarUsuarioExistente(businessId, correo, rol, profileId = "") {
   const response = await call(
     "asociarUsuarioExistente",
-    {businessId, correo: normalizeBusinessMemberEmail(correo), rol},
+    {businessId, correo: normalizeBusinessMemberEmail(correo), rol, profileId},
     "asociar usuarios"
   );
   return response.data?.miembro || null;
@@ -34,12 +34,35 @@ export async function asociarUsuarioExistente(businessId, correo, rol) {
 export async function actualizarMembresiaNegocio(
   businessId,
   miembroUid,
-  {rol, estado}
+  {rol, estado, profileId = ""}
 ) {
   const response = await call(
     "actualizarMembresiaNegocio",
-    {businessId, miembroUid, rol, estado},
+    {businessId, miembroUid, rol, estado, profileId},
     "actualizar permisos"
   );
   return response.data?.miembro || null;
+}
+
+export async function listarPerfilesEmpleados(businessId) {
+  const response = await call("listarPerfilesEmpleados", {businessId}, "consultar perfiles");
+  return response.data?.perfiles || [];
+}
+
+export async function crearPerfilEmpleado(businessId, input) {
+  const response = await call("crearPerfilEmpleado", {businessId, ...input}, "crear perfiles");
+  return response.data?.perfil || null;
+}
+
+export async function actualizarPerfilEmpleado(businessId, profileId, input) {
+  const response = await call(
+    "actualizarPerfilEmpleado",
+    {businessId, profileId, ...input},
+    "actualizar perfiles"
+  );
+  return response.data?.perfil || null;
+}
+
+export async function eliminarPerfilEmpleado(businessId, profileId) {
+  return (await call("eliminarPerfilEmpleado", {businessId, profileId}, "eliminar perfiles")).data;
 }

@@ -465,6 +465,27 @@ function businessResponse(snapshot, membershipData = null) {
     email: data.email || "",
     estado: data.estado || "inactivo",
     role: membershipData?.rol || null,
+    profileId: membershipData?.profileId || "",
+    profileName: membershipData?.profileName || "",
+    modules: membershipData?.modules || [],
+  };
+}
+
+async function resolveMembershipProfile(db, membership = {}) {
+  const profileId = safeText(membership.profileId, 160);
+  if (!profileId) return {...membership, profileId: "", profileName: "", modules: []};
+  const snapshot = await db.collection("negocios").doc(membership.negocioId)
+    .collection("perfilesEmpleados").doc(profileId).get();
+  const profile = snapshot.data() || {};
+  if (!snapshot.exists || profile.negocioId !== membership.negocioId ||
+      profile.estado !== ACTIVE_STATUS) {
+    return {...membership, profileId, profileName: "", modules: []};
+  }
+  return {
+    ...membership,
+    profileId,
+    profileName: safeText(profile.nombre, 80),
+    modules: Array.isArray(profile.modulos) ? profile.modulos : [],
   };
 }
 
@@ -547,7 +568,7 @@ function sortBusinessEntries(left, right) {
 async function requireBusinessAccess(
   request,
   { db, HttpsError },
-  { roles = BUSINESS_ROLES, requiresVerifiedBusiness = false } = {}
+  { roles = BUSINESS_ROLES, requiresVerifiedBusiness = false, moduleId = "" } = {}
 ) {
   const uid = requireAuthenticatedUid(request, HttpsError);
   const businessId = safeText(request?.data?.businessId, 160);
@@ -567,7 +588,7 @@ async function requireBusinessAccess(
     userRef.get(),
     requiresVerifiedBusiness ? taxSettingsRef.get() : Promise.resolve(null),
   ]);
-  const membership = membershipSnapshot.data() || {};
+  let membership = membershipSnapshot.data() || {};
   assertPlatformUserActive(userSnapshot.data() || {}, HttpsError);
 
   if (
@@ -580,6 +601,13 @@ async function requireBusinessAccess(
     throw new HttpsError(
       "permission-denied",
       "No tienes acceso al negocio seleccionado."
+    );
+  }
+  membership = await resolveMembershipProfile(db, membership);
+  if (membership.profileId && moduleId && !membership.modules.includes(moduleId)) {
+    throw new HttpsError(
+      "permission-denied",
+      "Tu perfil no tiene acceso a este módulo."
     );
   }
   if (
@@ -1375,7 +1403,11 @@ async function getBusinessSessionHandler(
     )
     .sort(sortBusinessEntries);
 
-  const availableBusinesses = available.map(({ snapshot, membership }) =>
+  const resolvedAvailable = await Promise.all(available.map(async ({snapshot, membership}) => ({
+    snapshot,
+    membership: await resolveMembershipProfile(db, membership),
+  })));
+  const availableBusinesses = resolvedAvailable.map(({ snapshot, membership }) =>
     businessResponse(snapshot, membership)
   );
   const ownedBusinessCount = businessSnapshots.filter(
@@ -1384,10 +1416,10 @@ async function getBusinessSessionHandler(
       isAvailableBusinessSnapshot(snapshot)
   ).length;
 
-  const preferred = available.find(
+  const preferred = resolvedAvailable.find(
     ({ snapshot }) => snapshot.id === userData.negocioActivoId
   );
-  const selected = preferred || available[0] || null;
+  const selected = preferred || resolvedAvailable[0] || null;
 
   if (selected) {
     if (selected.snapshot.id !== userData.negocioActivoId) {

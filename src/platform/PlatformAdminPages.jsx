@@ -18,6 +18,7 @@ import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import StatusBadge from "../components/ui/StatusBadge";
 import {COUNTRIES, getCountryByCode} from "../domain/businessCatalog";
 import {formatFiscalIdentifierForDisplay} from "../domain/fiscalIdentifier.mjs";
+import {BUSINESS_ROLE_LABELS} from "../domain/rbac.mjs";
 import {
   createPlatformRequestId,
   getPlatformBusiness,
@@ -363,7 +364,7 @@ export function PlatformBusinessDetailPage() {
         <Button variant="danger" disabled={working || !rejectionReason.trim()} onClick={() => run("reject_verification", (requestId) => resolvePlatformVerification({businessId, solicitudId: solicitudActual.id, decision: "RECHAZAR", motivo: rejectionReason.trim(), razonSocialOficial: "", requestId}))}>Rechazar</Button>
       </div>}
     </section>
-    <section className="platform-panel"><h2>Miembros ({miembros.length})</h2><div className="platform-table-wrap"><table className="platform-table"><thead><tr><th>Usuario</th><th>Correo</th><th>Rol</th><th>Estado</th></tr></thead><tbody>{miembros.map((member) => <tr key={member.uid} onClick={() => navigate(`/admin/usuarios/${member.uid}`)}><td>{member.nombre}</td><td>{member.correo}</td><td>{member.rol}</td><td>{member.estado}</td></tr>)}</tbody></table></div></section>
+    <section className="platform-panel"><h2>Miembros ({miembros.length})</h2><div className="platform-table-wrap"><table className="platform-table"><thead><tr><th>Usuario</th><th>Correo</th><th>Perfil</th><th>Estado</th></tr></thead><tbody>{miembros.map((member) => <tr key={member.uid} onClick={() => navigate(`/admin/usuarios/${member.uid}`)}><td>{member.nombre}</td><td>{member.correo}</td><td>{BUSINESS_ROLE_LABELS[member.rol] || member.rol}</td><td>{member.estado}</td></tr>)}</tbody></table></div></section>
     <section className="platform-panel"><h2>Historial</h2>{eventos.length ? <ol className="platform-timeline">{eventos.map((event) => <li key={`${event.origen}-${event.id}`}><span>{event.origen}</span><strong>{event.tipo}</strong><p>{event.estadoAnterior && `${event.estadoAnterior} → `}{event.estadoResultante}{event.motivo && ` · ${event.motivo}`}</p><time>{date(event.creadoEn)}</time></li>)}</ol> : <div className="platform-empty">Sin eventos registrados.</div>}</section>
     <section className="platform-panel platform-danger-zone"><div><h2>Zona de peligro</h2><p>Esta acción elimina permanentemente la empresa y todos sus datos exclusivos. Los usuarios de Auth no se eliminan.</p></div><Button variant="danger" icon={Trash2} onClick={() => {setDeleteConfirmation(""); setDeleteError(""); deleteRequestRef.current = ""; setDeleteOpen(true);}}>Eliminar empresa permanentemente</Button></section>
     <ResponsiveDialog

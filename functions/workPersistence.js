@@ -847,7 +847,7 @@ async function crearTareaTrabajoV2Handler(request, dependencies) {
 
 async function cambiarEstadoTareaTrabajoV2Handler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
-  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES, requiresVerifiedBusiness: true});
+  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES, requiresVerifiedBusiness: true, moduleId: "trabajos"});
   const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError); const taskId = identifier(request?.data?.tareaId, "La tarea", HttpsError);
   const legacyCompleted = request?.data?.completada;
   const requestedStatus = request?.data?.estado == null
@@ -910,7 +910,7 @@ async function cambiarEstadoTareaTrabajoV2Handler(request, dependencies) {
 
 async function agregarSubtareaTrabajoHandler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
-  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES, requiresVerifiedBusiness: true});
+  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES, requiresVerifiedBusiness: true, moduleId: "trabajos"});
   const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError);
   const taskId = identifier(request?.data?.tareaId, "La tarea", HttpsError);
   const titulo = normalizeSubtaskTitle(request?.data?.titulo, HttpsError);
@@ -942,7 +942,7 @@ async function agregarSubtareaTrabajoHandler(request, dependencies) {
 
 async function actualizarSubtareaTrabajoHandler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
-  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES, requiresVerifiedBusiness: true});
+  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES, requiresVerifiedBusiness: true, moduleId: "trabajos"});
   const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError);
   const taskId = identifier(request?.data?.tareaId, "La tarea", HttpsError);
   const subtaskId = identifier(request?.data?.subtareaId, "La subtarea", HttpsError);
@@ -1040,7 +1040,7 @@ async function asignarTareaTrabajoHandler(request, dependencies) {
 
 async function documentarTareaTrabajoHandler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
-  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES, requiresVerifiedBusiness: true});
+  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES, requiresVerifiedBusiness: true, moduleId: "trabajos"});
   const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError); const taskId = identifier(request?.data?.tareaId, "La tarea", HttpsError);
   const documentation = text(request?.data?.texto, "La documentación", 8000, HttpsError, {required: true});
   const requestId = requestIdentifier(request?.data?.requestId, HttpsError);
@@ -1094,7 +1094,7 @@ async function eliminarTareaTrabajoV2Handler(request, dependencies) {
 
 async function registrarGastoTrabajoHandler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
-  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES, requiresVerifiedBusiness: true});
+  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES, requiresVerifiedBusiness: true, moduleId: "trabajos"});
   const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError);
   const input = normalizeExpenseInput(request?.data?.gasto || {}, HttpsError);
   input.responsableDelGastoUid = memberLinkedUid(context, input.responsableDelGastoUid, "El responsable del gasto", HttpsError);
@@ -1162,7 +1162,7 @@ async function registrarGastoTrabajoHandler(request, dependencies) {
 
 async function registrarHorasHombreTrabajoHandler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
-  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES, requiresVerifiedBusiness: true});
+  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES, requiresVerifiedBusiness: true, moduleId: "trabajos"});
   const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError);
   const input = normalizeLaborInput(request?.data?.horasHombre || {}, HttpsError);
   input.tecnicoUid = memberLinkedUid(context, input.tecnicoUid, "El técnico", HttpsError, {required: true});
@@ -1335,7 +1335,7 @@ async function agregarNotaTrabajoHandler(request, dependencies) {
 
 async function registrarSalidaMaterialTrabajoHandler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
-  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES, requiresVerifiedBusiness: true});
+  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES, requiresVerifiedBusiness: true, moduleId: "trabajos"});
   const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError);
   const itemId = identifier(request?.data?.itemId, "El producto", HttpsError);
   const cantidad = positiveDecimal(request?.data?.cantidad, "La cantidad", 999999999.99, HttpsError);

@@ -7,11 +7,15 @@ import {
   getAuth,
 } from "firebase/auth";
 import {
+  collection,
   connectFirestoreEmulator,
   doc,
+  getDocs,
   getFirestore,
+  query,
   terminate,
   updateDoc,
+  where,
 } from "firebase/firestore";
 import {
   connectFunctionsEmulator,
@@ -178,7 +182,7 @@ try {
   assert.equal(ownerList.data.miembros.length, 3);
   assert.deepEqual(
     Object.keys(ownerList.data.miembros[0]).sort(),
-    ["correo", "estado", "fechaIncorporacion", "nombre", "rol", "uid"]
+    ["correo", "estado", "fechaIncorporacion", "nombre", "perfilNombre", "profileId", "rol", "uid"]
   );
   assert.ok(ownerList.data.miembros.some((item) => item.nombre === "Olivia Owner"));
   console.log("OK directorio: OWNER lista DTO mínimo de miembros activos");
@@ -203,13 +207,7 @@ try {
     rol: "MEMBER",
     estado: "activo",
   });
-  console.log("OK legacy: MEMBER existente conserva gestión de estado sin reasignarse");
-
-  await expectCallableError(
-    "MEMBER no se asigna a nuevas membresías",
-    () => call(owner, "asociarUsuarioExistente")({businessId, correo: target.email, rol: "MEMBER"}),
-    ["invalid-argument"]
-  );
+  console.log("OK compatibilidad: Colaborador existente conserva gestión de estado");
 
   const added = await call(owner, "asociarUsuarioExistente")({
     businessId,
@@ -236,24 +234,26 @@ try {
   console.log("OK asociación: OWNER agrega cuenta existente como TECNICO activo");
 
   await expectCallableError(
-    "ADMIN no asocia usuarios",
-    () => call(admin, "asociarUsuarioExistente")({businessId, correo: outsider.email}),
-    ["permission-denied"]
-  );
-  await expectCallableError(
     "MEMBER no asocia usuarios",
     () => call(member, "asociarUsuarioExistente")({businessId, correo: outsider.email}),
     ["permission-denied"]
   );
+  await call(admin, "actualizarMembresiaNegocio")({
+    businessId,
+    miembroUid: target.uid,
+    rol: "COMPRAS",
+    estado: "activo",
+  });
+  assert.equal((await targetMembershipRef.get()).data().rol, "COMPRAS");
   await expectCallableError(
-    "ADMIN no modifica membresías",
+    "ADMIN no modifica su propio perfil",
     () => call(admin, "actualizarMembresiaNegocio")({
       businessId,
-      miembroUid: target.uid,
-      rol: "ADMIN",
+      miembroUid: admin.uid,
+      rol: "VENTAS",
       estado: "activo",
     }),
-    ["permission-denied"]
+    ["failed-precondition"]
   );
   await expectCallableError(
     "MEMBER no modifica membresías",
@@ -318,7 +318,7 @@ try {
     estado: "inactivo",
   });
   assert.equal((await targetMembershipRef.get()).data().estado, "inactivo");
-  const [ownerWithInactive, adminWithoutInactive, memberWithoutInactive] =
+  const [ownerWithInactive, adminWithInactive, memberWithoutInactive] =
     await Promise.all([
       call(owner, "listarMiembrosNegocio")({businessId}),
       call(admin, "listarMiembrosNegocio")({businessId}),
@@ -327,7 +327,7 @@ try {
   assert.ok(ownerWithInactive.data.miembros.some((item) =>
     item.uid === target.uid && item.estado === "inactivo"
   ));
-  assert.equal(adminWithoutInactive.data.miembros.some((item) => item.uid === target.uid), false);
+  assert.equal(adminWithInactive.data.miembros.some((item) => item.uid === target.uid), true);
   assert.equal(memberWithoutInactive.data.miembros.some((item) => item.uid === target.uid), false);
   await expectCallableError(
     "membresía inactiva no se duplica",
@@ -353,6 +353,132 @@ try {
     }),
     ["failed-precondition"]
   );
+
+  const createdProfile = await call(owner, "crearPerfilEmpleado")({
+    businessId,
+    nombre: "Supervisor comercial",
+    descripcion: "Consulta de clientes",
+    modulos: ["clientes"],
+  });
+  const profileId = createdProfile.data.perfil.id;
+  await call(owner, "actualizarPerfilEmpleado")({
+    businessId,
+    profileId,
+    nombre: "Supervisor comercial",
+    descripcion: "Clientes de la empresa",
+    modulos: ["clientes"],
+  });
+  await call(owner, "actualizarMembresiaNegocio")({
+    businessId,
+    miembroUid: target.uid,
+    rol: "MEMBER",
+    profileId,
+    estado: "activo",
+  });
+  const storedCustomMembership = (await targetMembershipRef.get()).data();
+  assert.equal(storedCustomMembership.rol, "MEMBER");
+  assert.equal(storedCustomMembership.profileId, profileId);
+  const customDirectory = await call(owner, "listarMiembrosNegocio")({businessId});
+  assert.equal(
+    customDirectory.data.miembros.find((item) => item.uid === target.uid).perfilNombre,
+    "Supervisor comercial"
+  );
+  const targetSession = await call(target, "getBusinessSession")({});
+  const targetMainBusiness = targetSession.data.businesses.find((item) => item.id === businessId);
+  assert.equal(targetMainBusiness.profileId, profileId);
+  assert.deepEqual(targetMainBusiness.modules, ["clientes"]);
+  console.log("OK perfil: asignación estable y sesión resuelven módulos por profileId");
+
+  await Promise.all([
+    adminDb.doc(`negocios/${businessId}/clientes/client-profile-test`).set({
+      negocioId: businessId,
+      nombre: "Cliente autorizado",
+      estado: "activo",
+    }),
+    adminDb.doc(`negocios/${businessId}/ventas/sale-profile-test`).set({
+      negocioId: businessId,
+      numero: "VEN-PROFILE",
+      estado: "CONFIRMADA",
+    }),
+  ]);
+  assert.equal((await getDocs(query(
+    collection(target.db, `negocios/${businessId}/clientes`),
+    where("negocioId", "==", businessId)
+  ))).size, 1);
+  await expectDenied(
+    "perfil Clientes no lee Ventas",
+    () => getDocs(query(
+      collection(target.db, `negocios/${businessId}/ventas`),
+      where("negocioId", "==", businessId)
+    ))
+  );
+  await expectCallableError(
+    "perfil personalizado no administra perfiles",
+    () => call(target, "crearPerfilEmpleado")({
+      businessId,
+      nombre: "Escalación",
+      modulos: ["empresa", "empleados"],
+    }),
+    ["permission-denied"]
+  );
+  await expectCallableError(
+    "perfil sin Empleados no consulta directorio",
+    () => call(target, "listarMiembrosNegocio")({businessId}),
+    ["permission-denied"]
+  );
+  await expectCallableError(
+    "perfil en uso no se elimina",
+    () => call(owner, "eliminarPerfilEmpleado")({businessId, profileId}),
+    ["failed-precondition"]
+  );
+  const unusedProfile = await call(owner, "crearPerfilEmpleado")({
+    businessId,
+    nombre: "Perfil temporal",
+    modulos: ["inventario"],
+  });
+  await call(owner, "eliminarPerfilEmpleado")({
+    businessId,
+    profileId: unusedProfile.data.perfil.id,
+  });
+  assert.equal(
+    (await adminDb.doc(`negocios/${businessId}/perfilesEmpleados/${unusedProfile.data.perfil.id}`).get()).data().estado,
+    "inactivo"
+  );
+  await expectDenied(
+    "perfiles internos no se leen con SDK cliente",
+    () => getDocs(collection(target.db, `negocios/${businessId}/perfilesEmpleados`))
+  );
+  console.log("OK seguridad: módulo denegado, autoescalación y eliminación en uso bloqueados");
+
+  await expectCallableError(
+    "profileId de otra empresa",
+    () => call(outsider, "asociarUsuarioExistente")({
+      businessId: otherBusinessId,
+      correo: target.email,
+      rol: "MEMBER",
+      profileId,
+    }),
+    ["invalid-argument"]
+  );
+  const otherProfile = await call(outsider, "crearPerfilEmpleado")({
+    businessId: otherBusinessId,
+    nombre: "Consulta de ventas",
+    modulos: ["ventas"],
+  });
+  await call(outsider, "asociarUsuarioExistente")({
+    businessId: otherBusinessId,
+    correo: target.email,
+    rol: "MEMBER",
+    profileId: otherProfile.data.perfil.id,
+  });
+  const multiBusinessSession = await call(target, "getBusinessSession")({});
+  const mainAccess = multiBusinessSession.data.businesses.find((item) => item.id === businessId);
+  const otherAccess = multiBusinessSession.data.businesses.find((item) => item.id === otherBusinessId);
+  assert.deepEqual(mainAccess.modules, ["clientes"]);
+  assert.deepEqual(otherAccess.modules, ["ventas"]);
+  assert.notEqual(mainAccess.profileId, otherAccess.profileId);
+  console.log("OK multiempresa: el mismo usuario conserva perfiles distintos por membresía");
+
   await expectCallableError(
     "businessId de otra empresa",
     () => call(owner, "actualizarMembresiaNegocio")({
@@ -365,12 +491,15 @@ try {
   );
   assert.equal(
     (await adminDb.doc(`membresias/${otherBusinessId}__${target.uid}`).get()).exists,
-    false
+    true
   );
   const outsiderList = await call(outsider, "listarMiembrosNegocio")({
     businessId: otherBusinessId,
   });
-  assert.deepEqual(outsiderList.data.miembros.map((item) => item.uid), [outsider.uid]);
+  assert.deepEqual(
+    outsiderList.data.miembros.map((item) => item.uid).sort(),
+    [outsider.uid, target.uid].sort()
+  );
   console.log("OK aislamiento: membresías y operaciones permanecen dentro del negocio");
 
   await expectDenied(

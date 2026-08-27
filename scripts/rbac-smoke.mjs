@@ -3,6 +3,7 @@ import {createRequire} from "node:module";
 import {
   ASSIGNABLE_BUSINESS_ROLES,
   BUSINESS_PERMISSIONS,
+  BUSINESS_MODULES,
   BUSINESS_ROLES,
   canAccessBusinessPath,
   getDefaultBusinessPath,
@@ -15,12 +16,12 @@ const {crearVentaHandler} = require("../functions/salePersistence.js");
 const {crearCompraHandler} = require("../functions/purchasePersistence.js");
 const {obtenerBalanceTrabajoHandler} = require("../functions/workBalance.js");
 
-assert.deepEqual(ASSIGNABLE_BUSINESS_ROLES, ["ADMIN", "VENTAS", "COMPRAS", "TECNICO", "FINANZAS"]);
+assert.deepEqual(ASSIGNABLE_BUSINESS_ROLES, ["ADMIN", "VENTAS", "COMPRAS", "TECNICO", "FINANZAS", "MEMBER"]);
 assert.ok(BUSINESS_ROLES.includes("MEMBER"));
-assert.ok(!ASSIGNABLE_BUSINESS_ROLES.includes("MEMBER"));
+assert.ok(ASSIGNABLE_BUSINESS_ROLES.includes("MEMBER"));
 assert.ok(!BUSINESS_ROLES.includes("PLATFORM_SUPERADMIN"));
 assert.deepEqual(backendRbac.BUSINESS_ROLES, BUSINESS_ROLES);
-console.log("OK RBAC: seis roles V1, MEMBER sólo legacy y rol plataforma separado");
+console.log("OK RBAC: perfiles predefinidos compatibles y Colaborador asignable");
 
 const P = BUSINESS_PERMISSIONS;
 assert.equal(hasBusinessPermission("VENTAS", P.SALES_WRITE), true);
@@ -54,6 +55,18 @@ for (const role of BUSINESS_ROLES) {
   assert.equal(canAccessBusinessPath(role, getDefaultBusinessPath(role)), true);
 }
 console.log("OK RBAC: rutas y redirecciones seguras por rol");
+
+const customAccess = {role: "MEMBER", profileId: "profile-1", modules: ["clientes", "ventas"]};
+assert.deepEqual(BUSINESS_MODULES.slice(0, 3), ["reportes", "trabajos", "inventario"]);
+assert.equal(canAccessBusinessPath(customAccess, "/clientes"), true);
+assert.equal(canAccessBusinessPath(customAccess, "/ventas/venta-1"), true);
+assert.equal(canAccessBusinessPath(customAccess, "/cotizaciones"), false);
+assert.equal(canAccessBusinessPath(customAccess, "/cuenta"), true);
+assert.equal(hasBusinessPermission(customAccess, P.CLIENTS_READ), true);
+assert.equal(hasBusinessPermission(customAccess, P.CLIENTS_WRITE), false);
+assert.equal(getDefaultBusinessPath(customAccess), "/clientes");
+assert.equal(getDefaultBusinessPath({role: "MEMBER", profileId: "empty", modules: []}), "/cuenta");
+console.log("OK RBAC: perfil personalizado limita módulos y resuelve landing determinista");
 
 function rejectingDependencies(role) {
   return {

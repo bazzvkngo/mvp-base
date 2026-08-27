@@ -111,7 +111,7 @@ function AppLayout({
   });
   const allowedNavigationSections = React.useMemo(
     () => businessVerified
-      ? filterNavigationSections(navigationSections, negocioActivo?.role)
+      ? filterNavigationSections(navigationSections, negocioActivo)
       : filterNavigationForBusinessVerification(navigationSections, negocioActivo),
     [negocioActivo]
   );
@@ -213,7 +213,7 @@ function AppLayout({
         if (cancelled) return;
         const nextBusiness = session?.activeBusiness;
         if (canBusinessOperate(nextBusiness)) {
-          navigate(getDefaultBusinessPath(nextBusiness.role), { replace: true });
+          navigate(getDefaultBusinessPath(nextBusiness), { replace: true });
         }
       })
       .catch(() => {
@@ -258,7 +258,7 @@ function AppLayout({
     const session = await onBusinessChanged(business.id);
     const nextBusiness = session?.activeBusiness || business;
     navigate(canBusinessOperate(nextBusiness)
-      ? getDefaultBusinessPath(nextBusiness.role)
+      ? getDefaultBusinessPath(nextBusiness)
       : "/empresa?seccion=verificacion");
     setMobileNavigationOpen(false);
     setBusinessNotice(
@@ -270,7 +270,7 @@ function AppLayout({
     const session = await onBusinessCreated();
     const nextBusiness = session?.activeBusiness || business;
     navigate(canBusinessOperate(nextBusiness)
-      ? getDefaultBusinessPath(nextBusiness.role)
+      ? getDefaultBusinessPath(nextBusiness)
       : "/empresa?seccion=verificacion");
     setBusinessNotice(`${business.nombreComercial} fue creado correctamente`);
   };

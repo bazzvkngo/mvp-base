@@ -148,7 +148,7 @@ function AppRoutes({
     if (!platformAccess?.isSuperadmin) {
       return <Navigate to={businessSession?.needsOnboarding
         ? "/onboarding"
-        : getDefaultBusinessPath(businessSession?.activeBusiness?.role)} replace />;
+        : getDefaultBusinessPath(businessSession?.activeBusiness)} replace />;
     }
     return <Routes>
       <Route element={<PlatformAdminLayout usuario={usuario} businessSession={businessSession} onReturnToErp={onBusinessCreated} />}>
@@ -210,7 +210,7 @@ function AppRoutes({
   const businessId = activeBusiness?.id;
   const role = activeBusiness?.role;
   const safeLanding = canBusinessOperate(activeBusiness)
-    ? getDefaultBusinessPath(role)
+    ? getDefaultBusinessPath(activeBusiness)
     : "/empresa?seccion=verificacion";
   if (initialActivationRoute.status === "prompt") {
     return (
@@ -227,11 +227,11 @@ function AppRoutes({
   const unverifiedSetupAccess = !canBusinessOperate(activeBusiness) &&
     isUnverifiedBusinessAllowedPath(location.pathname);
   if (!["/", "/login", "/onboarding"].includes(location.pathname) &&
-      !canAccessBusinessPath(role, location.pathname) &&
+      !canAccessBusinessPath(activeBusiness, location.pathname) &&
       !unverifiedSetupAccess) {
     return <Navigate to={safeLanding} replace />;
   }
-  const canWriteQuotes = hasBusinessPermission(role, BUSINESS_PERMISSIONS.QUOTES_WRITE);
+  const canWriteQuotes = hasBusinessPermission(activeBusiness, BUSINESS_PERMISSIONS.QUOTES_WRITE);
   return (
     <Routes>
       <Route
@@ -277,7 +277,7 @@ function AppRoutes({
               key={businessId}
               businessId={businessId}
               currencyCode={activeBusiness?.monedaCodigo}
-              role={activeBusiness?.role}
+              role={activeBusiness}
             />
           }
         />
@@ -303,6 +303,7 @@ function AppRoutes({
             <EmployeesPage
               key={businessId}
               businessId={businessId}
+              currentUserUid={usuario?.uid}
               role={activeBusiness?.role}
             />
           }

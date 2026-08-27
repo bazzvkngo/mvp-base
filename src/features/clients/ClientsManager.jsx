@@ -210,7 +210,7 @@ function ClientsManager({businessId, countryCode = "CL", role}) {
 
       {!canManage && (
         <div className="client-message client-message--warning" role="status">
-          Tu rol MEMBER tiene acceso de lectura. OWNER o ADMIN deben crear y
+          Tu perfil tiene acceso de lectura. Los perfiles autorizados deben crear y
           modificar clientes.
         </div>
       )}

@@ -1013,7 +1013,7 @@ function InventoryAiImporter({ userId, onImported }) {
         <p style={styles.validationSummary} role="alert">
           La Function compatible para confirmar importaciones v2 no está
           disponible. El guardado permanece deshabilitado y no se utilizará el
-          flujo legacy.
+          flujo anterior.
         </p>
       )}
 

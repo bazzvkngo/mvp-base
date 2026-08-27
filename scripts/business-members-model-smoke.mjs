@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
   adaptBusinessMember,
+  businessMemberProfileLabel,
   canManageBusinessMembers,
   canReadBusinessMembers,
   isValidBusinessMemberEmail,
@@ -17,9 +18,9 @@ assert.equal(canReadBusinessMembers("TECNICO"), true);
 assert.equal(canReadBusinessMembers("FINANZAS"), true);
 assert.equal(canReadBusinessMembers("UNKNOWN"), false);
 assert.equal(canManageBusinessMembers("OWNER"), true);
-assert.equal(canManageBusinessMembers("ADMIN"), false);
+assert.equal(canManageBusinessMembers("ADMIN"), true);
 assert.equal(canManageBusinessMembers("MEMBER"), false);
-console.log("OK miembros modelo: roles V1 y MEMBER legacy son contratos reconocidos");
+console.log("OK miembros modelo: perfiles predefinidos y Colaborador son contratos reconocidos");
 
 assert.equal(normalizeBusinessMemberEmail(" Persona@Empresa.CL "), "persona@empresa.cl");
 assert.equal(isValidBusinessMemberEmail("persona@empresa.cl"), true);
@@ -31,6 +32,8 @@ const adapted = adaptBusinessMember({
   rol: "ADMIN",
   estado: "activo",
   fechaIncorporacion: "2026-08-07T12:00:00.000Z",
+  profileId: "profile-1",
+  perfilNombre: "Supervisor comercial",
   telefonoPersonal: "+56 9 1111 2222",
   numeroDocumento: "12.345.678-5",
 });
@@ -39,11 +42,14 @@ assert.deepEqual(Object.keys(adapted).sort(), [
   "estado",
   "fechaIncorporacion",
   "nombre",
+  "perfilNombre",
+  "profileId",
   "rol",
   "uid",
 ]);
 assert.equal(adapted.telefonoPersonal, undefined);
 assert.equal(adapted.numeroDocumento, undefined);
+assert.equal(businessMemberProfileLabel(adapted), "Supervisor comercial");
 console.log("OK miembros modelo: DTO mínimo y correo exacto normalizado");
 
 const backendSource = fs.readFileSync("functions/businessMemberships.js", "utf8");
@@ -53,7 +59,7 @@ const navigationSource = fs.readFileSync("src/app/navigation.js", "utf8");
 assert.match(backendSource, /getUserByEmail/);
 assert.match(backendSource, /authUser\.disabled/);
 assert.doesNotMatch(backendSource, /emailVerified/);
-assert.match(backendSource, /roles: \["OWNER"\]/);
+assert.match(backendSource, /roles: \["OWNER", "ADMIN"\]/);
 assert.match(backendSource, /target\.rol === "OWNER"/);
 assert.match(backendSource, /transaction\.create\(targetRef/);
 assert.doesNotMatch(backendSource, /transaction\.delete/);
@@ -62,7 +68,8 @@ assert.match(
   /match \/membresias\/\{membershipId\}[\s\S]*allow create, update, delete: if false;/
 );
 assert.match(pageSource, /canManageBusinessMembers/);
-assert.match(pageSource, /erp-card-list erp-mobile-only/);
+assert.match(pageSource, /Perfiles y permisos/);
+assert.doesNotMatch(pageSource, /legacy/i);
 assert.match(navigationSource, /to: "\/empleados"/);
 console.log("OK miembros integración estática: backend autoritativo, Rules y UI responsive");
 

@@ -14,6 +14,7 @@ export const ASSIGNABLE_BUSINESS_ROLES = Object.freeze([
   "COMPRAS",
   "TECNICO",
   "FINANZAS",
+  "MEMBER",
 ]);
 
 export const BUSINESS_ROLE_LABELS = Object.freeze({
@@ -23,7 +24,37 @@ export const BUSINESS_ROLE_LABELS = Object.freeze({
   COMPRAS: "Compras",
   TECNICO: "Técnico",
   FINANZAS: "Finanzas",
-  MEMBER: "Miembro (legacy)",
+  MEMBER: "Colaborador",
+});
+
+export const BUSINESS_MODULES = Object.freeze([
+  "reportes",
+  "trabajos",
+  "inventario",
+  "clientes",
+  "cotizaciones",
+  "ventas",
+  "proveedores",
+  "ordenes_compra",
+  "recepciones",
+  "compras",
+  "empresa",
+  "empleados",
+]);
+
+export const BUSINESS_MODULE_LABELS = Object.freeze({
+  reportes: "Inicio / Reportes",
+  trabajos: "Trabajos",
+  inventario: "Inventario",
+  clientes: "Clientes",
+  cotizaciones: "Cotizaciones",
+  ventas: "Ventas",
+  proveedores: "Proveedores",
+  ordenes_compra: "Órdenes de compra",
+  recepciones: "Recepciones",
+  compras: "Compras",
+  empresa: "Empresa",
+  empleados: "Empleados",
 });
 
 export const BUSINESS_PERMISSIONS = Object.freeze({
@@ -82,6 +113,40 @@ const permissionsByRole = Object.freeze({
     P.ACCOUNT_READ],
 });
 
+const permissionsByModule = Object.freeze({
+  reportes: [P.DASHBOARD_READ, P.REPORTS_READ, P.CLIENTS_READ, P.QUOTES_READ,
+    P.SALES_READ, P.PROVIDERS_READ, P.PURCHASES_READ, P.INVENTORY_READ,
+    P.WORKS_READ, P.FINANCE_READ],
+  trabajos: [P.DASHBOARD_READ, P.WORKS_READ, P.WORKS_OPERATE],
+  inventario: [P.DASHBOARD_READ, P.INVENTORY_READ],
+  clientes: [P.DASHBOARD_READ, P.CLIENTS_READ],
+  cotizaciones: [P.DASHBOARD_READ, P.QUOTES_READ, P.INVENTORY_READ,
+    P.CLIENTS_READ, P.REFERENCES_READ, P.PRICING_READ],
+  ventas: [P.DASHBOARD_READ, P.SALES_READ],
+  proveedores: [P.DASHBOARD_READ, P.PROVIDERS_READ],
+  ordenes_compra: [P.DASHBOARD_READ, P.PURCHASES_READ, P.PROVIDERS_READ,
+    P.INVENTORY_READ],
+  recepciones: [P.DASHBOARD_READ, P.PURCHASES_READ, P.INVENTORY_READ],
+  compras: [P.DASHBOARD_READ, P.PURCHASES_READ, P.INVENTORY_READ],
+  empresa: [P.DASHBOARD_READ, P.COMPANY_READ],
+  empleados: [P.DASHBOARD_READ, P.MEMBERS_READ],
+});
+
+const modulePaths = Object.freeze({
+  reportes: "/reportes",
+  trabajos: "/trabajos",
+  inventario: "/inventario",
+  clientes: "/clientes",
+  cotizaciones: "/cotizaciones",
+  ventas: "/ventas",
+  proveedores: "/proveedores",
+  ordenes_compra: "/ordenes-compra",
+  recepciones: "/recepciones",
+  compras: "/compras",
+  empresa: "/empresa",
+  empleados: "/empleados",
+});
+
 const routePermissions = Object.freeze([
   [/^\/(dashboard|resumen)\/?$/, P.DASHBOARD_READ],
   [/^\/clientes(?:\/|$)/, P.CLIENTS_READ],
@@ -100,6 +165,22 @@ const routePermissions = Object.freeze([
   [/^\/cuenta(?:\/|$)/, P.ACCOUNT_READ],
 ]);
 
+const routeModules = Object.freeze([
+  [/^\/(dashboard|resumen)\/?$/, "reportes"],
+  [/^\/clientes(?:\/|$)/, "clientes"],
+  [/^\/cotizaciones(?:\/|$)/, "cotizaciones"],
+  [/^\/ventas(?:\/|$)/, "ventas"],
+  [/^\/proveedores(?:\/|$)/, "proveedores"],
+  [/^\/ordenes-compra(?:\/|$)/, "ordenes_compra"],
+  [/^\/recepciones(?:\/|$)/, "recepciones"],
+  [/^\/compras(?:\/|$)/, "compras"],
+  [/^\/inventario(?:\/|$)/, "inventario"],
+  [/^\/trabajos(?:\/|$)/, "trabajos"],
+  [/^\/(reportes|estadisticas)(?:\/|$)/, "reportes"],
+  [/^\/empresa(?:\/|$)/, "empresa"],
+  [/^\/empleados(?:\/|$)/, "empleados"],
+]);
+
 export function normalizeBusinessRole(role) {
   return String(role || "").trim().toUpperCase();
 }
@@ -108,17 +189,46 @@ export function isBusinessRole(role) {
   return BUSINESS_ROLES.includes(normalizeBusinessRole(role));
 }
 
-export function hasBusinessPermission(role, permission) {
-  return (permissionsByRole[normalizeBusinessRole(role)] || []).includes(permission);
+function normalizeBusinessAccess(access) {
+  if (typeof access === "string") return {role: normalizeBusinessRole(access), modules: null};
+  const profileId = String(access?.profileId || access?.perfilId || "").trim();
+  const modules = profileId
+    ? [...new Set((access?.modules || access?.modulos || [])
+      .map((moduleId) => String(moduleId || "").trim())
+      .filter((moduleId) => BUSINESS_MODULES.includes(moduleId)))]
+    : null;
+  return {role: normalizeBusinessRole(access?.role || access?.rol), modules};
 }
 
-export function canAccessBusinessPath(role, pathname) {
+export function hasBusinessPermission(access, permission) {
+  const normalized = normalizeBusinessAccess(access);
+  if (!normalized.modules) {
+    return (permissionsByRole[normalized.role] || []).includes(permission);
+  }
+  if (permission === P.ACCOUNT_READ) return true;
+  return normalized.modules.some((moduleId) =>
+    (permissionsByModule[moduleId] || []).includes(permission)
+  );
+}
+
+export function canAccessBusinessPath(access, pathname) {
+  const normalized = normalizeBusinessAccess(access);
+  if (normalized.modules) {
+    if (/^\/cuenta(?:\/|$)/.test(pathname)) return true;
+    const moduleMatch = routeModules.find(([pattern]) => pattern.test(pathname));
+    return Boolean(moduleMatch && normalized.modules.includes(moduleMatch[1]));
+  }
   const match = routePermissions.find(([pattern]) => pattern.test(pathname));
-  return Boolean(match && hasBusinessPermission(role, match[1]));
+  return Boolean(match && hasBusinessPermission(normalized.role, match[1]));
 }
 
-export function getDefaultBusinessPath(role) {
-  const normalizedRole = normalizeBusinessRole(role);
+export function getDefaultBusinessPath(access) {
+  const normalized = normalizeBusinessAccess(access);
+  if (normalized.modules) {
+    const firstModule = BUSINESS_MODULES.find((moduleId) => normalized.modules.includes(moduleId));
+    return modulePaths[firstModule] || "/cuenta";
+  }
+  const normalizedRole = normalized.role;
   if (["OWNER", "ADMIN", "FINANZAS"].includes(normalizedRole)) return "/reportes";
   if (normalizedRole === "VENTAS") return "/cotizaciones";
   if (normalizedRole === "COMPRAS") return "/ordenes-compra";
@@ -126,11 +236,11 @@ export function getDefaultBusinessPath(role) {
   return "/cotizaciones";
 }
 
-export function filterNavigationSections(sections, role) {
+export function filterNavigationSections(sections, access) {
   return sections
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => canAccessBusinessPath(role, item.to)),
+      items: section.items.filter((item) => canAccessBusinessPath(access, item.to)),
     }))
     .filter((section) => section.items.length > 0);
 }

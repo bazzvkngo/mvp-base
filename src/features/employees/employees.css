@@ -2,6 +2,28 @@
   --employees-border: var(--color-border-default);
 }
 
+.employees-tabs {
+  border-bottom: 1px solid var(--employees-border);
+  display: flex;
+  gap: var(--space-2);
+}
+
+.employees-tabs button {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-weight: var(--font-weight-semibold);
+  padding: var(--space-3) var(--space-4);
+}
+
+.employees-tabs button[aria-selected="true"] {
+  border-bottom-color: var(--color-brand-600);
+  color: var(--color-brand-700);
+}
+
 .employees-eyebrow {
   color: var(--color-brand-700);
   font-size: var(--font-size-xs);
@@ -26,6 +48,65 @@
 .employees-message--error,
 .employees-form-error {
   color: var(--color-danger-700);
+}
+
+.employees-profile-grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.employees-profile-card {
+  border: 1px solid var(--employees-border);
+  border-radius: var(--radius-lg);
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.employees-profile-card h3,
+.employees-profile-card p {
+  margin: 0;
+}
+
+.employees-profile-card p {
+  color: var(--color-text-muted);
+}
+
+.employees-module-list,
+.employees-profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.employees-module-list span {
+  background: var(--color-brand-50);
+  border-radius: var(--radius-pill);
+  color: var(--color-brand-800);
+  font-size: var(--font-size-xs);
+  padding: var(--space-1) var(--space-2);
+}
+
+.employees-modules {
+  border: 1px solid var(--employees-border);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: var(--space-3);
+}
+
+.employees-modules label {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+}
+
+.employees-actions small {
+  color: var(--color-text-muted);
+  display: block;
+  width: 100%;
 }
 
 .employees-message--error {
@@ -134,6 +215,14 @@
   .employees-actions select,
   .employees-actions .ui-button {
     width: 100%;
+  }
+
+  .employees-modules {
+    grid-template-columns: 1fr;
+  }
+
+  .employees-table {
+    min-width: 760px;
   }
 }
 

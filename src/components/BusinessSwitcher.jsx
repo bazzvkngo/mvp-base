@@ -5,7 +5,7 @@ import AppIcon from "./ui/AppIcon";
 export const BUSINESS_ROLE_LABELS = Object.freeze({
   OWNER: "Propietario",
   ADMIN: "Administrador",
-  MEMBER: "Miembro",
+  MEMBER: "Colaborador",
 });
 
 function getInitials(name) {

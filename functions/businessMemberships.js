@@ -47,13 +47,14 @@ function validateActorSnapshot(snapshot, context, HttpsError) {
     actor.uid !== context.uid ||
     actor.negocioId !== context.businessId ||
     actor.estado !== ACTIVE_STATUS ||
-    actor.rol !== "OWNER"
+    !["OWNER", "ADMIN"].includes(actor.rol) || actor.profileId
   ) {
     throw new HttpsError(
       "permission-denied",
-      "Solo el propietario puede administrar miembros."
+      "No puedes administrar miembros de esta empresa."
     );
   }
+  return actor;
 }
 
 function validateBusinessSnapshot(snapshot, HttpsError) {
@@ -114,13 +115,15 @@ async function getProfilesByUid(db, uids) {
   return profilesByUid;
 }
 
-function directoryMember(snapshot, authUser, profile) {
+function directoryMember(snapshot, authUser, profile, employeeProfile) {
   const membership = snapshot.data() || {};
   return {
     uid: membership.uid,
     nombre: memberName(profile, authUser),
     correo: safeText(authUser?.email, 320),
     rol: membership.rol,
+    profileId: safeText(membership.profileId, 160),
+    perfilNombre: safeText(employeeProfile?.nombre, 80),
     estado: membership.estado,
     fechaIncorporacion: timestampToIso(membership.creadoEn),
   };
@@ -131,7 +134,7 @@ async function listarMiembrosNegocioHandler(
   {db, auth, HttpsError, requireBusinessAccess}
 ) {
   let context = await requireBusinessAccess(
-    request, {db, HttpsError}, {roles: ["OWNER", "ADMIN", "MEMBER"]}
+    request, {db, HttpsError}, {roles: ["OWNER", "ADMIN", "MEMBER"], moduleId: "empleados"}
   );
   const membershipsSnapshot = await db
     .collection("membresias")
@@ -139,25 +142,41 @@ async function listarMiembrosNegocioHandler(
     .get();
 
   context = await requireBusinessAccess(
-    request, {db, HttpsError}, {roles: ["OWNER", "ADMIN", "MEMBER"]}
+    request, {db, HttpsError}, {roles: ["OWNER", "ADMIN", "MEMBER"], moduleId: "empleados"}
   );
-  const canSeeInactive = context.membership.rol === "OWNER";
+  const canSeeInactive = ["OWNER", "ADMIN"].includes(context.membership.rol) &&
+    !context.membership.profileId;
   const memberships = membershipsSnapshot.docs.filter((snapshot) =>
     isCanonicalMembership(snapshot, context.businessId) &&
     (canSeeInactive || snapshot.data()?.estado === ACTIVE_STATUS)
   );
   const uids = memberships.map((snapshot) => snapshot.data().uid);
-  const [authUsers, profiles] = await Promise.all([
+  const profileIds = [...new Set(memberships.map((snapshot) =>
+    safeText(snapshot.data()?.profileId, 160)
+  ).filter(Boolean))];
+  const [authUsers, profiles, employeeProfileSnapshots] = await Promise.all([
     getAuthUsersByUid(auth, uids),
     getProfilesByUid(db, uids),
+    profileIds.length
+      ? db.getAll(...profileIds.map((profileId) => db.collection("negocios")
+        .doc(context.businessId).collection("perfilesEmpleados").doc(profileId)))
+      : [],
   ]);
+  const employeeProfiles = new Map(employeeProfileSnapshots.map((snapshot) =>
+    [snapshot.id, snapshot.data() || {}]
+  ));
   const roleOrder = {
     OWNER: 0, ADMIN: 1, VENTAS: 2, COMPRAS: 3, TECNICO: 4, FINANZAS: 5, MEMBER: 6,
   };
   const members = memberships
     .map((snapshot) => {
       const uid = snapshot.data().uid;
-      return directoryMember(snapshot, authUsers.get(uid), profiles.get(uid));
+      return directoryMember(
+        snapshot,
+        authUsers.get(uid),
+        profiles.get(uid),
+        employeeProfiles.get(safeText(snapshot.data()?.profileId, 160))
+      );
     })
     .sort((left, right) =>
       Number(right.estado === ACTIVE_STATUS) - Number(left.estado === ACTIVE_STATUS) ||
@@ -174,12 +193,13 @@ async function asociarUsuarioExistenteHandler(
   const context = await requireBusinessAccess(
     request,
     {db, HttpsError},
-    {roles: ["OWNER"]}
+    {roles: ["OWNER", "ADMIN"]}
   );
   const email = validateEmail(request?.data?.correo, HttpsError);
   const role = safeText(request?.data?.rol || "TECNICO", 20).toUpperCase();
+  const profileId = safeText(request?.data?.profileId, 160);
   if (!MANAGEABLE_ROLES.includes(role)) {
-    throw new HttpsError("invalid-argument", "Selecciona un rol V1 válido.");
+    throw new HttpsError("invalid-argument", "Selecciona un perfil válido.");
   }
   let authUser;
   try {
@@ -201,18 +221,36 @@ async function asociarUsuarioExistenteHandler(
   }
 
   const targetUid = validateUid(authUser.uid, HttpsError);
+  if (targetUid === context.uid) {
+    throw new HttpsError("failed-precondition", "No puedes modificar tu propio perfil.");
+  }
   const targetRef = db
     .collection("membresias")
     .doc(membershipDocumentId(context.businessId, targetUid));
 
   await db.runTransaction(async (transaction) => {
-    const [businessSnapshot, actorSnapshot, targetSnapshot] = await Promise.all([
+    const profileRef = profileId
+      ? db.collection("negocios").doc(context.businessId)
+        .collection("perfilesEmpleados").doc(profileId)
+      : null;
+    const [businessSnapshot, actorSnapshot, targetSnapshot, profileSnapshot] = await Promise.all([
       transaction.get(context.businessRef),
       transaction.get(context.membershipRef),
       transaction.get(targetRef),
+      profileRef ? transaction.get(profileRef) : Promise.resolve(null),
     ]);
     validateBusinessSnapshot(businessSnapshot, HttpsError);
-    validateActorSnapshot(actorSnapshot, context, HttpsError);
+    const actor = validateActorSnapshot(actorSnapshot, context, HttpsError);
+    if (actor.rol === "ADMIN" && role === "ADMIN") {
+      throw new HttpsError("permission-denied", "Un administrador no puede asignar otro administrador.");
+    }
+    if (profileId) {
+      const employeeProfile = profileSnapshot?.data() || {};
+      if (!profileSnapshot?.exists || employeeProfile.negocioId !== context.businessId ||
+          employeeProfile.estado !== ACTIVE_STATUS || role !== "MEMBER") {
+        throw new HttpsError("invalid-argument", "El perfil seleccionado no está disponible.");
+      }
+    }
     if (targetSnapshot.exists) {
       const existing = targetSnapshot.data() || {};
       if (!isCanonicalMembership(targetSnapshot, context.businessId)) {
@@ -238,11 +276,12 @@ async function asociarUsuarioExistenteHandler(
       actualizadoPorUid: context.uid,
       creadoEn: now,
       actualizadoEn: now,
+      ...(profileId ? {profileId} : {}),
     });
   });
 
   return {
-    miembro: {uid: targetUid, rol: role, estado: ACTIVE_STATUS},
+    miembro: {uid: targetUid, rol: role, profileId, estado: ACTIVE_STATUS},
   };
 }
 
@@ -253,15 +292,16 @@ async function actualizarMembresiaNegocioHandler(
   const context = await requireBusinessAccess(
     request,
     {db, HttpsError},
-    {roles: ["OWNER"]}
+    {roles: ["OWNER", "ADMIN"]}
   );
   const targetUid = validateUid(request?.data?.miembroUid, HttpsError);
   const role = safeText(request?.data?.rol, 20).toUpperCase();
+  const profileId = safeText(request?.data?.profileId, 160);
   const status = safeText(request?.data?.estado, 20).toLowerCase();
   if (!MANAGEABLE_ROLES.includes(role) && role !== "MEMBER") {
     throw new HttpsError(
       "invalid-argument",
-      "Selecciona un rol V1 válido."
+      "Selecciona un perfil válido."
     );
   }
   if (!MEMBERSHIP_STATUSES.includes(status)) {
@@ -294,14 +334,22 @@ async function actualizarMembresiaNegocioHandler(
   const targetRef = db
     .collection("membresias")
     .doc(membershipDocumentId(context.businessId, targetUid));
+  if (targetUid === context.uid) {
+    throw new HttpsError("failed-precondition", "No puedes modificar tu propio perfil.");
+  }
   await db.runTransaction(async (transaction) => {
-    const [businessSnapshot, actorSnapshot, targetSnapshot] = await Promise.all([
+    const profileRef = profileId
+      ? db.collection("negocios").doc(context.businessId)
+        .collection("perfilesEmpleados").doc(profileId)
+      : null;
+    const [businessSnapshot, actorSnapshot, targetSnapshot, profileSnapshot] = await Promise.all([
       transaction.get(context.businessRef),
       transaction.get(context.membershipRef),
       transaction.get(targetRef),
+      profileRef ? transaction.get(profileRef) : Promise.resolve(null),
     ]);
     validateBusinessSnapshot(businessSnapshot, HttpsError);
-    validateActorSnapshot(actorSnapshot, context, HttpsError);
+    const actor = validateActorSnapshot(actorSnapshot, context, HttpsError);
     if (!targetSnapshot.exists || !isCanonicalMembership(targetSnapshot, context.businessId)) {
       throw new HttpsError("not-found", "No se encontró la membresía indicada.");
     }
@@ -309,16 +357,21 @@ async function actualizarMembresiaNegocioHandler(
     if (target.rol === "OWNER") {
       throw new HttpsError(
         "failed-precondition",
-        "La membresía OWNER no puede modificarse en este módulo."
+        "El perfil del propietario no puede modificarse en este módulo."
       );
     }
-    if (role === "MEMBER" && target.rol !== "MEMBER") {
-      throw new HttpsError(
-        "invalid-argument",
-        "MEMBER sólo puede conservarse en membresías legacy existentes."
-      );
+    if (actor.rol === "ADMIN" && (target.rol === "ADMIN" || role === "ADMIN")) {
+      throw new HttpsError("permission-denied", "Un administrador no puede modificar administradores.");
     }
-    if (target.rol === role && target.estado === status) return;
+    if (profileId) {
+      const employeeProfile = profileSnapshot?.data() || {};
+      if (!profileSnapshot?.exists || employeeProfile.negocioId !== context.businessId ||
+          employeeProfile.estado !== ACTIVE_STATUS || role !== "MEMBER") {
+        throw new HttpsError("invalid-argument", "El perfil seleccionado no está disponible.");
+      }
+    }
+    if (target.rol === role && target.estado === status &&
+        safeText(target.profileId, 160) === profileId) return;
 
     const now = FieldValue.serverTimestamp();
     transaction.update(targetRef, {
@@ -326,6 +379,7 @@ async function actualizarMembresiaNegocioHandler(
       estado: status,
       actualizadoPorUid: context.uid,
       actualizadoEn: now,
+      profileId: profileId || FieldValue.delete(),
       ...(status === "inactivo"
         ? {desactivadoPorUid: context.uid, desactivadoEn: now}
         : {
@@ -335,7 +389,7 @@ async function actualizarMembresiaNegocioHandler(
     });
   });
 
-  return {miembro: {uid: targetUid, rol: role, estado: status}};
+  return {miembro: {uid: targetUid, rol: role, profileId, estado: status}};
 }
 
 module.exports = {

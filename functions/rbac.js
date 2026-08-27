@@ -4,7 +4,11 @@ const BUSINESS_ROLES = Object.freeze([
   "OWNER", "ADMIN", "VENTAS", "COMPRAS", "TECNICO", "FINANZAS", "MEMBER",
 ]);
 const ASSIGNABLE_BUSINESS_ROLES = Object.freeze([
-  "ADMIN", "VENTAS", "COMPRAS", "TECNICO", "FINANZAS",
+  "ADMIN", "VENTAS", "COMPRAS", "TECNICO", "FINANZAS", "MEMBER",
+]);
+const BUSINESS_MODULES = Object.freeze([
+  "reportes", "trabajos", "inventario", "clientes", "cotizaciones", "ventas",
+  "proveedores", "ordenes_compra", "recepciones", "compras", "empresa", "empleados",
 ]);
 const OWNER_ROLES = Object.freeze(["OWNER"]);
 const BUSINESS_MANAGEMENT_ROLES = Object.freeze(["OWNER", "ADMIN"]);
@@ -20,6 +24,7 @@ module.exports = {
   ASSIGNABLE_BUSINESS_ROLES,
   BALANCE_READ_ROLES,
   BUSINESS_MANAGEMENT_ROLES,
+  BUSINESS_MODULES,
   BUSINESS_ROLES,
   FINANCE_WRITE_ROLES,
   INVENTORY_WRITE_ROLES,

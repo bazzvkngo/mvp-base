@@ -748,7 +748,7 @@ function BusinessVerificationSection({businessId, currentUserUid, role}) {
       {verification.estado === BUSINESS_VERIFICATION_STATES.PENDING && <p>La solicitud está en revisión. Podrás comenzar a operar cuando sea aprobada.</p>}
       {verification.estado === BUSINESS_VERIFICATION_STATES.VERIFIED && <p><strong>{verification.identificadorFiscalTipo || form.identificadorFiscalTipo}: {verification.identificadorFiscalValor || form.identificadorFiscalValor}</strong> · ✓ Verificado</p>}
       {verification.estado === BUSINESS_VERIFICATION_STATES.REJECTED && <p><strong>Motivo:</strong> {verification.motivoRechazo || "La plataforma rechazó la solicitud."}</p>}
-      {!canRequest && <p className="settings-verification-help">Sólo el OWNER puede solicitar verificación. ADMIN y MEMBER pueden consultar el estado.</p>}
+      {!canRequest && <p className="settings-verification-help">Sólo el propietario puede solicitar verificación. Otros perfiles autorizados pueden consultar el estado.</p>}
       {canRequest && !requestBlocked && <Button type="button" icon={ShieldCheck} onClick={() => { setDialogOpen(true); setError(""); }}>Solicitar verificación</Button>}
     </div>
     <SectionStatus error={!dialogOpen ? error : ""} success={success} />
