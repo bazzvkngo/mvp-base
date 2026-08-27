@@ -244,6 +244,20 @@ async function main() {
   }), TestHttpsError);
   assert.equal("formacionPrecioVersion" in serviceWithoutProductPricing, false);
   assert.equal("tasaImpuestoCompra" in serviceWithoutProductPricing, false);
+  const referencePurchase = validateInventoryItemInput(item({
+    proveedorNombre: " Prodalam S.A. ",
+    proveedorRut: "937720009",
+    fechaCompraReferencia: "2026-08-24",
+    numeroFacturaReferencia: " 06897040 ",
+  }), TestHttpsError);
+  assert.equal(referencePurchase.proveedorNombre, "Prodalam S.A.");
+  assert.equal(referencePurchase.proveedorRut, "93.772.000-9");
+  assert.equal(referencePurchase.fechaCompraReferencia, "2026-08-24");
+  assert.equal(referencePurchase.numeroFacturaReferencia, "06897040");
+  assert.throws(
+    () => validateInventoryItemInput(item({fechaCompraReferencia: "2026-02-31"}), TestHttpsError),
+    (error) => error?.code === "invalid-argument"
+  );
 
   await initializeInventoryCatalogHandler(request(uid), deps);
   await initializeInventoryCatalogHandler(request(uid), deps);
@@ -346,7 +360,13 @@ async function main() {
     createInventoryItemWithCodeHandler(
       request(uid, {
         requestId: "request_product_0001",
-        item: item({barcode: "0012345678905"}),
+        item: item({
+          barcode: "0012345678905",
+          proveedorNombre: "Prodalam S.A.",
+          proveedorRut: "937720009",
+          fechaCompraReferencia: "2026-08-24",
+          numeroFacturaReferencia: "06897040",
+        }),
       }),
       deps
     ),
@@ -376,6 +396,16 @@ async function main() {
     "0012345678905",
     "El código de barras debe persistir como string y conservar ceros iniciales."
   );
+  const referencedProduct = db.read(`usuarios/${uid}/inventario/${first.itemId}`);
+  assert.equal(referencedProduct.proveedorNombre, "Prodalam S.A.");
+  assert.equal(referencedProduct.proveedorRut, "93.772.000-9");
+  assert.equal(referencedProduct.fechaCompraReferencia, "2026-08-24");
+  assert.equal(referencedProduct.numeroFacturaReferencia, "06897040");
+  const productWithoutReference = db.read(`usuarios/${uid}/inventario/${second.itemId}`);
+  assert.equal("proveedorNombre" in productWithoutReference, false);
+  assert.equal("proveedorRut" in productWithoutReference, false);
+  assert.equal("fechaCompraReferencia" in productWithoutReference, false);
+  assert.equal("numeroFacturaReferencia" in productWithoutReference, false);
 
   await expectCode("already-exists", () =>
     createInventoryItemWithCodeHandler(
@@ -553,6 +583,10 @@ async function main() {
         barcode: "0000001",
         stock: 99,
         stockMinimo: 10,
+        proveedorNombre: "No debe persistir",
+        proveedorRut: "93.772.000-9",
+        fechaCompraReferencia: "2026-08-24",
+        numeroFacturaReferencia: "123",
       }),
     }),
     deps
@@ -572,6 +606,10 @@ async function main() {
   assert.equal("barcode" in serviceData, false);
   assert.equal("stock" in serviceData, false);
   assert.equal("stockMinimo" in serviceData, false);
+  assert.equal("proveedorNombre" in serviceData, false);
+  assert.equal("proveedorRut" in serviceData, false);
+  assert.equal("fechaCompraReferencia" in serviceData, false);
+  assert.equal("numeroFacturaReferencia" in serviceData, false);
   const activityData = db.read(`usuarios/${uid}/inventario/${activity.itemId}`);
   assert.equal("marca" in activityData, false);
   assert.equal("modelo" in activityData, false);

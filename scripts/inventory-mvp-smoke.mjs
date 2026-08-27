@@ -60,6 +60,10 @@ function main() {
   assert.equal(product.barcode, "07801234567890");
   assert.equal(product.precioInterno, 1250);
   assert.equal(product.stock, 4);
+  assert.equal(product.proveedorNombre, "");
+  assert.equal(product.proveedorRut, "");
+  assert.equal(product.fechaCompraReferencia, "");
+  assert.equal(product.numeroFacturaReferencia, "");
   assert.equal(product.areaId, "");
   assert.equal(product.estado, "activo", "Un ítem nuevo debe quedar activo.");
   const taxedProduct = buildInventoryPayload({
@@ -69,6 +73,10 @@ function main() {
     areaId: "", categoriaId: "", descripcion: "",
     formacionPrecioVersion: INVENTORY_PRICE_FORMATION_VERSION,
     tasaImpuestoCompra: "19",
+    proveedorNombre: " Prodalam S.A. ",
+    proveedorRut: "937720009",
+    fechaCompraReferencia: "2026-08-24",
+    numeroFacturaReferencia: " 06897040 ",
   });
   assert.equal(taxedProduct.montoImpuestoCompra, 19000);
   assert.equal(taxedProduct.costoPagado, 119000);
@@ -76,6 +84,14 @@ function main() {
   assert.equal(taxedProduct.precioInterno, 148750);
   assert.equal(taxedProduct.barcode, "07801234567890");
   assert.equal(taxedProduct.stock, 4);
+  assert.equal(taxedProduct.proveedorNombre, "Prodalam S.A.");
+  assert.equal(taxedProduct.proveedorRut, "93.772.000-9");
+  assert.equal(taxedProduct.fechaCompraReferencia, "2026-08-24");
+  assert.equal(taxedProduct.numeroFacturaReferencia, "06897040");
+  assert.ok(validateInventoryDraft({
+    ...taxedProduct,
+    fechaCompraReferencia: "2026-02-31",
+  }).fechaCompraReferencia);
 
   const withoutPurchaseTax = calculateInventoryPriceFormation({
     costoBase: 100000,
@@ -133,6 +149,8 @@ function main() {
     margenDeseado: "30", precioManual: "30000", areaId: "", categoriaId: "",
     marca: "No corresponde", modelo: "No corresponde", codigoBarras: "000123",
     stock: "8", stockMinimo: "2",
+    proveedorNombre: "No corresponde", proveedorRut: "93.772.000-9",
+    fechaCompraReferencia: "2026-08-24", numeroFacturaReferencia: "123",
   });
   assert.equal(service.precioInterno, 30000);
   assert.equal(service.precioManual, true);
@@ -141,6 +159,10 @@ function main() {
   assert.equal("marca" in service, false);
   assert.equal("modelo" in service, false);
   assert.equal("barcode" in service, false);
+  assert.equal("proveedorNombre" in service, false);
+  assert.equal("proveedorRut" in service, false);
+  assert.equal("fechaCompraReferencia" in service, false);
+  assert.equal("numeroFacturaReferencia" in service, false);
   assert.equal("formacionPrecioVersion" in service, false);
   assert.equal("tasaImpuestoCompra" in service, false);
   assert.equal("costoPagado" in service, false);
@@ -165,6 +187,10 @@ function main() {
   assert.equal(legacy.marca, "");
   assert.equal(legacy.modelo, "");
   assert.equal(legacy.codigoBarras, "");
+  assert.equal(legacy.proveedorNombre, "");
+  assert.equal(legacy.proveedorRut, "");
+  assert.equal(legacy.fechaCompraReferencia, "");
+  assert.equal(legacy.numeroFacturaReferencia, "");
   const historicalProduct = adaptInventoryItem({
     tipoItem: "producto",
     nombre: "Producto histórico",
@@ -364,6 +390,7 @@ async function retryChecks() {
 
 async function sourceChecks() {
   const page = await readFile(new URL("../src/pages/InventoryPage.jsx", import.meta.url), "utf8");
+  const manager = await readFile(new URL("../src/features/inventory/InventoryManager.jsx", import.meta.url), "utf8");
   const importer = await readFile(new URL("../src/features/inventory/InventoryImportDialog.jsx", import.meta.url), "utf8");
   const importService = await readFile(new URL("../src/services/inventoryImportService.js", import.meta.url), "utf8");
   assert.doesNotMatch(page, /InventoryAiImporter|Gemini|normalizeInventoryDocument|normalizeInventoryItems/);
@@ -382,6 +409,10 @@ async function sourceChecks() {
   assert.match(importer, /requestIdBaseRef\.current = ""/);
   assert.match(importer, /Confirmar importación/);
   assert.match(importer, /Eliminar fila/);
+  assert.match(manager, /Origen de compra/);
+  assert.match(manager, /draft\.tipoItem === "producto" && <section className="inventory-form-section"><h3>Origen de compra/);
+  assert.match(manager, /type="date" value=\{draft\.fechaCompraReferencia\}/);
+  assert.match(manager, /<BarcodeInput actionLabel="Escanear"/);
 }
 
 main();

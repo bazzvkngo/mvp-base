@@ -248,6 +248,10 @@ async function main() {
         stock: 8,
         stockMinimo: 2,
         codigoBarras: "780000000001",
+        proveedorNombre: "Prodalam S.A.",
+        proveedorRut: "937720009",
+        fechaCompraReferencia: "2026-08-24",
+        numeroFacturaReferencia: "06897040",
       },
     });
     assert.equal(serviceResponse.data.codigoInterno, "SV-0001");
@@ -270,6 +274,10 @@ async function main() {
     assert.equal(productData.modelo, "ISR 1100");
     assert.equal(productData.stock, 8);
     assert.equal(productData.barcode, "780000000001");
+    assert.equal(productData.proveedorNombre, "Prodalam S.A.");
+    assert.equal(productData.proveedorRut, "93.772.000-9");
+    assert.equal(productData.fechaCompraReferencia, "2026-08-24");
+    assert.equal(productData.numeroFacturaReferencia, "06897040");
     assert.equal("codigoBarras" in productData, false);
     const barcodeLookup = await getDocs(query(
       collectionRef(db, uid, "inventario"),
@@ -300,6 +308,10 @@ async function main() {
         stock: 11,
         stockMinimo: 3,
         barcode: "780000000001",
+        proveedorNombre: "Proveedor actualizado S.A.",
+        proveedorRut: "760864285",
+        fechaCompraReferencia: "2026-08-25",
+        numeroFacturaReferencia: "FACT-200",
       },
     };
     const authoritativeUpdate = await call(
@@ -326,6 +338,11 @@ async function main() {
     assert.equal(adjustment.diferenciaStock, 3);
     assert.equal(adjustment.stockAnterior, 8);
     assert.equal(adjustment.stockPosterior, 11);
+    const updatedReference = (await getDoc(productRef)).data();
+    assert.equal(updatedReference.proveedorNombre, "Proveedor actualizado S.A.");
+    assert.equal(updatedReference.proveedorRut, "76.086.428-5");
+    assert.equal(updatedReference.fechaCompraReferencia, "2026-08-25");
+    assert.equal(updatedReference.numeroFacturaReferencia, "FACT-200");
     await expectCallableCode("failed-precondition", () =>
       call("updateInventoryItem", {
         ...authoritativeUpdatePayload,
@@ -427,6 +444,7 @@ async function main() {
     const legacyBefore = (await getDoc(legacyRef)).data();
     assert.equal(legacyBefore.areaId, undefined);
     assert.equal(legacyBefore.codigoInterno, undefined);
+    assert.equal(legacyBefore.proveedorNombre, undefined);
     const legacyUpdate = await call("updateInventoryItem", {
       itemId: "legacy-integrated",
       requestId: "integrated_legacy_update_0001",
@@ -451,6 +469,7 @@ async function main() {
     const legacyAfter = (await getDoc(legacyRef)).data();
     assert.equal(legacyAfter.sku, "LEGACY-042");
     assert.equal(legacyAfter.codigoInterno, undefined);
+    assert.equal(legacyAfter.proveedorNombre, undefined);
     assert.deepEqual(legacyAfter.campoDesconocido, { conservar: true });
 
     await assert.rejects(updateDoc(productRef, {

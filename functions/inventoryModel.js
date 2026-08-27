@@ -1,5 +1,6 @@
 const { createHash } = require("node:crypto");
 const {INVENTORY_WRITE_ROLES} = require("./rbac");
+const {formatChileanRut} = require("./fiscalIdentifier");
 
 const INVENTORY_MODEL_VERSION = 2;
 const INVENTORY_PRICE_FORMATION_VERSION = 2;
@@ -145,6 +146,25 @@ function inventoryCodeKeyId(code) {
 
 function normalizeBarcode(value) {
   return safeText(value, 120);
+}
+
+function normalizeInventoryReferenceDate(value, HttpsError) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    throw new HttpsError(
+      "invalid-argument",
+      "La fecha de compra de referencia no es válida."
+    );
+  }
+  const parsed = new Date(`${normalized}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== normalized) {
+    throw new HttpsError(
+      "invalid-argument",
+      "La fecha de compra de referencia no es válida."
+    );
+  }
+  return normalized;
 }
 
 function inventoryBarcodeKeyId(barcode) {
@@ -386,6 +406,19 @@ function validateInventoryItemInput(
     if (unidadStock) result.unidadStock = unidadStock;
     const barcode = normalizeBarcode(source.barcode || source.codigoBarras);
     if (barcode) result.barcode = barcode;
+    const proveedorNombre = safeText(source.proveedorNombre, 180);
+    const proveedorRut = formatChileanRut(safeText(source.proveedorRut, 20));
+    const fechaCompraReferencia = normalizeInventoryReferenceDate(
+      source.fechaCompraReferencia,
+      HttpsError
+    );
+    const numeroFacturaReferencia = safeText(source.numeroFacturaReferencia, 120);
+    if (proveedorNombre) result.proveedorNombre = proveedorNombre;
+    if (proveedorRut) result.proveedorRut = proveedorRut;
+    if (fechaCompraReferencia) result.fechaCompraReferencia = fechaCompraReferencia;
+    if (numeroFacturaReferencia) {
+      result.numeroFacturaReferencia = numeroFacturaReferencia;
+    }
   }
 
   const origen = safeText(source.origen, 80);
@@ -505,6 +538,10 @@ function inventoryEditableUpdate(item, categoryName, FieldValue) {
     modelo: optionalField(item.modelo, FieldValue),
     barcode: optionalField(item.barcode, FieldValue),
     codigoBarras: FieldValue.delete(),
+    proveedorNombre: optionalField(item.proveedorNombre, FieldValue),
+    proveedorRut: optionalField(item.proveedorRut, FieldValue),
+    fechaCompraReferencia: optionalField(item.fechaCompraReferencia, FieldValue),
+    numeroFacturaReferencia: optionalField(item.numeroFacturaReferencia, FieldValue),
     unidadStock: item.unidadStock || item.unidad,
     stockMinimo: item.stockMinimo,
     formacionPrecioVersion: item.formacionPrecioVersion || FieldValue.delete(),

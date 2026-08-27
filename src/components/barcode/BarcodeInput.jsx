@@ -13,7 +13,7 @@ export default function BarcodeInput({
   inputClassName = "erp-control",
   onChange,
   onSubmit,
-  placeholder = "Ej. 7801234567890",
+  placeholder = "Escanea o escribe el código del producto",
   value = "",
 }) {
   const [open, setOpen] = useState(false);

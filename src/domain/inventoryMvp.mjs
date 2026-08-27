@@ -2,6 +2,7 @@ import {
   calculateBasePrice,
   calculateEffectiveInternalPrice,
 } from "./pricing.js";
+import {formatChileanRut} from "./fiscalIdentifier.mjs";
 
 export const INVENTORY_TYPES = Object.freeze([
   { value: "producto", label: "Producto", description: "Ítem físico con control de stock." },
@@ -169,6 +170,14 @@ export function adaptInventoryItem(item = {}) {
     modelo: type === "producto" ? String(item.modelo || "").trim() : "",
     barcode,
     codigoBarras: barcode,
+    proveedorNombre: type === "producto" ? String(item.proveedorNombre || "").trim() : "",
+    proveedorRut: type === "producto" ? formatChileanRut(item.proveedorRut || "") : "",
+    fechaCompraReferencia: type === "producto"
+      ? String(item.fechaCompraReferencia || "").trim()
+      : "",
+    numeroFacturaReferencia: type === "producto"
+      ? String(item.numeroFacturaReferencia || "").trim()
+      : "",
     unidad: String(item.unidad || getDefaultUnitForType(type)).trim(),
     costoBase: Number.isFinite(cost) ? cost : 0,
     margenDeseado: Number.isFinite(margin) ? margin : 0,
@@ -271,6 +280,13 @@ export function validateInventoryDraft(draft = {}) {
     if (String(draft.marca || "").trim().length > 100) errors.marca = "La marca admite hasta 100 caracteres.";
     if (String(draft.modelo || "").trim().length > 100) errors.modelo = "El modelo admite hasta 100 caracteres.";
     if (String(draft.barcode ?? draft.codigoBarras ?? "").trim().length > 120) errors.codigoBarras = "El código de barras admite hasta 120 caracteres.";
+    if (String(draft.proveedorNombre || "").trim().length > 180) errors.proveedorNombre = "El proveedor admite hasta 180 caracteres.";
+    if (String(draft.proveedorRut || "").trim().length > 20) errors.proveedorRut = "El RUT proveedor admite hasta 20 caracteres.";
+    if (String(draft.numeroFacturaReferencia || "").trim().length > 120) errors.numeroFacturaReferencia = "El número de factura admite hasta 120 caracteres.";
+    const purchaseDate = String(draft.fechaCompraReferencia || "").trim();
+    if (purchaseDate && !isValidInventoryReferenceDate(purchaseDate)) {
+      errors.fechaCompraReferencia = "Selecciona una fecha de compra válida.";
+    }
   }
 
   const numericFields = [
@@ -346,6 +362,10 @@ export function buildInventoryPayload(
     payload.marca = String(draft.marca || "").trim();
     payload.modelo = String(draft.modelo || "").trim();
     payload.barcode = String(draft.barcode ?? draft.codigoBarras ?? "").trim();
+    payload.proveedorNombre = String(draft.proveedorNombre || "").trim();
+    payload.proveedorRut = formatChileanRut(draft.proveedorRut || "");
+    payload.fechaCompraReferencia = String(draft.fechaCompraReferencia || "").trim();
+    payload.numeroFacturaReferencia = String(draft.numeroFacturaReferencia || "").trim();
     payload.stock = parseInventoryNumber(draft.stock);
     payload.stockMinimo = parseInventoryNumber(draft.stockMinimo);
     payload.unidadStock = String(draft.unidadStock || draft.unidad).trim();
@@ -366,4 +386,10 @@ export function buildInventoryPayload(
     }
   }
   return payload;
+}
+
+function isValidInventoryReferenceDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }

@@ -33,6 +33,7 @@ import {
   calculateInventoryPriceFormation,
 } from "../domain/inventoryMvp.mjs";
 import {normalizeBarcode} from "../domain/barcode.mjs";
+import {formatChileanRut} from "../domain/fiscalIdentifier.mjs";
 
 const VALID_TYPES = ["producto", "servicio", "actividad"];
 const VALID_STATUS = ["activo", "inactivo", "eliminado"];
@@ -218,6 +219,20 @@ function normalizeTipoItem(value) {
   return "producto";
 }
 
+function normalizeReferencePurchaseDate(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+  const parsed = new Date(`${normalized}T00:00:00Z`);
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(normalized) ||
+    Number.isNaN(parsed.getTime()) ||
+    parsed.toISOString().slice(0, 10) !== normalized
+  ) {
+    throw new Error("La fecha de compra de referencia no es válida.");
+  }
+  return normalized;
+}
+
 export function normalizeInventoryItem(uid, data, { isCreate = false } = {}) {
   const nombre = String(data.nombre || "").trim();
   const tipoItem = normalizeTipoItem(data.tipoItem || data.tipo);
@@ -271,6 +286,23 @@ export function normalizeInventoryItem(uid, data, { isCreate = false } = {}) {
     negocioId: uid,
     actualizadoEn: serverTimestamp(),
   };
+
+  if (tipoItem === "producto") {
+    const proveedorNombre = String(data.proveedorNombre || "").trim();
+    const proveedorRut = formatChileanRut(data.proveedorRut || "");
+    const fechaCompraReferencia = normalizeReferencePurchaseDate(
+      data.fechaCompraReferencia
+    );
+    const numeroFacturaReferencia = String(
+      data.numeroFacturaReferencia || ""
+    ).trim();
+    if (proveedorNombre) payload.proveedorNombre = proveedorNombre;
+    if (proveedorRut) payload.proveedorRut = proveedorRut;
+    if (fechaCompraReferencia) payload.fechaCompraReferencia = fechaCompraReferencia;
+    if (numeroFacturaReferencia) {
+      payload.numeroFacturaReferencia = numeroFacturaReferencia;
+    }
+  }
 
   if (
     tipoItem === "producto" &&
@@ -371,6 +403,14 @@ export function normalizeManagedInventoryUpdate(
     payload.barcode = normalizeBarcode(data.barcode ?? data.codigoBarras) || deleteField();
     payload.codigoBarras = deleteField();
     payload.unidadStock = String(data.unidadStock || data.unidad || "").trim();
+    payload.proveedorNombre = String(data.proveedorNombre || "").trim() || deleteField();
+    payload.proveedorRut = formatChileanRut(data.proveedorRut || "") || deleteField();
+    payload.fechaCompraReferencia = normalizeReferencePurchaseDate(
+      data.fechaCompraReferencia
+    ) || deleteField();
+    payload.numeroFacturaReferencia = String(
+      data.numeroFacturaReferencia || ""
+    ).trim() || deleteField();
   } else {
     payload.marca = deleteField();
     payload.modelo = deleteField();
@@ -379,6 +419,10 @@ export function normalizeManagedInventoryUpdate(
     payload.codigoBarras = deleteField();
     payload.barcode = deleteField();
     payload.unidadStock = deleteField();
+    payload.proveedorNombre = deleteField();
+    payload.proveedorRut = deleteField();
+    payload.fechaCompraReferencia = deleteField();
+    payload.numeroFacturaReferencia = deleteField();
     payload.formacionPrecioVersion = deleteField();
     payload.tasaImpuestoCompra = deleteField();
     payload.montoImpuestoCompra = deleteField();

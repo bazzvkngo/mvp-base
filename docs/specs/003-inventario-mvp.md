@@ -40,6 +40,9 @@ Campos canónicos nuevos:
 - `stock`, `stockMinimo` y `unidadStock`, solo para productos;
 - `barcode`, opcional y separado del código interno y del código de proveedor,
   solo para productos físicos; `codigoBarras` se lee únicamente como alias legacy;
+- `proveedorNombre`, `proveedorRut`, `fechaCompraReferencia` y
+  `numeroFacturaReferencia`, opcionales y sólo para productos creados o editados
+  manualmente como referencia inicial de origen de compra;
 - `costoPromedio`, `costoPromedioMoneda`, `ultimoCosto`, `ultimoProveedor` y
   referencia a la última adquisición, sólo cuando una Recepción confirmó una entrada;
 - campos de auditoría autoritativos.
@@ -64,6 +67,10 @@ negocios/{businessId}/inventoryStatusRequests/{requestId}
 - Actividad: trabajo o tarea valorizada. No persiste campos de stock.
 
 Los campos comunes son nombre, unidad, costo base unitario, recargo porcentual persistido por compatibilidad como `margenDeseado`, precio interno calculado, ajuste manual opcional, descripción y estado activo. Área y categoría son opcionales. Una categoría seleccionada siempre debe pertenecer a un área activa.
+
+La referencia inicial de compra no crea Proveedores, Compras, Recepciones,
+movimientos económicos ni movimientos adicionales de stock. Los productos
+legacy sin esos campos se adaptan con valores vacíos y no requieren migración.
 
 ## Códigos de barras
 
