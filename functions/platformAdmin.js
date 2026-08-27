@@ -696,7 +696,7 @@ async function cambiarEstadoUsuarioPlataformaHandler(request, dependencies) {
   }
   const targetAuth = await auth.getUser(uid);
   if (targetAuth.customClaims?.platformRole === PLATFORM_SUPERADMIN) {
-    fail(HttpsError, "failed-precondition", "Las cuentas PLATFORM_SUPERADMIN no se suspenden desde este panel.");
+    fail(HttpsError, "failed-precondition", "Las cuentas Administrador no se suspenden desde este panel.");
   }
   const requestFingerprint = fingerprint({uid, desired, reason});
   const userRef = db.collection("usuarios").doc(uid);

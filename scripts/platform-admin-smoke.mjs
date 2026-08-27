@@ -11,11 +11,21 @@ assert.equal(isPlatformRoute("/admin/empresas/abc"), true);
 assert.equal(isPlatformRoute("/empresa"), false);
 assert.equal(formatFiscalIdentifierForDisplay("AR", "30712345678"), "30-71234567-8");
 
-const [pagesSource, serviceSource, functionsSource] = await Promise.all([
+const [layoutSource, appLayoutSource, pagesSource, serviceSource, functionsSource, resetSource] = await Promise.all([
+  readFile(new URL("../src/platform/PlatformAdminLayout.jsx", import.meta.url), "utf8"),
+  readFile(new URL("../src/layout/AppLayout.jsx", import.meta.url), "utf8"),
   readFile(new URL("../src/platform/PlatformAdminPages.jsx", import.meta.url), "utf8"),
   readFile(new URL("../src/services/platformAdminService.js", import.meta.url), "utf8"),
   readFile(new URL("../functions/platformAdmin.js", import.meta.url), "utf8"),
+  readFile(new URL("./reset-production-for-v1-qa.mjs", import.meta.url), "utf8"),
 ]);
+assert.match(layoutSource, /Consola de Administración/);
+assert.match(layoutSource, /Administración de plataforma/);
+assert.match(layoutSource, />Administrador<\/span>/);
+assert.doesNotMatch(layoutSource, />[^<]*Superadmin[^<]*</i);
+assert.doesNotMatch(layoutSource, />PLATFORM_SUPERADMIN</);
+assert.doesNotMatch(layoutSource, /Platform Console|Panel plataforma/);
+assert.match(appLayoutSource, /Consola de Administración/);
 assert.match(pagesSource, /window\.open\("", "_blank"\)[\s\S]*getPlatformVerificationDocument/);
 assert.match(pagesSource, />Ver documento</);
 assert.doesNotMatch(pagesSource, /Generar acceso temporal al documento/);
@@ -39,5 +49,18 @@ assert.match(pagesSource, /<h2>Historial<\/h2>/);
 assert.match(serviceSource, /eliminarEmpresaPermanentePlataforma/);
 assert.match(functionsSource, /requirePlatformSuperadmin\(request, dependencies\)/);
 assert.match(functionsSource, /db\.recursiveDelete\(businessRef\)/);
+assert.match(functionsSource, /customClaims\?\.platformRole === PLATFORM_SUPERADMIN/);
+assert.match(functionsSource, /const PLATFORM_SUPERADMIN = "PLATFORM_SUPERADMIN"/);
+assert.doesNotMatch(functionsSource, /Las cuentas PLATFORM_SUPERADMIN/);
+assert.match(resetSource, /const PROJECT_ID = "tesis-inventario-ia"/);
+assert.match(resetSource, /const PRESERVED_ADMIN_EMAIL = "software\.bagner@gmail\.com"/);
+assert.match(resetSource, /platformRole !== PLATFORM_SUPERADMIN/);
+assert.match(resetSource, /mode: confirm \? "confirm" : "dry-run"/);
+assert.match(resetSource, /argv\.includes\("--confirm"\)/);
+assert.match(resetSource, /GOOGLE_APPLICATION_CREDENTIALS/);
+assert.match(resetSource, /async function walk\(parentPath, collectionId\)/);
+assert.match(resetSource, /await walk\(relativePath, nestedCollectionId\)/);
+assert.match(resetSource, /right\.path\.split\("\/"\)\.length - left\.path\.split\("\/"\)\.length/);
+assert.match(resetSource, /await verifyPostReset\(api, admin\.localId\)/);
 
 console.log("Platform admin smoke: OK");

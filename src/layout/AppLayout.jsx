@@ -337,7 +337,7 @@ function AppLayout({
           )}
 
           <div className="topbar-user topbar-user--desktop">
-            {platformSuperadmin && <Button type="button" variant="secondary" icon={ShieldCheck} onClick={() => navigate("/admin/dashboard")}>Panel plataforma</Button>}
+            {platformSuperadmin && <Button type="button" variant="secondary" icon={ShieldCheck} onClick={() => navigate("/admin/dashboard")}>Consola de Administración</Button>}
             <Button
               type="button"
               variant="ghost-danger"
@@ -417,7 +417,7 @@ function AppLayout({
           >
             Editar perfil
           </Button>
-          {platformSuperadmin && <Button type="button" variant="secondary" icon={ShieldCheck} onClick={() => { setMobileAccountOpen(false); navigate("/admin/dashboard"); }}>Panel plataforma</Button>}
+          {platformSuperadmin && <Button type="button" variant="secondary" icon={ShieldCheck} onClick={() => { setMobileAccountOpen(false); navigate("/admin/dashboard"); }}>Consola de Administración</Button>}
           <Button
             type="button"
             variant="ghost-danger"

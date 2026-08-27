@@ -27,7 +27,7 @@ const sections = [
 ];
 
 function PlatformNavigation({onNavigate}) {
-  return <nav className="platform-nav" aria-label="Administracion de plataforma">
+  return <nav className="platform-nav" aria-label="Administración de plataforma">
     {sections.map((section) => <div className="platform-nav__section" key={section.label}>
       <span>{section.label}</span>
       {section.items.map((item) => <NavLink
@@ -60,7 +60,7 @@ function PlatformAdminLayout({businessSession, onReturnToErp, usuario}) {
     <aside className="platform-sidebar platform-sidebar--desktop">
       <div className="platform-brand">
         <span className="platform-brand__mark"><AppIcon icon={ShieldCheck} size={22} /></span>
-        <div><strong>ValoraCloud</strong><span>Platform Console</span></div>
+        <div><strong>ValoraCloud</strong><span>Consola de Administración</span></div>
       </div>
       <PlatformNavigation />
       <div className="platform-sidebar__footer">
@@ -73,15 +73,15 @@ function PlatformAdminLayout({businessSession, onReturnToErp, usuario}) {
         <button className="platform-menu-button" type="button" aria-label="Abrir navegacion" onClick={() => setMobileOpen(true)}>
           <AppIcon icon={Menu} size={21} />
         </button>
-        <div><span>Contexto global</span><strong>Administracion de plataforma</strong></div>
-        <div className="platform-topbar__identity"><span>PLATFORM_SUPERADMIN</span><strong>{usuario?.email}</strong></div>
+        <div><span>Contexto global</span><strong>Administración de plataforma</strong></div>
+        <div className="platform-topbar__identity"><span>Administrador</span><strong>{usuario?.email}</strong></div>
       </header>
       <main id="platform-main" className="platform-content"><Outlet /></main>
     </div>
     {mobileOpen && <div className="platform-mobile-layer">
       <button className="platform-mobile-overlay" type="button" aria-label="Cerrar navegacion" onClick={() => setMobileOpen(false)} />
       <aside className="platform-sidebar platform-sidebar--mobile" role="dialog" aria-modal="true">
-        <div className="platform-mobile-heading"><strong>Platform Console</strong><button type="button" aria-label="Cerrar" onClick={() => setMobileOpen(false)}><AppIcon icon={X} size={20} /></button></div>
+        <div className="platform-mobile-heading"><strong>Consola de Administración</strong><button type="button" aria-label="Cerrar" onClick={() => setMobileOpen(false)}><AppIcon icon={X} size={20} /></button></div>
         <PlatformNavigation onNavigate={() => setMobileOpen(false)} />
         <div className="platform-sidebar__footer">
           {hasErp && <Button variant="secondary" icon={RotateCcw} onClick={returnToErp}>Volver al ERP</Button>}
