@@ -130,12 +130,11 @@ assert.match(app, /businessSession\?\.needsOnboarding/);
 assert.match(app, /resolveInitialActivationRoute/);
 assert.match(app, /onFirstBusinessCreated=\{handleFirstBusinessCreated\}/);
 assert.match(activation, /Tu negocio ya está creado/);
-assert.match(activation, /Completar ahora/);
-assert.match(activation, /Hacerlo después/);
+assert.match(activation, /Completar y verificar empresa/);
+assert.doesNotMatch(activation, /Hacerlo después/);
 assert.match(activation, /useBusinessCompletionStatus/);
 assert.match(activation, /BusinessCompletionCard/);
-assert.match(activation, /getDefaultBusinessPath/);
-assert.match(activation, /canAccessBusinessPath\(business\?\.role, "\/empresa"\)[\s\S]*?"\/empresa"/);
+assert.match(activation, /finish\("\/empresa\?seccion=verificacion"\)/);
 assert.match(activation, /onFinish\?\.\(path\)/);
 assert.doesNotMatch(activation, /useNavigate|navigate\(/);
 assert.deepEqual(
@@ -192,7 +191,10 @@ assert.match(app, /path="\/onboarding" element=\{<Navigate to=\{safeLanding\} re
 assert.match(app, /path="\/" element=\{<Navigate to=\{safeLanding\} replace \/>\}/);
 assert.match(app, /path="\/dashboard" element=\{<Navigate to=\{safeLanding\} replace \/>\}/);
 assert.match(app, /path="\/resumen" element=\{<Navigate to=\{safeLanding\} replace \/>\}/);
-assert.match(appLayout, /navigate\(\s*getDefaultBusinessPath\(session\?\.activeBusiness\?\.role \|\| business\.role\)\s*\)/);
+assert.match(
+  appLayout,
+  /navigate\(canBusinessOperate\(nextBusiness\)[\s\S]*?getDefaultBusinessPath\(nextBusiness\)[\s\S]*?"\/empresa\?seccion=verificacion"/
+);
 assert.match(componentStyles, /\.activation-checklist li:last-child:nth-child\(odd\)[\s\S]*?grid-column: 1 \/ -1/);
 assert.match(componentStyles, /@media \(max-width: 640px\)[\s\S]*?\.activation-checklist li:last-child:nth-child\(odd\)[\s\S]*?grid-column: auto/);
 assert.doesNotMatch(navigation, /to: "\/dashboard"/);
@@ -201,11 +203,11 @@ const sidebarRoutes = [...navigation.matchAll(/\bto: "(\/[^\"]+)"/g)].map(
 );
 assert.deepEqual(sidebarRoutes, [
   "/reportes",
-  "/trabajos",
-  "/inventario",
   "/clientes",
   "/cotizaciones",
   "/ventas",
+  "/trabajos",
+  "/inventario",
   "/proveedores",
   "/ordenes-compra",
   "/recepciones",
@@ -218,7 +220,7 @@ assert.doesNotMatch(navigation, /label: "Análisis"/);
 assert.deepEqual(
   [...navigation.matchAll(/\blabel: "(Inicio|Operación|Comercial|Abastecimiento|Gestión|Cuenta)"/g)]
     .map(([, label]) => label),
-  ["Inicio", "Operación", "Comercial", "Abastecimiento", "Gestión", "Cuenta"]
+  ["Inicio", "Comercial", "Operación", "Abastecimiento", "Gestión", "Cuenta"]
 );
 const sidebarSections = [{ items: sidebarRoutes.map((to) => ({ to })) }];
 const visibleRoutesFor = (role) =>
@@ -227,10 +229,10 @@ const visibleRoutesFor = (role) =>
   );
 assert.deepEqual(visibleRoutesFor("OWNER"), sidebarRoutes);
 assert.deepEqual(visibleRoutesFor("VENTAS"), [
-  "/inventario",
   "/clientes",
   "/cotizaciones",
   "/ventas",
+  "/inventario",
   "/cuenta",
 ]);
 assert.deepEqual(visibleRoutesFor("COMPRAS"), [
@@ -248,8 +250,8 @@ assert.deepEqual(visibleRoutesFor("TECNICO"), [
 ]);
 assert.deepEqual(visibleRoutesFor("FINANZAS"), [
   "/reportes",
-  "/inventario",
   "/ventas",
+  "/inventario",
   "/ordenes-compra",
   "/recepciones",
   "/compras",
@@ -257,7 +259,7 @@ assert.deepEqual(visibleRoutesFor("FINANZAS"), [
 ]);
 assert.match(app, /key=\{businessId\}/);
 assert.match(companyConfig, /ownerOnly: true/);
-assert.match(companyConfig, /isSelectableNewBusinessCountry\(country\) \|\| country\.code === form\.paisCodigo/);
+assert.match(companyConfig, /<LockedSetting[\s\S]*?label="País"/);
 assert.match(companyConfig, /confirmation\.trim\(\) === expectedName/);
 assert.match(companyConfig, /Eliminar definitivamente/);
 assert.match(businessService, /httpsCallable\(functions, "deleteBusiness"\)/);

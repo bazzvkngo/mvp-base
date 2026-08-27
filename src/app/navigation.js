@@ -26,23 +26,6 @@ export const navigationSections = [
     ],
   },
   {
-    label: "Operación",
-    items: [
-      {
-        to: "/trabajos",
-        label: "Proyectos y trabajos",
-        title: "Proyectos y trabajos",
-        icon: BriefcaseBusiness,
-      },
-      {
-        to: "/inventario",
-        label: "Inventario",
-        title: "Inventario",
-        icon: Boxes,
-      },
-    ],
-  },
-  {
     label: "Comercial",
     items: [
       {
@@ -66,6 +49,23 @@ export const navigationSections = [
         icon: ReceiptText,
         activeWhen: (pathname) =>
           pathname === "/ventas" || pathname.startsWith("/ventas/"),
+      },
+    ],
+  },
+  {
+    label: "Operación",
+    items: [
+      {
+        to: "/trabajos",
+        label: "Proyectos y trabajos",
+        title: "Proyectos y trabajos",
+        icon: BriefcaseBusiness,
+      },
+      {
+        to: "/inventario",
+        label: "Inventario",
+        title: "Inventario",
+        icon: Boxes,
       },
     ],
   },
