@@ -322,13 +322,18 @@ export async function normalizeInventoryItemsWithAi({
   };
 }
 
-export async function normalizeInventoryDocumentWithAi({ businessId, fileData }) {
+export async function normalizeInventoryDocumentWithAi({
+  businessId,
+  fileData,
+  context = "inventory",
+}) {
   if (!fileData || fileData.kind !== "document" || !fileData.base64) {
     throw new Error("Selecciona un documento antes de analizar.");
   }
 
   const response = await invokeInventoryCallable("normalizeInventoryDocument", {
     businessId,
+    context: context === "reception" ? "reception" : "inventory",
     document: {
       nombreArchivo: fileData.nombreArchivo,
       tipoArchivo: fileData.tipoArchivo,
@@ -346,6 +351,11 @@ export async function normalizeInventoryDocumentWithAi({ businessId, fileData })
     mode: data.mode || "document-multimodal",
     model: data.model || "",
     documentType: data.documentType || "otro",
+    documento: data.documento || {},
+    proveedor: data.proveedor || {},
+    receptor: data.receptor || {},
+    totales: data.totales || {},
+    coherencia: data.coherencia || {estado: "sin_datos"},
     warnings: Array.isArray(data.warnings) ? data.warnings : [],
     warning:
       data.warning ||
@@ -360,9 +370,10 @@ export async function normalizeInventorySourceWithAi({
   businessId,
   fileData,
   assistantMode = "auto",
+  context = "inventory",
 }) {
   if (fileData?.kind === "document") {
-    return normalizeInventoryDocumentWithAi({ businessId, fileData });
+    return normalizeInventoryDocumentWithAi({businessId, fileData, context});
   }
   return normalizeInventoryItemsWithAi({ businessId, fileData, assistantMode });
 }

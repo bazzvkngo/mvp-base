@@ -15,15 +15,35 @@ const finite = (value, fallback = 0) => {
   return Number.isFinite(number) ? number : fallback;
 };
 
+const optionalFinite = (value) => {
+  if (value === "" || value === null || value === undefined) return null;
+  const number = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+};
+
+const documentParty = (value = {}) => ({
+  nombre: text(value?.nombre, 240),
+  identificadorFiscal: text(value?.identificadorFiscal, 80),
+});
+
 const lineId = (line) => text(line?.lineaId || line?.ordenLineaId, 160);
 const candidateId = (candidate) => text(
   candidate?.itemId || candidate?.inventoryId || candidate?.inventarioId,
   160
 );
-const candidateCode = (candidate) => text(
-  candidate?.codigo || candidate?.sku || candidate?.codigoProveedor,
+const candidateInternalCode = (candidate) => text(
+  candidate?.codigo || candidate?.sku,
   100
 );
+const candidateProviderCode = (candidate) => text(
+  candidate?.codigoProveedor,
+  100
+);
+const candidateCode = (candidate) =>
+  candidateProviderCode(candidate) || candidateInternalCode(candidate);
+
+const fiscalComparable = (value) => text(value, 100).toUpperCase()
+  .replace(/[^A-Z0-9]/g, "");
 
 function uniqueMatches(items, predicate) {
   const matches = items.filter(predicate);
@@ -39,19 +59,22 @@ function matchCandidate(candidate, receptionItems) {
     if (matches.length) return {kind: "item_id", matches};
   }
 
-  const code = comparable(candidateCode(candidate));
-  if (code) {
+  const internalCode = comparable(candidateInternalCode(candidate));
+  if (internalCode) {
     const matches = uniqueMatches(receptionItems, (line) => [
       line?.codigo,
       line?.sku,
       line?.inventarioSnapshot?.codigoInterno,
-    ].some((value) => comparable(value) === code));
+    ].some((value) => comparable(value) === internalCode));
     if (matches.length) return {kind: "codigo", matches};
+  }
 
+  const providerCode = comparable(candidateProviderCode(candidate));
+  if (providerCode) {
     const providerMatches = uniqueMatches(receptionItems, (line) => [
       line?.codigoProveedor,
       line?.inventarioSnapshot?.codigoProveedor,
-    ].some((value) => comparable(value) === code));
+    ].some((value) => comparable(value) === providerCode));
     if (providerMatches.length) return {kind: "codigo_proveedor", matches: providerMatches};
   }
 
@@ -72,6 +95,35 @@ function matchCandidate(candidate, receptionItems) {
   return {kind: "none", matches: []};
 }
 
+export function getReceptionImportedProviderStatus(analysis = {}, providerSnapshot = {}) {
+  const extractedFiscal = fiscalComparable(analysis?.proveedor?.identificadorFiscal);
+  const expectedFiscal = fiscalComparable(
+    providerSnapshot?.identificadorFiscalValor ||
+    providerSnapshot?.identificadorFiscalNormalizado ||
+    providerSnapshot?.rut ||
+    providerSnapshot?.rutNormalizado
+  );
+  if (!extractedFiscal) {
+    return {
+      estado: "revisar",
+      mensaje: "Revisar proveedor: el documento no entregó un identificador fiscal.",
+    };
+  }
+  if (!expectedFiscal) {
+    return {
+      estado: "revisar",
+      mensaje: "Revisar proveedor: el proveedor de la OC no tiene identificación fiscal para comparar.",
+    };
+  }
+  if (expectedFiscal && extractedFiscal === expectedFiscal) {
+    return {estado: "coincidencia", mensaje: "Proveedor reconocido por identificador fiscal."};
+  }
+  return {
+    estado: "no_encontrado",
+    mensaje: "Proveedor no encontrado. Selecciona o crea el proveedor mediante el flujo existente antes de continuar.",
+  };
+}
+
 export function buildReceptionImportPreview(candidates = [], receptionItems = []) {
   return (Array.isArray(candidates) ? candidates : []).map((candidate, index) => {
     const match = matchCandidate(candidate, receptionItems);
@@ -83,6 +135,7 @@ export function buildReceptionImportPreview(candidates = [], receptionItems = []
       rowId: text(candidate?.id, 160) || `documento-${index + 1}`,
       nombreOrigen: text(candidate?.nombre || candidate?.descripcion, 240) || `Línea ${index + 1}`,
       codigoOrigen: candidateCode(candidate),
+      codigoProveedorOrigen: candidateProviderCode(candidate),
       unidadOrigen: text(candidate?.unidad, 80) || "unidad",
       cantidad: finite(
         candidate?.cantidadOrigen ?? candidate?.cantidadSugerida ?? candidate?.cantidad ?? candidate?.stock,
@@ -90,6 +143,7 @@ export function buildReceptionImportPreview(candidates = [], receptionItems = []
       ),
       costoUnitario: finite(candidate?.costoBase ?? candidate?.costoUnitario, 0),
       descuentoPct: finite(candidate?.descuentoPct, 0),
+      totalLinea: finite(candidate?.totalLinea, 0),
       selectedLineId,
       matchKind: match.kind,
       estado: selectedLineId
@@ -180,7 +234,7 @@ export function applyReceptionImportRows(draftItems = [], rows = []) {
       descuentoPct: gross > 0 ? rounded(discount * 100 / gross) : 0,
       documentoLineas: matches.slice(0, 20).map((row) => ({
         nombre: text(row.nombreOrigen, 240),
-        codigo: text(row.codigoOrigen, 100),
+        codigoProveedor: text(row.codigoProveedorOrigen || row.codigoOrigen, 100),
         unidad: text(row.unidadOrigen, 80),
         cantidad: row.cantidad,
         costoUnitario: row.costoUnitario,
@@ -199,6 +253,8 @@ export function buildReceptionDocumentSource(fileData = {}, analysis = {}, field
   }
   const tipoDetectado = text(fields?.tipoDocumento || analysis?.documentType, 40).toLowerCase();
   const summary = getReceptionImportSummary(rows);
+  const extractedDocument = analysis?.documento || {};
+  const extractedTotals = analysis?.totales || {};
   return {
     origen: "importador_documental",
     nombreArchivo: text(fileData?.nombreArchivo, 240),
@@ -210,6 +266,18 @@ export function buildReceptionDocumentSource(fileData = {}, analysis = {}, field
     fechaDocumento: text(fields?.fechaDocumento, 10),
     fechaVencimiento: text(fields?.fechaVencimiento, 10),
     condicionesPago: text(fields?.condicionesPago, 1000),
+    moneda: text(fields?.moneda || extractedDocument.moneda, 12).toUpperCase(),
+    proveedorDocumento: documentParty(analysis?.proveedor),
+    receptorDocumento: documentParty(analysis?.receptor),
+    neto: optionalFinite(fields?.neto ?? extractedTotals.neto),
+    impuestoPorcentaje: optionalFinite(
+      fields?.impuestoPorcentaje ?? extractedTotals.impuestoPorcentaje
+    ),
+    impuestoMonto: optionalFinite(fields?.impuestoMonto ?? extractedTotals.impuestoMonto),
+    total: optionalFinite(fields?.total ?? extractedTotals.total),
+    coherenciaEstado: ["coherente", "revisar", "sin_datos"].includes(
+      analysis?.coherencia?.estado
+    ) ? analysis.coherencia.estado : "sin_datos",
     lineasDetectadas: summary.total,
     lineasAplicadas: summary.asociadas,
     advertencias: [

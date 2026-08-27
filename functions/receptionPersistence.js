@@ -63,10 +63,26 @@ function boundedDocumentCount(value) {
   return Number.isFinite(result) ? Math.min(200, Math.max(0, Math.trunc(result))) : 0;
 }
 
+function optionalDocumentAmount(value, label, HttpsError, maximum = Number.MAX_SAFE_INTEGER) {
+  if (value === null || value === undefined || value === "") return null;
+  const result = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(result) || result < 0 || result > maximum) {
+    fail(HttpsError, "invalid-argument", `${label} no es válido.`);
+  }
+  return result;
+}
+
+function normalizeDocumentParty(raw) {
+  return {
+    nombre: text(raw?.nombre, 240),
+    identificadorFiscal: text(raw?.identificadorFiscal, 80),
+  };
+}
+
 function normalizeDocumentLines(raw, HttpsError) {
   return (Array.isArray(raw) ? raw : []).slice(0, 20).map((line, index) => ({
     nombre: text(line?.nombre, 240),
-    codigo: text(line?.codigo, 100),
+    codigoProveedor: text(line?.codigoProveedor || line?.codigo, 100),
     unidad: text(line?.unidad, 80),
     cantidad: quantity(line?.cantidad, `Linea documental ${index + 1}`, HttpsError),
     costoUnitario: quantity(line?.costoUnitario, `Costo documental ${index + 1}`, HttpsError),
@@ -86,6 +102,11 @@ function normalizeDocumentSource(raw, HttpsError) {
     fail(HttpsError, "invalid-argument", "El tamano del documento no es valido.");
   }
   const type = text(raw.tipoDocumento, 40).toLowerCase();
+  const currency = text(raw.moneda, 12).toUpperCase();
+  if (currency && !/^[A-Z]{3}$/.test(currency)) {
+    fail(HttpsError, "invalid-argument", "La moneda extraída no es válida.");
+  }
+  const coherence = text(raw.coherenciaEstado, 20).toLowerCase();
   return {
     origen: "importador_documental",
     nombreArchivo,
@@ -97,6 +118,25 @@ function normalizeDocumentSource(raw, HttpsError) {
     fechaDocumento: optionalDate(raw.fechaDocumento, "La fecha del documento", HttpsError),
     fechaVencimiento: optionalDate(raw.fechaVencimiento, "La fecha de vencimiento", HttpsError),
     condicionesPago: text(raw.condicionesPago, 1000),
+    moneda: currency,
+    proveedorDocumento: normalizeDocumentParty(raw.proveedorDocumento),
+    receptorDocumento: normalizeDocumentParty(raw.receptorDocumento),
+    neto: optionalDocumentAmount(raw.neto, "El neto extraído", HttpsError),
+    impuestoPorcentaje: optionalDocumentAmount(
+      raw.impuestoPorcentaje,
+      "El porcentaje de impuesto extraído",
+      HttpsError,
+      100
+    ),
+    impuestoMonto: optionalDocumentAmount(
+      raw.impuestoMonto,
+      "El impuesto extraído",
+      HttpsError
+    ),
+    total: optionalDocumentAmount(raw.total, "El total extraído", HttpsError),
+    coherenciaEstado: ["coherente", "revisar", "sin_datos"].includes(coherence)
+      ? coherence
+      : "sin_datos",
     lineasDetectadas: boundedDocumentCount(raw.lineasDetectadas),
     lineasAplicadas: boundedDocumentCount(raw.lineasAplicadas),
     advertencias: (Array.isArray(raw.advertencias) ? raw.advertencias : [])

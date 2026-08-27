@@ -1,5 +1,13 @@
 # SPEC 011 — Recepciones MVP
 
+> Actualización BRUNO-10: el contexto documental `reception` extrae por separado
+> documento, emisor/proveedor, receptor, totales y líneas económicas. La respuesta
+> se normaliza determinísticamente, omite copias ORIGINAL/CEDIBLE repetidas y marca
+> `Revisar totales` cuando las líneas, neto, impuesto y total no concilian. Los
+> códigos de la factura son `codigoProveedor`, nunca SKU ni barcode. La identidad
+> fiscal extraída sólo se compara con el proveedor autoritativo de la OC; no crea ni
+> sustituye proveedores automáticamente.
+
 > Actualización BRUNO-06: un borrador de Recepción puede usar el importador
 > documental existente para generar una propuesta editable y reconciliarla con
 > las líneas de la OC. Importar o aplicar la propuesta no modifica inventario;

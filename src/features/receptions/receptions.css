@@ -29,12 +29,17 @@
 .reception-import__source small { color: #64748b; }
 .reception-import__document { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .reception-import__document > div, .reception-import__document label { display: grid; gap: 6px; }
+.reception-import__document > div small { color: #64748b; font-size: 12px; font-weight: 500; }
 .reception-import__document span, .reception-import__document label { font-size: 13px; font-weight: 700; }
 .reception-import__document input, .reception-import__document select, .reception-import__table input, .reception-import__table select { border: 1px solid #c9d4da; border-radius: 6px; font: inherit; min-height: 38px; padding: 7px 9px; }
 .reception-import__wide { grid-column: 1 / -1; }
 .reception-import__summary { display: flex; flex-wrap: wrap; gap: 8px; }
 .reception-import__summary span { background: #eef2f7; border-radius: 999px; color: #334155; font-size: 12px; font-weight: 700; padding: 5px 9px; }
-.reception-import__table { min-width: 900px; }
+.reception-import__provider-status { border: 1px solid #fde68a; border-radius: 7px; color: #92400e; grid-column: 1 / -1; margin: 0; padding: 9px 11px; }
+.reception-import__provider-status--coincidencia { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }
+.reception-import__provider-status--no_encontrado { background: #fff7ed; border-color: #fed7aa; color: #9a3412; }
+.reception-import__review-totals { background: #fee2e2 !important; color: #991b1b !important; }
+.reception-import__table { min-width: 1040px; }
 .reception-import__table input { max-width: 105px; }
 .reception-import-status { border-radius: 999px; display: inline-block; font-size: 11px; font-weight: 800; padding: 4px 8px; white-space: nowrap; }
 .reception-import-status--coincidencia { background: #dcfce7; color: #166534; }

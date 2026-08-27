@@ -1,16 +1,17 @@
 const { Type } = require("@google/genai");
 const { AI_MODELS } = require("./aiConfig");
+const {formatChileanRut, normalizeChileanRut} = require("./fiscalIdentifier");
 
 const DOCUMENT_GEMINI_MODEL = AI_MODELS.DOCUMENT_IMPORT;
 const MAX_DOCUMENT_IMPORT_BYTES = 5 * 1024 * 1024;
 const MAX_DOCUMENT_IMPORT_BASE64_LENGTH =
   Math.ceil(MAX_DOCUMENT_IMPORT_BYTES / 3) * 4 + 4;
 const DOCUMENT_UNAVAILABLE_MESSAGE =
-  "No fue posible analizar el documento mediante el servicio inteligente. El archivo no fue almacenado y ningún registro fue incorporado al inventario. Intenta nuevamente o utiliza una planilla compatible.";
+  "No fue posible analizar el documento. El archivo no fue almacenado ni se aplicaron cambios. Intenta nuevamente o continúa manualmente.";
 const TEMPORARY_DOCUMENT_UNAVAILABLE_MESSAGE =
-  "El servicio inteligente está temporalmente ocupado. Espera unos segundos e intenta nuevamente. El archivo no fue almacenado y ningún registro fue incorporado al inventario.";
+  "El servicio inteligente está temporalmente ocupado. El archivo no fue almacenado ni se aplicaron cambios. Espera unos segundos o continúa manualmente.";
 const DOCUMENT_USAGE_LIMIT_MESSAGE =
-  "El servicio inteligente alcanzó el límite de uso disponible. Intenta nuevamente más tarde. El archivo no fue almacenado y ningún registro fue incorporado al inventario.";
+  "El servicio inteligente alcanzó el límite de uso disponible. El archivo no fue almacenado ni se aplicaron cambios. Intenta más tarde o continúa manualmente.";
 const DEFAULT_DOCUMENT_IMPORT_MARGIN = 25;
 const DEFAULT_MARGIN_WARNING =
   "Se aplicó el margen predeterminado del sistema. Puedes modificarlo antes de guardar.";
@@ -40,6 +41,7 @@ const EXTENSION_TO_MIME = new Map([
 
 const INVENTORY_ITEM_TYPES = ["producto", "servicio", "actividad"];
 const DOCUMENT_TYPES = ["factura", "cotizacion", "lista_precios", "inventario", "otro"];
+const DOCUMENT_CONTEXTS = ["inventory", "reception"];
 const MAX_DOCUMENT_ITEMS = 80;
 
 class DocumentImportError extends Error {
@@ -67,6 +69,44 @@ const INVENTORY_DOCUMENT_RESPONSE_SCHEMA = {
       type: Type.STRING,
       enum: DOCUMENT_TYPES,
     },
+    documento: {
+      type: Type.OBJECT,
+      nullable: true,
+      properties: {
+        tipo: nullableString(),
+        numero: nullableString(),
+        fechaEmision: nullableString(),
+        fechaVencimiento: nullableString(),
+        condicionPago: nullableString(),
+        moneda: nullableString(),
+      },
+    },
+    proveedor: {
+      type: Type.OBJECT,
+      nullable: true,
+      properties: {
+        nombre: nullableString(),
+        identificadorFiscal: nullableString(),
+      },
+    },
+    receptor: {
+      type: Type.OBJECT,
+      nullable: true,
+      properties: {
+        nombre: nullableString(),
+        identificadorFiscal: nullableString(),
+      },
+    },
+    totales: {
+      type: Type.OBJECT,
+      nullable: true,
+      properties: {
+        neto: nullableNumber(),
+        impuestoPorcentaje: nullableNumber(),
+        impuestoMonto: nullableNumber(),
+        total: nullableNumber(),
+      },
+    },
     items: {
       type: Type.ARRAY,
       items: {
@@ -83,8 +123,12 @@ const INVENTORY_DOCUMENT_RESPONSE_SCHEMA = {
           descripcion: nullableString(),
           unidad: nullableString(),
           sku: nullableString(),
+          codigoProveedor: nullableString(),
           cantidadOrigen: nullableNumber(),
           precioUnitario: nullableNumber(),
+          costoUnitario: nullableNumber(),
+          descuento: nullableNumber(),
+          descuentoPct: nullableNumber(),
           totalLinea: nullableNumber(),
           costoBase: nullableNumber(),
           tasaImpuestoCompra: nullableNumber(),
@@ -97,6 +141,7 @@ const INVENTORY_DOCUMENT_RESPONSE_SCHEMA = {
           confianza: nullableNumber(),
           evidenciaOrigen: nullableString(),
           pagina: nullableNumber(),
+          seccionDocumento: nullableString(),
           valorCalculado: {
             type: Type.BOOLEAN,
             nullable: true,
@@ -318,16 +363,36 @@ function validateInventoryDocumentPayload(input) {
   };
 }
 
+function normalizeLocalizedNumericText(value) {
+  const compact = String(value ?? "")
+    .trim()
+    .replace(/\s+/g, "")
+    .replace(/[^\d,.-]/g, "");
+  if (!compact) return "";
+  const lastDot = compact.lastIndexOf(".");
+  const lastComma = compact.lastIndexOf(",");
+  if (lastDot >= 0 && lastComma >= 0) {
+    const decimalSeparator = lastDot > lastComma ? "." : ",";
+    const thousandsSeparator = decimalSeparator === "." ? "," : ".";
+    return compact.split(thousandsSeparator).join("")
+      .replace(decimalSeparator, ".");
+  }
+  const separator = lastDot >= 0 ? "." : lastComma >= 0 ? "," : "";
+  if (!separator) return compact;
+  const parts = compact.split(separator);
+  const unsignedFirst = parts[0].replace("-", "");
+  const thousandsGroups = parts.length > 1 && parts.slice(1).every((part) => part.length === 3);
+  if (thousandsGroups && unsignedFirst.length >= 1) return parts.join("");
+  return `${parts.slice(0, -1).join("")}.${parts.at(-1)}`;
+}
+
 function parsePositiveNumber(value) {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value === "number") {
     return Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
   }
 
-  const normalized = String(value)
-    .replace(/[^\d,.-]/g, "")
-    .replace(/\.(?=\d{3}(?:\D|$))/g, "")
-    .replace(",", ".");
+  const normalized = normalizeLocalizedNumericText(value);
   const parsed = Number(normalized);
   if (!Number.isFinite(parsed) || parsed < 0) return null;
   return Math.round(parsed);
@@ -341,10 +406,7 @@ function parsePositiveDecimal(value) {
       : null;
   }
 
-  const normalized = String(value)
-    .replace(/[^\d,.-]/g, "")
-    .replace(/\.(?=\d{3}(?:\D|$))/g, "")
-    .replace(",", ".");
+  const normalized = normalizeLocalizedNumericText(value);
   const parsed = Number(normalized);
   if (!Number.isFinite(parsed) || parsed < 0) return null;
   return Math.round(parsed * 100) / 100;
@@ -352,10 +414,7 @@ function parsePositiveDecimal(value) {
 
 function parsePositiveQuantity(value) {
   if (value === null || value === undefined || value === "") return null;
-  const normalized = String(value)
-    .replace(/[^\d,.-]/g, "")
-    .replace(/\.(?=\d{3}(?:\D|$))/g, "")
-    .replace(",", ".");
+  const normalized = normalizeLocalizedNumericText(value);
   const parsed = Number(normalized);
   if (!Number.isFinite(parsed) || parsed <= 0) return null;
   return Math.round(parsed * 100) / 100;
@@ -423,12 +482,138 @@ function isAdministrativeLine(name) {
     /^forma de pago\b/,
     /^observaciones?\b/,
     /^pagina\b/,
+    /^timbre\b/,
+    /^resolucion\b/,
+    /^codigo de autorizacion\b/,
+    /^cedible\b/,
+    /^sii\b/,
   ].some((pattern) => pattern.test(normalized));
 }
 
 function normalizeDocumentType(value) {
   const normalized = normalizeSearchText(value).replace(/\s+/g, "_");
+  if (normalized.startsWith("factura")) return "factura";
+  if (normalized.startsWith("cotizacion")) return "cotizacion";
+  if (normalized.includes("lista") && normalized.includes("precio")) return "lista_precios";
   return DOCUMENT_TYPES.includes(normalized) ? normalized : "otro";
+}
+
+function normalizeDocumentContext(value) {
+  const normalized = normalizeSearchText(value);
+  return DOCUMENT_CONTEXTS.includes(normalized) ? normalized : "inventory";
+}
+
+function normalizeDocumentDate(value) {
+  const raw = safeText(value, 40);
+  if (!raw) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const match = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/.exec(raw);
+  if (!match) return "";
+  const normalized = `${match[3]}-${match[2].padStart(2, "0")}-${match[1].padStart(2, "0")}`;
+  const date = new Date(`${normalized}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== normalized
+    ? ""
+    : normalized;
+}
+
+function normalizeFiscalIdentifier(value) {
+  const raw = safeText(value, 80).toUpperCase();
+  const compact = raw.replace(/[^0-9K]/g, "");
+  if (/^\d{7,8}[\dK]$/.test(compact)) {
+    return formatChileanRut(normalizeChileanRut(compact));
+  }
+  return raw.replace(/\s+/g, " ");
+}
+
+function normalizeDocumentParty(raw) {
+  return {
+    nombre: safeText(raw?.nombre || raw?.razonSocial, 240),
+    identificadorFiscal: normalizeFiscalIdentifier(
+      raw?.identificadorFiscal || raw?.rut || raw?.taxId
+    ),
+  };
+}
+
+function normalizeDocumentCurrency(value, {proveedor, receptor, impuestoPorcentaje} = {}) {
+  const explicit = safeText(value, 12).toUpperCase().replace(/[^A-Z]/g, "");
+  if (/^[A-Z]{3}$/.test(explicit)) return explicit;
+  const chileParties = [proveedor, receptor].filter((party) =>
+    /^\d{1,3}(?:\.\d{3}){2}-[\dK]$/.test(party?.identificadorFiscal || "")
+  );
+  return chileParties.length && impuestoPorcentaje === 19 ? "CLP" : "";
+}
+
+function documentItemFingerprint(item) {
+  return [
+    normalizeSearchText(item?.codigoProveedor || item?.sku || item?.codigo),
+    normalizeSearchText(item?.nombre || item?.descripcion).replace(/\s+/g, " "),
+    item?.cantidadOrigen ?? "",
+    item?.costoBase ?? "",
+    item?.descuentoPct ?? "",
+    item?.totalLinea ?? "",
+  ].join("|");
+}
+
+function dedupeDocumentItems(items) {
+  if (!Array.isArray(items) || items.length < 2) return {items: items || [], removed: 0};
+  const pages = new Map();
+  items.forEach((item) => {
+    const page = Number(item?.pagina || 0);
+    if (!page) return;
+    const current = pages.get(page) || [];
+    current.push(item);
+    pages.set(page, current);
+  });
+  const repeatedPages = new Set();
+  const pageSignatures = new Map();
+  pages.forEach((pageItems, page) => {
+    if (pageItems.length < 2) return;
+    const signature = pageItems.map(documentItemFingerprint).join("\n");
+    if (pageSignatures.has(signature)) repeatedPages.add(page);
+    else pageSignatures.set(signature, page);
+  });
+  let deduplicated = items.filter((item) => !repeatedPages.has(Number(item?.pagina || 0)));
+  if (deduplicated.length === items.length && items.length >= 4 && items.length % 2 === 0) {
+    const half = items.length / 2;
+    const repeatedSequence = items.slice(0, half).every((item, index) =>
+      documentItemFingerprint(item) === documentItemFingerprint(items[index + half])
+    );
+    if (repeatedSequence) deduplicated = items.slice(0, half);
+  }
+  if (deduplicated.length === items.length) {
+    const seen = new Set();
+    deduplicated = items.filter((item) => {
+      const fingerprint = documentItemFingerprint(item);
+      const markedCopy = normalizeSearchText(
+        `${item?.seccionDocumento || ""} ${item?.evidenciaOrigen || ""}`
+      ).includes("cedible");
+      if (markedCopy && seen.has(fingerprint)) return false;
+      seen.add(fingerprint);
+      return true;
+    });
+  }
+  return {items: deduplicated, removed: items.length - deduplicated.length};
+}
+
+function totalsAreClose(left, right) {
+  if (!Number.isFinite(left) || !Number.isFinite(right)) return null;
+  return Math.abs(left - right) <= Math.max(2, Math.abs(right) * 0.001);
+}
+
+function buildDocumentCoherence(items, totals) {
+  const lineTotals = items.map((item) => item.totalLinea).filter(Number.isFinite);
+  const linesCheck = lineTotals.length === items.length && items.length > 0
+    ? totalsAreClose(lineTotals.reduce((sum, value) => sum + value, 0), totals.neto)
+    : null;
+  const taxCheck = Number.isFinite(totals.neto) && Number.isFinite(totals.impuestoMonto)
+    ? totalsAreClose(totals.neto + totals.impuestoMonto, totals.total)
+    : null;
+  const checks = [linesCheck, taxCheck].filter((value) => value !== null);
+  return {
+    estado: checks.includes(false) ? "revisar" : checks.length ? "coherente" : "sin_datos",
+    lineasConcilianNeto: linesCheck,
+    netoImpuestoConcilianTotal: taxCheck,
+  };
 }
 
 function defaultUnitForDocumentItem(tipoItem) {
@@ -463,9 +648,10 @@ function normalizeConfidencePercent(value) {
   return null;
 }
 
-function normalizeInventoryDocumentItem(rawItem, index) {
+function normalizeInventoryDocumentItem(rawItem, index, context = "inventory") {
   const nombre = safeText(
-    rawItem?.nombre || rawItem?.name || rawItem?.producto || rawItem?.descripcionProducto,
+    rawItem?.nombre || rawItem?.name || rawItem?.producto ||
+      rawItem?.descripcionProducto || rawItem?.descripcion,
     140
   );
   if (!nombre || isAdministrativeLine(nombre)) return null;
@@ -474,7 +660,7 @@ function normalizeInventoryDocumentItem(rawItem, index) {
   const rawTipo = normalizeSearchText(rawItem?.tipoItem || rawItem?.tipo);
   const hasExplicitType = INVENTORY_ITEM_TYPES.includes(rawTipo);
   const tipoItem = hasExplicitType ? rawTipo : "producto";
-  if (!hasExplicitType) {
+  if (!hasExplicitType && context === "inventory") {
     advertencias.push("Tipo de item no determinado; revisar antes de guardar.");
   }
 
@@ -491,6 +677,15 @@ function normalizeInventoryDocumentItem(rawItem, index) {
   const totalLinea = parsePositiveNumber(
     rawItem?.totalLinea ?? rawItem?.precioTotal ?? rawItem?.importeLinea
   );
+  const descuentoDetectado = parsePositiveDecimal(
+    rawItem?.descuentoPct ?? rawItem?.descuentoPorcentaje ?? rawItem?.descuento
+  );
+  const descuentoPct = descuentoDetectado !== null && descuentoDetectado <= 100
+    ? descuentoDetectado
+    : 0;
+  if (descuentoDetectado > 100) {
+    advertencias.push("Descuento fuera de rango; revisar manualmente.");
+  }
   const precioVenta = parsePositiveNumber(
     rawItem?.precioInterno ??
       rawItem?.precioInternoSugerido ??
@@ -515,10 +710,11 @@ function normalizeInventoryDocumentItem(rawItem, index) {
   if (margenDeseado === null) {
     margenDeseado = calculateMarginFromPrice(costoBase, precioVenta);
   }
-  if (margenDeseado === null) {
+  if (margenDeseado === null && context === "inventory") {
     margenDeseado = DEFAULT_DOCUMENT_IMPORT_MARGIN;
     advertencias.push(DEFAULT_MARGIN_WARNING);
   }
+  if (margenDeseado === null) margenDeseado = 0;
 
   const unidad = safeText(rawItem?.unidad, 40) || defaultUnitForDocumentItem(tipoItem);
   const confianza = normalizeConfidencePercent(rawItem?.confianza ?? rawItem?.nivelConfianza);
@@ -548,7 +744,7 @@ function normalizeInventoryDocumentItem(rawItem, index) {
           stockMinimo: parsePositiveDecimal(
             rawItem?.stockMinimo ?? rawItem?.stockMin
           ),
-          codigoBarras: safeText(
+          codigoBarras: context === "reception" ? "" : safeText(
             rawItem?.codigoBarras || rawItem?.ean || rawItem?.upc,
             120
           ),
@@ -561,8 +757,9 @@ function normalizeInventoryDocumentItem(rawItem, index) {
   return {
     id: `documento-${index + 1}`,
     nombre,
-    sku: safeText(rawItem?.sku || rawItem?.codigo, 80) || "",
-    codigo: safeText(rawItem?.codigo || rawItem?.sku, 80) || "",
+    sku: safeText(rawItem?.sku, 80),
+    codigo: safeText(rawItem?.sku || (context === "inventory" ? rawItem?.codigo : ""), 80),
+    codigoProveedor: safeText(rawItem?.codigoProveedor, 100),
     tipoItem,
     areaPropuesta: safeText(
       rawItem?.areaPropuesta || rawItem?.areaNombre || rawItem?.area,
@@ -577,12 +774,16 @@ function normalizeInventoryDocumentItem(rawItem, index) {
     cantidadSugerida: cantidadOrigen,
     cantidadOrigen,
     costoBase,
+    costoUnitario: costoBase,
+    descuentoPct,
+    totalLinea,
     margenDeseado,
     precioInterno: calculateDocumentPrice(costoBase, margenDeseado),
     observacion: itemWarnings.join(" "),
     advertencias: itemWarnings,
     evidenciaOrigen,
     pagina,
+    seccionDocumento: safeText(rawItem?.seccionDocumento, 80),
     valorCalculado,
     confianza,
     origenAnalisis: "documento",
@@ -591,13 +792,16 @@ function normalizeInventoryDocumentItem(rawItem, index) {
   };
 }
 
-function sanitizeInventoryDocumentResult(payload) {
+function sanitizeInventoryDocumentResult(payload, {context = "inventory"} = {}) {
+  const normalizedContext = normalizeDocumentContext(context);
   const rawItems = Array.isArray(payload?.items) ? payload.items : [];
-  const items = rawItems
+  const normalizedItems = rawItems
     .slice(0, MAX_DOCUMENT_ITEMS)
-    .map((item, index) => normalizeInventoryDocumentItem(item, index))
+    .map((item, index) => normalizeInventoryDocumentItem(item, index, normalizedContext))
     .filter(Boolean);
   const warnings = normalizeWarnings(payload?.warnings);
+  const deduplication = dedupeDocumentItems(normalizedItems);
+  const items = deduplication.items;
 
   items.forEach((item) => {
     const itemWarnings = [];
@@ -623,8 +827,51 @@ function sanitizeInventoryDocumentResult(payload) {
     warnings.push("No se identificaron items comerciales suficientes.");
   }
 
+  if (deduplication.removed > 0) {
+    warnings.push(
+      `Se omitieron ${deduplication.removed} lineas repetidas de una copia del documento.`
+    );
+  }
+
+  const proveedor = normalizeDocumentParty(payload?.proveedor);
+  const receptor = normalizeDocumentParty(payload?.receptor);
+  const impuestoPorcentaje = parsePositiveDecimal(
+    payload?.totales?.impuestoPorcentaje ?? payload?.totales?.tasaImpuesto
+  );
+  const totales = {
+    neto: parsePositiveNumber(payload?.totales?.neto),
+    impuestoPorcentaje,
+    impuestoMonto: parsePositiveNumber(
+      payload?.totales?.impuestoMonto ?? payload?.totales?.iva
+    ),
+    total: parsePositiveNumber(payload?.totales?.total),
+  };
+  const rawDocument = payload?.documento || {};
+  const documentType = normalizeDocumentType(rawDocument.tipo || payload?.documentType);
+  const documento = {
+    tipo: safeText(rawDocument.tipo, 100),
+    numero: safeText(rawDocument.numero || rawDocument.folio, 120),
+    fechaEmision: normalizeDocumentDate(rawDocument.fechaEmision),
+    fechaVencimiento: normalizeDocumentDate(rawDocument.fechaVencimiento),
+    condicionPago: safeText(rawDocument.condicionPago, 240),
+    moneda: normalizeDocumentCurrency(rawDocument.moneda, {
+      proveedor,
+      receptor,
+      impuestoPorcentaje,
+    }),
+  };
+  const coherencia = buildDocumentCoherence(items, totales);
+  if (coherencia.estado === "revisar") {
+    warnings.push("Revisar totales: los importes extraidos no concilian entre si.");
+  }
+
   return {
-    documentType: normalizeDocumentType(payload?.documentType),
+    documentType,
+    documento,
+    proveedor,
+    receptor,
+    totales,
+    coherencia,
     items,
     warnings: dedupeWarnings(warnings),
   };
@@ -646,7 +893,27 @@ function extractJsonObject(text) {
   }
 }
 
-function buildInventoryDocumentPrompt() {
+function buildInventoryDocumentPrompt(context = "inventory") {
+  if (normalizeDocumentContext(context) === "reception") {
+    return (
+      "Eres un extractor de documentos de proveedor para la vista previa de Recepciones de ValoraCloud.\n" +
+      "Analiza el archivo visual completo, incluyendo tablas y todas las paginas, pero reconoce copias repetidas como ORIGINAL/CEDIBLE y devuelve cada posicion comercial una sola vez.\n\n" +
+      "Identifica por separado al EMISOR/PROVEEDOR y al RECEPTOR/CLIENTE. Nunca uses los datos del receptor como proveedor.\n" +
+      "Devuelve documento {tipo, numero, fechaEmision, fechaVencimiento, condicionPago, moneda}, proveedor {nombre, identificadorFiscal}, receptor {nombre, identificadorFiscal}, totales {neto, impuestoPorcentaje, impuestoMonto, total} e items.\n" +
+      "Cada item debe incluir nombre (puede repetir descripcion por compatibilidad), tipoItem, codigoProveedor, descripcion, unidad, cantidadOrigen, costoUnitario, descuento, totalLinea, pagina, seccionDocumento, confianza y advertencias.\n\n" +
+      "Reglas estrictas:\n" +
+      "- No inventes valores. Usa null cuando no esten visibles.\n" +
+      "- Conserva ceros iniciales del folio y devuelve fechas como AAAA-MM-DD cuando sea posible.\n" +
+      "- Interpreta separadores numericos segun el documento: en contexto chileno 3.636 significa 3636, no 3.636 decimal.\n" +
+      "- El codigo impreso en la columna de producto es codigoProveedor; no es SKU interno ni codigo de barras.\n" +
+      "- No extraigas como items codigos de timbre, pie, autorizacion, resolucion, folio, RUT, referencias o datos fuera de la tabla comercial.\n" +
+      "- Distingue cantidad, precio/costo unitario, descuento de linea y total de linea. No uses neto, IVA o total del documento como costo de un item.\n" +
+      "- Si el documento chileno no rotula moneda pero su contexto fiscal es inequivoco, moneda puede ser CLP; en otro caso usa null.\n" +
+      "- Si una pagina CEDIBLE repite la factura, no dupliques proveedor, items, cantidades ni totales.\n" +
+      "- Conserva dos posiciones realmente distintas aunque sus datos sean iguales; seccionDocumento y pagina son metadatos de apoyo.\n" +
+      "- Devuelve documentType=\"factura\" para una factura electronica y exclusivamente JSON valido conforme al schema."
+    );
+  }
   return (
     "Eres un asistente de ValoraCloud para normalizar documentos comerciales hacia una vista previa de inventario.\n" +
     "Analiza el documento completo como archivo visual, no solo como texto plano. Considera tablas, columnas, filas, encabezados, paginas repetidas, cantidades, precios unitarios y totales de linea.\n\n" +
@@ -937,7 +1204,7 @@ function logDocumentAnalysisFailure(documentPayload, startedAt, classification, 
   });
 }
 
-async function generateDocumentContent(generateGeminiContent, documentPayload) {
+async function generateDocumentContent(generateGeminiContent, documentPayload, context = "inventory") {
   try {
     return await generateGeminiContent({
       model: DOCUMENT_GEMINI_MODEL,
@@ -946,7 +1213,7 @@ async function generateDocumentContent(generateGeminiContent, documentPayload) {
         {
           role: "user",
           parts: [
-            { text: buildInventoryDocumentPrompt() },
+            { text: buildInventoryDocumentPrompt(context) },
             {
               inlineData: {
                 mimeType: documentPayload.detectedMime,
@@ -981,6 +1248,7 @@ async function normalizeInventoryDocumentHandler(
   }
 
   let documentPayload;
+  const context = normalizeDocumentContext(request?.data?.context);
   try {
     documentPayload = validateInventoryDocumentPayload(request.data || {});
   } catch (error) {
@@ -995,10 +1263,11 @@ async function normalizeInventoryDocumentHandler(
   try {
     const { response, aiRateLimit } = await generateDocumentContent(
       generateGeminiContent,
-      documentPayload
+      documentPayload,
+      context
     );
     const parsed = extractJsonObject(response.text);
-    const normalized = sanitizeInventoryDocumentResult(parsed);
+    const normalized = sanitizeInventoryDocumentResult(parsed, {context});
 
     return {
       items: normalized.items,
@@ -1006,6 +1275,11 @@ async function normalizeInventoryDocumentHandler(
       mode: "document-multimodal",
       model: DOCUMENT_GEMINI_MODEL,
       documentType: normalized.documentType,
+      documento: normalized.documento,
+      proveedor: normalized.proveedor,
+      receptor: normalized.receptor,
+      totales: normalized.totales,
+      coherencia: normalized.coherencia,
       warnings: normalized.warnings,
       aiRateLimit,
       warning:

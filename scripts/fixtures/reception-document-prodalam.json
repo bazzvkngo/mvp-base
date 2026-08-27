@@ -1,0 +1,48 @@
+{
+  "documentType": "factura",
+  "documento": {
+    "tipo": "FACTURA ELECTRÓNICA",
+    "numero": "06897040",
+    "fechaEmision": "24-08-2026",
+    "fechaVencimiento": "24-08-2026",
+    "condicionPago": "WebPay",
+    "moneda": null
+  },
+  "proveedor": {
+    "nombre": "Prodalam S.A.",
+    "identificadorFiscal": "93.772.000-9"
+  },
+  "receptor": {
+    "nombre": "Servicios Integrales Bagner SPA",
+    "identificadorFiscal": "77.091.679-8"
+  },
+  "totales": {
+    "neto": "337.942",
+    "impuestoPorcentaje": "19%",
+    "impuestoMonto": "64.209",
+    "total": "402.151"
+  },
+  "items": [
+    {"nombre":"PLETINA COMERCIAL 20X3X6.000MM","tipoItem":"producto","codigoProveedor":"32375","descripcion":"PLETINA COMERCIAL 20X3X6.000MM","cantidadOrigen":"2","unidad":"UN","costoUnitario":"3.636","descuento":"0","totalLinea":"7.272","pagina":1,"seccionDocumento":"ORIGINAL","confianza":95,"advertencias":[]},
+    {"nombre":"PERFIL ESTRUCTURAL A","tipoItem":"producto","codigoProveedor":"22378","descripcion":"PERFIL ESTRUCTURAL A","cantidadOrigen":"1","unidad":"UN","costoUnitario":"10.000","descuento":"0","totalLinea":"10.000","pagina":1,"seccionDocumento":"ORIGINAL","confianza":92,"advertencias":[]},
+    {"nombre":"PERFIL ESTRUCTURAL B","tipoItem":"producto","codigoProveedor":"22384","descripcion":"PERFIL ESTRUCTURAL B","cantidadOrigen":"2","unidad":"UN","costoUnitario":"10.000","descuento":"0","totalLinea":"20.000","pagina":1,"seccionDocumento":"ORIGINAL","confianza":92,"advertencias":[]},
+    {"nombre":"PERFIL ESTRUCTURAL C","tipoItem":"producto","codigoProveedor":"32318","descripcion":"PERFIL ESTRUCTURAL C","cantidadOrigen":"3","unidad":"UN","costoUnitario":"10.000","descuento":"0","totalLinea":"30.000","pagina":1,"seccionDocumento":"ORIGINAL","confianza":92,"advertencias":[]},
+    {"nombre":"PERFIL ESTRUCTURAL D","tipoItem":"producto","codigoProveedor":"9447","descripcion":"PERFIL ESTRUCTURAL D","cantidadOrigen":"4","unidad":"UN","costoUnitario":"10.000","descuento":"0","totalLinea":"40.000","pagina":1,"seccionDocumento":"ORIGINAL","confianza":92,"advertencias":[]},
+    {"nombre":"PERFIL ESTRUCTURAL E","tipoItem":"producto","codigoProveedor":"32328","descripcion":"PERFIL ESTRUCTURAL E","cantidadOrigen":"5","unidad":"UN","costoUnitario":"10.000","descuento":"0","totalLinea":"50.000","pagina":1,"seccionDocumento":"ORIGINAL","confianza":92,"advertencias":[]},
+    {"nombre":"PERFIL ESTRUCTURAL F","tipoItem":"producto","codigoProveedor":"70783","descripcion":"PERFIL ESTRUCTURAL F","cantidadOrigen":"6","unidad":"UN","costoUnitario":"10.000","descuento":"0","totalLinea":"60.000","pagina":1,"seccionDocumento":"ORIGINAL","confianza":92,"advertencias":[]},
+    {"nombre":"PERFIL ESTRUCTURAL G","tipoItem":"producto","codigoProveedor":"9467","descripcion":"PERFIL ESTRUCTURAL G","cantidadOrigen":"7","unidad":"UN","costoUnitario":"10.000","descuento":"0","totalLinea":"70.000","pagina":1,"seccionDocumento":"ORIGINAL","confianza":92,"advertencias":[]},
+    {"nombre":"PERFIL ESTRUCTURAL H","tipoItem":"producto","codigoProveedor":"9479","descripcion":"PERFIL ESTRUCTURAL H","cantidadOrigen":"1","unidad":"UN","costoUnitario":"50.670","descuento":"0","totalLinea":"50.670","pagina":1,"seccionDocumento":"ORIGINAL","confianza":92,"advertencias":[]},
+    {"nombre":"Timbre Electrónico SII 987654321","tipoItem":"producto","codigoProveedor":"987654321","descripcion":"Código impreso al pie","cantidadOrigen":"1","unidad":"UN","costoUnitario":"0","descuento":"0","totalLinea":"0","pagina":1,"seccionDocumento":"PIE","confianza":40,"advertencias":[]},
+    {"nombre":"PLETINA COMERCIAL 20X3X6.000MM","tipoItem":"producto","codigoProveedor":"32375","descripcion":"PLETINA COMERCIAL 20X3X6.000MM","cantidadOrigen":"2","unidad":"UN","costoUnitario":"3.636","descuento":"0","totalLinea":"7.272","pagina":2,"seccionDocumento":"CEDIBLE","confianza":95,"advertencias":[]},
+    {"nombre":"PERFIL ESTRUCTURAL A","tipoItem":"producto","codigoProveedor":"22378","descripcion":"PERFIL ESTRUCTURAL A","cantidadOrigen":"1","unidad":"UN","costoUnitario":"10.000","descuento":"0","totalLinea":"10.000","pagina":2,"seccionDocumento":"CEDIBLE","confianza":92,"advertencias":[]},
+    {"nombre":"PERFIL ESTRUCTURAL B","tipoItem":"producto","codigoProveedor":"22384","descripcion":"PERFIL ESTRUCTURAL B","cantidadOrigen":"2","unidad":"UN","costoUnitario":"10.000","descuento":"0","totalLinea":"20.000","pagina":2,"seccionDocumento":"CEDIBLE","confianza":92,"advertencias":[]},
+    {"nombre":"PERFIL ESTRUCTURAL C","tipoItem":"producto","codigoProveedor":"32318","descripcion":"PERFIL ESTRUCTURAL C","cantidadOrigen":"3","unidad":"UN","costoUnitario":"10.000","descuento":"0","totalLinea":"30.000","pagina":2,"seccionDocumento":"CEDIBLE","confianza":92,"advertencias":[]},
+    {"nombre":"PERFIL ESTRUCTURAL D","tipoItem":"producto","codigoProveedor":"9447","descripcion":"PERFIL ESTRUCTURAL D","cantidadOrigen":"4","unidad":"UN","costoUnitario":"10.000","descuento":"0","totalLinea":"40.000","pagina":2,"seccionDocumento":"CEDIBLE","confianza":92,"advertencias":[]},
+    {"nombre":"PERFIL ESTRUCTURAL E","tipoItem":"producto","codigoProveedor":"32328","descripcion":"PERFIL ESTRUCTURAL E","cantidadOrigen":"5","unidad":"UN","costoUnitario":"10.000","descuento":"0","totalLinea":"50.000","pagina":2,"seccionDocumento":"CEDIBLE","confianza":92,"advertencias":[]},
+    {"nombre":"PERFIL ESTRUCTURAL F","tipoItem":"producto","codigoProveedor":"70783","descripcion":"PERFIL ESTRUCTURAL F","cantidadOrigen":"6","unidad":"UN","costoUnitario":"10.000","descuento":"0","totalLinea":"60.000","pagina":2,"seccionDocumento":"CEDIBLE","confianza":92,"advertencias":[]},
+    {"nombre":"PERFIL ESTRUCTURAL G","tipoItem":"producto","codigoProveedor":"9467","descripcion":"PERFIL ESTRUCTURAL G","cantidadOrigen":"7","unidad":"UN","costoUnitario":"10.000","descuento":"0","totalLinea":"70.000","pagina":2,"seccionDocumento":"CEDIBLE","confianza":92,"advertencias":[]},
+    {"nombre":"PERFIL ESTRUCTURAL H","tipoItem":"producto","codigoProveedor":"9479","descripcion":"PERFIL ESTRUCTURAL H","cantidadOrigen":"1","unidad":"UN","costoUnitario":"50.670","descuento":"0","totalLinea":"50.670","pagina":2,"seccionDocumento":"CEDIBLE","confianza":92,"advertencias":[]},
+    {"nombre":"Timbre Electrónico SII 987654321","tipoItem":"producto","codigoProveedor":"987654321","descripcion":"Código impreso al pie","cantidadOrigen":"1","unidad":"UN","costoUnitario":"0","descuento":"0","totalLinea":"0","pagina":2,"seccionDocumento":"PIE CEDIBLE","confianza":40,"advertencias":[]}
+  ],
+  "warnings": []
+}

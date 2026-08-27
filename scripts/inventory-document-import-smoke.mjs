@@ -133,6 +133,10 @@ function expectInvalid(label, operation) {
 
 const validPdf = makePdf();
 const validPng = makePng();
+const receptionFixture = JSON.parse(readFileSync(
+  new URL("./fixtures/reception-document-prodalam.json", import.meta.url),
+  "utf8"
+));
 
 const pdfResult = validateInventoryDocumentPayload(
   payloadFor(validPdf, "factura-sintetica.pdf", "application/pdf")
@@ -321,6 +325,91 @@ const dailyQuotaError = makeGeminiServiceError({
 assert.equal(classifyGeminiServiceError(dailyQuotaError).category, "daily_quota");
 
 let dailyQuotaAttempts = 0;
+const normalizedReceptionDocument = sanitizeInventoryDocumentResult(
+  receptionFixture,
+  {context: "reception"}
+);
+assert.equal(normalizedReceptionDocument.documentType, "factura");
+assert.equal(normalizedReceptionDocument.documento.tipo, "FACTURA ELECTRÓNICA");
+assert.equal(normalizedReceptionDocument.documento.numero, "06897040");
+assert.equal(normalizedReceptionDocument.documento.fechaEmision, "2026-08-24");
+assert.equal(normalizedReceptionDocument.documento.fechaVencimiento, "2026-08-24");
+assert.equal(normalizedReceptionDocument.documento.condicionPago, "WebPay");
+assert.equal(normalizedReceptionDocument.documento.moneda, "CLP");
+assert.equal(normalizedReceptionDocument.proveedor.nombre, "Prodalam S.A.");
+assert.equal(normalizedReceptionDocument.proveedor.identificadorFiscal, "93.772.000-9");
+assert.equal(normalizedReceptionDocument.receptor.nombre, "Servicios Integrales Bagner SPA");
+assert.equal(normalizedReceptionDocument.receptor.identificadorFiscal, "77.091.679-8");
+assert.notEqual(normalizedReceptionDocument.proveedor.nombre, normalizedReceptionDocument.receptor.nombre);
+assert.equal(normalizedReceptionDocument.items.length, 9);
+assert.deepEqual(normalizedReceptionDocument.items.map((item) => item.codigoProveedor), [
+  "32375", "22378", "22384", "32318", "9447", "32328", "70783", "9467", "9479",
+]);
+assert.deepEqual(normalizedReceptionDocument.items.map((item) => item.cantidadOrigen), [
+  2, 1, 2, 3, 4, 5, 6, 7, 1,
+]);
+assert.equal(normalizedReceptionDocument.items[0].costoUnitario, 3636);
+assert.equal(normalizedReceptionDocument.items[0].totalLinea, 7272);
+assert.equal(normalizedReceptionDocument.items.every((item) => item.codigoBarras === ""), true);
+assert.equal(normalizedReceptionDocument.items.some((item) => item.codigoProveedor === "987654321"), false);
+assert.equal(normalizedReceptionDocument.totales.neto, 337942);
+assert.equal(normalizedReceptionDocument.totales.impuestoPorcentaje, 19);
+assert.equal(normalizedReceptionDocument.totales.impuestoMonto, 64209);
+assert.equal(normalizedReceptionDocument.totales.total, 402151);
+assert.equal(normalizedReceptionDocument.coherencia.estado, "coherente");
+assert.match(normalizedReceptionDocument.warnings.join(" "), /9 lineas repetidas/i);
+
+const nonAggressiveDuplicates = sanitizeInventoryDocumentResult({
+  documentType: "factura",
+  items: [
+    {nombre: "Posición repetida real", tipoItem: "producto", codigoProveedor: "A", cantidadOrigen: 1, costoUnitario: 10, totalLinea: 10, pagina: 1, confianza: 90},
+    {nombre: "Posición repetida real", tipoItem: "producto", codigoProveedor: "A", cantidadOrigen: 1, costoUnitario: 10, totalLinea: 10, pagina: 1, confianza: 90},
+  ],
+}, {context: "reception"});
+assert.equal(nonAggressiveDuplicates.items.length, 2);
+
+const mixedLocale = sanitizeInventoryDocumentResult({
+  documentType: "factura",
+  items: [
+    {nombre: "Formato europeo", tipoItem: "producto", cantidadOrigen: "1", costoUnitario: "1.234,56", totalLinea: "1.234,56", confianza: 90},
+    {nombre: "Formato anglosajón", tipoItem: "producto", cantidadOrigen: "1", costoUnitario: "1,234.56", totalLinea: "1,234.56", confianza: 90},
+  ],
+}, {context: "reception"});
+assert.deepEqual(mixedLocale.items.map((item) => item.costoUnitario), [1235, 1235]);
+
+const inconsistentTotals = sanitizeInventoryDocumentResult({
+  documentType: "factura",
+  totales: {neto: 100, impuestoMonto: 19, total: 999},
+  items: [{nombre: "Producto", tipoItem: "producto", cantidadOrigen: 1, costoUnitario: 100, totalLinea: 80, confianza: 90}],
+}, {context: "reception"});
+assert.equal(inconsistentTotals.coherencia.estado, "revisar");
+assert.match(inconsistentTotals.warnings.join(" "), /Revisar totales/i);
+console.log("OK recepción: emisor/receptor, folio, CEDIBLE, códigos, números chilenos y totales");
+
+let receptionPrompt = "";
+const receptionHandlerResult = await normalizeInventoryDocumentHandler(
+  {
+    auth: {uid: "usuario-prueba"},
+    data: {
+      ...payloadFor(validPdf, "factura.pdf", "application/pdf"),
+      context: "reception",
+    },
+  },
+  {
+    generateGeminiContent: async (options) => {
+      receptionPrompt = options.contents[0].parts[0].text;
+      return makeGeminiJsonResult(receptionFixture);
+    },
+    HttpsError: FakeHttpsError,
+  }
+);
+assert.match(receptionPrompt, /EMISOR\/PROVEEDOR/);
+assert.match(receptionPrompt, /ORIGINAL\/CEDIBLE/);
+assert.match(receptionPrompt, /codigoProveedor/);
+assert.equal(receptionHandlerResult.items.length, 9);
+assert.equal(receptionHandlerResult.proveedor.nombre, "Prodalam S.A.");
+assert.equal(receptionHandlerResult.totales.total, 402151);
+
 try {
   await normalizeInventoryDocumentHandler(
     {

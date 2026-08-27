@@ -4,6 +4,17 @@ export const RECEPTION_STATUSES = Object.freeze(["borrador", "confirmada", "canc
 const text = (value, max = 2000) => String(value ?? "").trim()
   .replace(/\s+/g, " ").slice(0, max);
 
+const optionalNumber = (value) => {
+  if (value === null || value === undefined || value === "") return null;
+  const number = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+};
+
+const adaptDocumentParty = (raw = {}) => ({
+  nombre: text(raw?.nombre, 240),
+  identificadorFiscal: text(raw?.identificadorFiscal, 80),
+});
+
 function adaptReceptionDocumentSource(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const nombreArchivo = text(raw.nombreArchivo, 240);
@@ -19,6 +30,16 @@ function adaptReceptionDocumentSource(raw) {
     fechaDocumento: text(raw.fechaDocumento, 10),
     fechaVencimiento: text(raw.fechaVencimiento, 10),
     condicionesPago: text(raw.condicionesPago, 1000),
+    moneda: text(raw.moneda, 12).toUpperCase(),
+    proveedorDocumento: adaptDocumentParty(raw.proveedorDocumento),
+    receptorDocumento: adaptDocumentParty(raw.receptorDocumento),
+    neto: optionalNumber(raw.neto),
+    impuestoPorcentaje: optionalNumber(raw.impuestoPorcentaje),
+    impuestoMonto: optionalNumber(raw.impuestoMonto),
+    total: optionalNumber(raw.total),
+    coherenciaEstado: ["coherente", "revisar", "sin_datos"].includes(raw.coherenciaEstado)
+      ? raw.coherenciaEstado
+      : "sin_datos",
     lineasDetectadas: Number(raw.lineasDetectadas || 0),
     lineasAplicadas: Number(raw.lineasAplicadas || 0),
     advertencias: (Array.isArray(raw.advertencias) ? raw.advertencias : [])
@@ -31,7 +52,7 @@ function adaptReceptionDocumentSource(raw) {
 function adaptDocumentLines(raw) {
   return (Array.isArray(raw) ? raw : []).slice(0, 20).map((line) => ({
     nombre: text(line?.nombre, 240),
-    codigo: text(line?.codigo, 100),
+    codigoProveedor: text(line?.codigoProveedor || line?.codigo, 100),
     unidad: text(line?.unidad, 80),
     cantidad: Number(line?.cantidad || 0),
     costoUnitario: Number(line?.costoUnitario || 0),
