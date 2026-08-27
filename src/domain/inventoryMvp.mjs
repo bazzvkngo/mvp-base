@@ -152,6 +152,9 @@ export function calculateInventoryPriceFormation(item = {}) {
 
 export function adaptInventoryItem(item = {}) {
   const type = TYPE_VALUES.has(item.tipoItem) ? item.tipoItem : "producto";
+  const barcode = type === "producto"
+    ? String(item.barcode || item.codigoBarras || "").trim()
+    : "";
   const cost = Number(
     item.costoBase ?? item.costo ?? item.precioCompra ?? item.precio ?? 0
   );
@@ -164,7 +167,8 @@ export function adaptInventoryItem(item = {}) {
     nombre: String(item.nombre || item.descripcionItem || "Ítem sin nombre").trim(),
     marca: type === "producto" ? String(item.marca || "").trim() : "",
     modelo: type === "producto" ? String(item.modelo || "").trim() : "",
-    codigoBarras: type === "producto" ? String(item.codigoBarras || "").trim() : "",
+    barcode,
+    codigoBarras: barcode,
     unidad: String(item.unidad || getDefaultUnitForType(type)).trim(),
     costoBase: Number.isFinite(cost) ? cost : 0,
     margenDeseado: Number.isFinite(margin) ? margin : 0,
@@ -241,6 +245,7 @@ export function filterInventoryItems(items, filters = {}) {
         item.sku,
         item.nombre,
         item.descripcion,
+        item.barcode,
         item.codigoBarras,
         item.marca,
         item.modelo,
@@ -265,7 +270,7 @@ export function validateInventoryDraft(draft = {}) {
   if (draft.tipoItem === "producto") {
     if (String(draft.marca || "").trim().length > 100) errors.marca = "La marca admite hasta 100 caracteres.";
     if (String(draft.modelo || "").trim().length > 100) errors.modelo = "El modelo admite hasta 100 caracteres.";
-    if (String(draft.codigoBarras || "").trim().length > 120) errors.codigoBarras = "El código de barras admite hasta 120 caracteres.";
+    if (String(draft.barcode ?? draft.codigoBarras ?? "").trim().length > 120) errors.codigoBarras = "El código de barras admite hasta 120 caracteres.";
   }
 
   const numericFields = [
@@ -340,7 +345,7 @@ export function buildInventoryPayload(
   if (draft.tipoItem === "producto") {
     payload.marca = String(draft.marca || "").trim();
     payload.modelo = String(draft.modelo || "").trim();
-    payload.codigoBarras = String(draft.codigoBarras || "").trim();
+    payload.barcode = String(draft.barcode ?? draft.codigoBarras ?? "").trim();
     payload.stock = parseInventoryNumber(draft.stock);
     payload.stockMinimo = parseInventoryNumber(draft.stockMinimo);
     payload.unidadStock = String(draft.unidadStock || draft.unidad).trim();

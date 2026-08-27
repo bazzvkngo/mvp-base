@@ -204,6 +204,10 @@ service cloud.firestore {
         && (
           !request.resource.data.keys().hasAny(["codigoBarras"])
           || request.resource.data.codigoBarras is string
+        )
+        && (
+          !request.resource.data.keys().hasAny(["barcode"])
+          || request.resource.data.barcode is string
         );
     }
 
@@ -233,6 +237,10 @@ service cloud.firestore {
         && (
           !request.resource.data.keys().hasAny(["codigoBarras"])
           || request.resource.data.codigoBarras is string
+        )
+        && (
+          !request.resource.data.keys().hasAny(["barcode"])
+          || request.resource.data.barcode is string
         );
     }
 
@@ -243,6 +251,7 @@ service cloud.firestore {
         "stock",
         "stockMinimo",
         "codigoBarras",
+        "barcode",
         "unidadStock",
         "formacionPrecioVersion",
         "tasaImpuestoCompra",
@@ -265,6 +274,7 @@ service cloud.firestore {
 
     function inventoryAuthoritativeFieldsAreImmutable() {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        "estado",
         "stock",
         "costoPromedio",
         "costoPromedioMoneda",
@@ -623,8 +633,7 @@ service cloud.firestore {
           && inventoryCodesAreImmutable()
           && inventoryAuthoritativeFieldsAreImmutable()
           && (
-            isInventoryLifecycleUpdate()
-            || hasValidInventoryV2(uid)
+            hasValidInventoryV2(uid)
             || isAllowedLegacyInventoryUpdate(uid)
           );
         allow delete: if false;
@@ -661,6 +670,14 @@ service cloud.firestore {
       }
 
       match /inventoryCodeKeys/{codeKeyId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /inventoryBarcodeKeys/{barcodeKeyId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /inventoryStatusRequests/{requestId} {
         allow read, create, update, delete: if false;
       }
 
@@ -732,8 +749,7 @@ service cloud.firestore {
           && inventoryCodesAreImmutable()
           && inventoryAuthoritativeFieldsAreImmutable()
           && (
-            isInventoryLifecycleUpdate()
-            || hasValidBusinessInventoryV2(businessId)
+            hasValidBusinessInventoryV2(businessId)
             || isAllowedLegacyBusinessInventoryUpdate(businessId)
           );
         allow delete: if false;
@@ -770,6 +786,14 @@ service cloud.firestore {
       }
 
       match /inventoryCodeKeys/{codeKeyId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /inventoryBarcodeKeys/{barcodeKeyId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /inventoryStatusRequests/{requestId} {
         allow read, create, update, delete: if false;
       }
 

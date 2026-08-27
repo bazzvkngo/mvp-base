@@ -162,7 +162,7 @@ function item(overrides = {}) {
     precioInterno: 600000,
     marca: "Lenovo",
     modelo: "T14",
-    codigoBarras: "0012345678905",
+    barcode: "",
     stock: 4,
     stockMinimo: 1,
     ...overrides,
@@ -344,7 +344,10 @@ async function main() {
 
   const [first, second] = await Promise.all([
     createInventoryItemWithCodeHandler(
-      request(uid, { requestId: "request_product_0001", item: item() }),
+      request(uid, {
+        requestId: "request_product_0001",
+        item: item({barcode: "0012345678905"}),
+      }),
       deps
     ),
     createInventoryItemWithCodeHandler(
@@ -369,9 +372,19 @@ async function main() {
     "Los productos nuevos deben recibir un impuesto estable sin modificar ítems previos."
   );
   assert.equal(
-    db.read(`usuarios/${uid}/inventario/${first.itemId}`).codigoBarras,
+    db.read(`usuarios/${uid}/inventario/${first.itemId}`).barcode,
     "0012345678905",
     "El código de barras debe persistir como string y conservar ceros iniciales."
+  );
+
+  await expectCode("already-exists", () =>
+    createInventoryItemWithCodeHandler(
+      request(uid, {
+        requestId: "request_duplicate_barcode_0001",
+        item: item({barcode: "0012345678905"}),
+      }),
+      deps
+    )
   );
 
   const idempotentRetry = await createInventoryItemWithCodeHandler(
@@ -449,11 +462,17 @@ async function main() {
   db.seed("usuarios/inventory-other-business/inventario/foreign-code", {
     codigoInterno: "OTHER-BUSINESS-001",
     sku: "OTHER-BUSINESS-LEGACY-001",
+    barcode: "0099999999999",
+    tipoItem: "producto",
+    estado: "activo",
   });
   const crossBusinessAllowed = await createInventoryItemWithCodeHandler(
     request(uid, {
       requestId: "request_cross_business_0001",
-      item: item({ codigoSolicitado: "OTHER-BUSINESS-001" }),
+      item: item({
+        codigoSolicitado: "OTHER-BUSINESS-001",
+        barcode: "0099999999999",
+      }),
     }),
     deps
   );
@@ -531,7 +550,7 @@ async function main() {
         nombre: "Instalación",
         marca: "No debe persistir",
         modelo: "No debe persistir",
-        codigoBarras: "0000001",
+        barcode: "0000001",
         stock: 99,
         stockMinimo: 10,
       }),
@@ -550,13 +569,13 @@ async function main() {
   const serviceData = db.read(`usuarios/${uid}/inventario/${service.itemId}`);
   assert.equal("marca" in serviceData, false);
   assert.equal("modelo" in serviceData, false);
-  assert.equal("codigoBarras" in serviceData, false);
+  assert.equal("barcode" in serviceData, false);
   assert.equal("stock" in serviceData, false);
   assert.equal("stockMinimo" in serviceData, false);
   const activityData = db.read(`usuarios/${uid}/inventario/${activity.itemId}`);
   assert.equal("marca" in activityData, false);
   assert.equal("modelo" in activityData, false);
-  assert.equal("codigoBarras" in activityData, false);
+  assert.equal("barcode" in activityData, false);
   assert.equal("stock" in activityData, false);
   assert.equal("stockMinimo" in activityData, false);
 

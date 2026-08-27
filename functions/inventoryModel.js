@@ -143,6 +143,18 @@ function inventoryCodeKeyId(code) {
   return Buffer.from(String(code || "").toUpperCase(), "utf8").toString("base64url");
 }
 
+function normalizeBarcode(value) {
+  return safeText(value, 120);
+}
+
+function inventoryBarcodeKeyId(barcode) {
+  return createHash("sha256").update(normalizeBarcode(barcode)).digest("hex");
+}
+
+function getInventoryBarcode(item = {}) {
+  return normalizeBarcode(item.barcode || item.codigoBarras);
+}
+
 function normalizeInventoryCodeForComparison(value) {
   return String(value || "").trim().toUpperCase().replace(/\s+/g, "-");
 }
@@ -193,6 +205,43 @@ async function assertRequestedCodesAvailable(userRef, codes, HttpsError) {
         `El código ${occupiedCode} ya existe en el inventario.`
       );
     }
+  }
+}
+
+async function assertBarcodeAvailable(userRef, barcode, HttpsError, excludeItemId = "") {
+  const normalized = normalizeBarcode(barcode);
+  if (!normalized) return;
+  const inventorySnapshot = await userRef.collection("inventario").get();
+  const duplicate = inventorySnapshot.docs.find((documentSnapshot) => {
+    if (documentSnapshot.id === excludeItemId) return false;
+    const existing = documentSnapshot.data() || {};
+    return (existing.estado || "activo") === "activo" &&
+      (existing.tipoItem || "producto") === "producto" &&
+      getInventoryBarcode(existing) === normalized;
+  });
+  if (duplicate) {
+    throw new HttpsError(
+      "already-exists",
+      "El código de barras ya pertenece a otro producto activo."
+    );
+  }
+}
+
+async function assertBarcodesAvailable(userRef, barcodes, HttpsError) {
+  const requested = new Set(barcodes.map(normalizeBarcode).filter(Boolean));
+  if (!requested.size) return;
+  const inventorySnapshot = await userRef.collection("inventario").get();
+  const duplicate = inventorySnapshot.docs.find((documentSnapshot) => {
+    const existing = documentSnapshot.data() || {};
+    return (existing.estado || "activo") === "activo" &&
+      (existing.tipoItem || "producto") === "producto" &&
+      requested.has(getInventoryBarcode(existing));
+  });
+  if (duplicate) {
+    throw new HttpsError(
+      "already-exists",
+      "El código de barras ya pertenece a otro producto activo."
+    );
   }
 }
 
@@ -335,8 +384,8 @@ function validateInventoryItemInput(
     );
     const unidadStock = safeText(source.unidadStock, 40);
     if (unidadStock) result.unidadStock = unidadStock;
-    const codigoBarras = safeText(source.codigoBarras, 120);
-    if (codigoBarras) result.codigoBarras = codigoBarras;
+    const barcode = normalizeBarcode(source.barcode || source.codigoBarras);
+    if (barcode) result.barcode = barcode;
   }
 
   const origen = safeText(source.origen, 80);
@@ -454,7 +503,8 @@ function inventoryEditableUpdate(item, categoryName, FieldValue) {
     ...update,
     marca: optionalField(item.marca, FieldValue),
     modelo: optionalField(item.modelo, FieldValue),
-    codigoBarras: optionalField(item.codigoBarras, FieldValue),
+    barcode: optionalField(item.barcode, FieldValue),
+    codigoBarras: FieldValue.delete(),
     unidadStock: item.unidadStock || item.unidad,
     stockMinimo: item.stockMinimo,
     formacionPrecioVersion: item.formacionPrecioVersion || FieldValue.delete(),
@@ -871,6 +921,7 @@ async function createInventoryItemWithCodeHandler(
     [item.codigoSolicitado],
     HttpsError
   );
+  await assertBarcodeAvailable(userRef, item.barcode, HttpsError);
   const counterRef = userRef
     .collection("inventarioContadores")
     .doc(item.tipoItem);
@@ -885,11 +936,16 @@ async function createInventoryItemWithCodeHandler(
       inventoryCodeKeyId(item.codigoSolicitado)
     )
     : null;
+  const barcodeKeyRef = item.barcode
+    ? userRef.collection("inventoryBarcodeKeys").doc(
+      inventoryBarcodeKeyId(item.barcode)
+    )
+    : null;
   const itemRef = userRef.collection("inventario").doc();
 
   return db.runTransaction(async (transaction) => {
     const [requestSnapshot, counterSnapshot, areaSnapshot, categorySnapshot,
-      requestedCodeKeySnapshot] =
+      requestedCodeKeySnapshot, barcodeKeySnapshot] =
       await Promise.all([
         transaction.get(requestRef),
         transaction.get(counterRef),
@@ -897,6 +953,9 @@ async function createInventoryItemWithCodeHandler(
         categoryRef ? transaction.get(categoryRef) : Promise.resolve(null),
         requestedCodeKeyRef
           ? transaction.get(requestedCodeKeyRef)
+          : Promise.resolve(null),
+        barcodeKeyRef
+          ? transaction.get(barcodeKeyRef)
           : Promise.resolve(null),
       ]);
 
@@ -926,6 +985,12 @@ async function createInventoryItemWithCodeHandler(
       throw new HttpsError(
         "already-exists",
         `El código ${item.codigoSolicitado} ya está reservado.`
+      );
+    }
+    if (barcodeKeySnapshot?.exists) {
+      throw new HttpsError(
+        "already-exists",
+        "El código de barras ya pertenece a otro producto activo."
       );
     }
 
@@ -958,6 +1023,15 @@ async function createInventoryItemWithCodeHandler(
     if (requestedCodeKeyRef) {
       transaction.set(requestedCodeKeyRef, {
         codigoInterno,
+        itemId: itemRef.id,
+        negocioId: businessId,
+        uidUsuario: uid,
+        creadoEn: timestamp,
+      });
+    }
+    if (barcodeKeyRef) {
+      transaction.set(barcodeKeyRef, {
+        barcode: item.barcode,
         itemId: itemRef.id,
         negocioId: businessId,
         uidUsuario: uid,
@@ -1015,14 +1089,30 @@ async function updateInventoryItemHandler(
     : null;
   const movementRef = businessRef.collection("movimientosInventario")
     .doc(`ajuste__${requestId}`);
+  const initialItemSnapshot = await readDocumentSnapshot(db, itemRef);
+  if (!initialItemSnapshot.exists) {
+    throw new HttpsError("not-found", "El ítem ya no existe.");
+  }
+  if ((initialItemSnapshot.data()?.estado || "activo") === "activo") {
+    await assertBarcodeAvailable(businessRef, item.barcode, HttpsError, itemId);
+  }
+  const nextBarcodeKeyRef = item.barcode
+    ? businessRef.collection("inventoryBarcodeKeys").doc(
+      inventoryBarcodeKeyId(item.barcode)
+    )
+    : null;
 
   return db.runTransaction(async (transaction) => {
-    const [requestSnapshot, itemSnapshot, areaSnapshot, categorySnapshot] =
+    const [requestSnapshot, itemSnapshot, areaSnapshot, categorySnapshot,
+      nextBarcodeKeySnapshot] =
       await Promise.all([
         transaction.get(requestRef),
         transaction.get(itemRef),
         areaRef ? transaction.get(areaRef) : Promise.resolve(null),
         categoryRef ? transaction.get(categoryRef) : Promise.resolve(null),
+        nextBarcodeKeyRef
+          ? transaction.get(nextBarcodeKeyRef)
+          : Promise.resolve(null),
       ]);
     if (requestSnapshot.exists) {
       const previous = requestSnapshot.data() || {};
@@ -1050,6 +1140,16 @@ async function updateInventoryItemHandler(
         "El tipo de un ítem existente no se puede modificar."
       );
     }
+    if (
+      (current.estado || "activo") === "activo" &&
+      nextBarcodeKeySnapshot?.exists &&
+      nextBarcodeKeySnapshot.data()?.itemId !== itemId
+    ) {
+      throw new HttpsError(
+        "already-exists",
+        "El código de barras ya pertenece a otro producto activo."
+      );
+    }
     if (areaRef && (!areaSnapshot?.exists || areaSnapshot.data()?.estado !== "activo")) {
       throw new HttpsError("failed-precondition", "Selecciona un área activa.");
     }
@@ -1067,6 +1167,18 @@ async function updateInventoryItemHandler(
     }
 
     const timestamp = FieldValue.serverTimestamp();
+    const currentBarcode = currentType === "producto"
+      ? getInventoryBarcode(current)
+      : "";
+    const currentBarcodeKeyRef = currentBarcode
+      ? businessRef.collection("inventoryBarcodeKeys").doc(
+        inventoryBarcodeKeyId(currentBarcode)
+      )
+      : null;
+    const currentBarcodeKeySnapshot = currentBarcodeKeyRef &&
+      currentBarcode !== item.barcode
+      ? await transaction.get(currentBarcodeKeyRef)
+      : null;
     const stockAnterior = Number(current.stock || 0);
     const stockPosterior = item.tipoItem === "producto" ? item.stock : null;
     if (!Number.isFinite(stockAnterior)) {
@@ -1088,6 +1200,25 @@ async function updateInventoryItemHandler(
       actualizadoEn: timestamp,
     };
     transaction.update(itemRef, update);
+
+    if ((current.estado || "activo") === "activo" && currentType === "producto") {
+      if (
+        currentBarcodeKeyRef &&
+        currentBarcode !== item.barcode &&
+        currentBarcodeKeySnapshot?.data()?.itemId === itemId
+      ) {
+        transaction.delete(currentBarcodeKeyRef);
+      }
+      if (nextBarcodeKeyRef) {
+        transaction.set(nextBarcodeKeyRef, {
+          barcode: item.barcode,
+          itemId,
+          negocioId: businessId,
+          uidUsuario: uid,
+          actualizadoEn: timestamp,
+        });
+      }
+    }
 
     if (stockChanged) {
       const delta = stockPosterior - stockAnterior;
@@ -1130,6 +1261,123 @@ async function updateInventoryItemHandler(
   });
 }
 
+async function setInventoryItemStatusHandler(
+  request,
+  {db, HttpsError, FieldValue, requireBusinessAccess}
+) {
+  const {uid, businessId, businessRef} = await resolveBusinessContext(
+    request,
+    {db, HttpsError, requireBusinessAccess}
+  );
+  const itemId = safeText(request.data?.itemId, 160);
+  const estado = safeText(request.data?.estado, 20).toLowerCase();
+  if (!/^[a-zA-Z0-9_-]{1,160}$/.test(itemId)) {
+    throw new HttpsError("invalid-argument", "Selecciona un ítem válido.");
+  }
+  if (!["activo", "inactivo"].includes(estado)) {
+    throw new HttpsError("invalid-argument", "Selecciona un estado válido.");
+  }
+  const requestId = validateRequestId(request.data?.requestId, HttpsError);
+  const itemRef = businessRef.collection("inventario").doc(itemId);
+  const initialSnapshot = await readDocumentSnapshot(db, itemRef);
+  if (!initialSnapshot.exists) {
+    throw new HttpsError("not-found", "El ítem ya no existe.");
+  }
+  const initial = initialSnapshot.data() || {};
+  if (initial.negocioId && initial.negocioId !== businessId) {
+    throw new HttpsError("permission-denied", "El ítem no pertenece al negocio.");
+  }
+  const barcode = (initial.tipoItem || "producto") === "producto"
+    ? getInventoryBarcode(initial)
+    : "";
+  if (estado === "activo") {
+    await assertBarcodeAvailable(businessRef, barcode, HttpsError, itemId);
+  }
+  const barcodeKeyRef = barcode
+    ? businessRef.collection("inventoryBarcodeKeys").doc(
+      inventoryBarcodeKeyId(barcode)
+    )
+    : null;
+  const requestRef = businessRef.collection("inventoryStatusRequests").doc(requestId);
+  const fingerprint = createHash("sha256")
+    .update(JSON.stringify({itemId, estado}))
+    .digest("hex");
+
+  return db.runTransaction(async (transaction) => {
+    const [requestSnapshot, itemSnapshot, barcodeKeySnapshot] = await Promise.all([
+      transaction.get(requestRef),
+      transaction.get(itemRef),
+      barcodeKeyRef ? transaction.get(barcodeKeyRef) : Promise.resolve(null),
+    ]);
+    if (requestSnapshot.exists) {
+      const previous = requestSnapshot.data() || {};
+      if (previous.fingerprint !== fingerprint) {
+        throw new HttpsError(
+          "failed-precondition",
+          "La solicitud ya fue utilizada con un cambio diferente."
+        );
+      }
+      return {...(previous.resultado || {}), idempotent: true};
+    }
+    if (!itemSnapshot.exists) {
+      throw new HttpsError("not-found", "El ítem ya no existe.");
+    }
+    const current = itemSnapshot.data() || {};
+    if (current.negocioId && current.negocioId !== businessId) {
+      throw new HttpsError("permission-denied", "El ítem no pertenece al negocio.");
+    }
+    const currentBarcode = (current.tipoItem || "producto") === "producto"
+      ? getInventoryBarcode(current)
+      : "";
+    if (currentBarcode !== barcode) {
+      throw new HttpsError(
+        "aborted",
+        "El producto cambió mientras se actualizaba su estado. Intenta nuevamente."
+      );
+    }
+    if (
+      estado === "activo" &&
+      barcodeKeySnapshot?.exists &&
+      barcodeKeySnapshot.data()?.itemId !== itemId
+    ) {
+      throw new HttpsError(
+        "already-exists",
+        "El código de barras ya pertenece a otro producto activo."
+      );
+    }
+    const timestamp = FieldValue.serverTimestamp();
+    transaction.update(itemRef, {
+      estado,
+      actualizadoPorUid: uid,
+      actualizadoEn: timestamp,
+    });
+    if (barcodeKeyRef && estado === "activo") {
+      transaction.set(barcodeKeyRef, {
+        barcode,
+        itemId,
+        negocioId: businessId,
+        uidUsuario: uid,
+        actualizadoEn: timestamp,
+      });
+    } else if (
+      barcodeKeyRef &&
+      barcodeKeySnapshot?.data()?.itemId === itemId
+    ) {
+      transaction.delete(barcodeKeyRef);
+    }
+    const result = {itemId, estado, idempotent: false};
+    transaction.set(requestRef, {
+      negocioId: businessId,
+      itemId,
+      fingerprint,
+      resultado: result,
+      creadoPorUid: uid,
+      creadoEn: timestamp,
+    });
+    return result;
+  });
+}
+
 async function confirmInventoryImportV2Handler(
   request,
   { db, HttpsError, FieldValue, requireBusinessAccess }
@@ -1154,11 +1402,18 @@ async function confirmInventoryImportV2Handler(
   const requestedCodes = rows
     .map((row) => row.item.codigoSolicitado)
     .filter(Boolean);
+  const requestedBarcodes = rows.map((row) => row.item.barcode).filter(Boolean);
   if (new Set(requestedCodes).size !== requestedCodes.length) {
     throw new HttpsError(
       "invalid-argument",
       "El archivo contiene códigos internos repetidos.",
       { internalCode: "inventory_import_duplicate_code" }
+    );
+  }
+  if (new Set(requestedBarcodes).size !== requestedBarcodes.length) {
+    throw new HttpsError(
+      "invalid-argument",
+      "El archivo contiene códigos de barras repetidos."
     );
   }
   const fingerprint = getImportRequestFingerprint(rows);
@@ -1183,6 +1438,7 @@ async function confirmInventoryImportV2Handler(
     };
   }
   await assertRequestedCodesAvailable(userRef, requestedCodes, HttpsError);
+  await assertBarcodesAvailable(userRef, requestedBarcodes, HttpsError);
   const counterRefs = new Map(
     [...new Set(rows.filter((row) => !row.item.codigoSolicitado)
       .map((row) => row.item.tipoItem))].map((tipoItem) => [
@@ -1208,6 +1464,14 @@ async function confirmInventoryImportV2Handler(
       userRef.collection("inventoryCodeKeys").doc(inventoryCodeKeyId(code)),
     ])
   );
+  const barcodeKeyRefs = new Map(
+    requestedBarcodes.map((barcode) => [
+      barcode,
+      userRef.collection("inventoryBarcodeKeys").doc(
+        inventoryBarcodeKeyId(barcode)
+      ),
+    ])
+  );
   const itemRefs = rows.map(() => userRef.collection("inventario").doc());
 
   return db.runTransaction(async (transaction) => {
@@ -1229,7 +1493,8 @@ async function confirmInventoryImportV2Handler(
       };
     }
 
-    const [counterSnapshots, areaSnapshots, categorySnapshots, codeKeySnapshots] =
+    const [counterSnapshots, areaSnapshots, categorySnapshots, codeKeySnapshots,
+      barcodeKeySnapshots] =
       await Promise.all([
         Promise.all(
           [...counterRefs.entries()].map(async ([key, reference]) => [
@@ -1255,11 +1520,18 @@ async function confirmInventoryImportV2Handler(
             await transaction.get(reference),
           ])
         ),
+        Promise.all(
+          [...barcodeKeyRefs.entries()].map(async ([key, reference]) => [
+            key,
+            await transaction.get(reference),
+          ])
+        ),
       ]);
     const countersByType = new Map(counterSnapshots);
     const areasById = new Map(areaSnapshots);
     const categoriesById = new Map(categorySnapshots);
     const codeKeysByCode = new Map(codeKeySnapshots);
+    const barcodeKeysByBarcode = new Map(barcodeKeySnapshots);
 
     rows.forEach((row, index) => {
       const areaSnapshot = areasById.get(row.item.areaId);
@@ -1296,6 +1568,12 @@ async function confirmInventoryImportV2Handler(
           { internalCode: "inventory_import_duplicate_code", rowId: row.rowId }
         );
       }
+      if (row.item.barcode && barcodeKeysByBarcode.get(row.item.barcode)?.exists) {
+        throw new HttpsError(
+          "already-exists",
+          `La fila ${index + 1} utiliza un código de barras ya reservado.`
+        );
+      }
     });
 
     const nextNumberByType = new Map(
@@ -1329,6 +1607,15 @@ async function confirmInventoryImportV2Handler(
       if (row.item.codigoSolicitado) {
         transaction.set(codeKeyRefs.get(row.item.codigoSolicitado), {
           codigoInterno,
+          itemId: itemRef.id,
+          negocioId: businessId,
+          uidUsuario: uid,
+          creadoEn: timestamp,
+        });
+      }
+      if (row.item.barcode) {
+        transaction.set(barcodeKeyRefs.get(row.item.barcode), {
+          barcode: row.item.barcode,
           itemId: itemRef.id,
           negocioId: businessId,
           uidUsuario: uid,
@@ -1383,6 +1670,7 @@ module.exports = {
   normalizeCatalogName,
   saveInventoryAreaHandler,
   saveInventoryCategoryHandler,
+  setInventoryItemStatusHandler,
   updateInventoryItemHandler,
   validateInventoryItemInput,
 };

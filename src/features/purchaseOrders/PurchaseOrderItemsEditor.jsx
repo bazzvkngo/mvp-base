@@ -1,9 +1,10 @@
 import React from "react";
+import BarcodeInput from "../../components/barcode/BarcodeInput";
 
 const money = (value) => `$${Math.round(Number(value || 0)).toLocaleString("es-CL")}`;
 const typeLabel = (value) => ({producto: "Producto", servicio: "Servicio", actividad: "Actividad"})[value] || "Producto";
 
-export default function PurchaseOrderItemsEditor({disabled, items, onChange, onOpenCatalog, readOnly}) {
+export default function PurchaseOrderItemsEditor({disabled, items, onChange, onOpenCatalog, onScanProduct, readOnly}) {
   const update = (index, field, value) => onChange(items.map((item, itemIndex) =>
     itemIndex === index ? {...item, [field]: value} : item
   ));
@@ -15,9 +16,12 @@ export default function PurchaseOrderItemsEditor({disabled, items, onChange, onO
           <p>{items.length === 1 ? "1 ítem" : `${items.length} ítems`}</p>
         </div>
         {!disabled && (
-          <button type="button" className="po-button po-button--secondary" onClick={onOpenCatalog}>
-            Agregar desde inventario
-          </button>
+          <div className="po-header__actions">
+            <BarcodeInput actionOnly actionLabel="Escanear producto" onSubmit={onScanProduct} />
+            <button type="button" className="po-button po-button--secondary" onClick={onOpenCatalog}>
+              Agregar desde inventario
+            </button>
+          </div>
         )}
       </header>
       {!items.length ? (

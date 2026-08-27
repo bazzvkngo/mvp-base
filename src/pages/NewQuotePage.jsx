@@ -16,7 +16,7 @@ import {
   validateQuoteDraft,
 } from "../domain/quoteModel.mjs";
 import { getCategoriesForArea } from "../domain/inventoryCatalog.mjs";
-import { PRICING_STATUS } from "../domain/pricing";
+import { buildValuationForItem, PRICING_STATUS } from "../domain/pricing";
 import useAiRateLimit from "../hooks/useAiRateLimit";
 import ClientSelector from "../features/clients/ClientSelector";
 import QuoteCatalogDialog from "../features/quotes/QuoteCatalogDialog";
@@ -28,6 +28,7 @@ import { suggestQuoteItems } from "../services/aiQuoteService";
 import { getCompanyProfile } from "../services/companyService";
 import {
   createManagedInventoryItem,
+  findActiveProductByBarcode,
   subscribeToInventoryAreas,
   subscribeToInventoryCategories,
 } from "../services/inventoryService";
@@ -968,6 +969,16 @@ function NewQuotePage({ userId }) {
       };
     });
     showAddFeedback(valuation.itemId, wasExisting);
+  };
+
+  const addScannedProduct = async (barcode) => {
+    const product = await findActiveProductByBarcode(userId, barcode);
+    if (!product) {
+      throw new Error("Producto no encontrado para este código.");
+    }
+    const valuation = valuations.find((entry) => entry.itemId === product.id) ||
+      buildValuationForItem(product, []);
+    addItem(valuation, 1);
   };
 
   const handleCatalogSearchChange = (event) => {
@@ -1999,6 +2010,7 @@ function NewQuotePage({ userId }) {
           feedback={itemFeedback}
           highlightedItemId={highlightedItemId}
           onOpenCatalog={() => setManualCatalogOpen(true)}
+          onScanProduct={addScannedProduct}
           onUpdate={updateItem}
           onMove={moveItem}
           onRemove={removeItem}

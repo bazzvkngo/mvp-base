@@ -29,8 +29,10 @@ import {
 import { sortInventoryItems } from "../domain/inventoryCompatibility.mjs";
 import {
   INVENTORY_PRICE_FORMATION_VERSION,
+  adaptInventoryItem,
   calculateInventoryPriceFormation,
 } from "../domain/inventoryMvp.mjs";
+import {normalizeBarcode} from "../domain/barcode.mjs";
 
 const VALID_TYPES = ["producto", "servicio", "actividad"];
 const VALID_STATUS = ["activo", "inactivo", "eliminado"];
@@ -42,6 +44,11 @@ const MANUAL_PRICE_FLAGS = [
   "usarPrecioManual",
   "precioPersonalizado",
 ];
+
+function inventoryStatusRequestId() {
+  const id = globalThis.crypto?.randomUUID?.() || `${Date.now()}_${Math.random()}`;
+  return `inventory_status_${String(id).replace(/[^a-zA-Z0-9_-]/g, "")}`.slice(0, 120);
+}
 
 function inventoryCollectionRef(uid) {
   return collection(db, ...inventoryCollectionPath(uid));
@@ -361,7 +368,8 @@ export function normalizeManagedInventoryUpdate(
     payload.modelo = modelo || deleteField();
     payload.stock = stock;
     payload.stockMinimo = stockMinimo;
-    payload.codigoBarras = String(data.codigoBarras || "").trim() || deleteField();
+    payload.barcode = normalizeBarcode(data.barcode ?? data.codigoBarras) || deleteField();
+    payload.codigoBarras = deleteField();
     payload.unidadStock = String(data.unidadStock || data.unidad || "").trim();
   } else {
     payload.marca = deleteField();
@@ -369,6 +377,7 @@ export function normalizeManagedInventoryUpdate(
     payload.stock = deleteField();
     payload.stockMinimo = deleteField();
     payload.codigoBarras = deleteField();
+    payload.barcode = deleteField();
     payload.unidadStock = deleteField();
     payload.formacionPrecioVersion = deleteField();
     payload.tasaImpuestoCompra = deleteField();
@@ -385,6 +394,28 @@ export async function getInventoryItems(uid) {
   return sortInventoryItems(
     snapshot.docs.map((itemDoc) => ({ id: itemDoc.id, ...itemDoc.data() }))
   );
+}
+
+export async function findActiveProductByBarcode(businessId, rawBarcode) {
+  const barcode = normalizeBarcode(rawBarcode);
+  if (!businessId || !barcode) return null;
+  const inventoryRef = inventoryCollectionRef(businessId);
+  const [canonicalSnapshot, legacySnapshot] = await Promise.all([
+    getDocs(query(inventoryRef, where("barcode", "==", barcode))),
+    getDocs(query(inventoryRef, where("codigoBarras", "==", barcode))),
+  ]);
+  const matches = new Map();
+  [...canonicalSnapshot.docs, ...legacySnapshot.docs].forEach((itemDoc) => {
+    const data = itemDoc.data() || {};
+    if (data.negocioId && data.negocioId !== businessId) return;
+    if ((data.estado || "activo") !== "activo") return;
+    if ((data.tipoItem || "producto") !== "producto") return;
+    matches.set(itemDoc.id, adaptInventoryItem({id: itemDoc.id, ...data}));
+  });
+  if (matches.size > 1) {
+    throw new Error("Hay más de un producto activo con este código de barras.");
+  }
+  return matches.values().next().value || null;
 }
 
 export async function getInventoryAcquisitions(businessId, itemId) {
@@ -444,19 +475,23 @@ export async function updateManagedInventoryItem(
 }
 
 export async function deactivateInventoryItem(uid, itemId) {
-  assertClientWriteAllowed("desactivar inventario");
-  return updateDoc(doc(db, ...inventoryDocPath(uid, itemId)), {
+  const response = await invokeInventoryModelCallable("setInventoryItemStatus", {
+    businessId: uid,
+    itemId,
     estado: "inactivo",
-    actualizadoEn: serverTimestamp(),
+    requestId: inventoryStatusRequestId(),
   });
+  return response.data;
 }
 
 export async function reactivateInventoryItem(uid, itemId) {
-  assertClientWriteAllowed("reactivar inventario");
-  return updateDoc(doc(db, ...inventoryDocPath(uid, itemId)), {
+  const response = await invokeInventoryModelCallable("setInventoryItemStatus", {
+    businessId: uid,
+    itemId,
     estado: "activo",
-    actualizadoEn: serverTimestamp(),
+    requestId: inventoryStatusRequestId(),
   });
+  return response.data;
 }
 
 export async function importInventoryItems(uid, items) {

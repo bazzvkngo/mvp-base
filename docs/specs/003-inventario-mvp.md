@@ -38,6 +38,8 @@ Campos canónicos nuevos:
 - `areaId` y `categoriaId`, solo cuando se seleccionan;
 - `categoria`, como etiqueta compatible con consumidores actuales;
 - `stock`, `stockMinimo` y `unidadStock`, solo para productos;
+- `barcode`, opcional y separado del código interno y del código de proveedor,
+  solo para productos físicos; `codigoBarras` se lee únicamente como alias legacy;
 - `costoPromedio`, `costoPromedioMoneda`, `ultimoCosto`, `ultimoProveedor` y
   referencia a la última adquisición, sólo cuando una Recepción confirmó una entrada;
 - campos de auditoría autoritativos.
@@ -51,6 +53,8 @@ negocios/{businessId}/inventarioContadores/{tipoItem}
 negocios/{businessId}/inventoryCreateRequests/{requestId}
 negocios/{businessId}/inventoryImportRequests/{requestId}
 negocios/{businessId}/inventoryCodeKeys/{codeKeyId}
+negocios/{businessId}/inventoryBarcodeKeys/{barcodeHash}
+negocios/{businessId}/inventoryStatusRequests/{requestId}
 ```
 
 ## Tipos de ítem
@@ -60,6 +64,10 @@ negocios/{businessId}/inventoryCodeKeys/{codeKeyId}
 - Actividad: trabajo o tarea valorizada. No persiste campos de stock.
 
 Los campos comunes son nombre, unidad, costo base unitario, recargo porcentual persistido por compatibilidad como `margenDeseado`, precio interno calculado, ajuste manual opcional, descripción y estado activo. Área y categoría son opcionales. Una categoría seleccionada siempre debe pertenecer a un área activa.
+
+## Códigos de barras
+
+El barcode se normaliza con `trim`, conserva ceros iniciales y debe ser único entre productos activos del mismo negocio. La reserva por hash se crea, cambia o libera autoritativamente al crear, editar, archivar o reactivar. La búsqueda del listado incluye barcode. El componente común admite ingreso manual, lector USB terminado en Enter y cámara bajo demanda con BarcodeDetector; siempre detiene las pistas al detectar, cancelar o desmontar y conserva ingreso manual como fallback.
 
 ## Cálculo de precio
 
@@ -152,4 +160,4 @@ La lectura adapta valores faltantes sin migrar documentos al abrir la ruta. Se a
 
 ## Fuera de alcance
 
-Variantes, tallas, colores, medidas configurables, imágenes, catálogo público, códigos de barras o cámara, ventas, conversiones de unidades, FX, IA, Gemini, PDF, OCR y migraciones masivas.
+Variantes, tallas, colores, medidas configurables, imágenes, catálogo público, ventas, conversiones de unidades, FX, IA, Gemini, PDF, OCR y migraciones masivas.

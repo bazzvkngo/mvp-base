@@ -3,6 +3,7 @@ import { Activity, Archive, Boxes, BriefcaseBusiness, FileSpreadsheet, Package, 
 import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
+import BarcodeInput from "../../components/barcode/BarcodeInput";
 import {
   INVENTORY_TYPES,
   INVENTORY_PRICE_FORMATION_VERSION,
@@ -459,7 +460,7 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
                 <Field label="Nombre del ítem" required error={fieldErrors.nombre}><input autoFocus className="erp-control" value={draft.nombre} onChange={(event) => updateDraft("nombre", event.target.value)} maxLength={140} /></Field>
                 <Field label="Código interno" error={fieldErrors.codigoSolicitado} hint={editingItem ? "No se puede modificar." : "Se asignará al guardar si queda vacío."}><input className="erp-control inventory-code-input" disabled={Boolean(editingItem)} value={editingItem ? draft.codigoInterno : draft.codigoSolicitado} onChange={(event) => updateDraft("codigoSolicitado", event.target.value)} maxLength={40} placeholder="Ej. NB-001" /></Field>
               </div>
-              {draft.tipoItem === "producto" && <div className="inventory-product-identity"><Field label="Marca" error={fieldErrors.marca}><input className="erp-control" value={draft.marca} onChange={(event) => updateDraft("marca", event.target.value)} maxLength={100} placeholder="Ej. Lenovo" /></Field><Field label="Modelo" error={fieldErrors.modelo}><input className="erp-control" value={draft.modelo} onChange={(event) => updateDraft("modelo", event.target.value)} maxLength={100} placeholder="Ej. ThinkPad E13" /></Field><Field label="Código de barras" error={fieldErrors.codigoBarras} hint="Conserva ceros iniciales."><input className="erp-control inventory-code-input" value={draft.codigoBarras} onChange={(event) => updateDraft("codigoBarras", event.target.value)} maxLength={120} autoComplete="off" placeholder="Ej. 07801234567890" /></Field></div>}
+              {draft.tipoItem === "producto" && <div className="inventory-product-identity"><Field label="Marca" error={fieldErrors.marca}><input className="erp-control" value={draft.marca} onChange={(event) => updateDraft("marca", event.target.value)} maxLength={100} placeholder="Ej. Lenovo" /></Field><Field label="Modelo" error={fieldErrors.modelo}><input className="erp-control" value={draft.modelo} onChange={(event) => updateDraft("modelo", event.target.value)} maxLength={100} placeholder="Ej. ThinkPad E13" /></Field><Field label="Código de barras" error={fieldErrors.codigoBarras} hint="Conserva ceros iniciales."><BarcodeInput actionLabel="Escanear" inputClassName="erp-control inventory-code-input" value={draft.codigoBarras} onChange={(value) => updateDraft("codigoBarras", value)} /></Field></div>}
               <Field label="Descripción"><textarea className="erp-control inventory-textarea" rows="2" maxLength={1200} value={draft.descripcion} onChange={(event) => updateDraft("descripcion", event.target.value)} /></Field>
             </section>
             <section className="inventory-form-section"><h3>Clasificación</h3><div className="inventory-classification-grid">

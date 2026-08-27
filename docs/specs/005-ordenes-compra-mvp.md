@@ -1,5 +1,7 @@
 # Órdenes de Compra MVP
 
+En una OC nueva o pendiente, “Escanear producto” resuelve por consulta exacta el `barcode` de un producto activo del negocio. Agrega la línea con costo y unidad del inventario o incrementa su cantidad sin reemplazar costo ni descuento editados; un código inexistente no crea productos.
+
 > Actualización: la OC representa lo solicitado y no modifica stock. La respuesta del proveedor es una dimensión separada y una OC emitida origina Recepciones, no Compras directas. Ver `011-recepciones-mvp.md`.
 
 ## Objetivo

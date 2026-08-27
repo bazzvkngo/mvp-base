@@ -57,7 +57,7 @@ function main() {
   assert.equal(product.codigoSolicitado, "NB-001");
   assert.equal(product.marca, "Lenovo");
   assert.equal(product.modelo, "ThinkPad E13");
-  assert.equal(product.codigoBarras, "07801234567890");
+  assert.equal(product.barcode, "07801234567890");
   assert.equal(product.precioInterno, 1250);
   assert.equal(product.stock, 4);
   assert.equal(product.areaId, "");
@@ -74,7 +74,7 @@ function main() {
   assert.equal(taxedProduct.costoPagado, 119000);
   assert.equal(taxedProduct.precioVentaSugerido, 148750);
   assert.equal(taxedProduct.precioInterno, 148750);
-  assert.equal(taxedProduct.codigoBarras, "07801234567890");
+  assert.equal(taxedProduct.barcode, "07801234567890");
   assert.equal(taxedProduct.stock, 4);
 
   const withoutPurchaseTax = calculateInventoryPriceFormation({
@@ -140,7 +140,7 @@ function main() {
   assert.equal("stockMinimo" in service, false);
   assert.equal("marca" in service, false);
   assert.equal("modelo" in service, false);
-  assert.equal("codigoBarras" in service, false);
+  assert.equal("barcode" in service, false);
   assert.equal("formacionPrecioVersion" in service, false);
   assert.equal("tasaImpuestoCompra" in service, false);
   assert.equal("costoPagado" in service, false);

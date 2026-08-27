@@ -10,6 +10,7 @@ import {
   getSupplierResponseState,
   resolvePurchaseOrderProviderPreview,
 } from "../domain/purchaseOrderModel.mjs";
+import {incrementScannedItem} from "../domain/barcode.mjs";
 import ProviderSelector from "../features/purchaseOrders/ProviderSelector";
 import PurchaseOrderCatalogDialog from "../features/purchaseOrders/PurchaseOrderCatalogDialog";
 import PurchaseOrderItemsEditor from "../features/purchaseOrders/PurchaseOrderItemsEditor";
@@ -19,7 +20,7 @@ import SendPurchaseOrderEmailDialog from "../features/purchaseOrders/SendPurchas
 import {auth} from "../firebase/firebaseConfig.js";
 import {listarMiembrosNegocio} from "../services/businessMemberService";
 import {getCompanyProfile} from "../services/companyService";
-import {getInventoryItems} from "../services/inventoryService";
+import {findActiveProductByBarcode, getInventoryItems} from "../services/inventoryService";
 import {listarProveedores} from "../services/providerService";
 import {
   actualizarOrdenCompraBorrador,
@@ -197,7 +198,7 @@ export default function NewPurchaseOrderPage({businessId, role}) {
   const addItem = (item) => {
     setDraft((current) => ({
       ...current,
-      items: [...current.items, {
+      items: incrementScannedItem(current.items, item.id, () => ({
         lineaId: lineId(),
         itemId: item.id,
         codigo: item.codigoInterno || item.sku || "",
@@ -208,8 +209,17 @@ export default function NewPurchaseOrderPage({businessId, role}) {
         cantidad: 1,
         costoUnitario: Number(item.costoBase || 0),
         descuentoPct: 0,
-      }],
+      })),
     }));
+  };
+
+  const addScannedProduct = async (barcode) => {
+    const product = await findActiveProductByBarcode(businessId, barcode);
+    if (!product) {
+      throw new Error("Producto no encontrado para este código.");
+    }
+    addItem(product);
+    sileo.success({title: "Producto agregado", description: product.nombre});
   };
 
   const persistDraft = async () => {
@@ -498,6 +508,7 @@ export default function NewPurchaseOrderPage({businessId, role}) {
               items={draft.items}
               onChange={(items) => setDraft((current) => ({...current, items}))}
               onOpenCatalog={() => setCatalogOpen(true)}
+              onScanProduct={addScannedProduct}
               readOnly={Boolean(order && order.estado !== "borrador")}
             />
             <details className="po-panel po-details" open>

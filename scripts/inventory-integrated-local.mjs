@@ -19,6 +19,7 @@ import {
   query,
   setDoc,
   updateDoc,
+  where,
 } from "firebase/firestore";
 import {
   connectFunctionsEmulator,
@@ -89,9 +90,9 @@ async function main() {
       invoke(name, { ...data, businessId });
 
     const initialReads = await Promise.all([
-      getDocs(collectionRef(db, uid, "areas")),
-      getDocs(collectionRef(db, uid, "categoriasInventario")),
-      getDocs(collectionRef(db, uid, "inventario")),
+      adminDb.collection(`negocios/${businessId}/areas`).get(),
+      adminDb.collection(`negocios/${businessId}/categoriasInventario`).get(),
+      adminDb.collection(`negocios/${businessId}/inventario`).get(),
     ]);
     assert.deepEqual(
       initialReads.map((snapshot) => snapshot.size),
@@ -268,6 +269,13 @@ async function main() {
     assert.equal(productData.marca, "Cisco");
     assert.equal(productData.modelo, "ISR 1100");
     assert.equal(productData.stock, 8);
+    assert.equal(productData.barcode, "780000000001");
+    assert.equal("codigoBarras" in productData, false);
+    const barcodeLookup = await getDocs(query(
+      collectionRef(db, uid, "inventario"),
+      where("barcode", "==", "780000000001")
+    ));
+    assert.equal(barcodeLookup.size, 1);
     const productRef = doc(
       db,
       "negocios",
@@ -291,7 +299,7 @@ async function main() {
         modelo: "ISR 1100",
         stock: 11,
         stockMinimo: 3,
-        codigoBarras: "780000000001",
+        barcode: "780000000001",
       },
     };
     const authoritativeUpdate = await call(
@@ -340,6 +348,31 @@ async function main() {
       .where("tipo", "==", "AJUSTE_STOCK")
       .get();
     assert.equal(productAdjustments.size, 1);
+
+    await expectCallableCode("already-exists", () =>
+      call("createInventoryItemWithCode", {
+        requestId: "integrated_duplicate_barcode_0001",
+        item: {
+          ...authoritativeUpdatePayload.item,
+          nombre: "Producto con barcode repetido",
+        },
+      })
+    );
+    const archivePayload = {
+      itemId: productResponse.data.itemId,
+      estado: "inactivo",
+      requestId: "integrated_product_archive_0001",
+    };
+    const archived = await call("setInventoryItemStatus", archivePayload);
+    const archivedRetry = await call("setInventoryItemStatus", archivePayload);
+    assert.equal(archived.data.estado, "inactivo");
+    assert.equal(archivedRetry.data.idempotent, true);
+    await assert.rejects(updateDoc(productRef, {estado: "activo"}));
+    await call("setInventoryItemStatus", {
+      itemId: productResponse.data.itemId,
+      estado: "activo",
+      requestId: "integrated_product_reactivate_0001",
+    });
 
     await expectCallableCode("invalid-argument", () =>
       call("createInventoryItemWithCode", {
@@ -612,6 +645,19 @@ async function main() {
     assert.equal("marca" in importedService, false);
     assert.equal("stock" in importedService, false);
 
+    const isolatedBarcode = "7899999999999";
+    await adminDb.doc(
+      "negocios/inventory-foreign-business/inventario/foreign-barcode"
+    ).set({
+      barcode: isolatedBarcode,
+      negocioId: "inventory-foreign-business",
+      tipoItem: "producto",
+      estado: "activo",
+    });
+    await assert.rejects(getDocs(query(
+      collection(db, "negocios", "inventory-foreign-business", "inventario"),
+      where("barcode", "==", isolatedBarcode)
+    )));
     const unclassifiedProduct = await call("createInventoryItemWithCode", {
       requestId: "integrated_unclassified_product_0001",
       item: {
@@ -628,6 +674,7 @@ async function main() {
         precioManual: false,
         stock: 2,
         stockMinimo: 1,
+        barcode: isolatedBarcode,
       },
     });
     const unclassifiedData = (

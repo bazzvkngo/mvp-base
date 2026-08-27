@@ -26,6 +26,7 @@ const {
   initializeInventoryCatalogHandler,
   saveInventoryAreaHandler,
   saveInventoryCategoryHandler,
+  setInventoryItemStatusHandler,
   updateInventoryItemHandler,
 } = require("./inventoryModel");
 const {
@@ -4128,6 +4129,17 @@ exports.updateInventoryItem = onCall(
   },
   async (request) =>
     updateInventoryItemHandler(request, inventoryModelDependencies)
+);
+
+exports.setInventoryItemStatus = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 60,
+  },
+  async (request) =>
+    setInventoryItemStatusHandler(request, inventoryModelDependencies)
 );
 
 exports.confirmInventoryImportV2 = onCall(
