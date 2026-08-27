@@ -2089,6 +2089,227 @@
   height: 260px;
 }
 
+.reports-simple {
+  gap: var(--space-4);
+}
+
+.reports-simple-header {
+  align-items: end;
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+}
+
+.reports-simple-header .erp-page-intro {
+  padding: var(--space-1) var(--space-3);
+}
+
+.reports-simple-header h1 {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-xl);
+  line-height: var(--line-height-tight);
+  margin: 0 0 2px;
+}
+
+.reports-simple-header .erp-page-intro p {
+  font-size: var(--font-size-xs);
+}
+
+.reports-simple-toolbar {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+.reports-simple-toolbar .financial-period-control {
+  gap: var(--space-2);
+}
+
+.reports-simple-toolbar .financial-period-control .erp-field,
+.reports-simple-toolbar .financial-period-control .erp-field:first-child {
+  flex: 0 0 156px;
+}
+
+.reports-simple-toolbar .erp-field {
+  gap: var(--space-1);
+}
+
+.reports-simple-toolbar .erp-control {
+  min-height: 36px;
+  padding-bottom: 0.4375rem;
+  padding-top: 0.4375rem;
+}
+
+.reports-simple-currency {
+  flex: 0 0 176px;
+}
+
+.reports-simple-help,
+.reports-simple-project-note {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  margin: 0;
+}
+
+.reports-simple-help {
+  text-align: right;
+}
+
+.reports-simple-currencies,
+.reports-simple-currency-group {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.reports-simple-currency-group > h2 {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.08em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.reports-simple-metrics {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.reports-simple-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xs);
+  color: inherit;
+  display: grid;
+  gap: var(--space-2);
+  min-height: 154px;
+  padding: var(--space-4);
+  text-align: left;
+  width: 100%;
+}
+
+.reports-simple-card--link {
+  cursor: pointer;
+  font: inherit;
+  transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+
+.reports-simple-card--link:hover {
+  border-color: var(--color-brand-400);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+.reports-simple-card--link:focus-visible {
+  outline: 2px solid var(--color-brand-600);
+  outline-offset: 2px;
+}
+
+.reports-simple-card__top {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.reports-simple-card__icon {
+  align-items: center;
+  background: var(--color-surface-selected);
+  border-radius: var(--radius-sm);
+  color: var(--color-brand-700);
+  display: inline-flex;
+  height: 36px;
+  justify-content: center;
+  width: 36px;
+}
+
+.reports-simple-card__link {
+  align-items: center;
+  color: var(--color-brand-700);
+  display: inline-flex;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  gap: 4px;
+}
+
+.reports-simple-card__title {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.reports-simple-card__amount {
+  color: var(--color-text-strong);
+  font-size: clamp(1.25rem, 2vw, 1.75rem);
+  overflow-wrap: anywhere;
+}
+
+.reports-simple-card small {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.reports-simple-project-note {
+  background: var(--color-surface-subtle);
+  border-left: 3px solid var(--color-brand-500);
+  border-radius: var(--radius-xs);
+  padding: var(--space-2) var(--space-3);
+}
+
+.reports-simple-chart {
+  padding: var(--space-4);
+}
+
+.reports-simple-chart__header {
+  align-items: start;
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+.reports-simple-chart__header h2 {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-md);
+  margin: 0 0 var(--space-1);
+}
+
+.reports-simple-chart__header p {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  margin: 0;
+}
+
+.reports-simple-chart__header > span {
+  background: var(--color-surface-subtle);
+  border-radius: 999px;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  padding: 4px 8px;
+}
+
+.reports-simple-chart .operational-comparison-chart {
+  height: 280px;
+}
+
+.reports-simple-state {
+  align-items: center;
+  color: var(--color-text-muted);
+  display: flex;
+  font-size: var(--font-size-sm);
+  gap: var(--space-3);
+  justify-content: space-between;
+  min-height: 88px;
+  padding: var(--space-4);
+}
+
+.reports-simple-state--error {
+  color: var(--color-danger-700);
+}
+
 @media (max-width: 1200px) {
   .financial-metric-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2117,6 +2338,19 @@
 
   .reports-v3-currency-help {
     grid-column: 1;
+  }
+
+  .reports-simple-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .reports-simple-toolbar {
+    justify-content: flex-start;
+  }
+
+  .reports-simple-help {
+    text-align: left;
   }
 }
 
@@ -2155,6 +2389,10 @@
   .reports-v3-finance-grid {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .reports-simple-metrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 640px) {
@@ -2184,6 +2422,19 @@
   .reports-v3-toolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .reports-simple-toolbar,
+  .reports-simple-toolbar .financial-period-control {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .reports-simple-toolbar .financial-period-control .erp-field,
+  .reports-simple-toolbar .financial-period-control .erp-field:first-child,
+  .reports-simple-currency {
+    flex: 1 1 auto;
+    width: 100%;
   }
 
   .reports-v3-toolbar > *,

@@ -21,6 +21,9 @@ export const DOCUMENT_STATUSES = Object.freeze([
   "cancelada",
 ]);
 
+const VALID_SALE_STATES = new Set(["confirmada", "confirmado", "activa", "activo"]);
+const VALID_PURCHASE_STATES = new Set(["confirmada", "confirmado", "activa", "activo"]);
+
 export const QUOTE_STATUSES = Object.freeze([
   "borrador",
   "emitida",
@@ -140,7 +143,8 @@ export function filterSales(
 }
 
 export function getSalesMetrics(sales, range, options = {}) {
-  const confirmed = filterSales(sales, {range, status: "confirmada", ...options});
+  const confirmed = filterSales(sales, {range, ...options, status: "todos"})
+    .filter((sale) => VALID_SALE_STATES.has(text(sale.estado).toLowerCase()));
   const totalsByCurrency = groupAmountsByCurrency(confirmed, options);
   const total = singleCurrencyValue(totalsByCurrency);
   return {
@@ -179,7 +183,8 @@ export function filterPurchases(
 }
 
 export function getPurchaseMetrics(purchases, range, options = {}) {
-  const confirmed = filterPurchases(purchases, {range, status: "confirmada", ...options});
+  const confirmed = filterPurchases(purchases, {range, ...options, status: "todos"})
+    .filter((purchase) => VALID_PURCHASE_STATES.has(text(purchase.estado).toLowerCase()));
   const totalsByCurrency = groupAmountsByCurrency(confirmed, options);
   const total = singleCurrencyValue(totalsByCurrency);
   return {
@@ -195,6 +200,76 @@ export function getPurchaseMetrics(purchases, range, options = {}) {
         )
         .filter(Boolean)
     ).size,
+  };
+}
+
+export function getProjectResultMetrics(
+  projectBalances,
+  {currency = "todos", fallbackCurrency = "CLP", accessible = true} = {}
+) {
+  if (!accessible) return {accessible: false, count: 0, total: null, totalsByCurrency: []};
+  const complete = (Array.isArray(projectBalances) ? projectBalances : []).filter((entry) => {
+    const balance = entry?.balance || {};
+    const result = Number(balance.resultado);
+    const balanceCurrency = normalizeReportCurrency(balance.moneda, fallbackCurrency);
+    return balance.estado === "COMPLETO" && Number.isFinite(result) &&
+      (currency === "todos" || currency === balanceCurrency);
+  });
+  const totalsByCurrency = groupAmountsByCurrency(
+    complete.map((entry) => ({
+      moneda: entry.balance.moneda,
+      total: entry.balance.resultado,
+    })),
+    {fallbackCurrency}
+  );
+  return {
+    accessible: true,
+    complete,
+    count: complete.length,
+    total: singleCurrencyValue(totalsByCurrency),
+    totalsByCurrency,
+  };
+}
+
+export function getSimplifiedReportSummary({
+  sales = [],
+  purchases = [],
+  projectBalances = [],
+  range,
+  currency = "todos",
+  fallbackCurrency = "CLP",
+  canViewProfitability = true,
+} = {}) {
+  const options = {currency, fallbackCurrency};
+  const salesMetrics = getSalesMetrics(sales, range, options);
+  const purchaseMetrics = getPurchaseMetrics(purchases, range, options);
+  const projectMetrics = getProjectResultMetrics(projectBalances, {
+    ...options,
+    accessible: canViewProfitability,
+  });
+  const discoveredCurrencies = [...new Set([
+    ...salesMetrics.totalsByCurrency.map((group) => group.currency),
+    ...purchaseMetrics.totalsByCurrency.map((group) => group.currency),
+    ...projectMetrics.totalsByCurrency.map((group) => group.currency),
+  ])];
+  const currencies = currency === "todos"
+    ? (discoveredCurrencies.length ? discoveredCurrencies : [fallbackCurrency]).sort()
+    : [currency];
+  const groupFor = (groups, selected) =>
+    groups.find((group) => group.currency === selected) ||
+    {currency: selected, count: 0, total: 0, average: 0};
+  return {
+    sales: salesMetrics,
+    purchases: purchaseMetrics,
+    projects: projectMetrics,
+    currencies: currencies.map((selected) => ({
+      currency: selected,
+      sales: groupFor(salesMetrics.totalsByCurrency, selected),
+      purchases: groupFor(purchaseMetrics.totalsByCurrency, selected),
+      projects: projectMetrics.accessible
+        ? groupFor(projectMetrics.totalsByCurrency, selected)
+        : {currency: selected, count: 0, total: null},
+    })),
   };
 }
 

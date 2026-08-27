@@ -7,7 +7,6 @@ import {
 import {
   adaptWorkExpense,
   adaptWorkLabor,
-  canViewWorkProfitability,
 } from "../domain/workModel.mjs";
 import {db} from "../firebase/firebaseConfig";
 import {BUSINESS_PERMISSIONS, hasBusinessPermission} from "../domain/rbac.mjs";
@@ -64,11 +63,26 @@ async function listWorkCosts(businessId, works, fallbackCurrency) {
 }
 
 async function listProjectBalances(businessId, works, role) {
-  if (!canViewWorkProfitability(role)) return [];
+  if (!hasBusinessPermission(role, BUSINESS_PERMISSIONS.PROFITABILITY_READ)) return [];
   return Promise.all(works.map(async (work) => ({
     ...work,
     balance: await obtenerBalanceTrabajo(businessId, work.id),
   })));
+}
+
+export async function loadSimplifiedReportData(value, {role = ""} = {}) {
+  const businessId = requireBusinessId(value);
+  const can = (permission) => hasBusinessPermission(role, permission);
+  const canViewProfitability = can(BUSINESS_PERMISSIONS.PROFITABILITY_READ);
+  const [sales, purchases, works] = await Promise.all([
+    can(BUSINESS_PERMISSIONS.SALES_READ) ? listarVentas(businessId) : Promise.resolve([]),
+    can(BUSINESS_PERMISSIONS.PURCHASES_READ) ? listarCompras(businessId) : Promise.resolve([]),
+    canViewProfitability ? listarTrabajos(businessId) : Promise.resolve([]),
+  ]);
+  const projectBalances = canViewProfitability
+    ? await listProjectBalances(businessId, works, role)
+    : [];
+  return {projectBalances, purchases, sales};
 }
 
 export async function loadReportData(

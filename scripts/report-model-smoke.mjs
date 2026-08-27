@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
 import {
   REPORT_TABS,
   buildReportCsv,
@@ -10,10 +11,12 @@ import {
   filterWorkCosts,
   groupAmountsByCurrency,
   getInventoryMetrics,
+  getProjectResultMetrics,
   getPurchaseMetrics,
   getQuoteMetrics,
   getSalesMetrics,
   getRecentOperationalActivity,
+  getSimplifiedReportSummary,
   normalizeInventoryMovement,
   normalizeInventoryAcquisition,
   normalizeWorkCost,
@@ -45,6 +48,14 @@ assert.equal(salesMetrics.average, 2000);
 assert.equal(salesMetrics.distinctCustomers, 1);
 assert.equal(filterSales(sales, {range, status: "borrador"}).length, 1);
 
+const currentSalesMetrics = getSalesMetrics([
+  {fechaVenta: "2026-08-09", estado: "activa", total: 2500, moneda: "CLP"},
+  {fechaVenta: "2026-08-10", estado: "preparada", total: 9000, moneda: "CLP"},
+  {fechaVenta: "2026-08-11", estado: "cancelada", total: 8000, moneda: "CLP"},
+], range);
+assert.equal(currentSalesMetrics.count, 1);
+assert.equal(currentSalesMetrics.total, 2500);
+
 const mixedSalesMetrics = getSalesMetrics([
   {...sales[0], id: "clp", moneda: "CLP", total: 1000},
   {...sales[1], id: "usd", moneda: "USD", total: 20},
@@ -68,6 +79,51 @@ assert.equal(purchaseMetrics.count, 2);
 assert.equal(purchaseMetrics.total, 6000);
 assert.equal(purchaseMetrics.average, 3000);
 assert.equal(purchaseMetrics.distinctProviders, 2);
+
+const currentPurchaseMetrics = getPurchaseMetrics([
+  {fechaCompra: "2026-08-12", estado: "activa", total: 700, moneda: "USD"},
+  {fechaCompra: "2026-08-13", estado: "revertida", total: 300, moneda: "USD"},
+  {fechaCompra: "2026-08-14", estado: "borrador", total: 200, moneda: "USD"},
+], range, {currency: "USD"});
+assert.equal(currentPurchaseMetrics.count, 1);
+assert.equal(currentPurchaseMetrics.total, 700);
+
+const projectBalances = [
+  {id: "work-1", balance: {estado: "COMPLETO", moneda: "CLP", resultado: 5000}},
+  {id: "work-2", balance: {estado: "PARCIAL_SIN_VENTA", moneda: "CLP", resultado: null}},
+  {id: "work-3", balance: {estado: "INCONSISTENTE_MONEDA", moneda: "USD", resultado: null}},
+  {id: "work-4", balance: {estado: "COMPLETO", moneda: "USD", resultado: -25}},
+];
+const projectMetrics = getProjectResultMetrics(projectBalances);
+assert.equal(projectMetrics.count, 2);
+assert.equal(projectMetrics.total, null);
+assert.deepEqual(projectMetrics.totalsByCurrency.map(({currency, total}) => ({currency, total})), [
+  {currency: "CLP", total: 5000},
+  {currency: "USD", total: -25},
+]);
+assert.deepEqual(getProjectResultMetrics(projectBalances, {accessible: false}), {
+  accessible: false,
+  count: 0,
+  total: null,
+  totalsByCurrency: [],
+});
+
+const simplified = getSimplifiedReportSummary({
+  sales: [{fechaVenta: "2026-08-15", estado: "activa", total: 10000, moneda: "CLP"}],
+  purchases: [{fechaCompra: "2026-08-16", estado: "confirmada", total: 9000, moneda: "CLP"}],
+  projectBalances,
+  range,
+});
+assert.equal(simplified.currencies.find((entry) => entry.currency === "CLP").projects.total, 5000);
+assert.notEqual(
+  simplified.currencies.find((entry) => entry.currency === "CLP").projects.total,
+  10000 - 9000
+);
+const emptySummary = getSimplifiedReportSummary({range, canViewProfitability: false});
+assert.equal(emptySummary.currencies[0].sales.total, 0);
+assert.equal(emptySummary.currencies[0].purchases.total, 0);
+assert.equal(emptySummary.currencies[0].projects.total, null);
+assert.equal(Number.isNaN(emptySummary.currencies[0].sales.total), false);
 
 const quotes = [
   {numero: "COT-1", fecha: "2026-08-01", estado: "aceptada", total: 5000, clienteNombre: "A"},
@@ -212,5 +268,16 @@ assert.deepEqual(
   ]
 );
 assert.deepEqual(combineOperationalTimelines([], []), []);
+
+const reportPageSource = readFileSync("src/pages/StatisticsPage.jsx", "utf8");
+const reportServiceSource = readFileSync("src/services/reportService.js", "utf8");
+assert.match(reportPageSource, /Resumen de ventas, compras y resultados de tus proyectos\./);
+assert.match(reportPageSource, /balance actual autoritativo y no se atribuye al período seleccionado/);
+assert.match(reportPageSource, /canAccessBusinessPath\(role, "\/ventas"\)/);
+assert.match(reportPageSource, /canAccessBusinessPath\(role, "\/compras"\)/);
+assert.match(reportPageSource, /canAccessBusinessPath\(role, "\/trabajos"\)/);
+assert.equal((reportPageSource.match(/<OperationalComparisonChart/g) || []).length, 1);
+assert.match(reportServiceSource, /BUSINESS_PERMISSIONS\.PROFITABILITY_READ/);
+assert.match(reportServiceSource, /canViewProfitability \? listarTrabajos/);
 
 console.log("Report model smoke: OK");
