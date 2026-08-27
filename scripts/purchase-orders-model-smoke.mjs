@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {createRequire} from "node:module";
+import path from "node:path";
 import {
   adaptStoredPurchaseOrder,
   buildPurchaseOrderMutationPayload,
@@ -10,6 +11,7 @@ import {
   matchesPurchaseOrderSearch,
   resolvePurchaseOrderProviderPreview,
 } from "../src/domain/purchaseOrderModel.mjs";
+import {buildPurchaseOrderPdfDocument} from "../src/domain/purchaseOrderDocument.mjs";
 
 const require = createRequire(import.meta.url);
 const {historicalPurchaseOrderCopyInput} = require(
@@ -22,6 +24,69 @@ const item = (overrides = {}) => ({
   cantidad: 2,
   costoUnitario: 1000,
   descuentoPct: 10,
+  ...overrides,
+});
+
+const companySnapshot = {
+  nombreComercial: "Valora Ingeniería",
+  razonSocial: "Valora Ingeniería SpA",
+  identificadorFiscalTipo: "RUT",
+  identificadorFiscalValor: "77.091.679-8",
+  giro: "Servicios de ingeniería",
+  direccion: "Avenida Industrial 2450",
+  ciudad: "Iquique",
+  region: "Tarapacá",
+  responsable: "María Soto",
+  telefono: "+56 9 5555 1212",
+  email: "compras@valora.test",
+};
+
+const providerSnapshot = {
+  proveedorId: "provider-document",
+  razonSocial: "Suministros del Norte SpA",
+  identificadorFiscalTipo: "RUT",
+  identificadorFiscalValor: "76.345.678-9",
+  personaContacto: "Carlos Muñoz",
+  email: "ventas@suministros.test",
+  telefono: "+56 9 4444 2323",
+  direccion: "Ruta A-16 1800",
+  comunaNombre: "Alto Hospicio",
+  regionNombre: "Tarapacá",
+  condicionesPago: "Transferencia a 30 días",
+  diasCredito: 30,
+};
+
+const documentItem = (index, overrides = {}) => ({
+  lineaId: `linea-documento-${index}`,
+  itemId: `item-documento-${index}`,
+  codigo: `PROD-${String(index).padStart(4, "0")}`,
+  nombre: `Producto industrial ${index}`,
+  descripcion: "Suministro según especificación técnica acordada.",
+  tipoItem: "producto",
+  unidad: "unidad",
+  cantidad: 2,
+  costoUnitario: 45000,
+  descuentoPct: 0,
+  ...overrides,
+});
+
+const orderFixture = (overrides = {}) => ({
+  id: "order-document",
+  numero: "OC-2026-0142",
+  estado: "emitida",
+  fechaEmision: "2026-08-27",
+  fechaEntregaEstimada: "2026-09-05",
+  direccionEntrega: "Bodega central, Avenida Industrial 2450, Iquique",
+  condicionesPago: "Transferencia a 30 días",
+  observaciones: "Coordinar horario de descarga con el área de operaciones.",
+  moneda: "CLP",
+  locale: "es-CL",
+  impuestoNombre: "IVA",
+  tasaIva: 0.19,
+  empresaSnapshot: companySnapshot,
+  proveedorId: providerSnapshot.proveedorId,
+  proveedorSnapshot: providerSnapshot,
+  items: [documentItem(1)],
   ...overrides,
 });
 
@@ -195,6 +260,8 @@ const providerSelectorSource = fs.readFileSync(
 );
 const historySource = fs.readFileSync("src/pages/PurchaseOrdersPage.jsx", "utf8");
 const printViewSource = fs.readFileSync("src/features/purchaseOrders/PurchaseOrderPrintView.jsx", "utf8");
+const documentSource = fs.readFileSync("src/domain/purchaseOrderDocument.mjs", "utf8");
+const pdfSource = fs.readFileSync("src/utils/purchaseOrderPdf.js", "utf8");
 const purchaseOrderCssSource = fs.readFileSync(
   "src/features/purchaseOrders/purchase-orders.css",
   "utf8"
@@ -221,16 +288,102 @@ assert.match(historySource, /PurchaseOrderPrintView company=\{company\} order=\{
 assert.match(historySource, /Correo<\/Button>[\s\S]*WhatsApp<\/Button>[\s\S]*Descargar PDF<\/Button>[\s\S]*Imprimir<\/Button>/);
 assert.match(historySource, /onClick=\{\(\) => setSelectedOrder\(null\)\}>Volver al listado/);
 assert.match(historySource, /createdOrder\?\.negocioId === businessId/);
-assert.match(printViewSource, /ORDEN DE COMPRA/);
+assert.match(printViewSource, /Orden de compra/);
 assert.match(printViewSource, /proveedorSnapshot/);
-assert.match(printViewSource, /order\.items\.map/);
+assert.match(printViewSource, /items\.map/);
 assert.match(printViewSource, /order\.neto/);
 assert.match(printViewSource, /order\.iva/);
 assert.match(printViewSource, /order\.total/);
+assert.match(printViewSource, /showCode/);
+assert.match(printViewSource, /showUnit/);
+assert.match(printViewSource, /showDiscount/);
+assert.match(printViewSource, /Condiciones de pago/);
+assert.doesNotMatch(printViewSource, /19%/);
+assert.doesNotMatch(printViewSource, /getDoc|getDocs|onSnapshot|listarProveedores/);
+assert.match(documentSource, /ORDEN DE COMPRA/);
+assert.match(documentSource, /showCode/);
+assert.match(documentSource, /showUnit/);
+assert.match(documentSource, /showDiscount/);
+assert.match(documentSource, /taxLabel\(order\)/);
+assert.doesNotMatch(documentSource, /19%/);
+assert.match(pdfSource, /buildPurchaseOrderPdfBase64/);
+assert.match(pdfSource, /sharePurchaseOrderWhatsApp/);
 assert.match(purchaseOrderCssSource, /@media\(max-width:767px\)/);
+assert.match(purchaseOrderCssSource, /size:\s*A4/);
 assert.match(purchaseOrderCssSource, /po-order-preview-dialog/);
 assert.match(purchaseOrderCssSource, /po-history__recent/);
 assert.doesNotMatch(purchaseOrderCssSource, /po-history__table\{min-width:800px\}/);
-console.log("OK integración estática: persistencia, reglas, vista imprimible y desacoplamiento");
+console.log("OK documento: snapshots, columnas condicionales, impuesto dinámico y acciones externas");
+
+const outputDir = path.resolve("output/pdf/purchase-order-validation");
+fs.mkdirSync(outputDir, {recursive: true});
+const logoPath = path.resolve("tmp/pdfs/reference/bagner-logo.png");
+const logoDataUrl = fs.existsSync(logoPath)
+  ? `data:image/png;base64,${fs.readFileSync(logoPath).toString("base64")}`
+  : "";
+
+const scenarios = [
+  ["01-short", orderFixture()],
+  [
+    "02-mixed-items-discount",
+    orderFixture({
+      items: [
+        documentItem(1, {cantidad: 4, costoUnitario: 125000, descuentoPct: 8}),
+        documentItem(2, {
+          codigo: "SRV-0002",
+          nombre: "Instalación y puesta en marcha",
+          tipoItem: "servicio",
+          unidad: "servicio",
+          cantidad: 1,
+          costoUnitario: 180000,
+        }),
+        ...Array.from({length: 7}, (_, index) =>
+          documentItem(index + 3, {costoUnitario: 35000 + index * 7500})
+        ),
+      ],
+    }),
+  ],
+  [
+    "03-multipage",
+    orderFixture({
+      items: Array.from({length: 60}, (_, index) =>
+        documentItem(index + 1, {
+          descripcion: `Componente ${index + 1} con embalaje, control de calidad y entrega documentada.`,
+          costoUnitario: 10000 + index * 500,
+        })
+      ),
+    }),
+  ],
+  [
+    "04-empty-optionals",
+    orderFixture({
+      fechaEntregaEstimada: "",
+      direccionEntrega: "",
+      condicionesPago: "",
+      observaciones: "",
+      proveedorSnapshot: {...providerSnapshot, condicionesPago: "", diasCredito: 0},
+    }),
+  ],
+  [
+    "05-multicurrency-tax-snapshot",
+    orderFixture({
+      moneda: "USD",
+      locale: "es-PE",
+      impuestoNombre: "IGV",
+      tasaIva: 0.18,
+      items: [documentItem(1, {cantidad: 3, costoUnitario: 1250, descuentoPct: 5})],
+    }),
+  ],
+];
+
+for (const [name, order] of scenarios) {
+  const result = buildPurchaseOrderPdfDocument({order, logoDataUrl});
+  const file = path.join(outputDir, `${name}.pdf`);
+  fs.writeFileSync(file, Buffer.from(result.doc.output("arraybuffer")));
+  assert.equal(result.order.proveedorSnapshot.razonSocial, providerSnapshot.razonSocial);
+  assert.equal(result.order.empresaSnapshot.razonSocial, companySnapshot.razonSocial);
+  if (name === "03-multipage") assert.ok(result.doc.getNumberOfPages() >= 2);
+  console.log(`PDF_VALIDATION ${name} pages=${result.doc.getNumberOfPages()} file=${file}`);
+}
 
 console.log("PURCHASE_ORDERS_MODEL_SMOKE_OK");

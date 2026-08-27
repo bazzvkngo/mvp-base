@@ -125,6 +125,21 @@ El workspace presenta encabezado, selector de proveedor registrado, catálogo de
 
 `MEMBER` puede consultar documentos e imprimirlos, pero no recibe acciones de escritura. Los estados emitido y cancelado son de solo lectura.
 
+## Documento comercial V2
+
+La vista previa, impresión y PDF comparten una jerarquía documental consistente
+con Cotización V2, manteniendo el propósito propio de la OC: empresa compradora,
+identidad y estado del documento, proveedor, entrega, condiciones, detalle de
+ítems y totales. Código, unidad y descuento se muestran únicamente cuando aportan
+información, y las acciones de correo, WhatsApp, descarga, impresión y edición
+permanecen fuera de la hoja comercial.
+
+El documento consume los snapshots históricos ya almacenados de empresa,
+proveedor, ítems, costos, moneda, impuesto y condiciones. No consulta maestros
+vivos para renderizar una OC emitida. El nombre y la tasa del impuesto se presentan
+desde la localización persistida, sin asumir una tasa fija. Este rediseño no cambia
+creación, estados, preview posterior a creación, Recepciones ni Compras automáticas.
+
 ## Límites explícitos
 
 Este MVP no implementa:
