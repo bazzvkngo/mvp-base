@@ -8,6 +8,7 @@ import {
 import {
   connectStorageEmulator,
   deleteObject,
+  getBytes,
   getStorage,
   ref,
   uploadBytes,
@@ -67,29 +68,47 @@ async function main() {
     const requestId = "verification-request";
     const evidencePath =
       `negocios/${businessId}/verificacion/${ownerUid}/${requestId}/documento.pdf`;
+    const evidenceRef = ref(ownerClient.storage, evidencePath);
+    const evidenceBytes = new TextEncoder().encode("evidencia empresarial");
 
     await Promise.all([
       adminDb.doc(`usuarios/${ownerUid}`).set({estadoPlataforma: "activo"}),
       adminDb.doc(`usuarios/${otherUid}`).set({estadoPlataforma: "activo"}),
       adminDb.doc(`negocios/${businessId}`).set({
+        creadoPorUid: ownerUid,
         estado: "activo",
         verificacionEmpresa: {estado: "NO_VERIFICADA"},
-      }),
-      adminDb.doc(`membresias/${businessId}__${ownerUid}`).set({
-        negocioId: businessId,
-        uid: ownerUid,
-        rol: "OWNER",
-        estado: "activo",
       }),
     ]);
 
     await uploadBytes(
-      ref(ownerClient.storage, evidencePath),
-      new TextEncoder().encode("evidencia empresarial"),
+      evidenceRef,
+      evidenceBytes,
       {contentType: "application/pdf"}
     );
-    await deleteObject(ref(ownerClient.storage, evidencePath));
-    console.log("OK permitido: OWNER revierte evidencia no asociada");
+    const downloaded = await getBytes(evidenceRef);
+    if (new TextDecoder().decode(downloaded) !== "evidencia empresarial") {
+      throw new Error(
+        "La lectura de evidencia no devolvió el contenido esperado."
+      );
+    }
+    console.log("OK permitido: OWNER creador sube y lee PDF");
+    await deleteObject(evidenceRef);
+    console.log("OK permitido: OWNER creador revierte evidencia no asociada");
+
+    for (const [extension, contentType] of [
+      ["png", "image/png"],
+      ["jpg", "image/jpeg"],
+    ]) {
+      const imageRef = ref(
+        ownerClient.storage,
+        `negocios/${businessId}/verificacion/${ownerUid}/` +
+          `${extension}/documento.${extension}`
+      );
+      await uploadBytes(imageRef, evidenceBytes, {contentType});
+      await deleteObject(imageRef);
+      console.log(`OK permitido: OWNER creador sube ${extension.toUpperCase()}`);
+    }
 
     await expectDenied("tipo de evidencia inválido", () =>
       uploadBytes(
@@ -107,16 +126,45 @@ async function main() {
         {contentType: "image/png"}
       )
     );
-    await expectDenied("otro usuario sube evidencia del OWNER", () =>
+    await expectDenied("otro usuario sube evidencia en su propia ruta", () =>
       uploadBytes(
-        ref(otherClient.storage, evidencePath),
+        ref(otherClient.storage,
+          `negocios/${businessId}/verificacion/${otherUid}/other/documento.pdf`),
         new TextEncoder().encode("evidencia ajena"),
         {contentType: "application/pdf"}
       )
     );
 
+    await adminDb.doc(`usuarios/${ownerUid}`).update({
+      estadoPlataforma: "suspendido",
+    });
+    await expectDenied("usuario suspendido sube evidencia", () =>
+      uploadBytes(
+        ref(ownerClient.storage,
+          `negocios/${businessId}/verificacion/${ownerUid}/` +
+            "suspended/documento.pdf"),
+        evidenceBytes,
+        {contentType: "application/pdf"}
+      )
+    );
+    await adminDb.doc(`usuarios/${ownerUid}`).update({
+      estadoPlataforma: "activo",
+    });
+
+    await adminDb.doc(`negocios/${businessId}`).update({estado: "suspendida"});
+    await expectDenied("negocio inactivo recibe evidencia", () =>
+      uploadBytes(
+        ref(ownerClient.storage,
+          `negocios/${businessId}/verificacion/${ownerUid}/` +
+            "inactive/documento.pdf"),
+        evidenceBytes,
+        {contentType: "application/pdf"}
+      )
+    );
+    await adminDb.doc(`negocios/${businessId}`).update({estado: "activo"});
+
     await uploadBytes(
-      ref(ownerClient.storage, evidencePath),
+      evidenceRef,
       new TextEncoder().encode("evidencia empresarial asociada"),
       {contentType: "application/pdf"}
     );
@@ -124,7 +172,7 @@ async function main() {
       `negocios/${businessId}/businessVerificationRequests/${requestId}`
     ).set({negocioId: businessId, uidUsuario: ownerUid, otherUid});
     await expectDenied("OWNER elimina evidencia asociada", () =>
-      deleteObject(ref(ownerClient.storage, evidencePath))
+      deleteObject(evidenceRef)
     );
     console.log("Business verification rules smoke: OK");
   } finally {

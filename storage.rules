@@ -50,9 +50,28 @@ service firebase.storage {
         && businessMembership(businessId).data.rol in ["OWNER", "ADMIN"];
     }
 
-    function canRequestBusinessVerification(businessId) {
-      return canAccessBusiness(businessId)
-        && businessMembership(businessId).data.rol == "OWNER";
+    function canAccessBusinessVerificationEvidence(businessId, ownerUid) {
+      return request.auth != null
+        && request.auth.uid == ownerUid
+        && platformUserIsActive(ownerUid)
+        && hasActiveBusinessDocument(businessId)
+        && activeBusiness(businessId).data.estado == "activo"
+        && activeBusiness(businessId).data.creadoPorUid == request.auth.uid;
+    }
+
+    function canRollbackBusinessVerificationEvidence(
+      businessId,
+      ownerUid,
+      requestId
+    ) {
+      // La propiedad/actividad se validaron al crear el objeto. En rollback,
+      // usuario + solicitud consumen el máximo de dos documentos permitido.
+      return request.auth != null
+        && request.auth.uid == ownerUid
+        && platformUserIsActive(ownerUid)
+        && !firestore.exists(
+          /databases/(default)/documents/negocios/$(businessId)/businessVerificationRequests/$(requestId)
+        );
     }
 
     match /usuarios/{uid}/empresa/logo/{fileName} {
@@ -86,13 +105,14 @@ service firebase.storage {
     }
 
     match /negocios/{businessId}/verificacion/{ownerUid}/{requestId}/{fileName} {
-      allow read: if canRequestBusinessVerification(businessId)
-        && request.auth.uid == ownerUid;
+      allow read: if canAccessBusinessVerificationEvidence(
+        businessId,
+        ownerUid
+      );
 
       allow create: if resource == null
         && request.resource != null
-        && canRequestBusinessVerification(businessId)
-        && request.auth.uid == ownerUid
+        && canAccessBusinessVerificationEvidence(businessId, ownerUid)
         && request.resource.size > 0
         && request.resource.size <= 5 * 1024 * 1024
         && request.resource.contentType.matches(
@@ -102,10 +122,10 @@ service firebase.storage {
       // Permite revertir sólo una evidencia cuyo request todavía no fue
       // persistido por la Function. Una evidencia asociada queda inmutable.
       allow delete: if resource != null
-        && canRequestBusinessVerification(businessId)
-        && request.auth.uid == ownerUid
-        && !firestore.exists(
-          /databases/(default)/documents/negocios/$(businessId)/businessVerificationRequests/$(requestId)
+        && canRollbackBusinessVerificationEvidence(
+          businessId,
+          ownerUid,
+          requestId
         );
     }
   }
