@@ -118,6 +118,8 @@ export function adaptWorkBalance(raw = {}) {
     consistenteMoneda: raw.consistenteMoneda !== false,
     monedasIncompatibles: Array.isArray(raw.monedasIncompatibles) ? raw.monedasIncompatibles : [],
     valorComercial: numericOrNull(raw.valorComercial),
+    materialesVenta: numericOrNull(raw.materialesVenta),
+    materialesAdicionales: numericOrNull(raw.materialesAdicionales),
     materiales: numericOrNull(raw.materiales),
     horasHombre: numericOrNull(raw.horasHombre),
     gastosDirectos: numericOrNull(raw.gastosDirectos),
@@ -400,28 +402,71 @@ export function getWorkAccumulatedCost(work = {}) {
   return Math.max(0, rounded(Number(work.materialesCostoTotal || 0) + Number(work.horasHombreCostoTotal || 0) + Number(work.gastosMontoTotal || 0) - materialExpense));
 }
 
-export function getWorkCostSummary({expenses = [], labor = [], materials = [], taskId} = {}) {
+export function getWorkSaleMaterials(sales = []) {
+  const seen = new Set();
+  return (Array.isArray(sales) ? sales : []).filter((sale) => sale?.estado === "confirmada").flatMap((sale) => {
+    const lines = new Map((Array.isArray(sale?.items) ? sale.items : []).map((line) => [String(line?.lineaId || ""), line]));
+    return (Array.isArray(sale?.efectosInventario) ? sale.efectosInventario : []).flatMap((effect, index) => {
+      const line = lines.get(String(effect?.lineaId || ""));
+      if (line && line.tipoItem !== "producto") return [];
+      const quantity = Number(effect?.cantidad);
+      if (!Number.isFinite(quantity) || quantity <= 0) return [];
+      const key = `${sale.id || sale.ventaId || "venta"}::${effect?.movimientoId || effect?.lineaId || index}`;
+      if (seen.has(key)) return [];
+      seen.add(key);
+      const unitCost = Number(effect?.costoUnitario);
+      const totalCost = Number(effect?.costoTotal);
+      const costAvailable = effect?.costoHistoricoDisponible !== false && Number.isFinite(unitCost) && unitCost >= 0 && Number.isFinite(totalCost) && totalCost >= 0;
+      return [{
+        id: key,
+        ventaId: String(sale.id || sale.ventaId || ""),
+        ventaNumero: String(sale.numero || "Venta"),
+        itemId: String(effect?.itemId || line?.itemId || ""),
+        nombre: String(effect?.nombre || line?.nombre || "Producto"),
+        codigo: String(effect?.codigo || line?.codigo || ""),
+        unidad: String(effect?.unidad || line?.unidad || "unidad"),
+        cantidad: quantity,
+        costoUnitario: costAvailable ? rounded(unitCost) : null,
+        costoTotal: costAvailable ? rounded(totalCost) : null,
+        costoHistoricoDisponible: costAvailable,
+        moneda: String(effect?.moneda || sale.moneda || "").trim().toUpperCase(),
+        fecha: String(effect?.fecha || sale.fechaVenta || "").slice(0, 10),
+        movimientoId: String(effect?.movimientoId || ""),
+      }];
+    });
+  });
+}
+
+export function getInventoryCurrentCost(item = {}) {
+  const candidates = [item.costoPromedio, item.costoBase, item.costo, item.precioCompra];
+  const selected = candidates.find((value) => value !== "" && value != null && Number.isFinite(Number(value)) && Number(value) >= 0);
+  return selected == null ? null : rounded(Number(selected));
+}
+
+export function getWorkCostSummary({expenses = [], labor = [], materials = [], saleMaterials = [], taskId} = {}) {
   const filterTask = (entry) => taskId === undefined || String(entry.tareaId || "") === String(taskId || "");
   const activeExpenses = expenses.filter((entry) => entry.estado !== "anulado" && filterTask(entry));
   const activeLabor = labor.filter((entry) => entry.estado !== "anulado" && filterTask(entry));
-  const hasInventoryMaterials = materials.some((entry) => entry.tipo === "SALIDA_PROYECTO");
+  const hasInventoryMaterials = saleMaterials.length > 0 || materials.some((entry) => entry.tipo === "SALIDA_PROYECTO");
   const materialMovements = materials.filter(filterTask);
+  const saleMaterialTotal = taskId === undefined ? saleMaterials.filter((entry) => entry.costoHistoricoDisponible !== false && entry.costoTotal != null).reduce((sum, entry) => sum + Number(entry.costoTotal || 0), 0) : 0;
   const materialTotal = hasInventoryMaterials
-    ? materialMovements.reduce((sum, entry) => sum + (entry.tipo === "DEVOLUCION_PROYECTO" ? -1 : 1) * Number(entry.costoTotal || 0), 0)
+    ? saleMaterialTotal + materialMovements.reduce((sum, entry) => sum + (entry.tipo === "DEVOLUCION_PROYECTO" ? -1 : 1) * Number(entry.costoTotal || 0), 0)
     : activeExpenses.filter((entry) => entry.categoria === "MATERIAL").reduce((sum, entry) => sum + Number(entry.monto || 0), 0);
   const laborTotal = activeLabor.reduce((sum, entry) => sum + Number(entry.total || 0), 0);
   const expenseTotal = activeExpenses.filter((entry) => !hasInventoryMaterials || entry.categoria !== "MATERIAL").reduce((sum, entry) => sum + Number(entry.monto || 0), 0);
   return {materials: Math.max(0, rounded(materialTotal)), labor: rounded(laborTotal), expenses: rounded(expenseTotal), total: Math.max(0, rounded(materialTotal + laborTotal + expenseTotal))};
 }
 
-export function buildWorkDailyCostSummary({expenses = [], labor = [], materials = [], events = []} = {}) {
+export function buildWorkDailyCostSummary({expenses = [], labor = [], materials = [], saleMaterials = [], events = []} = {}) {
   const dates = new Map();
   const row = (date) => {
     if (!date) return null;
     if (!dates.has(date)) dates.set(date, {date, materials: 0, labor: 0, expenses: 0, total: 0, advanceRecorded: false});
     return dates.get(date);
   };
-  const hasInventoryMaterials = materials.some((entry) => entry.tipo === "SALIDA_PROYECTO");
+  const hasInventoryMaterials = saleMaterials.length > 0 || materials.some((entry) => entry.tipo === "SALIDA_PROYECTO");
+  saleMaterials.filter((entry) => entry.costoHistoricoDisponible !== false && entry.costoTotal != null).forEach((entry) => { const current = row(entry.fecha); if (current) current.materials += Number(entry.costoTotal || 0); });
   materials.forEach((entry) => { const current = row(entry.fecha); if (current) current.materials += (entry.tipo === "DEVOLUCION_PROYECTO" ? -1 : 1) * Number(entry.costoTotal || 0); });
   labor.filter((entry) => entry.estado !== "anulado").forEach((entry) => { const current = row(entry.fecha); if (current) current.labor += Number(entry.total || 0); });
   expenses.filter((entry) => entry.estado !== "anulado").forEach((entry) => {

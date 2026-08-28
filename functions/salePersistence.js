@@ -2,7 +2,7 @@ const {createHash} = require("node:crypto");
 const {adaptDocumentLocalization, documentLocalizationSnapshot} = require("./localization");
 const {buildAuthoritativeCompanySnapshot, resolveCompanySnapshot} = require("./companySnapshot");
 const {fiscalSnapshotFields} = require("./fiscalIdentifier");
-const {linkedWorkFields, writeCommercialLink, writeSaleConfirmationEvent} = require("./workPersistence");
+const {inventoryCostSnapshot, linkedWorkFields, writeCommercialLink, writeSaleConfirmationEvent} = require("./workPersistence");
 
 const MODEL_VERSION = 1;
 const VAT_RATE = 0.19;
@@ -33,6 +33,22 @@ function number(value, label, HttpsError, {minimum = 0, maximum = Infinity} = {}
 }
 function safeMoney(values, HttpsError) {
   if (values.some((value) => !Number.isFinite(value) || !Number.isSafeInteger(value))) fail(HttpsError, "invalid-argument", MAXIMUM_AMOUNT_MESSAGE);
+}
+function roundCost(value) { return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100; }
+function costCurrency(item = {}, fallback = "CLP") {
+  const candidate = text(item.costoPromedioMoneda || item.monedaCosto || item.moneda, 3).toUpperCase();
+  const normalizedFallback = text(fallback, 3).toUpperCase();
+  return /^[A-Z]{3}$/.test(candidate) ? candidate : /^[A-Z]{3}$/.test(normalizedFallback) ? normalizedFallback : "CLP";
+}
+function historicalCostFields(item, quantity, fallbackCurrency) {
+  const snapshot = inventoryCostSnapshot(item);
+  if (!snapshot) return {costoHistoricoDisponible: false};
+  return {
+    ...snapshot,
+    costoTotal: roundCost(snapshot.costoUnitario * Number(quantity || 0)),
+    moneda: costCurrency(item, fallbackCurrency),
+    costoHistoricoDisponible: true,
+  };
 }
 function date(value, label, HttpsError, required = false) {
   const result = text(value, 10);
@@ -303,6 +319,7 @@ async function createConfirmedSaleFromQuoteInTransaction({
       const stockPosterior = stockAnterior - cantidad;
       const movementRef = businessRef.collection("movimientosInventario")
         .doc(`${saleRef.id}__${line.lineaId}`);
+      const costFields = historicalCostFields(raw, cantidad, base.moneda);
       transaction.create(movementRef, {
         movimientoId: movementRef.id,
         negocioId: businessId,
@@ -320,6 +337,7 @@ async function createConfirmedSaleFromQuoteInTransaction({
         codigo: text(line.codigo, 100),
         nombre: text(line.nombre, 240),
         unidad: text(line.unidad, 80),
+        ...costFields,
         creadoPorUid: actorUid,
         origenAceptacion: text(actor.origen, 80) || "manual",
         createdAt: timestamp,
@@ -330,6 +348,12 @@ async function createConfirmedSaleFromQuoteInTransaction({
         movimientoId: movementRef.id,
         cantidad,
         cantidadSolicitada,
+        codigo: text(line.codigo, 100),
+        nombre: text(line.nombre, 240),
+        unidad: text(line.unidad, 80),
+        fecha: base.fechaVenta,
+        tipoItem: "producto",
+        ...costFields,
       });
       runningStock = stockPosterior;
       pendingToApply -= cantidad;
@@ -504,12 +528,13 @@ async function confirmarVentaHandler(request, dependencies) {
     const groupMap = new Map(); toValidate.forEach((line) => { if (!line.itemId) fail(HttpsError, "failed-precondition", `El ítem ${line.nombre} no está vinculado al inventario.`); const group = groupMap.get(line.itemId) || {itemId: line.itemId, lines: []}; group.lines.push(line); groupMap.set(line.itemId, group); });
     const groups = [...groupMap.values()]; const clientRef = sale.cotizacionId ? null : businessRef.collection("clientes").doc(sale.clienteId); const itemRefs = groups.map((group) => businessRef.collection("inventario").doc(group.itemId)); const refs = clientRef ? [clientRef, ...itemRefs] : itemRefs;
     const snapshots = refs.length ? await transaction.getAll(...refs) : []; if (clientRef) client(snapshots[0], businessId, sale.clienteId, HttpsError); const itemSnapshots = clientRef ? snapshots.slice(1) : snapshots; const timestamp = FieldValue.serverTimestamp();
+    const efectosInventario = [];
     groups.forEach((group, index) => { const snapshot = itemSnapshots[index]; if (!snapshot.exists) fail(HttpsError, "failed-precondition", `No se encontró el ítem ${group.lines[0].nombre}.`); const raw = snapshot.data() || {}; if (raw.negocioId && raw.negocioId !== businessId) fail(HttpsError, "permission-denied", "Un ítem pertenece a otro negocio."); const currentType = TYPES.has(raw.tipoItem) ? raw.tipoItem : "producto"; if (group.lines.some((line) => line.tipoItem !== currentType)) fail(HttpsError, "failed-precondition", "Un ítem cambió de tipo."); if (!sale.cotizacionId && raw.estado && raw.estado !== "activo") fail(HttpsError, "failed-precondition", "Un ítem ya no está disponible."); if (currentType !== "producto") return;
       let runningStock = Number(raw.stock || 0); if (!Number.isFinite(runningStock)) fail(HttpsError, "failed-precondition", "El stock no pudo actualizarse de forma segura.");
-      group.lines.forEach((line) => { const cantidad = Number(line.cantidad); if (!Number.isFinite(cantidad) || cantidad <= 0) fail(HttpsError, "failed-precondition", "La cantidad de salida no es válida."); if (runningStock < cantidad) fail(HttpsError, "failed-precondition", `Stock insuficiente para ${text(line.nombre, 240)}. Disponible: ${runningStock}.`); const stockAnterior = runningStock; const stockPosterior = stockAnterior - cantidad; const movementRef = businessRef.collection("movimientosInventario").doc(`${ventaId}__${line.lineaId}`); transaction.set(movementRef, {movimientoId: movementRef.id, negocioId: businessId, itemId: line.itemId, ventaId, ventaNumero: sale.numero, tipo: "salida_venta", cantidad, stockAnterior, stockPosterior, motivo: "Confirmación de venta", codigo: text(line.codigo, 100), nombre: text(line.nombre, 240), unidad: text(line.unidad, 80), creadoPorUid: uid, createdAt: timestamp}); runningStock = stockPosterior; });
+      group.lines.forEach((line) => { const cantidad = Number(line.cantidad); if (!Number.isFinite(cantidad) || cantidad <= 0) fail(HttpsError, "failed-precondition", "La cantidad de salida no es válida."); if (runningStock < cantidad) fail(HttpsError, "failed-precondition", `Stock insuficiente para ${text(line.nombre, 240)}. Disponible: ${runningStock}.`); const stockAnterior = runningStock; const stockPosterior = stockAnterior - cantidad; const movementRef = businessRef.collection("movimientosInventario").doc(`${ventaId}__${line.lineaId}`); const costFields = historicalCostFields(raw, cantidad, sale.moneda); transaction.set(movementRef, {movimientoId: movementRef.id, negocioId: businessId, itemId: line.itemId, ventaId, ventaNumero: sale.numero, tipo: "salida_venta", cantidad, stockAnterior, stockPosterior, motivo: "Confirmación de venta", codigo: text(line.codigo, 100), nombre: text(line.nombre, 240), unidad: text(line.unidad, 80), ...costFields, creadoPorUid: uid, createdAt: timestamp}); efectosInventario.push({itemId: line.itemId, lineaId: line.lineaId, movimientoId: movementRef.id, cantidad, cantidadSolicitada: cantidad, codigo: text(line.codigo, 100), nombre: text(line.nombre, 240), unidad: text(line.unidad, 80), fecha: sale.fechaVenta, tipoItem: "producto", ...costFields}); runningStock = stockPosterior; });
       transaction.update(itemRefs[index], {stock: runningStock, actualizadoEn: timestamp, actualizadoPorUid: uid});
     });
-    const update = {estado: "confirmada", stockAplicado: true, stockAplicadoAt: timestamp, confirmadoPorUid: uid, confirmedAt: timestamp, actualizadoPorUid: uid, updatedAt: timestamp}; transaction.update(saleRef, update);
+    const update = {estado: "confirmada", efectosInventario, stockAplicado: true, stockAplicadoAt: timestamp, confirmadoPorUid: uid, confirmedAt: timestamp, actualizadoPorUid: uid, updatedAt: timestamp}; transaction.update(saleRef, update);
     if (workRef) writeSaleConfirmationEvent(transaction, workRef, {actor: {nombre: text(context.membership?.nombre || context.membership?.correo, 200) || "Persona del equipo", correo: text(context.membership?.correo, 240)}, actorUid: uid, businessId, currency: sale.moneda, quoteNumber: sale.cotizacionNumero, saleId: ventaId, saleNumber: sale.numero, timestamp, total: sale.total});
     transaction.set(requestRef, {negocioId: businessId, ventaId, uidUsuario: uid, productosActualizados: productLines.length, creadoEn: timestamp});
     return {venta: {id: ventaId, ...sale, ...update, confirmedAt: null, updatedAt: null}, requestId: reqId, idempotent: false, productosActualizados: productLines.length};
@@ -580,7 +605,22 @@ async function cancelarVentaBorradorHandler(request, dependencies) {
       const lineaId = id(effect?.lineaId, `Línea ${index + 1}`, HttpsError);
       const cantidad = number(effect?.cantidad, `Efecto ${index + 1}: cantidad`, HttpsError, {minimum: Number.MIN_VALUE});
       const group = groups.get(itemId) || {itemId, effects: []};
-      group.effects.push({cantidad, itemId, lineaId, movimientoId: text(effect?.movimientoId, 160)});
+      const costoUnitario = Number(effect?.costoUnitario);
+      const costoTotal = Number(effect?.costoTotal);
+      const hasHistoricalCost = Number.isFinite(costoUnitario) && costoUnitario >= 0 && Number.isFinite(costoTotal) && costoTotal >= 0;
+      group.effects.push({
+        cantidad,
+        itemId,
+        lineaId,
+        movimientoId: text(effect?.movimientoId, 160),
+        ...(hasHistoricalCost ? {
+          costoUnitario,
+          costoTotal,
+          costoFuente: text(effect?.costoFuente, 80),
+          moneda: costCurrency(effect, existing.moneda),
+          costoHistoricoDisponible: true,
+        } : {costoHistoricoDisponible: false}),
+      });
       groups.set(itemId, group);
     });
     const groupedEffects = [...groups.values()];
@@ -621,6 +661,13 @@ async function cancelarVentaBorradorHandler(request, dependencies) {
           cotizacionNumero: existing.cotizacionNumero || "",
           tipo: "entrada_cancelacion_venta",
           cantidad: effect.cantidad,
+          ...(effect.costoHistoricoDisponible ? {
+            costoUnitario: effect.costoUnitario,
+            costoTotal: effect.costoTotal,
+            costoFuente: effect.costoFuente,
+            moneda: effect.moneda,
+            costoHistoricoDisponible: true,
+          } : {costoHistoricoDisponible: false}),
           stockAnterior,
           stockPosterior,
           motivo,
@@ -633,6 +680,13 @@ async function cancelarVentaBorradorHandler(request, dependencies) {
           movimientoId: movementRef.id,
           movimientoOrigenId: effect.movimientoId,
           cantidad: effect.cantidad,
+          ...(effect.costoHistoricoDisponible ? {
+            costoUnitario: effect.costoUnitario,
+            costoTotal: effect.costoTotal,
+            costoFuente: effect.costoFuente,
+            moneda: effect.moneda,
+            costoHistoricoDisponible: true,
+          } : {costoHistoricoDisponible: false}),
         });
         runningStock = stockPosterior;
       });

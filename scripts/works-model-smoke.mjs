@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {createRequire} from "node:module";
-import {adaptStoredWork, adaptWorkExpense, adaptWorkLabor, adaptWorkLink, adaptWorkMaterialMovement, adaptWorkTask, adaptWorkTaskDocumentation, buildQuickWorkCreationPayload, buildWorkDailyCostSummary, buildWorkMutationPayload, canManageWorks, formatWorkNumber as formatFrontendNumber, getEligibleWorkQuoteOptions, getTaskProgress, getWorkCostSummary, getWorkDraftErrors, getWorkMemberIdentity, getWorkMemberOptionLabel, getWorkOperationalIndicators, getWorkTaskProgress, hasAdditionalWorkMembers, humanizeWorkEvent, matchesWorkFilters, WORK_MODEL_VERSION} from "../src/domain/workModel.mjs";
+import {adaptStoredWork, adaptWorkExpense, adaptWorkLabor, adaptWorkLink, adaptWorkMaterialMovement, adaptWorkTask, adaptWorkTaskDocumentation, buildQuickWorkCreationPayload, buildWorkDailyCostSummary, buildWorkMutationPayload, canManageWorks, formatWorkNumber as formatFrontendNumber, getEligibleWorkQuoteOptions, getInventoryCurrentCost, getTaskProgress, getWorkCostSummary, getWorkDraftErrors, getWorkMemberIdentity, getWorkMemberOptionLabel, getWorkOperationalIndicators, getWorkSaleMaterials, getWorkTaskProgress, hasAdditionalWorkMembers, humanizeWorkEvent, matchesWorkFilters, WORK_MODEL_VERSION} from "../src/domain/workModel.mjs";
 
 const require = createRequire(import.meta.url);
 const {actualizarSubtareaTrabajoHandler, actualizarTrabajoHandler, agregarNotaTrabajoHandler, agregarSubtareaTrabajoHandler, anularGastoTrabajoHandler, anularHorasHombreTrabajoHandler, asignarTareaTrabajoHandler, cambiarEstadoTareaTrabajoV2Handler, cambiarEstadoTrabajoHandler, crearTareaTrabajoV2Handler, crearTrabajoHandler, documentarTareaTrabajoHandler, eliminarSubtareaTrabajoHandler, eliminarTareaTrabajoV2Handler, formatWorkNumber, normalizeWorkInput, registrarDevolucionMaterialTrabajoHandler, registrarGastoTrabajoHandler, registrarHorasHombreTrabajoHandler, registrarSalidaMaterialTrabajoHandler, WORK_EXPENSE_CATEGORIES, writeCommercialLink, writeQuoteResponseEvent, writeSaleConfirmationEvent} = require("../functions/workPersistence.js");
@@ -348,6 +348,17 @@ assert.deepEqual(taskCosts, {materials: 250, labor: 10000, expenses: 5000, total
 assert.equal(projectCosts.total, 18250); assert.equal(projectCosts.total > taskCosts.total, true);
 const dailyCosts = buildWorkDailyCostSummary({...costInput, events: db.matching(`${workPath}/historial/`).map(([, value]) => ({...value, fecha: value.fecha}))});
 assert.deepEqual(dailyCosts.map(({date, total}) => [date, total]), [["2026-08-16", 250], ["2026-08-15", 6000], ["2026-08-14", 12000]]);
+const saleMaterials = getWorkSaleMaterials([{id: "sale-project", numero: "VTA-2026-0200", estado: "confirmada", moneda: "USD", fechaVenta: "2026-08-13", items: [
+  {lineaId: "product-line", tipoItem: "producto", nombre: "Conector", unidad: "unidad"},
+  {lineaId: "service-line", tipoItem: "servicio", nombre: "Instalación"},
+  {lineaId: "activity-line", tipoItem: "actividad", nombre: "Programación"},
+], efectosInventario: [{lineaId: "product-line", movimientoId: "sale-stock-once", itemId: "product-base", cantidad: 2, costoUnitario: 300, costoTotal: 600, moneda: "USD", costoHistoricoDisponible: true}]}]);
+assert.equal(saleMaterials.length, 1); assert.equal(saleMaterials[0].nombre, "Conector");
+assert.equal(getWorkCostSummary({...costInput, saleMaterials}).total, 18850);
+assert.equal(getWorkCostSummary({...costInput, saleMaterials, taskId: task.tareaId}).total, 15250);
+assert.deepEqual(buildWorkDailyCostSummary({...costInput, saleMaterials}).map(({date, total}) => [date, total]), [["2026-08-16", 250], ["2026-08-15", 6000], ["2026-08-14", 12000], ["2026-08-13", 600]]);
+assert.equal(getWorkSaleMaterials([{estado: "cancelada", efectosInventario: [{cantidad: 1, costoUnitario: 300, costoTotal: 300}]}]).length, 0);
+assert.equal(getInventoryCurrentCost({costoPromedio: 1200, costoBase: 1400}), 1200); assert.equal(getInventoryCurrentCost({costoBase: 250}), 250);
 const materialEvents = db.matching(`${workPath}/historial/`).map(([, value]) => value.tipo);
 assert.equal(materialEvents.includes("material_salida_registrada"), true); assert.equal(materialEvents.includes("material_devolucion_registrada"), true);
 const legacyWork = adaptStoredWork({trabajoId: "legacy-work", titulo: "Legacy"});
@@ -409,7 +420,8 @@ assert.doesNotMatch(page, /Nueva cotización/); assert.doesNotMatch(page, /fecha
 assert.match(styles, /works-form-automatic-note/); assert.match(styles, /@media\(min-width:768px\)[\s\S]*works-form-dialog \.responsive-dialog__body/);
 assert.match(page, /function DetailDisclosure[\s\S]*<details className="works-detail-disclosure">/); assert.match(page, /className="works-costs-focus"/); assert.match(page, /title="Notas y documentación"/); assert.match(page, /title="Historial del trabajo"/);
 assert.match(page, /<h3>Resumen<\/h3>[\s\S]*<TaskSection[\s\S]*<h3>Costos<\/h3>[\s\S]*title="Notas y documentación"[\s\S]*title="Historial del trabajo"/);
-assert.match(page, /Aún no hay venta confirmada para calcular resultado y rentabilidad\./); assert.match(page, /Aún no se han registrado materiales\./); assert.match(page, /Aún no se han registrado gastos\./); assert.match(page, /Aún no se han registrado horas hombre\./);
+assert.match(page, /Aún no hay venta confirmada para calcular resultado y rentabilidad\./); assert.match(page, /Aún no se han registrado consumos adicionales\./); assert.match(page, /Aún no se han registrado gastos\./); assert.match(page, /Aún no se han registrado horas hombre\./);
+assert.match(page, /Materiales incluidos en la venta/); assert.match(page, /Registra aquí sólo consumos adicionales del proyecto/); assert.match(page, /Costo estimado de esta salida/);
 assert.match(page, /Costo acumulado/); assert.match(page, /Último avance/); assert.match(page, /Sin actividad reciente/); assert.match(page, /Completar igualmente/); assert.match(page, /Motivo de espera/);
 assert.match(page, /TaskCostSelect/); assert.match(page, /Costos por día/); assert.match(page, /Nueva subtarea/); assert.match(page, /subtask\.completada/);
 assert.match(backend, /agregarSubtareaTrabajoHandler/); assert.match(backend, /actualizarSubtareaTrabajoHandler/); assert.match(backend, /eliminarSubtareaTrabajoHandler/); assert.match(backend, /tareaId: taskId/);

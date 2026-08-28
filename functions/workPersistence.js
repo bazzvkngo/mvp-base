@@ -254,7 +254,7 @@ function roundMoney(value) {
   return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 }
 
-function authoritativeInventoryCost(item, HttpsError) {
+function inventoryCostSnapshot(item = {}) {
   const candidates = [
     ["costoPromedio", item.costoPromedio],
     ["costoBase", item.costoBase],
@@ -262,8 +262,13 @@ function authoritativeInventoryCost(item, HttpsError) {
     ["precioCompra", item.precioCompra],
   ];
   const selected = candidates.find(([, value]) => value !== "" && value != null && Number.isFinite(Number(value)) && Number(value) >= 0);
-  if (!selected) fail(HttpsError, "failed-precondition", "El producto no tiene un costo vigente v\u00e1lido.");
-  return {costoUnitario: roundMoney(Number(selected[1])), costoFuente: selected[0]};
+  return selected ? {costoUnitario: roundMoney(Number(selected[1])), costoFuente: selected[0]} : null;
+}
+
+function authoritativeInventoryCost(item, HttpsError) {
+  const snapshot = inventoryCostSnapshot(item);
+  if (!snapshot) fail(HttpsError, "failed-precondition", "El producto no tiene un costo vigente v\u00e1lido.");
+  return snapshot;
 }
 
 function assertInventoryProduct(snapshot, businessId, HttpsError, {requireActive = false} = {}) {
@@ -1503,6 +1508,7 @@ module.exports = {
   eliminarTareaTrabajoV2Handler,
   eliminarSubtareaTrabajoHandler,
   formatWorkNumber,
+  inventoryCostSnapshot,
   linkedWorkFields,
   normalizeWorkInput,
   registrarGastoTrabajoHandler,

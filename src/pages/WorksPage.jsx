@@ -5,7 +5,7 @@ import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import StatusBadge from "../components/ui/StatusBadge";
-import {WORK_EXPENSE_CATEGORIES, WORK_PRIORITIES, WORK_STATUSES, WORK_TASK_STATUSES, buildQuickWorkCreationPayload, buildWorkDailyCostSummary, canManageWorks, canViewWorkProfitability, getEligibleWorkQuoteOptions, getTaskProgress, getWorkAccumulatedCost, getWorkCostSummary, getWorkDraftErrors, getWorkMemberIdentity, getWorkMemberOptionLabel, getWorkOperationalIndicators, getWorkPriorityLabel, getWorkStatusLabel, getWorkTaskProgress, hasAdditionalWorkMembers, humanizeWorkEvent, matchesWorkFilters} from "../domain/workModel.mjs";
+import {WORK_EXPENSE_CATEGORIES, WORK_PRIORITIES, WORK_STATUSES, WORK_TASK_STATUSES, buildQuickWorkCreationPayload, buildWorkDailyCostSummary, canManageWorks, canViewWorkProfitability, getEligibleWorkQuoteOptions, getInventoryCurrentCost, getTaskProgress, getWorkAccumulatedCost, getWorkCostSummary, getWorkDraftErrors, getWorkMemberIdentity, getWorkMemberOptionLabel, getWorkOperationalIndicators, getWorkPriorityLabel, getWorkSaleMaterials, getWorkStatusLabel, getWorkTaskProgress, hasAdditionalWorkMembers, humanizeWorkEvent, matchesWorkFilters} from "../domain/workModel.mjs";
 import {listarMiembrosNegocio} from "../services/businessMemberService.js";
 import {listarClientes} from "../services/clientService.js";
 import {getInventoryItems} from "../services/inventoryService.js";
@@ -189,8 +189,9 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
 
   const addNote = (event) => { event.preventDefault(); const value = noteText.trim(); if (!value) return; runDetailAction("note-new", () => agregarNotaTrabajo(businessId, selectedWork.id, value)).then((success) => {if (success) setNoteText("");}); };
   const terminal = ["completado", "cancelado"].includes(selectedWork?.estado);
-  const projectCost = useMemo(() => getWorkCostSummary({expenses: detail.gastos, labor: detail.horasHombre, materials: detail.materiales}), [detail.gastos, detail.horasHombre, detail.materiales]);
-  const dailyCosts = useMemo(() => buildWorkDailyCostSummary({expenses: detail.gastos, labor: detail.horasHombre, materials: detail.materiales, events: detail.historial}), [detail.gastos, detail.historial, detail.horasHombre, detail.materiales]);
+  const saleMaterials = useMemo(() => getWorkSaleMaterials(detail.ventas), [detail.ventas]);
+  const projectCost = useMemo(() => getWorkCostSummary({expenses: detail.gastos, labor: detail.horasHombre, materials: detail.materiales, saleMaterials}), [detail.gastos, detail.horasHombre, detail.materiales, saleMaterials]);
+  const dailyCosts = useMemo(() => buildWorkDailyCostSummary({expenses: detail.gastos, labor: detail.horasHombre, materials: detail.materiales, saleMaterials, events: detail.historial}), [detail.gastos, detail.historial, detail.horasHombre, detail.materiales, saleMaterials]);
   const requestStateChange = (next) => {
     if (next === selectedWork?.estado) return;
     if (next === "cancelado") { setCancelWork(selectedWork); return; }
@@ -279,7 +280,7 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
           <section className="works-costs-focus">
             <div className="works-section-heading"><div><h3>Costos</h3><span>Materiales, HH, gastos y resumen diario</span></div><strong>{formatMoney(projectCost.total, selectedWork.moneda || currencyCode || "CLP")}</strong></div>
             <div className="works-resources">
-              <MaterialsSection key={`materials-${selectedWork.id}`} businessId={businessId} canManage={canManage} currency={selectedWork.moneda || currencyCode || "CLP"} currentUserUid={currentUserUid} loading={detailLoading} movements={detail.materiales} processing={processing} products={inventoryProducts} role={role} runAction={runDetailAction} tasks={detail.tareas} workId={selectedWork.id} />
+              <MaterialsSection key={`materials-${selectedWork.id}`} businessId={businessId} canManage={canManage} currency={selectedWork.moneda || currencyCode || "CLP"} currentUserUid={currentUserUid} hasAssociatedSale={detail.ventas.some((sale) => sale.estado === "confirmada")} loading={detailLoading} movements={detail.materiales} processing={processing} products={inventoryProducts} role={role} runAction={runDetailAction} saleMaterials={saleMaterials} tasks={detail.tareas} workId={selectedWork.id} />
               <FinancialSection key={`costs-${selectedWork.id}`} businessId={businessId} canManage={canManage} currency={selectedWork.moneda || currencyCode || "CLP"} currentUserUid={currentUserUid} expenses={detail.gastos} labor={detail.horasHombre} loading={detailLoading} members={members} processing={processing} role={role} runAction={runDetailAction} tasks={detail.tareas} workId={selectedWork.id} />
               <DailyCostSummary currency={selectedWork.moneda || currencyCode || "CLP"} rows={dailyCosts} />
               {canManage && <WorkBalanceSection balance={detail.balance} loading={detailLoading} />}
@@ -458,7 +459,7 @@ function FinancialSection({businessId, canManage, currency, currentUserUid, expe
   </section>;
 }
 
-function MaterialsSection({businessId, canManage, currency, currentUserUid, loading, movements, processing, products, role, runAction, tasks, workId}) {
+function MaterialsSection({businessId, canManage, currency, currentUserUid, hasAssociatedSale, loading, movements, processing, products, role, runAction, saleMaterials, tasks, workId}) {
   const [draft, setDraft] = useState({itemId: "", cantidad: "", fecha: chileToday(), tareaId: ""});
   const [returnDrafts, setReturnDrafts] = useState({});
   const canConsume = canManage || ["TECNICO", "MEMBER"].includes(role);
@@ -466,7 +467,14 @@ function MaterialsSection({businessId, canManage, currency, currentUserUid, load
   const returns = movements.filter((movement) => movement.tipo === "DEVOLUCION_PROYECTO");
   const visibleExitIds = new Set(exits.map((movement) => movement.id));
   const visibleReturns = returns.filter((movement) => visibleExitIds.has(movement.movimientoOrigenId));
-  const valuedTotal = exits.reduce((sum, movement) => sum + movement.costoTotal, 0) - visibleReturns.reduce((sum, movement) => sum + movement.costoTotal, 0);
+  const saleValuedTotal = saleMaterials.filter((entry) => entry.costoHistoricoDisponible).reduce((sum, entry) => sum + entry.costoTotal, 0);
+  const additionalValuedTotal = exits.reduce((sum, movement) => sum + movement.costoTotal, 0) - visibleReturns.reduce((sum, movement) => sum + movement.costoTotal, 0);
+  const valuedTotal = saleValuedTotal + additionalValuedTotal;
+  const selectedProduct = products.find((product) => product.id === draft.itemId);
+  const currentUnitCost = selectedProduct ? getInventoryCurrentCost(selectedProduct) : null;
+  const currentCostCurrency = /^[A-Z]{3}$/.test(String(selectedProduct?.costoPromedioMoneda || "").toUpperCase()) ? selectedProduct.costoPromedioMoneda.toUpperCase() : currency;
+  const draftQuantity = Number(draft.cantidad);
+  const estimatedCost = currentUnitCost != null && Number.isFinite(draftQuantity) && draftQuantity > 0 ? currentUnitCost * draftQuantity : null;
   const returnedFor = (movementId) => returns.filter((movement) => movement.movimientoOrigenId === movementId).reduce((sum, movement) => sum + movement.cantidad, 0);
   const saveExit = (event) => {
     event.preventDefault();
@@ -485,7 +493,20 @@ function MaterialsSection({businessId, canManage, currency, currentUserUid, load
 
   return <section className="works-detail-section works-financial-file">
     <div className="works-section-heading"><div><h3>Materiales utilizados</h3><span>Consumo neto valorizado</span></div><strong>{formatMoney(Math.max(0, valuedTotal), currency)}</strong></div>
-    <p className="works-financial-note">Cada salida congela su costo. Las devoluciones conservan el movimiento de origen y restituyen stock con el mismo costo.</p>
+    {hasAssociatedSale && <section className="works-material-group works-material-group--sale">
+      <header><div><h4>Materiales incluidos en la venta</h4><p>Los materiales de la venta asociada ya fueron descontados del inventario. Registra aquí sólo consumos adicionales del proyecto.</p></div><strong>{formatMoney(saleValuedTotal, currency)}</strong></header>
+      {saleMaterials.length > 0 ? <div className="works-sale-materials-list">{saleMaterials.map((material) => <article key={material.id}>
+        <div><small>Producto</small><strong>{material.nombre}</strong><span>{material.ventaNumero}</span></div>
+        <div><small>Cantidad</small><strong>{material.cantidad} {material.unidad}</strong></div>
+        <div><small>Costo unitario histórico</small><strong>{material.costoHistoricoDisponible ? formatMoney(material.costoUnitario, material.moneda || currency) : "No disponible"}</strong></div>
+        <div><small>Costo total</small><strong>{material.costoHistoricoDisponible ? formatMoney(material.costoTotal, material.moneda || currency) : "No disponible"}</strong></div>
+        <div className="works-material-stock-state"><small>Inventario</small><strong>Stock ya descontado por la Venta</strong></div>
+      </article>)}</div> : <p className="works-empty-copy">La venta confirmada no contiene productos físicos descontados del inventario.</p>}
+      {saleMaterials.some((entry) => !entry.costoHistoricoDisponible) && <p className="works-message works-message--warning">Uno o más movimientos históricos no guardaron costo. No se recalcularon con el costo vigente.</p>}
+    </section>}
+    <section className="works-material-group">
+      <header><div><h4>Consumos adicionales</h4><p>Estas salidas sí generan un movimiento nuevo de inventario.</p></div><strong>{formatMoney(Math.max(0, additionalValuedTotal), currency)}</strong></header>
+      <p className="works-financial-note">Cada salida congela su costo. Las devoluciones conservan el movimiento de origen y restituyen stock con el mismo costo.</p>
     {canConsume && <form className="works-cost-form works-material-form" onSubmit={saveExit}>
       <select className="erp-control" required value={draft.itemId} onChange={(event) => setDraft((current) => ({...current, itemId: event.target.value}))}>
         <option value="">Selecciona producto</option>
@@ -495,6 +516,11 @@ function MaterialsSection({businessId, canManage, currency, currentUserUid, load
       <input className="erp-control" type="number" min="0.01" max="999999999.99" step="0.01" required value={draft.cantidad} onChange={(event) => setDraft((current) => ({...current, cantidad: event.target.value}))} placeholder="Cantidad" />
       <input className="erp-control" type="date" required value={draft.fecha} onChange={(event) => setDraft((current) => ({...current, fecha: event.target.value}))} />
       <Button type="submit" disabled={Boolean(processing)}>Registrar salida</Button>
+      {selectedProduct && <dl className="works-material-estimate">
+        <div><dt>Stock disponible</dt><dd>{Number(selectedProduct.stock || 0)} {selectedProduct.unidad || selectedProduct.unidadStock || "unidad"}</dd></div>
+        <div><dt>Costo unitario vigente</dt><dd>{currentUnitCost == null ? "No disponible" : formatMoney(currentUnitCost, currentCostCurrency)}</dd></div>
+        <div><dt>Costo estimado de esta salida</dt><dd>{estimatedCost == null ? "Ingresa una cantidad" : formatMoney(estimatedCost, currentCostCurrency)}</dd></div>
+      </dl>}
     </form>}
     {loading ? <p>Cargando materiales...</p> : <div className="works-cost-list">{exits.map((exit) => {
       const returned = returnedFor(exit.id); const remaining = Math.max(0, Math.round((exit.cantidad - returned) * 100) / 100);
@@ -503,7 +529,8 @@ function MaterialsSection({businessId, canManage, currency, currentUserUid, load
         <div><strong>{exit.productoSnapshot?.nombre || "Producto"}</strong><span>{exit.cantidad} {exit.productoSnapshot?.unidad || "unidad"} × {formatMoney(exit.costoUnitario, exit.moneda || currency)} = {formatMoney(exit.costoTotal, exit.moneda || currency)}</span><small>{dateLabel(exit.fecha)} · {exit.usuarioSnapshot?.nombre || "Equipo"} · {taskLabel(tasks, exit.tareaId)} · devuelto {returned}, pendiente {remaining}</small></div>
         {canManage && remaining > 0 && <form className="works-annul-form" onSubmit={(event) => saveReturn(event, exit)}><input className="erp-control" type="number" min="0.01" max={remaining} step="0.01" required value={returnValue.cantidad} onChange={(event) => updateReturn(exit.id, "cantidad", event.target.value)} placeholder="Cantidad a devolver" /><input className="erp-control" type="date" required value={returnValue.fecha} onChange={(event) => updateReturn(exit.id, "fecha", event.target.value)} /><Button type="submit" variant="secondary" disabled={Boolean(processing)}>Devolver</Button></form>}
       </article>;
-    })}{!exits.length && <p className="works-empty-copy">Aún no se han registrado materiales.</p>}</div>}
+    })}{!exits.length && <p className="works-empty-copy">Aún no se han registrado consumos adicionales.</p>}</div>}
+    </section>
   </section>;
 }
 
@@ -548,14 +575,16 @@ function DailyCostSummary({currency, rows}) { return <section className="works-d
 function WorkBalanceSection({balance, loading}) {
   if (loading) return <section className="works-detail-section"><h3>Balance y rentabilidad</h3><p>Calculando desde fuentes autoritativas...</p></section>;
   if (!balance) return null;
-  if (balance.estado === "PARCIAL_SIN_VENTA") return <section className="works-detail-section works-balance works-balance--partial"><h3>Balance y rentabilidad</h3><p className="works-empty-copy">Aún no hay venta confirmada para calcular resultado y rentabilidad.</p></section>;
   const money = (value) => value == null ? "No disponible" : formatMoney(value, balance.moneda);
   const inconsistent = balance.estado === "INCONSISTENTE_MONEDA";
   return <section className="works-detail-section works-balance">
     <div className="works-section-heading"><div><h3>Balance y rentabilidad</h3><span>{balance.estado === "COMPLETO" ? "Con Ventas confirmadas" : balance.estado === "PARCIAL_SIN_VENTA" ? "Balance parcial · sin Venta confirmada" : "Balance bloqueado · monedas incompatibles"}</span></div><strong>{balance.moneda}</strong></div>
     {inconsistent && <div className="works-message works-message--error" role="alert">No se mezclaron importes. Moneda base {balance.moneda}; incompatibles: {balance.monedasIncompatibles.join(", ")}.</div>}
+    {balance.estado === "PARCIAL_SIN_VENTA" && <p className="works-empty-copy">Aún no hay venta confirmada para calcular resultado y rentabilidad. Los costos registrados se muestran igualmente.</p>}
     {!inconsistent && <dl className="works-balance-grid">
       <div><dt>Valor comercial</dt><dd>{balance.valorComercial == null ? "Sin ingreso confirmado" : money(balance.valorComercial)}</dd></div>
+      <div><dt>Materiales de la venta</dt><dd>{money(balance.materialesVenta)}</dd></div>
+      <div><dt>Consumos adicionales netos</dt><dd>{money(balance.materialesAdicionales)}</dd></div>
       <div><dt>Materiales netos</dt><dd>{money(balance.materiales)}</dd></div>
       <div><dt>Horas hombre</dt><dd>{money(balance.horasHombre)}</dd></div>
       <div><dt>Gastos directos</dt><dd>{money(balance.gastosDirectos)}</dd></div>
@@ -566,6 +595,7 @@ function WorkBalanceSection({balance, loading}) {
       <div><dt>Rentabilidad</dt><dd>{balance.rentabilidadPct == null ? "No disponible" : `${balance.rentabilidadPct.toLocaleString("es-CL", {maximumFractionDigits: 2})}%`}</dd></div>
     </dl>}
     {inconsistent && <div className="works-balance-breakdown">{balance.desglosePorMoneda.map((entry) => <article key={entry.moneda}><strong>{entry.moneda}</strong><span>Ingresos {formatMoney(entry.valorComercial, entry.moneda)} · costos {formatMoney(entry.costoTotal, entry.moneda)}</span></article>)}</div>}
+    {(balance.fuentes.materialesVentaSinCosto || 0) > 0 && <p className="works-message works-message--warning">{balance.fuentes.materialesVentaSinCosto} movimiento(s) de Venta legacy no guardaron costo histórico y no se recalcularon con valores vigentes.</p>}
     <p className="works-financial-note">{balance.reglaMateriales === "INVENTARIO_AUTORITATIVO" ? `Inventario es la fuente de materiales; ${balance.fuentes.gastosMaterialExcluidos || 0} gasto(s) MATERIAL quedaron fuera para evitar doble imputación.` : "Sin libro de materiales: los gastos MATERIAL históricos permanecen como costo directo."}</p>
   </section>;
 }

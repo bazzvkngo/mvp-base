@@ -1,4 +1,4 @@
-const WORK_BALANCE_MODEL_VERSION = 1;
+const WORK_BALANCE_MODEL_VERSION = 2;
 const {BALANCE_READ_ROLES: BALANCE_ROLES} = require("./rbac");
 const PROJECT_MOVEMENT_TYPES = new Set(["SALIDA_PROYECTO", "DEVOLUCION_PROYECTO"]);
 
@@ -31,6 +31,8 @@ function balanceBucket(buckets, currencyCode) {
     buckets.set(currencyCode, {
       moneda: currencyCode,
       valorComercial: 0,
+      materialesVenta: 0,
+      materialesAdicionales: 0,
       materiales: 0,
       horasHombre: 0,
       gastosDirectos: 0,
@@ -38,6 +40,35 @@ function balanceBucket(buckets, currencyCode) {
     });
   }
   return buckets.get(currencyCode);
+}
+
+function saleMaterialEffects(sales = [], baseCurrency = "CLP") {
+  const seen = new Set();
+  return sales.flatMap((sale) => {
+    const lines = new Map((Array.isArray(sale.items) ? sale.items : []).map((line) => [String(line?.lineaId || ""), line]));
+    return (Array.isArray(sale.efectosInventario) ? sale.efectosInventario : []).flatMap((effect, index) => {
+      const line = lines.get(String(effect?.lineaId || ""));
+      if (line && line.tipoItem !== "producto") return [];
+      const quantity = Number(effect?.cantidad);
+      if (!Number.isFinite(quantity) || quantity <= 0) return [];
+      const key = `${sale.ventaId || sale.id || "venta"}::${effect?.movimientoId || effect?.lineaId || index}`;
+      if (seen.has(key)) return [];
+      seen.add(key);
+      const unitCost = Number(effect?.costoUnitario);
+      const totalCost = Number(effect?.costoTotal);
+      const costAvailable = effect?.costoHistoricoDisponible !== false && Number.isFinite(unitCost) && unitCost >= 0 && Number.isFinite(totalCost) && totalCost >= 0;
+      return [{
+        ...effect,
+        ventaId: String(sale.ventaId || sale.id || ""),
+        ventaNumero: String(sale.numero || ""),
+        cantidad: quantity,
+        moneda: currency(effect?.moneda, currency(sale.moneda, baseCurrency)),
+        costoUnitario: costAvailable ? roundMoney(unitCost) : null,
+        costoTotal: costAvailable ? roundMoney(totalCost) : null,
+        costoHistoricoDisponible: costAvailable,
+      }];
+    });
+  });
 }
 
 function calculateWorkBalance({business = {}, expenses = [], labor = [], materialMovements = [], quotes = [], sales = [], work = {}} = {}) {
@@ -49,7 +80,9 @@ function calculateWorkBalance({business = {}, expenses = [], labor = [], materia
   const activeExpenses = expenses.filter((expense) => validForWork(expense) && expense.estado !== "anulado");
   const activeLabor = labor.filter((entry) => validForWork(entry) && entry.estado !== "anulado");
   const projectMaterials = materialMovements.filter((movement) => validForWork(movement) && PROJECT_MOVEMENT_TYPES.has(movement.tipo));
-  const hasMaterialLedger = projectMaterials.some((movement) => movement.tipo === "SALIDA_PROYECTO");
+  const materialsFromSales = saleMaterialEffects(confirmedSales, baseCurrency);
+  const availableSaleMaterials = materialsFromSales.filter((entry) => entry.costoHistoricoDisponible);
+  const hasMaterialLedger = materialsFromSales.length > 0 || projectMaterials.some((movement) => movement.tipo === "SALIDA_PROYECTO");
   const includedExpenses = activeExpenses.filter((expense) => !(hasMaterialLedger && String(expense.categoria || "").toUpperCase() === "MATERIAL"));
   const excludedMaterialExpenses = activeExpenses.filter((expense) => hasMaterialLedger && String(expense.categoria || "").toUpperCase() === "MATERIAL");
   const buckets = new Map();
@@ -58,9 +91,16 @@ function calculateWorkBalance({business = {}, expenses = [], labor = [], materia
   confirmedSales.forEach((sale) => {
     balanceBucket(buckets, currency(sale.moneda, baseCurrency)).valorComercial += amount(sale.total);
   });
+  availableSaleMaterials.forEach((entry) => {
+    const bucket = balanceBucket(buckets, entry.moneda);
+    bucket.materialesVenta += amount(entry.costoTotal);
+    bucket.materiales += amount(entry.costoTotal);
+  });
   projectMaterials.forEach((movement) => {
     const multiplier = movement.tipo === "DEVOLUCION_PROYECTO" ? -1 : 1;
-    balanceBucket(buckets, currency(movement.moneda, baseCurrency)).materiales += multiplier * amount(movement.costoTotal);
+    const bucket = balanceBucket(buckets, currency(movement.moneda, baseCurrency));
+    bucket.materialesAdicionales += multiplier * amount(movement.costoTotal);
+    bucket.materiales += multiplier * amount(movement.costoTotal);
   });
   activeLabor.forEach((entry) => {
     balanceBucket(buckets, currency(entry.moneda, baseCurrency)).horasHombre += amount(entry.total);
@@ -77,6 +117,7 @@ function calculateWorkBalance({business = {}, expenses = [], labor = [], materia
   });
   const usedCurrencies = [
     ...confirmedSales.map((sale) => currency(sale.moneda, baseCurrency)),
+    ...availableSaleMaterials.map((entry) => entry.moneda),
     ...projectMaterials.map((movement) => currency(movement.moneda, baseCurrency)),
     ...activeLabor.map((entry) => currency(entry.moneda, baseCurrency)),
     ...includedExpenses.map((expense) => currency(expense.moneda, baseCurrency)),
@@ -93,6 +134,8 @@ function calculateWorkBalance({business = {}, expenses = [], labor = [], materia
   const excludedMaterialAmount = excludedMaterialExpenses.filter((expense) => currency(expense.moneda, baseCurrency) === baseCurrency).reduce((sum, expense) => sum + amount(expense.monto), 0);
   const aggregates = isConsistent ? {
     valorComercial: commercialValue,
+    materialesVenta: roundMoney(base.materialesVenta),
+    materialesAdicionales: roundMoney(base.materialesAdicionales),
     materiales: roundMoney(base.materiales),
     horasHombre: roundMoney(base.horasHombre),
     gastosDirectos: roundMoney(base.gastosDirectos),
@@ -102,6 +145,8 @@ function calculateWorkBalance({business = {}, expenses = [], labor = [], materia
     rentabilidadPct: profitability,
   } : {
     valorComercial: null,
+    materialesVenta: null,
+    materialesAdicionales: null,
     materiales: null,
     horasHombre: null,
     gastosDirectos: null,
@@ -124,6 +169,8 @@ function calculateWorkBalance({business = {}, expenses = [], labor = [], materia
     fuentes: {
       ventasConfirmadas: confirmedSales.length,
       cotizacionesRechazadas: rejectedQuotes,
+      movimientosMaterialesVenta: materialsFromSales.length,
+      materialesVentaSinCosto: materialsFromSales.filter((entry) => !entry.costoHistoricoDisponible).length,
       movimientosMateriales: projectMaterials.length,
       horasHombreVigentes: activeLabor.length,
       gastosVigentes: activeExpenses.length,

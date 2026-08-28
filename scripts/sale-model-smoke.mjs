@@ -18,6 +18,7 @@ import {
 
 const require = createRequire(import.meta.url);
 const {normalizeSaleInput} = require("../functions/salePersistence.js");
+const {inventoryCostSnapshot} = require("../functions/workPersistence.js");
 class TestHttpsError extends Error { constructor(code, message) { super(message); this.code = code; } }
 const line = (overrides = {}) => ({lineaId: "linea-1", itemId: "item-1", cantidad: 2, precioUnitario: 1000, descuentoPct: 10, ...overrides});
 
@@ -33,6 +34,9 @@ assert.throws(() => calculateSaleLine(line({cantidad: Infinity})), /número/);
 assert.throws(() => calculateSaleLine(line({precioUnitario: Number.MAX_VALUE})), /máximo permitido/);
 assert.throws(() => calculateSaleLine(line({cantidad: Number.MAX_VALUE, precioUnitario: 2})), /máximo permitido/);
 assert.throws(() => calculateSaleTotals([line({cantidad: 1, precioUnitario: Number.MAX_SAFE_INTEGER})]), /máximo permitido/);
+assert.deepEqual(inventoryCostSnapshot({costoPromedio: 750, costoBase: 900}), {costoUnitario: 750, costoFuente: "costoPromedio"});
+assert.deepEqual(inventoryCostSnapshot({costoBase: 900}), {costoUnitario: 900, costoFuente: "costoBase"});
+assert.equal(inventoryCostSnapshot({}), null);
 console.log("OK ventas modelo: líneas, descuentos, IVA, totales y overflow");
 
 const sale = (count) => ({clienteId: "client-1", fechaVenta: "2026-08-07", items: Array.from({length: count}, (_, index) => line({lineaId: `linea-${index + 1}`, itemId: `item-${index + 1}`}))});
@@ -77,7 +81,7 @@ const saleClient = fs.readFileSync(new URL("../src/features/sales/SaleClientSele
 const saleItems = fs.readFileSync(new URL("../src/features/sales/SaleItemsEditor.jsx", import.meta.url), "utf8");
 const salePrint = fs.readFileSync(new URL("../src/features/sales/SalePrintView.jsx", import.meta.url), "utf8");
 const rules = fs.readFileSync(new URL("../firestore.rules", import.meta.url), "utf8");
-for (const token of ["saleCreateRequests", "saleConfirmRequests", "quoteSaleConversionRequests", "saleCancellationRequests", "movimientosInventario", "salida_venta", "entrada_cancelacion_venta", "efectosInventario", "stockAplicado"]) assert.match(backend, new RegExp(token));
+for (const token of ["saleCreateRequests", "saleConfirmRequests", "quoteSaleConversionRequests", "saleCancellationRequests", "movimientosInventario", "salida_venta", "entrada_cancelacion_venta", "efectosInventario", "stockAplicado", "costoHistoricoDisponible", "costoUnitario", "costoTotal"]) assert.match(backend, new RegExp(token));
 assert.match(backend, /writeSaleConfirmationEvent/);
 for (const name of ["ventas", "saleCounters", "saleCreateRequests", "saleConfirmRequests", "saleCancellationRequests", "quoteSaleConversionRequests"]) assert.match(rules, new RegExp(`match /${name}/`));
 assert.match(salePage, /pendingConfirmationSaleId/);
