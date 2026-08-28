@@ -26,6 +26,7 @@ import {
   createPurchaseRequestId,
   obtenerCompra,
 } from "../services/purchaseService";
+import {formatDate, formatMoney} from "../utils/formatters";
 import "../features/purchases/purchases.css";
 
 const EMPTY_TOTALS = {subtotal: 0, descuentoTotal: 0, neto: 0, iva: 0, total: 0};
@@ -48,6 +49,44 @@ const timestampLabel = (value) => {
   const date = value?.toDate?.() || (value instanceof Date ? value : null);
   return date ? date.toLocaleString("es-CL") : "Fecha registrada en servidor";
 };
+const hasText = (value) => Boolean(String(value ?? "").trim());
+const visibleObservation = (value, purchase) => {
+  const observation = String(value || "").trim();
+  const generated = purchase?.recepcionNumero ? `Originada desde ${purchase.recepcionNumero}` : "";
+  const normalized = observation.toLocaleLowerCase("es-CL");
+  if (generated && normalized === generated.toLocaleLowerCase("es-CL")) return "";
+  return /^originada desde recepci[oó]n$/.test(normalized) ? "" : observation;
+};
+
+function PurchaseProviderSnapshot({provider = {}}) {
+  const fiscalId = provider.identificadorFiscalValor || provider.rut;
+  const details = [
+    [provider.identificadorFiscalTipo || "RUT", fiscalId],
+    ["Giro", provider.giro],
+    ["Contacto", provider.personaContacto],
+    ["Correo", provider.email],
+    ["Teléfono", provider.telefono],
+    ["Dirección", provider.direccion],
+    ["Condiciones", provider.condicionesPago],
+  ].filter(([, value]) => hasText(value));
+  return <section className="po-panel purchase-provider-card"><header><span className="po-kicker">Proveedor</span><h2>{provider.razonSocial || "Proveedor histórico"}</h2><small>Snapshot histórico conservado</small></header>{details.length > 0 && <dl>{details.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>}</section>;
+}
+
+function PurchaseDocumentInfo({draft, purchase, money}) {
+  if (draft.tipoDocumento === "sin_documento") {
+    return <p className="purchase-empty-copy">No hay un documento asociado a esta compra.</p>;
+  }
+  const source = purchase?.documentoOrigen || {};
+  const values = [
+    ["Documento", `${getPurchaseDocumentTypeLabel(draft.tipoDocumento)}${draft.numeroDocumentoProveedor ? ` N° ${draft.numeroDocumentoProveedor}` : ""}`],
+    ["Fecha", draft.fechaDocumento ? formatDate(draft.fechaDocumento, purchase?.locale) : ""],
+    ["Vencimiento", source.fechaVencimiento ? formatDate(source.fechaVencimiento, purchase?.locale) : ""],
+    ["Neto", money(source.neto ?? purchase?.neto)],
+    [purchase?.impuestoNombre || "IVA", money(source.impuestoMonto ?? purchase?.iva)],
+    ["Total", money(source.total ?? purchase?.total)],
+  ].filter(([, value]) => hasText(value));
+  return <dl className="purchase-document-summary">{values.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;
+}
 
 export default function NewPurchasePage({businessId, role}) {
   const {compraId} = useParams();
@@ -137,6 +176,7 @@ export default function NewPurchasePage({businessId, role}) {
       : providers.find((provider) => provider.proveedorId === draft.proveedorId) || {},
     ...totals,
   }), [company, draft, providers, purchase, totals]);
+  const money = (value) => formatMoney(value, printable.moneda, printable.locale);
 
   const addItem = (item) => setDraft((current) => ({
     ...current,
@@ -277,14 +317,14 @@ export default function NewPurchasePage({businessId, role}) {
         <div className="po-header__copy">
           <span className="po-kicker">Compra</span>
           <div className="po-header__title-row">
-            <h1>{purchase ? "Compra" : "Nueva compra"}</h1>
+            <h1>{purchase ? `Compra ${purchase.numero}` : "Nueva compra"}</h1>
             <span className={`po-status po-status--${purchase?.estado || "borrador"}`}>
               {getPurchaseStatusLabel(purchase?.estado || "borrador")}
             </span>
           </div>
           <div className="po-header__meta">
-            <strong>{purchase?.numero || "Compra por asignar"}</strong>
-            <span>{draft.fechaCompra}</span>
+            <strong>{printable.proveedorSnapshot?.razonSocial || "Proveedor por seleccionar"}</strong>
+            <span>{draft.fechaCompra ? formatDate(draft.fechaCompra, printable.locale) : "Sin fecha"} · {money(totals.total)}</span>
           </div>
         </div>
         <div className="po-header__actions">
@@ -300,24 +340,16 @@ export default function NewPurchasePage({businessId, role}) {
       </header>
       {message && <p className="po-message po-message--error no-print">{message}</p>}
       {purchase && (
-        <div className="purchase-origin no-print">
-          <strong>{purchase.recepcionNumero ? `Originada desde ${purchase.recepcionNumero}` : purchase.ordenCompraNumero ? `Originada desde ${purchase.ordenCompraNumero}` : "Origen: Directa"}</strong>
-          {purchase.recepcionId && <button type="button" className="po-button po-button--secondary" onClick={() => navigate(`/recepciones/${purchase.recepcionId}`)}>Ver recepción</button>}
-          {purchase.ordenCompraId && <button type="button" className="po-button po-button--secondary" onClick={() => navigate(`/ordenes-compra/${purchase.ordenCompraId}`)}>
-            Ver orden
-          </button>}
-        </div>
+        <section className="purchase-origin no-print">
+          <p>{purchase.recepcionNumero ? <>Originada desde recepción <button type="button" onClick={() => navigate(`/recepciones/${purchase.recepcionId}`)}>{purchase.recepcionNumero}</button></> : purchase.ordenCompraNumero ? <>Originada desde orden de compra <button type="button" onClick={() => navigate(`/ordenes-compra/${purchase.ordenCompraId}`)}>{purchase.ordenCompraNumero}</button></> : "Compra directa"}</p>
+          {(purchase.ordenCompraNumero || purchase.recepcionNumero) && <nav aria-label="Trazabilidad comercial">{purchase.ordenCompraNumero && <><button type="button" onClick={() => navigate(`/ordenes-compra/${purchase.ordenCompraId}`)}>{purchase.ordenCompraNumero}</button><span>→</span></>}{purchase.recepcionNumero && <><button type="button" onClick={() => navigate(`/recepciones/${purchase.recepcionId}`)}>{purchase.recepcionNumero}</button><span>→</span></>}<button type="button" aria-current="page" onClick={() => navigate(`/compras/${purchase.id}`)}>{purchase.numero}</button></nav>}
+        </section>
       )}
       {purchase?.registroAutomatico && (
-        <section className="po-panel no-print">
-          <h2>Trazabilidad</h2>
-          <div className="purchase-document-grid">
-            <p><strong>Compra registrada</strong><br />{timestampLabel(purchase.registradoEn)} desde la recepción {purchase.recepcionNumero}.</p>
-            <p><strong>Inventario relacionado</strong><br />{purchase.efectosInventario.length ? `${purchase.efectosInventario.length} movimiento(s) de entrada trazable(s).` : "Sin movimientos físicos: sólo servicios o actividades."}</p>
-            {purchase.documentoOrigen?.nombreArchivo && <p><strong>Documento importado</strong><br />{purchase.documentoOrigen.nombreArchivo}{purchase.documentoOrigen.numeroDocumento ? ` · N° ${purchase.documentoOrigen.numeroDocumento}` : ""}</p>}
-            {purchase.estado === "revertida" && <p className="purchase-field-wide"><strong>Compra revertida</strong><br />{timestampLabel(purchase.revertidaEn)} · {purchase.reversionMotivo}</p>}
-          </div>
-          {purchase.efectosInventario.length > 0 && <ul className="purchase-movement-list">{purchase.efectosInventario.map((effect) => <li key={effect.movimientoEntradaId}><strong>{effect.nombre}</strong><span>Entrada {effect.cantidad} {effect.unidad} · {effect.movimientoEntradaId}</span>{purchase.estado === "revertida" && <span>Compensación · {effect.movimientoReversionId}</span>}</li>)}</ul>}
+        <section className="po-panel purchase-inventory-trace no-print">
+          <header><div><span className="po-kicker">Inventario</span><h2>Trazabilidad de entradas</h2></div><small>Compra registrada {timestampLabel(purchase.registradoEn)}</small></header>
+          {purchase.efectosInventario.length > 0 ? <ul className="purchase-movement-list">{purchase.efectosInventario.map((effect) => <li key={effect.movimientoEntradaId}><strong title={effect.nombre}>{effect.nombre}</strong><span>Entrada: {effect.cantidad} {effect.unidad}</span><span>Origen: {purchase.recepcionNumero || "Recepción asociada"}</span>{purchase.estado === "revertida" && <em>Entrada compensada por reversión</em>}</li>)}</ul> : <p className="purchase-empty-copy">Esta compra sólo contiene servicios o actividades; no generó entradas de stock.</p>}
+          {purchase.estado === "revertida" && <div className="purchase-reversal-note"><strong>Compra revertida</strong><span>{timestampLabel(purchase.revertidaEn)} · {purchase.reversionMotivo}</span></div>}
         </section>
       )}
       {purchase?.estado === "confirmada" && purchase.stockAplicado &&
@@ -326,13 +358,13 @@ export default function NewPurchasePage({businessId, role}) {
       )}
       {purchase?.estado === "revertida" && <p className="purchase-stock-note no-print">La compra permanece en el historial y sus entradas de inventario fueron compensadas cuando correspondía.</p>}
       <div className="no-print">
-        <ProviderSelector
+        {readOnly && purchase ? <PurchaseProviderSnapshot provider={purchase.proveedorSnapshot} /> : <ProviderSelector
           disabled={readOnly || referencesLocked}
           onChange={(proveedorId) => setDraft((current) => ({...current, proveedorId}))}
           originalSnapshot={purchase?.proveedorSnapshot}
           providers={providers}
           value={draft.proveedorId}
-        />
+        />}
         <div className="po-layout">
           <div className="po-main">
             <PurchaseItemsEditor
@@ -345,16 +377,11 @@ export default function NewPurchasePage({businessId, role}) {
             />
             <details className="po-panel po-details" open>
               <summary>
-                <span><strong>Documento</strong><small>{draft.numeroDocumentoProveedor || "Sin documento asociado"}</small></span>
+                <span><strong>Documento tributario/comercial</strong><small>{draft.tipoDocumento === "sin_documento" ? "Sin documento asociado" : `${getPurchaseDocumentTypeLabel(draft.tipoDocumento)}${draft.numeroDocumentoProveedor ? ` N° ${draft.numeroDocumentoProveedor}` : ""}`}</small></span>
                 <span className="po-details__indicator" aria-hidden="true" />
               </summary>
               {readOnly ? (
-                <dl className="po-line__readonly">
-                  <div><dt>Tipo</dt><dd>{getPurchaseDocumentTypeLabel(draft.tipoDocumento)}</dd></div>
-                  {draft.tipoDocumento !== "sin_documento" && <div><dt>Número</dt><dd>{draft.numeroDocumentoProveedor || "—"}</dd></div>}
-                  <div><dt>Fecha compra</dt><dd>{draft.fechaCompra}</dd></div>
-                  {draft.tipoDocumento !== "sin_documento" && <div><dt>Fecha documento</dt><dd>{draft.fechaDocumento || "—"}</dd></div>}
-                </dl>
+                <PurchaseDocumentInfo draft={draft} purchase={purchase} money={money} />
               ) : (
                 <div className="purchase-document-grid">
                   <label>Tipo de documento
@@ -377,13 +404,14 @@ export default function NewPurchasePage({businessId, role}) {
             </details>
             <details className="po-panel po-details">
               <summary>
-                <span><strong>Condiciones y observaciones</strong><small>{draft.condicionesPago || draft.observaciones || "Sin información adicional"}</small></span>
+                <span><strong>Condiciones y observaciones</strong><small>{draft.condicionesPago || visibleObservation(draft.observaciones, purchase) || "Sin información adicional"}</small></span>
                 <span className="po-details__indicator" aria-hidden="true" />
               </summary>
               {readOnly ? (
-                <div className="purchase-document-grid">
-                  <p><strong>Condiciones</strong><br />{draft.condicionesPago || "—"}</p>
-                  <p><strong>Observaciones</strong><br />{draft.observaciones || "—"}</p>
+                <div className="purchase-notes-grid">
+                  {draft.condicionesPago && <section><span>Condiciones de pago</span><p>{draft.condicionesPago}</p></section>}
+                  {visibleObservation(draft.observaciones, purchase) && <section><span>Observaciones</span><p>{visibleObservation(draft.observaciones, purchase)}</p></section>}
+                  {!draft.condicionesPago && !visibleObservation(draft.observaciones, purchase) && <p className="purchase-empty-copy">No hay condiciones u observaciones adicionales.</p>}
                 </div>
               ) : (
                 <div className="purchase-document-grid">
@@ -398,10 +426,10 @@ export default function NewPurchasePage({businessId, role}) {
             </details>
             <details className="po-panel po-details">
               <summary>
-                <span><strong>Vista previa imprimible</strong><small>Documento listo para impresión</small></span>
+                <span><strong>Vista previa imprimible</strong><small>Presentación formal de la compra</small></span>
                 <span className="po-details__indicator" aria-hidden="true" />
               </summary>
-              <PurchasePrintView company={company} purchase={printable} />
+              <div className="purchase-preview-body"><PurchasePrintView company={company} purchase={printable} /></div>
             </details>
           </div>
           <PurchaseSummaryPanel

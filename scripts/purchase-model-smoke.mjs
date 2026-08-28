@@ -128,6 +128,9 @@ console.log("OK compras modelo: adaptación, búsqueda y roles");
 const backend = fs.readFileSync(new URL("../functions/purchasePersistence.js", import.meta.url), "utf8");
 const rules = fs.readFileSync(new URL("../firestore.rules", import.meta.url), "utf8");
 const purchasesPage = fs.readFileSync(new URL("../src/pages/PurchasesPage.jsx", import.meta.url), "utf8");
+const purchaseDetail = fs.readFileSync(new URL("../src/pages/NewPurchasePage.jsx", import.meta.url), "utf8");
+const purchasePrint = fs.readFileSync(new URL("../src/features/purchases/PurchasePrintView.jsx", import.meta.url), "utf8");
+const purchaseSummary = fs.readFileSync(new URL("../src/features/purchases/PurchaseSummaryPanel.jsx", import.meta.url), "utf8");
 assert.match(backend, /purchaseConfirmRequests/);
 assert.match(backend, /movimientosInventario/);
 assert.match(backend, /stockAplicado/);
@@ -142,5 +145,19 @@ for (const collectionName of [
   "purchaseOrderConversionRequests", "purchaseReversalRequests",
 ]) assert.match(rules, new RegExp(`match /${collectionName}/`));
 console.log("OK compras modelo: defensas backend y reglas declaradas");
+
+assert.match(purchaseDetail, /Trazabilidad comercial/);
+assert.match(purchaseDetail, /Trazabilidad de entradas/);
+assert.match(purchaseDetail, /No hay un documento asociado a esta compra\./);
+assert.match(purchaseDetail, /Snapshot hist[oó]rico conservado/);
+assert.doesNotMatch(purchaseDetail, />\s*\{effect\.movimientoEntradaId\}/);
+assert.doesNotMatch(purchaseDetail, />\s*\{effect\.movimientoReversionId\}/);
+assert.match(purchasePrint, /po-document-preview/);
+assert.match(purchasePrint, /Documento asociado/);
+assert.match(purchasePrint, /Unidad \/ naturaleza/);
+assert.match(purchasePrint, /Orden de compra/);
+assert.match(purchasePrint, /Recepci[oó]n/);
+assert.match(purchaseSummary, /discounts > 0 \? `-\$\{money\(discounts\)\}` : money\(0\)/);
+console.log("OK compras presentaciÃ³n: trazabilidad humana, documento imprimible y descuento cero");
 
 console.log("Smoke del modelo de Compras completado.");

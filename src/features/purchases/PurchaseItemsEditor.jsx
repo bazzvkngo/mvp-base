@@ -17,7 +17,7 @@ export default function PurchaseItemsEditor({
   const canChangeReferences = !disabled && !referencesLocked;
 
   return (
-    <section className="po-panel">
+    <section className="po-panel purchase-items-panel">
       <header className="po-panel__header">
         <div>
           <span className="po-kicker">Detalle de compra</span>
@@ -44,8 +44,8 @@ export default function PurchaseItemsEditor({
             return (
               <article className={`po-line${readOnly ? " po-line--readonly" : ""}`} key={item.lineaId}>
                 <div className="po-line__identity">
-                  <strong>{item.nombre}</strong>
-                  <small>{item.codigo || "Sin código"} · {typeLabel(item.tipoItem)} · {item.unidad}</small>
+                  <strong title={item.nombre}>{item.nombre}</strong>
+                  <small>{item.codigo || "Sin código"} · {typeLabel(item.tipoItem)}{item.unidad ? ` · ${item.unidad}` : ""}</small>
                 </div>
                 {readOnly ? (
                   <dl className="po-line__readonly">
