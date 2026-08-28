@@ -8,6 +8,11 @@ import {
   normalizeChileanRut,
   normalizeCountryCode,
 } from "./fiscalIdentifier.mjs";
+import {
+  MAX_CONTACT_PHONE_LENGTH,
+  getContactPhoneError,
+  normalizeContactPhone,
+} from "./contactFormatting.mjs";
 
 export const PROVIDER_MODEL_VERSION = 2;
 export const PROVIDER_STATUSES = Object.freeze(["activo", "archivado"]);
@@ -29,7 +34,7 @@ const PROVIDER_TEXT_FIELDS = Object.freeze({
   giro: {maxLength: 240, label: "giro"},
   personaContacto: {maxLength: 200, label: "persona de contacto"},
   email: {maxLength: 240, label: "correo"},
-  telefono: {maxLength: 100, label: "teléfono"},
+  telefono: {maxLength: MAX_CONTACT_PHONE_LENGTH, label: "teléfono"},
   direccion: {maxLength: 300, label: "dirección"},
   regionCodigo: {maxLength: 20, label: "código de región"},
   regionNombre: {maxLength: 160, label: "región"},
@@ -82,11 +87,8 @@ export function isValidProviderEmail(value) {
   return !value || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
-export function isValidProviderPhone(value) {
-  if (!value) return true;
-  if (!/^[+\d\s().-]+$/.test(value)) return false;
-  const digitCount = value.replace(/\D/g, "").length;
-  return digitCount >= 6 && digitCount <= 15;
+export function isValidProviderPhone(value, countryCode = "CL") {
+  return !getContactPhoneError(value, countryCode);
 }
 
 function normalizeCreditDays(value, errors) {
@@ -193,8 +195,9 @@ function collectProviderValidation(raw = {}, territoryCatalog = {}, countryCode 
   if (!errors.email && !isValidProviderEmail(normalized.email)) {
     errors.email = "Ingresa un correo válido.";
   }
-  if (!errors.telefono && !isValidProviderPhone(normalized.telefono)) {
-    errors.telefono = "Ingresa un teléfono válido.";
+  if (!errors.telefono) {
+    const phoneError = getContactPhoneError(normalized.telefono, country);
+    if (phoneError) errors.telefono = phoneError;
   }
   if (
     !errors.condicionesPago &&
@@ -232,7 +235,7 @@ export function normalizeProviderInput(raw = {}, territoryCatalog = {}, countryC
     giro: normalized.giro,
     personaContacto: normalized.personaContacto,
     email: normalized.email,
-    telefono: normalized.telefono,
+    telefono: normalizeContactPhone(normalized.telefono, country),
     direccion: normalized.direccion,
     regionCodigo: normalized.regionCodigo,
     regionNombre: normalized.regionNombre,

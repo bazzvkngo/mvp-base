@@ -6,6 +6,9 @@ import {
   formatChileanRut,
   getClientFieldErrors,
 } from "../../domain/clientModel.mjs";
+import {
+  formatContactPhoneInput,
+} from "../../domain/contactFormatting.mjs";
 import {getFiscalIdentifierLabel, getFiscalIdentifierPlaceholder, normalizeCountryCode} from "../../domain/fiscalIdentifier.mjs";
 import {
   CHILE_REGIONS,
@@ -31,27 +34,36 @@ const EMPTY_CLIENT = {
   notas: "",
 };
 
-function toFormValues(client) {
+function toFormValues(client, countryCode = "CL") {
   if (!client) return {...EMPTY_CLIENT};
-  return Object.fromEntries(
+  const values = Object.fromEntries(
     Object.keys(EMPTY_CLIENT).map((field) => [
       field,
       String(client[field] ?? EMPTY_CLIENT[field]),
     ])
   );
+  return {
+    ...values,
+    rut: normalizeCountryCode(countryCode) === "CL"
+      ? formatChileanRut(values.rut)
+      : values.rut,
+    telefono: formatContactPhoneInput(values.telefono, countryCode),
+  };
 }
 
-function ClientField({children, error, field, label, optional = true, wide}) {
+function ClientField({children, error, field, label, required = false, wide}) {
   const errorId = `${field}-error`;
   return (
     <label className={`client-form-field${wide ? " client-form-field--wide" : ""}`}>
       <span className="client-form-field__label">
         {label}
-        {optional && <span className="client-form-field__optional">Opcional</span>}
+        {required && <span className="client-form-field__required" aria-hidden="true"> *</span>}
       </span>
       {React.cloneElement(children, {
         "aria-describedby": error ? errorId : undefined,
         "aria-invalid": Boolean(error),
+        "aria-required": required || undefined,
+        required: required || undefined,
       })}
       {error && (
         <span id={errorId} className="client-form-field__error" role="alert">
@@ -63,7 +75,7 @@ function ClientField({children, error, field, label, optional = true, wide}) {
 }
 
 function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open}) {
-  const [values, setValues] = useState(() => toFormValues(client));
+  const [values, setValues] = useState(() => toFormValues(client, countryCode));
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -81,11 +93,11 @@ function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open})
 
   useEffect(() => {
     if (!open) return;
-    setValues(toFormValues(client));
+    setValues(toFormValues(client, country));
     setErrors({});
     setServerError("");
     setSaving(false);
-  }, [client, open]);
+  }, [client, country, open]);
 
   const setFieldRef = (field, node) => {
     fieldRefs.current[field] = node;
@@ -101,6 +113,47 @@ function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open})
       return next;
     });
     setServerError("");
+  };
+
+  const validateField = (field, value = values[field]) => {
+    let message = "";
+    try {
+      message = getClientFieldErrors({...values, [field]: value}, country)[field] || "";
+    } catch (error) {
+      message = error?.fieldErrors?.[field] || error?.message || "";
+    }
+    setErrors((current) => {
+      const next = {...current};
+      if (message) next[field] = message;
+      else delete next[field];
+      return next;
+    });
+  };
+
+  const handleTypeChange = (event) => {
+    const tipoCliente = event.target.value;
+    setValues((current) => ({
+      ...current,
+      tipoCliente,
+      ...(tipoCliente === "persona" ? {giro: "", personaContacto: ""} : {}),
+    }));
+    setErrors((current) => {
+      const next = {...current};
+      delete next.tipoCliente;
+      delete next.giro;
+      delete next.personaContacto;
+      return next;
+    });
+    setServerError("");
+  };
+
+  const handleRutChange = (event) => {
+    const value = isChile ? formatChileanRut(event.target.value) : event.target.value;
+    updateField("rut", value);
+  };
+
+  const handlePhoneChange = (event) => {
+    updateField("telefono", formatContactPhoneInput(event.target.value, country));
   };
 
   const handleRegionChange = (event) => {
@@ -220,32 +273,38 @@ function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open})
           </div>
         )}
 
-        <fieldset className="client-form-grid" disabled={saving}>
-          <legend className="sr-only">Datos del cliente</legend>
+        <div className="client-form-sections">
+          <fieldset className="client-form-section" disabled={saving}>
+            <legend>Datos del cliente</legend>
+            <p className="client-form-section__help">
+              Tipo, {fiscalLabel} y {isCompany ? "razón social" : "nombre completo"} son los únicos datos requeridos.
+            </p>
+            <div className="client-form-grid">
 
           <ClientField
             error={errors.tipoCliente}
             field="tipoCliente"
             label="Tipo de cliente"
-            optional={false}
+            required
           >
             <select
               ref={(node) => setFieldRef("tipoCliente", node)}
               value={values.tipoCliente}
-              onChange={(event) => updateField("tipoCliente", event.target.value)}
+              onChange={handleTypeChange}
             >
               <option value="empresa">Empresa</option>
               <option value="persona">Persona</option>
             </select>
           </ClientField>
 
-          <ClientField error={errors.rut} field="rut" label={fiscalLabel} optional={false}>
+          <ClientField error={errors.rut} field="rut" label={fiscalLabel} required>
             <input
               ref={(node) => setFieldRef("rut", node)}
               value={values.rut}
-              onChange={(event) => updateField("rut", event.target.value)}
-              onBlur={() => isChile && updateField("rut", formatChileanRut(values.rut))}
+              onChange={handleRutChange}
+              onBlur={() => validateField("rut")}
               inputMode="text"
+              maxLength={isChile ? 12 : 20}
               placeholder={getFiscalIdentifierPlaceholder(country)}
             />
           </ClientField>
@@ -254,18 +313,19 @@ function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open})
             error={errors.nombreRazonSocial}
             field="nombreRazonSocial"
             label={values.tipoCliente === "persona" ? "Nombre completo" : "Razón social"}
-            optional={false}
+            required
             wide
           >
             <input
               ref={(node) => setFieldRef("nombreRazonSocial", node)}
               value={values.nombreRazonSocial}
               onChange={(event) => updateField("nombreRazonSocial", event.target.value)}
-              autoComplete="organization"
+              autoComplete={isCompany ? "organization" : "name"}
+              placeholder={isCompany ? "Ej. Servicios técnicos" : "Ej. Nombre Apellido"}
             />
           </ClientField>
 
-          {isCompany && <>
+          {isCompany && (
             <ClientField error={errors.giro} field="giro" label="Giro">
               <input
                 ref={(node) => setFieldRef("giro", node)}
@@ -273,7 +333,14 @@ function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open})
                 onChange={(event) => updateField("giro", event.target.value)}
               />
             </ClientField>
+          )}
+            </div>
+          </fieldset>
 
+          <fieldset className="client-form-section" disabled={saving}>
+            <legend>Contacto <span>(opcional)</span></legend>
+            <div className="client-form-grid">
+          {isCompany && (
             <ClientField error={errors.personaContacto} field="personaContacto" label="Persona de contacto">
               <input
                 ref={(node) => setFieldRef("personaContacto", node)}
@@ -282,7 +349,7 @@ function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open})
                 autoComplete="name"
               />
             </ClientField>
-          </>}
+          )}
 
           <ClientField error={errors.email} field="email" label="Correo">
             <input
@@ -290,8 +357,9 @@ function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open})
               type="email"
               value={values.email}
               onChange={(event) => updateField("email", event.target.value)}
+              onBlur={() => validateField("email")}
               autoComplete="email"
-              placeholder="contacto@empresa.cl"
+              placeholder={isCompany ? "Ej. contacto@empresa.cl" : "Ej. nombre@correo.cl"}
             />
           </ClientField>
 
@@ -300,11 +368,20 @@ function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open})
               ref={(node) => setFieldRef("telefono", node)}
               type="tel"
               value={values.telefono}
-              onChange={(event) => updateField("telefono", event.target.value)}
+              onChange={handlePhoneChange}
+              onBlur={() => validateField("telefono")}
               autoComplete="tel"
+              inputMode="tel"
+              maxLength={30}
+              placeholder={isChile ? "Ej. +56 9 6123 4587" : "Ej. +1 202 555 0100"}
             />
           </ClientField>
+            </div>
+          </fieldset>
 
+          <fieldset className="client-form-section" disabled={saving}>
+            <legend>Ubicación <span>(opcional)</span></legend>
+            <div className="client-form-grid">
           <ClientField error={errors.direccion} field="direccion" label="Dirección" wide>
             <input
               ref={(node) => setFieldRef("direccion", node)}
@@ -352,8 +429,13 @@ function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open})
               <input ref={(node) => setFieldRef("comunaNombre", node)} value={values.comunaNombre} onChange={(event) => updateField("comunaNombre", event.target.value)} />
             </ClientField>
           </>}
+            </div>
+          </fieldset>
 
-          <ClientField error={errors.notas} field="notas" label="Notas" wide>
+          <fieldset className="client-form-section" disabled={saving}>
+            <legend>Notas <span>(opcional)</span></legend>
+            <div className="client-form-grid">
+          <ClientField error={errors.notas} field="notas" label="Notas internas" wide>
             <textarea
               ref={(node) => setFieldRef("notas", node)}
               value={values.notas}
@@ -361,7 +443,9 @@ function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open})
               rows="4"
             />
           </ClientField>
-        </fieldset>
+            </div>
+          </fieldset>
+        </div>
       </form>
     </ResponsiveDialog>
   );

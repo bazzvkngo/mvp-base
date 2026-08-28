@@ -1,6 +1,11 @@
 const {createHash} = require("node:crypto");
 const businessCatalog = require("./businessCatalog.json");
 const {
+  MAX_CONTACT_PHONE_LENGTH,
+  getContactPhoneError,
+  normalizeContactPhone,
+} = require("./contactFormatting");
+const {
   adaptStoredFiscalIdentifier,
   buildFiscalIdentifier,
   formatChileanRut,
@@ -62,7 +67,7 @@ const FIELD_CONFIG = {
   giro: [240, "giro"],
   personaContacto: [200, "persona de contacto"],
   email: [240, "correo"],
-  telefono: [100, "teléfono"],
+  telefono: [MAX_CONTACT_PHONE_LENGTH, "teléfono"],
   direccion: [300, "dirección"],
   regionCodigo: [20, "código de región"],
   regionNombre: [160, "región"],
@@ -224,12 +229,8 @@ function normalizeProviderInput(raw = {}, HttpsError, authoritativeCountry = "CL
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     fail(HttpsError, "invalid-argument", "Ingresa un correo válido.");
   }
-  if (telefono) {
-    const digitCount = telefono.replace(/\D/g, "").length;
-    if (!/^[+\d\s().-]+$/.test(telefono) || digitCount < 6 || digitCount > 15) {
-      fail(HttpsError, "invalid-argument", "Ingresa un teléfono válido.");
-    }
-  }
+  const phoneError = getContactPhoneError(telefono, countryCode);
+  if (phoneError) fail(HttpsError, "invalid-argument", phoneError);
   if (condicionesPago && !PAYMENT_TERMS.has(condicionesPago)) {
     fail(HttpsError, "invalid-argument", "Selecciona una condición de pago válida.");
   }
@@ -242,7 +243,7 @@ function normalizeProviderInput(raw = {}, HttpsError, authoritativeCountry = "CL
     giro: normalizeTextField(input, "giro", HttpsError),
     personaContacto: normalizeTextField(input, "personaContacto", HttpsError),
     email,
-    telefono,
+    telefono: normalizeContactPhone(telefono, countryCode),
     direccion: normalizeTextField(input, "direccion", HttpsError),
     ...normalizeTerritory(input, HttpsError, countryCode),
     condicionesPago,

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {createRequire} from "node:module";
 import fs from "node:fs";
 import {
   adaptStoredClient,
@@ -11,10 +12,20 @@ import {
   normalizeChileanRut,
   normalizeClientInput,
 } from "../src/domain/clientModel.mjs";
+import {
+  formatContactPhoneInput,
+  getContactPhoneError,
+  normalizeContactPhone,
+} from "../src/domain/contactFormatting.mjs";
+
+const require = createRequire(import.meta.url);
+const serverContactFormatting = require("../functions/contactFormatting.js");
 
 assert.equal(normalizeChileanRut("12.345.678-5"), "12345678-5");
 assert.equal(normalizeChileanRut(" 12 345 678 5 "), "12345678-5");
 assert.equal(formatChileanRut("123456785"), "12.345.678-5");
+assert.equal(formatChileanRut("764321985"), "76.432.198-5");
+assert.equal(formatChileanRut("6000000k"), "6.000.000-K");
 assert.equal(getClientRutKey("12.345.678-5"), "123456785");
 console.log("OK RUT: normalización, formato y clave canónica");
 
@@ -47,7 +58,24 @@ assert.equal(normalized.identificadorFiscalTipo, "RUT");
 assert.equal(normalized.identificadorFiscalNormalizado, "123456785");
 assert.equal(normalized.nombreRazonSocial, "Servicios del Sur SpA");
 assert.equal(normalized.email, "contacto@example.cl");
+assert.equal(normalized.telefono, "+56 9 1234 5678");
 console.log("OK cliente: normaliza el contrato del documento");
+
+assert.equal(formatContactPhoneInput("+56 (9) 6123-4587", "CL"), "+56 9 6123 4587");
+assert.equal(formatContactPhoneInput("961234587", "CL"), "+56 9 6123 4587");
+assert.equal(normalizeContactPhone("02 2345 6789", "CL"), "+56 2 2345 6789");
+assert.equal(getContactPhoneError("", "CL"), "");
+assert.match(getContactPhoneError("+56 9 1234 567890", "CL"), /teléfono chileno válido/i);
+assert.equal(normalizeContactPhone("+1 (202) 555-0100", "US"), "+12025550100");
+assert.equal(
+  serverContactFormatting.normalizeContactPhone("+56 (9) 6123-4587", "CL"),
+  "+56 9 6123 4587"
+);
+assert.equal(
+  serverContactFormatting.getContactPhoneError("+56 9 1234 567890", "CL"),
+  getContactPhoneError("+56 9 1234 567890", "CL")
+);
+console.log("OK teléfono: formatea pegado, normaliza Chile y conserva multipaís");
 
 const mutationPayload = buildClientMutationPayload({
   tipoCliente: " EMPRESA ",
@@ -103,6 +131,22 @@ assert.throws(
   (error) => error.code === "client/invalid-data"
 );
 console.log("OK cliente: valida campos obligatorios y correo");
+
+const optionalContactErrors = getClientFieldErrors({
+  tipoCliente: "empresa",
+  rut: "12.345.678-5",
+  nombreRazonSocial: "Cliente mínimo",
+  email: "",
+  telefono: "",
+});
+assert.deepEqual(optionalContactErrors, {});
+assert.match(getClientFieldErrors({
+  tipoCliente: "persona",
+  rut: "6.000.000-K",
+  nombreRazonSocial: "Persona",
+  telefono: "+56 9 1234 567890",
+}).telefono, /teléfono chileno válido/i);
+console.log("OK mínimos: correo y teléfono vacíos no bloquean; teléfono excesivo sí");
 
 assert.throws(
   () => normalizeClientInput({
@@ -178,12 +222,16 @@ const legacyPersonPayload = buildClientMutationPayload({
   giro: "Dato empresarial histórico",
   personaContacto: "Contacto histórico",
 });
-assert.equal(legacyPersonPayload.giro, "Dato empresarial histórico");
-assert.equal(legacyPersonPayload.personaContacto, "Contacto histórico");
+assert.equal(legacyPersonPayload.giro, "");
+assert.equal(legacyPersonPayload.personaContacto, "");
 const clientForm = fs.readFileSync("src/features/clients/ClientFormDialog.jsx", "utf8");
 assert.match(clientForm, /const isCompany = values\.tipoCliente === "empresa"/);
-assert.match(clientForm, /\{isCompany && <>[\s\S]*label="Giro"[\s\S]*label="Persona de contacto"[\s\S]*<\/>\}/);
+assert.match(clientForm, /tipoCliente === "persona" \? \{giro: "", personaContacto: ""\}/);
+assert.match(clientForm, /onChange=\{handleRutChange\}/);
+assert.match(clientForm, /onChange=\{handlePhoneChange\}/);
+assert.match(clientForm, /"Ej\. contacto@empresa\.cl" : "Ej\. nombre@correo\.cl"/);
 assert.match(clientForm, /label=\{values\.tipoCliente === "persona" \? "Nombre completo" : "Razón social"\}/);
-console.log("OK formulario: campos empresariales condicionales y datos legacy preservados");
+assert.doesNotMatch(clientForm, /client-form-field__optional/);
+console.log("OK formulario: Empresa/Persona diferenciadas, formato vivo y sin datos ocultos residuales");
 
 console.log("CLIENT_MODEL_SMOKE_OK");

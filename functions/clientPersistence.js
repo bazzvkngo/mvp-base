@@ -1,5 +1,10 @@
 const businessCatalog = require("./businessCatalog.json");
 const {
+  MAX_CONTACT_PHONE_LENGTH,
+  getContactPhoneError,
+  normalizeContactPhone,
+} = require("./contactFormatting");
+const {
   adaptStoredFiscalIdentifier,
   buildFiscalIdentifier,
   formatChileanRut,
@@ -200,6 +205,12 @@ function normalizeClientInput(raw = {}, HttpsError, authoritativeCountry = "CL")
     HttpsError
   );
   const email = normalizeTextField(raw, "email", 240, HttpsError).toLowerCase();
+  const telefono = normalizeTextField(
+    raw,
+    "telefono",
+    MAX_CONTACT_PHONE_LENGTH,
+    HttpsError
+  );
   const territory = normalizeTerritory(raw, HttpsError, countryCode);
 
   if (!CLIENT_TYPES.has(tipoCliente)) {
@@ -213,28 +224,35 @@ function normalizeClientInput(raw = {}, HttpsError, authoritativeCountry = "CL")
     fail(HttpsError, "invalid-argument", `Ingresa un ${getFiscalIdentifierLabel(countryCode)} válido.`);
   }
   if (!nombreRazonSocial) {
-    fail(HttpsError, "invalid-argument", "Ingresa el nombre o razón social.");
+    fail(
+      HttpsError,
+      "invalid-argument",
+      tipoCliente === "persona"
+        ? "Ingresa el nombre completo."
+        : "Ingresa la razón social."
+    );
   }
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     fail(HttpsError, "invalid-argument", "Ingresa un correo válido.");
   }
+  const phoneError = getContactPhoneError(telefono, countryCode);
+  if (phoneError) fail(HttpsError, "invalid-argument", phoneError);
 
   return {
     modeloClienteVersion: CLIENT_MODEL_VERSION,
     tipoCliente,
     ...fiscal,
     nombreRazonSocial,
-    giro: normalizeTextField(raw, "giro", 240, HttpsError),
+    giro: tipoCliente === "empresa"
+      ? normalizeTextField(raw, "giro", 240, HttpsError)
+      : "",
     email,
-    telefono: normalizeTextField(raw, "telefono", 100, HttpsError),
+    telefono: normalizeContactPhone(telefono, countryCode),
     direccion: normalizeTextField(raw, "direccion", 300, HttpsError),
     ...territory,
-    personaContacto: normalizeTextField(
-      raw,
-      "personaContacto",
-      200,
-      HttpsError
-    ),
+    personaContacto: tipoCliente === "empresa"
+      ? normalizeTextField(raw, "personaContacto", 200, HttpsError)
+      : "",
     notas: normalizeTextField(raw, "notas", 4000, HttpsError),
   };
 }

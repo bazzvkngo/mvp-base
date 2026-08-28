@@ -3648,6 +3648,41 @@
   gap: var(--space-3);
 }
 
+.client-form-sections {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.client-form-section {
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  min-width: 0;
+  padding: var(--space-4);
+}
+
+.client-form-section > legend {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-bold);
+  padding: 0 var(--space-2);
+}
+
+.client-form-section > legend span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+.client-form-section__help {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  margin: calc(var(--space-1) * -1) 0 0;
+}
+
 .client-form-grid {
   border: 0;
   display: grid;
@@ -3680,6 +3715,10 @@
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
   margin-left: var(--space-2);
+}
+
+.client-form-field__required {
+  color: var(--color-danger-700);
 }
 
 .client-form-field input,
@@ -3975,6 +4014,10 @@
   .quote-history-filters,
   .client-form-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .client-form-section {
+    padding: var(--space-3);
   }
 
   .quote-history-empty__actions {

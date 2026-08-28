@@ -15,6 +15,10 @@ import {
   normalizeProviderInput,
   normalizeProviderRut,
 } from "../src/domain/providerModel.mjs";
+import {
+  formatContactPhoneInput,
+  normalizeContactPhone,
+} from "../src/domain/contactFormatting.mjs";
 
 function providerFixture(overrides = {}) {
   return {
@@ -59,6 +63,7 @@ assert.equal(normalized.email, "ventas@proveedor.cl");
 assert.equal(normalized.diasCredito, 30);
 assert.equal(normalized.regionNombre, "Metropolitana de Santiago");
 assert.equal(normalized.comunaNombre, "Santiago");
+assert.equal(normalized.telefono, "+56 9 1234 5678");
 console.log("OK normalización: texto, correo, crédito y territorio canónico");
 
 assert.equal(isValidProviderEmail("compras@example.cl"), true);
@@ -66,7 +71,11 @@ assert.equal(isValidProviderEmail("correo-invalido"), false);
 assert.equal(isValidProviderPhone("+56 (9) 1234-5678"), true);
 assert.equal(isValidProviderPhone("teléfono secreto"), false);
 assert.equal(getProviderFieldErrors(providerFixture({email: "malo"})).email, "Ingresa un correo válido.");
-assert.equal(getProviderFieldErrors(providerFixture({telefono: "abc"})).telefono, "Ingresa un teléfono válido.");
+assert.match(getProviderFieldErrors(providerFixture({telefono: "abc"})).telefono, /teléfono chileno válido/i);
+assert.equal(formatContactPhoneInput("+56 (9) 6123-4587", "CL"), "+56 9 6123 4587");
+assert.equal(normalizeContactPhone("961234587", "CL"), "+56 9 6123 4587");
+assert.match(getProviderFieldErrors(providerFixture({telefono: "+56 9 1234 567890"})).telefono, /teléfono chileno válido/i);
+assert.deepEqual(getProviderFieldErrors(providerFixture({email: "", telefono: ""})), {});
 console.log("OK contacto: valida correo y teléfono opcionales");
 
 assert.equal(Boolean(getProviderFieldErrors(providerFixture({rut: ""})).rut), true);
@@ -164,6 +173,9 @@ assert.match(sourceManager, /No hay proveedores registrados/);
 assert.match(sourceManager, /canManage &&/);
 assert.match(sourceForm, /initialFocusRef=\{firstInputRef\}/);
 assert.match(sourceForm, /getCommuneByCode/);
+assert.match(sourceForm, /onChange=\{handleRutChange\}/);
+assert.match(sourceForm, /onChange=\{handlePhoneChange\}/);
+assert.doesNotMatch(sourceForm, /client-form-field__optional/);
 assert.match(sourceRules, /match \/proveedores\/\{proveedorId\}/);
 assert.match(sourceRules, /match \/providerRutKeys\/\{rutKey\}/);
 assert.match(sourcePersistence, /PURCHASE_WRITE_ROLES: AUTHORIZED_ROLES/);

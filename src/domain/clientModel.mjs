@@ -8,6 +8,11 @@ import {
   normalizeChileanRut,
   normalizeCountryCode,
 } from "./fiscalIdentifier.mjs";
+import {
+  MAX_CONTACT_PHONE_LENGTH,
+  getContactPhoneError,
+  normalizeContactPhone,
+} from "./contactFormatting.mjs";
 
 export const CLIENT_MODEL_VERSION = 2;
 export {formatChileanRut, isValidChileanRut, normalizeChileanRut};
@@ -23,7 +28,7 @@ const CLIENT_TEXT_FIELDS = Object.freeze({
   nombreRazonSocial: {maxLength: 240, label: "nombre o razón social"},
   giro: {maxLength: 240, label: "giro"},
   email: {maxLength: 240, label: "correo"},
-  telefono: {maxLength: 100, label: "teléfono"},
+  telefono: {maxLength: MAX_CONTACT_PHONE_LENGTH, label: "teléfono"},
   direccion: {maxLength: 300, label: "dirección"},
   regionCodigo: {maxLength: 20, label: "código de región"},
   regionNombre: {maxLength: 160, label: "región"},
@@ -98,10 +103,16 @@ export function getClientFieldErrors(raw = {}, countryCode = raw?.paisCodigo || 
     errors.rut = `Ingresa un ${getFiscalIdentifierLabel(country)} válido.`;
   }
   if (!errors.nombreRazonSocial && !nombreRazonSocial) {
-    errors.nombreRazonSocial = "Ingresa el nombre o razón social.";
+    errors.nombreRazonSocial = tipoCliente === "persona"
+      ? "Ingresa el nombre completo."
+      : "Ingresa la razón social.";
   }
   if (!errors.email && email && !isValidEmail(email)) {
     errors.email = "Ingresa un correo válido.";
+  }
+  if (!errors.telefono) {
+    const phoneError = getContactPhoneError(normalized.telefono, country);
+    if (phoneError) errors.telefono = phoneError;
   }
 
   return errors;
@@ -119,13 +130,14 @@ export function normalizeClientInput(raw = {}, countryCode = raw?.paisCodigo || 
 
   const fiscalValue = normalizeClientText(raw.identificadorFiscalValor || raw.rut, 80, getFiscalIdentifierLabel(country));
   const fiscal = buildFiscalIdentifier(country, fiscalValue);
+  const normalizedType = normalizeClientText(
+    raw.tipoCliente,
+    20,
+    "tipo de cliente"
+  ).toLowerCase();
   return {
     modeloClienteVersion: CLIENT_MODEL_VERSION,
-    tipoCliente: normalizeClientText(
-      raw.tipoCliente,
-      20,
-      "tipo de cliente"
-    ).toLowerCase(),
+    tipoCliente: normalizedType,
     ...fiscal,
     rut: fiscal.identificadorFiscalValor,
     rutNormalizado: country === "CL" ? normalizeChileanRut(fiscal.identificadorFiscalNormalizado) : "",
@@ -134,9 +146,11 @@ export function normalizeClientInput(raw = {}, countryCode = raw?.paisCodigo || 
       240,
       "nombre o razón social"
     ),
-    giro: normalizeClientText(raw.giro, 240, "giro"),
+    giro: normalizedType === "empresa"
+      ? normalizeClientText(raw.giro, 240, "giro")
+      : "",
     email: normalizeClientText(raw.email, 240, "correo").toLowerCase(),
-    telefono: normalizeClientText(raw.telefono, 100, "teléfono"),
+    telefono: normalizeContactPhone(raw.telefono, country),
     direccion: normalizeClientText(raw.direccion, 300, "dirección"),
     regionCodigo: normalizeClientText(
       raw.regionCodigo,
@@ -150,11 +164,9 @@ export function normalizeClientInput(raw = {}, countryCode = raw?.paisCodigo || 
       "código de comuna"
     ),
     comunaNombre: normalizeClientText(raw.comunaNombre, 160, "comuna"),
-    personaContacto: normalizeClientText(
-      raw.personaContacto,
-      200,
-      "persona de contacto"
-    ),
+    personaContacto: normalizedType === "empresa"
+      ? normalizeClientText(raw.personaContacto, 200, "persona de contacto")
+      : "",
     notas: normalizeClientText(raw.notas, 4000, "notas"),
   };
 }
