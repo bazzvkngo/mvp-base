@@ -142,7 +142,7 @@ function drawHeader(doc, order, company, logoDataUrl = "", { compact = false } =
   doc.text("ORDEN DE COMPRA", right, top + 3, { align: "right" });
   doc.setTextColor(...RED);
   doc.setFontSize(compact ? 9 : 13);
-  doc.text(order.numero || "OC por asignar", right, top + (compact ? 9 : 10), { align: "right" });
+  doc.text(order.numero || "Nueva orden de compra", right, top + (compact ? 9 : 10), { align: "right" });
 
   if (!compact) {
     [

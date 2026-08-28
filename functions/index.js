@@ -2659,6 +2659,7 @@ async function sendEmailWithResend({
   html,
   text,
   attachments = [],
+  replyTo = "",
 }) {
   const resend = new Resend(apiKey);
   const { data, error } = await resend.emails.send({
@@ -2668,6 +2669,7 @@ async function sendEmailWithResend({
     html,
     text,
     attachments,
+    ...(replyTo ? {replyTo} : {}),
   });
 
   if (error) {

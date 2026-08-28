@@ -9,6 +9,7 @@ const {
   buildPlainEmail,
   finalizeSuccessfulSend,
   normalizeSingleRecipient,
+  resolveCompanyReplyTo,
   sendPurchaseOrderEmailHandler,
   validateStoredOrder,
 } = require("../functions/purchaseOrderEmail.js");
@@ -21,6 +22,8 @@ class FakeHttpsError extends Error {
 }
 
 assert.equal(normalizeSingleRecipient("Proveedor@Empresa.cl", FakeHttpsError), "proveedor@empresa.cl");
+assert.equal(resolveCompanyReplyTo({email: "Compras@Empresa.cl"}), "compras@empresa.cl");
+assert.equal(resolveCompanyReplyTo({email: "compras@empresa.cl\nBcc:atacante@test.cl"}), "");
 for (const invalid of ["", "a@b.cl,c@d.cl", "a@b.cl\nBcc:x@y.cl", ["a@b.cl"]]) {
   assert.throws(() => normalizeSingleRecipient(invalid, FakeHttpsError), FakeHttpsError);
 }
@@ -39,14 +42,23 @@ const order = {
   estado: "borrador",
   total: 11900,
   condicionesPago: "Transferencia",
+  fechaEntregaEstimada: "2026-09-05",
+  locale: "es-CL",
+  moneda: "CLP",
   proveedorSnapshot: {razonSocial: "Proveedor Uno", email: "proveedor@empresa.cl"},
 };
-assert.match(buildPlainEmail({company: {nombreComercial: "Valora"}, order}), /OC-2026-0001/);
+const plainWithoutReplyTo = buildPlainEmail({company: {nombreComercial: "Valora"}, order});
+assert.match(plainWithoutReplyTo, /OC-2026-0001/);
+assert.match(plainWithoutReplyTo, /canal habitual/);
+assert.doesNotMatch(plainWithoutReplyTo, /responde a este correo/);
+assert.doesNotMatch(plainWithoutReplyTo, /2026-09-05/);
+assert.match(buildPlainEmail({company: {nombreComercial: "Valora", email: "compras@empresa.cl"}, order}), /responde a este correo/);
 assert.match(buildHtmlEmail({company: {nombreComercial: "Valora"}, order, escapeHtml: (value) => String(value)}), /ORDEN|Orden de compra/i);
 
-async function runHandler({emulator = false, configured = true, providerFails = false} = {}) {
+async function runHandler({companyEmail = "", emulator = false, configured = true, providerFails = false} = {}) {
   const orderPatches = [];
   const attemptPatches = [];
+  const providerCalls = [];
   const orderRef = {update: async (patch) => orderPatches.push(patch)};
   const attemptRef = {set: async (patch) => attemptPatches.push(patch)};
   const result = await sendPurchaseOrderEmailHandler({
@@ -56,7 +68,7 @@ async function runHandler({emulator = false, configured = true, providerFails = 
     FieldValue: {serverTimestamp: () => "SERVER_TIMESTAMP"},
     HttpsError: FakeHttpsError,
     escapeHtml: (value) => String(value),
-    getCompanyProfile: async () => ({nombreComercial: "Valora"}),
+    getCompanyProfile: async () => ({nombreComercial: "Valora", email: companyEmail}),
     getEmailSender: () => configured ? "compras@empresa.cl" : "",
     getResendApiKey: () => configured ? "secret" : "",
     isEmulatorEnvironment: () => emulator,
@@ -68,12 +80,13 @@ async function runHandler({emulator = false, configured = true, providerFails = 
       orderPatches.push({...basePatch, estado: "emitida", canalEmision: "correo", destinatarioEmision: emailProveedor, cantidadEnvios: 1, emitidaEn: FieldValue.serverTimestamp(), emitidaPorUid: uid, idEnvioCorreoProveedor: providerId});
       return {emitted: true, resent: false, finalStatus: "emitida"};
     },
-    sendEmailWithProvider: async () => {
+    sendEmailWithProvider: async (payload) => {
+      providerCalls.push(payload);
       if (providerFails) throw new Error("provider failed");
       return {id: "resend-1"};
     },
   });
-  return {attemptPatches, orderPatches, result};
+  return {attemptPatches, orderPatches, providerCalls, result};
 }
 
 const simulated = await runHandler({emulator: true});
@@ -86,8 +99,11 @@ assert.equal(missingConfig.result.success, false);
 assert.equal(missingConfig.orderPatches.at(-1).estadoEnvioCorreo, "error");
 assert.equal("estado" in missingConfig.orderPatches.at(-1), false, "un error conserva la OC pendiente");
 
-const sent = await runHandler();
+const sent = await runHandler({companyEmail: "compras@empresa.cl"});
 assert.equal(sent.result.success, true);
+assert.equal(sent.result.replyToConfigured, true);
+assert.equal(sent.providerCalls[0].replyTo, "compras@empresa.cl");
+assert.match(sent.providerCalls[0].text, /responde a este correo/);
 assert.equal(sent.orderPatches.at(-1).estado, "emitida");
 assert.equal(sent.orderPatches.at(-1).canalEmision, "correo");
 assert.equal(sent.orderPatches.at(-1).cantidadEnvios, 1);

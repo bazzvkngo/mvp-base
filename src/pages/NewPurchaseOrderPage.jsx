@@ -38,27 +38,28 @@ import {crearRecepcionDesdeOrden, createReceptionRequestId, listarRecepciones} f
 import {
   buildPurchaseOrderPdfAttachment,
   downloadPurchaseOrderPdf,
+  getPurchaseOrderWhatsAppAvailability,
   sharePurchaseOrderWhatsApp,
 } from "../utils/purchaseOrderPdf";
 import "../features/purchaseOrders/purchase-orders.css";
 
 const EMPTY_TOTALS = {subtotal: 0, descuentoTotal: 0, neto: 0, iva: 0, total: 0};
 
-function traceDate(value) {
+function traceDate(value, locale = "es-CL") {
   const date = value?.toDate?.() || (value ? new Date(value) : null);
   return date && !Number.isNaN(date.getTime())
-    ? date.toLocaleString("es-CL", {dateStyle: "short", timeStyle: "short"})
+    ? date.toLocaleString(locale, {dateStyle: "short", timeStyle: "short"})
     : "Fecha no disponible";
 }
 
-function documentDate(value) {
+function documentDate(value, locale = "es-CL") {
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
     const [year, month, day] = value.split("-");
-    return `${day}-${month}-${year}`;
+    return new Date(Number(year), Number(month) - 1, Number(day)).toLocaleDateString(locale);
   }
   const date = value?.toDate?.() || (value ? new Date(value) : null);
   return date && !Number.isNaN(date.getTime())
-    ? date.toLocaleDateString("es-CL").replaceAll("/", "-")
+    ? date.toLocaleDateString(locale)
     : "—";
 }
 
@@ -108,7 +109,7 @@ export default function NewPurchaseOrderPage({businessId, role}) {
   const [saving, setSaving] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
   const [message, setMessage] = useState("");
-  const [supplierAnswer, setSupplierAnswer] = useState({estado: "confirmada", comentario: ""});
+  const [supplierAnswer, setSupplierAnswer] = useState({estado: "pendiente", comentario: ""});
   const requestIdRef = useRef(createPurchaseOrderRequestId());
   const duplicateRequestIdRef = useRef("");
   const conversionRequestIdRef = useRef("");
@@ -181,7 +182,7 @@ export default function NewPurchaseOrderPage({businessId, role}) {
   const printableOrder = useMemo(() => ({
     ...(order || {}),
     ...draft,
-    numero: order?.numero || "OC por asignar",
+    numero: order?.numero || "Nueva orden de compra",
     paisCodigo: order?.paisCodigo || company?.paisCodigo || "CL",
     moneda: order?.moneda || company?.monedaCodigo || "CLP",
     locale: order?.locale || company?.locale || "es-CL",
@@ -194,6 +195,24 @@ export default function NewPurchaseOrderPage({businessId, role}) {
     ) || {},
     ...totals,
   }), [company, draft, order, providers, totals]);
+
+  const orderLocale = printableOrder.locale || "es-CL";
+  const supplierResponseState = getSupplierResponseState(order);
+  const whatsAppAvailability = getPurchaseOrderWhatsAppAvailability(order);
+  const hasConfirmedReceptions = receptions.some((entry) => entry.estado === "confirmada");
+  const cancellationDescription = order?.estado === "borrador"
+    ? "La orden quedará cancelada y dejará de estar disponible para envío."
+    : hasConfirmedReceptions
+      ? "Al cancelar, esta orden dejará de estar disponible para nuevas recepciones. Las recepciones ya confirmadas conservarán su trazabilidad y no se revertirán automáticamente."
+      : "Al cancelar, esta orden dejará de estar disponible para nuevas recepciones.";
+
+  const openSupplierConfirmation = () => {
+    setSupplierAnswer({
+      estado: getSupplierResponseState(order),
+      comentario: order?.respuestaProveedor?.comentario || "",
+    });
+    setActionDialog("supplier");
+  };
 
   const addItem = (item) => {
     setDraft((current) => ({
@@ -345,6 +364,10 @@ export default function NewPurchaseOrderPage({businessId, role}) {
 
   const saveSupplierAnswer = async () => {
     if (!order) return;
+    if (supplierAnswer.estado === "confirmada_con_observaciones" && !supplierAnswer.comentario.trim()) {
+      setMessage("Agrega la observación informada por el proveedor.");
+      return;
+    }
     setSaving(true);
     try {
       const result = await registrarRespuestaProveedor(
@@ -356,8 +379,8 @@ export default function NewPurchaseOrderPage({businessId, role}) {
       setOrder(result.ordenCompra);
       setActionDialog("");
       sileo.success({
-        title: "Respuesta registrada",
-        description: `El proveedor quedó como ${supplierAnswer.estado}.`,
+        title: "Confirmación registrada",
+        description: `Estado actualizado a ${getSupplierResponseLabel(result.ordenCompra)}.`,
       });
     } catch (error) {
       setMessage(error.message);
@@ -393,16 +416,23 @@ export default function NewPurchaseOrderPage({businessId, role}) {
 
   const openWhatsApp = async () => {
     if (!order) return;
+    const targetWindow = window.open("", "_blank");
+    if (!targetWindow) {
+      sileo.error({title: "No se pudo abrir WhatsApp", description: "El navegador bloqueó la nueva ventana."});
+      return;
+    }
+    targetWindow.opener = null;
     setSaving(true);
     setMessage("");
     try {
       const saved = await persistDraft();
-      const result = await sharePurchaseOrderWhatsApp({order: saved, companyProfile: company});
+      const result = await sharePurchaseOrderWhatsApp({order: saved, companyProfile: company, targetWindow});
       if (result.externalFlowOpened) {
         setWhatsAppDestination(result.destination || "");
         setActionDialog("whatsapp");
       }
     } catch (error) {
+      targetWindow.close();
       if (error?.name !== "AbortError") {
         setMessage(error.message);
         sileo.error({title: "No se pudo preparar WhatsApp", description: error.message});
@@ -452,7 +482,7 @@ export default function NewPurchaseOrderPage({businessId, role}) {
       <header className="po-header no-print">
         <div className="po-header__copy">
           <div className="po-header__title-row">
-            <h1>{order?.numero || "OC por asignar"}</h1>
+            <h1>{order?.numero || "Nueva orden de compra"}</h1>
             {order && (
               <span className={`po-status po-status--${order.estado}`}>
                 {order.estado === "emitida"
@@ -466,32 +496,34 @@ export default function NewPurchaseOrderPage({businessId, role}) {
           <div className="po-header__meta">
             <span>
               {order
-                ? `Creada ${documentDate(order.creadoEn || order.fechaEmision)}`
+                ? `Creada ${documentDate(order.creadoEn || order.fechaEmision, orderLocale)}`
                 : "El número se asignará al crearla."}
             </span>
           </div>
         </div>
         {order && (
-          <div className="po-header__actions">
-            {canManage && order.estado === "emitida" && getSupplierResponseState(order) !== "rechazada" && <button type="button" className="po-button po-button--primary" disabled={saving} onClick={createReception}>{saving ? "Preparando..." : "Registrar recepción"}</button>}
-            {canManage && order.estado === "emitida" && <button type="button" className="po-button po-button--secondary" disabled={saving} onClick={() => { setSupplierAnswer({estado: getSupplierResponseState(order) === "rechazada" ? "rechazada" : "confirmada", comentario: order.respuestaProveedor?.comentario || ""}); setActionDialog("supplier"); }}>Respuesta proveedor</button>}
-            {canManage && order.estado !== "cancelada" && <button type="button" className={`po-button ${order.estado === "borrador" ? "po-button--primary" : "po-button--secondary"}`} disabled={saving} onClick={() => setEmailOpen(true)}>{order.estado === "emitida" ? "Reenviar correo" : "Enviar por correo"}</button>}
-            {canManage && order.estado !== "cancelada" && <button type="button" className="po-button po-button--secondary" disabled={saving} onClick={openWhatsApp}>{order.estado === "emitida" ? "Reenviar por WhatsApp" : "WhatsApp"}</button>}
-            <details className="po-more-actions">
-              <summary className="po-button po-button--secondary">Más acciones ···</summary>
-              <div>
-                <button type="button" disabled={saving} onClick={downloadPdf}>Descargar PDF</button>
-                <button type="button" onClick={() => window.print()}>Imprimir</button>
-                {canManage && order.estado === "borrador" && <button type="button" disabled={saving} onClick={() => setActionDialog("manual")}>Marcar como enviada manualmente</button>}
-                {canManage && order.estado !== "cancelada" && <button type="button" disabled={saving} onClick={() => setActionDialog("cancel")}>Cancelar orden</button>}
-                {canManage && order.estado !== "borrador" && <button type="button" disabled={saving || duplicating} onClick={duplicate}>{duplicating ? "Creando copia..." : "Duplicar como pendiente"}</button>}
-              </div>
-            </details>
+          <div className="po-header__action-stack">
+            <div className="po-header__actions">
+              {canManage && order.estado === "emitida" && supplierResponseState !== "rechazada" && <button type="button" className="po-button po-button--primary" disabled={saving} onClick={createReception}>{saving ? "Preparando..." : "Registrar recepción"}</button>}
+              {canManage && order.estado === "emitida" && supplierResponseState === "rechazada" && <button type="button" className="po-button po-button--primary" disabled={saving} onClick={openSupplierConfirmation}>Actualizar confirmación</button>}
+              {canManage && order.estado === "borrador" && <button type="button" className="po-button po-button--primary" disabled={saving} onClick={() => setEmailOpen(true)}>Enviar por correo</button>}
+              {canManage && order.estado !== "cancelada" && <button type="button" className="po-button po-button--danger-subtle" disabled={saving} onClick={() => setActionDialog("cancel")}>Cancelar</button>}
+              {canManage && order.estado === "emitida" && supplierResponseState !== "rechazada" && <button type="button" className="po-button po-button--secondary" disabled={saving} onClick={openSupplierConfirmation}>Registrar confirmación</button>}
+              {canManage && order.estado === "emitida" && <button type="button" className="po-button po-button--secondary" disabled={saving} onClick={() => setEmailOpen(true)}>Reenviar correo</button>}
+              {canManage && order.estado !== "cancelada" && <button type="button" className="po-button po-button--secondary" disabled={saving || !whatsAppAvailability.enabled} title={whatsAppAvailability.help} onClick={openWhatsApp}>{order.estado === "emitida" ? "Reenviar por WhatsApp" : "WhatsApp"}</button>}
+            </div>
+            <div className="po-header__utility-actions">
+              <button type="button" className="po-button po-button--quiet" disabled={saving} onClick={downloadPdf}>Descargar PDF</button>
+              <button type="button" className="po-button po-button--quiet" onClick={() => window.print()}>Imprimir</button>
+              {canManage && order.estado === "borrador" && <button type="button" className="po-button po-button--quiet" disabled={saving} onClick={() => setActionDialog("manual")}>Registrar envío manual</button>}
+              {canManage && order.estado !== "borrador" && <button type="button" className="po-button po-button--quiet" disabled={saving || duplicating} onClick={duplicate}>{duplicating ? "Creando copia..." : "Duplicar como nueva orden"}</button>}
+            </div>
+            {canManage && order.estado !== "cancelada" && !whatsAppAvailability.enabled && <small className="po-action-help">{whatsAppAvailability.help}</small>}
           </div>
         )}
       </header>
       {order?.estado === "borrador" && <section className="po-next-step no-print"><strong>Siguiente paso</strong><span>Envía esta orden al proveedor para registrarla como emitida.</span></section>}
-      {order?.estado === "emitida" && <section className="po-linked-purchase no-print"><div><span>Respuesta del proveedor</span><strong>{getSupplierResponseLabel(order)}</strong></div><button type="button" className="po-button po-button--secondary" onClick={() => navigate("/recepciones")}>Ver recepciones</button></section>}
+      {order?.estado === "emitida" && <section className="po-linked-purchase no-print"><div><span>Confirmación del proveedor</span><strong>{getSupplierResponseLabel(order)}</strong></div><button type="button" className="po-button po-button--secondary" onClick={() => navigate("/recepciones")}>Ver recepciones</button></section>}
       {message && <p className="po-message po-message--error no-print">{message}</p>}
       <div className="no-print">
         <ProviderSelector
@@ -513,7 +545,7 @@ export default function NewPurchaseOrderPage({businessId, role}) {
             />
             <details className="po-panel po-details" open>
               <summary>
-                <span><strong>Entrega</strong><small>{draft.fechaEntregaEstimada || draft.direccionEntrega || "Sin información adicional"}</small></span>
+                <span><strong>Entrega</strong><small>{draft.fechaEntregaEstimada ? documentDate(draft.fechaEntregaEstimada, orderLocale) : draft.direccionEntrega || "Sin información adicional"}</small></span>
                 <span className="po-details__indicator" aria-hidden="true" />
               </summary>
               <div className="po-fields">
@@ -536,12 +568,12 @@ export default function NewPurchaseOrderPage({businessId, role}) {
               <section className="po-panel po-trace">
                 <header><h2>Trazabilidad</h2></header>
                 <ol>
-                  <li><strong>Creada</strong><span>{traceDate(order.creadoEn || order.fechaEmision)} · {visibleActor(order.creadoPorUid, memberByUid)}</span></li>
-                  {order.emitidaEn && <li><strong>Emitida por {({correo: "correo", whatsapp: "WhatsApp", manual: "registro manual"})[order.canalEmision] || "canal registrado"}</strong><span>{traceDate(order.emitidaEn)} · {visibleActor(order.emitidaPorUid, memberByUid)}{order.destinatarioEmision ? ` · ${order.destinatarioEmision}` : ""}</span></li>}
-                  {Number(order.cantidadEnvios || 0) > 1 && <li><strong>Reenviada por {({correo: "correo", whatsapp: "WhatsApp", manual: "registro manual"})[order.ultimoCanalEnvio] || "canal registrado"}</strong><span>{traceDate(order.reenviadaEn || order.ultimoEnvioEn)} · {visibleActor(order.reenviadaPorUid || order.ultimoEnvioPorUid, memberByUid)}{order.ultimoDestinatarioEnvio ? ` · ${order.ultimoDestinatarioEnvio}` : ""}</span></li>}
-                  {order.respuestaProveedor?.fecha && <li><strong>Respuesta del proveedor: {getSupplierResponseLabel(order)}</strong><span>{traceDate(order.respuestaProveedor.fecha)} · {order.respuestaProveedor.registradaPorNombre || order.respuestaProveedor.registradaPorEmail || "Usuario del negocio"}</span></li>}
-                  {receptions.map((entry) => <li key={entry.id}><strong>{entry.estado === "confirmada" ? "Recepción confirmada" : entry.estado === "cancelada" ? "Recepción cancelada" : "Recepción creada"}</strong><span>{traceDate(entry.confirmadoEn || entry.creadoEn)} · <button type="button" onClick={() => navigate(`/recepciones/${entry.id}`)}>{entry.numero}</button></span></li>)}
-                  {order.estado === "cancelada" && <li><strong>Cancelada</strong><span>{traceDate(order.canceladaEn)} · {visibleActor(order.canceladaPorUid, memberByUid)}</span></li>}
+                  <li><strong>Creada</strong><span>{traceDate(order.creadoEn || order.fechaEmision, orderLocale)} · {visibleActor(order.creadoPorUid, memberByUid)}</span></li>
+                  {order.emitidaEn && <li><strong>Emitida por {({correo: "correo", whatsapp: "WhatsApp", manual: "registro manual"})[order.canalEmision] || "canal registrado"}</strong><span>{traceDate(order.emitidaEn, orderLocale)} · {visibleActor(order.emitidaPorUid, memberByUid)}{order.destinatarioEmision ? ` · ${order.destinatarioEmision}` : ""}</span></li>}
+                  {Number(order.cantidadEnvios || 0) > 1 && <li><strong>Reenviada por {({correo: "correo", whatsapp: "WhatsApp", manual: "registro manual"})[order.ultimoCanalEnvio] || "canal registrado"}</strong><span>{traceDate(order.reenviadaEn || order.ultimoEnvioEn, orderLocale)} · {visibleActor(order.reenviadaPorUid || order.ultimoEnvioPorUid, memberByUid)}{order.ultimoDestinatarioEnvio ? ` · ${order.ultimoDestinatarioEnvio}` : ""}</span></li>}
+                  {order.respuestaProveedor?.fecha && <li><strong>Confirmación del proveedor: {getSupplierResponseLabel(order)}</strong><span>{traceDate(order.respuestaProveedor.fecha, orderLocale)} · {order.respuestaProveedor.registradaPorNombre || order.respuestaProveedor.registradaPorEmail || "Usuario del negocio"}</span></li>}
+                  {receptions.map((entry) => <li key={entry.id}><strong>{entry.estado === "confirmada" ? "Recepción confirmada" : entry.estado === "cancelada" ? "Recepción cancelada" : "Recepción creada"}</strong><span>{traceDate(entry.confirmadoEn || entry.creadoEn, orderLocale)} · <button type="button" onClick={() => navigate(`/recepciones/${entry.id}`)}>{entry.numero}</button></span></li>)}
+                  {order.estado === "cancelada" && <li><strong>Cancelada</strong><span>{traceDate(order.canceladaEn, orderLocale)} · {visibleActor(order.canceladaPorUid, memberByUid)}</span></li>}
                 </ol>
               </section>
             )}
@@ -567,10 +599,10 @@ export default function NewPurchaseOrderPage({businessId, role}) {
         open={catalogOpen}
       />
       <SendPurchaseOrderEmailDialog open={emailOpen} onClose={() => setEmailOpen(false)} onSend={sendEmail} order={order} processing={saving} />
-      <ResponsiveDialog open={actionDialog === "supplier"} onClose={() => !saving && setActionDialog("")} eyebrow="Respuesta del proveedor" title="Registrar respuesta" description="Esta dimensión es informativa y no cambia el estado interno de la orden." size="small" footer={<><Button type="button" variant="secondary" disabled={saving} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" disabled={saving} onClick={saveSupplierAnswer}>Guardar respuesta</Button></>}><div className="po-fields"><label>Estado<select value={supplierAnswer.estado} onChange={(event) => setSupplierAnswer({...supplierAnswer, estado: event.target.value})}><option value="confirmada">Confirmada</option><option value="rechazada">Rechazada</option></select></label><label>Comentario opcional<textarea value={supplierAnswer.comentario} onChange={(event) => setSupplierAnswer({...supplierAnswer, comentario: event.target.value})} /></label></div></ResponsiveDialog>
-      <ResponsiveDialog open={actionDialog === "whatsapp"} onClose={() => !saving && setActionDialog("")} eyebrow="WhatsApp" title="¿Enviaste la orden de compra?" description="Abrir WhatsApp o compartir el PDF no confirma que el proveedor lo haya recibido." size="small" footer={<><Button type="button" variant="secondary" disabled={saving} onClick={() => setActionDialog("")}>Mantener pendiente</Button><Button type="button" disabled={saving} onClick={confirmWhatsApp}>{saving ? "Registrando..." : "Sí, fue enviada"}</Button></>}><p>ValoraCloud registrará la emisión por WhatsApp, sin afirmar entrega ni lectura.</p></ResponsiveDialog>
-      <ResponsiveDialog open={actionDialog === "manual"} onClose={() => !saving && setActionDialog("")} eyebrow="Más acciones" title="Marcar emisión manual" description="Usa esta opción solo si la orden ya fue entregada al proveedor por otro medio." size="small" footer={<><Button type="button" variant="secondary" disabled={saving} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" disabled={saving} onClick={emitManual}>{saving ? "Registrando..." : "Marcar como emitida"}</Button></>}><p>Se guardará fecha, canal y usuario de la emisión.</p></ResponsiveDialog>
-      <ResponsiveDialog open={actionDialog === "cancel"} onClose={() => !saving && setActionDialog("")} eyebrow="Más acciones" title="Cancelar orden de compra" description="La orden quedará cancelada y no podrá convertirse en compra." size="small" footer={<><Button type="button" variant="secondary" disabled={saving} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" variant="danger" disabled={saving} onClick={cancel}>{saving ? "Cancelando..." : "Cancelar orden"}</Button></>}><p>La cancelación no modifica inventario ni compras existentes.</p></ResponsiveDialog>
+      <ResponsiveDialog open={actionDialog === "supplier"} onClose={() => !saving && setActionDialog("")} eyebrow="Confirmación del proveedor" title="Registrar confirmación" description="Registra aquí la respuesta recibida por correo, teléfono o WhatsApp. Una confirmación rechazada mantiene el bloqueo vigente para nuevas recepciones." size="small" footer={<><Button type="button" variant="secondary" disabled={saving} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" disabled={saving} onClick={saveSupplierAnswer}>{saving ? "Guardando..." : "Guardar confirmación"}</Button></>}><div className="po-fields"><label>Estado<select value={supplierAnswer.estado} onChange={(event) => setSupplierAnswer({...supplierAnswer, estado: event.target.value})}><option value="pendiente">Pendiente</option><option value="confirmada">Confirmada</option><option value="rechazada">Rechazada</option><option value="confirmada_con_observaciones">Confirmada con observaciones</option></select></label><label>Observación{supplierAnswer.estado === "confirmada_con_observaciones" ? " *" : " (opcional)"}<textarea required={supplierAnswer.estado === "confirmada_con_observaciones"} maxLength={2000} placeholder="Ej. Confirma cantidades y solicita ajustar la fecha de entrega." value={supplierAnswer.comentario} onChange={(event) => setSupplierAnswer({...supplierAnswer, comentario: event.target.value})} /></label></div></ResponsiveDialog>
+      <ResponsiveDialog open={actionDialog === "whatsapp"} onClose={() => !saving && setActionDialog("")} eyebrow="WhatsApp" title="¿Enviaste la orden de compra?" description="Abrir WhatsApp no confirma que el proveedor haya recibido la orden." size="small" footer={<><Button type="button" variant="secondary" disabled={saving} onClick={() => setActionDialog("")}>Mantener pendiente</Button><Button type="button" disabled={saving} onClick={confirmWhatsApp}>{saving ? "Registrando..." : "Sí, fue enviada"}</Button></>}><p>ValoraCloud registrará la emisión por WhatsApp, sin afirmar entrega ni lectura.</p></ResponsiveDialog>
+      <ResponsiveDialog open={actionDialog === "manual"} onClose={() => !saving && setActionDialog("")} eyebrow="Emisión" title="Marcar emisión manual" description="Usa esta opción solo si la orden ya fue entregada al proveedor por otro medio." size="small" footer={<><Button type="button" variant="secondary" disabled={saving} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" disabled={saving} onClick={emitManual}>{saving ? "Registrando..." : "Marcar como emitida"}</Button></>}><p>Se guardará fecha, canal y usuario de la emisión.</p></ResponsiveDialog>
+      <ResponsiveDialog open={actionDialog === "cancel"} onClose={() => !saving && setActionDialog("")} eyebrow="Acción de orden" title="Cancelar orden de compra" description={cancellationDescription} size="small" footer={<><Button type="button" variant="secondary" disabled={saving} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" variant="danger" disabled={saving} onClick={cancel}>{saving ? "Cancelando..." : "Cancelar orden"}</Button></>}>{hasConfirmedReceptions ? <p>La cancelación no revierte inventario ni compras ya generadas.</p> : null}</ResponsiveDialog>
     </main>
   );
 }

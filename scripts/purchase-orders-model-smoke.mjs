@@ -8,13 +8,20 @@ import {
   calculatePurchaseOrderLine,
   calculatePurchaseOrderTotals,
   canManagePurchaseOrders,
+  getSupplierResponseLabel,
+  getSupplierResponseState,
   matchesPurchaseOrderSearch,
   resolvePurchaseOrderProviderPreview,
 } from "../src/domain/purchaseOrderModel.mjs";
 import {buildPurchaseOrderPdfDocument} from "../src/domain/purchaseOrderDocument.mjs";
+import {
+  buildPurchaseOrderWhatsAppMessage,
+  getPurchaseOrderWhatsAppAvailability,
+  normalizePurchaseOrderWhatsAppPhone,
+} from "../src/utils/purchaseOrderPdf.js";
 
 const require = createRequire(import.meta.url);
-const {historicalPurchaseOrderCopyInput} = require(
+const {historicalPurchaseOrderCopyInput, registrarRespuestaProveedorHandler} = require(
   "../functions/purchaseOrderPersistence.js"
 );
 
@@ -220,6 +227,64 @@ assert.equal(canManagePurchaseOrders("VENTAS"), false);
 assert.equal(canManagePurchaseOrders("MEMBER"), false);
 console.log("OK compatibilidad: adapter legacy y roles");
 
+for (const [state, label] of [
+  ["pendiente", "Pendiente"],
+  ["confirmada", "Confirmada"],
+  ["rechazada", "Rechazada"],
+  ["confirmada_con_observaciones", "Confirmada con observaciones"],
+]) {
+  const responseOrder = {respuestaProveedor: {estado: state}};
+  assert.equal(getSupplierResponseState(responseOrder), state);
+  assert.equal(getSupplierResponseLabel(responseOrder), label);
+}
+assert.equal(normalizePurchaseOrderWhatsAppPhone("+56 9 6123 4587"), "56961234587");
+assert.equal(normalizePurchaseOrderWhatsAppPhone("9 6123 4587"), "56961234587");
+assert.equal(getPurchaseOrderWhatsAppAvailability({proveedorSnapshot: {telefono: ""}}).enabled, false);
+assert.match(
+  buildPurchaseOrderWhatsAppMessage({order: orderFixture(), companyProfile: companySnapshot}),
+  /confirma su recepción o indícanos cualquier observación/
+);
+console.log("OK confirmación proveedor y WhatsApp: cuatro estados, teléfono internacional y mensaje seguro");
+
+class FakeHttpsError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.code = code;
+  }
+}
+
+async function registerSupplierResponse(estado, comentario = "") {
+  let storedUpdate;
+  const orderRef = {};
+  const businessRef = {collection: () => ({doc: () => orderRef})};
+  const result = await registrarRespuestaProveedorHandler({
+    auth: {uid: "owner-a", token: {name: "Usuario QA", email: "usuario@qa.test"}},
+    data: {ordenCompraId: "order-a", estado, comentario},
+  }, {
+    db: {runTransaction: async (operation) => operation({
+      get: async () => ({exists: true, data: () => ({negocioId: "business-a", estado: "emitida"})}),
+      update: (_ref, update) => { storedUpdate = update; },
+    })},
+    FieldValue: {serverTimestamp: () => "SERVER_TIMESTAMP"},
+    HttpsError: FakeHttpsError,
+    requireBusinessAccess: async () => ({uid: "owner-a", businessId: "business-a", businessRef}),
+  });
+  return {result, storedUpdate};
+}
+
+const observedResponse = await registerSupplierResponse(
+  "confirmada_con_observaciones",
+  "Ajustar fecha de entrega"
+);
+assert.equal(observedResponse.storedUpdate.respuestaProveedor.estado, "confirmada_con_observaciones");
+assert.equal(observedResponse.storedUpdate.respuestaProveedor.fecha, "SERVER_TIMESTAMP");
+assert.equal(observedResponse.storedUpdate.respuestaProveedor.registradaPorUid, "owner-a");
+assert.equal(observedResponse.result.ordenCompra.respuestaProveedor.comentario, "Ajustar fecha de entrega");
+await assert.rejects(
+  () => registerSupplierResponse("confirmada_con_observaciones"),
+  /Agrega la observacion/
+);
+
 const copyInput = historicalPurchaseOrderCopyInput({
   ...stored,
   id: "orden-original",
@@ -281,7 +346,10 @@ assert.match(pageSource, /navigate\("\/ordenes-compra", \{[\s\S]*createdOrder: s
 assert.match(providerSelectorSource, /isHistorical \? originalSnapshot : selected/);
 assert.match(historySource, /po-history__cards/);
 assert.match(historySource, /<OrderActions/);
-assert.match(historySource, /Duplicar como pendiente/);
+assert.doesNotMatch(historySource, /Duplicar como pendiente|Más acciones/);
+assert.match(pageSource, /Duplicar como nueva orden/);
+assert.match(historySource, /Actualizar confirmación/);
+assert.match(historySource, /po-history__danger/);
 assert.match(historySource, /PurchaseOrderPreviewBoundary/);
 assert.match(historySource, /className="po-order-preview-dialog"/);
 assert.match(historySource, /PurchaseOrderPrintView company=\{company\} order=\{selectedOrder\}/);
@@ -308,10 +376,13 @@ assert.match(documentSource, /taxLabel\(order\)/);
 assert.doesNotMatch(documentSource, /19%/);
 assert.match(pdfSource, /buildPurchaseOrderPdfBase64/);
 assert.match(pdfSource, /sharePurchaseOrderWhatsApp/);
+assert.match(pdfSource, /https:\/\/wa\.me\/\$\{availability\.phone\}/);
 assert.match(purchaseOrderCssSource, /@media\(max-width:767px\)/);
 assert.match(purchaseOrderCssSource, /size:\s*A4/);
 assert.match(purchaseOrderCssSource, /po-order-preview-dialog/);
 assert.match(purchaseOrderCssSource, /po-history__recent/);
+assert.match(purchaseOrderCssSource, /po-header__action-stack/);
+assert.match(purchaseOrderCssSource, /po-history__danger/);
 assert.doesNotMatch(purchaseOrderCssSource, /po-history__table\{min-width:800px\}/);
 console.log("OK documento: snapshots, columnas condicionales, impuesto dinámico y acciones externas");
 

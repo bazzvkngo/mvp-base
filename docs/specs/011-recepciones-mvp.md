@@ -27,7 +27,7 @@ Separar lo solicitado, lo recibido físicamente y el documento económico:
 ## Fuente de verdad
 
 - La orden de compra conserva la solicitud histórica y no modifica stock.
-- `respuestaProveedor` es una dimensión informativa de la OC: `pendiente`, `confirmada` o `rechazada`.
+- `respuestaProveedor` es una dimensión informativa de la OC: `pendiente`, `confirmada`, `rechazada` o `confirmada_con_observaciones`. Esta última se trata como confirmada al evaluar la recepción.
 - La recepción registra lo recibido contra una OC emitida y es la única entrada nueva de abastecimiento.
 - La compra registra el documento económico. Las compras modelo 2 no modifican stock.
 - Compras y movimientos modelo 1 conservan compatibilidad histórica.

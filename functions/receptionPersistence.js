@@ -203,7 +203,8 @@ function confirmedTotals(snapshot, excludedId = "") {
 }
 
 function responseState(order) {
-  const state = text(order?.respuestaProveedor?.estado, 20).toLowerCase();
+  const state = text(order?.respuestaProveedor?.estado, 40).toLowerCase();
+  if (state === "confirmada_con_observaciones") return "confirmada";
   return ["confirmada", "rechazada"].includes(state) ? state : "pendiente";
 }
 

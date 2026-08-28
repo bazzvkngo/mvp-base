@@ -202,6 +202,10 @@ try {
   await call(owner, "crearRecepcionDesdeOrden")({businessId, ordenCompraId: rejectedOrder, requestId: requestId("corrected")});
   console.log("OK respuesta proveedor separada y corregible");
 
+  const observedOrder = `observed-${RUN_ID}`; await seedOrder(observedOrder, 1, "confirmada_con_observaciones");
+  await call(owner, "crearRecepcionDesdeOrden")({businessId, ordenCompraId: observedOrder, requestId: requestId("observed")});
+  console.log("OK confirmación con observaciones conserva flujo de recepción");
+
   const purchase = await call(owner, "crearCompra")({businessId, requestId: requestId("purchase"), compra: {proveedorId: providerId, fechaCompra: "2026-08-14", tipoDocumento: "factura", fechaDocumento: "2026-08-14", numeroDocumentoProveedor: "F-1", items: [{lineaId: "purchase-line", itemId: productId, cantidad: 3, costoUnitario: 1200, descuentoPct: 0}]}});
   assert.equal(purchase.data.compra.empresaSnapshot.razonSocial, companyProfileB.razonSocial);
   const beforePurchase = (await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data().stock;

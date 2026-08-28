@@ -34,6 +34,35 @@ function normalizeSingleRecipient(value, HttpsError) {
   return email;
 }
 
+function resolveCompanyReplyTo(company = {}) {
+  const email = normalizeEmail(company.email);
+  return typeof company.email === "string" && company.email.length <= 180 &&
+    !/[\r\n,;]/.test(company.email) && isValidEmail(email)
+    ? email
+    : "";
+}
+
+function resolveEmailLocale(order = {}) {
+  try {
+    return Intl.getCanonicalLocales(String(order.locale || "es-CL"))[0] || "es-CL";
+  } catch {
+    return "es-CL";
+  }
+}
+
+function formatEmailDate(value, locale) {
+  if (!value) return "";
+  const date = typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(`${value}T12:00:00Z`)
+    : value?.toDate?.() || new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat(locale, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
 function validateStoredOrder(order, {businessId, emailProveedor, HttpsError}) {
   if (order.negocioId !== businessId) {
     throw new HttpsError("permission-denied", "No puedes enviar esta orden de compra.");
@@ -185,17 +214,23 @@ async function finalizeSuccessfulSend({
 function buildPlainEmail({company, order}) {
   const companyName = company.nombreComercial || company.razonSocial || "Empresa compradora";
   const providerName = order.proveedorSnapshot?.razonSocial || "Proveedor";
+  const locale = resolveEmailLocale(order);
+  const replyTo = resolveCompanyReplyTo(company);
+  const responseInstruction = replyTo
+    ? "Por favor, responde a este correo para confirmar la orden, informar observaciones o indicar cualquier diferencia en cantidades, precios o fecha de entrega."
+    : "Por favor, confirma la orden por el canal habitual e informa cualquier observación o diferencia en cantidades, precios o fecha de entrega.";
   return [
     companyName,
     "",
     `Estimado/a ${providerName}:`,
     "",
     `Adjuntamos la orden de compra ${order.numero}.`,
-    `Total: ${Number(order.total || 0).toLocaleString("es-CL", {style: "currency", currency: "CLP", maximumFractionDigits: 0})}`,
+    `Total: ${Number(order.total || 0).toLocaleString(locale, {style: "currency", currency: order.moneda || "CLP", maximumFractionDigits: 0})}`,
     order.condicionesPago ? `Condiciones: ${humanPayment(order.condicionesPago)}` : "",
-    order.fechaEntregaEstimada ? `Entrega estimada: ${order.fechaEntregaEstimada}` : "",
+    order.fechaEntregaEstimada ? `Entrega estimada: ${formatEmailDate(order.fechaEntregaEstimada, locale)}` : "",
     "",
     "El detalle completo se encuentra en el PDF adjunto.",
+    responseInstruction,
     "",
     `Saludos,\n${companyName}`,
   ].filter(Boolean).join("\n");
@@ -213,12 +248,18 @@ function humanPayment(value) {
 function buildHtmlEmail({company, order, escapeHtml}) {
   const companyName = company.nombreComercial || company.razonSocial || "Empresa compradora";
   const providerName = order.proveedorSnapshot?.razonSocial || "Proveedor";
-  const total = Number(order.total || 0).toLocaleString("es-CL", {
+  const locale = resolveEmailLocale(order);
+  const replyTo = resolveCompanyReplyTo(company);
+  const responseInstruction = replyTo
+    ? "Por favor, responde a este correo para confirmar la orden, informar observaciones o indicar cualquier diferencia en cantidades, precios o fecha de entrega."
+    : "Por favor, confirma la orden por el canal habitual e informa cualquier observación o diferencia en cantidades, precios o fecha de entrega.";
+  const total = Number(order.total || 0).toLocaleString(locale, {
     style: "currency",
-    currency: "CLP",
+    currency: order.moneda || "CLP",
     maximumFractionDigits: 0,
   });
-  return `<!doctype html><html><body style="margin:0;background:#f4f7fb;font-family:Arial,sans-serif;color:#141f32"><div style="max-width:640px;margin:0 auto;padding:24px"><div style="background:#fff;border:1px solid #d3dce9;border-radius:8px;overflow:hidden"><div style="background:#07285d;color:#fff;padding:22px 24px;border-bottom:4px solid #d22430"><h1 style="font-size:22px;margin:0">${escapeHtml(companyName)}</h1><p style="margin:6px 0 0">Orden de compra</p></div><div style="padding:24px"><p>Estimado/a <strong>${escapeHtml(providerName)}</strong>:</p><p>Adjuntamos la orden de compra solicitada.</p><div style="background:#f4f7fb;border:1px solid #d3dce9;border-radius:6px;padding:14px;margin:18px 0"><p style="margin:0 0 8px"><strong>${escapeHtml(order.numero)}</strong></p><p style="margin:0 0 6px">Total: <strong>${escapeHtml(total)}</strong></p>${order.condicionesPago ? `<p style="margin:0 0 6px">Condiciones: ${escapeHtml(humanPayment(order.condicionesPago))}</p>` : ""}${order.fechaEntregaEstimada ? `<p style="margin:0">Entrega estimada: ${escapeHtml(order.fechaEntregaEstimada)}</p>` : ""}</div><p>El detalle completo se encuentra en el PDF adjunto.</p><p style="color:#4f5d75;margin-top:24px">Este correo fue generado desde ValoraCloud.</p></div></div></div></body></html>`;
+  const deliveryDate = formatEmailDate(order.fechaEntregaEstimada, locale);
+  return `<!doctype html><html><body style="margin:0;background:#f4f7fb;font-family:Arial,sans-serif;color:#141f32"><div style="max-width:640px;margin:0 auto;padding:24px"><div style="background:#fff;border:1px solid #d3dce9;border-radius:8px;overflow:hidden"><div style="background:#07285d;color:#fff;padding:22px 24px;border-bottom:4px solid #d22430"><h1 style="font-size:22px;margin:0">${escapeHtml(companyName)}</h1><p style="margin:6px 0 0">Orden de compra</p></div><div style="padding:24px"><p>Estimado/a <strong>${escapeHtml(providerName)}</strong>:</p><p>Adjuntamos la orden de compra solicitada.</p><div style="background:#f4f7fb;border:1px solid #d3dce9;border-radius:6px;padding:14px;margin:18px 0"><p style="margin:0 0 8px"><strong>${escapeHtml(order.numero)}</strong></p><p style="margin:0 0 6px">Total: <strong>${escapeHtml(total)}</strong></p>${order.condicionesPago ? `<p style="margin:0 0 6px">Condiciones: ${escapeHtml(humanPayment(order.condicionesPago))}</p>` : ""}${deliveryDate ? `<p style="margin:0">Entrega estimada: ${escapeHtml(deliveryDate)}</p>` : ""}</div><p>El detalle completo se encuentra en el PDF adjunto.</p><p>${escapeHtml(responseInstruction)}</p><p style="color:#4f5d75;margin-top:24px">Este correo fue generado desde ValoraCloud.</p></div></div></div></body></html>`;
 }
 
 async function sendPurchaseOrderEmailHandler(request, dependencies) {
@@ -266,6 +307,7 @@ async function sendPurchaseOrderEmailHandler(request, dependencies) {
     uid,
   });
   const company = await getCompanyProfile(businessRef, reservation.order);
+  const replyTo = resolveCompanyReplyTo(company);
   const subject = `Orden de compra ${reservation.order.numero}`;
   const html = buildHtmlEmail({company, order: reservation.order, escapeHtml});
   const text = buildPlainEmail({company, order: reservation.order});
@@ -304,6 +346,7 @@ async function sendPurchaseOrderEmailHandler(request, dependencies) {
       html,
       text,
       attachments: [pdfAttachment],
+      ...(replyTo ? {replyTo} : {}),
     });
     const providerId = safeText(providerResponse.id, 120);
     const finalization = await (
@@ -326,7 +369,7 @@ async function sendPurchaseOrderEmailHandler(request, dependencies) {
         name: trackingError.name,
       });
     }
-    return {success: true, provider: "resend", ...finalization};
+    return {success: true, provider: "resend", replyToConfigured: Boolean(replyTo), ...finalization};
   } catch (error) {
     console.error("sendPurchaseOrderEmail: proveedor falló.", {message: error.message, name: error.name});
     await reservation.orderRef.update({...basePatch, enviadoPorCorreo: false, estadoEnvioCorreo: "error", proveedorCorreo: "resend", ultimoErrorEnvio: safeError});
@@ -343,6 +386,7 @@ module.exports = {
   buildPlainEmail,
   finalizeSuccessfulSend,
   normalizeSingleRecipient,
+  resolveCompanyReplyTo,
   sendPurchaseOrderEmailHandler,
   validateStoredOrder,
 };

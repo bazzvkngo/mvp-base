@@ -52,7 +52,7 @@ export default function PurchaseOrderPrintView({ company: liveCompany = {}, orde
   const showDiscount = items.some((item) => Number(item.descuentoPct) > 0);
   const delivery = [
     ["Dirección de entrega", order.direccionEntrega],
-    ["Fecha o plazo esperado", order.fechaEntregaEstimada ? formatDate(order.fechaEntregaEstimada) : ""],
+    ["Fecha o plazo esperado", order.fechaEntregaEstimada ? formatDate(order.fechaEntregaEstimada, order.locale) : ""],
   ].filter(([, value]) => hasText(value));
   const paymentTerms = order.condicionesPago || provider.condicionesPago;
   const creditDays = Number(provider.diasCredito);
@@ -98,9 +98,9 @@ export default function PurchaseOrderPrintView({ company: liveCompany = {}, orde
         </div>
         <div className="po-document-preview__identity">
           <span>Orden de compra</span>
-          <strong>{order.numero || "OC por asignar"}</strong>
+          <strong>{order.numero || "Nueva orden de compra"}</strong>
           <dl>
-            <div><dt>Fecha de emisión</dt><dd>{order.fechaEmision ? formatDate(order.fechaEmision) : "-"}</dd></div>
+            <div><dt>Fecha de emisión</dt><dd>{order.fechaEmision ? formatDate(order.fechaEmision, order.locale) : "-"}</dd></div>
             <div><dt>Estado</dt><dd>{statusLabel(order.estado)}</dd></div>
             <div><dt>Moneda</dt><dd>{order.moneda || "CLP"}</dd></div>
           </dl>

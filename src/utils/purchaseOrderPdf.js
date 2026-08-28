@@ -51,7 +51,7 @@ export async function downloadPurchaseOrderPdf(options) {
   return attachment.fileName;
 }
 
-function normalizePhone(value) {
+export function normalizePurchaseOrderWhatsAppPhone(value) {
   const raw = String(value || "").trim();
   const digits = raw.replace(/\D/g, "");
   if (digits.length < 8 || digits.length > 15) return "";
@@ -61,34 +61,34 @@ function normalizePhone(value) {
   return "";
 }
 
-export async function sharePurchaseOrderWhatsApp({order, companyProfile}) {
-  const supportsFileShare = Boolean(
-    navigator.share && navigator.canShare && typeof File !== "undefined"
-  );
-  const fallbackWindow = supportsFileShare ? null : window.open("", "_blank");
-  if (fallbackWindow) fallbackWindow.opener = null;
-  let attachment;
-  try {
-    attachment = await buildPurchaseOrderPdfAttachment({order, companyProfile});
-  } catch (error) {
-    fallbackWindow?.close();
-    throw error;
-  }
-  const blob = attachmentToBlob(attachment);
-  const file = new File([blob], attachment.fileName, {type: attachment.contentType});
+export function getPurchaseOrderWhatsAppAvailability(order) {
+  const phone = normalizePurchaseOrderWhatsAppPhone(order?.proveedorSnapshot?.telefono);
+  return {
+    enabled: Boolean(phone),
+    phone,
+    help: phone ? "" : "Agrega un teléfono al proveedor para compartir por WhatsApp.",
+  };
+}
+
+export function buildPurchaseOrderWhatsAppMessage({order, companyProfile}) {
   const company = resolveDocumentCompany(order, companyProfile);
   const companyName = company.nombreComercial || company.razonSocial || "nuestra empresa";
-  const providerName = order.proveedorSnapshot?.razonSocial || "proveedor";
-  const text = `Hola ${providerName}, te comparto la orden de compra ${order.numero} de ${companyName}. El PDF contiene el detalle completo.`;
-  const payload = {title: `Orden de compra ${order.numero}`, text, files: [file]};
-  if (supportsFileShare && navigator.canShare(payload)) {
-    await navigator.share(payload);
-    return {externalFlowOpened: true, sharedDirectly: true, destination: order.proveedorSnapshot?.telefono || ""};
+  return `Hola, te enviamos la orden de compra ${order.numero} de ${companyName}. Por favor confirma su recepción o indícanos cualquier observación.`;
+}
+
+export async function sharePurchaseOrderWhatsApp({order, companyProfile, targetWindow = null}) {
+  const availability = getPurchaseOrderWhatsAppAvailability(order);
+  if (!availability.enabled) throw new Error(availability.help);
+  const text = buildPurchaseOrderWhatsAppMessage({order, companyProfile});
+  const url = `https://wa.me/${availability.phone}?text=${encodeURIComponent(text)}`;
+  if (targetWindow && !targetWindow.closed) {
+    targetWindow.location.href = url;
+  } else if (!window.open(url, "_blank", "noopener,noreferrer")) {
+    throw new Error("El navegador bloqueó la apertura de WhatsApp.");
   }
-  downloadBlob(blob, attachment.fileName);
-  const phone = normalizePhone(order.proveedorSnapshot?.telefono);
-  const url = `${phone ? `https://wa.me/${phone}` : "https://wa.me/"}?text=${encodeURIComponent(text)}`;
-  if (fallbackWindow && !fallbackWindow.closed) fallbackWindow.location.href = url;
-  else if (!window.open(url, "_blank", "noopener,noreferrer")) throw new Error("El navegador bloqueó la apertura de WhatsApp.");
-  return {externalFlowOpened: true, sharedDirectly: false, destination: order.proveedorSnapshot?.telefono || ""};
+  return {
+    externalFlowOpened: true,
+    sharedDirectly: false,
+    destination: availability.phone,
+  };
 }

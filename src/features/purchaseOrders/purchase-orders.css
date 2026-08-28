@@ -114,6 +114,29 @@
   justify-content: flex-end;
 }
 
+.po-header__action-stack {
+  align-items: flex-end;
+  display: grid;
+  gap: 7px;
+  justify-items: end;
+  max-width: 760px;
+}
+
+.po-header__utility-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.po-action-help {
+  color: var(--po-muted);
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  max-width: 380px;
+}
+
 .po-back-link {
   background: none;
   border: 0;
@@ -204,6 +227,30 @@
 
 .po-button--primary:hover:not(:disabled) {
   background: var(--po-teal-dark);
+}
+
+.po-button--danger-subtle {
+  background: #fff;
+  border-color: #e5a8af;
+  color: #a31d2d;
+}
+
+.po-button--danger-subtle:hover:not(:disabled) {
+  background: #fff0f1;
+  border-color: #d47782;
+}
+
+.po-button--quiet {
+  background: transparent;
+  border-color: transparent;
+  color: #526873;
+  min-height: 32px;
+  padding: 5px 8px;
+}
+
+.po-button--quiet:hover:not(:disabled) {
+  background: #eef4f6;
+  color: var(--po-teal);
 }
 
 .po-button--secondary {
@@ -492,6 +539,16 @@
 
 .po-history__actions > .po-history__primary:hover:not(:disabled) {
   background: var(--po-teal-dark);
+}
+
+.po-history__actions > .po-history__danger {
+  border-color: #e5a8af;
+  color: #a31d2d;
+}
+
+.po-history__actions > .po-history__danger:hover:not(:disabled) {
+  background: #fff0f1;
+  border-color: #d47782;
 }
 
 .po-line > p {
@@ -1351,8 +1408,15 @@
 }
 
 .po-order-preview-actions {
+  align-items: center;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.po-order-preview-actions .po-action-help {
+  flex-basis: 100%;
+  margin-left: auto;
+  text-align: right;
 }
 
 .print-only {
@@ -1450,6 +1514,24 @@
     align-items: stretch;
     flex-direction: column;
     gap: 10px;
+  }
+
+  .po-header__action-stack {
+    align-items: stretch;
+    justify-items: stretch;
+    max-width: none;
+    width: 100%;
+  }
+
+  .po-header__utility-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .po-action-help,
+  .po-order-preview-actions .po-action-help {
+    max-width: none;
+    text-align: left;
   }
 
   .po-header__actions,

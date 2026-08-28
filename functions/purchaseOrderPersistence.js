@@ -789,9 +789,13 @@ async function registrarRespuestaProveedorHandler(request, dependencies) {
     dependencies
   );
   const orderId = requireId(request?.data?.ordenCompraId, "La orden", HttpsError);
-  const state = safeText(request?.data?.estado, 20).toLowerCase();
-  if (!["confirmada", "rechazada"].includes(state)) {
-    fail(HttpsError, "invalid-argument", "Selecciona una respuesta valida.");
+  const state = safeText(request?.data?.estado, 40).toLowerCase();
+  if (!["pendiente", "confirmada", "rechazada", "confirmada_con_observaciones"].includes(state)) {
+    fail(HttpsError, "invalid-argument", "Selecciona una confirmacion valida.");
+  }
+  const comment = safeText(request?.data?.comentario, 2000);
+  if (state === "confirmada_con_observaciones" && !comment) {
+    fail(HttpsError, "invalid-argument", "Agrega la observacion informada por el proveedor.");
   }
   const orderRef = businessRef.collection("ordenesCompra").doc(orderId);
   return withTransactionRetry(db, async (transaction) => {
@@ -811,7 +815,7 @@ async function registrarRespuestaProveedorHandler(request, dependencies) {
       registradaPorUid: uid,
       registradaPorNombre: safeText(request.auth?.token?.name, 160),
       registradaPorEmail: safeText(request.auth?.token?.email, 240),
-      comentario: safeText(request?.data?.comentario, 2000),
+      comentario: comment,
     };
     const update = {
       respuestaProveedor: answer,

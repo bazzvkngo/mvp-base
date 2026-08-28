@@ -212,12 +212,19 @@ export function canManagePurchaseOrders(role) {
 }
 
 export function getSupplierResponseState(order) {
-  const value = text(order?.respuestaProveedor?.estado, 20).toLowerCase();
-  return ["confirmada", "rechazada"].includes(value) ? value : "pendiente";
+  const value = text(order?.respuestaProveedor?.estado, 40).toLowerCase();
+  return ["pendiente", "confirmada", "rechazada", "confirmada_con_observaciones"].includes(value)
+    ? value
+    : "pendiente";
 }
 
 export function getSupplierResponseLabel(order) {
-  return ({confirmada: "Confirmada por proveedor", rechazada: "Rechazada por proveedor", pendiente: "Sin respuesta"})[
+  return ({
+    pendiente: "Pendiente",
+    confirmada: "Confirmada",
+    rechazada: "Rechazada",
+    confirmada_con_observaciones: "Confirmada con observaciones",
+  })[
     getSupplierResponseState(order)
   ];
 }

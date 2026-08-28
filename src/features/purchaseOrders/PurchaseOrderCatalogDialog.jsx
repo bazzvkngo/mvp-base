@@ -20,7 +20,7 @@ export default function PurchaseOrderCatalogDialog({items, onAdd, onClose, open}
     <ResponsiveDialog
       open={open}
       onClose={onClose}
-      title="Agregar desde inventario"
+      title="Agregar desde catálogo"
       description="Productos, servicios y actividades activos. El costo se puede ajustar en la orden."
       size="large"
     >
