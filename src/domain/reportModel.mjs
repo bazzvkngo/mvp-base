@@ -231,6 +231,58 @@ export function getProjectResultMetrics(
   };
 }
 
+export function getProjectProfitabilitySummary(
+  projectBalances,
+  {currency = "todos", fallbackCurrency = "CLP", accessible = true} = {}
+) {
+  if (!accessible) return {accessible: false, complete: [], groups: []};
+  const metrics = getProjectResultMetrics(projectBalances, {
+    currency,
+    fallbackCurrency,
+    accessible,
+  });
+  const buckets = new Map();
+  metrics.complete.forEach((entry) => {
+    const balance = entry.balance || {};
+    const selected = normalizeReportCurrency(balance.moneda, fallbackCurrency);
+    const current = buckets.get(selected) || {
+      currency: selected,
+      count: 0,
+      revenue: 0,
+      materials: 0,
+      labor: 0,
+      directExpenses: 0,
+      indirectExpenses: 0,
+      costs: 0,
+      result: 0,
+      projects: [],
+    };
+    current.count += 1;
+    current.revenue += safeAmount(balance.valorComercial);
+    current.materials += safeAmount(balance.materiales);
+    current.labor += safeAmount(balance.horasHombre);
+    current.directExpenses += safeAmount(balance.gastosDirectos);
+    current.indirectExpenses += safeAmount(balance.gastosIndirectos);
+    current.costs += safeAmount(balance.costoTotal);
+    current.result += safeAmount(balance.resultado);
+    current.projects.push(entry);
+    buckets.set(selected, current);
+  });
+  const round = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+  const groups = [...buckets.values()].map((group) => ({
+    ...group,
+    revenue: round(group.revenue),
+    materials: round(group.materials),
+    labor: round(group.labor),
+    directExpenses: round(group.directExpenses),
+    indirectExpenses: round(group.indirectExpenses),
+    costs: round(group.costs),
+    result: round(group.result),
+    margin: group.revenue > 0 ? round((group.result / group.revenue) * 100) : null,
+  })).sort((left, right) => left.currency.localeCompare(right.currency));
+  return {accessible: true, complete: metrics.complete, groups};
+}
+
 export function getSimplifiedReportSummary({
   sales = [],
   purchases = [],

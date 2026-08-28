@@ -11,6 +11,7 @@ import {
   filterWorkCosts,
   groupAmountsByCurrency,
   getInventoryMetrics,
+  getProjectProfitabilitySummary,
   getProjectResultMetrics,
   getPurchaseMetrics,
   getQuoteMetrics,
@@ -107,6 +108,25 @@ assert.deepEqual(getProjectResultMetrics(projectBalances, {accessible: false}), 
   total: null,
   totalsByCurrency: [],
 });
+
+const profitability = getProjectProfitabilitySummary([
+  {id: "work-a", numero: "TRB-2026-0001", balance: {estado: "COMPLETO", moneda: "CLP", valorComercial: 106559, materiales: 30000, horasHombre: 8000, gastosDirectos: 3000, gastosIndirectos: 1000, costoTotal: 42000, resultado: 64559, rentabilidadPct: 60.58}},
+  {id: "work-b", numero: "TRB-2026-0002", balance: {estado: "COMPLETO", moneda: "CLP", valorComercial: 50000, materiales: 0, horasHombre: 0, gastosDirectos: 0, gastosIndirectos: 0, costoTotal: 0, resultado: 50000, rentabilidadPct: 100}},
+  {id: "work-usd", balance: {estado: "COMPLETO", moneda: "USD", valorComercial: 100, materiales: 40, horasHombre: 0, gastosDirectos: 0, gastosIndirectos: 0, costoTotal: 40, resultado: 60, rentabilidadPct: 60}},
+  {id: "work-partial", balance: {estado: "PARCIAL_SIN_VENTA", moneda: "CLP", costoTotal: 9000, resultado: null}},
+]);
+assert.equal(profitability.groups.length, 2);
+const clpProfitability = profitability.groups.find((entry) => entry.currency === "CLP");
+assert.equal(clpProfitability.count, 2);
+assert.equal(clpProfitability.revenue, 156559);
+assert.equal(clpProfitability.costs, 42000);
+assert.equal(clpProfitability.result, 114559);
+assert.equal(clpProfitability.materials, 30000);
+assert.equal(clpProfitability.labor, 8000);
+assert.equal(clpProfitability.directExpenses, 3000);
+assert.equal(clpProfitability.indirectExpenses, 1000);
+assert.equal(clpProfitability.margin, 73.17);
+assert.deepEqual(getProjectProfitabilitySummary(projectBalances, {accessible: false}), {accessible: false, complete: [], groups: []});
 
 const simplified = getSimplifiedReportSummary({
   sales: [{fechaVenta: "2026-08-15", estado: "activa", total: 10000, moneda: "CLP"}],
@@ -271,12 +291,20 @@ assert.deepEqual(combineOperationalTimelines([], []), []);
 
 const reportPageSource = readFileSync("src/pages/StatisticsPage.jsx", "utf8");
 const reportServiceSource = readFileSync("src/services/reportService.js", "utf8");
-assert.match(reportPageSource, /Resumen de ventas, compras y resultados de tus proyectos\./);
+const operationalChartSource = readFileSync("src/components/reports/OperationalComparisonChart.jsx", "utf8");
+assert.match(reportPageSource, /Analiza ventas, compras y rentabilidad de tus proyectos\./);
 assert.match(reportPageSource, /balance actual autoritativo y no se atribuye al período seleccionado/);
+assert.match(reportPageSource, /Resultado de proyectos/);
+assert.match(reportPageSource, /Rentabilidad de proyectos/);
+assert.match(reportPageSource, /Las compras muestran egresos registrados del negocio/);
+assert.match(reportPageSource, /openWorkId: project\.id/);
 assert.match(reportPageSource, /canAccessBusinessPath\(role, "\/ventas"\)/);
 assert.match(reportPageSource, /canAccessBusinessPath\(role, "\/compras"\)/);
 assert.match(reportPageSource, /canAccessBusinessPath\(role, "\/trabajos"\)/);
 assert.equal((reportPageSource.match(/<OperationalComparisonChart/g) || []).length, 1);
+assert.match(operationalChartSource, /items\.length === 1/);
+assert.match(operationalChartSource, /maxBarThickness: 24/);
+assert.match(operationalChartSource, /formatCompactMoney/);
 assert.match(reportServiceSource, /BUSINESS_PERMISSIONS\.PROFITABILITY_READ/);
 assert.match(reportServiceSource, /canViewProfitability \? listarTrabajos/);
 

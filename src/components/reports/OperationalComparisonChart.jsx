@@ -33,11 +33,25 @@ function formatLabel(key) {
     .replace(" de ", " ");
 }
 
+function formatCompactMoney(value, currency) {
+  return new Intl.NumberFormat("es-CL", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 1,
+    notation: "compact",
+  }).format(Number(value || 0));
+}
+
+function proportionalWidth(value, maximum) {
+  const amount = Number(value || 0);
+  return amount > 0 ? Math.max(2, (amount / maximum) * 100) : 0;
+}
+
 export default function OperationalComparisonChart({currency = "CLP", items}) {
   if (!items.length) {
     return (
       <div className="financial-chart-empty">
-        No hay ventas ni compras confirmadas en este periodo.
+        Aún no hay ventas ni compras confirmadas en este período.
       </div>
     );
   }
@@ -48,6 +62,16 @@ export default function OperationalComparisonChart({currency = "CLP", items}) {
         `${item.key}: ventas ${formatMoney(item.sales, currency)}, compras ${formatMoney(item.purchases, currency)}`
     )
     .join(". ");
+
+  if (items.length === 1) {
+    const item = items[0];
+    const maximum = Math.max(Number(item.sales || 0), Number(item.purchases || 0), 1);
+    return <div className="operational-comparison-single" role="img" aria-label={`Movimiento comercial del ${formatLabel(item.key)}. ${description}.`}>
+      <span className="operational-comparison-single__date">{formatLabel(item.key)}</span>
+      <div className="operational-comparison-single__row"><div><span>Ventas confirmadas</span><strong>{formatMoney(item.sales, currency)}</strong></div><div className="operational-comparison-single__track"><span className="operational-comparison-single__bar operational-comparison-single__bar--sales" style={{width: `${proportionalWidth(item.sales, maximum)}%`}} /></div></div>
+      <div className="operational-comparison-single__row"><div><span>Compras confirmadas</span><strong>{formatMoney(item.purchases, currency)}</strong></div><div className="operational-comparison-single__track"><span className="operational-comparison-single__bar operational-comparison-single__bar--purchases" style={{width: `${proportionalWidth(item.purchases, maximum)}%`}} /></div></div>
+    </div>;
+  }
 
   return (
     <div
@@ -64,12 +88,14 @@ export default function OperationalComparisonChart({currency = "CLP", items}) {
               data: items.map((item) => item.sales),
               backgroundColor: "#0f766e",
               borderRadius: 4,
+              maxBarThickness: 24,
             },
             {
               label: "Compras confirmadas",
               data: items.map((item) => item.purchases),
               backgroundColor: "#1e3a5f",
               borderRadius: 4,
+              maxBarThickness: 24,
             },
           ],
         }}
@@ -91,17 +117,14 @@ export default function OperationalComparisonChart({currency = "CLP", items}) {
             },
           },
           scales: {
-            x: {grid: {display: false}, ticks: {color: "#64748b"}},
+            x: {grid: {display: false}, ticks: {autoSkip: true, color: "#64748b", maxRotation: 0}},
             y: {
               beginAtZero: true,
               grid: {color: "#e2e8f0"},
               ticks: {
                 color: "#64748b",
                 callback(value) {
-                  return new Intl.NumberFormat("es-CL", {
-                    maximumFractionDigits: 1,
-                    notation: "compact",
-                  }).format(value);
+                  return formatCompactMoney(value, currency);
                 },
               },
             },
