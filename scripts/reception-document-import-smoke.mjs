@@ -5,7 +5,9 @@ import {
   buildReceptionDocumentSource,
   buildReceptionImportPreview,
   getReceptionImportedProviderStatus,
+  getReceptionImportRowReason,
   getReceptionImportSummary,
+  getReceptionOrderImportSummary,
   updateReceptionImportRow,
 } from "../src/domain/receptionDocumentImport.mjs";
 
@@ -24,17 +26,20 @@ const preview = buildReceptionImportPreview([
 
 assert.equal(preview[0].selectedLineId, "oc-line-1");
 assert.equal(preview[0].matchKind, "item_id");
-assert.equal(preview[0].estado, "coincidencia");
+assert.equal(preview[0].estado, "revisar");
+assert.match(getReceptionImportRowReason(preview[0], receptionItems), /costo unitario difiere/i);
 assert.equal(preview[1].selectedLineId, "");
 assert.equal(preview[1].estado, "revisar");
 assert.match(preview[1].advertencias.join(" "), /más de una coincidencia/i);
 assert.equal(preview[2].estado, "sin_asociar");
 assert.equal(preview[3].selectedLineId, "oc-line-2");
 assert.equal(preview[3].matchKind, "codigo_proveedor");
-assert.deepEqual(getReceptionImportSummary(preview), {total: 4, asociadas: 2, revisar: 1, sinAsociar: 2});
+assert.deepEqual(getReceptionImportSummary(preview), {total: 4, asociadas: 2, revisar: 3, sinAsociar: 2});
+assert.deepEqual(getReceptionOrderImportSummary(preview, receptionItems), {solicitados: 3, identificados: 2, pendientes: 1});
 
-const manuallyMatched = updateReceptionImportRow(preview, "doc-2", "selectedLineId", "oc-line-2");
-assert.equal(manuallyMatched[1].estado, "coincidencia");
+const manuallyMatched = updateReceptionImportRow(preview, "doc-2", "selectedLineId", "oc-line-2", receptionItems);
+assert.equal(manuallyMatched[1].estado, "revisar");
+assert.match(getReceptionImportRowReason(manuallyMatched[1], receptionItems), /costo unitario difiere/i);
 const applied = applyReceptionImportRows(receptionItems, manuallyMatched);
 assert.equal(applied.items[0].cantidad, 4);
 assert.equal(applied.items[0].costoUnitario, 1200);
@@ -89,7 +94,11 @@ assert.deepEqual(getReceptionImportedProviderStatus(
 assert.equal(getReceptionImportedProviderStatus(
   {proveedor: {nombre: "Mismo nombre", identificadorFiscal: "77.091.679-8"}},
   {razonSocial: "Mismo nombre", rut: "93.772.000-9"}
-).estado, "no_encontrado");
+).estado, "otro_proveedor");
+assert.equal(getReceptionImportedProviderStatus(
+  {proveedor: {nombre: "Sin RUT"}},
+  {razonSocial: "Proveedor QA", rut: "93.772.000-9"}
+).estado, "no_identificado");
 
 const dialogSource = fs.readFileSync("src/features/receptions/ReceptionDocumentImportDialog.jsx", "utf8");
 const pageSource = fs.readFileSync("src/pages/NewReceptionPage.jsx", "utf8");
@@ -97,7 +106,12 @@ const backendSource = fs.readFileSync("functions/receptionPersistence.js", "utf8
 const purchaseSource = fs.readFileSync("functions/purchasePersistence.js", "utf8");
 assert.match(dialogSource, /normalizeInventorySourceWithAi/);
 assert.match(dialogSource, /context: "reception"/);
-assert.match(dialogSource, /Proveedor no encontrado|providerStatus\.mensaje/);
+assert.match(dialogSource, /El documento corresponde a otro proveedor|providerStatus\.mensaje/);
+assert.match(dialogSource, /Cambiar archivo/);
+assert.match(dialogSource, /Continuar con revisión manual/);
+assert.match(dialogSource, /Leyendo documento…/);
+assert.match(dialogSource, /Documento/);
+assert.match(dialogSource, /Orden/);
 assert.match(dialogSource, /Revisar totales/);
 assert.match(dialogSource, /readInventorySourceFile/);
 assert.doesNotMatch(dialogSource, /confirmInventoryImportV2|confirmLocalInventoryImport|confirmarRecepcion/);

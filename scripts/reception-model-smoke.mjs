@@ -5,8 +5,10 @@ import {
   buildReceptionMutationPayload,
   getOrderReceptionStatus,
   getOrderReceptionStatusLabel,
+  getReceptionConfirmationImpact,
   getReceptionPurchaseAction,
   getReceptionStatusLabel,
+  getSupplierResponseLabel,
   shouldReconcileReceptionConfirmation,
 } from "../src/domain/receptionModel.mjs";
 
@@ -21,6 +23,13 @@ assert.equal(reception.recepcionId, "rec-1");
 assert.equal(getReceptionStatusLabel("confirmada"), "Recibida");
 assert.equal(getReceptionStatusLabel("borrador"), "Preparada");
 assert.equal(getOrderReceptionStatusLabel("recibida_parcial"), "Parcialmente recibida");
+assert.equal(getSupplierResponseLabel("pendiente"), "Pendiente");
+assert.equal(getSupplierResponseLabel("confirmada_con_observaciones"), "Con observaciones");
+assert.deepEqual(getReceptionConfirmationImpact([
+  {tipoItem: "producto", cantidad: 2, costoUnitario: 1000, descuentoPct: 10},
+  {tipoItem: "servicio", cantidad: 1, costoUnitario: 500, descuentoPct: 0},
+  {tipoItem: "actividad", cantidad: 0, costoUnitario: 900, descuentoPct: 0},
+], 0.19), {productos: 1, servicios: 1, actividades: 0, totalItems: 2, totalCompraEstimado: 2737});
 
 const order = {id: "oc-1", items: [{lineaId: "l1", cantidad: 10}]};
 assert.equal(getOrderReceptionStatus(order, [reception]), "recibida_parcial");
@@ -68,6 +77,10 @@ assert.doesNotMatch(receptionDetailSource, /Preparar compra|Continuar compra/);
 assert.doesNotMatch(receptionListSource, /Preparar compra|Continuar compra/);
 assert.match(receptionListSource, /Ver órdenes de compra/);
 assert.doesNotMatch(receptionListSource, /Ver órdenes emitidas|Ver ordenes emitidas|Registrar desde OC|Las recepciones se registran desde órdenes de compra emitidas/);
-assert.match(receptionDetailSource, /registrará automáticamente la compra/);
+assert.match(receptionDetailSource, /generará automáticamente la compra correspondiente/);
+assert.match(receptionDetailSource, /Confirmar recepción y registrar compra/);
+assert.match(receptionDetailSource, /Recibir ahora/);
+assert.match(receptionDetailSource, /Confirmar prestación/);
+assert.match(receptionDetailSource, /Trazabilidad comercial/);
 
 console.log("Reception model smoke: OK");

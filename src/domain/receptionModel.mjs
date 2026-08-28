@@ -71,7 +71,34 @@ export function getReceptionPurchaseAction(reception = {}, purchase = null, canM
 }
 
 export function getSupplierResponseLabel(value) {
-  return ({confirmada: "Confirmada", rechazada: "Rechazada", pendiente: "Sin respuesta"})[value] || "Sin respuesta";
+  return ({
+    confirmada: "Confirmada",
+    confirmada_con_observaciones: "Con observaciones",
+    rechazada: "Rechazada",
+    pendiente: "Pendiente",
+  })[value] || "Pendiente";
+}
+
+export function getReceptionConfirmationImpact(items = [], taxRate = 0) {
+  const selected = (Array.isArray(items) ? items : []).filter((line) =>
+    Number.isFinite(Number(line?.cantidad)) && Number(line.cantidad) > 0
+  );
+  const count = (type) => selected.filter((line) => line?.tipoItem === type).length;
+  const neto = selected.reduce((sum, line) => {
+    const subtotal = Math.round(Number(line.cantidad) * Number(line.costoUnitario || 0));
+    const descuento = Math.round(subtotal * Number(line.descuentoPct || 0) / 100);
+    return sum + subtotal - descuento;
+  }, 0);
+  const safeTaxRate = Number.isFinite(Number(taxRate)) && Number(taxRate) >= 0
+    ? Number(taxRate)
+    : 0;
+  return {
+    productos: count("producto"),
+    servicios: count("servicio"),
+    actividades: count("actividad"),
+    totalItems: selected.length,
+    totalCompraEstimado: neto + Math.round(neto * safeTaxRate),
+  };
 }
 
 export function adaptStoredReception(raw = {}) {

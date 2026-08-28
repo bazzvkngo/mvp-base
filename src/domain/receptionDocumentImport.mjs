@@ -105,22 +105,22 @@ export function getReceptionImportedProviderStatus(analysis = {}, providerSnapsh
   );
   if (!extractedFiscal) {
     return {
-      estado: "revisar",
-      mensaje: "Revisar proveedor: el documento no entregó un identificador fiscal.",
+      estado: "no_identificado",
+      mensaje: "No pudimos identificar al proveedor del documento. Revisa sus datos antes de asociar las líneas.",
     };
   }
   if (!expectedFiscal) {
     return {
-      estado: "revisar",
-      mensaje: "Revisar proveedor: el proveedor de la OC no tiene identificación fiscal para comparar.",
+      estado: "sin_datos_oc",
+      mensaje: "La orden no tiene una identificación fiscal disponible para comparar. Continúa con revisión manual.",
     };
   }
   if (expectedFiscal && extractedFiscal === expectedFiscal) {
     return {estado: "coincidencia", mensaje: "Proveedor reconocido por identificador fiscal."};
   }
   return {
-    estado: "no_encontrado",
-    mensaje: "Proveedor no encontrado. Selecciona o crea el proveedor mediante el flujo existente antes de continuar.",
+    estado: "otro_proveedor",
+    mensaje: "El documento corresponde a otro proveedor",
   };
 }
 
@@ -129,48 +129,80 @@ export function buildReceptionImportPreview(candidates = [], receptionItems = []
     const match = matchCandidate(candidate, receptionItems);
     const selectedLineId = match.matches.length === 1 ? lineId(match.matches[0]) : "";
     const ambiguous = match.matches.length > 1;
+    const selectedLine = match.matches.length === 1 ? match.matches[0] : null;
+    const candidateQuantity = finite(
+      candidate?.cantidadOrigen ?? candidate?.cantidadSugerida ?? candidate?.cantidad ?? candidate?.stock,
+      1
+    );
+    const candidateCost = finite(candidate?.costoBase ?? candidate?.costoUnitario, 0);
+    const pending = selectedLine
+      ? Math.max(0, finite(selectedLine.cantidadSolicitada) - finite(selectedLine.cantidadRecibidaAnterior))
+      : 0;
+    const quantityExceedsPending = Boolean(selectedLine) && candidateQuantity > pending + 0.000001;
+    const priceDiffers = Boolean(selectedLine) &&
+      Math.abs(candidateCost - finite(selectedLine.costoUnitario)) > 0.000001;
+    const unitDiffers = Boolean(selectedLine) && comparable(candidate?.unidad) &&
+      comparable(candidate.unidad) !== comparable(selectedLine.unidad || "unidad");
     const needsReview = candidate?.revisionRequerida === true ||
-      match.kind === "descripcion" || ambiguous;
+      match.kind === "descripcion" || ambiguous || quantityExceedsPending || priceDiffers || unitDiffers;
+    const warnings = [
+      ...(Array.isArray(candidate?.advertencias) ? candidate.advertencias : []),
+      ...(candidate?.observacion ? [candidate.observacion] : []),
+      ...(ambiguous ? ["Hay más de una coincidencia posible; selecciona el ítem de la OC."] : []),
+      ...(quantityExceedsPending ? ["La cantidad supera lo pendiente por recibir."] : []),
+      ...(priceDiffers ? ["El costo unitario difiere del registrado en la orden."] : []),
+      ...(unitDiffers ? ["La unidad del documento difiere de la orden."] : []),
+    ].map((warning) => text(warning, 300)).filter(Boolean);
     return {
       rowId: text(candidate?.id, 160) || `documento-${index + 1}`,
       nombreOrigen: text(candidate?.nombre || candidate?.descripcion, 240) || `Línea ${index + 1}`,
       codigoOrigen: candidateCode(candidate),
       codigoProveedorOrigen: candidateProviderCode(candidate),
       unidadOrigen: text(candidate?.unidad, 80) || "unidad",
-      cantidad: finite(
-        candidate?.cantidadOrigen ?? candidate?.cantidadSugerida ?? candidate?.cantidad ?? candidate?.stock,
-        1
-      ),
-      costoUnitario: finite(candidate?.costoBase ?? candidate?.costoUnitario, 0),
+      cantidad: candidateQuantity,
+      costoUnitario: candidateCost,
       descuentoPct: finite(candidate?.descuentoPct, 0),
       totalLinea: finite(candidate?.totalLinea, 0),
       selectedLineId,
       matchKind: match.kind,
+      sourceReviewRequired: candidate?.revisionRequerida === true,
       estado: selectedLineId
         ? (needsReview ? "revisar" : "coincidencia")
         : (ambiguous ? "revisar" : "sin_asociar"),
-      advertencias: [
-        ...(Array.isArray(candidate?.advertencias) ? candidate.advertencias : []),
-        ...(candidate?.observacion ? [candidate.observacion] : []),
-        ...(ambiguous ? ["Hay más de una coincidencia posible; selecciona el ítem de la OC."] : []),
-      ].map((warning) => text(warning, 300)).filter(Boolean),
+      advertencias: [...new Set(warnings)],
     };
   });
 }
 
-export function updateReceptionImportRow(rows, rowId, field, value) {
+function deriveRowState(row, receptionItems = []) {
+  if (!text(row?.selectedLineId, 160)) return "sin_asociar";
+  const target = receptionItems.find((line) => lineId(line) === text(row.selectedLineId, 160));
+  if (!target || row.sourceReviewRequired || row.matchKind === "descripcion") return "revisar";
+  const pending = Math.max(0, finite(target.cantidadSolicitada) - finite(target.cantidadRecibidaAnterior));
+  const quantity = finite(row.cantidad, NaN);
+  const cost = finite(row.costoUnitario, NaN);
+  const discount = finite(row.descuentoPct, NaN);
+  const unitDiffers = comparable(row.unidadOrigen) && comparable(row.unidadOrigen) !== comparable(target.unidad || "unidad");
+  if (!Number.isFinite(quantity) || quantity <= 0 || quantity > pending + 0.000001 ||
+    !Number.isFinite(cost) || cost < 0 || Math.abs(cost - finite(target.costoUnitario)) > 0.000001 ||
+    !Number.isFinite(discount) || discount < 0 || discount > 100 || unitDiffers) return "revisar";
+  return "coincidencia";
+}
+
+export function updateReceptionImportRow(rows, rowId, field, value, receptionItems = []) {
   return rows.map((row) => {
     if (row.rowId !== rowId) return row;
     if (field === "selectedLineId") {
-      return {
+      const updated = {
         ...row,
         selectedLineId: text(value, 160),
         matchKind: value ? "seleccion_manual" : "none",
-        estado: value ? "coincidencia" : "sin_asociar",
       };
+      return {...updated, estado: deriveRowState(updated, receptionItems)};
     }
     if (["cantidad", "costoUnitario", "descuentoPct"].includes(field)) {
-      return {...row, [field]: value};
+      const updated = {...row, [field]: value};
+      return {...updated, estado: deriveRowState(updated, receptionItems)};
     }
     return row;
   });
@@ -184,6 +216,46 @@ export function getReceptionImportSummary(rows = []) {
     revisar: values.filter((row) => row.estado === "revisar").length,
     sinAsociar: values.filter((row) => !text(row.selectedLineId, 160)).length,
   };
+}
+
+export function getReceptionOrderImportSummary(rows = [], receptionItems = []) {
+  const identifiedLineIds = new Set((Array.isArray(rows) ? rows : [])
+    .map((row) => text(row?.selectedLineId, 160)).filter(Boolean));
+  const requested = (Array.isArray(receptionItems) ? receptionItems : []).length;
+  return {
+    solicitados: requested,
+    identificados: identifiedLineIds.size,
+    pendientes: Math.max(0, requested - identifiedLineIds.size),
+  };
+}
+
+export function getReceptionImportRowReason(row = {}, receptionItems = []) {
+  const selectedLineId = text(row?.selectedLineId, 160);
+  if (!selectedLineId) {
+    return row?.advertencias?.[0] || "No encontramos una línea equivalente en la orden.";
+  }
+  const target = (Array.isArray(receptionItems) ? receptionItems : [])
+    .find((line) => lineId(line) === selectedLineId);
+  if (!target) return "La línea seleccionada ya no está disponible en la orden.";
+  const quantity = finite(row?.cantidad, NaN);
+  const pending = Math.max(0, finite(target.cantidadSolicitada) - finite(target.cantidadRecibidaAnterior));
+  if (!Number.isFinite(quantity) || quantity <= 0) return "Ingresa una cantidad mayor que cero.";
+  if (quantity > pending + 0.000001) return "La cantidad supera lo pendiente por recibir.";
+  const cost = finite(row?.costoUnitario, NaN);
+  if (!Number.isFinite(cost) || cost < 0) return "Ingresa un costo unitario válido.";
+  if (Math.abs(cost - finite(target.costoUnitario)) > 0.000001) {
+    return "El costo unitario difiere del registrado en la orden.";
+  }
+  const discount = finite(row?.descuentoPct, NaN);
+  if (!Number.isFinite(discount) || discount < 0 || discount > 100) {
+    return "El descuento debe estar entre 0 % y 100 %.";
+  }
+  if (comparable(row?.unidadOrigen) && comparable(row.unidadOrigen) !== comparable(target.unidad || "unidad")) {
+    return "La unidad del documento difiere de la orden.";
+  }
+  return row?.advertencias?.[0] || (row?.estado === "revisar"
+    ? "Revisa la asociación antes de aplicar la propuesta."
+    : "Asociación lista para aplicar.");
 }
 
 function rounded(value) {
