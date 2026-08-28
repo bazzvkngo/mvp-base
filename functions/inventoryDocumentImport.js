@@ -455,6 +455,20 @@ function isGeneralDocumentWarning(value) {
     "precio unitario incluye impuestos",
     "incluyen impuestos",
     "incluye impuestos",
+    "margen predeterminado",
+  ].some((text) => normalized.includes(text));
+}
+
+function isTaxAmbiguityWarning(value) {
+  const normalized = normalizeWarningKey(value);
+  if (!normalized) return false;
+  return [
+    "impuesto no determinado",
+    "tasa de impuesto no determinada",
+    "precios no indican si incluyen impuestos",
+    "precio no indica si incluye impuestos",
+    "no se pudo determinar la tasa",
+    "revisar iva",
   ].some((text) => normalized.includes(text));
 }
 
@@ -616,6 +630,82 @@ function buildDocumentCoherence(items, totals) {
   };
 }
 
+function inferInventoryPurchaseTax(items, totals, coherence, businessTax = {}) {
+  const products = items.filter((item) => item.tipoItem === "producto");
+  if (!products.length) {
+    return {estado: "no_aplica", tasa: null, tasaSugerida: null};
+  }
+
+  const documentRate = parsePositiveDecimal(totals.impuestoPorcentaje);
+  const configuredRate = parsePositiveDecimal(
+    businessTax.impuestoPredeterminadoTasa ?? businessTax.tasa
+  );
+  const hasConfiguredTax =
+    businessTax.configuracionTributariaBaseCompleta === true &&
+    configuredRate !== null && configuredRate <= 100;
+  const rateMatchesBusiness =
+    hasConfiguredTax && documentRate !== null &&
+    Math.abs(documentRate - configuredRate) <= 0.001;
+  const completeTotals = [totals.neto, totals.impuestoMonto, totals.total]
+    .every(Number.isFinite);
+  const taxAmountMatches = completeTotals && documentRate !== null
+    ? totalsAreClose(totals.neto * (documentRate / 100), totals.impuestoMonto)
+    : false;
+  const lineUnitPricesMatchNet =
+    items.length > 0 && items.every((item) => {
+      if (
+        !Number.isFinite(item.costoBase) || item.costoBase <= 0 ||
+        !Number.isFinite(item.cantidadOrigen) || item.cantidadOrigen <= 0 ||
+        !Number.isFinite(item.totalLinea)
+      ) {
+        return false;
+      }
+      const discount = Number.isFinite(item.descuentoPct)
+        ? item.descuentoPct
+        : 0;
+      const expectedLineTotal =
+        item.costoBase * item.cantidadOrigen * (1 - discount / 100);
+      return totalsAreClose(expectedLineTotal, item.totalLinea) === true;
+    });
+  const existingRatesAreCompatible = products.every((item) =>
+    item.tasaImpuestoCompra === undefined ||
+    Math.abs(Number(item.tasaImpuestoCompra) - documentRate) <= 0.001
+  );
+  const canApply =
+    rateMatchesBusiness &&
+    completeTotals &&
+    taxAmountMatches === true &&
+    coherence.lineasConcilianNeto === true &&
+    coherence.netoImpuestoConcilianTotal === true &&
+    lineUnitPricesMatchNet &&
+    existingRatesAreCompatible;
+
+  if (canApply) {
+    products.forEach((item) => {
+      item.tasaImpuestoCompra = documentRate;
+      item.advertencias = item.advertencias.filter(
+        (warning) => !isTaxAmbiguityWarning(warning)
+      );
+      item.observacion = item.advertencias.join(" ");
+    });
+    return {
+      estado: "aplicado",
+      tasa: documentRate,
+      tasaSugerida: documentRate,
+      fuente: "documento_y_configuracion_negocio",
+    };
+  }
+
+  return {
+    estado: "requiere_revision",
+    tasa: null,
+    tasaSugerida: documentRate ?? (hasConfiguredTax ? configuredRate : null),
+    fuente: documentRate !== null
+      ? "documento"
+      : hasConfiguredTax ? "configuracion_negocio" : "",
+  };
+}
+
 function defaultUnitForDocumentItem(tipoItem) {
   if (tipoItem === "servicio") return "servicio";
   if (tipoItem === "actividad") return "servicio";
@@ -721,7 +811,8 @@ function normalizeInventoryDocumentItem(rawItem, index, context = "inventory") {
   const evidenciaOrigen = safeText(rawItem?.evidenciaOrigen || rawItem?.origen, 180);
   const pagina = parsePositiveNumber(rawItem?.pagina);
   const revisionRequerida =
-    confianza === null || confianza < 50 || costoBase <= 0 || advertencias.length > 0;
+    confianza === null || confianza < 50 || costoBase <= 0 ||
+    (!hasExplicitType && context === "inventory");
   const itemWarnings = dedupeWarnings(advertencias);
   const detectedPurchaseTaxRate = parsePositiveDecimal(
     rawItem?.tasaImpuestoCompra ?? rawItem?.tasaImpuesto ?? rawItem?.iva
@@ -792,7 +883,10 @@ function normalizeInventoryDocumentItem(rawItem, index, context = "inventory") {
   };
 }
 
-function sanitizeInventoryDocumentResult(payload, {context = "inventory"} = {}) {
+function sanitizeInventoryDocumentResult(
+  payload,
+  {context = "inventory", businessTax = {}} = {}
+) {
   const normalizedContext = normalizeDocumentContext(context);
   const rawItems = Array.isArray(payload?.items) ? payload.items : [];
   const normalizedItems = rawItems
@@ -812,10 +906,10 @@ function sanitizeInventoryDocumentResult(payload, {context = "inventory"} = {}) 
     item.advertencias = dedupeWarnings(itemWarnings);
     item.observacion = item.advertencias.join(" ");
     item.revisionRequerida =
+      item.revisionRequerida === true ||
       item.confianza === null ||
       item.confianza < 50 ||
-      item.costoBase <= 0 ||
-      item.advertencias.length > 0;
+      item.costoBase <= 0;
   });
 
   if (rawItems.length > items.length) {
@@ -864,6 +958,12 @@ function sanitizeInventoryDocumentResult(payload, {context = "inventory"} = {}) 
   if (coherencia.estado === "revisar") {
     warnings.push("Revisar totales: los importes extraidos no concilian entre si.");
   }
+  const inferenciaImpuestoCompra = normalizedContext === "inventory"
+    ? inferInventoryPurchaseTax(items, totales, coherencia, businessTax)
+    : {estado: "no_aplica", tasa: null, tasaSugerida: null};
+  const resolvedWarnings = inferenciaImpuestoCompra.estado === "aplicado"
+    ? warnings.filter((warning) => !isTaxAmbiguityWarning(warning))
+    : warnings;
 
   return {
     documentType,
@@ -872,8 +972,9 @@ function sanitizeInventoryDocumentResult(payload, {context = "inventory"} = {}) 
     receptor,
     totales,
     coherencia,
+    inferenciaImpuestoCompra,
     items,
-    warnings: dedupeWarnings(warnings),
+    warnings: dedupeWarnings(resolvedWarnings),
   };
 }
 
@@ -921,7 +1022,7 @@ function buildInventoryDocumentPrompt(context = "inventory") {
     "Reglas estrictas:\n" +
     "- No inventes SKU, costos, margenes, cantidades, tipos ni identificadores persistentes.\n" +
     "- Usa null cuando un dato no este disponible.\n" +
-    "- SKU o codigo solo si aparece explicitamente junto al item.\n" +
+    "- El codigo impreso por el proveedor junto al item es codigoProveedor; no es SKU interno ni codigo de barras. Usa sku solo si el documento lo rotula explicitamente como SKU.\n" +
     "- Distingue precio unitario, cantidad y total de linea.\n" +
     "- Nunca uses subtotal, IVA, descuento general o total final como costo de un item.\n" +
     "- Si hay cantidad y total de linea pero no precio unitario, calcula costoBase como totalLinea / cantidad y marca valorCalculado true.\n" +
@@ -936,7 +1037,7 @@ function buildInventoryDocumentPrompt(context = "inventory") {
     "- Mantiene el orden original de las lineas comerciales.\n" +
     "- Trabaja en espanol aunque existan terminos tecnicos en ingles.\n" +
     "- Devuelve exclusivamente JSON valido siguiendo el schema solicitado.\n\n" +
-    "Campos esperados por item: nombre, tipoItem, areaPropuesta, categoriaPropuesta, descripcion, unidad, sku, cantidadOrigen, precioUnitario, totalLinea, costoBase, tasaImpuestoCompra, margenDeseado, marca, modelo, stock, stockMinimo, codigoBarras, confianza, evidenciaOrigen, pagina, valorCalculado y advertencias."
+    "Campos esperados por item: nombre, tipoItem, areaPropuesta, categoriaPropuesta, descripcion, unidad, sku, codigoProveedor, cantidadOrigen, precioUnitario, totalLinea, costoBase, tasaImpuestoCompra, margenDeseado, marca, modelo, stock, stockMinimo, codigoBarras, confianza, evidenciaOrigen, pagina, valorCalculado y advertencias."
   );
 }
 
@@ -1239,6 +1340,7 @@ async function generateDocumentContent(generateGeminiContent, documentPayload, c
 async function normalizeInventoryDocumentHandler(
   request,
   {
+    businessTax,
     generateGeminiContent,
     HttpsError,
   }
@@ -1267,7 +1369,10 @@ async function normalizeInventoryDocumentHandler(
       context
     );
     const parsed = extractJsonObject(response.text);
-    const normalized = sanitizeInventoryDocumentResult(parsed, {context});
+    const normalized = sanitizeInventoryDocumentResult(parsed, {
+      context,
+      businessTax,
+    });
 
     return {
       items: normalized.items,
@@ -1280,6 +1385,7 @@ async function normalizeInventoryDocumentHandler(
       receptor: normalized.receptor,
       totales: normalized.totales,
       coherencia: normalized.coherencia,
+      inferenciaImpuestoCompra: normalized.inferenciaImpuestoCompra,
       warnings: normalized.warnings,
       aiRateLimit,
       warning:

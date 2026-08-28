@@ -124,25 +124,64 @@
 .inventory-dropzone span, .inventory-import-help { color: var(--color-text-muted); font-size: var(--font-size-sm); }
 .inventory-visually-hidden { height: 1px; overflow: hidden; position: absolute; width: 1px; clip: rect(0 0 0 0); }
 .inventory-import-dialog { display: grid; gap: var(--space-3); }
+.inventory-import-steps { display: grid; gap: var(--space-2); grid-template-columns: repeat(4, minmax(0, 1fr)); list-style: none; margin: 0; padding: 0; }
+.inventory-import-steps li { align-items: center; color: var(--color-text-muted); display: flex; font-size: var(--font-size-xs); gap: var(--space-2); min-width: 0; }
+.inventory-import-steps li::after { background: var(--color-border-subtle); content: ""; height: 1px; margin-left: auto; width: 100%; }
+.inventory-import-steps li:last-child::after { display: none; }
+.inventory-import-steps li > span { align-items: center; background: var(--color-surface-subtle); border: 1px solid var(--color-border-control); border-radius: 50%; display: flex; flex: 0 0 auto; height: 26px; justify-content: center; width: 26px; }
+.inventory-import-steps li > strong { white-space: nowrap; }
+.inventory-import-steps li.is-current { color: var(--color-brand-700); }
+.inventory-import-steps li.is-current > span { background: var(--color-surface-selected); border-color: var(--color-brand-600); }
+.inventory-import-steps li.is-complete { color: var(--color-success-700); }
+.inventory-import-steps li.is-complete > span { background: var(--color-success-50); border-color: #86d8b5; }
+.inventory-import-file-card { align-items: center; background: var(--color-surface-panel); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); display: grid; gap: var(--space-3); grid-template-columns: auto minmax(0, 1fr) auto; padding: var(--space-3); }
+.inventory-import-file-card__type { background: var(--color-surface-selected); border-radius: 999px; color: var(--color-brand-700); font-size: var(--font-size-xs); font-weight: var(--font-weight-bold); padding: .35rem .55rem; }
+.inventory-import-file-card > div { display: grid; gap: 2px; min-width: 0; }
+.inventory-import-file-card > div > strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inventory-import-file-card > div > span { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+.inventory-import-file-card__actions { display: flex !important; flex-wrap: wrap; gap: var(--space-2) !important; }
 .inventory-template-option { color: var(--color-text-muted); font-size: var(--font-size-sm); margin: 0; text-align: center; }
 .inventory-import-ai-panel { align-items: start; background: var(--color-surface-subtle); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); display: grid; gap: var(--space-3); padding: var(--space-4); }
 .inventory-import-ai-panel > div { display: grid; gap: var(--space-1); }
 .inventory-import-ai-panel span { color: var(--color-text-muted); font-size: var(--font-size-sm); }
 .inventory-import-ai-panel .ai-availability { margin: 0; }
 .inventory-import-ai-panel .inventory-button { justify-self: start; }
-.inventory-import-summary { display: grid; gap: var(--space-2); grid-template-columns: minmax(220px, 2fr) repeat(3, 1fr); }
+.inventory-import-processing, .inventory-import-saving { align-items: center; display: flex !important; gap: var(--space-3) !important; }
+.inventory-import-processing > div, .inventory-import-saving > div { display: grid; gap: 2px; }
+.inventory-import-saving { background: var(--color-surface-selected); border: 1px solid var(--color-brand-200); border-radius: var(--radius-md); padding: var(--space-4); }
+.inventory-import-saving span { color: var(--color-text-muted); font-size: var(--font-size-sm); }
+.inventory-import-spinner { animation: inventory-import-spin .8s linear infinite; border: 3px solid var(--color-border-subtle); border-radius: 50%; border-top-color: var(--color-brand-600); flex: 0 0 auto; height: 28px; width: 28px; }
+@keyframes inventory-import-spin { to { transform: rotate(360deg); } }
+.inventory-import-summary { display: grid; gap: var(--space-2); grid-template-columns: minmax(220px, 2fr) repeat(4, 1fr); }
 .inventory-import-summary > div { background: var(--color-surface-subtle); border-radius: var(--radius-md); display: grid; gap: .2rem; padding: var(--space-3); }
 .inventory-import-summary span { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+.inventory-import-document-summary { background: var(--color-surface-subtle); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-5); margin: 0; padding: var(--space-3); }
+.inventory-import-document-summary > div { display: grid; gap: 2px; }
+.inventory-import-document-summary dt { color: var(--color-text-muted); font-size: var(--font-size-xs); font-weight: var(--font-weight-bold); }
+.inventory-import-document-summary dd { color: var(--color-text-strong); font-size: var(--font-size-sm); margin: 0; }
+.inventory-import-document-summary .is-positive dd { color: var(--color-success-700); font-weight: var(--font-weight-bold); }
+.inventory-import-bulk-actions { align-items: center; background: var(--color-surface-panel); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); display: flex; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2) var(--space-3); }
+.inventory-import-bulk-actions > span { color: var(--color-text-muted); font-size: var(--font-size-xs); margin-right: auto; }
+.inventory-import-bulk-actions .inventory-button { min-height: 34px; padding-block: .4rem; }
 .inventory-import-help { margin: 0; }
-.inventory-import-preview { display: grid; gap: var(--space-3); }
-.inventory-import-row { border: 1px solid var(--color-border-default); border-radius: var(--radius-md); display: grid; gap: var(--space-3); padding: var(--space-3); }
-.inventory-import-row.is-excluded { opacity: .55; }
-.inventory-import-row > header { align-items: center; display: flex; justify-content: space-between; }
-.inventory-import-row > header label { align-items: center; display: flex; font-size: var(--font-size-sm); font-weight: var(--font-weight-bold); gap: var(--space-2); }
+.inventory-import-preview { display: grid; gap: var(--space-2); }
+.inventory-import-row { border: 1px solid var(--color-border-default); border-radius: var(--radius-md); overflow: hidden; }
+.inventory-import-row.is-excluded { background: var(--color-surface-subtle); opacity: .7; }
+.inventory-import-row > summary { align-items: center; cursor: pointer; display: flex; gap: var(--space-3); justify-content: space-between; list-style: none; padding: var(--space-3); }
+.inventory-import-row > summary::-webkit-details-marker { display: none; }
+.inventory-import-row > summary::after { color: var(--color-text-muted); content: "+"; font-size: var(--font-size-lg); font-weight: var(--font-weight-bold); order: 3; }
+.inventory-import-row[open] > summary::after { content: "−"; }
+.inventory-import-row > summary label { align-items: center; display: flex; flex: 1 1 auto; gap: var(--space-3); min-width: 0; }
+.inventory-import-row__identity { display: grid; gap: 2px; min-width: 0; }
+.inventory-import-row__identity > strong { color: var(--color-text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inventory-import-row__identity > small { color: var(--color-text-muted); font-size: var(--font-size-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inventory-import-row__identity > .inventory-import-row__issue { color: var(--color-warning-800); }
+.inventory-import-row__detail { border-top: 1px solid var(--color-border-subtle); display: grid; gap: var(--space-3); padding: var(--space-3); }
 .inventory-row-status { border-radius: 999px; font-size: var(--font-size-xs); font-weight: var(--font-weight-bold); padding: .25rem .5rem; }
 .inventory-row-status.is-error { background: #fef2f2; color: #b91c1c; }
 .inventory-row-status.is-warning { background: #fffbeb; color: #92400e; }
 .inventory-row-status.is-valid { background: #ecfdf5; color: #047857; }
+.inventory-row-status.is-excluded { background: var(--color-surface-subtle); color: var(--color-text-muted); }
 .inventory-import-row-actions { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: flex-end; }
 .inventory-import-fields { display: grid; gap: var(--space-2); grid-template-columns: repeat(5, minmax(130px, 1fr)); }
 .inventory-import-fields label { display: grid; gap: .25rem; min-width: 0; }
@@ -163,6 +202,12 @@
   .inventory-filters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .inventory-search { grid-column: span 2; }
   .inventory-import-fields { grid-template-columns: repeat(3, minmax(130px, 1fr)); }
+  .inventory-import-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .inventory-import-summary > div:first-child { grid-column: 1 / -1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inventory-import-spinner { animation: none; }
 }
 
 @media (max-width: 767px) {
@@ -178,10 +223,17 @@
   .inventory-import-summary { grid-template-columns: repeat(2, 1fr); }
   .inventory-import-summary > div:first-child { grid-column: 1 / -1; }
   .inventory-import-fields { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
-  .inventory-import-row > header { align-items: flex-start; gap: var(--space-2); }
+  .inventory-import-file-card { align-items: start; grid-template-columns: minmax(0, 1fr); }
+  .inventory-import-file-card__type { justify-self: start; }
+  .inventory-import-row > summary { align-items: flex-start; gap: var(--space-2); }
 }
 
 @media (max-width: 420px) {
   .inventory-summary, .inventory-import-summary, .inventory-import-fields { grid-template-columns: minmax(0, 1fr); }
   .inventory-summary .erp-metric-card:last-child, .inventory-import-summary > div:first-child { grid-column: auto; }
+  .inventory-import-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .inventory-import-steps li::after { display: none; }
+  .inventory-import-row > summary { align-items: stretch; flex-wrap: wrap; }
+  .inventory-import-row > summary label { width: calc(100% - 24px); }
+  .inventory-import-row > summary .inventory-row-status { margin-left: 34px; }
 }

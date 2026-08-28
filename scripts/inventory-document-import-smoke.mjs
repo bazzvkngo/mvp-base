@@ -137,6 +137,10 @@ const receptionFixture = JSON.parse(readFileSync(
   new URL("./fixtures/reception-document-prodalam.json", import.meta.url),
   "utf8"
 ));
+const inventoryInvoiceFixture = JSON.parse(readFileSync(
+  new URL("./fixtures/inventory-document-invoice-qa.json", import.meta.url),
+  "utf8"
+));
 
 const pdfResult = validateInventoryDocumentPayload(
   payloadFor(validPdf, "factura-sintetica.pdf", "application/pdf")
@@ -297,7 +301,11 @@ assert.equal(
   ),
   false
 );
-assert.equal(normalizedRules.warnings.length, 1);
+assert.equal(normalizedRules.warnings.length, 2);
+assert.equal(
+  normalizedRules.warnings.filter((warning) => /margen predeterminado/i.test(warning)).length,
+  1
+);
 assert.equal(normalizedRules.items[0].confianza, 90);
 assert.equal(normalizedRules.items[1].confianza, 90);
 assert.equal(normalizedRules.items[2].confianza, null);
@@ -359,6 +367,61 @@ assert.equal(normalizedReceptionDocument.totales.total, 402151);
 assert.equal(normalizedReceptionDocument.coherencia.estado, "coherente");
 assert.match(normalizedReceptionDocument.warnings.join(" "), /9 lineas repetidas/i);
 
+const normalizedInventoryInvoice = sanitizeInventoryDocumentResult(
+  inventoryInvoiceFixture,
+  {
+    context: "inventory",
+    businessTax: {
+      paisCodigo: "CL",
+      impuestoPredeterminadoTasa: 19,
+      configuracionTributariaBaseCompleta: true,
+    },
+  }
+);
+assert.equal(normalizedInventoryInvoice.items.length, 9);
+assert.deepEqual(normalizedInventoryInvoice.items.map((item) => item.codigoProveedor), [
+  "32375", "22378", "22384", "32318", "9447", "32328", "70783", "9467", "9479",
+]);
+assert.deepEqual(normalizedInventoryInvoice.items.map((item) => item.cantidadOrigen), [
+  2, 4, 8, 2, 2, 3, 2, 4, 3,
+]);
+assert.deepEqual(normalizedInventoryInvoice.items.map((item) => item.costoBase), [
+  3636, 2702, 4220, 6034, 14697, 20985, 21672, 11588, 30663,
+]);
+assert.equal(
+  normalizedInventoryInvoice.items.reduce(
+    (sum, item) => sum + item.cantidadOrigen * item.costoBase,
+    0
+  ),
+  337942
+);
+assert.equal(normalizedInventoryInvoice.totales.neto, 337942);
+assert.equal(normalizedInventoryInvoice.totales.impuestoPorcentaje, 19);
+assert.equal(normalizedInventoryInvoice.totales.impuestoMonto, 64209);
+assert.equal(normalizedInventoryInvoice.totales.total, 402151);
+assert.equal(normalizedInventoryInvoice.coherencia.estado, "coherente");
+assert.equal(normalizedInventoryInvoice.inferenciaImpuestoCompra.estado, "aplicado");
+assert.equal(normalizedInventoryInvoice.items.every((item) => item.tasaImpuestoCompra === 19), true);
+assert.equal(normalizedInventoryInvoice.items.every((item) => item.revisionRequerida === false), true);
+assert.equal(normalizedInventoryInvoice.warnings.filter((warning) => /margen predeterminado/i.test(warning)).length, 1);
+assert.doesNotMatch(normalizedInventoryInvoice.warnings.join(" "), /no se pudo determinar la tasa/i);
+assert.match(normalizedInventoryInvoice.warnings.join(" "), /9 lineas repetidas/i);
+
+const taxMismatchInvoice = sanitizeInventoryDocumentResult(
+  inventoryInvoiceFixture,
+  {
+    context: "inventory",
+    businessTax: {
+      paisCodigo: "PE",
+      impuestoPredeterminadoTasa: 18,
+      configuracionTributariaBaseCompleta: true,
+    },
+  }
+);
+assert.equal(taxMismatchInvoice.inferenciaImpuestoCompra.estado, "requiere_revision");
+assert.equal(taxMismatchInvoice.items.some((item) => item.tasaImpuestoCompra === 19), false);
+console.log("OK inventario: 9 líneas únicas, costos netos, IVA contextual y advertencias no bloqueantes");
+
 const nonAggressiveDuplicates = sanitizeInventoryDocumentResult({
   documentType: "factura",
   items: [
@@ -409,6 +472,25 @@ assert.match(receptionPrompt, /codigoProveedor/);
 assert.equal(receptionHandlerResult.items.length, 9);
 assert.equal(receptionHandlerResult.proveedor.nombre, "Prodalam S.A.");
 assert.equal(receptionHandlerResult.totales.total, 402151);
+
+const inventoryHandlerResult = await normalizeInventoryDocumentHandler(
+  {
+    auth: {uid: "usuario-prueba"},
+    data: payloadFor(validPdf, "factura-sintetica.pdf", "application/pdf"),
+  },
+  {
+    businessTax: {
+      paisCodigo: "CL",
+      impuestoPredeterminadoTasa: 19,
+      configuracionTributariaBaseCompleta: true,
+    },
+    generateGeminiContent: async () => makeGeminiJsonResult(inventoryInvoiceFixture),
+    HttpsError: FakeHttpsError,
+  }
+);
+assert.equal(inventoryHandlerResult.items.length, 9);
+assert.equal(inventoryHandlerResult.inferenciaImpuestoCompra.estado, "aplicado");
+assert.equal(inventoryHandlerResult.items.every((item) => item.tasaImpuestoCompra === 19), true);
 
 try {
   await normalizeInventoryDocumentHandler(

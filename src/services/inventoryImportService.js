@@ -115,6 +115,31 @@ function requestedCodeError(value) {
   return "El código contiene caracteres no permitidos.";
 }
 
+function isPurchaseTaxReviewMessage(value) {
+  const normalized = normalizeInventoryText(value);
+  return [
+    "impuesto no determinado",
+    "tasa de impuesto no determinada",
+    "precios no indican si incluyen impuestos",
+    "precio no indica si incluye impuestos",
+    "no se pudo determinar la tasa",
+    "revisar iva",
+  ].some((text) => normalized.includes(text));
+}
+
+function uniqueImportMessages(messages) {
+  const seen = new Set();
+  return (Array.isArray(messages) ? messages : [])
+    .map((message) => String(message || "").trim())
+    .filter(Boolean)
+    .filter((message) => {
+      const key = normalizeInventoryText(message).replace(/\s+/g, " ");
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
 export function transformInventorySpreadsheetRows(
   matrix,
   { areas = [], categories = [], existingItems = [] } = {}
@@ -248,9 +273,10 @@ export function transformInventoryDocumentCandidates(
       sourceRow: index + 1,
       sourceKind: "document",
       included: item?.revisionRequerida !== true,
+      sourceCode: String(item?.codigoProveedor || "").trim(),
       draft,
       fieldErrors,
-      warnings: [...new Set(warnings)],
+      warnings: uniqueImportMessages(warnings),
     };
   });
 
@@ -302,6 +328,11 @@ export function updateInventoryImportRow(row, field, value, context = {}) {
     draft.tasaImpuestoCompra = "";
   }
   if (field === "areaId") draft.categoriaId = "";
+  if (field === "tasaImpuestoCompra") {
+    draft.formacionPrecioVersion = String(value).trim() === ""
+      ? ""
+      : INVENTORY_PRICE_FORMATION_VERSION;
+  }
   const fieldErrors = validateInventoryDraft(draft);
   const rawCode = String(draft.codigoSolicitado || "").trim();
   const normalizedCode = normalizeRequestedCode(rawCode);
@@ -309,7 +340,26 @@ export function updateInventoryImportRow(row, field, value, context = {}) {
   if (rawCode && !normalizedCode) {
     fieldErrors.codigoSolicitado = requestedCodeError(rawCode);
   }
-  return { ...row, draft, fieldErrors };
+  const warnings = field === "tasaImpuestoCompra" && String(value).trim() !== ""
+    ? (row.warnings || []).filter((warning) => !isPurchaseTaxReviewMessage(warning))
+    : row.warnings;
+  return { ...row, draft, fieldErrors, warnings: uniqueImportMessages(warnings) };
+}
+
+export function applyInventoryImportPurchaseTax(rows, rate, context = {}) {
+  const normalizedRate = parseInventoryNumber(rate);
+  if (!Number.isFinite(normalizedRate) || normalizedRate < 0 || normalizedRate > 100) {
+    throw new Error("La tasa de IVA debe estar entre 0 y 100.");
+  }
+  return (Array.isArray(rows) ? rows : []).map((row) => {
+    if (!row.included || row.draft?.tipoItem !== "producto") return row;
+    return updateInventoryImportRow(
+      row,
+      "tasaImpuestoCompra",
+      normalizedRate,
+      context
+    );
+  });
 }
 
 export function revalidateInventoryImportCodes(rows, existingItems = []) {
@@ -356,17 +406,30 @@ export function revalidateInventoryImportCodes(rows, existingItems = []) {
     } else if (row.included && barcode && barcodeCounts.get(barcode) > 1) {
       warnings.push("Posible duplicado: el código de barras se repite en la vista previa.");
     }
-    return { ...row, fieldErrors, warnings };
+    return { ...row, fieldErrors, warnings: uniqueImportMessages(warnings) };
   });
 }
 
 export function getInventoryImportSummary(rows) {
   const list = Array.isArray(rows) ? rows : [];
+  const selected = list.filter((row) => row.included);
+  const importable = selected.filter(
+    (row) => Object.keys(row.fieldErrors || {}).length === 0
+  ).length;
+  const ready = selected.filter(
+    (row) =>
+      Object.keys(row.fieldErrors || {}).length === 0 &&
+      (row.warnings || []).length === 0
+  ).length;
   return {
     total: list.length,
-    included: list.filter((row) => row.included).length,
-    valid: list.filter((row) => row.included && Object.keys(row.fieldErrors || {}).length === 0).length,
-    invalid: list.filter((row) => row.included && Object.keys(row.fieldErrors || {}).length > 0).length,
+    detected: list.length,
+    included: selected.length,
+    importable,
+    ready,
+    review: selected.length - ready,
+    valid: importable,
+    invalid: selected.filter((row) => Object.keys(row.fieldErrors || {}).length > 0).length,
     excluded: list.filter((row) => !row.included).length,
   };
 }

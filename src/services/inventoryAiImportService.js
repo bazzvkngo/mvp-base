@@ -356,6 +356,11 @@ export async function normalizeInventoryDocumentWithAi({
     receptor: data.receptor || {},
     totales: data.totales || {},
     coherencia: data.coherencia || {estado: "sin_datos"},
+    inferenciaImpuestoCompra: data.inferenciaImpuestoCompra || {
+      estado: "requiere_revision",
+      tasa: null,
+      tasaSugerida: null,
+    },
     warnings: Array.isArray(data.warnings) ? data.warnings : [],
     warning:
       data.warning ||

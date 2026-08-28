@@ -15,6 +15,7 @@ import {
 import {
   INVENTORY_TEMPLATE_COLUMNS,
   MAX_LOCAL_INVENTORY_ROWS,
+  applyInventoryImportPurchaseTax,
   buildInventoryImportBatchRequestId,
   confirmLocalInventoryImport,
   getInventoryImportSummary,
@@ -268,6 +269,17 @@ function main() {
       revisionRequerida: true,
       advertencias: ["Revisar precio unitario."],
     },
+    {
+      id: "documento-2",
+      tipoItem: "producto",
+      nombre: "Router de prueba",
+      codigoProveedor: "PROV-7788",
+      costoBase: 18000,
+      margenDeseado: 25,
+      cantidadOrigen: 2,
+      revisionRequerida: false,
+      advertencias: ["Revisar IVA.", " revisar iva. "],
+    },
   ], { areas, categories, existingItems: [{ nombre: "Switch" }] });
   assert.equal(documentRows[0].sourceKind, "document");
   assert.equal(documentRows[0].included, false);
@@ -280,6 +292,17 @@ function main() {
   );
   assert.equal(documentRows[0].draft.tasaImpuestoCompra, 19);
   assert.ok(documentRows[0].warnings.some((warning) => warning.includes("precio")));
+  assert.equal(documentRows[1].included, true);
+  assert.equal(documentRows[1].sourceCode, "PROV-7788");
+  assert.equal(documentRows[1].draft.codigoSolicitado, "");
+  assert.equal(documentRows[1].warnings.length, 1);
+  assert.equal(getInventoryImportSummary(documentRows).review, 1);
+  assert.equal(getInventoryImportSummary(documentRows).excluded, 1);
+  assert.equal(getInventoryImportSummary(documentRows).importable, 1);
+  const taxedDocumentRows = applyInventoryImportPurchaseTax(documentRows, 19, {areas, categories});
+  assert.equal(taxedDocumentRows[1].draft.tasaImpuestoCompra, 19);
+  assert.equal(taxedDocumentRows[1].warnings.length, 0);
+  assert.equal(getInventoryImportSummary(taxedDocumentRows).ready, 1);
 
   const duplicated = revalidateInventoryImportCodes([
     rows[0],
@@ -401,14 +424,20 @@ async function sourceChecks() {
   assert.match(importer, /Análisis con IA disponible/);
   assert.match(importer, /procesamiento local sin IA/);
   assert.match(importService, /confirmManagedInventoryImport/);
-  assert.match(importer, /Nada se guarda hasta Confirmar importación/);
+  assert.match(importer, /Nada se guarda hasta confirmar la importación/);
   assert.match(importer, /Reintentar importación/);
   assert.match(importer, /No vuelvas a importar el archivo completo con una solicitud nueva/);
   assert.match(importer, /toggleRow\(row\.rowId, event\.target\.checked\)/);
   assert.match(importer, /requestIdBaseRef\.current = createInventoryImportRequestIdBase\(\)/);
   assert.match(importer, /requestIdBaseRef\.current = ""/);
-  assert.match(importer, /Confirmar importación/);
+  assert.match(importer, /Importar \$\{summary\.importable\}/);
+  assert.match(importer, /savingInFlightRef\.current/);
+  assert.match(importer, /Subir archivo/);
+  assert.match(importer, /Revisar/);
+  assert.match(importer, /Importando inventario/);
+  assert.match(importer, /Aplicar IVA/);
   assert.match(importer, /Eliminar fila/);
+  assert.doesNotMatch(manager, /Hikvision|Prodalam|06897040|93\.772\.000-9/);
   assert.match(manager, /Origen de compra/);
   assert.match(manager, /draft\.tipoItem === "producto" && <section className="inventory-form-section"><h3>Origen de compra/);
   assert.match(manager, /type="date" value=\{draft\.fechaCompraReferencia\}/);

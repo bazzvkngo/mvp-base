@@ -4418,22 +4418,31 @@ exports.normalizeInventoryDocument = onCall(
     timeoutSeconds: 180,
   },
   async (request) => {
-  await requireOperationalBusinessAccess(request, {db, HttpsError});
-  if (!DOCUMENT_GENERATIVE_AI_ENABLED) {
-    console.warn("normalizeInventoryDocument: Gemini documental no disponible", {
-      reason: "feature_disabled",
-    });
-    throw new HttpsError(
-      "failed-precondition",
-      "El análisis inteligente de documentos está temporalmente deshabilitado."
-    );
-  }
+    const access = await requireOperationalBusinessAccess(request, {db, HttpsError});
+    if (!DOCUMENT_GENERATIVE_AI_ENABLED) {
+      console.warn("normalizeInventoryDocument: Gemini documental no disponible", {
+        reason: "feature_disabled",
+      });
+      throw new HttpsError(
+        "failed-precondition",
+        "El análisis inteligente de documentos está temporalmente deshabilitado."
+      );
+    }
 
-  return normalizeInventoryDocumentHandler(request, {
-    generateGeminiContent: generateInventoryDocumentContent,
-    HttpsError,
-  });
-}
+    return normalizeInventoryDocumentHandler(request, {
+      businessTax: {
+        paisCodigo: access.businessSnapshot.data()?.paisCodigo || "",
+        impuestoPredeterminadoNombre:
+          access.taxSettings?.impuestoPredeterminadoNombre || "",
+        impuestoPredeterminadoTasa:
+          access.taxSettings?.impuestoPredeterminadoTasa ?? null,
+        configuracionTributariaBaseCompleta:
+          access.taxSettings?.configuracionTributariaBaseCompleta === true,
+      },
+      generateGeminiContent: generateInventoryDocumentContent,
+      HttpsError,
+    });
+  }
 );
 
 /**

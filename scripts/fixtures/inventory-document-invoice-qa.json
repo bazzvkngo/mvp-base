@@ -1,0 +1,36 @@
+{
+  "documentType": "factura",
+  "documento": {
+    "tipo": "FACTURA ELECTRÓNICA",
+    "numero": "00012345",
+    "fechaEmision": "24-08-2026",
+    "moneda": "CLP"
+  },
+  "totales": {
+    "neto": "337.942",
+    "impuestoPorcentaje": "19%",
+    "impuestoMonto": "64.209",
+    "total": "402.151"
+  },
+  "items": [
+    {"nombre":"Producto técnico A","tipoItem":"producto","codigoProveedor":"32375","cantidadOrigen":"2","unidad":"UN","costoUnitario":"3.636","totalLinea":"7.272","pagina":1,"seccionDocumento":"ORIGINAL","confianza":95,"advertencias":["No se pudo determinar la tasa de impuesto."]},
+    {"nombre":"Producto técnico B","tipoItem":"producto","codigoProveedor":"22378","cantidadOrigen":"4","unidad":"UN","costoUnitario":"2.702","totalLinea":"10.808","pagina":1,"seccionDocumento":"ORIGINAL","confianza":94,"advertencias":["No se pudo determinar la tasa de impuesto."]},
+    {"nombre":"Producto técnico C","tipoItem":"producto","codigoProveedor":"22384","cantidadOrigen":"8","unidad":"UN","costoUnitario":"4.220","totalLinea":"33.760","pagina":1,"seccionDocumento":"ORIGINAL","confianza":94,"advertencias":["No se pudo determinar la tasa de impuesto."]},
+    {"nombre":"Producto técnico D","tipoItem":"producto","codigoProveedor":"32318","cantidadOrigen":"2","unidad":"UN","costoUnitario":"6.034","totalLinea":"12.068","pagina":1,"seccionDocumento":"ORIGINAL","confianza":93,"advertencias":["No se pudo determinar la tasa de impuesto."]},
+    {"nombre":"Producto técnico E","tipoItem":"producto","codigoProveedor":"9447","cantidadOrigen":"2","unidad":"UN","costoUnitario":"14.697","totalLinea":"29.394","pagina":1,"seccionDocumento":"ORIGINAL","confianza":93,"advertencias":["No se pudo determinar la tasa de impuesto."]},
+    {"nombre":"Producto técnico F","tipoItem":"producto","codigoProveedor":"32328","cantidadOrigen":"3","unidad":"UN","costoUnitario":"20.985","totalLinea":"62.955","pagina":1,"seccionDocumento":"ORIGINAL","confianza":93,"advertencias":["No se pudo determinar la tasa de impuesto."]},
+    {"nombre":"Producto técnico G","tipoItem":"producto","codigoProveedor":"70783","cantidadOrigen":"2","unidad":"UN","costoUnitario":"21.672","totalLinea":"43.344","pagina":1,"seccionDocumento":"ORIGINAL","confianza":92,"advertencias":["No se pudo determinar la tasa de impuesto."]},
+    {"nombre":"Producto técnico H","tipoItem":"producto","codigoProveedor":"9467","cantidadOrigen":"4","unidad":"UN","costoUnitario":"11.588","totalLinea":"46.352","pagina":1,"seccionDocumento":"ORIGINAL","confianza":92,"advertencias":["No se pudo determinar la tasa de impuesto."]},
+    {"nombre":"Producto técnico I","tipoItem":"producto","codigoProveedor":"9479","cantidadOrigen":"3","unidad":"UN","costoUnitario":"30.663","totalLinea":"91.989","pagina":1,"seccionDocumento":"ORIGINAL","confianza":92,"advertencias":["No se pudo determinar la tasa de impuesto."]},
+    {"nombre":"Producto técnico A","tipoItem":"producto","codigoProveedor":"32375","cantidadOrigen":"2","unidad":"UN","costoUnitario":"3.636","totalLinea":"7.272","pagina":2,"seccionDocumento":"CEDIBLE","confianza":95,"advertencias":["No se pudo determinar la tasa de impuesto."]},
+    {"nombre":"Producto técnico B","tipoItem":"producto","codigoProveedor":"22378","cantidadOrigen":"4","unidad":"UN","costoUnitario":"2.702","totalLinea":"10.808","pagina":2,"seccionDocumento":"CEDIBLE","confianza":94,"advertencias":["No se pudo determinar la tasa de impuesto."]},
+    {"nombre":"Producto técnico C","tipoItem":"producto","codigoProveedor":"22384","cantidadOrigen":"8","unidad":"UN","costoUnitario":"4.220","totalLinea":"33.760","pagina":2,"seccionDocumento":"CEDIBLE","confianza":94,"advertencias":["No se pudo determinar la tasa de impuesto."]},
+    {"nombre":"Producto técnico D","tipoItem":"producto","codigoProveedor":"32318","cantidadOrigen":"2","unidad":"UN","costoUnitario":"6.034","totalLinea":"12.068","pagina":2,"seccionDocumento":"CEDIBLE","confianza":93,"advertencias":["No se pudo determinar la tasa de impuesto."]},
+    {"nombre":"Producto técnico E","tipoItem":"producto","codigoProveedor":"9447","cantidadOrigen":"2","unidad":"UN","costoUnitario":"14.697","totalLinea":"29.394","pagina":2,"seccionDocumento":"CEDIBLE","confianza":93,"advertencias":["No se pudo determinar la tasa de impuesto."]},
+    {"nombre":"Producto técnico F","tipoItem":"producto","codigoProveedor":"32328","cantidadOrigen":"3","unidad":"UN","costoUnitario":"20.985","totalLinea":"62.955","pagina":2,"seccionDocumento":"CEDIBLE","confianza":93,"advertencias":["No se pudo determinar la tasa de impuesto."]},
+    {"nombre":"Producto técnico G","tipoItem":"producto","codigoProveedor":"70783","cantidadOrigen":"2","unidad":"UN","costoUnitario":"21.672","totalLinea":"43.344","pagina":2,"seccionDocumento":"CEDIBLE","confianza":92,"advertencias":["No se pudo determinar la tasa de impuesto."]},
+    {"nombre":"Producto técnico H","tipoItem":"producto","codigoProveedor":"9467","cantidadOrigen":"4","unidad":"UN","costoUnitario":"11.588","totalLinea":"46.352","pagina":2,"seccionDocumento":"CEDIBLE","confianza":92,"advertencias":["No se pudo determinar la tasa de impuesto."]},
+    {"nombre":"Producto técnico I","tipoItem":"producto","codigoProveedor":"9479","cantidadOrigen":"3","unidad":"UN","costoUnitario":"30.663","totalLinea":"91.989","pagina":2,"seccionDocumento":"CEDIBLE","confianza":92,"advertencias":["No se pudo determinar la tasa de impuesto."]}
+  ],
+  "warnings": []
+}
