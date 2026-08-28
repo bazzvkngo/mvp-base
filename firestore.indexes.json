@@ -75,6 +75,25 @@
         { "fieldPath": "trabajoId", "order": "ASCENDING" },
         { "fieldPath": "registradoPorUid", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "negocios",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "creadoEn", "order": "DESCENDING" },
+        { "fieldPath": "__name__", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "negocios",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "verificacionEmpresa.solicitadoEn",
+          "order": "DESCENDING"
+        },
+        { "fieldPath": "__name__", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
