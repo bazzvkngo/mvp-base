@@ -157,7 +157,10 @@ function OnboardingPage({ usuario, onBusinessCreated }) {
             <div className="onboarding-card__intro">
               <span className="onboarding-step">Comencemos</span>
               <h1 id="onboarding-title">Crea tu primer negocio</h1>
-              <p>Ingresa lo esencial para comenzar.</p>
+              <p>
+                Ingresa lo esencial. Luego completa el perfil y solicita la
+                verificación; ValoraCloud se activará al ser aprobada.
+              </p>
             </div>
 
             <form

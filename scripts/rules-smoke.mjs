@@ -1253,7 +1253,10 @@ async function main() {
         {contentType: "application/pdf"}
       )
     );
-    await expectDenied("OWNER elimina evidencia de verificación", () =>
+    await adminDb.doc(
+      `negocios/${businessId}/businessVerificationRequests/verification-rules-request`
+    ).set({negocioId: businessId, uidUsuario: ownerUid});
+    await expectDenied("OWNER elimina evidencia asociada", () =>
       deleteObject(ref(ownerClient.storage, verificationEvidencePath))
     );
 

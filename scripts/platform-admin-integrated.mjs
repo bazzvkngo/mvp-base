@@ -185,7 +185,7 @@ try {
       firstProfile.identificadorFiscalValor.replace(/\D/g, "")
   ));
   const users = await call(platform, "listarUsuariosPlataforma")({limite: 20});
-  assert.equal(users.data.usuarios.length, 20);
+  assert.equal(users.data.usuarios.length, clients.length);
   const searchedUser = await call(platform, "listarUsuariosPlataforma")({
     busqueda: owner.email,
     estado: "ACTIVO",

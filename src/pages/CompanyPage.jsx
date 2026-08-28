@@ -6,6 +6,8 @@ function CompanyPage({
   businessId,
   businessName,
   businessVerified,
+  currentUserEmail,
+  currentUserPhone,
   currentUserUid,
   onBusinessDeleted,
   onBusinessUpdated,
@@ -19,6 +21,8 @@ function CompanyPage({
       businessId={businessId}
       businessName={businessName}
       businessVerified={businessVerified}
+      currentUserEmail={currentUserEmail}
+      currentUserPhone={currentUserPhone}
       currentUserUid={currentUserUid}
       onBusinessDeleted={onBusinessDeleted}
       onBusinessUpdated={onBusinessUpdated}

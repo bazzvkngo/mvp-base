@@ -162,6 +162,8 @@ for (const state of ["NO_VERIFICADA", "PENDIENTE", "EN_REVISION", "RECHAZADA"]) 
 }
 const verifiedBusiness = {id: "business-verified", verificacionEmpresa: {estado: "VERIFICADA"}};
 assert.equal(canBusinessOperate(verifiedBusiness), true);
+assert.equal(canBusinessOperate({...verifiedBusiness, puedeOperar: true}), true);
+assert.equal(canBusinessOperate({...verifiedBusiness, puedeOperar: false}), false);
 businessPaths.forEach((path) => {
   assert.equal(canAccessBusinessPathForVerification(verifiedBusiness, path), true);
 });
@@ -230,6 +232,10 @@ const [
   initialActivation,
   functionsIndex,
   rules,
+  storageRules,
+  businessOnboarding,
+  verificationService,
+  businessCompletion,
 ] = await Promise.all([
   readFile(new URL("../src/features/company/CompanyConfig.jsx", import.meta.url), "utf8"),
   readFile(new URL("../functions/businessVerification.js", import.meta.url), "utf8"),
@@ -242,6 +248,10 @@ const [
   readFile(new URL("../src/pages/InitialBusinessActivationPage.jsx", import.meta.url), "utf8"),
   readFile(new URL("../functions/index.js", import.meta.url), "utf8"),
   readFile(new URL("../firestore.rules", import.meta.url), "utf8"),
+  readFile(new URL("../storage.rules", import.meta.url), "utf8"),
+  readFile(new URL("../functions/businessOnboarding.js", import.meta.url), "utf8"),
+  readFile(new URL("../src/services/businessVerificationService.js", import.meta.url), "utf8"),
+  readFile(new URL("../src/domain/businessCompletion.mjs", import.meta.url), "utf8"),
 ]);
 assert.doesNotMatch(companyUi, /name="paisCodigo"/);
 assert.doesNotMatch(companyUi, /name="monedaCodigo"/);
@@ -256,7 +266,12 @@ assert.doesNotMatch(companyUi, /Acción reservada al OWNER/i);
 assert.match(companyUi, /https:\/\/www\.empresa\.com/);
 assert.match(ownerVerificationUi, /label="País"/);
 assert.match(ownerVerificationUi, /label="Tipo de identificación fiscal"/);
-assert.doesNotMatch(ownerVerificationUi, /Documento acreditativo[\s\S]{0,80}optional/);
+assert.match(ownerVerificationUi, /Documento de respaldo/);
+assert.match(ownerVerificationUi, /Adjunta un documento que permita acreditar la empresa o tu relación con ella/);
+assert.match(ownerVerificationUi, /Seleccionar archivo/);
+assert.match(companyUi, /No pudimos subir el documento\. Intenta nuevamente\./);
+assert.match(ownerVerificationUi, /getPersonalProfile/);
+assert.match(ownerVerificationUi, /currentUserEmail/);
 assert.doesNotMatch(ownerVerificationUi, /Observaciones[\s\S]{0,80}optional/);
 assert.match(verificationBackend, /identificadorFiscalValor: requestData\.identificadorFiscalValor/);
 assert.match(verificationBackend, /razonSocialVerificada: officialLegalName/);
@@ -276,7 +291,10 @@ assert.match(appLayout, /onAddBusiness=\{businessVerified \?/);
 assert.match(appLayout, /observedBusinessProfile/);
 assert.match(appLayout, /normalizeBusinessVerificationState/);
 assert.match(companyUi, /ACTIVATION_SECTION_IDS/);
-assert.match(companyUi, /Empresa pendiente de verificación/);
+assert.match(companyUi, /Empresa no verificada/);
+assert.doesNotMatch(companyUi, /Empresa pendiente de verificación/);
+assert.doesNotMatch(companyUi, /Pendiente de verificación/);
+assert.match(businessCompletion, /Correo del propietario verificado/);
 assert.match(companyUi, /<h1>Empresa<\/h1>/);
 assert.doesNotMatch(companyUi, /OWNER · Puede editar/);
 for (const label of [
@@ -303,6 +321,12 @@ for (const dependencies of [
   assert.match(functionsIndex, new RegExp(`${dependencies}[\\s\\S]{0,240}requireOperationalBusinessAccess`));
 }
 assert.match(functionsIndex, /await requireOperationalBusinessAccess\(request, \{db, HttpsError\}\)/);
+assert.match(functionsIndex, /firebasestorage\.app/);
+assert.match(functionsIndex, /initializeApp\(\{storageBucket: FIREBASE_STORAGE_BUCKET\}\)/);
+assert.match(businessOnboarding, /puedeOperar: verificationState === VERIFICATION_STATES\.VERIFIED/);
+assert.match(storageRules, /businessVerificationRequests\/\$\(requestId\)/);
+assert.match(storageRules, /allow delete: if resource != null/);
+assert.match(verificationService, /await deleteObject\(evidence\.reference\)/);
 assert.match(rules, /function canOperateBusiness\(businessId\)/);
 assert.match(rules, /function canOperateActiveBusiness\(uid\)/);
 assert.match(rules, /function hasSetupBusinessRole\(businessId, roles\)/);

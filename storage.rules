@@ -89,7 +89,7 @@ service firebase.storage {
       allow read: if canRequestBusinessVerification(businessId)
         && request.auth.uid == ownerUid;
 
-      allow write: if resource == null
+      allow create: if resource == null
         && request.resource != null
         && canRequestBusinessVerification(businessId)
         && request.auth.uid == ownerUid
@@ -97,6 +97,15 @@ service firebase.storage {
         && request.resource.size <= 5 * 1024 * 1024
         && request.resource.contentType.matches(
           'application/pdf|image/(jpeg|png)'
+        );
+
+      // Permite revertir sólo una evidencia cuyo request todavía no fue
+      // persistido por la Function. Una evidencia asociada queda inmutable.
+      allow delete: if resource != null
+        && canRequestBusinessVerification(businessId)
+        && request.auth.uid == ownerUid
+        && !firestore.exists(
+          /databases/(default)/documents/negocios/$(businessId)/businessVerificationRequests/$(requestId)
         );
     }
   }

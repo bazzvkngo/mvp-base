@@ -290,6 +290,8 @@ function AppRoutes({
               businessId={businessId}
               businessName={activeBusiness?.nombreComercial}
               businessVerified={canBusinessOperate(activeBusiness)}
+              currentUserEmail={usuario?.email}
+              currentUserPhone={usuario?.phoneNumber}
               currentUserUid={usuario?.uid}
               role={activeBusiness?.role}
               onBusinessDeleted={onBusinessCreated}

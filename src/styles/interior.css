@@ -2783,7 +2783,84 @@
 
 .settings-verification-form {
   display: grid;
-  gap: var(--space-4);
+  gap: var(--space-3);
+}
+
+.verification-request-dialog {
+  max-width: 820px;
+}
+
+.verification-request-dialog .responsive-dialog__body {
+  padding-block: var(--space-3);
+}
+
+.verification-request-dialog .settings-form-grid {
+  gap: var(--space-2) var(--space-4);
+}
+
+.verification-evidence-helper {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+  margin: 0;
+}
+
+.settings-field input.sr-only {
+  height: 1px;
+  min-height: 1px;
+  padding: 0;
+  width: 1px;
+}
+
+.verification-evidence-uploader {
+  align-items: center;
+  background: var(--color-surface-subtle);
+  border: 1px dashed var(--color-border-control);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  padding: var(--space-3);
+}
+
+.verification-evidence-uploader.has-file {
+  background: var(--color-surface-panel);
+  border-style: solid;
+}
+
+.verification-evidence-uploader__icon {
+  align-items: center;
+  background: var(--color-surface-selected);
+  border-radius: var(--radius-md);
+  color: var(--color-brand-700);
+  display: flex;
+  height: 42px;
+  justify-content: center;
+  width: 42px;
+}
+
+.verification-evidence-uploader__copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.verification-evidence-uploader__copy strong {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.verification-evidence-uploader__copy span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.verification-evidence-uploader__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
 .settings-deletion-confirmation {
@@ -3264,6 +3341,19 @@
   .settings-form-grid,
   .settings-logo-card {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .verification-evidence-uploader {
+    align-items: start;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .verification-evidence-uploader__actions {
+    grid-column: 1 / -1;
+  }
+
+  .verification-evidence-uploader__actions .ui-button {
+    flex: 1 1 150px;
   }
 
   .settings-logo-actions,

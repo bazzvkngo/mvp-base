@@ -368,7 +368,6 @@ async function main() {
         nombreComercial: validPayload.nombreComercial,
         rubroCodigo: validPayload.rubroCodigo,
         regionEstado: "La Paz",
-        razonSocial: "Mauricio SPA",
         direccion: "Avenida Principal 100",
         telefono: "+56 9 1234 5678",
         email: "contacto@andes.example",

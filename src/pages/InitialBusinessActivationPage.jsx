@@ -53,7 +53,7 @@ function InitialBusinessActivationPage({
 
             <BusinessCompletionCard
   className="business-completion-card--activation"
-  description="Completa estos datos para dejar tu empresa lista para operar."
+  description="Completa el perfil y solicita la revisión. La activación depende de la aprobación."
   loading={loading}
   showSummary={false}
   status={status}

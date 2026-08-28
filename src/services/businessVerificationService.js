@@ -1,5 +1,10 @@
 import {httpsCallable} from "firebase/functions";
-import {getMetadata, ref as storageRef, uploadBytes} from "firebase/storage";
+import {
+  deleteObject,
+  getMetadata,
+  ref as storageRef,
+  uploadBytes,
+} from "firebase/storage";
 import {assertClientWriteAllowed} from "../config/firebaseEnvironment.mjs";
 import {getFirebaseFunctions, storage} from "../firebase/firebaseConfig";
 
@@ -21,6 +26,10 @@ export const VERIFICATION_EVIDENCE_TYPES = Object.freeze([
   "image/png",
 ]);
 export const MAX_VERIFICATION_EVIDENCE_BYTES = 5 * 1024 * 1024;
+
+export const BUSINESS_VERIFICATION_ERROR_STAGES = Object.freeze({
+  UPLOAD: "document-upload",
+});
 
 const functions = getFirebaseFunctions("us-central1");
 
@@ -60,8 +69,16 @@ function validateEvidence(file) {
     throw new Error("El documento debe ser PDF, JPG o PNG.");
   }
   if (file.size <= 0 || file.size > MAX_VERIFICATION_EVIDENCE_BYTES) {
-    throw new Error("El documento acreditativo no puede superar 5 MB.");
+    throw new Error("El documento de respaldo no puede superar 5 MB.");
   }
+}
+
+function uploadError(cause) {
+  const error = new Error("No pudimos subir el documento. Intenta nuevamente.");
+  error.name = "BusinessVerificationUploadError";
+  error.verificationStage = BUSINESS_VERIFICATION_ERROR_STAGES.UPLOAD;
+  error.cause = cause;
+  return error;
 }
 
 async function uploadEvidence({businessId, file, requestId, uid}) {
@@ -71,21 +88,31 @@ async function uploadEvidence({businessId, file, requestId, uid}) {
   const path = `negocios/${businessId}/verificacion/${uid}/${requestId}/documento.${extension}`;
   const reference = storageRef(storage, path);
   let metadata;
+  let uploaded = false;
   try {
     metadata = await getMetadata(reference);
   } catch (error) {
-    if (error?.code !== "storage/object-not-found") throw error;
-    const result = await uploadBytes(reference, file, {
-      contentType: file.type,
-      customMetadata: {nombreOriginal: String(file.name || "documento")},
-    });
-    metadata = result.metadata;
+    if (error?.code !== "storage/object-not-found") throw uploadError(error);
+    try {
+      const result = await uploadBytes(reference, file, {
+        contentType: file.type,
+        customMetadata: {nombreOriginal: String(file.name || "documento")},
+      });
+      metadata = result.metadata;
+      uploaded = true;
+    } catch (uploadFailure) {
+      throw uploadError(uploadFailure);
+    }
   }
   return {
-    ruta: path,
-    nombreOriginal: String(file.name || metadata.customMetadata?.nombreOriginal || "documento"),
-    tipoContenido: metadata.contentType || file.type,
-    tamanoBytes: Number(metadata.size || file.size),
+    document: {
+      ruta: path,
+      nombreOriginal: String(file.name || metadata.customMetadata?.nombreOriginal || "documento"),
+      tipoContenido: metadata.contentType || file.type,
+      tamanoBytes: Number(metadata.size || file.size),
+    },
+    reference,
+    uploaded,
   };
 }
 
@@ -100,20 +127,32 @@ export async function requestBusinessVerification({
   if (!businessId || !uid || !requestId) {
     throw new Error("No fue posible identificar la empresa o la solicitud.");
   }
-  const documentoAcreditativo = await uploadEvidence({
+  const evidence = await uploadEvidence({
     businessId,
     file,
     requestId,
     uid,
   });
   const callable = httpsCallable(functions, "solicitarVerificacionEmpresa");
-  const response = await callable({
-    businessId,
-    requestId,
-    solicitud: {
-      ...solicitud,
-      ...(documentoAcreditativo ? {documentoAcreditativo} : {}),
-    },
-  });
-  return response.data;
+  try {
+    const response = await callable({
+      businessId,
+      requestId,
+      solicitud: {
+        ...solicitud,
+        ...(evidence ? {documentoAcreditativo: evidence.document} : {}),
+      },
+    });
+    return response.data;
+  } catch (error) {
+    if (evidence?.uploaded) {
+      try {
+        await deleteObject(evidence.reference);
+      } catch {
+        // Si la transacción sí alcanzó a persistir, Rules impide borrar la
+        // evidencia asociada. En otros fallos se intenta el rollback best-effort.
+      }
+    }
+    throw error;
+  }
 }

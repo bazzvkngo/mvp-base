@@ -34,10 +34,10 @@ import {
 } from "../services/platformAdminService";
 
 const VERIFICATION_LABELS = {
-  NO_VERIFICADA: "No verificada",
-  PENDIENTE: "Pendiente",
-  VERIFICADA: "Verificada",
-  RECHAZADA: "Rechazada",
+  NO_VERIFICADA: "Empresa no verificada",
+  PENDIENTE: "Verificación en revisión",
+  VERIFICADA: "Empresa verificada",
+  RECHAZADA: "Verificación rechazada",
 };
 
 function message(error, fallback) {
@@ -300,7 +300,7 @@ export function PlatformBusinessDetailPage() {
       popup.location.replace(document.url);
     } catch {
       popup.close();
-      setNotice("No pudimos abrir el documento acreditativo.");
+      setNotice("No pudimos abrir el documento de respaldo.");
     }
   };
   const deleteBusiness = async () => {
@@ -330,10 +330,10 @@ export function PlatformBusinessDetailPage() {
   const pending = empresa.verificacion?.estado === "PENDIENTE" && solicitudActual;
   const verified = empresa.verificacion?.estado === "VERIFICADA";
   const verificationLabel = VERIFICATION_LABELS[empresa.verificacion?.estado] ||
-    empresa.verificacion?.estado || "No verificada";
+    empresa.verificacion?.estado || "Empresa no verificada";
   return <>
     <button className="platform-back" type="button" onClick={() => navigate(-1)}><AppIcon icon={ChevronLeft} size={18} />Volver</button>
-    <PlatformHeading eyebrow="Empresa" title={empresa.nombreComercial || "Empresa sin nombre"} description={<span className="platform-business-heading-meta"><span>{propietario?.correo || "Propietario sin correo"}</span><span>{countryName(empresa.paisCodigo)} · Verificación {verificationLabel.toLowerCase()}</span><small>ID: {empresa.id}</small></span>} action={<StatusBadge variant={stateVariant(empresa.estado)}>{empresa.estado}</StatusBadge>} />
+    <PlatformHeading eyebrow="Empresa" title={empresa.nombreComercial || "Empresa sin nombre"} description={<span className="platform-business-heading-meta"><span>{propietario?.correo || "Propietario sin correo"}</span><span>{countryName(empresa.paisCodigo)} · {verificationLabel}</span><small>ID: {empresa.id}</small></span>} action={<StatusBadge variant={stateVariant(empresa.estado)}>{empresa.estado}</StatusBadge>} />
     {notice && <div className="platform-notice" role="status">{notice}</div>}
     <section className="platform-panel"><h2>Datos de la empresa</h2><DetailGrid items={[
       {label: "País", value: countryName(empresa.paisCodigo)},
@@ -356,7 +356,7 @@ export function PlatformBusinessDetailPage() {
         {label: "Teléfono del solicitante", value: solicitudActual.telefonoSolicitante},
         {label: "Observaciones", value: solicitudActual.observaciones},
       ]} />}
-      {solicitudActual?.documentoAcreditativo && <div className="platform-evidence"><span>Documento acreditativo: {solicitudActual.documentoAcreditativo.nombreOriginal || "Documento adjunto"}</span><Button variant="secondary" onClick={loadEvidence}>Ver documento</Button></div>}
+      {solicitudActual?.documentoAcreditativo && <div className="platform-evidence"><span>Documento de respaldo: {solicitudActual.documentoAcreditativo.nombreOriginal || "Documento adjunto"}</span><Button variant="secondary" onClick={loadEvidence}>Ver documento</Button></div>}
       {pending && <div className="platform-verification-actions">
         <label>Razón social oficial<input required value={officialLegalName} onChange={(event) => {setOfficialLegalName(event.target.value); requestRef.current = "";}} /></label>
         <Button icon={CheckCircle2} disabled={working || !officialLegalName.trim()} onClick={() => run("approve_verification", (requestId) => resolvePlatformVerification({businessId, solicitudId: solicitudActual.id, decision: "APROBAR", motivo: "", razonSocialOficial: officialLegalName.trim(), requestId}))}>Aprobar</Button>

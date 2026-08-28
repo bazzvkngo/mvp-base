@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {createRequire} from "node:module";
 import {deleteApp, initializeApp} from "firebase/app";
-import {connectAuthEmulator, createUserWithEmailAndPassword, getAuth} from "firebase/auth";
+import {connectAuthEmulator, createUserWithEmailAndPassword, getAuth, signInWithEmailAndPassword, signOut} from "firebase/auth";
 import {connectFirestoreEmulator, doc, getDoc, getFirestore, setDoc, terminate, updateDoc} from "firebase/firestore";
 import {connectFunctionsEmulator, getFunctions, httpsCallable} from "firebase/functions";
 import {connectStorageEmulator, getStorage, ref, uploadBytes} from "firebase/storage";
@@ -26,6 +26,7 @@ const fiscalSeed = [...RUN_ID].reduce(
 );
 const FIRST_FISCAL_ID = chileRut(20000000 + fiscalSeed);
 const RETRY_FISCAL_ID = chileRut(80000000 + (fiscalSeed % 9999999));
+const THIRD_FISCAL_ID = chileRut(70000000 + (fiscalSeed % 9999999));
 const requireFromFunctions = createRequire(new URL("../functions/package.json", import.meta.url));
 const {deleteApp: deleteAdminApp, initializeApp: initializeAdminApp} = requireFromFunctions("firebase-admin/app");
 const {getAuth: getAdminAuth} = requireFromFunctions("firebase-admin/auth");
@@ -40,7 +41,9 @@ function client(name) {
   return {app, auth, db, functions, storage};
 }
 async function authenticate(target, name) {
-  const credential = await createUserWithEmailAndPassword(target.auth, `verification-${name}-${RUN_ID}@example.test`, `Verification-${RUN_ID}-Pass!`);
+  target.email = `verification-${name}-${RUN_ID}@example.test`;
+  target.password = `Verification-${RUN_ID}-Pass!`;
+  const credential = await createUserWithEmailAndPassword(target.auth, target.email, target.password);
   target.uid = credential.user.uid; target.user = credential.user; return target;
 }
 const call = (target, name) => httpsCallable(target.functions, name);
@@ -174,9 +177,42 @@ try {
   });
   const pendingBusinessId = pendingAdditional.data.business.id;
   await call(owner, "setActiveBusiness")({businessId: pendingBusinessId});
+  const pendingProfile = profile("Empresa pendiente del mismo owner", THIRD_FISCAL_ID);
+  const pngRequestId = requestId("verification_png");
+  const pngEvidencePath = `negocios/${pendingBusinessId}/verificacion/${owner.uid}/${pngRequestId}/respaldo.png`;
+  const pngEvidenceBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+  await uploadBytes(ref(owner.storage, pngEvidencePath), pngEvidenceBytes, {
+    contentType: "image/png",
+  });
+  await call(owner, "solicitarVerificacionEmpresa")({
+    businessId: pendingBusinessId,
+    requestId: pngRequestId,
+    solicitud: {
+      ...verificationPayload(pendingProfile),
+      documentoAcreditativo: {
+        ruta: pngEvidencePath,
+        nombreOriginal: "respaldo.png",
+        tipoContenido: "image/png",
+        tamanoBytes: pngEvidenceBytes.byteLength,
+      },
+    },
+  });
   const pendingSession = await call(owner, "getBusinessSession")();
   assert.equal(pendingSession.data.activeBusiness.id, pendingBusinessId);
-  assert.equal(pendingSession.data.activeBusiness.verificacionEmpresa.estado, "NO_VERIFICADA");
+  assert.equal(pendingSession.data.activeBusiness.verificacionEmpresa.estado, "PENDIENTE");
+  assert.equal(pendingSession.data.activeBusiness.puedeOperar, false);
+  const repeatedSession = await call(owner, "getBusinessSession")();
+  assert.equal(repeatedSession.data.activeBusiness.puedeOperar, false);
+  await signOut(owner.auth);
+  const signedInAgain = await signInWithEmailAndPassword(
+    owner.auth,
+    owner.email,
+    owner.password
+  );
+  owner.user = signedInAgain.user;
+  const reloginSession = await call(owner, "getBusinessSession")();
+  assert.equal(reloginSession.data.activeBusiness.id, pendingBusinessId);
+  assert.equal(reloginSession.data.activeBusiness.puedeOperar, false);
   await rejected("multiempresa pendiente bloqueada", () =>
     call(owner, "listarMiembrosNegocio")({businessId: pendingBusinessId}),
   ["failed-precondition"]);
@@ -184,6 +220,7 @@ try {
   const verifiedSession = await call(owner, "getBusinessSession")();
   assert.equal(verifiedSession.data.activeBusiness.id, businessId);
   assert.equal(verifiedSession.data.activeBusiness.verificacionEmpresa.estado, "VERIFICADA");
+  assert.equal(verifiedSession.data.activeBusiness.puedeOperar, true);
   const verifiedMemberList = await call(owner, "listarMiembrosNegocio")({businessId});
   assert.ok(verifiedMemberList.data.miembros.length >= 3);
   console.log("OK multiempresa: gate recalculado por negocio activo");

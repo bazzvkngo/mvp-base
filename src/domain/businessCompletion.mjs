@@ -39,7 +39,7 @@ function normalizeVerificationStatus(value) {
 
 function getCompletionLabel(percent) {
   if (percent === 100) return "Empresa completa y verificada";
-  if (percent >= 70) return "Empresa casi lista";
+  if (percent >= 70) return "Perfil casi completo";
   if (percent >= 40) return "Perfil en progreso";
   return "Configuración inicial";
 }
@@ -119,7 +119,7 @@ export function getBusinessCompletionStatus(
     },
     {
       id: "ownerEmail",
-      label: "Correo del propietario",
+      label: "Correo del propietario verificado",
       weight: BUSINESS_COMPLETION_WEIGHTS.ownerEmail,
       completed: ownerEmailVerified === true,
       actionLabel: "Verificar correo",

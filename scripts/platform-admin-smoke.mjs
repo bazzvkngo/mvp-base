@@ -28,6 +28,7 @@ assert.doesNotMatch(layoutSource, /Platform Console|Panel plataforma/);
 assert.match(appLayoutSource, /Consola de Administración/);
 assert.match(pagesSource, /window\.open\("", "_blank"\)[\s\S]*getPlatformVerificationDocument/);
 assert.match(pagesSource, />Ver documento</);
+assert.match(pagesSource, /Documento de respaldo/);
 assert.doesNotMatch(pagesSource, /Generar acceso temporal al documento/);
 assert.match(pagesSource, /El navegador bloqueó la nueva pestaña/);
 assert.match(pagesSource, /<form className="platform-filters" onSubmit=\{onSubmit\}>/);

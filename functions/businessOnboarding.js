@@ -457,6 +457,7 @@ function businessResponse(snapshot, membershipData = null) {
       ...(data.verificacionEmpresa || {}),
       estado: verificationState,
     },
+    puedeOperar: verificationState === VERIFICATION_STATES.VERIFIED,
     rut: verificationState === VERIFICATION_STATES.VERIFIED
       ? data.identificadorFiscalValor || data.rut || ""
       : "",

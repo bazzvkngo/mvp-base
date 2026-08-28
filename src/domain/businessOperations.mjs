@@ -17,9 +17,13 @@ export function isUnverifiedBusinessAllowedPath(pathname = "") {
 }
 
 export function canBusinessOperate(business = {}) {
-  return normalizeBusinessVerificationState(
+  const verified = normalizeBusinessVerificationState(
     business.verificacionEmpresa?.estado
   ) === "VERIFICADA";
+  if (Object.prototype.hasOwnProperty.call(business, "puedeOperar")) {
+    return verified && business.puedeOperar === true;
+  }
+  return verified;
 }
 
 export function canAccessBusinessPathForVerification(business = {}, pathname = "") {

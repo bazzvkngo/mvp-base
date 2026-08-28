@@ -161,8 +161,14 @@ const {
 } = require("./workPersistence");
 const {obtenerBalanceTrabajoHandler} = require("./workBalance");
 
-// Inicializar Admin SDK (una sola vez)
-initializeApp();
+// Inicializar Admin SDK (una sola vez). Este proyecto usa el bucket canónico
+// *.firebasestorage.app; dejarlo implícito hace que Admin pueda resolver el
+// nombre legacy *.appspot.com, que no existe para proyectos nuevos.
+const FIREBASE_PROJECT_ID = process.env.GCLOUD_PROJECT ||
+  process.env.GCP_PROJECT || "tesis-inventario-ia";
+const FIREBASE_STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET ||
+  `${FIREBASE_PROJECT_ID}.firebasestorage.app`;
+initializeApp({storageBucket: FIREBASE_STORAGE_BUCKET});
 const db = getFirestore();
 const adminAuth = getAuth();
 const adminStorageBucket = getStorage().bucket();

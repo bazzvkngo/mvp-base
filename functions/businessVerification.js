@@ -179,7 +179,7 @@ function normalizeEvidence(raw, {businessId, uid, operationId, HttpsError}) {
   const contentType = text(raw.tipoContenido, 100).toLowerCase();
   const size = Number(raw.tamanoBytes);
   if (!path.startsWith(expectedPrefix) || path.slice(expectedPrefix.length).includes("/")) {
-    fail(HttpsError, "invalid-argument", "El documento acreditativo no es valido.");
+    fail(HttpsError, "invalid-argument", "El documento de respaldo no es valido.");
   }
   if (!EVIDENCE_TYPES.has(contentType) || !Number.isFinite(size) ||
     size <= 0 || size > MAX_EVIDENCE_BYTES) {
@@ -202,12 +202,12 @@ async function verifyEvidence(evidence, bucket, HttpsError) {
     const storedType = text(metadata.contentType, 100).toLowerCase();
     if (!EVIDENCE_TYPES.has(storedType) || !Number.isFinite(storedSize) ||
       storedSize <= 0 || storedSize > MAX_EVIDENCE_BYTES) {
-      fail(HttpsError, "invalid-argument", "El documento acreditativo no es valido.");
+      fail(HttpsError, "invalid-argument", "El documento de respaldo no es valido.");
     }
     return {...evidence, tipoContenido: storedType, tamanoBytes: storedSize};
   } catch (error) {
     if (error instanceof HttpsError) throw error;
-    fail(HttpsError, "invalid-argument", "No se encontro el documento acreditativo.");
+    fail(HttpsError, "invalid-argument", "No se encontro el documento de respaldo.");
   }
 }
 

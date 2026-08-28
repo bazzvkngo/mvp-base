@@ -2,6 +2,7 @@ import React from "react";
 import {
   BellRing,
   Building2,
+  FileUp,
   FileText,
   ImagePlus,
   Landmark,
@@ -37,6 +38,7 @@ import {
   deleteCompanyLogo,
   getBusinessSettings,
   getCompanyProfile,
+  getPersonalProfile,
   saveBusinessInformation,
   saveBusinessSettings,
   uploadCompanyLogo,
@@ -104,7 +106,7 @@ const EMPTY_INFORMATION = {
 function messageForError(error, fallback) {
   const code = String(error?.code || "");
   if (code.includes("permission-denied")) {
-    return "Tu rol no permite modificar esta configuración.";
+    return "No tienes permisos para acceder a esta sección.";
   }
   if (code.includes("invalid-argument")) return error?.message || fallback;
   if (code.includes("failed-precondition") || code.includes("already-exists")) {
@@ -114,6 +116,29 @@ function messageForError(error, fallback) {
     return "No pudimos conectar con el servicio. Tus cambios siguen en pantalla.";
   }
   return fallback;
+}
+
+function verificationMessageForError(error) {
+  const code = String(error?.code || "").toLowerCase();
+  if (error?.verificationStage === "document-upload") {
+    return "No pudimos subir el documento. Intenta nuevamente.";
+  }
+  if (code.includes("permission-denied") || code.includes("unauthenticated")) {
+    return "No tienes permisos para acceder a esta sección.";
+  }
+  if (code.includes("invalid-argument")) {
+    return "Revisa la identificación fiscal y los datos del solicitante.";
+  }
+  if (code.includes("already-exists")) {
+    return "Esta solicitud ya fue utilizada. Recarga la página e intenta nuevamente.";
+  }
+  if (code.includes("failed-precondition")) {
+    return "La empresa no está disponible para esta solicitud o ya tiene una revisión en curso.";
+  }
+  if (code.includes("unavailable") || code.includes("deadline-exceeded")) {
+    return "No pudimos conectar con el servicio. Intenta nuevamente.";
+  }
+  return "No pudimos enviar la solicitud. Revisa los datos e intenta nuevamente.";
 }
 
 function isValidOptionalUrl(value) {
@@ -439,7 +464,7 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
                   <div className="settings-fiscal-pending">
                     <span className={`settings-verification-pill is-${(form.verificacionEmpresa?.estado || BUSINESS_VERIFICATION_STATES.NOT_VERIFIED).toLowerCase()}`}>
                       {(form.verificacionEmpresa?.estado || BUSINESS_VERIFICATION_STATES.NOT_VERIFIED) === BUSINESS_VERIFICATION_STATES.NOT_VERIFIED
-                        ? "Pendiente de verificación"
+                        ? `${form.identificadorFiscalTipo || "Identificador fiscal"} no verificado`
                         : BUSINESS_VERIFICATION_STATUS_LABELS[
                           form.verificacionEmpresa?.estado || BUSINESS_VERIFICATION_STATES.NOT_VERIFIED
                         ]}
@@ -489,9 +514,9 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
                 </span>
               </div>
               <LockedSetting
-  label="Razón social oficial"
-  value={form.razonSocial || "Pendiente de verificación"}
-/>
+                label="Razón social oficial"
+                value={form.razonSocial || "Aún no registrada"}
+              />
               <SettingsField label="Giro" wide>
                 <input name="giro" value={form.giro} onChange={change} />
               </SettingsField>
@@ -604,7 +629,13 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
   );
 }
 
-function BusinessVerificationSection({businessId, currentUserUid, role}) {
+function BusinessVerificationSection({
+  businessId,
+  currentUserEmail,
+  currentUserPhone,
+  currentUserUid,
+  role,
+}) {
   const [profile, setProfile] = React.useState(null);
   const [form, setForm] = React.useState({
     paisCodigo: "CL",
@@ -622,6 +653,8 @@ function BusinessVerificationSection({businessId, currentUserUid, role}) {
   const [error, setError] = React.useState("");
   const [success, setSuccess] = React.useState("");
   const requestRef = React.useRef("");
+  const fileInputRef = React.useRef(null);
+  const submittingRef = React.useRef(false);
 
   React.useEffect(() => {
     requestRef.current = "";
@@ -641,7 +674,12 @@ function BusinessVerificationSection({businessId, currentUserUid, role}) {
   }, [businessId]);
 
   const load = React.useCallback(async () => {
-    const value = await getCompanyProfile(businessId);
+    const [value, personalProfile] = await Promise.all([
+      getCompanyProfile(businessId),
+      currentUserUid
+        ? getPersonalProfile(currentUserUid).catch(() => null)
+        : Promise.resolve(null),
+    ]);
     setProfile(value);
     setForm((current) => ({
       ...current,
@@ -651,11 +689,14 @@ function BusinessVerificationSection({businessId, currentUserUid, role}) {
         value.verificacionEmpresa?.identificadorFiscalDeclaradoValor ||
         value.verificacionEmpresa?.identificadorFiscalValor ||
         value.identificadorFiscalValor || "",
-      correoSolicitante: value.email || "",
-      telefonoSolicitante: value.telefono || "",
+      correoSolicitante: current.correoSolicitante ||
+        currentUserEmail || value.email || "",
+      telefonoSolicitante: current.telefonoSolicitante ||
+        personalProfile?.telefonoPersonal || currentUserPhone ||
+        value.telefono || "",
     }));
     return value;
-  }, [businessId]);
+  }, [businessId, currentUserEmail, currentUserPhone, currentUserUid]);
 
   React.useEffect(() => {
     let active = true;
@@ -686,31 +727,43 @@ function BusinessVerificationSection({businessId, currentUserUid, role}) {
     requestRef.current = "";
     if (!selected) {
       setFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
     if (!VERIFICATION_EVIDENCE_TYPES.includes(selected.type) ||
       selected.size <= 0 || selected.size > MAX_VERIFICATION_EVIDENCE_BYTES) {
       setFile(null);
-      setError("El documento debe ser PDF, JPG o PNG y pesar hasta 5 MB.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      setError("Selecciona un archivo PDF, JPG o PNG de hasta 5 MB.");
       return;
     }
     setFile(selected);
   };
   const submit = async (event) => {
     event.preventDefault();
-    if (
-      !form.identificadorFiscalValor.trim() ||
-      form.relacionSolicitante.trim().length < 2 ||
-      !isValidBusinessEmail(form.correoSolicitante) ||
-      form.telefonoSolicitante.trim().length < 6 ||
-      (form.paisCodigo === "CL" &&
-        !isValidChileanRut(form.identificadorFiscalValor))
-    ) {
-      setError(
-        "Completa la identificación fiscal, cargo, correo y teléfono válidos."
-      );
+    if (submittingRef.current) return;
+    if (!form.identificadorFiscalValor.trim()) {
+      setError("Ingresa el identificador fiscal de la empresa.");
       return;
     }
+    if (form.paisCodigo === "CL" &&
+      !isValidChileanRut(form.identificadorFiscalValor)) {
+      setError("Ingresa un RUT válido.");
+      return;
+    }
+    if (form.relacionSolicitante.trim().length < 2) {
+      setError("Indica tu relación o cargo en la empresa.");
+      return;
+    }
+    if (!isValidBusinessEmail(form.correoSolicitante)) {
+      setError("Ingresa un correo del solicitante válido.");
+      return;
+    }
+    if (form.telefonoSolicitante.trim().length < 6) {
+      setError("Ingresa un teléfono del solicitante válido.");
+      return;
+    }
+    submittingRef.current = true;
     setSubmitting(true);
     setError("");
     setSuccess("");
@@ -728,23 +781,25 @@ function BusinessVerificationSection({businessId, currentUserUid, role}) {
       await load();
       setDialogOpen(false);
       setFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
       setSuccess("Solicitud enviada. La empresa quedó pendiente de revisión.");
     } catch (submitError) {
-      setError(messageForError(submitError, "No pudimos enviar la solicitud de verificación."));
+      setError(verificationMessageForError(submitError));
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
 
   if (loading) return <p className="settings-loading">Cargando verificación...</p>;
 
-  return <SectionFrame title="Verificación empresarial" description="La revisión es realizada por la plataforma y es independiente de los roles del negocio.">
+  return <SectionFrame title="Verificación empresarial" description="Solicita la revisión para activar los módulos operativos de ValoraCloud.">
     <div className={`settings-card settings-verification-card is-${verification.estado.toLowerCase()}`}>
       <div className="settings-verification-heading">
         <AppIcon icon={ShieldCheck} size={24} />
         <div><span>Estado actual</span><strong>{BUSINESS_VERIFICATION_STATUS_LABELS[verification.estado]}</strong></div>
       </div>
-      {verification.estado === BUSINESS_VERIFICATION_STATES.NOT_VERIFIED && <p>La identificación fiscal de esta empresa debe ser validada antes de operar.</p>}
+      {verification.estado === BUSINESS_VERIFICATION_STATES.NOT_VERIFIED && <p>Aún no se ha enviado una solicitud. Completa los datos y solicita la revisión.</p>}
       {verification.estado === BUSINESS_VERIFICATION_STATES.PENDING && <p>La solicitud está en revisión. Podrás comenzar a operar cuando sea aprobada.</p>}
       {verification.estado === BUSINESS_VERIFICATION_STATES.VERIFIED && <p><strong>{verification.identificadorFiscalTipo || form.identificadorFiscalTipo}: {verification.identificadorFiscalValor || form.identificadorFiscalValor}</strong> · ✓ Verificado</p>}
       {verification.estado === BUSINESS_VERIFICATION_STATES.REJECTED && <p><strong>Motivo:</strong> {verification.motivoRechazo || "La plataforma rechazó la solicitud."}</p>}
@@ -757,7 +812,8 @@ function BusinessVerificationSection({businessId, currentUserUid, role}) {
   onClose={() => !submitting && setDialogOpen(false)}
   size="large"
   title="Solicitar verificación empresarial"
-  description="Ingresa los datos fiscales de la empresa para solicitar su verificación."
+  description="Confirma los datos de la empresa y del solicitante."
+  className="verification-request-dialog"
   footer={
     <>
       <Button
@@ -849,20 +905,54 @@ function BusinessVerificationSection({businessId, currentUserUid, role}) {
         />
       </SettingsField>
 
-      <SettingsField
-        label="Documento acreditativo"
-        wide
-        hint="PDF, JPG o PNG; máximo 5 MB."
-      >
+      <div className="settings-field settings-field--wide">
+        <span id="verification-evidence-label" className="settings-field__label">
+          Documento de respaldo
+        </span>
+        <p className="verification-evidence-helper">
+          Adjunta un documento que permita acreditar la empresa o tu relación con ella.
+        </p>
         <input
+          ref={fileInputRef}
+          className="sr-only"
           type="file"
           accept="application/pdf,image/jpeg,image/png"
+          aria-labelledby="verification-evidence-label"
           onChange={(event) =>
             chooseEvidence(event.target.files?.[0] || null)
           }
         />
-        {file && <small>{file.name}</small>}
-      </SettingsField>
+        <div className={`verification-evidence-uploader${file ? " has-file" : ""}`}>
+          <span className="verification-evidence-uploader__icon" aria-hidden="true">
+            <AppIcon icon={FileUp} size={22} />
+          </span>
+          <div className="verification-evidence-uploader__copy">
+            <strong>{file ? file.name : "PDF, JPG o PNG · máximo 5 MB"}</strong>
+            <span>{file ? "Listo para enviar" : "El documento es opcional"}</span>
+          </div>
+          <div className="verification-evidence-uploader__actions">
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={submitting}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {file ? "Cambiar" : "Seleccionar archivo"}
+            </Button>
+            {file && (
+              <Button
+                type="button"
+                variant="ghost-danger"
+                disabled={submitting}
+                onClick={() => chooseEvidence(null)}
+              >
+                Eliminar
+              </Button>
+            )}
+          </div>
+        </div>
+        <span className="settings-field__support">&nbsp;</span>
+      </div>
 
       <SettingsField label="Observaciones" wide>
         <textarea
@@ -1162,6 +1252,8 @@ function CompanyConfig({
   businessCompletionStatus,
   businessName,
   businessVerified,
+  currentUserEmail,
+  currentUserPhone,
   currentUserUid,
   onBusinessDeleted,
   onBusinessUpdated,
@@ -1186,6 +1278,8 @@ function CompanyConfig({
       : "verificacion";
   const focusTarget = searchParams.get("objetivo") || "";
   const canEdit = role === "OWNER" || role === "ADMIN";
+  const activationStatus = businessCompletionStatus?.verificationStatus ||
+    BUSINESS_VERIFICATION_STATES.NOT_VERIFIED;
   const canActOnCompletionItem = (item) =>
     item.id !== "ownerEmail" || role === "OWNER";
   const focusActiveSection = React.useCallback(() => {
@@ -1241,8 +1335,11 @@ function CompanyConfig({
       </div>
       {!businessVerified && activeSection !== "verificacion" && (
         <p className="settings-activation-notice" role="status">
-          Empresa pendiente de verificación. Completa la verificación para
-          activar los módulos operativos.
+          {activationStatus === BUSINESS_VERIFICATION_STATES.PENDING
+            ? "La solicitud de verificación está en revisión."
+            : activationStatus === BUSINESS_VERIFICATION_STATES.REJECTED
+              ? "La verificación fue rechazada. Revisa el motivo y envía una nueva solicitud."
+              : "Empresa no verificada. Envía una solicitud para activar los módulos operativos."}
         </p>
       )}
       {canEdit && businessCompletionStatus && (
@@ -1270,7 +1367,15 @@ function CompanyConfig({
         </nav>
         <div ref={settingsContentRef} className="settings-content">
           {activeSection === "informacion" && <BusinessInformationSection businessId={businessId} canEdit={canEdit} focusTarget={focusTarget} onBusinessUpdated={onBusinessUpdated} />}
-          {activeSection === "verificacion" && <BusinessVerificationSection businessId={businessId} currentUserUid={currentUserUid} role={role} />}
+          {activeSection === "verificacion" && (
+            <BusinessVerificationSection
+              businessId={businessId}
+              currentUserEmail={currentUserEmail}
+              currentUserPhone={currentUserPhone}
+              currentUserUid={currentUserUid}
+              role={role}
+            />
+          )}
           {activeSection === "impuestos" && <TaxSection businessId={businessId} />}
           {activeSection === "inventario" && <InventorySection businessId={businessId} canEdit={canEdit} />}
           {activeSection === "cotizaciones" && <QuoteSection businessId={businessId} canEdit={canEdit} />}

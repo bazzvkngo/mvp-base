@@ -32,6 +32,10 @@ assert.equal(
   initial.pendingItems.find((item) => item.id === "ownerEmail")?.path,
   "/cuenta?seccion=acceso"
 );
+assert.equal(
+  initial.pendingItems.find((item) => item.id === "ownerEmail")?.label,
+  "Correo del propietario verificado"
+);
 
 const fiscal = getBusinessCompletionStatus({
   ...initialProfile,
