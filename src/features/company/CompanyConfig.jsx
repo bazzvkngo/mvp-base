@@ -422,19 +422,26 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
       title="Información de la empresa"
       description="Identidad, ubicación y datos necesarios para la activación."
     >
-      {[BUSINESS_VERIFICATION_STATES.PENDING, BUSINESS_VERIFICATION_STATES.VERIFIED]
-        .includes(form.verificacionEmpresa?.estado) && (
+      {form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.PENDING && (
         <p className="settings-message settings-message--warning" role="status">
           Cambiar la razón social invalidará la verificación actual y requerirá una nueva solicitud.
         </p>
       )}
       <form onSubmit={save} noValidate>
         <fieldset className="settings-fieldset" disabled={!canEdit || saving}>
-          <legend className="sr-only">Datos comerciales y logo</legend>
-          <div className="settings-card company-information-card">
+          <legend className="sr-only">Información de la empresa</legend>
+          <div className={`settings-card company-information-card company-authoritative-card${form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.VERIFIED ? " is-verified" : ""}`}>
             <div className="company-information-card__header">
-              <h3>Jurisdicción fiscal registrada</h3>
-              <p>Datos definidos al crear la empresa.</p>
+              <div>
+                <h3>{form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.VERIFIED ? "Empresa verificada" : "Datos fiscales y autoritativos"}</h3>
+                <p>Identidad fiscal protegida y datos definidos al crear la empresa.</p>
+              </div>
+              {form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.VERIFIED && (
+                <span className="company-verified-status">
+                  <AppIcon icon={ShieldCheck} size={17} />
+                  Verificación vigente
+                </span>
+              )}
             </div>
             <div className="settings-form-grid">
               <LockedSetting
@@ -453,7 +460,9 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
               />
               <div id="empresa-fiscal" className="settings-field settings-locked-field settings-field--wide">
                 <span className="settings-field__label">
-                  Estado del {form.identificadorFiscalTipo || "identificador fiscal"}
+                  {form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.VERIFIED
+                    ? `${form.identificadorFiscalTipo || "Identificador fiscal"} verificado`
+                    : `Estado del ${form.identificadorFiscalTipo || "identificador fiscal"}`}
                 </span>
                 {form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.VERIFIED ? (
                   <div className="settings-locked-field__value is-verified">
@@ -480,12 +489,27 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
                   </div>
                 )}
               </div>
+              <div className="settings-field settings-locked-field settings-field--wide company-official-name">
+                <span className="settings-field__label">Razón social oficial</span>
+                <div className="settings-locked-field__value">
+                  <span>{form.razonSocial || "Aún no registrada"}</span>
+                  <AppIcon icon={Lock} size={16} />
+                </div>
+                {form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.VERIFIED && (
+                  <span className="settings-field__support">
+                    Este dato forma parte de la verificación. Si cambia, ValoraCloud solicitará una nueva revisión.
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
           <div className="settings-card company-information-card">
             <div className="company-information-card__header">
-              <h3>Identidad comercial</h3>
+              <div>
+                <h3>Datos comerciales editables</h3>
+                <p>Información con la que la empresa se presenta a clientes y proveedores.</p>
+              </div>
             </div>
             <div className="settings-form-grid">
               <SettingsField label="Nombre comercial" required error={touched.nombreComercial ? fieldErrors.nombreComercial : ""} targetId="empresa-identidad">
@@ -513,10 +537,6 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
                   ) : "Selecciona la actividad que mejor representa los servicios de tu empresa."}
                 </span>
               </div>
-              <LockedSetting
-                label="Razón social oficial"
-                value={form.razonSocial || "Aún no registrada"}
-              />
               <SettingsField label="Giro" wide>
                 <input name="giro" value={form.giro} onChange={change} />
               </SettingsField>
@@ -563,9 +583,12 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
             </div>
           </div>
 
-          <div className="settings-card company-information-card">
+          <div className="settings-card company-information-card company-information-card--secondary">
             <div className="company-information-card__header">
-              <h3>Ubicación y contacto</h3>
+              <div>
+                <h3>Ubicación y contacto</h3>
+                <p>Datos complementarios para documentos y comunicaciones comerciales.</p>
+              </div>
             </div>
             <div className="settings-form-grid">
               {form.paisCodigo === "CL" ? (
@@ -986,9 +1009,18 @@ function TaxSection({ businessId }) {
     return () => { active = false; };
   }, [businessId]);
   return (
-    <SectionFrame title="Configuración tributaria" description="Perfil fiscal base derivado del país registrado. Los documentos históricos conservan su snapshot original.">
+    <SectionFrame title="Configuración tributaria" description="Estos valores se utilizan por defecto en los documentos comerciales del negocio.">
       {loading ? <p className="settings-loading">Cargando impuestos...</p> : (
-        <div className="settings-card">
+        <div className="settings-card settings-protected-summary">
+          <div className="settings-protected-summary__header">
+            <span className="settings-protected-summary__icon" aria-hidden="true">
+              <AppIcon icon={Lock} size={19} />
+            </span>
+            <div>
+              <h3>Resumen tributario protegido</h3>
+              <p>Configuración base definida por la jurisdicción fiscal registrada.</p>
+            </div>
+          </div>
           <div className="settings-form-grid">
             <LockedSetting
               label="País fiscal"
@@ -1006,7 +1038,7 @@ function TaxSection({ businessId }) {
             />
           </div>
           <p className="settings-card__description">
-            Configurado automáticamente según el país registrado. Futuras exenciones o tasas especiales se administrarán por separado.
+            Los documentos históricos conservan la configuración tributaria con la que fueron emitidos.
           </p>
           {profile?.configuracionTributariaBaseCompleta === false && (
             <p className="settings-message settings-message--warning" role="status">
@@ -1056,11 +1088,11 @@ function InventorySection({ businessId, canEdit }) {
               <span><AppIcon icon={BellRing} size={20} /><span><strong>Alertas de stock bajo</strong><small>Avisa cuando un producto alcanza el umbral configurado.</small></span></span>
               <input type="checkbox" role="switch" checked={form.alertasStockBajo} onChange={(event) => setForm({ ...form, alertasStockBajo: event.target.checked })} />
             </label>
-            <SettingsField label="Umbral general de stock bajo" hint="Los productos pueden conservar además su mínimo individual.">
+            <SettingsField label="Umbral general de stock bajo" hint="La alerta se genera cuando el stock llega a este nivel o baja de él. Si el producto tiene un mínimo individual, ese valor tiene prioridad.">
               <input type="number" min="0" step="1" value={form.umbralStockBajo} disabled={!form.alertasStockBajo || !canEdit || saving} onChange={(event) => setForm({ ...form, umbralStockBajo: event.target.value })} />
             </SettingsField>
             <label className="settings-toggle-row">
-              <span><AppIcon icon={PackageCheck} size={20} /><span><strong>Permitir stock negativo</strong><small>Si se desactiva, ValoraCloud impedirá guardar existencias bajo cero.</small></span></span>
+              <span><AppIcon icon={PackageCheck} size={20} /><span><strong>Permitir stock negativo</strong><small>Al activarlo, las operaciones pueden dejar existencias bajo cero. Si está desactivado, ValoraCloud las bloquea.</small></span></span>
               <input type="checkbox" role="switch" checked={form.permitirStockNegativo} onChange={(event) => setForm({ ...form, permitirStockNegativo: event.target.checked })} />
             </label>
           </fieldset>
@@ -1108,18 +1140,50 @@ function QuoteSection({ businessId, canEdit }) {
     <SectionFrame title="Valores predeterminados para nuevas cotizaciones" description="Se aplican al crear una cotización. Los cambios realizados dentro de una cotización afectan sólo a ese documento y no modifican estos valores de Empresa.">
       {loading ? <p className="settings-loading">Cargando valores predeterminados...</p> : (
         <form onSubmit={submit}>
-          <fieldset className="settings-fieldset settings-card" disabled={!canEdit || saving}>
+          <fieldset className="settings-fieldset" disabled={!canEdit || saving}>
             <legend className="sr-only">Valores predeterminados de cotización</legend>
-            <div className="settings-form-grid">
-              <SettingsField label="Condiciones de pago predeterminadas" wide><textarea name="condicionesPago" rows="3" value={form.condicionesPago} onChange={change} /></SettingsField>
-              <SettingsField label="Validez predeterminada (días)"><input name="validezCotizacionDias" type="number" min="1" max="365" value={form.validezCotizacionDias} onChange={change} /></SettingsField>
-              <SettingsField label="Plazo de ejecución o entrega" wide optional><textarea name="plazoEntregaCotizacion" rows="2" value={form.plazoEntregaCotizacion} onChange={change} /></SettingsField>
-              <SettingsField label="Garantía predeterminada" wide optional><textarea name="garantiaCotizacion" rows="2" value={form.garantiaCotizacion} onChange={change} /></SettingsField>
-              <SettingsField label="Alcance geográfico predeterminado" wide optional><textarea name="alcanceGeograficoCotizacion" rows="2" value={form.alcanceGeograficoCotizacion} onChange={change} /></SettingsField>
-              <SettingsField label="Exclusiones predeterminadas" wide optional><textarea name="exclusionesCotizacion" rows="3" value={form.exclusionesCotizacion} onChange={change} /></SettingsField>
-              <SettingsField label="Nota final predeterminada" wide optional><textarea name="notaFinalCotizacion" rows="3" value={form.notaFinalCotizacion} onChange={change} /></SettingsField>
-              <SettingsField label="Términos y condiciones predeterminados" wide optional><textarea name="terminosCotizacion" rows="4" value={form.terminosCotizacion} onChange={change} /></SettingsField>
-              <SettingsField label="Pie de documento" wide optional><textarea name="notaPieCotizacion" rows="2" value={form.notaPieCotizacion} onChange={change} /></SettingsField>
+            <div className="settings-quote-groups">
+              <section className="settings-card settings-quote-group">
+                <div className="settings-quote-group__header">
+                  <h3>Pago y validez</h3>
+                  <p>Base comercial y vigencia de cada nueva propuesta.</p>
+                </div>
+                <div className="settings-form-grid">
+                  <SettingsField label="Condiciones de pago predeterminadas" wide><textarea name="condicionesPago" rows="3" placeholder="Ej. 50% al iniciar y 50% contra entrega" value={form.condicionesPago} onChange={change} /></SettingsField>
+                  <SettingsField label="Validez predeterminada (días)"><input name="validezCotizacionDias" type="number" min="1" max="365" value={form.validezCotizacionDias} onChange={change} /></SettingsField>
+                </div>
+              </section>
+              <section className="settings-card settings-quote-group">
+                <div className="settings-quote-group__header">
+                  <h3>Entrega y garantía</h3>
+                  <p>Compromisos operativos que se proponen al cliente.</p>
+                </div>
+                <div className="settings-form-grid">
+                  <SettingsField label="Plazo de ejecución o entrega" wide optional><textarea name="plazoEntregaCotizacion" rows="2" placeholder="Ej. 10 días hábiles desde la aprobación" value={form.plazoEntregaCotizacion} onChange={change} /></SettingsField>
+                  <SettingsField label="Garantía predeterminada" wide optional><textarea name="garantiaCotizacion" rows="2" placeholder="Ej. 6 meses desde la entrega" value={form.garantiaCotizacion} onChange={change} /></SettingsField>
+                  <SettingsField label="Alcance geográfico predeterminado" wide optional><textarea name="alcanceGeograficoCotizacion" rows="2" placeholder="Ej. Santiago y comunas cercanas" value={form.alcanceGeograficoCotizacion} onChange={change} /></SettingsField>
+                </div>
+              </section>
+              <section className="settings-card settings-quote-group">
+                <div className="settings-quote-group__header">
+                  <h3>Condiciones generales</h3>
+                  <p>Límites y términos que acompañan la propuesta.</p>
+                </div>
+                <div className="settings-form-grid">
+                  <SettingsField label="Exclusiones predeterminadas" wide optional><textarea name="exclusionesCotizacion" rows="3" placeholder="Ej. Permisos o trabajos no especificados" value={form.exclusionesCotizacion} onChange={change} /></SettingsField>
+                  <SettingsField label="Términos y condiciones predeterminados" wide optional><textarea name="terminosCotizacion" rows="4" placeholder="Ej. Valores sujetos a las condiciones indicadas" value={form.terminosCotizacion} onChange={change} /></SettingsField>
+                </div>
+              </section>
+              <section className="settings-card settings-quote-group">
+                <div className="settings-quote-group__header">
+                  <h3>Notas del documento</h3>
+                  <p>Mensajes complementarios visibles en la cotización.</p>
+                </div>
+                <div className="settings-form-grid">
+                  <SettingsField label="Nota final predeterminada" wide optional><textarea name="notaFinalCotizacion" rows="3" placeholder="Ej. Gracias por confiar en nuestra empresa" value={form.notaFinalCotizacion} onChange={change} /></SettingsField>
+                  <SettingsField label="Pie de documento" wide optional><textarea name="notaPieCotizacion" rows="2" placeholder="Ej. Datos de contacto o mensaje breve de cierre" value={form.notaPieCotizacion} onChange={change} /></SettingsField>
+                </div>
+              </section>
             </div>
           </fieldset>
           <SectionStatus error={error} success={success} />
@@ -1177,15 +1241,15 @@ function BusinessDeletionSection({
   return (
     <SectionFrame
       title="Eliminar empresa"
-      description="Esta acción retira la empresa del uso normal sin borrar su historial."
+      description="Desactiva la empresa para la operación diaria y conserva sus registros históricos."
     >
       <div className="settings-card settings-danger-zone">
         <div>
           <h3>Eliminación lógica</h3>
           <p>
-            La empresa desaparecerá del selector y sus miembros no podrán seguir
-            operando. Clientes, documentos, inventario y demás datos históricos
-            se conservarán.
+            La empresa dejará de estar disponible para operar y desaparecerá del
+            selector de todos sus miembros. Sus clientes, documentos, inventario
+            y demás registros históricos se conservarán.
           </p>
         </div>
         <Button
@@ -1203,7 +1267,7 @@ function BusinessDeletionSection({
         onClose={closeDialog}
         initialFocusRef={confirmationInputRef}
         title="Confirma la eliminación de la empresa"
-        description="No se borrará ningún dato histórico, pero la empresa dejará de estar disponible para todos sus miembros."
+        description="La empresa dejará de estar disponible para operar y todos sus miembros perderán el acceso. Sus registros históricos se conservarán."
         footer={
           <>
             <Button type="button" variant="secondary" onClick={closeDialog} disabled={deleting}>
@@ -1216,7 +1280,7 @@ function BusinessDeletionSection({
               onClick={confirmDeletion}
               disabled={!confirmationMatches || deleting}
             >
-              {deleting ? "Eliminando..." : "Eliminar definitivamente"}
+              {deleting ? "Eliminando..." : "Confirmar eliminación"}
             </Button>
           </>
         }

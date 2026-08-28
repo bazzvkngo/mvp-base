@@ -66,6 +66,8 @@ const receptionDetailSource = fs.readFileSync("src/pages/NewReceptionPage.jsx", 
 const receptionListSource = fs.readFileSync("src/pages/ReceptionsPage.jsx", "utf8");
 assert.doesNotMatch(receptionDetailSource, /Preparar compra|Continuar compra/);
 assert.doesNotMatch(receptionListSource, /Preparar compra|Continuar compra/);
+assert.match(receptionListSource, /Ver órdenes de compra/);
+assert.doesNotMatch(receptionListSource, /Ver órdenes emitidas|Ver ordenes emitidas|Registrar desde OC|Las recepciones se registran desde órdenes de compra emitidas/);
 assert.match(receptionDetailSource, /registrará automáticamente la compra/);
 
 console.log("Reception model smoke: OK");

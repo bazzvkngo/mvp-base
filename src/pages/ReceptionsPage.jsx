@@ -61,11 +61,7 @@ export default function ReceptionsPage({businessId, role}) {
     <main className="erp-page po-history">
       <div className="erp-module-intro">
         <div className="erp-page-intro"><p>Confirma la recepción física; el inventario y la compra se registran automáticamente.</p></div>
-        {canManage && <Button type="button" onClick={() => navigate("/ordenes-compra")}>Ver ordenes emitidas</Button>}
-      </div>
-      <div className="reception-callout">
-        <span>Las recepciones se registran desde órdenes de compra emitidas.</span>
-        {canManage && <button type="button" className="po-button po-button--secondary" onClick={() => navigate("/ordenes-compra")}>Registrar desde OC</button>}
+        {canManage && <Button type="button" onClick={() => navigate("/ordenes-compra")}>Ver órdenes de compra</Button>}
       </div>
       {message && <p className="po-message po-message--error">{message}</p>}
       <section className="erp-panel erp-history-panel">

@@ -2687,6 +2687,43 @@
   gap: 3px;
 }
 
+.company-authoritative-card.is-verified {
+  border-color: #a7f3d0;
+}
+
+.company-authoritative-card .company-information-card__header {
+  align-items: start;
+  gap: var(--space-3);
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.company-authoritative-card.is-verified .company-information-card__header h3 {
+  color: var(--color-success-700);
+}
+
+.company-verified-status {
+  align-items: center;
+  background: var(--color-success-50);
+  border: 1px solid #a7f3d0;
+  border-radius: 999px;
+  color: var(--color-success-700);
+  display: inline-flex;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  gap: 6px;
+  padding: 6px 9px;
+  white-space: nowrap;
+}
+
+.company-official-name .settings-field__support {
+  min-height: 0;
+}
+
+.company-information-card--secondary {
+  background: var(--color-surface-subtle);
+  box-shadow: none;
+}
+
 .company-information-card__header h3,
 .company-information-card__header p {
   margin: 0;
@@ -3033,6 +3070,69 @@
   margin: 0;
 }
 
+.settings-protected-summary {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.settings-protected-summary__header {
+  align-items: center;
+  display: flex;
+  gap: var(--space-3);
+}
+
+.settings-protected-summary__header h3,
+.settings-protected-summary__header p,
+.settings-quote-group__header h3,
+.settings-quote-group__header p {
+  margin: 0;
+}
+
+.settings-protected-summary__header h3,
+.settings-quote-group__header h3 {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-md);
+}
+
+.settings-protected-summary__header p,
+.settings-quote-group__header p {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  margin-top: 3px;
+}
+
+.settings-protected-summary__icon {
+  align-items: center;
+  background: var(--color-surface-selected);
+  border-radius: var(--radius-md);
+  color: var(--color-brand-700);
+  display: flex;
+  flex: 0 0 auto;
+  height: 42px;
+  justify-content: center;
+  width: 42px;
+}
+
+.settings-protected-summary > .settings-form-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.settings-quote-groups {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settings-quote-group {
+  align-content: start;
+  display: grid;
+  gap: var(--space-4);
+}
+
+.settings-quote-group .settings-form-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .settings-locked-field__value {
   align-items: center;
   background: var(--color-surface-subtle);
@@ -3317,6 +3417,16 @@
 
   .settings-card {
     padding: var(--space-3);
+  }
+
+  .company-authoritative-card .company-information-card__header,
+  .settings-quote-groups,
+  .settings-protected-summary > .settings-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .company-verified-status {
+    justify-self: start;
   }
 
   .account-security-row {
