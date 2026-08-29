@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Save } from "lucide-react";
+import ContactTerritoryFields from "../../components/contacts/ContactTerritoryFields";
 import Button from "../../components/ui/Button";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import {
@@ -11,11 +12,10 @@ import {
 } from "../../domain/contactFormatting.mjs";
 import {getFiscalIdentifierLabel, getFiscalIdentifierPlaceholder, normalizeCountryCode} from "../../domain/fiscalIdentifier.mjs";
 import {
-  CHILE_REGIONS,
   getCommuneByCode,
-  getCommunesForRegion,
   getRegionByCode,
 } from "../../domain/businessCatalog";
+import {adaptContactTerritoryForCountry} from "../../domain/contactTerritory.mjs";
 import { getClientErrorMessage } from "../../services/clientService";
 
 const EMPTY_CLIENT = {
@@ -42,13 +42,13 @@ function toFormValues(client, countryCode = "CL") {
       String(client[field] ?? EMPTY_CLIENT[field]),
     ])
   );
-  return {
+  return adaptContactTerritoryForCountry({
     ...values,
     rut: normalizeCountryCode(countryCode) === "CL"
       ? formatChileanRut(values.rut)
       : values.rut,
     telefono: formatContactPhoneInput(values.telefono, countryCode),
-  };
+  }, countryCode, client?.paisCodigo || countryCode);
 }
 
 function ClientField({children, error, field, label, required = false, wide}) {
@@ -86,10 +86,6 @@ function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open})
   const isChile = country === "CL";
   const isCompany = values.tipoCliente === "empresa";
   const fiscalLabel = getFiscalIdentifierLabel(country);
-  const communes = useMemo(
-    () => getCommunesForRegion(values.regionCodigo),
-    [values.regionCodigo]
-  );
 
   useEffect(() => {
     if (!open) return;
@@ -110,6 +106,16 @@ function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open})
       if (!current[field]) return current;
       const next = {...current};
       delete next[field];
+      return next;
+    });
+    setServerError("");
+  };
+
+  const updateTerritory = (patch, clearedErrorFields = []) => {
+    setValues((current) => ({...current, ...patch}));
+    setErrors((current) => {
+      const next = {...current};
+      clearedErrorFields.forEach((field) => delete next[field]);
       return next;
     });
     setServerError("");
@@ -154,32 +160,6 @@ function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open})
 
   const handlePhoneChange = (event) => {
     updateField("telefono", formatContactPhoneInput(event.target.value, country));
-  };
-
-  const handleRegionChange = (event) => {
-    const regionCodigo = event.target.value;
-    const region = getRegionByCode(regionCodigo);
-    setValues((current) => ({
-      ...current,
-      regionCodigo,
-      regionNombre: region?.name || "",
-      comunaCodigo: "",
-      comunaNombre: "",
-    }));
-    setErrors((current) => ({...current, regionCodigo: "", comunaCodigo: ""}));
-    setServerError("");
-  };
-
-  const handleCommuneChange = (event) => {
-    const comunaCodigo = event.target.value;
-    const commune = getCommuneByCode(values.regionCodigo, comunaCodigo);
-    setValues((current) => ({
-      ...current,
-      comunaCodigo,
-      comunaNombre: commune?.name || "",
-    }));
-    setErrors((current) => ({...current, comunaCodigo: ""}));
-    setServerError("");
   };
 
   const closeSafely = () => {
@@ -391,44 +371,15 @@ function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open})
             />
           </ClientField>
 
-          {isChile ? <><ClientField error={errors.regionCodigo} field="regionCodigo" label="Región">
-            <select
-              ref={(node) => setFieldRef("regionCodigo", node)}
-              value={values.regionCodigo}
-              onChange={handleRegionChange}
-            >
-              <option value="">Sin especificar</option>
-              {CHILE_REGIONS.map((region) => (
-                <option key={region.code} value={region.code}>
-                  {region.name}
-                </option>
-              ))}
-            </select>
-          </ClientField>
-
-          <ClientField error={errors.comunaCodigo} field="comunaCodigo" label="Comuna">
-            <select
-              ref={(node) => setFieldRef("comunaCodigo", node)}
-              value={values.comunaCodigo}
-              onChange={handleCommuneChange}
-              disabled={!values.regionCodigo || saving}
-            >
-              <option value="">Sin especificar</option>
-              {communes.map((commune) => (
-                <option key={commune.code} value={commune.code}>
-                  {commune.name}
-                </option>
-              ))}
-            </select>
-          </ClientField>
-          </> : <>
-            <ClientField error={errors.regionNombre} field="regionNombre" label="Región / Estado / Departamento">
-              <input ref={(node) => setFieldRef("regionNombre", node)} value={values.regionNombre} onChange={(event) => updateField("regionNombre", event.target.value)} />
-            </ClientField>
-            <ClientField error={errors.comunaNombre} field="comunaNombre" label="Ciudad / Municipio">
-              <input ref={(node) => setFieldRef("comunaNombre", node)} value={values.comunaNombre} onChange={(event) => updateField("comunaNombre", event.target.value)} />
-            </ClientField>
-          </>}
+          <ContactTerritoryFields
+            Field={ClientField}
+            countryCode={country}
+            errors={errors}
+            onChange={updateTerritory}
+            saving={saving}
+            setFieldRef={setFieldRef}
+            values={values}
+          />
             </div>
           </fieldset>
 

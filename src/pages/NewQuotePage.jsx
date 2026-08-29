@@ -440,6 +440,8 @@ function NewQuotePage({ userId }) {
   const [inventoryAreas, setInventoryAreas] = useState([]);
   const [inventoryCategories, setInventoryCategories] = useState([]);
   const [dirty, setDirty] = useState(false);
+  const [itemsInteracted, setItemsInteracted] = useState(false);
+  const [saveAttempted, setSaveAttempted] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [scopeOpen, setScopeOpen] = useState(false);
   const [conditionsOpen, setConditionsOpen] = useState(false);
@@ -936,6 +938,7 @@ function NewQuotePage({ userId }) {
   };
 
   const addItem = (valuation, quantity = 1) => {
+    setItemsInteracted(true);
     setDirty(true);
     setSuccess("");
     setError("");
@@ -1536,6 +1539,7 @@ function NewQuotePage({ userId }) {
   };
 
   const updateItem = (itemId, field, value) => {
+    setItemsInteracted(true);
     setDirty(true);
     setQuote((prev) => ({
       ...prev,
@@ -1550,6 +1554,7 @@ function NewQuotePage({ userId }) {
   };
 
   const removeItem = (itemId) => {
+    setItemsInteracted(true);
     setDirty(true);
     setQuote((prev) => ({
       ...prev,
@@ -1597,6 +1602,8 @@ function NewQuotePage({ userId }) {
     setSuccess("");
     setItemFeedback("");
     setHighlightedItemId("");
+    setItemsInteracted(false);
+    setSaveAttempted(false);
     createRequestIdRef.current = "";
     setDirty(false);
   };
@@ -1625,6 +1632,7 @@ function NewQuotePage({ userId }) {
       return;
     }
 
+    setSaveAttempted(true);
     const validationError = validateQuote();
     if (validationError) {
       setError(validationError);
@@ -2014,7 +2022,9 @@ function NewQuotePage({ userId }) {
           onUpdate={updateItem}
           onMove={moveItem}
           onRemove={removeItem}
-          validationError={quoteValidation.fieldErrors.items || quoteValidation.fieldErrors.numericos}
+          validationError={saveAttempted || itemsInteracted
+            ? quoteValidation.fieldErrors.items || quoteValidation.fieldErrors.numericos
+            : ""}
         />
       </div>
 

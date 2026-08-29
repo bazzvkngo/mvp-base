@@ -44,8 +44,8 @@ function QuoteItemsEditor({
 
       {items.length === 0 ? (
         <div className="quote-workspace__empty quote-workspace__empty--items">
-          <strong>Aún no agregas ítems</strong>
-          <span>Abre el catálogo para comenzar a construir la cotización.</span>
+          <strong>Agrega el detalle de la cotización</strong>
+          <span>Agrega productos, servicios o actividades para construir la cotización.</span>
           <button type="button" className="quote-workspace__button quote-workspace__button--primary" onClick={onOpenCatalog}>
             Abrir catálogo
           </button>
@@ -107,7 +107,7 @@ function QuoteItemsEditor({
         </div>
       )}
 
-      {validationError && <p className="quote-workspace__message quote-workspace__message--error">{validationError}</p>}
+      {validationError && <p className="quote-workspace__message quote-workspace__message--error" role="alert">{validationError}</p>}
     </section>
   );
 }

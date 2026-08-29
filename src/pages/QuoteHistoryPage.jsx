@@ -584,12 +584,17 @@ function QuoteHistoryPage({ userId, role }) {
           <div className="erp-empty-state" role="status">Cargando cotizaciones...</div>
         ) : quotes.length === 0 ? (
           <div className="erp-empty-state quote-history-empty">
-            <h3>Ya puedes comenzar a trabajar con ValoraCloud.</h3>
-            <p>
-              Prepara los datos básicos o crea directamente tu primera
-              cotización.
-            </p>
+            <h3>Aún no hay cotizaciones</h3>
+            <p>Crea una cotización para registrar una nueva propuesta comercial.</p>
             <div className="quote-history-empty__actions">
+              {canDuplicate && (
+                <Button
+                  type="button"
+                  onClick={() => navigate("/cotizaciones/nueva")}
+                >
+                  Nueva cotización
+                </Button>
+              )}
               {canCreateClients && (
                 <Button
                   type="button"
@@ -607,15 +612,7 @@ function QuoteHistoryPage({ userId, role }) {
                   variant="secondary"
                   onClick={() => navigate("/inventario")}
                 >
-                  Agregar productos o servicios
-                </Button>
-              )}
-              {canDuplicate && (
-                <Button
-                  type="button"
-                  onClick={() => navigate("/cotizaciones/nueva")}
-                >
-                  Crear cotización
+                  Ir al inventario
                 </Button>
               )}
             </div>

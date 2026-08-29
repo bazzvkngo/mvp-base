@@ -220,7 +220,20 @@
 .platform-verification-actions textarea { border: 1px solid #b8c8d0; border-radius: var(--radius-md); font: inherit; padding: var(--space-2); resize: vertical; }
 .platform-verification-summary { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-3); }
 .platform-verification-summary > span:last-child { color: #667e8c; font-size: var(--font-size-sm); }
-.platform-evidence { align-items: center; color: #526b7a; display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-4); }
+.platform-verification-review { display: grid; gap: var(--space-3); grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: var(--space-4); }
+.platform-verification-review article { background: #f7fafb; border: 1px solid #e1e9ed; border-radius: var(--radius-md); display: grid; gap: var(--space-1); min-width: 0; padding: var(--space-3); }
+.platform-verification-review article > span,
+.platform-verification-confirmation > span { color: #718794; font-size: var(--font-size-xs); }
+.platform-verification-review article > strong,
+.platform-verification-confirmation > strong { color: #203846; overflow-wrap: anywhere; }
+.platform-verification-review article > small,
+.platform-verification-confirmation > small,
+.platform-verification-decision > small { color: #667e8c; }
+.platform-verification-review__evidence .ui-button { justify-self: start; margin-top: var(--space-1); }
+.platform-verification-actions { align-items: stretch; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.platform-verification-decision { border: 1px solid #e1e9ed; border-radius: var(--radius-md); display: grid; gap: var(--space-2); padding: var(--space-3); }
+.platform-verification-decision .ui-button { justify-self: start; }
+.platform-verification-confirmation { display: grid; gap: var(--space-2); }
 .platform-notice { background: #e7f8f6; border: 1px solid #93dcd6; border-radius: var(--radius-md); color: #126d68; margin-bottom: var(--space-4); padding: var(--space-3) var(--space-4); }
 .platform-help { color: #718794; font-size: var(--font-size-xs); margin: var(--space-4) 0 0; }
 .platform-danger-zone { align-items: center; border-color: #efb4b4; display: flex; gap: var(--space-5); justify-content: space-between; }
@@ -252,7 +265,9 @@
   .platform-page-heading { align-items: flex-start; flex-direction: column; }
   .platform-page-heading .ui-button { width: 100%; }
   .platform-detail-columns,
-  .platform-detail-grid { grid-template-columns: 1fr; }
+  .platform-detail-grid,
+  .platform-verification-actions,
+  .platform-verification-review { grid-template-columns: 1fr; }
   .platform-action-form,
   .platform-verification-actions { align-items: stretch; flex-direction: column; }
   .platform-filters { grid-template-columns: 1fr; }
