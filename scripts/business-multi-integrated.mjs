@@ -307,6 +307,10 @@ async function main() {
         estado: "activa",
       }
     );
+    const savedReference = await getDoc(
+      doc(owner.db, "negocios", firstBusinessId, "referencias", "reference-a")
+    );
+    assert.equal(savedReference.data()?.precioObservado, 1000);
     await expectDenied(() =>
       setDoc(
         doc(

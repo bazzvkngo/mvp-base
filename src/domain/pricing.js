@@ -49,8 +49,15 @@ export function hasManualPriceOverride(item) {
 }
 
 export function calculateEffectiveInternalPrice(item) {
-  const manualPrice = getManualPrice(item);
-  return manualPrice ?? calculateBasePrice(item);
+  const storedPrice = item?.precioInterno;
+  if (storedPrice !== "" && storedPrice !== null && storedPrice !== undefined) {
+    const commercialPrice = Number(storedPrice);
+    if (Number.isFinite(commercialPrice) && commercialPrice >= 0) {
+      return commercialPrice;
+    }
+  }
+
+  return calculateBasePrice(item);
 }
 
 export function calculateReferenceAverage(references) {
@@ -68,15 +75,8 @@ export function calculateReferenceAverage(references) {
   return total / prices.length;
 }
 
-export function calculateSuggestedPrice(item, references) {
-  const precioInternoEfectivo = calculateEffectiveInternalPrice(item);
-  const promedioReferencias = calculateReferenceAverage(references);
-
-  if (promedioReferencias === null) {
-    return Math.round(precioInternoEfectivo);
-  }
-
-  return Math.round(precioInternoEfectivo * 0.4 + promedioReferencias * 0.6);
+export function calculateSuggestedPrice(item) {
+  return Math.round(calculateEffectiveInternalPrice(item));
 }
 
 export function calculatePriceDifference(priceInternal, referenceAverage) {

@@ -17,10 +17,21 @@ function finiteNumber(value, fallback = 0) {
   return Number.isFinite(numberValue) ? numberValue : fallback;
 }
 
+function optionalFiniteNumber(value) {
+  if (value === "" || value === null || value === undefined) return null;
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
 export function createQuoteItemFromValuation(valuation) {
   const inventoryItem = valuation?.item || {};
+  const commercialPrice =
+    optionalFiniteNumber(inventoryItem.precioInterno) ??
+    optionalFiniteNumber(valuation?.precioInterno) ??
+    optionalFiniteNumber(inventoryItem.precio) ??
+    0;
   const precioUnitarioEditable = Math.max(
-    finiteNumber(valuation?.precioSugerido, valuation?.precioInterno || 0),
+    finiteNumber(commercialPrice, 0),
     0
   );
   const itemId = valuation?.itemId || inventoryItem.id || "";

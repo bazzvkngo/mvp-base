@@ -35,6 +35,7 @@
     "test:inventory-mvp": "node scripts/inventory-mvp-smoke.mjs",
     "test:inventory-service": "node scripts/inventory-service-smoke.mjs",
     "test:inventory-import-v2": "node scripts/inventory-import-v2-smoke.mjs",
+    "test:reference-pricing": "node scripts/reference-pricing-smoke.mjs",
     "test:inventory-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/inventory-integrated-local.mjs\"",
     "test:firebase-environment": "node scripts/firebase-environment-smoke.mjs",
     "test:quotes": "node scripts/quote-model-smoke.mjs",

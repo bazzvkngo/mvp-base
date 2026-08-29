@@ -96,7 +96,7 @@ function QuoteCatalogDialog({
                   </div>
                   <div className="quote-catalog__price">
                     <small>Precio</small>
-                    <strong>{formatCLP(valuation.precioSugerido)}</strong>
+                    <strong>{formatCLP(valuation.precioInterno)}</strong>
                   </div>
                   <div className="quote-catalog__add">
                     {quantity > 0 && <span>Agregado: {quantity}</span>}
