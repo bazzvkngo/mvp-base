@@ -62,7 +62,7 @@ export function canManageWorks(role) {
 }
 
 export function isWorkOperationalReadOnly(work = {}) {
-  return ["completado", "cancelado"].includes(work.estado);
+  return ["completado", "cancelado"].includes(work?.estado);
 }
 
 export function getWorkMemberIdentity(member = {}) {
