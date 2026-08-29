@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import {useNavigate, useSearchParams} from "react-router-dom";
 import FinancialPeriodSelector from "../components/finance/FinancialPeriodSelector";
+import CostCompositionChart from "../components/reports/CostCompositionChart";
 import OperationalComparisonChart from "../components/reports/OperationalComparisonChart";
 import Button from "../components/ui/Button";
 import {getFinancialPeriodRange, getSantiagoDateKey} from "../domain/financialMovement.mjs";
@@ -50,9 +51,9 @@ function MetricCard({amount, detail, emptyText, icon: Icon, linkLabel, onOpen, r
   const content = <>
     <div className="reports-simple-card__top">
       <span className="reports-simple-card__icon"><Icon size={19} aria-hidden="true" /></span>
+      <span className="reports-simple-card__title">{title}</span>
       {onOpen && <span className="reports-simple-card__link">{linkLabel}<ArrowRight size={14} /></span>}
     </div>
-    <span className="reports-simple-card__title">{title}</span>
     <strong className="reports-simple-card__amount">{restricted ? "Acceso restringido" : amount}</strong>
     <small>{restricted ? "Tu perfil no incluye información de rentabilidad." : detail || emptyText}</small>
   </>;
@@ -64,22 +65,36 @@ function MetricCard({amount, detail, emptyText, icon: Icon, linkLabel, onOpen, r
 function ProfitabilitySummary({currency, group}) {
   if (!group) return <div className="reports-profitability-empty">Registra costos en tus proyectos para analizar su rentabilidad.</div>;
   const money = (value) => formatMoney(value, currency);
+  const costItems = [
+    {label: "Materiales", value: group.materials, colorIndex: 0},
+    {label: "Horas hombre", value: group.labor, colorIndex: 1},
+    {label: "Gastos directos", value: group.directExpenses, colorIndex: 2},
+    {label: "Administrativos / indirectos", value: group.indirectExpenses, colorIndex: 3},
+  ];
+  const hasCostComposition = costItems.some((item) => Number(item.value || 0) > 0);
   return <article className="reports-profitability-group">
     <header><span>{currency}</span><small>{group.count} {group.count === 1 ? "proyecto conciliado" : "proyectos conciliados"}</small></header>
-    <dl className="reports-profitability-totals">
-      <div><dt>Ingresos asociados</dt><dd>{money(group.revenue)}</dd></div>
-      <div><dt>Costos registrados</dt><dd>{money(group.costs)}</dd></div>
-      <div className="reports-profitability-result"><dt>Resultado</dt><dd>{money(group.result)}</dd></div>
-      <div><dt>Margen</dt><dd>{formatPercent(group.margin)}</dd></div>
-    </dl>
-    <div className="reports-cost-breakdown">
-      <span>Composición de costos</span>
-      <dl>
-        <div><dt>Materiales</dt><dd>{money(group.materials)}</dd></div>
-        <div><dt>Horas hombre</dt><dd>{money(group.labor)}</dd></div>
-        <div><dt>Gastos directos</dt><dd>{money(group.directExpenses)}</dd></div>
-        <div><dt>Administrativos / indirectos</dt><dd>{money(group.indirectExpenses)}</dd></div>
+    <div className="reports-profitability-focus">
+      <dl className="reports-profitability-primary">
+        <div className="reports-profitability-result"><dt>Resultado</dt><dd>{money(group.result)}</dd></div>
+        <div><dt>Margen</dt><dd>{formatPercent(group.margin)}</dd></div>
       </dl>
+      <dl className="reports-profitability-secondary">
+        <div><dt>Ingresos asociados</dt><dd>{money(group.revenue)}</dd></div>
+        <div><dt>Costos registrados</dt><dd>{money(group.costs)}</dd></div>
+      </dl>
+    </div>
+    <div className={`reports-cost-composition${hasCostComposition ? " reports-cost-composition--chart" : ""}`}>
+      {hasCostComposition && <CostCompositionChart currency={currency} items={costItems} total={group.costs} />}
+      <div className="reports-cost-breakdown">
+        <span>Composición de costos</span>
+        <dl>
+          <div><dt>Materiales</dt><dd>{money(group.materials)}</dd></div>
+          <div><dt>Horas hombre</dt><dd>{money(group.labor)}</dd></div>
+          <div><dt>Gastos directos</dt><dd>{money(group.directExpenses)}</dd></div>
+          <div><dt>Administrativos / indirectos</dt><dd>{money(group.indirectExpenses)}</dd></div>
+        </dl>
+      </div>
     </div>
   </article>;
 }
@@ -150,7 +165,12 @@ function StatisticsPage({businessId, currencyCode = "CLP", role = ""}) {
   const salesTimeline = useMemo(() => aggregateOperationalTimeline(summary.sales.confirmed, {range, dateField: "fechaVenta", fallbackCurrency: currencyCode}), [currencyCode, range, summary.sales.confirmed]);
   const purchaseTimeline = useMemo(() => aggregateOperationalTimeline(summary.purchases.confirmed, {range, dateField: "fechaCompra", fallbackCurrency: currencyCode}), [currencyCode, range, summary.purchases.confirmed]);
   const operationalTimeline = useMemo(() => combineOperationalTimelines(salesTimeline, purchaseTimeline), [purchaseTimeline, salesTimeline]);
-  const chartGroups = summary.currencies.map((group) => ({currency: group.currency, items: operationalTimeline.filter((item) => item.currency === group.currency)}));
+  const chartGroups = summary.currencies.map((group) => ({
+    currency: group.currency,
+    items: operationalTimeline.filter((item) => item.currency === group.currency),
+    purchases: group.purchases.total,
+    sales: group.sales.total,
+  }));
   const links = {purchases: canAccessBusinessPath(role, "/compras"), sales: canAccessBusinessPath(role, "/ventas"), works: canAccessBusinessPath(role, "/trabajos")};
 
   if (!businessId) return <section className="erp-page reports-simple"><header className="erp-page-header"><div className="erp-page-intro"><span className="reports-simple-eyebrow">Reportes</span><h1>Resumen ejecutivo</h1><p>Analiza ventas, compras y rentabilidad de tus proyectos.</p></div></header><div className="erp-card reports-simple-state">Selecciona un negocio para consultar sus reportes.</div></section>;
@@ -187,7 +207,16 @@ function StatisticsPage({businessId, currencyCode = "CLP", role = ""}) {
         </section>
         <section className="erp-card reports-simple-chart">
           <div className="reports-section-heading"><div><span>Movimiento comercial</span><h2>Ventas y compras</h2><p>Operaciones confirmadas dentro del período seleccionado.</p></div></div>
-          <div className="reports-chart-groups">{chartGroups.map((group) => <article className="reports-chart-group" key={group.currency}><h3>{group.currency}</h3><OperationalComparisonChart currency={group.currency} items={group.items} /></article>)}</div>
+          <div className="reports-chart-groups">{chartGroups.map((group) => <article className="reports-chart-group" key={group.currency}>
+            <div className="reports-chart-summary">
+              <span>{group.currency}</span>
+              <dl>
+                <div><dt><i className="reports-chart-summary__dot reports-chart-summary__dot--sales" aria-hidden="true" />Ventas confirmadas</dt><dd>{formatMoney(group.sales, group.currency)}</dd></div>
+                <div><dt><i className="reports-chart-summary__dot reports-chart-summary__dot--purchases" aria-hidden="true" />Compras confirmadas</dt><dd>{formatMoney(group.purchases, group.currency)}</dd></div>
+              </dl>
+            </div>
+            <OperationalComparisonChart currency={group.currency} items={group.items} />
+          </article>)}</div>
         </section>
       </div>
 
