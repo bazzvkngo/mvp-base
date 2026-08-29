@@ -3,13 +3,16 @@ import {useLocation, useNavigate, useParams} from "react-router-dom";
 import {sileo} from "sileo";
 import Button from "../components/ui/Button";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
+import SupplyTrace from "../components/ui/SupplyTrace";
 import {
   calculatePurchaseOrderTotals,
   canManagePurchaseOrders,
   getSupplierResponseLabel,
   getSupplierResponseState,
+  getProviderPurchaseOrderPaymentTerms,
   resolvePurchaseOrderProviderPreview,
 } from "../domain/purchaseOrderModel.mjs";
+import {getOrderReceptionStatus, getOrderReceptionStatusLabel} from "../domain/receptionModel.mjs";
 import {incrementScannedItem} from "../domain/barcode.mjs";
 import ProviderSelector from "../features/purchaseOrders/ProviderSelector";
 import PurchaseOrderCatalogDialog from "../features/purchaseOrders/PurchaseOrderCatalogDialog";
@@ -198,6 +201,12 @@ export default function NewPurchaseOrderPage({businessId, role}) {
 
   const orderLocale = printableOrder.locale || "es-CL";
   const supplierResponseState = getSupplierResponseState(order);
+  const receptionStatus = order ? getOrderReceptionStatus(order, receptions) : "sin_recepcion";
+  const receptionCompleted = receptionStatus === "recibida_total";
+  const openDraftReception = receptions.find((entry) => entry.estado === "borrador");
+  const receptionActionLabel = receptionStatus === "recibida_parcial" || openDraftReception
+    ? "Continuar recepción"
+    : "Registrar recepción";
   const whatsAppAvailability = getPurchaseOrderWhatsAppAvailability(order);
   const hasConfirmedReceptions = receptions.some((entry) => entry.estado === "confirmada");
   const cancellationDescription = order?.estado === "borrador"
@@ -334,6 +343,10 @@ export default function NewPurchaseOrderPage({businessId, role}) {
 
   const createReception = async () => {
     if (!order) return;
+    if (openDraftReception) {
+      navigate(`/recepciones/${openDraftReception.id}/editar`);
+      return;
+    }
     if (!conversionRequestIdRef.current) {
       conversionRequestIdRef.current = createReceptionRequestId("reception-create");
     }
@@ -504,11 +517,11 @@ export default function NewPurchaseOrderPage({businessId, role}) {
         {order && (
           <div className="po-header__action-stack">
             <div className="po-header__actions">
-              {canManage && order.estado === "emitida" && supplierResponseState !== "rechazada" && <button type="button" className="po-button po-button--primary" disabled={saving} onClick={createReception}>{saving ? "Preparando..." : "Registrar recepción"}</button>}
-              {canManage && order.estado === "emitida" && supplierResponseState === "rechazada" && <button type="button" className="po-button po-button--primary" disabled={saving} onClick={openSupplierConfirmation}>Actualizar confirmación</button>}
+              {canManage && order.estado === "emitida" && supplierResponseState !== "rechazada" && !receptionCompleted && <button type="button" className="po-button po-button--primary" disabled={saving} onClick={createReception}>{saving ? "Preparando..." : receptionActionLabel}</button>}
+              {canManage && order.estado === "emitida" && supplierResponseState === "rechazada" && !receptionCompleted && <button type="button" className="po-button po-button--primary" disabled={saving} onClick={openSupplierConfirmation}>Actualizar confirmación</button>}
               {canManage && order.estado === "borrador" && <button type="button" className="po-button po-button--primary" disabled={saving} onClick={() => setEmailOpen(true)}>Enviar por correo</button>}
-              {canManage && order.estado !== "cancelada" && <button type="button" className="po-button po-button--danger-subtle" disabled={saving} onClick={() => setActionDialog("cancel")}>Cancelar</button>}
-              {canManage && order.estado === "emitida" && supplierResponseState !== "rechazada" && <button type="button" className="po-button po-button--secondary" disabled={saving} onClick={openSupplierConfirmation}>Registrar confirmación</button>}
+              {canManage && order.estado !== "cancelada" && !receptionCompleted && <button type="button" className="po-button po-button--danger-subtle" disabled={saving} onClick={() => setActionDialog("cancel")}>Cancelar</button>}
+              {canManage && order.estado === "emitida" && supplierResponseState !== "rechazada" && !receptionCompleted && <button type="button" className="po-button po-button--secondary" disabled={saving} onClick={openSupplierConfirmation}>Registrar confirmación</button>}
               {canManage && order.estado === "emitida" && <button type="button" className="po-button po-button--secondary" disabled={saving} onClick={() => setEmailOpen(true)}>Reenviar correo</button>}
               {canManage && order.estado !== "cancelada" && <button type="button" className="po-button po-button--secondary" disabled={saving || !whatsAppAvailability.enabled} title={whatsAppAvailability.help} onClick={openWhatsApp}>{order.estado === "emitida" ? "Reenviar por WhatsApp" : "WhatsApp"}</button>}
             </div>
@@ -523,12 +536,20 @@ export default function NewPurchaseOrderPage({businessId, role}) {
         )}
       </header>
       {order?.estado === "borrador" && <section className="po-next-step no-print"><strong>Siguiente paso</strong><span>Envía esta orden al proveedor para registrarla como emitida.</span></section>}
-      {order?.estado === "emitida" && <section className="po-linked-purchase no-print"><div><span>Confirmación del proveedor</span><strong>{getSupplierResponseLabel(order)}</strong></div><button type="button" className="po-button po-button--secondary" onClick={() => navigate("/recepciones")}>Ver recepciones</button></section>}
+      {order?.estado === "emitida" && <section className="po-linked-purchase no-print"><div><span>Estado de recepción</span><strong>{getOrderReceptionStatusLabel(receptionStatus)}</strong><small>Confirmación del proveedor: {getSupplierResponseLabel(order)}</small></div></section>}
+      {order && <div className="no-print"><SupplyTrace currentType="order" order={order} receptions={receptions} /></div>}
       {message && <p className="po-message po-message--error no-print">{message}</p>}
       <div className="no-print">
         <ProviderSelector
           disabled={readOnly}
-          onChange={(proveedorId) => setDraft((current) => ({...current, proveedorId}))}
+          onChange={(proveedorId) => {
+            const provider = providers.find((entry) => entry.proveedorId === proveedorId);
+            setDraft((current) => ({
+              ...current,
+              proveedorId,
+              condicionesPago: getProviderPurchaseOrderPaymentTerms(provider),
+            }));
+          }}
           originalSnapshot={order?.proveedorSnapshot}
           providers={providers}
           value={draft.proveedorId}
@@ -566,7 +587,7 @@ export default function NewPurchaseOrderPage({businessId, role}) {
             {order && <section className="po-panel po-preview-panel"><header className="po-panel__header"><div><span className="po-kicker">Documento</span><h2>Vista previa imprimible</h2><p>Documento profesional para el proveedor.</p></div><button type="button" className="po-button po-button--secondary" aria-expanded={previewOpen} onClick={() => setPreviewOpen((current) => !current)}>{previewOpen ? "Ocultar vista previa" : "Ver vista previa"}</button></header>{previewOpen && <div className="po-preview-body"><PurchaseOrderPrintView company={company} order={printableOrder} /></div>}</section>}
             {order && (
               <section className="po-panel po-trace">
-                <header><h2>Trazabilidad</h2></header>
+                <header><h2>Historial de la orden</h2></header>
                 <ol>
                   <li><strong>Creada</strong><span>{traceDate(order.creadoEn || order.fechaEmision, orderLocale)} · {visibleActor(order.creadoPorUid, memberByUid)}</span></li>
                   {order.emitidaEn && <li><strong>Emitida por {({correo: "correo", whatsapp: "WhatsApp", manual: "registro manual"})[order.canalEmision] || "canal registrado"}</strong><span>{traceDate(order.emitidaEn, orderLocale)} · {visibleActor(order.emitidaPorUid, memberByUid)}{order.destinatarioEmision ? ` · ${order.destinatarioEmision}` : ""}</span></li>}

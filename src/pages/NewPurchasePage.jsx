@@ -3,6 +3,7 @@ import {useLocation, useNavigate, useParams} from "react-router-dom";
 import {sileo} from "sileo";
 import Button from "../components/ui/Button";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
+import SupplyTrace from "../components/ui/SupplyTrace";
 import {
   calculatePurchaseTotals,
   canManagePurchases,
@@ -339,12 +340,7 @@ export default function NewPurchasePage({businessId, role}) {
         </div>
       </header>
       {message && <p className="po-message po-message--error no-print">{message}</p>}
-      {purchase && (
-        <section className="purchase-origin no-print">
-          <p>{purchase.recepcionNumero ? <>Originada desde recepción <button type="button" onClick={() => navigate(`/recepciones/${purchase.recepcionId}`)}>{purchase.recepcionNumero}</button></> : purchase.ordenCompraNumero ? <>Originada desde orden de compra <button type="button" onClick={() => navigate(`/ordenes-compra/${purchase.ordenCompraId}`)}>{purchase.ordenCompraNumero}</button></> : "Compra directa"}</p>
-          {(purchase.ordenCompraNumero || purchase.recepcionNumero) && <nav aria-label="Trazabilidad comercial">{purchase.ordenCompraNumero && <><button type="button" onClick={() => navigate(`/ordenes-compra/${purchase.ordenCompraId}`)}>{purchase.ordenCompraNumero}</button><span>→</span></>}{purchase.recepcionNumero && <><button type="button" onClick={() => navigate(`/recepciones/${purchase.recepcionId}`)}>{purchase.recepcionNumero}</button><span>→</span></>}<button type="button" aria-current="page" onClick={() => navigate(`/compras/${purchase.id}`)}>{purchase.numero}</button></nav>}
-        </section>
-      )}
+      {purchase && <div className="no-print"><SupplyTrace currentType="purchase" purchase={purchase} /></div>}
       {purchase?.registroAutomatico && (
         <section className="po-panel purchase-inventory-trace no-print">
           <header><div><span className="po-kicker">Inventario</span><h2>Trazabilidad de entradas</h2></div><small>Compra registrada {timestampLabel(purchase.registradoEn)}</small></header>

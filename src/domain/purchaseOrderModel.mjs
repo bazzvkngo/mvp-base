@@ -94,6 +94,16 @@ export function resolvePurchaseOrderProviderPreview(
   ) || null;
 }
 
+export function getProviderPurchaseOrderPaymentTerms(provider = {}) {
+  const terms = text(provider.condicionesPago, 2000);
+  if (!terms) return "";
+  const label = paymentLabel(terms.toLocaleLowerCase("es-CL"));
+  const creditDays = Number(provider.diasCredito);
+  return terms.toLocaleLowerCase("es-CL") === "credito" && Number.isSafeInteger(creditDays) && creditDays > 0
+    ? `${label} a ${creditDays} días`
+    : label;
+}
+
 export function buildPurchaseOrderMutationPayload(raw = {}) {
   const proveedorId = validId(raw.proveedorId, "El proveedor");
   if (!Array.isArray(raw.items) || raw.items.length === 0) {

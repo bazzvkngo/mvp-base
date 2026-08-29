@@ -139,6 +139,7 @@ assert.match(backend, /salida_reversion_compra/);
 assert.doesNotMatch(backend, /cost[oe]Base\s*:/i);
 assert.match(purchasesPage, /Revertir compra/);
 assert.match(purchasesPage, /Motivo de reversión \*/);
+assert.doesNotMatch(purchasesPage, />Ver<|onOpen=\{open\}/);
 for (const collectionName of [
   "compras", "movimientosInventario", "purchaseCounters",
   "purchaseCreateRequests", "purchaseConfirmRequests",
@@ -146,7 +147,8 @@ for (const collectionName of [
 ]) assert.match(rules, new RegExp(`match /${collectionName}/`));
 console.log("OK compras modelo: defensas backend y reglas declaradas");
 
-assert.match(purchaseDetail, /Trazabilidad comercial/);
+assert.match(purchaseDetail, /SupplyTrace/);
+assert.doesNotMatch(purchaseDetail, /Originada desde recepción|Originada desde orden de compra/);
 assert.match(purchaseDetail, /Trazabilidad de entradas/);
 assert.match(purchaseDetail, /No hay un documento asociado a esta compra\./);
 assert.match(purchaseDetail, /Snapshot hist[oó]rico conservado/);

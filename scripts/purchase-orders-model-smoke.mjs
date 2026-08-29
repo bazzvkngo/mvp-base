@@ -8,6 +8,7 @@ import {
   calculatePurchaseOrderLine,
   calculatePurchaseOrderTotals,
   canManagePurchaseOrders,
+  getProviderPurchaseOrderPaymentTerms,
   getSupplierResponseLabel,
   getSupplierResponseState,
   matchesPurchaseOrderSearch,
@@ -21,7 +22,11 @@ import {
 } from "../src/utils/purchaseOrderPdf.js";
 
 const require = createRequire(import.meta.url);
-const {historicalPurchaseOrderCopyInput, registrarRespuestaProveedorHandler} = require(
+const {
+  duplicarOrdenCompraComoBorradorHandler,
+  historicalPurchaseOrderCopyInput,
+  registrarRespuestaProveedorHandler,
+} = require(
   "../functions/purchaseOrderPersistence.js"
 );
 
@@ -176,6 +181,12 @@ assert.strictEqual(
   historicalProviderA
 );
 console.log("OK preview proveedor: A→A histórico, A→B vivo y A→B→A histórico");
+assert.equal(getProviderPurchaseOrderPaymentTerms({condicionesPago: "credito", diasCredito: 30}), "Crédito a 30 días");
+assert.equal(getProviderPurchaseOrderPaymentTerms({condicionesPago: "transferencia", diasCredito: 0}), "Transferencia");
+assert.equal(getProviderPurchaseOrderPaymentTerms({condicionesPago: "", diasCredito: 30}), "");
+assert.equal(buildPurchaseOrderMutationPayload({proveedorId: "provider-a", condicionesPago: "", items: [item()]}).condicionesPago, "");
+assert.equal(buildPurchaseOrderMutationPayload({proveedorId: "provider-a", condicionesPago: "Pago contra entrega", items: [item()]}).condicionesPago, "Pago contra entrega");
+console.log("OK condiciones proveedor: precarga visible y editable para la OC");
 
 const mutation = buildPurchaseOrderMutationPayload({
   proveedorId: "proveedor-1",
@@ -316,6 +327,94 @@ assert.equal("estado" in copyInput, false);
 assert.equal("total" in copyInput, false);
 console.log("OK duplicación: copia datos editables sin autoridad histórica");
 
+async function duplicateOrderPaymentTerms(condicionesPago) {
+  const sourceId = "order-source";
+  const generatedId = `order-copy-${condicionesPago ? "informed" : "empty"}`;
+  const reference = (collectionName, id) => ({collectionName, id});
+  const businessRef = {
+    collection: (collectionName) => ({
+      doc: (id) => reference(collectionName, id || generatedId),
+    }),
+  };
+  const source = {
+    negocioId: "business-a",
+    estado: "emitida",
+    numero: "OC-2026-0001",
+    proveedorId: "provider-a",
+    condicionesPago,
+    fechaEntregaEstimada: "",
+    direccionEntrega: "",
+    observaciones: "",
+    items: [{
+      lineaId: "linea-1",
+      itemId: "item-1",
+      cantidad: 1,
+      costoUnitario: 1000,
+      descuentoPct: 0,
+    }],
+  };
+  let storedOrder;
+  const snapshot = (id, data, exists = true) => ({id, exists, data: () => data});
+  const result = await duplicarOrdenCompraComoBorradorHandler({
+    auth: {uid: "owner-a"},
+    data: {sourceId, requestId: `duplicate-${condicionesPago ? "informed" : "empty"}`},
+  }, {
+    db: {runTransaction: async (operation) => operation({
+      get: async (ref) => {
+        if (ref.collectionName === "purchaseOrderDuplicateRequests") {
+          return snapshot(ref.id, {}, false);
+        }
+        if (ref.collectionName === "ordenesCompra" && ref.id === sourceId) {
+          return snapshot(sourceId, source);
+        }
+        throw new Error(`Lectura inesperada ${ref.collectionName}/${ref.id}`);
+      },
+      getAll: async (...refs) => refs.map((ref) => {
+        if (ref.collectionName === "proveedores") {
+          return snapshot(ref.id, {
+            negocioId: "business-a",
+            proveedorId: "provider-a",
+            estado: "activo",
+            razonSocial: "Proveedor vigente",
+            condicionesPago: "credito",
+          });
+        }
+        if (ref.collectionName === "purchaseOrderCounters") {
+          return snapshot(ref.id, {lastNumber: 1});
+        }
+        if (ref === businessRef) return snapshot("business-a", {nombreComercial: "Valora"});
+        if (ref.collectionName === "empresa") return snapshot(ref.id, {});
+        if (ref.collectionName === "inventario") {
+          return snapshot(ref.id, {
+            negocioId: "business-a",
+            estado: "activo",
+            nombre: "Producto vigente",
+            tipoItem: "producto",
+            unidad: "unidad",
+          });
+        }
+        throw new Error(`Lectura agrupada inesperada ${ref.collectionName}/${ref.id}`);
+      }),
+      set: (ref, value) => {
+        if (ref.collectionName === "ordenesCompra" && ref.id === generatedId) storedOrder = value;
+      },
+    })},
+    FieldValue: {serverTimestamp: () => "SERVER_TIMESTAMP"},
+    HttpsError: FakeHttpsError,
+    requireBusinessAccess: async () => ({uid: "owner-a", businessId: "business-a", businessRef}),
+  }, new Date("2026-08-29T12:00:00Z"));
+  assert.equal(result.ordenCompra.condicionesPago, condicionesPago);
+  assert.equal(storedOrder.condicionesPago, condicionesPago);
+  return storedOrder;
+}
+
+assert.equal((await duplicateOrderPaymentTerms("")).condicionesPago, "");
+assert.equal(
+  (await duplicateOrderPaymentTerms("Pago contra entrega")).condicionesPago,
+  "Pago contra entrega"
+);
+console.log("OK duplicación handler: condiciones explícitas preservadas sin fallback del proveedor");
+
 const backendSource = fs.readFileSync("functions/purchaseOrderPersistence.js", "utf8");
 const rulesSource = fs.readFileSync("firestore.rules", "utf8");
 const pageSource = fs.readFileSync("src/pages/NewPurchaseOrderPage.jsx", "utf8");
@@ -338,6 +437,7 @@ assert.match(backendSource, /ordenCompraOrigenId/);
 assert.match(backendSource, /purchaseOrderCounters/);
 assert.match(backendSource, /providerSnapshotFromDocument/);
 assert.match(backendSource, /inventorySnapshotFromDocument/);
+assert.doesNotMatch(backendSource, /condicionesPago:\s*input\.condicionesPago\s*\|\|/);
 assert.match(rulesSource, /match \/ordenesCompra\/\{ordenCompraId\}/);
 assert.match(rulesSource, /allow create, update, delete: if false/);
 assert.match(pageSource, /PurchaseOrderPrintView/);
@@ -349,6 +449,32 @@ assert.match(historySource, /<OrderActions/);
 assert.doesNotMatch(historySource, /Duplicar como pendiente|Más acciones/);
 assert.match(pageSource, /Duplicar como nueva orden/);
 assert.match(historySource, /Actualizar confirmación/);
+assert.match(historySource, /Continuar recepción/);
+assert.match(historySource, /Recepción completada/);
+assert.match(
+  historySource,
+  /receptionStatus === "recibida_total"[\s\S]*?Recepción completada[\s\S]*?getSupplierResponseState\(order\) === "rechazada"/
+);
+assert.match(
+  historySource,
+  /order\.estado !== "cancelada" && receptionStatus !== "recibida_total"[\s\S]*?>Cancelar<\//
+);
+assert.match(
+  pageSource,
+  /supplierResponseState === "rechazada" && !receptionCompleted[\s\S]*?>Actualizar confirmación<\//
+);
+assert.match(
+  pageSource,
+  /supplierResponseState !== "rechazada" && !receptionCompleted[\s\S]*?>Registrar confirmación<\//
+);
+assert.match(
+  pageSource,
+  /order\.estado !== "cancelada" && !receptionCompleted[\s\S]*?>Cancelar<\//
+);
+console.log("OK OC recibida total: recepción dominante sin confirmación ni cancelación operativa");
+assert.doesNotMatch(historySource, />Ver<|"Ver"/);
+assert.match(pageSource, /getProviderPurchaseOrderPaymentTerms/);
+assert.match(pageSource, /SupplyTrace/);
 assert.match(historySource, /po-history__danger/);
 assert.match(historySource, /PurchaseOrderPreviewBoundary/);
 assert.match(historySource, /className="po-order-preview-dialog"/);

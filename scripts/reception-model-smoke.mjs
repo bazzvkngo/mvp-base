@@ -11,6 +11,7 @@ import {
   getSupplierResponseLabel,
   shouldReconcileReceptionConfirmation,
 } from "../src/domain/receptionModel.mjs";
+import {buildSupplyTrace, getSupplyDocumentRoute} from "../src/domain/supplyTrace.mjs";
 
 const reception = adaptStoredReception({
   id: "rec-1",
@@ -22,7 +23,9 @@ const reception = adaptStoredReception({
 assert.equal(reception.recepcionId, "rec-1");
 assert.equal(getReceptionStatusLabel("confirmada"), "Recibida");
 assert.equal(getReceptionStatusLabel("borrador"), "Preparada");
-assert.equal(getOrderReceptionStatusLabel("recibida_parcial"), "Parcialmente recibida");
+assert.equal(getOrderReceptionStatusLabel("sin_recepcion"), "Recepción pendiente");
+assert.equal(getOrderReceptionStatusLabel("recibida_parcial"), "Recepción parcial");
+assert.equal(getOrderReceptionStatusLabel("recibida_total"), "Recepción completada");
 assert.equal(getSupplierResponseLabel("pendiente"), "Pendiente");
 assert.equal(getSupplierResponseLabel("confirmada_con_observaciones"), "Con observaciones");
 assert.deepEqual(getReceptionConfirmationImpact([
@@ -40,6 +43,62 @@ assert.equal(getOrderReceptionStatus(order, [
 assert.equal(getOrderReceptionStatus(order, [
   adaptStoredReception({estado: "borrador", ordenCompraId: "oc-1", items: [{lineaId: "l1", cantidad: 10}]}),
 ]), "sin_recepcion");
+
+const traceShape = (trace) => trace.map((row) => row.map((node) => `${node.type}:${node.id || "pending"}`));
+const assertCurrentDocument = (trace, type, id) => {
+  const current = trace.flat().filter((node) => node.current && node.type === type && node.id === id);
+  assert.ok(current.length >= 1, `El documento actual ${type}:${id} debe aparecer marcado`);
+};
+
+const directPurchaseTrace = buildSupplyTrace({
+  currentType: "purchase",
+  purchase: {id: "com-directa", numero: "COM-2026-0001"},
+});
+assert.deepEqual(traceShape(directPurchaseTrace), [["purchase:com-directa"]]);
+assertCurrentDocument(directPurchaseTrace, "purchase", "com-directa");
+
+const legacyOrderPurchaseTrace = buildSupplyTrace({
+  currentType: "purchase",
+  purchase: {id: "com-oc", numero: "COM-2026-0002", ordenCompraId: "oc-legacy", ordenCompraNumero: "OC-2025-0042"},
+});
+assert.deepEqual(traceShape(legacyOrderPurchaseTrace), [["order:oc-legacy", "purchase:com-oc"]]);
+assertCurrentDocument(legacyOrderPurchaseTrace, "purchase", "com-oc");
+
+const legacyReceptionPurchaseTrace = buildSupplyTrace({
+  currentType: "purchase",
+  purchase: {id: "com-rec", numero: "COM-2026-0003", recepcionId: "rec-legacy", recepcionNumero: "REC-2025-0017"},
+});
+assert.deepEqual(traceShape(legacyReceptionPurchaseTrace), [["reception:rec-legacy", "purchase:com-rec"]]);
+assertCurrentDocument(legacyReceptionPurchaseTrace, "purchase", "com-rec");
+
+const modernPurchaseTrace = buildSupplyTrace({
+  currentType: "purchase",
+  purchase: {
+    id: "com-moderna", numero: "COM-2026-0004",
+    ordenCompraId: "oc-moderna", ordenCompraNumero: "OC-2026-0009",
+    recepcionId: "rec-moderna", recepcionNumero: "REC-2026-0011",
+  },
+});
+assert.deepEqual(traceShape(modernPurchaseTrace), [["order:oc-moderna", "reception:rec-moderna", "purchase:com-moderna"]]);
+assertCurrentDocument(modernPurchaseTrace, "purchase", "com-moderna");
+
+const emptyTrace = buildSupplyTrace({currentType: "order", order: {id: "oc-1", numero: "OC-2026-0001"}});
+assert.deepEqual(traceShape(emptyTrace), [["order:oc-1", "reception:pending"]]);
+assert.equal(emptyTrace[0][1].number, "Recepción pendiente");
+assertCurrentDocument(emptyTrace, "order", "oc-1");
+
+const partialTrace = buildSupplyTrace({currentType: "order", order: {id: "oc-1", numero: "OC-2026-0001"}, receptions: [
+  {id: "rec-1", numero: "REC-2026-0001", compraId: "com-1", compraNumero: "COM-2026-0001"},
+  {id: "rec-2", numero: "REC-2026-0002"},
+]});
+assert.deepEqual(traceShape(partialTrace), [
+  ["order:oc-1", "reception:rec-1", "purchase:com-1"],
+  ["order:oc-1", "reception:rec-2"],
+]);
+assertCurrentDocument(partialTrace, "order", "oc-1");
+assert.equal(getSupplyDocumentRoute(partialTrace[1][1]), "/recepciones/rec-2");
+assert.equal(getSupplyDocumentRoute(partialTrace[0][2]), "/compras/com-1");
+console.log("OK trazabilidad abastecimiento: casos A-F y documento actual preservado");
 
 assert.deepEqual(buildReceptionMutationPayload({
   fechaRecepcion: "2026-08-14",
@@ -75,12 +134,13 @@ const receptionDetailSource = fs.readFileSync("src/pages/NewReceptionPage.jsx", 
 const receptionListSource = fs.readFileSync("src/pages/ReceptionsPage.jsx", "utf8");
 assert.doesNotMatch(receptionDetailSource, /Preparar compra|Continuar compra/);
 assert.doesNotMatch(receptionListSource, /Preparar compra|Continuar compra/);
-assert.match(receptionListSource, /Ver órdenes de compra/);
-assert.doesNotMatch(receptionListSource, /Ver órdenes emitidas|Ver ordenes emitidas|Registrar desde OC|Las recepciones se registran desde órdenes de compra emitidas/);
+assert.doesNotMatch(receptionListSource, />Ver<|Abrir compra|Ver órdenes de compra/);
 assert.match(receptionDetailSource, /generará automáticamente la compra correspondiente/);
 assert.match(receptionDetailSource, /Confirmar recepción y registrar compra/);
 assert.match(receptionDetailSource, /Recibir ahora/);
 assert.match(receptionDetailSource, /Confirmar prestación/);
-assert.match(receptionDetailSource, /Trazabilidad comercial/);
+assert.match(receptionDetailSource, /SupplyTrace/);
+assert.match(receptionDetailSource, /Recepción completada correctamente/);
+assert.doesNotMatch(receptionDetailSource, /Inventario y compra registrados|Ver compra/);
 
 console.log("Reception model smoke: OK");

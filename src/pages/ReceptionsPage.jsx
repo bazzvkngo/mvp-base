@@ -2,7 +2,6 @@ import React, {useEffect, useMemo, useState} from "react";
 import {Search} from "lucide-react";
 import {useNavigate} from "react-router-dom";
 import AppIcon from "../components/ui/AppIcon";
-import Button from "../components/ui/Button";
 import {canManageReceptions, getReceptionStatusLabel} from "../domain/receptionModel.mjs";
 import {listarRecepciones} from "../services/receptionService";
 import "../features/receptions/receptions.css";
@@ -61,7 +60,6 @@ export default function ReceptionsPage({businessId, role}) {
     <main className="erp-page po-history">
       <div className="erp-module-intro">
         <div className="erp-page-intro"><p>Confirma la recepción física; el inventario y la compra se registran automáticamente.</p></div>
-        {canManage && <Button type="button" onClick={() => navigate("/ordenes-compra")}>Ver órdenes de compra</Button>}
       </div>
       {message && <p className="po-message po-message--error">{message}</p>}
       <section className="erp-panel erp-history-panel">
@@ -71,15 +69,15 @@ export default function ReceptionsPage({businessId, role}) {
           <label className="erp-field"><span className="erp-field__label">Estado</span><select className="erp-control" value={status} onChange={(event) => setStatus(event.target.value)}><option value="todos">Todos</option><option value="borrador">Preparadas</option><option value="confirmada">Recibidas</option><option value="cancelada">Canceladas</option></select></label>
         </div>
         {loading ? <div className="erp-empty-state">Cargando recepciones...</div> : <section className="erp-table-region">
-          <table className="erp-table po-history__table"><thead><tr><th>Recepción</th><th>Proveedor</th><th>Origen OC</th><th>Fecha</th><th>Recibido</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>
+          <table className="erp-table po-history__table"><thead><tr><th>Recepción</th><th>Proveedor</th><th>Orden de compra</th><th>Compra</th><th>Fecha</th><th>Recibido</th><th>Estado</th></tr></thead><tbody>
             {filtered.map((entry) => <tr key={entry.id}>
               <td><button type="button" className="po-inline-link" onClick={() => open(entry)}>{entry.numero}</button></td>
               <td><strong>{entry.proveedorSnapshot?.razonSocial || "Proveedor historico"}</strong></td>
-              <td><button type="button" className="po-inline-link" onClick={() => navigate(`/ordenes-compra/${entry.ordenCompraId}`)}>{entry.ordenCompraNumero || "Abrir OC"}</button></td>
+              <td><button type="button" className="po-inline-link" onClick={() => navigate(`/ordenes-compra/${entry.ordenCompraId}`)}>{entry.ordenCompraNumero || "Orden de compra"}</button></td>
+              <td>{entry.compraId ? <button type="button" className="po-inline-link" onClick={() => navigate(`/compras/${entry.compraId}`)}>{entry.compraNumero || "Compra registrada"}</button> : "—"}</td>
               <td>{entry.fechaRecepcion || "—"}</td>
               <td>{receptionProgressLabel(entry)}</td>
               <td><span className={`po-status po-status--${entry.estado}`}>{getReceptionStatusLabel(entry.estado)}</span></td>
-              <td><div className="po-history__actions"><button type="button" onClick={() => open(entry)}>{entry.estado === "borrador" && canManage ? "Editar" : "Ver"}</button>{entry.compraId && <button type="button" onClick={() => navigate(`/compras/${entry.compraId}`)}>Abrir compra</button>}</div></td>
             </tr>)}
             {!filtered.length && <tr><td colSpan="7" className="po-history__empty">No hay recepciones coincidentes.</td></tr>}
           </tbody></table>

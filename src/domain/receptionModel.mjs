@@ -190,7 +190,7 @@ export function getOrderReceptionStatus(order, receptions = []) {
 }
 
 export function getOrderReceptionStatusLabel(value) {
-  return ({sin_recepcion: "Pendiente de recepción", recibida_parcial: "Parcialmente recibida", recibida_total: "Recibida"})[value] || "Pendiente de recepción";
+  return ({sin_recepcion: "Recepción pendiente", recibida_parcial: "Recepción parcial", recibida_total: "Recepción completada"})[value] || "Recepción pendiente";
 }
 
 export function getOrderReceptionProgress(order, receptions = []) {

@@ -11,10 +11,9 @@ import {cancelarCompraBorrador, confirmarCompra, createPurchaseRequestId, listar
 import "../features/purchases/purchases.css";
 
 const money = (value, document) => formatMoney(value, document?.moneda, document?.locale);
-function Actions({canManage, onAction, onOpen, purchase, processing}) {
+function Actions({canManage, onAction, purchase, processing}) {
   return (
     <div className="po-history__actions">
-      <button type="button" onClick={() => onOpen(purchase)}>{purchase.estado === "borrador" && canManage ? "Editar" : "Ver"}</button>
       {canManage && purchase.estado === "borrador" && (
         <>
           <button type="button" disabled={processing} onClick={() => onAction(purchase, "confirmar")}>Confirmar</button>
@@ -133,7 +132,7 @@ export default function PurchasesPage({businessId, role}) {
                     <td>{money(purchase.total, purchase)}</td>
                     <td>{purchase.recepcionId ? <button type="button" className="po-inline-link" onClick={() => navigate(`/recepciones/${purchase.recepcionId}`)}>{purchase.recepcionNumero || "Abrir recepción"}</button> : purchase.ordenCompraId ? <button type="button" className="po-inline-link" onClick={() => navigate(`/ordenes-compra/${purchase.ordenCompraId}`)}>{purchase.ordenCompraNumero || "Abrir OC"}</button> : "Directa"}</td>
                     <td><span className={`po-status po-status--${purchase.estado}`}>{getPurchaseStatusLabel(purchase.estado)}</span></td>
-                    <td><Actions canManage={canManage} onAction={action} onOpen={open} processing={processing === purchase.id} purchase={purchase} /></td>
+                    <td><Actions canManage={canManage} onAction={action} processing={processing === purchase.id} purchase={purchase} /></td>
                   </tr>
                 ))}
                 {!filtered.length && <tr><td colSpan="7" className="po-history__empty">No hay compras coincidentes.</td></tr>}
@@ -146,7 +145,7 @@ export default function PurchasesPage({businessId, role}) {
                 <header><div><span className="po-history-card__label">Compra</span><button type="button" className="po-inline-link" onClick={() => open(purchase)}>{purchase.numero}</button></div><span className={`po-status po-status--${purchase.estado}`}>{getPurchaseStatusLabel(purchase.estado)}</span></header>
                 <div className="po-history-card__provider"><strong>{purchase.proveedorSnapshot.razonSocial}</strong><span>{purchase.proveedorSnapshot.rut || "Sin RUT"}</span></div>
                 <dl><div><dt>Fecha</dt><dd>{purchase.fechaCompra || "—"}</dd></div><div><dt>Total</dt><dd>{money(purchase.total)}</dd></div><div><dt>Documento</dt><dd>{purchase.tipoDocumento === "sin_documento" ? "Sin documento" : purchase.numeroDocumentoProveedor || getPurchaseDocumentTypeLabel(purchase.tipoDocumento)}</dd></div><div><dt>Origen</dt><dd>{purchase.recepcionId ? <button type="button" className="po-inline-link" onClick={() => navigate(`/recepciones/${purchase.recepcionId}`)}>{purchase.recepcionNumero || "Abrir recepción"}</button> : purchase.ordenCompraId ? <button type="button" className="po-inline-link" onClick={() => navigate(`/ordenes-compra/${purchase.ordenCompraId}`)}>{purchase.ordenCompraNumero || "Abrir OC"}</button> : "Directa"}</dd></div></dl>
-                <Actions canManage={canManage} onAction={action} onOpen={open} processing={processing === purchase.id} purchase={purchase} />
+                <Actions canManage={canManage} onAction={action} processing={processing === purchase.id} purchase={purchase} />
               </article>
             ))}
             {!filtered.length && <div className="po-history__cards-empty">No hay compras coincidentes.</div>}

@@ -3,10 +3,10 @@ import {useNavigate, useParams} from "react-router-dom";
 import {sileo} from "sileo";
 import Button from "../components/ui/Button";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
+import SupplyTrace from "../components/ui/SupplyTrace";
 import {
   canManageReceptions,
   getReceptionConfirmationImpact,
-  getReceptionPurchaseAction,
   getReceptionStatusLabel,
   getSupplierResponseLabel,
   shouldReconcileReceptionConfirmation,
@@ -43,8 +43,8 @@ export default function NewReceptionPage({businessId, role}) {
   const confirmGuard = useRef(false);
   const canManage = canManageReceptions(role);
   const readOnly = !canManage || reception?.estado !== "borrador";
-  const purchaseAction = getReceptionPurchaseAction(reception, linkedPurchase, canManage);
   const receivedProducts = reception?.items?.some((line) => line.tipoItem === "producto" && Number(line.cantidad) > 0);
+  const receivedServices = reception?.items?.some((line) => line.tipoItem !== "producto" && Number(line.cantidad) > 0);
   const confirmationImpact = getReceptionConfirmationImpact(draft.items, reception?.tasaIva);
 
   useEffect(() => {
@@ -104,7 +104,6 @@ export default function NewReceptionPage({businessId, role}) {
     catch (error) { setMessage(error.message); }
     finally { setProcessing(false); }
   };
-  const openPurchase = () => { if (reception.compraId) navigate(`/compras/${reception.compraId}`); };
   const applyImport = ({items, documentoOrigen, aplicadas, omitidas}) => {
     setDraft((current) => ({...current, items, documentoOrigen}));
     sileo.success({title: "Propuesta aplicada", description: `${aplicadas} línea${aplicadas === 1 ? "" : "s"} rellenada${aplicadas === 1 ? "" : "s"}${omitidas ? `; ${omitidas} quedaron sin asociar.` : "."} Aún no se modificó el stock.`});
@@ -117,16 +116,13 @@ export default function NewReceptionPage({businessId, role}) {
     {message && <p className="po-message po-message--error">{message}</p>}
 
     {reception.estado === "confirmada" && <section className="reception-success" role="status" aria-live="polite">
-      <div className="reception-success__copy"><span className="reception-success__eyebrow">Recepción confirmada</span><h2>Inventario y compra registrados</h2><p>{receivedProducts ? "El stock de los productos recibidos fue actualizado." : "Esta recepción no incluía productos; no hubo cambios de stock."}</p><p className="reception-success__next">{reception.compraId ? reception.compraEstado === "revertida" ? `La compra asociada fue revertida${reception.compraReversionMotivo ? `: ${reception.compraReversionMotivo}` : "."}` : "La compra correspondiente quedó registrada y disponible para consulta." : "Esta recepción histórica conserva el vínculo económico previo de su orden."}</p>
-        <nav className="reception-trace" aria-label="Trazabilidad comercial"><button type="button" onClick={() => navigate(`/ordenes-compra/${reception.ordenCompraId}`)}>{reception.ordenCompraNumero}</button><span>→</span><strong>{reception.numero}</strong>{reception.compraId && <><span>→</span><button type="button" onClick={openPurchase}>{reception.compraNumero || linkedPurchase?.numero || "Abrir compra"}</button></>}</nav>
-      </div>
-      {purchaseAction && <div className="reception-success__action"><Button type="button" variant="secondary" disabled={processing} onClick={openPurchase}>{reception.compraNumero ? `Ver ${reception.compraNumero}` : "Ver compra"}</Button></div>}
+      <div className="reception-success__copy"><span className="reception-success__eyebrow">Recepción confirmada</span><h2>Recepción completada correctamente.</h2><p>{receivedProducts ? "Los productos recibidos actualizaron existencias." : "Esta recepción no incluía productos; no hubo cambios de existencias."}</p>{receivedServices && <p>Los servicios y actividades recibidos quedaron confirmados.</p>}<p className="reception-success__next">{reception.compraId ? reception.compraEstado === "revertida" ? `La compra asociada fue revertida${reception.compraReversionMotivo ? `: ${reception.compraReversionMotivo}` : "."}` : `La compra ${reception.compraNumero || linkedPurchase?.numero || "asociada"} se registró automáticamente.` : "Esta recepción histórica conserva el vínculo económico previo de su orden."}</p></div>
     </section>}
 
     {reception.estado !== "confirmada" && <section className="reception-order-origin">
-      <div><span>Orden asociada</span><button type="button" className="po-inline-link" onClick={() => navigate(`/ordenes-compra/${reception.ordenCompraId}`)}>{reception.ordenCompraNumero} · {reception.proveedorSnapshot?.razonSocial || "Proveedor histórico"}</button></div>
-      <small>Confirmación del proveedor · {getSupplierResponseLabel(reception.respuestaProveedorEstado)}</small>
+      <div><span>Confirmación del proveedor</span><strong>{getSupplierResponseLabel(reception.respuestaProveedorEstado)}</strong></div>
     </section>}
+    <SupplyTrace currentType="reception" order={{id: reception.ordenCompraId, numero: reception.ordenCompraNumero}} receptions={[reception]} purchase={linkedPurchase} />
 
     <section className="po-panel"><h2>Datos de recepción</h2><div className="reception-grid"><label>Fecha de recepción<input type="date" disabled={readOnly} value={draft.fechaRecepcion} onChange={(event) => setDraft({...draft, fechaRecepcion: event.target.value})} /></label><label className="reception-grid__wide">Observaciones<textarea disabled={readOnly} value={draft.observaciones} onChange={(event) => setDraft({...draft, observaciones: event.target.value})} /></label></div></section>
     <section className="po-panel">
