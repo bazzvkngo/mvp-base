@@ -1409,12 +1409,19 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
   gap: 6px;
 }
 
-.po-email-form input {
+.po-email-form input,
+.po-email-form textarea {
   border: 1px solid #c8d5dd;
   border-radius: 7px;
   font: inherit;
   min-height: 44px;
   padding: 9px 11px;
+}
+
+.po-email-form textarea {
+  line-height: 1.45;
+  min-height: 128px;
+  resize: vertical;
 }
 
 .po-email-form p {
@@ -1425,6 +1432,42 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 
 .po-email-form .po-email-form__error {
   color: #a31d2d;
+}
+
+.po-email-summary {
+  background: #f4f7fb;
+  border: 1px solid #d3dce9;
+  border-radius: 7px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 11px 12px;
+}
+
+.po-email-summary div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.po-email-summary span {
+  color: var(--po-muted);
+  font-size: 11px;
+}
+
+.po-email-summary strong {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.po-email-form .po-email-attachment-note {
+  color: var(--po-ink);
+}
+
+@media (max-width: 560px) {
+  .po-email-summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .po-history__actions--purchase-orders {

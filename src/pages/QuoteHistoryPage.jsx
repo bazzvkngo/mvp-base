@@ -725,6 +725,7 @@ function QuoteHistoryPage({ userId, role }) {
       </div>
 
       <ResponsiveDialog
+        className="quote-document-dialog"
         open={Boolean(selectedQuote)}
         onClose={handleCloseDetail}
         portal={false}
@@ -734,40 +735,46 @@ function QuoteHistoryPage({ userId, role }) {
         title={selectedQuote ? `Cotización ${getQuoteDisplayNumber(selectedQuote, selectedQuote.id || "-")}` : "Detalle de cotización"}
         description="Revisa el documento formal y administra su estado comercial."
         footer={selectedQuote ? (
-          <div className="erp-actions" style={styles.dialogActions}>
-            {canDuplicate && (
-            <QuoteActions
+          <div className="quote-document-footer">
+            <QuoteDocumentActions
+              businessId={userId}
+              canSendByEmail={canDuplicate}
+              companyProfile={companyProfile}
+              onOpenEmail={() => {
+                if (isQuoteEmailSendable(selectedQuote, selectedQuote.id)) {
+                  setRestoreDetailFocus(false);
+                  setEmailModalQuote(selectedQuote);
+                  setSelectedQuoteId("");
+                }
+              }}
+              onWhatsAppShared={handleWhatsAppShared}
               quote={selectedQuote}
-              disabled={savingStatus}
-              onChangeStatus={handleChangeStatus}
-              onArchive={handleArchiveQuote}
-              onRestore={handleRestoreQuote}
-              onEditDraft={handleEditDraft}
-              canDuplicate={canDuplicate}
-              duplicating={duplicatingQuoteId === selectedQuote.id}
-              onDuplicate={handleDuplicateQuote}
-              onAcceptQuote={handleAcceptQuote}
-              onReopen={handleReopenQuote}
-              accepting={acceptingQuoteId === selectedQuote.id}
-            /> )}
+            />
+            <div className="quote-document-footer__secondary">
+              {canDuplicate && (
+              <QuoteActions
+                quote={selectedQuote}
+                disabled={savingStatus}
+                onChangeStatus={handleChangeStatus}
+                onArchive={handleArchiveQuote}
+                onRestore={handleRestoreQuote}
+                onEditDraft={handleEditDraft}
+                canDuplicate={canDuplicate}
+                duplicating={duplicatingQuoteId === selectedQuote.id}
+                onDuplicate={handleDuplicateQuote}
+                onAcceptQuote={handleAcceptQuote}
+                onReopen={handleReopenQuote}
+                accepting={acceptingQuoteId === selectedQuote.id}
+              /> )}
+            </div>
           </div>
         ) : null}
       >
         {selectedQuote && (
           <QuoteDetail
-            businessId={userId}
-            canSendByEmail={canDuplicate}
             quote={selectedQuote}
             companyProfile={companyProfile}
-            onWhatsAppShared={handleWhatsAppShared}
             onOpenWork={() => navigate("/trabajos", {state: {openWorkId: selectedQuote.trabajoId}})}
-            onOpenEmail={() => {
-              if (isQuoteEmailSendable(selectedQuote, selectedQuote.id)) {
-                setRestoreDetailFocus(false);
-                setEmailModalQuote(selectedQuote);
-                setSelectedQuoteId("");
-              }
-            }}
           />
         )}
       </ResponsiveDialog>
@@ -1295,13 +1302,12 @@ function MoreActionsMenu({ actions, disabled }) {
   );
 }
 
-function QuoteDetail({
+function QuoteDocumentActions({
   businessId,
   quote,
   companyProfile,
   canSendByEmail,
   onOpenEmail,
-  onOpenWork,
   onWhatsAppShared,
 }) {
   const canSendEmail = isQuoteEmailSendable(quote, quote.id);
@@ -1386,39 +1392,9 @@ function QuoteDetail({
   };
 
   return (
-    <div className="history-print-area" style={styles.detailPanel}>
-      <div className="no-print" style={styles.detailActions}>
-        <div style={styles.detailHeading}>
-          <h3 style={styles.panelTitle}>Detalle de cotización</h3>
-          <p style={styles.helpText}>
-            Vista formal para revisión e impresión desde el historial.
-          </p>
-          {quote.clienteHistoricoNoVinculado && (
-            <p className="quote-legacy-client-note">
-              Cliente histórico no vinculado a un registro actual.
-            </p>
-          )}
-          {quote.trabajoId && (
-            <button type="button" style={styles.projectLinkButton} onClick={onOpenWork}>
-              Proyecto {quote.trabajoNumero || quote.trabajoTitulo || quote.trabajoId}
-            </button>
-          )}
-          <CommercialStatusTimeline quote={quote} />
-        </div>
-        <div style={styles.detailButtonGroup}>
-          {canSendByEmail && (
-            <button
-              type="button"
-              onClick={() => runPdfAction("whatsapp")}
-              disabled={Boolean(pdfAction) || !canShareWhatsApp}
-              title={canShareWhatsApp ? "" : "No disponible desde este estado."}
-              style={styles.whatsappButton}
-            >
-              <AppIcon icon={MessageCircle} size={17} />
-              {pdfAction === "whatsapp" ? "Preparando..." : "WhatsApp"}
-            </button>
-          )}
-          {canSendByEmail && (
+    <>
+      <div className="quote-document-footer__primary">
+        {canSendByEmail && (
           <button
             type="button"
             onClick={onOpenEmail}
@@ -1430,37 +1406,42 @@ function QuoteDetail({
           >
             <AppIcon icon={Mail} size={17} />
             Correo
-          </button> )}
-          <button
-            type="button"
-            onClick={() => runPdfAction("download")}
-            disabled={Boolean(pdfAction)}
-            style={styles.printButton}
-          >
-            <AppIcon icon={Download} size={17} />
-            {pdfAction === "download" ? "Generando..." : "Descargar PDF"}
           </button>
-          <button
-            type="button"
-            onClick={() => window.print()}
-            style={styles.secondaryDocumentButton}
-          >
-            <AppIcon icon={Printer} size={17} />
-            Imprimir
-          </button>
-        </div>
-        {!canSendEmail && emailActionHint && (
-          <p className="no-print" style={styles.actionHint}>
-            {emailActionHint}
-          </p>
         )}
-        {pdfError && <p style={styles.actionHint}>{pdfError}</p>}
+        {canSendByEmail && (
+          <button
+            type="button"
+            onClick={() => runPdfAction("whatsapp")}
+            disabled={Boolean(pdfAction) || !canShareWhatsApp}
+            title={canShareWhatsApp ? "" : "No disponible desde este estado."}
+            style={styles.whatsappButton}
+          >
+            <AppIcon icon={MessageCircle} size={17} />
+            {pdfAction === "whatsapp" ? "Preparando..." : "WhatsApp"}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => runPdfAction("download")}
+          disabled={Boolean(pdfAction)}
+          style={styles.printButton}
+        >
+          <AppIcon icon={Download} size={17} />
+          {pdfAction === "download" ? "Generando..." : "Descargar PDF"}
+        </button>
+        <button
+          type="button"
+          onClick={() => window.print()}
+          style={styles.secondaryDocumentButton}
+        >
+          <AppIcon icon={Printer} size={17} />
+          Imprimir
+        </button>
       </div>
-
-      <div style={styles.detailDocument}>
-        <QuotePrintView quote={quote} companyProfile={companyProfile} />
-      </div>
-
+      {!canSendEmail && emailActionHint && (
+        <small className="quote-document-footer__hint">{emailActionHint}</small>
+      )}
+      {pdfError && <small className="quote-document-footer__error">{pdfError}</small>}
       <ResponsiveDialog
         open={whatsAppConfirmationOpen}
         onClose={() => {
@@ -1490,6 +1471,41 @@ function QuoteDetail({
           </div>
         )}
       />
+    </>
+  );
+}
+
+function QuoteDetail({
+  quote,
+  companyProfile,
+  onOpenWork,
+}) {
+
+  return (
+    <div className="history-print-area" style={styles.detailPanel}>
+      <div className="no-print" style={styles.detailActions}>
+        <div style={styles.detailHeading}>
+          <h3 style={styles.panelTitle}>Detalle de cotización</h3>
+          <p style={styles.helpText}>
+            Vista formal para revisión e impresión desde el historial.
+          </p>
+          {quote.clienteHistoricoNoVinculado && (
+            <p className="quote-legacy-client-note">
+              Cliente histórico no vinculado a un registro actual.
+            </p>
+          )}
+          {quote.trabajoId && (
+            <button type="button" style={styles.projectLinkButton} onClick={onOpenWork}>
+              Proyecto {quote.trabajoNumero || quote.trabajoTitulo || quote.trabajoId}
+            </button>
+          )}
+          <CommercialStatusTimeline quote={quote} />
+        </div>
+      </div>
+
+      <div style={styles.detailDocument}>
+        <QuotePrintView quote={quote} companyProfile={companyProfile} />
+      </div>
     </div>
   );
 
@@ -1655,14 +1671,19 @@ function CommercialStatusTimeline({ quote }) {
     });
   }
   }
-  if (!events.length) return null;
+  events.unshift({
+    label: "Estado actual",
+    value: getQuoteStatusLabel(quote.estado),
+    note: quote.fechaEmision ? `Emisión: ${formatTimestamp(quote.fechaEmision)}` : "",
+    primary: true,
+  });
 
   return (
     <section style={styles.commercialStatus} aria-label="Estado comercial">
       <strong style={styles.commercialStatusTitle}>Estado comercial</strong>
       <div style={styles.commercialStatusGrid}>
         {events.map((event) => (
-          <div key={`${event.label}-${event.value}`} style={styles.commercialStatusEvent}>
+          <div key={`${event.label}-${event.value}`} style={{...styles.commercialStatusEvent, ...(event.primary ? styles.commercialStatusCurrent : {})}}>
             <span style={styles.commercialStatusLabel}>{event.label}</span>
             <span style={styles.commercialStatusValue}>{event.value}</span>
             {event.note && <small style={styles.commercialStatusNote}>{event.note}</small>}
@@ -1711,6 +1732,14 @@ const styles = {
     display: "grid",
     gap: "2px",
     paddingLeft: "8px",
+  },
+  commercialStatusCurrent: {
+    background: "#ffffff",
+    border: "1px solid #cbd5e1",
+    borderLeft: "4px solid #0f766e",
+    borderRadius: "5px",
+    gridColumn: "1 / -1",
+    padding: "9px 10px",
   },
   commercialStatusLabel: {
     color: "#334155",
@@ -1881,14 +1910,6 @@ const styles = {
     flex: "1 1 280px",
     minWidth: 0,
   },
-  detailButtonGroup: {
-    alignItems: "center",
-    display: "flex",
-    flex: "0 0 auto",
-    flexWrap: "wrap",
-    gap: "10px",
-    justifyContent: "flex-end",
-  },
   emailButton: {
     alignItems: "center",
     background: "#0f766e",
@@ -1949,20 +1970,10 @@ const styles = {
     color: "#64748b",
     cursor: "not-allowed",
   },
-  actionHint: {
-    color: "#64748b",
-    flexBasis: "100%",
-    fontSize: "13px",
-    margin: "4px 0 0",
-  },
   detailDocument: {
     maxWidth: "100%",
     minWidth: 0,
     overflowX: "auto",
-  },
-  dialogActions: {
-    justifyContent: "flex-end",
-    width: "100%",
   },
   prepareSaleActions: {
     justifyContent: "flex-end",

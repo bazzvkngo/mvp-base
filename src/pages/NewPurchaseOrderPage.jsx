@@ -402,14 +402,14 @@ export default function NewPurchaseOrderPage({businessId, role}) {
     }
   };
 
-  const sendEmail = async (emailProveedor) => {
+  const sendEmail = async ({emailProveedor, asunto, mensaje}) => {
     if (!order) return;
     setSaving(true);
     setMessage("");
     try {
       const saved = await persistDraft();
       const pdfAttachment = await buildPurchaseOrderPdfAttachment({order: saved, companyProfile: company});
-      const result = await sendPurchaseOrderEmail({businessId, ordenCompraId: saved.id, emailProveedor, pdfAttachment});
+      const result = await sendPurchaseOrderEmail({businessId, ordenCompraId: saved.id, emailProveedor, asunto, mensaje, pdfAttachment});
       if (!result.success) throw new Error(result.error || "No fue posible enviar la orden de compra.");
       setEmailOpen(false);
       const refreshed = await obtenerOrdenCompra(businessId, saved.id);
@@ -619,7 +619,7 @@ export default function NewPurchaseOrderPage({businessId, role}) {
         onClose={() => setCatalogOpen(false)}
         open={catalogOpen}
       />
-      <SendPurchaseOrderEmailDialog open={emailOpen} onClose={() => setEmailOpen(false)} onSend={sendEmail} order={order} processing={saving} />
+      <SendPurchaseOrderEmailDialog companyProfile={company} open={emailOpen} onClose={() => setEmailOpen(false)} onSend={sendEmail} order={order} processing={saving} />
       <ResponsiveDialog open={actionDialog === "supplier"} onClose={() => !saving && setActionDialog("")} eyebrow="Confirmación del proveedor" title="Registrar confirmación" description="Registra aquí la respuesta recibida por correo, teléfono o WhatsApp. Una confirmación rechazada mantiene el bloqueo vigente para nuevas recepciones." size="small" footer={<><Button type="button" variant="secondary" disabled={saving} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" disabled={saving} onClick={saveSupplierAnswer}>{saving ? "Guardando..." : "Guardar confirmación"}</Button></>}><div className="po-fields"><label>Estado<select value={supplierAnswer.estado} onChange={(event) => setSupplierAnswer({...supplierAnswer, estado: event.target.value})}><option value="pendiente">Pendiente</option><option value="confirmada">Confirmada</option><option value="rechazada">Rechazada</option><option value="confirmada_con_observaciones">Confirmada con observaciones</option></select></label><label>Observación{supplierAnswer.estado === "confirmada_con_observaciones" ? " *" : " (opcional)"}<textarea required={supplierAnswer.estado === "confirmada_con_observaciones"} maxLength={2000} placeholder="Ej. Confirma cantidades y solicita ajustar la fecha de entrega." value={supplierAnswer.comentario} onChange={(event) => setSupplierAnswer({...supplierAnswer, comentario: event.target.value})} /></label></div></ResponsiveDialog>
       <ResponsiveDialog open={actionDialog === "whatsapp"} onClose={() => !saving && setActionDialog("")} eyebrow="WhatsApp" title="¿Enviaste la orden de compra?" description="Abrir WhatsApp no confirma que el proveedor haya recibido la orden." size="small" footer={<><Button type="button" variant="secondary" disabled={saving} onClick={() => setActionDialog("")}>Mantener pendiente</Button><Button type="button" disabled={saving} onClick={confirmWhatsApp}>{saving ? "Registrando..." : "Sí, fue enviada"}</Button></>}><p>ValoraCloud registrará la emisión por WhatsApp, sin afirmar entrega ni lectura.</p></ResponsiveDialog>
       <ResponsiveDialog open={actionDialog === "manual"} onClose={() => !saving && setActionDialog("")} eyebrow="Emisión" title="Marcar emisión manual" description="Usa esta opción solo si la orden ya fue entregada al proveedor por otro medio." size="small" footer={<><Button type="button" variant="secondary" disabled={saving} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" disabled={saving} onClick={emitManual}>{saving ? "Registrando..." : "Marcar como emitida"}</Button></>}><p>Se guardará fecha, canal y usuario de la emisión.</p></ResponsiveDialog>

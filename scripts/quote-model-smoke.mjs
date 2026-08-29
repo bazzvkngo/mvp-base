@@ -422,6 +422,7 @@ const sourceQuoteWorkspaceCss = fs.readFileSync(
 const sourcePdf = fs.readFileSync("src/utils/quotePdf.js", "utf8");
 const sourceEmail = fs.readFileSync("src/features/quotes/SendQuoteEmailModal.jsx", "utf8");
 const sourceHistory = fs.readFileSync("src/pages/QuoteHistoryPage.jsx", "utf8");
+const sourceInteriorCss = fs.readFileSync("src/styles/interior.css", "utf8");
 const sourceQuoteService = fs.readFileSync("src/services/quoteService.js", "utf8");
 const sourceQuotePersistence = fs.readFileSync("functions/quotePersistence.js", "utf8");
 const sourceQuoteDocument = fs.readFileSync("src/domain/quoteDocument.mjs", "utf8");
@@ -434,6 +435,26 @@ const sourceCompanyService = fs.readFileSync("src/services/companyService.js", "
 const duplicateServiceSource = sourceQuoteService.slice(
   sourceQuoteService.indexOf("export async function duplicateQuoteAsDraft"),
   sourceQuoteService.indexOf("export async function getQuotes")
+);
+const quoteActionsSource = sourceHistory.slice(
+  sourceHistory.indexOf("function QuoteActions"),
+  sourceHistory.indexOf("function QuoteDocumentActions")
+);
+const quoteDocumentActionsSource = sourceHistory.slice(
+  sourceHistory.indexOf("function QuoteDocumentActions"),
+  sourceHistory.indexOf("function QuoteDetail")
+);
+const quotePrimaryActionsSource = quoteDocumentActionsSource.slice(
+  quoteDocumentActionsSource.indexOf("quote-document-footer__primary"),
+  quoteDocumentActionsSource.indexOf("</div>")
+);
+const quoteDetailSource = sourceHistory.slice(
+  sourceHistory.indexOf("function QuoteDetail"),
+  sourceHistory.indexOf("function CommercialStatusTimeline")
+);
+const commercialStatusSource = sourceHistory.slice(
+  sourceHistory.indexOf("function CommercialStatusTimeline"),
+  sourceHistory.indexOf("const styles")
 );
 assert.match(sourceNewQuote, /createManagedInventoryItem/);
 assert.doesNotMatch(sourceNewQuote, /\bcreateInventoryItem\b/);
@@ -491,6 +512,28 @@ assert.match(sourcePdf, /buildQuotePdfBase64/);
 assert.match(sourceEmail, /buildQuotePdfAttachment/);
 assert.match(sourceHistory, /downloadQuotePdf/);
 assert.match(sourceHistory, /shareQuotePdf/);
+assert.match(sourceHistory, /className="quote-document-footer"/);
+assert.match(sourceHistory, /className="quote-document-footer__secondary"/);
+assert.match(sourceHistory, /quote-document-footer__secondary[\s\S]*<QuoteActions/);
+const documentActionPositions = ["Correo", "WhatsApp", "Descargar PDF", "Imprimir"]
+  .map((label) => quotePrimaryActionsSource.indexOf(label));
+assert.ok(documentActionPositions.every((position) => position >= 0));
+assert.deepEqual([...documentActionPositions].sort((a, b) => a - b), documentActionPositions);
+assert.equal((quotePrimaryActionsSource.match(/>\s*Correo\s*<\/button>/g) || []).length, 1);
+assert.equal((quotePrimaryActionsSource.match(/: "WhatsApp"/g) || []).length, 1);
+assert.equal((quotePrimaryActionsSource.match(/: "Descargar PDF"/g) || []).length, 1);
+assert.equal((quotePrimaryActionsSource.match(/>\s*Imprimir\s*<\/button>/g) || []).length, 1);
+assert.doesNotMatch(quoteActionsSource, /Correo|WhatsApp|Descargar PDF|Imprimir|runPdfAction/);
+assert.doesNotMatch(quoteDetailSource, /icon=\{Mail\}|icon=\{MessageCircle\}|icon=\{Download\}|icon=\{Printer\}|runPdfAction/);
+assert.match(commercialStatusSource, /label: "Estado actual"/);
+assert.match(commercialStatusSource, /getQuoteStatusLabel\(quote\.estado\)/);
+assert.match(commercialStatusSource, /estadoEnvioCorreo/);
+assert.match(commercialStatusSource, /respuestaCliente/);
+assert.match(commercialStatusSource, /Aceptada por cliente/);
+assert.match(commercialStatusSource, /Rechazada por cliente/);
+assert.match(sourceInteriorCss, /\.quote-document-footer \{[\s\S]*flex-wrap: wrap/);
+assert.match(sourceInteriorCss, /@media \(max-width: 767px\)[\s\S]*\.quote-document-footer__primary \{[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+assert.match(sourceInteriorCss, /@media \(max-width: 420px\)[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
 assert.match(sourceHistory, /Duplicar como pendiente/);
 assert.match(sourceHistory, /Marcar como emitida/);
 assert.match(sourceHistory, /motivoRechazoCliente/);

@@ -34,6 +34,28 @@ function normalizeSingleRecipient(value, HttpsError) {
   return email;
 }
 
+function normalizeEmailSubject(value, HttpsError) {
+  if (value == null) return "";
+  // eslint-disable-next-line no-control-regex
+  if (typeof value !== "string" || value.length > 180 || /[\r\n\u0000-\u001f\u007f]/.test(value)) {
+    throw new HttpsError("invalid-argument", "Ingresa un asunto válido de hasta 180 caracteres.");
+  }
+  const subject = value.trim();
+  if (!subject) throw new HttpsError("invalid-argument", "Ingresa el asunto del correo.");
+  return subject;
+}
+
+function normalizeEmailMessage(value, HttpsError) {
+  if (value == null) return "";
+  // eslint-disable-next-line no-control-regex
+  if (typeof value !== "string" || value.length > 2000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value)) {
+    throw new HttpsError("invalid-argument", "Ingresa un mensaje válido de hasta 2000 caracteres.");
+  }
+  const message = value.replace(/\r\n?/g, "\n").trim();
+  if (!message) throw new HttpsError("invalid-argument", "Ingresa el mensaje del correo.");
+  return message;
+}
+
 function resolveCompanyReplyTo(company = {}) {
   const email = normalizeEmail(company.email);
   return typeof company.email === "string" && company.email.length <= 180 &&
@@ -211,29 +233,45 @@ async function finalizeSuccessfulSend({
   });
 }
 
-function buildPlainEmail({company, order}) {
+function responseInstructionIncluded(message) {
+  const normalized = String(message || "").toLocaleLowerCase("es-CL")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return /responde[^.\n]{0,80}correo|confirma[^.\n]{0,80}recepcion|canal habitual/.test(normalized);
+}
+
+function buildEmailSubject({asunto = "", company, order}) {
+  const companyName = company.nombreComercial || company.razonSocial || "Empresa compradora";
+  return asunto || `Orden de compra ${order.numero} | ${companyName}`;
+}
+
+function buildCommercialMessage({company, mensaje = "", order}) {
+  if (mensaje) return mensaje;
   const companyName = company.nombreComercial || company.razonSocial || "Empresa compradora";
   const providerName = order.proveedorSnapshot?.razonSocial || "Proveedor";
+  return `Estimado/a ${providerName}:\n\nAdjuntamos la orden de compra ${order.numero} para su revisión.\n\nSaludos,\n${companyName}`;
+}
+
+function buildPlainEmail({company, mensaje = "", order}) {
+  const companyName = company.nombreComercial || company.razonSocial || "Empresa compradora";
   const locale = resolveEmailLocale(order);
   const replyTo = resolveCompanyReplyTo(company);
+  const commercialMessage = buildCommercialMessage({company, mensaje, order});
   const responseInstruction = replyTo
     ? "Por favor, responde a este correo para confirmar la orden, informar observaciones o indicar cualquier diferencia en cantidades, precios o fecha de entrega."
     : "Por favor, confirma la orden por el canal habitual e informa cualquier observación o diferencia en cantidades, precios o fecha de entrega.";
   return [
     companyName,
     "",
-    `Estimado/a ${providerName}:`,
+    commercialMessage,
     "",
-    `Adjuntamos la orden de compra ${order.numero}.`,
+    `Orden de compra: ${order.numero}`,
     `Total: ${Number(order.total || 0).toLocaleString(locale, {style: "currency", currency: order.moneda || "CLP", maximumFractionDigits: 0})}`,
     order.condicionesPago ? `Condiciones: ${humanPayment(order.condicionesPago)}` : "",
     order.fechaEntregaEstimada ? `Entrega estimada: ${formatEmailDate(order.fechaEntregaEstimada, locale)}` : "",
     "",
     "El detalle completo se encuentra en el PDF adjunto.",
-    responseInstruction,
-    "",
-    `Saludos,\n${companyName}`,
-  ].filter(Boolean).join("\n");
+    responseInstructionIncluded(commercialMessage) ? "" : responseInstruction,
+  ].join("\n");
 }
 
 function humanPayment(value) {
@@ -245,11 +283,11 @@ function humanPayment(value) {
   })[value] || value;
 }
 
-function buildHtmlEmail({company, order, escapeHtml}) {
+function buildHtmlEmail({company, mensaje = "", order, escapeHtml}) {
   const companyName = company.nombreComercial || company.razonSocial || "Empresa compradora";
-  const providerName = order.proveedorSnapshot?.razonSocial || "Proveedor";
   const locale = resolveEmailLocale(order);
   const replyTo = resolveCompanyReplyTo(company);
+  const commercialMessage = buildCommercialMessage({company, mensaje, order});
   const responseInstruction = replyTo
     ? "Por favor, responde a este correo para confirmar la orden, informar observaciones o indicar cualquier diferencia en cantidades, precios o fecha de entrega."
     : "Por favor, confirma la orden por el canal habitual e informa cualquier observación o diferencia en cantidades, precios o fecha de entrega.";
@@ -259,7 +297,7 @@ function buildHtmlEmail({company, order, escapeHtml}) {
     maximumFractionDigits: 0,
   });
   const deliveryDate = formatEmailDate(order.fechaEntregaEstimada, locale);
-  return `<!doctype html><html><body style="margin:0;background:#f4f7fb;font-family:Arial,sans-serif;color:#141f32"><div style="max-width:640px;margin:0 auto;padding:24px"><div style="background:#fff;border:1px solid #d3dce9;border-radius:8px;overflow:hidden"><div style="background:#07285d;color:#fff;padding:22px 24px;border-bottom:4px solid #d22430"><h1 style="font-size:22px;margin:0">${escapeHtml(companyName)}</h1><p style="margin:6px 0 0">Orden de compra</p></div><div style="padding:24px"><p>Estimado/a <strong>${escapeHtml(providerName)}</strong>:</p><p>Adjuntamos la orden de compra solicitada.</p><div style="background:#f4f7fb;border:1px solid #d3dce9;border-radius:6px;padding:14px;margin:18px 0"><p style="margin:0 0 8px"><strong>${escapeHtml(order.numero)}</strong></p><p style="margin:0 0 6px">Total: <strong>${escapeHtml(total)}</strong></p>${order.condicionesPago ? `<p style="margin:0 0 6px">Condiciones: ${escapeHtml(humanPayment(order.condicionesPago))}</p>` : ""}${deliveryDate ? `<p style="margin:0">Entrega estimada: ${escapeHtml(deliveryDate)}</p>` : ""}</div><p>El detalle completo se encuentra en el PDF adjunto.</p><p>${escapeHtml(responseInstruction)}</p><p style="color:#4f5d75;margin-top:24px">Este correo fue generado desde ValoraCloud.</p></div></div></div></body></html>`;
+  return `<!doctype html><html><body style="margin:0;background:#f4f7fb;font-family:Arial,sans-serif;color:#141f32"><div style="max-width:640px;margin:0 auto;padding:24px"><div style="background:#fff;border:1px solid #d3dce9;border-radius:8px;overflow:hidden"><div style="background:#07285d;color:#fff;padding:22px 24px;border-bottom:4px solid #d22430"><h1 style="font-size:22px;margin:0">${escapeHtml(companyName)}</h1><p style="margin:6px 0 0">Orden de compra</p></div><div style="padding:24px"><p style="line-height:1.6;white-space:pre-wrap">${escapeHtml(commercialMessage)}</p><div style="background:#f4f7fb;border:1px solid #d3dce9;border-radius:6px;padding:14px;margin:18px 0"><p style="margin:0 0 8px"><strong>${escapeHtml(order.numero)}</strong></p><p style="margin:0 0 6px">Total: <strong>${escapeHtml(total)}</strong></p>${order.condicionesPago ? `<p style="margin:0 0 6px">Condiciones: ${escapeHtml(humanPayment(order.condicionesPago))}</p>` : ""}${deliveryDate ? `<p style="margin:0">Entrega estimada: ${escapeHtml(deliveryDate)}</p>` : ""}</div><p>El detalle completo se encuentra en el PDF adjunto.</p>${responseInstructionIncluded(commercialMessage) ? "" : `<p>${escapeHtml(responseInstruction)}</p>`}<p style="color:#4f5d75;margin-top:24px">Este correo fue generado desde ValoraCloud.</p></div></div></div></body></html>`;
 }
 
 async function sendPurchaseOrderEmailHandler(request, dependencies) {
@@ -291,6 +329,8 @@ async function sendPurchaseOrderEmailHandler(request, dependencies) {
     request.data?.emailProveedor,
     HttpsError
   );
+  const requestedSubject = normalizeEmailSubject(request.data?.asunto, HttpsError);
+  const requestedMessage = normalizeEmailMessage(request.data?.mensaje, HttpsError);
   const pdfAttachment = normalizePdfAttachment(request.data);
   if (!pdfAttachment) {
     throw new HttpsError("invalid-argument", "El PDF adjunto es obligatorio.");
@@ -308,9 +348,9 @@ async function sendPurchaseOrderEmailHandler(request, dependencies) {
   });
   const company = await getCompanyProfile(businessRef, reservation.order);
   const replyTo = resolveCompanyReplyTo(company);
-  const subject = `Orden de compra ${reservation.order.numero}`;
-  const html = buildHtmlEmail({company, order: reservation.order, escapeHtml});
-  const text = buildPlainEmail({company, order: reservation.order});
+  const subject = buildEmailSubject({asunto: requestedSubject, company, order: reservation.order});
+  const html = buildHtmlEmail({company, mensaje: requestedMessage, order: reservation.order, escapeHtml});
+  const text = buildPlainEmail({company, mensaje: requestedMessage, order: reservation.order});
   const basePatch = {
     ...reservation.recipient,
     fechaEnvioCorreo: FieldValue.serverTimestamp(),
@@ -382,10 +422,13 @@ module.exports = {
   PURCHASE_ORDER_EMAIL_COOLDOWN_MS,
   PURCHASE_ORDER_EMAIL_LEASE_MS,
   assertAttemptAvailable,
+  buildEmailSubject,
   buildHtmlEmail,
   buildPlainEmail,
   finalizeSuccessfulSend,
   normalizeSingleRecipient,
+  normalizeEmailMessage,
+  normalizeEmailSubject,
   resolveCompanyReplyTo,
   sendPurchaseOrderEmailHandler,
   validateStoredOrder,
