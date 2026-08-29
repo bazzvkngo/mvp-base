@@ -304,6 +304,26 @@ for (const event of ["gasto_registrado", "gasto_anulado", "horas_hombre_registra
 assert.equal(adaptWorkExpense(storedExpense).monto, 100000); assert.equal(adaptWorkLabor(storedLabor).total, 40000);
 console.log("OK costos: gastos, HH autoritativas, moneda, membresías, idempotencia, anulación y corrección append-only");
 
+const unitCostRegressionWorkId = "work-material-unit-cost";
+const unitCostRegressionWorkPath = `negocios/business-a/trabajos/${unitCostRegressionWorkId}`;
+const unitCostRegressionProductPath = "negocios/business-a/inventario/product-unit-cost";
+db.seed(unitCostRegressionWorkPath, {negocioId: "business-a", trabajoId: unitCostRegressionWorkId, titulo: "Regresión costo unitario", estado: "en_progreso", moneda: "USD", materialesSalidasTotal: 0, materialesCostoTotal: 0});
+db.seed(unitCostRegressionProductPath, {negocioId: "business-a", itemId: "product-unit-cost", tipoItem: "producto", estado: "activo", nombre: "Material unitario", unidad: "unidad", stock: 4, costoPromedio: 24972, costoBase: 999});
+const unitCostRegressionProduct = db.read(unitCostRegressionProductPath);
+assert.equal(getInventoryCurrentCost(unitCostRegressionProduct), 24972);
+assert.equal(getInventoryCurrentCost(unitCostRegressionProduct) * 1, 24972);
+const unitCostRegressionExit = await registrarSalidaMaterialTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: unitCostRegressionWorkId, itemId: "product-unit-cost", cantidad: 1, fecha: "2026-08-14", requestId: "material-unit-cost-regression"}), dependencies);
+const unitCostRegressionMovements = db.matching("negocios/business-a/movimientosInventario/").map(([, value]) => value).filter((value) => value.trabajoId === unitCostRegressionWorkId);
+assert.equal(db.read(unitCostRegressionProductPath).stock, 3);
+assert.equal(unitCostRegressionMovements.length, 1);
+assert.equal(unitCostRegressionMovements[0].tipo, "SALIDA_PROYECTO");
+assert.equal(unitCostRegressionExit.costoUnitario, 24972);
+assert.equal(unitCostRegressionExit.costoTotal, 24972);
+assert.equal(unitCostRegressionMovements[0].costoTotal, 24972);
+assert.equal(db.read(unitCostRegressionWorkPath).materialesCostoTotal, 24972);
+assert.notEqual(db.read(unitCostRegressionWorkPath).materialesCostoTotal, 99888);
+console.log("OK regresión materiales: stock 4, costo unitario 24.972 y salida 1 imputan 24.972, no 99.888");
+
 const productPath = "negocios/business-a/inventario/product-a";
 db.seed(productPath, {negocioId: "business-a", itemId: "product-a", tipoItem: "producto", estado: "activo", nombre: "Cable THHN", codigoInterno: "MAT-001", unidad: "metro", stock: 10, costoPromedio: 800, costoBase: 1000});
 db.seed("negocios/business-a/inventario/service-a", {negocioId: "business-a", itemId: "service-a", tipoItem: "servicio", estado: "activo", nombre: "Instalación", stock: 10, costoBase: 500});
