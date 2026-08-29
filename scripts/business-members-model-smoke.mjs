@@ -50,11 +50,14 @@ assert.deepEqual(Object.keys(adapted).sort(), [
 assert.equal(adapted.telefonoPersonal, undefined);
 assert.equal(adapted.numeroDocumento, undefined);
 assert.equal(businessMemberProfileLabel(adapted), "Supervisor comercial");
+assert.equal(adaptBusinessMember({nombre: "Sin nombre registrado"}).nombre, "Nombre no informado");
+assert.equal(adaptBusinessMember({nombre: ""}).nombre, "Nombre no informado");
 console.log("OK miembros modelo: DTO mínimo y correo exacto normalizado");
 
 const backendSource = fs.readFileSync("functions/businessMemberships.js", "utf8");
 const rulesSource = fs.readFileSync("firestore.rules", "utf8");
 const pageSource = fs.readFileSync("src/pages/EmployeesPage.jsx", "utf8");
+const rbacSource = fs.readFileSync("src/domain/rbac.mjs", "utf8");
 const navigationSource = fs.readFileSync("src/app/navigation.js", "utf8");
 assert.match(backendSource, /getUserByEmail/);
 assert.match(backendSource, /authUser\.disabled/);
@@ -69,6 +72,15 @@ assert.match(
 );
 assert.match(pageSource, /canManageBusinessMembers/);
 assert.match(pageSource, /Perfiles y permisos/);
+assert.match(pageSource, /Perfiles del sistema/);
+assert.match(pageSource, /Perfiles personalizados/);
+assert.match(pageSource, /Perfil protegido/);
+assert.match(pageSource, /Acceso a módulos/);
+assert.match(pageSource, /Seleccionar todos/);
+assert.match(pageSource, /Limpiar/);
+assert.match(pageSource, /profileForm\.modulos\.length/);
+assert.match(rbacSource, /trabajos: "Proyectos y trabajos"/);
+assert.doesNotMatch(pageSource, /Perfil estándar de ValoraCloud/);
 assert.doesNotMatch(pageSource, /legacy/i);
 assert.match(navigationSource, /to: "\/empleados"/);
 console.log("OK miembros integración estática: backend autoritativo, Rules y UI responsive");

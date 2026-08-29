@@ -427,6 +427,33 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
           Cambiar la razón social invalidará la verificación actual y requerirá una nueva solicitud.
         </p>
       )}
+      <dl className="company-profile-summary" aria-label="Resumen de la empresa">
+        <div>
+          <dt>Estado</dt>
+          <dd className={form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.VERIFIED ? "is-verified" : ""}>
+            {form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.VERIFIED && <AppIcon icon={ShieldCheck} size={15} />}
+            {BUSINESS_VERIFICATION_STATUS_LABELS[
+              form.verificacionEmpresa?.estado || BUSINESS_VERIFICATION_STATES.NOT_VERIFIED
+            ]}
+          </dd>
+        </div>
+        <div>
+          <dt>País</dt>
+          <dd>{form.paisNombre || getCountryByCode(form.paisCodigo)?.name || form.paisCodigo || "—"}</dd>
+        </div>
+        <div>
+          <dt>{form.identificadorFiscalTipo || "Identificación fiscal"}</dt>
+          <dd>{form.identificadorFiscalValor || "No informado"}</dd>
+        </div>
+        <div>
+          <dt>Razón social</dt>
+          <dd>{form.razonSocial || "No informada"}</dd>
+        </div>
+        <div>
+          <dt>Rubro</dt>
+          <dd>{form.rubroNombre || getBusinessCategoryDisplayName(form.rubroCodigo, form.rubroOtro) || "No informado"}</dd>
+        </div>
+      </dl>
       <form onSubmit={save} noValidate>
         <fieldset className="settings-fieldset" disabled={!canEdit || saving}>
           <legend className="sr-only">Información de la empresa</legend>
@@ -1176,7 +1203,7 @@ function QuoteSection({ businessId, canEdit }) {
               </section>
               <section className="settings-card settings-quote-group">
                 <div className="settings-quote-group__header">
-                  <h3>Notas del documento</h3>
+                  <h3>Notas finales</h3>
                   <p>Mensajes complementarios visibles en la cotización.</p>
                 </div>
                 <div className="settings-form-grid">
@@ -1258,7 +1285,7 @@ function BusinessDeletionSection({
           icon={Trash2}
           onClick={() => setDialogOpen(true)}
         >
-          Eliminar empresa
+          Desactivar empresa
         </Button>
       </div>
 
@@ -1266,7 +1293,7 @@ function BusinessDeletionSection({
         open={dialogOpen}
         onClose={closeDialog}
         initialFocusRef={confirmationInputRef}
-        title="Confirma la eliminación de la empresa"
+        title="Confirma la desactivación de la empresa"
         description="La empresa dejará de estar disponible para operar y todos sus miembros perderán el acceso. Sus registros históricos se conservarán."
         footer={
           <>
@@ -1280,7 +1307,7 @@ function BusinessDeletionSection({
               onClick={confirmDeletion}
               disabled={!confirmationMatches || deleting}
             >
-              {deleting ? "Eliminando..." : "Confirmar eliminación"}
+              {deleting ? "Desactivando..." : "Desactivar para todos"}
             </Button>
           </>
         }

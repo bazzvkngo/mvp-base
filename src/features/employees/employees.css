@@ -56,6 +56,60 @@
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 
+.employees-profile-section {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.employees-profile-section + .employees-profile-section {
+  border-top: 1px solid var(--employees-border);
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+}
+
+.employees-profile-section__header {
+  align-items: end;
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+}
+
+.employees-profile-section__header h3,
+.employees-profile-section__header p {
+  margin: 0;
+}
+
+.employees-profile-section__header h3 {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-md);
+}
+
+.employees-profile-section__header p,
+.employees-profile-section__header > span,
+.employees-profile-empty span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.employees-profile-card--system {
+  background: var(--color-surface-subtle);
+  box-shadow: none;
+}
+
+.employees-profile-card .ui-status-badge {
+  gap: 4px;
+  justify-self: start;
+}
+
+.employees-profile-empty {
+  background: var(--color-surface-subtle);
+  border: 1px dashed var(--employees-border);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-4);
+}
+
 .employees-profile-card {
   border: 1px solid var(--employees-border);
   border-radius: var(--radius-lg);
@@ -92,9 +146,32 @@
   border: 1px solid var(--employees-border);
   border-radius: var(--radius-md);
   display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.employees-modules-toolbar {
+  align-items: center;
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+.employees-modules-toolbar > span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.employees-modules-toolbar > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.employees-modules-grid {
+  display: grid;
   gap: var(--space-2);
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  padding: var(--space-3);
 }
 
 .employees-modules label {
@@ -218,7 +295,21 @@
   }
 
   .employees-modules {
+    padding: var(--space-3);
+  }
+
+  .employees-modules-grid {
     grid-template-columns: 1fr;
+  }
+
+  .employees-modules-toolbar,
+  .employees-profile-section__header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .employees-modules-toolbar .ui-button {
+    flex: 1 1 140px;
   }
 
   .employees-table {

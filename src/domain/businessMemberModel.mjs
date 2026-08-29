@@ -30,9 +30,12 @@ export function canManageBusinessMembers(role) {
 export function adaptBusinessMember(raw = {}) {
   const role = safeText(raw.rol).toUpperCase();
   const status = safeText(raw.estado).toLowerCase();
+  const storedName = safeText(raw.nombre);
   return {
     uid: safeText(raw.uid),
-    nombre: safeText(raw.nombre) || "Sin nombre registrado",
+    nombre: storedName && storedName !== "Sin nombre registrado"
+      ? storedName
+      : "Nombre no informado",
     correo: safeText(raw.correo) || "Sin correo disponible",
     rol: BUSINESS_MEMBER_ROLES.includes(role) ? role : "MEMBER",
     profileId: safeText(raw.profileId),

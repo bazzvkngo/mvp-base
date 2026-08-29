@@ -44,7 +44,7 @@ export const BUSINESS_MODULES = Object.freeze([
 
 export const BUSINESS_MODULE_LABELS = Object.freeze({
   reportes: "Inicio / Reportes",
-  trabajos: "Trabajos",
+  trabajos: "Proyectos y trabajos",
   inventario: "Inventario",
   clientes: "Clientes",
   cotizaciones: "Cotizaciones",
