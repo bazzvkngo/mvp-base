@@ -61,12 +61,32 @@ export function canManageWorks(role) {
   return ["OWNER", "ADMIN"].includes(String(role || "").toUpperCase());
 }
 
+export function isWorkOperationalReadOnly(work = {}) {
+  return ["completado", "cancelado"].includes(work.estado);
+}
+
 export function getWorkMemberIdentity(member = {}) {
   const name = String(member.nombre || "").trim();
   if (name && name !== "Sin nombre registrado") return name;
   const email = String(member.correo || "").trim();
   if (email && email !== "Sin correo disponible") return email;
   return "Usuario sin identificar";
+}
+
+export function getWorkHistoricalPersonIdentity(snapshot = {}, uid = "", members = [], fallback = "Una persona del equipo") {
+  const validName = (value) => {
+    const name = String(value || "").trim();
+    return name && !["sin nombre registrado", "usuario sin identificar"].includes(name.toLocaleLowerCase("es-CL")) ? name : "";
+  };
+  const snapshotName = validName(snapshot.nombre);
+  if (snapshotName) return snapshotName;
+  const snapshotEmail = String(snapshot.correo || "").trim();
+  const normalizedSnapshotEmail = snapshotEmail.toLocaleLowerCase("es-CL");
+  const member = members.find((entry) => entry.uid === uid || (normalizedSnapshotEmail && String(entry.correo || "").trim().toLocaleLowerCase("es-CL") === normalizedSnapshotEmail));
+  const memberName = validName(member?.nombre);
+  if (memberName) return memberName;
+  if (snapshotEmail && snapshotEmail !== "Sin correo disponible") return snapshotEmail;
+  return fallback;
 }
 
 export function getWorkMemberOptionLabel(member = {}, currentUserUid = "") {
@@ -487,7 +507,8 @@ export function getWorkOperationalIndicators(work = {}, {now = new Date()} = {})
 }
 
 export function humanizeWorkEvent(event = {}, {includeAmounts = true} = {}) {
-  const actor = event.actorSnapshot?.nombre || "Una persona del equipo";
+  const actorIdentity = getWorkMemberIdentity(event.actorSnapshot);
+  const actor = actorIdentity === "Usuario sin identificar" ? "Una persona del equipo" : actorIdentity;
   const detail = event.detalle || {};
   const eventMoney = (value) => {
     const currency = /^[A-Z]{3}$/.test(String(detail.moneda || "")) ? detail.moneda : "";

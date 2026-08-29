@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {createRequire} from "node:module";
-import {adaptStoredWork, adaptWorkExpense, adaptWorkLabor, adaptWorkLink, adaptWorkMaterialMovement, adaptWorkTask, adaptWorkTaskDocumentation, buildQuickWorkCreationPayload, buildWorkDailyCostSummary, buildWorkMutationPayload, canManageWorks, formatWorkNumber as formatFrontendNumber, getEligibleWorkQuoteOptions, getInventoryCurrentCost, getTaskProgress, getWorkCostSummary, getWorkDraftErrors, getWorkMemberIdentity, getWorkMemberOptionLabel, getWorkOperationalIndicators, getWorkSaleMaterials, getWorkTaskProgress, hasAdditionalWorkMembers, humanizeWorkEvent, matchesWorkFilters, WORK_MODEL_VERSION} from "../src/domain/workModel.mjs";
+import {adaptStoredWork, adaptWorkExpense, adaptWorkLabor, adaptWorkLink, adaptWorkMaterialMovement, adaptWorkTask, adaptWorkTaskDocumentation, buildQuickWorkCreationPayload, buildWorkDailyCostSummary, buildWorkMutationPayload, canManageWorks, formatWorkNumber as formatFrontendNumber, getEligibleWorkQuoteOptions, getInventoryCurrentCost, getTaskProgress, getWorkCostSummary, getWorkDraftErrors, getWorkHistoricalPersonIdentity, getWorkMemberIdentity, getWorkMemberOptionLabel, getWorkOperationalIndicators, getWorkSaleMaterials, getWorkTaskProgress, hasAdditionalWorkMembers, humanizeWorkEvent, isWorkOperationalReadOnly, matchesWorkFilters, WORK_MODEL_VERSION} from "../src/domain/workModel.mjs";
 
 const require = createRequire(import.meta.url);
 const {actualizarSubtareaTrabajoHandler, actualizarTrabajoHandler, agregarNotaTrabajoHandler, agregarSubtareaTrabajoHandler, anularGastoTrabajoHandler, anularHorasHombreTrabajoHandler, asignarTareaTrabajoHandler, cambiarEstadoTareaTrabajoV2Handler, cambiarEstadoTrabajoHandler, crearTareaTrabajoV2Handler, crearTrabajoHandler, documentarTareaTrabajoHandler, eliminarSubtareaTrabajoHandler, eliminarTareaTrabajoV2Handler, formatWorkNumber, normalizeWorkInput, registrarDevolucionMaterialTrabajoHandler, registrarGastoTrabajoHandler, registrarHorasHombreTrabajoHandler, registrarSalidaMaterialTrabajoHandler, WORK_EXPENSE_CATEGORIES, writeCommercialLink, writeQuoteResponseEvent, writeSaleConfirmationEvent} = require("../functions/workPersistence.js");
@@ -324,6 +324,67 @@ assert.equal(db.read(unitCostRegressionWorkPath).materialesCostoTotal, 24972);
 assert.notEqual(db.read(unitCostRegressionWorkPath).materialesCostoTotal, 99888);
 console.log("OK regresión materiales: stock 4, costo unitario 24.972 y salida 1 imputan 24.972, no 99.888");
 
+const completedGuardWorkId = "work-completed-cost-guard";
+const completedGuardWorkPath = `negocios/business-a/trabajos/${completedGuardWorkId}`;
+const completedGuardProductPath = "negocios/business-a/inventario/product-completed-guard";
+db.seed(completedGuardWorkPath, {
+  negocioId: "business-a",
+  trabajoId: completedGuardWorkId,
+  titulo: "Cierre autoritativo de costos",
+  estado: "en_progreso",
+  moneda: "USD",
+  gastosVigentesTotal: 0,
+  gastosMontoTotal: 0,
+  gastosMontoDirecto: 0,
+  gastosMontoIndirecto: 0,
+  gastosMaterialMontoTotal: 0,
+  horasHombreVigentesTotal: 0,
+  horasHombreCantidadTotal: 0,
+  horasHombreCostoTotal: 0,
+  materialesSalidasTotal: 0,
+  materialesDevolucionesTotal: 0,
+  materialesCostoTotal: 0,
+});
+db.seed(completedGuardProductPath, {negocioId: "business-a", itemId: "product-completed-guard", tipoItem: "producto", estado: "activo", nombre: "Producto protegido", unidad: "unidad", stock: 4, costoPromedio: 1000});
+const openGuardExit = await registrarSalidaMaterialTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: completedGuardWorkId, itemId: "product-completed-guard", cantidad: 1, fecha: "2026-08-14", requestId: "completed-guard-material-open"}), dependencies);
+const openGuardExpense = await registrarGastoTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: completedGuardWorkId, requestId: "completed-guard-expense-open", gasto: {concepto: "Gasto previo al cierre", monto: 200, categoria: "OPERATIVO", responsableDelGastoUid: "owner-a", fecha: "2026-08-14"}}), dependencies);
+const openGuardLabor = await registrarHorasHombreTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: completedGuardWorkId, requestId: "completed-guard-labor-open", horasHombre: {tecnicoUid: "worker-a", horas: 1, costoHora: 300, fecha: "2026-08-14", concepto: "HH previa al cierre"}}), dependencies);
+assert.equal(db.read(completedGuardProductPath).stock, 3);
+assert.equal(db.read(completedGuardWorkPath).materialesCostoTotal, 1000);
+await cambiarEstadoTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: completedGuardWorkId, estado: "completado"}), dependencies);
+const completedGuardCostInput = () => ({
+  expenses: db.matching(`${completedGuardWorkPath}/gastos/`).map(([, value]) => adaptWorkExpense(value)),
+  labor: db.matching(`${completedGuardWorkPath}/horasHombre/`).map(([, value]) => adaptWorkLabor(value)),
+  materials: db.matching("negocios/business-a/movimientosInventario/").map(([, value]) => adaptWorkMaterialMovement(value)).filter((value) => value.trabajoId === completedGuardWorkId),
+});
+const completedGuardBalanceBefore = getWorkCostSummary(completedGuardCostInput());
+const completedGuardDocumentsBefore = structuredClone([...db.documents.entries()]);
+const rejectsCompletedCostMutation = (operation) => assert.rejects(operation, (error) => error.code === "failed-precondition" && /antes de modificar sus costos/.test(error.message));
+await rejectsCompletedCostMutation(() => registrarSalidaMaterialTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: completedGuardWorkId, itemId: "product-completed-guard", cantidad: 1, fecha: "2026-08-15", requestId: "completed-guard-material-closed"}), dependencies));
+await rejectsCompletedCostMutation(() => registrarDevolucionMaterialTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: completedGuardWorkId, movimientoOrigenId: openGuardExit.movimientoId, cantidad: 1, fecha: "2026-08-15", requestId: "completed-guard-return-closed"}), dependencies));
+await rejectsCompletedCostMutation(() => registrarGastoTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: completedGuardWorkId, requestId: "completed-guard-expense-closed", gasto: {concepto: "Gasto bloqueado", monto: 50, categoria: "OPERATIVO", responsableDelGastoUid: "owner-a", fecha: "2026-08-15"}}), dependencies));
+await rejectsCompletedCostMutation(() => anularGastoTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: completedGuardWorkId, gastoId: openGuardExpense.gastoId, motivo: "No debe anularse cerrado", requestId: "completed-guard-expense-annul"}), dependencies));
+await rejectsCompletedCostMutation(() => registrarHorasHombreTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: completedGuardWorkId, requestId: "completed-guard-labor-closed", horasHombre: {tecnicoUid: "worker-a", horas: 1, costoHora: 300, fecha: "2026-08-15", concepto: "HH bloqueada"}}), dependencies));
+await rejectsCompletedCostMutation(() => anularHorasHombreTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: completedGuardWorkId, horasHombreId: openGuardLabor.horasHombreId, motivo: "No debe anularse cerrado", requestId: "completed-guard-labor-annul"}), dependencies));
+assert.equal(db.read(completedGuardProductPath).stock, 3);
+assert.equal(db.read(`${completedGuardWorkPath}/gastos/${openGuardExpense.gastoId}`).estado, "vigente");
+assert.equal(db.read(`${completedGuardWorkPath}/horasHombre/${openGuardLabor.horasHombreId}`).estado, "vigente");
+assert.deepEqual(getWorkCostSummary(completedGuardCostInput()), completedGuardBalanceBefore);
+assert.deepEqual([...db.documents.entries()], completedGuardDocumentsBefore);
+await cambiarEstadoTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: completedGuardWorkId, estado: "en_progreso"}), dependencies);
+const reopenedGuardExit = await registrarSalidaMaterialTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: completedGuardWorkId, itemId: "product-completed-guard", cantidad: 1, fecha: "2026-08-16", requestId: "completed-guard-material-reopened"}), dependencies);
+assert.equal(reopenedGuardExit.costoTotal, 1000);
+assert.equal(db.read(completedGuardProductPath).stock, 2);
+console.log("OK cierre autoritativo: costos bloqueados sin escrituras parciales y habilitados tras reapertura");
+
+await cambiarEstadoTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: completedGuardWorkId, estado: "cancelado"}), dependencies);
+const canceledGuardStockBefore = db.read(completedGuardProductPath).stock;
+await rejectsCompletedCostMutation(() => registrarSalidaMaterialTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: completedGuardWorkId, itemId: "product-completed-guard", cantidad: 1, fecha: "2026-08-17", requestId: "canceled-guard-material"}), dependencies));
+await rejectsCompletedCostMutation(() => registrarGastoTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: completedGuardWorkId, requestId: "canceled-guard-expense", gasto: {concepto: "Gasto cancelado", monto: 50, categoria: "OPERATIVO", responsableDelGastoUid: "owner-a", fecha: "2026-08-17"}}), dependencies));
+await rejectsCompletedCostMutation(() => registrarHorasHombreTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: completedGuardWorkId, requestId: "canceled-guard-labor", horasHombre: {tecnicoUid: "worker-a", horas: 1, costoHora: 300, fecha: "2026-08-17", concepto: "HH cancelada"}}), dependencies));
+assert.equal(db.read(completedGuardProductPath).stock, canceledGuardStockBefore);
+console.log("OK cancelación autoritativa: materiales, gastos y HH quedan bloqueados sin alterar stock");
+
 const productPath = "negocios/business-a/inventario/product-a";
 db.seed(productPath, {negocioId: "business-a", itemId: "product-a", tipoItem: "producto", estado: "activo", nombre: "Cable THHN", codigoInterno: "MAT-001", unidad: "metro", stock: 10, costoPromedio: 800, costoBase: 1000});
 db.seed("negocios/business-a/inventario/service-a", {negocioId: "business-a", itemId: "service-a", tipoItem: "servicio", estado: "activo", nombre: "Instalación", stock: 10, costoBase: 500});
@@ -419,7 +480,16 @@ assert.equal(matchesWorkFilters(adapted, {query: "constructora sur", estado: "to
 const mutation = buildWorkMutationPayload({...input(), numero: "TRB-FAKE", clienteSnapshot: {nombre: "Falso"}, creadoPorUid: "fake"});
 assert.equal("numero" in mutation, false); assert.equal("clienteSnapshot" in mutation, false); assert.equal("creadoPorUid" in mutation, false);
 assert.equal(humanizeWorkEvent({tipo: "nota_agregada", actorSnapshot: {nombre: "Mauricio"}}), "Mauricio agregó una nota.");
+assert.equal(humanizeWorkEvent({tipo: "nota_agregada", actorSnapshot: {nombre: "Sin nombre registrado", correo: "persona@example.cl"}}), "persona@example.cl agregó una nota.");
 assert.doesNotMatch(humanizeWorkEvent({tipo: "venta_confirmada", actorSnapshot: {nombre: "Mauricio"}, detalle: {numero: "VTA-1", total: 119000, moneda: "USD"}}, {includeAmounts: false}), /119|USD/);
+assert.equal(getWorkHistoricalPersonIdentity({nombre: "Nombre histórico", correo: "historico@example.cl"}, "worker-a", [{uid: "worker-a", nombre: "Nombre actual"}]), "Nombre histórico");
+assert.equal(getWorkHistoricalPersonIdentity({nombre: "Sin nombre registrado", correo: "historico@example.cl"}, "worker-a", [{uid: "worker-a", nombre: "Nombre actual"}]), "Nombre actual");
+assert.equal(getWorkHistoricalPersonIdentity({nombre: "Sin nombre registrado", correo: "historico@example.cl"}, "", []), "historico@example.cl");
+assert.equal(getWorkHistoricalPersonIdentity({}, "", [], "Persona histórica"), "Persona histórica");
+assert.equal(isWorkOperationalReadOnly({estado: "completado"}), true);
+assert.equal(isWorkOperationalReadOnly({estado: "cancelado"}), true);
+assert.equal(isWorkOperationalReadOnly({estado: "en_progreso"}), false);
+for (const estado of ["pendiente", "en_espera"]) assert.equal(isWorkOperationalReadOnly({estado}), false);
 console.log("OK frontend: búsqueda, payload restringido y eventos sin UID crudo");
 
 const rules = fs.readFileSync("firestore.rules", "utf8");
@@ -431,19 +501,34 @@ assert.match(backend, /workCounters/); assert.match(backend, /workCreateRequests
 assert.match(backend, /runTransaction[\s\S]*transaction\.get\(counterRef\)[\s\S]*transaction\.set\(counterRef/);
 assert.match(page, /ResponsiveDialog/); assert.doesNotMatch(page, /window\.confirm|actorUid/); assert.match(page, /works-board/); assert.match(page, /Historial del trabajo/); assert.match(page, /TaskSection/); assert.match(page, /FinancialSection/); assert.match(page, /No tienes tareas asignadas/);
 assert.match(page, /\+ Nuevo cliente/); assert.match(page, /openCreateClient/); assert.match(page, /editingWork \|\| hasAdditionalMembers/);
-assert.match(page, /Responsable principal/); assert.match(page, /Equipo de trabajo/); assert.doesNotMatch(page, /<Field[^>]+label="Número"/);
+assert.match(page, /Responsable principal/); assert.match(page, /Equipo adicional/); assert.match(page, /Sin integrantes/); assert.doesNotMatch(page, /<Field[^>]+label="Número"/);
 assert.match(page, /member\.uid === currentUserUid && member\.estado === "activo"/); assert.match(page, /responsableUid: currentMember\?\.uid \|\| ""/);
 assert.match(page, /label="Cotización asociada" optional/); assert.match(page, /Sin cotización/); assert.match(page, /getEligibleWorkQuoteOptions/);
-assert.match(page, /label="Descripción" optional/); assert.match(page, /label="Cliente" optional/); assert.match(page, /label="Responsable" optional/); assert.match(page, /label="Fecha de inicio" optional/); assert.match(page, /label="Fecha de término" optional/);
+assert.match(page, /label="Descripción" optional/); assert.match(page, /label="Cliente" optional/); assert.match(page, /label="Responsable" optional/); assert.match(page, /label="Inicio planificado" optional/); assert.match(page, /label="Término planificado" optional/); assert.match(page, /Completado el/);
 assert.match(page, /Escribe un nombre breve para identificar el proyecto/); assert.match(page, /Describe el requerimiento o lo informado por el cliente/); assert.match(page, /El número TRB y el estado Pendiente se asignarán automáticamente\./);
 assert.doesNotMatch(page, /Nueva cotización/); assert.doesNotMatch(page, /fecha de ingreso se asignarán automáticamente/);
 assert.match(styles, /works-form-automatic-note/); assert.match(styles, /@media\(min-width:768px\)[\s\S]*works-form-dialog \.responsive-dialog__body/);
-assert.match(page, /function DetailDisclosure[\s\S]*<details className="works-detail-disclosure">/); assert.match(page, /className="works-costs-focus"/); assert.match(page, /title="Notas y documentación"/); assert.match(page, /title="Historial del trabajo"/);
-assert.match(page, /<h3>Resumen<\/h3>[\s\S]*<TaskSection[\s\S]*<h3>Costos<\/h3>[\s\S]*title="Notas y documentación"[\s\S]*title="Historial del trabajo"/);
-assert.match(page, /Aún no hay venta confirmada para calcular resultado y rentabilidad\./); assert.match(page, /Aún no se han registrado consumos adicionales\./); assert.match(page, /Aún no se han registrado gastos\./); assert.match(page, /Aún no se han registrado horas hombre\./);
+assert.match(page, /function DetailDisclosure[\s\S]*<details className="works-detail-disclosure">/); assert.match(page, /className="works-costs-focus"/); assert.match(page, /title="Notas del proyecto"/); assert.match(page, /title="Historial del trabajo"/);
+assert.match(page, /<h3>Resumen<\/h3>[\s\S]*<TaskSection[\s\S]*<h3>Costos<\/h3>[\s\S]*title="Notas del proyecto"[\s\S]*title="Historial del trabajo"/);
+assert.match(page, /Aún no hay venta confirmada para calcular resultado y margen\./); assert.match(page, /Aún no se han registrado consumos adicionales\./); assert.match(page, /Aún no se han registrado gastos\./); assert.match(page, /Aún no se han registrado horas hombre\./);
 assert.match(page, /Materiales incluidos en la venta/); assert.match(page, /Registra aquí sólo consumos adicionales del proyecto/); assert.match(page, /Costo estimado de esta salida/);
-assert.match(page, /Costo acumulado/); assert.match(page, /Último avance/); assert.match(page, /Sin actividad reciente/); assert.match(page, /Completar igualmente/); assert.match(page, /Motivo de espera/);
+assert.match(page, /Costo asignado a esta tarea/); assert.match(page, /Último avance/); assert.match(page, /Sin actividad reciente/); assert.match(page, /Completar igualmente/); assert.match(page, /Motivo de espera/);
 assert.match(page, /TaskCostSelect/); assert.match(page, /Costos por día/); assert.match(page, /Nueva subtarea/); assert.match(page, /subtask\.completada/);
+assert.match(page, /const completed = selectedWork\?\.estado === "completado"/);
+assert.match(page, /const operationalReadOnly = isWorkOperationalReadOnly\(selectedWork\)/);
+assert.match(page, /readOnly=\{operationalReadOnly\}/);
+assert.match(page, /canConsume && !readOnly && <form className="works-cost-form works-material-form"/);
+assert.match(page, /canRegister && !readOnly && <form className="works-cost-form" onSubmit=\{saveExpense\}/);
+assert.match(page, /canRegister && !readOnly && <form className="works-cost-form" onSubmit=\{saveLabor\}/);
+assert.match(page, /canManage && !readOnly && entry\.estado !== "anulado"/);
+assert.match(page, /canManage && !readOnly && remaining > 0/);
+assert.match(page, /!operationalReadOnly && <Button[^>]+onClick=\{\(\) => setCancelWork\(selectedWork\)\}>Cancelar trabajo/);
+assert.match(page, /open=\{Boolean\(cancelWork\) && !isWorkOperationalReadOnly\(cancelWork\)\}/);
+assert.match(page, /Reabrir proyecto/);
+assert.match(page, /visibleExpenses\.map/); assert.match(page, /visibleLabor\.map/); assert.match(page, /exits\.map/); assert.match(page, /saleMaterials\.map/);
+assert.match(page, /works-balance-grid works-balance-primary/); assert.match(page, /<dt>Ingresos<\/dt>/); assert.match(page, /<dt>Costos<\/dt>/); assert.match(page, /<dt>Resultado<\/dt>/); assert.match(page, /<dt>Margen<\/dt>/);
+assert.doesNotMatch(page, /Costos \/ ingreso|<dt>Rentabilidad<\/dt>|<th>Avance<\/th>|movimiento\(s\)|gasto\(s\) MATERIAL|Inventario es la fuente de materiales/);
+assert.match(page, /El costo histórico de/);
 assert.match(backend, /agregarSubtareaTrabajoHandler/); assert.match(backend, /actualizarSubtareaTrabajoHandler/); assert.match(backend, /eliminarSubtareaTrabajoHandler/); assert.match(backend, /tareaId: taskId/);
 assert.match(styles, /works-detail-disclosure\[open\]/); assert.match(styles, /works-commercial-list[\s\S]*grid-template-columns/);
 console.log("OK integración: Rules, autoridad backend, lista/tablero y confirmación segura");

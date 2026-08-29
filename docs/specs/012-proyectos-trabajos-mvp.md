@@ -53,6 +53,8 @@ La primera operación financiera fija `moneda` en el TRB desde la moneda autorit
 
 `workCostRequests/{requestId}` es interno e idempotente. El historial agrega `gasto_registrado`, `gasto_anulado`, `horas_hombre_registradas` y `horas_hombre_anuladas`. TRB legacy sin moneda, gastos, HH o contadores se adapta con totales cero sin migración.
 
+Los trabajos `completado` y `cancelado` son terminales para altas, anulaciones y devoluciones de gastos, HH y materiales; sólo al volver a un estado operativo mediante el cambio de estado existente se habilitan nuevamente.
+
 ## Materiales / fase 4
 
 Las salidas y devoluciones del TRB reutilizan el libro empresarial `movimientosInventario`. `SALIDA_PROYECTO` descuenta stock y `DEVOLUCION_PROYECTO` lo restituye; ambos movimientos son inmutables, conservan `trabajoId`, `tareaId` opcional, `itemId`, cantidad, costo unitario y total, moneda, stock anterior/posterior, actor, fecha y snapshot mínimo del producto. La devolución referencia siempre su `movimientoOrigenId` y hereda la tarea de la salida.

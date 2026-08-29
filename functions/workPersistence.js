@@ -122,6 +122,16 @@ function assertTaskMutable(work, HttpsError) {
   if (["completado", "cancelado"].includes(work.estado)) fail(HttpsError, "failed-precondition", "Reabre el trabajo antes de modificar sus tareas.");
 }
 
+function assertWorkCostsMutable(work, HttpsError) {
+  if (["completado", "cancelado"].includes(work.estado)) {
+    fail(
+        HttpsError,
+        "failed-precondition",
+        "El proyecto est\u00e1 en un estado terminal. Vuelve a un estado operativo antes de modificar sus costos.",
+    );
+  }
+}
+
 function normalizeTaskInput(raw = {}, HttpsError) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) fail(HttpsError, "invalid-argument", "Los datos de la tarea deben enviarse como objeto.");
   return {
@@ -1117,6 +1127,7 @@ async function registrarGastoTrabajoHandler(request, dependencies) {
     if (previous) { result = previous; return; }
     const [workSnapshot, businessSnapshot] = await Promise.all([transaction.get(workRef), transaction.get(context.businessRef)]);
     const work = assertWork(workSnapshot, context.businessId, HttpsError);
+    assertWorkCostsMutable(work, HttpsError);
     assertWorkOperator(work, context, HttpsError);
     await assertOptionalCostTask(transaction, workRef, input.tareaId, context, HttpsError);
     const business = businessSnapshot.data() || {};
@@ -1191,6 +1202,7 @@ async function registrarHorasHombreTrabajoHandler(request, dependencies) {
       transaction.get(db.collection("membresias").doc(membershipId(context.businessId, input.tecnicoUid))),
     ]);
     const work = assertWork(workSnapshot, context.businessId, HttpsError);
+    assertWorkCostsMutable(work, HttpsError);
     assertWorkOperator(work, context, HttpsError);
     await assertOptionalCostTask(transaction, workRef, input.tareaId, context, HttpsError);
     const business = businessSnapshot.data() || {};
@@ -1251,6 +1263,7 @@ async function anularGastoTrabajoHandler(request, dependencies) {
     const previous = previousCostRequest(await transaction.get(requestRef), {fingerprint: requestFingerprint, operation: "anular_gasto", uid: context.uid}, HttpsError);
     if (previous) { result = previous; return; }
     const work = assertWork(await transaction.get(workRef), context.businessId, HttpsError);
+    assertWorkCostsMutable(work, HttpsError);
     const expenseSnapshot = await transaction.get(expenseRef); const expense = expenseSnapshot.data() || {};
     if (!expenseSnapshot.exists || expense.negocioId !== context.businessId || expense.trabajoId !== workId) fail(HttpsError, "not-found", "No se encontró el gasto.");
     const timestamp = FieldValue.serverTimestamp();
@@ -1297,6 +1310,7 @@ async function anularHorasHombreTrabajoHandler(request, dependencies) {
     const previous = previousCostRequest(await transaction.get(requestRef), {fingerprint: requestFingerprint, operation: "anular_hh", uid: context.uid}, HttpsError);
     if (previous) { result = previous; return; }
     const work = assertWork(await transaction.get(workRef), context.businessId, HttpsError);
+    assertWorkCostsMutable(work, HttpsError);
     const laborSnapshot = await transaction.get(laborRef); const labor = laborSnapshot.data() || {};
     if (!laborSnapshot.exists || labor.negocioId !== context.businessId || labor.trabajoId !== workId) fail(HttpsError, "not-found", "No se encontró el registro de HH.");
     const timestamp = FieldValue.serverTimestamp();
@@ -1363,6 +1377,7 @@ async function registrarSalidaMaterialTrabajoHandler(request, dependencies) {
       transaction.get(workRef), transaction.get(context.businessRef), transaction.get(itemRef),
     ]);
     const work = assertWork(workSnapshot, context.businessId, HttpsError);
+    assertWorkCostsMutable(work, HttpsError);
     assertWorkOperator(work, context, HttpsError);
     await assertOptionalCostTask(transaction, workRef, taskId, context, HttpsError);
     if (!businessSnapshot.exists) fail(HttpsError, "failed-precondition", "El negocio seleccionado no est\u00e1 disponible.");
@@ -1429,6 +1444,7 @@ async function registrarDevolucionMaterialTrabajoHandler(request, dependencies) 
     if (previous) { result = previous; return; }
     const [workSnapshot, originSnapshot, balanceSnapshot] = await Promise.all([transaction.get(workRef), transaction.get(originRef), transaction.get(balanceRef)]);
     const work = assertWork(workSnapshot, context.businessId, HttpsError);
+    assertWorkCostsMutable(work, HttpsError);
     if (!originSnapshot.exists) fail(HttpsError, "not-found", "No se encontr\u00f3 la salida de material.");
     const origin = originSnapshot.data() || {};
     if (origin.negocioId !== context.businessId || origin.trabajoId !== workId || origin.tipo !== "SALIDA_PROYECTO") fail(HttpsError, "failed-precondition", "La salida no corresponde a este proyecto.");
