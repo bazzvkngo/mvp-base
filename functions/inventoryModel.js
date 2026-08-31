@@ -299,7 +299,7 @@ function getInventoryTaxFields(item, rawSettings = {}) {
 function validateInventoryItemInput(
   data,
   HttpsError,
-  { allowNegativeStock = false } = {}
+  { allowNegativeStock = false, allowRequestedCode = true } = {}
 ) {
   const source = data && typeof data === "object" ? data : {};
   const tipoItem = safeText(source.tipoItem, 20).toLowerCase();
@@ -356,11 +356,13 @@ function validateInventoryItemInput(
     estado: "activo",
   };
 
-  const codigoSolicitado = normalizeRequestedInventoryCode(
-    source.codigoSolicitado,
-    HttpsError
-  );
-  if (codigoSolicitado) result.codigoSolicitado = codigoSolicitado;
+  if (allowRequestedCode) {
+    const codigoSolicitado = normalizeRequestedInventoryCode(
+      source.codigoSolicitado,
+      HttpsError
+    );
+    if (codigoSolicitado) result.codigoSolicitado = codigoSolicitado;
+  }
 
   if (tipoItem === "producto") {
     if (usesPurchaseTaxPriceFormation) {
@@ -943,6 +945,7 @@ async function createInventoryItemWithCodeHandler(
   const item = validateInventoryItemInput(request.data?.item, HttpsError, {
     allowNegativeStock:
       inventorySettingsSnapshot.data()?.permitirStockNegativo === true,
+    allowRequestedCode: false,
   });
   const requestRef = userRef.collection("inventoryCreateRequests").doc(requestId);
   const previousRequest = await readDocumentSnapshot(db, requestRef);
@@ -953,11 +956,6 @@ async function createInventoryItemWithCodeHandler(
       idempotent: true,
     };
   }
-  await assertRequestedCodesAvailable(
-    userRef,
-    [item.codigoSolicitado],
-    HttpsError
-  );
   await assertBarcodeAvailable(userRef, item.barcode, HttpsError);
   const counterRef = userRef
     .collection("inventarioContadores")
@@ -968,11 +966,6 @@ async function createInventoryItemWithCodeHandler(
   const categoryRef = item.categoriaId
     ? userRef.collection("categoriasInventario").doc(item.categoriaId)
     : null;
-  const requestedCodeKeyRef = item.codigoSolicitado
-    ? userRef.collection("inventoryCodeKeys").doc(
-      inventoryCodeKeyId(item.codigoSolicitado)
-    )
-    : null;
   const barcodeKeyRef = item.barcode
     ? userRef.collection("inventoryBarcodeKeys").doc(
       inventoryBarcodeKeyId(item.barcode)
@@ -982,15 +975,12 @@ async function createInventoryItemWithCodeHandler(
 
   return db.runTransaction(async (transaction) => {
     const [requestSnapshot, counterSnapshot, areaSnapshot, categorySnapshot,
-      requestedCodeKeySnapshot, barcodeKeySnapshot] =
+      barcodeKeySnapshot] =
       await Promise.all([
         transaction.get(requestRef),
         transaction.get(counterRef),
         areaRef ? transaction.get(areaRef) : Promise.resolve(null),
         categoryRef ? transaction.get(categoryRef) : Promise.resolve(null),
-        requestedCodeKeyRef
-          ? transaction.get(requestedCodeKeyRef)
-          : Promise.resolve(null),
         barcodeKeyRef
           ? transaction.get(barcodeKeyRef)
           : Promise.resolve(null),
@@ -1018,12 +1008,6 @@ async function createInventoryItemWithCodeHandler(
       );
     }
 
-    if (requestedCodeKeySnapshot?.exists) {
-      throw new HttpsError(
-        "already-exists",
-        `El código ${item.codigoSolicitado} ya está reservado.`
-      );
-    }
     if (barcodeKeySnapshot?.exists) {
       throw new HttpsError(
         "already-exists",
@@ -1033,19 +1017,16 @@ async function createInventoryItemWithCodeHandler(
 
     const lastNumber = Number(counterSnapshot.data()?.ultimoNumero || 0);
     const nextNumber = Number.isSafeInteger(lastNumber) ? lastNumber + 1 : 1;
-    const codigoInterno = item.codigoSolicitado ||
-      formatInternalCode(item.tipoItem, nextNumber);
+    const codigoInterno = formatInternalCode(item.tipoItem, nextNumber);
     const timestamp = FieldValue.serverTimestamp();
 
-    if (!item.codigoSolicitado) {
-      transaction.set(counterRef, {
-        tipoItem: item.tipoItem,
-        ultimoNumero: nextNumber,
-        negocioId: businessId,
-        uidUsuario: uid,
-        actualizadoEn: timestamp,
-      });
-    }
+    transaction.set(counterRef, {
+      tipoItem: item.tipoItem,
+      ultimoNumero: nextNumber,
+      negocioId: businessId,
+      uidUsuario: uid,
+      actualizadoEn: timestamp,
+    });
     transaction.set(itemRef, {
       ...inventoryPersistenceData(item),
       ...getInventoryTaxFields(item, taxSettingsSnapshot.data() || {}),
@@ -1057,15 +1038,6 @@ async function createInventoryItemWithCodeHandler(
       creadoEn: timestamp,
       actualizadoEn: timestamp,
     });
-    if (requestedCodeKeyRef) {
-      transaction.set(requestedCodeKeyRef, {
-        codigoInterno,
-        itemId: itemRef.id,
-        negocioId: businessId,
-        uidUsuario: uid,
-        creadoEn: timestamp,
-      });
-    }
     if (barcodeKeyRef) {
       transaction.set(barcodeKeyRef, {
         barcode: item.barcode,

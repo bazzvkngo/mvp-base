@@ -42,11 +42,13 @@ autoriza eliminar compatibilidad legacy ni ampliar el cambio a otros contratos.
   el estado empresarial al cargar o revalidar la sesión.
 - **IMPLEMENTADO:** Platform Admin abre la evidencia mediante una URL firmada
   temporal entregada por Functions, sin acceso global del SDK al bucket.
-- **CONFIRMADO PENDIENTE:** una sesión ERP ya abierta debe detectar la aprobación
-  realizada desde otra sesión, revalidar y actualizar `businessSession` y
-  habilitar los módulos sin F5. Actualmente el propietario necesita refrescar.
-- **CONFIRMADO PENDIENTE:** las tarjetas Empresas, Usuarios, Verificaciones
-  pendientes y Suspensiones del Dashboard Platform Admin serán navegables.
+- **IMPLEMENTADO:** una sesión ERP ya abierta observa la aprobación realizada
+  desde otra sesión mediante el listener empresarial existente, revalida y
+  actualiza `businessSession`, habilita los módulos y notifica sin F5 ni polling
+  permanente.
+- **IMPLEMENTADO:** las tarjetas Empresas, Usuarios, Verificaciones pendientes y
+  Suspensiones del Dashboard Platform Admin son navegables; Suspensiones usa el
+  filtro existente y muestra la cifra de empresas suspendidas correspondiente.
 
 ### B. Inventario
 
@@ -60,9 +62,11 @@ autoriza eliminar compatibilidad legacy ni ampliar el cambio a otros contratos.
   la prueba física desktop no decodificó códigos reales de dos productos. La
   lectura física por cámara no está validada; se repetirá en teléfono móvil al
   desplegar sobre HTTPS, sin bloquear por ahora manual ni USB.
-- **CONFIRMADO PENDIENTE:** todo código interno nuevo será generado por
-  ValoraCloud. El input vigente `codigoSolicitado` y cualquier contrato histórico
-  equivalente se retirarán sólo con adaptación y pruebas de compatibilidad.
+- **IMPLEMENTADO:** el alta manual siempre solicita a ValoraCloud un código
+  interno automático, la edición lo conserva como sólo lectura y los payloads
+  manuales y el Callable ignoran propuestas de reemplazo. Excel/CSV mantiene por
+  compatibilidad su contrato histórico `codigo`/`codigoSolicitado`; su eventual
+  retiro o cambio de semántica requiere una decisión separada.
 - **CONFIRMADO PENDIENTE:** los productos expondrán historial/evolución de
   costos. Ya existen adquisiciones y snapshots de promedio/último costo, pero no
   una experiencia histórica completa.
@@ -214,12 +218,14 @@ Ficha administrativa → tareas/subtareas → costos/materiales/adicionales
 - Proyectos con equipo, tareas/subtareas, costos, materiales y balance.
 - Reportes actuales de Ventas, Compras y Proyectos.
 - Gate `VERIFICADA` y evidencia segura de Platform Admin.
+- Activación reactiva sin F5 y navegación de tarjetas Platform Admin.
+- Generación exclusiva del código interno en alta manual, preservando códigos
+  legacy y compatibilidad de cargas maestras.
 
 ### Confirmado pendiente
 
-- Navegación de tarjetas Platform Admin.
-- Reactividad de verificación sin F5 y QA móvil HTTPS del scanner por cámara.
-- Generación exclusiva de códigos internos e historial visual de costos.
+- QA móvil HTTPS del scanner por cámara.
+- Historial visual de costos.
 - Compra directa con importador documental y entrada física confirmada.
 - Margen comercial y evolución de Reportes.
 - UX/tablero por Proyecto, adicionales facturables y evidencia de gastos.
@@ -250,10 +256,11 @@ Ficha administrativa → tareas/subtareas → costos/materiales/adicionales
 
 ## 8. Orden sugerido de implementación
 
-1. Implementar y validar la activación reactiva sin F5 y la navegación de
-   tarjetas Platform Admin, conservando la evidencia segura ya existente.
-2. Reconciliar Inventario/Compras: códigos internos automáticos y Compra directa
-   con importador documental y entrada física, preservando el flujo con OC.
+1. Validar en QA la activación reactiva sin F5 y la navegación de tarjetas
+   Platform Admin, conservando la evidencia segura ya existente.
+2. Reconciliar Inventario/Compras: decidir la compatibilidad de códigos en cargas
+   maestras e implementar Compra directa con importador documental y entrada
+   física, preservando el flujo con OC.
 3. Definir semántica de costos e historial visible antes de cambiar indicadores
    comerciales.
 4. Implementar margen comercial de Ventas y luego ampliar Reportes con reglas

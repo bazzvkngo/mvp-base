@@ -3,12 +3,11 @@
 ## Estado post-demo
 
 El gate `VERIFICADA` está implementado y `getBusinessSession` resuelve el estado
-empresarial al cargar o revalidar la sesión. La detección en vivo no está
-implementada: si Platform Admin aprueba desde otra sesión mientras el propietario
-mantiene el ERP abierto, éste necesita refrescar para volver a resolver la sesión
-y habilitar los módulos. Revalidar y actualizar `businessSession` sin F5 es un
-requisito confirmado pendiente; el frontend no reemplazará la validación
-autoritaria de Functions y Rules.
+empresarial al cargar o revalidar la sesión. La sesión ERP abierta observa el
+perfil empresarial ya autorizado mediante el listener Firestore existente; al
+detectar la transición a `VERIFICADA`, revalida `businessSession`, habilita la
+navegación operativa y notifica al usuario sin F5. No usa polling permanente ni
+reemplaza la validación autoritativa de Functions y Rules.
 
 ## Contrato y estados
 

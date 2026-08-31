@@ -98,10 +98,13 @@ assert.match(salesHistory, /<th>Número<\/th><th>Cliente<\/th><th>Total<\/th><th
 assert.match(salesHistory, /formatDate\(sale\.fechaVenta\)/);
 assert.match(salesHistory, /getSaleStockStatusLabel/);
 assert.match(saleSummary, /Guardar cambios/);
-assert.match(saleSummary, /Number\(totals\.descuentoTotal\) > 0/);
+assert.match(saleSummary, /discountTotal > 0 \? `-\$\{money\(discountTotal\)\}` : money\(0\)/);
 assert.match(saleSummary, /Ellipsis/);
 assert.match(saleSummary, /No puedes confirmar esta venta porque uno o más productos no tienen stock suficiente/);
 assert.match(salePage, /sale-context-card/);
+assert.match(salePage, /className="sale-context-toolbar"/);
+assert.match(salePage, /Stock aplicado\. Disponibilidad actualizada al aceptar la cotización\./);
+assert.doesNotMatch(salePage, /Stock: Stock aplicado/);
 assert.match(saleClient, /sale-context-client__snapshot/);
 assert.match(saleItems, /Stock insuficiente/);
 assert.match(saleItems, /Disponible: \{stock\} · Solicitado: \{requested\}/);

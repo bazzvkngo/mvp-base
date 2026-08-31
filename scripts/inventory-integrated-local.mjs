@@ -252,11 +252,16 @@ async function main() {
         proveedorRut: "937720009",
         fechaCompraReferencia: "2026-08-24",
         numeroFacturaReferencia: "06897040",
+        codigoSolicitado: "FORZADO-001",
+        codigoInterno: "FORZADO-001",
+        codigo: "FORZADO-ALIAS",
+        sku: "FORZADO-SKU",
       },
     });
     assert.equal(serviceResponse.data.codigoInterno, "SV-0001");
     assert.equal(activityResponse.data.codigoInterno, "AC-0001");
     assert.equal(productResponse.data.codigoInterno, "PR-0001");
+    assert.notEqual(productResponse.data.codigoInterno, "FORZADO-001");
 
     const serviceData = (
       await getDoc(
@@ -278,6 +283,10 @@ async function main() {
     assert.equal(productData.proveedorRut, "93.772.000-9");
     assert.equal(productData.fechaCompraReferencia, "2026-08-24");
     assert.equal(productData.numeroFacturaReferencia, "06897040");
+    assert.equal(productData.codigoInterno, "PR-0001");
+    assert.notEqual(productData.codigoInterno, "FORZADO-001");
+    assert.equal("codigo" in productData, false);
+    assert.equal("sku" in productData, false);
     assert.equal("codigoBarras" in productData, false);
     const barcodeLookup = await getDocs(query(
       collectionRef(db, uid, "inventario"),
@@ -312,6 +321,8 @@ async function main() {
         proveedorRut: "760864285",
         fechaCompraReferencia: "2026-08-25",
         numeroFacturaReferencia: "FACT-200",
+        codigoInterno: "FORZADO-DESDE-FRONTEND",
+        codigoSolicitado: "FORZADO-DESDE-FRONTEND",
       },
     };
     const authoritativeUpdate = await call(
@@ -343,6 +354,7 @@ async function main() {
     assert.equal(updatedReference.proveedorRut, "76.086.428-5");
     assert.equal(updatedReference.fechaCompraReferencia, "2026-08-25");
     assert.equal(updatedReference.numeroFacturaReferencia, "FACT-200");
+    assert.equal(updatedReference.codigoInterno, "PR-0001");
     await expectCallableCode("failed-precondition", () =>
       call("updateInventoryItem", {
         ...authoritativeUpdatePayload,
@@ -741,28 +753,31 @@ async function main() {
     });
     const crossBusinessCodePayload = {
       requestId: "integrated_cross_business_code_0001",
-      item: {
-        tipoItem: "servicio",
-        nombre: "Servicio con código libre en este negocio",
-        unidad: "servicio",
-        costoBase: 1000,
-        margenDeseado: 10,
-        precioInterno: 1100,
-        precioManual: false,
-        codigoSolicitado: "foreign-legacy-001",
-      },
+      rows: [{
+        rowId: "cross-business-code-row",
+        item: {
+          tipoItem: "servicio",
+          nombre: "Servicio con código libre en este negocio",
+          unidad: "servicio",
+          costoBase: 1000,
+          margenDeseado: 10,
+          precioInterno: 1100,
+          precioManual: false,
+          codigoSolicitado: "foreign-legacy-001",
+        },
+      }],
     };
     const crossBusinessCode = await call(
-      "createInventoryItemWithCode",
+      "confirmInventoryImportV2",
       crossBusinessCodePayload
     );
-    assert.equal(crossBusinessCode.data.codigoInterno, "FOREIGN-LEGACY-001");
+    assert.equal(crossBusinessCode.data.results[0].codigoInterno, "FOREIGN-LEGACY-001");
     const crossBusinessCodeRetry = await call(
-      "createInventoryItemWithCode",
+      "confirmInventoryImportV2",
       crossBusinessCodePayload
     );
     assert.equal(crossBusinessCodeRetry.data.idempotent, true);
-    assert.equal(crossBusinessCodeRetry.data.itemId, crossBusinessCode.data.itemId);
+    assert.deepEqual(crossBusinessCodeRetry.data.results, crossBusinessCode.data.results);
 
     const customCodePayload = {
       requestId: "integrated_custom_code_0001",

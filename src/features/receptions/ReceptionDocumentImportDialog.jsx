@@ -31,6 +31,7 @@ const ANALYSIS_MESSAGES = [
   "Preparando conciliación…",
 ];
 const STATUS_LABELS = {coincidencia: "Asociado", revisar: "Revisar", sin_asociar: "Sin asociación"};
+const hasDocumentValue = (value) => value !== "" && value !== null && value !== undefined;
 const providerFiscalId = (provider = {}) => provider.identificadorFiscalValor ||
   provider.identificadorFiscalNormalizado || provider.rut || provider.rutNormalizado || "Sin identificación fiscal";
 
@@ -157,7 +158,7 @@ export default function ReceptionDocumentImportDialog({businessId, onApply, onCl
 
         <section className="reception-import__document-summary" aria-label="Resumen del documento">
           <div><span>Folio</span><strong>{fields.numeroDocumento || "Sin folio"}</strong></div><div><span>Fecha</span><strong>{fields.fechaDocumento || "Sin fecha"}</strong></div><div><span>Proveedor</span><strong>{analysis?.proveedor?.nombre || "No identificado"}</strong></div>
-          <div><span>Neto</span><strong>{fields.neto === "" ? "—" : formatMoney(fields.neto, currency)}</strong></div><div><span>IVA</span><strong>{fields.impuestoMonto === "" ? "—" : `${formatMoney(fields.impuestoMonto, currency)}${fields.impuestoPorcentaje === "" ? "" : ` · ${fields.impuestoPorcentaje}%`}`}</strong></div><div><span>Total</span><strong>{fields.total === "" ? "—" : formatMoney(fields.total, currency)}</strong></div><div><span>Líneas</span><strong>{summary.total}</strong></div>
+          <div><span>Neto</span><strong>{hasDocumentValue(fields.neto) ? formatMoney(fields.neto, currency) : "—"}</strong></div><div><span>{hasDocumentValue(fields.impuestoPorcentaje) ? `IVA (${fields.impuestoPorcentaje}%)` : "IVA"}</span><strong>{hasDocumentValue(fields.impuestoMonto) ? formatMoney(fields.impuestoMonto, currency) : "—"}</strong></div><div><span>Total</span><strong>{hasDocumentValue(fields.total) ? formatMoney(fields.total, currency) : "—"}</strong></div><div><span>Líneas</span><strong>{summary.total}</strong></div>
         </section>
         <details className="reception-import__document-details">
           <summary>Revisar datos del documento</summary>

@@ -328,9 +328,12 @@ export function validateInventoryDraft(draft = {}) {
 export function buildInventoryPayload(
   draft,
   categories = [],
-  { authorizedStatus = "activo" } = {}
+  { authorizedStatus = "activo", allowRequestedCode = true } = {}
 ) {
-  const errors = validateInventoryDraft(draft);
+  const validatedDraft = allowRequestedCode
+    ? draft
+    : {...draft, codigoSolicitado: ""};
+  const errors = validateInventoryDraft(validatedDraft);
   if (Object.keys(errors).length) {
     const error = new Error(Object.values(errors)[0]);
     error.fields = errors;
@@ -356,7 +359,9 @@ export function buildInventoryPayload(
     categoriaId: String(draft.categoriaId || "").trim(),
     categoria: category?.nombre || "",
   };
-  const requestedCode = normalizeInventoryRequestedCode(draft.codigoSolicitado);
+  const requestedCode = allowRequestedCode
+    ? normalizeInventoryRequestedCode(draft.codigoSolicitado)
+    : "";
   if (requestedCode) payload.codigoSolicitado = requestedCode;
   if (draft.tipoItem === "producto") {
     payload.marca = String(draft.marca || "").trim();

@@ -149,6 +149,15 @@
 }
 
 .platform-metric { padding: var(--space-5); }
+.platform-metric--link {
+  color: inherit;
+  cursor: pointer;
+  display: block;
+  text-decoration: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+.platform-metric--link:hover { border-color: #82c9c4; box-shadow: 0 12px 28px rgb(7 23 37 / 0.1); transform: translateY(-2px); }
+.platform-metric--link:focus-visible { outline: 3px solid rgb(24 125 120 / 0.3); outline-offset: 3px; }
 .platform-metric > span { align-items: center; background: #e7f8f6; border-radius: var(--radius-md); color: #187d78; display: flex; height: 40px; justify-content: center; margin-bottom: var(--space-5); width: 40px; }
 .platform-metric > strong { color: var(--platform-ink); display: block; font-size: 2rem; }
 .platform-metric h2 { color: var(--platform-ink); font-size: var(--font-size-sm); margin: var(--space-2) 0; }

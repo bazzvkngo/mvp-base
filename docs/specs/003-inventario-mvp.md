@@ -13,11 +13,19 @@ no decodificó códigos reales de dos productos. La lectura física por cámara 
 está aceptada todavía; se repetirá la prueba en un teléfono móvil al desplegar en
 HTTPS. No es un bloqueo inmediato y manual/USB permanecen disponibles.
 
-**Confirmado pendiente:** todo código interno nuevo debe ser generado por
-ValoraCloud. El formulario vigente todavía permite proponer `codigoSolicitado`;
-ese contrato actual se conserva hasta implementar y probar su retiro. Una
-factura iniciada desde un acceso relacionado con Inventario deberá conducir a
-Nueva compra y nunca incorporar stock silenciosamente como carga maestra.
+**Implementado:** en el alta manual, ValoraCloud genera siempre el código
+interno; el formulario sólo informa que se asignará automáticamente. En edición
+se muestra el código existente como sólo lectura y el payload manual descarta
+intentos de proponer otro. El Callable `createInventoryItemWithCode` también
+ignora cualquier código aportado por el cliente y consume siempre el correlativo
+autoritativo. Los códigos legacy permanecen visibles.
+
+**Compatibilidad pendiente de decisión:** Excel/CSV mantiene por ahora la
+columna histórica `codigo`/`codigoSolicitado` para cargas maestras. Retirar o
+reinterpretar ese contrato requiere una decisión y pruebas específicas; no se
+incluye en la automatización del formulario manual. Una factura iniciada desde
+un acceso relacionado con Inventario deberá conducir a Nueva compra y nunca
+incorporar stock silenciosamente como carga maestra.
 
 **Evolución posterior:** el modelo ya conserva adquisiciones, costo promedio y
 último costo. Falta exponer una evolución histórica de costos por producto. La
@@ -142,7 +150,7 @@ La plantilla descargable contiene:
 tipo,nombre,codigo,area,categoria,unidad,costo_base,margen,precio_manual,stock,stock_minimo,descripcion
 ```
 
-`nombre` y `tipo` son obligatorios. Si falta el tipo, la fila queda pendiente de revisión. La plantilla conserva el esquema anterior sin inferir IVA de compra. Un código vacío se genera con el correlativo seguro. El contrato histórico admite un código aportado, lo normaliza, reserva los prefijos automáticos `PR`, `SV` y `AC`, y verifica duplicados en backend. Esta posibilidad queda marcada para retiro por el target confirmado de generación exclusiva de códigos internos; no debe eliminarse sin implementar antes la adaptación de UI, payloads, importación y compatibilidad legacy.
+`nombre` y `tipo` son obligatorios. Si falta el tipo, la fila queda pendiente de revisión. La plantilla conserva el esquema anterior sin inferir IVA de compra. Un código vacío se genera con el correlativo seguro. El contrato histórico admite un código aportado, lo normaliza, reserva los prefijos automáticos `PR`, `SV` y `AC`, y verifica duplicados en backend. Esta posibilidad se conserva temporalmente como compatibilidad exclusiva de carga maestra y no forma parte del alta manual; su eventual retiro requiere una decisión, adaptación y pruebas específicas.
 
 ## Backend y seguridad multiempresa
 
@@ -154,7 +162,9 @@ tipo,nombre,codigo,area,categoria,unidad,costo_base,margen,precio_manual,stock,s
 - verifican que el negocio esté activo;
 - vuelven a validar todos los campos;
 - ignoran estado, identidad del usuario, negocio y timestamps enviados como autoridad;
-- generan códigos y timestamps en servidor;
+- generan códigos y timestamps en servidor; la creación manual usa siempre el
+  correlativo, mientras la importación mantiene temporalmente el código legacy
+  revisado cuando fue aportado en una carga maestra;
 - usan transacciones e idempotencia por `requestId`;
 - validan áreas y categorías dentro del mismo negocio cuando se informan.
 

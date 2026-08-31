@@ -3,8 +3,9 @@
 > Estado post-demo: este flujo ligado a OC continúa vigente y separado de la
 > Compra directa. Ya están implementados el límite por cantidad pendiente, el
 > rechazo de líneas ajenas, la trazabilidad histórica y la revisión documental
-> con Neto / impuesto / tasa / Total. Queda pendiente uniformar esa presentación
-> tributaria en todos los resúmenes y detalles donde los valores existan.
+> con Neto / IVA (tasa) / Total. Los valores extraídos también se muestran en el
+> origen documental aplicado a la Recepción. Queda pendiente uniformar esa
+> presentación tributaria en otros resúmenes y detalles donde los valores existan.
 
 > Actualización BRUNO-10: el contexto documental `reception` extrae por separado
 > documento, emisor/proveedor, receptor, totales y líneas económicas. La respuesta

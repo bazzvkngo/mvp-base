@@ -4,12 +4,10 @@
 
 **Implementado:** directorios y detalles de Empresas/Usuarios/Verificaciones,
 resolución y suspensiones autoritativas, y apertura segura de evidencia mediante
-una URL firmada temporal obtenida desde Functions.
-
-**Confirmado pendiente:** las cuatro tarjetas del Dashboard —Empresas, Usuarios,
-Verificaciones pendientes y Suspensiones— deben ser navegables hacia sus vistas
-filtradas o directorios correspondientes. Hoy son métricas informativas y no
-debe documentarse navegación como existente.
+una URL firmada temporal obtenida desde Functions. Las cuatro tarjetas del
+Dashboard son enlaces completos accesibles por teclado: Empresas, Usuarios y
+Verificaciones abren sus directorios; Suspensiones abre Empresas con el filtro
+`SUSPENDIDA` activo y su cifra cuenta exclusivamente empresas suspendidas.
 
 ## Contexto y autoridad
 
@@ -20,7 +18,8 @@ Firestore y Storage no ofrecen lecturas globales al claim. Los directorios y det
 ## Navegación
 
 - Resumen: Dashboard con conteos de empresas, usuarios, verificaciones y
-  suspensiones. La navegación desde cada tarjeta es un target pendiente.
+  empresas suspendidas, con navegación desde cada tarjeta a su directorio o
+  filtro coherente existente.
 - Clientes de ValoraCloud: Empresas, Usuarios y Verificaciones.
 - Un superadmin con una empresa ERP activa puede volver al ERP; un superadmin sin empresas puede entrar a `/admin` sin ser forzado al onboarding.
 

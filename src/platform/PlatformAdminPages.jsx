@@ -11,7 +11,7 @@ import {
   UserRound,
   Users,
 } from "lucide-react";
-import {useLocation, useNavigate, useParams} from "react-router-dom";
+import {Link, useLocation, useNavigate, useParams} from "react-router-dom";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
@@ -166,17 +166,17 @@ export function PlatformDashboardPage() {
   if (state.loading) return <Loading />;
   if (state.error) return <ErrorState error={state.error} retry={load} />;
   const cards = [
-    {label: "Empresas", value: state.data.empresas.total, detail: `${state.data.empresas.activas} activas`, icon: Building2},
-    {label: "Usuarios", value: state.data.usuarios.total, detail: `${state.data.usuarios.conMembresiaActiva} con membresía activa`, icon: Users},
-    {label: "Verificaciones pendientes", value: state.data.empresas.verificacionesPendientes, detail: `${state.data.empresas.verificadas} verificadas`, icon: Clock3},
-    {label: "Suspensiones", value: state.data.empresas.suspendidas + state.data.usuarios.suspendidos, detail: `${state.data.empresas.suspendidas} empresas · ${state.data.usuarios.suspendidos} usuarios`, icon: AlertTriangle},
+    {label: "Empresas", value: state.data.empresas.total, detail: `${state.data.empresas.activas} activas`, icon: Building2, to: "/admin/empresas"},
+    {label: "Usuarios", value: state.data.usuarios.total, detail: `${state.data.usuarios.conMembresiaActiva} con membresía activa`, icon: Users, to: "/admin/usuarios"},
+    {label: "Verificaciones pendientes", value: state.data.empresas.verificacionesPendientes, detail: `${state.data.empresas.verificadas} verificadas`, icon: Clock3, to: "/admin/verificaciones"},
+    {label: "Suspensiones", value: state.data.empresas.suspendidas, detail: "Empresas suspendidas", icon: AlertTriangle, to: "/admin/empresas?estado=SUSPENDIDA"},
   ];
   return <>
     <PlatformHeading eyebrow="Resumen" title="Dashboard" description="Vista operativa global de ValoraCloud." />
     <section className="platform-metric-grid">
-      {cards.map((card) => <article className="platform-metric" key={card.label}>
+      {cards.map((card) => <Link className="platform-metric platform-metric--link" key={card.label} to={card.to} aria-label={`Abrir ${card.label.toLowerCase()}`}>
         <span><AppIcon icon={card.icon} size={20} /></span><strong>{card.value}</strong><h2>{card.label}</h2><p>{card.detail}</p>
-      </article>)}
+      </Link>)}
     </section>
     <section className="platform-callout"><AppIcon icon={ShieldCheck} size={24} /><div><strong>Autoridad separada del ERP</strong><p>Las consultas y acciones globales se ejecutan mediante Functions y no conceden acceso SDK a datos empresariales.</p></div></section>
   </>;
@@ -242,12 +242,15 @@ function PlatformListFilters({
 
 export function PlatformBusinessesPage({verificationOnly = false}) {
   const location = useLocation();
-  const initialFilters = React.useMemo(() => ({
-    search: "",
-    country: "TODOS",
-    state: "TODOS",
-    verification: verificationOnly ? "PENDIENTE" : "TODAS",
-  }), [verificationOnly]);
+  const initialFilters = React.useMemo(() => {
+    const requestedState = new URLSearchParams(location.search).get("estado");
+    return {
+      search: "",
+      country: "TODOS",
+      state: ["ACTIVA", "SUSPENDIDA", "ELIMINADA"].includes(requestedState) ? requestedState : "TODOS",
+      verification: verificationOnly ? "PENDIENTE" : "TODAS",
+    };
+  }, [location.search, verificationOnly]);
   const [draft, setDraft] = React.useState(initialFilters);
   const [filters, setFilters] = React.useState(initialFilters);
   const [state, setState] = React.useState({loading: true, items: [], cursor: null, error: ""});

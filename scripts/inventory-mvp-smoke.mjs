@@ -67,6 +67,12 @@ function main() {
   assert.equal(product.numeroFacturaReferencia, "");
   assert.equal(product.areaId, "");
   assert.equal(product.estado, "activo", "Un ítem nuevo debe quedar activo.");
+  const manualProduct = buildInventoryPayload(
+    {...product, codigoSolicitado: "FORZADO-DESDE-FRONTEND"},
+    [],
+    {allowRequestedCode: false}
+  );
+  assert.equal(Object.hasOwn(manualProduct, "codigoSolicitado"), false);
   const taxedProduct = buildInventoryPayload({
     tipoItem: "producto", nombre: "Router con IVA", unidad: "unidad", costoBase: "100000",
     margenDeseado: "25", precioManual: "", stock: "4", stockMinimo: "2",
@@ -442,6 +448,9 @@ async function sourceChecks() {
   assert.match(manager, /draft\.tipoItem === "producto" && <section className="inventory-form-section"><h3>Origen de compra/);
   assert.match(manager, /type="date" value=\{draft\.fechaCompraReferencia\}/);
   assert.match(manager, /<BarcodeInput actionLabel="Escanear"/);
+  assert.match(manager, /value=\{editingItem \? draft\.codigoInterno : "Se asignará automáticamente"\}/);
+  assert.match(manager, /readOnly aria-readonly="true"/);
+  assert.match(manager, /allowRequestedCode: false/);
 }
 
 main();

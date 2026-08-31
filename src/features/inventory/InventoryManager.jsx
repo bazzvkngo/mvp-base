@@ -335,7 +335,7 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
 
   const saveItem = async (event) => {
     event.preventDefault();
-    const errors = validateInventoryDraft(draft);
+    const errors = validateInventoryDraft({...draft, codigoSolicitado: ""});
     setFieldErrors(errors);
     if (Object.keys(errors).length) return;
     setSaving(true);
@@ -344,9 +344,12 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
       const payload = buildInventoryPayload(
         draft,
         categories,
-        editingItem
-          ? { authorizedStatus: adaptInventoryItem(editingItem).estado }
-          : undefined
+        {
+          authorizedStatus: editingItem
+            ? adaptInventoryItem(editingItem).estado
+            : "activo",
+          allowRequestedCode: false,
+        }
       );
       if (editingItem) {
         if (!createRequestRef.current) createRequestRef.current = requestId();
@@ -471,7 +474,7 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
             <section className="inventory-form-section"><h3>Identificación</h3>
               <div className="inventory-identity-primary">
                 <Field label="Nombre del ítem" required error={fieldErrors.nombre}><input autoFocus className="erp-control" value={draft.nombre} onChange={(event) => updateDraft("nombre", event.target.value)} maxLength={140} placeholder="Ej. Cámara IP modelo X100" /></Field>
-                <Field label="Código interno" error={fieldErrors.codigoSolicitado} hint={editingItem ? "No se puede modificar." : "Se asignará al guardar si queda vacío."}><input className="erp-control inventory-code-input" disabled={Boolean(editingItem)} value={editingItem ? draft.codigoInterno : draft.codigoSolicitado} onChange={(event) => updateDraft("codigoSolicitado", event.target.value)} maxLength={40} placeholder="Ej. CAM-001" /></Field>
+                <Field label="Código interno" hint={editingItem ? "Código actual. No se puede modificar." : "La asignación definitiva se realiza al guardar."}><input className="erp-control inventory-code-input" readOnly aria-readonly="true" value={editingItem ? draft.codigoInterno : "Se asignará automáticamente"} /></Field>
               </div>
               {draft.tipoItem === "producto" && <div className="inventory-product-identity"><Field label="Marca" error={fieldErrors.marca}><input className="erp-control" value={draft.marca} onChange={(event) => updateDraft("marca", event.target.value)} maxLength={100} placeholder="Ej. Marca" /></Field><Field label="Modelo" error={fieldErrors.modelo}><input className="erp-control" value={draft.modelo} onChange={(event) => updateDraft("modelo", event.target.value)} maxLength={100} placeholder="Ej. X100" /></Field><Field label="Código de barras" error={fieldErrors.codigoBarras} hint="Conserva ceros iniciales."><BarcodeInput actionLabel="Escanear" inputClassName="erp-control inventory-code-input" value={draft.codigoBarras} onChange={(value) => updateDraft("codigoBarras", value)} /></Field></div>}
               <Field label="Descripción"><textarea className="erp-control inventory-textarea" rows="2" maxLength={1200} value={draft.descripcion} onChange={(event) => updateDraft("descripcion", event.target.value)} placeholder="Agrega detalles útiles para identificar este producto" /></Field>

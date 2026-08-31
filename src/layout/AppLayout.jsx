@@ -1,6 +1,7 @@
 import React from "react";
 import { LogOut, Menu, ShieldCheck, UserRound, X } from "lucide-react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { sileo } from "sileo";
 import AdditionalBusinessDrawer from "../components/AdditionalBusinessDrawer";
 import BrandLogo from "../components/BrandLogo";
 import BusinessSwitcher from "../components/BusinessSwitcher";
@@ -18,6 +19,7 @@ import {
   canBusinessOperate,
   filterNavigationForBusinessVerification,
   normalizeBusinessVerificationState,
+  shouldRefreshBusinessSessionForVerification,
 } from "../domain/businessOperations.mjs";
 import { logout } from "../services/authService";
 import useBusinessCompletionStatus from "../hooks/useBusinessCompletionStatus";
@@ -98,6 +100,7 @@ function AppLayout({
   const drawerRef = React.useRef(null);
   const closeButtonRef = React.useRef(null);
   const activationRefreshRef = React.useRef("");
+  const layoutMountedRef = React.useRef(true);
   const canManageBusiness = ["OWNER", "ADMIN"].includes(negocioActivo?.role);
   const businessVerified = canBusinessOperate(negocioActivo);
   const ownerEmailVerified = negocioActivo?.ownerEmailVerified === true;
@@ -121,6 +124,13 @@ function AppLayout({
   const accountNavigationSections = allowedNavigationSections.filter(
     (section) => section.label === "Cuenta"
   );
+
+  React.useEffect(() => {
+    layoutMountedRef.current = true;
+    return () => {
+      layoutMountedRef.current = false;
+    };
+  }, []);
 
   React.useEffect(() => {
     if (!mobileNavigationOpen) return undefined;
@@ -199,30 +209,30 @@ function AppLayout({
     const observedState = normalizeBusinessVerificationState(
       observedBusinessProfile?.verificacionEmpresa?.estado
     );
-    if (sessionState === observedState) {
-      activationRefreshRef.current = "";
+    if (!shouldRefreshBusinessSessionForVerification(sessionState, observedState)) {
+      if (sessionState === observedState) activationRefreshRef.current = "";
       return undefined;
     }
 
     const refreshKey = `${businessId}:${sessionState}:${observedState}`;
     if (activationRefreshRef.current === refreshKey) return undefined;
     activationRefreshRef.current = refreshKey;
-    let cancelled = false;
     Promise.resolve(onBusinessCreated())
       .then((session) => {
-        if (cancelled) return;
+        if (!layoutMountedRef.current) return;
         const nextBusiness = session?.activeBusiness;
-        if (canBusinessOperate(nextBusiness)) {
+        if (nextBusiness?.id === businessId && canBusinessOperate(nextBusiness)) {
+          sileo.success({
+            title: "Empresa verificada",
+            description: "Los módulos operativos ya están disponibles.",
+          });
           navigate(getDefaultBusinessPath(nextBusiness), { replace: true });
         }
       })
       .catch(() => {
-        if (!cancelled) activationRefreshRef.current = "";
+        if (layoutMountedRef.current) activationRefreshRef.current = "";
       });
-
-    return () => {
-      cancelled = true;
-    };
+    return undefined;
   }, [navigate, negocioActivo, observedBusinessProfile, onBusinessCreated]);
 
   React.useEffect(() => {

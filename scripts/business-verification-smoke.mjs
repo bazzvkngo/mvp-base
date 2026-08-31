@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {createRequire} from "node:module";
+import {shouldRefreshBusinessSessionForVerification} from "../src/domain/businessOperations.mjs";
 
 const require = createRequire(import.meta.url);
 const {
@@ -33,5 +34,9 @@ assert.equal(fiscalDataChanged(business, profile, {
   ...unchanged,
   razonSocial: "Otra Razón Social SpA",
 }), false);
+assert.equal(shouldRefreshBusinessSessionForVerification("PENDIENTE", "VERIFICADA"), true);
+assert.equal(shouldRefreshBusinessSessionForVerification("NO_VERIFICADA", "VERIFICADA"), true);
+assert.equal(shouldRefreshBusinessSessionForVerification("VERIFICADA", "VERIFICADA"), false);
+assert.equal(shouldRefreshBusinessSessionForVerification("PENDIENTE", "PENDIENTE"), false);
 
 console.log("Business verification smoke: OK");

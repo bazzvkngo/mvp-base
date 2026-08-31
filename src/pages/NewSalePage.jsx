@@ -288,12 +288,23 @@ export default function NewSalePage({businessId, role}) {
     ...(tipoDocumento === "sin_documento" ? {numeroDocumento: "", fechaDocumento: ""} : {}),
   }));
 
+  const stockStatusMessage = sale?.estado !== "confirmada"
+    ? ""
+    : sale.alertasStock?.length
+      ? `${getSaleStockStatusLabel(sale.estadoStock, sale)}. ${sale.alertasStock.map((alert) => `${alert.nombre}: faltan ${alert.faltante}`).join(" · ")}`
+      : hasProducts && sale.stockAplicado
+        ? "Stock aplicado. Disponibilidad actualizada al aceptar la cotización."
+        : `${getSaleStockStatusLabel(sale.estadoStock, sale)}.`;
+
   if (loading) return <p className="muted">Cargando venta...</p>;
 
   return (
     <main className="po-workspace sale-workspace">
       <section className="po-panel sale-context-card no-print">
-        <button type="button" className="sale-back-link" onClick={() => navigate("/ventas")}>← Historial de ventas</button>
+        <div className="sale-context-toolbar">
+          <button type="button" className="sale-back-link" onClick={() => navigate("/ventas")}>← Historial de ventas</button>
+          {canCancelConfirmedQuote && <button type="button" className="po-button po-button--danger" onClick={() => setActionDialog("cancel")}>Cancelar venta</button>}
+        </div>
         <div className="sale-context-grid">
           <div className="sale-context-sale">
             <span className="po-kicker">Venta</span>
@@ -308,14 +319,13 @@ export default function NewSalePage({businessId, role}) {
               {sale?.cotizacionId && sale?.aceptadaEn && <span>Aceptada {formatDate(sale.aceptadaEn)}</span>}
             </div>
             {!readOnly && <p className="sale-header-guidance">Revisa la venta antes de confirmarla.</p>}
-            {canCancelConfirmedQuote && <button type="button" className="po-button po-button--danger" onClick={() => setActionDialog("cancel")}>Cancelar venta</button>}
           </div>
           <SaleClientSelector clients={clients} disabled={readOnly || referencesLocked} onChange={(clienteId) => setDraft((current) => ({...current, clienteId}))} originalSnapshot={sale?.clienteSnapshot} value={draft.clienteId} />
         </div>
       </section>
 
       {message && <p className="po-message po-message--error no-print">{message}</p>}
-      {sale?.estado === "confirmada" && <p className={`sale-stock-note no-print${sale.alertasStock?.length ? " po-message po-message--error" : ""}`} role={sale.alertasStock?.length ? "alert" : undefined}>{getSaleStockStatusLabel(sale.estadoStock, sale)}{sale.alertasStock?.length ? `. ${sale.alertasStock.map((alert) => `${alert.nombre}: faltan ${alert.faltante}`).join(" · ")}` : hasProducts && sale.stockAplicado ? ". Disponibilidad actualizada al aceptar la cotización." : "."}</p>}
+      {sale?.estado === "confirmada" && <p className={`sale-stock-note no-print${sale.alertasStock?.length ? " po-message po-message--error" : ""}`} role={sale.alertasStock?.length ? "alert" : undefined}>{stockStatusMessage}</p>}
 
       <div className="no-print">
         <div className="po-layout">

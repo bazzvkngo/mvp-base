@@ -5,7 +5,10 @@
 **Implementado:** toda Venta confirmada congela el costo histórico disponible de
 los productos en sus efectos de inventario, incluso cuando no está vinculada a
 un Proyecto. Esa trazabilidad permite calcular margen comercial sin consultar
-el costo vigente ni exigir un `trabajoId`.
+el costo vigente ni exigir un `trabajoId`. En el detalle, cancelar una venta
+confirmada originada desde cotización está disponible en las acciones superiores;
+el estado de stock usa un único mensaje y el descuento cero se presenta como
+`$0`, nunca como un monto negativo.
 
 **Confirmado pendiente:** Reportes debe mostrar el margen comercial de Ventas
 separado del resultado/rentabilidad de Proyectos. La agregación, el tratamiento

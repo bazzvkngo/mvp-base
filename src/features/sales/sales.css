@@ -5,6 +5,16 @@
   padding: 15px 18px;
 }
 
+.sale-context-toolbar {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 7px;
+}
+
+.sale-context-toolbar .sale-back-link { margin-bottom: 0; }
+
 .sale-context-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
@@ -751,6 +761,9 @@
 }
 
 @media (max-width: 620px) {
+  .sale-context-toolbar { align-items: stretch; flex-direction: column; }
+  .sale-context-toolbar .po-button { width: 100%; }
+
   .sale-history .po-history__toolbar {
     grid-template-columns: 1fr;
   }

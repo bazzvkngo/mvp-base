@@ -8,6 +8,14 @@ export function normalizeBusinessVerificationState(value) {
     : "NO_VERIFICADA";
 }
 
+export function shouldRefreshBusinessSessionForVerification(
+  sessionState,
+  observedState
+) {
+  return normalizeBusinessVerificationState(sessionState) !== "VERIFICADA" &&
+    normalizeBusinessVerificationState(observedState) === "VERIFICADA";
+}
+
 function normalizedPath(pathname = "") {
   return String(pathname || "").replace(/\/+$/, "") || "/";
 }

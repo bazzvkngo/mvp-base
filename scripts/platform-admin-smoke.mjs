@@ -45,6 +45,14 @@ assert.match(pagesSource, /onSelectorChange\(\{\.\.\.draft, verification:/);
 assert.match(pagesSource, /onSelectorChange\(\{\.\.\.draft, company:/);
 assert.match(pagesSource, /setFilters\(\{\.\.\.nextFilters, search: nextFilters\.search\.trim\(\)\}\)/);
 assert.match(pagesSource, /setFilters\(\{\.\.\.initialFilters\}\)/);
+for (const route of ["/admin/empresas", "/admin/usuarios", "/admin/verificaciones"]) {
+  assert.match(pagesSource, new RegExp(`to: "${route}"`));
+}
+assert.match(pagesSource, /to: "\/admin\/empresas\?estado=SUSPENDIDA"/);
+assert.match(pagesSource, /label: "Suspensiones", value: state\.data\.empresas\.suspendidas, detail: "Empresas suspendidas"/);
+assert.doesNotMatch(pagesSource, /empresas\.suspendidas \+ state\.data\.usuarios\.suspendidos/);
+assert.match(pagesSource, /className="platform-metric platform-metric--link"/);
+assert.match(pagesSource, /new URLSearchParams\(location\.search\)\.get\("estado"\)/);
 assert.doesNotMatch(pagesSource, /<th>Propietario<\/th>/);
 assert.doesNotMatch(pagesSource, /<small>\{business\.id\}<\/small>/);
 assert.match(pagesSource, /business\.propietario\?\.correo \|\| "Propietario sin correo"/);

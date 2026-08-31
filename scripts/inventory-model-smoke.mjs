@@ -362,6 +362,8 @@ async function main() {
         requestId: "request_product_0001",
         item: item({
           barcode: "0012345678905",
+          codigoSolicitado: "FORZADO-001",
+          codigoInterno: "FORZADO-001",
           proveedorNombre: "Prodalam S.A.",
           proveedorRut: "937720009",
           fechaCompraReferencia: "2026-08-24",
@@ -382,6 +384,12 @@ async function main() {
     [first.codigoInterno, second.codigoInterno].sort(),
     ["PR-0001", "PR-0002"],
     "Dos altas concurrentes no deben duplicar correlativos."
+  );
+  assert.notEqual(first.codigoInterno, "FORZADO-001");
+  assert.notEqual(
+    db.read(`usuarios/${uid}/inventario/${first.itemId}`).codigoInterno,
+    "FORZADO-001",
+    "El Callable manual debe ignorar códigos aportados por el cliente."
   );
   assert.deepEqual(
     {
@@ -460,19 +468,6 @@ async function main() {
     "Un doble envío con la misma clave debe crear como máximo un ítem."
   );
 
-  db.seed(`usuarios/${uid}/inventario/occupied-internal-code`, {
-    codigoInterno: "  occupied internal 001  ",
-  });
-  await expectCode("already-exists", () =>
-    createInventoryItemWithCodeHandler(
-      request(uid, {
-        requestId: "request_occupied_internal_0001",
-        item: item({ codigoSolicitado: "OCCUPIED-INTERNAL-001" }),
-      }),
-      deps
-    )
-  );
-
   db.seed(`usuarios/${uid}/inventario/occupied-legacy-sku`, {
     sku: "  legacy sku 042  ",
   });
@@ -496,17 +491,20 @@ async function main() {
     tipoItem: "producto",
     estado: "activo",
   });
-  const crossBusinessAllowed = await createInventoryItemWithCodeHandler(
+  const crossBusinessAllowed = await confirmInventoryImportV2Handler(
     request(uid, {
-      requestId: "request_cross_business_0001",
-      item: item({
-        codigoSolicitado: "OTHER-BUSINESS-001",
-        barcode: "0099999999999",
-      }),
+      requestId: "import_cross_business_0001",
+      rows: [{
+        rowId: "cross-business-row",
+        item: item({
+          codigoSolicitado: "OTHER-BUSINESS-001",
+          barcode: "0099999999999",
+        }),
+      }],
     }),
     deps
   );
-  assert.equal(crossBusinessAllowed.codigoInterno, "OTHER-BUSINESS-001");
+  assert.equal(crossBusinessAllowed.results[0].codigoInterno, "OTHER-BUSINESS-001");
 
   const freeImportRequest = request(uid, {
     requestId: "import_free_code_0001",
@@ -527,18 +525,7 @@ async function main() {
   assert.equal(freeImportRetry.idempotent, true);
   assert.deepEqual(freeImportRetry.results, freeImport.results);
 
-  let concurrentScans = 0;
-  let releaseConcurrentScans;
-  const concurrentScanBarrier = new Promise((resolve) => {
-    releaseConcurrentScans = resolve;
-  });
-  db.beforeCollectionGet = async (path) => {
-    if (path !== `usuarios/${uid}/inventario`) return;
-    concurrentScans += 1;
-    if (concurrentScans === 2) releaseConcurrentScans();
-    await concurrentScanBarrier;
-  };
-  const concurrentCustomCode = await Promise.allSettled([
+  const concurrentManualCodes = await Promise.all([
     createInventoryItemWithCodeHandler(
       request(uid, {
         requestId: "request_code_race_0001",
@@ -554,22 +541,13 @@ async function main() {
       deps
     ),
   ]);
-  db.beforeCollectionGet = null;
+  assert.equal(new Set(concurrentManualCodes.map(({codigoInterno}) => codigoInterno)).size, 2);
   assert.equal(
-    concurrentCustomCode.filter(({ status }) => status === "fulfilled").length,
-    1
-  );
-  const rejectedConcurrentCode = concurrentCustomCode.find(
-    ({ status }) => status === "rejected"
-  );
-  assert.equal(rejectedConcurrentCode?.reason?.code, "already-exists");
-  assert.match(rejectedConcurrentCode?.reason?.message || "", /reservado/);
-  assert.equal(
-    db.matching(`usuarios/${uid}/inventario/`).filter(([, data]) =>
-      data.codigoInterno === "RACE-CODE-001"
-    ).length,
-    1,
-    "inventoryCodeKeys debe resolver la carrera después del preflight."
+    concurrentManualCodes.every(({codigoInterno}) =>
+      /^PR-\d+$/.test(codigoInterno) && codigoInterno !== "RACE-CODE-001"
+    ),
+    true,
+    "Altas manuales concurrentes deben ignorar el mismo código forzado y usar correlativos distintos."
   );
 
   const service = await createInventoryItemWithCodeHandler(
@@ -689,7 +667,7 @@ async function main() {
     new URL("../src/features/inventory/InventoryManager.jsx", import.meta.url),
     "utf8"
   );
-  assert.match(managerSource, /asignará.*guardar/i);
+  assert.match(managerSource, /Se asignará automáticamente/);
   assert.doesNotMatch(managerSource, /name=["']sku["']/);
   assert.match(managerSource, /SKU \/ código interno/);
   assert.match(managerSource, /Código de barras/);
@@ -697,7 +675,7 @@ async function main() {
   assert.match(managerSource, /requestId:\s*createRequestRef\.current/);
   assert.match(
     managerSource,
-    /authorizedStatus:\s*adaptInventoryItem\(editingItem\)\.estado/,
+    /authorizedStatus:\s*editingItem\s*\?\s*adaptInventoryItem\(editingItem\)\.estado/,
     "Guardar una edición debe conservar el estado autorizado del ítem."
   );
   assert.match(managerSource, /Sin área/);
