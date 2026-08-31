@@ -303,6 +303,7 @@ export function PlatformBusinessDetailPage() {
   const [rejectionReason, setRejectionReason] = React.useState("");
   const [officialLegalName, setOfficialLegalName] = React.useState("");
   const [working, setWorking] = React.useState(false);
+  const [openingEvidence, setOpeningEvidence] = React.useState(false);
   const [notice, setNotice] = React.useState("");
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [verificationDecision, setVerificationDecision] = React.useState("");
@@ -336,6 +337,7 @@ export function PlatformBusinessDetailPage() {
     } finally { setWorking(false); }
   };
   const loadEvidence = async () => {
+    if (openingEvidence) return;
     setNotice("");
     const popup = window.open("", "_blank");
     if (!popup) {
@@ -343,15 +345,23 @@ export function PlatformBusinessDetailPage() {
       return;
     }
     popup.opener = null;
+    popup.document.title = "Preparando documento";
+    popup.document.body.textContent = "Preparando documento seguro…";
+    setOpeningEvidence(true);
     try {
-      const document = await getPlatformVerificationDocument(
+      const evidence = await getPlatformVerificationDocument(
         businessId,
         state.data.solicitudActual.id
       );
-      popup.location.replace(document.url);
-    } catch {
-      popup.close();
-      setNotice("No pudimos abrir el documento de respaldo.");
+      if (popup.closed) {
+        throw new Error("La pestaña del documento fue cerrada.");
+      }
+      popup.location.assign(evidence.url);
+    } catch (error) {
+      if (!popup.closed) popup.close();
+      setNotice(message(error, "No pudimos abrir el documento de respaldo."));
+    } finally {
+      setOpeningEvidence(false);
     }
   };
   const deleteBusiness = async () => {
@@ -403,7 +413,7 @@ export function PlatformBusinessDetailPage() {
       {solicitudActual && <div className="platform-verification-review">
         <article><span>{fiscalFieldLabel(solicitudActual.identificadorFiscalTipo, "declarado")}</span><strong>{fiscalIdentifier(solicitudActual.paisCodigo, solicitudActual.identificadorFiscalValor)}</strong><small>{countryName(solicitudActual.paisCodigo)}</small></article>
         <article><span>Solicitante</span><strong>{solicitudActual.correoSolicitante || "Correo no informado"}</strong><small>{solicitudActual.relacionSolicitante || "Relación no informada"}{solicitudActual.telefonoSolicitante ? ` · ${solicitudActual.telefonoSolicitante}` : ""}</small></article>
-        <article className="platform-verification-review__evidence"><span>Evidencia</span><strong>{solicitudActual.documentoAcreditativo?.nombreOriginal || "Sin documento adjunto"}</strong>{solicitudActual.documentoAcreditativo && <Button variant="secondary" onClick={loadEvidence}>Ver documento</Button>}</article>
+        <article className="platform-verification-review__evidence"><span>Evidencia</span><strong>{solicitudActual.documentoAcreditativo?.nombreOriginal || "Sin documento adjunto"}</strong>{solicitudActual.documentoAcreditativo && <Button variant="secondary" disabled={openingEvidence} onClick={loadEvidence}>{openingEvidence ? "Abriendo…" : "Ver documento"}</Button>}</article>
         {solicitudActual.observaciones && <article><span>Observaciones</span><strong>{solicitudActual.observaciones}</strong></article>}
       </div>}
       {pending && <div className="platform-verification-actions">

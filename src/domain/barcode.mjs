@@ -17,32 +17,38 @@ export async function getBarcodeCameraSupport({
   mediaDevices = globalThis.navigator?.mediaDevices,
 } = {}) {
   if (typeof mediaDevices?.getUserMedia !== "function") {
-    return {supported: false, reason: "camera-api-unavailable", formats: []};
+    return {
+      supported: false,
+      reason: "camera-api-unavailable",
+      decoder: "manual",
+      formats: [],
+    };
   }
-  if (typeof BarcodeDetectorClass !== "function") {
-    return {supported: false, reason: "barcode-detector-unavailable", formats: []};
+  if (typeof BarcodeDetectorClass === "function") {
+    try {
+      const supportedFormats = typeof BarcodeDetectorClass.getSupportedFormats === "function"
+        ? await BarcodeDetectorClass.getSupportedFormats()
+        : BARCODE_FORMATS;
+      const formats = BARCODE_FORMATS.filter((format) => supportedFormats.includes(format));
+      if (formats.length === BARCODE_FORMATS.length) {
+        return {supported: true, reason: "", decoder: "native", formats};
+      }
+    } catch {
+      // La cámara sigue disponible mediante el decoder JS acotado a barras 1D.
+    }
   }
-  try {
-    const supportedFormats = typeof BarcodeDetectorClass.getSupportedFormats === "function"
-      ? await BarcodeDetectorClass.getSupportedFormats()
-      : BARCODE_FORMATS;
-    const formats = BARCODE_FORMATS.filter((format) => supportedFormats.includes(format));
-    return formats.length
-      ? {supported: true, reason: "", formats}
-      : {supported: false, reason: "barcode-formats-unavailable", formats: []};
-  } catch {
-    return {supported: false, reason: "barcode-detector-error", formats: []};
-  }
+  return {
+    supported: true,
+    reason: "",
+    decoder: "zxing",
+    formats: [...BARCODE_FORMATS],
+  };
 }
 
 export function barcodeSupportMessage(reason) {
-  if (reason === "camera-api-unavailable") {
-    return "Este navegador o dispositivo no permite abrir la cámara. Usa el lector USB o ingresa el código manualmente.";
-  }
-  if (reason === "barcode-formats-unavailable") {
-    return "Este navegador no puede leer los formatos compatibles. Usa el lector USB o ingresa el código manualmente.";
-  }
-  return "Este navegador no admite lectura de códigos con cámara. Usa el lector USB o ingresa el código manualmente.";
+  return reason === "camera-api-unavailable"
+    ? "Este navegador o dispositivo no permite abrir la cámara. Usa el lector USB o ingresa el código manualmente."
+    : "No se pudo preparar el lector de códigos. Usa el lector USB o ingresa el código manualmente.";
 }
 
 export function barcodeCameraErrorMessage(error) {

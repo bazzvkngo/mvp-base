@@ -20,12 +20,13 @@ const unsupportedCamera = await getBarcodeCameraSupport({
 assert.deepEqual(unsupportedCamera, {
   supported: false,
   reason: "camera-api-unavailable",
+  decoder: "manual",
   formats: [],
 });
 
 class SupportedDetector {
   static async getSupportedFormats() {
-    return ["ean_13", "qr_code", "code_128"];
+    return ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "qr_code"];
   }
 }
 const supportedCamera = await getBarcodeCameraSupport({
@@ -35,9 +36,20 @@ const supportedCamera = await getBarcodeCameraSupport({
 assert.deepEqual(supportedCamera, {
   supported: true,
   reason: "",
-  formats: ["ean_13", "code_128"],
+  decoder: "native",
+  formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"],
 });
-assert.match(barcodeSupportMessage("barcode-detector-unavailable"), /lector USB/);
+const fallbackCamera = await getBarcodeCameraSupport({
+  BarcodeDetectorClass: undefined,
+  mediaDevices: {getUserMedia() {}},
+});
+assert.deepEqual(fallbackCamera, {
+  supported: true,
+  reason: "",
+  decoder: "zxing",
+  formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"],
+});
+assert.match(barcodeSupportMessage("camera-api-unavailable"), /lector USB/);
 assert.match(barcodeCameraErrorMessage({name: "NotAllowedError"}), /Habilita el permiso/);
 assert.match(barcodeCameraErrorMessage({name: "NotFoundError"}), /No se encontró una cámara/);
 assert.equal(isDuplicateBarcodeRead({barcode: "001234", readAt: 1000}, "001234", 2000), true);
@@ -66,9 +78,10 @@ stopBarcodeCamera({getTracks: () => [
 ]});
 assert.equal(stopped, 2, "Cerrar el escáner debe detener todas las pistas.");
 
-const [scanner, inventoryService, inventoryUi, quotePage, quoteEditor, poPage, poEditor] =
+const [scanner, decoder, inventoryService, inventoryUi, quotePage, quoteEditor, poPage, poEditor] =
   await Promise.all([
     readFile(new URL("../src/components/barcode/BarcodeInput.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/services/barcodeDecoder.js", import.meta.url), "utf8"),
     readFile(new URL("../src/services/inventoryService.js", import.meta.url), "utf8"),
     readFile(new URL("../src/features/inventory/InventoryManager.jsx", import.meta.url), "utf8"),
     readFile(new URL("../src/pages/NewQuotePage.jsx", import.meta.url), "utf8"),
@@ -77,12 +90,19 @@ const [scanner, inventoryService, inventoryUi, quotePage, quoteEditor, poPage, p
     readFile(new URL("../src/features/purchaseOrders/PurchaseOrderItemsEditor.jsx", import.meta.url), "utf8"),
   ]);
 
-assert.match(scanner, /BarcodeDetector/);
+assert.match(decoder, /BarcodeDetector/);
 assert.match(scanner, /getUserMedia/);
 assert.match(scanner, /releaseCamera\(\)/);
 assert.match(scanner, /event\.key !== "Enter"/);
 assert.match(scanner, /getBarcodeCameraSupport/);
 assert.match(scanner, /isDuplicateBarcodeRead/);
+assert.match(scanner, /getUserMedia[\s\S]*createBarcodeFrameDecoder/);
+assert.match(decoder, /decoder === "native"/);
+assert.match(decoder, /import\("@zxing\/library"\)/);
+for (const format of ["EAN_13", "EAN_8", "UPC_A", "UPC_E", "CODE_128"]) {
+  assert.match(decoder, new RegExp(format));
+}
+assert.doesNotMatch(decoder, /QR_CODE/);
 assert.match(inventoryService, /where\("barcode", "==", barcode\)/);
 assert.match(inventoryService, /where\("codigoBarras", "==", barcode\)/);
 assert.doesNotMatch(inventoryService, /findActiveProductByBarcode[\s\S]*?getInventoryItems/);

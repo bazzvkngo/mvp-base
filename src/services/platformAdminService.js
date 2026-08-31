@@ -42,8 +42,30 @@ export const listPlatformBusinesses = ({
 export const getPlatformBusiness = (businessId) =>
   call("obtenerEmpresaPlataforma", {businessId});
 
-export const getPlatformVerificationDocument = (businessId, solicitudId) =>
-  call("obtenerDocumentoVerificacionPlataforma", {businessId, solicitudId});
+export function getSafePlatformDocumentUrl(value) {
+  const rawUrl = String(value || "").trim();
+  if (!rawUrl) throw new Error("El documento no entregó una URL válida.");
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error("El documento no entregó una URL válida.");
+  }
+  const localEmulator = parsed.protocol === "http:" &&
+    ["127.0.0.1", "localhost", "::1"].includes(parsed.hostname);
+  if (parsed.protocol !== "https:" && !localEmulator) {
+    throw new Error("El documento no entregó una URL segura.");
+  }
+  return parsed.href;
+}
+
+export async function getPlatformVerificationDocument(businessId, solicitudId) {
+  const evidence = await call(
+    "obtenerDocumentoVerificacionPlataforma",
+    {businessId, solicitudId}
+  );
+  return {...evidence, url: getSafePlatformDocumentUrl(evidence?.url)};
+}
 
 export const listPlatformUsers = ({
   cursor,

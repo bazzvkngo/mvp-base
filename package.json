@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@zxing/library": "0.21.3",
     "chart.js": "^4.5.1",
     "firebase": "^12.15.0",
     "jspdf": "^4.2.1",
