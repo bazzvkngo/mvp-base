@@ -25,7 +25,7 @@ export default function SaleSummaryPanel({
       </header>
       <div className="po-summary__amounts">
         <div><span>Subtotal</span><strong>{money(totals.subtotal)}</strong></div>
-        <div><span>Descuentos</span><strong>-{money(totals.descuentoTotal)}</strong></div>
+        <div><span>Descuentos</span><strong>{Number(totals.descuentoTotal) > 0 ? `-${money(totals.descuentoTotal)}` : money(0)}</strong></div>
         <div><span>Neto</span><strong>{money(totals.neto)}</strong></div>
         <div><span>{totals.afectaIva ? `${taxName} ${taxRate}%` : `${taxName} · Exenta`}</span><strong>{money(totals.iva)}</strong></div>
         <div className="po-summary__total"><span>Total</span><strong>{money(totals.total)}</strong></div>

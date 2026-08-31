@@ -1,13 +1,48 @@
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 import {
+  barcodeCameraErrorMessage,
+  barcodeSupportMessage,
+  getBarcodeCameraSupport,
   incrementScannedItem,
+  isDuplicateBarcodeRead,
   normalizeBarcode,
   stopBarcodeCamera,
 } from "../src/domain/barcode.mjs";
 
 assert.equal(normalizeBarcode(" 0012345678905\n"), "0012345678905");
 assert.equal(normalizeBarcode(""), "");
+
+const unsupportedCamera = await getBarcodeCameraSupport({
+  BarcodeDetectorClass: class Detector {},
+  mediaDevices: {},
+});
+assert.deepEqual(unsupportedCamera, {
+  supported: false,
+  reason: "camera-api-unavailable",
+  formats: [],
+});
+
+class SupportedDetector {
+  static async getSupportedFormats() {
+    return ["ean_13", "qr_code", "code_128"];
+  }
+}
+const supportedCamera = await getBarcodeCameraSupport({
+  BarcodeDetectorClass: SupportedDetector,
+  mediaDevices: {getUserMedia() {}},
+});
+assert.deepEqual(supportedCamera, {
+  supported: true,
+  reason: "",
+  formats: ["ean_13", "code_128"],
+});
+assert.match(barcodeSupportMessage("barcode-detector-unavailable"), /lector USB/);
+assert.match(barcodeCameraErrorMessage({name: "NotAllowedError"}), /Habilita el permiso/);
+assert.match(barcodeCameraErrorMessage({name: "NotFoundError"}), /No se encontró una cámara/);
+assert.equal(isDuplicateBarcodeRead({barcode: "001234", readAt: 1000}, "001234", 2000), true);
+assert.equal(isDuplicateBarcodeRead({barcode: "001234", readAt: 1000}, "001234", 2500), false);
+assert.equal(isDuplicateBarcodeRead({barcode: "001234", readAt: 1000}, "987", 1100), false);
 
 const created = incrementScannedItem([], "product-1", () => ({
   lineaId: "line-1",
@@ -46,7 +81,8 @@ assert.match(scanner, /BarcodeDetector/);
 assert.match(scanner, /getUserMedia/);
 assert.match(scanner, /releaseCamera\(\)/);
 assert.match(scanner, /event\.key !== "Enter"/);
-assert.match(scanner, /ingresar el código manualmente/);
+assert.match(scanner, /getBarcodeCameraSupport/);
+assert.match(scanner, /isDuplicateBarcodeRead/);
 assert.match(inventoryService, /where\("barcode", "==", barcode\)/);
 assert.match(inventoryService, /where\("codigoBarras", "==", barcode\)/);
 assert.doesNotMatch(inventoryService, /findActiveProductByBarcode[\s\S]*?getInventoryItems/);

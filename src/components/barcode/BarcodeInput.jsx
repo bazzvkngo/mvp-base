@@ -1,10 +1,15 @@
 import React, {useCallback, useEffect, useRef, useState} from "react";
 import {Camera, ScanLine} from "lucide-react";
 import ResponsiveDialog from "../ui/ResponsiveDialog";
-import {normalizeBarcode, stopBarcodeCamera} from "../../domain/barcode.mjs";
+import {
+  barcodeCameraErrorMessage,
+  barcodeSupportMessage,
+  getBarcodeCameraSupport,
+  isDuplicateBarcodeRead,
+  normalizeBarcode,
+  stopBarcodeCamera,
+} from "../../domain/barcode.mjs";
 import "./barcode.css";
-
-const FORMATS = ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"];
 
 export default function BarcodeInput({
   actionLabel = "Escanear código",
@@ -20,10 +25,15 @@ export default function BarcodeInput({
   const [manualValue, setManualValue] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [checkingSupport, setCheckingSupport] = useState(false);
+  const [cameraStatus, setCameraStatus] = useState("idle");
+  const [cameraSupport, setCameraSupport] = useState(null);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const frameRef = useRef(0);
   const inputRef = useRef(null);
+  const submittingRef = useRef(false);
+  const lastReadRef = useRef(null);
   const onChangeRef = useRef(onChange);
   const onSubmitRef = useRef(onSubmit);
   onChangeRef.current = onChange;
@@ -41,6 +51,8 @@ export default function BarcodeInput({
     releaseCamera();
     setOpen(false);
     setError("");
+    setCameraStatus("idle");
+    setCameraSupport(null);
   }, [releaseCamera]);
 
   const submit = useCallback(async (rawValue) => {
@@ -49,7 +61,13 @@ export default function BarcodeInput({
       setError("Ingresa o escanea un código de barras.");
       return false;
     }
+    if (submittingRef.current || isDuplicateBarcodeRead(lastReadRef.current, barcode)) {
+      return false;
+    }
+    const readAt = Date.now();
+    lastReadRef.current = {barcode, readAt};
     try {
+      submittingRef.current = true;
       setSubmitting(true);
       setError("");
       onChangeRef.current?.(barcode);
@@ -57,27 +75,24 @@ export default function BarcodeInput({
       close();
       return true;
     } catch (submitError) {
+      if (lastReadRef.current?.barcode === barcode && lastReadRef.current?.readAt === readAt) {
+        lastReadRef.current = null;
+      }
       setError(submitError?.message || "No se pudo usar el código leído.");
       return false;
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }, [close]);
 
   useEffect(() => {
-    if (!open) return undefined;
+    if (!open || !cameraSupport?.supported) return undefined;
     let active = true;
     const startCamera = async () => {
-      if (!("BarcodeDetector" in globalThis) || !navigator.mediaDevices?.getUserMedia) {
-        setError("La cámara no está disponible en este navegador. Puedes ingresar el código manualmente.");
-        return;
-      }
       try {
-        const supported = typeof globalThis.BarcodeDetector.getSupportedFormats === "function"
-          ? await globalThis.BarcodeDetector.getSupportedFormats()
-          : FORMATS;
-        const formats = FORMATS.filter((format) => supported.includes(format));
-        const detector = new globalThis.BarcodeDetector(formats.length ? {formats} : undefined);
+        setCameraStatus("starting");
+        const detector = new globalThis.BarcodeDetector({formats: cameraSupport.formats});
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: false,
           video: {facingMode: {ideal: "environment"}},
@@ -94,10 +109,17 @@ export default function BarcodeInput({
         }
         video.srcObject = stream;
         await video.play();
+        if (!active) {
+          releaseCamera();
+          return;
+        }
+        setCameraStatus("ready");
+        let consecutiveDetectionErrors = 0;
         const detect = async () => {
           if (!active || !videoRef.current) return;
           try {
             const codes = await detector.detect(videoRef.current);
+            consecutiveDetectionErrors = 0;
             const detected = normalizeBarcode(codes?.[0]?.rawValue);
             if (detected) {
               releaseCamera();
@@ -106,7 +128,13 @@ export default function BarcodeInput({
               return;
             }
           } catch {
-            // Un cuadro incompleto no debe cerrar la captura.
+            consecutiveDetectionErrors += 1;
+            if (consecutiveDetectionErrors >= 5) {
+              releaseCamera();
+              setCameraStatus("unavailable");
+              setError("La cámara se abrió, pero no pudo analizar la imagen. Usa el lector USB o ingresa el código manualmente.");
+              return;
+            }
           }
           if (active) frameRef.current = requestAnimationFrame(detect);
         };
@@ -114,11 +142,8 @@ export default function BarcodeInput({
       } catch (cameraError) {
         releaseCamera();
         if (active) {
-          setError(
-            cameraError?.name === "NotAllowedError"
-              ? "No se autorizó la cámara. Puedes ingresar el código manualmente."
-              : "No se pudo iniciar la cámara. Puedes ingresar el código manualmente."
-          );
+          setCameraStatus("unavailable");
+          setError(barcodeCameraErrorMessage(cameraError));
         }
       }
     };
@@ -127,12 +152,34 @@ export default function BarcodeInput({
       active = false;
       releaseCamera();
     };
-  }, [open, releaseCamera, submit]);
+  }, [cameraSupport, open, releaseCamera, submit]);
 
-  const openScanner = () => {
+  useEffect(() => {
+    if (!open) return undefined;
+    const releaseWhenHidden = () => {
+      if (document.visibilityState !== "hidden") return;
+      releaseCamera();
+      setCameraStatus("unavailable");
+      setError("La cámara se detuvo al cambiar de vista. Cierra este cuadro y vuelve a abrirlo para reintentar.");
+    };
+    document.addEventListener("visibilitychange", releaseWhenHidden);
+    return () => document.removeEventListener("visibilitychange", releaseWhenHidden);
+  }, [open, releaseCamera]);
+
+  const openScanner = async () => {
+    if (checkingSupport) return;
+    setCheckingSupport(true);
     setManualValue(actionOnly ? "" : normalizeBarcode(value));
     setError("");
-    setOpen(true);
+    try {
+      const support = await getBarcodeCameraSupport();
+      setCameraSupport(support);
+      setCameraStatus(support.supported ? "starting" : "unavailable");
+      if (!support.supported) setError(barcodeSupportMessage(support.reason));
+      setOpen(true);
+    } finally {
+      setCheckingSupport(false);
+    }
   };
 
   const handleKeyDown = (event, currentValue) => {
@@ -143,7 +190,7 @@ export default function BarcodeInput({
 
   return <>
     {actionOnly ? (
-      <button type="button" className="barcode-action-button" disabled={disabled} onClick={openScanner}>
+      <button type="button" className="barcode-action-button" disabled={disabled || checkingSupport} onClick={openScanner}>
         <ScanLine size={17} />{actionLabel}
       </button>
     ) : (
@@ -159,7 +206,7 @@ export default function BarcodeInput({
           onChange={(event) => onChange?.(event.target.value)}
           onKeyDown={(event) => handleKeyDown(event, value)}
         />
-        <button type="button" disabled={disabled} onClick={openScanner}><Camera size={17} />{actionLabel}</button>
+        <button type="button" disabled={disabled || checkingSupport} onClick={openScanner}><Camera size={17} />{actionLabel}</button>
       </span>
     )}
 
@@ -175,7 +222,7 @@ export default function BarcodeInput({
       <div className="barcode-scanner">
         <div className="barcode-scanner__camera">
           <video ref={videoRef} muted playsInline aria-label="Vista de la cámara para escanear" />
-          <span><ScanLine size={28} />EAN-13, EAN-8, UPC y Code 128</span>
+          <span><ScanLine size={28} />{cameraStatus === "ready" ? "Cámara lista: apunta al código" : cameraStatus === "starting" ? "Iniciando cámara…" : "Ingreso manual disponible"}</span>
         </div>
         <label>
           <span>Ingreso manual o lector USB</span>
@@ -183,6 +230,7 @@ export default function BarcodeInput({
             ref={inputRef}
             className="erp-control"
             value={manualValue}
+            disabled={submitting}
             maxLength={120}
             autoComplete="off"
             onChange={(event) => { setManualValue(event.target.value); setError(""); }}

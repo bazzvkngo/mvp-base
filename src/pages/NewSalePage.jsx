@@ -315,7 +315,7 @@ export default function NewSalePage({businessId, role}) {
       </section>
 
       {message && <p className="po-message po-message--error no-print">{message}</p>}
-      {sale?.estado === "confirmada" && <p className={`sale-stock-note no-print${sale.alertasStock?.length ? " po-message po-message--error" : ""}`} role={sale.alertasStock?.length ? "alert" : undefined}>Stock: {getSaleStockStatusLabel(sale.estadoStock, sale)}{sale.alertasStock?.length ? `. ${sale.alertasStock.map((alert) => `${alert.nombre}: faltan ${alert.faltante}`).join(" · ")}` : hasProducts && sale.stockAplicado ? ". Disponibilidad actualizada al aceptar la cotización." : "."}</p>}
+      {sale?.estado === "confirmada" && <p className={`sale-stock-note no-print${sale.alertasStock?.length ? " po-message po-message--error" : ""}`} role={sale.alertasStock?.length ? "alert" : undefined}>{getSaleStockStatusLabel(sale.estadoStock, sale)}{sale.alertasStock?.length ? `. ${sale.alertasStock.map((alert) => `${alert.nombre}: faltan ${alert.faltante}`).join(" · ")}` : hasProducts && sale.stockAplicado ? ". Disponibilidad actualizada al aceptar la cotización." : "."}</p>}
 
       <div className="no-print">
         <div className="po-layout">

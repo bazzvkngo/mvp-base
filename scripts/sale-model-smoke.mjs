@@ -98,6 +98,7 @@ assert.match(salesHistory, /<th>Número<\/th><th>Cliente<\/th><th>Total<\/th><th
 assert.match(salesHistory, /formatDate\(sale\.fechaVenta\)/);
 assert.match(salesHistory, /getSaleStockStatusLabel/);
 assert.match(saleSummary, /Guardar cambios/);
+assert.match(saleSummary, /Number\(totals\.descuentoTotal\) > 0/);
 assert.match(saleSummary, /Ellipsis/);
 assert.match(saleSummary, /No puedes confirmar esta venta porque uno o más productos no tienen stock suficiente/);
 assert.match(salePage, /sale-context-card/);
