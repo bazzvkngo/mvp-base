@@ -1,5 +1,11 @@
 # SPEC 011 — Recepciones MVP
 
+> Estado post-demo: este flujo ligado a OC continúa vigente y separado de la
+> Compra directa. Ya están implementados el límite por cantidad pendiente, el
+> rechazo de líneas ajenas, la trazabilidad histórica y la revisión documental
+> con Neto / impuesto / tasa / Total. Queda pendiente uniformar esa presentación
+> tributaria en todos los resúmenes y detalles donde los valores existan.
+
 > Actualización BRUNO-10: el contexto documental `reception` extrae por separado
 > documento, emisor/proveedor, receptor, totales y líneas económicas. La respuesta
 > se normaliza determinísticamente, omite copias ORIGINAL/CEDIBLE repetidas y marca
@@ -62,13 +68,22 @@ válida con la OC quedan fuera de la propuesta aplicada.
   compra) y bloquea la mezcla con un promedio vigente en otra moneda.
 - El cliente no escribe directamente recepciones, contadores, idempotencia ni movimientos.
 
+El cálculo técnico vigente de `costoPromedio` y `ultimoCosto` se conserva como
+trazabilidad implementada. No resuelve por sí solo qué valor comercial debe
+destacarse al usuario como costo vigente; esa decisión de producto permanece
+pendiente de diseño conforme a la SPEC 016.
+
 ## Compras y compatibilidad
 
 Una recepción nueva confirmada registra automáticamente una compra confirmada con las cantidades y valores de su snapshot. Functions enlaza Compra, Recepción, OC, adquisiciones y movimientos dentro de la misma transacción. La conversión manual se conserva únicamente para recepciones históricas confirmadas sin Compra.
 
 Una Compra confirmada puede revertirse completamente con motivo obligatorio. La reversión conserva OC, Recepción y Compra, crea movimientos compensatorios deterministas y marca la evidencia económica como revertida. Si el stock disponible de cualquier producto es menor que lo ingresado por esa Recepción, la transacción completa se bloquea.
 
-La compra directa sigue disponible, pero tampoco representa entrada física en el modelo 2. La recepción directa o ajuste queda fuera de este MVP.
+La compra directa vigente sigue disponible como documento económico y no
+representa entrada física en el modelo 2 actual. El target post-demo confirmado
+es incorporar la entrada física al confirmar una adquisición directa desde
+Nueva compra; su diseño e implementación pertenecen a Compras y no deben
+debilitar las restricciones de una Recepción ligada a OC.
 
 No hay migración destructiva. `confirmarCompra` conserva la aplicación de stock sólo para borradores históricos de modelo 1. Toda compra nueva usa `modeloCompraVersion: 2` y `stockGestionadoPor: recepcion`.
 

@@ -1,5 +1,19 @@
 # Ventas MVP
 
+## Estado post-demo sobre margen comercial
+
+**Implementado:** toda Venta confirmada congela el costo histórico disponible de
+los productos en sus efectos de inventario, incluso cuando no está vinculada a
+un Proyecto. Esa trazabilidad permite calcular margen comercial sin consultar
+el costo vigente ni exigir un `trabajoId`.
+
+**Confirmado pendiente:** Reportes debe mostrar el margen comercial de Ventas
+separado del resultado/rentabilidad de Proyectos. La agregación, el tratamiento
+de registros legacy sin costo congelado y la prevención de doble
+contabilización cuando una Venta también pertenece a un Proyecto deben diseñarse
+y probarse antes de exponer la métrica. Nunca se calculará como ventas menos
+compras.
+
 ## Objetivo y modelo
 
 Ventas registra operaciones comerciales directas o derivadas de una cotización aceptada. El documento canónico vive en `negocios/{businessId}/ventas/{ventaId}` y usa un único identificador `ventaId`. Guarda número, estado, cliente y snapshot, origen opcional, líneas y snapshots, totales, documento, condiciones, observaciones, aplicación de stock, autoría y timestamps.
@@ -60,6 +74,9 @@ Si se pierde la respuesta de aceptación, el mismo request idempotente o una nue
 ## Fuera de alcance
 
 No incluye facturación electrónica, SII, pagos, cuentas por cobrar, finanzas automáticas, devoluciones comerciales, notas de crédito, consumo por proyecto, actualización de costos, ventas masivas ni IA.
+
+Un PDF o documento comercial generado por ValoraCloud no debe denominarse
+“factura electrónica” mientras no exista una integración tributaria oficial.
 
 ## Pruebas y aceptación
 

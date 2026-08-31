@@ -15,6 +15,15 @@
 - No confiar únicamente en validaciones frontend.
 - No permitir acceso cruzado entre empresas.
 
+# Precedencia documental
+
+- `AGENTS.md` sigue siendo la autoridad máxima en seguridad, arquitectura multiempresa y workflow.
+- Para decisiones de producto post-demo, leer `docs/specs/016-vision-post-demo-bruno.md`.
+- Una SPEC específica más reciente puede sustituir únicamente los puntos que declare explícitamente reemplazados.
+- Las SPEC anteriores siguen siendo autoridad para invariantes, compatibilidad legacy y comportamiento no sustituido.
+- Si código, una SPEC histórica y la visión post-demo parecen contradecirse, detenerse y analizar la precedencia antes de implementar.
+- No convertir objetivos `PENDIENTES` de la SPEC 016 en funciones ya existentes.
+
 # Convenciones
 
 - En código nuevo, usar `businessId` para variables relacionadas con empresa.

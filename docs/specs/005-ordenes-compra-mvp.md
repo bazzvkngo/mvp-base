@@ -121,7 +121,7 @@ La navegación incluye Compras con:
 - `/ordenes-compra/{ordenCompraId}/editar` para editar borradores;
 - `/ordenes-compra/{ordenCompraId}` para consulta.
 
-El workspace presenta encabezado, selector de proveedor registrado, catálogo de inventario activo, editor de líneas, resumen sticky y secciones de entrega, condiciones, observaciones y vista previa. La vista imprimible muestra empresa compradora, proveedor, fechas, ítems y totales. No se envían correos.
+El workspace presenta encabezado, selector de proveedor registrado, catálogo de inventario activo, editor de líneas, resumen sticky y secciones de entrega, condiciones, observaciones y vista previa. La vista imprimible muestra empresa compradora, proveedor, fechas, ítems y totales. El envío por correo adjunta el PDF y sólo registra la emisión cuando el proveedor backend confirma el envío; WhatsApp requiere confirmación humana posterior a abrir el canal. Reenviar reutiliza la misma OC y conserva trazabilidad.
 
 `MEMBER` puede consultar documentos e imprimirlos, pero no recibe acciones de escritura. Los estados emitido y cancelado son de solo lectura.
 
@@ -151,7 +151,8 @@ Este MVP no implementa:
 - cambios de stock o `costoBase`;
 - vínculo automático con finanzas;
 - eliminación física;
-- correo de órdenes;
+- ingestión automática de respuestas del proveedor; su respuesta se registra
+  manualmente por el flujo autoritativo vigente;
 - inteligencia artificial.
 
 ## Pruebas

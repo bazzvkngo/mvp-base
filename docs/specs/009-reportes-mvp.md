@@ -1,5 +1,18 @@
 # Reportes simplificados
 
+## Estado documental post-demo
+
+**Implementado:** el resumen actual presenta Ventas confirmadas, Compras
+confirmadas y resultado/rentabilidad autoritativa de Proyectos, separados por
+moneda y permisos.
+
+**Confirmado pendiente:** evolucionar Reportes para distinguir ingresos, gastos,
+margen comercial de Ventas y resultado/rentabilidad de Proyectos. Debe entregar
+métricas útiles aunque una Venta no tenga Proyecto, sin convertir Reportes en
+contabilidad formal ni SII. La definición exacta de “ingresos” y “gastos” frente
+a documentos confirmados, pagos y movimientos financieros queda pendiente de
+diseño; no se inventa en esta SPEC.
+
 ## Objetivo
 
 `/reportes` entrega un resumen operacional de solo lectura para responder cuánto vendió,
@@ -32,6 +45,18 @@ vinculada o con monedas inconsistentes no aporta un resultado. Nunca se presenta
 El balance de Proyecto es actual y no posee atribución histórica rigurosa por período;
 la interfaz debe explicitarlo y no filtrarlo artificialmente con el selector de fechas.
 
+## Margen comercial de ventas — target pendiente
+
+Una Venta confirmada de productos puede tener margen comercial aunque no exista
+Proyecto. El costo histórico congelado en sus efectos de inventario es la fuente
+preferida cuando está disponible; un registro legacy sin costo histórico no debe
+completarse con el costo vigente. La fórmula agregada, los estados parciales y la
+regla exacta para no duplicar resultado cuando la misma Venta participa en un
+Proyecto quedan pendientes de diseño e implementación.
+
+Margen comercial y rentabilidad de Proyectos son métricas distintas. Ninguna de
+las dos equivale a `ventas - compras`.
+
 ## Presentación
 
 - Encabezado: `Reportes` y `Resumen de ventas, compras y resultados de tus proyectos.`
@@ -62,6 +87,8 @@ CSV, inventario, cotizaciones ni Finanzas. No se agregan índices ni Cloud Funct
 - Las cifras comerciales consideran sólo operaciones activas o confirmadas del período.
 - Cancelaciones, preparaciones, reversiones y borradores no alteran los totales.
 - La ganancia proviene del balance de Proyecto y no de restar compras a ventas.
+- La pantalla vigente no presenta todavía margen comercial general como si ya
+  estuviera implementado.
 - Los resultados se separan por moneda y nunca producen `NaN`.
 - Un perfil sin rentabilidad no recibe balances de Proyecto.
 - Los enlaces respetan las rutas habilitadas para perfiles personalizados.

@@ -1,5 +1,29 @@
 # Inventario MVP
 
+## Estado post-demo
+
+**Implementado:** catálogo y stock maestro, alta manual, carga inicial desde
+Excel/CSV, código de barras independiente, entrada manual, lector USB e
+implementación de cámara mediante `getUserMedia`, detector nativo y fallback a
+ZXing. El scanner conserva únicamente EAN-13, EAN-8, UPC-A, UPC-E y Code 128.
+
+**QA pendiente / limitación conocida:** la cámara obtiene permiso, enciende el
+dispositivo y muestra preview, pero la prueba física desktop posterior al cambio
+no decodificó códigos reales de dos productos. La lectura física por cámara no
+está aceptada todavía; se repetirá la prueba en un teléfono móvil al desplegar en
+HTTPS. No es un bloqueo inmediato y manual/USB permanecen disponibles.
+
+**Confirmado pendiente:** todo código interno nuevo debe ser generado por
+ValoraCloud. El formulario vigente todavía permite proponer `codigoSolicitado`;
+ese contrato actual se conserva hasta implementar y probar su retiro. Una
+factura iniciada desde un acceso relacionado con Inventario deberá conducir a
+Nueva compra y nunca incorporar stock silenciosamente como carga maestra.
+
+**Evolución posterior:** el modelo ya conserva adquisiciones, costo promedio y
+último costo. Falta exponer una evolución histórica de costos por producto. La
+semántica comercial definitiva que se mostrará como costo vigente —último,
+promedio ponderado u otra— queda pendiente de diseño.
+
 ## Objetivo
 
 Ofrecer una vista empresarial de consulta y administración para productos, servicios y actividades, con creación manual enfocada, importación local desde planillas y persistencia autoritativa multiempresa.
@@ -74,7 +98,7 @@ legacy sin esos campos se adaptan con valores vacíos y no requieren migración.
 
 ## Códigos de barras
 
-El barcode se normaliza con `trim`, conserva ceros iniciales y debe ser único entre productos activos del mismo negocio. La reserva por hash se crea, cambia o libera autoritativamente al crear, editar, archivar o reactivar. La búsqueda del listado incluye barcode. El componente común admite ingreso manual, lector USB terminado en Enter y cámara bajo demanda con BarcodeDetector; siempre detiene las pistas al detectar, cancelar o desmontar y conserva ingreso manual como fallback.
+El barcode se normaliza con `trim`, conserva ceros iniciales y debe ser único entre productos activos del mismo negocio. La reserva por hash se crea, cambia o libera autoritativamente al crear, editar, archivar o reactivar. La búsqueda del listado incluye barcode. El componente común admite ingreso manual, lector USB terminado en Enter y contiene la implementación de cámara bajo demanda con `getUserMedia`, `BarcodeDetector` o ZXing; siempre detiene pistas, decoder, timers y captura al detectar, cancelar o desmontar, y conserva ingreso manual como fallback. La decodificación física por cámara continúa pendiente de QA satisfactoria, incluida una prueba móvil sobre HTTPS.
 
 ## Cálculo de precio
 
@@ -118,7 +142,7 @@ La plantilla descargable contiene:
 tipo,nombre,codigo,area,categoria,unidad,costo_base,margen,precio_manual,stock,stock_minimo,descripcion
 ```
 
-`nombre` y `tipo` son obligatorios. Si falta el tipo, la fila queda pendiente de revisión. La plantilla conserva el esquema anterior sin inferir IVA de compra. Un código vacío se genera con el correlativo seguro. Un código aportado se normaliza, no puede usar los prefijos automáticos `PR`, `SV` o `AC`, y se verifica en backend para impedir duplicados.
+`nombre` y `tipo` son obligatorios. Si falta el tipo, la fila queda pendiente de revisión. La plantilla conserva el esquema anterior sin inferir IVA de compra. Un código vacío se genera con el correlativo seguro. El contrato histórico admite un código aportado, lo normaliza, reserva los prefijos automáticos `PR`, `SV` y `AC`, y verifica duplicados en backend. Esta posibilidad queda marcada para retiro por el target confirmado de generación exclusiva de códigos internos; no debe eliminarse sin implementar antes la adaptación de UI, payloads, importación y compatibilidad legacy.
 
 ## Backend y seguridad multiempresa
 
@@ -160,11 +184,16 @@ La lectura adapta valores faltantes sin migrar documentos al abrir la ruta. Se a
 - El código se asigna de forma segura al guardar.
 - La lista funciona en escritorio y como tarjetas a 390 px.
 - Crear, editar, archivar y reactivar son accesibles según rol.
-- La importación no usa IA, OCR, PDF, imágenes ni Storage.
+- La carga inicial canónica desde Excel/CSV no usa IA, OCR, PDF, imágenes ni
+  Storage.
 - Ninguna fila se guarda antes de confirmar.
 - Backend y Rules impiden acceso cruzado entre empresas.
 - Los consumidores actuales continúan leyendo registros legacy y nuevos.
 
 ## Fuera de alcance
 
-Variantes, tallas, colores, medidas configurables, imágenes, catálogo público, ventas, conversiones de unidades, FX, IA, Gemini, PDF, OCR y migraciones masivas.
+Variantes, tallas, colores, medidas configurables, imágenes, catálogo público,
+ventas, conversiones de unidades, FX y migraciones masivas. Los flujos
+documentales/IA existentes se conservan como compatibilidad, pero una factura de
+adquisición pertenece al flujo de Compra descrito como target en las SPEC 006 y
+016, no al alta maestra silenciosa de Inventario.

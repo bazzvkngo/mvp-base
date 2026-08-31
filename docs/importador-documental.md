@@ -1,146 +1,153 @@
-# Importador documental multiformato
+# Importación de inventario y documentos comerciales
 
-## Alcance
+## Estado y alcance
 
-Desde BRUNO-06 la misma lectura y normalización también puede abrirse desde un
-borrador de Recepción. En ese contexto los candidatos no crean inventario: un
-adaptador los reconcilia con la OC, permite revisión humana y sólo rellena
-cantidades, costos y metadatos del borrador. La confirmación autoritativa de la
-Recepción sigue siendo el único paso que actualiza stock y registra la Compra.
+Este documento separa el comportamiento implementado del target post-demo. La
+lectura de un archivo nunca constituye por sí sola una adquisición ni autoriza
+un movimiento de stock. La [`SPEC 016`](specs/016-vision-post-demo-bruno.md)
+confirma la evolución de la Compra directa, pero no permite describirla como una
+función existente.
 
-El importador inteligente multiformato permite cargar documentos comerciales en
-CSV, XLS, XLSX, PDF, JPG, JPEG, PNG y WebP. No promete aceptar cualquier
-extensión informática: el alcance se limita a los formatos empresariales más
-habituales para facturas, cotizaciones de proveedores, listas de precios e
-inventarios.
+## A. Implementado actualmente
 
-CSV, XLS y XLSX conservan el flujo tabular existente con SheetJS, análisis local
-conservador, normalización opcional mediante Gemini y vista previa editable.
+### Carga maestra local
 
-PDF e imágenes usan un adaptador documental separado. El archivo se valida en
-frontend y backend, se envía temporalmente en Base64 a una Cloud Function
-callable autenticada, se analiza con Gemini desde backend y se descarta al
-terminar la ejecución. No se guarda el documento fuente en Firestore ni Firebase
-Storage.
+La acción vigente de Inventario admite XLSX, XLS y CSV de hasta 5 MB. El
+navegador lee la planilla con SheetJS, normaliza encabezados y filas de forma
+determinista, muestra una vista previa editable y envía sólo filas incluidas y
+válidas después de la confirmación humana. Este camino local no sube el archivo
+a Storage, Gemini ni Functions para analizarlo.
 
-## Arquitectura
+La persistencia pasa por la operación autoritativa de importación, que valida
+membresía, permisos, empresa, campos, unicidad e idempotencia. Incorpora las
+filas confirmadas al catálogo/stock maestro según el contrato de Inventario,
+pero no crea Proveedor, Orden de Compra, Recepción, Compra económica ni una
+adquisición comercial implícita.
+
+### Adaptador documental conservado
+
+El código también conserva un adaptador documental en la interfaz de
+Inventario para PDF, JPG, JPEG, PNG y WebP de hasta 5 MB. Este comportamiento
+existente se mantiene por compatibilidad: valida el archivo en frontend y
+backend, envía temporalmente Base64 a la callable autenticada
+`normalizeInventoryDocument` y usa Gemini multimodal para proponer líneas del
+catálogo. No existe OCR local ni fallback heurístico para PDF o imágenes; si
+Gemini no está disponible, el análisis documental falla de forma controlada.
+
+El documento fuente se procesa en memoria y no se persiste en Firestore ni
+Firebase Storage. Los candidatos sólo llegan a Inventario después de una vista
+previa editable, selección y confirmación humana. Este adaptador existente no
+define la semántica futura de una factura de compra y no debe confundirse con
+el target de adquisición directa.
+
+### Importador de Recepciones
+
+Un borrador de Recepción ligado a una OC puede abrir el importador existente.
+Las planillas usan normalización determinista sin Gemini; PDF e imágenes usan el
+mismo análisis multimodal, pero con contexto `reception`. En ese contexto se
+reconocen, cuando están presentes:
+
+- identificación del documento, tipo, folio y fecha;
+- emisor/proveedor y receptor;
+- neto, impuesto o IVA, tasa y total;
+- líneas con descripción, códigos del proveedor, cantidad y valores unitarios.
+
+Los datos reconocidos son una propuesta, no autoridad. La identidad fiscal del
+emisor se compara con el proveedor autoritativo de la OC y nunca crea ni
+reemplaza un Proveedor. La normalización omite copias repetidas, separa los
+campos administrativos de las líneas y advierte cuando líneas y totales no
+concilian.
+
+Cada línea propuesta se reconcilia únicamente contra líneas existentes de la
+OC mediante identificadores y coincidencias controladas. La cantidad aplicable
+debe ser mayor que cero y no puede superar la cantidad pendiente de esa línea.
+Una línea sin asociación válida queda fuera del borrador aplicado. El usuario
+revisa y corrige la propuesta antes de aplicarla; aplicar o guardar el borrador
+no mueve stock. Sólo `confirmarRecepcion` revalida autoritativamente y produce
+los efectos físicos y económicos.
+
+Cuando se guarda el origen documental de una Recepción, sólo se conservan
+metadatos sanitizados: nombre, tipo y tamaño del archivo; datos reconocidos del
+documento y partes; totales; coherencia; conteos y advertencias. El Base64 se
+descarta.
+
+## B. Carga maestra de Inventario
+
+La carga maestra canónica sirve para crear el catálogo o realizar una carga
+inicial masiva desde Excel/CSV:
 
 ```text
-Selector de archivo
-  Adaptador tabular
-    CSV/XLS/XLSX -> SheetJS -> normalizeInventoryItems -> vista previa
-  Adaptador documental
-    PDF/JPG/PNG/WebP -> validación -> Base64 temporal
-      -> normalizeInventoryDocument -> Gemini multimodal
-      -> sanitización backend -> vista previa
-Confirmación humana
-  -> importInventoryItems -> Firestore
+Excel/CSV → lectura local → revisión humana → confirmar Inventario
 ```
 
-La separación evita regresiones en planillas: `normalizeInventoryItems` se
-mantiene para CSV, XLS y XLSX, mientras `normalizeInventoryDocument` concentra
-PDF e imágenes.
+Representa datos maestros iniciales, no una compra nueva. Una factura, guía o
+documento de proveedor no debe convertirse silenciosamente en stock mediante
+este concepto. Que el adaptador documental legacy todavía exista en la UI de
+Inventario no cambia esta separación semántica ni autoriza ampliarlo.
+
+## C. Target confirmado pendiente: factura de compra directa
+
+La evolución acordada, todavía no implementada, es:
+
+```text
+Factura/documento → Nueva compra → revisión humana → confirmar → entrada a stock
+```
+
+El importador de factura deberá vivir dentro de Nueva compra, incluso cuando el
+acceso se inicie desde Inventario. El usuario revisará proveedor, documento,
+líneas, cantidades, costos y totales antes de confirmar. La entrada física sólo
+ocurrirá en la confirmación autoritativa del nuevo flujo.
+
+Actualmente una Compra directa `modeloCompraVersion: 2` se confirma como hecho
+económico y conserva `stockAplicado: false`; no produce la entrada física. Por
+eso el flujo anterior es un target de producto y no una capacidad disponible.
+Su implementación futura deberá definir backend, idempotencia, snapshots,
+movimientos, costos, reversión, permisos y compatibilidad antes de modificar
+stock.
+
+## D. Recepción con Orden de Compra
+
+El flujo con OC permanece separado y vigente:
+
+```text
+Orden de Compra → Recepción acotada a pendiente → Compra económica
+```
+
+La OC conserva lo solicitado y no mueve stock. Al confirmar la Recepción,
+Functions vuelve a validar que cada línea pertenezca a la OC y que la suma
+recibida no supere lo pendiente; luego actualiza stock, `costoPromedio` y
+`ultimoCosto`, registra movimientos/adquisiciones y crea en la misma transacción
+la Compra económica confirmada correspondiente.
+
+Una factura que contiene productos, líneas o cantidades ajenas a la OC no
+habilita recibirlos como parte de esa Recepción. Esas líneas quedan sin asociar
+y fuera de la propuesta aplicada. Deben resolverse fuera de ese documento —por
+ejemplo, corrigiendo el antecedente comercial o mediante el futuro flujo de
+Compra directa— sin debilitar la trazabilidad de la OC.
 
 ## Seguridad y privacidad
 
-- Requiere usuario autenticado.
-- Valida extensión, MIME declarado, firma binaria real y tamaño.
-- Rechaza Base64 inválido, MIME falso, HTML renombrado, PDF protegido, PDF sin
-  páginas detectables, PDF truncado e imágenes vacías o incompletas.
-- Mantiene límite conservador de 5 MB para archivo original. Base64 aumenta el
-  payload alrededor de 33%, por lo que 5 MB producen aproximadamente 6,7 MB más
-  metadatos JSON.
-- Procesa en memoria durante la ejecución de la Function.
-- No registra Base64 ni contenido del documento.
-- Los logs solo deben incluir tipo, tamaño aproximado, cantidad de candidatos,
-  duración, resultado general y código de error controlado.
-- No se persisten evidencia de origen, página, advertencias ni cantidad de
-  origen como campos definitivos del inventario.
+- La callable documental exige autenticación, `businessId` y acceso vigente al
+  negocio; las mutaciones posteriores vuelven a validar membresía y permisos.
+- Se validan extensión, MIME declarado, firma binaria, Base64, tamaño y casos
+  controlados de corrupción antes de invocar Gemini.
+- El límite del archivo original es 5 MB; su representación Base64 aumenta el
+  payload, pero nunca se registra ni se persiste.
+- Los logs deben limitarse a tipo, tamaño aproximado, conteos, duración,
+  resultado general y códigos de error controlados.
+- Ninguna vista previa, advertencia o dato extraído sustituye snapshots,
+  cálculos o validaciones autoritativas.
 
-## Modelo y transporte
+## Validación reproducible
 
-El flujo documental usa `gemini-2.5-flash` de forma aislada porque el análisis
-de PDF e imágenes requiere comprensión multimodal y estructura visual. El
-asistente de cotizaciones y el importador tabular siguen usando su configuración
-previa.
-
-El transporte usa callable HTTPS con Base64 para archivos pequeños. No se usa
-Firebase Storage porque el documento fuente no debe quedar almacenado.
-
-## Normalización
-
-La IA debe devolver candidatos alineados con el inventario real:
-
-- `nombre`
-- `tipoItem`
-- `categoria`
-- `descripcion`
-- `unidad`
-- `costoBase`
-- `margenDeseado`
-- `sku`
-- `estado`
-
-Los campos auxiliares como confianza, cantidad de origen, advertencias,
-evidencia y pagina existen solo para la vista previa. La cantidad de una factura
-no se convierte en stock al guardar documentos, porque el inventario actual no
-administra stock documental como entrada automática.
-
-## Reglas semánticas
-
-- No importar RUT, folio, razón social, direcciones, teléfonos, correos, fechas,
-  forma de pago, datos bancarios, subtotal, IVA, impuestos, descuentos
-  generales, despacho, recargos, total final, observaciones comerciales ni
-  números de página.
-- Distinguir precio unitario, cantidad y total de línea.
-- Calcular costo unitario desde total de línea / cantidad solo cuando ambos
-  valores existen y el cálculo es determinista.
-- No inventar SKU, costo, margen ni categoría.
-- No auto-seleccionar candidatos documentales con baja confianza o datos
-  incompletos.
-- No guardar nada sin confirmación humana.
-
-## Pruebas reproducibles
-
-El comando principal del flujo documental es:
+El smoke documental vigente se ejecuta con:
 
 ```bash
 npm run test:inventory-docs
 ```
 
-La prueba genera buffers sintéticos en memoria y cubre:
-
-- PDF válido.
-- PNG válido.
-- HTML renombrado como PDF.
-- MIME falso.
-- Base64 inválido.
-- PDF protegido.
-- PDF sin páginas.
-- Archivo superior a 5 MB.
-- Sanitización que descarta IVA, subtotal y total.
-- Rechazo de usuario no autenticado.
-
-Para validar Gemini real se requiere una clave `GEMINI_API_KEY` configurada en
-Functions y documentos sintéticos legibles. Si no hay clave local, deben
-validarse igualmente serialización, sanitización, errores y regresión de
-planillas.
-
-## Resumen técnico para tesis y defensa
-
-La mejora incorpora ingesta documental multiformato para documentos comerciales.
-El sistema conserva el importador tabular existente y agrega un adaptador
-documental que procesa PDF e imágenes de forma temporal en backend. Gemini
-analiza el documento completo, incluyendo disposición visual, tablas, columnas,
-filas, cantidades y precios, para identificar líneas comerciales candidatas.
-
-Los resultados se normalizan hacia el esquema canónico del inventario y pasan
-por controles de calidad: validación de tipo de archivo, sanitización de campos,
-exclusión de metadatos administrativos, detección de ambigüedades, confianza y
-advertencias. Ningún documento fuente se almacena y ningún candidato se guarda
-sin revisión y confirmación humana.
-
-Esta arquitectura mantiene continuidad con CSV, XLS y XLSX, reduce riesgo de
-regresión, protege datos comerciales sensibles y permite explicar el flujo como
-un proceso de asistencia documental con control humano, no como automatización
-ciega de inventario.
+Cubre tipos válidos, MIME o Base64 falsos, archivos corruptos o excesivos,
+sanitización y autenticación. La reconciliación de Recepciones debe cubrir además
+proveedor, documento y totales reconocidos, cantidades mayores a lo pendiente,
+líneas ajenas, confirmación humana y ausencia de stock antes de
+`confirmarRecepcion`.

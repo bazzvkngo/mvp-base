@@ -1,5 +1,16 @@
 # SPEC 015 — Panel PLATFORM_SUPERADMIN
 
+## Estado post-demo
+
+**Implementado:** directorios y detalles de Empresas/Usuarios/Verificaciones,
+resolución y suspensiones autoritativas, y apertura segura de evidencia mediante
+una URL firmada temporal obtenida desde Functions.
+
+**Confirmado pendiente:** las cuatro tarjetas del Dashboard —Empresas, Usuarios,
+Verificaciones pendientes y Suspensiones— deben ser navegables hacia sus vistas
+filtradas o directorios correspondientes. Hoy son métricas informativas y no
+debe documentarse navegación como existente.
+
 ## Contexto y autoridad
 
 `/admin` es un contexto separado del ERP, con shell, navegación y servicios propios. El guard de cliente sólo mejora la experiencia: cada consulta y mutación revalida en Functions el custom claim firmado `platformRole: "PLATFORM_SUPERADMIN"` y el estado activo de la cuenta. `OWNER`, `ADMIN` y `MEMBER` nunca derivan privilegios de plataforma desde `membresias`.
@@ -8,7 +19,8 @@ Firestore y Storage no ofrecen lecturas globales al claim. Los directorios y det
 
 ## Navegación
 
-- Resumen: Dashboard con conteos de empresas, usuarios, verificaciones y suspensiones.
+- Resumen: Dashboard con conteos de empresas, usuarios, verificaciones y
+  suspensiones. La navegación desde cada tarjeta es un target pendiente.
 - Clientes de ValoraCloud: Empresas, Usuarios y Verificaciones.
 - Un superadmin con una empresa ERP activa puede volver al ERP; un superadmin sin empresas puede entrar a `/admin` sin ser forzado al onboarding.
 

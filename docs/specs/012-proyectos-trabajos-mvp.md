@@ -1,5 +1,29 @@
 # Proyectos y trabajos MVP
 
+## Estado post-demo
+
+**Implementado:** ficha administrativa con nombre, cliente y cotización
+opcionales, responsable, participantes reales, prioridad y fechas; expediente
+comercial; tareas con subtareas; documentación textual; HH, gastos y materiales
+con costo congelado; y balance autoritativo de Proyecto.
+
+**Confirmado pendiente:** selector de cotización buscable, reducción de ruido
+visual, separación más clara entre ficha y espacio operativo, y tablero de
+tareas abierto para un Proyecto concreto. El tablero vigente todavía presenta
+las fichas de múltiples Proyectos como tarjetas.
+
+También está pendiente distinguir costos internos no facturables de
+materiales/adicionales facturables solicitados por el cliente. Un adicional
+facturable deberá consumir stock e incrementar el cobro asociado al Proyecto;
+HH, comida, combustible y gastos internos no se cobrarán automáticamente. No se
+ha definido todavía el contrato de modificación del cobro ni su interacción con
+Cotización/Venta, por lo que queda pendiente de diseño y no debe inferirse del
+libro de materiales actual.
+
+La documentación de tareas vigente es textual. Un gasto interno deberá poder
+conservar evidencia/boleta y autoría en una etapa posterior; almacenamiento,
+retención, permisos y modelo de archivo quedan pendientes de diseño.
+
 ## Objetivo
 
 Registrar, asignar y seguir trabajos operativos genéricos por empresa, conservando una trazabilidad legible de cambios, tareas, costos, balance y notas. El módulo no administra todavía facturación ni pagos.
@@ -105,8 +129,18 @@ El historial registra creación, cambios de estado y responsable, participantes 
 
 La ruta `/trabajos` ofrece búsqueda y filtros, lista responsive y tablero sin drag-and-drop. Cada tarjeta resume responsable, prioridad, progreso, tareas, costo acumulado, último avance, espera y falta de actividad. La ficha prioriza resumen, tareas/subtareas y costos por fuente/día; documentación e historial permanecen secundarios. Completar con pendientes exige confirmación explícita y conserva el progreso real.
 
+La descripción anterior corresponde a la interfaz implementada. El target que
+la sustituirá sólo en este punto es: seleccionar primero un Proyecto y abrir un
+tablero con sus tareas; no presentar cada ficha de Proyecto como una tarjeta del
+tablero operativo.
+
 ## Límites
 
 - Sin facturación, pagos ni conversión FX.
-- Sin archivos adjuntos, comentarios anidados, subtareas anidadas o dependencias.
+- Sin archivos adjuntos en el estado actual, comentarios anidados, subtareas
+  anidadas o dependencias. La evidencia de gastos confirmada post-demo amplía
+  este límite sólo cuando exista un diseño seguro aprobado.
 - Sin drag-and-drop.
+
+Los documentos generados por ValoraCloud no se denominan “factura electrónica”
+sin una integración tributaria oficial.

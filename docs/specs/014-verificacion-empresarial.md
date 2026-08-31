@@ -1,5 +1,15 @@
 # SPEC 014 — Verificación empresarial
 
+## Estado post-demo
+
+El gate `VERIFICADA` está implementado y `getBusinessSession` resuelve el estado
+empresarial al cargar o revalidar la sesión. La detección en vivo no está
+implementada: si Platform Admin aprueba desde otra sesión mientras el propietario
+mantiene el ERP abierto, éste necesita refrescar para volver a resolver la sesión
+y habilitar los módulos. Revalidar y actualizar `businessSession` sin F5 es un
+requisito confirmado pendiente; el frontend no reemplazará la validación
+autoritaria de Functions y Rules.
+
 ## Contrato y estados
 
 El estado vigente vive en `negocios/{businessId}.verificacionEmpresa.estado` y admite `NO_VERIFICADA`, `PENDIENTE`, `VERIFICADA` y `RECHAZADA`. Un negocio legacy sin el objeto se interpreta como `NO_VERIFICADA`, sin migración. Sólo un `OWNER` activo puede crear una solicitud mediante `solicitarVerificacionEmpresa`; `ADMIN` y `MEMBER` sólo consultan el estado resumido del negocio.

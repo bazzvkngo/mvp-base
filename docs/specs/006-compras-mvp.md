@@ -1,5 +1,13 @@
 # Compras MVP
 
+> Estado post-demo: el flujo vigente de Compra directa modelo 2 registra sólo el
+> documento económico y no mueve stock. Está confirmado, pero pendiente de
+> implementación, que una adquisición presencial/directa se revise y confirme
+> desde Nueva compra y que esa confirmación produzca la entrada física. El
+> importador de factura deberá vivir dentro de Nueva compra. Hasta reconciliar
+> ese target, no se debe atribuir entrada de stock a la confirmación directa
+> actual ni reutilizar silenciosamente el importador de carga maestra.
+
 > Actualización: las compras nuevas (`modeloCompraVersion: 2`) son documentos económicos y no modifican stock. La entrada física ocurre al confirmar una Recepción. El comportamiento anterior se conserva para documentos históricos de modelo 1. Ver `011-recepciones-mvp.md`.
 >
 > Actualización BRUNO-05: la misma confirmación de Recepción crea la Compra
@@ -24,7 +32,8 @@ negocios/{businessId}/adquisicionesInventario/{adquisicionId}
 `compraId` y `movimientoId` son nombres canónicos. Cada compra guarda:
 
 - `numero` con formato `COM-YYYY-NNNN`, `anio` y `correlativo`;
-- `estado`: `borrador`, `confirmada` o `cancelada`;
+- `estado`: `borrador`, `confirmada`, `cancelada` o `revertida` cuando se aplica
+  la reversión autoritativa;
 - `proveedorId` y `proveedorSnapshot` histórico;
 - origen opcional `recepcionId`/`recepcionNumero` y `ordenCompraId`/`ordenCompraNumero`;
 - documento del proveedor, fechas, condiciones y observaciones;
@@ -48,7 +57,7 @@ Todas están cerradas al SDK cliente. La numeración es transaccional e independ
 
 El frontend envía únicamente campos editables, IDs, cantidades, costos y descuentos. Functions valida una membresía activa `OWNER` o `ADMIN`, resuelve siempre el negocio autorizado y vuelve a leer proveedores e inventario dentro de ese negocio. Número, estado, snapshots, totales y aplicación de stock son autoritativos.
 
-En una compra directa, proveedor e ítems nuevos deben estar activos. Conservar proveedor o línea durante la edición mantiene exactamente su snapshot existente; cambiar la referencia exige un maestro activo y crea un snapshot nuevo. Al confirmar se vuelven a leer el proveedor y todos los ítems únicos dentro de la misma transacción: deben seguir existiendo, pertenecer al negocio, conservar su tipo y continuar activos. Esto incluye productos, servicios y actividades, aunque sólo los productos modifiquen stock.
+En una compra directa, proveedor e ítems nuevos deben estar activos. Conservar proveedor o línea durante la edición mantiene exactamente su snapshot existente; cambiar la referencia exige un maestro activo y crea un snapshot nuevo. Al confirmar se vuelven a leer el proveedor y todos los ítems únicos dentro de la misma transacción: deben seguir existiendo, pertenecer al negocio, conservar su tipo y continuar activos. Esto incluye productos, servicios y actividades; la Compra directa modelo 2 vigente no modifica stock de ninguno de ellos.
 
 Una compra originada desde una Recepción usa exclusivamente el proveedor, los ítems y las cantidades efectivamente recibidas en ese documento. Conserva además la referencia a la OC. Una compra legacy originada directamente desde una OC usa los snapshots históricos ya autorizados de la orden emitida. Ninguna de las dos reconstruye esos datos desde maestros vivos. Mientras permanece en borrador, proveedor, cantidad de líneas, `lineaId`, `itemId` y snapshots quedan bloqueados; sólo pueden ajustarse cantidades, costos, descuentos y los campos editables de documento, condiciones y observaciones.
 
@@ -126,19 +135,30 @@ Rutas:
 - `/compras/{compraId}/editar`: edición de borrador;
 - `/compras/{compraId}`: detalle de solo lectura.
 
-Órdenes emitidas ofrecen registrar Recepciones. Una Recepción confirmada ofrece `Registrar compra` y, una vez vinculada, `Ver compra`. El workspace reutiliza la identidad visual de Órdenes de Compra, pero mantiene componentes propios para líneas, resumen, catálogo, detalle y documento imprimible. La vista móvil usa tarjetas y no depende de scroll horizontal.
+Órdenes emitidas ofrecen registrar Recepciones. Una Recepción nueva confirmada
+ya queda vinculada a su Compra automática y ofrece `Ver compra`; `Registrar
+compra` se conserva sólo para Recepciones históricas confirmadas sin Compra. El
+workspace reutiliza la identidad visual de Órdenes de Compra, pero mantiene
+componentes propios para líneas, resumen, catálogo, detalle y documento
+imprimible. La vista móvil usa tarjetas y no depende de scroll horizontal.
 
-Antes de confirmar se advierte que se actualizará stock y la compra ya no podrá editarse. El detalle confirmado muestra el origen y si el stock fue aplicado.
+Antes de confirmar una Compra modelo 2 vigente se advierte que el paso sólo
+registra el documento económico y no actualiza stock. El detalle confirmado
+muestra el origen y si el stock fue aplicado por compatibilidad histórica. Esta
+presentación deberá cambiar junto con el flujo físico de Compra directa
+confirmado para la etapa post-demo, no antes.
 
 ## Límites explícitos
 
 No se implementan:
 
 - ventas;
-- recepción parcial o devoluciones;
+- recepción directa sin OC, hasta implementar el target post-demo de Compra
+  directa con entrada física;
 - pagos o cuentas por pagar;
 - integración SII, contabilidad o finanzas;
-- reversas o edición de movimientos;
+- edición de movimientos; la reversión completa autoritativa ya implementada no
+  habilita edición ni eliminación de movimientos;
 - actualización de `costoBase`;
 - ajustes manuales de inventario;
 - inteligencia artificial.
