@@ -24,11 +24,12 @@ export async function getBarcodeCameraSupport({
       formats: [],
     };
   }
-  if (typeof BarcodeDetectorClass === "function") {
+  if (
+    typeof BarcodeDetectorClass === "function" &&
+    typeof BarcodeDetectorClass.getSupportedFormats === "function"
+  ) {
     try {
-      const supportedFormats = typeof BarcodeDetectorClass.getSupportedFormats === "function"
-        ? await BarcodeDetectorClass.getSupportedFormats()
-        : BARCODE_FORMATS;
+      const supportedFormats = await BarcodeDetectorClass.getSupportedFormats();
       const formats = BARCODE_FORMATS.filter((format) => supportedFormats.includes(format));
       if (formats.length === BARCODE_FORMATS.length) {
         return {supported: true, reason: "", decoder: "native", formats};

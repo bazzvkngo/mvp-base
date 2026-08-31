@@ -9,7 +9,10 @@ import {
   normalizeBarcode,
   stopBarcodeCamera,
 } from "../../domain/barcode.mjs";
-import {createBarcodeFrameDecoder} from "../../services/barcodeDecoder";
+import {
+  createBarcodeDecoderSession,
+  waitForBarcodeVideoReady,
+} from "../../services/barcodeDecoder";
 import "./barcode.css";
 
 export default function BarcodeInput({
@@ -32,6 +35,7 @@ export default function BarcodeInput({
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const decoderRef = useRef(null);
+  const cameraAbortRef = useRef(null);
   const frameRef = useRef(0);
   const detectionTimerRef = useRef(0);
   const inputRef = useRef(null);
@@ -43,6 +47,8 @@ export default function BarcodeInput({
   onSubmitRef.current = onSubmit;
 
   const releaseCamera = useCallback(() => {
+    cameraAbortRef.current?.abort();
+    cameraAbortRef.current = null;
     if (frameRef.current) cancelAnimationFrame(frameRef.current);
     if (detectionTimerRef.current) clearTimeout(detectionTimerRef.current);
     frameRef.current = 0;
@@ -97,17 +103,38 @@ export default function BarcodeInput({
     if (!open || !cameraSupport?.supported) return undefined;
     let active = true;
     const startCamera = async () => {
+      const cameraAbortController = new AbortController();
+      cameraAbortRef.current = cameraAbortController;
       try {
         setCameraStatus("starting");
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: false,
-          video: {facingMode: {ideal: "environment"}},
+          video: {
+            facingMode: {ideal: "environment"},
+            width: {ideal: 1280},
+            height: {ideal: 720},
+          },
         });
         if (!active) {
           stopBarcodeCamera(stream);
           return;
         }
         streamRef.current = stream;
+        const videoTrack = stream.getVideoTracks?.()[0];
+        if (typeof videoTrack?.getCapabilities === "function") {
+          try {
+            const capabilities = videoTrack.getCapabilities();
+            if (
+              Array.isArray(capabilities?.focusMode) &&
+              capabilities.focusMode.includes("continuous") &&
+              typeof videoTrack.applyConstraints === "function"
+            ) {
+              await videoTrack.applyConstraints({advanced: [{focusMode: "continuous"}]});
+            }
+          } catch {
+            // El autofocus es una mejora opcional; la webcam sigue siendo utilizable sin él.
+          }
+        }
         const video = videoRef.current;
         if (!video) {
           releaseCamera();
@@ -115,22 +142,45 @@ export default function BarcodeInput({
         }
         video.srcObject = stream;
         await video.play();
+        await waitForBarcodeVideoReady(video, {signal: cameraAbortController.signal});
         if (!active) {
           releaseCamera();
           return;
         }
         setCameraStatus("ready");
-        const decoder = await createBarcodeFrameDecoder(cameraSupport);
+        const decoder = await createBarcodeDecoderSession({
+          ...cameraSupport,
+          onFallback: () => {
+            if (import.meta.env.DEV) {
+              console.debug("[BarcodeInput] decoder native sin lectura; continuando con ZXing.");
+            }
+          },
+        });
         if (!active) {
           decoder.stop();
           releaseCamera();
           return;
         }
         decoderRef.current = decoder;
+        if (import.meta.env.DEV) {
+          const settings = videoTrack?.getSettings?.() || {};
+          console.debug("[BarcodeInput] scanner iniciado.", {
+            decoder: cameraSupport.decoder,
+            videoWidth: video.videoWidth,
+            videoHeight: video.videoHeight,
+            track: {
+              width: settings.width,
+              height: settings.height,
+              facingMode: settings.facingMode,
+              frameRate: settings.frameRate,
+              focusMode: settings.focusMode,
+            },
+          });
+        }
         let consecutiveDetectionErrors = 0;
         const scheduleDetection = () => {
           if (!active) return;
-          if (decoder.kind === "zxing") {
+          if (decoderRef.current?.kind === "zxing") {
             detectionTimerRef.current = setTimeout(() => {
               detectionTimerRef.current = 0;
               if (active) frameRef.current = requestAnimationFrame(detect);
@@ -152,6 +202,10 @@ export default function BarcodeInput({
               return;
             }
           } catch {
+            if (decoder.kind === "native") {
+              scheduleDetection();
+              return;
+            }
             consecutiveDetectionErrors += 1;
             if (consecutiveDetectionErrors >= 5) {
               releaseCamera();
@@ -164,6 +218,7 @@ export default function BarcodeInput({
         };
         scheduleDetection();
       } catch (cameraError) {
+        if (!active || cameraError?.name === "AbortError") return;
         releaseCamera();
         if (active) {
           setCameraStatus("unavailable");

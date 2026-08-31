@@ -9,6 +9,13 @@ import {
   normalizeBarcode,
   stopBarcodeCamera,
 } from "../src/domain/barcode.mjs";
+import {
+  createBarcodeDecoderSession,
+  isBarcodeVideoReady,
+  isZxingRetryableError,
+  NATIVE_DECODER_FALLBACK_MS,
+  waitForBarcodeVideoReady,
+} from "../src/services/barcodeDecoder.js";
 
 assert.equal(normalizeBarcode(" 0012345678905\n"), "0012345678905");
 assert.equal(normalizeBarcode(""), "");
@@ -49,6 +56,11 @@ assert.deepEqual(fallbackCamera, {
   decoder: "zxing",
   formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"],
 });
+const unverifiableNativeCamera = await getBarcodeCameraSupport({
+  BarcodeDetectorClass: class DetectorWithoutFormatProbe {},
+  mediaDevices: {getUserMedia() {}},
+});
+assert.equal(unverifiableNativeCamera.decoder, "zxing");
 assert.match(barcodeSupportMessage("camera-api-unavailable"), /lector USB/);
 assert.match(barcodeCameraErrorMessage({name: "NotAllowedError"}), /Habilita el permiso/);
 assert.match(barcodeCameraErrorMessage({name: "NotFoundError"}), /No se encontró una cámara/);
@@ -78,6 +90,136 @@ stopBarcodeCamera({getTracks: () => [
 ]});
 assert.equal(stopped, 2, "Cerrar el escáner debe detener todas las pistas.");
 
+const readyVideo = {readyState: 2, videoWidth: 1280, videoHeight: 720};
+
+// A. Native detecta y entrega el valor sin crear ZXing.
+const nativeCreates = [];
+const nativeSession = await createBarcodeDecoderSession({
+  decoder: "native",
+  formats: supportedCamera.formats,
+  createDecoder: async ({decoder}) => {
+    nativeCreates.push(decoder);
+    return {kind: decoder, detect: async () => "0012345678905", stop() {}};
+  },
+  now: () => 0,
+});
+assert.equal(await nativeSession.detect(readyVideo), "0012345678905");
+assert.deepEqual(nativeCreates, ["native"]);
+nativeSession.stop();
+
+// B y C. La ventana depende del reloj; native se detiene antes de crear ZXing y ZXing se acepta.
+let scanClock = 0;
+const decoderEvents = [];
+const fallbackSession = await createBarcodeDecoderSession({
+  decoder: "native",
+  formats: supportedCamera.formats,
+  now: () => scanClock,
+  createDecoder: async ({decoder}) => {
+    decoderEvents.push(`create:${decoder}`);
+    return decoder === "native"
+      ? {
+          kind: "native",
+          detect: async () => "",
+          stop: () => decoderEvents.push("stop:native"),
+        }
+      : {
+          kind: "zxing",
+          detect: async () => " 00012345 ",
+          stop: () => decoderEvents.push("stop:zxing"),
+        };
+  },
+  onFallback: () => decoderEvents.push("fallback"),
+});
+assert.equal(await fallbackSession.detect(readyVideo), "");
+assert.equal(fallbackSession.kind, "native");
+scanClock = NATIVE_DECODER_FALLBACK_MS + 1;
+assert.equal(await fallbackSession.detect(readyVideo), "");
+assert.equal(fallbackSession.kind, "zxing");
+assert.deepEqual(decoderEvents.slice(0, 4), [
+  "create:native",
+  "stop:native",
+  "create:zxing",
+  "fallback",
+]);
+assert.equal(normalizeBarcode(await fallbackSession.detect(readyVideo)), "00012345");
+
+// D. NotFound/Checksum/Format de ZXing son reintentos normales.
+const {
+  ChecksumException,
+  FormatException,
+  NotFoundException,
+} = await import("@zxing/library");
+const retryableTypes = [NotFoundException, ChecksumException, FormatException];
+for (const RetryableError of retryableTypes) {
+  assert.equal(isZxingRetryableError(new RetryableError(), retryableTypes), true);
+}
+assert.equal(isZxingRetryableError(new Error("inesperado"), retryableTypes), false);
+
+// E. No se decodifica hasta tener estado y dimensiones reales del video.
+let earlyDetectCalls = 0;
+const waitingSession = await createBarcodeDecoderSession({
+  decoder: "zxing",
+  formats: supportedCamera.formats,
+  createDecoder: async () => ({
+    kind: "zxing",
+    detect: async () => { earlyDetectCalls += 1; return "123"; },
+    stop() {},
+  }),
+});
+assert.equal(isBarcodeVideoReady({readyState: 1, videoWidth: 0, videoHeight: 0}), false);
+assert.equal(await waitingSession.detect({readyState: 1, videoWidth: 0, videoHeight: 0}), "");
+assert.equal(earlyDetectCalls, 0);
+class MockVideo extends EventTarget {
+  readyState = 1;
+  videoWidth = 0;
+  videoHeight = 0;
+}
+const loadingVideo = new MockVideo();
+let videoReadyResolved = false;
+const videoReadyPromise = waitForBarcodeVideoReady(loadingVideo).then(() => {
+  videoReadyResolved = true;
+});
+await Promise.resolve();
+assert.equal(videoReadyResolved, false);
+loadingVideo.readyState = 2;
+loadingVideo.videoWidth = 1280;
+loadingVideo.videoHeight = 720;
+loadingVideo.dispatchEvent(new Event("loadeddata"));
+await videoReadyPromise;
+assert.equal(videoReadyResolved, true);
+waitingSession.stop();
+
+// F. Cerrar detiene el decoder; el stream y los recursos del loop se validan abajo.
+fallbackSession.stop();
+assert.equal(decoderEvents.at(-1), "stop:zxing");
+
+// G. Una sesión nunca ejecuta dos intentos de decoder simultáneamente.
+let activeDecodes = 0;
+let maxActiveDecodes = 0;
+let finishDecode;
+const exclusiveSession = await createBarcodeDecoderSession({
+  decoder: "native",
+  formats: supportedCamera.formats,
+  now: () => 0,
+  createDecoder: async () => ({
+    kind: "native",
+    async detect() {
+      activeDecodes += 1;
+      maxActiveDecodes = Math.max(maxActiveDecodes, activeDecodes);
+      const result = await new Promise((resolve) => { finishDecode = resolve; });
+      activeDecodes -= 1;
+      return result;
+    },
+    stop() {},
+  }),
+});
+const firstDetection = exclusiveSession.detect(readyVideo);
+assert.equal(await exclusiveSession.detect(readyVideo), "");
+finishDecode("987654321");
+assert.equal(await firstDetection, "987654321");
+assert.equal(maxActiveDecodes, 1);
+exclusiveSession.stop();
+
 const [scanner, decoder, inventoryService, inventoryUi, quotePage, quoteEditor, poPage, poEditor] =
   await Promise.all([
     readFile(new URL("../src/components/barcode/BarcodeInput.jsx", import.meta.url), "utf8"),
@@ -96,8 +238,20 @@ assert.match(scanner, /releaseCamera\(\)/);
 assert.match(scanner, /event\.key !== "Enter"/);
 assert.match(scanner, /getBarcodeCameraSupport/);
 assert.match(scanner, /isDuplicateBarcodeRead/);
-assert.match(scanner, /getUserMedia[\s\S]*createBarcodeFrameDecoder/);
+assert.match(scanner, /getUserMedia[\s\S]*createBarcodeDecoderSession/);
+assert.match(scanner, /width: \{ideal: 1280\}/);
+assert.match(scanner, /height: \{ideal: 720\}/);
+assert.match(scanner, /focusMode\.includes\("continuous"\)/);
+assert.match(scanner, /waitForBarcodeVideoReady/);
+assert.match(scanner, /import\.meta\.env\.DEV/);
+assert.match(scanner, /cancelAnimationFrame/);
+assert.match(scanner, /clearTimeout/);
+assert.match(scanner, /cameraAbortRef\.current\?\.abort/);
+assert.match(scanner, /decoderRef\.current\?\.stop/);
+assert.match(scanner, /stopBarcodeCamera/);
 assert.match(decoder, /decoder === "native"/);
+assert.match(decoder, /NATIVE_DECODER_FALLBACK_MS = 2000/);
+assert.match(decoder, /currentDecoder = null;[\s\S]*decoderAtStart\.stop[\s\S]*decoder: "zxing"/);
 assert.match(decoder, /import\("@zxing\/library"\)/);
 for (const format of ["EAN_13", "EAN_8", "UPC_A", "UPC_E", "CODE_128"]) {
   assert.match(decoder, new RegExp(format));
