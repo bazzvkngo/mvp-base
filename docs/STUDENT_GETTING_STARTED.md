@@ -6,12 +6,21 @@ ValoraCloud es un ERP SaaS multiempresa construido como proyecto de tesis. Esta
 rama es una base congelada para desarrollar módulos independientes sin alterar
 el núcleo ya validado. No es una rama de integración ni de despliegue.
 
-Base de trabajo:
+Baseline funcional congelado para estudiantes. La rama puede incorporar commits
+documentales posteriores, por lo que su HEAD actual no necesariamente coincide
+con este punto de referencia:
 
 ```text
 rama: student-baseline-20260901
+commit: 2dd9581
+tag: checkpoint-student-baseline-20260901
+```
+
+Core congelado:
+
+```text
 commit: 3036228
-tag de referencia: checkpoint-bruno-c-post-demo-20260901
+tag: checkpoint-bruno-c-post-demo-20260901
 ```
 
 Antes de empezar, lee en este orden:
