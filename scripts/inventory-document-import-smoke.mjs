@@ -367,6 +367,19 @@ assert.equal(normalizedReceptionDocument.totales.total, 402151);
 assert.equal(normalizedReceptionDocument.coherencia.estado, "coherente");
 assert.match(normalizedReceptionDocument.warnings.join(" "), /9 lineas repetidas/i);
 
+const normalizedPurchaseDocument = sanitizeInventoryDocumentResult(
+  receptionFixture,
+  {context: "purchase"}
+);
+assert.equal(normalizedPurchaseDocument.documentType, "factura");
+assert.equal(normalizedPurchaseDocument.proveedor.identificadorFiscal, "93.772.000-9");
+assert.equal(normalizedPurchaseDocument.items.length, 9);
+assert.equal(normalizedPurchaseDocument.items[0].cantidadOrigen, 2);
+assert.equal(normalizedPurchaseDocument.items[0].costoUnitario, 3636);
+assert.equal(normalizedPurchaseDocument.totales.impuestoMonto, 64209);
+assert.equal(normalizedPurchaseDocument.inferenciaImpuestoCompra.estado, "no_aplica");
+console.log("OK documento de compra: extractor compartido conserva proveedor, líneas y tributos");
+
 const normalizedInventoryInvoice = sanitizeInventoryDocumentResult(
   inventoryInvoiceFixture,
   {

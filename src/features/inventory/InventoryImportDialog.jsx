@@ -1,20 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
-import AiAvailabilityStatus from "../../components/ai/AiAvailabilityStatus";
+import React, { useRef, useState } from "react";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
-import { AI_MODELS } from "../../config/aiModels";
-import useAiRateLimit from "../../hooks/useAiRateLimit";
-import {
-  createMissingAiRateLimitStatusError,
-  getAiAvailabilityErrorStatus,
-  translateInventoryAiError,
-} from "../../services/inventoryAiClient.mjs";
-import {
-  ACCEPTED_INVENTORY_FILE_TYPES,
-  getInventoryImportAiRateLimitStatus,
-  normalizeInventoryDocumentWithAi,
-  readInventorySourceFile,
-  stripInventoryDocumentPayload,
-} from "../../services/inventoryAiImportService";
 import {
   applyInventoryImportPurchaseTax,
   confirmLocalInventoryImport,
@@ -23,30 +8,17 @@ import {
   getInventoryImportSummary,
   readLocalInventoryWorkbook,
   revalidateInventoryImportCodes,
-  transformInventoryDocumentCandidates,
   updateInventoryImportRow,
 } from "../../services/inventoryImportService";
 
 const SPREADSHEET_EXTENSION = /\.(csv|xls|xlsx)$/i;
-const ANALYSIS_MESSAGES = [
-  "Leyendo documento…",
-  "Identificando productos…",
-  "Revisando precios y cantidades…",
-  "Preparando vista previa…",
-];
+const SPREADSHEET_ACCEPT = ".csv,.xls,.xlsx";
 const IMPORT_PHASES = [
   { id: "upload", label: "Subir archivo" },
   { id: "analyze", label: "Analizar" },
   { id: "review", label: "Revisar" },
   { id: "import", label: "Importar" },
 ];
-
-function formatDocumentDate(value) {
-  const normalized = String(value || "").trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return normalized;
-  return new Intl.DateTimeFormat("es-CL", {dateStyle: "medium"})
-    .format(new Date(`${normalized}T12:00:00`));
-}
 
 function formatDocumentNumber(value) {
   const number = Number(value);
@@ -72,59 +44,29 @@ function InventoryImportDialog({
 }) {
   const inputRef = useRef(null);
   const requestIdBaseRef = useRef("");
-  const analysisInFlightRef = useRef(false);
   const savingInFlightRef = useRef(false);
   const [rows, setRows] = useState([]);
   const [fileName, setFileName] = useState("");
   const [sheetName, setSheetName] = useState("");
   const [sourceKind, setSourceKind] = useState("");
-  const [documentData, setDocumentData] = useState(null);
-  const [documentSummary, setDocumentSummary] = useState(null);
-  const [analysisWarnings, setAnalysisWarnings] = useState([]);
-  const [analysisMessageIndex, setAnalysisMessageIndex] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
   const summary = getInventoryImportSummary(rows);
-  const aiAvailability = useAiRateLimit(AI_MODELS.documentImport, {
-    enabled: open && sourceKind === "document",
-    getErrorStatus: getAiAvailabilityErrorStatus,
-    getStatus: getInventoryImportAiRateLimitStatus,
-  });
   const activePhase = result || saving
     ? "import"
     : rows.length
       ? "review"
-      : sourceKind === "document" || analyzing
-        ? "analyze"
-        : "upload";
+      : "upload";
   const activePhaseIndex = IMPORT_PHASES.findIndex((phase) => phase.id === activePhase);
 
-  useEffect(() => {
-    if (!analyzing) {
-      setAnalysisMessageIndex(0);
-      return undefined;
-    }
-    const timer = window.setInterval(() => {
-      setAnalysisMessageIndex((current) =>
-        Math.min(current + 1, ANALYSIS_MESSAGES.length - 1)
-      );
-    }, 1400);
-    return () => window.clearInterval(timer);
-  }, [analyzing]);
-
   const reset = () => {
-    analysisInFlightRef.current = false;
     savingInFlightRef.current = false;
     setRows([]);
     setFileName("");
     setSheetName("");
     setSourceKind("");
-    setDocumentData(null);
-    setDocumentSummary(null);
-    setAnalysisWarnings([]);
     setError("");
     setResult(null);
     requestIdBaseRef.current = "";
@@ -132,104 +74,40 @@ function InventoryImportDialog({
   };
 
   const close = () => {
-    if (saving || analyzing) return;
+    if (saving) return;
     reset();
     onClose();
   };
 
   const loadFile = async (file) => {
-    if (!file || loading || analyzing) return;
+    if (!file || loading) return;
     setLoading(true);
     setRows([]);
     setError("");
     setResult(null);
-    setAnalysisWarnings([]);
-    setDocumentData(null);
-    setDocumentSummary(null);
     setSheetName("");
     try {
-      requestIdBaseRef.current = createInventoryImportRequestIdBase();
-      if (SPREADSHEET_EXTENSION.test(String(file.name || ""))) {
-        const parsed = await readLocalInventoryWorkbook(file, {
-          areas,
-          categories,
-          existingItems,
-        });
-        setRows(parsed.rows);
-        setSheetName(parsed.sheetName);
-        setSourceKind("spreadsheet");
-      } else {
-        const parsed = await readInventorySourceFile(file);
-        if (parsed.kind !== "document") {
-          throw new Error("Selecciona un PDF o una imagen compatible.");
-        }
-        setDocumentData(parsed);
-        setSourceKind("document");
+      if (!SPREADSHEET_EXTENSION.test(String(file.name || ""))) {
+        throw new Error("Selecciona un archivo Excel o CSV para la carga maestra.");
       }
+      requestIdBaseRef.current = createInventoryImportRequestIdBase();
+      const parsed = await readLocalInventoryWorkbook(file, {
+        areas,
+        categories,
+        existingItems,
+      });
+      setRows(parsed.rows);
+      setSheetName(parsed.sheetName);
+      setSourceKind("spreadsheet");
       setFileName(file.name);
     } catch (loadError) {
       setSourceKind("");
       setFileName("");
       requestIdBaseRef.current = "";
-      setError(
-        translateInventoryAiError(loadError).message ||
-          "No se pudo leer el archivo."
-      );
+      setError(loadError.message || "No se pudo leer el archivo.");
     } finally {
       setLoading(false);
       if (inputRef.current) inputRef.current.value = "";
-    }
-  };
-
-  const analyzeDocument = async () => {
-    if (!documentData?.base64 || analysisInFlightRef.current) return;
-    if (!aiAvailability.begin()) return;
-    analysisInFlightRef.current = true;
-    setAnalyzing(true);
-    setError("");
-    try {
-      const analysis = await normalizeInventoryDocumentWithAi({
-        businessId,
-        fileData: documentData,
-      });
-      const previewRows = transformInventoryDocumentCandidates(analysis.items, {
-        areas,
-        categories,
-        existingItems,
-      });
-      setRows(previewRows);
-      setDocumentSummary({
-        documentType: analysis.documentType,
-        documento: analysis.documento || {},
-        totales: analysis.totales || {},
-        coherencia: analysis.coherencia || {},
-        inferenciaImpuestoCompra: analysis.inferenciaImpuestoCompra || {},
-        lineCount: previewRows.length,
-      });
-      setAnalysisWarnings([
-        ...(analysis.warning ? [analysis.warning] : []),
-        ...(Array.isArray(analysis.warnings) ? analysis.warnings : []),
-      ]);
-      setDocumentData(stripInventoryDocumentPayload(documentData));
-      if (analysis.aiRateLimit) {
-        aiAvailability.applySuccess(analysis.aiRateLimit);
-      } else {
-        aiAvailability.applyError(createMissingAiRateLimitStatusError());
-      }
-      if (!previewRows.length) {
-        setError(
-          "No se detectaron productos claros. Puedes reintentar con otro documento."
-        );
-      }
-    } catch (analysisError) {
-      aiAvailability.applyError(analysisError);
-      const translated = translateInventoryAiError(analysisError);
-      setError(
-        `No pudimos analizar este documento con IA. ${translated.message}`
-      );
-    } finally {
-      analysisInFlightRef.current = false;
-      setAnalyzing(false);
     }
   };
 
@@ -343,7 +221,7 @@ function InventoryImportDialog({
       size="large"
       eyebrow="Inventario"
       title="Importar inventario"
-      description="Sube una planilla, PDF o imagen. Revisarás los productos antes de agregarlos."
+      description="Carga el catálogo maestro desde una planilla Excel o CSV."
       footer={footer}
     >
       <div className="inventory-import-dialog">
@@ -363,7 +241,7 @@ function InventoryImportDialog({
           ref={inputRef}
           className="inventory-visually-hidden"
           type="file"
-          accept={ACCEPTED_INVENTORY_FILE_TYPES}
+          accept={SPREADSHEET_ACCEPT}
           onChange={(event) => loadFile(event.target.files?.[0])}
         />
 
@@ -380,13 +258,13 @@ function InventoryImportDialog({
               <strong>
                 {loading
                   ? "Leyendo archivo…"
-                  : "Arrastra una planilla, PDF o imagen"}
+                  : "Arrastra una planilla Excel o CSV"}
               </strong>
-              <span>CSV, XLS, XLSX, PDF, JPG, JPEG, PNG o WEBP · máximo 5 MB.</span>
+              <span>CSV, XLS o XLSX.</span>
               <button
                 type="button"
                 className="inventory-button inventory-button--primary"
-                disabled={loading || analyzing}
+                disabled={loading}
                 onClick={() => inputRef.current?.click()}
               >
                 Seleccionar archivo
@@ -407,51 +285,15 @@ function InventoryImportDialog({
 
         {sourceKind && !rows.length && !result && (
           <section className="inventory-import-file-card" aria-label="Archivo seleccionado">
-            <span className="inventory-import-file-card__type">
-              {sourceKind === "document" ? "Documento" : "Planilla"}
-            </span>
+            <span className="inventory-import-file-card__type">Planilla</span>
             <div>
               <strong>{fileName}</strong>
-              <span>{loading ? "Leyendo archivo…" : analyzing ? "Análisis en curso" : "Listo para analizar"}</span>
+              <span>{loading ? "Leyendo archivo…" : "Lista para revisar"}</span>
             </div>
             <div className="inventory-import-file-card__actions">
-              <button type="button" className="inventory-link-button" disabled={loading || analyzing} onClick={() => inputRef.current?.click()}>Cambiar</button>
-              <button type="button" className="inventory-link-button" disabled={loading || analyzing} onClick={reset}>Eliminar</button>
+              <button type="button" className="inventory-link-button" disabled={loading} onClick={() => inputRef.current?.click()}>Cambiar</button>
+              <button type="button" className="inventory-link-button" disabled={loading} onClick={reset}>Eliminar</button>
             </div>
-          </section>
-        )}
-
-        {sourceKind === "document" && documentData && !rows.length && !result && (
-          <section className="inventory-import-ai-panel" aria-label="Análisis con IA">
-            {analyzing ? (
-              <div className="inventory-import-processing" role="status" aria-live="polite">
-                <span className="inventory-import-spinner" aria-hidden="true" />
-                <div>
-                  <strong>{ANALYSIS_MESSAGES[analysisMessageIndex]}</strong>
-                  <span>El archivo se procesa temporalmente. Todavía no se guarda ningún ítem.</span>
-                </div>
-              </div>
-            ) : aiAvailability.status.reason === "available" ? (
-              <p className="ai-availability ai-availability--available" role="status">
-                Análisis con IA disponible.
-              </p>
-            ) : (
-              <AiAvailabilityStatus
-                status={aiAvailability.status}
-                remainingSeconds={aiAvailability.remainingSeconds}
-                actionLabel="volver a analizar"
-              />
-            )}
-            <button
-              type="button"
-              className="inventory-button inventory-button--primary"
-              disabled={
-                analyzing || aiAvailability.isBlocked || !documentData.base64
-              }
-              onClick={analyzeDocument}
-            >
-              {analyzing ? "Analizando documento…" : "Analizar documento"}
-            </button>
           </section>
         )}
 
@@ -504,37 +346,17 @@ function InventoryImportDialog({
             <div className="inventory-import-summary">
               <div>
                 <strong>{fileName}</strong>
-                <span>{sourceKind === "document" ? "Vista previa generada con IA" : `Hoja: ${sheetName} · procesamiento local sin IA`}</span>
+                <span>Hoja: {sheetName} · procesamiento local sin IA</span>
               </div>
               <div><strong>{summary.detected}</strong><span>detectadas</span></div>
               <div><strong>{summary.ready}</strong><span>listas para importar</span></div>
               <div><strong>{summary.review}</strong><span>requieren revisión</span></div>
               <div><strong>{summary.excluded}</strong><span>excluidas</span></div>
             </div>
-            {documentSummary && (
-              <dl className="inventory-import-document-summary">
-                {documentSummary.documento?.numero && <div><dt>Documento</dt><dd>{documentSummary.documento.tipo || "Documento"} Nº {documentSummary.documento.numero}</dd></div>}
-                {documentSummary.documento?.fechaEmision && <div><dt>Fecha</dt><dd>{formatDocumentDate(documentSummary.documento.fechaEmision)}</dd></div>}
-                {documentSummary.totales?.impuestoPorcentaje != null && <div><dt>Impuesto detectado</dt><dd>{documentSummary.totales.impuestoPorcentaje}%</dd></div>}
-                <div><dt>Líneas</dt><dd>{documentSummary.lineCount}</dd></div>
-                {Number.isFinite(Number(documentSummary.totales?.neto)) && <div><dt>Neto</dt><dd>{formatDocumentNumber(documentSummary.totales.neto)}</dd></div>}
-                {documentSummary.inferenciaImpuestoCompra?.estado === "aplicado" && <div className="is-positive"><dt>Precios</dt><dd>Netos · IVA aplicado a las líneas</dd></div>}
-              </dl>
-            )}
-            {analysisWarnings.length > 0 && (
-              <ul className="inventory-row-warnings inventory-import-analysis-warnings">
-                {[...new Set(analysisWarnings)].map((warning) => <li key={warning}>{warning}</li>)}
-              </ul>
-            )}
             <div className="inventory-import-bulk-actions" aria-label="Acciones para las filas">
               <span>{summary.included} seleccionadas · {summary.importable} importables</span>
               <button type="button" className="inventory-link-button" disabled={saving || summary.included === rows.length} onClick={() => setAllRowsIncluded(true)}>Seleccionar todas</button>
               <button type="button" className="inventory-link-button" disabled={saving || summary.included === 0} onClick={() => setAllRowsIncluded(false)}>Excluir todas</button>
-              {documentSummary?.inferenciaImpuestoCompra?.tasaSugerida != null && Number.isFinite(Number(documentSummary.inferenciaImpuestoCompra.tasaSugerida)) && (
-                <button type="button" className="inventory-button inventory-button--secondary" disabled={saving || summary.included === 0} onClick={() => applyPurchaseTax(documentSummary.inferenciaImpuestoCompra.tasaSugerida)}>
-                  Aplicar IVA {documentSummary.inferenciaImpuestoCompra.tasaSugerida}% a seleccionadas
-                </button>
-              )}
               {rows.some((row) => row.draft.tipoItem === "producto") && (
                 <button type="button" className="inventory-button inventory-button--secondary" disabled={saving || summary.included === 0} onClick={() => applyPurchaseTax(0)}>
                   Sin IVA / Exento

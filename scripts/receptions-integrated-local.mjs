@@ -90,6 +90,8 @@ try {
   const confirmed = await call(owner, "confirmarRecepcion")({businessId, recepcionId: first.data.recepcion.id, requestId: confirmId});
   assert.equal(confirmed.data.recepcion.estado, "confirmada"); assert.equal(confirmed.data.productosActualizados, 1);
   assert.equal(confirmed.data.compra.estado, "confirmada");
+  assert.equal(confirmed.data.compra.modeloCompraVersion, 3);
+  assert.equal(confirmed.data.compra.stockGestionadoPor, "recepcion");
   assert.equal(confirmed.data.compra.registroAutomatico, true);
   assert.equal(confirmed.data.compra.recepcionId, first.data.recepcion.id);
   assert.equal(confirmed.data.compra.tipoDocumento, "factura");
@@ -113,6 +115,10 @@ try {
   assert.equal(firstAcquisitions.docs[0].data().compraId, confirmed.data.compra.id);
   const confirmationRetry = await call(owner, "confirmarRecepcion")({businessId, recepcionId: first.data.recepcion.id, requestId: confirmId});
   const confirmationRetryWithOtherRequest = await call(owner, "confirmarRecepcion")({businessId, recepcionId: first.data.recepcion.id, requestId: requestId("confirm-first-retry")});
+  const stockBeforePurchaseRetry = (await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data().stock;
+  const purchaseRetry = await call(owner, "confirmarCompra")({businessId, compraId: confirmed.data.compra.id, requestId: requestId("reception-purchase-confirm")});
+  assert.equal(purchaseRetry.data.idempotent, true);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data().stock, stockBeforePurchaseRetry);
   assert.equal(confirmationRetry.data.compra.id, confirmed.data.compra.id);
   assert.equal(confirmationRetryWithOtherRequest.data.compra.id, confirmed.data.compra.id);
   assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data().stock, 4);
@@ -208,13 +214,14 @@ try {
 
   const purchase = await call(owner, "crearCompra")({businessId, requestId: requestId("purchase"), compra: {proveedorId: providerId, fechaCompra: "2026-08-14", tipoDocumento: "factura", fechaDocumento: "2026-08-14", numeroDocumentoProveedor: "F-1", items: [{lineaId: "purchase-line", itemId: productId, cantidad: 3, costoUnitario: 1200, descuentoPct: 0}]}});
   assert.equal(purchase.data.compra.empresaSnapshot.razonSocial, companyProfileB.razonSocial);
+  await adminDb.doc(`negocios/${businessId}/compras/${purchase.data.compra.id}`).update({modeloCompraVersion: 2, stockGestionadoPor: "recepcion"});
   const beforePurchase = (await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data().stock;
   const acquisitionsBeforePurchase = (await adminDb.collection(`negocios/${businessId}/adquisicionesInventario`).get()).size;
   const purchaseConfirmed = await call(owner, "confirmarCompra")({businessId, compraId: purchase.data.compra.id, requestId: requestId("purchase-confirm")});
   assert.equal(purchaseConfirmed.data.compra.estado, "confirmada"); assert.equal(purchaseConfirmed.data.compra.stockAplicado, false);
   assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data().stock, beforePurchase);
   assert.equal((await adminDb.collection(`negocios/${businessId}/adquisicionesInventario`).get()).size, acquisitionsBeforePurchase);
-  console.log("OK compra nueva económica sin doble stock");
+  console.log("OK compra V2 legacy económica sin doble stock");
 
   const receptionsQuery = (target) => query(collection(target.db, "negocios", businessId, "recepciones"), where("negocioId", "==", businessId));
   const acquisitionsQuery = (target) => query(collection(target.db, "negocios", businessId, "adquisicionesInventario"), where("negocioId", "==", businessId), where("itemId", "==", productId));

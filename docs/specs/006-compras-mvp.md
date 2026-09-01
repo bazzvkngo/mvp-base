@@ -1,14 +1,15 @@
 # Compras MVP
 
-> Estado post-demo: el flujo vigente de Compra directa modelo 2 registra sólo el
-> documento económico y no mueve stock. Está confirmado, pero pendiente de
-> implementación, que una adquisición presencial/directa se revise y confirme
-> desde Nueva compra y que esa confirmación produzca la entrada física. El
-> importador de factura deberá vivir dentro de Nueva compra. Hasta reconciliar
-> ese target, no se debe atribuir entrada de stock a la confirmación directa
-> actual ni reutilizar silenciosamente el importador de carga maestra.
+> Actualización BRUNO POST-DEMO B: las Compras directas nuevas usan
+> `modeloCompraVersion: 3` y `stockGestionadoPor: compra_directa`. Crear, editar o
+> importar una factura sólo prepara el borrador; confirmar incrementa de forma
+> autoritativa y atómica el stock de productos. Servicios y actividades no
+> modifican existencias.
 
-> Actualización: las compras nuevas (`modeloCompraVersion: 2`) son documentos económicos y no modifican stock. La entrada física ocurre al confirmar una Recepción. El comportamiento anterior se conserva para documentos históricos de modelo 1. Ver `011-recepciones-mvp.md`.
+> Las Compras V1 y V2 conservan sin migración su semántica histórica. La
+> conversión legacy directa desde OC continúa creando V2. Las Compras nuevas
+> producidas por una Recepción usan V3 con `stockGestionadoPor: recepcion` y no
+> duplican la entrada física. Ver `011-recepciones-mvp.md`.
 >
 > Actualización BRUNO-05: la misma confirmación de Recepción crea la Compra
 > correspondiente directamente en estado `confirmada`; ya no existe una segunda
@@ -17,7 +18,12 @@
 
 ## Objetivo
 
-Registrar compras directas o derivadas de una recepción como documentos económicos y conservar su evidencia histórica. En el modelo 2, confirmar una compra no modifica stock: la entrada física y las recepciones parciales se registran en Recepciones conforme a la SPEC 011. El modelo 1 conserva compatibilidad histórica con su comportamiento anterior. Este módulo no implementa pagos, cuentas por pagar, contabilidad ni ajustes manuales.
+Registrar compras directas o derivadas de una recepción como documentos
+económicos y conservar su evidencia histórica. En V3, `stockGestionadoPor`
+distingue la Compra directa que aplica su propia entrada física de aquella cuyo
+stock ya fue aplicado por Recepción. V1/V2 mantienen compatibilidad histórica.
+Este módulo no implementa pagos, cuentas por pagar, contabilidad ni ajustes
+manuales.
 
 ## Modelo Firestore
 
@@ -40,6 +46,9 @@ negocios/{businessId}/adquisicionesInventario/{adquisicionId}
 - líneas con `lineaId`, `itemId`, snapshot autoritativo, cantidad, costo unitario editable, descuento y totales;
 - `subtotal`, `descuentoTotal`, `neto`, `iva` y `total` en CLP;
 - `stockAplicado`, autoría y timestamps canónicos.
+- `modeloCompraVersion` y `stockGestionadoPor` para fijar la semántica física;
+- `documentoOrigen` sanitizado cuando el borrador se preparó desde factura,
+  sin Base64 ni archivo persistido.
 
 Las colecciones internas son:
 
@@ -57,13 +66,18 @@ Todas están cerradas al SDK cliente. La numeración es transaccional e independ
 
 El frontend envía únicamente campos editables, IDs, cantidades, costos y descuentos. Functions valida una membresía activa `OWNER` o `ADMIN`, resuelve siempre el negocio autorizado y vuelve a leer proveedores e inventario dentro de ese negocio. Número, estado, snapshots, totales y aplicación de stock son autoritativos.
 
-En una compra directa, proveedor e ítems nuevos deben estar activos. Conservar proveedor o línea durante la edición mantiene exactamente su snapshot existente; cambiar la referencia exige un maestro activo y crea un snapshot nuevo. Al confirmar se vuelven a leer el proveedor y todos los ítems únicos dentro de la misma transacción: deben seguir existiendo, pertenecer al negocio, conservar su tipo y continuar activos. Esto incluye productos, servicios y actividades; la Compra directa modelo 2 vigente no modifica stock de ninguno de ellos.
+En una compra directa, proveedor e ítems nuevos deben estar activos. Conservar proveedor o línea durante la edición mantiene exactamente su snapshot existente; cambiar la referencia exige un maestro activo y crea un snapshot nuevo. Al confirmar se vuelven a leer el proveedor y todos los ítems únicos dentro de la misma transacción: deben seguir existiendo, pertenecer al negocio, conservar su tipo y continuar activos. Esto incluye productos, servicios y actividades; en V3 directa sólo los productos incrementan stock.
 
 Una compra originada desde una Recepción usa exclusivamente el proveedor, los ítems y las cantidades efectivamente recibidas en ese documento. Conserva además la referencia a la OC. Una compra legacy originada directamente desde una OC usa los snapshots históricos ya autorizados de la orden emitida. Ninguna de las dos reconstruye esos datos desde maestros vivos. Mientras permanece en borrador, proveedor, cantidad de líneas, `lineaId`, `itemId` y snapshots quedan bloqueados; sólo pueden ajustarse cantidades, costos, descuentos y los campos editables de documento, condiciones y observaciones.
 
 ## Creación desde Recepción y compatibilidad desde OC
 
-El flujo canónico crea la Compra confirmada dentro de la transacción que confirma la Recepción y aplica stock. Cada Recepción conserva su propio `compraId`, por lo que repetir la operación con el mismo u otro `requestId` devuelve la misma Compra. Recepciones parciales diferentes de una misma OC producen Compras económicas diferentes; no existe una regla general `una OC = una Compra`.
+El flujo canónico crea una Compra V3 confirmada con
+`stockGestionadoPor: recepcion` dentro de la transacción que confirma la
+Recepción y aplica stock. Cada Recepción conserva su propio `compraId`, por lo
+que repetir la operación con el mismo u otro `requestId` devuelve la misma
+Compra. Recepciones parciales diferentes de una misma OC producen Compras
+económicas diferentes; no existe una regla general `una OC = una Compra`.
 
 ## Reversión
 
@@ -104,15 +118,21 @@ Una compra admite como máximo 200 líneas. Este límite mantiene la confirmaci�
 
 ## Confirmación y stock
 
-Para compras modelo 2, confirmar ejecuta una transacción exclusivamente económica:
+Para una Compra V3 directa, confirmar ejecuta una sola transacción:
 
-- comprueba que la compra esté en borrador y `stockAplicado` sea falso;
-- marca la compra `confirmada`, conserva `stockAplicado: false` y registra autoría y fecha;
-- no modifica stock, promedio ni adquisiciones, incluso si se editaron costos del documento.
+- comprueba borrador, proveedor activo e ítems activos del mismo negocio;
+- rechaza un origen documental con líneas todavía sin resolver;
+- incrementa únicamente productos y crea movimientos deterministas
+  `entrada_compra` con `tipoOrigen: compra_directa`;
+- confirma el documento y marca `stockAplicado: true` sólo cuando existen
+  productos cuya entrada fue aplicada; una compra compuesta únicamente por
+  servicios/actividades conserva `stockAplicado: false`;
+- no actualiza `costoBase`, promedio, último costo ni adquisiciones.
 
-La Recepción confirmada es la única fuente nueva de `entrada_recepcion`, adquisición y costo promedio. Al preparar una Compra desde ella se vincula `compraId`/`compraNumero` a su adquisición sin alterar los hechos económicos originales. Servicios y actividades nunca generan adquisiciones.
-
-La ruta de stock `entrada_compra` se conserva exclusivamente para borradores históricos de modelo 1, sin crear adquisiciones ni recalcular promedio.
+Una Compra V3 con `stockGestionadoPor: recepcion` no suma stock ni crea un
+segundo movimiento: la Recepción ya registró `entrada_recepcion`, adquisición y
+costos técnicos. V2 continúa siendo exclusivamente económica y V1 conserva su
+ruta histórica `entrada_compra`.
 
 La idempotencia tiene doble defensa: `purchaseConfirmRequests/{requestId}` protege reintentos de transporte y el propio estado `confirmada`/`stockAplicado` impide aplicar stock otra vez con un request diferente. Las transacciones de inventario preservan incrementos concurrentes.
 
@@ -142,34 +162,52 @@ workspace reutiliza la identidad visual de Órdenes de Compra, pero mantiene
 componentes propios para líneas, resumen, catálogo, detalle y documento
 imprimible. La vista móvil usa tarjetas y no depende de scroll horizontal.
 
-Antes de confirmar una Compra modelo 2 vigente se advierte que el paso sólo
-registra el documento económico y no actualiza stock. El detalle confirmado
-muestra el origen y si el stock fue aplicado por compatibilidad histórica. Esta
-presentación deberá cambiar junto con el flujo físico de Compra directa
-confirmado para la etapa post-demo, no antes.
+Nueva compra ofrece `Importar factura`. El extractor documental existente
+acepta exclusivamente PDF, JPG/JPEG, PNG o WebP y propone proveedor, folio,
+fechas, líneas, cantidades, costos, descuentos y totales; el usuario debe
+resolver proveedor e ítems existentes antes de aplicar la propuesta. Aplicar
+deja un borrador y no confirma ni mueve stock. Excel/CSV permanece en la carga
+maestra de Inventario. El acceso desde Inventario se muestra sólo con permiso de
+escritura de Compras.
+
+Antes de confirmar, V3 directa informa que incrementará el stock de productos.
+Una Compra derivada de Recepción informa que el stock ya fue gestionado allí.
+El detalle confirmado distingue `stockAplicado` de
+`stockGestionadoPor: recepcion`.
 
 ## Límites explícitos
 
 No se implementan:
 
 - ventas;
-- recepción directa sin OC, hasta implementar el target post-demo de Compra
-  directa con entrada física;
+- recepción directa sin OC como documento separado: esa adquisición se registra
+  mediante Compra directa V3;
 - pagos o cuentas por pagar;
 - integración SII, contabilidad o finanzas;
 - edición de movimientos; la reversión completa autoritativa ya implementada no
   habilita edición ni eliminación de movimientos;
 - actualización de `costoBase`;
 - ajustes manuales de inventario;
-- inteligencia artificial.
+- creación automática de proveedores o productos desde IA/OCR; el extractor
+  existente sólo propone datos sujetos a revisión humana.
 
 ## Pruebas
 
 `purchase-model-smoke.mjs` cubre cálculos, overflow, payload mínimo, máximo de 200 líneas en frontend/backend, adaptación, búsqueda, roles y presencia de defensas backend/rules.
 
-`purchases-integrated-local.mjs` cubre creación directa OWNER/ADMIN, rechazo MEMBER, aislamiento entre empresas, snapshots autoritativos, manipulación, numeración e idempotencia, compatibilidad de conversión desde OC emitida, bloqueo de referencias, edición comercial permitida, revalidación de maestros, movimientos legacy, costo base intacto, reintentos, concurrencia, rollback atómico y reglas de acceso.
+`purchases-integrated-local.mjs` cubre V3 directa sin stock al crear/editar,
+entrada de productos al confirmar, exclusión de servicios/actividades,
+`stockAplicado: false` cuando no existen productos, reversión compensatoria,
+movimientos, MEMBER, aislamiento, reintentos, concurrencia, rollback, documento
+incompleto, costos maestros intactos y compatibilidad V1/V2.
 
-`receptions-integrated-local.mjs` cubre Recepciones parciales, una Compra independiente e idempotente por Recepción, ausencia de doble stock y la exclusión mutua entre la conversión legacy por OC y las conversiones V2 por Recepción.
+`purchase-document-import-smoke.mjs` cubre match fiscal/nombre de proveedor,
+barcode/código interno/nombre de líneas, revisión manual, bloqueo de líneas sin
+resolver, datos tributarios y separación entre aplicar y confirmar.
+
+`receptions-integrated-local.mjs` cubre Recepciones parciales, una Compra V3
+independiente e idempotente por Recepción, ausencia de doble stock y la exclusión
+mutua con la conversión legacy por OC.
 
 La aceptación requiere además regresiones de Órdenes de Compra, Inventario, Proveedores, Cotizaciones, Clientes y Rules; build, lint de Functions, revisión de diff y revisión visual manual. El módulo no se marca completado en `000-mvp-profesor.md` hasta que esa revisión visual sea aprobada.
 
@@ -178,7 +216,8 @@ La aceptación requiere además regresiones de Órdenes de Compra, Inventario, P
 - La autoridad de negocio, roles, referencias, snapshots, cálculos y estados reside en Functions.
 - Una Recepción confirmada produce como máximo una Compra y conserva su evidencia histórica.
 - Varias Recepciones parciales de una OC pueden producir Compras distintas sin superponerse con una Compra legacy por la OC completa.
-- Confirmar una Compra modelo 2 no modifica stock ni duplica adquisiciones.
+- Confirmar una Compra V3 directa incrementa productos una sola vez; una V3 de
+  Recepción no duplica la entrada y V1/V2 preservan su semántica.
 - Reintentos y concurrencia no duplican ni pierden stock.
 - Un fallo revierte la confirmación completa.
 - No se modifica `costoBase` ni se crean efectos financieros.

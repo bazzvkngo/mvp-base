@@ -41,7 +41,7 @@ const EXTENSION_TO_MIME = new Map([
 
 const INVENTORY_ITEM_TYPES = ["producto", "servicio", "actividad"];
 const DOCUMENT_TYPES = ["factura", "cotizacion", "lista_precios", "inventario", "otro"];
-const DOCUMENT_CONTEXTS = ["inventory", "reception"];
+const DOCUMENT_CONTEXTS = ["inventory", "reception", "purchase"];
 const MAX_DOCUMENT_ITEMS = 80;
 
 class DocumentImportError extends Error {
@@ -995,18 +995,22 @@ function extractJsonObject(text) {
 }
 
 function buildInventoryDocumentPrompt(context = "inventory") {
-  if (normalizeDocumentContext(context) === "reception") {
+  const normalizedContext = normalizeDocumentContext(context);
+  if (normalizedContext === "reception" || normalizedContext === "purchase") {
+    const destination = normalizedContext === "purchase"
+      ? "Nueva compra"
+      : "Recepciones";
     return (
-      "Eres un extractor de documentos de proveedor para la vista previa de Recepciones de ValoraCloud.\n" +
+      `Eres un extractor de documentos de proveedor para la vista previa de ${destination} de ValoraCloud.\n` +
       "Analiza el archivo visual completo, incluyendo tablas y todas las paginas, pero reconoce copias repetidas como ORIGINAL/CEDIBLE y devuelve cada posicion comercial una sola vez.\n\n" +
       "Identifica por separado al EMISOR/PROVEEDOR y al RECEPTOR/CLIENTE. Nunca uses los datos del receptor como proveedor.\n" +
       "Devuelve documento {tipo, numero, fechaEmision, fechaVencimiento, condicionPago, moneda}, proveedor {nombre, identificadorFiscal}, receptor {nombre, identificadorFiscal}, totales {neto, impuestoPorcentaje, impuestoMonto, total} e items.\n" +
-      "Cada item debe incluir nombre (puede repetir descripcion por compatibilidad), tipoItem, codigoProveedor, descripcion, unidad, cantidadOrigen, costoUnitario, descuento, totalLinea, pagina, seccionDocumento, confianza y advertencias.\n\n" +
+      "Cada item debe incluir nombre (puede repetir descripcion por compatibilidad), tipoItem, codigoProveedor, sku, codigoBarras, descripcion, unidad, cantidadOrigen, costoUnitario, descuento, totalLinea, pagina, seccionDocumento, confianza y advertencias.\n\n" +
       "Reglas estrictas:\n" +
       "- No inventes valores. Usa null cuando no esten visibles.\n" +
       "- Conserva ceros iniciales del folio y devuelve fechas como AAAA-MM-DD cuando sea posible.\n" +
       "- Interpreta separadores numericos segun el documento: en contexto chileno 3.636 significa 3636, no 3.636 decimal.\n" +
-      "- El codigo impreso en la columna de producto es codigoProveedor; no es SKU interno ni codigo de barras.\n" +
+      "- El codigo impreso en la columna de producto es codigoProveedor. Usa sku o codigoBarras solo cuando el documento lo rotule explicitamente como SKU, EAN, UPC o codigo de barras.\n" +
       "- No extraigas como items codigos de timbre, pie, autorizacion, resolucion, folio, RUT, referencias o datos fuera de la tabla comercial.\n" +
       "- Distingue cantidad, precio/costo unitario, descuento de linea y total de linea. No uses neto, IVA o total del documento como costo de un item.\n" +
       "- Si el documento chileno no rotula moneda pero su contexto fiscal es inequivoco, moneda puede ser CLP; en otro caso usa null.\n" +

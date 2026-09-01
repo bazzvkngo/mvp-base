@@ -8,11 +8,13 @@ import {
   calculatePurchaseTotals,
   canManagePurchases,
   getPurchaseDocumentTypeLabel,
+  getPurchaseStockSemantics,
   getPurchaseStatusLabel,
   shouldReconcilePurchaseConfirmation,
 } from "../domain/purchaseModel.mjs";
 import ProviderSelector from "../features/purchaseOrders/ProviderSelector";
 import PurchaseCatalogDialog from "../features/purchases/PurchaseCatalogDialog";
+import PurchaseDocumentImportDialog from "../features/purchases/PurchaseDocumentImportDialog";
 import PurchaseItemsEditor from "../features/purchases/PurchaseItemsEditor";
 import PurchasePrintView from "../features/purchases/PurchasePrintView";
 import PurchaseSummaryPanel from "../features/purchases/PurchaseSummaryPanel";
@@ -43,6 +45,7 @@ const emptyDraft = () => ({
   condicionesPago: "",
   observaciones: "",
   items: [],
+  documentoOrigen: null,
 });
 const lineId = () => `linea-${globalThis.crypto?.randomUUID?.() ||
   `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
@@ -99,6 +102,7 @@ export default function NewPurchasePage({businessId, role}) {
   const [inventory, setInventory] = useState([]);
   const [company, setCompany] = useState(null);
   const [catalogOpen, setCatalogOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(Boolean(location.state?.openPurchaseImport));
   const [actionDialog, setActionDialog] = useState("");
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -109,6 +113,10 @@ export default function NewPurchasePage({businessId, role}) {
   const canManage = canManagePurchases(role);
   const readOnly = !canManage || Boolean(purchase && purchase.estado !== "borrador");
   const referencesLocked = Boolean(purchase?.ordenCompraId || purchase?.recepcionId);
+  const stockSemantics = getPurchaseStockSemantics(purchase || {
+    modeloCompraVersion: 3,
+    stockGestionadoPor: "compra_directa",
+  });
 
   useEffect(() => {
     if (location.state?.message) {
@@ -143,6 +151,7 @@ export default function NewPurchasePage({businessId, role}) {
           condicionesPago: stored.condicionesPago,
           observaciones: stored.observaciones,
           items: stored.items,
+          documentoOrigen: stored.documentoOrigen,
         });
       }
     }).catch((error) => {
@@ -194,6 +203,20 @@ export default function NewPurchasePage({businessId, role}) {
       descuentoPct: 0,
     }],
   }));
+
+  const applyDocumentImport = (imported) => {
+    setDraft((current) => ({
+      ...current,
+      ...imported,
+      fechaCompra: imported.fechaCompra || current.fechaCompra,
+      observaciones: current.observaciones,
+    }));
+    setMessage("");
+    sileo.success({
+      title: "Factura aplicada al borrador",
+      description: "Revisa proveedor, líneas y totales. La compra todavía no está confirmada.",
+    });
+  };
 
   const persist = async () => purchase
     ? (await actualizarCompraBorrador(businessId, purchase.id, draft)).compra
@@ -248,9 +271,10 @@ export default function NewPurchasePage({businessId, role}) {
         replace: true,
         state: {
           message: "Compra confirmada",
-          description: productsUpdated
-            ? "Compra histórica confirmada con su comportamiento de stock original."
-            : "Documento económico confirmado. No se modificó stock.",
+          description: getPurchaseStockSemantics({
+            ...confirmed,
+            productosActualizados: productsUpdated,
+          }).confirmationResultMessage,
         },
       });
     };
@@ -337,6 +361,11 @@ export default function NewPurchasePage({businessId, role}) {
               Imprimir
             </button>
           )}
+          {!readOnly && !referencesLocked && (
+            <button type="button" className="po-button po-button--secondary" onClick={() => setImportOpen(true)}>
+              Importar factura
+            </button>
+          )}
         </div>
       </header>
       {message && <p className="po-message po-message--error no-print">{message}</p>}
@@ -351,6 +380,9 @@ export default function NewPurchasePage({businessId, role}) {
       {purchase?.estado === "confirmada" && purchase.stockAplicado &&
         purchase.items.some((item) => item.tipoItem === "producto") && (
         <p className="purchase-stock-note no-print">El inventario se actualizó al confirmar esta compra.</p>
+      )}
+      {purchase?.estado === "confirmada" && stockSemantics.kind === "reception" && (
+        <p className="purchase-stock-note no-print">El stock de esta compra fue gestionado mediante la recepción vinculada.</p>
       )}
       {purchase?.estado === "revertida" && <p className="purchase-stock-note no-print">La compra permanece en el historial y sus entradas de inventario fueron compensadas cuando correspondía.</p>}
       <div className="no-print">
@@ -397,6 +429,15 @@ export default function NewPurchasePage({businessId, role}) {
                   </label>}
                 </div>
               )}
+              {!readOnly && draft.documentoOrigen && <div className="purchase-imported-document-summary" role="status">
+                <strong>Factura importada y pendiente de confirmación</strong>
+                <span>{draft.documentoOrigen.nombreArchivo || "Documento"} · {draft.documentoOrigen.lineasAplicadas || 0} líneas vinculadas</span>
+                <dl>
+                  {hasText(draft.documentoOrigen.neto) && <div><dt>Neto</dt><dd>{money(draft.documentoOrigen.neto)}</dd></div>}
+                  {hasText(draft.documentoOrigen.impuestoMonto) && <div><dt>{hasText(draft.documentoOrigen.impuestoPorcentaje) ? `${printable.impuestoNombre} (${draft.documentoOrigen.impuestoPorcentaje}%)` : printable.impuestoNombre}</dt><dd>{money(draft.documentoOrigen.impuestoMonto)}</dd></div>}
+                  {hasText(draft.documentoOrigen.total) && <div><dt>Total</dt><dd>{money(draft.documentoOrigen.total)}</dd></div>}
+                </dl>
+              </div>}
             </details>
             <details className="po-panel po-details">
               <summary>
@@ -450,7 +491,18 @@ export default function NewPurchasePage({businessId, role}) {
         onClose={() => setCatalogOpen(false)}
         open={catalogOpen}
       />
-      <ResponsiveDialog open={actionDialog === "confirm"} onClose={() => !processing && setActionDialog("")} eyebrow="Compra preparada" title="Confirmar compra" description="Al confirmar, se registrará el documento económico del proveedor." size="small" footer={<><Button type="button" variant="secondary" disabled={processing} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" disabled={processing} onClick={confirm}>{processing ? "Confirmando..." : "Confirmar compra"}</Button></>}><p>El stock no cambiará en este paso, porque el inventario se actualiza al confirmar las recepciones.</p></ResponsiveDialog>
+      <PurchaseDocumentImportDialog
+        businessId={businessId}
+        inventory={inventory}
+        onApply={applyDocumentImport}
+        onClose={() => setImportOpen(false)}
+        open={importOpen}
+        providers={providers}
+        taxName={purchase?.impuestoNombre || company?.impuestoPredeterminadoNombre || "Impuesto"}
+      />
+      <ResponsiveDialog open={actionDialog === "confirm"} onClose={() => !processing && setActionDialog("")} eyebrow="Compra preparada" title="Confirmar compra" description="Al confirmar, se registrará el documento económico del proveedor." size="small" footer={<><Button type="button" variant="secondary" disabled={processing} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" disabled={processing} onClick={confirm}>{processing ? "Confirmando..." : "Confirmar compra"}</Button></>}>
+        <p>{stockSemantics.confirmationMessage}</p>
+      </ResponsiveDialog>
       <ResponsiveDialog open={actionDialog === "cancel"} onClose={() => !processing && setActionDialog("")} eyebrow="Más acciones" title="Cancelar compra" description="La compra preparada quedará cancelada y ya no podrá editarse." size="small" footer={<><Button type="button" variant="secondary" disabled={processing} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" variant="danger" disabled={processing} onClick={cancel}>{processing ? "Cancelando..." : "Cancelar compra"}</Button></>}><p>Cancelar una compra preparada no modifica stock.</p></ResponsiveDialog>
     </main>
   );

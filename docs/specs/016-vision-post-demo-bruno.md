@@ -86,18 +86,23 @@ pendiente, no acepta como recibidas líneas ajenas y conserva trazabilidad. Al
 confirmarla, la transacción vigente aplica la entrada física y crea la Compra
 económica confirmada correspondiente.
 
-**CONFIRMADO PENDIENTE — compra directa sin OC:**
+**IMPLEMENTADO — compra directa sin OC (BRUNO POST-DEMO B):**
 
 ```text
 Factura/documento → Nueva compra → Revisar → Confirmar → Entrada física
 ```
 
-Este flujo cubre adquisiciones presenciales o directas. El importador documental
-de factura deberá integrarse dentro de Nueva compra. Si se inicia desde un acceso
-relacionado con Inventario, debe navegar a Compra; nunca debe convertir una
-factura silenciosamente en carga maestra ni actualizar stock antes de confirmar.
-El código actual todavía confirma la Compra directa modelo 2 como hecho sólo
-económico, sin entrada física; por ello el target no está implementado.
+Este flujo cubre adquisiciones presenciales o directas. Nueva compra reutiliza el
+extractor documental existente, propone proveedor e ítems maestros y exige
+revisión humana. Importar o aplicar sólo prepara el borrador; confirmar una V3
+con `stockGestionadoPor: compra_directa` incrementa productos de forma atómica e
+idempotente. Servicios y actividades no cambian stock. El acceso documental de
+Inventario conduce a Nueva compra y Excel/CSV continúa siendo carga maestra.
+
+V1/V2 no se migran ni cambian semántica. Una Compra V3 originada por Recepción
+usa `stockGestionadoPor: recepcion` y nunca repite la entrada física. BRUNO B no
+actualiza costo base, promedio, último costo ni historial visual; esa evolución
+económica permanece pendiente.
 
 ### D. Costos
 
@@ -193,7 +198,7 @@ Carga maestra: Excel/CSV → revisión → Inventario
 Abastecimiento planificado:
 Orden de compra → Recepción acotada a pendiente → stock + Compra económica
 
-Adquisición directa (target):
+Adquisición directa:
 Factura/documento → Nueva compra → revisión → confirmación → stock
 
 Venta:
@@ -213,6 +218,8 @@ Ficha administrativa → tareas/subtareas → costos/materiales/adicionales
   backend.
 - Catálogo/stock, barcode y carga inicial tabular.
 - Flujo OC → Recepción → Compra, con restricciones y trazabilidad.
+- Compra directa V3 con importación documental, revisión humana y entrada física
+  confirmada sin alterar costos maestros.
 - Costo técnico promedio/último y adquisiciones históricas persistidas.
 - Ventas con costo histórico congelado cuando está disponible.
 - Proyectos con equipo, tareas/subtareas, costos, materiales y balance.
@@ -226,7 +233,6 @@ Ficha administrativa → tareas/subtareas → costos/materiales/adicionales
 
 - QA móvil HTTPS del scanner por cámara.
 - Historial visual de costos.
-- Compra directa con importador documental y entrada física confirmada.
 - Margen comercial y evolución de Reportes.
 - UX/tablero por Proyecto, adicionales facturables y evidencia de gastos.
 - Vertical Taller para automotriz/movilidad.
@@ -258,9 +264,8 @@ Ficha administrativa → tareas/subtareas → costos/materiales/adicionales
 
 1. Validar en QA la activación reactiva sin F5 y la navegación de tarjetas
    Platform Admin, conservando la evidencia segura ya existente.
-2. Reconciliar Inventario/Compras: decidir la compatibilidad de códigos en cargas
-   maestras e implementar Compra directa con importador documental y entrada
-   física, preservando el flujo con OC.
+2. Validar en QA Compra directa V3 con importador documental y entrada física,
+   preservando la compatibilidad de cargas maestras y el flujo con OC.
 3. Definir semántica de costos e historial visible antes de cambiar indicadores
    comerciales.
 4. Implementar margen comercial de Ventas y luego ampliar Reportes con reglas

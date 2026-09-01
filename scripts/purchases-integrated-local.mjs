@@ -7,6 +7,7 @@ import {
   getFirestore, query, setDoc, terminate, updateDoc, where,
 } from "firebase/firestore";
 import {connectFunctionsEmulator, getFunctions, httpsCallable} from "firebase/functions";
+import {getPurchaseStockSemantics} from "../src/domain/purchaseModel.mjs";
 
 const PROJECT_ID = "tesis-inventario-ia";
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -107,6 +108,9 @@ try {
   assert.equal(ownerCreated.data.compra.items[0].nombre, "Producto A");
   assert.equal(ownerCreated.data.compra.total, 42840);
   assert.equal(ownerCreated.data.compra.stockAplicado, false);
+  assert.equal(ownerCreated.data.compra.modeloCompraVersion, 3);
+  assert.equal(ownerCreated.data.compra.stockGestionadoPor, "compra_directa");
+  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock, 8);
   const ownerRetry = await call(owner, "crearCompra")({businessId, requestId: ownerCreateId, compra: purchasePayload(providerId, [line(productA, "line-main"), line(serviceId, "line-service", {cantidad: 1}), line(activityId, "line-activity", {cantidad: 1})])});
   assert.equal(ownerRetry.data.compra.id, ownerCreated.data.compra.id);
   assert.equal(ownerRetry.data.idempotent, true);
@@ -116,14 +120,13 @@ try {
   assert.equal(otherCreated.data.compra.numero, "COM-2026-0001");
   const adminCreated = await call(admin, "crearCompra")({businessId, requestId: requestId("admin-create"), compra: purchasePayload(providerId, [line(productB, "admin-line")])});
   assert.equal(adminCreated.data.compra.numero, "COM-2026-0002");
-  assert.equal(ownerCreated.data.compra.modeloCompraVersion, 2);
-  await Promise.all([
-    adminDb.doc(`negocios/${businessId}/compras/${ownerCreated.data.compra.id}`).update({modeloCompraVersion: 1, stockGestionadoPor: null}),
-    adminDb.doc(`negocios/${businessId}/compras/${adminCreated.data.compra.id}`).update({modeloCompraVersion: 1, stockGestionadoPor: null}),
-  ]);
+  assert.equal(adminCreated.data.compra.modeloCompraVersion, 3);
+  assert.equal(adminCreated.data.compra.stockGestionadoPor, "compra_directa");
   console.log("OK roles OWNER/ADMIN y correlativos independientes por negocio");
 
   await expectCallableError("MEMBER no crea", () => call(member, "crearCompra")({businessId, requestId: requestId("member-create"), compra: purchasePayload(providerId, [line(productA, "member-line")])}), ["permission-denied"]);
+  await expectCallableError("MEMBER no confirma", () => call(member, "confirmarCompra")({businessId, compraId: ownerCreated.data.compra.id, requestId: requestId("member-confirm")}), ["permission-denied"]);
+  await expectCallableError("confirmación cross-business", () => call(owner, "confirmarCompra")({businessId: otherBusinessId, compraId: otherCreated.data.compra.id, requestId: requestId("cross-confirm")}), ["permission-denied"]);
   await expectCallableError("proveedor cruzado", () => call(owner, "crearCompra")({businessId, requestId: requestId("cross-provider"), compra: purchasePayload(providerOtherId, [line(productA, "cross-provider-line")])}), ["failed-precondition", "permission-denied"]);
   await expectCallableError("ítem cruzado", () => call(owner, "crearCompra")({businessId, requestId: requestId("cross-item"), compra: purchasePayload(providerId, [line(crossItem, "cross-item-line")])}), ["failed-precondition", "permission-denied"]);
   await expectCallableError("producto inactivo directo", () => call(owner, "crearCompra")({businessId, requestId: requestId("inactive-direct"), compra: purchasePayload(providerId, [line(inactiveProduct, "inactive-direct-line")])}), ["failed-precondition"]);
@@ -150,6 +153,12 @@ try {
   await adminDb.doc(`negocios/${businessId}/inventario/${activityId}`).update({estado: "activo"});
   console.log("OK revalidación directa: proveedor, servicio y actividad activos sin efectos parciales");
 
+  const stockBeforeEdit = (await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock;
+  await call(owner, "actualizarCompraBorrador")({businessId, compraId: ownerCreated.data.compra.id, compra: purchasePayload(providerId, [line(productA, "line-main", {costoUnitario: 9500}), line(serviceId, "line-service", {cantidad: 1}), line(activityId, "line-activity", {cantidad: 1})])});
+  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock, stockBeforeEdit);
+  assert.equal((await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("compraId", "==", ownerCreated.data.compra.id).get()).size, 0);
+  console.log("OK compra directa V3: crear y editar borrador no modifican stock");
+
   const beforeProduct = (await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data();
   const confirmId = requestId("confirm-main");
   const confirmed = await call(owner, "confirmarCompra")({businessId, compraId: ownerCreated.data.compra.id, requestId: confirmId});
@@ -159,7 +168,7 @@ try {
   assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${serviceId}`).get()).data().stock, undefined);
   assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${activityId}`).get()).data().stock, undefined);
   const movements = await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("compraId", "==", ownerCreated.data.compra.id).get();
-  assert.equal(movements.size, 1); assert.equal(movements.docs[0].data().tipo, "entrada_compra");
+  assert.equal(movements.size, 1); assert.equal(movements.docs[0].data().tipo, "entrada_compra"); assert.equal(movements.docs[0].data().tipoOrigen, "compra_directa");
   assert.equal(movements.docs[0].data().cantidad, 2); assert.equal(movements.docs[0].data().stockAnterior, 8); assert.equal(movements.docs[0].data().stockPosterior, 10);
   const retrySame = await call(owner, "confirmarCompra")({businessId, compraId: ownerCreated.data.compra.id, requestId: confirmId});
   const retryOther = await call(owner, "confirmarCompra")({businessId, compraId: ownerCreated.data.compra.id, requestId: requestId("confirm-main-other")});
@@ -167,14 +176,43 @@ try {
   assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock, beforeProduct.stock + 2);
   console.log("OK confirmación: sólo productos, movimiento inmutable, sin costoBase y doble defensa idempotente");
 
+  const reversalId = requestId("reverse-main");
+  const reversed = await call(owner, "revertirCompra")({businessId, compraId: ownerCreated.data.compra.id, motivo: "Validar reversión V3 directa", requestId: reversalId});
+  assert.equal(reversed.data.compra.estado, "revertida"); assert.equal(reversed.data.productosRevertidos, 1);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock, beforeProduct.stock);
+  let reversedMovements = await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("compraId", "==", ownerCreated.data.compra.id).get();
+  assert.equal(reversedMovements.size, 2);
+  assert.equal(reversedMovements.docs.filter((document) => document.data().tipo === "salida_reversion_compra").length, 1);
+  const reversalRetry = await call(owner, "revertirCompra")({businessId, compraId: ownerCreated.data.compra.id, motivo: "Validar reversión V3 directa", requestId: reversalId});
+  assert.equal(reversalRetry.data.idempotent, true);
+  reversedMovements = await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("compraId", "==", ownerCreated.data.compra.id).get();
+  assert.equal(reversedMovements.size, 2);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock, beforeProduct.stock);
+  console.log("OK reversión V3 directa: stock restaurado, movimiento compensatorio e idempotencia");
+
+  const nonProductDraft = await call(owner, "crearCompra")({businessId, requestId: requestId("non-product-create"), compra: purchasePayload(providerId, [line(serviceId, "non-product-service", {cantidad: 1}), line(activityId, "non-product-activity", {cantidad: 1})])});
+  const serviceBefore = (await adminDb.doc(`negocios/${businessId}/inventario/${serviceId}`).get()).data();
+  const activityBefore = (await adminDb.doc(`negocios/${businessId}/inventario/${activityId}`).get()).data();
+  const nonProductConfirmId = requestId("non-product-confirm");
+  const nonProductConfirmed = await call(owner, "confirmarCompra")({businessId, compraId: nonProductDraft.data.compra.id, requestId: nonProductConfirmId});
+  assert.equal(nonProductConfirmed.data.compra.estado, "confirmada");
+  assert.equal(nonProductConfirmed.data.compra.stockAplicado, false);
+  assert.equal(nonProductConfirmed.data.productosActualizados, 0);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${serviceId}`).get()).data().stock, serviceBefore.stock);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${activityId}`).get()).data().stock, activityBefore.stock);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${serviceId}`).get()).data().costoBase, serviceBefore.costoBase);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${activityId}`).get()).data().costoBase, activityBefore.costoBase);
+  assert.equal((await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("compraId", "==", nonProductDraft.data.compra.id).get()).size, 0);
+  assert.doesNotMatch(getPurchaseStockSemantics({...nonProductConfirmed.data.compra, productosActualizados: nonProductConfirmed.data.productosActualizados}).confirmationResultMessage, /stock de productos actualizado/i);
+  const nonProductRetry = await call(owner, "confirmarCompra")({businessId, compraId: nonProductDraft.data.compra.id, requestId: nonProductConfirmId});
+  assert.equal(nonProductRetry.data.idempotent, true); assert.equal(nonProductRetry.data.productosActualizados, 0);
+  assert.equal((await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("compraId", "==", nonProductDraft.data.compra.id).get()).size, 0);
+  console.log("OK V3 sin productos: servicios/actividades sin stock, movimientos ni mensaje físico");
+
   const concurrencyPayload = (suffix, quantity) => purchasePayload(providerId, [line(productA, `concurrent-${suffix}`, {cantidad: quantity, descuentoPct: 0})]);
   const [draftTwo, draftFive] = await Promise.all([
     call(owner, "crearCompra")({businessId, requestId: requestId("create-two"), compra: concurrencyPayload("two", 2)}),
     call(admin, "crearCompra")({businessId, requestId: requestId("create-five"), compra: concurrencyPayload("five", 5)}),
-  ]);
-  await Promise.all([
-    adminDb.doc(`negocios/${businessId}/compras/${draftTwo.data.compra.id}`).update({modeloCompraVersion: 1, stockGestionadoPor: null}),
-    adminDb.doc(`negocios/${businessId}/compras/${draftFive.data.compra.id}`).update({modeloCompraVersion: 1, stockGestionadoPor: null}),
   ]);
   assert.notEqual(draftTwo.data.compra.numero, draftFive.data.compra.numero);
   const stockBeforeConcurrent = (await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock;
@@ -186,7 +224,6 @@ try {
   console.log("OK concurrencia: dos confirmaciones acumulan stock sin pérdida");
 
   const multiProduct = await call(owner, "crearCompra")({businessId, requestId: requestId("multi-create"), compra: purchasePayload(providerId, [line(productA, "multi-a", {cantidad: 2}), line(productB, "multi-b", {cantidad: 5})])});
-  await adminDb.doc(`negocios/${businessId}/compras/${multiProduct.data.compra.id}`).update({modeloCompraVersion: 1, stockGestionadoPor: null});
   const productABefore = (await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock;
   const productBBefore = (await adminDb.doc(`negocios/${businessId}/inventario/${productB}`).get()).data().stock;
   await call(owner, "confirmarCompra")({businessId, compraId: multiProduct.data.compra.id, requestId: requestId("multi-confirm")});
@@ -194,8 +231,25 @@ try {
   assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productB}`).get()).data().stock, productBBefore + 5);
   console.log("OK confirmación con múltiples productos");
 
+  const unresolvedDocument = {
+    origen: "importador_documental", nombreArchivo: "factura.pdf", tipoArchivo: "application/pdf",
+    extension: "pdf", tamanoBytes: 2048, tipoDocumento: "factura", numeroDocumento: "F-DOC-1",
+    fechaDocumento: "2026-08-06", moneda: "CLP", proveedorDocumento: {nombre: "Proveedor Autoritativo SpA", identificadorFiscal: "76.000.000-0"},
+    receptorDocumento: {nombre: "Empresa Compradora", identificadorFiscal: "76.500.500-5"},
+    neto: 10000, impuestoPorcentaje: 19, impuestoMonto: 1900, total: 11900,
+    coherenciaEstado: "coherente", proveedorCoincidencia: "identificador_fiscal",
+    lineasDetectadas: 2, lineasAplicadas: 1, advertencias: [],
+  };
+  const importedDraft = await call(owner, "crearCompra")({businessId, requestId: requestId("document-create"), compra: purchasePayload(providerId, [line(productA, "document-line", {cantidad: 1, costoUnitario: 10000, descuentoPct: 0})], {documentoOrigen: unresolvedDocument})});
+  const stockBeforeDocument = (await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock;
+  assert.equal(importedDraft.data.compra.documentoOrigen.total, 11900);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock, stockBeforeDocument);
+  await expectCallableError("documento con línea sin resolver", () => call(owner, "confirmarCompra")({businessId, compraId: importedDraft.data.compra.id, requestId: requestId("document-unresolved-confirm")}), ["failed-precondition"]);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/compras/${importedDraft.data.compra.id}`).get()).data().estado, "borrador");
+  assert.equal((await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("compraId", "==", importedDraft.data.compra.id).get()).size, 0);
+  console.log("OK importador: factura prepara borrador, conserva tributos y bloquea líneas sin resolver sin stock");
+
   const rollbackDraft = await call(owner, "crearCompra")({businessId, requestId: requestId("rollback-create"), compra: purchasePayload(providerId, [line(productA, "rollback-a", {cantidad: 1}), line(productB, "rollback-b", {cantidad: 1})])});
-  await adminDb.doc(`negocios/${businessId}/compras/${rollbackDraft.data.compra.id}`).update({modeloCompraVersion: 1, stockGestionadoPor: null});
   const stockBeforeRollback = (await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock;
   await adminDb.doc(`negocios/${businessId}/inventario/${productB}`).delete();
   await expectCallableError("rollback por producto faltante", () => call(owner, "confirmarCompra")({businessId, compraId: rollbackDraft.data.compra.id, requestId: requestId("rollback-confirm")}), ["failed-precondition"]);
@@ -219,6 +273,7 @@ try {
   await expectCallableError("OC de otro negocio no convierte", () => call(outsider, "crearCompraDesdeOrden")({businessId: otherBusinessId, ordenCompraId: orderId, requestId: requestId("convert-cross")}), ["not-found", "permission-denied"]);
   const conversion = await call(owner, "crearCompraDesdeOrden")({businessId, ordenCompraId: orderId, requestId: requestId("convert-emitted")});
   assert.equal(conversion.data.compra.ordenCompraId, orderId); assert.equal(conversion.data.compra.proveedorSnapshot.razonSocial, "Proveedor histórico OC"); assert.equal(conversion.data.compra.items[0].nombre, "Producto histórico OC");
+  assert.equal(conversion.data.compra.modeloCompraVersion, 2); assert.equal(conversion.data.compra.stockGestionadoPor, "recepcion");
   const conversionDraft = {
     proveedorId: conversion.data.compra.proveedorId,
     fechaCompra: conversion.data.compra.fechaCompra,
@@ -264,6 +319,20 @@ try {
   assert.equal(concurrentConversions[0].data.compra.id, concurrentConversions[1].data.compra.id);
   assert.equal((await adminDb.collection(`negocios/${businessId}/compras`).where("ordenCompraId", "==", concurrentOrderId).get()).size, 1);
   console.log("OK OC emitida: producto histórico, servicio sin movimiento, snapshots, enlace único y conversión concurrente");
+
+  const legacyV2 = await call(owner, "crearCompra")({businessId, requestId: requestId("legacy-v2-create"), compra: purchasePayload(providerId, [line(productA, "legacy-v2-line", {cantidad: 1})])});
+  await adminDb.doc(`negocios/${businessId}/compras/${legacyV2.data.compra.id}`).update({modeloCompraVersion: 2, stockGestionadoPor: "recepcion"});
+  const stockBeforeV2 = (await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock;
+  await call(owner, "confirmarCompra")({businessId, compraId: legacyV2.data.compra.id, requestId: requestId("legacy-v2-confirm")});
+  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock, stockBeforeV2);
+  assert.equal((await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("compraId", "==", legacyV2.data.compra.id).get()).size, 0);
+
+  const legacyV1 = await call(owner, "crearCompra")({businessId, requestId: requestId("legacy-v1-create"), compra: purchasePayload(providerId, [line(productA, "legacy-v1-line", {cantidad: 1})])});
+  await adminDb.doc(`negocios/${businessId}/compras/${legacyV1.data.compra.id}`).update({modeloCompraVersion: 1, stockGestionadoPor: null});
+  const stockBeforeV1 = (await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock;
+  await call(owner, "confirmarCompra")({businessId, compraId: legacyV1.data.compra.id, requestId: requestId("legacy-v1-confirm")});
+  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock, stockBeforeV1 + 1);
+  console.log("OK compatibilidad: V2 permanece económica y V1 conserva su entrada histórica");
 
   const cancelDraft = await call(owner, "crearCompra")({businessId, requestId: requestId("cancel-create"), compra: purchasePayload(providerId, [line(productA, "cancel-line")])});
   const cancelStock = (await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock;

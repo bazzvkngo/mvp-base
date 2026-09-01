@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import {useNavigate} from "react-router-dom";
 import { Activity, Archive, Boxes, BriefcaseBusiness, FileSpreadsheet, Package, PackagePlus, RotateCcw, Settings2 } from "lucide-react";
 import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
@@ -79,7 +80,9 @@ function requestId() {
 }
 
 function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
+  const navigate = useNavigate();
   const cannotWrite = readOnly || !hasBusinessPermission(role, BUSINESS_PERMISSIONS.INVENTORY_WRITE);
+  const canStartPurchase = !readOnly && hasBusinessPermission(role, BUSINESS_PERMISSIONS.PURCHASES_WRITE);
   const canReadCosts = hasBusinessPermission(role, BUSINESS_PERMISSIONS.INVENTORY_COSTS_READ);
   const [items, setItems] = useState([]);
   const [areas, setAreas] = useState([]);
@@ -432,9 +435,10 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
         <div className="erp-page-intro">
           <p>Administra productos, servicios y actividades del negocio activo.</p>
         </div>
-        {!cannotWrite && <div className="erp-module-actions inventory-header-actions">
-          <button type="button" className="inventory-button inventory-button--secondary" onClick={() => setImportOpen(true)}><AppIcon icon={FileSpreadsheet} size={18} />Importar inventario</button>
-          <button type="button" className="inventory-button inventory-button--primary" onClick={openNewItem}><AppIcon icon={PackagePlus} size={18} />Nuevo ítem</button>
+        {(!cannotWrite || canStartPurchase) && <div className="erp-module-actions inventory-header-actions">
+          {!cannotWrite && <button type="button" className="inventory-button inventory-button--secondary" onClick={() => setImportOpen(true)}><AppIcon icon={FileSpreadsheet} size={18} />Importar inventario</button>}
+          {canStartPurchase && <button type="button" className="inventory-button inventory-button--secondary" onClick={() => navigate("/compras/nueva", {state: {openPurchaseImport: true}})}>Importar factura</button>}
+          {!cannotWrite && <button type="button" className="inventory-button inventory-button--primary" onClick={openNewItem}><AppIcon icon={PackagePlus} size={18} />Nuevo ítem</button>}
         </div>}
       </div>
 

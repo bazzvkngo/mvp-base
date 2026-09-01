@@ -145,8 +145,9 @@ global del SDK a Firestore o Storage.
   idempotencia transaccional.
 - **Abastecimiento:** proveedores, Órdenes de Compra, Recepciones y Compras. La
   OC no mueve stock; una Recepción confirmada y acotada a lo pendiente aplica
-  la entrada física y crea su Compra económica. Una Compra directa modelo 2
-  vigente es sólo económica y no mueve stock.
+  la entrada física y crea su Compra V3 económica marcada como gestionada por
+  Recepción. Una Compra directa V3 aplica la entrada de productos únicamente al
+  confirmar; crear, editar o importar su factura sólo prepara un borrador.
 - **Proyectos/Trabajos:** ficha, responsables y participantes, tareas y
   subtareas, horas, gastos, materiales, documentación textual e indicadores de
   balance según su contrato actual.
@@ -154,18 +155,18 @@ global del SDK a Firestore o Storage.
   resultado/rentabilidad de Proyectos, separados por moneda y permiso. No son
   contabilidad formal ni integración tributaria.
 
-La Compra directa con documento y entrada física, los cambios de experiencia de
-Proyectos, la ampliación de costos/margen/reportes y los demás objetivos
-post-demo continúan pendientes conforme a la SPEC 016. No se describen aquí
-como colecciones, estados o funciones existentes.
+Los cambios de experiencia de Proyectos, la ampliación de
+costos/margen/reportes y los demás objetivos post-demo que la SPEC 016 todavía
+clasifica como pendientes no se describen aquí como arquitectura existente.
 
 ## Stock, snapshots e idempotencia
 
 El stock sólo cambia mediante operaciones físicas autoritativas y
 transaccionales: confirmación de Recepción, confirmación de Venta, consumo o
-devolución de materiales en Trabajos, ajustes autorizados y compatibilidad
-explícita con documentos legacy. Una OC, un borrador, una vista previa de
-importación y una Compra directa modelo 2 actual no modifican stock.
+devolución de materiales en Trabajos, confirmación de Compra directa V3, ajustes
+autorizados y compatibilidad explícita con documentos legacy. Una OC, un
+borrador y una vista previa de importación no modifican stock. Una Compra V3
+marcada `stockGestionadoPor: recepcion` tampoco repite la entrada ya aplicada.
 
 Cotizaciones, Órdenes de Compra, Recepciones, Compras, Ventas y Trabajos
 conservan los snapshots históricos definidos por sus SPEC. Contadores
@@ -185,6 +186,10 @@ se reescribe desde maestros actuales.
 - En Recepciones, el resultado documental es sólo una propuesta editable
   reconciliada con la OC; el Base64 se descarta y únicamente pueden persistirse
   metadatos sanitizados al guardar el borrador.
+- En Nueva compra, el mismo extractor propone proveedor, líneas y datos
+  tributarios. El usuario debe vincular maestros existentes; aplicar la factura
+  sólo completa el borrador y confirmar mantiene la autoridad de stock en
+  Functions.
 - La evidencia binaria persistida actualmente corresponde a la verificación
   empresarial. La documentación de Trabajos vigente es textual; la evidencia
   de gastos post-demo sigue pendiente de diseño.

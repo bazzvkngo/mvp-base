@@ -2,11 +2,10 @@
 
 ## Estado y alcance
 
-Este documento separa el comportamiento implementado del target post-demo. La
+Este documento separa los flujos implementados y sus efectos. La
 lectura de un archivo nunca constituye por sí sola una adquisición ni autoriza
 un movimiento de stock. La [`SPEC 016`](specs/016-vision-post-demo-bruno.md)
-confirma la evolución de la Compra directa, pero no permite describirla como una
-función existente.
+clasifica la Compra directa documental V3 implementada en BRUNO POST-DEMO B.
 
 ## A. Implementado actualmente
 
@@ -26,19 +25,16 @@ adquisición comercial implícita.
 
 ### Adaptador documental conservado
 
-El código también conserva un adaptador documental en la interfaz de
-Inventario para PDF, JPG, JPEG, PNG y WebP de hasta 5 MB. Este comportamiento
-existente se mantiene por compatibilidad: valida el archivo en frontend y
-backend, envía temporalmente Base64 a la callable autenticada
-`normalizeInventoryDocument` y usa Gemini multimodal para proponer líneas del
-catálogo. No existe OCR local ni fallback heurístico para PDF o imágenes; si
-Gemini no está disponible, el análisis documental falla de forma controlada.
+El código conserva un adaptador documental para PDF, JPG, JPEG, PNG y WebP de
+hasta 5 MB. Valida el archivo en frontend y backend, envía temporalmente Base64
+a la callable autenticada `normalizeInventoryDocument` y usa Gemini multimodal
+para proponer datos. No existe OCR local ni fallback heurístico para PDF o
+imágenes; si Gemini no está disponible, el análisis falla de forma controlada.
 
 El documento fuente se procesa en memoria y no se persiste en Firestore ni
-Firebase Storage. Los candidatos sólo llegan a Inventario después de una vista
-previa editable, selección y confirmación humana. Este adaptador existente no
-define la semántica futura de una factura de compra y no debe confundirse con
-el target de adquisición directa.
+Firebase Storage. En Nueva compra, los candidatos se vinculan a Proveedores e
+Inventario existentes y sólo llegan al borrador después de revisión humana. El
+adaptador no crea maestros ni confirma documentos.
 
 ### Importador de Recepciones
 
@@ -82,28 +78,32 @@ Excel/CSV → lectura local → revisión humana → confirmar Inventario
 
 Representa datos maestros iniciales, no una compra nueva. Una factura, guía o
 documento de proveedor no debe convertirse silenciosamente en stock mediante
-este concepto. Que el adaptador documental legacy todavía exista en la UI de
-Inventario no cambia esta separación semántica ni autoriza ampliarlo.
+este concepto. El acceso documental desde Inventario conduce a Nueva compra; no
+convierte una factura en carga maestra. El extractor se conserva y reutiliza,
+mientras la carga tabular Excel/CSV permanece sin cambios.
 
-## C. Target confirmado pendiente: factura de compra directa
+## C. Implementado: factura de compra directa
 
-La evolución acordada, todavía no implementada, es:
+El flujo implementado es:
 
 ```text
 Factura/documento → Nueva compra → revisión humana → confirmar → entrada a stock
 ```
 
-El importador de factura deberá vivir dentro de Nueva compra, incluso cuando el
-acceso se inicie desde Inventario. El usuario revisará proveedor, documento,
-líneas, cantidades, costos y totales antes de confirmar. La entrada física sólo
-ocurrirá en la confirmación autoritativa del nuevo flujo.
+`/compras/nueva` ofrece `Importar factura` y reutiliza
+`normalizeInventoryDocument` con contexto de Compra. Propone emisor/proveedor,
+folio, fechas, líneas, cantidades, costos, descuentos, Neto, IVA/tasa y Total.
+El match de proveedor prioriza identificación fiscal y usa nombre sólo como
+fallback revisable; nunca crea un Proveedor. Las líneas intentan barcode, código
+interno y nombre/descripción, y quedan como vinculadas, por revisar o sin
+coincidencia. Toda línea debe resolverse contra un ítem existente antes de
+aplicar.
 
-Actualmente una Compra directa `modeloCompraVersion: 2` se confirma como hecho
-económico y conserva `stockAplicado: false`; no produce la entrada física. Por
-eso el flujo anterior es un target de producto y no una capacidad disponible.
-Su implementación futura deberá definir backend, idempotencia, snapshots,
-movimientos, costos, reversión, permisos y compatibilidad antes de modificar
-stock.
+Aplicar la propuesta sólo completa el borrador y persiste metadatos sanitizados;
+no mueve stock ni conserva Base64. Al confirmar, Functions revalida proveedor e
+ítems, y una Compra V3 `stockGestionadoPor: compra_directa` incrementa sólo
+productos con movimiento autoritativo e idempotente. No actualiza `costoBase`,
+promedio, último costo ni historial visual.
 
 ## D. Recepción con Orden de Compra
 
@@ -122,8 +122,8 @@ la Compra económica confirmada correspondiente.
 Una factura que contiene productos, líneas o cantidades ajenas a la OC no
 habilita recibirlos como parte de esa Recepción. Esas líneas quedan sin asociar
 y fuera de la propuesta aplicada. Deben resolverse fuera de ese documento —por
-ejemplo, corrigiendo el antecedente comercial o mediante el futuro flujo de
-Compra directa— sin debilitar la trazabilidad de la OC.
+ejemplo, corrigiendo el antecedente comercial o mediante una Compra directa
+separada— sin debilitar la trazabilidad de la OC.
 
 ## Seguridad y privacidad
 
@@ -151,3 +151,9 @@ sanitización y autenticación. La reconciliación de Recepciones debe cubrir ad
 proveedor, documento y totales reconocidos, cantidades mayores a lo pendiente,
 líneas ajenas, confirmación humana y ausencia de stock antes de
 `confirmarRecepcion`.
+
+`node scripts/purchase-document-import-smoke.mjs` cubre match fiscal y por
+nombre, vínculos por barcode/código interno/nombre, revisión manual, bloqueo de
+líneas sin resolver y datos tributarios. `purchases-integrated-local.mjs` prueba
+que importar/guardar no mueve stock y que confirmar V3 directa lo aplica una
+sola vez.

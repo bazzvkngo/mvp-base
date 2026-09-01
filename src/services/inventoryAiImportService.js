@@ -333,7 +333,7 @@ export async function normalizeInventoryDocumentWithAi({
 
   const response = await invokeInventoryCallable("normalizeInventoryDocument", {
     businessId,
-    context: context === "reception" ? "reception" : "inventory",
+    context: ["reception", "purchase"].includes(context) ? context : "inventory",
     document: {
       nombreArchivo: fileData.nombreArchivo,
       tipoArchivo: fileData.tipoArchivo,

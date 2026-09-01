@@ -3,11 +3,15 @@ const {adaptDocumentLocalization, documentLocalizationSnapshot} = require("./loc
 const {buildAuthoritativeCompanySnapshot, resolveCompanySnapshot} = require("./companySnapshot");
 const {fiscalSnapshotFields} = require("./fiscalIdentifier");
 
-const MODEL_VERSION = 2;
+const MODEL_VERSION = 3;
+const LEGACY_ORDER_MODEL_VERSION = 2;
 const VAT_RATE = 0.19;
 const {PURCHASE_WRITE_ROLES: WRITE_ROLES} = require("./rbac");
 const TYPES = new Set(["producto", "servicio", "actividad"]);
 const DOCUMENT_TYPES = new Set(["factura", "boleta", "otro", "sin_documento"]);
+const DOCUMENT_SOURCE_TYPES = new Set(["application/pdf", "image/jpeg", "image/png", "image/webp", "text/csv", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]);
+const DOCUMENT_SOURCE_EXTENSIONS = new Set(["pdf", "jpg", "jpeg", "png", "webp", "csv", "xls", "xlsx"]);
+const MAX_DOCUMENT_SIZE_BYTES = 5 * 1024 * 1024;
 const MAXIMUM_AMOUNT_MESSAGE = "El monto de la compra supera el máximo permitido.";
 
 function fail(HttpsError, code, message) { throw new HttpsError(code, message); }
@@ -54,6 +58,74 @@ function lineInput(raw, index, HttpsError) {
     descuentoPct: number(raw?.descuentoPct ?? 0, `Ítem ${index + 1}: descuento`, HttpsError, {maximum: 100}),
   };
 }
+function optionalNumber(value, label, HttpsError, {maximum = Infinity} = {}) {
+  if (value === "" || value == null) return null;
+  return number(value, label, HttpsError, {maximum});
+}
+function documentParty(raw) {
+  return {
+    nombre: text(raw?.nombre, 240),
+    identificadorFiscal: text(raw?.identificadorFiscal, 80),
+  };
+}
+function normalizeDocumentSource(raw, HttpsError) {
+  if (raw == null) return null;
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    fail(HttpsError, "invalid-argument", "El origen documental no es válido.");
+  }
+  const extension = text(raw.extension, 12).toLowerCase();
+  const tipoArchivo = text(raw.tipoArchivo, 120).toLowerCase();
+  const tamanoBytes = number(raw.tamanoBytes ?? 0, "El tamaño del documento", HttpsError, {
+    maximum: MAX_DOCUMENT_SIZE_BYTES,
+  });
+  if (extension && !DOCUMENT_SOURCE_EXTENSIONS.has(extension)) {
+    fail(HttpsError, "invalid-argument", "El formato del documento no está permitido.");
+  }
+  if (tipoArchivo && !DOCUMENT_SOURCE_TYPES.has(tipoArchivo)) {
+    fail(HttpsError, "invalid-argument", "El tipo del documento no está permitido.");
+  }
+  const lineasDetectadas = Math.round(number(
+    raw.lineasDetectadas ?? 0,
+    "Las líneas detectadas",
+    HttpsError,
+    {maximum: 200}
+  ));
+  const lineasAplicadas = Math.round(number(
+    raw.lineasAplicadas ?? 0,
+    "Las líneas aplicadas",
+    HttpsError,
+    {maximum: 200}
+  ));
+  if (lineasAplicadas > lineasDetectadas) {
+    fail(HttpsError, "invalid-argument", "La conciliación documental no es válida.");
+  }
+  return {
+    origen: "importador_documental",
+    nombreArchivo: text(raw.nombreArchivo, 240),
+    tipoArchivo,
+    extension,
+    tamanoBytes: Math.round(tamanoBytes),
+    tipoDocumento: DOCUMENT_TYPES.has(raw.tipoDocumento) ? raw.tipoDocumento : "otro",
+    numeroDocumento: text(raw.numeroDocumento, 120),
+    fechaDocumento: date(raw.fechaDocumento, "La fecha del documento importado", HttpsError),
+    fechaVencimiento: date(raw.fechaVencimiento, "La fecha de vencimiento", HttpsError),
+    condicionesPago: text(raw.condicionesPago, 1000),
+    moneda: text(raw.moneda, 12).toUpperCase(),
+    proveedorDocumento: documentParty(raw.proveedorDocumento),
+    receptorDocumento: documentParty(raw.receptorDocumento),
+    neto: optionalNumber(raw.neto, "El neto del documento", HttpsError),
+    impuestoPorcentaje: optionalNumber(raw.impuestoPorcentaje, "La tasa de impuesto", HttpsError, {maximum: 100}),
+    impuestoMonto: optionalNumber(raw.impuestoMonto, "El impuesto del documento", HttpsError),
+    total: optionalNumber(raw.total, "El total del documento", HttpsError),
+    coherenciaEstado: ["coherente", "revisar", "sin_datos"].includes(raw.coherenciaEstado) ? raw.coherenciaEstado : "sin_datos",
+    proveedorCoincidencia: text(raw.proveedorCoincidencia, 40),
+    lineasDetectadas,
+    lineasAplicadas,
+    lineasSinResolver: lineasDetectadas - lineasAplicadas,
+    advertencias: (Array.isArray(raw.advertencias) ? raw.advertencias : [])
+      .map((warning) => text(warning, 300)).filter(Boolean).slice(0, 20),
+  };
+}
 function input(raw, HttpsError) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) fail(HttpsError, "invalid-argument", "Los datos de la compra no son válidos.");
   if (!Array.isArray(raw.items) || !raw.items.length) fail(HttpsError, "invalid-argument", "Agrega al menos un ítem a la compra.");
@@ -67,6 +139,7 @@ function input(raw, HttpsError) {
     fechaDocumento: date(raw.fechaDocumento, "La fecha del documento", HttpsError),
     tipoDocumento, numeroDocumentoProveedor: text(raw.numeroDocumentoProveedor, 120),
     condicionesPago: text(raw.condicionesPago, 2000), observaciones: text(raw.observaciones, 4000),
+    documentoOrigen: normalizeDocumentSource(raw.documentoOrigen, HttpsError),
   };
 }
 function provider(snapshot, businessId, providerId, HttpsError) {
@@ -113,9 +186,14 @@ async function access(request, dependencies) {
   return dependencies.requireBusinessAccess(request, {db: dependencies.db, HttpsError: dependencies.HttpsError}, {roles: WRITE_ROLES, requiresVerifiedBusiness: true});
 }
 function formatNumber(year, sequence) { return `COM-${year}-${String(sequence).padStart(4, "0")}`; }
-function baseStored({businessId, uid, purchaseId, numero, sequence, now, normalized, proveedorSnapshot, items, localization, empresaSnapshot, origin = {}, timestamp, HttpsError}) {
+function baseStored({businessId, uid, purchaseId, numero, sequence, now, normalized, proveedorSnapshot, items, localization, empresaSnapshot, modelVersion = MODEL_VERSION, stockManagedBy = "compra_directa", origin = {}, timestamp, HttpsError}) {
   const location = localization || adaptDocumentLocalization({});
-  return {modeloCompraVersion: MODEL_VERSION, compraId: purchaseId, negocioId: businessId, numero, anio: now.year, correlativo: sequence, estado: "borrador", paisCodigo: location.paisCodigo, moneda: location.moneda, locale: location.locale, impuestoNombre: location.impuestoNombre, tasaIva: location.tasaIva, empresaSnapshot, proveedorId: normalized.proveedorId, proveedorSnapshot, ...origin, items, ...totals(items, HttpsError, location.tasaIva), fechaCompra: normalized.fechaCompra, fechaDocumento: normalized.fechaDocumento, tipoDocumento: normalized.tipoDocumento, numeroDocumentoProveedor: normalized.numeroDocumentoProveedor, condicionesPago: normalized.condicionesPago || text(proveedorSnapshot.condicionesPago, 2000), observaciones: normalized.observaciones, stockGestionadoPor: "recepcion", stockAplicado: false, stockAplicadoEn: null, creadoPorUid: uid, actualizadoPorUid: uid, creadoEn: timestamp, actualizadoEn: timestamp};
+  const documentoOrigen = normalized.documentoOrigen ? {
+    ...normalized.documentoOrigen,
+    importadoEn: timestamp,
+    actualizadoEn: timestamp,
+  } : null;
+  return {modeloCompraVersion: modelVersion, compraId: purchaseId, negocioId: businessId, numero, anio: now.year, correlativo: sequence, estado: "borrador", paisCodigo: location.paisCodigo, moneda: location.moneda, locale: location.locale, impuestoNombre: location.impuestoNombre, tasaIva: location.tasaIva, empresaSnapshot, proveedorId: normalized.proveedorId, proveedorSnapshot, ...origin, documentoOrigen: origin.documentoOrigen || documentoOrigen, items, ...totals(items, HttpsError, location.tasaIva), fechaCompra: normalized.fechaCompra, fechaDocumento: normalized.fechaDocumento, tipoDocumento: normalized.tipoDocumento, numeroDocumentoProveedor: normalized.numeroDocumentoProveedor, condicionesPago: normalized.condicionesPago || text(proveedorSnapshot.condicionesPago, 2000), observaciones: normalized.observaciones, stockGestionadoPor: stockManagedBy, stockAplicado: false, stockAplicadoEn: null, creadoPorUid: uid, actualizadoPorUid: uid, creadoEn: timestamp, actualizadoEn: timestamp};
 }
 
 function buildConfirmedPurchaseFromReception({
@@ -171,6 +249,8 @@ function buildConfirmedPurchaseFromReception({
     items,
     localization: adaptDocumentLocalization(reception),
     empresaSnapshot,
+    modelVersion: MODEL_VERSION,
+    stockManagedBy: "recepcion",
     origin: {
       recepcionId: reception.recepcionId,
       recepcionNumero: text(reception.numero, 120),
@@ -311,7 +391,7 @@ async function crearCompraDesdeOrdenHandler(request, dependencies, clock = new D
     const numero = formatNumber(now.year, sequence);
     const timestamp = FieldValue.serverTimestamp();
     const currentCompanySnapshot = buildAuthoritativeCompanySnapshot({businessId, business: businessSnapshot.data() || {}, profile: companyProfileSnapshot.data() || {}});
-    const stored = baseStored({businessId, uid, purchaseId: purchaseRef.id, numero, sequence, now, normalized, proveedorSnapshot, items, localization: adaptDocumentLocalization(order), empresaSnapshot: resolveCompanySnapshot(order, currentCompanySnapshot), origin: {ordenCompraId: orderId, ordenCompraNumero: text(order.numero, 120)}, timestamp, HttpsError});
+    const stored = baseStored({businessId, uid, purchaseId: purchaseRef.id, numero, sequence, now, normalized, proveedorSnapshot, items, localization: adaptDocumentLocalization(order), empresaSnapshot: resolveCompanySnapshot(order, currentCompanySnapshot), modelVersion: LEGACY_ORDER_MODEL_VERSION, stockManagedBy: "recepcion", origin: {ordenCompraId: orderId, ordenCompraNumero: text(order.numero, 120)}, timestamp, HttpsError});
     transaction.set(counterRef, {negocioId: businessId, year: now.year, lastNumber: sequence, actualizadoEn: timestamp});
     transaction.set(purchaseRef, stored);
     transaction.update(orderRef, {compraId: purchaseRef.id, compraNumero: numero, compraRegistradaEn: timestamp, actualizadoEn: timestamp, actualizadoPorUid: uid});
@@ -411,6 +491,8 @@ async function crearCompraDesdeRecepcionHandler(request, dependencies, clock = n
         reception,
         resolveCompanySnapshot(order, currentCompanySnapshot)
       ),
+      modelVersion: MODEL_VERSION,
+      stockManagedBy: "recepcion",
       origin: {
         recepcionId: receptionId,
         recepcionNumero: text(reception.numero, 120),
@@ -471,7 +553,12 @@ async function actualizarCompraBorradorHandler(request, dependencies) {
     const proveedorSnapshot = providerChanged ? provider(snapshots[cursor++], businessId, normalized.proveedorId, HttpsError) : preservedProvider(existing);
     const items = normalized.items.map((item, index) => storedLine(item, itemChanged[index] ? inventory(snapshots[cursor++], businessId, item.itemId, HttpsError) : preservedItem(previousLines.get(item.lineaId)), HttpsError));
     const timestamp = FieldValue.serverTimestamp();
-    const update = {...normalized, proveedorSnapshot, items, ...totals(items, HttpsError, adaptDocumentLocalization(existing).tasaIva), actualizadoPorUid: uid, actualizadoEn: timestamp};
+    const documentoOrigen = normalized.documentoOrigen ? {
+      ...normalized.documentoOrigen,
+      importadoEn: existing.documentoOrigen?.importadoEn || timestamp,
+      actualizadoEn: timestamp,
+    } : null;
+    const update = {...normalized, documentoOrigen, proveedorSnapshot, items, ...totals(items, HttpsError, adaptDocumentLocalization(existing).tasaIva), actualizadoPorUid: uid, actualizadoEn: timestamp};
     delete update.itemsInput;
     transaction.update(purchaseRef, update);
     return {compra: {id: purchaseId, ...existing, ...update, actualizadoEn: null}};
@@ -502,12 +589,25 @@ async function confirmarCompraHandler(request, dependencies) {
       return {compra: {id: purchaseId, ...purchase}, requestId: reqId, idempotent: true, productosActualizados: 0};
     }
     if (purchase.estado !== "borrador") fail(HttpsError, "failed-precondition", "La compra no puede confirmarse.");
-    if (Number(purchase.modeloCompraVersion || 1) >= 2 || purchase.stockGestionadoPor === "recepcion") {
+    const modelVersion = Number(purchase.modeloCompraVersion || 1);
+    const stockManagedBy = text(purchase.stockGestionadoPor, 40);
+    const isV3DirectPurchase = modelVersion === 3 && stockManagedBy === "compra_directa";
+    const isEconomicOnlyPurchase = stockManagedBy === "recepcion" || modelVersion === 2;
+    if (modelVersion === 3 && !["compra_directa", "recepcion"].includes(stockManagedBy)) {
+      fail(HttpsError, "failed-precondition", "La compra no define quién gestiona su stock.");
+    }
+    if (isEconomicOnlyPurchase) {
       const timestamp = FieldValue.serverTimestamp();
       const update = {estado: "confirmada", stockAplicado: false, stockAplicadoEn: null, confirmadoPorUid: uid, confirmadoEn: timestamp, actualizadoPorUid: uid, actualizadoEn: timestamp};
       transaction.update(purchaseRef, update);
       transaction.set(requestRef, {negocioId: businessId, compraId: purchaseId, uidUsuario: uid, productosActualizados: 0, creadoEn: timestamp});
       return {compra: {id: purchaseId, ...purchase, ...update, confirmadoEn: null, actualizadoEn: null}, requestId: reqId, idempotent: false, productosActualizados: 0};
+    }
+    if (modelVersion >= 3 && !isV3DirectPurchase) {
+      fail(HttpsError, "failed-precondition", "La versión de la compra no es compatible con esta confirmación.");
+    }
+    if (isV3DirectPurchase && Number(purchase.documentoOrigen?.lineasSinResolver || 0) > 0) {
+      fail(HttpsError, "failed-precondition", "Resuelve todas las líneas del documento antes de confirmar la compra.");
     }
     const purchaseLines = Array.isArray(purchase.items) ? purchase.items : [];
     const productLines = purchaseLines.filter((line) => line.tipoItem === "producto");
@@ -543,12 +643,13 @@ async function confirmarCompraHandler(request, dependencies) {
         const stockPosterior = stockAnterior + cantidad;
         if (!Number.isFinite(cantidad) || cantidad <= 0 || !Number.isFinite(stockPosterior) || Math.abs(stockPosterior) > Number.MAX_SAFE_INTEGER) fail(HttpsError, "failed-precondition", "El stock no pudo actualizarse de forma segura.");
         const movementRef = businessRef.collection("movimientosInventario").doc(`${purchaseId}__${line.lineaId}`);
-        transaction.set(movementRef, {movimientoId: movementRef.id, negocioId: businessId, itemId: line.itemId, compraId: purchaseId, compraNumero: purchase.numero, tipo: "entrada_compra", cantidad, stockAnterior, stockPosterior, motivo: "Confirmación de compra", codigo: text(line.codigo, 100), nombre: text(line.nombre, 240), unidad: text(line.unidad, 80), creadoPorUid: uid, creadoEn: timestamp});
+        transaction.set(movementRef, {movimientoId: movementRef.id, negocioId: businessId, itemId: line.itemId, lineaId: text(line.lineaId, 160), compraId: purchaseId, compraNumero: purchase.numero, tipo: "entrada_compra", tipoOrigen: isV3DirectPurchase ? "compra_directa" : "compra", cantidad, stockAnterior, stockPosterior, stockResultante: stockPosterior, motivo: "Confirmación de compra", codigo: text(line.codigo, 100), nombre: text(line.nombre, 240), unidad: text(line.unidad, 80), creadoPorUid: uid, creadoEn: timestamp});
         runningStock = stockPosterior;
       });
       transaction.update(itemRefs[index], {stock: runningStock, actualizadoEn: timestamp, actualizadoPorUid: uid});
     });
-    const update = {estado: "confirmada", stockAplicado: true, stockAplicadoEn: timestamp, confirmadoPorUid: uid, confirmadoEn: timestamp, actualizadoPorUid: uid, actualizadoEn: timestamp};
+    const stockApplied = productLines.length > 0;
+    const update = {estado: "confirmada", stockAplicado: stockApplied, stockAplicadoEn: stockApplied ? timestamp : null, confirmadoPorUid: uid, confirmadoEn: timestamp, actualizadoPorUid: uid, actualizadoEn: timestamp};
     transaction.update(purchaseRef, update);
     transaction.set(requestRef, {negocioId: businessId, compraId: purchaseId, uidUsuario: uid, productosActualizados: productLines.length, creadoEn: timestamp});
     return {compra: {id: purchaseId, ...purchase, ...update, confirmadoEn: null, actualizadoEn: null}, requestId: reqId, idempotent: false, productosActualizados: productLines.length};

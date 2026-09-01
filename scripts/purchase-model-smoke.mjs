@@ -8,8 +8,10 @@ import {
   calculatePurchaseTotals,
   canManagePurchases,
   getPurchaseDocumentTypeLabel,
+  getPurchaseStockSemantics,
   getPurchaseStatusLabel,
   matchesPurchaseSearch,
+  PURCHASE_MODEL_VERSION,
   PURCHASE_STATUSES,
   shouldReconcilePurchaseConfirmation,
 } from "../src/domain/purchaseModel.mjs";
@@ -117,12 +119,31 @@ assert.equal(canManagePurchases("ADMIN"), true);
 assert.equal(canManagePurchases("COMPRAS"), true);
 assert.equal(canManagePurchases("VENTAS"), false);
 assert.equal(canManagePurchases("MEMBER"), false);
+assert.equal(PURCHASE_MODEL_VERSION, 3);
 assert.deepEqual(PURCHASE_STATUSES, ["borrador", "confirmada", "cancelada", "revertida"]);
 assert.equal(getPurchaseStatusLabel("borrador"), "Preparada");
 assert.equal(getPurchaseStatusLabel("revertida"), "Revertida");
 assert.equal(getPurchaseDocumentTypeLabel("sin_documento"), "Sin documento");
 assert.equal(shouldReconcilePurchaseConfirmation({code: "unavailable"}), true);
 assert.equal(shouldReconcilePurchaseConfirmation({code: "permission-denied"}), false);
+const directV3Semantics = getPurchaseStockSemantics({modeloCompraVersion: 3, stockGestionadoPor: "compra_directa"});
+assert.equal(directV3Semantics.kind, "direct_v3");
+assert.match(directV3Semantics.confirmationMessage, /incrementará el stock de los productos/);
+assert.match(getPurchaseStockSemantics({modeloCompraVersion: 3, stockGestionadoPor: "compra_directa", productosActualizados: 1}).confirmationResultMessage, /stock de productos actualizado/);
+assert.doesNotMatch(getPurchaseStockSemantics({modeloCompraVersion: 3, stockGestionadoPor: "compra_directa", stockAplicado: false, productosActualizados: 0}).confirmationResultMessage, /stock de productos actualizado/);
+const receptionV3Semantics = getPurchaseStockSemantics({modeloCompraVersion: 3, stockGestionadoPor: "recepcion"});
+assert.equal(receptionV3Semantics.kind, "reception");
+assert.match(receptionV3Semantics.confirmationMessage, /ya fue gestionado mediante la recepción/);
+const economicV2Semantics = getPurchaseStockSemantics({modeloCompraVersion: 2, stockGestionadoPor: "recepcion"});
+assert.equal(economicV2Semantics.kind, "legacy_v2");
+assert.match(economicV2Semantics.confirmationResultMessage, /documento económico sin modificar stock/);
+assert.doesNotMatch(economicV2Semantics.confirmationResultMessage, /por la recepción/);
+const linkedV2Semantics = getPurchaseStockSemantics({modeloCompraVersion: 2, stockGestionadoPor: "recepcion", recepcionId: "reception-historical"});
+assert.equal(linkedV2Semantics.kind, "reception");
+assert.match(linkedV2Semantics.confirmationResultMessage, /gestionado por la recepción/);
+const legacyV1Semantics = getPurchaseStockSemantics({modeloCompraVersion: 1, productosActualizados: 1});
+assert.equal(legacyV1Semantics.kind, "legacy");
+assert.match(legacyV1Semantics.confirmationResultMessage, /comportamiento de stock original/);
 console.log("OK compras modelo: adaptación, búsqueda y roles");
 
 const backend = fs.readFileSync(new URL("../functions/purchasePersistence.js", import.meta.url), "utf8");
@@ -139,6 +160,11 @@ assert.match(backend, /salida_reversion_compra/);
 assert.doesNotMatch(backend, /cost[oe]Base\s*:/i);
 assert.match(purchasesPage, /Revertir compra/);
 assert.match(purchasesPage, /Motivo de reversión \*/);
+assert.match(purchasesPage, /getPurchaseStockSemantics/);
+assert.match(purchaseDetail, /getPurchaseStockSemantics/);
+assert.match(purchaseDetail, /stockSemantics\.kind === "reception"/);
+assert.doesNotMatch(purchaseDetail, /purchase\.stockGestionadoPor === "recepcion"/);
+assert.doesNotMatch(purchasesPage, /El stock se gestiona en Recepciones|El stock no cambiará en este paso|Confirmar compra histórica/);
 assert.doesNotMatch(purchasesPage, />Ver<|onOpen=\{open\}/);
 for (const collectionName of [
   "compras", "movimientosInventario", "purchaseCounters",

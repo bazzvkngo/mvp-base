@@ -1,6 +1,6 @@
 import {adaptStoredFiscalIdentifier} from "./fiscalIdentifier.mjs";
 
-export const PURCHASE_MODEL_VERSION = 2;
+export const PURCHASE_MODEL_VERSION = 3;
 export const PURCHASE_VAT_RATE = 0.19;
 export const PURCHASE_STATUSES = Object.freeze(["borrador", "confirmada", "cancelada", "revertida"]);
 export const PURCHASE_DOCUMENT_TYPES = Object.freeze(["factura", "boleta", "otro", "sin_documento"]);
@@ -11,6 +11,44 @@ export function getPurchaseStatusLabel(value) {
 
 export function getPurchaseDocumentTypeLabel(value) {
   return ({factura: "Factura", boleta: "Boleta", otro: "Otro", sin_documento: "Sin documento"})[value] || "Sin documento";
+}
+
+export function getPurchaseStockSemantics(raw = {}) {
+  const modelVersion = Number(raw.modeloCompraVersion || 1);
+  const stockManagedBy = String(raw.stockGestionadoPor || "").trim();
+  const productsUpdated = Number(raw.productosActualizados || 0);
+  const hasReception = Boolean(String(raw.recepcionId || "").trim()) ||
+    (modelVersion === 3 && stockManagedBy === "recepcion");
+  if (modelVersion === 3 && stockManagedBy === "compra_directa") {
+    return {
+      kind: "direct_v3",
+      confirmationMessage: "Al confirmar esta compra se incrementará el stock de los productos. Los servicios y actividades no modifican existencias.",
+      confirmationResultMessage: raw.stockAplicado === true || productsUpdated > 0
+        ? "Compra confirmada y stock de productos actualizado."
+        : "Compra confirmada. Los servicios y actividades no modificaron existencias.",
+    };
+  }
+  if (hasReception) {
+    return {
+      kind: "reception",
+      confirmationMessage: "El stock ya fue gestionado mediante la recepción. Confirmar esta compra sólo registra el documento económico.",
+      confirmationResultMessage: "Documento económico confirmado. El stock fue gestionado por la recepción.",
+    };
+  }
+  if (modelVersion === 2) {
+    return {
+      kind: "legacy_v2",
+      confirmationMessage: "Esta Compra V2 registra únicamente el documento económico y no modifica stock.",
+      confirmationResultMessage: "Compra V2 confirmada como documento económico sin modificar stock.",
+    };
+  }
+  return {
+    kind: "legacy",
+    confirmationMessage: "Esta compra histórica conservará la semántica de stock de su versión original.",
+    confirmationResultMessage: productsUpdated > 0 || raw.stockAplicado === true
+      ? "Compra histórica confirmada con su comportamiento de stock original."
+      : "Documento económico confirmado sin modificar stock.",
+  };
 }
 
 export function shouldReconcilePurchaseConfirmation(error) {
@@ -25,6 +63,48 @@ const MAXIMUM_AMOUNT_MESSAGE = "El monto de la compra supera el máximo permitid
 const paymentLabel = (value) => ({contado: "Contado", transferencia: "Transferencia", credito: "Crédito", otro: "Otro"})[value] || value;
 
 const text = (value, max = 2000) => String(value ?? "").trim().replace(/\s+/g, " ").slice(0, max);
+
+const optionalFinite = (value) => {
+  if (value === "" || value === null || value === undefined) return null;
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+};
+
+function documentParty(raw = {}) {
+  return {
+    nombre: text(raw.nombre, 240),
+    identificadorFiscal: text(raw.identificadorFiscal, 80),
+  };
+}
+
+function buildDocumentSourcePayload(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  return {
+    origen: "importador_documental",
+    nombreArchivo: text(raw.nombreArchivo, 240),
+    tipoArchivo: text(raw.tipoArchivo, 120).toLowerCase(),
+    extension: text(raw.extension, 12).toLowerCase(),
+    tamanoBytes: Math.max(0, Math.round(Number(raw.tamanoBytes || 0))),
+    tipoDocumento: DOCUMENT_SET.has(raw.tipoDocumento) ? raw.tipoDocumento : "otro",
+    numeroDocumento: text(raw.numeroDocumento, 120),
+    fechaDocumento: text(raw.fechaDocumento, 10),
+    fechaVencimiento: text(raw.fechaVencimiento, 10),
+    condicionesPago: text(raw.condicionesPago, 1000),
+    moneda: text(raw.moneda, 12).toUpperCase(),
+    proveedorDocumento: documentParty(raw.proveedorDocumento),
+    receptorDocumento: documentParty(raw.receptorDocumento),
+    neto: optionalFinite(raw.neto),
+    impuestoPorcentaje: optionalFinite(raw.impuestoPorcentaje),
+    impuestoMonto: optionalFinite(raw.impuestoMonto),
+    total: optionalFinite(raw.total),
+    coherenciaEstado: ["coherente", "revisar", "sin_datos"].includes(raw.coherenciaEstado) ? raw.coherenciaEstado : "sin_datos",
+    proveedorCoincidencia: text(raw.proveedorCoincidencia, 40),
+    lineasDetectadas: Math.max(0, Math.round(Number(raw.lineasDetectadas || 0))),
+    lineasAplicadas: Math.max(0, Math.round(Number(raw.lineasAplicadas || 0))),
+    advertencias: (Array.isArray(raw.advertencias) ? raw.advertencias : [])
+      .map((warning) => text(warning, 300)).filter(Boolean).slice(0, 20),
+  };
+}
 
 function id(value, label) {
   const result = text(value, 160);
@@ -81,6 +161,7 @@ export function buildPurchaseMutationPayload(raw = {}) {
     numeroDocumentoProveedor: text(raw.numeroDocumentoProveedor, 120),
     condicionesPago: text(raw.condicionesPago, 2000),
     observaciones: text(raw.observaciones, 4000),
+    documentoOrigen: buildDocumentSourcePayload(raw.documentoOrigen),
     items: raw.items.map((item, index) => {
       const values = calculatePurchaseLine(item, index);
       return {
@@ -131,7 +212,13 @@ export function adaptStoredPurchase(raw = {}) {
     proveedorId: text(raw.proveedorId || proveedor.proveedorId, 160), proveedorSnapshot: proveedor,
     ordenCompraId: text(raw.ordenCompraId, 160), ordenCompraNumero: text(raw.ordenCompraNumero, 120),
     recepcionId: text(raw.recepcionId, 160), recepcionNumero: text(raw.recepcionNumero, 120),
+    modeloCompraVersion: Number(raw.modeloCompraVersion || 1),
     stockGestionadoPor: text(raw.stockGestionadoPor, 40),
+    stockAplicado: raw.stockAplicado === true,
+    inventarioAplicadoEnRecepcion: raw.inventarioAplicadoEnRecepcion === true,
+    documentoOrigen: raw.documentoOrigen && typeof raw.documentoOrigen === "object"
+      ? {...raw.documentoOrigen}
+      : null,
     registroAutomatico: raw.registroAutomatico === true,
     efectosInventario: Array.isArray(raw.efectosInventario) ? raw.efectosInventario : [],
     reversionMotivo: text(raw.reversionMotivo, 1000),

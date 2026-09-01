@@ -6,7 +6,7 @@ import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import {formatMoney} from "../utils/formatters";
-import {canManagePurchases, getPurchaseDocumentTypeLabel, getPurchaseStatusLabel, matchesPurchaseSearch} from "../domain/purchaseModel.mjs";
+import {canManagePurchases, getPurchaseDocumentTypeLabel, getPurchaseStockSemantics, getPurchaseStatusLabel, matchesPurchaseSearch} from "../domain/purchaseModel.mjs";
 import {cancelarCompraBorrador, confirmarCompra, createPurchaseRequestId, listarCompras, revertirCompra} from "../services/purchaseService";
 import "../features/purchases/purchases.css";
 
@@ -52,7 +52,14 @@ export default function PurchasesPage({businessId, role}) {
         confirmIds.current.set(purchase.id, requestId);
         const result = await confirmarCompra(businessId, purchase.id, {requestId});
         confirmIds.current.delete(purchase.id);
-        sileo.success({title: "Compra confirmada", description: result.productosActualizados ? "Compra histórica confirmada con su comportamiento original." : "Documento económico confirmado sin modificar stock."});
+        sileo.success({
+          title: "Compra confirmada",
+          description: getPurchaseStockSemantics({
+            ...purchase,
+            ...result.compra,
+            productosActualizados: result.productosActualizados,
+          }).confirmationResultMessage,
+        });
       } else if (type === "revertir") {
         const requestId = reversalIds.current.get(purchase.id) || createPurchaseRequestId("purchase-reversal");
         reversalIds.current.set(purchase.id, requestId);
@@ -75,7 +82,7 @@ export default function PurchasesPage({businessId, role}) {
     <main className="erp-page po-history">
       <div className="erp-module-intro">
         <div className="erp-page-intro">
-          <p>Registra documentos económicos de compra. El stock se gestiona en Recepciones.</p>
+          <p>Registra compras directas y documentos económicos derivados de Recepciones. Confirmar una Compra V3 directa incrementa stock; una Compra de Recepción no lo duplica.</p>
         </div>
         {canManage && <Button type="button" icon={Plus} onClick={() => navigate("/compras/nueva")}>Nueva compra</Button>}
       </div>
@@ -153,7 +160,7 @@ export default function PurchasesPage({businessId, role}) {
           </>
         )}
       </section>
-      <ResponsiveDialog open={Boolean(pendingAction)} onClose={() => !processing && setPendingAction(null)} eyebrow={pendingAction?.type === "confirmar" ? "Compra preparada" : "Más acciones"} title={pendingAction?.type === "confirmar" ? "Confirmar compra histórica" : pendingAction?.type === "revertir" ? "Revertir compra" : "Cancelar compra"} description={pendingAction?.type === "confirmar" ? "Este control se conserva para compras preparadas anteriormente." : pendingAction?.type === "revertir" ? "Esta acción revertirá los movimientos de inventario asociados y conservará el registro histórico." : "La compra preparada quedará cancelada sin modificar stock."} size="small" footer={<><Button type="button" variant="secondary" disabled={Boolean(processing)} onClick={() => setPendingAction(null)}>Volver</Button><Button type="button" variant={pendingAction?.type === "confirmar" ? "primary" : "danger"} disabled={Boolean(processing) || (pendingAction?.type === "revertir" && !reversalReason.trim())} onClick={executeAction}>{processing ? "Procesando..." : pendingAction?.type === "confirmar" ? "Confirmar compra" : pendingAction?.type === "revertir" ? "Revertir compra" : "Cancelar compra"}</Button></>}>{pendingAction?.type === "revertir" ? <label className="purchase-field-wide">Motivo de reversión *<textarea value={reversalReason} onChange={(event) => setReversalReason(event.target.value)} /></label> : <p>{pendingAction?.type === "confirmar" ? "Las compras nuevas desde recepción ya nacen confirmadas; este paso sólo aplica a registros anteriores." : "Esta acción no se puede deshacer."}</p>}</ResponsiveDialog>
+      <ResponsiveDialog open={Boolean(pendingAction)} onClose={() => !processing && setPendingAction(null)} eyebrow={pendingAction?.type === "confirmar" ? "Compra preparada" : "Más acciones"} title={pendingAction?.type === "confirmar" ? "Confirmar compra" : pendingAction?.type === "revertir" ? "Revertir compra" : "Cancelar compra"} description={pendingAction?.type === "confirmar" ? "Revisa el efecto físico de este documento antes de confirmar." : pendingAction?.type === "revertir" ? "Esta acción revertirá los movimientos de inventario asociados y conservará el registro histórico." : "La compra preparada quedará cancelada sin modificar stock."} size="small" footer={<><Button type="button" variant="secondary" disabled={Boolean(processing)} onClick={() => setPendingAction(null)}>Volver</Button><Button type="button" variant={pendingAction?.type === "confirmar" ? "primary" : "danger"} disabled={Boolean(processing) || (pendingAction?.type === "revertir" && !reversalReason.trim())} onClick={executeAction}>{processing ? "Procesando..." : pendingAction?.type === "confirmar" ? "Confirmar compra" : pendingAction?.type === "revertir" ? "Revertir compra" : "Cancelar compra"}</Button></>}>{pendingAction?.type === "revertir" ? <label className="purchase-field-wide">Motivo de reversión *<textarea value={reversalReason} onChange={(event) => setReversalReason(event.target.value)} /></label> : <p>{pendingAction?.type === "confirmar" ? getPurchaseStockSemantics(pendingAction.purchase).confirmationMessage : "Esta acción no se puede deshacer."}</p>}</ResponsiveDialog>
     </main>
   );
 }

@@ -20,8 +20,8 @@
 > las líneas de la OC. Importar o aplicar la propuesta no modifica inventario;
 > sólo `confirmarRecepcion` conserva la autoridad para stock y Compra automática.
 
-> Actualización BRUNO-05: confirmar una Recepción actualiza inventario y crea en
-> la misma transacción una Compra modelo 2 ya confirmada por las cantidades
+> Actualización BRUNO POST-DEMO B: confirmar una Recepción actualiza inventario y crea en
+> la misma transacción una Compra modelo 3, `stockGestionadoPor: recepcion`, ya confirmada por las cantidades
 > efectivamente recibidas. Cada Recepción confirmada genera como máximo una
 > Compra; los reintentos devuelven ambos documentos sin duplicar stock.
 
@@ -36,7 +36,8 @@ Separar lo solicitado, lo recibido físicamente y el documento económico:
 - La orden de compra conserva la solicitud histórica y no modifica stock.
 - `respuestaProveedor` es una dimensión informativa de la OC: `pendiente`, `confirmada`, `rechazada` o `confirmada_con_observaciones`. Esta última se trata como confirmada al evaluar la recepción.
 - La recepción registra lo recibido contra una OC emitida y es la única entrada nueva de abastecimiento.
-- La compra registra el documento económico. Las compras modelo 2 no modifican stock.
+- La compra registra el documento económico. Una Compra V3 de Recepción no
+  modifica stock nuevamente; V1/V2 conservan compatibilidad histórica.
 - Compras y movimientos modelo 1 conservan compatibilidad histórica.
 
 ## Persistencia y estados
@@ -80,12 +81,13 @@ Una recepción nueva confirmada registra automáticamente una compra confirmada 
 
 Una Compra confirmada puede revertirse completamente con motivo obligatorio. La reversión conserva OC, Recepción y Compra, crea movimientos compensatorios deterministas y marca la evidencia económica como revertida. Si el stock disponible de cualquier producto es menor que lo ingresado por esa Recepción, la transacción completa se bloquea.
 
-La compra directa vigente sigue disponible como documento económico y no
-representa entrada física en el modelo 2 actual. El target post-demo confirmado
-es incorporar la entrada física al confirmar una adquisición directa desde
-Nueva compra; su diseño e implementación pertenecen a Compras y no deben
-debilitar las restricciones de una Recepción ligada a OC.
+La Compra directa V3 ya incorpora su propia entrada física al confirmar desde
+Nueva compra. Este flujo separado no permite introducir líneas ajenas ni superar
+pendientes dentro de una Recepción ligada a OC.
 
-No hay migración destructiva. `confirmarCompra` conserva la aplicación de stock sólo para borradores históricos de modelo 1. Toda compra nueva usa `modeloCompraVersion: 2` y `stockGestionadoPor: recepcion`.
+No hay migración destructiva. `confirmarCompra` conserva las semánticas V1/V2.
+Toda Compra nueva producida por Recepción usa `modeloCompraVersion: 3` y
+`stockGestionadoPor: recepcion`; reintentar su confirmación no vuelve a sumar
+stock.
 
 Para productos legacy sin promedio, la primera Recepción valoriza el stock anterior con `costoPagado`, o con `costoBase` más su tasa configurada como fallback. Un producto sin adquisiciones continúa funcionando y muestra historial vacío.
