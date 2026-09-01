@@ -9,6 +9,18 @@ No es un sistema de facturación electrónica ni genera documentos tributarios.
 La asistencia con IA propone estructura y normalización, pero no define precios
 finales ni reemplaza la revisión humana.
 
+## Desarrollo de módulos / Student Baseline
+
+Los colaboradores que parten desde `student-baseline-20260901` deben trabajar
+exclusivamente en una feature branch y usar Firebase Emulator Suite. `npm run
+dev` apunta a datos reales; para desarrollo estudiantil se usan
+`npm run emulators:start` y `npm run dev:emulator`. No se autoriza desplegar ni
+modificar el Core sin revisión.
+
+- [Guía de inicio para estudiantes](docs/STUDENT_GETTING_STARTED.md)
+- [Contrato de desarrollo de módulos](docs/MODULE_DEVELOPMENT_CONTRACT.md)
+- [Workflow Git para estudiantes](docs/STUDENT_GIT_WORKFLOW.md)
+
 ## Alcance del MVP
 
 - Registro, inicio de sesión, verificación de correo y recuperación de
