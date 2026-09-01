@@ -64,22 +64,30 @@ válida con la OC quedan fuera de la propuesta aplicada.
 - Los movimientos nuevos usan `tipoOrigen: recepcion` y referencian recepción y OC.
 - Cada línea de producto crea además una adquisición inmutable en
   `adquisicionesInventario` con ID determinista `recepcionId__lineaId`.
-- La misma transacción actualiza stock, `costoPromedio`, `ultimoCosto` y
-  `ultimoProveedor`; costo y stock nunca quedan aplicados por separado.
+- Antes de esos efectos, la confirmación calcula el presupuesto atómico
+  compartido de 450 escrituras según líneas físicas, productos únicos y
+  documentos fijos. Un exceso se rechaza íntegramente; servicios y actividades
+  no cuentan como efectos físicos y la operación nunca se divide en batches.
+- La misma transacción actualiza stock, saldo perpetuo `valorInventario`,
+  `costoPromedio`, `ultimoCosto` y `ultimoProveedor`; cantidad y valor nunca
+  quedan aplicados por separado.
 - El promedio usa costo pagado unitario (neto tras descuento más impuesto de
   compra) y bloquea la mezcla con un promedio vigente en otra moneda.
 - El cliente no escribe directamente recepciones, contadores, idempotencia ni movimientos.
 
-El cálculo técnico vigente de `costoPromedio` y `ultimoCosto` se conserva como
-trazabilidad implementada. No resuelve por sí solo qué valor comercial debe
-destacarse al usuario como costo vigente; esa decisión de producto permanece
-pendiente de diseño conforme a la SPEC 016.
+`costoBase` conserva su significado comercial/manual y no se modifica. El
+detalle de Inventario distingue promedio vigente, último costo y ledger
+histórico; ninguno sustituye al costo congelado de Ventas o Proyectos.
 
 ## Compras y compatibilidad
 
 Una recepción nueva confirmada registra automáticamente una compra confirmada con las cantidades y valores de su snapshot. Functions enlaza Compra, Recepción, OC, adquisiciones y movimientos dentro de la misma transacción. La conversión manual se conserva únicamente para recepciones históricas confirmadas sin Compra.
 
-Una Compra confirmada puede revertirse completamente con motivo obligatorio. La reversión conserva OC, Recepción y Compra, crea movimientos compensatorios deterministas y marca la evidencia económica como revertida. Si el stock disponible de cualquier producto es menor que lo ingresado por esa Recepción, la transacción completa se bloquea.
+Una Compra confirmada puede revertirse completamente con motivo obligatorio. La
+reversión conserva OC, Recepción y Compra, resta hoy de Q/V el costo pagado
+original, crea movimientos compensatorios deterministas y marca cada adquisición
+como revertida. La transacción completa se bloquea por stock insuficiente, costo
+o moneda no demostrables, V negativo/inconsistente o residual con Q cero.
 
 La Compra directa V3 ya incorpora su propia entrada física al confirmar desde
 Nueva compra. Este flujo separado no permite introducir líneas ajenas ni superar
@@ -90,4 +98,7 @@ Toda Compra nueva producida por Recepción usa `modeloCompraVersion: 3` y
 `stockGestionadoPor: recepcion`; reintentar su confirmación no vuelve a sumar
 stock.
 
-Para productos legacy sin promedio, la primera Recepción valoriza el stock anterior con `costoPagado`, o con `costoBase` más su tasa configurada como fallback. Un producto sin adquisiciones continúa funcionando y muestra historial vacío.
+Para productos legacy, la primera mutación económica usa primero un promedio
+válido y luego el fallback `costoPagado` o `costoBase` con la tasa configurada.
+Persiste metadata mínima del baseline sin crear una adquisición falsa. Un
+producto sin adquisiciones continúa funcionando y muestra historial vacío.

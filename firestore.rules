@@ -307,6 +307,10 @@ service cloud.firestore {
 
     function hasNoInventoryAcquisitionFields() {
       return !request.resource.data.keys().hasAny([
+        "modeloCostoInventarioVersion",
+        "valorInventario",
+        "valorInventarioMoneda",
+        "baselineCostoInventario",
         "costoPromedio",
         "costoPromedioMoneda",
         "ultimoCosto",
@@ -320,6 +324,10 @@ service cloud.firestore {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
         "estado",
         "stock",
+        "modeloCostoInventarioVersion",
+        "valorInventario",
+        "valorInventarioMoneda",
+        "baselineCostoInventario",
         "costoPromedio",
         "costoPromedioMoneda",
         "ultimoCosto",

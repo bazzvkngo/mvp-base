@@ -1,6 +1,14 @@
 const { createHash } = require("node:crypto");
 const {INVENTORY_WRITE_ROLES} = require("./rbac");
 const {formatChileanRut} = require("./fiscalIdentifier");
+const {normalizeBusinessLocalization} = require("./localization");
+const {
+  INVENTORY_ECONOMIC_MODEL_VERSION,
+  applyInventoryAverageStockAdjustment,
+  assertCanonicalInventoryQuantity,
+  inventoryEconomicFields,
+  resolveInventoryEconomicState,
+} = require("./inventoryAcquisition");
 
 const INVENTORY_MODEL_VERSION = 2;
 const INVENTORY_PRICE_FORMATION_VERSION = 2;
@@ -396,9 +404,13 @@ function validateInventoryItemInput(
     const modelo = safeText(source.modelo, 100);
     if (marca) result.marca = marca;
     if (modelo) result.modelo = modelo;
-    result.stock = toFiniteNumber(source.stock ?? 0, "El stock actual", HttpsError, {
-      allowNegative: allowNegativeStock,
-    });
+    result.stock = assertCanonicalInventoryQuantity(
+      toFiniteNumber(source.stock ?? 0, "El stock actual", HttpsError, {
+        allowNegative: allowNegativeStock,
+      }),
+      HttpsError,
+      "El stock actual"
+    );
     result.stockMinimo = toFiniteNumber(
       source.stockMinimo ?? 0,
       "El stock mínimo",
@@ -1112,11 +1124,12 @@ async function updateInventoryItemHandler(
     : null;
 
   return db.runTransaction(async (transaction) => {
-    const [requestSnapshot, itemSnapshot, areaSnapshot, categorySnapshot,
+    const [requestSnapshot, itemSnapshot, businessSnapshot, areaSnapshot, categorySnapshot,
       nextBarcodeKeySnapshot] =
       await Promise.all([
         transaction.get(requestRef),
         transaction.get(itemRef),
+        transaction.get(businessRef),
         areaRef ? transaction.get(areaRef) : Promise.resolve(null),
         categoryRef ? transaction.get(categoryRef) : Promise.resolve(null),
         nextBarcodeKeyRef
@@ -1198,13 +1211,28 @@ async function updateInventoryItemHandler(
     }
     const stockChanged = item.tipoItem === "producto" &&
       stockPosterior !== stockAnterior;
+    const economicAdjustment = stockChanged
+      ? applyInventoryAverageStockAdjustment(
+        resolveInventoryEconomicState({
+          item: current,
+          operationCurrency: normalizeBusinessLocalization(
+            businessSnapshot?.data() || {}
+          ).monedaCodigo,
+        }, HttpsError),
+        stockPosterior - stockAnterior,
+        HttpsError
+      )
+      : null;
     const update = {
       ...inventoryEditableUpdate(
         item,
         categorySnapshot?.data()?.nombre || "",
         FieldValue
       ),
-      ...(stockChanged ? {stock: stockPosterior} : {}),
+      ...(stockChanged ? {
+        stock: economicAdjustment.next.stock,
+        ...inventoryEconomicFields(economicAdjustment.next, timestamp),
+      } : {}),
       actualizadoPorUid: uid,
       actualizadoEn: timestamp,
     };
@@ -1240,7 +1268,15 @@ async function updateInventoryItemHandler(
         cantidad: Math.abs(delta),
         diferenciaStock: delta,
         stockAnterior,
-        stockPosterior,
+        stockPosterior: economicAdjustment.next.stock,
+        costoUnitarioAplicado: economicAdjustment.unitCost,
+        costoTotal: Math.abs(economicAdjustment.valueDelta),
+        valorInventarioAnterior: economicAdjustment.previous.value,
+        valorInventarioPosterior: economicAdjustment.next.value,
+        costoPromedioAnterior: economicAdjustment.previous.average,
+        costoPromedioPosterior: economicAdjustment.next.average,
+        moneda: economicAdjustment.next.currency,
+        modeloEconomiaInventarioVersion: INVENTORY_ECONOMIC_MODEL_VERSION,
         motivo: "Ajuste manual desde Inventario",
         productoSnapshot: {
           codigoInterno: safeText(current.codigoInterno || current.sku, 80),

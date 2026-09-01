@@ -575,11 +575,12 @@ function ItemDetail({ acquisitions, acquisitionsState, areas, cannotWrite, categ
       <Detail label="Categoría" value={getInventoryCategoryLabel(adapted, categories)} />
       <Detail label="Unidad" value={adapted.unidad} />
       {adapted.tipoItem === "producto" ? <>
-        <Detail label="Costo unitario neto" value={formatCLP(adapted.costoBase)} />
+        <Detail label="Costo base / manual" value={formatCLP(adapted.costoBase)} />
         <Detail label="IVA de compra" value={`${adapted.tasaImpuestoCompra}% · ${formatCLP(adapted.montoImpuestoCompra)}`} />
         <Detail label="Costo pagado" value={formatCLP(adapted.costoPagado)} />
         {showCosts && <Detail label="Costo promedio" value={adapted.costoPromedio === null ? "Sin adquisiciones" : formatMoney(adapted.costoPromedio, currency)} />}
         {showCosts && <Detail label="Último costo" value={adapted.ultimoCosto === null ? "Sin adquisiciones" : formatMoney(adapted.ultimoCosto, currency)} />}
+        {showCosts && adapted.valorInventario !== null && <Detail label="Valor vigente del stock" value={formatMoney(adapted.valorInventario, adapted.valorInventarioMoneda || currency)} />}
         {showCosts && <Detail label="Último proveedor" value={providerName} />}
         <Detail label="Recargo" value={`${adapted.margenDeseado}%`} />
         <Detail label="Precio sugerido" value={formatCLP(adapted.precioCalculado)} />
@@ -599,13 +600,24 @@ function ItemDetail({ acquisitions, acquisitionsState, areas, cannotWrite, categ
 function AcquisitionHistory({ acquisitions, state }) {
   return <section className="inventory-acquisition-history">
     <h3>Historial de adquisiciones</h3>
-    {state.loading ? <p>Cargando adquisiciones…</p> : state.error ? <p className="inventory-feedback inventory-feedback--error">{state.error}</p> : acquisitions.length === 0 ? <p>Este producto aún no tiene adquisiciones registradas desde Recepción.</p> : <div className="inventory-acquisition-list">{acquisitions.map((entry) => {
+    {state.loading ? <p>Cargando adquisiciones…</p> : state.error ? <p className="inventory-feedback inventory-feedback--error">{state.error}</p> : acquisitions.length === 0 ? <p>Este producto aún no tiene adquisiciones registradas.</p> : <div className="inventory-acquisition-list">{acquisitions.map((entry) => {
       const provider = entry.proveedorSnapshot?.razonSocial || "Proveedor no informado";
       const chain = [entry.ordenCompraNumero, entry.recepcionNumero, entry.compraNumero].filter(Boolean).join(" · ");
+      const active = entry.estado !== "revertida";
+      const origin = entry.origen === "compra_directa" || (!entry.recepcionId && entry.compraId)
+        ? "Compra directa"
+        : "Recepción";
+      const hasAverageTransition = entry.costoPromedioAnterior != null && entry.costoPromedioPosterior != null &&
+        Number.isFinite(Number(entry.costoPromedioAnterior)) && Number.isFinite(Number(entry.costoPromedioPosterior));
+      const hasValueTransition = entry.valorInventarioAnterior != null && entry.valorInventarioPosterior != null &&
+        Number.isFinite(Number(entry.valorInventarioAnterior)) && Number.isFinite(Number(entry.valorInventarioPosterior));
       return <article key={entry.id}>
-        <div><strong>{formatDate(entry.fechaAdquisicion)}</strong><span>{provider}</span></div>
+        <div><strong>{formatDate(entry.fechaAdquisicion)}</strong><span>{active ? "Vigente" : "Revertida"}</span></div>
+        <div><strong>{origin}</strong><span>{provider}</span></div>
         <div><strong>{entry.cantidad} {entry.productoSnapshot?.unidad || "unidad"}</strong><span>{formatMoney(entry.costoPagadoUnitario, entry.moneda)} c/u · {formatMoney(entry.costoPagadoTotal, entry.moneda)} total</span></div>
-        <small>{chain || "Origen documental no informado"} · UID {entry.registradoPorUid || "no informado"}</small>
+        {hasAverageTransition && <small>Promedio: {formatMoney(entry.costoPromedioAnterior, entry.moneda)} → {formatMoney(entry.costoPromedioPosterior, entry.moneda)}</small>}
+        {hasValueTransition && <small>Valor de inventario: {formatMoney(entry.valorInventarioAnterior, entry.moneda)} → {formatMoney(entry.valorInventarioPosterior, entry.moneda)}</small>}
+        <small>{chain || entry.numeroDocumentoProveedor || "Origen documental no informado"} · UID {entry.registradoPorUid || "no informado"}</small>
       </article>;
     })}</div>}
   </section>;

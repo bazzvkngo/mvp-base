@@ -3,6 +3,13 @@ const {
   WORK_MANAGEMENT_ROLES,
   WORK_OPERATION_ROLES,
 } = require("./rbac");
+const {
+  INVENTORY_ECONOMIC_MODEL_VERSION,
+  applyInventoryCostedOutflow,
+  applyInventoryEconomicDelta,
+  inventoryEconomicFields,
+  resolveInventoryEconomicState,
+} = require("./inventoryAcquisition");
 
 const WORK_MODEL_VERSION = 2;
 const WORK_FILE_MODEL_VERSION = 1;
@@ -1383,14 +1390,20 @@ async function registrarSalidaMaterialTrabajoHandler(request, dependencies) {
     if (!businessSnapshot.exists) fail(HttpsError, "failed-precondition", "El negocio seleccionado no est\u00e1 disponible.");
     const item = assertInventoryProduct(itemSnapshot, context.businessId, HttpsError, {requireActive: true});
     if (item.stock < cantidad) fail(HttpsError, "failed-precondition", "No hay stock suficiente para registrar la salida.");
-    const {costoUnitario, costoFuente} = authoritativeInventoryCost(item, HttpsError);
-    const costoTotal = roundMoney(cantidad * costoUnitario);
-    if (!Number.isFinite(costoTotal) || costoTotal > 999999999999.99) fail(HttpsError, "invalid-argument", "El costo total del material est\u00e1 fuera del rango permitido.");
     const moneda = workCurrency(work, businessSnapshot.data() || {}, HttpsError);
-    const stockPosterior = roundMoney(item.stock - cantidad);
+    const previousEconomic = resolveInventoryEconomicState({item, operationCurrency: moneda}, HttpsError);
+    const {costoUnitario, costoFuente} = authoritativeInventoryCost({...item, costoPromedio: previousEconomic.average}, HttpsError);
+    const outflow = applyInventoryCostedOutflow(previousEconomic, {
+      cantidad,
+      costoUnitario,
+    }, HttpsError);
+    const costoTotal = outflow.costoTotal;
+    if (!Number.isFinite(costoTotal) || costoTotal > 999999999999.99) fail(HttpsError, "invalid-argument", "El costo total del material est\u00e1 fuera del rango permitido.");
+    const nextEconomic = outflow.next;
+    const stockPosterior = nextEconomic.stock;
     const timestamp = FieldValue.serverTimestamp();
     const snapshot = productSnapshot(item, itemId);
-    transaction.update(itemRef, {stock: stockPosterior, actualizadoEn: timestamp, actualizadoPorUid: context.uid});
+    transaction.update(itemRef, {stock: stockPosterior, ...inventoryEconomicFields(nextEconomic, timestamp), actualizadoEn: timestamp, actualizadoPorUid: context.uid});
     transaction.create(movementRef, {
       modeloMovimientoProyectoVersion: WORK_MATERIAL_MODEL_VERSION,
       movimientoId: movementRef.id,
@@ -1406,6 +1419,11 @@ async function registrarSalidaMaterialTrabajoHandler(request, dependencies) {
       moneda,
       stockAnterior: item.stock,
       stockPosterior,
+      valorInventarioAnterior: previousEconomic.value,
+      valorInventarioPosterior: nextEconomic.value,
+      costoPromedioAnterior: previousEconomic.average,
+      costoPromedioPosterior: nextEconomic.average,
+      modeloEconomiaInventarioVersion: INVENTORY_ECONOMIC_MODEL_VERSION,
       movimientoOrigenId: null,
       productoSnapshot: snapshot,
       usuarioUid: context.uid,
@@ -1464,9 +1482,12 @@ async function registrarDevolucionMaterialTrabajoHandler(request, dependencies) 
     if (!Number.isFinite(costoUnitario) || costoUnitario < 0 || !Number.isFinite(originCost) || originCost < 0 || !Number.isFinite(returnedCost) || returnedCost < 0) fail(HttpsError, "failed-precondition", "La salida no tiene un costo congelado v\u00e1lido.");
     const isFinalReturn = Math.abs(cantidad - remainingQuantity) < 0.001;
     const costoTotal = isFinalReturn ? roundMoney(originCost - returnedCost) : roundMoney(cantidad * costoUnitario);
-    const stockPosterior = roundMoney(item.stock + cantidad);
+    const moneda = String(origin.moneda || work.moneda || "").trim().toUpperCase();
+    const previousEconomic = resolveInventoryEconomicState({item, operationCurrency: moneda}, HttpsError);
+    const nextEconomic = applyInventoryEconomicDelta(previousEconomic, {quantityDelta: cantidad, valueDelta: costoTotal}, HttpsError);
+    const stockPosterior = nextEconomic.stock;
     const timestamp = FieldValue.serverTimestamp();
-    transaction.update(itemRef, {stock: stockPosterior, actualizadoEn: timestamp, actualizadoPorUid: context.uid});
+    transaction.update(itemRef, {stock: stockPosterior, ...inventoryEconomicFields(nextEconomic, timestamp), actualizadoEn: timestamp, actualizadoPorUid: context.uid});
     transaction.create(movementRef, {
       modeloMovimientoProyectoVersion: WORK_MATERIAL_MODEL_VERSION,
       movimientoId: movementRef.id,
@@ -1479,9 +1500,14 @@ async function registrarDevolucionMaterialTrabajoHandler(request, dependencies) 
       costoUnitario,
       costoTotal,
       costoFuente: String(origin.costoFuente || "salida_congelada"),
-      moneda: String(origin.moneda || work.moneda || "").trim().toUpperCase(),
+      moneda,
       stockAnterior: item.stock,
       stockPosterior,
+      valorInventarioAnterior: previousEconomic.value,
+      valorInventarioPosterior: nextEconomic.value,
+      costoPromedioAnterior: previousEconomic.average,
+      costoPromedioPosterior: nextEconomic.average,
+      modeloEconomiaInventarioVersion: INVENTORY_ECONOMIC_MODEL_VERSION,
       movimientoOrigenId: originMovementId,
       productoSnapshot: origin.productoSnapshot || productSnapshot(item, origin.itemId),
       usuarioUid: context.uid,

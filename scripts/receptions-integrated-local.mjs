@@ -81,6 +81,14 @@ try {
     documentoLineas: [{nombre: line.nombre, codigo: line.tipoItem === "producto" ? "SKU-A" : "SV-A", unidad: line.unidad, cantidad: line.tipoItem === "producto" ? 4 : 1, costoUnitario: line.tipoItem === "producto" ? 1200 : 750, descuentoPct: 0}],
   }));
   const documentoOrigen = {origen: "importador_documental", nombreArchivo: "factura-sintetica.pdf", tipoArchivo: "application/pdf", extension: "pdf", tamanoBytes: 2048, tipoDocumento: "factura", numeroDocumento: "QA-123", fechaDocumento: "2026-08-13", fechaVencimiento: "2026-09-13", condicionesPago: "30 dias", lineasDetectadas: 3, lineasAplicadas: 2, advertencias: ["Fixture sintetico"]};
+  const invalidPrecisionItems = firstItems.map((line) => line.lineaId === "product-line"
+    ? {...line, cantidad: 1.0000004, costoUnitario: 100000000}
+    : line);
+  await rejected("cantidad fÃ­sica no canÃ³nica en RecepciÃ³n", () => call(owner, "actualizarRecepcionBorrador")({businessId, recepcionId: first.data.recepcion.id, recepcion: {fechaRecepcion: "2026-08-14", observaciones: "Cantidad invÃ¡lida", items: invalidPrecisionItems}}), ["failed-precondition"]);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data().stock, 0);
+  assert.equal((await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("recepcionId", "==", first.data.recepcion.id).get()).size, 0);
+  assert.equal((await adminDb.collection(`negocios/${businessId}/adquisicionesInventario`).where("recepcionId", "==", first.data.recepcion.id).get()).size, 0);
+  assert.equal((await adminDb.collection(`negocios/${businessId}/compras`).where("recepcionId", "==", first.data.recepcion.id).get()).size, 0);
   await call(owner, "actualizarRecepcionBorrador")({businessId, recepcionId: first.data.recepcion.id, recepcion: {fechaRecepcion: "2026-08-14", observaciones: "Parcial", documentoOrigen, items: firstItems}});
   const importedDraft = (await adminDb.doc(`negocios/${businessId}/recepciones/${first.data.recepcion.id}`).get()).data();
   assert.equal(importedDraft.documentoOrigen.nombreArchivo, "factura-sintetica.pdf");
@@ -101,6 +109,7 @@ try {
   assert.equal(confirmed.data.compra.items.find((line) => line.tipoItem === "servicio").cantidad, 1);
   const productAfterFirst = (await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data();
   assert.equal(productAfterFirst.stock, 4);
+  assert.equal(productAfterFirst.valorInventario, 5712);
   assert.equal(productAfterFirst.costoPromedio, 1428);
   assert.equal(productAfterFirst.ultimoCosto, 1428);
   assert.equal(productAfterFirst.ultimoProveedor.razonSocial, provider.razonSocial);
@@ -110,6 +119,10 @@ try {
   const firstAcquisitions = await adminDb.collection(`negocios/${businessId}/adquisicionesInventario`).where("recepcionId", "==", first.data.recepcion.id).get();
   assert.equal(firstAcquisitions.size, 1);
   assert.equal(firstAcquisitions.docs[0].data().costoPagadoTotal, 5712);
+  assert.equal(firstAcquisitions.docs[0].data().estado, "vigente");
+  assert.equal(firstAcquisitions.docs[0].data().origen, "recepcion");
+  assert.equal(firstAcquisitions.docs[0].data().valorInventarioAnterior, 0);
+  assert.equal(firstAcquisitions.docs[0].data().valorInventarioPosterior, 5712);
   assert.equal(firstAcquisitions.docs[0].data().proveedorId, providerId);
   assert.equal(firstAcquisitions.docs[0].data().ordenCompraId, orderId);
   assert.equal(firstAcquisitions.docs[0].data().compraId, confirmed.data.compra.id);
@@ -129,7 +142,10 @@ try {
   const second = await call(owner, "crearRecepcionDesdeOrden")({businessId, ordenCompraId: orderId, requestId: requestId("create-second")});
   assert.equal(second.data.recepcion.items.find((line) => line.tipoItem === "producto").cantidad, 6);
   const secondConfirmed = await call(owner, "confirmarRecepcion")({businessId, recepcionId: second.data.recepcion.id, requestId: requestId("confirm-second")});
-  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data().stock, 10);
+  const productAfterSecondReception = (await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data();
+  assert.equal(productAfterSecondReception.stock, 10);
+  assert.equal(productAfterSecondReception.valorInventario, 12852);
+  assert.equal(productAfterSecondReception.costoPromedio, 1285.2);
   assert.equal(secondConfirmed.data.compra.estado, "confirmada");
   assert.equal(secondConfirmed.data.compra.items.find((line) => line.tipoItem === "producto").cantidad, 6);
   assert.notEqual(secondConfirmed.data.compra.id, confirmed.data.compra.id);
@@ -149,7 +165,12 @@ try {
   assert.equal(reversed.data.compra.estado, "revertida");
   assert.equal(reversedRetry.data.idempotent, true);
   assert.equal(reversedOtherRetry.data.idempotent, true);
-  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data().stock, 6);
+  const productAfterFirstReversal = (await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data();
+  assert.equal(productAfterFirstReversal.stock, 6);
+  assert.equal(productAfterFirstReversal.valorInventario, 7140);
+  assert.equal(productAfterFirstReversal.costoPromedio, 1190);
+  assert.equal(productAfterFirstReversal.ultimoCosto, 1190);
+  assert.equal(firstAcquisitions.docs[0].ref ? (await firstAcquisitions.docs[0].ref.get()).data().estado : "", "revertida");
   const reversalMovements = await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("compraId", "==", confirmed.data.compra.id).get();
   assert.equal(reversalMovements.docs.filter((entry) => entry.data().tipo === "salida_reversion_compra").length, 1);
   const originalReception = (await adminDb.doc(`negocios/${businessId}/recepciones/${first.data.recepcion.id}`).get()).data();
@@ -168,8 +189,9 @@ try {
   await call(owner, "confirmarRecepcion")({businessId, recepcionId: averageReception.data.recepcion.id, requestId: requestId("average-confirm")});
   const productAfterSecondCost = (await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data();
   assert.equal(productAfterSecondCost.stock, 7);
+  assert.equal(productAfterSecondCost.valorInventario, 8568);
   assert.equal(productAfterSecondCost.ultimoCosto, 1428);
-  assert.equal(productAfterSecondCost.costoPromedio, 1305.6);
+  assert.equal(productAfterSecondCost.costoPromedio, 1224);
   console.log("OK segunda adquisición recalcula costo promedio ponderado");
 
   const incompatibleOrderId = `currency-${RUN_ID}`; await seedOrder(incompatibleOrderId, 1, "pendiente", 1000, "USD");

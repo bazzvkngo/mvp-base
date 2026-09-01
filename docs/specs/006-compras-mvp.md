@@ -81,7 +81,19 @@ económicas diferentes; no existe una regla general `una OC = una Compra`.
 
 ## Reversión
 
-`revertirCompra` exige un rol de escritura autorizado por el RBAC de Compras, motivo y `requestId`. Una transacción marca la Compra `revertida`, conserva sus documentos de origen y genera una salida compensatoria determinista por cada entrada física asociada. `purchaseReversalRequests` y el estado final impiden dobles descuentos. La Recepción permanece `confirmada` y evidencia el estado revertido de su Compra. Si cualquier producto no dispone de toda la cantidad original, la reversión completa se rechaza sin escrituras parciales ni stock negativo. No existen reversiones parciales en V1.
+`revertirCompra` exige un rol de escritura autorizado por el RBAC de Compras,
+motivo y `requestId`. Una transacción marca la Compra y sus adquisiciones como
+`revertida`, conserva sus documentos de origen y genera una única salida
+compensatoria determinista por cada entrada física. El efecto económico actual
+resta la cantidad y el costo pagado total original de la adquisición; no hace
+replay ni reescribe snapshots históricos de Ventas o Proyectos.
+`purchaseReversalRequests` y el estado final impiden dobles descuentos. La
+Recepción permanece `confirmada` y evidencia el estado revertido de su Compra.
+Se bloquea íntegramente por stock insuficiente, costo original no demostrable,
+moneda incompatible, saldo negativo/inconsistente o valor residual con stock
+cero. Si se revierte la última adquisición, el resumen vuelve a la anterior
+vigente sólo cuando su cronología es demostrable; en caso contrario se limpia a
+`null`. No existen reversiones parciales en V1.
 
 La Callable legacy `crearCompraDesdeOrden` se conserva como compatibilidad controlada:
 
@@ -114,7 +126,13 @@ total = neto + iva
 
 Cantidad debe ser finita y mayor que cero; costo finito y no negativo; descuento finito entre 0 y 100. Los montos persistidos deben ser enteros seguros de JavaScript. Functions recalcula todo e ignora totales manipulados.
 
-Una compra admite como máximo 200 líneas. Este límite mantiene la confirmación completa bajo el máximo práctico de escrituras de una sola transacción sin dividir la atomicidad.
+Una compra admite como máximo 200 líneas de documento. La confirmación y la
+reversión calculan además, antes de aplicar efectos, un presupuesto atómico
+compartido de 450 escrituras: cuentan movimientos, adquisiciones, productos
+únicos y documentos fijos. Servicios y actividades no consumen presupuesto de
+efectos físicos. Si las líneas físicas requieren más escrituras, la operación
+completa falla con `failed-precondition`; no se divide en batches ni deja stock,
+ledger o requests parciales.
 
 ## Confirmación y stock
 
@@ -124,10 +142,15 @@ Para una Compra V3 directa, confirmar ejecuta una sola transacción:
 - rechaza un origen documental con líneas todavía sin resolver;
 - incrementa únicamente productos y crea movimientos deterministas
   `entrada_compra` con `tipoOrigen: compra_directa`;
+- aplica el mismo cálculo de adquisición que Recepción, suma el costo pagado al
+  saldo perpetuo de valor, recalcula el promedio y crea
+  `adquisicionesInventario/{compraId__lineaId}` con estado `vigente`;
+- actualiza último costo, proveedor y última adquisición sin inventar OC o
+  Recepción;
 - confirma el documento y marca `stockAplicado: true` sólo cuando existen
   productos cuya entrada fue aplicada; una compra compuesta únicamente por
   servicios/actividades conserva `stockAplicado: false`;
-- no actualiza `costoBase`, promedio, último costo ni adquisiciones.
+- no actualiza `costoBase`, `costoPagado` comercial, margen ni precio de venta.
 
 Una Compra V3 con `stockGestionadoPor: recepcion` no suma stock ni crea un
 segundo movimiento: la Recepción ya registró `entrada_recepcion`, adquisición y
@@ -136,7 +159,9 @@ ruta histórica `entrada_compra`.
 
 La idempotencia tiene doble defensa: `purchaseConfirmRequests/{requestId}` protege reintentos de transporte y el propio estado `confirmada`/`stockAplicado` impide aplicar stock otra vez con un request diferente. Las transacciones de inventario preservan incrementos concurrentes.
 
-Cada movimiento guarda negocio, producto, compra, número, cantidad, stock anterior/posterior, snapshot mínimo, autoría y timestamp. No existe edición ni eliminación cliente de movimientos.
+Cada movimiento guarda negocio, producto, compra, número, cantidad, stock y
+valor anterior/posterior, costo promedio, moneda, snapshot mínimo, autoría y
+timestamp. No existe edición ni eliminación cliente de movimientos.
 
 ## Estados y permisos
 
@@ -196,10 +221,11 @@ No se implementan:
 `purchase-model-smoke.mjs` cubre cálculos, overflow, payload mínimo, máximo de 200 líneas en frontend/backend, adaptación, búsqueda, roles y presencia de defensas backend/rules.
 
 `purchases-integrated-local.mjs` cubre V3 directa sin stock al crear/editar,
-entrada de productos al confirmar, exclusión de servicios/actividades,
+entrada económica de productos al confirmar, adquisición y promedio, exclusión de servicios/actividades,
 `stockAplicado: false` cuando no existen productos, reversión compensatoria,
 movimientos, MEMBER, aislamiento, reintentos, concurrencia, rollback, documento
-incompleto, costos maestros intactos y compatibilidad V1/V2.
+incompleto, costo base intacto, reversión segura de Q/V, snapshots de Venta,
+moneda y compatibilidad V1/V2.
 
 `purchase-document-import-smoke.mjs` cubre match fiscal/nombre de proveedor,
 barcode/código interno/nombre de líneas, revisión manual, bloqueo de líneas sin
@@ -218,6 +244,8 @@ La aceptación requiere además regresiones de Órdenes de Compra, Inventario, P
 - Varias Recepciones parciales de una OC pueden producir Compras distintas sin superponerse con una Compra legacy por la OC completa.
 - Confirmar una Compra V3 directa incrementa productos una sola vez; una V3 de
   Recepción no duplica la entrada y V1/V2 preservan su semántica.
+- La Compra directa mantiene Q/V, promedio, último costo y ledger con el mismo
+  algoritmo económico que Recepción.
 - Reintentos y concurrencia no duplican ni pierden stock.
 - Un fallo revierte la confirmación completa.
 - No se modifica `costoBase` ni se crean efectos financieros.

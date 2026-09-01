@@ -81,6 +81,8 @@ try {
 
   const providerId = `provider-${RUN_ID}`; const providerBId = `provider-b-${RUN_ID}`; const providerOtherId = `provider-other-${RUN_ID}`;
   const productA = `product-a-${RUN_ID}`; const productB = `product-b-${RUN_ID}`;
+  const economicProduct = `economic-product-${RUN_ID}`; const negativeValueProduct = `negative-value-${RUN_ID}`; const residualValueProduct = `residual-value-${RUN_ID}`; const fxProduct = `fx-product-${RUN_ID}`; const zeroFxProduct = `zero-fx-product-${RUN_ID}`;
+  const economicClientId = `economic-client-${RUN_ID}`;
   const serviceId = `service-${RUN_ID}`; const activityId = `activity-${RUN_ID}`;
   const inactiveProduct = `inactive-${RUN_ID}`; const crossItem = `cross-${RUN_ID}`;
   const providerFixture = {proveedorId: providerId, negocioId: businessId, estado: "activo", rut: "76.000.000-0", razonSocial: "Proveedor Autoritativo SpA", email: "proveedor@example.test", condicionesPago: "crédito"};
@@ -92,6 +94,13 @@ try {
     adminDb.doc(`negocios/${businessId}/proveedores/${providerOtherId}`).set({...providerFixture, proveedorId: providerOtherId, negocioId: otherBusinessId}),
     adminDb.doc(`negocios/${businessId}/inventario/${productA}`).set(itemFixture(productA, "producto", "Producto A", 8)),
     adminDb.doc(`negocios/${businessId}/inventario/${productB}`).set(itemFixture(productB, "producto", "Producto B", 3)),
+    adminDb.doc(`negocios/${businessId}/inventario/${economicProduct}`).set({...itemFixture(economicProduct, "producto", "Producto económico", 10), costoBase: 100, costoPromedio: 100, costoPromedioMoneda: "CLP"}),
+    adminDb.doc(`negocios/${businessId}/inventario/${negativeValueProduct}`).set({...itemFixture(negativeValueProduct, "producto", "Producto valor negativo", 0), costoBase: 100}),
+    adminDb.doc(`negocios/${businessId}/inventario/${residualValueProduct}`).set({...itemFixture(residualValueProduct, "producto", "Producto valor residual", 0), costoBase: 100}),
+    adminDb.doc(`negocios/${businessId}/inventario/${fxProduct}`).set({...itemFixture(fxProduct, "producto", "Producto otra moneda", 1), costoBase: 100, costoPromedio: 100, costoPromedioMoneda: "USD"}),
+    adminDb.doc(`negocios/${businessId}/inventario/${zeroFxProduct}`).set({...itemFixture(zeroFxProduct, "producto", "Producto saldo cero otra moneda", 0), modeloCostoInventarioVersion: 1, valorInventario: 0, valorInventarioMoneda: "USD", costoPromedio: null, costoPromedioMoneda: "USD", baselineCostoInventario: {costoUnitarioInicial: 25, fuente: "costoBase", moneda: "USD", stockInicial: 0, valorInicial: 0}}),
+    adminDb.doc(`negocios/${businessId}/adquisicionesInventario/old-usd-${RUN_ID}`).set({adquisicionId: `old-usd-${RUN_ID}`, negocioId: businessId, itemId: zeroFxProduct, estado: "vigente", origen: "compra_directa", costoPagadoUnitario: 25, costoPagadoTotal: 25, cantidad: 1, moneda: "USD", proveedorSnapshot: {razonSocial: "Proveedor histórico USD"}, creadoEn: new Date("2026-01-01T00:00:00.000Z")}),
+    adminDb.doc(`negocios/${businessId}/clientes/${economicClientId}`).set({clienteId: economicClientId, negocioId: businessId, estado: "activo", tipoCliente: "empresa", rut: "76.111.111-1", nombreRazonSocial: "Cliente económico SpA", email: "economia@example.test"}),
     adminDb.doc(`negocios/${businessId}/inventario/${serviceId}`).set(itemFixture(serviceId, "servicio", "Servicio técnico")),
     adminDb.doc(`negocios/${businessId}/inventario/${activityId}`).set(itemFixture(activityId, "actividad", "Actividad")),
     adminDb.doc(`negocios/${businessId}/inventario/${inactiveProduct}`).set({...itemFixture(inactiveProduct, "producto", "Producto histórico", 4), estado: "archivado"}),
@@ -115,6 +124,13 @@ try {
   assert.equal(ownerRetry.data.compra.id, ownerCreated.data.compra.id);
   assert.equal(ownerRetry.data.idempotent, true);
   console.log("OK compra directa OWNER, autoridad e idempotencia de creación");
+
+  const purchasesBeforeNonCanonical = (await adminDb.collection(`negocios/${businessId}/compras`).get()).size;
+  await expectCallableError("cantidad fÃ­sica no canÃ³nica en Compra", () => call(owner, "crearCompra")({businessId, requestId: requestId("noncanonical-create"), compra: purchasePayload(providerId, [line(productA, "noncanonical-line", {cantidad: 1.0000004, costoUnitario: 100000000})])}), ["failed-precondition"]);
+  assert.equal((await adminDb.collection(`negocios/${businessId}/compras`).get()).size, purchasesBeforeNonCanonical);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock, 8);
+  assert.equal((await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("itemId", "==", productA).get()).size, 0);
+  console.log("OK cantidad fÃ­sica de Compra falla cerrada sin documento ni efectos parciales");
 
   const otherCreated = await call(outsider, "crearCompra")({businessId: otherBusinessId, requestId: requestId("other-create"), compra: purchasePayload(providerOtherId, [line(productA, "other-line")])});
   assert.equal(otherCreated.data.compra.numero, "COM-2026-0001");
@@ -163,13 +179,23 @@ try {
   const confirmId = requestId("confirm-main");
   const confirmed = await call(owner, "confirmarCompra")({businessId, compraId: ownerCreated.data.compra.id, requestId: confirmId});
   assert.equal(confirmed.data.compra.estado, "confirmada"); assert.equal(confirmed.data.compra.stockAplicado, true);
-  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock, beforeProduct.stock + 2);
-  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().costoBase, 777);
+  const productAfterDirectPurchase = (await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data();
+  assert.equal(productAfterDirectPurchase.stock, beforeProduct.stock + 2);
+  assert.equal(productAfterDirectPurchase.valorInventario, 26565);
+  assert.equal(productAfterDirectPurchase.costoPromedio, 2656.5);
+  assert.equal(productAfterDirectPurchase.ultimoCosto, 10174.5);
+  assert.equal(productAfterDirectPurchase.costoBase, 777);
   assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${serviceId}`).get()).data().stock, undefined);
   assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${activityId}`).get()).data().stock, undefined);
   const movements = await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("compraId", "==", ownerCreated.data.compra.id).get();
   assert.equal(movements.size, 1); assert.equal(movements.docs[0].data().tipo, "entrada_compra"); assert.equal(movements.docs[0].data().tipoOrigen, "compra_directa");
   assert.equal(movements.docs[0].data().cantidad, 2); assert.equal(movements.docs[0].data().stockAnterior, 8); assert.equal(movements.docs[0].data().stockPosterior, 10);
+  const directAcquisition = (await adminDb.doc(`negocios/${businessId}/adquisicionesInventario/${ownerCreated.data.compra.id}__line-main`).get()).data();
+  assert.equal(directAcquisition.estado, "vigente");
+  assert.equal(directAcquisition.origen, "compra_directa");
+  assert.equal(directAcquisition.costoPagadoTotal, 20349);
+  assert.equal(directAcquisition.recepcionId, undefined);
+  assert.equal(directAcquisition.ordenCompraId, undefined);
   const retrySame = await call(owner, "confirmarCompra")({businessId, compraId: ownerCreated.data.compra.id, requestId: confirmId});
   const retryOther = await call(owner, "confirmarCompra")({businessId, compraId: ownerCreated.data.compra.id, requestId: requestId("confirm-main-other")});
   assert.equal(retrySame.data.idempotent, true); assert.equal(retryOther.data.idempotent, true);
@@ -179,7 +205,12 @@ try {
   const reversalId = requestId("reverse-main");
   const reversed = await call(owner, "revertirCompra")({businessId, compraId: ownerCreated.data.compra.id, motivo: "Validar reversión V3 directa", requestId: reversalId});
   assert.equal(reversed.data.compra.estado, "revertida"); assert.equal(reversed.data.productosRevertidos, 1);
-  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock, beforeProduct.stock);
+  const productAfterDirectReversal = (await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data();
+  assert.equal(productAfterDirectReversal.stock, beforeProduct.stock);
+  assert.equal(productAfterDirectReversal.valorInventario, 6216);
+  assert.equal(productAfterDirectReversal.costoPromedio, 777);
+  assert.equal(productAfterDirectReversal.ultimoCosto, null);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/adquisicionesInventario/${ownerCreated.data.compra.id}__line-main`).get()).data().estado, "revertida");
   let reversedMovements = await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("compraId", "==", ownerCreated.data.compra.id).get();
   assert.equal(reversedMovements.size, 2);
   assert.equal(reversedMovements.docs.filter((document) => document.data().tipo === "salida_reversion_compra").length, 1);
@@ -189,6 +220,56 @@ try {
   assert.equal(reversedMovements.size, 2);
   assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock, beforeProduct.stock);
   console.log("OK reversión V3 directa: stock restaurado, movimiento compensatorio e idempotencia");
+
+  const economicPurchase = await call(owner, "crearCompra")({businessId, requestId: requestId("economic-a-create"), compra: purchasePayload(providerId, [line(economicProduct, "economic-a", {cantidad: 10, costoUnitario: 168.0672, descuentoPct: 0})])});
+  await call(owner, "confirmarCompra")({businessId, compraId: economicPurchase.data.compra.id, requestId: requestId("economic-a-confirm")});
+  let economicState = (await adminDb.doc(`negocios/${businessId}/inventario/${economicProduct}`).get()).data();
+  assert.deepEqual([economicState.stock, economicState.valorInventario, economicState.costoPromedio], [20, 3000, 150]);
+  const economicSale = await call(owner, "crearVenta")({businessId, requestId: requestId("economic-sale-create"), venta: {
+    clienteId: economicClientId, fechaVenta: "2026-08-08", tipoDocumento: "sin_documento", condicionesPago: "Contado", observaciones: "Prueba económica",
+    items: [{lineaId: "economic-sale", itemId: economicProduct, cantidad: 5, precioUnitario: 500, descuentoPct: 0}],
+  }});
+  await call(owner, "confirmarVenta")({businessId, ventaId: economicSale.data.venta.id, requestId: requestId("economic-sale-confirm")});
+  economicState = (await adminDb.doc(`negocios/${businessId}/inventario/${economicProduct}`).get()).data();
+  assert.deepEqual([economicState.stock, economicState.valorInventario, economicState.costoPromedio], [15, 2250, 150]);
+  const frozenSale = (await adminDb.doc(`negocios/${businessId}/ventas/${economicSale.data.venta.id}`).get()).data();
+  assert.deepEqual([frozenSale.efectosInventario[0].costoUnitario, frozenSale.efectosInventario[0].costoTotal], [150, 750]);
+  await call(owner, "revertirCompra")({businessId, compraId: economicPurchase.data.compra.id, motivo: "Reversión posterior a venta", requestId: requestId("economic-a-reverse")});
+  economicState = (await adminDb.doc(`negocios/${businessId}/inventario/${economicProduct}`).get()).data();
+  assert.deepEqual([economicState.stock, economicState.valorInventario, economicState.costoPromedio], [5, 250, 50]);
+  const frozenSaleAfterReversal = (await adminDb.doc(`negocios/${businessId}/ventas/${economicSale.data.venta.id}`).get()).data();
+  assert.deepEqual([frozenSaleAfterReversal.efectosInventario[0].costoUnitario, frozenSaleAfterReversal.efectosInventario[0].costoTotal], [150, 750]);
+  console.log("OK economía: adquisición A → venta congelada → reversión A conserva Q=5, V=250 y promedio=50");
+
+  const unsafeReversal = async (itemId, label, corruptedValue) => {
+    const draft = await call(owner, "crearCompra")({businessId, requestId: requestId(`${label}-create`), compra: purchasePayload(providerId, [line(itemId, `${label}-line`, {cantidad: 10, costoUnitario: 168.0672, descuentoPct: 0})])});
+    await call(owner, "confirmarCompra")({businessId, compraId: draft.data.compra.id, requestId: requestId(`${label}-confirm`)});
+    await adminDb.doc(`negocios/${businessId}/inventario/${itemId}`).update({valorInventario: corruptedValue});
+    await expectCallableError(label, () => call(owner, "revertirCompra")({businessId, compraId: draft.data.compra.id, motivo: label, requestId: requestId(`${label}-reverse`)}), ["failed-precondition"]);
+    assert.equal((await adminDb.doc(`negocios/${businessId}/compras/${draft.data.compra.id}`).get()).data().estado, "confirmada");
+    assert.equal((await adminDb.doc(`negocios/${businessId}/adquisicionesInventario/${draft.data.compra.id}__${label}-line`).get()).data().estado, "vigente");
+    assert.equal((await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("compraId", "==", draft.data.compra.id).get()).size, 1);
+  };
+  await unsafeReversal(negativeValueProduct, "valor-negativo", 1500);
+  await unsafeReversal(residualValueProduct, "valor-residual", 2100);
+  const fxDraft = await call(owner, "crearCompra")({businessId, requestId: requestId("fx-create"), compra: purchasePayload(providerId, [line(fxProduct, "fx-line", {cantidad: 1})])});
+  await expectCallableError("moneda incompatible sin FX", () => call(owner, "confirmarCompra")({businessId, compraId: fxDraft.data.compra.id, requestId: requestId("fx-confirm")}), ["failed-precondition"]);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${fxProduct}`).get()).data().stock, 1);
+
+  const zeroFxDraft = await call(owner, "crearCompra")({businessId, requestId: requestId("zero-fx-create"), compra: purchasePayload(providerId, [line(zeroFxProduct, "zero-fx-line", {cantidad: 1, costoUnitario: 500, descuentoPct: 0})])});
+  await call(owner, "confirmarCompra")({businessId, compraId: zeroFxDraft.data.compra.id, requestId: requestId("zero-fx-confirm")});
+  let zeroFxState = (await adminDb.doc(`negocios/${businessId}/inventario/${zeroFxProduct}`).get()).data();
+  assert.deepEqual([zeroFxState.stock, zeroFxState.valorInventario, zeroFxState.valorInventarioMoneda, zeroFxState.costoPromedioMoneda], [1, 595, "CLP", "CLP"]);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/adquisicionesInventario/${zeroFxDraft.data.compra.id}__zero-fx-line`).get()).data().moneda, "CLP");
+  await call(owner, "revertirCompra")({businessId, compraId: zeroFxDraft.data.compra.id, motivo: "Validar último costo entre monedas", requestId: requestId("zero-fx-reverse")});
+  zeroFxState = (await adminDb.doc(`negocios/${businessId}/inventario/${zeroFxProduct}`).get()).data();
+  assert.deepEqual([zeroFxState.stock, zeroFxState.valorInventario, zeroFxState.valorInventarioMoneda], [0, 0, "CLP"]);
+  assert.equal(zeroFxState.ultimoCosto, null);
+  assert.equal(zeroFxState.ultimoProveedor, null);
+  assert.equal(zeroFxState.ultimaAdquisicionId, null);
+  assert.equal(zeroFxState.ultimaAdquisicionEn, null);
+  console.log("OK saldo cero cambia de USD a CLP y la reversión no presenta último costo cross-currency");
+  console.log("OK bloqueos económicos: V negativo, residual con Q=0 y moneda incompatible sin FX");
 
   const nonProductDraft = await call(owner, "crearCompra")({businessId, requestId: requestId("non-product-create"), compra: purchasePayload(providerId, [line(serviceId, "non-product-service", {cantidad: 1}), line(activityId, "non-product-activity", {cantidad: 1})])});
   const serviceBefore = (await adminDb.doc(`negocios/${businessId}/inventario/${serviceId}`).get()).data();
@@ -254,6 +335,30 @@ try {
   await adminDb.doc(`negocios/${businessId}/inventario/${productB}`).delete();
   await expectCallableError("rollback por producto faltante", () => call(owner, "confirmarCompra")({businessId, compraId: rollbackDraft.data.compra.id, requestId: requestId("rollback-confirm")}), ["failed-precondition"]);
   assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock, stockBeforeRollback);
+
+  const budgetProducts = Array.from({length: 150}, (_, index) => `budget-${index}-${RUN_ID}`);
+  const budgetSeed = adminDb.batch();
+  budgetProducts.forEach((itemId, index) => budgetSeed.set(
+    adminDb.doc(`negocios/${businessId}/inventario/${itemId}`),
+    itemFixture(itemId, "producto", `Producto presupuesto ${index + 1}`, 0)
+  ));
+  await budgetSeed.commit();
+  const budgetDraft = await call(owner, "crearCompra")({
+    businessId,
+    requestId: requestId("budget-create"),
+    compra: purchasePayload(providerId, budgetProducts.map((itemId, index) =>
+      line(itemId, `budget-line-${index}`, {cantidad: 1, costoUnitario: 1, descuentoPct: 0})
+    )),
+  });
+  const budgetConfirmRequestId = requestId("budget-confirm");
+  await expectCallableError("presupuesto atómico de Compra", () => call(owner, "confirmarCompra")({businessId, compraId: budgetDraft.data.compra.id, requestId: budgetConfirmRequestId}), ["failed-precondition"]);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/compras/${budgetDraft.data.compra.id}`).get()).data().estado, "borrador");
+  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${budgetProducts[0]}`).get()).data().stock, 0);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${budgetProducts.at(-1)}`).get()).data().stock, 0);
+  assert.equal((await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("compraId", "==", budgetDraft.data.compra.id).get()).size, 0);
+  assert.equal((await adminDb.collection(`negocios/${businessId}/adquisicionesInventario`).where("compraId", "==", budgetDraft.data.compra.id).get()).size, 0);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/purchaseConfirmRequests/${budgetConfirmRequestId}`).get()).exists, false);
+  console.log("OK presupuesto atómico: exceso rechazado sin stock, movimiento, adquisición ni request parcial");
   assert.equal((await adminDb.doc(`negocios/${businessId}/compras/${rollbackDraft.data.compra.id}`).get()).data().estado, "borrador");
   assert.equal((await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("compraId", "==", rollbackDraft.data.compra.id).get()).size, 0);
   console.log("OK atomicidad: fallo en B revierte stock, movimientos y estado de A");

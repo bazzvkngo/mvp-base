@@ -7,9 +7,12 @@ const {adaptDocumentLocalization} = require("./localization");
 const {buildAuthoritativeCompanySnapshot, resolveCompanySnapshot} = require("./companySnapshot");
 const {buildConfirmedPurchaseFromReception, formatPurchaseNumber} = require("./purchasePersistence");
 const {
-  calculateAcquisitionAmounts,
-  calculateWeightedAverage,
-  legacyPaidCost,
+  INVENTORY_ECONOMIC_MODEL_VERSION,
+  applyInventoryAcquisition,
+  assertCanonicalInventoryQuantity,
+  assertInventoryTransactionWriteBudget,
+  inventoryEconomicFields,
+  resolveInventoryEconomicState,
 } = require("./inventoryAcquisition");
 
 function fail(HttpsError, code, message) {
@@ -271,9 +274,12 @@ function normalizeDraft(raw, reception, HttpsError) {
   }
   const items = (reception.items || []).map((line) => {
     const suppliedLine = suppliedLines.get(line.lineaId);
+    const cantidad = suppliedLine ? suppliedLine.cantidad : 0;
     return {
       ...line,
-      cantidad: suppliedLine ? suppliedLine.cantidad : 0,
+      cantidad: line.tipoItem === "producto"
+        ? assertCanonicalInventoryQuantity(cantidad, HttpsError)
+        : cantidad,
       costoUnitario: suppliedLine?.costoUnitario ?? Number(line.costoUnitario || 0),
       descuentoPct: suppliedLine?.descuentoPct ?? Number(line.descuentoPct || 0),
       documentoLineas: suppliedLine?.documentoLineas ?? line.documentoLineas ?? [],
@@ -556,6 +562,13 @@ async function confirmarRecepcionHandler(request, dependencies, now = new Date()
       line.tipoItem === "producto" && Number(line.cantidad) > EPSILON
     );
     const inventoryIds = [...new Set(productLines.map((line) => line.itemId))];
+    assertInventoryTransactionWriteBudget({
+      acquisitionWrites: productLines.length,
+      documentWrites: 3 + (createsAutomaticPurchase ? 2 : 0),
+      inventoryWrites: inventoryIds.length,
+      movementWrites: productLines.length,
+      operation: "confirmación de Recepción",
+    }, HttpsError);
     const inventoryRefs = inventoryIds.map((itemId) =>
       businessRef.collection("inventario").doc(itemId)
     );
@@ -576,39 +589,18 @@ async function confirmarRecepcionHandler(request, dependencies, now = new Date()
       if (item.negocioId && item.negocioId !== businessId) {
         fail(HttpsError, "permission-denied", "El item pertenece a otro negocio.");
       }
-      const previous = running.get(line.itemId) || {
-        stock: Number(item.stock || 0),
-        costoPromedio: legacyPaidCost(item),
-        moneda: text(item.costoPromedioMoneda, 12).toUpperCase(),
-      };
-      if (
-        previous.stock > EPSILON &&
-        previous.moneda &&
-        previous.moneda !== receptionCurrency
-      ) {
-        fail(
-          HttpsError,
-          "failed-precondition",
-          `No se puede promediar ${line.nombre || "el producto"} en monedas distintas.`
-        );
-      }
-      const amounts = calculateAcquisitionAmounts({
+      const previous = running.get(line.itemId) || resolveInventoryEconomicState({
+        item,
+        operationCurrency: receptionCurrency,
+      }, HttpsError);
+      const {amounts, next} = applyInventoryAcquisition(previous, {
         cantidad: line.cantidad,
         costoUnitario: line.costoUnitario,
         descuentoPct: line.descuentoPct,
         tasaImpuestoCompra: Number(reception.tasaIva || 0) * 100,
-      });
-      const after = previous.stock + amounts.cantidad;
-      const average = calculateWeightedAverage({
-        stockAnterior: previous.stock,
-        costoPromedioAnterior: previous.costoPromedio,
-        cantidadEntrada: amounts.cantidad,
-        costoEntrada: amounts.costoPagadoUnitario,
-      });
+      }, HttpsError);
       running.set(line.itemId, {
-        stock: after,
-        costoPromedio: average,
-        moneda: receptionCurrency,
+        ...next,
         ultimoCosto: amounts.costoPagadoUnitario,
         ultimaAdquisicionId: `${receptionId}__${line.lineaId}`,
       });
@@ -634,13 +626,21 @@ async function confirmarRecepcionHandler(request, dependencies, now = new Date()
         costoTotal: amounts.costoPagadoTotal,
         moneda: receptionCurrency,
         stockAnterior: previous.stock,
-        stockResultante: after,
+        stockResultante: next.stock,
+        valorInventarioAnterior: previous.value,
+        valorInventarioPosterior: next.value,
+        costoPromedioAnterior: previous.average,
+        costoPromedioPosterior: next.average,
+        modeloEconomiaInventarioVersion: INVENTORY_ECONOMIC_MODEL_VERSION,
         creadoPorUid: uid,
         creadoEn: timestamp,
       });
       transaction.create(acquisitionRef, {
         modeloAdquisicionVersion: 1,
+        modeloEconomiaInventarioVersion: INVENTORY_ECONOMIC_MODEL_VERSION,
         adquisicionId: acquisitionRef.id,
+        estado: "vigente",
+        origen: "recepcion",
         negocioId: businessId,
         itemId: line.itemId,
         lineaId: line.lineaId,
@@ -675,6 +675,12 @@ async function confirmarRecepcionHandler(request, dependencies, now = new Date()
         },
         ...amounts,
         moneda: receptionCurrency,
+        stockAnterior: previous.stock,
+        stockPosterior: next.stock,
+        valorInventarioAnterior: previous.value,
+        valorInventarioPosterior: next.value,
+        costoPromedioAnterior: previous.average,
+        costoPromedioPosterior: next.average,
         fechaAdquisicion: text(reception.fechaRecepcion, 10),
         ordenCompraId: text(reception.ordenCompraId, 160),
         ordenCompraNumero: text(reception.ordenCompraNumero, 120),
@@ -690,8 +696,7 @@ async function confirmarRecepcionHandler(request, dependencies, now = new Date()
     running.forEach((state, itemId) => {
       transaction.update(businessRef.collection("inventario").doc(itemId), {
         stock: state.stock,
-        costoPromedio: state.costoPromedio,
-        costoPromedioMoneda: state.moneda,
+        ...inventoryEconomicFields(state, timestamp),
         ultimoCosto: state.ultimoCosto,
         ultimoProveedor: {
           proveedorId: text(reception.proveedorId, 160),

@@ -324,6 +324,28 @@ assert.equal(db.read(unitCostRegressionWorkPath).materialesCostoTotal, 24972);
 assert.notEqual(db.read(unitCostRegressionWorkPath).materialesCostoTotal, 99888);
 console.log("OK regresión materiales: stock 4, costo unitario 24.972 y salida 1 imputan 24.972, no 99.888");
 
+const exactClosureWorkId = "work-material-exact-closure";
+const exactClosureWorkPath = `negocios/business-a/trabajos/${exactClosureWorkId}`;
+const exactClosureProductPath = "negocios/business-a/inventario/product-exact-closure";
+db.seed(exactClosureWorkPath, {negocioId: "business-a", trabajoId: exactClosureWorkId, titulo: "Cierre exacto Q/V", estado: "en_progreso", moneda: "USD", materialesSalidasTotal: 0, materialesDevolucionesTotal: 0, materialesCostoTotal: 0});
+db.seed(exactClosureProductPath, {negocioId: "business-a", itemId: "product-exact-closure", tipoItem: "producto", estado: "activo", nombre: "Material de costo fraccionario", unidad: "unidad", stock: 20000, modeloCostoInventarioVersion: 1, valorInventario: 101, valorInventarioMoneda: "USD", costoPromedio: 0.0051, costoPromedioMoneda: "USD"});
+const exactClosureExit = await registrarSalidaMaterialTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: exactClosureWorkId, itemId: "product-exact-closure", cantidad: 20000, fecha: "2026-08-14", requestId: "material-exact-closure-exit"}), dependencies);
+const exactClosureAfterExit = db.read(exactClosureProductPath);
+assert.deepEqual([exactClosureAfterExit.stock, exactClosureAfterExit.valorInventario, exactClosureAfterExit.costoPromedio], [0, 0, null]);
+assert.equal(exactClosureExit.costoTotal, 101);
+const exactClosureReturn = await registrarDevolucionMaterialTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: exactClosureWorkId, movimientoOrigenId: exactClosureExit.movimientoId, cantidad: 20000, fecha: "2026-08-14", requestId: "material-exact-closure-return"}), dependencies);
+const exactClosureAfterReturn = db.read(exactClosureProductPath);
+assert.deepEqual([exactClosureAfterReturn.stock, exactClosureAfterReturn.valorInventario, exactClosureAfterReturn.costoPromedio], [20000, 101, 0.0051]);
+assert.equal(exactClosureReturn.costoTotal, 101);
+const exactClosureMovementsBeforeInvalid = db.matching("negocios/business-a/movimientosInventario/").length;
+await assert.rejects(
+  registrarSalidaMaterialTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: exactClosureWorkId, itemId: "product-exact-closure", cantidad: 1.0000004, fecha: "2026-08-14", requestId: "material-noncanonical-quantity"}), dependencies),
+  (error) => error.code === "invalid-argument"
+);
+assert.deepEqual([db.read(exactClosureProductPath).stock, db.read(exactClosureProductPath).valorInventario], [20000, 101]);
+assert.equal(db.matching("negocios/business-a/movimientosInventario/").length, exactClosureMovementsBeforeInvalid);
+console.log("OK materiales Q/V: salida total, devoluciÃ³n exacta y cantidad no canÃ³nica sin efectos");
+
 const completedGuardWorkId = "work-completed-cost-guard";
 const completedGuardWorkPath = `negocios/business-a/trabajos/${completedGuardWorkId}`;
 const completedGuardProductPath = "negocios/business-a/inventario/product-completed-guard";
@@ -393,6 +415,8 @@ const materialExit = await registrarSalidaMaterialTrabajoHandler(materialExitReq
 const materialExitRetry = await registrarSalidaMaterialTrabajoHandler(materialExitRequest, dependencies);
 assert.equal(materialExit.costoUnitario, 800); assert.equal(materialExit.costoTotal, 4000); assert.equal(materialExitRetry.idempotent, true);
 assert.equal(db.read(productPath).stock, 5);
+assert.equal(db.read(productPath).valorInventario, 4000);
+assert.equal(db.read(productPath).costoPromedio, 800);
 let materialMovements = db.matching("negocios/business-a/movimientosInventario/").map(([, value]) => value).filter((value) => value.trabajoId === created.trabajoId);
 assert.equal(materialMovements.length, 1); assert.equal(materialMovements[0].tipo, "SALIDA_PROYECTO"); assert.equal(materialMovements[0].productoSnapshot.nombre, "Cable THHN");
 assert.equal(db.read(workPath).materialesCostoTotal, 4000);
@@ -410,7 +434,7 @@ assert.equal(partialReturn.costoUnitario, 800); assert.equal(partialReturn.costo
 await assert.rejects(() => registrarDevolucionMaterialTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, movimientoOrigenId: materialExit.movimientoId, cantidad: 4, fecha: "2026-08-15", requestId: "material-over-return"}), dependencies), (error) => error.code === "failed-precondition");
 assert.equal(db.read(productPath).stock, 7);
 const fullReturn = await registrarDevolucionMaterialTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, movimientoOrigenId: materialExit.movimientoId, cantidad: 3, fecha: "2026-08-15", requestId: "material-return-0002"}), dependencies);
-assert.equal(fullReturn.costoUnitario, 800); assert.equal(fullReturn.costoTotal, 2400); assert.equal(fullReturn.cantidadPendiente, 0); assert.equal(db.read(productPath).stock, 10); assert.equal(db.read(workPath).materialesCostoTotal, 0);
+assert.equal(fullReturn.costoUnitario, 800); assert.equal(fullReturn.costoTotal, 2400); assert.equal(fullReturn.cantidadPendiente, 0); assert.equal(db.read(productPath).stock, 10); assert.equal(db.read(productPath).valorInventario, 8000); assert.equal(db.read(productPath).costoPromedio, 800); assert.equal(db.read(workPath).materialesCostoTotal, 0);
 materialMovements = db.matching("negocios/business-a/movimientosInventario/").map(([, value]) => value).filter((value) => value.trabajoId === created.trabajoId);
 assert.equal(materialMovements.length, 3); assert.equal(materialMovements.filter((value) => value.tipo === "DEVOLUCION_PROYECTO").length, 2);
 assert.equal(materialMovements.find((value) => value.movimientoId === materialExit.movimientoId).cantidadDevuelta, undefined);
@@ -418,6 +442,7 @@ assert.equal(adaptWorkMaterialMovement(materialMovements[1]).movimientoOrigenId,
 db.seed("negocios/business-a/inventario/product-base", {negocioId: "business-a", itemId: "product-base", tipoItem: "producto", estado: "activo", nombre: "Conector", unidad: "unidad", stock: 2, costoBase: 250});
 const baseCostExit = await registrarSalidaMaterialTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, itemId: "product-base", cantidad: 1, fecha: "2026-08-16", tareaId: task.tareaId, requestId: "material-base-cost"}), dependencies);
 assert.equal(baseCostExit.costoUnitario, 250); assert.equal(baseCostExit.costoTotal, 250);
+assert.equal(db.read("negocios/business-a/inventario/product-base").valorInventario, 250);
 const costInput = {
   expenses: db.matching(`${workPath}/gastos/`).map(([, value]) => adaptWorkExpense(value)),
   labor: db.matching(`${workPath}/horasHombre/`).map(([, value]) => adaptWorkLabor(value)),

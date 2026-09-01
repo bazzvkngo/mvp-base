@@ -168,6 +168,19 @@ autorizados y compatibilidad explícita con documentos legacy. Una OC, un
 borrador y una vista previa de importación no modifican stock. Una Compra V3
 marcada `stockGestionadoPor: recepcion` tampoco repite la entrada ya aplicada.
 
+Para productos inicializados en el modelo económico versionado, cada mutación
+de stock mantiene conjuntamente cantidad (`stock`) y saldo perpetuo de valor
+(`valorInventario`) en una única moneda; `costoPromedio` se deriva como valor
+dividido por cantidad. Los productos legacy se inicializan de forma lazy desde
+su promedio válido o desde el fallback de costo histórico, guardando metadata
+del baseline sin inventar adquisiciones. Recepción y Compra directa crean
+adquisiciones; Ventas y materiales de Trabajos descuentan y reponen el mismo
+costo congelado. Los ajustes físicos conservan el promedio vigente. Functions
+bloquea saldos negativos, residuos de valor con stock cero y mezcla de monedas.
+`costoBase` continúa siendo el costo comercial/manual del maestro y no equivale
+al promedio, al último costo, al ledger de adquisiciones ni al snapshot histórico
+de una Venta o Trabajo.
+
 Cotizaciones, Órdenes de Compra, Recepciones, Compras, Ventas y Trabajos
 conservan los snapshots históricos definidos por sus SPEC. Contadores
 transaccionales, `requestId`, registros de solicitud, IDs deterministas y

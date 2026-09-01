@@ -200,11 +200,21 @@ export function adaptInventoryItem(item = {}) {
     adapted.precioCalculado = adapted.precioVentaSugerido;
     adapted.precioEfectivo = Math.round(calculateEffectiveInternalPrice(adapted));
   }
-  const averageCost = Number(item.costoPromedio);
-  const lastCost = Number(item.ultimoCosto);
+  const averageCost = item.costoPromedio === "" || item.costoPromedio == null
+    ? null
+    : Number(item.costoPromedio);
+  const lastCost = item.ultimoCosto === "" || item.ultimoCosto == null
+    ? null
+    : Number(item.ultimoCosto);
+  const inventoryValue = item.valorInventario === "" || item.valorInventario == null
+    ? null
+    : Number(item.valorInventario);
   adapted.costoPromedio = Number.isFinite(averageCost) ? averageCost : null;
   adapted.costoPromedioMoneda = String(item.costoPromedioMoneda || "").trim().toUpperCase();
   adapted.ultimoCosto = Number.isFinite(lastCost) ? lastCost : null;
+  adapted.modeloCostoInventarioVersion = Number(item.modeloCostoInventarioVersion || 0);
+  adapted.valorInventario = Number.isFinite(inventoryValue) ? inventoryValue : null;
+  adapted.valorInventarioMoneda = String(item.valorInventarioMoneda || "").trim().toUpperCase();
   adapted.ultimoProveedor = item.ultimoProveedor && typeof item.ultimoProveedor === "object"
     ? item.ultimoProveedor
     : null;

@@ -221,6 +221,29 @@ async function main() {
       precioInterno: 12000,
       estado: "activo",
     };
+    await expectCallableCode("failed-precondition", () =>
+      call("createInventoryItemWithCode", {
+        requestId: "integrated_noncanonical_initial_stock_0001",
+        item: {
+          ...commonItem,
+          tipoItem: "producto",
+          nombre: "Producto con stock inicial no canónico",
+          stock: 1.0000004,
+          stockMinimo: 0,
+        },
+      })
+    );
+    assert.equal(
+      (await getDocs(collectionRef(db, uid, "inventario"))).size,
+      0,
+      "Un stock inicial no canónico no debe crear el producto."
+    );
+    assert.equal(
+      (await adminDb.doc(
+        `negocios/${businessId}/inventoryCreateRequests/integrated_noncanonical_initial_stock_0001`
+      ).get()).exists,
+      false
+    );
     const serviceResponse = await call("createInventoryItemWithCode", {
       requestId: "integrated_service_0001",
       item: {
@@ -304,6 +327,8 @@ async function main() {
     assert.equal((await getDoc(productRef)).data().nombre, "Router local editable");
     await assert.rejects(updateDoc(productRef, {stock: 80}));
     await assert.rejects(updateDoc(productRef, {costoPromedio: 1}));
+    await assert.rejects(updateDoc(productRef, {valorInventario: 1}));
+    await assert.rejects(updateDoc(productRef, {modeloCostoInventarioVersion: 99}));
 
     const authoritativeUpdatePayload = {
       requestId: "integrated_product_update_0001",
@@ -350,6 +375,10 @@ async function main() {
     assert.equal(adjustment.stockAnterior, 8);
     assert.equal(adjustment.stockPosterior, 11);
     const updatedReference = (await getDoc(productRef)).data();
+    assert.equal(updatedReference.valorInventario, 110000);
+    assert.equal(updatedReference.costoPromedio, 10000);
+    assert.equal(adjustment.valorInventarioAnterior, 80000);
+    assert.equal(adjustment.valorInventarioPosterior, 110000);
     assert.equal(updatedReference.proveedorNombre, "Proveedor actualizado S.A.");
     assert.equal(updatedReference.proveedorRut, "76.086.428-5");
     assert.equal(updatedReference.fechaCompraReferencia, "2026-08-25");
@@ -371,12 +400,103 @@ async function main() {
     });
     assert.equal(metadataUpdate.data.movimientoId, null);
     assert.equal((await getDoc(productRef)).data().stock, 11);
+    const negativeAdjustment = await call("updateInventoryItem", {
+      ...authoritativeUpdatePayload,
+      requestId: "integrated_product_negative_adjustment_0001",
+      item: {...authoritativeUpdatePayload.item, stock: 9},
+    });
+    const afterNegativeAdjustment = (await getDoc(productRef)).data();
+    const negativeMovement = (
+      await adminDb.doc(
+        `negocios/${businessId}/movimientosInventario/${negativeAdjustment.data.movimientoId}`
+      ).get()
+    ).data();
+    assert.equal(afterNegativeAdjustment.stock, 9);
+    assert.equal(afterNegativeAdjustment.valorInventario, 90000);
+    assert.equal(afterNegativeAdjustment.costoPromedio, 10000);
+    assert.equal(negativeMovement.diferenciaStock, -2);
+    assert.equal(negativeMovement.valorInventarioAnterior, 110000);
+    assert.equal(negativeMovement.valorInventarioPosterior, 90000);
+    const restoredAdjustment = await call("updateInventoryItem", {
+      ...authoritativeUpdatePayload,
+      requestId: "integrated_product_restore_adjustment_0001",
+      item: {...authoritativeUpdatePayload.item, stock: 11},
+    });
+    const afterRestoredAdjustment = (await getDoc(productRef)).data();
+    assert.equal(afterRestoredAdjustment.stock, 11);
+    assert.equal(afterRestoredAdjustment.valorInventario, 110000);
+    assert.equal(afterRestoredAdjustment.costoPromedio, 10000);
+    assert.ok(restoredAdjustment.data.movimientoId);
+    const nonCanonicalAdjustmentRequestId = "integrated_noncanonical_adjustment_0001";
+    await expectCallableCode("failed-precondition", () =>
+      call("updateInventoryItem", {
+        ...authoritativeUpdatePayload,
+        requestId: nonCanonicalAdjustmentRequestId,
+        item: {...authoritativeUpdatePayload.item, stock: 12.0000004},
+      })
+    );
+    const afterNonCanonicalAdjustment = (await getDoc(productRef)).data();
+    assert.deepEqual(
+      [afterNonCanonicalAdjustment.stock, afterNonCanonicalAdjustment.valorInventario],
+      [11, 110000]
+    );
+    assert.equal((await adminDb.doc(`negocios/${businessId}/movimientosInventario/ajuste__${nonCanonicalAdjustmentRequestId}`).get()).exists, false);
+    assert.equal((await adminDb.doc(`negocios/${businessId}/inventoryUpdateRequests/${nonCanonicalAdjustmentRequestId}`).get()).exists, false);
     const productAdjustments = await adminDb
       .collection(`negocios/${businessId}/movimientosInventario`)
       .where("itemId", "==", productResponse.data.itemId)
       .where("tipo", "==", "AJUSTE_STOCK")
       .get();
-    assert.equal(productAdjustments.size, 1);
+    assert.equal(productAdjustments.size, 3);
+
+    const staleCurrencyItemId = "stale_currency_zero_stock";
+    const staleCurrencyRequestId = "integrated_stale_currency_adjustment_0001";
+    const staleCurrencyRef = adminDb.doc(
+      `negocios/${businessId}/inventario/${staleCurrencyItemId}`
+    );
+    await staleCurrencyRef.set({
+      ...commonItem,
+      itemId: staleCurrencyItemId,
+      codigoInterno: "PR-STALE-USD",
+      negocioId: businessId,
+      tipoItem: "producto",
+      nombre: "Producto sin exposición con referencia USD",
+      stock: 0,
+      stockMinimo: 0,
+      modeloCostoInventarioVersion: 1,
+      valorInventario: 0,
+      valorInventarioMoneda: "USD",
+      costoPromedio: null,
+      costoPromedioMoneda: "USD",
+      baselineCostoInventario: {
+        costoUnitarioInicial: 25,
+        fuente: "costoBase",
+        moneda: "USD",
+        stockInicial: 0,
+        valorInicial: 0,
+      },
+    });
+    await expectCallableCode("failed-precondition", () =>
+      call("updateInventoryItem", {
+        requestId: staleCurrencyRequestId,
+        itemId: staleCurrencyItemId,
+        item: {
+          ...commonItem,
+          tipoItem: "producto",
+          nombre: "Producto sin exposición con referencia USD",
+          stock: 1,
+          stockMinimo: 0,
+        },
+      })
+    );
+    const staleCurrencyAfter = (await staleCurrencyRef.get()).data();
+    assert.deepEqual(
+      [staleCurrencyAfter.stock, staleCurrencyAfter.valorInventario, staleCurrencyAfter.valorInventarioMoneda],
+      [0, 0, "USD"]
+    );
+    assert.equal((await adminDb.doc(`negocios/${businessId}/movimientosInventario/ajuste__${staleCurrencyRequestId}`).get()).exists, false);
+    assert.equal((await adminDb.doc(`negocios/${businessId}/inventoryUpdateRequests/${staleCurrencyRequestId}`).get()).exists, false);
+    console.log("OK ajuste positivo desde cero no reutiliza una referencia USD como CLP");
 
     await expectCallableCode("already-exists", () =>
       call("createInventoryItemWithCode", {
@@ -549,7 +669,7 @@ async function main() {
         adminDb.doc(`negocios/${businessId}/inventarioContadores/${type}`).get()
       )
     );
-    assert.equal(itemsBeforePreview.size, 4);
+    assert.equal(itemsBeforePreview.size, 5);
     assert.deepEqual(
       countersBeforePreview.map((snapshot) => snapshot.data()?.ultimoNumero),
       [1, 1, 1],
@@ -580,6 +700,35 @@ async function main() {
     const countBeforeInvalidBatch = (
       await getDocs(collectionRef(db, uid, "inventario"))
     ).size;
+    await expectCallableCode("failed-precondition", () =>
+      call("confirmInventoryImportV2", {
+        requestId: "import_noncanonical_stock_0001",
+        rows: [
+          importRows[2],
+          {
+            rowId: "noncanonical-stock-product",
+            item: {
+              ...commonItem,
+              tipoItem: "producto",
+              nombre: "Producto importado con stock no canónico",
+              stock: 1.0000004,
+              stockMinimo: 0,
+            },
+          },
+        ],
+      })
+    );
+    assert.equal(
+      (await getDocs(collectionRef(db, uid, "inventario"))).size,
+      countBeforeInvalidBatch,
+      "Una cantidad no canónica debe rechazar el lote completo sin productos parciales."
+    );
+    assert.equal(
+      (await adminDb.doc(
+        `negocios/${businessId}/inventoryImportRequests/import_noncanonical_stock_0001`
+      ).get()).exists,
+      false
+    );
     await expectCallableCode("invalid-argument", () =>
       call("confirmInventoryImportV2", {
         requestId: "import_invalid_row_0001",
@@ -832,6 +981,28 @@ async function main() {
       query(collectionRef(db, uid, "inventario"), orderBy("actualizadoEn", "desc"))
     );
     assert.equal(finalItems.size, 11);
+
+    const canonicalFractionalProduct = await call("createInventoryItemWithCode", {
+      requestId: "integrated_canonical_initial_stock_0001",
+      item: {
+        ...commonItem,
+        tipoItem: "producto",
+        nombre: "Producto con stock inicial canónico",
+        stock: 1.000001,
+        stockMinimo: 0,
+      },
+    });
+    const canonicalFractionalData = (
+      await getDoc(doc(
+        db,
+        "negocios",
+        businessId,
+        "inventario",
+        canonicalFractionalProduct.data.itemId
+      ))
+    ).data();
+    assert.equal(canonicalFractionalData.stock, 1.000001);
+    console.log("OK stock inicial: más de 6 decimales bloqueado y 6 decimales aceptado");
 
     await signOut(auth);
     const memberCredential = await signInAnonymously(auth);

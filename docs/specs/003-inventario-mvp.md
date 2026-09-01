@@ -27,10 +27,11 @@ incluye en la automatización del formulario manual. Una factura iniciada desde
 un acceso relacionado con Inventario deberá conducir a Nueva compra y nunca
 incorporar stock silenciosamente como carga maestra.
 
-**Evolución posterior:** el modelo ya conserva adquisiciones, costo promedio y
-último costo. Falta exponer una evolución histórica de costos por producto. La
-semántica comercial definitiva que se mostrará como costo vigente —último,
-promedio ponderado u otra— queda pendiente de diseño.
+**Implementado BRUNO POST-DEMO C:** el detalle distingue costo base/manual,
+costo promedio vigente, último costo de adquisición e historial auditable de
+adquisiciones vigentes y revertidas. El saldo perpetuo de valor se inicializa de
+forma lazy para productos legacy; no existe migración masiva ni una adquisición
+ficticia por el baseline.
 
 ## Objetivo
 
@@ -75,11 +76,50 @@ Campos canónicos nuevos:
 - `proveedorNombre`, `proveedorRut`, `fechaCompraReferencia` y
   `numeroFacturaReferencia`, opcionales y sólo para productos creados o editados
   manualmente como referencia inicial de origen de compra;
+- `modeloCostoInventarioVersion`, `valorInventario`,
+  `valorInventarioMoneda` y `baselineCostoInventario`, cuando una operación de
+  stock inicializa o mantiene el saldo económico autoritativo;
 - `costoPromedio`, `costoPromedioMoneda`, `ultimoCosto`, `ultimoProveedor` y
-  referencia a la última adquisición, sólo cuando una Recepción confirmó una entrada;
+  referencia a la última adquisición vigente demostrable;
 - campos de auditoría autoritativos.
 
-El historial canónico vive en `negocios/{businessId}/adquisicionesInventario/{recepcionId__lineaId}` y conserva producto/proveedor, cantidad, costo e impuesto, moneda, OC, Recepción, Compra si existe, fecha, movimiento y usuario. Sólo Functions puede escribirlo.
+El historial canónico vive en
+`negocios/{businessId}/adquisicionesInventario/{adquisicionId}`. Las nuevas
+adquisiciones de Recepción o Compra directa conservan origen real,
+producto/proveedor, cantidad, costo neto, descuento, impuesto, costo pagado,
+moneda, stock/valor/promedio anterior y posterior, documentos que realmente
+existan, estado y autoría. Un documento legacy sin `estado` se interpreta como
+vigente; una reversión lo conserva marcado `revertida`. Sólo Functions escribe
+este ledger.
+
+## Economía de inventario
+
+- `costoBase` es el costo comercial/manual editable del maestro; no cambia por
+  adquisiciones y continúa alimentando la formación de precio legacy.
+- `valorInventario` es el saldo económico autoritativo del stock en una moneda.
+  Si `Q = stock`, `costoPromedio = V / Q` cuando `Q > 0`; con `Q = 0`, V debe ser
+  cero y el promedio queda nulo. Una salida normal que consume exactamente todo
+  Q retira el V restante; una salida parcial conserva el promedio vigente. Las
+  nuevas mutaciones físicas exigen cantidades representables con un máximo de
+  seis decimales y fallan antes de persistir si exceden esa precisión; sólo el
+  ruido numérico interno se normaliza. Un sobreconsumo material continúa
+  bloqueado. La reversión de Compra no usa la regla de cierre: resta siempre la
+  cantidad y el costo original de la adquisición y bloquea un saldo imposible.
+- `ultimoCosto` es el costo pagado unitario de la última adquisición vigente que
+  puede demostrarse; nunca se reemplaza por `costoBase` ni por el promedio.
+- `adquisicionesInventario` es el ledger histórico. Recepciones y Compras
+  directas crean entradas deterministas; `AJUSTE_STOCK` no es una adquisición.
+- Ventas y materiales de Trabajos congelan un costo histórico inmutable. Sus
+  cancelaciones/devoluciones reponen exactamente ese snapshot, sin recalcularlo.
+
+Un producto legacy se inicializa al primer cambio autoritativo de stock: usa
+primero un `costoPromedio` válido y, si falta, el fallback histórico ya definido
+por `legacyPaidCost`. La metadata mínima del baseline queda persistida, sin
+crear proveedor, OC, Recepción o adquisición falsos. No hay conversión FX; una
+moneda incompatible bloquea la operación. Cuando Q/V son cero, una adquisición
+nueva puede fijar la moneda autoritativa de su propio saldo; un ajuste positivo
+no reutiliza una referencia histórica de otra moneda como si hubiera sido
+convertida.
 
 Las reservas y solicitudes internas no son accesibles mediante el SDK cliente:
 
@@ -172,12 +212,15 @@ Las Rules permiten lectura a miembros activos, bloquean colecciones internas y r
 
 ### Hardening de stock
 
-La edición normal se ejecuta mediante `updateInventoryItem`. `stock` y los
-campos de adquisición derivados (`costoPromedio`, `ultimoCosto`, proveedor y
-referencias de última adquisición) son inmutables desde el SDK cliente. Cuando
+La edición normal se ejecuta mediante `updateInventoryItem`. `stock`, el saldo
+versionado de valor, su baseline y los campos de adquisición derivados
+(`costoPromedio`, `ultimoCosto`, proveedor y referencias de última adquisición)
+son inmutables desde el SDK cliente. Cuando
 el formulario cambia el stock actual, la Function registra en la misma
 transacción un movimiento `AJUSTE_STOCK`, con stock anterior/posterior, delta,
-usuario, fecha y snapshot mínimo. Nombre, descripción, precios, stock mínimo y
+valor anterior/posterior, costo aplicado, usuario, fecha y snapshot mínimo. El
+ajuste positivo o negativo conserva el promedio vigente y se bloquea si el
+costo o saldo no puede representarse con seguridad. Nombre, descripción, precios, stock mínimo y
 clasificación continúan editables bajo validación autoritativa. Los ajustes usan
 `requestId` y `inventoryUpdateRequests` para evitar movimientos duplicados.
 
@@ -203,7 +246,8 @@ La lectura adapta valores faltantes sin migrar documentos al abrir la ruta. Se a
 ## Fuera de alcance
 
 Variantes, tallas, colores, medidas configurables, imágenes, catálogo público,
-ventas, conversiones de unidades, FX y migraciones masivas. Los flujos
+ventas como módulo, conversiones de unidades, FX y migraciones masivas. Reports
+V4 y Projects V3 permanecen pendientes. Los flujos
 documentales/IA existentes se conservan como compatibilidad, pero una factura de
 adquisición pertenece al flujo de Compra descrito como target en las SPEC 006 y
 016, no al alta maestra silenciosa de Inventario.

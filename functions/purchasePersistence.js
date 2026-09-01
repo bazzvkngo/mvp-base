@@ -2,6 +2,16 @@ const {createHash} = require("node:crypto");
 const {adaptDocumentLocalization, documentLocalizationSnapshot} = require("./localization");
 const {buildAuthoritativeCompanySnapshot, resolveCompanySnapshot} = require("./companySnapshot");
 const {fiscalSnapshotFields} = require("./fiscalIdentifier");
+const {
+  INVENTORY_ECONOMIC_MODEL_VERSION,
+  applyInventoryAcquisition,
+  applyInventoryEconomicDelta,
+  assertCanonicalInventoryQuantity,
+  assertInventoryTransactionWriteBudget,
+  calculateAcquisitionAmounts,
+  inventoryEconomicFields,
+  resolveInventoryEconomicState,
+} = require("./inventoryAcquisition");
 
 const MODEL_VERSION = 3;
 const LEGACY_ORDER_MODEL_VERSION = 2;
@@ -166,11 +176,14 @@ function inventory(snapshot, businessId, itemId, HttpsError, active = true) {
   return {inventarioId: itemId, codigoInterno: text(raw.codigoInterno || raw.sku, 100), nombre, descripcion: text(raw.descripcion, 3000), tipoItem, unidad: text(raw.unidad, 80) || "unidad", modeloInventarioVersion: Number(raw.modeloInventarioVersion || 1)};
 }
 function storedLine(value, snapshot, HttpsError) {
-  const subtotalLinea = Math.round(value.cantidad * value.costoUnitario);
+  const cantidad = snapshot.tipoItem === "producto"
+    ? assertCanonicalInventoryQuantity(value.cantidad, HttpsError)
+    : value.cantidad;
+  const subtotalLinea = Math.round(cantidad * value.costoUnitario);
   const descuentoLinea = Math.round((subtotalLinea * value.descuentoPct) / 100);
   const totalLinea = subtotalLinea - descuentoLinea;
   safeMoney([subtotalLinea, descuentoLinea, totalLinea], HttpsError);
-  return {lineaId: value.lineaId, itemId: value.itemId, codigo: snapshot.codigoInterno, nombre: snapshot.nombre, descripcion: snapshot.descripcion, tipoItem: snapshot.tipoItem, unidad: snapshot.unidad, cantidad: value.cantidad, costoUnitario: value.costoUnitario, descuentoPct: value.descuentoPct, subtotalLinea, descuentoLinea, totalLinea, inventarioSnapshot: snapshot};
+  return {lineaId: value.lineaId, itemId: value.itemId, codigo: snapshot.codigoInterno, nombre: snapshot.nombre, descripcion: snapshot.descripcion, tipoItem: snapshot.tipoItem, unidad: snapshot.unidad, cantidad, costoUnitario: value.costoUnitario, descuentoPct: value.descuentoPct, subtotalLinea, descuentoLinea, totalLinea, inventarioSnapshot: snapshot};
 }
 function totals(items, HttpsError, taxRate = VAT_RATE) {
   const subtotal = items.reduce((sum, item) => sum + item.subtotalLinea, 0);
@@ -611,6 +624,14 @@ async function confirmarCompraHandler(request, dependencies) {
     }
     const purchaseLines = Array.isArray(purchase.items) ? purchase.items : [];
     const productLines = purchaseLines.filter((line) => line.tipoItem === "producto");
+    const uniqueProductCount = new Set(productLines.map((line) => line.itemId)).size;
+    assertInventoryTransactionWriteBudget({
+      acquisitionWrites: productLines.length,
+      documentWrites: 2,
+      inventoryWrites: uniqueProductCount,
+      movementWrites: productLines.length,
+      operation: "confirmación de Compra",
+    }, HttpsError);
     const linesToValidate = purchase.ordenCompraId ? productLines : purchaseLines;
     const itemGroups = new Map();
     linesToValidate.forEach((line) => {
@@ -626,6 +647,8 @@ async function confirmarCompraHandler(request, dependencies) {
     if (providerRef) provider(snapshots[0], businessId, purchase.proveedorId, HttpsError);
     const itemSnapshots = providerRef ? snapshots.slice(1) : snapshots;
     const timestamp = FieldValue.serverTimestamp();
+    const efectosInventario = [];
+    const purchaseCurrency = text(purchase.moneda, 12).toUpperCase();
     groups.forEach((group, index) => {
       const snapshot = itemSnapshots[index];
       if (!snapshot.exists) fail(HttpsError, "failed-precondition", `No se encontró el ítem ${group.lines[0].nombre}.`);
@@ -635,21 +658,69 @@ async function confirmarCompraHandler(request, dependencies) {
       if (group.lines.some((line) => line.tipoItem !== currentType)) fail(HttpsError, "failed-precondition", "Un ítem cambió de tipo.");
       if (!purchase.ordenCompraId && raw.estado && raw.estado !== "activo") fail(HttpsError, "failed-precondition", "Un ítem ya no está disponible.");
       if (currentType !== "producto") return;
-      let runningStock = Number(raw.stock || 0);
-      if (!Number.isFinite(runningStock)) fail(HttpsError, "failed-precondition", "El stock no pudo actualizarse de forma segura.");
+      let running = resolveInventoryEconomicState({
+        item: raw,
+        operationCurrency: purchaseCurrency,
+      }, HttpsError);
       group.lines.forEach((line) => {
-        const stockAnterior = runningStock;
-        const cantidad = Number(line.cantidad);
-        const stockPosterior = stockAnterior + cantidad;
-        if (!Number.isFinite(cantidad) || cantidad <= 0 || !Number.isFinite(stockPosterior) || Math.abs(stockPosterior) > Number.MAX_SAFE_INTEGER) fail(HttpsError, "failed-precondition", "El stock no pudo actualizarse de forma segura.");
+        const {amounts, next} = applyInventoryAcquisition(running, {
+          cantidad: line.cantidad,
+          costoUnitario: line.costoUnitario,
+          descuentoPct: line.descuentoPct,
+          tasaImpuestoCompra: Number(purchase.tasaIva || 0) * 100,
+        }, HttpsError);
         const movementRef = businessRef.collection("movimientosInventario").doc(`${purchaseId}__${line.lineaId}`);
-        transaction.set(movementRef, {movimientoId: movementRef.id, negocioId: businessId, itemId: line.itemId, lineaId: text(line.lineaId, 160), compraId: purchaseId, compraNumero: purchase.numero, tipo: "entrada_compra", tipoOrigen: isV3DirectPurchase ? "compra_directa" : "compra", cantidad, stockAnterior, stockPosterior, stockResultante: stockPosterior, motivo: "Confirmación de compra", codigo: text(line.codigo, 100), nombre: text(line.nombre, 240), unidad: text(line.unidad, 80), creadoPorUid: uid, creadoEn: timestamp});
-        runningStock = stockPosterior;
+        const acquisitionRef = businessRef.collection("adquisicionesInventario").doc(`${purchaseId}__${line.lineaId}`);
+        const economicSnapshots = {
+          stockAnterior: running.stock,
+          stockPosterior: next.stock,
+          valorInventarioAnterior: running.value,
+          valorInventarioPosterior: next.value,
+          costoPromedioAnterior: running.average,
+          costoPromedioPosterior: next.average,
+        };
+        transaction.create(movementRef, {movimientoId: movementRef.id, negocioId: businessId, itemId: line.itemId, lineaId: text(line.lineaId, 160), compraId: purchaseId, compraNumero: purchase.numero, adquisicionId: acquisitionRef.id, tipo: "entrada_compra", tipoOrigen: "compra_directa", cantidad: amounts.cantidad, costoUnitarioAplicado: amounts.costoPagadoUnitario, costoTotal: amounts.costoPagadoTotal, moneda: purchaseCurrency, stockAnterior: running.stock, stockPosterior: next.stock, stockResultante: next.stock, valorInventarioAnterior: running.value, valorInventarioPosterior: next.value, costoPromedioAnterior: running.average, costoPromedioPosterior: next.average, modeloEconomiaInventarioVersion: INVENTORY_ECONOMIC_MODEL_VERSION, motivo: "Confirmación de compra", codigo: text(line.codigo, 100), nombre: text(line.nombre, 240), unidad: text(line.unidad, 80), creadoPorUid: uid, creadoEn: timestamp});
+        transaction.create(acquisitionRef, {
+          modeloAdquisicionVersion: 1,
+          modeloEconomiaInventarioVersion: INVENTORY_ECONOMIC_MODEL_VERSION,
+          adquisicionId: acquisitionRef.id,
+          negocioId: businessId,
+          itemId: line.itemId,
+          lineaId: text(line.lineaId, 160),
+          estado: "vigente",
+          origen: "compra_directa",
+          productoSnapshot: line.inventarioSnapshot || {inventarioId: line.itemId, codigoInterno: text(line.codigo, 100), nombre: text(line.nombre, 240), tipoItem: "producto", unidad: text(line.unidad, 80)},
+          proveedorId: text(purchase.proveedorId, 160),
+          proveedorSnapshot: purchase.proveedorSnapshot || {},
+          ...amounts,
+          ...economicSnapshots,
+          moneda: purchaseCurrency,
+          fechaAdquisicion: text(purchase.fechaCompra, 10),
+          compraId: purchaseId,
+          compraNumero: text(purchase.numero, 120),
+          tipoDocumento: text(purchase.tipoDocumento, 80),
+          numeroDocumentoProveedor: text(purchase.numeroDocumentoProveedor, 120),
+          fechaDocumento: text(purchase.fechaDocumento, 10),
+          movimientoInventarioId: movementRef.id,
+          registradoPorUid: uid,
+          creadoEn: timestamp,
+        });
+        efectosInventario.push({itemId: line.itemId, lineaId: line.lineaId, nombre: line.nombre, unidad: line.unidad, cantidad: amounts.cantidad, movimientoEntradaId: movementRef.id, movimientoReversionId: `${purchaseId}__reversion__${line.lineaId}`, adquisicionId: acquisitionRef.id});
+        running = {...next, ultimoCosto: amounts.costoPagadoUnitario, ultimaAdquisicionId: acquisitionRef.id};
       });
-      transaction.update(itemRefs[index], {stock: runningStock, actualizadoEn: timestamp, actualizadoPorUid: uid});
+      transaction.update(itemRefs[index], {
+        stock: running.stock,
+        ...inventoryEconomicFields(running, timestamp),
+        ultimoCosto: running.ultimoCosto,
+        ultimoProveedor: {proveedorId: text(purchase.proveedorId, 160), razonSocial: text(purchase.proveedorSnapshot?.razonSocial, 240)},
+        ultimaAdquisicionId: running.ultimaAdquisicionId,
+        ultimaAdquisicionEn: timestamp,
+        actualizadoEn: timestamp,
+        actualizadoPorUid: uid,
+      });
     });
     const stockApplied = productLines.length > 0;
-    const update = {estado: "confirmada", stockAplicado: stockApplied, stockAplicadoEn: stockApplied ? timestamp : null, confirmadoPorUid: uid, confirmadoEn: timestamp, actualizadoPorUid: uid, actualizadoEn: timestamp};
+    const update = {estado: "confirmada", efectosInventario, stockAplicado: stockApplied, stockAplicadoEn: stockApplied ? timestamp : null, confirmadoPorUid: uid, confirmadoEn: timestamp, actualizadoPorUid: uid, actualizadoEn: timestamp};
     transaction.update(purchaseRef, update);
     transaction.set(requestRef, {negocioId: businessId, compraId: purchaseId, uidUsuario: uid, productosActualizados: productLines.length, creadoEn: timestamp});
     return {compra: {id: purchaseId, ...purchase, ...update, confirmadoEn: null, actualizadoEn: null}, requestId: reqId, idempotent: false, productosActualizados: productLines.length};
@@ -675,6 +746,71 @@ function purchaseReversalEffects(purchase) {
       movimientoReversionId: `${purchase.compraId}__reversion__${line.lineaId}`,
       adquisicionId: "",
     }));
+}
+
+function reversalCost(effect, purchase, acquisitionById, HttpsError) {
+  const acquisitionId = text(effect.adquisicionId, 160);
+  if (acquisitionId) {
+    const acquisition = acquisitionById.get(acquisitionId);
+    if (!acquisition || acquisition.negocioId !== purchase.negocioId) {
+      fail(HttpsError, "failed-precondition", "La adquisición original no contiene un costo confiable.");
+    }
+    if (acquisition.estado === "revertida") {
+      fail(HttpsError, "failed-precondition", "La adquisición original ya fue revertida.");
+    }
+    const total = Number(acquisition.costoPagadoTotal);
+    const currency = text(acquisition.moneda, 12).toUpperCase();
+    if (!Number.isFinite(total) || total < 0 || !/^[A-Z]{3}$/.test(currency)) {
+      fail(HttpsError, "failed-precondition", "La adquisición original no contiene un costo confiable.");
+    }
+    return {acquisition, currency, total};
+  }
+  const line = (purchase.items || []).find((item) =>
+    text(item.lineaId, 160) === text(effect.lineaId, 160)
+  );
+  if (!line) fail(HttpsError, "failed-precondition", "La compra histórica no conserva su costo original.");
+  const amounts = calculateAcquisitionAmounts({
+    cantidad: line.cantidad,
+    costoUnitario: line.costoUnitario,
+    descuentoPct: line.descuentoPct,
+    tasaImpuestoCompra: Number(purchase.tasaIva || 0) * 100,
+  });
+  const currency = text(purchase.moneda, 12).toUpperCase();
+  if (!Number.isFinite(amounts.costoPagadoTotal) || !/^[A-Z]{3}$/.test(currency)) {
+    fail(HttpsError, "failed-precondition", "La compra histórica no conserva un costo original representable.");
+  }
+  return {acquisition: null, currency, total: amounts.costoPagadoTotal};
+}
+
+function timestampMillis(value) {
+  if (value && typeof value.toMillis === "function") return value.toMillis();
+  if (Number.isFinite(Number(value?._seconds))) return Number(value._seconds) * 1000;
+  if (Number.isFinite(Number(value?.seconds))) return Number(value.seconds) * 1000;
+  return null;
+}
+
+function previousDemonstrableAcquisition(
+  snapshot,
+  {businessId, currency, excludedIds, itemId}
+) {
+  const active = snapshot.docs.flatMap((document) => {
+    const data = document.data() || {};
+    if (
+      data.negocioId !== businessId || data.itemId !== itemId ||
+      excludedIds.has(document.id) || data.estado === "revertida"
+    ) return [];
+    const timestamp = timestampMillis(data.creadoEn);
+    const cost = Number(data.costoPagadoUnitario);
+    const currency = text(data.moneda, 12).toUpperCase();
+    return timestamp !== null && Number.isFinite(cost) && cost >= 0 && /^[A-Z]{3}$/.test(currency)
+      ? [{currency, data, id: document.id, timestamp}]
+      : [{ambiguous: true}];
+  });
+  if (active.some((entry) => entry.ambiguous)) return null;
+  active.sort((left, right) => right.timestamp - left.timestamp || right.id.localeCompare(left.id));
+  if (active.length > 1 && active[0].timestamp === active[1].timestamp) return null;
+  if (active[0] && active[0].currency !== currency) return null;
+  return active[0] || null;
 }
 
 async function revertirCompraHandler(request, dependencies) {
@@ -742,6 +878,13 @@ async function revertirCompraHandler(request, dependencies) {
     const receptionRef = purchase.recepcionId
       ? businessRef.collection("recepciones").doc(id(purchase.recepcionId, "La recepcion", HttpsError))
       : null;
+    assertInventoryTransactionWriteBudget({
+      acquisitionWrites: acquisitionEffects.length,
+      documentWrites: 2 + (receptionRef ? 1 : 0),
+      inventoryWrites: inventoryIds.length,
+      movementWrites: effects.length,
+      operation: "reversión de Compra",
+    }, HttpsError);
     const [inventorySnapshots, movementSnapshots, acquisitionSnapshots, receptionSnapshot] = await Promise.all([
       inventoryRefs.length ? transaction.getAll(...inventoryRefs) : [],
       movementRefs.length ? transaction.getAll(...movementRefs) : [],
@@ -760,24 +903,27 @@ async function revertirCompraHandler(request, dependencies) {
     if (receptionSnapshot && (!receptionSnapshot.exists || receptionSnapshot.data()?.negocioId !== businessId)) {
       fail(HttpsError, "failed-precondition", "La recepción vinculada es inconsistente.");
     }
-    const stockByItem = new Map();
+    const inventoryByItem = new Map();
     inventorySnapshots.forEach((snapshot) => {
       if (!snapshot.exists || snapshot.data()?.negocioId !== businessId) {
         fail(HttpsError, "failed-precondition", "Un producto de la compra ya no está disponible.");
       }
-      const stock = Number(snapshot.data()?.stock || 0);
-      if (!Number.isFinite(stock)) {
-        fail(HttpsError, "failed-precondition", "El stock no pudo revertirse de forma segura.");
-      }
-      stockByItem.set(snapshot.id, stock);
+      inventoryByItem.set(snapshot.id, snapshot.data() || {});
     });
+    const acquisitionById = new Map(acquisitionSnapshots.flatMap((snapshot) =>
+      snapshot.exists ? [[snapshot.id, snapshot.data() || {}]] : []
+    ));
+    const costsByEffect = new Map(effects.map((effect) => [
+      `${text(effect.itemId, 160)}__${text(effect.lineaId, 160)}`,
+      reversalCost(effect, {...purchase, negocioId: businessId}, acquisitionById, HttpsError),
+    ]));
     const requiredByItem = new Map();
     effects.forEach((effect) => {
       const itemId = text(effect.itemId, 160);
       requiredByItem.set(itemId, (requiredByItem.get(itemId) || 0) + Number(effect.cantidad));
     });
     const unavailable = inventoryIds.flatMap((itemId) => {
-      const available = stockByItem.get(itemId) || 0;
+      const available = Number(inventoryByItem.get(itemId)?.stock || 0);
       const required = requiredByItem.get(itemId) || 0;
       if (available + 0.000001 >= required) return [];
       const sample = effects.find((effect) => effect.itemId === itemId) || {};
@@ -790,13 +936,35 @@ async function revertirCompraHandler(request, dependencies) {
         `No se puede revertir la compra por stock insuficiente. ${unavailable.join("; ")}.`
       );
     }
+    const reversedAcquisitionIds = new Set(acquisitionEffects.map((effect) =>
+      text(effect.adquisicionId, 160)
+    ));
+    const historyByItem = new Map();
+    await Promise.all(inventoryIds.map(async (itemId) => {
+      const currentLastId = text(inventoryByItem.get(itemId)?.ultimaAdquisicionId, 160);
+      if (!reversedAcquisitionIds.has(currentLastId)) return;
+      const history = await transaction.get(
+        businessRef.collection("adquisicionesInventario").where("itemId", "==", itemId)
+      );
+      historyByItem.set(itemId, history);
+    }));
     const timestamp = FieldValue.serverTimestamp();
-    const runningStock = new Map(stockByItem);
+    const runningEconomic = new Map();
     effects.forEach((effect) => {
       const itemId = text(effect.itemId, 160);
       const quantity = Number(effect.cantidad);
-      const before = runningStock.get(itemId);
-      const after = before - quantity;
+      const cost = costsByEffect.get(`${itemId}__${text(effect.lineaId, 160)}`);
+      const before = runningEconomic.get(itemId) || resolveInventoryEconomicState({
+        item: inventoryByItem.get(itemId),
+        operationCurrency: cost.currency,
+      }, HttpsError);
+      if (before.currency !== cost.currency) {
+        fail(HttpsError, "failed-precondition", "La adquisición no coincide con la moneda del saldo de inventario.");
+      }
+      const after = applyInventoryEconomicDelta(before, {
+        quantityDelta: -quantity,
+        valueDelta: -cost.total,
+      }, HttpsError);
       const reversalMovementId = text(
         effect.movimientoReversionId || `${purchaseId}__reversion__${effect.lineaId}`,
         160
@@ -818,18 +986,49 @@ async function revertirCompraHandler(request, dependencies) {
           lineaId: text(effect.lineaId, 160),
           movimientoOrigenId: text(effect.movimientoEntradaId, 160),
           cantidad: quantity,
-          stockAnterior: before,
-          stockResultante: after,
+          costoTotal: cost.total,
+          moneda: cost.currency,
+          stockAnterior: before.stock,
+          stockPosterior: after.stock,
+          stockResultante: after.stock,
+          valorInventarioAnterior: before.value,
+          valorInventarioPosterior: after.value,
+          costoPromedioAnterior: before.average,
+          costoPromedioPosterior: after.average,
+          modeloEconomiaInventarioVersion: INVENTORY_ECONOMIC_MODEL_VERSION,
           motivo: reason,
           creadoPorUid: uid,
           creadoEn: timestamp,
         }
       );
-      runningStock.set(itemId, after);
+      runningEconomic.set(itemId, after);
     });
-    runningStock.forEach((stock, itemId) => {
+    runningEconomic.forEach((economic, itemId) => {
+      const inventory = inventoryByItem.get(itemId) || {};
+      const currentLastId = text(inventory.ultimaAdquisicionId, 160);
+      const replacesLast = reversedAcquisitionIds.has(currentLastId);
+      const previous = replacesLast && historyByItem.has(itemId)
+        ? previousDemonstrableAcquisition(historyByItem.get(itemId), {
+          businessId,
+          currency: economic.currency,
+          excludedIds: reversedAcquisitionIds,
+          itemId,
+        })
+        : null;
       transaction.update(businessRef.collection("inventario").doc(itemId), {
-        stock,
+        stock: economic.stock,
+        ...inventoryEconomicFields(economic, timestamp),
+        ...(replacesLast ? previous ? {
+          ultimoCosto: Number(previous.data.costoPagadoUnitario),
+          ultimoProveedor: previous.data.proveedorSnapshot || null,
+          ultimaAdquisicionId: previous.id,
+          ultimaAdquisicionEn: previous.data.creadoEn,
+        } : {
+          ultimoCosto: null,
+          ultimoProveedor: null,
+          ultimaAdquisicionId: null,
+          ultimaAdquisicionEn: null,
+        } : {}),
         actualizadoEn: timestamp,
         actualizadoPorUid: uid,
       });

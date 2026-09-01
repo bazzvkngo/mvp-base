@@ -3,6 +3,14 @@ const {adaptDocumentLocalization, documentLocalizationSnapshot} = require("./loc
 const {buildAuthoritativeCompanySnapshot, resolveCompanySnapshot} = require("./companySnapshot");
 const {fiscalSnapshotFields} = require("./fiscalIdentifier");
 const {inventoryCostSnapshot, linkedWorkFields, writeCommercialLink, writeSaleConfirmationEvent} = require("./workPersistence");
+const {
+  INVENTORY_ECONOMIC_MODEL_VERSION,
+  applyInventoryCostedOutflow,
+  applyInventoryEconomicDelta,
+  assertCanonicalInventoryQuantity,
+  inventoryEconomicFields,
+  resolveInventoryEconomicState,
+} = require("./inventoryAcquisition");
 
 const MODEL_VERSION = 1;
 const VAT_RATE = 0.19;
@@ -105,11 +113,14 @@ function inventory(snapshot, businessId, itemId, HttpsError, active = true) {
   return {inventarioId: itemId, codigoInterno: text(raw.codigoInterno || raw.sku, 100), nombre, descripcion: text(raw.descripcion, 3000), tipoItem, unidad: text(raw.unidad, 80) || "unidad", modeloInventarioVersion: Number(raw.modeloInventarioVersion || 1)};
 }
 function storedLine(value, snapshot, HttpsError, extra = {}) {
-  const subtotalLinea = Math.round(value.cantidad * value.precioUnitario);
+  const cantidad = snapshot.tipoItem === "producto"
+    ? assertCanonicalInventoryQuantity(value.cantidad, HttpsError)
+    : value.cantidad;
+  const subtotalLinea = Math.round(cantidad * value.precioUnitario);
   const descuentoLinea = Math.round((subtotalLinea * value.descuentoPct) / 100);
   const totalLinea = subtotalLinea - descuentoLinea;
   safeMoney([subtotalLinea, descuentoLinea, totalLinea], HttpsError);
-  return {lineaId: value.lineaId, itemId: value.itemId, codigo: snapshot.codigoInterno, nombre: snapshot.nombre, descripcion: snapshot.descripcion, tipoItem: snapshot.tipoItem, unidad: snapshot.unidad, cantidad: value.cantidad, precioUnitario: value.precioUnitario, descuentoPct: value.descuentoPct, subtotalLinea, descuentoLinea, totalLinea, inventarioSnapshot: snapshot, ...extra};
+  return {lineaId: value.lineaId, itemId: value.itemId, codigo: snapshot.codigoInterno, nombre: snapshot.nombre, descripcion: snapshot.descripcion, tipoItem: snapshot.tipoItem, unidad: snapshot.unidad, cantidad, precioUnitario: value.precioUnitario, descuentoPct: value.descuentoPct, subtotalLinea, descuentoLinea, totalLinea, inventarioSnapshot: snapshot, ...extra};
 }
 function totals(items, HttpsError, {descuentoGeneral = 0, afectaIva = true, tasaIva = VAT_RATE} = {}) {
   const subtotal = items.reduce((sum, item) => sum + item.subtotalLinea, 0);
@@ -309,17 +320,24 @@ async function createConfirmedSaleFromQuoteInTransaction({
       });
     }
     if (!validProduct || safeAvailable === 0) return;
-    let runningStock = available;
+    let running = resolveInventoryEconomicState({item: raw, operationCurrency: base.moneda}, HttpsError);
     let pendingToApply = Math.min(safeAvailable, required);
     group.lines.forEach((line) => {
       const cantidadSolicitada = Number(line.cantidad);
       const cantidad = Math.min(cantidadSolicitada, pendingToApply);
       if (cantidad <= 0) return;
-      const stockAnterior = runningStock;
-      const stockPosterior = stockAnterior - cantidad;
       const movementRef = businessRef.collection("movimientosInventario")
         .doc(`${saleRef.id}__${line.lineaId}`);
-      const costFields = historicalCostFields(raw, cantidad, base.moneda);
+      let costFields = historicalCostFields({...raw, costoPromedio: running.average}, cantidad, base.moneda);
+      if (costFields.costoHistoricoDisponible !== true) {
+        fail(HttpsError, "failed-precondition", "El producto no tiene un costo vigente confiable.");
+      }
+      const outflow = applyInventoryCostedOutflow(running, {
+        cantidad,
+        costoUnitario: costFields.costoUnitario,
+      }, HttpsError);
+      costFields = {...costFields, costoTotal: outflow.costoTotal};
+      const next = outflow.next;
       transaction.create(movementRef, {
         movimientoId: movementRef.id,
         negocioId: businessId,
@@ -331,8 +349,13 @@ async function createConfirmedSaleFromQuoteInTransaction({
         tipo: "salida_venta",
         cantidad,
         cantidadSolicitada,
-        stockAnterior,
-        stockPosterior,
+        stockAnterior: running.stock,
+        stockPosterior: next.stock,
+        valorInventarioAnterior: running.value,
+        valorInventarioPosterior: next.value,
+        costoPromedioAnterior: running.average,
+        costoPromedioPosterior: next.average,
+        modeloEconomiaInventarioVersion: INVENTORY_ECONOMIC_MODEL_VERSION,
         motivo: "Aceptación de cotización",
         codigo: text(line.codigo, 100),
         nombre: text(line.nombre, 240),
@@ -355,11 +378,12 @@ async function createConfirmedSaleFromQuoteInTransaction({
         tipoItem: "producto",
         ...costFields,
       });
-      runningStock = stockPosterior;
+      running = next;
       pendingToApply -= cantidad;
     });
     transaction.update(inventoryRefs[index], {
-      stock: runningStock,
+      stock: running.stock,
+      ...inventoryEconomicFields(running, timestamp),
       actualizadoEn: timestamp,
       actualizadoPorUid: actorUid,
     });
@@ -530,9 +554,25 @@ async function confirmarVentaHandler(request, dependencies) {
     const snapshots = refs.length ? await transaction.getAll(...refs) : []; if (clientRef) client(snapshots[0], businessId, sale.clienteId, HttpsError); const itemSnapshots = clientRef ? snapshots.slice(1) : snapshots; const timestamp = FieldValue.serverTimestamp();
     const efectosInventario = [];
     groups.forEach((group, index) => { const snapshot = itemSnapshots[index]; if (!snapshot.exists) fail(HttpsError, "failed-precondition", `No se encontró el ítem ${group.lines[0].nombre}.`); const raw = snapshot.data() || {}; if (raw.negocioId && raw.negocioId !== businessId) fail(HttpsError, "permission-denied", "Un ítem pertenece a otro negocio."); const currentType = TYPES.has(raw.tipoItem) ? raw.tipoItem : "producto"; if (group.lines.some((line) => line.tipoItem !== currentType)) fail(HttpsError, "failed-precondition", "Un ítem cambió de tipo."); if (!sale.cotizacionId && raw.estado && raw.estado !== "activo") fail(HttpsError, "failed-precondition", "Un ítem ya no está disponible."); if (currentType !== "producto") return;
-      let runningStock = Number(raw.stock || 0); if (!Number.isFinite(runningStock)) fail(HttpsError, "failed-precondition", "El stock no pudo actualizarse de forma segura.");
-      group.lines.forEach((line) => { const cantidad = Number(line.cantidad); if (!Number.isFinite(cantidad) || cantidad <= 0) fail(HttpsError, "failed-precondition", "La cantidad de salida no es válida."); if (runningStock < cantidad) fail(HttpsError, "failed-precondition", `Stock insuficiente para ${text(line.nombre, 240)}. Disponible: ${runningStock}.`); const stockAnterior = runningStock; const stockPosterior = stockAnterior - cantidad; const movementRef = businessRef.collection("movimientosInventario").doc(`${ventaId}__${line.lineaId}`); const costFields = historicalCostFields(raw, cantidad, sale.moneda); transaction.set(movementRef, {movimientoId: movementRef.id, negocioId: businessId, itemId: line.itemId, ventaId, ventaNumero: sale.numero, tipo: "salida_venta", cantidad, stockAnterior, stockPosterior, motivo: "Confirmación de venta", codigo: text(line.codigo, 100), nombre: text(line.nombre, 240), unidad: text(line.unidad, 80), ...costFields, creadoPorUid: uid, createdAt: timestamp}); efectosInventario.push({itemId: line.itemId, lineaId: line.lineaId, movimientoId: movementRef.id, cantidad, cantidadSolicitada: cantidad, codigo: text(line.codigo, 100), nombre: text(line.nombre, 240), unidad: text(line.unidad, 80), fecha: sale.fechaVenta, tipoItem: "producto", ...costFields}); runningStock = stockPosterior; });
-      transaction.update(itemRefs[index], {stock: runningStock, actualizadoEn: timestamp, actualizadoPorUid: uid});
+      let running = resolveInventoryEconomicState({item: raw, operationCurrency: sale.moneda}, HttpsError);
+      group.lines.forEach((line) => {
+        const cantidad = Number(line.cantidad);
+        if (!Number.isFinite(cantidad) || cantidad <= 0) fail(HttpsError, "failed-precondition", "La cantidad de salida no es válida.");
+        if (running.stock < cantidad) fail(HttpsError, "failed-precondition", `Stock insuficiente para ${text(line.nombre, 240)}. Disponible: ${running.stock}.`);
+        const movementRef = businessRef.collection("movimientosInventario").doc(`${ventaId}__${line.lineaId}`);
+        let costFields = historicalCostFields({...raw, costoPromedio: running.average}, cantidad, sale.moneda);
+        if (costFields.costoHistoricoDisponible !== true) fail(HttpsError, "failed-precondition", "El producto no tiene un costo vigente confiable.");
+        const outflow = applyInventoryCostedOutflow(running, {
+          cantidad,
+          costoUnitario: costFields.costoUnitario,
+        }, HttpsError);
+        costFields = {...costFields, costoTotal: outflow.costoTotal};
+        const next = outflow.next;
+        transaction.set(movementRef, {movimientoId: movementRef.id, negocioId: businessId, itemId: line.itemId, ventaId, ventaNumero: sale.numero, tipo: "salida_venta", cantidad, stockAnterior: running.stock, stockPosterior: next.stock, valorInventarioAnterior: running.value, valorInventarioPosterior: next.value, costoPromedioAnterior: running.average, costoPromedioPosterior: next.average, modeloEconomiaInventarioVersion: INVENTORY_ECONOMIC_MODEL_VERSION, motivo: "Confirmación de venta", codigo: text(line.codigo, 100), nombre: text(line.nombre, 240), unidad: text(line.unidad, 80), ...costFields, creadoPorUid: uid, createdAt: timestamp});
+        efectosInventario.push({itemId: line.itemId, lineaId: line.lineaId, movimientoId: movementRef.id, cantidad, cantidadSolicitada: cantidad, codigo: text(line.codigo, 100), nombre: text(line.nombre, 240), unidad: text(line.unidad, 80), fecha: sale.fechaVenta, tipoItem: "producto", ...costFields});
+        running = next;
+      });
+      transaction.update(itemRefs[index], {stock: running.stock, ...inventoryEconomicFields(running, timestamp), actualizadoEn: timestamp, actualizadoPorUid: uid});
     });
     const update = {estado: "confirmada", efectosInventario, stockAplicado: true, stockAplicadoAt: timestamp, confirmadoPorUid: uid, confirmedAt: timestamp, actualizadoPorUid: uid, updatedAt: timestamp}; transaction.update(saleRef, update);
     if (workRef) writeSaleConfirmationEvent(transaction, workRef, {actor: {nombre: text(context.membership?.nombre || context.membership?.correo, 200) || "Persona del equipo", correo: text(context.membership?.correo, 240)}, actorUid: uid, businessId, currency: sale.moneda, quoteNumber: sale.cotizacionNumero, saleId: ventaId, saleNumber: sale.numero, timestamp, total: sale.total});
@@ -641,13 +681,19 @@ async function cancelarVentaBorradorHandler(request, dependencies) {
       if (raw.negocioId && raw.negocioId !== businessId) {
         fail(HttpsError, "permission-denied", "Un producto pertenece a otro negocio.");
       }
-      let runningStock = Number(raw.stock);
-      if (!Number.isFinite(runningStock)) {
-        fail(HttpsError, "failed-precondition", "El stock no pudo revertirse de forma segura.");
-      }
+      const firstCurrency = group.effects.find((effect) => effect.moneda)?.moneda || existing.moneda;
+      let running = resolveInventoryEconomicState({item: raw, operationCurrency: firstCurrency}, HttpsError);
       group.effects.forEach((effect) => {
-        const stockAnterior = runningStock;
-        const stockPosterior = stockAnterior + effect.cantidad;
+        if (!effect.costoHistoricoDisponible) {
+          fail(HttpsError, "failed-precondition", "La venta no conserva el costo histórico necesario para reponer inventario.");
+        }
+        if (effect.moneda !== running.currency) {
+          fail(HttpsError, "failed-precondition", "La venta no puede reponer valor en una moneda distinta al saldo de inventario.");
+        }
+        const next = applyInventoryEconomicDelta(running, {
+          quantityDelta: effect.cantidad,
+          valueDelta: effect.costoTotal,
+        }, HttpsError);
         const movementRef = businessRef.collection("movimientosInventario")
           .doc(`cancelacion__${ventaId}__${effect.lineaId}`);
         transaction.create(movementRef, {
@@ -668,8 +714,13 @@ async function cancelarVentaBorradorHandler(request, dependencies) {
             moneda: effect.moneda,
             costoHistoricoDisponible: true,
           } : {costoHistoricoDisponible: false}),
-          stockAnterior,
-          stockPosterior,
+          stockAnterior: running.stock,
+          stockPosterior: next.stock,
+          valorInventarioAnterior: running.value,
+          valorInventarioPosterior: next.value,
+          costoPromedioAnterior: running.average,
+          costoPromedioPosterior: next.average,
+          modeloEconomiaInventarioVersion: INVENTORY_ECONOMIC_MODEL_VERSION,
           motivo,
           creadoPorUid: uid,
           createdAt: timestamp,
@@ -688,10 +739,11 @@ async function cancelarVentaBorradorHandler(request, dependencies) {
             costoHistoricoDisponible: true,
           } : {costoHistoricoDisponible: false}),
         });
-        runningStock = stockPosterior;
+        running = next;
       });
       transaction.update(inventoryRefs[index], {
-        stock: runningStock,
+        stock: running.stock,
+        ...inventoryEconomicFields(running, timestamp),
         actualizadoEn: timestamp,
         actualizadoPorUid: uid,
       });

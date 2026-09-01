@@ -423,12 +423,14 @@ async function sourceChecks() {
   const importer = await readFile(new URL("../src/features/inventory/InventoryImportDialog.jsx", import.meta.url), "utf8");
   const importService = await readFile(new URL("../src/services/inventoryImportService.js", import.meta.url), "utf8");
   assert.doesNotMatch(page, /InventoryAiImporter|Gemini|normalizeInventoryDocument|normalizeInventoryItems/);
-  assert.match(importer, /SPREADSHEET_EXTENSION[\s\S]*?readLocalInventoryWorkbook/);
-  assert.match(importer, /normalizeInventoryDocumentWithAi/);
-  assert.match(importer, /useAiRateLimit/);
-  assert.match(importer, /enabled: open && sourceKind === "document"/);
-  assert.match(importer, /Análisis con IA disponible/);
+  assert.match(importer, /SPREADSHEET_EXTENSION = \/\\\.\(csv\|xls\|xlsx\)\$\/i/);
+  assert.match(importer, /SPREADSHEET_ACCEPT = "\.csv,\.xls,\.xlsx"/);
+  assert.match(importer, /Carga el catálogo maestro desde una planilla Excel o CSV/);
+  assert.match(importer, /CSV, XLS o XLSX/);
+  assert.match(importer, /readLocalInventoryWorkbook/);
   assert.match(importer, /procesamiento local sin IA/);
+  assert.doesNotMatch(importer, /normalizeInventoryDocumentWithAi|useAiRateLimit|Gemini/);
+  assert.doesNotMatch(importer, /application\/pdf|image\/(?:jpeg|png|webp)|\.pdf|\.jpe?g|\.png|\.webp/i);
   assert.match(importService, /confirmManagedInventoryImport/);
   assert.match(importer, /Nada se guarda hasta confirmar la importación/);
   assert.match(importer, /Reintentar importación/);
@@ -441,7 +443,7 @@ async function sourceChecks() {
   assert.match(importer, /Subir archivo/);
   assert.match(importer, /Revisar/);
   assert.match(importer, /Importando inventario/);
-  assert.match(importer, /Aplicar IVA/);
+  assert.match(importer, /Sin IVA \/ Exento/);
   assert.match(importer, /Eliminar fila/);
   assert.doesNotMatch(manager, /Hikvision|Prodalam|06897040|93\.772\.000-9/);
   assert.match(manager, /Origen de compra/);
