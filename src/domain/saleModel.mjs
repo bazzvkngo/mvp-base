@@ -29,6 +29,7 @@ export const SALE_DOCUMENT_TYPE_LABELS = Object.freeze({
 });
 
 const STATUS_SET = new Set(SALE_STATUSES);
+const CONFIRMED_STATUS_ALIASES = new Set(["confirmado", "activa", "activo"]);
 const DOCUMENT_SET = new Set(SALE_DOCUMENT_TYPES);
 const ITEM_TYPES = new Set(["producto", "servicio", "actividad"]);
 const MAXIMUM_AMOUNT_MESSAGE = "El monto de la venta supera el máximo permitido.";
@@ -206,7 +207,11 @@ export function adaptStoredSale(raw = {}) {
     id: text(raw.id || raw.ventaId, 160),
     ventaId: text(raw.ventaId || raw.id, 160),
     numero: text(raw.numero, 120),
-    estado: STATUS_SET.has(estado) ? estado : "borrador",
+    estado: STATUS_SET.has(estado)
+      ? estado
+      : CONFIRMED_STATUS_ALIASES.has(estado)
+        ? "confirmada"
+        : "borrador",
     clienteId: text(raw.clienteId || cliente.clienteId, 160),
     clienteSnapshot: cliente,
     cotizacionId: text(raw.cotizacionId, 160),

@@ -12,6 +12,7 @@ import {
 } from "../domain/saleModel.mjs";
 import SaleCatalogDialog from "../features/sales/SaleCatalogDialog";
 import SaleClientSelector from "../features/sales/SaleClientSelector";
+import SaleCommercialMarginPanel from "../features/sales/SaleCommercialMarginPanel";
 import SaleItemsEditor from "../features/sales/SaleItemsEditor";
 import SalePrintView from "../features/sales/SalePrintView";
 import SaleSummaryPanel from "../features/sales/SaleSummaryPanel";
@@ -57,6 +58,7 @@ export default function NewSalePage({businessId, role}) {
   const pendingConfirmationSaleId = useRef("");
   const canManage = canManageSales(role);
   const readOnly = !canManage || Boolean(sale && sale.estado !== "borrador");
+  const isSaleDetailRoute = Boolean(ventaId) && !/\/editar\/?$/.test(location.pathname);
   const referencesLocked = Boolean(sale?.cotizacionId);
   const canCancelConfirmedQuote = Boolean(
     canManage && sale?.cotizacionId && sale?.estado === "confirmada"
@@ -331,6 +333,8 @@ export default function NewSalePage({businessId, role}) {
         <div className="po-layout">
           <div className="po-main">
             <SaleItemsEditor disabled={readOnly} inventory={inventory} items={draft.items} onChange={(items) => setDraft((current) => ({...current, items}))} onOpenCatalog={() => setCatalogOpen(true)} readOnly={Boolean(readOnly && sale)} referencesLocked={referencesLocked} />
+
+            {isSaleDetailRoute && <SaleCommercialMarginPanel role={role} sale={sale} />}
 
             <section className="po-panel sale-data-panel">
               <header className="sale-section-heading">

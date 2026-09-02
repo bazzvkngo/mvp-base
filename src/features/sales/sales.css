@@ -437,6 +437,111 @@
   margin: 0;
 }
 
+.sale-commercial-margin {
+  border-left: 4px solid #087f78;
+  display: grid;
+  gap: 14px;
+}
+
+.sale-commercial-margin__header {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.sale-commercial-margin__header h2 {
+  color: #17313f;
+  font-size: 18px;
+  font-weight: 850;
+  margin: 2px 0 0;
+}
+
+.sale-commercial-margin__status {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 999px;
+  color: #065f46;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 5px 9px;
+  white-space: nowrap;
+}
+
+.sale-commercial-margin__status--anulada,
+.sale-commercial-margin__status--no_disponible,
+.sale-commercial-margin__status--inconsistente_moneda {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #526573;
+}
+
+.sale-commercial-margin__status--parcial,
+.sale-commercial-margin__status--pendiente,
+.sale-commercial-margin__status--no_aplica {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
+.sale-commercial-margin__metrics {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.sale-commercial-margin__metrics > div {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+}
+
+.sale-commercial-margin__metrics dt {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sale-commercial-margin__metrics dd {
+  color: #17313f;
+  font-size: 15px;
+  font-weight: 800;
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sale-commercial-margin__metrics .sale-commercial-margin__primary-metric {
+  background: #f0fdfa;
+  border-color: #99f6e4;
+}
+
+.sale-commercial-margin__notice,
+.sale-commercial-margin__note {
+  color: #526573;
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.sale-commercial-margin__notice {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  padding: 10px 12px;
+}
+
+.sale-commercial-margin__note {
+  border-left: 3px solid #94a3b8;
+  padding-left: 10px;
+}
+
 .sale-conditions-summary {
   display: grid;
   gap: 10px;
@@ -790,8 +895,13 @@
   }
 
   .sale-data-readonly,
-  .sale-conditions-summary {
+  .sale-conditions-summary,
+  .sale-commercial-margin__metrics {
     grid-template-columns: 1fr;
+  }
+
+  .sale-commercial-margin__header {
+    align-items: flex-start;
   }
 
   .sale-preview-body {

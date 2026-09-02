@@ -57,6 +57,7 @@
     "test:receptions-model": "node scripts/reception-model-smoke.mjs && node scripts/inventory-acquisition-smoke.mjs",
     "test:receptions-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/receptions-integrated-local.mjs\"",
     "test:sales-model": "node scripts/sale-model-smoke.mjs",
+    "test:sales-margin": "node scripts/sale-commercial-margin-smoke.mjs && node scripts/sale-commercial-margin-ui-smoke.mjs",
     "test:sales-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/sales-integrated-local.mjs\"",
     "test:business-catalog": "node scripts/business-catalog-smoke.mjs",
     "test:contact-territory": "node scripts/contact-territory-smoke.mjs",
