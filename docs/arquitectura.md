@@ -116,10 +116,10 @@ La verificación vive en `negocios/{businessId}.verificacionEmpresa`. Para el ER
 normal, el gate `VERIFICADA` se aplica además de la membresía y los permisos; el
 contexto no verificado queda limitado al onboarding, configuración y solicitud
 de verificación que correspondan. `getBusinessSession` resuelve el estado
-empresarial al cargar o revalidar la sesión, pero una sesión ya abierta todavía
-no detecta automáticamente una aprobación realizada desde otra sesión; hoy el
-propietario necesita refrescar para habilitar los módulos. El target post-demo
-confirmado es revalidar y actualizar `businessSession` sin F5.
+empresarial al cargar o revalidar la sesión. Una sesión ERP abierta observa la
+transición a `VERIFICADA` mediante el listener empresarial existente, revalida
+`businessSession`, habilita los módulos y notifica al usuario sin F5 ni polling
+permanente.
 
 Solicitudes, decisiones y eventos de verificación son autoritativos. La
 evidencia opcional realmente implementada se limita a PDF, JPG o PNG en una ruta

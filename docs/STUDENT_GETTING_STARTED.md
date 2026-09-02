@@ -92,6 +92,35 @@ Storage deben apuntar juntos a los emuladores; una combinación híbrida se
 rechaza. Los datos locales pueden persistirse en `.firebase-emulator-data/`,
 que está ignorado por Git.
 
+## Verificación local de empresas
+
+La aprobación empresarial mantiene el mismo flujo seguro del Core: el `OWNER`
+envía una solicitud y una cuenta separada de Platform Admin la revisa desde
+`/admin/verificaciones`. Para disponer de esa cuenta exclusivamente local,
+mantén Emulator Suite iniciado y ejecuta en otra terminal:
+
+```bash
+npm run bootstrap:platform-admin:emulator
+```
+
+El bootstrap crea o actualiza `platform-admin@valoracloud.local`, le asigna el
+custom claim `platformRole: "PLATFORM_SUPERADMIN"` y muestra una contraseña
+generada para el entorno local. Si necesitas una contraseña local estable,
+puedes definir `VALORACLOUD_LOCAL_PLATFORM_ADMIN_PASSWORD` antes de ejecutar el
+comando; debe tener entre 12 y 128 caracteres y no debe ser una credencial real.
+
+Después inicia la aplicación con `npm run dev:emulator`, ingresa como `OWNER`,
+crea la empresa y envía su verificación. Abre una segunda sesión o ventana de
+incógnito, inicia sesión con la cuenta local mostrada por el bootstrap, visita
+`/admin/verificaciones`, abre la empresa y apruébala indicando su razón social
+oficial. Al volver a la sesión `OWNER`, ValoraCloud revalidará la sesión y
+habilitará los módulos.
+
+El script valida Auth y Firestore antes de escribir y aborta si cualquiera no
+apunta a `localhost`, `127.0.0.1` o `::1`. Esta cuenta jamás debe utilizarse con
+Firebase real. El bootstrap no verifica empresas automáticamente ni reemplaza
+las validaciones de Functions y Rules.
+
 ### Advertencia de producción
 
 En este repositorio, `npm run dev` y `npm run dev:existing` usan datos Firebase
