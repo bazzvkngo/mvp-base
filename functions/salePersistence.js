@@ -2,7 +2,7 @@ const {createHash} = require("node:crypto");
 const {adaptDocumentLocalization, documentLocalizationSnapshot} = require("./localization");
 const {buildAuthoritativeCompanySnapshot, resolveCompanySnapshot} = require("./companySnapshot");
 const {fiscalSnapshotFields} = require("./fiscalIdentifier");
-const {inventoryCostSnapshot, linkedWorkFields, writeCommercialLink, writeSaleConfirmationEvent} = require("./workPersistence");
+const {inventoryCostSnapshot, linkedWorkFields, writeCommercialLink, writeEvent, writeSaleConfirmationEvent} = require("./workPersistence");
 const {
   INVENTORY_ECONOMIC_MODEL_VERSION,
   applyInventoryCostedOutflow,
@@ -76,6 +76,10 @@ function lineInput(raw, index, HttpsError) {
     cantidad: number(raw?.cantidad, `Ítem ${index + 1}: cantidad`, HttpsError, {minimum: Number.MIN_VALUE}),
     precioUnitario: number(raw?.precioUnitario, `Ítem ${index + 1}: precio unitario`, HttpsError),
     descuentoPct: number(raw?.descuentoPct ?? 0, `Ítem ${index + 1}: descuento`, HttpsError, {maximum: 100}),
+    // SPEC 020 §15: se acepta sólo el formato aquí (id válido u omitido); la
+    // existencia/estado/pertenencia real del adicional referenciado se valida
+    // exclusivamente dentro de confirmarVenta, nunca al guardar un borrador.
+    origenAdicionalId: id(raw?.origenAdicionalId, `Ítem ${index + 1}: adicional de origen`, HttpsError, {optional: true}),
   };
 }
 function input(raw, HttpsError) {
@@ -86,6 +90,9 @@ function input(raw, HttpsError) {
   if (new Set(items.map((item) => item.lineaId)).size !== items.length) fail(HttpsError, "invalid-argument", "Las líneas están duplicadas.");
   return {
     clienteId: id(raw.clienteId, "El cliente", HttpsError), items,
+    // SPEC 020 §16: sólo se acepta cuando ya viene fijado (Ventas no tiene un
+    // selector de Proyecto propio); confirmarVenta revalida pertenencia real.
+    trabajoId: id(raw.trabajoId, "El proyecto", HttpsError, {optional: true}),
     descuento: number(raw.descuento ?? 0, "El descuento general", HttpsError),
     afectaIva: raw.afectaIva !== false,
     fechaVenta: date(raw.fechaVenta, "La fecha de venta", HttpsError, true),
@@ -120,7 +127,7 @@ function storedLine(value, snapshot, HttpsError, extra = {}) {
   const descuentoLinea = Math.round((subtotalLinea * value.descuentoPct) / 100);
   const totalLinea = subtotalLinea - descuentoLinea;
   safeMoney([subtotalLinea, descuentoLinea, totalLinea], HttpsError);
-  return {lineaId: value.lineaId, itemId: value.itemId, codigo: snapshot.codigoInterno, nombre: snapshot.nombre, descripcion: snapshot.descripcion, tipoItem: snapshot.tipoItem, unidad: snapshot.unidad, cantidad, precioUnitario: value.precioUnitario, descuentoPct: value.descuentoPct, subtotalLinea, descuentoLinea, totalLinea, inventarioSnapshot: snapshot, ...extra};
+  return {lineaId: value.lineaId, itemId: value.itemId, codigo: snapshot.codigoInterno, nombre: snapshot.nombre, descripcion: snapshot.descripcion, tipoItem: snapshot.tipoItem, unidad: snapshot.unidad, cantidad, precioUnitario: value.precioUnitario, descuentoPct: value.descuentoPct, subtotalLinea, descuentoLinea, totalLinea, inventarioSnapshot: snapshot, origenAdicionalId: value.origenAdicionalId || "", ...extra};
 }
 function totals(items, HttpsError, {descuentoGeneral = 0, afectaIva = true, tasaIva = VAT_RATE} = {}) {
   const subtotal = items.reduce((sum, item) => sum + item.subtotalLinea, 0);
@@ -149,15 +156,20 @@ async function crearVentaHandler(request, dependencies, clock = new Date()) {
   if (normalized.items.some((item) => !item.itemId)) fail(HttpsError, "invalid-argument", "Todos los ítems de una venta directa deben provenir del inventario.");
   const fingerprint = hash(normalized); const now = chileParts(clock); const saleRef = businessRef.collection("ventas").doc();
   const requestRef = businessRef.collection("saleCreateRequests").doc(reqId); const counterRef = businessRef.collection("saleCounters").doc(String(now.year));
+  const workRef = normalized.trabajoId ? businessRef.collection("trabajos").doc(normalized.trabajoId) : null;
   return transactionRetry(db, async (transaction) => {
     const previous = await transaction.get(requestRef);
     if (previous.exists) { const data = previous.data() || {}; if (data.uidUsuario !== uid || data.fingerprint !== fingerprint) fail(HttpsError, "already-exists", "La solicitud ya fue usada con otros datos."); const existing = await transaction.get(businessRef.collection("ventas").doc(data.ventaId)); return {venta: {id: existing.id, ...existing.data()}, requestId: reqId, idempotent: true}; }
-    const refs = [businessRef.collection("clientes").doc(normalized.clienteId), counterRef, businessRef, businessRef.collection("configuracion").doc("impuestos"), businessRef.collection("empresa").doc("perfil"), ...normalized.items.map((item) => businessRef.collection("inventario").doc(item.itemId))];
+    const refs = [businessRef.collection("clientes").doc(normalized.clienteId), counterRef, businessRef, businessRef.collection("configuracion").doc("impuestos"), businessRef.collection("empresa").doc("perfil"), ...normalized.items.map((item) => businessRef.collection("inventario").doc(item.itemId)), ...(workRef ? [workRef] : [])];
     const snapshots = await transaction.getAll(...refs); const clienteSnapshot = client(snapshots[0], businessId, normalized.clienteId, HttpsError);
     const items = normalized.items.map((item, index) => storedLine(item, inventory(snapshots[index + 5], businessId, item.itemId, HttpsError), HttpsError));
+    // SPEC 020 §16: una Venta directa admite un trabajoId opcional (ninguna
+    // Cotización involucrada), validado igual que en el camino ya existente
+    // de Venta-desde-Cotización (linkedWorkFields sobre assertWork).
+    const workFields = workRef ? linkedWorkFields(snapshots[snapshots.length - 1], businessId, HttpsError) : {};
     const current = Number(snapshots[1].data()?.lastNumber || 0); const sequence = Number.isSafeInteger(current) && current >= 0 ? current + 1 : 1;
     const numero = formatNumber(now.year, sequence); const timestamp = FieldValue.serverTimestamp();
-    const stored = baseStored({businessId, uid, ventaId: saleRef.id, numero, sequence, now, normalized, clienteSnapshot, items, localization: documentLocalizationSnapshot(snapshots[2].data() || {}, snapshots[3].data() || {}), empresaSnapshot: buildAuthoritativeCompanySnapshot({businessId, business: snapshots[2].data() || {}, profile: snapshots[4].data() || {}}), timestamp, HttpsError});
+    const stored = baseStored({businessId, uid, ventaId: saleRef.id, numero, sequence, now, normalized, clienteSnapshot, items, localization: documentLocalizationSnapshot(snapshots[2].data() || {}, snapshots[3].data() || {}), empresaSnapshot: buildAuthoritativeCompanySnapshot({businessId, business: snapshots[2].data() || {}, profile: snapshots[4].data() || {}}), origin: workFields, timestamp, HttpsError});
     transaction.set(counterRef, {negocioId: businessId, year: now.year, lastNumber: sequence, actualizadoEn: timestamp}); transaction.set(saleRef, stored);
     transaction.set(requestRef, {ventaId: saleRef.id, numero, negocioId: businessId, uidUsuario: uid, fingerprint, creadoEn: timestamp});
     return {venta: {id: saleRef.id, ...stored, createdAt: null, updatedAt: null}, requestId: reqId, idempotent: false};
@@ -530,7 +542,11 @@ async function actualizarVentaBorradorHandler(request, dependencies) {
     const snapshots = refs.length ? await transaction.getAll(...refs) : []; let cursor = 0;
     const clienteSnapshot = clientChanged ? client(snapshots[cursor++], businessId, normalized.clienteId, HttpsError) : preservedClient(existing);
     const items = normalized.items.map((item, index) => storedLine(item, itemChanged[index] ? inventory(snapshots[cursor++], businessId, item.itemId, HttpsError) : preservedItem(previousLines.get(item.lineaId)), HttpsError, existing.cotizacionId ? {cantidadCotizada: previousLines.get(item.lineaId).cantidadCotizada} : {}));
-    const timestamp = FieldValue.serverTimestamp(); const update = {...normalized, clienteSnapshot, items, ...totals(items, HttpsError, {descuentoGeneral: normalized.descuento, afectaIva: normalized.afectaIva, tasaIva: adaptDocumentLocalization(existing).tasaIva}), actualizadoPorUid: uid, updatedAt: timestamp}; transaction.update(saleRef, update);
+    // trabajoId es inmutable una vez creada la venta (sólo crearVenta lo fija,
+    // SPEC 020 §16): se descarta cualquier valor que el cliente reenvíe aquí
+    // para no permitir re-vincular el borrador a otro Proyecto por esta vía.
+    const {trabajoId: _ignoredTrabajoId, ...normalizedWithoutWork} = normalized;
+    const timestamp = FieldValue.serverTimestamp(); const update = {...normalizedWithoutWork, clienteSnapshot, items, ...totals(items, HttpsError, {descuentoGeneral: normalized.descuento, afectaIva: normalized.afectaIva, tasaIva: adaptDocumentLocalization(existing).tasaIva}), actualizadoPorUid: uid, updatedAt: timestamp}; transaction.update(saleRef, update);
     return {venta: {id: ventaId, ...existing, ...update, updatedAt: null}};
   });
 }
@@ -552,6 +568,17 @@ async function confirmarVentaHandler(request, dependencies) {
     const groupMap = new Map(); toValidate.forEach((line) => { if (!line.itemId) fail(HttpsError, "failed-precondition", `El ítem ${line.nombre} no está vinculado al inventario.`); const group = groupMap.get(line.itemId) || {itemId: line.itemId, lines: []}; group.lines.push(line); groupMap.set(line.itemId, group); });
     const groups = [...groupMap.values()]; const clientRef = sale.cotizacionId ? null : businessRef.collection("clientes").doc(sale.clienteId); const itemRefs = groups.map((group) => businessRef.collection("inventario").doc(group.itemId)); const refs = clientRef ? [clientRef, ...itemRefs] : itemRefs;
     const snapshots = refs.length ? await transaction.getAll(...refs) : []; if (clientRef) client(snapshots[0], businessId, sale.clienteId, HttpsError); const itemSnapshots = clientRef ? snapshots.slice(1) : snapshots; const timestamp = FieldValue.serverTimestamp();
+    // SPEC 020 §7 (gate crítico): recolectar cada línea con origenAdicionalId
+    // ANTES de cualquier escritura, mismo principio que el resto de esta
+    // transacción (todas las lecturas antes que cualquier escritura). Un
+    // adicional nunca existe sin trabajoId, así que sin workRef ninguna línea
+    // puede referenciarlo válidamente.
+    const additionalLineEntries = lines.filter((line) => line.origenAdicionalId);
+    if (additionalLineEntries.length && !workRef) fail(HttpsError, "failed-precondition", "Un adicional sólo puede incorporarse en una venta vinculada a un proyecto.");
+    const referencedAdditionalIds = additionalLineEntries.map((line) => line.origenAdicionalId);
+    if (new Set(referencedAdditionalIds).size !== referencedAdditionalIds.length) fail(HttpsError, "invalid-argument", "Un mismo adicional no puede incorporarse en más de una línea de la venta.");
+    const additionalRefs = additionalLineEntries.map((line) => workRef.collection("adicionales").doc(line.origenAdicionalId));
+    const additionalSnapshots = additionalRefs.length ? await transaction.getAll(...additionalRefs) : [];
     const efectosInventario = [];
     groups.forEach((group, index) => { const snapshot = itemSnapshots[index]; if (!snapshot.exists) fail(HttpsError, "failed-precondition", `No se encontró el ítem ${group.lines[0].nombre}.`); const raw = snapshot.data() || {}; if (raw.negocioId && raw.negocioId !== businessId) fail(HttpsError, "permission-denied", "Un ítem pertenece a otro negocio."); const currentType = TYPES.has(raw.tipoItem) ? raw.tipoItem : "producto"; if (group.lines.some((line) => line.tipoItem !== currentType)) fail(HttpsError, "failed-precondition", "Un ítem cambió de tipo."); if (!sale.cotizacionId && raw.estado && raw.estado !== "activo") fail(HttpsError, "failed-precondition", "Un ítem ya no está disponible."); if (currentType !== "producto") return;
       let running = resolveInventoryEconomicState({item: raw, operationCurrency: sale.moneda}, HttpsError);
@@ -575,7 +602,24 @@ async function confirmarVentaHandler(request, dependencies) {
       transaction.update(itemRefs[index], {stock: running.stock, ...inventoryEconomicFields(running, timestamp), actualizadoEn: timestamp, actualizadoPorUid: uid});
     });
     const update = {estado: "confirmada", efectosInventario, stockAplicado: true, stockAplicadoAt: timestamp, confirmadoPorUid: uid, confirmedAt: timestamp, actualizadoPorUid: uid, updatedAt: timestamp}; transaction.update(saleRef, update);
-    if (workRef) writeSaleConfirmationEvent(transaction, workRef, {actor: {nombre: text(context.membership?.nombre || context.membership?.correo, 200) || "Persona del equipo", correo: text(context.membership?.correo, 240)}, actorUid: uid, businessId, currency: sale.moneda, quoteNumber: sale.cotizacionNumero, saleId: ventaId, saleNumber: sale.numero, timestamp, total: sale.total});
+    const eventActor = {nombre: text(context.membership?.nombre || context.membership?.correo, 200) || "Persona del equipo", correo: text(context.membership?.correo, 240)};
+    // SPEC 020 §7/§12: cierre atómico de cada adicional referenciado, junto a
+    // writeSaleConfirmationEvent (mismo punto ya existente donde
+    // salePersistence.js escribe efectos en el Proyecto vinculado). Si
+    // cualquiera de estas validaciones falla, TODA la transacción se aborta
+    // (incluidos los efectos de inventario ya encolados arriba): no puede
+    // quedar una venta parcialmente confirmada ni un adicional huérfano.
+    additionalLineEntries.forEach((line, refIndex) => {
+      const snapshot = additionalSnapshots[refIndex];
+      const additional = snapshot.exists ? snapshot.data() || {} : {};
+      if (!snapshot.exists || additional.negocioId !== businessId || additional.trabajoId !== sale.trabajoId) fail(HttpsError, "not-found", "No se encontró el adicional seleccionado.");
+      if (additional.estado !== "PENDIENTE_COBRO") fail(HttpsError, "failed-precondition", "El adicional ya no está pendiente de cobro.");
+      if (additional.itemId !== line.itemId) fail(HttpsError, "failed-precondition", "El ítem del adicional no coincide con la línea de la venta.");
+      if (additional.moneda && additional.moneda !== sale.moneda) fail(HttpsError, "failed-precondition", "El adicional no es compatible con la moneda de la venta.");
+      transaction.update(additionalRefs[refIndex], {estado: "INCORPORADO_A_VENTA", ventaId, lineaId: line.lineaId, actualizadoEn: timestamp});
+      writeEvent(transaction, workRef, {businessId, type: "adicional_incorporado_a_venta", actorUid: uid, actor: eventActor, detail: {adicionalId: line.origenAdicionalId, ventaId, numero: sale.numero, lineaId: line.lineaId, itemId: additional.itemId, cantidad: line.cantidad, precioUnitario: line.precioUnitario, moneda: sale.moneda}, timestamp});
+    });
+    if (workRef) writeSaleConfirmationEvent(transaction, workRef, {actor: eventActor, actorUid: uid, businessId, currency: sale.moneda, quoteNumber: sale.cotizacionNumero, saleId: ventaId, saleNumber: sale.numero, timestamp, total: sale.total});
     transaction.set(requestRef, {negocioId: businessId, ventaId, uidUsuario: uid, productosActualizados: productLines.length, creadoEn: timestamp});
     return {venta: {id: ventaId, ...sale, ...update, confirmedAt: null, updatedAt: null}, requestId: reqId, idempotent: false, productosActualizados: productLines.length};
   });

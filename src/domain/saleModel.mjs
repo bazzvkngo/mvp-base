@@ -128,6 +128,12 @@ export function buildSaleMutationPayload(raw = {}) {
   calculateSaleTotals(raw.items, descuento, {afectaIva});
   return {
     clienteId: id(raw.clienteId, "El cliente"),
+    // SPEC 020 §16: sólo se acepta cuando ya viene fijado (p. ej. desde
+    // WorksPage al abrir "Nueva venta" desde un Proyecto); no existe ningún
+    // selector de Proyecto genérico en Ventas. Igual que origenAdicionalId
+    // por línea, el backend nunca confía en esto más allá del formato: la
+    // pertenencia real se revalida en Functions (crearVenta/confirmarVenta).
+    trabajoId: id(raw.trabajoId, "El proyecto", {optional: true}),
     descuento,
     afectaIva,
     fechaVenta: text(raw.fechaVenta, 10),
@@ -144,6 +150,10 @@ export function buildSaleMutationPayload(raw = {}) {
         cantidad: values.cantidad,
         precioUnitario: values.precioUnitario,
         descuentoPct: values.descuentoPct,
+        // SPEC 020 §5/§17: referencia histórica opcional hacia el adicional
+        // de origen (Works). Sólo formato aquí; confirmarVenta es la única
+        // autoridad que valida existencia/estado/pertenencia/ítem.
+        origenAdicionalId: id(item.origenAdicionalId, `Ítem ${index + 1}: adicional de origen`, {optional: true}),
       };
     }),
   };
@@ -177,6 +187,7 @@ function storedLine(raw = {}, index = 0) {
     tipoItem: ITEM_TYPES.has(tipo) ? tipo : "producto",
     unidad: text(raw.unidad || snapshot.unidad, 80) || "unidad",
     cantidadCotizada: raw.cantidadCotizada == null ? null : Number(raw.cantidadCotizada),
+    origenAdicionalId: text(raw.origenAdicionalId, 160),
     ...calculateSaleLine(raw, index),
   };
 }

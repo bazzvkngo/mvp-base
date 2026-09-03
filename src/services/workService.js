@@ -1,11 +1,12 @@
 import {collection, doc, getDoc, getDocs, query, where} from "firebase/firestore";
 import {httpsCallable} from "firebase/functions";
+import {getDownloadURL, ref as storageRef, uploadBytes} from "firebase/storage";
 import {assertCloudFunctionAllowed} from "../config/firebaseEnvironment.mjs";
 import {adaptStoredQuote} from "../domain/quoteModel.mjs";
 import {adaptStoredSale} from "../domain/saleModel.mjs";
-import {adaptStoredWork, adaptWorkBalance, adaptWorkEvent, adaptWorkExpense, adaptWorkLabor, adaptWorkLink, adaptWorkMaterialMovement, adaptWorkNote, adaptWorkTask, adaptWorkTaskDocumentation, buildWorkMutationPayload} from "../domain/workModel.mjs";
-import {db, getFirebaseFunctions} from "../firebase/firebaseConfig";
-import {inventoryMovementsCollectionPath, quoteDocPath, saleDocPath, workExpensesCollectionPath, workHistoryCollectionPath, workLaborCollectionPath, workLinksCollectionPath, workNotesCollectionPath, worksCollectionPath, workTaskDocumentationCollectionPath, workTasksCollectionPath} from "../firebase/firestorePaths";
+import {adaptStoredWork, adaptWorkAdditional, adaptWorkBalance, adaptWorkEvent, adaptWorkExpense, adaptWorkLabor, adaptWorkLink, adaptWorkMaterialMovement, adaptWorkNote, adaptWorkTask, adaptWorkTaskDocumentation, buildWorkExpenseEvidenceFileName, buildWorkMutationPayload, validateWorkExpenseEvidenceSelection} from "../domain/workModel.mjs";
+import {db, getFirebaseFunctions, storage} from "../firebase/firebaseConfig";
+import {inventoryMovementsCollectionPath, quoteDocPath, saleDocPath, workAdditionalsCollectionPath, workExpensesCollectionPath, workHistoryCollectionPath, workLaborCollectionPath, workLinksCollectionPath, workNotesCollectionPath, worksCollectionPath, workTaskDocumentationCollectionPath, workTasksCollectionPath} from "../firebase/firestorePaths";
 
 const functions = getFirebaseFunctions("us-central1");
 
@@ -65,11 +66,27 @@ export async function obtenerBalanceTrabajo(rawBusinessId, rawWorkId) {
   return adaptWorkBalance(response.data);
 }
 
+// SPEC 020 ETAPA 5: lectura acotada para el selector de adicionales de
+// Ventas (src/features/works/AdditionalSelector.jsx) — a diferencia de
+// cargarFichaTrabajo (toda la ficha del Proyecto), aquí sólo se necesitan los
+// adicionales PENDIENTE_COBRO, así que se filtra en la propia consulta en
+// vez de traer todo y filtrar en memoria.
+export async function listarAdicionalesPendientesTrabajo(rawBusinessId, rawWorkId) {
+  const id = businessId(rawBusinessId); const selectedWorkId = workId(rawWorkId);
+  const snapshot = await getDocs(query(
+    collection(db, ...workAdditionalsCollectionPath(id, selectedWorkId)),
+    where("negocioId", "==", id),
+    where("trabajoId", "==", selectedWorkId),
+    where("estado", "==", "PENDIENTE_COBRO"),
+  ));
+  return sortByDate(snapshot.docs.map((entry) => adaptWorkAdditional({...entry.data(), id: entry.id})), "creadoEn", "desc");
+}
+
 export async function cargarFichaTrabajo(rawBusinessId, rawWorkId, {role = "", currentUserUid = ""} = {}) {
   const id = businessId(rawBusinessId); const selectedWorkId = workId(rawWorkId);
   const isTechnician = String(role).toUpperCase() === "TECNICO";
   const emptySnapshot = {docs: []};
-  const [tasks, notes, history, linksSnapshot, expensesSnapshot, laborSnapshot, materialMovementsSnapshot] = await Promise.all([
+  const [tasks, notes, history, linksSnapshot, expensesSnapshot, laborSnapshot, materialMovementsSnapshot, additionalsSnapshot] = await Promise.all([
     getDocs(query(
       collection(db, ...workTasksCollectionPath(id, selectedWorkId)),
       where("negocioId", "==", id),
@@ -82,6 +99,8 @@ export async function cargarFichaTrabajo(rawBusinessId, rawWorkId, {role = "", c
     getDocs(query(collection(db, ...workExpensesCollectionPath(id, selectedWorkId)), where("negocioId", "==", id), where("trabajoId", "==", selectedWorkId), ...(isTechnician ? [where("registradoPorUid", "==", currentUserUid)] : []))),
     getDocs(query(collection(db, ...workLaborCollectionPath(id, selectedWorkId)), where("negocioId", "==", id), where("trabajoId", "==", selectedWorkId), ...(isTechnician ? [where("registradoPorUid", "==", currentUserUid)] : []))),
     getDocs(query(collection(db, ...inventoryMovementsCollectionPath(id)), where("negocioId", "==", id), where("trabajoId", "==", selectedWorkId))),
+    // Mismo predicado que gastos/HH: canReadWorkCosts restringe TECNICO a lo autoatribuido.
+    getDocs(query(collection(db, ...workAdditionalsCollectionPath(id, selectedWorkId)), where("negocioId", "==", id), where("trabajoId", "==", selectedWorkId), ...(isTechnician ? [where("registradoPorUid", "==", currentUserUid)] : []))),
   ]);
   const vinculos = sortByDate(linksSnapshot.docs.map((entry) => adaptWorkLink({...entry.data(), id: entry.id})), "creadoEn");
   const taskDocuments = tasks.docs.map((entry) => adaptWorkTask({...entry.data(), id: entry.id}));
@@ -116,6 +135,7 @@ export async function cargarFichaTrabajo(rawBusinessId, rawWorkId, {role = "", c
     ventas: canonicalDocuments.filter((entry) => entry?.tipo === "venta").map((entry) => entry.documento),
     gastos: sortByDate(expensesSnapshot.docs.map((entry) => adaptWorkExpense({...entry.data(), id: entry.id})), "fecha", "desc"),
     horasHombre: sortByDate(laborSnapshot.docs.map((entry) => adaptWorkLabor({...entry.data(), id: entry.id})), "fecha", "desc"),
+    adicionales: sortByDate(additionalsSnapshot.docs.map((entry) => adaptWorkAdditional({...entry.data(), id: entry.id})), "creadoEn", "desc"),
     materiales: sortByDate(materialMovementsSnapshot.docs
       .map((entry) => ({...entry.data(), id: entry.id}))
       .filter((entry) => ["SALIDA_PROYECTO", "DEVOLUCION_PROYECTO"].includes(entry.tipo))
@@ -177,6 +197,49 @@ export async function registrarGastoTrabajo(rawBusinessId, rawWorkId, gasto, req
 
 export async function anularGastoTrabajo(rawBusinessId, rawWorkId, gastoId, motivo, requestId) {
   return (await call("anularGastoTrabajo", {businessId: businessId(rawBusinessId), trabajoId: workId(rawWorkId), gastoId, motivo, requestId}, "anular gastos de trabajos")).data;
+}
+
+export async function crearAdicionalTrabajo(rawBusinessId, rawWorkId, adicional, requestId) {
+  return (await call("crearAdicionalTrabajo", {businessId: businessId(rawBusinessId), trabajoId: workId(rawWorkId), adicional, requestId}, "registrar adicionales de trabajos")).data;
+}
+
+export async function anularAdicionalTrabajo(rawBusinessId, rawWorkId, adicionalId, motivo, requestId) {
+  return (await call("anularAdicionalTrabajo", {businessId: businessId(rawBusinessId), trabajoId: workId(rawWorkId), adicionalId, motivo, requestId}, "anular adicionales de trabajos")).data;
+}
+
+export async function adjuntarEvidenciaGastoTrabajo(rawBusinessId, rawWorkId, gastoId, nombreArchivo, requestId) {
+  return (await call("adjuntarEvidenciaGastoTrabajo", {businessId: businessId(rawBusinessId), trabajoId: workId(rawWorkId), gastoId, nombreArchivo, requestId}, "adjuntar evidencia de gastos de trabajos")).data;
+}
+
+// Flujo aprobado (SPEC 020 §8/§9): subir directo a Storage (create-only,
+// gobernado por storage.rules) y luego registrar la metadata mediante la
+// Function autoritativa, que relee el objeto real — esta función nunca
+// declara contentType/size al backend, sólo el nombre de archivo ya sano.
+// La validación/saneo son los mismos helpers puros de workModel.mjs que ya
+// usa WorkExpenseEvidence.jsx para la UX, para no duplicar la regla.
+export async function subirEvidenciaGastoTrabajo(rawBusinessId, rawWorkId, gastoId, file, requestId) {
+  const id = businessId(rawBusinessId);
+  const wId = workId(rawWorkId);
+  const validation = validateWorkExpenseEvidenceSelection(file, 0);
+  if (!validation.ok) throw new Error(validation.reason);
+  const fileName = buildWorkExpenseEvidenceFileName(file.name, file.type);
+  const path = `negocios/${id}/trabajos/${wId}/gastos/${gastoId}/${fileName}`;
+  try {
+    await uploadBytes(storageRef(storage, path), file, {contentType: file.type});
+  } catch (uploadFailure) {
+    const error = new Error("No pudimos subir el documento. Intenta nuevamente.");
+    error.cause = uploadFailure;
+    throw error;
+  }
+  return adjuntarEvidenciaGastoTrabajo(id, wId, gastoId, fileName, requestId);
+}
+
+// Lectura directa vía SDK cliente (SPEC 020 §11): Storage Rules es la
+// autoridad de acceso, no hace falta una Function ni una URL firmada aquí.
+export async function obtenerEnlaceEvidenciaGastoTrabajo(storagePath) {
+  const path = String(storagePath || "").trim();
+  if (!path) throw new Error("No se encontró la ruta del documento.");
+  return getDownloadURL(storageRef(storage, path));
 }
 
 export async function registrarHorasHombreTrabajo(rawBusinessId, rawWorkId, horasHombre, requestId) {

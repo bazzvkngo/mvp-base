@@ -10,6 +10,7 @@ import {
   getSaleStockStatusLabel,
   shouldReconcileSaleConfirmation,
 } from "../domain/saleModel.mjs";
+import AdditionalSelector from "../features/works/AdditionalSelector.jsx";
 import SaleCatalogDialog from "../features/sales/SaleCatalogDialog";
 import SaleClientSelector from "../features/sales/SaleClientSelector";
 import SaleCommercialMarginPanel from "../features/sales/SaleCommercialMarginPanel";
@@ -19,6 +20,7 @@ import SaleSummaryPanel from "../features/sales/SaleSummaryPanel";
 import {listarClientes} from "../services/clientService";
 import {getCompanyProfile} from "../services/companyService";
 import {getInventoryItems} from "../services/inventoryService";
+import {listarAdicionalesPendientesTrabajo} from "../services/workService.js";
 import {formatDate} from "../utils/formatters";
 import {
   actualizarVentaBorrador,
@@ -32,18 +34,29 @@ import "../features/sales/sales.css";
 
 const EMPTY_TOTALS = {subtotal: 0, descuentoItems: 0, descuento: 0, descuentoTotal: 0, neto: 0, afectaIva: true, tasaIva: 0.19, iva: 0, total: 0};
 const today = () => new Intl.DateTimeFormat("en-CA", {timeZone: "America/Santiago"}).format(new Date());
-const emptyDraft = () => ({clienteId: "", descuento: 0, afectaIva: true, fechaVenta: today(), fechaDocumento: "", tipoDocumento: "sin_documento", numeroDocumento: "", condicionesPago: "", observaciones: "", items: []});
+const emptyDraft = () => ({clienteId: "", trabajoId: "", descuento: 0, afectaIva: true, fechaVenta: today(), fechaDocumento: "", tipoDocumento: "sin_documento", numeroDocumento: "", condicionesPago: "", observaciones: "", items: []});
 const lineId = () => `linea-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
 
 export default function NewSalePage({businessId, role}) {
   const {ventaId} = useParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const [draft, setDraft] = useState(emptyDraft);
+  // SPEC 020 ETAPA 5: el único origen de un trabajoId al crear una Venta
+  // directa es la navegación desde la ficha del Proyecto ("Nueva venta"),
+  // nunca un selector propio de Ventas (Ventas no elige Proyecto). Se lee
+  // una sola vez al montar, no en cada render de location.state.
+  const [draft, setDraft] = useState(() => {
+    const base = emptyDraft();
+    if (ventaId) return base;
+    const trabajoId = String(location.state?.trabajoId || "").trim();
+    return trabajoId ? {...base, trabajoId} : base;
+  });
   const [sale, setSale] = useState(null);
   const [clients, setClients] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [company, setCompany] = useState(null);
+  const [pendingAdditionals, setPendingAdditionals] = useState([]);
+  const [additionalsLoading, setAdditionalsLoading] = useState(false);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [conditionsOpen, setConditionsOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -97,6 +110,7 @@ export default function NewSalePage({businessId, role}) {
         } else if (stored) {
           setDraft({
             clienteId: stored.clienteId,
+            trabajoId: stored.trabajoId || "",
             descuento: stored.descuento,
             afectaIva: stored.afectaIva,
             fechaVenta: stored.fechaVenta,
@@ -152,6 +166,55 @@ export default function NewSalePage({businessId, role}) {
       : clients.find((client) => client.clienteId === draft.clienteId) || {},
     ...totals,
   }), [clients, company, draft, sale, totals]);
+
+  // SPEC 020 ETAPA 5: sólo se cargan los adicionales pendientes cuando la
+  // venta está vinculada a un Proyecto y sigue editable — lectura acotada
+  // (listarAdicionalesPendientesTrabajo ya filtra PENDIENTE_COBRO en la
+  // propia consulta, no hace falta filtrar en memoria).
+  useEffect(() => {
+    let active = true;
+    if (!draft.trabajoId || readOnly) { setPendingAdditionals([]); return undefined; }
+    setAdditionalsLoading(true);
+    listarAdicionalesPendientesTrabajo(businessId, draft.trabajoId)
+      .then((list) => { if (active) setPendingAdditionals(list); })
+      .catch(() => { if (active) setPendingAdditionals([]); })
+      .finally(() => { if (active) setAdditionalsLoading(false); });
+    return () => { active = false; };
+  }, [businessId, draft.trabajoId, readOnly]);
+
+  // Salvaguarda defensiva (SPEC 020 §16): si por alguna razón el trabajoId
+  // se pierde, ninguna línea puede seguir apuntando a un adicional de un
+  // Proyecto que ya no está vinculado a esta venta.
+  useEffect(() => {
+    if (draft.trabajoId) return;
+    setDraft((current) => current.items.some((item) => item.origenAdicionalId)
+      ? {...current, items: current.items.map((item) => item.origenAdicionalId ? {...item, origenAdicionalId: ""} : item)}
+      : current);
+  }, [draft.trabajoId]);
+
+  const selectedAdditionalIds = useMemo(() => draft.items.map((item) => item.origenAdicionalId).filter(Boolean), [draft.items]);
+
+  const toggleAdditional = (additional) => setDraft((current) => {
+    const alreadySelected = current.items.some((item) => item.origenAdicionalId === additional.id);
+    if (alreadySelected) return {...current, items: current.items.filter((item) => item.origenAdicionalId !== additional.id)};
+    return {...current, items: [...current.items, {
+      lineaId: lineId(),
+      itemId: additional.itemId,
+      codigo: additional.itemSnapshot?.codigoInterno || "",
+      nombre: additional.itemSnapshot?.nombre || "Ítem sin nombre",
+      descripcion: additional.descripcion || "",
+      tipoItem: additional.tipoItem || "producto",
+      unidad: additional.itemSnapshot?.unidad || "unidad",
+      cantidad: additional.cantidad,
+      precioUnitario: additional.precioUnitario,
+      descuentoPct: 0,
+      origenAdicionalId: additional.id,
+    }]};
+  });
+
+  const trabajoDisplay = sale?.trabajoId
+    ? {id: sale.trabajoId, numero: sale.trabajoNumero, titulo: sale.trabajoTitulo}
+    : (!ventaId && draft.trabajoId ? {id: draft.trabajoId, numero: location.state?.trabajoNumero, titulo: location.state?.trabajoTitulo} : null);
 
   const addItem = (item) => setDraft((current) => ({
     ...current,
@@ -316,7 +379,7 @@ export default function NewSalePage({businessId, role}) {
             </div>
             <div className="sale-context-sale__metadata">
               {sale?.cotizacionId ? <span>Originada desde <button type="button" className="sale-inline-link" onClick={() => navigate(`/cotizaciones/${sale.cotizacionId}/editar`)}>{sale.cotizacionNumero || "cotización aceptada"}</button></span> : <span>Venta directa</span>}
-              {sale?.trabajoId && <span>Proyecto <button type="button" className="sale-inline-link" onClick={() => navigate("/trabajos", {state: {openWorkId: sale.trabajoId}})}>{sale.trabajoNumero || sale.trabajoTitulo || sale.trabajoId}</button></span>}
+              {trabajoDisplay && <span>Proyecto <button type="button" className="sale-inline-link" onClick={() => navigate("/trabajos", {state: {openWorkId: trabajoDisplay.id}})}>{trabajoDisplay.numero || trabajoDisplay.titulo || trabajoDisplay.id}</button></span>}
               <span>Fecha {formatDate(draft.fechaVenta)}</span>
               {sale?.cotizacionId && sale?.aceptadaEn && <span>Aceptada {formatDate(sale.aceptadaEn)}</span>}
             </div>
@@ -333,6 +396,16 @@ export default function NewSalePage({businessId, role}) {
         <div className="po-layout">
           <div className="po-main">
             <SaleItemsEditor disabled={readOnly} inventory={inventory} items={draft.items} onChange={(items) => setDraft((current) => ({...current, items}))} onOpenCatalog={() => setCatalogOpen(true)} readOnly={Boolean(readOnly && sale)} referencesLocked={referencesLocked} />
+
+            {draft.trabajoId && !readOnly && (
+              <AdditionalSelector
+                additionals={pendingAdditionals}
+                currency={printable.moneda}
+                loading={additionalsLoading}
+                onToggle={toggleAdditional}
+                selectedIds={selectedAdditionalIds}
+              />
+            )}
 
             {isSaleDetailRoute && <SaleCommercialMarginPanel role={role} sale={sale} />}
 

@@ -142,13 +142,16 @@ const {
 const {
   actualizarTrabajoHandler,
   actualizarSubtareaTrabajoHandler,
+  adjuntarEvidenciaGastoTrabajoHandler,
   agregarNotaTrabajoHandler,
   agregarSubtareaTrabajoHandler,
+  anularAdicionalTrabajoHandler,
   anularGastoTrabajoHandler,
   anularHorasHombreTrabajoHandler,
   asignarTareaTrabajoHandler,
   cambiarEstadoTareaTrabajoV2Handler,
   cambiarEstadoTrabajoHandler,
+  crearAdicionalTrabajoHandler,
   crearTrabajoHandler,
   crearTareaTrabajoV2Handler,
   documentarTareaTrabajoHandler,
@@ -2302,6 +2305,7 @@ exports.reactivarCliente = onCall(
 );
 
 const workPersistenceDependencies = {
+  bucket: adminStorageBucket,
   db,
   auth: adminAuth,
   HttpsError,
@@ -2366,6 +2370,18 @@ exports.registrarGastoTrabajo = onCall(workCallableOptions, async (request) =>
 
 exports.anularGastoTrabajo = onCall(workCallableOptions, async (request) =>
   anularGastoTrabajoHandler(request, workPersistenceDependencies)
+);
+
+exports.crearAdicionalTrabajo = onCall(workCallableOptions, async (request) =>
+  crearAdicionalTrabajoHandler(request, workPersistenceDependencies)
+);
+
+exports.anularAdicionalTrabajo = onCall(workCallableOptions, async (request) =>
+  anularAdicionalTrabajoHandler(request, workPersistenceDependencies)
+);
+
+exports.adjuntarEvidenciaGastoTrabajo = onCall(workCallableOptions, async (request) =>
+  adjuntarEvidenciaGastoTrabajoHandler(request, workPersistenceDependencies)
 );
 
 exports.registrarHorasHombreTrabajo = onCall(workCallableOptions, async (request) =>

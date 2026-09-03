@@ -41,7 +41,7 @@ console.log("OK ventas modelo: líneas, descuentos, IVA, totales y overflow");
 
 const sale = (count) => ({clienteId: "client-1", fechaVenta: "2026-08-07", items: Array.from({length: count}, (_, index) => line({lineaId: `linea-${index + 1}`, itemId: `item-${index + 1}`}))});
 const payload = buildSaleMutationPayload({...sale(1), numero: "VTA-FAKE", estado: "confirmada", clienteSnapshot: {nombreRazonSocial: "Falso"}, stockAplicado: true, total: 1});
-assert.deepEqual(payload.items[0], {lineaId: "linea-1", itemId: "item-1", cantidad: 2, precioUnitario: 1000, descuentoPct: 10});
+assert.deepEqual(payload.items[0], {lineaId: "linea-1", itemId: "item-1", cantidad: 2, precioUnitario: 1000, descuentoPct: 10, origenAdicionalId: ""});
 assert.equal(payload.descuento, 0);
 assert.equal(payload.afectaIva, true);
 const exemptPayload = buildSaleMutationPayload({...sale(1), descuento: 300, afectaIva: false});

@@ -929,6 +929,20 @@ service cloud.firestore {
           allow create, update, delete: if false;
         }
 
+        // SPEC 020 (Adicionales facturables): mismo patrón exacto que gastos/
+        // horasHombre. La creación es exclusiva de crearAdicionalTrabajo (que
+        // siempre fija estado en PENDIENTE_COBRO); la transición a
+        // INCORPORADO_A_VENTA sólo existirá dentro de confirmarVenta (ETAPA 5,
+        // no implementada todavía). Ningún cliente puede crear, actualizar ni
+        // eliminar un adicional directamente, cualquiera sea el estado que
+        // intente asignarle.
+        match /adicionales/{adicionalId} {
+          allow read: if canReadWorkCosts(businessId, trabajoId, resource.data)
+            && resource.data.negocioId == businessId
+            && resource.data.trabajoId == trabajoId;
+          allow create, update, delete: if false;
+        }
+
         match /historial/{eventoId} {
           allow read: if canReadWorkOperations(businessId, trabajoId)
             && resource.data.negocioId == businessId

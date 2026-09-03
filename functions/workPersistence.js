@@ -17,10 +17,19 @@ const WORK_TASK_MODEL_VERSION = 2;
 const WORK_EXPENSE_MODEL_VERSION = 1;
 const WORK_LABOR_MODEL_VERSION = 1;
 const WORK_MATERIAL_MODEL_VERSION = 1;
+const WORK_ADDITIONAL_MODEL_VERSION = 1;
 const WRITE_ROLES = WORK_MANAGEMENT_ROLES;
 const WORK_STATUSES = new Set(["pendiente", "en_progreso", "en_espera", "completado", "cancelado"]);
 const WORK_PRIORITIES = new Set(["baja", "normal", "alta", "urgente"]);
 const WORK_EXPENSE_CATEGORIES = new Set(["MATERIAL", "MANO_DE_OBRA", "OPERATIVO", "SERVICIO_EXTERNO", "ADMINISTRATIVO", "OTRO"]);
+// Mismo conjunto que ya usan Ventas/Cotizaciones (src/domain/saleModel.mjs): un
+// adicional es, conceptualmente, una línea de Venta en espera (SPEC 020 §5.2).
+const WORK_ADDITIONAL_ITEM_TYPES = new Set(["producto", "servicio", "actividad"]);
+// Mismos tipos y límite ya usados por la evidencia de verificación empresarial
+// (businessVerification.js): no se inventa un umbral nuevo (SPEC 020 §8.2).
+const WORK_EXPENSE_EVIDENCE_TYPES = new Set(["application/pdf", "image/jpeg", "image/png"]);
+const MAX_WORK_EXPENSE_EVIDENCE_BYTES = 5 * 1024 * 1024;
+const MAX_WORK_EXPENSE_EVIDENCE_FILES = 5;
 const WORK_TASK_STATUSES = new Set(["pendiente", "en_progreso", "en_espera", "completada"]);
 const WORK_INPUT_FIELDS = new Set(["titulo", "descripcion", "clienteId", "cotizacionId", "responsableUid", "participanteUids", "estado", "prioridad", "fechaInicio", "fechaPrevista"]);
 
@@ -230,6 +239,16 @@ function positiveDecimal(value, label, max, HttpsError) {
   return Math.round(number * 100) / 100;
 }
 
+function nonNegativeDecimal(value, label, max, HttpsError) {
+  const normalized = typeof value === "string" ? value.trim().replace(",", ".") : value;
+  if ((typeof normalized !== "string" && typeof normalized !== "number") || !/^\d+(\.\d{1,2})?$/.test(String(normalized))) {
+    fail(HttpsError, "invalid-argument", `${label} debe ser un número válido con hasta dos decimales.`);
+  }
+  const number = Number(normalized);
+  if (!Number.isFinite(number) || number < 0 || number > max) fail(HttpsError, "invalid-argument", `${label} está fuera del rango permitido.`);
+  return Math.round(number * 100) / 100;
+}
+
 function requiredDate(value, label, HttpsError) {
   const normalized = optionalDate(value, label, HttpsError);
   if (!normalized) fail(HttpsError, "invalid-argument", `${label} es obligatoria.`);
@@ -249,6 +268,71 @@ function normalizeExpenseInput(raw = {}, HttpsError) {
     observacion: text(raw.observacion, "La observación", 4000, HttpsError),
     tareaId: identifier(raw.tareaId, "La tarea", HttpsError, {optional: true}),
   };
+}
+
+// Un adicional facturable es, conceptualmente, una línea de Venta en espera
+// (SPEC 020 §5.2): el cliente nunca envía tipoItem ni moneda — igual que
+// crearVenta, el tipo se deriva de forma autoritativa desde el catálogo
+// (catalogItemContext) y la moneda desde workCurrency, nunca desde el
+// cliente. El cliente tampoco puede enviar `estado`: este normalizador
+// simplemente no lo lee, por lo que un adicional nuevo siempre nace
+// PENDIENTE_COBRO (asignado explícitamente por el handler, nunca por input).
+function normalizeAdditionalInput(raw = {}, HttpsError) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) fail(HttpsError, "invalid-argument", "Los datos del adicional deben enviarse como objeto.");
+  return {
+    itemId: identifier(raw.itemId, "El ítem", HttpsError),
+    cantidad: positiveDecimal(raw.cantidad, "La cantidad", 999999999.99, HttpsError),
+    precioUnitario: nonNegativeDecimal(raw.precioUnitario, "El precio unitario", 999999999999.99, HttpsError),
+    descripcion: text(raw.descripcion, "La descripción", 2000, HttpsError),
+    tareaId: identifier(raw.tareaId, "La tarea", HttpsError, {optional: true}),
+  };
+}
+
+// El cliente sólo aporta un nombre de archivo (nunca una ruta completa): la
+// ruta real de Storage se reconstruye siempre en el servidor (SPEC 020 §9.1),
+// nunca se confía en un path arbitrario enviado por el cliente. Mismo
+// alfabeto conservador que `identifier`, sin "/" en ningún caso: no hay forma
+// de que el nombre escape del prefijo negocios/.../gastos/{gastoId}/ que
+// construye adjuntarEvidenciaGastoTrabajoHandler.
+function evidenceFileName(value, HttpsError) {
+  const normalized = text(value, "El nombre del archivo", 200, HttpsError, {required: true});
+  if (!/^[a-zA-Z0-9._-]{1,200}$/.test(normalized) || normalized === "." || normalized === "..") {
+    fail(HttpsError, "invalid-argument", "El nombre del archivo no es válido.");
+  }
+  return normalized;
+}
+
+// Igual patrón que verifyEvidence en businessVerification.js: el cliente
+// puede declarar cualquier cosa al subir a Storage, pero la Function nunca
+// confía en esa declaración — siempre relee la metadata real del objeto ya
+// subido (contentType/size autoritativos) antes de asociarlo al gasto.
+async function verifyWorkExpenseEvidenceObject(bucket, storagePath, HttpsError) {
+  if (!bucket) fail(HttpsError, "failed-precondition", "Storage no está disponible.");
+  let metadata;
+  try {
+    [metadata] = await bucket.file(storagePath).getMetadata();
+  } catch (error) {
+    fail(HttpsError, "not-found", "No se encontró el documento subido.");
+  }
+  const size = Number(metadata.size);
+  const contentType = String(metadata.contentType || "").toLowerCase();
+  if (!WORK_EXPENSE_EVIDENCE_TYPES.has(contentType) || !Number.isFinite(size) || size <= 0 || size > MAX_WORK_EXPENSE_EVIDENCE_BYTES) {
+    fail(HttpsError, "invalid-argument", "El documento debe ser PDF, JPG o PNG y pesar hasta 5 MB.");
+  }
+  return {tipoMime: contentType, tamanoBytes: size};
+}
+
+// Mismo criterio de autoatribución que ya aplica a registrarGastoTrabajo
+// (memberLinkedUid) y a assertWorkOperator, aplicado sobre el gasto YA
+// EXISTENTE (no sobre un campo nuevo enviado por el cliente): OWNER/ADMIN
+// operan cualquier gasto; TECNICO/MEMBER sólo el que registraron o del que
+// son responsables (SPEC 020 §13).
+function assertExpenseEvidenceOperator(expense, context, HttpsError) {
+  if (WRITE_ROLES.includes(context.membership?.rol)) return;
+  const isOwnExpense = expense.registradoPorUid === context.uid || expense.responsableDelGastoUid === context.uid;
+  if (!["TECNICO", "MEMBER"].includes(context.membership?.rol) || !isOwnExpense) {
+    fail(HttpsError, "permission-denied", "No puedes adjuntar evidencia a este gasto.");
+  }
 }
 
 function normalizeLaborInput(raw = {}, HttpsError) {
@@ -297,6 +381,30 @@ function assertInventoryProduct(snapshot, businessId, HttpsError, {requireActive
   const stock = Number(item.stock);
   if (!Number.isFinite(stock) || stock < 0) fail(HttpsError, "failed-precondition", "El producto no tiene stock v\u00e1lido.");
   return {...item, stock};
+}
+
+// Igual patrón de confianza que usa crearVenta con su propio catálogo
+// (salePersistence.js): el tipoItem nunca se toma del cliente, siempre se
+// deriva de forma autoritativa desde el documento real de inventario. A
+// diferencia de assertInventoryProduct (restringido a "producto" porque
+// mueve stock), un adicional puede referenciar producto/servicio/actividad
+// por igual, y en ETAPA 2 nunca toca stock (SPEC 020 §7: el descuento de
+// stock, si corresponde, sólo ocurre cuando la Venta que lo incorpore se
+// confirme, en una etapa posterior).
+function catalogItemContext(snapshot, businessId, HttpsError) {
+  if (!snapshot.exists) fail(HttpsError, "not-found", "No se encontró el ítem seleccionado.");
+  const item = snapshot.data() || {};
+  if (item.negocioId !== businessId) fail(HttpsError, "permission-denied", "El ítem no pertenece al negocio.");
+  if (item.estado !== "activo") fail(HttpsError, "failed-precondition", "Selecciona un ítem activo del catálogo.");
+  const tipoItem = WORK_ADDITIONAL_ITEM_TYPES.has(item.tipoItem) ? item.tipoItem : "producto";
+  return {
+    tipoItem,
+    itemSnapshot: {
+      codigoInterno: String(item.codigoInterno || "").trim(),
+      nombre: String(item.nombre || "Ítem sin nombre").trim(),
+      unidad: String(item.unidad || item.unidadStock || "unidad").trim(),
+    },
+  };
 }
 
 function productSnapshot(item, itemId) {
@@ -1183,6 +1291,180 @@ async function registrarGastoTrabajoHandler(request, dependencies) {
   return result;
 }
 
+async function crearAdicionalTrabajoHandler(request, dependencies) {
+  const {db, FieldValue, HttpsError} = dependencies;
+  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES, requiresVerifiedBusiness: true, moduleId: "trabajos"});
+  const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError);
+  const input = normalizeAdditionalInput(request?.data?.adicional || {}, HttpsError);
+  const requestId = requestIdentifier(request?.data?.requestId, HttpsError);
+  const requestFingerprint = fingerprint({workId, input});
+  const people = await userSnapshots(dependencies, [context.uid]);
+  const actor = publicPerson(people, context.uid);
+  const workRef = context.businessRef.collection("trabajos").doc(workId);
+  const additionalRef = workRef.collection("adicionales").doc();
+  const itemRef = context.businessRef.collection("inventario").doc(input.itemId);
+  const requestRef = context.businessRef.collection("workCostRequests").doc(requestId);
+  let result;
+  await db.runTransaction(async (transaction) => {
+    const previous = previousCostRequest(await transaction.get(requestRef), {fingerprint: requestFingerprint, operation: "crear_adicional", uid: context.uid}, HttpsError);
+    if (previous) { result = previous; return; }
+    const [workSnapshot, businessSnapshot, itemSnapshot] = await Promise.all([
+      transaction.get(workRef), transaction.get(context.businessRef), transaction.get(itemRef),
+    ]);
+    const work = assertWork(workSnapshot, context.businessId, HttpsError);
+    assertWorkCostsMutable(work, HttpsError);
+    assertWorkOperator(work, context, HttpsError);
+    await assertOptionalCostTask(transaction, workRef, input.tareaId, context, HttpsError);
+    const business = businessSnapshot.data() || {};
+    if (!businessSnapshot.exists) fail(HttpsError, "failed-precondition", "El negocio seleccionado no está disponible.");
+    const {tipoItem, itemSnapshot: catalogSnapshot} = catalogItemContext(itemSnapshot, context.businessId, HttpsError);
+    const moneda = workCurrency(work, business, HttpsError);
+    const timestamp = FieldValue.serverTimestamp();
+    transaction.create(additionalRef, {
+      modeloAdicionalVersion: WORK_ADDITIONAL_MODEL_VERSION,
+      adicionalId: additionalRef.id,
+      negocioId: context.businessId,
+      trabajoId: workId,
+      itemId: input.itemId,
+      tipoItem,
+      itemSnapshot: catalogSnapshot,
+      cantidad: input.cantidad,
+      precioUnitario: input.precioUnitario,
+      moneda,
+      descripcion: input.descripcion,
+      tareaId: input.tareaId,
+      estado: "PENDIENTE_COBRO",
+      registradoPorUid: context.uid,
+      registradoPorSnapshot: {nombre: actor.nombre, correo: actor.correo},
+      ventaId: null,
+      lineaId: null,
+      anuladoEn: null,
+      anuladoPorUid: null,
+      anuladoPorSnapshot: null,
+      motivoAnulacion: "",
+      creadoEn: timestamp,
+      actualizadoEn: timestamp,
+    });
+    transaction.update(workRef, {
+      moneda,
+      modeloTrabajoVersion: WORK_MODEL_VERSION,
+      ultimaActividadEn: timestamp,
+      actualizadoPorUid: context.uid,
+      actualizadoEn: timestamp,
+    });
+    writeEvent(transaction, workRef, {businessId: context.businessId, type: "adicional_registrado", actorUid: context.uid, actor, detail: {adicionalId: additionalRef.id, tareaId: input.tareaId, itemId: input.itemId, tipoItem, cantidad: input.cantidad, precioUnitario: input.precioUnitario, moneda}, timestamp});
+    result = {adicionalId: additionalRef.id, moneda, idempotent: false};
+    transaction.create(requestRef, costRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "crear_adicional", result, timestamp, uid: context.uid, workId, recordId: additionalRef.id}));
+  });
+  return result;
+}
+
+async function anularAdicionalTrabajoHandler(request, dependencies) {
+  const {db, FieldValue, HttpsError} = dependencies;
+  const context = await requireWriteAccess(request, dependencies);
+  const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError);
+  const additionalId = identifier(request?.data?.adicionalId, "El adicional", HttpsError);
+  const reason = text(request?.data?.motivo, "El motivo de anulación", 1000, HttpsError, {required: true});
+  const requestId = requestIdentifier(request?.data?.requestId, HttpsError);
+  const requestFingerprint = fingerprint({workId, additionalId, reason});
+  const people = await userSnapshots(dependencies, [context.uid]); const actor = publicPerson(people, context.uid);
+  const workRef = context.businessRef.collection("trabajos").doc(workId);
+  const additionalRef = workRef.collection("adicionales").doc(additionalId);
+  const requestRef = context.businessRef.collection("workCostRequests").doc(requestId);
+  let result;
+  await db.runTransaction(async (transaction) => {
+    const previous = previousCostRequest(await transaction.get(requestRef), {fingerprint: requestFingerprint, operation: "anular_adicional", uid: context.uid}, HttpsError);
+    if (previous) { result = previous; return; }
+    const work = assertWork(await transaction.get(workRef), context.businessId, HttpsError);
+    assertWorkCostsMutable(work, HttpsError);
+    const additionalSnapshot = await transaction.get(additionalRef);
+    const additional = additionalSnapshot.data() || {};
+    if (!additionalSnapshot.exists || additional.negocioId !== context.businessId || additional.trabajoId !== workId) fail(HttpsError, "not-found", "No se encontró el adicional.");
+    const timestamp = FieldValue.serverTimestamp();
+    // Doble anulación: idempotente, sin cambios (misma semántica que anularGastoTrabajo).
+    // Cualquier otro estado de origen (INCORPORADO_A_VENTA, o uno corrupto/desconocido)
+    // se rechaza explícitamente: sólo PENDIENTE_COBRO -> ANULADO es una transición real.
+    if (additional.estado === "ANULADO") {
+      result = {adicionalId: additionalId, sinCambios: true, idempotent: false};
+      transaction.create(requestRef, costRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "anular_adicional", result, timestamp, uid: context.uid, workId, recordId: additionalId}));
+      return;
+    }
+    if (additional.estado !== "PENDIENTE_COBRO") fail(HttpsError, "failed-precondition", "Sólo un adicional pendiente de cobro puede anularse.");
+    transaction.update(additionalRef, {estado: "ANULADO", anuladoEn: timestamp, anuladoPorUid: context.uid, anuladoPorSnapshot: {nombre: actor.nombre, correo: actor.correo}, motivoAnulacion: reason, actualizadoEn: timestamp});
+    writeEvent(transaction, workRef, {businessId: context.businessId, type: "adicional_anulado", actorUid: context.uid, actor, detail: {adicionalId: additionalId, itemId: additional.itemId, cantidad: additional.cantidad, precioUnitario: additional.precioUnitario, moneda: additional.moneda, motivo: reason}, timestamp});
+    result = {adicionalId: additionalId, idempotent: false};
+    transaction.create(requestRef, costRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "anular_adicional", result, timestamp, uid: context.uid, workId, recordId: additionalId}));
+  });
+  return result;
+}
+
+// SPEC 020 ETAPA 3: evidencia documental de un gasto ya existente. El cliente
+// sube el archivo directamente a Storage (gobernado por storage.rules, patrón
+// create-only calcado de verificación empresarial) y luego llama a esta
+// Function para asociar la metadata al gasto. La Function nunca confía en el
+// tamaño/tipo declarado por el cliente: siempre relee el objeto real de
+// Storage (verifyWorkExpenseEvidenceObject). No toca monto/moneda/categoría/
+// clasificacionCosto/estado del gasto, ni el balance del Proyecto: sólo
+// agrega una entrada al arreglo `evidencia`.
+async function adjuntarEvidenciaGastoTrabajoHandler(request, dependencies) {
+  const {bucket, db, FieldValue, HttpsError} = dependencies;
+  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES, requiresVerifiedBusiness: true, moduleId: "trabajos"});
+  const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError);
+  const expenseId = identifier(request?.data?.gastoId, "El gasto", HttpsError);
+  const fileName = evidenceFileName(request?.data?.nombreArchivo, HttpsError);
+  const requestId = requestIdentifier(request?.data?.requestId, HttpsError);
+  const storagePath = `negocios/${context.businessId}/trabajos/${workId}/gastos/${expenseId}/${fileName}`;
+  const requestFingerprint = fingerprint({workId, expenseId, storagePath});
+  const people = await userSnapshots(dependencies, [context.uid]);
+  const actor = publicPerson(people, context.uid);
+  const workRef = context.businessRef.collection("trabajos").doc(workId);
+  const expenseRef = workRef.collection("gastos").doc(expenseId);
+  const requestRef = context.businessRef.collection("workCostRequests").doc(requestId);
+  let result;
+  await db.runTransaction(async (transaction) => {
+    const previous = previousCostRequest(await transaction.get(requestRef), {fingerprint: requestFingerprint, operation: "adjuntar_evidencia_gasto", uid: context.uid}, HttpsError);
+    if (previous) { result = previous; return; }
+    assertWork(await transaction.get(workRef), context.businessId, HttpsError);
+    const expenseSnapshot = await transaction.get(expenseRef);
+    const expense = expenseSnapshot.data() || {};
+    if (!expenseSnapshot.exists || expense.negocioId !== context.businessId || expense.trabajoId !== workId) {
+      fail(HttpsError, "not-found", "No se encontró el gasto.");
+    }
+    assertExpenseEvidenceOperator(expense, context, HttpsError);
+    if (expense.estado !== "vigente") fail(HttpsError, "failed-precondition", "Sólo se puede adjuntar evidencia a un gasto vigente.");
+    const existingEvidence = Array.isArray(expense.evidencia) ? expense.evidencia : [];
+    const timestamp = FieldValue.serverTimestamp();
+    const alreadyRegistered = existingEvidence.find((entry) => entry?.storagePath === storagePath);
+    if (alreadyRegistered) {
+      // Mismo archivo ya asociado (reintento/doble llamada): idempotente, sin duplicar ni alterar el gasto.
+      result = {gastoId: expenseId, evidenciaId: alreadyRegistered.id, storagePath, idempotent: true, sinCambios: true};
+      transaction.create(requestRef, costRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "adjuntar_evidencia_gasto", result, timestamp, uid: context.uid, workId, recordId: expenseId}));
+      return;
+    }
+    if (existingEvidence.length >= MAX_WORK_EXPENSE_EVIDENCE_FILES) {
+      fail(HttpsError, "failed-precondition", `Un gasto admite hasta ${MAX_WORK_EXPENSE_EVIDENCE_FILES} archivos de evidencia.`);
+    }
+    const {tipoMime, tamanoBytes} = await verifyWorkExpenseEvidenceObject(bucket, storagePath, HttpsError);
+    const nowIso = (dependencies.now ? dependencies.now() : new Date()).toISOString();
+    const evidenceId = `ev_${fingerprint({expenseId, storagePath}).slice(0, 24)}`;
+    const evidenceEntry = {
+      id: evidenceId,
+      storagePath,
+      nombreArchivo: fileName,
+      tipoMime,
+      tamanoBytes,
+      subidoPorUid: context.uid,
+      subidoPorSnapshot: {nombre: actor.nombre, correo: actor.correo},
+      subidoEn: nowIso,
+    };
+    transaction.update(expenseRef, {evidencia: [...existingEvidence, evidenceEntry], actualizadoEn: timestamp});
+    writeEvent(transaction, workRef, {businessId: context.businessId, type: "gasto_evidencia_adjuntada", actorUid: context.uid, actor, detail: {gastoId: expenseId, evidenciaId: evidenceId, nombreArchivo: fileName, tipoMime, tamanoBytes}, timestamp});
+    result = {gastoId: expenseId, evidenciaId: evidenceId, storagePath, idempotent: false};
+    transaction.create(requestRef, costRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "adjuntar_evidencia_gasto", result, timestamp, uid: context.uid, workId, recordId: expenseId}));
+  });
+  return result;
+}
+
 async function registrarHorasHombreTrabajoHandler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
   const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WORK_OPERATION_ROLES, requiresVerifiedBusiness: true, moduleId: "trabajos"});
@@ -1538,12 +1820,15 @@ module.exports = {
   actualizarTrabajoHandler,
   actualizarSubtareaTrabajoHandler,
   agregarSubtareaTrabajoHandler,
+  adjuntarEvidenciaGastoTrabajoHandler,
   agregarNotaTrabajoHandler,
+  anularAdicionalTrabajoHandler,
   anularGastoTrabajoHandler,
   anularHorasHombreTrabajoHandler,
   asignarTareaTrabajoHandler,
   cambiarEstadoTareaTrabajoV2Handler,
   cambiarEstadoTrabajoHandler,
+  crearAdicionalTrabajoHandler,
   crearTrabajoHandler,
   crearTareaTrabajoV2Handler,
   documentarTareaTrabajoHandler,
@@ -1558,6 +1843,7 @@ module.exports = {
   registrarDevolucionMaterialTrabajoHandler,
   registrarSalidaMaterialTrabajoHandler,
   writeCommercialLink,
+  writeEvent,
   writeQuoteResponseEvent,
   writeSaleConfirmationEvent,
 };

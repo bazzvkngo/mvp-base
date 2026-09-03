@@ -118,6 +118,10 @@ export const workLaborCollectionPath = (businessId, trabajoId) => [
   ...workDocPath(businessId, trabajoId),
   "horasHombre",
 ];
+export const workAdditionalsCollectionPath = (businessId, trabajoId) => [
+  ...workDocPath(businessId, trabajoId),
+  "adicionales",
+];
 export const workNotesCollectionPath = (businessId, trabajoId) => [
   ...workDocPath(businessId, trabajoId),
   "notas",

@@ -5,15 +5,18 @@ import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import StatusBadge from "../components/ui/StatusBadge";
+import WorkAdditionalsSection from "../features/works/WorkAdditionalsSection.jsx";
+import WorkExpenseEvidence from "../features/works/WorkExpenseEvidence.jsx";
 import WorkQuoteSelector from "../features/works/WorkQuoteSelector.jsx";
 import WorkTaskBoard from "../features/works/WorkTaskBoard.jsx";
 import {WORK_EXPENSE_CATEGORIES, WORK_PRIORITIES, WORK_STATUSES, WORK_TASK_STATUSES, buildQuickWorkCreationPayload, buildWorkDailyCostSummary, canManageWorks, canOperateWorkTask, canViewWorkProfitability, getEligibleWorkQuoteOptions, getInventoryCurrentCost, getTaskProgress, getVisibleWorkTasks, getWorkAccumulatedCost, getWorkCostSummary, getWorkDraftErrors, getWorkHistoricalPersonIdentity, getWorkMemberIdentity, getWorkMemberOptionLabel, getWorkOperationalIndicators, getWorkPriorityLabel, getWorkSaleMaterials, getWorkStatusLabel, getWorkTaskProgress, getWorkTaskStatusOptions, hasAdditionalWorkMembers, humanizeWorkEvent, isWorkOperationalReadOnly, matchesWorkFilters} from "../domain/workModel.mjs";
+import {canManageSales} from "../domain/saleModel.mjs";
 import {listarMiembrosNegocio} from "../services/businessMemberService.js";
 import {listarClientes} from "../services/clientService.js";
 import {getInventoryItems} from "../services/inventoryService.js";
 import {getQuotes} from "../services/quoteService.js";
 import {listarVentas} from "../services/saleService.js";
-import {actualizarSubtareaTrabajo, actualizarTrabajo, agregarNotaTrabajo, agregarSubtareaTrabajo, agregarTareaTrabajo, anularGastoTrabajo, anularHorasHombreTrabajo, asignarTareaTrabajo, cambiarEstadoTareaTrabajo, cambiarEstadoTrabajo, cargarFichaTrabajo, createWorkCostRequestId, createWorkRequestId, createWorkTaskRequestId, crearTrabajo, documentarTareaTrabajo, eliminarSubtareaTrabajo, eliminarTareaTrabajo, listarTrabajos, obtenerBalanceTrabajo, registrarDevolucionMaterialTrabajo, registrarGastoTrabajo, registrarHorasHombreTrabajo, registrarSalidaMaterialTrabajo} from "../services/workService.js";
+import {actualizarSubtareaTrabajo, actualizarTrabajo, agregarNotaTrabajo, agregarSubtareaTrabajo, agregarTareaTrabajo, anularAdicionalTrabajo, anularGastoTrabajo, anularHorasHombreTrabajo, asignarTareaTrabajo, cambiarEstadoTareaTrabajo, cambiarEstadoTrabajo, cargarFichaTrabajo, crearAdicionalTrabajo, createWorkCostRequestId, createWorkRequestId, createWorkTaskRequestId, crearTrabajo, documentarTareaTrabajo, eliminarSubtareaTrabajo, eliminarTareaTrabajo, listarTrabajos, obtenerBalanceTrabajo, obtenerEnlaceEvidenciaGastoTrabajo, registrarDevolucionMaterialTrabajo, registrarGastoTrabajo, registrarHorasHombreTrabajo, registrarSalidaMaterialTrabajo, subirEvidenciaGastoTrabajo} from "../services/workService.js";
 import {formatMoney} from "../utils/formatters.js";
 import "../features/works/works.css";
 
@@ -48,6 +51,7 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
   const [quotes, setQuotes] = useState([]);
   const [sales, setSales] = useState([]);
   const [inventoryProducts, setInventoryProducts] = useState([]);
+  const [catalogItems, setCatalogItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [view, setView] = useState("list");
@@ -58,7 +62,7 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
   const [fieldErrors, setFieldErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [selectedWork, setSelectedWork] = useState(null);
-  const [detail, setDetail] = useState({tareas: [], notas: [], historial: [], vinculos: [], cotizaciones: [], ventas: [], gastos: [], horasHombre: [], materiales: [], balance: null});
+  const [detail, setDetail] = useState({tareas: [], notas: [], historial: [], vinculos: [], cotizaciones: [], ventas: [], gastos: [], horasHombre: [], materiales: [], adicionales: [], balance: null});
   const [detailLoading, setDetailLoading] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [processing, setProcessing] = useState("");
@@ -72,7 +76,7 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
     try {
       const access = {role, currentUserUid};
       const [workList, clientList, memberList, inventoryList, quoteList, saleList] = await Promise.all([listarTrabajos(businessId, access), canManage ? listarClientes(businessId) : Promise.resolve([]), canManage ? listarMiembrosNegocio(businessId) : Promise.resolve([]), getInventoryItems(businessId), canManage ? getQuotes(businessId) : Promise.resolve([]), canManage ? listarVentas(businessId) : Promise.resolve([])]);
-      setWorks(workList); setClients(clientList.filter((client) => client.estado === "activo")); setMembers(memberList.filter((member) => member.estado === "activo")); setInventoryProducts(inventoryList.filter((item) => item.estado === "activo" && item.tipoItem === "producto")); setQuotes(quoteList); setSales(saleList);
+      setWorks(workList); setClients(clientList.filter((client) => client.estado === "activo")); setMembers(memberList.filter((member) => member.estado === "activo")); setInventoryProducts(inventoryList.filter((item) => item.estado === "activo" && item.tipoItem === "producto")); setCatalogItems(inventoryList.filter((item) => item.estado === "activo")); setQuotes(quoteList); setSales(saleList);
     } catch (loadError) {
       setError(loadError.message || "No se pudo cargar Proyectos y trabajos.");
     } finally { setLoading(false); }
@@ -118,7 +122,7 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
 
   const openDetail = (work) => { setSelectedWork(work); setNoteText(""); loadDetail(work.id); };
   const refreshWork = async (workId) => {
-    const [list, inventoryList] = await Promise.all([listarTrabajos(businessId, {role, currentUserUid}), getInventoryItems(businessId)]); setWorks(list); setInventoryProducts(inventoryList.filter((item) => item.estado === "activo" && item.tipoItem === "producto"));
+    const [list, inventoryList] = await Promise.all([listarTrabajos(businessId, {role, currentUserUid}), getInventoryItems(businessId)]); setWorks(list); setInventoryProducts(inventoryList.filter((item) => item.estado === "activo" && item.tipoItem === "producto")); setCatalogItems(inventoryList.filter((item) => item.estado === "activo"));
     const current = list.find((work) => work.id === workId);
     if (current) setSelectedWork(current);
     await loadDetail(workId);
@@ -281,6 +285,21 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
             <div className="works-resources">
               <MaterialsSection key={`materials-${selectedWork.id}`} businessId={businessId} canManage={canManage} currency={selectedWork.moneda || currencyCode || "CLP"} currentUserUid={currentUserUid} hasAssociatedSale={detail.ventas.some((sale) => sale.estado === "confirmada")} loading={detailLoading} movements={detail.materiales} processing={processing} products={inventoryProducts} readOnly={operationalReadOnly} role={role} runAction={runDetailAction} saleMaterials={saleMaterials} tasks={detail.tareas} workId={selectedWork.id} />
               <FinancialSection key={`costs-${selectedWork.id}`} businessId={businessId} canManage={canManage} currency={selectedWork.moneda || currencyCode || "CLP"} currentUserUid={currentUserUid} expenses={detail.gastos} labor={detail.horasHombre} loading={detailLoading} members={members} processing={processing} readOnly={operationalReadOnly} role={role} runAction={runDetailAction} tasks={detail.tareas} workId={selectedWork.id} />
+              <WorkAdditionalsSection
+                key={`additionals-${selectedWork.id}`}
+                additionals={detail.adicionales}
+                canManage={canManage}
+                catalogItems={catalogItems}
+                currency={selectedWork.moneda || currencyCode || "CLP"}
+                loading={detailLoading}
+                onAnnul={(additionalId, motivo) => runDetailAction(`additional-annul-${additionalId}`, () => anularAdicionalTrabajo(businessId, selectedWork.id, additionalId, motivo, createWorkCostRequestId("additional-annul")))}
+                onCreate={(payload) => runDetailAction("additional-new", () => crearAdicionalTrabajo(businessId, selectedWork.id, payload, createWorkCostRequestId("additional-create")))}
+                onCreateSale={canManageSales(role) ? () => navigate("/ventas/nueva", {state: {trabajoId: selectedWork.id, trabajoNumero: selectedWork.numero, trabajoTitulo: selectedWork.titulo}}) : undefined}
+                processing={processing}
+                readOnly={operationalReadOnly}
+                role={role}
+                tasks={detail.tareas}
+              />
               <DailyCostSummary currency={selectedWork.moneda || currencyCode || "CLP"} rows={dailyCosts} />
               {canViewWorkProfitability(role) && <WorkBalanceSection balance={detail.balance} loading={detailLoading} />}
             </div>
@@ -424,6 +443,19 @@ function FinancialSection({businessId, canManage, currency, currentUserUid, expe
       : () => anularHorasHombreTrabajo(businessId, workId, recordId, reason, createWorkCostRequestId("labor-annul"));
     runAction(`${key}-annul`, action).then((success) => {if (success) setAnnulReasons((current) => ({...current, [key]: ""}));});
   };
+  // SPEC 020 ETAPA 4: la evidencia es un adjunto del gasto ya existente, no
+  // un módulo nuevo. Mismo criterio de autorización que registrar el gasto
+  // (canManage sin restricción; TECNICO/MEMBER sólo sobre un gasto propio),
+  // más "vigente" porque un gasto anulado no admite evidencia nueva
+  // (server-side ya lo exige; aquí sólo se oculta el control).
+  const canAttachEvidence = (entry) => entry.estado === "vigente" && !readOnly &&
+    (canManage || (["TECNICO", "MEMBER"].includes(role) && [entry.registradoPorUid, entry.responsableDelGastoUid].includes(currentUserUid)));
+  const uploadEvidence = (expenseId, file) => runAction(`evidence-${expenseId}`, () => subirEvidenciaGastoTrabajo(businessId, workId, expenseId, file, createWorkCostRequestId("expense-evidence")));
+  const openEvidence = (storagePath) => {
+    obtenerEnlaceEvidenciaGastoTrabajo(storagePath)
+      .then((url) => window.open(url, "_blank", "noopener,noreferrer"))
+      .catch(() => window.alert("No se pudo abrir el documento. Intenta nuevamente."));
+  };
 
   return <section className="works-detail-section works-financial-file">
     <div className="works-section-heading"><div><h3>Costos reales</h3><span>Moneda {currency}</span></div></div>
@@ -441,7 +473,7 @@ function FinancialSection({businessId, canManage, currency, currentUserUid, expe
           <textarea className="erp-control" maxLength="4000" rows="2" value={expenseDraft.observacion} onChange={(event) => setExpenseDraft((current) => ({...current, observacion: event.target.value}))} placeholder="Observación" />
           <Button type="submit" disabled={Boolean(processing)}>Registrar gasto</Button>
         </form>}
-        {loading ? <p>Cargando gastos...</p> : <div className="works-cost-list">{visibleExpenses.map((entry) => { const key = `expense-${entry.id}`; return <article key={entry.id} className={entry.estado === "anulado" ? "is-annulled" : ""}><div><strong>{entry.concepto}</strong><span>{formatMoney(entry.monto, entry.moneda || currency)} · {WORK_EXPENSE_CATEGORIES.find((item) => item.value === entry.categoria)?.label || entry.categoria} · {entry.clasificacionCosto === "INDIRECTO" ? "Indirecto" : "Directo"}</span><small>{dateLabel(entry.fecha)} · {entry.responsableDelGastoSnapshot?.nombre || entry.responsableDelGastoSnapshot?.correo || entry.registradoPorSnapshot?.nombre || entry.registradoPorSnapshot?.correo || "Equipo"} · {taskLabel(tasks, entry.tareaId)}</small>{entry.observacion && <p>{entry.observacion}</p>}{entry.estado === "anulado" && <small>Anulado: {entry.motivoAnulacion}</small>}</div>{canManage && !readOnly && entry.estado !== "anulado" && <form className="works-annul-form" onSubmit={(event) => annul(event, "expense", entry.id)}><input className="erp-control" maxLength="1000" required value={annulReasons[key] || ""} onChange={(event) => setAnnulReasons((current) => ({...current, [key]: event.target.value}))} placeholder="Motivo de anulación" /><Button type="submit" variant="ghost-danger" disabled={Boolean(processing)}>Anular</Button></form>}</article>;})}{!visibleExpenses.length && <p className="works-empty-copy">Aún no se han registrado gastos.</p>}</div>}
+        {loading ? <p>Cargando gastos...</p> : <div className="works-cost-list">{visibleExpenses.map((entry) => { const key = `expense-${entry.id}`; return <article key={entry.id} className={entry.estado === "anulado" ? "is-annulled" : ""}><div><strong>{entry.concepto}</strong><span>{formatMoney(entry.monto, entry.moneda || currency)} · {WORK_EXPENSE_CATEGORIES.find((item) => item.value === entry.categoria)?.label || entry.categoria} · {entry.clasificacionCosto === "INDIRECTO" ? "Indirecto" : "Directo"}</span><small>{dateLabel(entry.fecha)} · {entry.responsableDelGastoSnapshot?.nombre || entry.responsableDelGastoSnapshot?.correo || entry.registradoPorSnapshot?.nombre || entry.registradoPorSnapshot?.correo || "Equipo"} · {taskLabel(tasks, entry.tareaId)}</small>{entry.observacion && <p>{entry.observacion}</p>}{entry.estado === "anulado" && <small>Anulado: {entry.motivoAnulacion}</small>}<WorkExpenseEvidence canAttach={canAttachEvidence(entry)} entries={entry.evidencia || []} onOpen={openEvidence} onUpload={(file) => uploadEvidence(entry.id, file)} processing={processing === `evidence-${entry.id}`} /></div>{canManage && !readOnly && entry.estado !== "anulado" && <form className="works-annul-form" onSubmit={(event) => annul(event, "expense", entry.id)}><input className="erp-control" maxLength="1000" required value={annulReasons[key] || ""} onChange={(event) => setAnnulReasons((current) => ({...current, [key]: event.target.value}))} placeholder="Motivo de anulación" /><Button type="submit" variant="ghost-danger" disabled={Boolean(processing)}>Anular</Button></form>}</article>;})}{!visibleExpenses.length && <p className="works-empty-copy">Aún no se han registrado gastos.</p>}</div>}
       </section>
       <section><header><div><h4>Horas hombre</h4><strong>{laborHours} HH · {formatMoney(laborTotal, currency)}</strong></div><small>El total se calcula en backend.</small></header>
         {canRegister && !readOnly && <form className="works-cost-form" onSubmit={saveLabor}>

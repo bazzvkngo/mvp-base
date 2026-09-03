@@ -217,6 +217,12 @@
 .works-cost-list .is-annulled { opacity: .65; }
 .works-cost-list .is-annulled strong, .works-cost-list .is-annulled span { text-decoration: line-through; }
 .works-annul-form { align-items: center; display: grid; gap: var(--space-2); grid-template-columns: minmax(0, 1fr) auto; }
+.works-expense-evidence { display: grid; gap: var(--space-2); margin-top: var(--space-2); }
+.works-expense-evidence__list { display: flex; flex-wrap: wrap; gap: var(--space-2); list-style: none; margin: 0; padding: 0; }
+.works-expense-evidence__list li { align-items: center; background: var(--color-surface-subtle); border-radius: var(--radius-sm); display: inline-flex; gap: var(--space-1); padding: 3px 8px; }
+.works-expense-evidence__list button { background: transparent; border: 0; color: var(--color-brand-700); cursor: pointer; font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); padding: 0; }
+.works-expense-evidence__list small { color: var(--color-text-muted); font-size: 10px; }
+.works-expense-evidence__upload { align-items: center; display: inline-flex; gap: var(--space-2); }
 .works-note-form { display: grid; gap: var(--space-2); justify-items: end; }
 .works-note-form textarea { resize: vertical; }
 .works-notes-section { gap: var(--space-2); }

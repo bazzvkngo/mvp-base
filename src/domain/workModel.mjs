@@ -5,6 +5,84 @@ export const WORK_INACTIVITY_DAYS = 3;
 export const WORK_EXPENSE_MODEL_VERSION = 1;
 export const WORK_LABOR_MODEL_VERSION = 1;
 export const WORK_MATERIAL_MODEL_VERSION = 1;
+export const WORK_ADDITIONAL_MODEL_VERSION = 1;
+
+// Mismo contrato de línea que ya usan Ventas/Cotizaciones (src/domain/saleModel.mjs,
+// src/domain/quoteModel.mjs): un adicional es, conceptualmente, una línea de Venta
+// en espera, nunca texto libre sin respaldo de catálogo (SPEC 020 §5.2).
+export const WORK_ADDITIONAL_ITEM_TYPES = Object.freeze(["producto", "servicio", "actividad"]);
+
+export const WORK_ADDITIONAL_STATUSES = Object.freeze(["PENDIENTE_COBRO", "INCORPORADO_A_VENTA", "ANULADO"]);
+
+// Ambos estados terminales (SPEC 020 §5.3): un adicional anulado nunca se reactiva,
+// uno incorporado nunca se reincorpora ni vuelve a estar pendiente.
+export const WORK_ADDITIONAL_TRANSITIONS = Object.freeze({
+  PENDIENTE_COBRO: Object.freeze(["INCORPORADO_A_VENTA", "ANULADO"]),
+  INCORPORADO_A_VENTA: Object.freeze([]),
+  ANULADO: Object.freeze([]),
+});
+
+// Mismos tipos/límite ya usados por la evidencia de verificación empresarial
+// (src/services/businessVerificationService.js) y por el backend
+// (functions/workPersistence.js): no se inventa un umbral nuevo (SPEC 020 §8.2).
+export const WORK_EXPENSE_EVIDENCE_TYPES = Object.freeze(["application/pdf", "image/jpeg", "image/png"]);
+export const MAX_WORK_EXPENSE_EVIDENCE_BYTES = 5 * 1024 * 1024;
+export const MAX_WORK_EXPENSE_EVIDENCE_FILES = 5;
+
+export function getWorkExpenseEvidenceTypeLabel(tipoMime) {
+  if (tipoMime === "application/pdf") return "PDF";
+  if (tipoMime === "image/jpeg") return "JPG";
+  if (tipoMime === "image/png") return "PNG";
+  return "Archivo";
+}
+
+function workExpenseEvidenceExtension(mimeType) {
+  if (mimeType === "application/pdf") return "pdf";
+  if (mimeType === "image/jpeg") return "jpg";
+  if (mimeType === "image/png") return "png";
+  return "";
+}
+
+const WORK_EXPENSE_EVIDENCE_COMBINING_MARKS = new RegExp(`[${String.fromCharCode(0x0300)}-${String.fromCharCode(0x036f)}]`, "g");
+
+function sanitizeWorkExpenseEvidenceBaseName(name) {
+  const withoutExtension = String(name || "documento").replace(/\.[^./\\]+$/, "");
+  const cleaned = withoutExtension.normalize("NFD").replace(WORK_EXPENSE_EVIDENCE_COMBINING_MARKS, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+  return cleaned || "documento";
+}
+
+// El nombre real subido nunca se usa como identidad autoritativa tal cual
+// (puede colisionar o traer espacios/acentos, SPEC 020 §9.1): se sanea y se
+// le agrega un sufijo único, dentro del mismo alfabeto conservador que ya
+// exige adjuntarEvidenciaGastoTrabajo en el backend
+// (letras/números/puntos/guiones, /^[a-zA-Z0-9._-]{1,200}$/), sin depender
+// de que el cliente lo garantice por sí solo. `uniquePart` es inyectable
+// para pruebas deterministas; en producción se genera solo.
+export function buildWorkExpenseEvidenceFileName(originalName, mimeType, {uniquePart} = {}) {
+  const extension = workExpenseEvidenceExtension(mimeType);
+  const base = sanitizeWorkExpenseEvidenceBaseName(originalName);
+  const suffix = uniquePart || `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  return `${base}-${suffix}${extension ? `.${extension}` : ""}`;
+}
+
+// Validación de forma exclusivamente para UX (feedback inmediato antes de
+// subir). Storage Rules revalida tamaño/contentType real y
+// adjuntarEvidenciaGastoTrabajo relee la metadata real del objeto ya subido:
+// ninguna de las dos capas confía en este resultado.
+export function validateWorkExpenseEvidenceSelection(file, existingCount = 0) {
+  if (!file) return {ok: false, reason: "Selecciona un archivo."};
+  if (existingCount >= MAX_WORK_EXPENSE_EVIDENCE_FILES) {
+    return {ok: false, reason: `Este gasto ya tiene el máximo de ${MAX_WORK_EXPENSE_EVIDENCE_FILES} archivos de evidencia.`};
+  }
+  if (!WORK_EXPENSE_EVIDENCE_TYPES.includes(file.type)) {
+    return {ok: false, reason: "El documento debe ser PDF, JPG o PNG."};
+  }
+  if (!(file.size > 0) || file.size > MAX_WORK_EXPENSE_EVIDENCE_BYTES) {
+    return {ok: false, reason: "El documento no puede superar 5 MB."};
+  }
+  return {ok: true, reason: ""};
+}
 
 export const WORK_EXPENSE_CATEGORIES = Object.freeze([
   {value: "MATERIAL", label: "Material", classification: "DIRECTO"},
@@ -121,6 +199,15 @@ export function getEligibleWorkQuoteOptions(quotes = [], sales = [], {workId = "
     if (!quoteId || quote?.estado !== "aceptada" || !sale || sale?.estado !== "confirmada" || sale?.cotizacionId !== quoteId || linkedElsewhere || !quoteClientId || quoteClientId !== saleClientId) return [];
     return [{quote, sale}];
   });
+}
+
+// Un adicional PENDIENTE_COBRO nunca se ofrece dos veces ni cruza de Proyecto:
+// mismo patrón que getEligibleWorkQuoteOptions, filtrando por trabajoId exacto.
+export function getEligibleWorkAdditionalOptions(additionals = [], {workId = ""} = {}) {
+  const currentWorkId = String(workId || "").trim();
+  return (Array.isArray(additionals) ? additionals : []).filter((additional) =>
+    additional?.estado === "PENDIENTE_COBRO" && String(additional?.trabajoId || "").trim() === currentWorkId
+  );
 }
 
 export function canViewWorkProfitability(role) {
@@ -299,6 +386,88 @@ export function adaptWorkExpense(raw = {}) {
     tareaId: String(raw.tareaId || "").trim(),
     estado: raw.estado === "anulado" ? "anulado" : "vigente",
     creadoEn: dateValue(raw.creadoEn),
+    anuladoEn: dateValue(raw.anuladoEn),
+    motivoAnulacion: String(raw.motivoAnulacion || "").trim(),
+  };
+}
+
+const WORK_ADDITIONAL_ITEM_TYPE_SET = new Set(WORK_ADDITIONAL_ITEM_TYPES);
+const WORK_ADDITIONAL_STATUS_SET = new Set(WORK_ADDITIONAL_STATUSES);
+const WORK_ADDITIONAL_ID_PATTERN = /^[a-zA-Z0-9_.:-]{1,160}$/;
+
+function requiredWorkAdditionalId(value, label) {
+  const result = String(value ?? "").trim();
+  if (!result) throw new Error(`${label} es obligatorio.`);
+  if (!WORK_ADDITIONAL_ID_PATTERN.test(result)) throw new Error(`${label} no es válido.`);
+  return result;
+}
+
+function requiredWorkAdditionalNumber(value, label, {minimum = 0, maximum = Infinity} = {}) {
+  if (value === "" || value == null) throw new Error(`${label} es obligatorio.`);
+  const result = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(result)) throw new Error(`${label} debe ser un número válido.`);
+  if (result < minimum || result > maximum) throw new Error(`${label} está fuera del rango permitido.`);
+  return result;
+}
+
+function requiredWorkAdditionalCurrency(value) {
+  const result = String(value || "").trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(result)) throw new Error("La moneda no es válida.");
+  return result;
+}
+
+export function isValidWorkAdditionalStatus(value) {
+  return WORK_ADDITIONAL_STATUS_SET.has(value);
+}
+
+// Único punto de verdad para transiciones válidas (SPEC 020 §5.3): reutilizado
+// tanto por validación en Functions (ETAPA 2) como por controles de UI (ETAPA 4).
+export function canTransitionWorkAdditionalStatus(from, to) {
+  return Boolean(WORK_ADDITIONAL_TRANSITIONS[from]?.includes(to));
+}
+
+// Valida y normaliza los datos de un adicional nuevo. Puro: no consulta
+// ninguna base de datos, inventario ni el catálogo real — sólo aplica las
+// mismas reglas de forma que ya exige una línea de Venta/Cotización (itemId
+// obligatorio, sin texto libre). Un adicional nuevo siempre nace
+// PENDIENTE_COBRO (SPEC 020 §5.3), por lo que este builder no acepta `estado`
+// como entrada.
+export function buildWorkAdditionalMutationPayload(raw = {}) {
+  const negocioId = requiredWorkAdditionalId(raw.negocioId, "El negocio");
+  const trabajoId = requiredWorkAdditionalId(raw.trabajoId, "El trabajo");
+  const itemId = requiredWorkAdditionalId(raw.itemId, "El ítem");
+  if (!WORK_ADDITIONAL_ITEM_TYPE_SET.has(raw.tipoItem)) throw new Error("El tipo de ítem no es válido.");
+  const cantidad = requiredWorkAdditionalNumber(raw.cantidad, "La cantidad", {minimum: Number.MIN_VALUE});
+  const precioUnitario = requiredWorkAdditionalNumber(raw.precioUnitario, "El precio unitario");
+  const moneda = requiredWorkAdditionalCurrency(raw.moneda);
+  const tareaId = raw.tareaId ? requiredWorkAdditionalId(raw.tareaId, "La tarea") : "";
+  const descripcion = String(raw.descripcion || "").trim().slice(0, 2000);
+  return {negocioId, trabajoId, itemId, tipoItem: raw.tipoItem, cantidad, precioUnitario, moneda, tareaId, descripcion};
+}
+
+export function adaptWorkAdditional(raw = {}) {
+  return {
+    ...raw,
+    id: raw.id || raw.adicionalId || "",
+    adicionalId: raw.adicionalId || raw.id || "",
+    modeloAdicionalVersion: Number(raw.modeloAdicionalVersion || WORK_ADDITIONAL_MODEL_VERSION),
+    negocioId: String(raw.negocioId || "").trim(),
+    trabajoId: String(raw.trabajoId || "").trim(),
+    itemId: String(raw.itemId || "").trim(),
+    tipoItem: WORK_ADDITIONAL_ITEM_TYPE_SET.has(raw.tipoItem) ? raw.tipoItem : "producto",
+    cantidad: Number(raw.cantidad || 0),
+    precioUnitario: Number(raw.precioUnitario || 0),
+    moneda: String(raw.moneda || "").trim().toUpperCase(),
+    descripcion: String(raw.descripcion || "").trim(),
+    tareaId: String(raw.tareaId || "").trim(),
+    estado: WORK_ADDITIONAL_STATUS_SET.has(raw.estado) ? raw.estado : "PENDIENTE_COBRO",
+    registradoPorUid: String(raw.registradoPorUid || "").trim(),
+    registradoPorSnapshot: raw.registradoPorSnapshot || null,
+    creadoEn: dateValue(raw.creadoEn),
+    ventaId: String(raw.ventaId || "").trim(),
+    lineaId: String(raw.lineaId || "").trim(),
+    anuladoPorUid: String(raw.anuladoPorUid || "").trim(),
+    anuladoPorSnapshot: raw.anuladoPorSnapshot || null,
     anuladoEn: dateValue(raw.anuladoEn),
     motivoAnulacion: String(raw.motivoAnulacion || "").trim(),
   };
@@ -554,6 +723,10 @@ export function humanizeWorkEvent(event = {}, {includeAmounts = true} = {}) {
     tarea_eliminada: `${actor} eliminó la tarea “${detail.tareaTitulo || "Sin título"}”.`,
     gasto_registrado: `${actor} registró el gasto “${detail.concepto || "Sin concepto"}”${amountText(detail.monto)}.`,
     gasto_anulado: `${actor} anuló el gasto “${detail.concepto || "Sin concepto"}”${amountText(detail.monto)}.`,
+    gasto_evidencia_adjuntada: `${actor} adjuntó evidencia “${detail.nombreArchivo || "documento"}” a un gasto.`,
+    adicional_registrado: `${actor} registró un adicional de ${Number(detail.cantidad || 0)} unidad(es)${amountText(detail.precioUnitario)} cada una.`,
+    adicional_anulado: `${actor} anuló un adicional${amountText(detail.precioUnitario)}.`,
+    adicional_incorporado_a_venta: `${actor} incorporó un adicional a la venta ${detail.numero || "sin número"}${amountText(detail.precioUnitario)}.`,
     horas_hombre_registradas: `${actor} registró ${Number(detail.horas || 0)} HH para ${detail.tecnicoNombre || "un técnico"}${amountText(detail.total)}.`,
     horas_hombre_anuladas: `${actor} anuló ${Number(detail.horas || 0)} HH de “${detail.concepto || "Sin concepto"}”${amountText(detail.total)}.`,
     material_salida_registrada: `${actor} registró la salida de ${Number(detail.cantidad || 0)} ${detail.productoNombre || "material"}${amountText(detail.costoTotal)}.`,
