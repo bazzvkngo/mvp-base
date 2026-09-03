@@ -196,8 +196,8 @@ service cloud.firestore {
     }
 
     function hasValidInventoryCatalogRelation(uid) {
-      let areaId = request.resource.data.areaId;
-      let categoriaId = request.resource.data.categoriaId;
+      let areaId = request.resource.data.get("areaId", "");
+      let categoriaId = request.resource.data.get("categoriaId", "");
       let areaPath = /databases/$(database)/documents/usuarios/$(uid)/areas/$(areaId);
       let categoryPath = /databases/$(database)/documents/usuarios/$(uid)/categoriasInventario/$(categoriaId);
       return areaId is string
@@ -237,14 +237,14 @@ service cloud.firestore {
     }
 
     function hasValidProductFields() {
-      return request.resource.data.marca is string
-        && request.resource.data.marca.size() > 0
-        && request.resource.data.modelo is string
-        && request.resource.data.modelo.size() > 0
-        && request.resource.data.stock is number
-        && request.resource.data.stock >= 0
-        && request.resource.data.stockMinimo is number
-        && request.resource.data.stockMinimo >= 0
+      return request.resource.data.get("marca", null) is string
+        && request.resource.data.get("marca", "").size() > 0
+        && request.resource.data.get("modelo", null) is string
+        && request.resource.data.get("modelo", "").size() > 0
+        && request.resource.data.get("stock", null) is number
+        && request.resource.data.get("stock", -1) >= 0
+        && request.resource.data.get("stockMinimo", null) is number
+        && request.resource.data.get("stockMinimo", -1) >= 0
         && (
           !request.resource.data.keys().hasAny(["codigoBarras"])
           || request.resource.data.codigoBarras is string
@@ -347,76 +347,101 @@ service cloud.firestore {
       ];
       return !request.resource.data.keys().hasAny(fields)
         || (
-          request.resource.data.tipoItem == "producto"
+          request.resource.data.get("tipoItem", "") == "producto"
           && request.resource.data.keys().hasAll(fields)
-          && request.resource.data.formacionPrecioVersion == 2
-          && request.resource.data.tasaImpuestoCompra is number
-          && request.resource.data.tasaImpuestoCompra >= 0
-          && request.resource.data.tasaImpuestoCompra <= 100
-          && request.resource.data.montoImpuestoCompra is number
-          && request.resource.data.montoImpuestoCompra >= 0
-          && request.resource.data.costoPagado is number
-          && request.resource.data.costoPagado >= 0
-          && request.resource.data.precioVentaSugerido is number
-          && request.resource.data.precioVentaSugerido >= 0
+          && request.resource.data.get("formacionPrecioVersion", null) == 2
+          && request.resource.data.get("tasaImpuestoCompra", null) is number
+          && request.resource.data.get("tasaImpuestoCompra", -1) >= 0
+          && request.resource.data.get("tasaImpuestoCompra", 101) <= 100
+          && request.resource.data.get("montoImpuestoCompra", null) is number
+          && request.resource.data.get("montoImpuestoCompra", -1) >= 0
+          && request.resource.data.get("costoPagado", null) is number
+          && request.resource.data.get("costoPagado", -1) >= 0
+          && request.resource.data.get("precioVentaSugerido", null) is number
+          && request.resource.data.get("precioVentaSugerido", -1) >= 0
         );
     }
 
     function hasValidInventoryStructure(uid) {
-      return request.resource.data.tipoItem in ["producto", "servicio", "actividad"]
-        && request.resource.data.nombre is string
-        && request.resource.data.nombre.size() > 0
-        && request.resource.data.categoria is string
-        && request.resource.data.categoria.size() > 0
-        && request.resource.data.unidad is string
-        && request.resource.data.unidad.size() > 0
-        && request.resource.data.costoBase is number
-        && request.resource.data.margenDeseado is number
-        && request.resource.data.precioInterno is number
+      return request.resource.data.get("tipoItem", "") in ["producto", "servicio", "actividad"]
+        && request.resource.data.get("nombre", null) is string
+        && request.resource.data.get("nombre", "").size() > 0
+        && request.resource.data.get("categoria", null) is string
+        && request.resource.data.get("categoria", "").size() > 0
+        && request.resource.data.get("unidad", null) is string
+        && request.resource.data.get("unidad", "").size() > 0
+        && request.resource.data.get("costoBase", null) is number
+        && request.resource.data.get("margenDeseado", null) is number
+        && request.resource.data.get("precioInterno", null) is number
         && hasValidInventoryCatalogRelation(uid)
         && hasValidPurchasePriceFormation()
         && (
           (
-            request.resource.data.tipoItem == "producto"
+            request.resource.data.get("tipoItem", "") == "producto"
             && hasValidProductFields()
           )
           || (
-            request.resource.data.tipoItem != "producto"
+            request.resource.data.get("tipoItem", "") != "producto"
             && hasNoProductFields()
           )
         );
     }
 
     function hasValidInventoryV2(uid) {
-      return request.resource.data.modeloInventarioVersion == 2
-        && request.resource.data.codigoInterno is string
-        && request.resource.data.codigoInterno.size() > 0
+      return request.resource.data.get("modeloInventarioVersion", null) == 2
+        && request.resource.data.get("codigoInterno", null) is string
+        && request.resource.data.get("codigoInterno", "").size() > 0
         && hasValidInventoryStructure(uid);
     }
 
-    function hasValidBusinessInventoryV2(businessId) {
-      return request.resource.data.modeloInventarioVersion == 2
-        && request.resource.data.codigoInterno is string
-        && request.resource.data.codigoInterno.size() > 0
-        && request.resource.data.tipoItem in ["producto", "servicio", "actividad"]
-        && request.resource.data.nombre is string
-        && request.resource.data.nombre.size() > 0
-        && request.resource.data.categoria is string
-        && request.resource.data.categoria.size() >= 0
-        && request.resource.data.unidad is string
-        && request.resource.data.unidad.size() > 0
-        && request.resource.data.costoBase is number
-        && request.resource.data.margenDeseado is number
-        && request.resource.data.precioInterno is number
+    function hasValidBusinessInventoryStructure(businessId) {
+      return request.resource.data.get("tipoItem", "") in ["producto", "servicio", "actividad"]
+        && request.resource.data.get("nombre", null) is string
+        && request.resource.data.get("nombre", "").size() > 0
+        && request.resource.data.get("categoria", null) is string
+        && request.resource.data.get("categoria", "").size() >= 0
+        && request.resource.data.get("unidad", null) is string
+        && request.resource.data.get("unidad", "").size() > 0
+        && request.resource.data.get("costoBase", null) is number
+        && request.resource.data.get("margenDeseado", null) is number
+        && request.resource.data.get("precioInterno", null) is number
         && hasValidBusinessInventoryCatalogRelation(businessId)
         && hasValidPurchasePriceFormation()
         && (
           (
-            request.resource.data.tipoItem == "producto"
+            request.resource.data.get("tipoItem", "") == "producto"
             && hasValidBusinessProductFields(businessId)
           )
           || (
-            request.resource.data.tipoItem != "producto"
+            request.resource.data.get("tipoItem", "") != "producto"
+            && hasNoProductFields()
+          )
+        );
+    }
+
+    function hasValidBusinessInventoryV2(businessId) {
+      return request.resource.data.get("modeloInventarioVersion", null) == 2
+        && request.resource.data.get("codigoInterno", null) is string
+        && request.resource.data.get("codigoInterno", "").size() > 0
+        && request.resource.data.get("tipoItem", "") in ["producto", "servicio", "actividad"]
+        && request.resource.data.get("nombre", null) is string
+        && request.resource.data.get("nombre", "").size() > 0
+        && request.resource.data.get("categoria", null) is string
+        && request.resource.data.get("categoria", "").size() >= 0
+        && request.resource.data.get("unidad", null) is string
+        && request.resource.data.get("unidad", "").size() > 0
+        && request.resource.data.get("costoBase", null) is number
+        && request.resource.data.get("margenDeseado", null) is number
+        && request.resource.data.get("precioInterno", null) is number
+        && hasValidBusinessInventoryCatalogRelation(businessId)
+        && hasValidPurchasePriceFormation()
+        && (
+          (
+            request.resource.data.get("tipoItem", "") == "producto"
+            && hasValidBusinessProductFields(businessId)
+          )
+          || (
+            request.resource.data.get("tipoItem", "") != "producto"
             && hasNoProductFields()
           )
         );
@@ -434,25 +459,25 @@ service cloud.firestore {
         && request.resource.data.get("modeloInventarioVersion", null) == null
         && request.resource.data.get("codigoInterno", null) == null
         && request.resource.data.negocioId == businessId
-        && request.resource.data.tipoItem in ["producto", "servicio", "actividad"]
-        && request.resource.data.nombre is string
-        && request.resource.data.nombre.size() > 0
-        && request.resource.data.categoria is string
-        && request.resource.data.categoria.size() >= 0
-        && request.resource.data.unidad is string
-        && request.resource.data.unidad.size() > 0
-        && request.resource.data.costoBase is number
-        && request.resource.data.margenDeseado is number
-        && request.resource.data.precioInterno is number
+        && request.resource.data.get("tipoItem", "") in ["producto", "servicio", "actividad"]
+        && request.resource.data.get("nombre", null) is string
+        && request.resource.data.get("nombre", "").size() > 0
+        && request.resource.data.get("categoria", null) is string
+        && request.resource.data.get("categoria", "").size() >= 0
+        && request.resource.data.get("unidad", null) is string
+        && request.resource.data.get("unidad", "").size() > 0
+        && request.resource.data.get("costoBase", null) is number
+        && request.resource.data.get("margenDeseado", null) is number
+        && request.resource.data.get("precioInterno", null) is number
         && hasValidBusinessInventoryCatalogRelation(businessId)
         && hasValidPurchasePriceFormation()
         && (
           (
-            request.resource.data.tipoItem == "producto"
+            request.resource.data.get("tipoItem", "") == "producto"
             && hasValidBusinessProductFields(businessId)
           )
           || (
-            request.resource.data.tipoItem != "producto"
+            request.resource.data.get("tipoItem", "") != "producto"
             && hasNoProductFields()
           )
         );
@@ -684,9 +709,23 @@ service cloud.firestore {
           && hasValidDocumentOwner(uid)
           && inventoryCodesAreImmutable()
           && inventoryAuthoritativeFieldsAreImmutable()
+          // hasValidInventoryStructure(uid) se evalúa una sola vez y se
+          // combina con el discriminador V2/legacy (antes: dos llamadas
+          // separadas, una por rama del OR, duplicando exists()/get() de
+          // hasValidInventoryCatalogRelation) — misma política exacta por
+          // ley distributiva: (A∧C)∨(B∧C) ≡ C∧(A∨B).
+          && hasValidInventoryStructure(uid)
           && (
-            hasValidInventoryV2(uid)
-            || isAllowedLegacyInventoryUpdate(uid)
+            (
+              request.resource.data.get("modeloInventarioVersion", null) == 2
+              && request.resource.data.get("codigoInterno", null) is string
+              && request.resource.data.get("codigoInterno", "").size() > 0
+            )
+            || (
+              resource.data.get("modeloInventarioVersion", null) == null
+              && request.resource.data.get("modeloInventarioVersion", null) == null
+              && request.resource.data.get("codigoInterno", null) == null
+            )
           );
         allow delete: if false;
       }
@@ -800,9 +839,25 @@ service cloud.firestore {
           && hasValidBusinessDocument(businessId)
           && inventoryCodesAreImmutable()
           && inventoryAuthoritativeFieldsAreImmutable()
+          // hasValidBusinessInventoryStructure(businessId) se evalúa una
+          // sola vez y se combina con el discriminador V2/legacy (antes:
+          // dos llamadas separadas, una por rama del OR, duplicando
+          // exists()/get() de hasValidBusinessInventoryCatalogRelation) —
+          // misma política exacta por ley distributiva:
+          // (A∧C)∨(B∧C) ≡ C∧(A∨B).
+          && hasValidBusinessInventoryStructure(businessId)
           && (
-            hasValidBusinessInventoryV2(businessId)
-            || isAllowedLegacyBusinessInventoryUpdate(businessId)
+            (
+              request.resource.data.get("modeloInventarioVersion", null) == 2
+              && request.resource.data.get("codigoInterno", null) is string
+              && request.resource.data.get("codigoInterno", "").size() > 0
+            )
+            || (
+              resource.data.get("modeloInventarioVersion", null) == null
+              && request.resource.data.get("modeloInventarioVersion", null) == null
+              && request.resource.data.get("codigoInterno", null) == null
+              && request.resource.data.negocioId == businessId
+            )
           );
         allow delete: if false;
       }

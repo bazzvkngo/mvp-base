@@ -28,6 +28,7 @@
     "build": "vite build --mode production",
     "preview": "vite preview",
     "test:rules": "firebase emulators:exec --only auth,firestore,storage \"node scripts/rules-smoke.mjs\"",
+    "test:inventory-rules-budget-fix": "firebase emulators:exec --only auth,firestore \"node scripts/inventory-rules-budget-fix-smoke.mjs\"",
     "test:business-verification-rules": "firebase emulators:exec --only auth,firestore,storage \"node scripts/business-verification-rules-smoke.mjs\"",
     "test:ai-rate-limits": "node scripts/ai-rate-limiter-smoke.mjs",
     "test:inventory-docs": "node scripts/inventory-document-import-smoke.mjs",

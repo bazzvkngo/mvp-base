@@ -154,11 +154,20 @@ async function main() {
     }
     console.log("OK permitido: propietario lee inventario heredado sin area");
 
-    await updateDoc(doc(ownerClient.db, inventoryPath), {
-      estado: "inactivo",
-      actualizadoEn: serverTimestamp(),
-    });
-    console.log("OK permitido: cambio de ciclo de vida de inventario heredado");
+    // estado está protegido por inventoryAuthoritativeFieldsAreImmutable()
+    // (firestore.rules) para TODO item de inventario, heredado o V2: un
+    // cliente nunca puede cambiarlo por escritura directa, sólo mediante
+    // setInventoryItemStatus (que opera exclusivamente sobre el modelo
+    // canónico negocios/{businessId}/inventario). Un item heredado bajo
+    // usuarios/{uid}/inventario no tiene Function equivalente y por tanto
+    // no admite cambio de estado por ningún camino hoy; se documenta como
+    // denegación esperada, no como caso permitido.
+    await expectDenied("cliente cambia estado de inventario heredado por escritura directa", () =>
+      updateDoc(doc(ownerClient.db, inventoryPath), {
+        estado: "inactivo",
+        actualizadoEn: serverTimestamp(),
+      })
+    );
 
     await updateDoc(doc(ownerClient.db, inventoryPath), {
       areaId: "area-smoke",
