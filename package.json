@@ -42,7 +42,6 @@
     "test:quotes": "node scripts/quote-model-smoke.mjs",
     "test:quote-email": "node scripts/quote-email-smoke.mjs",
     "test:quote-public": "node scripts/quote-public-proposal-smoke.mjs",
-    "test:quotes-integrated": "node scripts/quote-integrated-local.mjs",
     "test:quote-model": "node scripts/quote-model-smoke.mjs",
     "test:quote-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/quote-integrated-local.mjs\"",
     "test:clients-model": "node scripts/client-model-smoke.mjs",

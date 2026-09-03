@@ -262,6 +262,11 @@ async function createProposalFixture(
     estado: "activo",
     nombre: "Servicio comercial",
     stock: 5,
+    // Ítem legacy (sin modeloCostoInventarioVersion) con un costo histórico
+    // real registrado, igual que cualquier producto legacy operado antes de
+    // BRUNO C: resolveInventoryEconomicState exige este baseline para
+    // aceptar una Venta desde el portal público sin inventar valorización.
+    costoBase: 1000,
   });
   const dependencies = {
     db,
@@ -884,7 +889,7 @@ assert.equal(
   const db = createFakeDb([
     ...verifiedBusinessEntries(),
     [quotePath, quoteFixture()],
-    [inventoryPath, {negocioId: "business-1", itemId: "inventory-secret", tipoItem: "producto", estado: "activo", nombre: "Producto", stock: 2}],
+    [inventoryPath, {negocioId: "business-1", itemId: "inventory-secret", tipoItem: "producto", estado: "activo", nombre: "Producto", stock: 2, costoBase: 1000}],
   ]);
   const businessRef = db.collection("negocios").doc("business-1");
   const transitionRequest = {

@@ -281,8 +281,10 @@ assert.doesNotMatch(verificationBackend, /requestData\.razonSocial/);
 assert.match(businessJurisdiction, /"razonSocial"/);
 assert.match(platformAdminService, /razonSocialOficial/);
 assert.match(platformAdminPages, /Razón social oficial/);
-assert.match(platformAdminPages, /razonSocialOficial: officialLegalName\.trim\(\)/);
-assert.match(platformAdminPages, /razonSocialOficial: ""/);
+// El envío es una única expresión ternaria (antes eran dos ramas if/else
+// separadas): al aprobar se envía el nombre recortado, al rechazar se envía
+// vacío. Se verifica ambas ramas en una sola aserción sobre la forma actual.
+assert.match(platformAdminPages, /razonSocialOficial: approving \? officialLegalName\.trim\(\) : ""/);
 assert.match(app, /BusinessOperationGate/);
 assert.match(app, /unverifiedSetupAccess/);
 assert.match(operationGate, /Navigate to="\/empresa\?seccion=verificacion" replace/);

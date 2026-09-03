@@ -21,8 +21,18 @@ async function user(label) {
 
 const call = (client, name) => httpsCallable(client.functions, name);
 const requestId = (label) => `fiscal-${label}-${RUN_ID}`;
-const customer = (value, country = "OTHER", name = "Cliente fiscal") => ({tipoCliente: "empresa", paisCodigo: country, identificadorFiscalTipo: "FALSO", identificadorFiscalValor: value, nombreRazonSocial: name, giro: "Servicios", email: "fiscal@example.test", telefono: "+591 70000000", direccion: "Dirección fiscal", regionCodigo: "", regionNombre: "Departamento", comunaCodigo: "", comunaNombre: "Municipio", personaContacto: "Contacto", notas: ""});
-const provider = (value, country = "OTHER", name = "Proveedor fiscal") => ({paisCodigo: country, identificadorFiscalTipo: "FALSO", identificadorFiscalValor: value, razonSocial: name, nombreFantasia: "", giro: "Suministros", personaContacto: "Contacto", email: "proveedor@example.test", telefono: "+591 70000001", direccion: "Dirección fiscal", regionCodigo: "", regionNombre: "Departamento", comunaCodigo: "", comunaNombre: "Municipio", condicionesPago: "transferencia", diasCredito: 0, notas: ""});
+// La validación de teléfono (functions/contactFormatting.js) exige formato
+// nacional chileno cuando el NEGOCIO OPERADOR (no el país fiscal del
+// cliente/proveedor) es "CL" — countryCode se deriva de
+// context.businessSnapshot.data().paisCodigo en crearCliente/crearProveedor
+// (functions/clientPersistence.js:359, functions/providerPersistence.js
+// equivalente). El fixture debe enviar un teléfono chileno sólo para las
+// llamadas dirigidas a un negocio "CL"; el resto usa el formato
+// internacional genérico ya aceptado.
+const CHILEAN_PHONE = "+56 9 6123 4587";
+const GENERIC_PHONE = "+591 70000000";
+const customer = (value, country = "OTHER", name = "Cliente fiscal", telefono = GENERIC_PHONE) => ({tipoCliente: "empresa", paisCodigo: country, identificadorFiscalTipo: "FALSO", identificadorFiscalValor: value, nombreRazonSocial: name, giro: "Servicios", email: "fiscal@example.test", telefono, direccion: "Dirección fiscal", regionCodigo: "", regionNombre: "Departamento", comunaCodigo: "", comunaNombre: "Municipio", personaContacto: "Contacto", notas: ""});
+const provider = (value, country = "OTHER", name = "Proveedor fiscal", telefono = GENERIC_PHONE) => ({paisCodigo: country, identificadorFiscalTipo: "FALSO", identificadorFiscalValor: value, razonSocial: name, nombreFantasia: "", giro: "Suministros", personaContacto: "Contacto", email: "proveedor@example.test", telefono, direccion: "Dirección fiscal", regionCodigo: "", regionNombre: "Departamento", comunaCodigo: "", comunaNombre: "Municipio", condicionesPago: "transferencia", diasCredito: 0, notas: ""});
 
 async function rejected(label, operation, codes) {
   try { await operation(); } catch (error) {
@@ -61,9 +71,9 @@ try {
     seedBusiness(cl, "CL", "CLP"), seedBusiness(bo, "BO", "USD"), seedBusiness(bo2, "BO", "BOB"), seedBusiness(br, "BR", "BRL"), seedBusiness(pe, "PE", "PEN"),
   ]);
 
-  const clCreated = await call(cl, "crearCliente")({businessId: clBusiness, cliente: customer("12.345.678-5", "BO", "Cliente CL")});
+  const clCreated = await call(cl, "crearCliente")({businessId: clBusiness, cliente: customer("12.345.678-5", "BO", "Cliente CL", CHILEAN_PHONE)});
   assert.equal(clCreated.data.cliente.identificadorFiscalTipo, "RUT");
-  await rejected("RUT chileno inválido", () => call(cl, "crearCliente")({businessId: clBusiness, cliente: customer("12.345.678-4", "BO")}), ["invalid-argument"]);
+  await rejected("RUT chileno inválido", () => call(cl, "crearCliente")({businessId: clBusiness, cliente: customer("12.345.678-4", "BO", "Cliente fiscal", CHILEAN_PHONE)}), ["invalid-argument"]);
 
   const boCreated = await call(bo, "crearCliente")({businessId: boBusiness, cliente: customer("12-34567", "CL", "Cliente BO USD")});
   const boId = boCreated.data.cliente.clienteId;
