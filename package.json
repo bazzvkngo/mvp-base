@@ -82,6 +82,10 @@
     "test:finance": "node scripts/financial-model-smoke.mjs",
     "test:statistics": "node scripts/financial-model-smoke.mjs",
     "test:reports": "node scripts/report-model-smoke.mjs",
+    "test:reports-profitability-v4": "node scripts/report-profitability-v4-smoke.mjs",
+    "test:reports-profitability-v4-stage2": "node scripts/report-profitability-v4-stage2-smoke.mjs",
+    "test:reports-profitability-v4-stage2-integrated": "firebase emulators:exec --only auth,firestore \"node scripts/report-profitability-v4-stage2-integrated.mjs\"",
+    "test:reports-profitability-v4-stage3-ui": "node scripts/report-profitability-v4-stage3-ui-smoke.mjs",
     "test:works-model": "node scripts/works-model-smoke.mjs && node scripts/work-balance-smoke.mjs",
     "test:summary": "node scripts/financial-model-smoke.mjs",
     "seed:business-catalogs:emulator": "node scripts/seed-business-catalogs.mjs --emulator"

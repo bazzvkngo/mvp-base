@@ -26,6 +26,11 @@ import {
   hasBusinessPermission,
 } from "../domain/rbac.mjs";
 import {getWorkStatusLabel} from "../domain/workModel.mjs";
+import {
+  ProjectProfitabilityV4Summary,
+  SalesCommercialMarginV4Card,
+  useReportProfitabilityV4,
+} from "../features/reports/ReportProfitabilityV4Section";
 import {loadSimplifiedReportData} from "../services/reportService";
 import {formatMoney} from "../utils/formatters";
 
@@ -172,6 +177,7 @@ function StatisticsPage({businessId, currencyCode = "CLP", role = ""}) {
     sales: group.sales.total,
   }));
   const links = {purchases: canAccessBusinessPath(role, "/compras"), sales: canAccessBusinessPath(role, "/ventas"), works: canAccessBusinessPath(role, "/trabajos")};
+  const profitabilityV4 = useReportProfitabilityV4({businessId, range, role});
 
   if (!businessId) return <section className="erp-page reports-simple"><header className="erp-page-header"><div className="erp-page-intro"><span className="reports-simple-eyebrow">Reportes</span><h1>Resumen ejecutivo</h1><p>Analiza ventas, compras y rentabilidad de tus proyectos.</p></div></header><div className="erp-card reports-simple-state">Selecciona un negocio para consultar sus reportes.</div></section>;
 
@@ -200,10 +206,13 @@ function StatisticsPage({businessId, currencyCode = "CLP", role = ""}) {
 
       <p className="reports-simple-project-note">Las compras muestran egresos registrados del negocio. La rentabilidad de proyectos considera únicamente ingresos y costos asociados a cada proyecto; corresponde al balance actual autoritativo y no se atribuye al período seleccionado.</p>
 
+      <SalesCommercialMarginV4Card canView={profitabilityV4.canView} commercial={profitabilityV4.commercial} onRetry={profitabilityV4.reload} />
+
       <div className="reports-executive-grid">
         <section className="erp-card reports-profitability">
           <div className="reports-section-heading"><div><span>Rentabilidad operativa</span><h2>Rentabilidad de proyectos</h2><p>Ingresos y costos provenientes del balance autoritativo de cada proyecto.</p></div>{links.works && <button type="button" onClick={() => navigate("/trabajos")}>Ver proyectos<ArrowRight size={14} /></button>}</div>
           {!canViewProfitability ? <div className="reports-profitability-empty">Tu perfil no incluye información de rentabilidad.</div> : <div className="reports-profitability-groups">{summary.currencies.map((group) => <ProfitabilitySummary currency={group.currency} group={profitability.groups.find((entry) => entry.currency === group.currency)} key={group.currency} />)}</div>}
+          <ProjectProfitabilityV4Summary canView={profitabilityV4.canView} projects={profitabilityV4.projects} />
         </section>
         <section className="erp-card reports-simple-chart">
           <div className="reports-section-heading"><div><span>Movimiento comercial</span><h2>Ventas y compras</h2><p>Operaciones confirmadas dentro del período seleccionado.</p></div></div>
