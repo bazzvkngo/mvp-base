@@ -5,7 +5,9 @@ import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import StatusBadge from "../components/ui/StatusBadge";
-import {WORK_EXPENSE_CATEGORIES, WORK_PRIORITIES, WORK_STATUSES, WORK_TASK_STATUSES, buildQuickWorkCreationPayload, buildWorkDailyCostSummary, canManageWorks, canViewWorkProfitability, getEligibleWorkQuoteOptions, getInventoryCurrentCost, getTaskProgress, getWorkAccumulatedCost, getWorkCostSummary, getWorkDraftErrors, getWorkHistoricalPersonIdentity, getWorkMemberIdentity, getWorkMemberOptionLabel, getWorkOperationalIndicators, getWorkPriorityLabel, getWorkSaleMaterials, getWorkStatusLabel, getWorkTaskProgress, hasAdditionalWorkMembers, humanizeWorkEvent, isWorkOperationalReadOnly, matchesWorkFilters} from "../domain/workModel.mjs";
+import WorkQuoteSelector from "../features/works/WorkQuoteSelector.jsx";
+import WorkTaskBoard from "../features/works/WorkTaskBoard.jsx";
+import {WORK_EXPENSE_CATEGORIES, WORK_PRIORITIES, WORK_STATUSES, WORK_TASK_STATUSES, buildQuickWorkCreationPayload, buildWorkDailyCostSummary, canManageWorks, canOperateWorkTask, canViewWorkProfitability, getEligibleWorkQuoteOptions, getInventoryCurrentCost, getTaskProgress, getVisibleWorkTasks, getWorkAccumulatedCost, getWorkCostSummary, getWorkDraftErrors, getWorkHistoricalPersonIdentity, getWorkMemberIdentity, getWorkMemberOptionLabel, getWorkOperationalIndicators, getWorkPriorityLabel, getWorkSaleMaterials, getWorkStatusLabel, getWorkTaskProgress, getWorkTaskStatusOptions, hasAdditionalWorkMembers, humanizeWorkEvent, isWorkOperationalReadOnly, matchesWorkFilters} from "../domain/workModel.mjs";
 import {listarMiembrosNegocio} from "../services/businessMemberService.js";
 import {listarClientes} from "../services/clientService.js";
 import {getInventoryItems} from "../services/inventoryService.js";
@@ -33,11 +35,6 @@ function Status({value}) {
 
 function Priority({value}) {
   return <span className={`works-priority works-priority--${value}`}>{getWorkPriorityLabel(value)}</span>;
-}
-
-function quoteOptionLabel({quote}, currencyCode) {
-  const clientName = quote.clienteNombre || quote.cliente?.empresa || "Cliente sin nombre";
-  return `${quote.numero || "COT"} · ${clientName} · ${formatMoney(quote.total, quote.moneda || currencyCode)}`;
 }
 
 export default function WorksPage({businessId, currencyCode, currentUserUid, role}) {
@@ -152,8 +149,7 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
     setFormOpen(true);
   };
   const openEdit = (work) => { if (isWorkOperationalReadOnly(work)) return; setSelectedWork(null); setEditingWork(work); setDraft({titulo: work.titulo, descripcion: work.descripcion, clienteId: work.clienteId, cotizacionId: work.cotizacionId, responsableUid: work.responsableUid, participanteUids: work.participanteUids, estado: work.estado, prioridad: work.prioridad, fechaInicio: work.fechaInicio, fechaPrevista: work.fechaPrevista}); setFieldErrors({}); setFormOpen(true); };
-  const selectQuote = (event) => {
-    const cotizacionId = event.target.value;
+  const selectQuote = (cotizacionId) => {
     const option = quoteOptions.find(({quote}) => quote.id === cotizacionId);
     setDraft((current) => ({...current, cotizacionId, clienteId: option?.quote.clienteId || ""}));
     setFieldErrors((current) => ({...current, cotizacionId: "", clienteId: ""}));
@@ -218,7 +214,7 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
         <FormSection title="Información">
           <div className="works-form-grid">
             <Field className="works-field--wide" label="Nombre" required error={fieldErrors.titulo}><input autoFocus className="erp-control" maxLength="180" placeholder="Escribe un nombre breve para identificar el proyecto" value={draft.titulo} onChange={(event) => updateDraft("titulo", event.target.value)} /></Field>
-            <Field className="works-field--wide" label="Cotización asociada" optional error={fieldErrors.cotizacionId}><select className="erp-control" disabled={commercialLinkLocked} value={draft.cotizacionId} onChange={selectQuote}><option value="">{commercialLinkLocked ? "Vínculo comercial existente" : "Sin cotización"}</option>{quoteOptions.map((option) => <option key={option.quote.id} value={option.quote.id}>{quoteOptionLabel(option, currencyCode)}</option>)}</select></Field>
+            <Field className="works-field--wide" label="Cotización asociada" optional error={fieldErrors.cotizacionId}><WorkQuoteSelector currencyCode={currencyCode} disabled={commercialLinkLocked} loading={loading} onChange={selectQuote} options={quoteOptions} value={draft.cotizacionId} /></Field>
             <Field className="works-field--wide" label="Cliente" optional><select className="erp-control" disabled={Boolean(draft.cotizacionId)} value={draft.clienteId} onChange={selectClient}><option value="">Sin cliente</option>{clients.map((client) => <option key={client.clienteId} value={client.clienteId}>{client.nombreRazonSocial} · {client.rut}</option>)}{!draft.cotizacionId && <option value={NEW_CLIENT_VALUE}>+ Nuevo cliente</option>}</select></Field>
             <Field className="works-field--wide" label="Descripción" optional error={fieldErrors.descripcion}><textarea className="erp-control" rows="2" maxLength="5000" placeholder="Describe el requerimiento o lo informado por el cliente" value={draft.descripcion} onChange={(event) => updateDraft("descripcion", event.target.value)} /></Field>
           </div>
@@ -286,7 +282,7 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
               <MaterialsSection key={`materials-${selectedWork.id}`} businessId={businessId} canManage={canManage} currency={selectedWork.moneda || currencyCode || "CLP"} currentUserUid={currentUserUid} hasAssociatedSale={detail.ventas.some((sale) => sale.estado === "confirmada")} loading={detailLoading} movements={detail.materiales} processing={processing} products={inventoryProducts} readOnly={operationalReadOnly} role={role} runAction={runDetailAction} saleMaterials={saleMaterials} tasks={detail.tareas} workId={selectedWork.id} />
               <FinancialSection key={`costs-${selectedWork.id}`} businessId={businessId} canManage={canManage} currency={selectedWork.moneda || currencyCode || "CLP"} currentUserUid={currentUserUid} expenses={detail.gastos} labor={detail.horasHombre} loading={detailLoading} members={members} processing={processing} readOnly={operationalReadOnly} role={role} runAction={runDetailAction} tasks={detail.tareas} workId={selectedWork.id} />
               <DailyCostSummary currency={selectedWork.moneda || currencyCode || "CLP"} rows={dailyCosts} />
-              {canManage && <WorkBalanceSection balance={detail.balance} loading={detailLoading} />}
+              {canViewWorkProfitability(role) && <WorkBalanceSection balance={detail.balance} loading={detailLoading} />}
             </div>
           </section>
 
@@ -322,9 +318,8 @@ function TaskSection({businessId, canManage, costs, currency, currentUserUid, lo
   const [subtaskTitles, setSubtaskTitles] = useState({});
   const [waitingTask, setWaitingTask] = useState(null);
   const [waitReason, setWaitReason] = useState("");
-  const visibleTasks = canManage
-    ? tasks
-    : tasks.filter((task) => task.modeloTareaVersion < 2 || task.responsableUid === currentUserUid);
+  const [taskView, setTaskView] = useState("list");
+  const visibleTasks = getVisibleWorkTasks(tasks, {canManage, currentUserUid});
   const createTask = (event) => {
     event.preventDefault();
     if (!draft.titulo.trim()) return;
@@ -332,7 +327,7 @@ function TaskSection({businessId, canManage, costs, currency, currentUserUid, lo
       if (success) setDraft({titulo: "", descripcion: "", responsableUid: ""});
     });
   };
-  const canOperate = (task) => canManage || (["TECNICO", "MEMBER"].includes(role) && task.responsableUid === currentUserUid);
+  const canOperate = (task) => canOperateWorkTask(task, {canManage, role, currentUserUid});
   const assign = (task, responsableUid) => runAction(`task-assign-${task.id}`, () => asignarTareaTrabajo(businessId, workId, task.id, responsableUid, createWorkTaskRequestId("task-assign")));
   const changeState = (task, estado, motivoEspera = "") => runAction(`task-state-${task.id}`, () => cambiarEstadoTareaTrabajo(businessId, workId, task.id, estado, {motivoEspera, requestId: createWorkTaskRequestId(`task-${estado}`)}));
   const requestTaskState = (task, estado) => {
@@ -359,15 +354,17 @@ function TaskSection({businessId, canManage, costs, currency, currentUserUid, lo
   };
   const removeLegacy = (task) => runAction(`task-delete-${task.id}`, () => eliminarTareaTrabajo(businessId, workId, task.id, createWorkTaskRequestId("task-delete")));
 
+  const emptyTasksCopy = canManage ? "Aún no hay tareas." : "No tienes tareas asignadas.";
+
   return <section className="works-detail-section">
-    <div className="works-section-heading"><div><h3>Tareas</h3><span>{tasks.filter((task) => task.completada).length} / {tasks.length} completadas</span></div></div>
+    <div className="works-section-heading"><div><h3>Tareas</h3><span>{tasks.filter((task) => task.completada).length} / {tasks.length} completadas</span></div><div className="works-view-switch" role="group" aria-label="Vista de tareas"><button type="button" className={taskView === "list" ? "is-active" : ""} onClick={() => setTaskView("list")}><AppIcon icon={LayoutList} size={15} />Lista</button><button type="button" className={taskView === "board" ? "is-active" : ""} onClick={() => setTaskView("board")}><AppIcon icon={Columns3} size={15} />Tablero</button></div></div>
     {canManage && !terminal && <form className="works-task-create" onSubmit={createTask}>
       <input className="erp-control" maxLength="240" value={draft.titulo} onChange={(event) => setDraft((current) => ({...current, titulo: event.target.value}))} placeholder="Título de la tarea" required />
       <textarea className="erp-control" maxLength="4000" rows="2" value={draft.descripcion} onChange={(event) => setDraft((current) => ({...current, descripcion: event.target.value}))} placeholder="Descripción operativa" />
       <select className="erp-control" value={draft.responsableUid} onChange={(event) => setDraft((current) => ({...current, responsableUid: event.target.value}))}><option value="">Sin responsable</option>{members.map((member) => <option key={member.uid} value={member.uid}>{member.nombre}</option>)}</select>
       <Button type="submit" icon={Plus} disabled={processing === "task-new"}>Crear tarea</Button>
     </form>}
-    {loading ? <p>Cargando tareas...</p> : <div className="works-task-list works-task-list--v2">
+    {loading ? <p>Cargando tareas...</p> : taskView === "board" ? <WorkTaskBoard canManage={canManage} canOperate={canOperate} costs={costs} currency={currency} emptyCopy={emptyTasksCopy} onRemoveLegacy={removeLegacy} onRequestTaskState={requestTaskState} processing={processing} tasks={visibleTasks} terminal={terminal} /> : <div className="works-task-list works-task-list--v2">
       {visibleTasks.map((task) => { const progress = getTaskProgress(task); const taskCost = getWorkCostSummary({...costs, taskId: task.id}); return <article key={task.id} className={task.completada ? "is-complete" : ""}>
         <header><div><strong>{task.titulo}</strong><span className={`works-task-state works-task-state--${task.estado}`}>{WORK_TASK_STATUSES.find((entry) => entry.value === task.estado)?.label || "Pendiente"}</span></div>{canManage && !terminal && <select aria-label={`Responsable de ${task.titulo}`} className="erp-control" disabled={Boolean(processing)} value={task.responsableUid} onChange={(event) => assign(task, event.target.value)}><option value="">Sin responsable</option>{members.map((member) => <option key={member.uid} value={member.uid}>{member.nombre}</option>)}</select>}</header>
         {task.descripcion && <p>{task.descripcion}</p>}
@@ -375,10 +372,10 @@ function TaskSection({businessId, canManage, costs, currency, currentUserUid, lo
         {task.estado === "en_espera" && task.motivoEspera && <p className="works-wait-reason">En espera: {task.motivoEspera}</p>}
         <div className="works-subtask-list">{task.subtareas.map((subtask) => <div key={subtask.id} className={subtask.completada ? "is-complete" : ""}><input type="checkbox" checked={subtask.completada} disabled={terminal || !canOperate(task) || Boolean(processing)} onChange={() => toggleSubtask(task, subtask)} /><input className="erp-control" maxLength="240" disabled={terminal || !canManage || subtask.completada} value={subtaskTitles[subtask.id] ?? subtask.titulo} onChange={(event) => setSubtaskTitles((current) => ({...current, [subtask.id]: event.target.value}))} /><div>{canManage && !terminal && !subtask.completada && <><Button type="button" variant="secondary" disabled={Boolean(processing) || (subtaskTitles[subtask.id] ?? subtask.titulo).trim() === subtask.titulo} onClick={() => renameSubtask(task, subtask)}>Guardar</Button><button type="button" aria-label={`Eliminar ${subtask.titulo}`} onClick={() => removeSubtask(task, subtask)}><AppIcon icon={Trash2} size={15} /></button></>}</div></div>)}</div>
         {canOperate(task) && !terminal && !task.completada && <form className="works-subtask-create" onSubmit={(event) => addSubtask(event, task)}><input className="erp-control" maxLength="240" required value={subtaskDrafts[task.id] || ""} onChange={(event) => setSubtaskDrafts((current) => ({...current, [task.id]: event.target.value}))} placeholder="Nueva subtarea" /><Button type="submit" variant="secondary" disabled={Boolean(processing)}>Agregar</Button></form>}
-        {!terminal && canOperate(task) && (!task.completada || canManage) && <div className="works-task-actions"><select className="erp-control" value={task.estado} disabled={Boolean(processing)} onChange={(event) => requestTaskState(task, event.target.value)}>{WORK_TASK_STATUSES.filter((entry) => canManage || entry.value !== "pendiente" || task.estado === "pendiente").map((entry) => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select>{canManage && task.modeloTareaVersion < 2 && !task.completada && <button type="button" aria-label={`Eliminar ${task.titulo}`} onClick={() => removeLegacy(task)}><AppIcon icon={Trash2} size={16} />Eliminar</button>}</div>}
+        {!terminal && canOperate(task) && (!task.completada || canManage) && <div className="works-task-actions"><select className="erp-control" value={task.estado} disabled={Boolean(processing)} onChange={(event) => requestTaskState(task, event.target.value)}>{getWorkTaskStatusOptions(task, {canManage}).map((entry) => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select>{canManage && task.modeloTareaVersion < 2 && !task.completada && <button type="button" aria-label={`Eliminar ${task.titulo}`} onClick={() => removeLegacy(task)}><AppIcon icon={Trash2} size={16} />Eliminar</button>}</div>}
         <details className="works-task-documentation"><summary>Documentación ({task.documentacion.length})</summary>{task.documentacion.map((entry) => <div key={entry.id}><p>{entry.texto}</p><small>{workPersonIdentity(entry.autorSnapshot, entry.autorUid, members, "Persona del equipo")} · {dateLabel(entry.creadoEn, true)}{entry.tipo === "cierre" ? " · Cierre" : ""}</small></div>)}{!terminal && canOperate(task) && <form className="works-task-document-form" onSubmit={(event) => addDocumentation(event, task)}><textarea className="erp-control" maxLength="8000" rows="2" value={documentation[task.id] || ""} onChange={(event) => setDocumentation((current) => ({...current, [task.id]: event.target.value}))} placeholder="Comentario o evidencia" /><Button type="submit" variant="secondary" disabled={Boolean(processing)}>Agregar</Button></form>}</details>
       </article>;})}
-      {!visibleTasks.length && <p className="works-empty-copy">{canManage ? "Aún no hay tareas." : "No tienes tareas asignadas."}</p>}
+      {!visibleTasks.length && <p className="works-empty-copy">{emptyTasksCopy}</p>}
     </div>}
     <ResponsiveDialog open={Boolean(waitingTask)} onClose={() => !processing && setWaitingTask(null)} size="small" eyebrow="Tarea" title="Poner tarea en espera" description="El motivo quedará en el historial." footer={<><Button type="button" variant="secondary" onClick={() => setWaitingTask(null)}>Volver</Button><Button type="button" disabled={Boolean(processing) || !waitReason.trim()} onClick={() => changeState(waitingTask, "en_espera", waitReason.trim()).then((success) => {if (success) {setWaitingTask(null); setWaitReason("");}})}>Confirmar espera</Button></>}><Field label="Motivo" required><textarea className="erp-control" rows="3" maxLength="1000" value={waitReason} onChange={(event) => setWaitReason(event.target.value)} /></Field></ResponsiveDialog>
   </section>;

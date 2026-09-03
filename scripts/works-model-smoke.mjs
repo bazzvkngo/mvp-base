@@ -528,7 +528,9 @@ assert.match(page, /ResponsiveDialog/); assert.doesNotMatch(page, /window\.confi
 assert.match(page, /\+ Nuevo cliente/); assert.match(page, /openCreateClient/); assert.match(page, /editingWork \|\| hasAdditionalMembers/);
 assert.match(page, /Responsable principal/); assert.match(page, /Equipo adicional/); assert.match(page, /Sin integrantes/); assert.doesNotMatch(page, /<Field[^>]+label="Número"/);
 assert.match(page, /member\.uid === currentUserUid && member\.estado === "activo"/); assert.match(page, /responsableUid: currentMember\?\.uid \|\| ""/);
-assert.match(page, /label="Cotización asociada" optional/); assert.match(page, /Sin cotización/); assert.match(page, /getEligibleWorkQuoteOptions/);
+assert.match(page, /label="Cotización asociada" optional/); assert.match(page, /<WorkQuoteSelector/); assert.match(page, /getEligibleWorkQuoteOptions/);
+const quoteSelector = fs.readFileSync("src/features/works/WorkQuoteSelector.jsx", "utf8");
+assert.match(quoteSelector, /Sin cotización asociada/); assert.doesNotMatch(quoteSelector, /firebase|firestore|getDocs|httpsCallable|onSnapshot/i);
 assert.match(page, /label="Descripción" optional/); assert.match(page, /label="Cliente" optional/); assert.match(page, /label="Responsable" optional/); assert.match(page, /label="Inicio planificado" optional/); assert.match(page, /label="Término planificado" optional/); assert.match(page, /Completado el/);
 assert.match(page, /Escribe un nombre breve para identificar el proyecto/); assert.match(page, /Describe el requerimiento o lo informado por el cliente/); assert.match(page, /El número TRB y el estado Pendiente se asignarán automáticamente\./);
 assert.doesNotMatch(page, /Nueva cotización/); assert.doesNotMatch(page, /fecha de ingreso se asignarán automáticamente/);

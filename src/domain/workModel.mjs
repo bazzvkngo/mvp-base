@@ -399,6 +399,22 @@ export function matchesWorkFilters(work, filters = {}) {
   return normalizeWorkSearch([work.numero, work.titulo, work.clienteSnapshot?.nombreRazonSocial, work.clienteSnapshot?.rut].filter(Boolean).join(" ")).includes(query);
 }
 
+// Reglas reales de visibilidad/operación de tareas (extraídas de TaskSection
+// en WorksPage.jsx, sin cambiar su semántica), para que la lista y el
+// tablero de tareas (PROJECTS_V3 ETAPA 2) compartan exactamente la misma
+// fuente de verdad y no puedan divergir.
+export function getVisibleWorkTasks(tasks = [], {canManage, currentUserUid} = {}) {
+  return canManage ? tasks : tasks.filter((task) => task.modeloTareaVersion < 2 || task.responsableUid === currentUserUid);
+}
+
+export function canOperateWorkTask(task, {canManage, role, currentUserUid} = {}) {
+  return canManage || (["TECNICO", "MEMBER"].includes(role) && task?.responsableUid === currentUserUid);
+}
+
+export function getWorkTaskStatusOptions(task, {canManage} = {}) {
+  return WORK_TASK_STATUSES.filter((entry) => canManage || entry.value !== "pendiente" || task?.estado === "pendiente");
+}
+
 export function getWorkTaskProgress(work) {
   const total = Math.max(0, Number(work?.tareasTotal || 0));
   const completed = Math.min(total, Math.max(0, Number(work?.tareasCompletadas || 0)));
