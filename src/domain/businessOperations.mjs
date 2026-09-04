@@ -12,8 +12,15 @@ export function shouldRefreshBusinessSessionForVerification(
   sessionState,
   observedState
 ) {
-  return normalizeBusinessVerificationState(sessionState) !== "VERIFICADA" &&
-    normalizeBusinessVerificationState(observedState) === "VERIFICADA";
+  // Antes sólo disparaba hacia "VERIFICADA", dejando un rechazo
+  // (PENDIENTE -> RECHAZADA) sin reflejarse nunca en la sesión activa. El
+  // documento autoritativo (negocios/{businessId}, observado en vivo por
+  // useBusinessCompletionStatus) puede transicionar a cualquiera de los 4
+  // estados reales (NO_VERIFICADA/PENDIENTE/VERIFICADA/RECHAZADA); cualquier
+  // cambio respecto de lo que la sesión cacheada ya tiene amerita
+  // revalidar businessSession, no sólo la aprobación.
+  return normalizeBusinessVerificationState(sessionState) !==
+    normalizeBusinessVerificationState(observedState);
 }
 
 function normalizedPath(pathname = "") {
