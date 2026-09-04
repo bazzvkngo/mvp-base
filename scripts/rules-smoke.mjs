@@ -105,6 +105,11 @@ async function main() {
       adminDb.doc(`negocios/${businessId}`).set({
         estado: "activo",
         verificacionEmpresa: {estado: "VERIFICADA"},
+        // Toda empresa real recibe creadoPorUid al crearse
+        // (functions/businessOnboarding.js) — storage.rules exige que el
+        // solicitante de evidencia de verificación sea ese creador
+        // registrado, no cualquier OWNER/ADMIN.
+        creadoPorUid: ownerUid,
       }),
       adminDb.doc(`membresias/${businessId}__${ownerUid}`).set({
         negocioId: businessId,
@@ -385,6 +390,7 @@ async function main() {
         regionCodigo: "13",
         estado: "activo",
         verificacionEmpresa: {estado: "VERIFICADA"},
+        creadoPorUid: ownerUid,
       }),
       adminDb.doc(`membresias/${businessId}__${ownerUid}`).set({
         negocioId: businessId,

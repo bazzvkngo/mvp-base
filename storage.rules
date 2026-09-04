@@ -51,12 +51,21 @@ service firebase.storage {
     }
 
     function canAccessBusinessVerificationEvidence(businessId, ownerUid) {
+      // creadoPorUid puede estar ausente en un negocio legacy (ver el mismo
+      // fallback ya reconocido en functions/businessOnboarding.js:
+      // business.creadoPorUid || business.ownerUid || business.uidUsuario).
+      // Este gate exige específicamente que el solicitante sea el creador
+      // registrado del negocio (más estricto que canManageBusiness, que
+      // acepta cualquier OWNER/ADMIN) — no se amplía esa política aquí. Un
+      // negocio sin creadoPorUid no puede demostrar esa autoría, así que
+      // el acceso se deniega de forma limpia y explícita en vez de
+      // producir un error de evaluación por campo ausente.
       return request.auth != null
         && request.auth.uid == ownerUid
         && platformUserIsActive(ownerUid)
         && hasActiveBusinessDocument(businessId)
         && activeBusiness(businessId).data.estado == "activo"
-        && activeBusiness(businessId).data.creadoPorUid == request.auth.uid;
+        && activeBusiness(businessId).data.get("creadoPorUid", null) == request.auth.uid;
     }
 
     // SPEC 020 (evidencia de gastos): la evidencia es un adjunto de un gasto

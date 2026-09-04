@@ -31,6 +31,7 @@
     "test:inventory-rules-budget-fix": "firebase emulators:exec --only auth,firestore \"node scripts/inventory-rules-budget-fix-smoke.mjs\"",
     "test:work-rules-budget-fix": "firebase emulators:exec --only auth,firestore \"node scripts/work-rules-budget-fix-smoke.mjs\"",
     "test:business-verification-rules": "firebase emulators:exec --only auth,firestore,storage \"node scripts/business-verification-rules-smoke.mjs\"",
+    "test:storage-rules-budget-fix": "firebase emulators:exec --only auth,firestore,storage \"node scripts/storage-rules-budget-fix-smoke.mjs\"",
     "test:ai-rate-limits": "node scripts/ai-rate-limiter-smoke.mjs",
     "test:inventory-docs": "node scripts/inventory-document-import-smoke.mjs",
     "test:inventory-sheets": "node scripts/inventory-spreadsheet-smoke.mjs",
