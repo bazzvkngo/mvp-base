@@ -385,6 +385,14 @@
   resize: vertical;
 }
 
+.quote-item__details-help {
+  color: #5b6b76;
+  font-size: 11px;
+  grid-column: 1 / -1;
+  line-height: 1.4;
+  margin: -3px 0 0;
+}
+
 .quote-collapsible {
   background: #fff;
   border: 1px solid #dce5ea;
@@ -499,6 +507,18 @@
   font-size: 12px;
   font-weight: 750;
   padding: 6px;
+}
+
+.quote-workspace__link-button {
+  background: transparent;
+  border: 0;
+  color: #176c78;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 750;
+  padding: 6px 0;
+  text-align: left;
+  width: fit-content;
 }
 
 .quote-catalog-dialog .responsive-dialog__body {

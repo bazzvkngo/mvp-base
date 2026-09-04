@@ -13,8 +13,11 @@ import {
   DRAFT_QUOTE_NUMBER_LABEL,
   getQuoteStatusLabel,
   getQuotePdfFileName,
+  isAdvancedQuoteScope,
+  isValidQuoteDateRange,
   normalizeQuoteItem,
   normalizeScopeSections,
+  QUOTE_SIMPLE_SCOPE_TITLE,
   resolveQuoteClientSelectionSnapshot,
 } from "../src/domain/quoteModel.mjs";
 import {filterSelectableClients} from "../src/domain/clientModel.mjs";
@@ -315,6 +318,30 @@ assert.equal(
 );
 console.log("OK contenido: descripciones extensas y alcance vacío/poblado");
 
+assert.equal(isAdvancedQuoteScope([]), false);
+assert.equal(isAdvancedQuoteScope([{ titulo: "", lineas: ["Instalación completa"] }]), false);
+assert.equal(
+  isAdvancedQuoteScope([{ titulo: QUOTE_SIMPLE_SCOPE_TITLE, lineas: ["Instalación completa"] }]),
+  false,
+  "una cotización guardada en modo simple debe seguir clasificando como simple al recargarla"
+);
+assert.equal(isAdvancedQuoteScope([{ titulo: "Materiales", lineas: ["Cemento"] }]), true);
+assert.equal(
+  isAdvancedQuoteScope([
+    { titulo: "", lineas: ["a"] },
+    { titulo: "", lineas: ["b"] },
+  ]),
+  true
+);
+console.log("OK alcance: modo simple sobrevive al round-trip, título editado y múltiples secciones siguen en modo avanzado");
+
+assert.equal(isValidQuoteDateRange("2026-09-15", "2026-09-25"), true);
+assert.equal(isValidQuoteDateRange("2026-09-15", "2026-09-15"), true);
+assert.equal(isValidQuoteDateRange("2026-09-25", "2026-09-15"), false);
+assert.equal(isValidQuoteDateRange("2026-09-15", ""), false);
+assert.equal(isValidQuoteDateRange("", "2026-09-15"), false);
+console.log("OK plazo: rango desde/hasta exige ambas fechas y rechaza hasta anterior a desde");
+
 const inventorySource = item(1);
 const snapshotted = normalizeQuoteItem(inventorySource, 0, { strict: true });
 inventorySource.nombre = "Nombre modificado después";
@@ -474,6 +501,8 @@ assert.match(sourceNewQuote, /savingRef\.current/);
 assert.match(sourceNewQuote, /estado:\s*"borrador"/);
 assert.match(sourceNewQuote, /openQuoteId/);
 assert.match(sourceNewQuote, /Más condiciones/);
+assert.match(sourceNewQuote, /isAdvancedQuoteScope\(quote\.seccionesAlcance\)/);
+assert.match(sourceNewQuote, /isValidQuoteDateRange\(plazoRangeDraft\.desde, plazoRangeDraft\.hasta\)/);
 assert.match(sourceNewQuote, /Restaurar valores de Empresa/);
 assert.match(sourceNewQuote, /if \(isEditMode\) return;/);
 assert.match(sourceNewQuote, /profile\.plazoEntregaCotizacion/);
@@ -491,7 +520,7 @@ assert.match(sourceQuoteCatalog, /<ResponsiveDialog/);
 assert.match(sourceQuoteCatalog, /initialFocusRef=\{searchRef\}/);
 assert.match(sourceQuoteCatalog, /Agregar otra vez/);
 assert.doesNotMatch(sourceQuoteItems, /<table/);
-assert.match(sourceQuoteItems, /Editar descripción y unidad/);
+assert.match(sourceQuoteItems, /Personalizar ítem/);
 assert.match(sourceQuoteItems, /Subtotal \$\{formatCLP\(subtotal\)\}/);
 assert.match(sourceQuoteItems, /items\.length === 1 \? "" : "s"/);
 assert.match(sourceQuoteItems, /Agrega productos, servicios o actividades para construir la cotización\./);

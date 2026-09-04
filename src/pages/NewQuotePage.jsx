@@ -11,6 +11,9 @@ import {
   calculateQuoteLineAmounts,
   DEFAULT_QUOTE_CONDITIONS,
   getQuoteStatusLabel,
+  isAdvancedQuoteScope,
+  isValidQuoteDateRange,
+  QUOTE_SIMPLE_SCOPE_TITLE,
   resolveQuoteClientSelectionSnapshot,
   tryCalculateQuoteTotals,
   validateQuoteDraft,
@@ -63,6 +66,19 @@ const DEFAULT_UNIT_BY_TYPE = {
   servicio: "servicio",
   actividad: "hora",
 };
+
+function formatShortEsDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))) return "";
+  const date = new Date(`${value}T12:00:00Z`);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("es-CL", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  })
+    .format(date)
+    .replace(/\./g, "");
+}
 
 const PRICE_CONFIDENCE_UNAVAILABLE = "no_disponible";
 const DEFAULT_PRICE_JUSTIFICATION =
@@ -443,8 +459,10 @@ function NewQuotePage({ userId }) {
   const [itemsInteracted, setItemsInteracted] = useState(false);
   const [saveAttempted, setSaveAttempted] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
-  const [scopeOpen, setScopeOpen] = useState(false);
+  const [scopeOpen, setScopeOpen] = useState(true);
   const [conditionsOpen, setConditionsOpen] = useState(false);
+  const [plazoRangeOpen, setPlazoRangeOpen] = useState(false);
+  const [plazoRangeDraft, setPlazoRangeDraft] = useState({ desde: "", hasta: "" });
 
   useEffect(() => {
     currentClienteIdRef.current = quote.clienteId;
@@ -820,6 +838,24 @@ function NewQuotePage({ userId }) {
     }));
   };
 
+  // V1 mínima: el selector desde/hasta sólo compone el mismo texto libre que
+  // ya acepta "condiciones.plazoEntrega" (sin cambiar el contrato ni tocar
+  // Functions/PDF). El campo sigue siendo editable a mano, incluida la
+  // redacción de plazos relativos ("10 días hábiles desde la orden de
+  // compra"), que este selector no cubre todavía.
+  const applyPlazoRange = () => {
+    // El botón ya se deshabilita si el rango no es válido; esta comprobación
+    // es defensiva (por ejemplo, un envío por teclado) y evita persistir un
+    // rango invertido aunque cambie la UI que lo invoca.
+    if (!isValidQuoteDateRange(plazoRangeDraft.desde, plazoRangeDraft.hasta)) return;
+    const desdeLabel = formatShortEsDate(plazoRangeDraft.desde);
+    const hastaLabel = formatShortEsDate(plazoRangeDraft.hasta);
+    if (!desdeLabel || !hastaLabel) return;
+    updateCondition("plazoEntrega", `${desdeLabel} → ${hastaLabel}`);
+    setPlazoRangeOpen(false);
+    setPlazoRangeDraft({ desde: "", hasta: "" });
+  };
+
   const handleClientChange = useCallback((client) => {
     if (!client) {
       currentClienteIdRef.current = "";
@@ -863,13 +899,50 @@ function NewQuotePage({ userId }) {
   const addScopeSection = () => {
     setDirty(true);
     setScopeOpen(true);
-    setQuote((prev) => ({
-      ...prev,
-      seccionesAlcance: [
-        ...prev.seccionesAlcance,
-        { id: `alcance-${Date.now()}`, titulo: "", lineas: [""] },
-      ],
-    }));
+    setQuote((prev) => {
+      const base = prev.seccionesAlcance.length
+        ? prev.seccionesAlcance
+        : [{ id: `alcance-${Date.now()}`, titulo: QUOTE_SIMPLE_SCOPE_TITLE, lineas: [] }];
+      return {
+        ...prev,
+        seccionesAlcance: [
+          ...base,
+          { id: `alcance-${Date.now()}-extra`, titulo: "", lineas: [""] },
+        ],
+      };
+    });
+  };
+
+  // El textarea principal (modo simple) edita la primera sección de
+  // seccionesAlcance para no crear un campo nuevo: sólo se le asigna un
+  // título por defecto mientras tenga contenido, así pasa la validación
+  // existente (una sección con líneas requiere título) sin pedírselo al
+  // usuario. Si el usuario borra todo el texto, el título vuelve a quedar
+  // vacío y la sección se descarta al guardar (normalizeScopeSections).
+  const updatePrimaryScopeText = (text) => {
+    setDirty(true);
+    setScopeOpen(true);
+    const lineas = text.split(/\r?\n/);
+    const hasContent = lineas.some((line) => line.trim());
+    setQuote((prev) => {
+      if (prev.seccionesAlcance.length === 0) {
+        if (!hasContent) return prev;
+        return {
+          ...prev,
+          seccionesAlcance: [
+            { id: `alcance-${Date.now()}`, titulo: QUOTE_SIMPLE_SCOPE_TITLE, lineas },
+          ],
+        };
+      }
+      return {
+        ...prev,
+        seccionesAlcance: prev.seccionesAlcance.map((section, index) =>
+          index === 0
+            ? { ...section, titulo: hasContent ? (section.titulo || QUOTE_SIMPLE_SCOPE_TITLE) : "", lineas }
+            : section
+        ),
+      };
+    });
   };
 
   const updateScopeSection = (id, patch) => {
@@ -900,6 +973,18 @@ function NewQuotePage({ userId }) {
       return { ...prev, seccionesAlcance: sections };
     });
   };
+
+  // Modo simple (un solo textarea sin título) vs. modo avanzado (varios
+  // apartados con título propio). Se deriva de los datos (isAdvancedQuoteScope
+  // en quoteModel.mjs), no de un flag de UI aparte, para que una cotización
+  // existente con secciones tituladas o múltiples nunca pierda su edición
+  // completa, y para que el round-trip de una cotización guardada en modo
+  // simple no reaparezca como avanzada sólo por el título autogenerado.
+  const isAdvancedScope = isAdvancedQuoteScope(quote.seccionesAlcance);
+  const primaryScopeText = (quote.seccionesAlcance[0]?.lineas || []).join("\n");
+
+  const plazoRangeValid = isValidQuoteDateRange(plazoRangeDraft.desde, plazoRangeDraft.hasta);
+  const plazoRangeShowError = Boolean(plazoRangeDraft.desde && plazoRangeDraft.hasta) && !plazoRangeValid;
 
   const showItemFeedback = (message) => {
     setItemFeedback(message);
@@ -2029,29 +2114,27 @@ function NewQuotePage({ userId }) {
       </div>
 
       <QuoteCollapsibleSection
-        title={quote.seccionesAlcance.length ? "Alcance del trabajo" : "+ Agregar alcance o entregables"}
-        summary={quote.seccionesAlcance.length
-          ? `${quote.seccionesAlcance.length} sección${quote.seccionesAlcance.length === 1 ? "" : "es"} descriptiva${quote.seccionesAlcance.length === 1 ? "" : "s"}`
+        title="Qué incluye esta propuesta"
+        summary={quote.seccionesAlcance.length > 1
+          ? `${quote.seccionesAlcance.length} apartados`
           : "Opcional"}
         open={scopeOpen}
-        onToggle={() => quote.seccionesAlcance.length ? setScopeOpen((current) => !current) : addScopeSection()}
+        onToggle={() => setScopeOpen((current) => !current)}
       >
         <div className="quote-workspace__secondary-body">
           <div className="quote-workspace__secondary-header">
-            <p style={styles.helpText}>Las secciones vacías no aparecerán en el PDF.</p>
-            <button type="button" onClick={addScopeSection} className="quote-workspace__button quote-workspace__button--secondary">Agregar sección</button>
+            <p style={styles.helpText}>Describe brevemente los trabajos, servicios o entregables incluidos en la cotización. Las secciones vacías no aparecerán en el PDF.</p>
+            <button type="button" onClick={addScopeSection} className="quote-workspace__button quote-workspace__button--secondary">+ Agregar apartado</button>
           </div>
-          {quote.seccionesAlcance.length === 0 ? (
-            <div style={styles.compactEmptyState}>Puedes agregar Servicios, Materiales, Gastos de operación, Entregables o cualquier otro título.</div>
-          ) : (
+          {isAdvancedScope ? (
             <div style={styles.scopeList}>
               {quote.seccionesAlcance.map((section, index) => (
                 <article key={section.id} style={styles.scopeCard}>
                   <div style={styles.scopeHeader}>
-                    <input value={section.titulo} onChange={(event) => updateScopeSection(section.id, { titulo: event.target.value })} placeholder="Título de la sección" style={styles.input} />
+                    <input value={section.titulo} onChange={(event) => updateScopeSection(section.id, { titulo: event.target.value })} placeholder="Título del apartado" style={styles.input} />
                     <div style={styles.scopeActions}>
-                      <button type="button" aria-label="Subir sección" disabled={index === 0} onClick={() => moveScopeSection(index, -1)} style={styles.orderButton}>↑</button>
-                      <button type="button" aria-label="Bajar sección" disabled={index === quote.seccionesAlcance.length - 1} onClick={() => moveScopeSection(index, 1)} style={styles.orderButton}>↓</button>
+                      <button type="button" aria-label="Subir apartado" disabled={index === 0} onClick={() => moveScopeSection(index, -1)} style={styles.orderButton}>↑</button>
+                      <button type="button" aria-label="Bajar apartado" disabled={index === quote.seccionesAlcance.length - 1} onClick={() => moveScopeSection(index, 1)} style={styles.orderButton}>↓</button>
                       <button type="button" onClick={() => removeScopeSection(section.id)} style={styles.removeButton}>Eliminar</button>
                     </div>
                   </div>
@@ -2062,6 +2145,14 @@ function NewQuotePage({ userId }) {
                 </article>
               ))}
             </div>
+          ) : (
+            <textarea
+              rows={4}
+              value={primaryScopeText}
+              onChange={(event) => updatePrimaryScopeText(event.target.value)}
+              placeholder="Ej: instalación completa, materiales incluidos, pruebas de funcionamiento..."
+              style={styles.textarea}
+            />
           )}
         </div>
       </QuoteCollapsibleSection>
@@ -2078,7 +2169,25 @@ function NewQuotePage({ userId }) {
           <Field label="Vigencia (días)"><input type="number" min="1" max="3650" value={quote.validezDias} onChange={(event) => updateField("validezDias", event.target.value)} style={styles.input} /></Field>
           <Field label="Tratamiento tributario"><select value={quote.afectaIva === false ? "exenta" : "afecta"} onChange={(event) => updateField("afectaIva", event.target.value === "afecta")} style={styles.input}><option value="afecta">Afecta IVA 19%</option><option value="exenta">Exenta de IVA</option></select></Field>
           <Field label="Forma de pago"><input value={quote.condiciones.formaPago} onChange={(event) => updateCondition("formaPago", event.target.value)} style={styles.input} /></Field>
-          <Field label="Plazo de ejecución o entrega"><input value={quote.condiciones.plazoEntrega} onChange={(event) => updateCondition("plazoEntrega", event.target.value)} style={styles.input} /></Field>
+          <Field label="Plazo de ejecución o entrega">
+            <input value={quote.condiciones.plazoEntrega} onChange={(event) => updateCondition("plazoEntrega", event.target.value)} placeholder='Ej: "10 días hábiles desde recepción de la orden de compra"' style={styles.input} />
+            {plazoRangeOpen ? (
+              <div>
+                <div style={styles.plazoRangeRow}>
+                  <input type="date" value={plazoRangeDraft.desde} onChange={(event) => setPlazoRangeDraft((current) => ({ ...current, desde: event.target.value }))} style={{ ...styles.input, width: "auto" }} />
+                  <span aria-hidden="true">→</span>
+                  <input type="date" min={plazoRangeDraft.desde || undefined} value={plazoRangeDraft.hasta} onChange={(event) => setPlazoRangeDraft((current) => ({ ...current, hasta: event.target.value }))} style={{ ...styles.input, width: "auto" }} />
+                  <button type="button" disabled={!plazoRangeValid} onClick={applyPlazoRange} className="quote-workspace__button quote-workspace__button--primary">Aceptar</button>
+                  <button type="button" onClick={() => setPlazoRangeOpen(false)} className="quote-workspace__button quote-workspace__button--secondary">Cancelar</button>
+                </div>
+                {plazoRangeShowError && (
+                  <span style={styles.fieldErrorText}>La fecha "hasta" no puede ser anterior a "desde".</span>
+                )}
+              </div>
+            ) : (
+              <button type="button" onClick={() => setPlazoRangeOpen(true)} className="quote-workspace__link-button">Definir con fecha desde/hasta</button>
+            )}
+          </Field>
         </div>
       </section>
 
@@ -2096,9 +2205,9 @@ function NewQuotePage({ userId }) {
           <div style={styles.conditionsGrid}>
             <Field label="Garantía"><input value={quote.condiciones.garantia} onChange={(event) => updateCondition("garantia", event.target.value)} style={styles.input} /></Field>
             <Field label="Alcance geográfico"><input value={quote.condiciones.alcanceGeografico} onChange={(event) => updateCondition("alcanceGeografico", event.target.value)} style={styles.input} /></Field>
-            <Field label="Observaciones" wide><textarea rows={3} value={quote.condiciones.observaciones} onChange={(event) => updateCondition("observaciones", event.target.value)} style={styles.textarea} /></Field>
-            <Field label="Exclusiones" wide><textarea rows={3} value={quote.condiciones.exclusiones} onChange={(event) => updateCondition("exclusiones", event.target.value)} style={styles.textarea} /></Field>
-            <Field label="Términos y condiciones adicionales" wide><textarea rows={4} value={quote.condiciones.terminosAdicionales} onChange={(event) => updateCondition("terminosAdicionales", event.target.value)} style={styles.textarea} /></Field>
+            <CompactConditionField label="Observaciones" value={quote.condiciones.observaciones} onChange={(value) => updateCondition("observaciones", value)} />
+            <CompactConditionField label="Exclusiones" value={quote.condiciones.exclusiones} onChange={(value) => updateCondition("exclusiones", value)} />
+            <CompactConditionField label="Otras condiciones" value={quote.condiciones.terminosAdicionales} onChange={(value) => updateCondition("terminosAdicionales", value)} />
           </div>
         </div>
       </QuoteCollapsibleSection>
@@ -2453,6 +2562,37 @@ function Field({ label, helpText, helpTone = "default", wide = false, children }
       )}
       {children}
     </label>
+  );
+}
+
+function CompactConditionField({ label, onChange, value }) {
+  const hasContent = Boolean((value || "").trim());
+  const [expanded, setExpanded] = React.useState(hasContent);
+  const showTextarea = expanded || hasContent;
+  const rows = Math.min(8, Math.max(3, (value || "").split(/\r?\n/).length + 1));
+  return (
+    <Field label={label} wide>
+      {showTextarea ? (
+        <textarea
+          autoFocus={expanded && !hasContent}
+          onBlur={() => {
+            if (!(value || "").trim()) setExpanded(false);
+          }}
+          onChange={(event) => onChange(event.target.value)}
+          rows={rows}
+          style={styles.compactTextarea}
+          value={value || ""}
+        />
+      ) : (
+        <button
+          className="quote-workspace__button quote-workspace__button--secondary"
+          onClick={() => setExpanded(true)}
+          type="button"
+        >
+          + Agregar {label.toLowerCase()}
+        </button>
+      )}
+    </Field>
   );
 }
 
@@ -3464,6 +3604,13 @@ const styles = {
     gap: "12px",
     gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
     marginTop: "14px",
+  },
+  plazoRangeRow: {
+    alignItems: "center",
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "8px",
+    marginTop: "8px",
   },
   acceptanceToggle: {
     alignItems: "center",

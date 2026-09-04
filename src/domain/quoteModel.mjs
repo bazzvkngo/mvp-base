@@ -327,6 +327,34 @@ export function normalizeScopeSections(sections) {
     .filter((section) => section.titulo || section.lineas.length > 0);
 }
 
+// Título autogenerado cuando la UI de "Alcance" opera en modo simple (un solo
+// textarea, sin pedirle título al usuario). Vive aquí -no sólo en la página-
+// porque distinguir modo simple de modo avanzado en una cotización ya
+// guardada depende de comparar contra este mismo valor exacto.
+export const QUOTE_SIMPLE_SCOPE_TITLE = "Qué incluye esta propuesta";
+
+// Una cotización es "avanzada" (varios apartados con título propio) si tiene
+// más de una sección, o si su única sección tiene un título que el usuario
+// escribió a mano (distinto del autogenerado). Sin este segundo chequeo, una
+// cotización guardada en modo simple reaparecería como avanzada al volver a
+// cargarla, porque el título autogenerado quedó persistido para cumplir la
+// regla existente de que toda sección con líneas requiere título.
+export function isAdvancedQuoteScope(sections) {
+  const list = Array.isArray(sections) ? sections : [];
+  if (list.length > 1) return true;
+  const title = String(list[0]?.titulo || "").trim();
+  return Boolean(title) && title !== QUOTE_SIMPLE_SCOPE_TITLE;
+}
+
+// V1 mínima de validación para el selector desde/hasta del plazo de
+// ejecución: ambas fechas son obligatorias y "hasta" no puede ser anterior a
+// "desde". Las fechas llegan como "YYYY-MM-DD", así que la comparación de
+// strings ya respeta el orden cronológico sin necesidad de parsear Date.
+export function isValidQuoteDateRange(desde, hasta) {
+  if (!desde || !hasta) return false;
+  return String(hasta) >= String(desde);
+}
+
 export function normalizeQuoteConditions(raw = {}, company = {}) {
   const conditions = raw?.condiciones && typeof raw.condiciones === "object"
     ? raw.condiciones

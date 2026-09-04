@@ -89,14 +89,17 @@ function QuoteItemsEditor({
                   <button type="button" className="quote-item__remove" onClick={() => onRemove(lineId)}>Quitar</button>
                 </div>
                 <details className="quote-item__details">
-                  <summary>Editar descripción y unidad</summary>
+                  <summary>Personalizar ítem</summary>
                   <div>
                     <label>
-                      <span>Descripción comercial</span>
+                      <span>Descripción para esta cotización</span>
                       <textarea rows="2" value={item.descripcionComercial ?? item.descripcion ?? ""} onChange={(event) => onUpdate(lineId, "descripcionComercial", event.target.value)} />
                     </label>
+                    <p className="quote-item__details-help">
+                      Personaliza cómo aparecerá este ítem en la propuesta. No modifica el producto del catálogo.
+                    </p>
                     <label>
-                      <span>Unidad</span>
+                      <span>Unidad de cobro</span>
                       <input value={item.unidad || ""} onChange={(event) => onUpdate(lineId, "unidad", event.target.value)} />
                     </label>
                   </div>
