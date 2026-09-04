@@ -213,24 +213,19 @@ try {
   const readByAdmin = await getDoc(doc(admin.db, `negocios/${businessId}/trabajos/${workId}/adicionales/${created.data.adicionalId}`));
   assert.equal(readByAdmin.exists(), true);
   console.log("OK caso 18: lectura autorizada OWNER/ADMIN vía el mismo predicado canReadWorkCosts ya usado por gastos/HH");
-  // HALLAZGO PRE-EXISTENTE (no introducido por SPEC 020, fuera de su alcance):
-  // un TECNICO leyendo un registro propio a través de canReadWorkCosts agota el
-  // presupuesto de 1000 expresiones de Firestore Rules (cadena
-  // canReadWorkCosts -> canReadWork -> hasBusinessModuleAccess ->
-  // hasCustomBusinessModule/hasBusinessRole, sin memoización de get() dentro de
-  // una misma evaluación, agravado por el match /{document=**} de cierre que
-  // también se evalúa para la misma ruta). Se confirmó con un repro desechable
-  // que gastos (sin tocar en este bloque) reproduce exactamente el mismo error
-  // para un TECNICO leyendo su propio gasto. No es una brecha de seguridad (el
-  // efecto es denegar de más, nunca conceder de más) y no es una regresión de
-  // ETAPA 2: se documenta aquí como hallazgo para un bloque futuro dedicado a
-  // esos helpers compartidos, no se intenta corregir en SPEC 020.
+  // El hallazgo pre-existente documentado aquí en ETAPA 2 (TECNICO leyendo un
+  // registro propio a través de canReadWorkCosts agotaba el presupuesto de
+  // 1000 expresiones de Firestore Rules) fue diagnosticado y corregido en
+  // QA GENERAL FASE 2B.2 (canReadWork/canReadWorkOperations/canReadWorkCosts
+  // ahora derivan canOperateBusiness y la membresía una sola vez en vez de
+  // repetirlo por cada rama del OR). El comportamiento correcto —siempre
+  // fue la política prevista, sólo estaba enmascarada por el agotamiento de
+  // presupuesto— es que un TECNICO SÍ puede leer un adicional del que es
+  // autor, igual que ya podía con gastos/HH vía el mismo predicado.
   const technicianOwnAdditional = await callable(technician, "crearAdicionalTrabajo")({businessId, trabajoId: workId, requestId: requestId("technician-own"), adicional: {itemId: service, cantidad: 1, precioUnitario: 2000}});
-  await expectCallableError(
-    "lectura de TECNICO sobre su propio adicional (hallazgo pre-existente compartido con gastos/HH, ver comentario arriba)",
-    () => getDoc(doc(technician.db, `negocios/${businessId}/trabajos/${workId}/adicionales/${technicianOwnAdditional.data.adicionalId}`)),
-    ["permission-denied", "resource-exhausted"],
-  );
+  const technicianOwnRead = await getDoc(doc(technician.db, `negocios/${businessId}/trabajos/${workId}/adicionales/${technicianOwnAdditional.data.adicionalId}`));
+  assert.equal(technicianOwnRead.exists(), true, "TECNICO debe poder leer un adicional del que es autor");
+  console.log("OK: TECNICO lee su propio adicional (canReadWorkCosts corregido en FASE 2B.2, sin agotar presupuesto)");
 
   // --- Caso 19: lectura cross-tenant rechazada ---
   await expectDenied("lectura cross-tenant", () => getDoc(doc(outsider.db, `negocios/${businessId}/trabajos/${workId}/adicionales/${created.data.adicionalId}`)));

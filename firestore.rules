@@ -122,32 +122,74 @@ service cloud.firestore {
         || request.auth.uid in work.get("participanteUids", []);
     }
 
-    function canReadWork(businessId, workId) {
+    // canReadWork/canReadWorkOperations/canReadWorkCosts (más abajo) son
+    // equivalentes exactos, ya derivados por álgebra booleana, de la forma
+    // original hasBusinessModuleAccess(...) || (hasBusinessRole(...) &&
+    // ...) — pero evalúan canOperateBusiness(businessId) y leen la
+    // membresía UNA sola vez en vez de repetirlo por cada rama del OR y
+    // por cada llamada anidada (antes: hasta 5-6 rederivaciones completas
+    // de la cadena de membresía/negocio por lectura, causa del
+    // agotamiento de presupuesto en /trabajos/.../tareas). No se modifica
+    // hasBusinessModuleAccess/hasBusinessRole/hasCustomBusinessModule/
+    // canOperateBusiness — siguen intactos y se siguen usando tal cual en
+    // el resto del archivo; estas tres funciones son específicas de
+    // lectura de Proyecto y no se reutilizan fuera de este dominio.
+    function workReadRoleCheck(businessId, workId, moduleRoles) {
+      let membership = get(membershipPath(businessId, request.auth.uid)).data;
+      let role = membership.get("rol", "");
+      let profileId = membership.get("profileId", "");
+      let moduleOkDirect = role in moduleRoles && (role != "MEMBER" || profileId == "");
+      let moduleOkCustom = role == "MEMBER" && profileId != ""
+        && exists(/databases/$(database)/documents/negocios/$(businessId)/perfilesEmpleados/$(profileId))
+        && get(/databases/$(database)/documents/negocios/$(businessId)/perfilesEmpleados/$(profileId)).data.negocioId == businessId
+        && get(/databases/$(database)/documents/negocios/$(businessId)/perfilesEmpleados/$(profileId)).data.estado == "activo"
+        && get(/databases/$(database)/documents/negocios/$(businessId)/perfilesEmpleados/$(profileId)).data.modulos.hasAny(["trabajos", "reportes"]);
       let workPath = /databases/$(database)/documents/negocios/$(businessId)/trabajos/$(workId);
-      return hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "FINANZAS", "MEMBER"], ["trabajos", "reportes"])
-        || (
-          hasBusinessRole(businessId, ["TECNICO"])
-          && exists(workPath)
-          && isAssignedWorkData(get(workPath).data)
-        );
+      return moduleOkDirect
+        || moduleOkCustom
+        || (role == "TECNICO" && exists(workPath) && isAssignedWorkData(get(workPath).data));
+    }
+
+    function canReadWork(businessId, workId) {
+      return canOperateBusiness(businessId)
+        ? workReadRoleCheck(businessId, workId, ["OWNER", "ADMIN", "FINANZAS", "MEMBER"])
+        : false;
     }
 
     function canReadWorkOperations(businessId, workId) {
-      return hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "MEMBER"], ["trabajos", "reportes"])
-        || (canReadWork(businessId, workId) && hasBusinessRole(businessId, ["TECNICO"]));
+      return canOperateBusiness(businessId)
+        ? workReadRoleCheck(businessId, workId, ["OWNER", "ADMIN", "MEMBER"])
+        : false;
     }
 
-    function canReadWorkCosts(businessId, workId, record) {
-      return hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "FINANZAS", "MEMBER"], ["trabajos", "reportes"])
+    function workCostsRoleCheck(businessId, workId, record) {
+      let membership = get(membershipPath(businessId, request.auth.uid)).data;
+      let role = membership.get("rol", "");
+      let profileId = membership.get("profileId", "");
+      let moduleOkDirect = role in ["OWNER", "ADMIN", "FINANZAS", "MEMBER"] && (role != "MEMBER" || profileId == "");
+      let moduleOkCustom = role == "MEMBER" && profileId != ""
+        && exists(/databases/$(database)/documents/negocios/$(businessId)/perfilesEmpleados/$(profileId))
+        && get(/databases/$(database)/documents/negocios/$(businessId)/perfilesEmpleados/$(profileId)).data.negocioId == businessId
+        && get(/databases/$(database)/documents/negocios/$(businessId)/perfilesEmpleados/$(profileId)).data.estado == "activo"
+        && get(/databases/$(database)/documents/negocios/$(businessId)/perfilesEmpleados/$(profileId)).data.modulos.hasAny(["trabajos", "reportes"]);
+      let workPath = /databases/$(database)/documents/negocios/$(businessId)/trabajos/$(workId);
+      return moduleOkDirect
+        || moduleOkCustom
         || (
-          canReadWork(businessId, workId)
-          && hasBusinessRole(businessId, ["TECNICO"])
+          role == "TECNICO"
+          && exists(workPath) && isAssignedWorkData(get(workPath).data)
           && (
             record.get("registradoPorUid", "") == request.auth.uid
             || record.get("responsableDelGastoUid", "") == request.auth.uid
             || record.get("tecnicoUid", "") == request.auth.uid
           )
         );
+    }
+
+    function canReadWorkCosts(businessId, workId, record) {
+      return canOperateBusiness(businessId)
+        ? workCostsRoleCheck(businessId, workId, record)
+        : false;
     }
 
     function hasValidDocumentOwner(uid) {
