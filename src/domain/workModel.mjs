@@ -143,22 +143,24 @@ export function isWorkOperationalReadOnly(work = {}) {
   return ["completado", "cancelado"].includes(work?.estado);
 }
 
-export function getWorkMemberIdentity(member = {}) {
-  const name = String(member.nombre || "").trim();
+export function getWorkMemberIdentity(member) {
+  const safeMember = member || {};
+  const name = String(safeMember.nombre || "").trim();
   if (name && name !== "Sin nombre registrado") return name;
-  const email = String(member.correo || "").trim();
+  const email = String(safeMember.correo || "").trim();
   if (email && email !== "Sin correo disponible") return email;
   return "Usuario sin identificar";
 }
 
-export function getWorkHistoricalPersonIdentity(snapshot = {}, uid = "", members = [], fallback = "Una persona del equipo") {
+export function getWorkHistoricalPersonIdentity(snapshot, uid = "", members = [], fallback = "Una persona del equipo") {
+  const safeSnapshot = snapshot || {};
   const validName = (value) => {
     const name = String(value || "").trim();
     return name && !["sin nombre registrado", "usuario sin identificar"].includes(name.toLocaleLowerCase("es-CL")) ? name : "";
   };
-  const snapshotName = validName(snapshot.nombre);
+  const snapshotName = validName(safeSnapshot.nombre);
   if (snapshotName) return snapshotName;
-  const snapshotEmail = String(snapshot.correo || "").trim();
+  const snapshotEmail = String(safeSnapshot.correo || "").trim();
   const normalizedSnapshotEmail = snapshotEmail.toLocaleLowerCase("es-CL");
   const member = members.find((entry) => entry.uid === uid || (normalizedSnapshotEmail && String(entry.correo || "").trim().toLocaleLowerCase("es-CL") === normalizedSnapshotEmail));
   const memberName = validName(member?.nombre);

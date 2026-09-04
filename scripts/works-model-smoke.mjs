@@ -97,6 +97,8 @@ const ownerOnly = [{uid: "owner-a", nombre: "Sin nombre registrado", correo: "ow
 assert.equal(getWorkMemberIdentity(ownerOnly[0]), "owner@example.cl");
 assert.equal(getWorkMemberOptionLabel(ownerOnly[0], "owner-a"), "Yo (owner@example.cl)");
 assert.equal(getWorkMemberIdentity({uid: "unknown", nombre: "", correo: ""}), "Usuario sin identificar");
+assert.equal(getWorkMemberIdentity(null), "Usuario sin identificar");
+assert.equal(getWorkMemberIdentity(undefined), "Usuario sin identificar");
 assert.equal(hasAdditionalWorkMembers(ownerOnly, "owner-a"), false);
 assert.equal(hasAdditionalWorkMembers([...ownerOnly, {uid: "worker-a"}], "owner-a"), true);
 const quickPayload = buildQuickWorkCreationPayload(input({estado: "en_progreso", fechaInicio: ""}));
@@ -511,6 +513,9 @@ assert.equal(getWorkHistoricalPersonIdentity({nombre: "Nombre histórico", corre
 assert.equal(getWorkHistoricalPersonIdentity({nombre: "Sin nombre registrado", correo: "historico@example.cl"}, "worker-a", [{uid: "worker-a", nombre: "Nombre actual"}]), "Nombre actual");
 assert.equal(getWorkHistoricalPersonIdentity({nombre: "Sin nombre registrado", correo: "historico@example.cl"}, "", []), "historico@example.cl");
 assert.equal(getWorkHistoricalPersonIdentity({}, "", [], "Persona histórica"), "Persona histórica");
+assert.equal(getWorkHistoricalPersonIdentity(null, "", [], "Sin responsable principal"), "Sin responsable principal");
+assert.equal(getWorkHistoricalPersonIdentity(undefined, "", [], "Sin responsable principal"), "Sin responsable principal");
+assert.equal(humanizeWorkEvent({tipo: "nota_agregada", actorSnapshot: null}), "Una persona del equipo agregó una nota.");
 assert.equal(isWorkOperationalReadOnly({estado: "completado"}), true);
 assert.equal(isWorkOperationalReadOnly({estado: "cancelado"}), true);
 assert.equal(isWorkOperationalReadOnly({estado: "en_progreso"}), false);
