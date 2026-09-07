@@ -325,6 +325,140 @@ export function getSimplifiedReportSummary({
   };
 }
 
+// Agrupadores "top N" para las subvistas de Ventas/Compras/Inventario del
+// centro de reportes. Se agrupan primero por moneda (igual que
+// groupAmountsByCurrency) y sólo luego se rankean dentro de cada moneda, para
+// no comparar ni sumar montos de monedas distintas al ordenar un top N.
+function rankTopByCurrency(records, {counterpartyIdField, counterpartyNameField, fallbackCurrency, limit}) {
+  const currencyBuckets = new Map();
+  (Array.isArray(records) ? records : []).forEach((record) => {
+    const currency = resolveReportCurrency(record, fallbackCurrency);
+    if (!currencyBuckets.has(currency)) currencyBuckets.set(currency, new Map());
+    const bucket = currencyBuckets.get(currency);
+    const id = text(counterpartyIdField(record)) || "sin-identificar";
+    const name = text(counterpartyNameField(record)) || "Histórico";
+    const current = bucket.get(id) || {id, name, count: 0, total: 0};
+    current.count += 1;
+    current.total += safeAmount(record.total);
+    bucket.set(id, current);
+  });
+  return [...currencyBuckets.entries()]
+    .map(([currency, bucket]) => ({
+      currency,
+      entries: [...bucket.values()]
+        .sort((left, right) => right.total - left.total)
+        .slice(0, limit),
+    }))
+    .sort((left, right) => left.currency.localeCompare(right.currency));
+}
+
+function rankTopLinesByCurrency(records, {fallbackCurrency, limit}) {
+  const currencyBuckets = new Map();
+  (Array.isArray(records) ? records : []).forEach((record) => {
+    const currency = resolveReportCurrency(record, fallbackCurrency);
+    if (!currencyBuckets.has(currency)) currencyBuckets.set(currency, new Map());
+    const bucket = currencyBuckets.get(currency);
+    (Array.isArray(record.items) ? record.items : []).forEach((line) => {
+      const id = text(line.itemId) || text(line.codigo) || "sin-identificar";
+      const name = text(line.nombre) || "Ítem histórico";
+      const current = bucket.get(id) || {id, name, quantity: 0, total: 0};
+      current.quantity += safeAmount(line.cantidad);
+      current.total += safeAmount(line.totalLinea);
+      bucket.set(id, current);
+    });
+  });
+  return [...currencyBuckets.entries()]
+    .map(([currency, bucket]) => ({
+      currency,
+      entries: [...bucket.values()]
+        .sort((left, right) => right.total - left.total)
+        .slice(0, limit),
+    }))
+    .sort((left, right) => left.currency.localeCompare(right.currency));
+}
+
+export function getTopSalesClients(confirmedSales, {fallbackCurrency = "CLP", limit = 5} = {}) {
+  return rankTopByCurrency(confirmedSales, {
+    counterpartyIdField: (sale) => sale.clienteId || sale.clienteSnapshot?.clienteId,
+    counterpartyNameField: (sale) => sale.clienteSnapshot?.nombreRazonSocial,
+    fallbackCurrency,
+    limit,
+  });
+}
+
+export function getTopSalesProducts(confirmedSales, {fallbackCurrency = "CLP", limit = 5} = {}) {
+  return rankTopLinesByCurrency(confirmedSales, {fallbackCurrency, limit});
+}
+
+export function getTopPurchaseSuppliers(confirmedPurchases, {fallbackCurrency = "CLP", limit = 5} = {}) {
+  return rankTopByCurrency(confirmedPurchases, {
+    counterpartyIdField: (purchase) => purchase.proveedorId || purchase.proveedorSnapshot?.proveedorId,
+    counterpartyNameField: (purchase) => purchase.proveedorSnapshot?.razonSocial,
+    fallbackCurrency,
+    limit,
+  });
+}
+
+export function getTopPurchaseProducts(confirmedPurchases, {fallbackCurrency = "CLP", limit = 5} = {}) {
+  return rankTopLinesByCurrency(confirmedPurchases, {fallbackCurrency, limit});
+}
+
+// Igual que reportModel.getInventoryMetrics: sólo lee productos activos y no
+// introduce ninguna consulta nueva (opera sobre el arreglo ya obtenido por
+// getInventoryItems). El "valor" de cada producto usa el mismo costo
+// (costoPromedio, con costoBase como respaldo) que ya usa inventoryValue en
+// getInventoryMetrics, para no introducir un segundo criterio de costeo.
+export function getInventoryTopValueProducts(items, {fallbackCurrency = "CLP", limit = 8} = {}) {
+  const active = (Array.isArray(items) ? items : []).filter(
+    (item) => item.tipoItem === "producto" && (item.estado || "activo") === "activo"
+  );
+  return active
+    .map((item) => {
+      const cost = Number(item.costoPromedio ?? item.costoBase);
+      const stock = Number(item.stock);
+      const value = Number.isFinite(cost) && Number.isFinite(stock) ? cost * stock : 0;
+      return {
+        id: text(item.id || item.itemId),
+        nombre: text(item.nombre) || "Ítem histórico",
+        categoria: text(item.categoria) || "Sin categoría",
+        stock: Number.isFinite(stock) ? stock : 0,
+        currency: resolveReportCurrency(
+          {moneda: item.costoPromedioMoneda || item.moneda},
+          fallbackCurrency
+        ),
+        value,
+      };
+    })
+    .filter((entry) => entry.value > 0)
+    .sort((left, right) => right.value - left.value)
+    .slice(0, limit);
+}
+
+export function getInventoryCategoryDistribution(items, {fallbackCurrency = "CLP"} = {}) {
+  const active = (Array.isArray(items) ? items : []).filter(
+    (item) => item.tipoItem === "producto" && (item.estado || "activo") === "activo"
+  );
+  const buckets = new Map();
+  active.forEach((item) => {
+    const cost = Number(item.costoPromedio ?? item.costoBase);
+    const stock = Number(item.stock);
+    const value = Number.isFinite(cost) && Number.isFinite(stock) ? cost * stock : 0;
+    const currency = resolveReportCurrency(
+      {moneda: item.costoPromedioMoneda || item.moneda},
+      fallbackCurrency
+    );
+    const categoria = text(item.categoria) || "Sin categoría";
+    const key = `${currency}__${categoria}`;
+    const current = buckets.get(key) || {categoria, currency, count: 0, value: 0};
+    current.count += 1;
+    current.value += value;
+    buckets.set(key, current);
+  });
+  return [...buckets.values()].sort((left, right) =>
+    left.currency.localeCompare(right.currency) || right.value - left.value
+  );
+}
+
 export function filterQuotes(
   quotes,
   {range, status = "todos", search = "", currency = "todos", fallbackCurrency = "CLP"} = {}

@@ -10,7 +10,9 @@ import {
   filterSales,
   filterWorkCosts,
   groupAmountsByCurrency,
+  getInventoryCategoryDistribution,
   getInventoryMetrics,
+  getInventoryTopValueProducts,
   getProjectProfitabilitySummary,
   getProjectResultMetrics,
   getPurchaseMetrics,
@@ -18,6 +20,10 @@ import {
   getSalesMetrics,
   getRecentOperationalActivity,
   getSimplifiedReportSummary,
+  getTopPurchaseProducts,
+  getTopPurchaseSuppliers,
+  getTopSalesClients,
+  getTopSalesProducts,
   normalizeInventoryMovement,
   normalizeInventoryAcquisition,
   normalizeWorkCost,
@@ -169,6 +175,68 @@ assert.equal(inventoryMetrics.lowStockProducts.length, 1);
 assert.equal(inventoryMetrics.coverage, 50);
 assert.equal(inventoryMetrics.inventoryValue, null);
 
+const salesWithLines = [
+  {fechaVenta: "2026-08-02", estado: "confirmada", total: 1000, moneda: "CLP", clienteId: "c1", clienteSnapshot: {nombreRazonSocial: "Cliente Uno"}, items: [{itemId: "prod-1", nombre: "Producto A", cantidad: 2, totalLinea: 700}, {itemId: "prod-2", nombre: "Producto B", cantidad: 1, totalLinea: 300}]},
+  {fechaVenta: "2026-08-03", estado: "confirmada", total: 3000, moneda: "CLP", clienteId: "c1", clienteSnapshot: {nombreRazonSocial: "Cliente Uno"}, items: [{itemId: "prod-1", nombre: "Producto A", cantidad: 3, totalLinea: 3000}]},
+  {fechaVenta: "2026-08-04", estado: "confirmada", total: 20, moneda: "USD", clienteId: "c2", clienteSnapshot: {nombreRazonSocial: "Cliente Dos"}, items: [{itemId: "prod-3", nombre: "Producto C", cantidad: 1, totalLinea: 20}]},
+];
+const topClients = getTopSalesClients(salesWithLines, {limit: 5});
+const topClientsClp = topClients.find((group) => group.currency === "CLP");
+assert.equal(topClientsClp.entries.length, 1);
+assert.equal(topClientsClp.entries[0].name, "Cliente Uno");
+assert.equal(topClientsClp.entries[0].total, 4000);
+assert.equal(topClientsClp.entries[0].count, 2);
+const topClientsUsd = topClients.find((group) => group.currency === "USD");
+assert.equal(topClientsUsd.entries[0].total, 20);
+const topProducts = getTopSalesProducts(salesWithLines, {limit: 1});
+const topProductsClp = topProducts.find((group) => group.currency === "CLP");
+assert.equal(topProductsClp.entries.length, 1);
+assert.equal(topProductsClp.entries[0].name, "Producto A");
+assert.equal(topProductsClp.entries[0].total, 3700);
+assert.equal(topProductsClp.entries[0].quantity, 5);
+assert.deepEqual(getTopSalesClients([]), []);
+
+const purchasesWithLines = [
+  {fechaCompra: "2026-08-06", estado: "confirmada", total: 2000, moneda: "CLP", proveedorId: "p1", proveedorSnapshot: {razonSocial: "Proveedor Uno"}, items: [{itemId: "mat-1", nombre: "Material A", cantidad: 5, totalLinea: 2000}]},
+  {fechaCompra: "2026-08-07", estado: "confirmada", total: 4000, moneda: "CLP", proveedorId: "p2", proveedorSnapshot: {razonSocial: "Proveedor Dos"}, items: [{itemId: "mat-1", nombre: "Material A", cantidad: 10, totalLinea: 4000}]},
+];
+const topSuppliers = getTopPurchaseSuppliers(purchasesWithLines, {limit: 5});
+const topSuppliersClp = topSuppliers.find((group) => group.currency === "CLP");
+assert.equal(topSuppliersClp.entries[0].name, "Proveedor Dos");
+assert.equal(topSuppliersClp.entries[0].total, 4000);
+const topPurchaseProducts = getTopPurchaseProducts(purchasesWithLines, {limit: 5});
+assert.equal(topPurchaseProducts.find((group) => group.currency === "CLP").entries[0].total, 6000);
+
+const inventoryForTopValue = [
+  {id: "i1", nombre: "Cemento", tipoItem: "producto", estado: "activo", categoria: "Materiales", stock: 10, costoBase: 100, moneda: "CLP"},
+  {id: "i2", nombre: "Taladro", tipoItem: "producto", estado: "activo", categoria: "Materiales", stock: 2, costoBase: 5000, moneda: "CLP"},
+  {id: "i3", nombre: "Sierra", tipoItem: "producto", estado: "activo", categoria: "Herramientas", stock: 1, costoBase: 200, moneda: "CLP"},
+  {id: "i4", nombre: "Sin stock", tipoItem: "producto", estado: "activo", stock: 0, costoBase: 100, moneda: "CLP"},
+  {id: "i5", nombre: "Instalación", tipoItem: "servicio", estado: "activo", categoria: "Materiales", costoBase: 999999, moneda: "CLP"},
+];
+const topValue = getInventoryTopValueProducts(inventoryForTopValue, {limit: 2});
+assert.equal(topValue.length, 2);
+assert.equal(topValue[0].nombre, "Taladro");
+assert.equal(topValue[0].value, 10000);
+assert.equal(topValue[1].nombre, "Cemento");
+assert.equal(topValue[1].value, 1000);
+const categoryDistribution = getInventoryCategoryDistribution(inventoryForTopValue);
+const materialesBucket = categoryDistribution.find((entry) => entry.categoria === "Materiales");
+assert.equal(materialesBucket.count, 2);
+assert.equal(materialesBucket.value, 11000);
+const sinCategoriaBucket = categoryDistribution.find((entry) => entry.categoria === "Sin categoría");
+assert.equal(sinCategoriaBucket.count, 1);
+assert.equal(sinCategoriaBucket.value, 0);
+assert.deepEqual(getTopSalesClients([]), []);
+assert.deepEqual(getTopSalesProducts([]), []);
+assert.deepEqual(getTopPurchaseSuppliers([]), []);
+assert.deepEqual(getTopPurchaseProducts([]), []);
+assert.deepEqual(getInventoryTopValueProducts([]), []);
+assert.deepEqual(getInventoryCategoryDistribution([]), []);
+assert.deepEqual(getInventoryTopValueProducts(null), []);
+console.log("OK reportes v5: estado sin datos (ventas/compras/inventario vacíos) no rompe ningún agregador nuevo");
+console.log("OK reportes v5: top clientes/productos de ventas, top proveedores/productos de compras y agrupación de inventario por moneda, sin mezclar monedas");
+
 const purchaseMovement = normalizeInventoryMovement({
   movimientoId: "m1",
   tipo: "entrada_compra",
@@ -291,38 +359,96 @@ assert.deepEqual(combineOperationalTimelines([], []), []);
 
 const reportPageSource = readFileSync("src/pages/StatisticsPage.jsx", "utf8");
 const reportServiceSource = readFileSync("src/services/reportService.js", "utf8");
+const reportsNavSource = readFileSync("src/features/reports/ReportsNav.jsx", "utf8");
+const resumenViewSource = readFileSync("src/features/reports/views/ReportsResumenView.jsx", "utf8");
+const ventasViewSource = readFileSync("src/features/reports/views/ReportsVentasView.jsx", "utf8");
+const comprasViewSource = readFileSync("src/features/reports/views/ReportsComprasView.jsx", "utf8");
+const inventarioViewSource = readFileSync("src/features/reports/views/ReportsInventarioView.jsx", "utf8");
+const proyectosViewSource = readFileSync("src/features/reports/views/ReportsProyectosView.jsx", "utf8");
+const gananciasViewSource = readFileSync("src/features/reports/views/ReportsGananciasView.jsx", "utf8");
 const operationalChartSource = readFileSync("src/components/reports/OperationalComparisonChart.jsx", "utf8");
 const costCompositionSource = readFileSync("src/components/reports/CostCompositionChart.jsx", "utf8");
-assert.match(reportPageSource, /Analiza ventas, compras y rentabilidad de tus proyectos\./);
-assert.match(reportPageSource, /balance actual autoritativo y no se atribuye al período seleccionado/);
-assert.match(reportPageSource, /Resultado de proyectos/);
-assert.match(reportPageSource, /Rentabilidad de proyectos/);
-assert.match(reportPageSource, /Las compras muestran egresos registrados del negocio/);
-assert.match(reportPageSource, /openWorkId: project\.id/);
+
+// REPORTES_V5: el centro de reportes switchea subvistas por query param
+// "vista", sin recargar la app, y comparte período/moneda entre todas.
+assert.deepEqual(
+  [...reportsNavSource.matchAll(/id: "(\w+)"/g)].map((match) => match[1]),
+  ["resumen", "ventas", "compras", "inventario", "proyectos", "ganancias"]
+);
+assert.match(reportPageSource, /searchParams\.get\("vista"\)/);
+assert.match(reportPageSource, /<ReportsNav active=\{vista\} onSelect=\{goToView\}/);
+assert.match(reportPageSource, /searchParams\.get\("period"\)/);
+assert.match(reportPageSource, /searchParams\.get\("currency"\)/);
+assert.match(reportPageSource, /Consulta ventas, compras, inventario, proyectos y ganancias en un solo lugar\./);
 assert.match(reportPageSource, /canAccessBusinessPath\(role, "\/ventas"\)/);
 assert.match(reportPageSource, /canAccessBusinessPath\(role, "\/compras"\)/);
 assert.match(reportPageSource, /canAccessBusinessPath\(role, "\/trabajos"\)/);
-assert.equal((reportPageSource.match(/<OperationalComparisonChart/g) || []).length, 1);
+
+// Resumen: KPIs compactos por moneda (sin la tabla completa de proyectos ni
+// el detalle de segmentos comerciales, que viven en sus propias subvistas) y
+// un único gráfico comparativo.
+assert.match(resumenViewSource, /Ganancia de proyectos/);
+assert.match(resumenViewSource, /Ganancia comercial/);
+assert.equal((resumenViewSource.match(/<OperationalComparisonChart/g) || []).length, 1);
+assert.doesNotMatch(reportPageSource, /<OperationalComparisonChart/);
+assert.match(resumenViewSource, /reports-chart-summary/);
+assert.match(resumenViewSource, /formatMoney\(group\.sales, group\.currency\)/);
+assert.match(resumenViewSource, /formatMoney\(group\.purchases, group\.currency\)/);
+assert.doesNotMatch(resumenViewSource, /reports-profitability-primary/);
+assert.doesNotMatch(resumenViewSource, /<CostCompositionChart/);
+
+// Ventas y Compras: cada subvista es exclusiva de su dominio; Compras no
+// incorpora lenguaje ni cálculo de ganancia.
+assert.match(ventasViewSource, /<SalesCommercialMarginV4Card/);
+assert.match(ventasViewSource, /topSalesClients/);
+assert.match(ventasViewSource, /topSalesProducts/);
+assert.doesNotMatch(comprasViewSource, /[Gg]anancia/);
+assert.doesNotMatch(comprasViewSource, /margenBrutoProductosCubiertos/);
+assert.match(comprasViewSource, /Las compras muestran egresos registrados del negocio/);
+assert.match(comprasViewSource, /topPurchaseSuppliers/);
+assert.match(comprasViewSource, /topPurchaseProducts/);
+
+// Inventario: sólo métricas ya soportadas por getInventoryMetrics y los
+// nuevos agregadores puros; nada de rotación ni proyecciones.
+assert.doesNotMatch(inventarioViewSource, /rotaci[oó]n|proyecci[oó]n/i);
+assert.match(inventarioViewSource, /metrics\.byCurrency/);
+assert.match(inventarioViewSource, /topValue/);
+assert.match(inventarioViewSource, /categories/);
+
+// Proyectos: usa el balance autoritativo existente sin redefinirlo (Work
+// Balance) y conserva la nota de que no se atribuye al período.
+assert.match(proyectosViewSource, /balance actual autoritativo y no se atribuye al período seleccionado/);
+assert.match(proyectosViewSource, /Rentabilidad de proyectos/);
+assert.match(proyectosViewSource, /openWorkId: project\.id/);
+assert.match(proyectosViewSource, /<CostCompositionChart currency=\{currency\} items=\{costItems\}/);
+assert.match(proyectosViewSource, /group\.materials/);
+assert.match(proyectosViewSource, /group\.labor/);
+assert.match(proyectosViewSource, /group\.directExpenses/);
+assert.match(proyectosViewSource, /group\.indirectExpenses/);
+assert.match(proyectosViewSource, /reports-profitability-primary/);
+assert.match(proyectosViewSource, /reports-profitability-secondary/);
+
+// Ganancias: dos bloques separados (COMMERCIAL_SALES vs
+// PROJECT_PROFITABILITY, vía los componentes V4 ya existentes) y ninguna
+// suma total entre ellos.
+assert.match(gananciasViewSource, /Ganancias por Ventas/);
+assert.match(gananciasViewSource, /Ganancias por Proyectos/);
+assert.match(gananciasViewSource, /<SalesCommercialMarginV4Card/);
+assert.match(gananciasViewSource, /<ProjectProfitabilityV4Summary/);
+assert.doesNotMatch(gananciasViewSource, /[Tt]otal de ganancias/);
+assert.doesNotMatch(gananciasViewSource, /commercial\.bloque.*\+.*projects\.bloque|projects\.bloque.*\+.*commercial\.bloque/);
+
 assert.match(operationalChartSource, /<Bar/);
 assert.doesNotMatch(operationalChartSource, /operational-comparison-single/);
 assert.match(operationalChartSource, /maxBarThickness: items\.length === 1 \? 36 : 24/);
 assert.match(operationalChartSource, /animation: false/);
 assert.match(operationalChartSource, /formatCompactMoney/);
-assert.match(reportPageSource, /<CostCompositionChart currency=\{currency\} items=\{costItems\}/);
-assert.match(reportPageSource, /group\.materials/);
-assert.match(reportPageSource, /group\.labor/);
-assert.match(reportPageSource, /group\.directExpenses/);
-assert.match(reportPageSource, /group\.indirectExpenses/);
-assert.match(reportPageSource, /reports-profitability-primary/);
-assert.match(reportPageSource, /reports-profitability-secondary/);
-assert.match(reportPageSource, /reports-chart-summary/);
-assert.match(reportPageSource, /formatMoney\(group\.sales, group\.currency\)/);
-assert.match(reportPageSource, /formatMoney\(group\.purchases, group\.currency\)/);
 assert.match(costCompositionSource, /<Doughnut/);
 assert.match(costCompositionSource, /animation: false/);
 assert.match(costCompositionSource, /formatMoney\(context\.parsed, currency\)/);
 assert.match(costCompositionSource, /formatMoney\(total, currency\)/);
 assert.match(reportServiceSource, /BUSINESS_PERMISSIONS\.PROFITABILITY_READ/);
 assert.match(reportServiceSource, /canViewProfitability \? listarTrabajos/);
+console.log("OK reportes v5: centro de reportes con subvistas, filtros compartidos por query param y separación económica Ventas/Proyectos/Ganancias preservada");
 
 console.log("Report model smoke: OK");

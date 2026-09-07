@@ -2857,6 +2857,110 @@ body:has(.reports-simple) .environment-notice {
   display: none;
 }
 
+/* REPORTES_V5 (centro de reportes: subvistas Ventas/Compras/Inventario/Proyectos/Ganancias) */
+
+.reports-simple-metrics--3col {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.reports-detail-section {
+  padding: var(--space-4);
+}
+
+.reports-detail-grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.reports-detail-subheading {
+  color: var(--color-text-muted);
+  font-size: 0.6875rem;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.08em;
+  margin: 0 0 var(--space-2);
+  text-transform: uppercase;
+}
+
+.reports-empty-note {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  margin: 0;
+}
+
+.reports-top-list-groups {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.reports-top-list-group h4 {
+  color: var(--color-text-muted);
+  font-size: 0.6875rem;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.08em;
+  margin: 0 0 var(--space-2);
+  text-transform: uppercase;
+}
+
+.reports-top-list-table-wrap {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  width: 100%;
+}
+
+.reports-top-list-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 320px;
+  width: 100%;
+}
+
+.reports-top-list-table th {
+  background: var(--color-surface-subtle);
+  color: var(--color-text-muted);
+  font-size: 0.6875rem;
+  font-weight: var(--font-weight-semibold);
+  padding: 7px 9px;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.reports-top-list-table td {
+  border-top: 1px solid var(--color-border-subtle);
+  color: var(--color-text-default);
+  font-size: var(--font-size-xs);
+  padding: 8px 9px;
+}
+
+.reports-top-list-table th:not(:first-child),
+.reports-top-list-table td:not(:first-child) {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.reports-ganancias-block {
+  display: grid;
+  gap: var(--space-2);
+}
+
+@media (max-width: 960px) {
+  .reports-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .reports-simple-metrics--3col {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .reports-simple-metrics--3col {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* REPORTES_RENTABILIDAD_V4 (ETAPA 3) */
 
 .reports-v4-commercial {
