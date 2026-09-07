@@ -139,14 +139,9 @@ node scripts/seed-business-catalogs.mjs --allow-remote-development --project tes
 
 ## Reset seguro
 
-El reset local se obtiene iniciando los emuladores sin `--import`. Para un reset
-remoto del proyecto de pruebas, solo después de desplegar las dos Functions y las
-reglas de esta etapa:
-
-```powershell
-firebase firestore:delete --all-collections --force --project tesis-inventario-ia
-node scripts/seed-business-catalogs.mjs --allow-remote-development --project tesis-inventario-ia
-```
-
-No ejecutar esos comandos contra otro proyecto ni antes de disponer del backend
-nuevo, porque las cuentas existentes quedarían sin su contexto de negocio.
+El reset local se obtiene iniciando los emuladores sin `--import`. El reset
+remoto de un proyecto Firebase es una operación destructiva e irreversible:
+sólo debe ejecutarla el mantenedor del proyecto, confirmando explícitamente
+el proyecto y las credenciales antes de correr cualquier comando. Si
+necesitas un reset remoto, contacta al mantenedor en vez de ejecutar
+comandos de borrado por tu cuenta.
