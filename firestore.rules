@@ -953,6 +953,14 @@ service cloud.firestore {
         allow delete: if false;
       }
 
+      // Cache de precios de mercado (Google Shopping vía Serper) por ítem
+      // de inventario. Sólo la Cloud Function (Admin SDK, sin Rules) la
+      // escribe; el cliente nunca lee ni escribe esta colección
+      // directamente, siempre recibe los datos como respuesta del callable.
+      match /referenciasPrecios/{itemId} {
+        allow read, write: if false;
+      }
+
       match /cotizaciones/{quoteId} {
         allow read: if hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "VENTAS", "FINANZAS", "MEMBER"], ["cotizaciones", "reportes"]);
         allow create: if false;

@@ -17,6 +17,7 @@ import AccountPage from "../pages/AccountPage";
 import FinancePage from "../pages/FinancePage";
 import InventoryPage from "../pages/InventoryPage";
 import LoginPage from "../pages/LoginPage";
+import MarketPriceReferencesPage from "../pages/MarketPriceReferencesPage";
 import MarketReferencesPage from "../pages/MarketReferencesPage";
 import NewQuotePage from "../pages/NewQuotePage";
 import OnboardingPage from "../pages/OnboardingPage";
@@ -340,6 +341,12 @@ function AppRoutes({
               businessId={businessId}
               role={activeBusiness?.role}
             />
+          }
+        />
+        <Route
+          path="/inventario/:itemId/referencias"
+          element={
+            <MarketPriceReferencesPage key={businessId} businessId={businessId} />
           }
         />
         <Route
