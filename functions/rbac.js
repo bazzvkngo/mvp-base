@@ -8,7 +8,7 @@ const ASSIGNABLE_BUSINESS_ROLES = Object.freeze([
 ]);
 const BUSINESS_MODULES = Object.freeze([
   "reportes", "trabajos", "inventario", "clientes", "cotizaciones", "ventas",
-  "proveedores", "ordenes_compra", "recepciones", "compras", "empresa", "empleados",
+  "proveedores", "ordenes_compra", "recepciones", "compras", "empresa", "empleados", "taller",
 ]);
 const OWNER_ROLES = Object.freeze(["OWNER"]);
 const BUSINESS_MANAGEMENT_ROLES = Object.freeze(["OWNER", "ADMIN"]);
@@ -17,6 +17,8 @@ const PURCHASE_WRITE_ROLES = Object.freeze(["OWNER", "ADMIN", "COMPRAS"]);
 const INVENTORY_WRITE_ROLES = PURCHASE_WRITE_ROLES;
 const WORK_MANAGEMENT_ROLES = BUSINESS_MANAGEMENT_ROLES;
 const WORK_OPERATION_ROLES = Object.freeze(["OWNER", "ADMIN", "TECNICO", "MEMBER"]);
+const TALLER_MANAGEMENT_ROLES = BUSINESS_MANAGEMENT_ROLES;
+const TALLER_OPERATION_ROLES = Object.freeze(["OWNER", "ADMIN", "TECNICO", "MEMBER"]);
 const FINANCE_WRITE_ROLES = Object.freeze(["OWNER", "ADMIN", "FINANZAS"]);
 const BALANCE_READ_ROLES = FINANCE_WRITE_ROLES;
 
@@ -31,6 +33,8 @@ module.exports = {
   OWNER_ROLES,
   PURCHASE_WRITE_ROLES,
   SALES_WRITE_ROLES,
+  TALLER_MANAGEMENT_ROLES,
+  TALLER_OPERATION_ROLES,
   WORK_MANAGEMENT_ROLES,
   WORK_OPERATION_ROLES,
 };

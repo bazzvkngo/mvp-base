@@ -40,11 +40,13 @@ export const BUSINESS_MODULES = Object.freeze([
   "compras",
   "empresa",
   "empleados",
+  "taller",
 ]);
 
 export const BUSINESS_MODULE_LABELS = Object.freeze({
   reportes: "Inicio / Reportes",
   trabajos: "Proyectos y trabajos",
+  taller: "Taller",
   inventario: "Inventario",
   clientes: "Clientes",
   cotizaciones: "Cotizaciones",
@@ -75,6 +77,7 @@ export const BUSINESS_PERMISSIONS = Object.freeze({
   WORKS_READ: "works.read",
   WORKS_MANAGE: "works.manage",
   WORKS_OPERATE: "works.operate",
+  TALLER_READ: "taller.read",
   REPORTS_READ: "reports.read",
   PROFITABILITY_READ: "profitability.read",
   FINANCE_READ: "finance.read",
@@ -101,14 +104,15 @@ const permissionsByRole = Object.freeze({
     P.PURCHASES_READ, P.PURCHASES_WRITE, P.INVENTORY_READ, P.INVENTORY_WRITE,
     P.INVENTORY_COSTS_READ, P.REFERENCES_READ, P.ACCOUNT_READ],
   TECNICO: [P.DASHBOARD_READ, P.INVENTORY_READ, P.WORKS_READ, P.WORKS_OPERATE,
+    P.TALLER_READ,
     P.ACCOUNT_READ],
   FINANZAS: [P.DASHBOARD_READ, P.SALES_READ, P.PURCHASES_READ, P.INVENTORY_READ,
     P.INVENTORY_COSTS_READ, P.REPORTS_READ, P.PROFITABILITY_READ,
     P.FINANCE_READ, P.FINANCE_WRITE, P.ACCOUNT_READ],
-  // MEMBER conserva lectura histórica y operación técnica propia, sin permisos nuevos.
+  // MEMBER conserva lectura histórica y operación técnica propia.
   MEMBER: [P.DASHBOARD_READ, P.CLIENTS_READ, P.QUOTES_READ, P.SALES_READ,
     P.PROVIDERS_READ, P.PURCHASES_READ, P.INVENTORY_READ, P.INVENTORY_COSTS_READ,
-    P.WORKS_READ, P.WORKS_OPERATE, P.REPORTS_READ, P.FINANCE_READ,
+    P.WORKS_READ, P.WORKS_OPERATE, P.TALLER_READ, P.REPORTS_READ, P.FINANCE_READ,
     P.REFERENCES_READ, P.PRICING_READ, P.COMPANY_READ, P.MEMBERS_READ,
     P.ACCOUNT_READ],
 });
@@ -118,6 +122,7 @@ const permissionsByModule = Object.freeze({
     P.SALES_READ, P.PROVIDERS_READ, P.PURCHASES_READ, P.INVENTORY_READ,
     P.WORKS_READ, P.FINANCE_READ],
   trabajos: [P.DASHBOARD_READ, P.WORKS_READ, P.WORKS_OPERATE],
+  taller: [P.TALLER_READ],
   inventario: [P.DASHBOARD_READ, P.INVENTORY_READ],
   clientes: [P.DASHBOARD_READ, P.CLIENTS_READ],
   cotizaciones: [P.DASHBOARD_READ, P.QUOTES_READ, P.INVENTORY_READ,
@@ -135,6 +140,7 @@ const permissionsByModule = Object.freeze({
 const modulePaths = Object.freeze({
   reportes: "/reportes",
   trabajos: "/trabajos",
+  taller: "/taller/ordenes",
   inventario: "/inventario",
   clientes: "/clientes",
   cotizaciones: "/cotizaciones",
@@ -156,6 +162,7 @@ const routePermissions = Object.freeze([
   [/^\/(ordenes-compra|recepciones|compras)(?:\/|$)/, P.PURCHASES_READ],
   [/^\/inventario(?:\/|$)/, P.INVENTORY_READ],
   [/^\/trabajos(?:\/|$)/, P.WORKS_READ],
+  [/^\/taller(?:\/|$)/, P.TALLER_READ],
   [/^\/(reportes|estadisticas)(?:\/|$)/, P.REPORTS_READ],
   [/^\/finanzas(?:\/|$)/, P.FINANCE_READ],
   [/^\/valorizacion(?:\/|$)/, P.PRICING_READ],
@@ -176,6 +183,7 @@ const routeModules = Object.freeze([
   [/^\/compras(?:\/|$)/, "compras"],
   [/^\/inventario(?:\/|$)/, "inventario"],
   [/^\/trabajos(?:\/|$)/, "trabajos"],
+  [/^\/taller(?:\/|$)/, "taller"],
   [/^\/(reportes|estadisticas)(?:\/|$)/, "reportes"],
   [/^\/empresa(?:\/|$)/, "empresa"],
   [/^\/empleados(?:\/|$)/, "empleados"],

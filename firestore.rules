@@ -971,6 +971,38 @@ service cloud.firestore {
         allow create, update, delete: if false;
       }
 
+      match /vehiculos/{vehiculoId} {
+        allow read: if hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "TECNICO", "MEMBER"], ["taller"])
+          && resource.data.negocioId == businessId;
+        allow create, update, delete: if false;
+      }
+
+      match /vehiclePlateKeys/{plateKey} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /vehicleVinKeys/{vinKey} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /vehicleCreateRequests/{requestId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /ordenesTrabajo/{otId} {
+        allow read: if hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "TECNICO", "MEMBER"], ["taller"])
+          && resource.data.negocioId == businessId;
+        allow create, update, delete: if false;
+      }
+
+      match /otCounters/{counterId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /otCreateRequests/{requestId} {
+        allow read, create, update, delete: if false;
+      }
+
       match /trabajos/{trabajoId} {
         allow read: if resource.data.negocioId == businessId
           && (
