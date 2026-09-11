@@ -21,6 +21,10 @@
     "vite": "^7.3.6"
   },
   "scripts": {
+    "test:veterinary-reception-triage": "node scripts/veterinary-reception-triage-model-smoke.mjs",
+    "test:veterinary-patient": "node scripts/veterinary-patient-model-smoke.mjs",
+    "test:veterinary-appointment": "node scripts/veterinary-appointment-model-smoke.mjs",
+    "test:veterinary": "npm run test:veterinary-patient && npm run test:veterinary-appointment && npm run test:veterinary-reception-triage",
     "dev": "vite --mode existing",
     "dev:existing": "vite --mode existing",
     "dev:emulator": "vite --mode emulator",
