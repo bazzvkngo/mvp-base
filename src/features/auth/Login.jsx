@@ -300,9 +300,9 @@ function Login() {
                       aria-pressed={showPassword}
                     >
                       {showPassword ? (
-                        <EyeOff size={19} aria-hidden="true" />
-                      ) : (
                         <Eye size={19} aria-hidden="true" />
+                      ) : (
+                        <EyeOff size={19} aria-hidden="true" />
                       )}
                     </button>
                   </div>
@@ -350,9 +350,9 @@ function Login() {
                       aria-pressed={showConfirmPassword}
                     >
                       {showConfirmPassword ? (
-                        <EyeOff size={19} aria-hidden="true" />
-                      ) : (
                         <Eye size={19} aria-hidden="true" />
+                      ) : (
+                        <EyeOff size={19} aria-hidden="true" />
                       )}
                     </button>
                   </div>
