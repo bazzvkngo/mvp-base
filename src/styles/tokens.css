@@ -61,6 +61,7 @@
 
   /* Semantic status — sin cambios de fondo, se mantiene compatibilidad */
   --color-success-50: #ecfdf5;
+  --color-success-200: #a7f3d0;
   --color-success-700: #047857;
   --color-warning-50: #fffbeb;
   --color-warning-200: #fde68a;
