@@ -14,8 +14,8 @@ import {
 import {Link, useLocation, useNavigate, useParams} from "react-router-dom";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
+import LoadingState from "../components/ui/LoadingState";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
-import Spinner from "../components/ui/Spinner";
 import StatusBadge from "../components/ui/StatusBadge";
 import {COUNTRIES, getCountryByCode} from "../domain/businessCatalog";
 import {formatFiscalIdentifierForDisplay} from "../domain/fiscalIdentifier.mjs";
@@ -148,7 +148,7 @@ function PlatformHeading({eyebrow, title, description, action}) {
 }
 
 function Loading() {
-  return <div className="platform-state"><Spinner /><p>Cargando datos globales...</p></div>;
+  return <LoadingState variant="page" label="Cargando datos globales..." />;
 }
 
 function ErrorState({error, retry}) {
