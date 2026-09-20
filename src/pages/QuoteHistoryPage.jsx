@@ -16,6 +16,7 @@ import SendQuoteEmailModal from "../features/quotes/SendQuoteEmailModal";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
+import {SkeletonCards, SkeletonRegion, SkeletonTable} from "../components/ui/Skeleton";
 import { getCompanyProfile } from "../services/companyService";
 import {
   canDuplicateQuotes,
@@ -581,7 +582,10 @@ function QuoteHistoryPage({ userId, role }) {
         )}
 
         {loading ? (
-          <div className="erp-empty-state" role="status">Cargando cotizaciones...</div>
+          <SkeletonRegion label="Cargando cotizaciones...">
+            <SkeletonTable className="erp-desktop-only" columns={7} />
+            <SkeletonCards className="erp-card-list erp-mobile-only" />
+          </SkeletonRegion>
         ) : quotes.length === 0 ? (
           <div className="erp-empty-state quote-history-empty">
             <h3>Aún no hay cotizaciones</h3>
