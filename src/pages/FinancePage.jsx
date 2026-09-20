@@ -17,6 +17,7 @@ import FinancialPeriodSelector from "../components/finance/FinancialPeriodSelect
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
+import {SkeletonRegion, SkeletonTable} from "../components/ui/Skeleton";
 import StatusBadge from "../components/ui/StatusBadge";
 import {
   FINANCIAL_CATEGORIES,
@@ -294,7 +295,9 @@ function FinancePage({ businessId, role }) {
         </div>
 
         {loading ? (
-          <div className="erp-empty-state" role="status">Cargando movimientos del periodo...</div>
+          <SkeletonRegion label="Cargando movimientos del periodo...">
+            <SkeletonTable className="financial-table-region" columns={8} twoLine />
+          </SkeletonRegion>
         ) : visibleItems.length === 0 ? (
           <div className="erp-empty-state financial-empty-state">
             <ReceiptText size={28} aria-hidden="true" />
