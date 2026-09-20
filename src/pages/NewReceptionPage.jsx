@@ -2,6 +2,7 @@ import React, {useEffect, useRef, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
 import {sileo} from "sileo";
 import Button from "../components/ui/Button";
+import LoadingState from "../components/ui/LoadingState";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import SupplyTrace from "../components/ui/SupplyTrace";
 import {
@@ -110,7 +111,7 @@ export default function NewReceptionPage({businessId, role}) {
     sileo.success({title: "Propuesta aplicada", description: `${aplicadas} línea${aplicadas === 1 ? "" : "s"} rellenada${aplicadas === 1 ? "" : "s"}${omitidas ? `; ${omitidas} quedaron sin asociar.` : "."} Aún no se modificó el stock.`});
   };
 
-  if (loading) return <p className="muted">Cargando recepción...</p>;
+  if (loading) return <LoadingState variant="page" label="Cargando recepción..." />;
   if (!reception) return <p className="po-message po-message--error">{message}</p>;
   return <main className="po-workspace">
     <header className="po-header"><div className="po-header__copy"><span className="po-kicker">Recepción</span><div className="po-header__title-row"><h1>{reception.numero}</h1><span className={`po-status po-status--${reception.estado}`}>{getReceptionStatusLabel(reception.estado)}</span></div><div className="po-header__meta"><strong>{reception.proveedorSnapshot?.razonSocial}</strong><span>{draft.fechaRecepcion}</span></div></div><div className="po-header__actions"><button type="button" className="po-button po-button--secondary" onClick={() => navigate("/recepciones")}>Volver al historial</button></div></header>

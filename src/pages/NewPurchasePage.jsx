@@ -2,6 +2,7 @@ import React, {useEffect, useMemo, useRef, useState} from "react";
 import {useLocation, useNavigate, useParams} from "react-router-dom";
 import {sileo} from "sileo";
 import Button from "../components/ui/Button";
+import LoadingState from "../components/ui/LoadingState";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import SupplyTrace from "../components/ui/SupplyTrace";
 import {
@@ -334,7 +335,7 @@ export default function NewPurchasePage({businessId, role}) {
     ...(tipoDocumento === "sin_documento" ? {numeroDocumentoProveedor: "", fechaDocumento: ""} : {}),
   }));
 
-  if (loading) return <p className="muted">Cargando compra...</p>;
+  if (loading) return <LoadingState variant="page" label="Cargando compra..." />;
 
   return (
     <main className="po-workspace">

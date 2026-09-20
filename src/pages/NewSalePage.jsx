@@ -1,6 +1,7 @@
 import React, {useEffect, useMemo, useRef, useState} from "react";
 import {useLocation, useNavigate, useParams} from "react-router-dom";
 import {sileo} from "sileo";
+import LoadingState from "../components/ui/LoadingState";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import {
   calculateSaleTotals,
@@ -361,7 +362,7 @@ export default function NewSalePage({businessId, role}) {
         ? "Stock aplicado. Disponibilidad actualizada al aceptar la cotización."
         : `${getSaleStockStatusLabel(sale.estadoStock, sale)}.`;
 
-  if (loading) return <p className="muted">Cargando venta...</p>;
+  if (loading) return <LoadingState variant="page" label="Cargando venta..." />;
 
   return (
     <main className="po-workspace sale-workspace">

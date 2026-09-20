@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { AlertTriangle, ArrowLeft, ExternalLink, RefreshCw, ShoppingBag, Star } from "lucide-react";
 import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
+import LoadingState from "../../components/ui/LoadingState";
 import { searchInventoryMarketReferences } from "../../services/marketReferenceService";
 import { formatDate, formatMoney } from "../../utils/formatters";
 
@@ -71,7 +72,7 @@ function MarketPriceReferencesView({ businessId, itemId }) {
     return (
       <section className="erp-page">
         <PageHeader onBack={goToInventory} title="Referencias de mercado" subtitle="Consultando precios en Google Shopping…" />
-        <div className="erp-empty-state">Buscando precios…</div>
+        <LoadingState variant="page" label="Buscando precios…" />
       </section>
     );
   }
