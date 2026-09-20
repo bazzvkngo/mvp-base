@@ -116,7 +116,7 @@
 
 .quote-workspace__status--emitida {
   background: var(--color-info-50);
-  border-color: #b8cce7;
+  border-color: var(--color-info-200);
   color: var(--color-info-700);
 }
 
