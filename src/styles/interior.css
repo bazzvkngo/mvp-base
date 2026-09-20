@@ -367,7 +367,7 @@
   }
 
   .responsive-dialog-overlay {
-    background: rgb(15 23 42 / 0.5);
+    background: color-mix(in srgb, var(--color-text-strong) 50%, transparent);
     inset: 0;
     position: absolute;
   }
