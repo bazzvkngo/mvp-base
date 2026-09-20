@@ -11,6 +11,7 @@ import {
 import { useSearchParams } from "react-router-dom";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
+import LoadingState from "../components/ui/LoadingState";
 import StatusBadge from "../components/ui/StatusBadge";
 import { formatChileanRut, isValidChileanRut } from "../domain/fiscalIdentifier.mjs";
 import {
@@ -259,7 +260,7 @@ function AccountPage({ onSessionRefresh, usuario }) {
               <h2 id="personal-profile-title" tabIndex="-1">Perfil personal</h2>
               <p>La información se guarda únicamente en tu cuenta personal y no modifica los datos de ninguna empresa.</p>
             </header>
-            {loading ? <p className="settings-loading">Cargando perfil...</p> : (
+            {loading ? <LoadingState variant="section" label="Cargando perfil..." /> : (
               <form onSubmit={submit} noValidate>
                 <fieldset className="settings-fieldset settings-card" disabled={saving}>
                   <legend className="sr-only">Datos personales</legend>

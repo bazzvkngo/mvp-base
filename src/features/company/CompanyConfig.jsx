@@ -16,6 +16,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import BusinessCategoryPicker from "../../components/BusinessCategoryPicker";
 import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
+import LoadingState from "../../components/ui/LoadingState";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import {
   CHILE_REGIONS,
@@ -415,7 +416,7 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
     }
   };
 
-  if (loading) return <p className="settings-loading" role="status">Cargando información...</p>;
+  if (loading) return <LoadingState variant="section" label="Cargando información..." />;
 
   return (
     <SectionFrame
@@ -841,7 +842,7 @@ function BusinessVerificationSection({
     }
   };
 
-  if (loading) return <p className="settings-loading">Cargando verificación...</p>;
+  if (loading) return <LoadingState variant="section" label="Cargando verificación..." />;
 
   return <SectionFrame title="Verificación empresarial" description="Solicita la revisión para activar los módulos operativos de ValoraCloud.">
     <div className={`settings-card settings-verification-card is-${verification.estado.toLowerCase()}`}>
@@ -1037,7 +1038,7 @@ function TaxSection({ businessId }) {
   }, [businessId]);
   return (
     <SectionFrame title="Configuración tributaria" description="Estos valores se utilizan por defecto en los documentos comerciales del negocio.">
-      {loading ? <p className="settings-loading">Cargando impuestos...</p> : (
+      {loading ? <LoadingState variant="section" label="Cargando impuestos..." /> : (
         <div className="settings-card settings-protected-summary">
           <div className="settings-protected-summary__header">
             <span className="settings-protected-summary__icon" aria-hidden="true">
@@ -1107,7 +1108,7 @@ function InventorySection({ businessId, canEdit }) {
   };
   return (
     <SectionFrame title="Inventario" description="Controla alertas y el comportamiento del stock del negocio activo.">
-      {loading ? <p className="settings-loading">Cargando preferencias...</p> : (
+      {loading ? <LoadingState variant="section" label="Cargando preferencias..." /> : (
         <form onSubmit={submit}>
           <fieldset className="settings-fieldset settings-card settings-toggle-list" disabled={!canEdit || saving}>
             <legend className="sr-only">Preferencias de inventario</legend>
@@ -1165,7 +1166,7 @@ function QuoteSection({ businessId, canEdit }) {
   };
   return (
     <SectionFrame title="Valores predeterminados para nuevas cotizaciones" description="Se aplican al crear una cotización. Los cambios realizados dentro de una cotización afectan sólo a ese documento y no modifican estos valores de Empresa.">
-      {loading ? <p className="settings-loading">Cargando valores predeterminados...</p> : (
+      {loading ? <LoadingState variant="section" label="Cargando valores predeterminados..." /> : (
         <form onSubmit={submit}>
           <fieldset className="settings-fieldset" disabled={!canEdit || saving}>
             <legend className="sr-only">Valores predeterminados de cotización</legend>
