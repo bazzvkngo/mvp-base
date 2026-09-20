@@ -16,6 +16,7 @@ import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import LoadingState from "../components/ui/LoadingState";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
+import Skeleton, {SkeletonRegion} from "../components/ui/Skeleton";
 import StatusBadge from "../components/ui/StatusBadge";
 import {COUNTRIES, getCountryByCode} from "../domain/businessCatalog";
 import {formatFiscalIdentifierForDisplay} from "../domain/fiscalIdentifier.mjs";
@@ -164,7 +165,20 @@ export function PlatformDashboardPage() {
       .catch((error) => setState({loading: false, data: null, error: message(error, "No pudimos cargar el resumen.")}));
   }, []);
   React.useEffect(load, [load]);
-  if (state.loading) return <Loading />;
+  const heading = <PlatformHeading eyebrow="Resumen" title="Dashboard" description="Vista operativa global de ValoraCloud." />;
+  if (state.loading) return <>
+    {heading}
+    <SkeletonRegion label="Cargando datos globales...">
+      <section className="platform-metric-grid">
+        {[0, 1, 2, 3].map((index) => <div className="platform-metric" key={index}>
+          <span><Skeleton variant="block" width={20} height={20} /></span>
+          <strong><Skeleton width="40%" /></strong>
+          <h2><Skeleton width="70%" /></h2>
+          <p><Skeleton width="55%" /></p>
+        </div>)}
+      </section>
+    </SkeletonRegion>
+  </>;
   if (state.error) return <ErrorState error={state.error} retry={load} />;
   const cards = [
     {label: "Empresas", value: state.data.empresas.total, detail: `${state.data.empresas.activas} activas`, icon: Building2, to: "/admin/empresas"},
@@ -173,7 +187,7 @@ export function PlatformDashboardPage() {
     {label: "Suspensiones", value: state.data.empresas.suspendidas, detail: "Empresas suspendidas", icon: AlertTriangle, to: "/admin/empresas?estado=SUSPENDIDA"},
   ];
   return <>
-    <PlatformHeading eyebrow="Resumen" title="Dashboard" description="Vista operativa global de ValoraCloud." />
+    {heading}
     <section className="platform-metric-grid">
       {cards.map((card) => <Link className="platform-metric platform-metric--link" key={card.label} to={card.to} aria-label={`Abrir ${card.label.toLowerCase()}`}>
         <span><AppIcon icon={card.icon} size={20} /></span><strong>{card.value}</strong><h2>{card.label}</h2><p>{card.detail}</p>

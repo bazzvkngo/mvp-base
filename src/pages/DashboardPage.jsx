@@ -17,6 +17,7 @@ import DashboardDonutChart from "../components/DashboardDonutChart";
 import FinancialPeriodSelector from "../components/finance/FinancialPeriodSelector";
 import OperationalComparisonChart from "../components/reports/OperationalComparisonChart";
 import Button from "../components/ui/Button";
+import Skeleton, {SkeletonRegion} from "../components/ui/Skeleton";
 import {
   getFinancialPeriodRange,
   getSantiagoDateKey,
@@ -57,6 +58,27 @@ const EMPTY_REPORT_DATA = {
   inventory: [],
   inventoryMovements: [],
 };
+
+const METRIC_SKELETON_TONES = ["income", "expense", "neutral", "neutral", "net"];
+
+// Mismo markup y padding que DashboardCountCard, con bloques en lugar de
+// texto, para que la tarjeta mida lo mismo antes y después de cargar.
+function DashboardMetricSkeleton({tone}) {
+  return (
+    <article className={`financial-metric-card financial-metric-card--${tone}`}>
+      <div className="financial-metric-card__heading">
+        <Skeleton variant="block" width={30} height={30} />
+        <Skeleton width="55%" />
+      </div>
+      <strong className="financial-metric-card__value">
+        <Skeleton variant="block" width="70%" height="calc(var(--line-height-tight) * 1em)" />
+      </strong>
+      <span className="financial-metric-card__note">
+        <Skeleton variant="block" width="85%" height="calc(1.35 * 1em)" />
+      </span>
+    </article>
+  );
+}
 
 function DashboardCountCard({icon, label, note, tone = "neutral", value}) {
   return (
@@ -289,9 +311,16 @@ export default function DashboardPage({businessId, currencyCode = "CLP", role}) 
       </div>
 
       {reportState.error && <div className="financial-feedback financial-feedback--error" role="alert">{reportState.error}</div>}
-      {reportState.loading && <div className="financial-inline-loading" role="status">Cargando estado operacional del negocio activo...</div>}
 
       <QuickActions actions={quickActions} navigate={navigate} />
+
+      {reportState.loading && (
+        <SkeletonRegion label="Cargando estado operacional del negocio activo...">
+          <section className="financial-metric-grid dashboard-v2-metrics">
+            {METRIC_SKELETON_TONES.map((tone, index) => <DashboardMetricSkeleton key={index} tone={tone} />)}
+          </section>
+        </SkeletonRegion>
+      )}
 
       {!reportState.loading && !reportState.error && (
         <>
