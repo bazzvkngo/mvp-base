@@ -58,7 +58,7 @@
 }
 
 .po-header__meta strong {
-  color: #29495c;
+  color: var(--color-text-strong);
   font-size: 13px;
 }
 
