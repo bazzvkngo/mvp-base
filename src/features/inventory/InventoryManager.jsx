@@ -3,6 +3,7 @@ import {useNavigate} from "react-router-dom";
 import { Activity, Archive, Boxes, BriefcaseBusiness, FileSpreadsheet, Package, PackagePlus, RotateCcw, Settings2 } from "lucide-react";
 import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
+import LoadingState from "../../components/ui/LoadingState";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import BarcodeInput from "../../components/barcode/BarcodeInput";
 import {
@@ -600,7 +601,7 @@ function ItemDetail({ acquisitions, acquisitionsState, areas, cannotWrite, categ
 function AcquisitionHistory({ acquisitions, state }) {
   return <section className="inventory-acquisition-history">
     <h3>Historial de adquisiciones</h3>
-    {state.loading ? <p>Cargando adquisiciones…</p> : state.error ? <p className="inventory-feedback inventory-feedback--error">{state.error}</p> : acquisitions.length === 0 ? <p>Este producto aún no tiene adquisiciones registradas.</p> : <div className="inventory-acquisition-list">{acquisitions.map((entry) => {
+    {state.loading ? <LoadingState variant="section" label="Cargando adquisiciones…" /> : state.error ? <p className="inventory-feedback inventory-feedback--error">{state.error}</p> : acquisitions.length === 0 ? <p>Este producto aún no tiene adquisiciones registradas.</p> : <div className="inventory-acquisition-list">{acquisitions.map((entry) => {
       const provider = entry.proveedorSnapshot?.razonSocial || "Proveedor no informado";
       const chain = [entry.ordenCompraNumero, entry.recepcionNumero, entry.compraNumero].filter(Boolean).join(" · ");
       const active = entry.estado !== "revertida";

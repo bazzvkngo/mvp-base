@@ -3,6 +3,7 @@ import {Link} from "react-router-dom";
 import {Search, UserRoundSearch} from "lucide-react";
 import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
+import LoadingState from "../../components/ui/LoadingState";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import {filterSelectableClients} from "../../domain/clientModel.mjs";
 import {
@@ -143,7 +144,7 @@ function ClientSelector({
         </div>
       )}
 
-      {loading && <p className="client-selector__status" role="status">Cargando clientes activos…</p>}
+      {loading && <LoadingState variant="inline" label="Cargando clientes activos…" />}
       {error && <p className="client-selector__status client-selector__status--error" role="alert">{error}</p>}
       {!loading && !error && activeClients.length === 0 && (
         <p className="client-selector__status">

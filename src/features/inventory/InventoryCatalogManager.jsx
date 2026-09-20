@@ -1,5 +1,6 @@
 import React, {useEffect, useMemo, useRef, useState} from "react";
 import Button from "../../components/ui/Button";
+import LoadingState from "../../components/ui/LoadingState";
 import {isDuplicateAreaName, isDuplicateCategoryName} from "../../domain/inventoryCatalog.mjs";
 import {saveInventoryArea, saveInventoryCategory} from "../../services/inventoryService";
 
@@ -115,7 +116,7 @@ function InventoryCatalogManager({areas, businessId, categories, loadErrors, loa
     }
   };
 
-  if (loading) return <p className="inventory-catalog-loading" role="status">Cargando áreas y categorías...</p>;
+  if (loading) return <LoadingState variant="section" label="Cargando áreas y categorías..." />;
   if (loadErrors?.areas || loadErrors?.categories) {
     return <div className="inventory-catalog-load-error" role="alert"><strong>No fue posible cargar el catálogo.</strong>{loadErrors.areas && <span>Áreas: {loadErrors.areas}</span>}{loadErrors.categories && <span>Categorías: {loadErrors.categories}</span>}<Button type="button" variant="secondary" onClick={onRetry}>Reintentar carga</Button></div>;
   }

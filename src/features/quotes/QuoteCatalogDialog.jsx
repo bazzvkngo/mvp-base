@@ -1,4 +1,5 @@
 import React from "react";
+import LoadingState from "../../components/ui/LoadingState";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import { formatCLP } from "../../utils/formatters";
 
@@ -76,7 +77,7 @@ function QuoteCatalogDialog({
         </div>
 
         {loading ? (
-          <div className="quote-workspace__empty" role="status">Cargando inventario valorizado…</div>
+          <LoadingState variant="section" label="Cargando inventario valorizado…" />
         ) : totalCount === 0 ? (
           <div className="quote-workspace__empty">No hay inventario activo valorizado.</div>
         ) : filteredCount === 0 ? (
