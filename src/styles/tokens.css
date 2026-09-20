@@ -73,6 +73,31 @@
   --color-info-50: #eff6ff;
   --color-info-700: #1d4ed8;
 
+  /* Tags categóricos (tipo de ítem en líneas de venta: producto/servicio/
+     actividad/adicional) — identidad propia, no semántica de estado. Verde
+     y ámbar coinciden en valor con success/warning por coincidencia de
+     origen (ambos vienen de la misma paleta por defecto), pero se declaran
+     con su propio valor para no acoplar el esquema de tags a los tokens
+     semánticos. */
+  --color-tag-blue-bg: #e0f2fe;
+  --color-tag-blue-text: #075985;
+  --color-tag-purple-bg: #ede9fe;
+  --color-tag-purple-text: #5b21b6;
+  --color-tag-green-bg: #ecfdf5;
+  --color-tag-green-text: #047857;
+  --color-tag-amber-bg: #fef3c7;
+  --color-tag-amber-text: #92400e;
+
+  /* Alerta de stock — familia separada de warning. Ya se usa (sin
+     tokenizar) en inventory.css para "poco stock" con la paleta "orange"
+     de Tailwind, distinta de la "amber" que usa --color-warning-*.
+     Pendiente: centralizar también inventory.css en esta familia cuando
+     le toque su turno. */
+  --color-stock-alert-50: #fff7ed;
+  --color-stock-alert-200: #fed7aa;
+  --color-stock-alert-500: #f97316;
+  --color-stock-alert-800: #9a3412;
+
   /* Typography */
   --font-family-sans: "Segoe UI Variable Text", "Segoe UI Variable", Inter,
     ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
