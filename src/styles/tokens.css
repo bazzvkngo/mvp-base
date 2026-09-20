@@ -190,4 +190,13 @@
   --focus-offset: 2px;
   --focus-ring: 0 0 0 3px rgb(20 160 143 / 0.24);
 
+  /* Skeleton — tinte del texto fuerte sobre transparente, para que se lea
+     sobre paneles blancos y sobre el canvas cálido sin fijar un hex propio.
+     VALORES INICIALES (6% base, 3% brillo): validar en pantalla antes de
+     consumirlos en <Skeleton>. */
+  --color-skeleton-base: color-mix(in srgb, var(--color-text-strong) 6%, transparent);
+  --color-skeleton-highlight: color-mix(in srgb, var(--color-text-strong) 3%, transparent);
+
+  /* Movimiento — duración de una vuelta completa de <Spinner>. */
+  --motion-spin-duration: 0.8s;
 }
