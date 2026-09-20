@@ -175,7 +175,7 @@
 }
 
 .auth-visual {
-  background: #062746;
+  background: var(--color-dark-ink);
   isolation: isolate;
   min-height: 0;
   min-width: 0;
@@ -187,8 +187,8 @@
 .auth-visual::after {
   background: radial-gradient(
     circle,
-    rgb(30 218 211 / 0.34) 0%,
-    rgb(30 218 211 / 0.09) 42%,
+    color-mix(in srgb, var(--color-dark-accent) 34%, transparent) 0%,
+    color-mix(in srgb, var(--color-dark-accent) 9%, transparent) 42%,
     transparent 70%
   );
   border-radius: 50%;
