@@ -3560,14 +3560,6 @@ body:has(.reports-simple) .environment-notice {
   padding-top: var(--space-4);
 }
 
-.settings-loading {
-  background: var(--color-surface-panel);
-  border: 1px solid var(--color-border-subtle);
-  color: var(--color-text-muted);
-  margin: 0;
-  padding: var(--space-5);
-}
-
 .settings-toggle-list {
   display: grid;
   gap: var(--space-3);
