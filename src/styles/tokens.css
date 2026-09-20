@@ -1,33 +1,65 @@
 :root {
   color-scheme: light;
 
-  /* Brand */
-  --color-brand-50: #edf8f7;
-  --color-brand-100: #d5efec;
-  --color-brand-200: #acdeda;
-  --color-brand-500: #13877e;
+  /* Brand — mismo hue base (teal ValoraCloud), calibrado con un paso más
+     y con el 500 un poco más vívido para usarlo como "acento" en UI clara */
+  --color-brand-50:  #eefaf8;
+  --color-brand-100: #d7f1ec;
+  --color-brand-200: #b0e3da;
+  --color-brand-300: #7fd0c2;
+  --color-brand-400: #45b8a8;
+  --color-brand-500: #14a08f;
   --color-brand-600: #0f766e;
   --color-brand-700: #0b5f59;
   --color-brand-800: #104d49;
+  --color-brand-900: #0a3733;
 
-  /* Surfaces */
-  --color-surface-canvas: #f3f5f7;
+  /* Acento cálido secundario — para progreso, iconos destacados, hover suave.
+     No reemplaza al brand, lo complementa (mismo tono frío-cálido que un portal
+     de salud, pero derivado del propio teal, no un azul/verde genérico ajeno) */
+  --color-accent-100: #fdf1e0;
+  --color-accent-300: #f3c98a;
+  --color-accent-500: #e8a44f;
+  --color-accent-700: #b97a2e;
+
+  /* Surfaces — fondo cálido tipo "papel", no gris frío de spreadsheet */
+  --color-surface-canvas: #f7f5f1;
   --color-surface-panel: #ffffff;
-  --color-surface-subtle: #f8fafc;
+  --color-surface-subtle: #faf8f4;
   --color-surface-raised: #ffffff;
-  --color-surface-hover: #edf6f5;
-  --color-surface-selected: #e0f1ef;
+  --color-surface-hover: #eef8f6;
+  --color-surface-selected: #dff3ef;
 
-  /* Text and borders */
-  --color-text-strong: #0f172a;
-  --color-text-default: #334155;
-  --color-text-muted: #64748b;
+  /* Text and borders — se mantienen casi igual, ya funcionan bien */
+  --color-text-strong: #16211f;
+  --color-text-default: #3a4744;
+  --color-text-muted: #6b7876;
   --color-text-inverse: #ffffff;
-  --color-border-subtle: #d7dee7;
-  --color-border-default: #c5ced9;
-  --color-border-control: #7c899b;
+  --color-border-subtle: #e4e0d8;
+  --color-border-default: #d3cdc2;
+  --color-border-control: #93a09c;
 
-  /* Semantic status */
+  /* Dark surfaces — familia compartida para el sidebar del panel superadmin
+     y el panel visual del login. Valores tomados tal cual del sidebar de
+     PlatformAdminLayout (ya medidos: ~14.5:1 texto sobre fondo, ~9.9:1
+     acento sobre fondo), no inventados. */
+  --color-dark-ink: #071725;
+  --color-dark-panel: #0d2436;
+  --color-dark-text-strong: #dce8ee;
+  --color-dark-text-default: #c6d6df;
+  --color-dark-text-muted: #87a2b2;
+  --color-dark-text-faint: #7894a4;
+  --color-dark-accent: #53d3c8;
+  --color-dark-accent-soft: rgb(83 211 200 / 0.14);
+
+  /* Formal documents (órdenes de compra y similares enviados a un tercero) —
+     deliberadamente distinto del teal cálido de la app: un documento externo
+     formal se lee mejor con un navy/rojo tipo membrete que con el branding
+     SaaS. Valores tomados de la vista de documento de órdenes de compra. */
+  --color-document-navy: #123765;
+  --color-document-red: #b5222d;
+
+  /* Semantic status — sin cambios de fondo, se mantiene compatibilidad */
   --color-success-50: #ecfdf5;
   --color-success-700: #047857;
   --color-warning-50: #fffbeb;
@@ -35,6 +67,7 @@
   --color-warning-800: #92400e;
   --color-danger-50: #fef2f2;
   --color-danger-600: #dc2626;
+  --color-danger-200: #fecaca;
   --color-danger-700: #b91c1c;
   --color-info-50: #eff6ff;
   --color-info-700: #1d4ed8;
@@ -67,12 +100,18 @@
   --space-8: 2rem;
   --space-10: 2.5rem;
 
-  /* Shape and elevation */
-  --radius-sm: 3px;
-  --radius-md: 4px;
+  /* Shape and elevation — radios más generosos, se agregan los que faltaban
+     (lg y xl cubren lo que hoy se resuelve con `calc(var(--radius-md) * N)`
+     repetido en 15+ lugares distintos) */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
   --radius-pill: 999px;
-  --shadow-sm: 0 1px 2px rgb(15 23 42 / 0.06);
-  --shadow-md: 0 8px 24px rgb(15 23 42 / 0.1);
+
+  --shadow-sm: 0 1px 3px rgb(22 33 31 / 0.06);
+  --shadow-md: 0 10px 28px rgb(22 33 31 / 0.09);
+  --shadow-lg: 0 20px 48px rgb(22 33 31 / 0.12);
 
   /* Shell */
   --shell-sidebar-width: 248px;
@@ -81,6 +120,7 @@
   --z-sticky: 20;
   --z-overlay: 80;
   --z-drawer: 90;
+  --z-modal: 100;
   --z-dialog: 110;
 
   /* Breakpoint reference tokens (media queries use their literal equivalents). */
@@ -92,6 +132,6 @@
   /* Interaction */
   --focus-outline: 2px solid #0b5f59;
   --focus-offset: 2px;
-  --focus-ring: 0 0 0 3px rgb(19 135 126 / 0.24);
+  --focus-ring: 0 0 0 3px rgb(20 160 143 / 0.24);
 
 }
