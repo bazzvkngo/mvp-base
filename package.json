@@ -100,6 +100,7 @@
     "test:spec020-stage4": "node scripts/work-additionals-section-smoke.mjs && node scripts/work-expense-evidence-smoke.mjs",
     "test:spec020-stage5": "node scripts/additional-selector-smoke.mjs",
     "test:spec020-stage5-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/sale-additional-integrated-local.mjs\"",
+    "test:skeleton": "node scripts/skeleton-smoke.mjs",
     "test:summary": "node scripts/financial-model-smoke.mjs",
     "seed:business-catalogs:emulator": "node scripts/seed-business-catalogs.mjs --emulator"
   },

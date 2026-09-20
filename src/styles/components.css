@@ -134,6 +134,78 @@
   padding: var(--space-10) var(--space-4);
 }
 
+/* Skeleton — el gradiente queda plano en base en ambos extremos del
+   recorrido, así que con reduced motion (globals.css deja un único ciclo de
+   0.01ms) el bloque se ve como base plana. No usar animation-fill-mode. */
+.ui-skeleton {
+  animation: ui-shimmer var(--motion-shimmer-duration) linear infinite;
+  background-image: linear-gradient(
+    90deg,
+    var(--color-skeleton-base) 0%,
+    var(--color-skeleton-base) 40%,
+    var(--color-skeleton-highlight) 50%,
+    var(--color-skeleton-base) 60%,
+    var(--color-skeleton-base) 100%
+  );
+  background-size: 300% 100%;
+  border-radius: var(--radius-sm);
+  display: block;
+  max-width: 100%;
+}
+
+/* La línea ocupa el alto de una línea de texto del contenedor, para que una
+   fila de skeleton mida lo mismo que una fila real de una línea. */
+.ui-skeleton--line {
+  height: 1em;
+  margin: calc((var(--line-height-default) * 1em - 1em) / 2) 0;
+  width: 100%;
+}
+
+.ui-skeleton--block {
+  height: var(--space-8);
+  width: 100%;
+}
+
+@keyframes ui-shimmer {
+  from {
+    background-position: 0 0;
+  }
+
+  to {
+    background-position: 100% 0;
+  }
+}
+
+.ui-skeleton-region {
+  position: relative;
+}
+
+/* :where() deja la especificidad en 0: la clase responsiva de la página
+   (erp-card-list, po-history__cards) decide cuándo se muestra, sin importar
+   el orden de las hojas. */
+:where(.ui-skeleton-cards) {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.ui-skeleton-card {
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3);
+}
+
+.ui-skeleton-card__header {
+  align-items: flex-start;
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
 .ui-status-badge {
   align-items: center;
   border: 1px solid var(--color-border-default);

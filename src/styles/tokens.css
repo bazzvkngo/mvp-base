@@ -197,6 +197,8 @@
   --color-skeleton-base: color-mix(in srgb, var(--color-text-strong) 6%, transparent);
   --color-skeleton-highlight: color-mix(in srgb, var(--color-text-strong) 3%, transparent);
 
-  /* Movimiento — duración de una vuelta completa de <Spinner>. */
+  /* Movimiento — duración de una vuelta de <Spinner> y de un barrido de
+     brillo de <Skeleton>. */
   --motion-spin-duration: 0.8s;
+  --motion-shimmer-duration: 1.4s;
 }
