@@ -261,7 +261,7 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 
 .po-button--danger-subtle:hover:not(:disabled) {
   background: var(--color-danger-50);
-  border-color: #d47782;
+  border-color: var(--color-danger-300);
 }
 
 .po-button--quiet {
@@ -567,7 +567,7 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 
 .po-history__actions > .po-history__danger:hover:not(:disabled) {
   background: var(--color-danger-50);
-  border-color: #d47782;
+  border-color: var(--color-danger-300);
 }
 
 .po-reception-complete {
