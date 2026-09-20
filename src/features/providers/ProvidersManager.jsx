@@ -11,6 +11,7 @@ import {
 import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
+import {SkeletonCards, SkeletonRegion, SkeletonTable} from "../../components/ui/Skeleton";
 import StatusBadge from "../../components/ui/StatusBadge";
 import {
   canManageProviders,
@@ -250,7 +251,10 @@ function ProvidersManager({businessId, countryCode = "CL", role}) {
         </div>
 
         {loading ? (
-          <div className="erp-empty-state" role="status">Cargando proveedores del negocio activo...</div>
+          <SkeletonRegion label="Cargando proveedores del negocio activo...">
+            <SkeletonTable className="erp-desktop-only" columns={6} twoLine />
+            <SkeletonCards className="erp-card-list erp-mobile-only" />
+          </SkeletonRegion>
         ) : !loadError && visibleProviders.length === 0 ? (
           <div className="erp-empty-state clients-empty-state">
             <AppIcon icon={Truck} size={28} />

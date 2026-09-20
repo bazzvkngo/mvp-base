@@ -12,6 +12,7 @@ import {
 import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
+import {SkeletonCards, SkeletonRegion, SkeletonTable} from "../../components/ui/Skeleton";
 import StatusBadge from "../../components/ui/StatusBadge";
 import { matchesClientSearch } from "../../domain/clientModel.mjs";
 import {getFiscalIdentifierLabel} from "../../domain/fiscalIdentifier.mjs";
@@ -280,9 +281,10 @@ function ClientsManager({businessId, countryCode = "CL", role}) {
         </div>
 
         {loading ? (
-          <div className="erp-empty-state" role="status">
-            Cargando clientes del negocio activo...
-          </div>
+          <SkeletonRegion label="Cargando clientes del negocio activo...">
+            <SkeletonTable className="erp-desktop-only" columns={5} twoLine />
+            <SkeletonCards className="erp-card-list erp-mobile-only" />
+          </SkeletonRegion>
         ) : !loadError && visibleClients.length === 0 ? (
           <div className="erp-empty-state clients-empty-state">
             <AppIcon icon={UsersRound} size={28} />
