@@ -146,8 +146,8 @@
 .inventory-import-ai-panel span { color: var(--color-text-muted); font-size: var(--font-size-sm); }
 .inventory-import-ai-panel .ai-availability { margin: 0; }
 .inventory-import-ai-panel .inventory-button { justify-self: start; }
-.inventory-import-processing, .inventory-import-saving { align-items: center; display: flex !important; gap: var(--space-3) !important; }
-.inventory-import-processing > div, .inventory-import-saving > div { display: grid; gap: 2px; }
+.inventory-import-saving { align-items: center; display: flex !important; gap: var(--space-3) !important; }
+.inventory-import-saving > div { display: grid; gap: 2px; }
 .inventory-import-saving { background: var(--color-surface-selected); border: 1px solid var(--color-brand-200); border-radius: var(--radius-md); padding: var(--space-4); }
 .inventory-import-saving span { color: var(--color-text-muted); font-size: var(--font-size-sm); }
 .inventory-import-summary { display: grid; gap: var(--space-2); grid-template-columns: minmax(220px, 2fr) repeat(4, 1fr); }
