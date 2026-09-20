@@ -815,10 +815,6 @@
   text-align: right;
 }
 
-.sale-history-table td:nth-child(7) .sale-history-actions {
-  justify-content: flex-end;
-}
-
 .sale-history .po-status {
   box-sizing: border-box;
   font-size: var(--font-size-xs);
@@ -833,41 +829,6 @@
   color: var(--color-text-muted);
   font-size: 12px;
   margin-top: 2px;
-}
-
-.sale-history-actions {
-  align-items: flex-start;
-}
-
-.sale-history-no-actions {
-  color: var(--color-text-muted);
-}
-
-.sale-more-actions--history summary {
-  background: var(--color-surface-subtle);
-  border: 1px solid var(--color-border-control);
-  border-radius: 4px;
-  color: var(--color-text-default);
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.2;
-  min-height: 38px;
-  padding: 8px 10px;
-}
-
-.sale-more-actions--history {
-  border: 0;
-  padding: 0;
-}
-
-.sale-more-actions--history summary {
-  justify-content: center;
-}
-
-.sale-more-actions--history > button {
-  margin-top: 6px;
-  width: 100%;
 }
 
 @media (max-width: 820px) {
@@ -963,20 +924,4 @@
     flex-direction: column;
   }
 
-  .sale-history-card .sale-history-actions {
-    grid-template-columns: 1fr;
-  }
-
-  .sale-history-card .sale-more-actions--history {
-    grid-column: 1 / -1;
-  }
-
-  .sale-history-card .sale-more-actions--history summary,
-  .sale-history-card .sale-more-actions--history > button {
-    align-items: center;
-    display: flex;
-    justify-content: center;
-    min-height: 44px;
-    width: 100%;
-  }
 }
