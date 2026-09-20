@@ -163,11 +163,6 @@
   color: var(--color-text-strong);
 }
 
-.quote-workspace__button--issued {
-  background: #173f68;
-  color: var(--color-text-inverse);
-}
-
 .quote-workspace__button--compact {
   min-height: 34px;
   padding: 6px 10px;

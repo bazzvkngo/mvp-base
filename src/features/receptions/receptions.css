@@ -11,10 +11,6 @@
 .reception-success__copy h2 { color: var(--color-success-700); font-size: 18px; }
 .reception-success__eyebrow { color: var(--color-success-700); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .reception-success__next { color: var(--color-text-muted); font-size: 14px; }
-.reception-success__action { flex: 0 0 auto; }
-.reception-trace { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
-.reception-trace button { background: transparent; border: 0; color: var(--color-success-700); cursor: pointer; font: inherit; font-weight: 800; padding: 0; text-decoration: underline; text-underline-offset: 2px; }
-.reception-trace span { color: var(--color-text-muted); }
 .reception-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .reception-grid label { display: grid; font-size: 13px; font-weight: 700; gap: 6px; }
 .reception-grid input, .reception-grid textarea { border: 1px solid var(--color-border-control); border-radius: 6px; font: inherit; min-height: 42px; padding: 9px 11px; }

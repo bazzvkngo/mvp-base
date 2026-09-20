@@ -1,11 +1,5 @@
 @import "../purchaseOrders/purchase-orders.css";
 
-.purchase-origin { background: var(--color-surface-subtle); border: 1px solid var(--color-border-subtle); border-radius: 9px; display: grid; gap: 8px; margin-bottom: 14px; padding: 12px 14px; }
-.purchase-origin p { color: var(--color-text-muted); font-size: 13px; margin: 0; }
-.purchase-origin nav { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; }
-.purchase-origin button { background: transparent; border: 0; color: var(--color-brand-600); cursor: pointer; font: inherit; font-weight: 800; padding: 0; text-decoration: underline; text-underline-offset: 2px; }
-.purchase-origin nav button[aria-current="page"] { color: var(--color-text-strong); text-decoration: none; }
-.purchase-origin nav span { color: var(--color-text-muted); }
 .purchase-stock-note { background: var(--color-success-50); border-radius: 6px; color: var(--color-brand-700); font-size: 13px; margin: 0 0 14px; padding: 10px 12px; }
 .po-status--confirmada { background: var(--color-success-50); color: var(--color-success-700); }
 .po-status--revertida { background: var(--color-danger-50); color: var(--color-danger-700); }
@@ -69,7 +63,7 @@
 }
 
 @media (max-width: 620px) {
-  .purchase-origin, .purchase-provider-card, .purchase-inventory-trace { border-radius: 9px; }
+  .purchase-provider-card, .purchase-inventory-trace { border-radius: 9px; }
   .purchase-inventory-trace > header { align-items: start; flex-direction: column; gap: 6px; }
   .purchase-provider-card dl, .purchase-document-summary, .purchase-document-grid, .purchase-notes-grid, .purchase-document-preview__footer-notes dl { grid-template-columns: 1fr; }
   .purchase-document-grid .purchase-field-wide { grid-column: auto; }
