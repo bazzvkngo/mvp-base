@@ -1,5 +1,6 @@
 import React, {useState} from "react";
 import Button from "../../components/ui/Button";
+import LoadingState from "../../components/ui/LoadingState";
 import StatusBadge from "../../components/ui/StatusBadge";
 import {formatMoney} from "../../utils/formatters.js";
 
@@ -163,7 +164,7 @@ export default function WorkAdditionalsSection({
         </form>
       )}
 
-      {loading ? <p>Cargando adicionales...</p> : (
+      {loading ? <LoadingState variant="section" label="Cargando adicionales..." /> : (
         <div className="works-cost-list">
           {additionals.map((entry) => {
             const annullable = canAnnulAdditional(entry, {canManage});

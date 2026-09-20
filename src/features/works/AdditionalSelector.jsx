@@ -1,4 +1,5 @@
 import React from "react";
+import LoadingState from "../../components/ui/LoadingState";
 import {formatMoney} from "../../utils/formatters.js";
 
 // SPEC 020 ETAPA 5: selector de adicionales pendientes de un Proyecto, para
@@ -31,7 +32,7 @@ export default function AdditionalSelector({additionals = [], currency, loading 
         <h4>Adicionales pendientes del proyecto</h4>
         <span>Selecciona los que quieras incorporar a esta venta</span>
       </header>
-      {loading && <p className="po-empty">Cargando adicionales...</p>}
+      {loading && <LoadingState variant="inline" label="Cargando adicionales..." />}
       {!loading && !additionals.length && <p className="po-empty">Este proyecto no tiene adicionales pendientes de cobro.</p>}
       {!loading && additionals.length > 0 && (
         <ul className="sale-additional-selector__list">
