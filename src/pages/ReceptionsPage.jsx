@@ -2,6 +2,7 @@ import React, {useEffect, useMemo, useState} from "react";
 import {Search} from "lucide-react";
 import {useNavigate} from "react-router-dom";
 import AppIcon from "../components/ui/AppIcon";
+import {SkeletonRegion, SkeletonTable} from "../components/ui/Skeleton";
 import {canManageReceptions, getReceptionStatusLabel} from "../domain/receptionModel.mjs";
 import {listarRecepciones} from "../services/receptionService";
 import "../features/receptions/receptions.css";
@@ -68,7 +69,7 @@ export default function ReceptionsPage({businessId, role}) {
           <label className="erp-field erp-history-search-field"><span className="erp-field__label">Buscar por recepcion, OC o proveedor</span><span className="clients-search-control"><AppIcon icon={Search} size={18} /><input className="erp-control" value={search} onChange={(event) => setSearch(event.target.value)} /></span></label>
           <label className="erp-field"><span className="erp-field__label">Estado</span><select className="erp-control" value={status} onChange={(event) => setStatus(event.target.value)}><option value="todos">Todos</option><option value="borrador">Preparadas</option><option value="confirmada">Recibidas</option><option value="cancelada">Canceladas</option></select></label>
         </div>
-        {loading ? <div className="erp-empty-state">Cargando recepciones...</div> : <section className="erp-table-region">
+        {loading ? <SkeletonRegion label="Cargando recepciones..."><SkeletonTable columns={7} /></SkeletonRegion> : <section className="erp-table-region">
           <table className="erp-table po-history__table"><thead><tr><th>Recepción</th><th>Proveedor</th><th>Orden de compra</th><th>Compra</th><th>Fecha</th><th>Recibido</th><th>Estado</th></tr></thead><tbody>
             {filtered.map((entry) => <tr key={entry.id}>
               <td><button type="button" className="po-inline-link" onClick={() => open(entry)}>{entry.numero}</button></td>

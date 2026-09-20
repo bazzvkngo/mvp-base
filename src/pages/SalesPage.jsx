@@ -3,6 +3,7 @@ import {Plus, Search} from "lucide-react";
 import {useNavigate} from "react-router-dom";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
+import {SkeletonCards, SkeletonRegion, SkeletonTable} from "../components/ui/Skeleton";
 import {
   canManageSales,
   getSaleStatusLabel,
@@ -81,7 +82,12 @@ export default function SalesPage({businessId, role}) {
           </label>
         </div>
 
-        {loading ? <div className="erp-empty-state" role="status">Cargando ventas...</div> : (
+        {loading ? (
+          <SkeletonRegion label="Cargando ventas...">
+            <SkeletonTable className="po-history__desktop" columns={7} />
+            <SkeletonCards className="po-history__cards" />
+          </SkeletonRegion>
+        ) : (
           <>
           <section className="erp-table-region po-history__desktop">
             <table className="erp-table clients-table po-history__table sale-history-table">

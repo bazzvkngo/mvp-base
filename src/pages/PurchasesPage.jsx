@@ -5,6 +5,7 @@ import {sileo} from "sileo";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
+import {SkeletonCards, SkeletonRegion, SkeletonTable} from "../components/ui/Skeleton";
 import {formatMoney} from "../utils/formatters";
 import {canManagePurchases, getPurchaseDocumentTypeLabel, getPurchaseStockSemantics, getPurchaseStatusLabel, matchesPurchaseSearch} from "../domain/purchaseModel.mjs";
 import {cancelarCompraBorrador, confirmarCompra, createPurchaseRequestId, listarCompras, revertirCompra} from "../services/purchaseService";
@@ -125,7 +126,12 @@ export default function PurchasesPage({businessId, role}) {
           </label>
         </div>
 
-        {loading ? <div className="erp-empty-state" role="status">Cargando compras...</div> : (
+        {loading && items.length === 0 ? (
+          <SkeletonRegion label="Cargando compras...">
+            <SkeletonTable className="po-history__desktop" columns={7} twoLine />
+            <SkeletonCards className="po-history__cards" />
+          </SkeletonRegion>
+        ) : (
           <>
           <section className="erp-table-region po-history__desktop">
             <table className="erp-table po-history__table">
