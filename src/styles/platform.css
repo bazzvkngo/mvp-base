@@ -165,8 +165,6 @@
 .platform-state,
 .platform-empty { align-items: center; color: var(--color-text-muted); display: flex; flex-direction: column; gap: var(--space-3); justify-content: center; min-height: 220px; text-align: center; }
 .platform-state.is-error { color: var(--color-danger-700); }
-.platform-spin { animation: platform-spin 800ms linear infinite; }
-@keyframes platform-spin { to { transform: rotate(360deg); } }
 
 .platform-table-wrap { background: var(--color-surface-panel); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); overflow: auto; }
 .platform-table { border-collapse: collapse; min-width: 900px; width: 100%; }

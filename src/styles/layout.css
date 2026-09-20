@@ -821,10 +821,6 @@
   min-width: 180px;
 }
 
-.business-create-drawer__submit[aria-busy="true"] svg {
-  animation: business-spin 0.8s linear infinite;
-}
-
 .business-discard-confirm {
   align-items: center;
   background: rgb(15 23 42 / 0.5);
@@ -860,12 +856,6 @@
   flex-wrap: wrap;
   gap: var(--space-2);
   justify-content: flex-end;
-}
-
-@keyframes business-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 .mobile-nav-layer {
@@ -1115,8 +1105,7 @@
   .mobile-nav-overlay,
   .business-switcher__chevron,
   .business-create-drawer,
-  .business-create-drawer-layer .responsive-dialog-overlay,
-  .business-create-drawer__submit[aria-busy="true"] svg {
+  .business-create-drawer-layer .responsive-dialog-overlay {
     animation: none;
     transition: none;
   }

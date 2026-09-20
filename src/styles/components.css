@@ -75,6 +75,38 @@
   opacity: 0.62;
 }
 
+.ui-spinner {
+  animation: ui-spin var(--motion-spin-duration) linear infinite;
+  border: 3px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-radius: 50%;
+  border-top-color: currentColor;
+  color: var(--color-brand-600);
+  display: block;
+  flex: 0 0 auto;
+}
+
+.ui-spinner--sm {
+  border-width: 2px;
+  height: 16px;
+  width: 16px;
+}
+
+.ui-spinner--md {
+  height: 28px;
+  width: 28px;
+}
+
+/* Dentro de un botón: hereda el color del texto en lugar del acento. */
+.ui-spinner--inherit {
+  color: inherit;
+}
+
+@keyframes ui-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .ui-status-badge {
   align-items: center;
   border: 1px solid var(--color-border-default);
@@ -1028,11 +1060,6 @@
   width: 100%;
 }
 
-.onboarding-submit[aria-busy="true"] .ui-button__icon,
-.onboarding-submit[aria-busy="true"] svg {
-  animation: onboarding-spin 0.8s linear infinite;
-}
-
 .onboarding-footnote {
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
@@ -1070,12 +1097,6 @@
   margin-top: var(--space-4);
 }
 
-@keyframes onboarding-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 @media (max-width: 640px) {
   .onboarding-screen {
     align-items: flex-start;
@@ -1105,12 +1126,6 @@
 
   .onboarding-brand-row .ui-button {
     padding-inline: var(--space-2);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .onboarding-submit[aria-busy="true"] svg {
-    animation: none;
   }
 }
 
@@ -2086,8 +2101,7 @@
   .onboarding-shell,
   .onboarding-card,
   .onboarding-screen::before,
-  .onboarding-screen::after,
-  .onboarding-submit[aria-busy="true"] svg {
+  .onboarding-screen::after {
     animation: none;
   }
 

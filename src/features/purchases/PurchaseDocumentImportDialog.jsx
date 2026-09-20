@@ -1,6 +1,7 @@
 import {useEffect, useMemo, useRef, useState} from "react";
 import Button from "../../components/ui/Button";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
+import Spinner from "../../components/ui/Spinner";
 import {
   applyPurchaseDocumentImport,
   buildPurchaseDocumentPreview,
@@ -240,7 +241,7 @@ export default function PurchaseDocumentImportDialog({
         <div className="reception-import__file-actions"><button type="button" disabled={loading || analyzing || applying} onClick={chooseAnotherFile}>Cambiar</button><button type="button" disabled={loading || analyzing || applying} onClick={reset}>Eliminar</button></div>
       </section>}
       {fileData && !rows.length && <section className="reception-import__analysis">
-        {analyzing ? <div className="reception-import__processing" role="status" aria-live="polite"><span className="reception-import__spinner" aria-hidden="true" /><div><strong>{ANALYSIS_MESSAGES[analysisMessageIndex]}</strong><span>Todavía no se guarda ni confirma ninguna compra.</span></div></div> : <><strong>Factura lista para analizar</strong><span>Propondremos proveedor, líneas y totales para revisión humana.</span></>}
+        {analyzing ? <div className="reception-import__processing" role="status" aria-live="polite"><Spinner /><div><strong>{ANALYSIS_MESSAGES[analysisMessageIndex]}</strong><span>Todavía no se guarda ni confirma ninguna compra.</span></div></div> : <><strong>Factura lista para analizar</strong><span>Propondremos proveedor, líneas y totales para revisión humana.</span></>}
         <Button type="button" disabled={loading || analyzing || !fileData.base64} onClick={analyze}>{analyzing ? "Analizando factura…" : "Analizar y vincular"}</Button>
       </section>}
       {error && <p className="po-message po-message--error" role="alert">{error}</p>}

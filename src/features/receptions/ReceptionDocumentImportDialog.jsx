@@ -1,6 +1,7 @@
 import {useEffect, useRef, useState} from "react";
 import Button from "../../components/ui/Button";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
+import Spinner from "../../components/ui/Spinner";
 import {
   applyReceptionImportRows,
   buildReceptionDocumentSource,
@@ -141,7 +142,7 @@ export default function ReceptionDocumentImportDialog({businessId, onApply, onCl
         <div className="reception-import__file-actions"><button type="button" disabled={loading || analyzing || applying} onClick={chooseAnotherFile}>Cambiar</button><button type="button" disabled={loading || analyzing || applying} onClick={reset}>Eliminar</button></div>
       </section>}
       {fileData && !rows.length && <section className="reception-import__analysis">
-        {analyzing ? <div className="reception-import__processing" role="status" aria-live="polite"><span className="reception-import__spinner" aria-hidden="true" /><div><strong>{ANALYSIS_MESSAGES[analysisMessageIndex]}</strong><span>El archivo se procesa temporalmente; todavía no se aplica ningún cambio.</span></div></div> : <><strong>Documento listo para analizar</strong><span>Validaremos proveedor, líneas y totales antes de proponer cambios.</span></>}
+        {analyzing ? <div className="reception-import__processing" role="status" aria-live="polite"><Spinner /><div><strong>{ANALYSIS_MESSAGES[analysisMessageIndex]}</strong><span>El archivo se procesa temporalmente; todavía no se aplica ningún cambio.</span></div></div> : <><strong>Documento listo para analizar</strong><span>Validaremos proveedor, líneas y totales antes de proponer cambios.</span></>}
         <Button type="button" disabled={loading || analyzing || (fileData.kind === "document" && !fileData.base64)} onClick={analyze}>{analyzing ? "Analizando documento…" : "Analizar y conciliar"}</Button>
       </section>}
       {error && <p className="po-message po-message--error" role="alert">{error}</p>}
@@ -190,7 +191,7 @@ export default function ReceptionDocumentImportDialog({businessId, onApply, onCl
           })}
         </section>
         {summary.sinAsociar > 0 && <p className="reception-import__notice">Las líneas sin asociación quedarán fuera de la recepción y no modificarán stock ni la compra.</p>}
-        {applying && <div className="reception-import__applying" role="status" aria-live="polite"><span className="reception-import__spinner" aria-hidden="true" /><div><strong>Aplicando conciliación…</strong><span>Estamos trasladando únicamente las líneas asociadas a la recepción.</span></div></div>}
+        {applying && <div className="reception-import__applying" role="status" aria-live="polite"><Spinner /><div><strong>Aplicando conciliación…</strong><span>Estamos trasladando únicamente las líneas asociadas a la recepción.</span></div></div>}
       </>}
     </div>
   </ResponsiveDialog>;

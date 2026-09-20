@@ -1,5 +1,6 @@
 import React, { useRef, useState } from "react";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
+import Spinner from "../../components/ui/Spinner";
 import {
   applyInventoryImportPurchaseTax,
   confirmLocalInventoryImport,
@@ -305,7 +306,7 @@ function InventoryImportDialog({
 
         {saving && (
           <div className="inventory-import-saving" role="status" aria-live="polite">
-            <span className="inventory-import-spinner" aria-hidden="true" />
+            <Spinner />
             <div>
               <strong>Importando inventario…</strong>
               <span>Estamos guardando los ítems seleccionados. Mantén esta ventana abierta.</span>

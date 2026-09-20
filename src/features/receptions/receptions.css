@@ -59,8 +59,6 @@
 .reception-import__processing > div, .reception-import__applying > div { display: grid; gap: 2px; }
 .reception-import__processing span, .reception-import__applying span { color: var(--color-text-muted); font-size: 12px; }
 .reception-import__applying { background: var(--color-brand-50); border: 1px solid var(--color-brand-200); border-radius: 9px; padding: 14px; }
-.reception-import__spinner { animation: reception-import-spin .8s linear infinite; border: 3px solid var(--color-border-subtle); border-radius: 50%; border-top-color: var(--color-brand-600); flex: 0 0 auto; height: 28px; width: 28px; }
-@keyframes reception-import-spin { to { transform: rotate(360deg); } }
 .reception-import__provider-status { background: var(--color-stock-alert-50); border: 1px solid var(--color-stock-alert-200); border-radius: 8px; color: var(--color-stock-alert-800); margin: 0; padding: 10px 12px; }
 .reception-import__provider-status--coincidencia { background: var(--color-success-50); border-color: var(--color-success-200); color: var(--color-success-700); }
 .reception-import__provider-status--no_identificado, .reception-import__provider-status--sin_datos_oc { background: var(--color-warning-50); border-color: var(--color-warning-200); color: var(--color-warning-800); }
@@ -110,7 +108,6 @@
 .po-status--recibida_total { background: var(--color-success-50); color: var(--color-success-700); }
 .po-status--sin_recepcion { background: var(--color-surface-subtle); color: var(--color-text-default); }
 
-@media (prefers-reduced-motion: reduce) { .reception-import__spinner { animation: none; } }
 @media (max-width: 900px) {
   .reception-import__document-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .reception-import__document-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
