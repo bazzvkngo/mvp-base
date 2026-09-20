@@ -1,6 +1,7 @@
 ﻿import React, { useEffect, useMemo, useState } from "react";
 import { subscribeToInventory } from "../../services/inventoryService";
 import { useSearchParams } from "react-router-dom";
+import LoadingState from "../../components/ui/LoadingState";
 import {
   createReference,
   deactivateReference,
@@ -536,7 +537,7 @@ function MarketReferencesManager({ userId, role }) {
         </div>
 
         {loading ? (
-          <p style={styles.emptyText}>Cargando referencias...</p>
+          <LoadingState variant="section" label="Cargando referencias..." />
         ) : filteredReferences.length === 0 ? (
           <div style={styles.emptyState}>
             <h3 style={styles.emptyTitle}>No hay referencias para mostrar</h3>

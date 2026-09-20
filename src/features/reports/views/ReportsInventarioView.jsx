@@ -1,6 +1,7 @@
 import React from "react";
 import {RefreshCw} from "lucide-react";
 import Button from "../../../components/ui/Button";
+import LoadingState from "../../../components/ui/LoadingState";
 import {formatMoney} from "../../../utils/formatters";
 
 // Vista dedicada a Inventario. La consulta del catálogo completo se dispara
@@ -14,7 +15,7 @@ function ReportsInventarioView({categories, error, metrics, onRetry, status, top
     return <div className="erp-card reports-simple-state">Tu perfil no incluye acceso a Inventario.</div>;
   }
   if (status === "loading" || status === "idle") {
-    return <div className="erp-card reports-simple-state">Cargando inventario...</div>;
+    return <LoadingState variant="section" label="Cargando inventario..." />;
   }
   if (status === "error") {
     return <div className="erp-card reports-simple-state reports-simple-state--error" role="alert">

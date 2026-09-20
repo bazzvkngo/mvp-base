@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import LoadingState from "../components/ui/LoadingState";
 import { PRICING_STATUS } from "../domain/pricing";
 import { subscribeToValuations } from "../services/valuationService";
 import { formatCLP, formatDate, formatPercent } from "../utils/formatters";
@@ -236,7 +237,7 @@ function PricingPage({ userId }) {
         </div>
 
         {loading ? (
-          <p style={styles.emptyText}>Cargando valorización...</p>
+          <LoadingState variant="section" label="Cargando valorización..." />
         ) : valuations.length === 0 ? (
           <div style={styles.emptyState}>
             <h3 style={styles.emptyTitle}>No hay inventario activo</h3>

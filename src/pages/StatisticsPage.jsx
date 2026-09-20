@@ -3,6 +3,7 @@ import {RefreshCw} from "lucide-react";
 import {useNavigate, useSearchParams} from "react-router-dom";
 import FinancialPeriodSelector from "../components/finance/FinancialPeriodSelector";
 import Button from "../components/ui/Button";
+import LoadingState from "../components/ui/LoadingState";
 import {getFinancialPeriodRange, getSantiagoDateKey} from "../domain/financialMovement.mjs";
 import {
   REPORT_PERIOD_OPTIONS,
@@ -158,7 +159,7 @@ function StatisticsPage({businessId, currencyCode = "CLP", role = ""}) {
     <p className="reports-simple-help">Las monedas se muestran por separado y no se convierten.</p>
 
     {error && <div className="erp-card reports-simple-state reports-simple-state--error" role="alert"><span>{error}</span><Button variant="secondary" onClick={() => setReloadKey((value) => value + 1)}><RefreshCw size={16} /> Reintentar</Button></div>}
-    {loading && !error && <div className="erp-card reports-simple-state">Cargando reportes...</div>}
+    {loading && !error && <LoadingState variant="section" label="Cargando reportes..." />}
 
     {!loading && !error && <>
       {vista === "resumen" && <ReportsResumenView canViewProfitability={canViewProfitability} chartGroups={chartGroups} inventoryCard={inventoryCard} links={links} onSelectView={goToView} profitabilityV4={profitabilityV4} summary={summary} />}

@@ -1,5 +1,6 @@
 import React from "react";
 import {RefreshCw} from "lucide-react";
+import LoadingState from "../../components/ui/LoadingState";
 import {
   REPORT_PROFITABILITY_COVERAGE as COVERAGE,
   REPORT_SALE_PROJECT_SEGMENT as SEGMENT,
@@ -112,7 +113,7 @@ export function SalesCommercialMarginV4Card({commercial, canView, onRetry}) {
         </div>
       </div>
 
-      {commercial.status === "loading" && <div className="reports-v4-state">Calculando margen comercial…</div>}
+      {commercial.status === "loading" && <LoadingState variant="inline" label="Calculando margen comercial…" />}
 
       {commercial.status === "error" && (
         <div className="reports-v4-state reports-v4-state--error" role="alert">
@@ -147,7 +148,7 @@ export function ProjectProfitabilityV4Summary({projects, canView}) {
   if (!canView) return null;
 
   if (projects.status === "loading") {
-    return <p className="reports-v4-projects-summary reports-v4-state">Calculando cobertura de balances de Proyecto…</p>;
+    return <div className="reports-v4-projects-summary"><LoadingState variant="inline" label="Calculando cobertura de balances de Proyecto…" /></div>;
   }
   if (projects.status === "error") {
     return (
