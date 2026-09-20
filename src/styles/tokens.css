@@ -75,6 +75,20 @@
   --color-info-200: #b8cce7;
   --color-info-700: #1d4ed8;
 
+  /* Datos financieros/operacionales (esquema categórico compartido entre
+     tarjetas, montos, marcadores y leyendas): ingreso, gasto, neto y
+     pendiente. "Ingreso" no tiene token propio: usar --color-brand-600
+     directamente (mismo valor, #0f766e).
+     DEUDA CONOCIDA: los charts en JS (FinancialCharts.jsx,
+     OperationalComparisonChart.jsx, CostCompositionChart.jsx) todavía usan
+     literales propios (#0f766e, #1e3a5f, #475569, #d97706, etc.) y NO están
+     sincronizados con esta familia; si se cambia un valor aquí, hay que
+     cambiarlo también a mano en esos archivos. */
+  --color-data-expense: #1e3a5f;
+  --color-data-net: #475569;
+  --color-data-pending: #d97706;
+  --color-data-pending-700: #b45309;
+
   /* Tags categóricos (tipo de ítem en líneas de venta: producto/servicio/
      actividad/adicional) — identidad propia, no semántica de estado. Verde
      y ámbar coinciden en valor con success/warning por coincidencia de
