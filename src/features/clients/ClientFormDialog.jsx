@@ -234,7 +234,7 @@ function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open})
             type="submit"
             form="client-form"
             icon={Save}
-            disabled={saving}
+            loading={saving}
           >
             {saving ? "Guardando..." : isEditing ? "Guardar cambios" : "Crear cliente"}
           </Button>

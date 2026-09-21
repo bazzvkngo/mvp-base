@@ -217,7 +217,7 @@ function ProviderFormDialog({countryCode = "CL", onClose, onSubmit, open, provid
           <Button type="button" variant="secondary" onClick={closeSafely} disabled={saving}>
             Cancelar
           </Button>
-          <Button type="submit" form="provider-form" icon={Save} disabled={saving}>
+          <Button type="submit" form="provider-form" icon={Save} loading={saving}>
             {saving ? "Guardando..." : isEditing ? "Guardar cambios" : "Crear proveedor"}
           </Button>
         </>

@@ -144,11 +144,11 @@ function InventoryCatalogManager({areas, businessId, categories, loadErrors, loa
 }
 
 function AreaForm({form, inputRef, onCancel, onChange, onSubmit, saving}) {
-  return <form className="inventory-catalog-inline-form" onSubmit={onSubmit}><label><span>Nombre del área</span><input ref={inputRef} className="erp-control" required maxLength={80} value={form.nombre} onChange={(event) => onChange({...form, nombre: event.target.value})} /></label><div><Button type="button" variant="secondary" onClick={onCancel}>Cancelar</Button><Button type="submit" disabled={saving}>{saving ? "Guardando..." : form.id ? "Actualizar" : "Crear área"}</Button></div></form>;
+  return <form className="inventory-catalog-inline-form" onSubmit={onSubmit}><label><span>Nombre del área</span><input ref={inputRef} className="erp-control" required maxLength={80} value={form.nombre} onChange={(event) => onChange({...form, nombre: event.target.value})} /></label><div><Button type="button" variant="secondary" onClick={onCancel}>Cancelar</Button><Button type="submit" loading={saving}>{saving ? "Guardando..." : form.id ? "Actualizar" : "Crear área"}</Button></div></form>;
 }
 
 function CategoryForm({areaName, form, inputRef, onCancel, onChange, onSubmit, saving}) {
-  return <form className="inventory-catalog-inline-form" onSubmit={onSubmit}><p>Área: <strong>{areaName}</strong></p><label><span>Nombre de la categoría</span><input ref={inputRef} className="erp-control" required maxLength={80} value={form.nombre} onChange={(event) => onChange({...form, nombre: event.target.value})} /></label><div><Button type="button" variant="secondary" onClick={onCancel}>Cancelar</Button><Button type="submit" disabled={saving}>{saving ? "Guardando..." : form.id ? "Actualizar" : "Crear categoría"}</Button></div></form>;
+  return <form className="inventory-catalog-inline-form" onSubmit={onSubmit}><p>Área: <strong>{areaName}</strong></p><label><span>Nombre de la categoría</span><input ref={inputRef} className="erp-control" required maxLength={80} value={form.nombre} onChange={(event) => onChange({...form, nombre: event.target.value})} /></label><div><Button type="button" variant="secondary" onClick={onCancel}>Cancelar</Button><Button type="submit" loading={saving}>{saving ? "Guardando..." : form.id ? "Actualizar" : "Crear categoría"}</Button></div></form>;
 }
 
 export default InventoryCatalogManager;

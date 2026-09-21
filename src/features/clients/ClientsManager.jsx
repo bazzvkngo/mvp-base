@@ -420,7 +420,7 @@ function ClientsManager({businessId, countryCode = "CL", role}) {
             <Button
               type="button"
               variant={confirmationIsArchive ? "danger" : "primary"}
-              disabled={changingStatus}
+              loading={changingStatus}
               onClick={confirmStatusChange}
             >
               {changingStatus

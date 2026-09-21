@@ -322,7 +322,7 @@ function ProvidersManager({businessId, countryCode = "CL", role}) {
         footer={(
           <>
             <Button type="button" variant="secondary" disabled={changingStatus} onClick={() => setConfirmation(null)}>Cancelar</Button>
-            <Button type="button" variant={confirmationIsArchive ? "danger" : "primary"} disabled={changingStatus} onClick={confirmStatusChange}>
+            <Button type="button" variant={confirmationIsArchive ? "danger" : "primary"} loading={changingStatus} onClick={confirmStatusChange}>
               {changingStatus ? "Procesando..." : confirmationIsArchive ? "Archivar proveedor" : "Reactivar proveedor"}
             </Button>
           </>

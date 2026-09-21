@@ -101,7 +101,7 @@ function FinancialMovementDialog({
           <Button type="button" variant="secondary" onClick={onClose} disabled={saving}>
             Cancelar
           </Button>
-          <Button type="submit" form={formId} disabled={saving}>
+          <Button type="submit" form={formId} loading={saving}>
             {saving ? "Guardando..." : movement ? "Guardar cambios" : "Registrar movimiento"}
           </Button>
         </>

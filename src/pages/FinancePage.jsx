@@ -363,7 +363,7 @@ function FinancePage({ businessId, role }) {
         title="Eliminar movimiento"
         description="Esta acción afecta solamente al negocio activo y no se puede deshacer."
         size="small"
-        footer={<><Button variant="secondary" onClick={() => setDeleteCandidate(null)} disabled={deleting}>Cancelar</Button><Button variant="danger" onClick={confirmDelete} disabled={deleting}>{deleting ? "Eliminando..." : "Eliminar"}</Button></>}
+        footer={<><Button variant="secondary" onClick={() => setDeleteCandidate(null)} disabled={deleting}>Cancelar</Button><Button variant="danger" onClick={confirmDelete} loading={deleting}>{deleting ? "Eliminando..." : "Eliminar"}</Button></>}
       >
         <p>¿Confirmas que deseas eliminar <strong>{deleteCandidate?.concept}</strong> por {formatCLP(deleteCandidate?.amount)}?</p>
       </ResponsiveDialog>
