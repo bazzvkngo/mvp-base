@@ -1,5 +1,14 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import Button from "../components/ui/Button";
+import LoadingState from "../components/ui/LoadingState";
+import {
+  INITIAL_SUBSCRIPTION_STATE,
+  SUBSCRIPTION_EVENT,
+  SUBSCRIPTION_STATUS,
+  nextSubscriptionStatus,
+} from "../domain/subscriptionStatus.mjs";
 import {
   getReferencesByItem,
 } from "../services/referenceService";
@@ -10,6 +19,10 @@ import {
   subscribeToReferenceTasks,
 } from "../services/referenceTaskService";
 import { formatDate } from "../utils/formatters";
+
+// Sin respuesta del servidor en este tiempo, la pantalla pasa a "lenta o sin
+// conexión". El listener NO se cancela: un snapshot tardío la lleva a ready.
+const SLOW_CONNECTION_TIMEOUT_MS = 10000;
 
 const taskStatusLabels = {
   pendiente: "Pendiente",
@@ -80,21 +93,60 @@ function ReferenceTasksPage({ userId, role }) {
   const [searchText, setSearchText] = useState("");
   const [postponeDaysByTask, setPostponeDaysByTask] = useState({});
   const [resolvingTaskId, setResolvingTaskId] = useState("");
-  const [error, setError] = useState("");
+  // Error de una ACCIÓN (aplazar, abrir referencia); el de carga vive en subscription.
+  const [actionError, setActionError] = useState("");
+  const [subscription, setSubscription] = useState(INITIAL_SUBSCRIPTION_STATE);
+  const [retryCount, setRetryCount] = useState(0);
+
+  const dispatchSubscription = useCallback((event) => {
+    setSubscription((current) => nextSubscriptionStatus(current, event));
+  }, []);
 
   useEffect(() => {
     if (!userId) return undefined;
 
-    setError("");
-    return subscribeToReferenceTasks(
+    setActionError("");
+    dispatchSubscription({ type: SUBSCRIPTION_EVENT.RETRY });
+
+    let timeoutId = window.setTimeout(() => {
+      timeoutId = null;
+      dispatchSubscription({ type: SUBSCRIPTION_EVENT.TIMEOUT });
+    }, SLOW_CONNECTION_TIMEOUT_MS);
+    const clearSlowTimer = () => {
+      if (timeoutId === null) return;
+      window.clearTimeout(timeoutId);
+      timeoutId = null;
+    };
+
+    const unsubscribe = subscribeToReferenceTasks(
       userId,
-      (items) => setReferenceTasks(items),
+      (items, meta) => {
+        // Las notificaciones solo de metadatos traen los mismos datos: solo
+        // se reemplaza la lista y se avanza la máquina; filtros, aplazamientos
+        // en curso y demás estado de la página no se tocan.
+        const fromCache = meta?.fromCache === true;
+        setReferenceTasks(items);
+        if (!fromCache) clearSlowTimer();
+        dispatchSubscription({
+          type: SUBSCRIPTION_EVENT.SNAPSHOT,
+          fromCache,
+          empty: items.length === 0,
+        });
+      },
       (err) => {
         console.error("Error al cargar tareas de referencias:", err);
-        setError("No se pudieron cargar las tareas de referencias.");
+        clearSlowTimer();
+        dispatchSubscription({ type: SUBSCRIPTION_EVENT.ERROR });
       }
     );
-  }, [userId]);
+
+    return () => {
+      clearSlowTimer();
+      unsubscribe();
+    };
+  }, [userId, retryCount, dispatchSubscription]);
+
+  const retrySubscription = () => setRetryCount((count) => count + 1);
 
   const filteredTasks = useMemo(() => {
     const normalizedSearch = searchText.trim().toLocaleLowerCase("es-CL");
@@ -146,7 +198,7 @@ function ReferenceTasksPage({ userId, role }) {
 
     try {
       setResolvingTaskId(task.id);
-      setError("");
+      setActionError("");
       const itemReferences = await getReferencesByItem(userId, task.itemId);
       const latestActiveReference = getLatestActiveReference(itemReferences);
       if (latestActiveReference?.id) {
@@ -157,7 +209,7 @@ function ReferenceTasksPage({ userId, role }) {
       navigate(`/referencias?${params.toString()}`);
     } catch (err) {
       console.error("Error al buscar referencia activa para la tarea:", err);
-      setError("No se pudo abrir la referencia asociada a la tarea.");
+      setActionError("No se pudo abrir la referencia asociada a la tarea.");
     } finally {
       setResolvingTaskId("");
     }
@@ -168,7 +220,7 @@ function ReferenceTasksPage({ userId, role }) {
       await postponeReferenceTask(userId, taskId, postponeDaysByTask[taskId] || 7);
     } catch (err) {
       console.error("Error al aplazar tarea de referencia:", err);
-      setError("No se pudo aplazar la tarea de referencia.");
+      setActionError("No se pudo aplazar la tarea de referencia.");
     }
   };
 
@@ -196,7 +248,7 @@ function ReferenceTasksPage({ userId, role }) {
         </button>
       </div>
 
-      {error && <p role="alert" style={styles.errorText}>{error}</p>}
+      {actionError && <p role="alert" style={styles.errorText}>{actionError}</p>}
 
       <div className="erp-panel" style={styles.panel}>
         <div className="erp-filters" style={styles.filters}>
@@ -238,7 +290,29 @@ function ReferenceTasksPage({ userId, role }) {
           </label>
         </div>
 
-        {filteredTasks.length === 0 ? (
+        {subscription.status === SUBSCRIPTION_STATUS.LOADING ? (
+          <LoadingState variant="section" label="Cargando tareas de referencias..." />
+        ) : subscription.status === SUBSCRIPTION_STATUS.SLOW ||
+          subscription.status === SUBSCRIPTION_STATUS.ERROR ? (
+          <div
+            className="client-message client-message--error"
+            role={subscription.status === SUBSCRIPTION_STATUS.ERROR ? "alert" : "status"}
+          >
+            <span>
+              {subscription.status === SUBSCRIPTION_STATUS.ERROR
+                ? "No se pudieron cargar las tareas de referencias."
+                : "La conexión está lenta o no hay conexión. Sigue intentando..."}
+            </span>
+            <Button
+              type="button"
+              variant="secondary"
+              icon={RefreshCw}
+              onClick={retrySubscription}
+            >
+              Reintentar
+            </Button>
+          </div>
+        ) : filteredTasks.length === 0 ? (
           <p className="erp-empty-state" style={styles.emptyText}>No hay tareas para este filtro.</p>
         ) : (
           <>

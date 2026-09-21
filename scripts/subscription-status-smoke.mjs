@@ -167,4 +167,34 @@ const pendingBody = serviceSource.match(/export function subscribeToPendingRefer
 assert.match(pendingBody, /\(tasks\) => onTasks\(tasks\.filter\(/, "subscribeToPendingReferenceTasks (código muerto) no se toca");
 console.log("OK: servicio — onSnapshot con includeMetadataChanges, onTasks recibe {fromCache} y el callback de error sigue pasando");
 
+// --- ReferenceTasksPage: usa la máquina, el timeout y el orden de estados (lectura de fuente) ---
+const pageSource = await readFile(new URL("../src/pages/ReferenceTasksPage.jsx", import.meta.url), "utf8");
+const cssInterior = await readFile(new URL("../src/styles/interior.css", import.meta.url), "utf8");
+assert.match(pageSource, /const SLOW_CONNECTION_TIMEOUT_MS = 10000;/, "constante con nombre de 10 s");
+assert.match(pageSource, /from "\.\.\/domain\/subscriptionStatus\.mjs"/, "usa la máquina pura");
+const timerCallback = pageSource.match(/window\.setTimeout\(\(\) => \{([\s\S]*?)\}, SLOW_CONNECTION_TIMEOUT_MS\)/)?.[1] || "";
+assert.match(timerCallback, /SUBSCRIPTION_EVENT\.TIMEOUT/, "el temporizador emite timeout");
+assert.doesNotMatch(timerCallback, /unsubscribe/, "al vencer el timeout NO se cancela el listener (un snapshot tardío pasa a ready)");
+const cleanup = pageSource.match(/return \(\) => \{\s*clearSlowTimer\(\);\s*unsubscribe\(\);\s*\};/);
+assert.ok(cleanup, "el cleanup limpia el temporizador y cancela el listener al desmontar");
+assert.match(pageSource, /\}, \[userId, retryCount, dispatchSubscription\]\);/, "el contador de reintento está en las dependencias del efecto");
+assert.match(pageSource, /if \(!fromCache\) clearSlowTimer\(\);/, "el temporizador se limpia al recibir un snapshot del servidor");
+assert.match(pageSource, /clearSlowTimer\(\);\s*dispatchSubscription\(\{ type: SUBSCRIPTION_EVENT\.ERROR \}\)/, "el error de onSnapshot pasa a la máquina");
+assert.match(pageSource, /dispatchSubscription\(\{ type: SUBSCRIPTION_EVENT\.RETRY \}\)/, "cada suscripción arranca con retry (loading)");
+assert.doesNotMatch(pageSource, /setError\(/, "sin el error mezclado: los errores de acciones van a actionError");
+assert.match(pageSource, /\{actionError && <p role="alert" style=\{styles\.errorText\}>\{actionError\}<\/p>\}/, "actionError con el <p role=alert> inline existente");
+const iLoading = pageSource.indexOf("SUBSCRIPTION_STATUS.LOADING ? (");
+const iBanner = pageSource.indexOf("SUBSCRIPTION_STATUS.SLOW ||");
+const iEmpty = pageSource.indexOf("No hay tareas para este filtro.");
+assert.ok(iLoading > -1 && iBanner > iLoading && iEmpty > iBanner, "orden: cargando -> lento/error -> vacío -> lista");
+assert.match(pageSource, /<LoadingState variant="section" label="Cargando tareas de referencias\.\.\." \/>/);
+assert.match(pageSource, /La conexión está lenta o no hay conexión\. Sigue intentando\.\.\./);
+assert.match(pageSource, /No se pudieron cargar las tareas de referencias\./);
+assert.match(pageSource, /variant="secondary"\s+icon=\{RefreshCw\}\s+onClick=\{retrySubscription\}/, "Reintentar con el patrón de Clients y Providers");
+assert.match(pageSource, /className="client-message client-message--error"/);
+assert.match(cssInterior, /^\.client-message \{/m, ".client-message vive en el CSS compartido (interior.css)");
+assert.match(cssInterior, /^\.client-message--error \{/m, ".client-message--error vive en el CSS compartido (interior.css)");
+assert.doesNotMatch(pageSource, /import "[^"]*\.css"/, "la página no importa CSS de feature");
+console.log("OK: ReferenceTasksPage — máquina, timeout de 10 s sin cancelar el listener, limpieza, reintento, actionError separado y orden de estados");
+
 console.log("SUBSCRIPTION_STATUS_SMOKE_OK");
