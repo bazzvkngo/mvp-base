@@ -298,7 +298,7 @@ function FinancePage({ businessId, role }) {
           <SkeletonRegion label="Cargando movimientos del periodo...">
             <SkeletonTable className="financial-table-region" columns={8} twoLine />
           </SkeletonRegion>
-        ) : visibleItems.length === 0 ? (
+        ) : error && visibleItems.length === 0 ? null : visibleItems.length === 0 ? (
           <div className="erp-empty-state financial-empty-state">
             <ReceiptText size={28} aria-hidden="true" />
             <h3>No hay movimientos para estos filtros</h3>
