@@ -501,10 +501,10 @@ export default function NewPurchasePage({businessId, role}) {
         providers={providers}
         taxName={purchase?.impuestoNombre || company?.impuestoPredeterminadoNombre || "Impuesto"}
       />
-      <ResponsiveDialog open={actionDialog === "confirm"} onClose={() => !processing && setActionDialog("")} eyebrow="Compra preparada" title="Confirmar compra" description="Al confirmar, se registrará el documento económico del proveedor." size="small" footer={<><Button type="button" variant="secondary" disabled={processing} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" disabled={processing} onClick={confirm}>{processing ? "Confirmando..." : "Confirmar compra"}</Button></>}>
+      <ResponsiveDialog open={actionDialog === "confirm"} onClose={() => !processing && setActionDialog("")} eyebrow="Compra preparada" title="Confirmar compra" description="Al confirmar, se registrará el documento económico del proveedor." size="small" footer={<><Button type="button" variant="secondary" disabled={processing} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" loading={processing} onClick={confirm}>{processing ? "Confirmando..." : "Confirmar compra"}</Button></>}>
         <p>{stockSemantics.confirmationMessage}</p>
       </ResponsiveDialog>
-      <ResponsiveDialog open={actionDialog === "cancel"} onClose={() => !processing && setActionDialog("")} eyebrow="Más acciones" title="Cancelar compra" description="La compra preparada quedará cancelada y ya no podrá editarse." size="small" footer={<><Button type="button" variant="secondary" disabled={processing} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" variant="danger" disabled={processing} onClick={cancel}>{processing ? "Cancelando..." : "Cancelar compra"}</Button></>}><p>Cancelar una compra preparada no modifica stock.</p></ResponsiveDialog>
+      <ResponsiveDialog open={actionDialog === "cancel"} onClose={() => !processing && setActionDialog("")} eyebrow="Más acciones" title="Cancelar compra" description="La compra preparada quedará cancelada y ya no podrá editarse." size="small" footer={<><Button type="button" variant="secondary" disabled={processing} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" variant="danger" loading={processing} onClick={cancel}>{processing ? "Cancelando..." : "Cancelar compra"}</Button></>}><p>Cancelar una compra preparada no modifica stock.</p></ResponsiveDialog>
     </main>
   );
 }

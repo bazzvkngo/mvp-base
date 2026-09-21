@@ -119,7 +119,7 @@ export default function ReceptionDocumentImportDialog({businessId, onApply, onCl
   };
   const footer = rows.length ? <>
     <Button type="button" variant="secondary" disabled={analyzing || applying} onClick={close}>Cancelar</Button>
-    <Button type="button" aria-busy={applying} disabled={analyzing || applying || summary.asociadas === 0 || (providerMismatch && !providerReviewAccepted)} onClick={apply}>
+    <Button type="button" loading={applying} disabled={analyzing || summary.asociadas === 0 || (providerMismatch && !providerReviewAccepted)} onClick={apply}>
       {applying ? "Aplicando conciliación…" : `Aplicar ${summary.asociadas} ${summary.asociadas === 1 ? "línea" : "líneas"}`}
     </Button>
   </> : null;
@@ -143,7 +143,7 @@ export default function ReceptionDocumentImportDialog({businessId, onApply, onCl
       </section>}
       {fileData && !rows.length && <section className="reception-import__analysis">
         {analyzing ? <div className="reception-import__processing" role="status" aria-live="polite"><Spinner /><div><strong>{ANALYSIS_MESSAGES[analysisMessageIndex]}</strong><span>El archivo se procesa temporalmente; todavía no se aplica ningún cambio.</span></div></div> : <><strong>Documento listo para analizar</strong><span>Validaremos proveedor, líneas y totales antes de proponer cambios.</span></>}
-        <Button type="button" disabled={loading || analyzing || (fileData.kind === "document" && !fileData.base64)} onClick={analyze}>{analyzing ? "Analizando documento…" : "Analizar y conciliar"}</Button>
+        <Button type="button" loading={analyzing} disabled={loading || (fileData.kind === "document" && !fileData.base64)} onClick={analyze}>{analyzing ? "Analizando documento…" : "Analizar y conciliar"}</Button>
       </section>}
       {error && <p className="po-message po-message--error" role="alert">{error}</p>}
 

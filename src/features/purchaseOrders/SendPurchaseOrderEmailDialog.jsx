@@ -51,7 +51,7 @@ export default function SendPurchaseOrderEmailDialog({companyProfile, onClose, o
       <Button
         type="submit"
         form="send-purchase-order-email-form"
-        disabled={processing || !valid}
+        loading={processing} disabled={!valid}
       >
         {processing ? "Enviando..." : "Enviar por correo"}
       </Button>

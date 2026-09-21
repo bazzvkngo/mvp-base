@@ -210,7 +210,7 @@ export default function PurchaseDocumentImportDialog({
 
   const footer = rows.length ? <>
     <Button type="button" variant="secondary" disabled={analyzing || applying} onClick={close}>Cancelar</Button>
-    <Button type="button" aria-busy={applying} disabled={analyzing || applying || !summary.lista || !selectedProviderId} onClick={apply}>
+    <Button type="button" loading={applying} disabled={analyzing || !summary.lista || !selectedProviderId} onClick={apply}>
       {applying ? "Aplicando factura…" : "Aplicar a Nueva compra"}
     </Button>
   </> : null;
@@ -242,7 +242,7 @@ export default function PurchaseDocumentImportDialog({
       </section>}
       {fileData && !rows.length && <section className="reception-import__analysis">
         {analyzing ? <div className="reception-import__processing" role="status" aria-live="polite"><Spinner /><div><strong>{ANALYSIS_MESSAGES[analysisMessageIndex]}</strong><span>Todavía no se guarda ni confirma ninguna compra.</span></div></div> : <><strong>Factura lista para analizar</strong><span>Propondremos proveedor, líneas y totales para revisión humana.</span></>}
-        <Button type="button" disabled={loading || analyzing || !fileData.base64} onClick={analyze}>{analyzing ? "Analizando factura…" : "Analizar y vincular"}</Button>
+        <Button type="button" loading={analyzing} disabled={loading || !fileData.base64} onClick={analyze}>{analyzing ? "Analizando factura…" : "Analizar y vincular"}</Button>
       </section>}
       {error && <p className="po-message po-message--error" role="alert">{error}</p>}
 
