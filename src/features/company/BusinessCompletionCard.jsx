@@ -6,6 +6,7 @@ function BusinessCompletionCard({
   canActOnItem,
   className = "",
   description = "Completa tu perfil para dejar tus documentos y operaciones listos.",
+  error = false,
   loading = false,
   onAction,
   showSummary = true,
@@ -38,6 +39,11 @@ function BusinessCompletionCard({
       >
         <span style={{ width: `${status.percent}%` }} />
       </div>
+      {error && (
+        <p className="settings-message settings-message--warning" role="status">
+          No pudimos actualizar el estado de la empresa. Los datos pueden estar desactualizados.
+        </p>
+      )}
       {showSummary && (
   <p className="business-completion-card__summary">
     {status.label} · {status.verificationLabel}

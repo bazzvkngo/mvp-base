@@ -10,7 +10,7 @@ function InitialBusinessActivationPage({
   ownerEmailVerified,
   onFinish,
 }) {
-  const { loading, status } = useBusinessCompletionStatus({
+  const { loading, error, status } = useBusinessCompletionStatus({
     businessId: business?.id,
     ownerEmailVerified,
     initialProfile: business || {},
@@ -54,6 +54,7 @@ function InitialBusinessActivationPage({
             <BusinessCompletionCard
   className="business-completion-card--activation"
   description="Completa el perfil y solicita la revisión. La activación depende de la aprobación."
+  error={error}
   loading={loading}
   showSummary={false}
   status={status}
