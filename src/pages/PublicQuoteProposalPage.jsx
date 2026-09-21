@@ -3,6 +3,7 @@ import { CheckCircle2, Download, XCircle } from "lucide-react";
 import { useParams } from "react-router-dom";
 import { sileo } from "sileo";
 import BrandLogo from "../components/BrandLogo";
+import Spinner from "../components/ui/Spinner";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
@@ -113,7 +114,8 @@ function PublicQuoteProposalPage() {
     return (
       <main className="public-proposal public-proposal--centered">
         <BrandLogo variant="auth" subtitle="Propuesta comercial" />
-        <section className="public-proposal__message" aria-live="polite">
+        <section className="public-proposal__message" role="status">
+          <Spinner />
           <h1>Cargando propuesta</h1>
           <p>Estamos preparando la información comercial.</p>
         </section>

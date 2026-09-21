@@ -177,6 +177,11 @@
   margin: 0 0 var(--space-2);
 }
 
+/* Spinner de la rama de carga: centrado sobre el título. */
+.public-proposal__message > .ui-spinner {
+  margin: 0 auto var(--space-3);
+}
+
 .public-proposal__rejection-options {
   border: 0;
   display: grid;
