@@ -159,7 +159,6 @@ const routePermissions = Object.freeze([
   [/^\/(reportes|estadisticas)(?:\/|$)/, P.REPORTS_READ],
   [/^\/finanzas(?:\/|$)/, P.FINANCE_READ],
   [/^\/valorizacion(?:\/|$)/, P.PRICING_READ],
-  [/^\/(referencias|tareas-referencias)(?:\/|$)/, P.REFERENCES_READ],
   [/^\/empresa(?:\/|$)/, P.COMPANY_READ],
   [/^\/empleados(?:\/|$)/, P.MEMBERS_READ],
   [/^\/cuenta(?:\/|$)/, P.ACCOUNT_READ],

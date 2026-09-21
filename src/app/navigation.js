@@ -139,8 +139,6 @@ const navigationItems = navigationSections.flatMap((section) => section.items);
 const hiddenRouteMeta = Object.freeze({
   "/finanzas": { title: "Finanzas" },
   "/valorizacion": { title: "Valorización" },
-  "/referencias": { title: "Referencias de mercado" },
-  "/tareas-referencias": { title: "Tareas de referencias" },
 });
 
 export function getRouteMeta(pathname) {

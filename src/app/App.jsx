@@ -19,7 +19,6 @@ import FinancePage from "../pages/FinancePage";
 import InventoryPage from "../pages/InventoryPage";
 import LoginPage from "../pages/LoginPage";
 import MarketPriceReferencesPage from "../pages/MarketPriceReferencesPage";
-import MarketReferencesPage from "../pages/MarketReferencesPage";
 import NewQuotePage from "../pages/NewQuotePage";
 import OnboardingPage from "../pages/OnboardingPage";
 import InitialBusinessActivationPage from "../pages/InitialBusinessActivationPage";
@@ -34,7 +33,6 @@ import ReceptionsPage from "../pages/ReceptionsPage";
 import NewReceptionPage from "../pages/NewReceptionPage";
 import NewSalePage from "../pages/NewSalePage";
 import SalesPage from "../pages/SalesPage";
-import ReferenceTasksPage from "../pages/ReferenceTasksPage";
 import StatisticsPage from "../pages/StatisticsPage";
 import BusinessUnavailablePage from "../pages/BusinessUnavailablePage";
 import EmployeesPage from "../pages/EmployeesPage";
@@ -340,20 +338,6 @@ function AppRoutes({
           path="/inventario/:itemId/referencias"
           element={
             <MarketPriceReferencesPage key={businessId} businessId={businessId} />
-          }
-        />
-        <Route
-          path="/referencias"
-          element={
-            <MarketReferencesPage key={businessId} userId={businessId} role={activeBusiness?.role}
-        />
-          }
-        />
-        <Route
-          path="/tareas-referencias"
-          element={
-            <ReferenceTasksPage key={businessId} userId={businessId} role={activeBusiness?.role}
-        />
           }
         />
         <Route
