@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { sileo } from "sileo";
 import AiAvailabilityStatus from "../components/ai/AiAvailabilityStatus";
+import Spinner from "../components/ui/Spinner";
 import { AI_MODELS } from "../config/aiModels";
 import {
   createQuoteItemFromValuation,
@@ -1808,7 +1809,8 @@ function NewQuotePage({ userId }) {
   if (isEditMode && editLoading) {
     return (
       <section className="quote-page" style={styles.wrapper}>
-        <div className="no-print" style={styles.panel}>
+        <div className="no-print ui-reveal-delay" style={styles.panel} role="status">
+          <div style={styles.loadingSpinner}><Spinner /></div>
           <h3 style={styles.panelTitle}>Cargando cotización pendiente</h3>
           <p style={styles.helpText}>Estamos obteniendo la cotización guardada.</p>
         </div>
@@ -2659,6 +2661,9 @@ const styles = {
   },
   compactPanelTitle: {
     marginBottom: "6px",
+  },
+  loadingSpinner: {
+    marginBottom: "12px",
   },
   formGrid: {
     display: "grid",
