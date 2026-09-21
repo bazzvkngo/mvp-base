@@ -113,7 +113,7 @@ function MarketPriceReferencesView({ businessId, itemId }) {
         title="Referencias de mercado"
         subtitle={item?.name}
         actions={
-          <Button type="button" variant="secondary" icon={RefreshCw} disabled={refreshing} onClick={handleRefresh}>
+          <Button type="button" variant="secondary" icon={RefreshCw} loading={refreshing} onClick={handleRefresh}>
             {refreshing ? "Actualizando…" : "Forzar refresco"}
           </Button>
         }

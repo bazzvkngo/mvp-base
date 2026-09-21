@@ -813,7 +813,7 @@ function QuoteHistoryPage({ userId, role }) {
             </Button>
             <Button
               type="button"
-              disabled={savingStatus || Boolean(acceptingQuoteId)}
+              loading={savingStatus || Boolean(acceptingQuoteId)}
               onClick={handleConfirmAcceptance}
             >
               {savingStatus || acceptingQuoteId
@@ -1467,7 +1467,7 @@ function QuoteDocumentActions({
             </Button>
             <Button
               type="button"
-              disabled={confirmingWhatsApp}
+              loading={confirmingWhatsApp}
               onClick={confirmWhatsAppSent}
             >
               {confirmingWhatsApp ? "Registrando..." : "Sí, fue enviada"}

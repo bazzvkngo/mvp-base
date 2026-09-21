@@ -52,7 +52,7 @@ export default function WorkExpenseEvidence({canAttach = false, entries = [], on
                 onChange={handleFile}
                 hidden
               />
-              <Button type="button" variant="secondary" disabled={Boolean(processing)} onClick={() => inputRef.current?.click()}>
+              <Button type="button" variant="secondary" loading={Boolean(processing)} onClick={() => inputRef.current?.click()}>
                 {processing ? "Subiendo..." : "Adjuntar evidencia"}
               </Button>
               {selectionError && <small className="works-field-error">{selectionError}</small>}

@@ -305,7 +305,7 @@ export function PlatformBusinessesPage({verificationOnly = false}) {
     {state.error && <ErrorState error={state.error} retry={() => load()} />}
     {!state.error && state.loading && !state.items.length && <Loading />}
     {!state.error && Boolean(state.items.length || !state.loading) && <BusinessesTable businesses={state.items} verificationOnly={verificationOnly} emptyText={verificationOnly ? "No hay verificaciones para los filtros seleccionados." : undefined} />}
-    {state.cursor && <div className="platform-load-more"><Button variant="secondary" disabled={state.loading} onClick={() => load(state.cursor, true)}>{state.loading ? "Cargando..." : "Cargar más"}</Button></div>}
+    {state.cursor && <div className="platform-load-more"><Button variant="secondary" loading={state.loading} onClick={() => load(state.cursor, true)}>{state.loading ? "Cargando..." : "Cargar más"}</Button></div>}
   </>;
 }
 
@@ -431,7 +431,7 @@ export function PlatformBusinessDetailPage() {
       {solicitudActual && <div className="platform-verification-review">
         <article><span>{fiscalFieldLabel(solicitudActual.identificadorFiscalTipo, "declarado")}</span><strong>{fiscalIdentifier(solicitudActual.paisCodigo, solicitudActual.identificadorFiscalValor)}</strong><small>{countryName(solicitudActual.paisCodigo)}</small></article>
         <article><span>Solicitante</span><strong>{solicitudActual.correoSolicitante || "Correo no informado"}</strong><small>{solicitudActual.relacionSolicitante || "Relación no informada"}{solicitudActual.telefonoSolicitante ? ` · ${solicitudActual.telefonoSolicitante}` : ""}</small></article>
-        <article className="platform-verification-review__evidence"><span>Evidencia</span><strong>{solicitudActual.documentoAcreditativo?.nombreOriginal || "Sin documento adjunto"}</strong>{solicitudActual.documentoAcreditativo && <Button variant="secondary" disabled={openingEvidence} onClick={loadEvidence}>{openingEvidence ? "Abriendo…" : "Ver documento"}</Button>}</article>
+        <article className="platform-verification-review__evidence"><span>Evidencia</span><strong>{solicitudActual.documentoAcreditativo?.nombreOriginal || "Sin documento adjunto"}</strong>{solicitudActual.documentoAcreditativo && <Button variant="secondary" loading={openingEvidence} onClick={loadEvidence}>{openingEvidence ? "Abriendo…" : "Ver documento"}</Button>}</article>
         {solicitudActual.observaciones && <article><span>Observaciones</span><strong>{solicitudActual.observaciones}</strong></article>}
       </div>}
       {pending && <div className="platform-verification-actions">
@@ -448,7 +448,7 @@ export function PlatformBusinessDetailPage() {
       description="Esta acción no se puede deshacer. Escribe el nombre comercial exacto para continuar."
       initialFocusRef={deleteInputRef}
       onClose={() => !deleting && setDeleteOpen(false)}
-      footer={<><Button variant="secondary" disabled={deleting} onClick={() => setDeleteOpen(false)}>Cancelar</Button><Button variant="danger" icon={Trash2} disabled={deleting || deleteConfirmation !== empresa.nombreComercial} onClick={deleteBusiness}>{deleting ? "Eliminando..." : "Eliminar permanentemente"}</Button></>}
+      footer={<><Button variant="secondary" disabled={deleting} onClick={() => setDeleteOpen(false)}>Cancelar</Button><Button variant="danger" icon={Trash2} loading={deleting} disabled={deleteConfirmation !== empresa.nombreComercial} onClick={deleteBusiness}>{deleting ? "Eliminando..." : "Eliminar permanentemente"}</Button></>}
     >
       <div className="platform-delete-confirmation"><p>Nombre comercial: <strong>{empresa.nombreComercial}</strong></p><label>Confirmación<input ref={deleteInputRef} value={deleteConfirmation} autoComplete="off" onChange={(event) => {setDeleteConfirmation(event.target.value); setDeleteError(""); deleteRequestRef.current = "";}} /></label>{deleteError && <div className="platform-delete-error" role="alert">{deleteError}</div>}</div>
     </ResponsiveDialog>
@@ -457,7 +457,7 @@ export function PlatformBusinessDetailPage() {
       title={verificationDecision === "APROBAR" ? "Confirmar aprobación" : "Confirmar rechazo"}
       description={verificationDecision === "APROBAR" ? "Revisa la razón social oficial antes de verificar la empresa." : "Revisa el motivo que quedará registrado en el historial."}
       onClose={() => !working && setVerificationDecision("")}
-      footer={<><Button variant="secondary" disabled={working} onClick={() => setVerificationDecision("")}>Volver</Button><Button variant={verificationDecision === "RECHAZAR" ? "danger" : "primary"} disabled={working} onClick={async () => {
+      footer={<><Button variant="secondary" disabled={working} onClick={() => setVerificationDecision("")}>Volver</Button><Button variant={verificationDecision === "RECHAZAR" ? "danger" : "primary"} loading={working} onClick={async () => {
         const approving = verificationDecision === "APROBAR";
         const succeeded = await run(approving ? "approve_verification" : "reject_verification", (requestId) => resolvePlatformVerification({businessId, solicitudId: solicitudActual.id, decision: verificationDecision, motivo: approving ? "" : rejectionReason.trim(), razonSocialOficial: approving ? officialLegalName.trim() : "", requestId}));
         if (succeeded) setVerificationDecision("");

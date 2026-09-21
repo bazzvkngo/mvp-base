@@ -203,7 +203,7 @@ function PublicQuoteProposalPage() {
           variant="secondary"
           icon={Download}
           onClick={handleDownload}
-          disabled={downloading}
+          loading={downloading}
         >
           {downloading ? "Preparando PDF..." : "Descargar PDF"}
         </Button>
@@ -254,7 +254,7 @@ function PublicQuoteProposalPage() {
             </Button>
             <Button
               type="button"
-              disabled={responding}
+              loading={responding}
               onClick={() => handleResponse("accept")}
             >
               {responding ? "Registrando..." : "Confirmar aceptación"}
@@ -286,7 +286,7 @@ function PublicQuoteProposalPage() {
             <Button
               type="button"
               variant="danger"
-              disabled={responding}
+              loading={responding}
               onClick={() => handleResponse("reject")}
             >
               {responding ? "Registrando..." : "Confirmar rechazo"}

@@ -239,7 +239,7 @@ function SendQuoteEmailModal({
       <Button
         type="submit"
         form="send-quote-email-form"
-        disabled={sending || !canSendQuote}
+        loading={sending} disabled={!canSendQuote}
       >
         {firebaseEnvironment.isEmulator
           ? sending
