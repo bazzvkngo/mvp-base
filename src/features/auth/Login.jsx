@@ -394,8 +394,7 @@ function Login() {
               <Button
                 type="submit"
                 className="auth-submit"
-                disabled={primaryDisabled}
-                aria-busy={primaryDisabled}
+                loading={primaryDisabled}
               >
                 {primaryLabel}
               </Button>
