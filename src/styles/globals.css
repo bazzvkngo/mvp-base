@@ -93,10 +93,6 @@ svg {
   width: 1px;
 }
 
-.muted {
-  color: var(--color-text-muted);
-}
-
 .technical-text,
 .identifier,
 code {
