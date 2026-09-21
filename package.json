@@ -102,6 +102,7 @@
     "test:spec020-stage5-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/sale-additional-integrated-local.mjs\"",
     "test:skeleton": "node scripts/skeleton-smoke.mjs",
     "test:button": "node scripts/button-smoke.mjs",
+    "test:loading-screen": "node scripts/loading-screen-smoke.mjs",
     "test:summary": "node scripts/financial-model-smoke.mjs",
     "seed:business-catalogs:emulator": "node scripts/seed-business-catalogs.mjs --emulator"
   },

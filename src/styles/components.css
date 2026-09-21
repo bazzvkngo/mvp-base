@@ -160,6 +160,21 @@
   }
 }
 
+.brand-loader {
+  background: var(--color-surface-canvas);
+  display: grid;
+  justify-items: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  place-content: center;
+}
+
+.brand-loader__content {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: center;
+}
+
 /* Skeleton — el gradiente queda plano en base en ambos extremos del
    recorrido, así que con reduced motion (globals.css deja un único ciclo de
    0.01ms) el bloque se ve como base plana. No usar animation-fill-mode. */
@@ -321,14 +336,6 @@
   min-height: 100dvh;
   overflow: hidden;
   width: 100%;
-}
-
-.auth-screen > .muted:only-child {
-  left: 50%;
-  margin: 0;
-  position: fixed;
-  top: 50%;
-  transform: translate(-50%, -50%);
 }
 
 .auth-visual {

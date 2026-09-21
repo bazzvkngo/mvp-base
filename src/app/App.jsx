@@ -9,6 +9,7 @@ import {
 
 import AppLayout from "../layout/AppLayout";
 import EnvironmentNotice from "../components/EnvironmentNotice";
+import LoadingScreen from "../components/LoadingScreen";
 import ToastRouteSync from "../components/ToastRouteSync";
 import CompanyPage from "../pages/CompanyPage";
 import ClientsPage from "../pages/ClientsPage";
@@ -66,14 +67,6 @@ import {
   PlatformUserDetailPage,
   PlatformUsersPage,
 } from "../platform/PlatformAdminPages";
-
-function LoadingScreen() {
-  return (
-    <div className="auth-screen">
-      <p className="muted">Cargando ValoraCloud...</p>
-    </div>
-  );
-}
 
 function BusinessSessionError({ onRetry }) {
   return (
