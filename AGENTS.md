@@ -35,6 +35,21 @@
 - Trabajar en etapas pequeñas.
 - No hacer commit ni push salvo solicitud explícita.
 
+# Diseño y sistema visual
+
+- Esta sección aplica a código nuevo y a tareas de modernización visual. No migrar código existente dentro de tareas funcionales.
+- Colores, radios, sombras, espaciado y movimiento salen de los tokens de `src/styles/tokens.css` (`--color-*`, `--radius-*`, `--shadow-*`, `--space-*`, `--motion-*`).
+- En código nuevo no escribir `#hex`, `rgb()`, `hsl()` ni valores literales de radio, sombra o duración, ni en CSS, ni en estilos inline ni en CSS-in-JS.
+- Si falta un token para un hueco real de una escala semántica, agregarlo a `tokens.css`. No crear paletas locales por feature.
+- Excepciones documentadas, que no se cambian sin autorización: `--color-document-*` (documentos formales), `--color-data-*` (gráficos), `--color-dark-*` (sidebar y login) y `--color-stock-alert-*`.
+- Los estilos compartidos viven en `src/styles/components.css` con prefijo `ui-`. El CSS de un feature contiene solo estilos de ese feature, y un feature no importa el CSS de otro.
+- El CSS se empaqueta de forma global: buscar si una clase ya existe antes de crear otra.
+- Reutilizar antes de crear: `Button` (con `loading`), `Spinner`, `LoadingState`, `Skeleton`, `SkeletonRegion`, `SkeletonTable`, `SkeletonCards`, `LoadingScreen` y `BrandLogo`. No crear otra familia de botón.
+- Orden de los estados de datos: cargando, error, vacío, datos. Un vacío real nunca muestra skeleton, y un skeleton nunca debe quedar colgado si la carga falla.
+- Tablas y tarjetas cargan con `SkeletonTable` o `SkeletonCards`. Secciones y páginas cargan con `LoadingState`.
+- Un solo `role="status"` por estado de carga. No anidar `role="status"` ni `aria-live`. `BrandLogo` va siempre como hermano, nunca dentro de un `role="status"`.
+- Si el cambio toca `src/components/ui/`, ejecutar además `npm run test:button`, `npm run test:skeleton` y `npm run test:loading-screen`.
+
 # Seguridad
 
 - No guardar secretos en `VITE_*`.
@@ -59,6 +74,7 @@ Después de modificar:
 - Resumir archivos y decisiones.
 - Informar pruebas ejecutadas y pendientes.
 - Mostrar `git status --short`.
+- Indicar si el cambio altera el resultado visual y qué pantallas revisar en el navegador.
 - Detenerse sin commit.
 
 # Verificación mínima
