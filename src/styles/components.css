@@ -26,7 +26,7 @@
   color: var(--color-text-inverse);
 }
 
-.ui-button--primary:hover:not(:disabled) {
+.ui-button--primary:hover:not(:disabled):not(.ui-button--loading) {
   background: var(--color-brand-700);
 }
 
@@ -36,7 +36,7 @@
   color: var(--color-text-default);
 }
 
-.ui-button--secondary:hover:not(:disabled) {
+.ui-button--secondary:hover:not(:disabled):not(.ui-button--loading) {
   background: var(--color-surface-subtle);
   border-color: var(--color-text-muted);
 }
@@ -46,7 +46,7 @@
   color: var(--color-brand-700);
 }
 
-.ui-button--ghost:hover:not(:disabled) {
+.ui-button--ghost:hover:not(:disabled):not(.ui-button--loading) {
   background: var(--color-brand-50);
 }
 
@@ -55,7 +55,7 @@
   color: var(--color-text-inverse);
 }
 
-.ui-button--danger:hover:not(:disabled) {
+.ui-button--danger:hover:not(:disabled):not(.ui-button--loading) {
   background: var(--color-danger-700);
 }
 
@@ -65,7 +65,7 @@
   color: var(--color-danger-700);
 }
 
-.ui-button--ghost-danger:hover:not(:disabled) {
+.ui-button--ghost-danger:hover:not(:disabled):not(.ui-button--loading) {
   background: var(--color-danger-50);
   border-color: var(--color-danger-700);
 }
@@ -73,6 +73,12 @@
 .ui-button:disabled {
   cursor: not-allowed;
   opacity: 0.62;
+}
+
+/* En carga el botón no está disabled (conserva el foco): sin reducción de
+   opacidad y sin hover, active ni elevación; el focus-visible se mantiene. */
+.ui-button--loading {
+  cursor: progress;
 }
 
 .ui-spinner {
@@ -600,14 +606,14 @@
   width: 100%;
 }
 
-.auth-submit:hover:not(:disabled) {
+.auth-submit:hover:not(:disabled):not(.ui-button--loading) {
   box-shadow:
     0 11px 24px rgb(15 118 110 / 0.24),
     0 0 0 1px rgb(19 135 126 / 0.08);
   transform: translateY(-2px);
 }
 
-.auth-submit:active:not(:disabled) {
+.auth-submit:active:not(:disabled):not(.ui-button--loading) {
   box-shadow: 0 5px 12px rgb(15 118 110 / 0.18);
   transform: translateY(0) scale(0.995);
 }
@@ -967,8 +973,8 @@
     transition-duration: 80ms;
   }
 
-  .auth-submit:hover:not(:disabled),
-  .auth-submit:active:not(:disabled) {
+  .auth-submit:hover:not(:disabled):not(.ui-button--loading),
+  .auth-submit:active:not(:disabled):not(.ui-button--loading) {
     transform: none;
   }
 }
@@ -1498,14 +1504,14 @@
     transform 150ms ease;
 }
 
-.onboarding-submit:hover:not(:disabled) {
+.onboarding-submit:hover:not(:disabled):not(.ui-button--loading) {
   box-shadow:
     0 11px 24px rgb(15 118 110 / 0.23),
     0 0 0 1px rgb(19 135 126 / 0.08);
   transform: translateY(-2px);
 }
 
-.onboarding-submit:active:not(:disabled) {
+.onboarding-submit:active:not(:disabled):not(.ui-button--loading) {
   box-shadow: 0 5px 12px rgb(15 118 110 / 0.17);
   transform: translateY(0) scale(0.995);
 }
@@ -2214,8 +2220,8 @@
     transition-duration: 80ms;
   }
 
-  .onboarding-submit:hover:not(:disabled),
-  .onboarding-submit:active:not(:disabled) {
+  .onboarding-submit:hover:not(:disabled):not(.ui-button--loading),
+  .onboarding-submit:active:not(:disabled):not(.ui-button--loading) {
     transform: none;
   }
 }
