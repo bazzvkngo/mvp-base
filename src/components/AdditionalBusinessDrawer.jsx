@@ -15,7 +15,6 @@ import {
 import QuickBusinessFields from "./QuickBusinessFields";
 import Button from "./ui/Button";
 import ResponsiveDialog from "./ui/ResponsiveDialog";
-import { SpinnerIcon } from "./ui/Spinner";
 
 function AdditionalBusinessDrawer({
   onClose,
@@ -200,9 +199,8 @@ function AdditionalBusinessDrawer({
           type="submit"
           form="additional-business-form"
           className="business-create-drawer__submit"
-          icon={isSubmitting ? SpinnerIcon : Building2}
-          disabled={isSubmitting}
-          aria-busy={isSubmitting}
+          icon={Building2}
+          loading={isSubmitting}
         >
           {isSubmitting ? "Creando negocio..." : "Crear negocio"}
         </Button>

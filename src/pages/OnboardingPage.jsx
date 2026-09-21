@@ -4,7 +4,6 @@ import BrandLogo from "../components/BrandLogo";
 import QuickBusinessFields from "../components/QuickBusinessFields";
 import Button from "../components/ui/Button";
 import SkipLink from "../components/ui/SkipLink";
-import { SpinnerIcon } from "../components/ui/Spinner";
 import {
   getBusinessCreationErrorMessage,
   INITIAL_ONBOARDING_BUSINESS_VALUES,
@@ -201,9 +200,8 @@ function OnboardingPage({ usuario, onBusinessCreated }) {
                 <Button
                   type="submit"
                   className="onboarding-submit"
-                  icon={isSubmitting ? SpinnerIcon : ArrowRight}
-                  disabled={isSubmitting}
-                  aria-busy={isSubmitting}
+                  icon={ArrowRight}
+                  loading={isSubmitting}
                 >
                   {isSubmitting ? "Creando negocio..." : "Crear mi negocio"}
                 </Button>
