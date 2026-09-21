@@ -116,7 +116,14 @@ try {
   assert.ok(start > -1 && end > start);
   // Sin comentarios: uno de ellos menciona animation-fill-mode para advertirlo.
   const skeletonCss = components.slice(start, end).replace(/\/\*[\s\S]*?\*\//g, "");
-  assert.doesNotMatch(skeletonCss, /animation-fill-mode|forwards/, "sin animation-fill-mode: el estado en pausa es base plana");
+  // La comprobación de fill-mode se acota a la regla del shimmer y a su
+  // keyframes: otras animaciones de components.css (p. ej. .ui-reveal-delay,
+  // que necesita `both`) sí pueden llevarlo.
+  const withoutComments = components.replace(/\/\*[\s\S]*?\*\//g, "");
+  const shimmerRule = withoutComments.match(/\.ui-skeleton \{[^}]*\}/)?.[0];
+  const shimmerKeyframes = withoutComments.match(/@keyframes ui-shimmer \{[\s\S]*?\n\}/)?.[0];
+  assert.ok(shimmerRule && shimmerKeyframes, "existen la regla .ui-skeleton y su @keyframes");
+  assert.doesNotMatch(shimmerRule + shimmerKeyframes, /animation-fill-mode|forwards|\bboth\b/, "sin fill-mode en el shimmer: el estado en pausa es base plana");
   assert.doesNotMatch(skeletonCss, /@media/, "sin @media propio: globals.css cubre reduced motion");
   assert.match(tokens, /--motion-shimmer-duration:\s*1\.4s/);
   assert.equal(count(tokens, /--motion-shimmer-duration:/g), 1);

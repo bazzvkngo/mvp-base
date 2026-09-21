@@ -140,6 +140,26 @@
   padding: var(--space-10) var(--space-4);
 }
 
+/* Retraso de aparición: el elemento ocupa su lugar desde el inicio y solo se
+   hace visible pasado --motion-reveal-delay, para no mostrar un loader en
+   cargas muy cortas. El fill-mode `both` es OBLIGATORIO: con reduced motion,
+   globals.css deja la duración en 0.01ms pero no toca el delay, y sin
+   fill-mode el elemento volvería a opacity 0 y quedaría invisible. */
+.ui-reveal-delay {
+  animation: ui-reveal var(--motion-reveal-duration) ease-out
+    var(--motion-reveal-delay) both;
+}
+
+@keyframes ui-reveal {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
 /* Skeleton — el gradiente queda plano en base en ambos extremos del
    recorrido, así que con reduced motion (globals.css deja un único ciclo de
    0.01ms) el bloque se ve como base plana. No usar animation-fill-mode. */

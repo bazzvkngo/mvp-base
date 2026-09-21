@@ -198,7 +198,10 @@
   --color-skeleton-highlight: color-mix(in srgb, var(--color-text-strong) 3%, transparent);
 
   /* Movimiento — duración de una vuelta de <Spinner> y de un barrido de
-     brillo de <Skeleton>. */
+     brillo de <Skeleton>; retraso y fundido de .ui-reveal-delay, que evita
+     mostrar un loader en cargas muy cortas. */
   --motion-spin-duration: 0.8s;
   --motion-shimmer-duration: 1.4s;
+  --motion-reveal-delay: 250ms;
+  --motion-reveal-duration: 150ms;
 }
