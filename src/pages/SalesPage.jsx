@@ -54,7 +54,7 @@ export default function SalesPage({businessId, role}) {
         {canManage && <Button type="button" icon={Plus} onClick={() => navigate("/ventas/nueva")}>Nueva venta</Button>}
       </div>
 
-      {message && <p className="po-message po-message--error">{message}</p>}
+      {message && <p className="po-message po-message--error" role="alert">{message}</p>}
 
       <section className="erp-panel erp-history-panel sale-history-panel" aria-labelledby="sales-history-title">
         <div className="erp-panel-header">
@@ -87,7 +87,7 @@ export default function SalesPage({businessId, role}) {
             <SkeletonTable className="po-history__desktop" columns={7} />
             <SkeletonCards className="po-history__cards" />
           </SkeletonRegion>
-        ) : (
+        ) : message && items.length === 0 ? null : (
           <>
           <section className="erp-table-region po-history__desktop">
             <table className="erp-table clients-table po-history__table sale-history-table">

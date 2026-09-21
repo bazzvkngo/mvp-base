@@ -33,10 +33,12 @@ export default function PurchasesPage({businessId, role}) {
   const reversalIds = useRef(new Map());
   const [items, setItems] = useState([]); const [search, setSearch] = useState(""); const [status, setStatus] = useState("todos"); const [origin, setOrigin] = useState("todos"); const [message, setMessage] = useState(""); const [loading, setLoading] = useState(true); const [processing, setProcessing] = useState("");
   const [pendingAction, setPendingAction] = useState(null);
+  // Falló la CARGA de la lista (`message` también lleva errores de acciones).
+  const [loadFailed, setLoadFailed] = useState(false);
   const [reversalReason, setReversalReason] = useState("");
   const canManage = canManagePurchases(role);
-  const load = async () => { setLoading(true); try { setItems(await listarCompras(businessId)); } catch (error) { setMessage(error.message); } finally { setLoading(false); } };
-  useEffect(() => { let active = true; setLoading(true); listarCompras(businessId).then((values) => { if (active) setItems(values); }).catch((error) => { if (active) setMessage(error.message); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [businessId]);
+  const load = async () => { setLoading(true); try { setItems(await listarCompras(businessId)); setLoadFailed(false); } catch (error) { setMessage(error.message); setLoadFailed(true); } finally { setLoading(false); } };
+  useEffect(() => { let active = true; setLoading(true); listarCompras(businessId).then((values) => { if (active) { setItems(values); setLoadFailed(false); } }).catch((error) => { if (active) { setMessage(error.message); setLoadFailed(true); } }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [businessId]);
   const filtered = useMemo(() => items.filter((item) => (status === "todos" || item.estado === status) && (origin === "todos" || (origin === "oc" ? item.ordenCompraId : !item.ordenCompraId)) && matchesPurchaseSearch(item, search)), [items, origin, search, status]);
   const action = (purchase, type) => { setReversalReason(""); setPendingAction({purchase, type}); };
   const executeAction = async () => {
@@ -88,7 +90,7 @@ export default function PurchasesPage({businessId, role}) {
         {canManage && <Button type="button" icon={Plus} onClick={() => navigate("/compras/nueva")}>Nueva compra</Button>}
       </div>
 
-      {message && <p className="po-message">{message}</p>}
+      {message && <p className="po-message" role={loadFailed ? "alert" : undefined}>{message}</p>}
 
       <section className="erp-panel erp-history-panel" aria-labelledby="purchases-list-title">
         <div className="erp-panel-header">
@@ -131,7 +133,7 @@ export default function PurchasesPage({businessId, role}) {
             <SkeletonTable className="po-history__desktop" columns={7} twoLine />
             <SkeletonCards className="po-history__cards" />
           </SkeletonRegion>
-        ) : (
+        ) : loadFailed && items.length === 0 ? null : (
           <>
           <section className="erp-table-region po-history__desktop">
             <table className="erp-table po-history__table">
