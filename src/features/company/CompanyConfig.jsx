@@ -1341,6 +1341,7 @@ function BusinessDeletionSection({
 
 function CompanyConfig({
   businessId,
+  businessCompletionError,
   businessCompletionStatus,
   businessName,
   businessVerified,
@@ -1436,6 +1437,7 @@ function CompanyConfig({
       )}
       {canEdit && businessCompletionStatus && (
         <BusinessCompletionCard
+          error={businessCompletionError}
           status={businessCompletionStatus}
           canActOnItem={canActOnCompletionItem}
           onAction={handleCompletionAction}

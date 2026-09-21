@@ -126,7 +126,9 @@ assert.doesNotMatch(
   layout,
   /ownerEmailVerified = negocioActivo\?\.role === "OWNER"/
 );
-assert.match(layout, /<Outlet context=\{\{ businessCompletionStatus \}\}/);
+// El contexto del Outlet sigue entregando businessCompletionStatus; puede llevar además businessCompletionError.
+assert.match(layout, /<Outlet context=\{\{[^}]*\bbusinessCompletionStatus\b[^}]*\}\}/);
+assert.match(layout, /error: businessCompletionError,/);
 assert.doesNotMatch(layout, /verification-banner|handleResendVerification|Estado de verificación/);
 assert.match(company, /<BusinessCompletionCard/);
 assert.match(company, /searchParams\.get\("objetivo"\)/);

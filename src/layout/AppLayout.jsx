@@ -106,6 +106,7 @@ function AppLayout({
   const businessVerified = canBusinessOperate(negocioActivo);
   const ownerEmailVerified = negocioActivo?.ownerEmailVerified === true;
   const {
+    error: businessCompletionError,
     profile: observedBusinessProfile,
     status: businessCompletionStatus,
   } = useBusinessCompletionStatus({
@@ -393,7 +394,7 @@ function AppLayout({
             />
           )}
           {!businessChanging && (
-            <Outlet context={{ businessCompletionStatus }} />
+            <Outlet context={{ businessCompletionError, businessCompletionStatus }} />
           )}
         </main>
       </div>

@@ -13,10 +13,11 @@ function CompanyPage({
   onBusinessUpdated,
   role,
 }) {
-  const { businessCompletionStatus } = useOutletContext() || {};
+  const { businessCompletionError, businessCompletionStatus } = useOutletContext() || {};
 
   return (
     <CompanyConfig
+      businessCompletionError={businessCompletionError}
       businessCompletionStatus={businessCompletionStatus}
       businessId={businessId}
       businessName={businessName}
