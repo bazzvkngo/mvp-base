@@ -7,6 +7,7 @@ import BrandLogo from "../components/BrandLogo";
 import BusinessSwitcher from "../components/BusinessSwitcher";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
+import LoadingState from "../components/ui/LoadingState";
 import PageHeader from "../components/ui/PageHeader";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import SkipLink from "../components/ui/SkipLink";
@@ -383,12 +384,13 @@ function AppLayout({
           id="main-content"
           className={businessChanging ? "page-content is-business-changing" : "page-content"}
           tabIndex="-1"
-          aria-busy={businessChanging}
         >
           {businessChanging && (
-            <div className="business-change-status" role="status">
-              Cambiando de negocio...
-            </div>
+            <LoadingState
+              variant="page"
+              className="business-change-status"
+              label="Cambiando de negocio..."
+            />
           )}
           {!businessChanging && (
             <Outlet context={{ businessCompletionStatus }} />
