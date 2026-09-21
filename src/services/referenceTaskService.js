@@ -80,15 +80,24 @@ export function isActivePendingReferenceTask(task, now = new Date()) {
   return !postponedUntil || postponedUntil <= now.getTime();
 }
 
+// onTasks(tasks, {fromCache}): el segundo argumento es opcional para quien no
+// lo use. Con includeMetadataChanges el listener también avisa cuando la
+// respuesta pasa de caché a servidor sin que cambien los datos; sin eso, una
+// lista que sigue vacía tras conectar no se notificaría nunca. Esos avisos
+// solo de metadatos llegan con los mismos datos: el consumidor no debe
+// reiniciar nada por ellos.
 export function subscribeToReferenceTasks(uid, onTasks, onError) {
   return onSnapshot(
     referenceTasksCollectionRef(uid),
+    { includeMetadataChanges: true },
     (snapshot) => {
       const tasks = snapshot.docs.map((taskDoc) => ({
         id: taskDoc.id,
         ...taskDoc.data(),
       }));
-      onTasks(sortReferenceTasks(tasks));
+      onTasks(sortReferenceTasks(tasks), {
+        fromCache: snapshot.metadata.fromCache,
+      });
     },
     onError
   );

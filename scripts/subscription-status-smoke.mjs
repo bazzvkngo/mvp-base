@@ -156,4 +156,15 @@ assert.doesNotMatch(code, /^\s*import\s/m, "el módulo no importa nada");
 assert.doesNotMatch(code, /react|firebase|firestore|window\.|document\./i, "sin React, Firebase ni DOM");
 console.log("OK: el módulo no importa nada ni toca React, Firebase o el DOM");
 
+// --- Servicio: entrega fromCache e includeMetadataChanges (sin Firebase: lectura de fuente) ---
+const serviceSource = await readFile(new URL("../src/services/referenceTaskService.js", import.meta.url), "utf8");
+const subscribeBody = serviceSource.match(/export function subscribeToReferenceTasks\([^)]*\) \{([\s\S]*?)\n\}/)?.[1] || "";
+assert.ok(subscribeBody, "existe subscribeToReferenceTasks");
+assert.match(subscribeBody, /\{ includeMetadataChanges: true \}/, "onSnapshot con includeMetadataChanges: true");
+assert.match(subscribeBody, /onTasks\(sortReferenceTasks\(tasks\), \{\s*fromCache: snapshot\.metadata\.fromCache,?\s*\}\)/, "onTasks(tasks, {fromCache})");
+assert.match(subscribeBody, /^\s*onError\s*$/m, "el callback de error se sigue pasando a onSnapshot");
+const pendingBody = serviceSource.match(/export function subscribeToPendingReferenceTasks\([^)]*\) \{([\s\S]*?)\n\}/)?.[1] || "";
+assert.match(pendingBody, /\(tasks\) => onTasks\(tasks\.filter\(/, "subscribeToPendingReferenceTasks (código muerto) no se toca");
+console.log("OK: servicio — onSnapshot con includeMetadataChanges, onTasks recibe {fromCache} y el callback de error sigue pasando");
+
 console.log("SUBSCRIPTION_STATUS_SMOKE_OK");
