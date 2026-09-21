@@ -595,12 +595,12 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
                     {form.logoUrl ? "Reemplazar" : "Seleccionar"}
                   </Button>
                   {logoFile && (
-                    <Button type="button" onClick={uploadLogo} disabled={uploading}>
+                    <Button type="button" onClick={uploadLogo} loading={uploading}>
                       {uploading ? "Subiendo..." : "Subir logo"}
                     </Button>
                   )}
                   {form.logoUrl && (
-                    <Button type="button" variant="ghost-danger" icon={Trash2} onClick={removeLogo} disabled={deletingLogo || uploading}>
+                    <Button type="button" variant="ghost-danger" icon={Trash2} onClick={removeLogo} loading={deletingLogo} disabled={uploading}>
                       {deletingLogo ? "Eliminando..." : "Eliminar"}
                     </Button>
                   )}
@@ -673,7 +673,7 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
         <SectionStatus error={error} success={success} />
         <div className="settings-save-row">
           {!canEdit && <p>Tu rol permite consultar estos datos, pero no editarlos.</p>}
-          {canEdit && <Button type="submit" icon={Save} disabled={saving}>{saving ? "Guardando..." : "Guardar información"}</Button>}
+          {canEdit && <Button type="submit" icon={Save} loading={saving}>{saving ? "Guardando..." : "Guardar información"}</Button>}
         </div>
       </form>
     </SectionFrame>
@@ -879,7 +879,7 @@ function BusinessVerificationSection({
       <Button
         type="submit"
         form="business-verification-form"
-        disabled={submitting}
+        loading={submitting}
       >
         {submitting ? "Enviando..." : "Solicitar verificación"}
       </Button>
@@ -1125,7 +1125,7 @@ function InventorySection({ businessId, canEdit }) {
             </label>
           </fieldset>
           <SectionStatus error={error} success={success} />
-          <div className="settings-save-row">{canEdit ? <Button type="submit" icon={Save} disabled={saving}>{saving ? "Guardando..." : "Guardar inventario"}</Button> : <p>Configuración de solo lectura para tu rol.</p>}</div>
+          <div className="settings-save-row">{canEdit ? <Button type="submit" icon={Save} loading={saving}>{saving ? "Guardando..." : "Guardar inventario"}</Button> : <p>Configuración de solo lectura para tu rol.</p>}</div>
         </form>
       )}
     </SectionFrame>
@@ -1215,7 +1215,7 @@ function QuoteSection({ businessId, canEdit }) {
             </div>
           </fieldset>
           <SectionStatus error={error} success={success} />
-          <div className="settings-save-row">{canEdit ? <Button type="submit" icon={Save} disabled={saving}>{saving ? "Guardando..." : "Guardar cotizaciones"}</Button> : <p>Configuración de solo lectura para tu rol.</p>}</div>
+          <div className="settings-save-row">{canEdit ? <Button type="submit" icon={Save} loading={saving}>{saving ? "Guardando..." : "Guardar cotizaciones"}</Button> : <p>Configuración de solo lectura para tu rol.</p>}</div>
         </form>
       )}
     </SectionFrame>
@@ -1306,7 +1306,7 @@ function BusinessDeletionSection({
               variant="danger"
               icon={Trash2}
               onClick={confirmDeletion}
-              disabled={!confirmationMatches || deleting}
+              loading={deleting} disabled={!confirmationMatches}
             >
               {deleting ? "Desactivando..." : "Desactivar para todos"}
             </Button>

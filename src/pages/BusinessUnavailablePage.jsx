@@ -39,7 +39,7 @@ function BusinessUnavailablePage({ usuario, onRetry }) {
             negocio o tu membresía.
           </p>
           <div className="onboarding-message-actions">
-            <Button type="button" onClick={handleRetry} disabled={retrying}>
+            <Button type="button" onClick={handleRetry} loading={retrying}>
               {retrying ? "Comprobando..." : "Reintentar"}
             </Button>
             <Button type="button" variant="secondary" icon={LogOut} onClick={logout}>

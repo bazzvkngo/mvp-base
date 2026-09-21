@@ -300,7 +300,7 @@ function AccountPage({ onSessionRefresh, usuario }) {
                 </fieldset>
                 {error && <p className="settings-message settings-message--error" role="alert">{error}</p>}
                 {success && <p className="settings-message settings-message--success" role="status">{success}</p>}
-                <div className="settings-save-row"><Button type="submit" icon={Save} disabled={saving}>{saving ? "Guardando..." : "Guardar perfil"}</Button></div>
+                <div className="settings-save-row"><Button type="submit" icon={Save} loading={saving}>{saving ? "Guardando..." : "Guardar perfil"}</Button></div>
               </form>
             )}
           </section>
@@ -332,7 +332,7 @@ function AccountPage({ onSessionRefresh, usuario }) {
                     type="button"
                     variant="secondary"
                     icon={RefreshCw}
-                    disabled={refreshing || resending}
+                    loading={refreshing} disabled={resending}
                     onClick={refreshVerification}
                   >
                     {refreshing ? "Comprobando..." : "Comprobar verificación"}
@@ -340,7 +340,7 @@ function AccountPage({ onSessionRefresh, usuario }) {
                   <Button
                     type="button"
                     icon={Send}
-                    disabled={resending || refreshing || resendCooldown > 0}
+                    loading={resending} disabled={refreshing || resendCooldown > 0}
                     onClick={resendVerification}
                   >
                     {resending
@@ -366,7 +366,7 @@ function AccountPage({ onSessionRefresh, usuario }) {
                 <Button
                   type="button"
                   variant="secondary"
-                  disabled={resettingPassword}
+                  loading={resettingPassword}
                   onClick={changePassword}
                 >
                   {resettingPassword ? "Enviando..." : "Enviar enlace para cambiar contraseña"}
