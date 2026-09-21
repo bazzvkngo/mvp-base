@@ -154,6 +154,8 @@ function QuoteHistoryPage({ userId, role }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("todos");
   const [error, setError] = useState("");
+  // Falló la CARGA de la lista (`error` también lleva errores de acciones).
+  const [loadFailed, setLoadFailed] = useState(false);
   const [success, setSuccess] = useState("");
   const [emailModalQuote, setEmailModalQuote] = useState(null);
   const [restoreDetailFocus, setRestoreDetailFocus] = useState(true);
@@ -186,11 +188,13 @@ function QuoteHistoryPage({ userId, role }) {
       .then((items) => {
         if (!active) return;
         setQuotes(items);
+        setLoadFailed(false);
       })
       .catch((err) => {
         console.error("Error al cargar cotizaciones:", err);
         if (active) {
           setError("No se pudieron cargar las cotizaciones.");
+          setLoadFailed(true);
         }
       })
       .finally(() => {
@@ -586,7 +590,7 @@ function QuoteHistoryPage({ userId, role }) {
             <SkeletonTable className="erp-desktop-only" columns={7} />
             <SkeletonCards className="erp-card-list erp-mobile-only" />
           </SkeletonRegion>
-        ) : quotes.length === 0 ? (
+        ) : loadFailed && quotes.length === 0 ? null : quotes.length === 0 ? (
           <div className="erp-empty-state quote-history-empty">
             <h3>Aún no hay cotizaciones</h3>
             <p>Crea una cotización para registrar una nueva propuesta comercial.</p>
