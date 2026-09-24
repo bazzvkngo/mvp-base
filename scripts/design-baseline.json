@@ -12,7 +12,7 @@
       "note": "El negro de overlay de escaneo es excepción; el resto (paneles, bordes) es deuda sin registrar."
     },
     "src/components/DashboardDonutChart.jsx": {
-      "color": 18,
+      "color": 10,
       "radius": 2,
       "shadow": 0,
       "duration": 0,
@@ -20,7 +20,7 @@
       "note": "Colores de gráfico (Chart.js) no sincronizados con --color-data-*; deuda conocida."
     },
     "src/components/finance/FinancialCharts.jsx": {
-      "color": 17,
+      "color": 11,
       "radius": 0,
       "shadow": 0,
       "duration": 0,
@@ -28,7 +28,7 @@
       "note": "Colores de gráfico (Chart.js) no sincronizados con --color-data-*; deuda conocida."
     },
     "src/components/reports/CostCompositionChart.jsx": {
-      "color": 6,
+      "color": 5,
       "radius": 0,
       "shadow": 0,
       "duration": 0,
@@ -36,7 +36,7 @@
       "note": "Colores de gráfico (Chart.js) no sincronizados con --color-data-*; deuda conocida."
     },
     "src/components/reports/OperationalComparisonChart.jsx": {
-      "color": 12,
+      "color": 6,
       "radius": 0,
       "shadow": 0,
       "duration": 0,
@@ -60,7 +60,7 @@
       "note": "1 literal es el naranja de stock pendiente de --color-stock-alert-* (deuda conocida); el resto son verdes/rojos/ámbar de estado sin registrar."
     },
     "src/features/inventory/InventoryAiImporter.jsx": {
-      "color": 164,
+      "color": 82,
       "radius": 20,
       "shadow": 0,
       "duration": 0,
@@ -116,7 +116,7 @@
       "note": "rgba(255,255,255,a) de overlay; excepción."
     },
     "src/features/references/MarketPriceReferencesView.jsx": {
-      "color": 16,
+      "color": 8,
       "radius": 2,
       "shadow": 0,
       "duration": 0,
@@ -124,7 +124,7 @@
       "note": "Estilos inline sin registrar."
     },
     "src/features/sales/SalePrintView.jsx": {
-      "color": 11,
+      "color": 29,
       "radius": 0,
       "shadow": 0,
       "duration": 0,
@@ -156,7 +156,7 @@
       "note": "QUOTE_CHART: colores de estado para Chart.js no sincronizados con --color-data-*; deuda conocida."
     },
     "src/pages/NewQuotePage.jsx": {
-      "color": 386,
+      "color": 193,
       "radius": 52,
       "shadow": 3,
       "duration": 1,
@@ -164,7 +164,7 @@
       "note": "Objeto styles inline con literales; deuda conocida, no se toca en tareas funcionales."
     },
     "src/pages/PricingPage.jsx": {
-      "color": 98,
+      "color": 49,
       "radius": 10,
       "shadow": 0,
       "duration": 0,
@@ -172,7 +172,7 @@
       "note": "Objeto styles propio; deuda conocida documentada en Parte B, destino de migración sin decidir."
     },
     "src/pages/QuoteHistoryPage.jsx": {
-      "color": 164,
+      "color": 82,
       "radius": 15,
       "shadow": 1,
       "duration": 0,

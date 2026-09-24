@@ -125,6 +125,15 @@ function scanJs(text, filePath) {
     throw new Error(`${filePath}: no se pudo parsear (${e.message})`);
   }
   const out = [];
+  // Nodos StringLiteral/TemplateLiteral ya contabilizados como valor de una
+  // ObjectProperty, para no volver a contarlos cuando el visitor genérico
+  // StringLiteral/TemplateElement los visite también. path.skip() NO basta
+  // aquí: llamado sobre el path del valor de una ObjectProperty no impide
+  // que el visitor StringLiteral de nivel superior dispare igual sobre ese
+  // mismo nodo (se comprobó con @babel/traverse 7.29: sin este WeakSet, un
+  // literal como `borderLeft: "2px solid #0f766e"` se contaba dos veces:
+  // una vía ObjectProperty y otra vía StringLiteral).
+  const handled = new WeakSet();
   const visitStr = (val, keyName, line) => {
     if (typeof val !== "string") return;
     // Clave de propiedad de objeto inline (estilos, mapas de color): se
@@ -150,32 +159,24 @@ function scanJs(text, filePath) {
       const val = p.node.value;
       const line = p.node.loc?.start.line;
       if (name && val.type === "StringLiteral") {
+        handled.add(val);
         visitStr(val.value, name, line);
-        p.get("value").skip();
       } else if (name && val.type === "TemplateLiteral" && val.expressions.length === 0) {
+        handled.add(val);
         visitStr(val.quasis[0].value.cooked, name, line);
-        p.get("value").skip();
       }
     },
     StringLiteral(p) {
+      if (handled.has(p.node)) return;
       if (p.parent.type === "ImportDeclaration" || p.parent.type === "ExportNamedDeclaration") return;
       visitStr(p.node.value, null, p.node.loc?.start.line);
     },
     TemplateElement(p) {
+      if (handled.has(p.parentPath?.node)) return;
       visitStr(p.node.value.cooked, null, p.node.loc?.start.line);
     },
   });
-  // Deduplica solo coincidencias exactas (mismo literal, misma línea, misma
-  // propiedad) para no contar dos veces un nodo visitado por más de un
-  // visitor; NO deduplica por valor solo, porque el mismo literal puede
-  // aparecer legítimamente muchas veces en el archivo.
-  const seen = new Set();
-  return out.filter((o) => {
-    const key = `${o.k}|${o.lit}|${o.line}|${o.prop}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  return out;
 }
 
 async function walk(dir, out) {
@@ -342,7 +343,15 @@ async function main() {
   console.log("DESIGN_SMOKE_OK");
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exitCode = 1;
-});
+// Se exportan para scripts/design-baseline-update.mjs (regenera la baseline
+// desde la misma lógica de escaneo, sin duplicarla).
+export {scanRepo, countBy, scanCss, scanJs};
+
+// Solo corre main() cuando el archivo se ejecuta directamente (node
+// scripts/design-smoke.mjs), no cuando otro script lo importa.
+if (path.resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
+  main().catch((err) => {
+    console.error(err);
+    process.exitCode = 1;
+  });
+}
