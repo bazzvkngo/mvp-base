@@ -83,6 +83,7 @@ Según el alcance, ejecutar:
 
 ```bash
 npm run build
+npm run test:design
 npm --prefix functions run lint
 git diff --check
 ```
