@@ -107,6 +107,7 @@
     "test:loading-screen": "node scripts/loading-screen-smoke.mjs",
     "test:subscription-status": "node scripts/subscription-status-smoke.mjs",
     "test:design": "node scripts/design-smoke.mjs",
+    "test:design-scan": "node scripts/design-scan-smoke.mjs",
     "test:summary": "node scripts/financial-model-smoke.mjs",
     "seed:business-catalogs:emulator": "node scripts/seed-business-catalogs.mjs --emulator"
   },
