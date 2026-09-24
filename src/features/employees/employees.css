@@ -188,7 +188,7 @@
 
 .employees-message--error {
   background: var(--color-danger-50);
-  border-color: #fecaca;
+  border-color: var(--color-danger-200);
 }
 
 .employees-panel-header {

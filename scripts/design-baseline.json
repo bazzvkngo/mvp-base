@@ -4,7 +4,7 @@
   "generatedAt": "2026-09-23",
   "literals": {
     "src/components/barcode/barcode.css": {
-      "color": 12,
+      "color": 6,
       "radius": 3,
       "shadow": 1,
       "duration": 0,
@@ -42,14 +42,6 @@
       "duration": 0,
       "category": "b",
       "note": "Colores de gráfico (Chart.js) no sincronizados con --color-data-*; deuda conocida."
-    },
-    "src/features/employees/employees.css": {
-      "color": 1,
-      "radius": 0,
-      "shadow": 0,
-      "duration": 0,
-      "category": "c",
-      "note": "Un literal (#fecaca) sin registrar; coincide con --color-danger-200."
     },
     "src/features/inventory/inventory.css": {
       "color": 48,
@@ -204,7 +196,7 @@
       "note": "Solo radios/sombras sin registrar, sin colores."
     },
     "src/styles/layout.css": {
-      "color": 8,
+      "color": 6,
       "radius": 1,
       "shadow": 0,
       "duration": 1,
