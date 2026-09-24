@@ -324,7 +324,7 @@
 .ai-availability--provider_error,
 .ai-availability--status_error {
   background: var(--color-danger-50);
-  border-color: #fecaca;
+  border-color: var(--color-danger-200);
   color: var(--color-danger-700);
 }
 
@@ -407,7 +407,7 @@
 
 .auth-visual__message {
   bottom: clamp(2rem, 5vw, 4.75rem);
-  color: #ffffff;
+  color: var(--color-text-inverse);
   font-size: clamp(1.15rem, 1.55vw, 1.55rem);
   font-weight: var(--font-weight-semibold);
   left: clamp(2rem, 5vw, 5rem);
@@ -466,7 +466,7 @@
 
 .auth-card .brand-logo--auth .brand-logo__icon {
   border-radius: calc(var(--radius-md) * 2.5);
-  box-shadow: 0 8px 22px rgb(15 118 110 / 0.13);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--color-brand-600) 13%, transparent);
   height: 56px;
   width: 56px;
 }
@@ -622,7 +622,7 @@
 
 .auth-submit {
   border-radius: calc(var(--radius-md) * 2);
-  box-shadow: 0 8px 18px rgb(15 118 110 / 0.2);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--color-brand-600) 20%, transparent);
   font-size: var(--font-size-md);
   margin-top: var(--space-1);
   min-height: 48px;
@@ -635,13 +635,13 @@
 
 .auth-submit:hover:not(:disabled):not(.ui-button--loading) {
   box-shadow:
-    0 11px 24px rgb(15 118 110 / 0.24),
+    0 11px 24px color-mix(in srgb, var(--color-brand-600) 24%, transparent),
     0 0 0 1px rgb(19 135 126 / 0.08);
   transform: translateY(-2px);
 }
 
 .auth-submit:active:not(:disabled):not(.ui-button--loading) {
-  box-shadow: 0 5px 12px rgb(15 118 110 / 0.18);
+  box-shadow: 0 5px 12px color-mix(in srgb, var(--color-brand-600) 18%, transparent);
   transform: translateY(0) scale(0.995);
 }
 
@@ -829,7 +829,7 @@
 
 @media (max-width: 680px) {
   .auth-screen {
-    background: linear-gradient(180deg, #f5fafb 0%, #ffffff 260px);
+    background: linear-gradient(180deg, #f5fafb 0%, var(--color-surface-panel) 260px);
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
     min-height: 100vh;
@@ -849,7 +849,7 @@
 
   .auth-panel {
     align-items: flex-start;
-    background: linear-gradient(180deg, #f5fafb 0%, #ffffff 260px);
+    background: linear-gradient(180deg, #f5fafb 0%, var(--color-surface-panel) 260px);
     box-sizing: border-box;
     max-width: 100%;
     min-height: 100vh;
@@ -1010,7 +1010,7 @@
 .onboarding-screen {
   align-items: center;
   background:
-    linear-gradient(180deg, rgb(15 118 110 / 0.055), transparent 360px),
+    linear-gradient(180deg, color-mix(in srgb, var(--color-brand-600) 5.5%, transparent), transparent 360px),
     var(--color-surface-canvas);
   display: flex;
   justify-content: center;
@@ -1176,7 +1176,7 @@
 
 .onboarding-alert {
   background: var(--color-danger-50);
-  border: 1px solid #fecaca;
+  border: 1px solid var(--color-danger-200);
   border-left: 4px solid var(--color-danger-700);
   border-radius: var(--radius-md);
   color: var(--color-danger-700);
@@ -1323,7 +1323,7 @@
 
 .onboarding-brand-row .brand-logo--auth .brand-logo__icon {
   border-radius: calc(var(--radius-md) * 2);
-  box-shadow: 0 6px 16px rgb(15 118 110 / 0.1);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--color-brand-600) 10%, transparent);
   height: 48px;
   width: 48px;
 }
@@ -1521,7 +1521,7 @@
 
 .onboarding-submit {
   border-radius: calc(var(--radius-md) * 2);
-  box-shadow: 0 8px 18px rgb(15 118 110 / 0.18);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--color-brand-600) 18%, transparent);
   font-size: var(--font-size-md);
   margin-top: 0;
   min-height: 48px;
@@ -1533,13 +1533,13 @@
 
 .onboarding-submit:hover:not(:disabled):not(.ui-button--loading) {
   box-shadow:
-    0 11px 24px rgb(15 118 110 / 0.23),
+    0 11px 24px color-mix(in srgb, var(--color-brand-600) 23%, transparent),
     0 0 0 1px rgb(19 135 126 / 0.08);
   transform: translateY(-2px);
 }
 
 .onboarding-submit:active:not(:disabled):not(.ui-button--loading) {
-  box-shadow: 0 5px 12px rgb(15 118 110 / 0.17);
+  box-shadow: 0 5px 12px color-mix(in srgb, var(--color-brand-600) 17%, transparent);
   transform: translateY(0) scale(0.995);
 }
 
@@ -2294,7 +2294,7 @@
 }
 
 .quote-email-dialog__qa-notice {
-  background: #fffbeb;
+  background: var(--color-warning-50);
   border: 1px solid #f59e0b;
   border-radius: 6px;
   color: #78350f;
@@ -2328,7 +2328,7 @@
 
 .quote-email-dialog__qa-action {
   align-items: center;
-  background: #ffffff;
+  background: var(--color-surface-panel);
   border: 1px solid currentColor;
   border-radius: var(--radius-sm);
   color: inherit;
