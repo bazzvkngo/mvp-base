@@ -44,7 +44,7 @@
       "note": "Colores de gráfico (Chart.js) no sincronizados con --color-data-*; deuda conocida."
     },
     "src/features/inventory/inventory.css": {
-      "color": 48,
+      "color": 16,
       "radius": 5,
       "shadow": 1,
       "duration": 0,
