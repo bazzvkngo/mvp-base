@@ -132,7 +132,7 @@
       "note": "Solo radios/sombras sin registrar, sin colores."
     },
     "src/features/works/works.css": {
-      "color": 24,
+      "color": 12,
       "radius": 1,
       "shadow": 0,
       "duration": 0,
