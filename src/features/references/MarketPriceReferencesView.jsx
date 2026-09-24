@@ -200,7 +200,7 @@ function MarketPriceReferencesView({ businessId, itemId }) {
 const styles = {
   header: {
     alignItems: "flex-start",
-    background: "#ffffff",
+    background: "var(--color-surface-panel)",
     border: "1px solid #e5e7eb",
     borderRadius: "4px",
     padding: "18px",
@@ -209,7 +209,7 @@ const styles = {
     alignItems: "center",
     background: "transparent",
     border: 0,
-    color: "#0f766e",
+    color: "var(--color-brand-600)",
     cursor: "pointer",
     display: "inline-flex",
     fontSize: "13px",
@@ -226,10 +226,10 @@ const styles = {
     textAlign: "center",
   },
   warningsBox: {
-    background: "#fffbeb",
-    border: "1px solid #fde68a",
+    background: "var(--color-warning-50)",
+    border: "1px solid var(--color-warning-200)",
     borderRadius: "4px",
-    color: "#92400e",
+    color: "var(--color-warning-800)",
     display: "grid",
     fontSize: "13px",
     gap: "4px",
@@ -247,7 +247,7 @@ const styles = {
   },
   merchantLink: {
     alignItems: "center",
-    color: "#0f766e",
+    color: "var(--color-brand-600)",
     display: "inline-flex",
     fontSize: "13px",
     fontWeight: 700,

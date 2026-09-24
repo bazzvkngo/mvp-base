@@ -108,7 +108,7 @@
       "note": "rgba(255,255,255,a) de overlay; excepción."
     },
     "src/features/references/MarketPriceReferencesView.jsx": {
-      "color": 8,
+      "color": 2,
       "radius": 2,
       "shadow": 0,
       "duration": 0,
