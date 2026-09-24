@@ -82,7 +82,7 @@ const statusStyles = {
   },
   emitida: {
     background: "#dbeafe",
-    color: "#1d4ed8",
+    color: "var(--color-info-700)",
   },
   aceptada: {
     background: "#dcfce7",
@@ -94,7 +94,7 @@ const statusStyles = {
   },
   vencida: {
     background: "#fef3c7",
-    color: "#92400e",
+    color: "var(--color-warning-800)",
   },
   archivada: {
     background: "#e5e7eb",
@@ -1736,15 +1736,15 @@ const styles = {
     gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
   },
   commercialStatusEvent: {
-    borderLeft: "2px solid #0f766e",
+    borderLeft: "2px solid var(--color-brand-600)",
     display: "grid",
     gap: "2px",
     paddingLeft: "8px",
   },
   commercialStatusCurrent: {
-    background: "#ffffff",
+    background: "var(--color-surface-panel)",
     border: "1px solid #cbd5e1",
-    borderLeft: "4px solid #0f766e",
+    borderLeft: "4px solid var(--color-brand-600)",
     borderRadius: "5px",
     gridColumn: "1 / -1",
     padding: "9px 10px",
@@ -1759,7 +1759,7 @@ const styles = {
     fontSize: "12px",
   },
   commercialStatusNote: {
-    color: "#0f766e",
+    color: "var(--color-brand-600)",
     fontSize: "11px",
     fontWeight: 700,
   },
@@ -1802,10 +1802,10 @@ const styles = {
     marginTop: "12px",
   },
   primaryButton: {
-    background: "#0f766e",
-    border: "1px solid #0f766e",
+    background: "var(--color-brand-600)",
+    border: "1px solid var(--color-brand-600)",
     borderRadius: "4px",
-    color: "#ffffff",
+    color: "var(--color-text-inverse)",
     cursor: "pointer",
     fontSize: "13px",
     fontWeight: 800,
@@ -1827,7 +1827,7 @@ const styles = {
     padding: "8px 10px",
   },
   actionsMenu: {
-    background: "#ffffff",
+    background: "var(--color-surface-panel)",
     border: "1px solid #cbd5e1",
     borderRadius: "6px",
     boxShadow: "0 12px 30px rgba(15, 23, 42, 0.18)",
@@ -1867,7 +1867,7 @@ const styles = {
     background: "#111827",
     border: 0,
     borderRadius: "4px",
-    color: "#ffffff",
+    color: "var(--color-text-inverse)",
     cursor: "pointer",
     display: "inline-flex",
     fontSize: "13px",
@@ -1890,8 +1890,8 @@ const styles = {
     color: "#166534",
   },
   emailSimulated: {
-    background: "#fffbeb",
-    color: "#92400e",
+    background: "var(--color-warning-50)",
+    color: "var(--color-warning-800)",
   },
   emailError: {
     background: "#fee2e2",
@@ -1903,7 +1903,7 @@ const styles = {
     whiteSpace: "nowrap",
   },
   detailPanel: {
-    background: "#ffffff",
+    background: "var(--color-surface-panel)",
     minWidth: 0,
   },
   detailActions: {
@@ -1920,10 +1920,10 @@ const styles = {
   },
   emailButton: {
     alignItems: "center",
-    background: "#0f766e",
+    background: "var(--color-brand-600)",
     border: 0,
     borderRadius: "4px",
-    color: "#ffffff",
+    color: "var(--color-text-inverse)",
     cursor: "pointer",
     display: "inline-flex",
     fontSize: "13px",
@@ -1936,7 +1936,7 @@ const styles = {
   projectLinkButton: {
     background: "transparent",
     border: 0,
-    color: "#1d4ed8",
+    color: "var(--color-info-700)",
     cursor: "pointer",
     fontSize: "13px",
     fontWeight: 700,
@@ -1947,7 +1947,7 @@ const styles = {
     background: "#128c7e",
     border: 0,
     borderRadius: "4px",
-    color: "#ffffff",
+    color: "var(--color-text-inverse)",
     cursor: "pointer",
     display: "inline-flex",
     fontSize: "13px",
@@ -1988,7 +1988,7 @@ const styles = {
     width: "100%",
   },
   prepareSaleNotice: {
-    background: "#eff6ff",
+    background: "var(--color-info-50)",
     border: "1px solid #bfdbfe",
     borderRadius: "6px",
     color: "#1e3a8a",
@@ -1997,7 +1997,7 @@ const styles = {
     padding: "12px 14px",
   },
   printSheet: {
-    background: "#ffffff",
+    background: "var(--color-surface-panel)",
     border: "1px solid #e5e7eb",
     color: "#111827",
     padding: "28px",
@@ -2043,7 +2043,7 @@ const styles = {
   },
   printTh: {
     background: "#111827",
-    color: "#ffffff",
+    color: "var(--color-text-inverse)",
     fontSize: "12px",
     padding: "10px",
     textAlign: "left",
@@ -2086,7 +2086,7 @@ const styles = {
     color: "#111827",
   },
   totalValueStrong: {
-    color: "#0f766e",
+    color: "var(--color-brand-600)",
     fontSize: "22px",
   },
   observationsBox: {
@@ -2095,10 +2095,10 @@ const styles = {
     paddingTop: "14px",
   },
   errorText: {
-    background: "#fef2f2",
-    border: "1px solid #fecaca",
+    background: "var(--color-danger-50)",
+    border: "1px solid var(--color-danger-200)",
     borderRadius: "4px",
-    color: "#b91c1c",
+    color: "var(--color-danger-700)",
     margin: 0,
     padding: "11px 13px",
   },
