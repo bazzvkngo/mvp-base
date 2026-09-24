@@ -1,0 +1,317 @@
+{
+  "$schema": "Ratchet de literales de diseño (colores, radios, sombras, duraciones) fuera de tokens.css. Ver scripts/design-smoke.mjs.",
+  "generatedFrom": "e38b7c4",
+  "generatedAt": "2026-09-23",
+  "literals": {
+    "src/components/barcode/barcode.css": {
+      "color": 12,
+      "radius": 3,
+      "shadow": 1,
+      "duration": 0,
+      "category": "mixed",
+      "note": "El negro de overlay de escaneo es excepción; el resto (paneles, bordes) es deuda sin registrar."
+    },
+    "src/components/DashboardDonutChart.jsx": {
+      "color": 18,
+      "radius": 2,
+      "shadow": 0,
+      "duration": 0,
+      "category": "b",
+      "note": "Colores de gráfico (Chart.js) no sincronizados con --color-data-*; deuda conocida."
+    },
+    "src/components/finance/FinancialCharts.jsx": {
+      "color": 17,
+      "radius": 0,
+      "shadow": 0,
+      "duration": 0,
+      "category": "b",
+      "note": "Colores de gráfico (Chart.js) no sincronizados con --color-data-*; deuda conocida."
+    },
+    "src/components/reports/CostCompositionChart.jsx": {
+      "color": 6,
+      "radius": 0,
+      "shadow": 0,
+      "duration": 0,
+      "category": "b",
+      "note": "Colores de gráfico (Chart.js) no sincronizados con --color-data-*; deuda conocida."
+    },
+    "src/components/reports/OperationalComparisonChart.jsx": {
+      "color": 12,
+      "radius": 0,
+      "shadow": 0,
+      "duration": 0,
+      "category": "b",
+      "note": "Colores de gráfico (Chart.js) no sincronizados con --color-data-*; deuda conocida."
+    },
+    "src/features/employees/employees.css": {
+      "color": 1,
+      "radius": 0,
+      "shadow": 0,
+      "duration": 0,
+      "category": "c",
+      "note": "Un literal (#fecaca) sin registrar; coincide con --color-danger-200."
+    },
+    "src/features/inventory/inventory.css": {
+      "color": 48,
+      "radius": 5,
+      "shadow": 1,
+      "duration": 0,
+      "category": "mixed",
+      "note": "1 literal es el naranja de stock pendiente de --color-stock-alert-* (deuda conocida); el resto son verdes/rojos/ámbar de estado sin registrar."
+    },
+    "src/features/inventory/InventoryAiImporter.jsx": {
+      "color": 164,
+      "radius": 20,
+      "shadow": 0,
+      "duration": 0,
+      "category": "a",
+      "note": "Código de IA existente (se conserva, no se amplía ni elimina sin autorización); excepción, no se migra."
+    },
+    "src/features/purchaseOrders/purchase-orders.css": {
+      "color": 4,
+      "radius": 23,
+      "shadow": 6,
+      "duration": 0,
+      "category": "a",
+      "note": "Paleta de documento impreso de orden de compra (--color-document-* equivalente); excepción documentada."
+    },
+    "src/features/purchases/purchases.css": {
+      "color": 1,
+      "radius": 8,
+      "shadow": 0,
+      "duration": 0,
+      "category": "a",
+      "note": "Mismo color de la paleta de documento impreso (#5f6b7c); excepción documentada."
+    },
+    "src/features/quotes/public-quote.css": {
+      "color": 1,
+      "radius": 0,
+      "shadow": 0,
+      "duration": 0,
+      "category": "c",
+      "note": "Un rgb() de acento sin registrar; bajo volumen, no priorizado."
+    },
+    "src/features/quotes/quote-workspace.css": {
+      "color": 0,
+      "radius": 13,
+      "shadow": 3,
+      "duration": 0,
+      "category": "c",
+      "note": "Solo radios/sombras sin registrar, sin colores."
+    },
+    "src/features/quotes/QuotePrintView.jsx": {
+      "color": 11,
+      "radius": 0,
+      "shadow": 0,
+      "duration": 0,
+      "category": "a",
+      "note": "Vista de impresión de cotización; paleta de documento formal, excepción documentada (--color-document-*)."
+    },
+    "src/features/receptions/receptions.css": {
+      "color": 1,
+      "radius": 22,
+      "shadow": 0,
+      "duration": 0,
+      "category": "a",
+      "note": "rgba(255,255,255,a) de overlay; excepción."
+    },
+    "src/features/references/MarketPriceReferencesView.jsx": {
+      "color": 16,
+      "radius": 2,
+      "shadow": 0,
+      "duration": 0,
+      "category": "c",
+      "note": "Estilos inline sin registrar."
+    },
+    "src/features/sales/SalePrintView.jsx": {
+      "color": 11,
+      "radius": 0,
+      "shadow": 0,
+      "duration": 0,
+      "category": "a",
+      "note": "Vista de impresión de venta; paleta de documento formal, excepción documentada (--color-document-*)."
+    },
+    "src/features/sales/sales.css": {
+      "color": 0,
+      "radius": 15,
+      "shadow": 1,
+      "duration": 0,
+      "category": "c",
+      "note": "Solo radios/sombras sin registrar, sin colores."
+    },
+    "src/features/works/works.css": {
+      "color": 24,
+      "radius": 1,
+      "shadow": 0,
+      "duration": 0,
+      "category": "c",
+      "note": "Paleta de badges de estado sin registrar; varios valores coinciden con --color-tag-*/--color-warning-*/--color-danger-*."
+    },
+    "src/pages/DashboardPage.jsx": {
+      "color": 6,
+      "radius": 0,
+      "shadow": 0,
+      "duration": 0,
+      "category": "b",
+      "note": "QUOTE_CHART: colores de estado para Chart.js no sincronizados con --color-data-*; deuda conocida."
+    },
+    "src/pages/NewQuotePage.jsx": {
+      "color": 386,
+      "radius": 52,
+      "shadow": 3,
+      "duration": 1,
+      "category": "b",
+      "note": "Objeto styles inline con literales; deuda conocida, no se toca en tareas funcionales."
+    },
+    "src/pages/PricingPage.jsx": {
+      "color": 98,
+      "radius": 10,
+      "shadow": 0,
+      "duration": 0,
+      "category": "b",
+      "note": "Objeto styles propio; deuda conocida documentada en Parte B, destino de migración sin decidir."
+    },
+    "src/pages/QuoteHistoryPage.jsx": {
+      "color": 164,
+      "radius": 15,
+      "shadow": 1,
+      "duration": 0,
+      "category": "c",
+      "note": "statusStyles y estilos inline con literales sin registrar; ~1/3 coincide con --color-tag-*."
+    },
+    "src/styles/components.css": {
+      "color": 51,
+      "radius": 6,
+      "shadow": 11,
+      "duration": 37,
+      "category": "mixed",
+      "note": "Mezcla: rgb() de marca/scrim (excepción, ver --color-brand-600 y --shadow-*) + hex/rgb sin token (deuda sin registrar) en badges y superficies."
+    },
+    "src/styles/globals.css": {
+      "color": 1,
+      "radius": 1,
+      "shadow": 0,
+      "duration": 2,
+      "category": "a",
+      "note": "#ffffff dentro de @media print y 0.01ms de prefers-reduced-motion; ambos son excepciones legítimas."
+    },
+    "src/styles/interior.css": {
+      "color": 0,
+      "radius": 7,
+      "shadow": 1,
+      "duration": 0,
+      "category": "c",
+      "note": "Solo radios/sombras sin registrar, sin colores."
+    },
+    "src/styles/layout.css": {
+      "color": 8,
+      "radius": 1,
+      "shadow": 0,
+      "duration": 1,
+      "category": "mixed",
+      "note": "rgb() de scrim/overlay son excepción; el resto (colores de estado en el sidebar) es deuda sin registrar."
+    },
+    "src/styles/platform.css": {
+      "color": 5,
+      "radius": 0,
+      "shadow": 2,
+      "duration": 3,
+      "category": "a",
+      "note": "rgb() de scrim/overlay del layout de plataforma; excepción."
+    }
+  },
+  "cssCrossFeatureImports": [
+    {
+      "from": "src/features/purchases/PurchaseDocumentImportDialog.jsx",
+      "to": "src/features/receptions/receptions.css",
+      "type": "js-import",
+      "note": "Diálogo de compras reutiliza estilos de recepciones."
+    },
+    {
+      "from": "src/pages/PurchaseOrdersPage.jsx",
+      "to": "src/features/receptions/receptions.css",
+      "type": "js-import",
+      "note": "Página de órdenes de compra reutiliza estilos de recepciones."
+    },
+    {
+      "from": "src/features/sales/sales.css",
+      "to": "src/features/purchases/purchases.css",
+      "type": "css-@import",
+      "note": "sales.css importa la hoja de compras."
+    },
+    {
+      "from": "src/features/purchases/purchases.css",
+      "to": "src/features/purchaseOrders/purchase-orders.css",
+      "type": "css-@import",
+      "note": "purchases.css importa la hoja de órdenes de compra."
+    },
+    {
+      "from": "src/features/receptions/receptions.css",
+      "to": "src/features/purchaseOrders/purchase-orders.css",
+      "type": "css-@import",
+      "note": "receptions.css importa la hoja de órdenes de compra (cadena con purchases.css)."
+    }
+  ],
+  "uiClassExceptions": {
+    "ui-button": {
+      "files": [
+        "src/styles/interior.css",
+        "src/features/works/works.css",
+        "src/styles/platform.css",
+        "src/styles/layout.css",
+        "src/features/employees/employees.css",
+        "src/features/receptions/receptions.css",
+        "src/features/quotes/public-quote.css",
+        "src/features/inventory/inventory.css"
+      ],
+      "note": "Overrides históricos de .ui-button por feature/sección, no definiciones nuevas del componente."
+    },
+    "ui-status-badge": {
+      "files": [
+        "src/styles/interior.css",
+        "src/styles/platform.css",
+        "src/features/employees/employees.css",
+        "src/features/works/works.css"
+      ],
+      "note": "Overrides históricos de .ui-status-badge por feature/sección."
+    },
+    "ui-page-header": {
+      "files": [
+        "src/styles/layout.css"
+      ],
+      "note": "Definido en layout.css en vez de components.css; deuda histórica del shell de layout."
+    },
+    "ui-page-header__eyebrow": {
+      "files": [
+        "src/styles/layout.css"
+      ],
+      "note": "Ídem ui-page-header."
+    },
+    "ui-page-header__title": {
+      "files": [
+        "src/styles/layout.css"
+      ],
+      "note": "Ídem ui-page-header."
+    },
+    "ui-spinner": {
+      "files": [
+        "src/features/quotes/public-quote.css"
+      ],
+      "note": "Override histórico para la vista pública de cotización."
+    },
+    "ui-reveal-delay": {
+      "files": [
+        "src/styles/tokens.css"
+      ],
+      "note": "Definido también en tokens.css además de components.css (token de animación, no de color)."
+    }
+  },
+  "uiClassMarkers": {
+    "ui-skeleton-table": {
+      "usedIn": [
+        "src/components/ui/Skeleton.jsx"
+      ],
+      "note": "Marcador de clase en JSX sin regla CSS propia (hereda estilos de erp-table); no se audita como definición nueva."
+    }
+  }
+}

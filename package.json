@@ -17,6 +17,8 @@
     "xlsx": "file:vendor/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
+    "@babel/parser": "^7.29.3",
+    "@babel/traverse": "^7.29.0",
     "@vitejs/plugin-react": "^5.0.0",
     "vite": "^7.3.6"
   },
@@ -104,6 +106,7 @@
     "test:button": "node scripts/button-smoke.mjs",
     "test:loading-screen": "node scripts/loading-screen-smoke.mjs",
     "test:subscription-status": "node scripts/subscription-status-smoke.mjs",
+    "test:design": "node scripts/design-smoke.mjs",
     "test:summary": "node scripts/financial-model-smoke.mjs",
     "seed:business-catalogs:emulator": "node scripts/seed-business-catalogs.mjs --emulator"
   },
