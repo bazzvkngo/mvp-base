@@ -62,9 +62,11 @@
   /* Semantic status — sin cambios de fondo, se mantiene compatibilidad */
   --color-success-50: #ecfdf5;
   --color-success-200: #a7f3d0;
+  --color-success-300: #86d5b2; /* borde de .ui-status-badge--success, antes literal */
   --color-success-700: #047857;
   --color-warning-50: #fffbeb;
   --color-warning-200: #fde68a;
+  --color-warning-300: #e7bd55; /* borde de .ui-status-badge--warning, antes literal */
   --color-warning-800: #92400e;
   --color-danger-50: #fef2f2;
   --color-danger-600: #dc2626;

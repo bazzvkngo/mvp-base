@@ -180,7 +180,7 @@
       "note": "statusStyles y estilos inline con literales sin registrar; ~1/3 coincide con --color-tag-*."
     },
     "src/styles/components.css": {
-      "color": 51,
+      "color": 49,
       "radius": 6,
       "shadow": 11,
       "duration": 37,
