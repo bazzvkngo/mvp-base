@@ -280,8 +280,8 @@ assert.doesNotMatch(
   /businessLimitOpen|canCreateBusiness === false|Alcanzaste el límite/
 );
 assert.match(appLayout, /shouldRefreshBusinessSessionForVerification/);
-assert.match(appLayout, /title: "Empresa verificada"/);
-assert.match(appLayout, /description: "Los módulos operativos ya están disponibles\."/);
+assert.match(appLayout, /verificationToastTitle: "Empresa verificada"/);
+assert.match(appLayout, /verificationToastDescription: "Los módulos operativos ya están disponibles\."/);
 assert.doesNotMatch(appLayout, /window\.location\.reload|setInterval/);
 
 console.log("BUSINESS_QUICK_FLOW_SMOKE_OK");

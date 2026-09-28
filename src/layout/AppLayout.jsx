@@ -208,6 +208,23 @@ function AppLayout({
     navigate(location.pathname, {replace: true, state: null});
   }, [location.pathname, location.state, navigate]);
 
+  // Mismo patrón para el toast de "Empresa verificada" (más abajo), con su
+  // propia clave (verificationToastTitle/Description) en vez de reutilizar
+  // businessToastTitle: ese efecto de verificación puede navegar al mismo
+  // getDefaultBusinessPath(nextBusiness) que usan handleBusinessChanged/
+  // handleBusinessCreated, así que una clave compartida arriesgaría que una
+  // escritura de state pisara a la otra antes de leerse; además este toast
+  // trae description, que el consumidor de businessToastTitle no lee.
+  React.useEffect(() => {
+    const toastTitle = location.state?.verificationToastTitle;
+    if (!toastTitle) return;
+    sileo.success({
+      title: toastTitle,
+      description: location.state?.verificationToastDescription,
+    });
+    navigate(location.pathname, {replace: true, state: null});
+  }, [location.pathname, location.state, navigate]);
+
   React.useEffect(() => {
     const businessId = negocioActivo?.id || "";
     const observedBusinessId =
@@ -233,11 +250,13 @@ function AppLayout({
         if (!layoutMountedRef.current) return;
         const nextBusiness = session?.activeBusiness;
         if (nextBusiness?.id === businessId && canBusinessOperate(nextBusiness)) {
-          sileo.success({
-            title: "Empresa verificada",
-            description: "Los módulos operativos ya están disponibles.",
+          navigate(getDefaultBusinessPath(nextBusiness), {
+            replace: true,
+            state: {
+              verificationToastTitle: "Empresa verificada",
+              verificationToastDescription: "Los módulos operativos ya están disponibles.",
+            },
           });
-          navigate(getDefaultBusinessPath(nextBusiness), { replace: true });
         }
       })
       .catch(() => {
