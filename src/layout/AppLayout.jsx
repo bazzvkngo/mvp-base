@@ -96,7 +96,6 @@ function AppLayout({
   const [mobileNavigationOpen, setMobileNavigationOpen] = React.useState(false);
   const [mobileAccountOpen, setMobileAccountOpen] = React.useState(false);
   const [businessDrawerOpen, setBusinessDrawerOpen] = React.useState(false);
-  const [businessNotice, setBusinessNotice] = React.useState("");
   const menuButtonRef = React.useRef(null);
   const drawerRef = React.useRef(null);
   const closeButtonRef = React.useRef(null);
@@ -193,11 +192,21 @@ function AppLayout({
       desktopMediaQuery.removeEventListener("change", closeDrawerOnDesktop);
   }, []);
 
+  // El toast de cambio/creación de empresa se dispara en location.state, no
+  // en el mismo tick del navigate(): ToastRouteSync limpia los toasts de
+  // sileo al cambiar de ruta (App.jsx monta <ToastRouteSync /> antes que
+  // <AppRoutes />, así que su efecto corre primero en el mismo commit), y
+  // AppLayout no se desmonta entre rutas. Mismo patrón que ya usan
+  // NewSalePage/NewPurchaseOrderPage/NewPurchasePage/PurchaseOrdersPage,
+  // con una clave de state propia (businessToastTitle, no toastTitle) para
+  // no cruzarse con la de esas páginas cuando quedan montadas dentro del
+  // mismo <Outlet>.
   React.useEffect(() => {
-    if (!businessNotice) return undefined;
-    const timerId = window.setTimeout(() => setBusinessNotice(""), 4500);
-    return () => window.clearTimeout(timerId);
-  }, [businessNotice]);
+    const toastTitle = location.state?.businessToastTitle;
+    if (!toastTitle) return;
+    sileo.success({title: toastTitle});
+    navigate(location.pathname, {replace: true, state: null});
+  }, [location.pathname, location.state, navigate]);
 
   React.useEffect(() => {
     const businessId = negocioActivo?.id || "";
@@ -271,11 +280,12 @@ function AppLayout({
     const nextBusiness = session?.activeBusiness || business;
     navigate(canBusinessOperate(nextBusiness)
       ? getDefaultBusinessPath(nextBusiness)
-      : "/empresa?seccion=verificacion");
+      : "/empresa?seccion=verificacion", {
+      state: {
+        businessToastTitle: `Ahora estás trabajando en ${business.nombreComercial}`,
+      },
+    });
     setMobileNavigationOpen(false);
-    setBusinessNotice(
-      `Ahora estás trabajando en ${business.nombreComercial}`
-    );
   };
 
   const handleBusinessCreated = async (business) => {
@@ -283,8 +293,11 @@ function AppLayout({
     const nextBusiness = session?.activeBusiness || business;
     navigate(canBusinessOperate(nextBusiness)
       ? getDefaultBusinessPath(nextBusiness)
-      : "/empresa?seccion=verificacion");
-    setBusinessNotice(`${business.nombreComercial} fue creado correctamente`);
+      : "/empresa?seccion=verificacion", {
+      state: {
+        businessToastTitle: `${business.nombreComercial} fue creado correctamente`,
+      },
+    });
   };
 
   const businessSwitcher = (
@@ -374,12 +387,6 @@ function AppLayout({
             <AppIcon icon={UserRound} size={20} />
           </button>
         </header>
-
-        {businessNotice && (
-          <div className="business-toast no-print" role="status" aria-live="polite">
-            {businessNotice}
-          </div>
-        )}
 
         <main
           id="main-content"

@@ -616,23 +616,6 @@
   min-height: min(420px, 60vh);
 }
 
-.business-toast {
-  background: var(--color-text-strong);
-  border: 1px solid rgb(255 255 255 / 0.16);
-  border-radius: var(--radius-md);
-  bottom: var(--space-5);
-  box-shadow: var(--shadow-md);
-  color: var(--color-text-inverse);
-  font-size: var(--font-size-sm);
-  left: 50%;
-  max-width: min(420px, calc(100vw - 32px));
-  padding: var(--space-3) var(--space-4);
-  position: fixed;
-  text-align: center;
-  transform: translateX(-50%);
-  z-index: calc(var(--z-dialog) + 2);
-}
-
 .business-create-drawer-layer {
   align-items: stretch;
   justify-content: flex-end;
