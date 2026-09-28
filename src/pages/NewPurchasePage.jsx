@@ -240,7 +240,6 @@ export default function NewPurchasePage({businessId, role}) {
         sileo.success({title: "Compra actualizada", description: `${stored.numero} continúa preparada para confirmar.`});
       }
     } catch (error) {
-      setMessage(error.message);
       sileo.error({title: "No se pudo guardar la compra", description: error.message});
     } finally {
       setProcessing(false);
