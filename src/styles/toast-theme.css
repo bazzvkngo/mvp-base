@@ -1,0 +1,21 @@
+/* Puente de tema entre sileo (librería de toasts) y los tokens de
+   ValoraCloud. Único lugar donde se tocan los 5 tipos de sileo
+   (success/error/warning/info/action) más "loading"; los 71 sitios que
+   llaman sileo.success()/sileo.error()/etc. no se tocan.
+
+   sileo trae su propia paleta (oklch) inyectada en :root por la propia
+   librería (JS en tiempo de ejecución, no en el CSS de la app). En build
+   de producción esa inyección queda DESPUÉS del CSS estático de la app en
+   el documento; en dev queda antes (orden de módulos ES). Un :root normal
+   perdería la cascada contra sileo en uno de los dos modos según el
+   orden de imports. Se usa :root:root (especificidad 0,2,0, mayor que el
+   :root de sileo) para que la sobreescritura sea segura sin depender del
+   orden de inserción en ningún modo. */
+:root:root {
+  --sileo-state-success: var(--color-success-700);
+  --sileo-state-error: var(--color-danger-700);
+  --sileo-state-warning: var(--color-warning-800);
+  --sileo-state-info: var(--color-info-700);
+  --sileo-state-action: var(--color-brand-600);
+  --sileo-state-loading: var(--color-text-muted);
+}

@@ -8,10 +8,15 @@ import "./styles/components.css";
 import "./styles/interior.css";
 import "./styles/layout.css";
 import "./styles/platform.css";
+import "./styles/toast-theme.css";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <Toaster position="bottom-right" offset={{ bottom: 128, right: 16 }} />
+    <Toaster
+      position="bottom-right"
+      offset={{ bottom: 128, right: 16 }}
+      options={{ fill: "var(--color-surface-panel)" }}
+    />
     <App />
   </React.StrictMode>
 );
