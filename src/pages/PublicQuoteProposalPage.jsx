@@ -87,7 +87,7 @@ function PublicQuoteProposalPage() {
       });
     } catch (error) {
       sileo.error({
-        title: "No pudimos registrar tu respuesta",
+        title: "No se pudo registrar tu respuesta",
         description: error.message || "Recarga la página e inténtalo nuevamente.",
       });
     } finally {

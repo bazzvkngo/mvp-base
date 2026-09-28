@@ -155,7 +155,7 @@ function SendQuoteEmailModal({
       } catch (sendError) {
         sileo.dismiss(loadingToastId);
         sileo.error({
-          title: "No pudimos enviar la cotización",
+          title: "No se pudo enviar la cotización",
           description: getSafeEmailError(sendError),
         });
         throw sendError;
