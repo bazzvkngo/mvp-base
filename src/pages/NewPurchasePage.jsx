@@ -257,7 +257,6 @@ export default function NewPurchasePage({businessId, role}) {
         setPurchase(stored);
       }
     } catch (error) {
-      setMessage(error.message);
       sileo.error({title: "No se pudo preparar la compra", description: error.message});
       setProcessing(false);
       return;
@@ -286,7 +285,6 @@ export default function NewPurchasePage({businessId, role}) {
     } catch (error) {
       if (!shouldReconcilePurchaseConfirmation(error)) {
         pendingConfirmationPurchaseId.current = "";
-        setMessage(error.message);
         sileo.error({title: "No se pudo confirmar la compra", description: error.message});
       } else {
         try {
@@ -321,7 +319,6 @@ export default function NewPurchasePage({businessId, role}) {
         state: {message: "Compra cancelada", description: `${purchase.numero} quedó cancelada sin modificar stock.`},
       });
     } catch (error) {
-      setMessage(error.message);
       sileo.error({title: "No se pudo cancelar la compra", description: error.message});
     } finally {
       setProcessing(false);
