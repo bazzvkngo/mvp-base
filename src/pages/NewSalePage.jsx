@@ -299,7 +299,6 @@ export default function NewSalePage({businessId, role}) {
     } catch (error) {
       if (!shouldReconcileSaleConfirmation(error)) {
         pendingConfirmationSaleId.current = "";
-        setMessage(error.message);
         sileo.error({title: "No se pudo confirmar la venta", description: error.message});
         return;
       }
@@ -309,11 +308,9 @@ export default function NewSalePage({businessId, role}) {
           finishConfirmation(authoritative);
         } else {
           if (authoritative) setSale(authoritative);
-          setMessage(error.message);
           sileo.error({title: "No se pudo confirmar la venta", description: error.message});
         }
       } catch {
-        setMessage(error.message);
         sileo.error({title: "No se pudo confirmar la venta", description: error.message});
       }
     } finally {
