@@ -369,8 +369,9 @@ export default function NewPurchaseOrderPage({businessId, role}) {
       );
       conversionRequestIdRef.current = "";
       navigate(`/recepciones/${result.recepcion.id}/editar`);
-    } catch (error) {
-      setMessage(error.message);
+    } catch {
+      // sileo.promise() ya mostró el toast de error (misma
+      // description: error.message) — nada más que hacer aquí.
     } finally {
       setSaving(false);
     }
@@ -421,7 +422,6 @@ export default function NewPurchaseOrderPage({businessId, role}) {
         sileo.success({title: result.resent ? "Orden de compra reenviada" : "Correo enviado", description: `${saved.numero} fue enviada a ${emailProveedor}.`});
       }
     } catch (error) {
-      setMessage(error.message);
       sileo.error({title: "No se pudo enviar la orden", description: error.message});
     } finally {
       setSaving(false);
@@ -467,7 +467,6 @@ export default function NewPurchaseOrderPage({businessId, role}) {
       setActionDialog("");
       sileo.success({title: "Orden de compra emitida", description: `${emitted.numero} fue registrada como enviada por WhatsApp.`});
     } catch (error) {
-      setMessage(error.message);
       sileo.error({title: "No se pudo registrar el envío", description: error.message});
     } finally {
       setSaving(false);
