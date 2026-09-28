@@ -448,7 +448,6 @@ export default function NewPurchaseOrderPage({businessId, role}) {
     } catch (error) {
       targetWindow.close();
       if (error?.name !== "AbortError") {
-        setMessage(error.message);
         sileo.error({title: "No se pudo preparar WhatsApp", description: error.message});
       }
     } finally {
