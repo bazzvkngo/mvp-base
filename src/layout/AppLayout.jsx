@@ -382,6 +382,8 @@ function AppLayout({
           )}
 
           <div className="topbar-actions">
+            <NotificationBell businessId={negocioActivo?.id} role={negocioActivo?.role} />
+
             <div className="topbar-user topbar-user--desktop">
               {platformSuperadmin && <Button type="button" variant="secondary" icon={ShieldCheck} onClick={() => navigate("/admin/dashboard")}>Consola de Administración</Button>}
               <Button
@@ -396,8 +398,6 @@ function AppLayout({
                 Salir
               </Button>
             </div>
-
-            <NotificationBell businessId={negocioActivo?.id} role={negocioActivo?.role} />
 
             <button
               type="button"
