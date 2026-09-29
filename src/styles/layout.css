@@ -1176,3 +1176,58 @@
     transition: none;
   }
 }
+
+/* Modo oscuro (etapa 5, paso 3 de 10: hub compartido). */
+@media (prefers-color-scheme: dark) {
+  /* Mismo criterio que components.css: --color-brand-600/700/800 se
+     mantienen sin cambio (paso 2), así que como texto/ícono directo sobre
+     una superficie oscura no pasan AA (2.26:1 medido en el paso 2). Se
+     corrige con --color-brand-400 (mínimo 4.92:1 contra las 6 superficies
+     oscuras de la fundación) en cada selector que lo usa como texto sobre
+     un fondo que sí reacciona al tema. */
+  .business-switcher__add,
+  .nav-link:hover,
+  .nav-link-active,
+  .nav-link-active .nav-link__completion,
+  .topbar-menu-button:hover,
+  .topbar-account-button:hover,
+  .topbar-notifications-button:hover {
+    color: var(--color-brand-400);
+  }
+
+  .nav-link-active {
+    border-left-color: var(--color-brand-400);
+  }
+
+  .business-drawer-section__header {
+    color: var(--color-brand-400);
+  }
+
+  /* .environment-notice: mismo cian "modo QA/emulador" sin token propio
+     que ya existe en components.css (.quote-email-dialog__qa-notice--result),
+     mismos valores oscuros ya verificados ahí (7fd9e6/0f2b2e: 9.23:1). */
+  .environment-notice {
+    background: #0f2b2e;
+    border-color: #3d8a94;
+    color: #7fd9e6;
+  }
+
+  /* Scrims de diálogo (.business-discard-confirm) y del overlay de nav
+     mobile (.mobile-nav-overlay): hoy usan rgb(15 23 42 / X), el valor
+     VIEJO de --color-text-strong (antes de la recalibración de tokens.css),
+     nunca migrado al color-mix(...--color-text-strong...) canónico que sí
+     usa interior.css. Migrarlo ahora a ese patrón canónico sería
+     introducir un bug: --color-text-strong pasa a ser un color CLARO en
+     oscuro (#e4edf1), así que ese color-mix daría un velo claro sobre la
+     página en vez de oscurecerla — lo opuesto de lo que un scrim necesita
+     (atenuar detrás de un diálogo/drawer). Se deja como literal, fijo,
+     pero oscuro de verdad en los dos temas (un scrim oscuro atenúa igual
+     de bien un fondo claro que uno oscuro; se sube la opacidad un poco
+     porque oscuro-sobre-oscuro necesita algo más de diferencia para
+     leerse). Este hallazgo aplica también a interior.css, fuera de
+     alcance de este paso (hub compartido); queda para su propio paso. */
+  .business-discard-confirm,
+  .mobile-nav-overlay {
+    background: rgb(2 6 12 / 0.6);
+  }
+}

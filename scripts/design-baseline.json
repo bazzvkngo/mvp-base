@@ -196,12 +196,12 @@
       "note": "Solo radios/sombras sin registrar, sin colores."
     },
     "src/styles/layout.css": {
-      "color": 5,
+      "color": 9,
       "radius": 1,
       "shadow": 0,
       "duration": 1,
       "category": "mixed",
-      "note": "rgb() de scrim/overlay son excepción; el resto (colores de estado en el sidebar) es deuda sin registrar."
+      "note": "rgb() de scrim/overlay son excepción; el resto (colores de estado en el sidebar) es deuda sin registrar. +4 (etapa 5, paso 3, dentro de @media (prefers-color-scheme: dark)): .environment-notice reutiliza la misma familia cian sin token que components.css (mismos valores, misma verificación de contraste); .business-discard-confirm/.mobile-nav-overlay fijan su scrim a rgb(2 6 12 / 0.6) en vez de migrarlo al patrón canónico color-mix(...--color-text-strong...) — ese patrón se rompe en oscuro porque --color-text-strong pasa a ser un color CLARO (el scrim se volvería un velo claro en vez de oscurecer); mismo hallazgo pendiente para interior.css, fuera de alcance de este paso."
     },
     "src/styles/platform.css": {
       "color": 5,
