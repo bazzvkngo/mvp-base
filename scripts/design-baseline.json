@@ -180,12 +180,12 @@
       "note": "Mezcla: rgb() de marca/scrim (excepción, ver --color-brand-600 y --shadow-*) + hex/rgb sin token (deuda sin registrar) en badges y superficies. +26 color / +3 shadow (etapa 5, paso 3, dentro de @media (prefers-color-scheme: dark)): (1) .ui-button--danger/:hover y .ui-badge-count fijan su relleno al rojo de siempre (#dc2626/#b91c1c) porque --color-danger-600/700 ya cambiaron de valor en el paso 2 para servir como TEXTO, no como fondo con texto blanco encima (blanco sobre el valor oscuro nuevo da 2.28-3.03:1, no pasa AA); (2) contrapartes oscuras de los fondos decorativos de .onboarding-screen/.onboarding-card/.auth-panel (gradientes/glows, sin texto encima, no aplica contraste AA, primer valor razonable a validar en pantalla); (3) familia cian sin token de los avisos 'QA local' (.quote-email-dialog__qa-notice*), contraste verificado contra su propio fondo. No cuenta el arreglo de --color-brand-600/700/800 como texto (selector por selector, ver el bloque): eso son var(), no literales."
     },
     "src/styles/globals.css": {
-      "color": 1,
+      "color": 3,
       "radius": 1,
       "shadow": 0,
       "duration": 2,
       "category": "a",
-      "note": "#ffffff dentro de @media print y 0.01ms de prefers-reduced-motion; ambos son excepciones legítimas."
+      "note": "#ffffff dentro de @media print y 0.01ms de prefers-reduced-motion; ambos son excepciones legítimas. +2 (etapa 5, paso 3): color: #3a4744 agregado al mismo bloque @media print (le faltaba fijar el color de texto además del fondo — sin esto, imprimir con el SO en oscuro daría texto claro sobre el papel blanco fijo, casi ilegible); background: #1c4a4a en ::selection dentro de @media (prefers-color-scheme: dark), porque el par claro (--color-brand-200 sin cambio + --color-text-strong que en oscuro sí cambia a un color claro) queda roto (1.19:1) — se define un fondo propio para oscuro, verificado en 8.31:1 contra el --color-text-strong oscuro."
     },
     "src/styles/interior.css": {
       "color": 0,

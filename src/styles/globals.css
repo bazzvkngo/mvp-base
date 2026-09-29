@@ -221,6 +221,7 @@ td[align="right"] {
   html,
   body {
     background: #ffffff;
+    color: #3a4744;
     font-size: 11px;
     line-height: 1.25;
   }
@@ -363,5 +364,40 @@ td[align="right"] {
 
   .quote-print__empty-notice {
     padding: 10px !important;
+  }
+}
+
+/* Modo oscuro (etapa 5, paso 3 de 10: hub compartido).
+
+   @media (prefers-reduced-motion: reduce) de arriba: no toca ningún
+   color, no interactúa con el tema — confirmado, sin cambios.
+
+   @media print de arriba: prefers-color-scheme SÍ puede seguir activo
+   durante la impresión (la mayoría de los navegadores refleja el tema del
+   SO también en vista previa de impresión), por eso el bloque ya fijaba
+   `background: #ffffff` como literal (no var()) en vez de depender de
+   --color-surface-canvas. Pero le faltaba fijar `color`: sin eso, el
+   texto seguía tomando var(--color-text-default), que en oscuro es un
+   gris claro (#c3d3db) — imprimir con el SO en modo oscuro habría dado
+   texto claro sobre el papel blanco fijo, casi ilegible. Se agregó
+   `color: #3a4744` (el mismo --color-text-default de siempre) al mismo
+   bloque, arriba, junto al `background: #ffffff` ya existente — ambos
+   fijos, la impresión no debe depender del tema del sistema.
+
+   Scrollbar nativo: color-scheme: light dark (tokens.css, paso 1) ya lo
+   resuelve solo, sin CSS propio aquí — no hay ::-webkit-scrollbar en este
+   archivo que pueda entrar en conflicto. */
+@media (prefers-color-scheme: dark) {
+  /* ::selection combina var(--color-brand-200) (sin cambio, paso 2) con
+     var(--color-text-strong) (SÍ cambia, ahora claro: #e4edf1). Ese par
+     ya no es el mismo textooscuro/fondo-claro de siempre: texto claro
+     sobre fondo claro mide 1.19:1, el texto seleccionado se volvería casi
+     invisible. Se define un par propio para oscuro en vez de heredar la
+     combinación rota: fondo verde-azulado oscuro + el mismo
+     --color-text-strong (que en oscuro ya es claro, perfecto para este
+     fondo). */
+  ::selection {
+    background: #1c4a4a;
+    color: var(--color-text-strong);
   }
 }
