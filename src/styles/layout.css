@@ -415,7 +415,7 @@
   gap: var(--space-3);
   grid-template-columns: minmax(0, 1fr) auto;
   min-height: var(--shell-topbar-height);
-  padding: var(--space-2) var(--space-6);
+  padding: var(--space-1) var(--space-6);
   position: sticky;
   top: 0;
   z-index: calc(var(--z-sticky) + 1);
@@ -487,6 +487,18 @@
   display: flex;
   gap: var(--space-2);
   min-width: 0;
+}
+
+/* Envuelve el grupo desktop (Salir), la campana y el botón de cuenta mobile
+   en un solo item de grid: así el grid de dos columnas de .topbar no se
+   rompe al agregar la campana, y esta queda pegada visualmente a cualquiera
+   de los dos elementos que esté visible según el tamaño de pantalla (Salir
+   en desktop, el botón de cuenta en mobile), sin renderizar dos instancias
+   de NotificationBell. */
+.topbar-actions {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
 }
 
 .topbar .ui-page-header {
@@ -1085,7 +1097,7 @@
   .topbar {
     gap: var(--space-3);
     grid-template-columns: auto minmax(0, 1fr) auto;
-    padding: var(--space-2) var(--space-4);
+    padding: var(--space-1) var(--space-4);
   }
 
   .topbar .ui-page-header__eyebrow {

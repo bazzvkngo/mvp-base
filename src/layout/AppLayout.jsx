@@ -381,33 +381,35 @@ function AppLayout({
             />
           )}
 
-          <div className="topbar-user topbar-user--desktop">
-            {platformSuperadmin && <Button type="button" variant="secondary" icon={ShieldCheck} onClick={() => navigate("/admin/dashboard")}>Consola de Administración</Button>}
-            <Button
+          <div className="topbar-actions">
+            <div className="topbar-user topbar-user--desktop">
+              {platformSuperadmin && <Button type="button" variant="secondary" icon={ShieldCheck} onClick={() => navigate("/admin/dashboard")}>Consola de Administración</Button>}
+              <Button
+                type="button"
+                variant="ghost-danger"
+                icon={LogOut}
+                className="topbar-logout-button no-print"
+                aria-label="Cerrar sesión"
+                title="Salir de ValoraCloud"
+                onClick={() => logout()}
+              >
+                Salir
+              </Button>
+            </div>
+
+            <NotificationBell businessId={negocioActivo?.id} role={negocioActivo?.role} />
+
+            <button
               type="button"
-              variant="ghost-danger"
-              icon={LogOut}
-              className="topbar-logout-button no-print"
-              aria-label="Cerrar sesión"
-              title="Salir de ValoraCloud"
-              onClick={() => logout()}
+              className="topbar-account-button no-print"
+              aria-label="Abrir cuenta de usuario"
+              aria-haspopup="dialog"
+              aria-expanded={mobileAccountOpen}
+              onClick={() => setMobileAccountOpen(true)}
             >
-              Salir
-            </Button>
+              <AppIcon icon={UserRound} size={20} />
+            </button>
           </div>
-
-          <NotificationBell businessId={negocioActivo?.id} role={negocioActivo?.role} />
-
-          <button
-            type="button"
-            className="topbar-account-button no-print"
-            aria-label="Abrir cuenta de usuario"
-            aria-haspopup="dialog"
-            aria-expanded={mobileAccountOpen}
-            onClick={() => setMobileAccountOpen(true)}
-          >
-            <AppIcon icon={UserRound} size={20} />
-          </button>
         </header>
 
         <main
