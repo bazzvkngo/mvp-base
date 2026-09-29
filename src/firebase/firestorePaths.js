@@ -216,3 +216,14 @@ export const referenceTaskDocPath = (userId, taskId) => [
   "tareasReferencias",
   taskId,
 ];
+export const notificationsCollectionPath = (businessId) => [
+  "negocios",
+  businessId,
+  "notificaciones",
+];
+export const notificationDocPath = (businessId, notificacionId) => [
+  "negocios",
+  businessId,
+  "notificaciones",
+  notificacionId,
+];
