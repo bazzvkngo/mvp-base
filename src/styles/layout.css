@@ -453,6 +453,35 @@
   color: var(--color-brand-800);
 }
 
+/* A diferencia de topbar-menu-button/topbar-account-button (solo mobile,
+   display: none por defecto, se muestran en el media query de abajo), la
+   campana debe verse en desktop y mobile: sin regla de display propia,
+   nunca se oculta. */
+.topbar-notifications-button {
+  align-items: center;
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-md);
+  color: var(--color-text-default);
+  cursor: pointer;
+  display: inline-flex;
+  height: 42px;
+  justify-content: center;
+  position: relative;
+  width: 42px;
+}
+
+.topbar-notifications-button:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-brand-800);
+}
+
+.topbar-notifications-button__badge {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+}
+
 .topbar-user {
   align-items: center;
   display: flex;
@@ -530,6 +559,47 @@
 
 .account-dialog-status {
   align-items: start;
+}
+
+.notification-list {
+  display: grid;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.notification-list__item {
+  align-items: start;
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  text-align: left;
+  width: 100%;
+}
+
+.notification-list__item.is-unread {
+  background: var(--color-info-50);
+  border-color: var(--color-info-200);
+}
+
+.notification-list__item strong {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-sm);
+}
+
+.notification-list__item span {
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+}
+
+.notification-list__item small {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
 }
 
 .verification-notice,
@@ -1078,6 +1148,7 @@
   .business-menu__item,
   .topbar-menu-button,
   .topbar-account-button,
+  .topbar-notifications-button,
   .mobile-nav-close {
     min-height: 44px;
   }

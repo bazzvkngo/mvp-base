@@ -278,6 +278,30 @@
   color: var(--color-text-default);
 }
 
+/* Contador pequeño superpuesto sobre un ícono (ej. la campana de
+   notificaciones). Genérico a propósito, sin nombre de feature: el
+   padre debe posicionarse (position: relative) y darle position:
+   absolute a este elemento en su propio CSS.
+   height/min-width/font-size quedan literales a propósito: no hay una
+   escala de tamaño de ícono/badge en tokens.css (--font-size-xs, el
+   paso más chico, ya es 13px, demasiado grande para esta burbuja de
+   16px) y crear una escala nueva para un solo uso sería una paleta
+   local, justo lo que tokens.css pide evitar. */
+.ui-badge-count {
+  align-items: center;
+  background: var(--color-danger-700);
+  border-radius: var(--radius-pill);
+  color: var(--color-text-inverse);
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: var(--font-weight-bold);
+  height: 16px;
+  justify-content: center;
+  line-height: 1;
+  min-width: 16px;
+  padding: 0 var(--space-1);
+}
+
 .ui-page-header {
   min-width: 0;
 }

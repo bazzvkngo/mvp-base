@@ -5,6 +5,7 @@ import { sileo } from "sileo";
 import AdditionalBusinessDrawer from "../components/AdditionalBusinessDrawer";
 import BrandLogo from "../components/BrandLogo";
 import BusinessSwitcher from "../components/BusinessSwitcher";
+import NotificationBell from "../components/NotificationBell";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import LoadingState from "../components/ui/LoadingState";
@@ -394,6 +395,8 @@ function AppLayout({
               Salir
             </Button>
           </div>
+
+          <NotificationBell businessId={negocioActivo?.id} role={negocioActivo?.role} />
 
           <button
             type="button"
