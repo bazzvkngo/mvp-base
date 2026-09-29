@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {createRequire} from "node:module";
 import {deleteApp, initializeApp} from "firebase/app";
 import {connectAuthEmulator, createUserWithEmailAndPassword, getAuth, signInWithEmailAndPassword, signOut} from "firebase/auth";
-import {connectFirestoreEmulator, doc, getDoc, getFirestore, setDoc, terminate, updateDoc} from "firebase/firestore";
+import {connectFirestoreEmulator, deleteDoc, doc, getDoc, getFirestore, setDoc, terminate, updateDoc} from "firebase/firestore";
 import {connectFunctionsEmulator, getFunctions, httpsCallable} from "firebase/functions";
 import {connectStorageEmulator, getStorage, ref, uploadBytes} from "firebase/storage";
 
@@ -169,6 +169,34 @@ try {
   assert.equal((await adminDb.doc(identityPath).get()).data().negocioId, businessId);
   await rejected("índice global cerrado", () => getDoc(doc(platform.db, identityPath)), ["permission-denied"]);
 
+  const notificationPath = `negocios/${businessId}/notificaciones/${requested.data.solicitudId}`;
+  const notification = (await adminDb.doc(notificationPath).get()).data();
+  assert.equal(notification.notificacionId, requested.data.solicitudId);
+  assert.equal(notification.tipo, "VERIFICACION_APROBADA");
+  assert.equal(notification.negocioId, businessId);
+  assert.equal(notification.titulo, "Empresa verificada");
+  assert.equal(notification.descripcion, "Los módulos operativos ya están disponibles.");
+  assert.equal(notification.leida, false);
+  assert.equal(notification.leidaEn, undefined);
+  const referencedEvent = (await adminDb.doc(`negocios/${businessId}/eventosVerificacionEmpresa/${notification.eventoRefId}`).get()).data();
+  assert.equal(referencedEvent.tipo, "VERIFICACION_APROBADA");
+  assert.equal(referencedEvent.solicitudId, requested.data.solicitudId);
+  const notificationsAfterRetry = await adminDb.collection(`negocios/${businessId}/notificaciones`).get();
+  assert.equal(notificationsAfterRetry.size, 1, "el reintento con el mismo requestId no duplicó la notificación");
+
+  const notificationRef = doc(owner.db, "negocios", businessId, "notificaciones", requested.data.solicitudId);
+  assert.equal((await getDoc(notificationRef)).data().titulo, "Empresa verificada");
+  await rejected("ADMIN lee notificación", () => getDoc(doc(admin.db, "negocios", businessId, "notificaciones", requested.data.solicitudId)), ["permission-denied"]);
+  await rejected("MEMBER lee notificación", () => getDoc(doc(member.db, "negocios", businessId, "notificaciones", requested.data.solicitudId)), ["permission-denied"]);
+  await rejected("plataforma lee notificación por SDK", () => getDoc(doc(platform.db, "negocios", businessId, "notificaciones", requested.data.solicitudId)), ["permission-denied"]);
+  await rejected("SDK crea notificación", () => setDoc(doc(owner.db, "negocios", businessId, "notificaciones", "forged"), {negocioId: businessId, tipo: "VERIFICACION_APROBADA", titulo: "x", leida: false}), ["permission-denied"]);
+  await rejected("SDK borra notificación", () => deleteDoc(notificationRef), ["permission-denied"]);
+  await rejected("SDK toca titulo al marcar leída", () => updateDoc(notificationRef, {leida: true, titulo: "otro"}), ["permission-denied"]);
+  await rejected("SDK cambia contenido sin marcar leída", () => updateDoc(notificationRef, {descripcion: "otra"}), ["permission-denied"]);
+  await updateDoc(notificationRef, {leida: true, leidaEn: new Date()});
+  assert.equal((await getDoc(notificationRef)).data().leida, true);
+  console.log("OK notificaciones: VERIFICACION_APROBADA creada, idempotente ante reintento y Rules OWNER-only con update acotado a leida/leidaEn");
+
   const pendingAdditional = await call(owner, "createAdditionalBusiness")({
     nombreComercial: "Empresa pendiente del mismo owner",
     rubroCodigo: "INGENIERIA_CONSULTORIA",
@@ -238,6 +266,12 @@ try {
   const secondBusiness = (await adminDb.doc(`negocios/${secondBusinessId}`).get()).data();
   assert.equal(secondBusiness.verificacionEmpresa.estado, "RECHAZADA");
   assert.equal(secondBusiness.verificacionEmpresa.motivoRechazo, "Identidad fiscal ya utilizada.");
+  const rejectionNotification = (await adminDb.doc(`negocios/${secondBusinessId}/notificaciones/${secondRequest.data.solicitudId}`).get()).data();
+  assert.equal(rejectionNotification.tipo, "VERIFICACION_RECHAZADA");
+  assert.equal(rejectionNotification.titulo, "Verificación rechazada");
+  assert.equal(rejectionNotification.descripcion, "Identidad fiscal ya utilizada.");
+  assert.equal(rejectionNotification.leida, false);
+  console.log("OK notificaciones: VERIFICACION_RECHAZADA con el motivo del rechazo");
 
   await rejected("identidad verificada inmutable", () => call(owner, "updateBusinessInformation")({
     businessId,

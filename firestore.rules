@@ -560,6 +560,15 @@ service cloud.firestore {
       );
     }
 
+    // Calcado de isAllowedReferenceTaskUpdate(): el cliente solo puede
+    // marcar la notificación como leída, sin tocar tipo/titulo/descripcion/
+    // eventoRefId ni el resto del contenido.
+    function isAllowedNotificationUpdate() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return request.resource.data.leida == true
+        && changed.hasOnly(["leida", "leidaEn"]);
+    }
+
     function hasValidFinancialCategory(type, categoryId) {
       return (
         type == "income"
@@ -1143,6 +1152,18 @@ service cloud.firestore {
         allow read: if hasSetupBusinessRole(businessId, ["OWNER"])
           && resource.data.negocioId == businessId;
         allow create, update, delete: if false;
+      }
+
+      // Mismo filtro de lectura que eventosVerificacionEmpresa (OWNER): la
+      // notificación referencia ese evento (eventoRefId) y no tiene sentido
+      // que la vea un rol que no puede leer el evento de origen.
+      match /notificaciones/{notificacionId} {
+        allow read: if hasSetupBusinessRole(businessId, ["OWNER"])
+          && resource.data.negocioId == businessId;
+        allow update: if hasSetupBusinessRole(businessId, ["OWNER"])
+          && resource.data.negocioId == businessId
+          && isAllowedNotificationUpdate();
+        allow create, delete: if false;
       }
 
       match /businessVerificationRequests/{requestId} {

@@ -426,6 +426,12 @@ async function resolverVerificacionEmpresaHandler(request, dependencies) {
     .doc(operationId);
   const membershipRef = db.collection("membresias").doc(`${businessId}__${uid}`);
   const eventRef = businessRef.collection("eventosVerificacionEmpresa").doc();
+  // ID determinístico por solicitud (no autogenerado como eventRef): un
+  // reintento con el mismo requestId cae en la rama "operation.exists" más
+  // abajo y nunca vuelve a llegar a este transaction.create, pero además,
+  // aunque llegara, escribir dos veces con el mismo ID falla en vez de
+  // duplicar la notificación.
+  const notificationRef = businessRef.collection("notificaciones").doc(verificationRequestId);
   const profileRef = businessRef.collection("empresa").doc("perfil");
 
   return db.runTransaction(async (transaction) => {
@@ -558,16 +564,32 @@ async function resolverVerificacionEmpresaHandler(request, dependencies) {
         {merge: true}
       );
     }
+    const notificationType = decision === "APROBAR"
+      ? "VERIFICACION_APROBADA"
+      : "VERIFICACION_RECHAZADA";
     transaction.create(eventRef, {
       negocioId: businessId,
       solicitudId: verificationRequestId,
-      tipo: decision === "APROBAR"
-        ? "VERIFICACION_APROBADA"
-        : "VERIFICACION_RECHAZADA",
+      tipo: notificationType,
       estadoAnterior: VERIFICATION_STATES.PENDING,
       estadoResultante: resultingState,
       ...(rejectionReason ? {motivo: rejectionReason} : {}),
       creadoPorUid: uid,
+      creadoEn: timestamp,
+    });
+    // Misma transacción que eventRef: un reintento con el mismo requestId
+    // nunca llega hasta acá (corta antes, en la rama "operation.exists"),
+    // así que esto se ejecuta como máximo una vez por solicitud resuelta.
+    transaction.create(notificationRef, {
+      notificacionId: notificationRef.id,
+      tipo: notificationType,
+      negocioId: businessId,
+      titulo: decision === "APROBAR" ? "Empresa verificada" : "Verificación rechazada",
+      ...(decision === "APROBAR"
+        ? {descripcion: "Los módulos operativos ya están disponibles."}
+        : rejectionReason ? {descripcion: rejectionReason} : {}),
+      leida: false,
+      eventoRefId: eventRef.id,
       creadoEn: timestamp,
     });
     transaction.create(operationRef, {
