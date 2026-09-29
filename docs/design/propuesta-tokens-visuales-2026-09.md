@@ -85,7 +85,7 @@
 
   /* Shell */
   --shell-sidebar-width: 248px;
-  --shell-topbar-height: 52px;
+  --shell-topbar-height: 50px;
   --shell-content-max: 1600px;
   --z-sticky: 20;
   --z-overlay: 80;
@@ -276,7 +276,7 @@ Esto es **solo la propuesta de valores**, no un reemplazo de `tokens.css` todavÃ
 
   /* Shell â€” sin cambios estructurales */
   --shell-sidebar-width: 248px;
-  --shell-topbar-height: 52px;
+  --shell-topbar-height: 50px;
   --shell-content-max: 1600px;
   --z-sticky: 20;
   --z-overlay: 80;
