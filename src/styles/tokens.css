@@ -1,5 +1,14 @@
 :root {
-  color-scheme: light;
+  /* "light dark" (en vez de "light" fijo): le dice al navegador que la
+     página soporta ambos esquemas, para que resuelva sola el renderizado
+     de controles nativos (scrollbar, checkbox, <select>, etc.) contra la
+     preferencia real del sistema en cada momento — no requiere que este
+     archivo lo condicione con @media, el navegador ya lo hace por su
+     cuenta al tener ambos valores listados. OJO: esto NO redefine ninguna
+     custom property propia (--color-*, --shadow-*, etc.); esas siguen
+     dependiendo del bloque @media (prefers-color-scheme: dark) de abajo,
+     hoy vacío a propósito (ver etapa 5, paso 1 de 10). */
+  color-scheme: light dark;
 
   /* Brand — mismo hue base (teal ValoraCloud), calibrado con un paso más
      y con el 500 un poco más vívido para usarlo como "acento" en UI clara */
@@ -167,9 +176,9 @@
   --radius-xl: 24px;
   --radius-pill: 999px;
 
-  --shadow-sm: 0 1px 3px rgb(22 33 31 / 0.06);
-  --shadow-md: 0 10px 28px rgb(22 33 31 / 0.09);
-  --shadow-lg: 0 20px 48px rgb(22 33 31 / 0.12);
+  --shadow-sm: 0 1px 3px color-mix(in srgb, var(--color-text-strong) 6%, transparent);
+  --shadow-md: 0 10px 28px color-mix(in srgb, var(--color-text-strong) 9%, transparent);
+  --shadow-lg: 0 20px 48px color-mix(in srgb, var(--color-text-strong) 12%, transparent);
 
   /* Shell */
   --shell-sidebar-width: 248px;
@@ -188,9 +197,9 @@
   --breakpoint-narrow: 380px;
 
   /* Interaction */
-  --focus-outline: 2px solid #0b5f59;
+  --focus-outline: 2px solid var(--color-brand-700);
   --focus-offset: 2px;
-  --focus-ring: 0 0 0 3px rgb(20 160 143 / 0.24);
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--color-brand-500) 24%, transparent);
 
   /* Skeleton — tinte del texto fuerte sobre transparente, para que se lea
      sobre paneles blancos y sobre el canvas cálido sin fijar un hex propio.
@@ -206,4 +215,13 @@
   --motion-shimmer-duration: 1.4s;
   --motion-reveal-delay: 250ms;
   --motion-reveal-duration: 150ms;
+}
+
+/* Andamiaje del modo oscuro (etapa 5, paso 1 de 10): bloque vacío a
+   propósito, sin ningún color todavía. Los valores oscuros se definen en
+   un paso posterior; hasta entonces este bloque no tiene ningún efecto
+   visual, y el modo claro (el único que existe hoy) queda idéntico. */
+@media (prefers-color-scheme: dark) {
+  :root {
+  }
 }
