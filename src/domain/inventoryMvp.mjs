@@ -231,16 +231,25 @@ export function isInventoryLowStock(item) {
   );
 }
 
-export function summarizeInventory(items) {
+export function summarizeInventory(items, { lowStockThreshold = 0 } = {}) {
   const active = (Array.isArray(items) ? items : [])
     .map(adaptInventoryItem)
     .filter((item) => item.estado === "activo");
   const products = active.filter((item) => item.tipoItem === "producto");
+  // Prioridad: stockMinimo por ítem si está definido; si no, el umbral
+  // general del negocio (0 = sin umbral general, por ejemplo con
+  // alertasStockBajo desactivado). Mismo criterio que ya documenta el
+  // hint de "Umbral general de stock bajo" en CompanyConfig.
+  const threshold = Number(lowStockThreshold) > 0 ? Number(lowStockThreshold) : 0;
+  const isLowStock = (item) =>
+    item.stockMinimo > 0
+      ? item.stock <= item.stockMinimo
+      : threshold > 0 && item.stock <= threshold;
   return {
     total: active.length,
     products: products.length,
     servicesAndActivities: active.length - products.length,
-    lowStock: products.filter((item) => isInventoryLowStock(item)).length,
+    lowStock: products.filter(isLowStock).length,
     inventoryCost: products.reduce(
       (total, item) => total + item.costoBase * Math.max(item.stock, 0),
       0

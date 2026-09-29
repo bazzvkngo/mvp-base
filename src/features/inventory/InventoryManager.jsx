@@ -180,7 +180,13 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
     return () => { active = false; };
   }, [businessId, canReadCosts, detailItem]);
 
-  const summary = useMemo(() => summarizeInventory(items, { lowStockThreshold: settings.umbralStockBajo }), [items, settings.umbralStockBajo]);
+  const summary = useMemo(
+    () =>
+      summarizeInventory(items, {
+        lowStockThreshold: settings.alertasStockBajo ? settings.umbralStockBajo : 0,
+      }),
+    [items, settings.alertasStockBajo, settings.umbralStockBajo]
+  );
   const visibleItems = useMemo(() => filterInventoryItems(items, filters), [filters, items]);
   const activeAreas = useMemo(() => areas.filter((area) => (area.estado || "activo") === "activo"), [areas]);
   const formCategories = useMemo(() => getCategoriesForArea(categories, draft.areaId), [categories, draft.areaId]);

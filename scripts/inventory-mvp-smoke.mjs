@@ -228,6 +228,37 @@ function main() {
   assert.equal(isInventoryLowStock(list[1]), false);
   assert.equal(isInventoryLowStock(list[3]), false);
 
+  // summarizeInventory(items, { lowStockThreshold }): el mínimo por ítem
+  // manda si está definido; el umbral general solo decide para ítems sin
+  // mínimo propio (mismo criterio que el hint de "Umbral general de stock
+  // bajo" en CompanyConfig).
+  const thresholdCases = [
+    { id: "own-min-low", nombre: "Con mínimo propio, bajo", tipoItem: "producto", costoBase: 10, margenDeseado: 10, stock: 1, stockMinimo: 2, estado: "activo" },
+    { id: "own-min-ok", nombre: "Con mínimo propio, ok pese al umbral general", tipoItem: "producto", costoBase: 10, margenDeseado: 10, stock: 10, stockMinimo: 2, estado: "activo" },
+    { id: "no-min-low-by-threshold", nombre: "Sin mínimo propio, bajo por umbral general", tipoItem: "producto", costoBase: 10, margenDeseado: 10, stock: 3, stockMinimo: 0, estado: "activo" },
+    { id: "no-min-ok", nombre: "Sin mínimo propio, sobre el umbral general", tipoItem: "producto", costoBase: 10, margenDeseado: 10, stock: 20, stockMinimo: 0, estado: "activo" },
+  ];
+  assert.equal(
+    summarizeInventory(thresholdCases).lowStock,
+    1,
+    "sin lowStockThreshold, solo el mínimo por ítem cuenta (own-min-low)"
+  );
+  assert.equal(
+    summarizeInventory(thresholdCases, { lowStockThreshold: 0 }).lowStock,
+    1,
+    "lowStockThreshold: 0 (alertasStockBajo desactivado) se comporta igual que sin umbral"
+  );
+  assert.equal(
+    summarizeInventory(thresholdCases, { lowStockThreshold: 5 }).lowStock,
+    2,
+    "el umbral general suma ítems sin mínimo propio (no-min-low-by-threshold)"
+  );
+  assert.equal(
+    summarizeInventory(thresholdCases, { lowStockThreshold: 20 }).lowStock,
+    3,
+    "own-min-ok sigue sin contar pese a un umbral general alto: el mínimo por ítem tiene prioridad"
+  );
+
   const headers = mapInventoryHeaders(["TÍPO ÍTEM", "Producto", "Código", "Área", "Categoría", "Medida", "Costo Base", "Margen %", "Precio venta", "Cantidad", "Stock mínimo", "Descripción"]);
   assert.equal(headers.tipoItem, 0);
   assert.equal(headers.nombre, 1);
