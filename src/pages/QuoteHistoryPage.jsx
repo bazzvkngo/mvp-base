@@ -39,7 +39,7 @@ import {
   createQuoteDeliveryRequestId,
   prepareQuoteWhatsAppShare,
 } from "../services/publicQuoteService";
-import { formatDate, formatMoney } from "../utils/formatters";
+import { formatDate, formatMoney, formatTimestamp } from "../utils/formatters";
 import { downloadQuotePdf, shareQuotePdf } from "../utils/quotePdf";
 import {
   BUSINESS_PERMISSIONS,
@@ -101,27 +101,6 @@ const statusStyles = {
     color: "#374151",
   },
 };
-
-function formatTimestamp(value) {
-  if (!value) return "-";
-
-  const date =
-    typeof value?.toDate === "function"
-      ? value.toDate()
-      : value instanceof Date
-      ? value
-      : new Date(value);
-
-  if (Number.isNaN(date.getTime())) return "-";
-
-  return date.toLocaleString("es-CL", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 function getQuoteTimestamp(quote) {
   return quote?.actualizadoEn || quote?.creadoEn || null;

@@ -62,3 +62,29 @@ export function formatDate(value, locale = DEFAULT_LOCALE) {
     day: "2-digit",
   }).format(date);
 }
+
+// Extraída de QuoteHistoryPage.jsx (mismo comportamiento, sin cambios):
+// fecha + hora, para Timestamp de Firestore, Date o cualquier valor que
+// Date acepte. A diferencia de formatDate, no trata las fechas-solo-día
+// ("YYYY-MM-DD") como UTC-mediodía, porque ningún llamador de esta función
+// las usa así.
+export function formatTimestamp(value, locale = DEFAULT_LOCALE) {
+  if (!value) return "-";
+
+  const date =
+    typeof value?.toDate === "function"
+      ? value.toDate()
+      : value instanceof Date
+      ? value
+      : new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "-";
+
+  return new Intl.DateTimeFormat(safeLocale(locale), {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
