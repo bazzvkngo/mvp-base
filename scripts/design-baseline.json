@@ -60,12 +60,12 @@
       "note": "Código de IA existente (se conserva, no se amplía ni elimina sin autorización); excepción, no se migra."
     },
     "src/features/purchaseOrders/purchase-orders.css": {
-      "color": 4,
+      "color": 6,
       "radius": 23,
       "shadow": 6,
       "duration": 0,
       "category": "a",
-      "note": "Paleta de documento impreso de orden de compra (--color-document-* equivalente); excepción documentada."
+      "note": "Paleta de documento impreso de orden de compra (--color-document-* equivalente); excepción documentada. +2 (etapa 5, paso 2): --color-surface-panel/--color-border-default fijados a su valor claro dentro de @media (prefers-color-scheme: dark) { .po-document-preview { ... } }, para que el documento no herede el modo oscuro de tokens.css (:root único). No se puede usar var() para evitar el literal: var(--color-surface-panel) dentro de una regla que redefine esa misma variable es una referencia cíclica (cae al valor heredado oscuro, lo opuesto de lo buscado)."
     },
     "src/features/purchases/purchases.css": {
       "color": 1,
@@ -76,12 +76,12 @@
       "note": "Mismo color de la paleta de documento impreso (#5f6b7c); excepción documentada."
     },
     "src/features/quotes/public-quote.css": {
-      "color": 1,
+      "color": 14,
       "radius": 0,
       "shadow": 0,
       "duration": 0,
-      "category": "c",
-      "note": "Un rgb() de acento sin registrar; bajo volumen, no priorizado."
+      "category": "mixed",
+      "note": "1 rgb() de acento sin registrar (deuda, bajo volumen, no priorizado). +13 (etapa 5, paso 2): esta página la ve un tercero externo sin sesión y debe verse igual sin importar el tema del sistema (como un documento formal); se fijan en .public-proposal, dentro de @media (prefers-color-scheme: dark), los mismos 13 valores claros que tokens.css ya define, para que no hereden el modo oscuro de la fundación (:root único). No se puede usar var() para evitarlos: sería una referencia cíclica dentro de la misma regla que redefine esas variables."
     },
     "src/features/quotes/quote-workspace.css": {
       "color": 0,

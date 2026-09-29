@@ -254,3 +254,29 @@
     width: 100%;
   }
 }
+
+/* Exención de modo oscuro (etapa 5, paso 2 de 10): esta página la ve un
+   tercero externo sin sesión, como un documento formal — debe verse igual
+   sin importar el tema del sistema de quien la abre. tokens.css usa un
+   único :root global (ver hallazgo del paso 1), así que sin este bloque
+   heredaría los valores oscuros de la fundación como cualquier otro
+   archivo. Se fijan aquí, en .public-proposal (el contenedor raíz de toda
+   la página), los mismos valores claros de tokens.css — el resto de
+   selectores de este archivo los hereda sin tocarlos uno por uno. */
+@media (prefers-color-scheme: dark) {
+  .public-proposal {
+    --color-brand-600: #0f766e;
+    --color-brand-700: #0b5f59;
+    --color-surface-panel: #ffffff;
+    --color-surface-canvas: #f7f5f1;
+    --color-text-strong: #16211f;
+    --color-text-default: #3a4744;
+    --color-text-muted: #6b7876;
+    --color-border-subtle: #e4e0d8;
+    --color-border-control: #93a09c;
+    --color-success-50: #ecfdf5;
+    --color-success-700: #047857;
+    --color-warning-50: #fffbeb;
+    --color-warning-800: #92400e;
+  }
+}

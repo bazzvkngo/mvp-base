@@ -974,6 +974,22 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
   padding: 38px 42px;
 }
 
+/* Exención de modo oscuro (etapa 5, paso 2 de 10): esta es la vista
+   previa de un documento formal (orden de compra), debe verse igual sin
+   importar el tema del sistema, igual que QuotePrintView/SalePrintView.
+   Solo 2 propiedades de todo este bloque .po-document-preview* consumen
+   tokens generales (el resto ya usa --po-doc-* propios o literales del
+   documento): el fondo de este selector y el borde de
+   .po-document-preview__empty, heredado de aquí. Se fijan ambas al valor
+   claro para que tokens.css (:root único, ver hallazgo del paso 1) no las
+   enganche por accidente. */
+@media (prefers-color-scheme: dark) {
+  .po-document-preview {
+    --color-surface-panel: #ffffff;
+    --color-border-default: #d3cdc2;
+  }
+}
+
 .po-document-preview p {
   margin: 2px 0;
 }
