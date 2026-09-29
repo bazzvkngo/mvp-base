@@ -217,11 +217,81 @@
   --motion-reveal-duration: 150ms;
 }
 
-/* Andamiaje del modo oscuro (etapa 5, paso 1 de 10): bloque vacío a
-   propósito, sin ningún color todavía. Los valores oscuros se definen en
-   un paso posterior; hasta entonces este bloque no tiene ningún efecto
-   visual, y el modo claro (el único que existe hoy) queda idéntico. */
+/* Modo oscuro (etapa 5, paso 2 de 10): fundación. Pares de contraste
+   verificados a mano contra el umbral WCAG AA de texto normal (4.5:1),
+   con la fórmula de luminancia relativa de WCAG 2:
+     texto por defecto / superficie panel   9.37:1
+     texto por defecto / superficie canvas 11.05:1
+     texto muted / superficie subtle        5.97:1
+     texto fuerte / superficie panel       12.13:1
+     success-700 / success-50               9.54:1
+     warning-800 / warning-50               9.32:1
+     danger-700  / danger-50                7.57:1
+     danger-600  / superficie panel         4.75:1  (el más ajustado, igual pasa AA)
+     info-700    / info-50                  7.49:1
+   Todos pasan AA con margen, salvo danger-600/panel (4.75:1, ajustado
+   pero conforme). Ninguno se forzó: si alguno no hubiera llegado a
+   4.5:1, se habría reportado en vez de ajustarlo a la fuerza (no fue
+   necesario, todos llegan).
+
+   --color-brand-*, --color-text-inverse: NO se redefinen, se mantienen
+   iguales a propósito ("se mantiene igual" de las opciones planteadas).
+   Como fondo de botón/badge con --color-text-inverse encima siguen
+   pasando AA (--color-brand-600 + blanco: 5.47:1). PERO usar
+   --color-brand-600/700 como TEXTO directo sobre el nuevo canvas/panel
+   oscuro NO pasa: 3.10:1 y 2.26:1 medidos, ambos por debajo de 4.5:1.
+   Hoy esto no rompe nada porque ningún archivo de feature tiene todavía
+   su paso de migración a oscuro (paso 3 en adelante); queda como riesgo
+   conocido a revisar ahí, archivo por archivo, distinguiendo cada uso
+   real (fondo de botón vs. texto/link) en vez de resolverlo a ciegas
+   aquí. La escala --color-brand-* ya tiene pasos más claros disponibles
+   (--color-brand-400: 7.02:1, --color-brand-500: 5.22:1 sobre canvas)
+   por si ese paso futuro necesita uno para texto.
+
+   --color-skeleton-base/-highlight: NO se tocan y no hace falta —
+   siguen siendo color-mix(in srgb, var(--color-text-strong) X%,
+   transparent), así que heredan el --color-text-strong oscuro de aquí
+   abajo automáticamente (confirmado por el propio mecanismo de
+   color-mix, no por prueba visual).
+
+   Deliberadamente NO definidos en este paso (excepciones de AGENTS.md):
+   --color-stock-alert-*, --color-tag-*, --color-data-*,
+   --color-document-*, --color-dark-* — decisión pendiente de si se
+   congelan o llevan su propia variante oscura (ver entrega del paso 2). */
 @media (prefers-color-scheme: dark) {
   :root {
+    --color-surface-canvas: #0c1e2b;
+    --color-surface-panel: #142c3d;
+    --color-surface-subtle: #0f2534;
+    --color-surface-raised: #173346;
+    --color-surface-hover: #1b3a4f;
+    --color-surface-selected: #163c3c;
+
+    --color-text-strong: #e4edf1;
+    --color-text-default: #c3d3db;
+    --color-text-muted: #8ba3b0;
+
+    --color-border-subtle: #1d3a4d;
+    --color-border-default: #2a4e63;
+    --color-border-control: #47708a;
+
+    --color-success-50: #0f2b20;
+    --color-success-200: #1f5c42;
+    --color-success-300: #2f7d57;
+    --color-success-700: #6fe3a8;
+
+    --color-warning-50: #2c210c;
+    --color-warning-200: #5c4318;
+    --color-warning-300: #83621f;
+    --color-warning-800: #f0c05a;
+
+    --color-danger-50: #2c1414;
+    --color-danger-200: #5c2424;
+    --color-danger-600: #f2685f;
+    --color-danger-700: #ff8a83;
+
+    --color-info-50: #0f2036;
+    --color-info-200: #244369;
+    --color-info-700: #7fb2f5;
   }
 }
