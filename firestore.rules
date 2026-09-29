@@ -843,12 +843,6 @@ service cloud.firestore {
       match /quoteCreateRequests/{requestId} {
         allow read, create, update, delete: if false;
       }
-
-      match /tareasReferencias/{taskId} {
-        allow read: if canOperateActiveBusiness(uid);
-        allow update: if canOperateActiveBusiness(uid) && isAllowedReferenceTaskUpdate();
-        allow create, delete: if false;
-      }
     }
 
     match /negocios/{businessId} {

@@ -205,17 +205,6 @@ export const financialMovementDocPath = (businessId, movementId) => [
   "financialMovements",
   movementId,
 ];
-export const referenceTasksCollectionPath = (userId) => [
-  "negocios",
-  userId,
-  "tareasReferencias",
-];
-export const referenceTaskDocPath = (userId, taskId) => [
-  "negocios",
-  userId,
-  "tareasReferencias",
-  taskId,
-];
 export const notificationsCollectionPath = (businessId) => [
   "negocios",
   businessId,
