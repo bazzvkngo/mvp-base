@@ -172,12 +172,12 @@
       "note": "statusStyles y estilos inline con literales sin registrar; ~1/3 coincide con --color-tag-*."
     },
     "src/styles/components.css": {
-      "color": 33,
+      "color": 59,
       "radius": 6,
-      "shadow": 11,
+      "shadow": 14,
       "duration": 37,
       "category": "mixed",
-      "note": "Mezcla: rgb() de marca/scrim (excepción, ver --color-brand-600 y --shadow-*) + hex/rgb sin token (deuda sin registrar) en badges y superficies."
+      "note": "Mezcla: rgb() de marca/scrim (excepción, ver --color-brand-600 y --shadow-*) + hex/rgb sin token (deuda sin registrar) en badges y superficies. +26 color / +3 shadow (etapa 5, paso 3, dentro de @media (prefers-color-scheme: dark)): (1) .ui-button--danger/:hover y .ui-badge-count fijan su relleno al rojo de siempre (#dc2626/#b91c1c) porque --color-danger-600/700 ya cambiaron de valor en el paso 2 para servir como TEXTO, no como fondo con texto blanco encima (blanco sobre el valor oscuro nuevo da 2.28-3.03:1, no pasa AA); (2) contrapartes oscuras de los fondos decorativos de .onboarding-screen/.onboarding-card/.auth-panel (gradientes/glows, sin texto encima, no aplica contraste AA, primer valor razonable a validar en pantalla); (3) familia cian sin token de los avisos 'QA local' (.quote-email-dialog__qa-notice*), contraste verificado contra su propio fondo. No cuenta el arreglo de --color-brand-600/700/800 como texto (selector por selector, ver el bloque): eso son var(), no literales."
     },
     "src/styles/globals.css": {
       "color": 1,

@@ -2579,3 +2579,148 @@
     min-height: 200px;
   }
 }
+
+/* Modo oscuro (etapa 5, paso 3 de 10: hub compartido). Ver
+   scripts/design-baseline.json para el detalle de cada literal nuevo
+   registrado aquí. */
+@media (prefers-color-scheme: dark) {
+  /* Rellenos sólidos con texto inverso encima: se fijan al mismo rojo de
+     siempre. --color-danger-600/700 ya tienen valor oscuro (paso 2), pero
+     se calibró para TEXTO sobre un fondo -50 (badges), no para ser el
+     propio relleno con --color-text-inverse blanco encima — blanco sobre
+     esos valores da 3.03:1/2.28:1, no pasa AA. Un rojo sólido se lee igual
+     de bien en claro y en oscuro, así que aquí se fija en vez de seguir la
+     redefinición del token (mismo criterio que --color-brand-600/700 como
+     fondo de botón, que sí se dejó seguir sin cambios). */
+  .ui-button--danger {
+    background: #dc2626;
+  }
+  .ui-button--danger:hover:not(:disabled):not(.ui-button--loading) {
+    background: #b91c1c;
+  }
+  .ui-badge-count {
+    background: #b91c1c;
+  }
+
+  /* --color-brand-600/700/800 se mantienen sin cambio (paso 2, decisión
+     "se mantiene igual"): funcionan bien como FONDO de botón/franja con
+     --color-text-inverse encima. Como TEXTO/ícono directo sobre una
+     superficie oscura no pasan AA (2.26:1 medido en el paso 2). Se
+     corrige selector por selector con --color-brand-400 (mínimo 4.92:1
+     contra las 6 superficies oscuras de la fundación, confirmado contra
+     cada una antes de elegirlo). Se EXCLUYEN a propósito los selectores
+     donde ese texto vive sobre --color-brand-50/100/200 (sin cambio,
+     siguen claros: .auth-password-toggle:hover, .onboarding-icon,
+     .onboarding-section__icon, .business-category-option[aria-checked]) —
+     ahí el par ya funciona igual que en claro, y aplicar brand-400 ahí
+     rompería el contraste (texto claro sobre fondo claro). */
+  .ui-button--ghost,
+  .ui-spinner,
+  .onboarding-step,
+  .business-completion-card__heading > strong,
+  .business-completion-checklist button,
+  .business-category-group h3 svg,
+  .quote-record-link,
+  .quote-record-link:hover,
+  .quote-email-dialog__recipient-action,
+  .quote-email-dialog__recipient-action:hover:not(:disabled),
+  .quote-email-dialog__attachment {
+    color: var(--color-brand-400);
+  }
+
+  /* Fondos decorativos de onboarding y login: pastel casi blanco en claro,
+     primer valor razonable para oscuro (mismo espíritu que ya deja escrito
+     --color-skeleton-base/-highlight en tokens.css: validar en pantalla
+     antes de darlo por definitivo). Sin texto encima, no aplica medir
+     contraste AA — son fondos decorativos, no pares texto/fondo. */
+  .onboarding-screen {
+    background:
+      radial-gradient(circle at 12% 8%, rgb(83 211 200 / 0.1), transparent 28%),
+      radial-gradient(circle at 88% 92%, rgb(127 178 245 / 0.08), transparent 30%),
+      linear-gradient(145deg, #0e2230 0%, #0c1e2b 48%, #0e2230 100%);
+  }
+
+  .onboarding-screen::before {
+    background: rgb(83 211 200 / 0.05);
+  }
+
+  .onboarding-screen::after {
+    background: rgb(127 178 245 / 0.05);
+  }
+
+  .onboarding-card {
+    border-color: rgb(83 211 200 / 0.35);
+    box-shadow:
+      0 20px 55px rgb(2 6 12 / 0.4),
+      0 0 0 1px rgb(255 255 255 / 0.04) inset;
+  }
+
+  .onboarding-field input:disabled,
+  .onboarding-field select:disabled {
+    background-color: var(--color-surface-subtle);
+  }
+
+  .auth-panel {
+    background:
+      radial-gradient(circle at 100% 0%, rgb(83 211 200 / 0.05), transparent 28%),
+      var(--color-surface-panel);
+  }
+
+  .auth-panel::before {
+    background: linear-gradient(
+      180deg,
+      transparent 3%,
+      rgb(83 211 200 / 0.14) 34%,
+      rgb(83 211 200 / 0.05) 68%,
+      transparent 97%
+    );
+  }
+
+  .auth-submit:hover:not(:disabled):not(.ui-button--loading) {
+    box-shadow:
+      0 11px 24px color-mix(in srgb, var(--color-brand-600) 24%, transparent),
+      0 0 0 1px rgb(83 211 200 / 0.14);
+  }
+
+  .onboarding-submit:hover:not(:disabled):not(.ui-button--loading) {
+    box-shadow:
+      0 11px 24px color-mix(in srgb, var(--color-brand-600) 23%, transparent),
+      0 0 0 1px rgb(83 211 200 / 0.14);
+  }
+
+  @media (max-width: 680px) {
+    .auth-screen,
+    .auth-panel {
+      background: linear-gradient(180deg, #0e2230 0%, var(--color-surface-panel) 260px);
+    }
+  }
+
+  /* Aviso "QA local" del envío de correo de cotización: familia cian
+     deliberadamente distinta de los semánticos reales (para marcar que es
+     de prueba, no dato real), sin tokens propios — ya era deuda sin
+     registrar en claro. El aviso base ya usa var(--color-warning-50) como
+     fondo (con valor oscuro del paso 2); se reutilizan aquí los MISMOS
+     hex oscuros ya elegidos para --color-warning-200/800 en tokens.css,
+     en vez de inventar otros, para no duplicar decisiones de contraste
+     (warning-800/warning-50 ya midió 9.32:1 en el paso 2). El cian de
+     --qa-notice--result no tiene token: 7fd9e6/0f2b2e mide 9.23:1,
+     7fd9e6/panel oscuro (fondo de .qa-action) mide 8.90:1. */
+  .quote-email-dialog__qa-notice {
+    border-color: #5c4318;
+    color: #f0c05a;
+  }
+
+  .quote-email-dialog__qa-notice--result {
+    background: #0f2b2e;
+    border-color: #3d8a94;
+    color: #7fd9e6;
+  }
+
+  .quote-email-dialog__qa-action:hover {
+    background: #123640;
+  }
+
+  .quote-email-dialog__qa-action:focus-visible {
+    outline-color: #56c7d8;
+  }
+}
