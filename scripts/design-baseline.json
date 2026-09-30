@@ -148,12 +148,12 @@
       "note": "Sincronizado en la etapa 5, paso 7: QUOTE_STATUS (antes QUOTE_CHART) es su propia familia --color-quote-status-* (no --color-data-*, son estados de documento, no categorías financieras), elegida según usePrefersDarkMode(). +6 color: cada uno de los 6 estados ahora declara su par {light, dark} explícito (3 cambian de verdad: aceptada/rechazada/archivada; 3 repiten el mismo hex en ambos por claridad: borrador/emitida/vencida, ya pasaban bien sin cambio)."
     },
     "src/pages/NewQuotePage.jsx": {
-      "color": 193,
+      "color": 1,
       "radius": 52,
-      "shadow": 3,
+      "shadow": 0,
       "duration": 1,
       "category": "b",
-      "note": "Objeto styles inline con literales; deuda conocida, no se toca en tareas funcionales."
+      "note": "Etapa 5, paso 8: los ~193 literales de color del objeto styles se migraron a var(--color-*)/var(--shadow-*) (mecanismo de reuso-por-rol para paginas legacy, aprobado en la tarea). Queda 1 literal (rgba(15,23,42,0.45), backdrop del modal, ya congelado a proposito, mismo mecanismo de pin de scrims). radius/duration no son reactivos al tema, no se tocaron."
     },
     "src/pages/PricingPage.jsx": {
       "color": 49,
