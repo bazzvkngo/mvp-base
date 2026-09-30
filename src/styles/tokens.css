@@ -276,22 +276,41 @@
     --color-border-control: #47708a;
 
     --color-success-50: #0f2b20;
-    --color-success-200: #1f5c42;
-    --color-success-300: #2f7d57;
+    --color-success-200: #348a5f;
+    --color-success-300: #3a9a6c;
     --color-success-700: #6fe3a8;
 
     --color-warning-50: #2c210c;
-    --color-warning-200: #5c4318;
-    --color-warning-300: #83621f;
+    --color-warning-200: #96702a;
+    --color-warning-300: #a67f2b;
     --color-warning-800: #f0c05a;
 
     --color-danger-50: #2c1414;
-    --color-danger-200: #5c2424;
+    --color-danger-200: #c25b50;
     --color-danger-600: #f2685f;
     --color-danger-700: #ff8a83;
 
     --color-info-50: #0f2036;
-    --color-info-200: #244369;
+    --color-info-200: #4779b3;
     --color-info-700: #7fb2f5;
   }
 }
+
+/* Corrección posterior al paso 2 (encontrada en el paso 4, etapa 5, al
+   auditar interior.css): los -200/-300 de arriba se eligieron a ojo como
+   bordes de badge, sin medir contraste no-textual (WCAG 1.4.11, umbral
+   3:1) — el paso 2 solo midió el texto -700/-800. Contra su propia -50
+   (el fondo real donde viven, p. ej. --color-success-200 sobre
+   --color-success-50 en un badge) daban 1.42:1-1.92:1, muy por debajo
+   de 3:1: un borde prácticamente invisible. Corregidos aquí a valores
+   que sí pasan 3:1 tanto contra su -50 como contra --color-surface-panel
+   (por si el borde toca directamente el panel en vez del tinte -50):
+     success-200: 3.57:1 (-50) / 3.39:1 (panel)
+     success-300: 4.34:1 (-50) / 4.13:1 (panel)
+     warning-200: 3.49:1 (-50) / 3.19:1 (panel)
+     warning-300: 4.28:1 (-50) / 3.91:1 (panel)
+     danger-200:  4.03:1 (-50) / 3.37:1 (panel)
+     info-200:    3.64:1 (-50) / 3.19:1 (panel)
+   Afecta a todo consumidor ya migrado (components.css, layout.css) y a
+   interior.css; no requirió tocar ningún archivo de feature porque son
+   los mismos tokens, ya consumidos por var(). */
