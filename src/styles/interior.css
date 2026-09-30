@@ -2289,6 +2289,55 @@ body:has(.reports-simple) .environment-notice {
   display: none;
 }
 
+/* Modo oscuro (etapa 5, paso 4 de 10: interior.css, pasada 2 de 6 —
+   Dashboard V2). Sin scrims en esta pasada (el único de todo el archivo
+   ya se corrigió en la pasada 1). */
+@media (prefers-color-scheme: dark) {
+  /* --color-brand-600/700/800 sin cambio (paso 2) como texto/ícono sobre
+     una superficie que sí reacciona al tema — mismo criterio que la
+     pasada 1, cada selector verificado contra su fondo real antes de
+     aplicar el fix. */
+  .dashboard-v2-kicker,
+  .dashboard-v2-financial-note button,
+  .dashboard-activity-v2-row button,
+  .dashboard-attention-item button,
+  .dashboard-v2-financial-note button:hover,
+  .dashboard-activity-v2-row button:hover,
+  .dashboard-attention-item button:hover,
+  .dashboard-activity-v2-type,
+  .statistics-module-icon,
+  .report-detail-button,
+  .report-detail-button:hover,
+  .reports-simple-card__icon,
+  .reports-simple-card__link,
+  .reports-simple-eyebrow,
+  .reports-section-heading > div > span,
+  .reports-simple-card--result .reports-simple-card__amount,
+  .reports-simple-card--margin .reports-simple-card__amount,
+  .reports-section-heading button,
+  .reports-project-table button,
+  .reports-project-cards header button,
+  .reports-project-table button strong {
+    color: var(--color-brand-400);
+  }
+
+  /* Excepción encontrada leyendo el contexto (no adivinada): dentro de
+     .reports-simple-card--margin, .reports-simple-card__icon tiene su
+     PROPIO fondo fijo en --color-brand-50 (línea ~1812, sin cambio en
+     oscuro) — ahí el brand-700 de siempre sigue funcionando igual que en
+     claro, y el brand-400 general de arriba (pensado para
+     --color-surface-selected) rompería el contraste. Se revierte con
+     selector más específico. */
+  .reports-simple-card--margin .reports-simple-card__icon {
+    color: var(--color-brand-700);
+  }
+
+  /* Misma excepción: .reports-profitability-primary dd vive dentro de
+     .reports-profitability-primary > div, que tiene fondo propio fijo en
+     --color-brand-50 (línea ~1935, sin cambio en oscuro) — no se toca,
+     ya funciona igual que en claro. */
+}
+
 /* REPORTES_V5 (centro de reportes: subvistas Ventas/Compras/Inventario/Proyectos/Ganancias) */
 
 .reports-simple-metrics--3col {
