@@ -1635,3 +1635,55 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
     break-inside: avoid;
   }
 }
+
+/* Modo oscuro (etapa 5, paso 5 de 10: cadena de compras, base
+   purchase-orders.css). Sin scrims/overlays en este archivo (grep
+   completo de "overlay|scrim|backdrop": cero resultados) — los 2
+   color-mix(...--color-text-strong...) que tiene (líneas ~14 y ~365) son
+   sombras de elevación de tarjeta/menú, no telones de fondo de diálogo;
+   mismo criterio ya establecido en el paso 3/4 (efecto halo reportado,
+   no se toca, no bloquea nada funcional aquí tampoco). */
+@media (prefers-color-scheme: dark) {
+  /* --color-brand-600/700/800 sin cambio (paso 2) como texto/ícono sobre
+     una superficie que sí reacciona al tema, cada uno verificado contra
+     su fondo real antes de tocar. Corregido con --color-brand-400
+     (mínimo 4.92:1 ya verificado en el paso 3). */
+  .po-kicker,
+  .po-status--emitida,
+  .po-back-link:hover,
+  .po-next-step strong,
+  .po-linked-purchase span,
+  .supply-trace__title,
+  .supply-trace__document,
+  .po-button--quiet:hover:not(:disabled),
+  .po-message,
+  .po-provider__badge,
+  .po-line__readonly-total dd,
+  .po-summary__total strong,
+  .po-details__indicator,
+  .po-inline-link,
+  .po-trace li button {
+    color: var(--color-brand-400);
+  }
+
+  /* .po-history-card.po-history__recent ya usa border-color:
+     var(--color-brand-400) en claro (sin cambio, ya seguro); su anillo
+     box-shadow acompañante seguía en brand-600 (2.20:1 contra
+     --color-surface-selected, falla) — se alinea al mismo brand-400 del
+     borde para que ambas propiedades de la misma regla usen el mismo
+     tono. */
+  .po-history-card.po-history__recent {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-brand-400) 12%, transparent);
+  }
+
+  /* Excepciones NO tocadas, confirmadas leyendo el contexto:
+     --color-brand-600 como fondo con --color-text-inverse encima
+     (.po-button--primary, .po-history__actions > .po-history__primary)
+     ya funciona igual que en claro (5.47:1, verificado en el paso 2/3).
+     Los focus rings con color-mix(...--color-brand-500...) (líneas ~238,
+     ~520) no se tocan, mismo criterio que --focus-ring de tokens.css. */
+}
+
+/* Registro de tokens faltantes encontrados en esta pasada (etapa 5,
+   barrido acumulado, NO resueltos aquí — ver entrega del paso 5):
+   ninguno nuevo en purchase-orders.css. */

@@ -62,10 +62,10 @@
     "src/features/purchaseOrders/purchase-orders.css": {
       "color": 6,
       "radius": 23,
-      "shadow": 6,
+      "shadow": 7,
       "duration": 0,
       "category": "a",
-      "note": "Paleta de documento impreso de orden de compra (--color-document-* equivalente); excepción documentada. +2 (etapa 5, paso 2): --color-surface-panel/--color-border-default fijados a su valor claro dentro de @media (prefers-color-scheme: dark) { .po-document-preview { ... } }, para que el documento no herede el modo oscuro de tokens.css (:root único). No se puede usar var() para evitar el literal: var(--color-surface-panel) dentro de una regla que redefine esa misma variable es una referencia cíclica (cae al valor heredado oscuro, lo opuesto de lo buscado)."
+      "note": "Paleta de documento impreso de orden de compra (--color-document-* equivalente); excepción documentada. +2 (etapa 5, paso 2): --color-surface-panel/--color-border-default fijados a su valor claro dentro de @media (prefers-color-scheme: dark) { .po-document-preview { ... } }, para que el documento no herede el modo oscuro de tokens.css (:root único). No se puede usar var() para evitar el literal: var(--color-surface-panel) dentro de una regla que redefine esa misma variable es una referencia cíclica (cae al valor heredado oscuro, lo opuesto de lo buscado). +1 shadow (etapa 5, paso 5): .po-history-card.po-history__recent repite su box-shadow dentro de @media (dark), mismo selector, solo cambia color-mix(...--color-brand-600...) (2.20:1, falla) a color-mix(...--color-brand-400...) — se cuenta como segunda declaración de box-shadow, mismo patrón ya visto en interior.css paso 4."
     },
     "src/features/purchases/purchases.css": {
       "color": 1,
