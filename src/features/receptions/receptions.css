@@ -131,3 +131,29 @@
   .reception-import__row-fields label:first-child { grid-column: auto; }
   .reception-import__provider-actions, .reception-import__provider-actions .ui-button { width: 100%; }
 }
+
+/* Modo oscuro (etapa 5, paso 5 de 10: cadena de compras, pasada 2 de 3
+   — receptions.css, que importa purchase-orders.css DIRECTO, no vía
+   purchases.css — confirmado leyendo la línea 1 de este archivo). Sin
+   scrims/overlays, sin color-mix (grep completo, cero resultados). */
+@media (prefers-color-scheme: dark) {
+  /* --color-brand-600/700 sin cambio (paso 2) como texto sobre una
+     superficie que sí reacciona al tema. Corregido con
+     --color-brand-400. */
+  .reception-import__steps li.is-current,
+  .reception-import__file-actions button {
+    color: var(--color-brand-400);
+  }
+
+  /* Excepciones NO tocadas, confirmadas leyendo el contexto:
+     .reception-import__steps li.is-current > span (fondo
+     --color-brand-50) y .reception-import__file-type (fondo
+     --color-brand-50) usan --color-brand-600/700 sobre un fondo de la
+     MISMA familia brand, que no cambia con el tema — ya funcionan igual
+     que en claro, tocarlas rompería el contraste (texto claro sobre
+     fondo claro). --color-stock-alert-* (líneas 62-72, 107): ya tiene
+     valor oscuro definido en tokens.css (paso 5, ver commit aparte), no
+     hace falta redefinirlo aquí, solo se sigue usando por var(). */
+}
+
+/* Tokens faltantes nuevos encontrados en esta pasada: ninguno. */
