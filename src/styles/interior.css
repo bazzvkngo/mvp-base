@@ -4259,6 +4259,23 @@ body:has(.reports-simple) .environment-notice {
   padding: var(--space-2) var(--space-3);
 }
 
+/* Modo oscuro (etapa 5, paso 4 de 10: interior.css, pasada 5 de 6 —
+   Clientes). Sin scrims nuevos. */
+@media (prefers-color-scheme: dark) {
+  .client-row-actions button:hover {
+    color: var(--color-brand-400);
+  }
+
+  .client-form-field input:focus,
+  .client-form-field select:focus,
+  .client-form-field textarea:focus,
+  .client-selector__search > div:focus-within,
+  .client-selector__result:hover,
+  .client-selector__result[aria-pressed="true"] {
+    border-color: var(--color-brand-400);
+  }
+}
+
 /* Historial de cotizaciones */
 .quote-document-footer {
   align-items: center;
