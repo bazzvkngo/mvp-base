@@ -44,12 +44,12 @@
       "note": "Colores de gráfico (Chart.js) no sincronizados con --color-data-*; deuda conocida."
     },
     "src/features/inventory/inventory.css": {
-      "color": 16,
+      "color": 15,
       "radius": 5,
-      "shadow": 1,
+      "shadow": 2,
       "duration": 0,
       "category": "mixed",
-      "note": "1 literal es el naranja de stock pendiente de --color-stock-alert-* (deuda conocida); el resto son verdes/rojos/ámbar de estado sin registrar."
+      "note": "Verdes/rojos/ámbar/grises de estado sin registrar (sin coincidencia exacta a un token actual, salvo el ya tokenizado abajo). -1 (etapa 5, paso 6): .inventory-stock-low tokenizó su background (#fff7ed) a var(--color-stock-alert-50), coincidencia exacta confirmada — investigado primero: NINGÚN selector de este archivo usaba el token por var() todavía pese a que ya tenía valor oscuro desde el paso 5; ahora tiene 1 uso real. +1 shadow (etapa 5, paso 6): .inventory-catalog-list li.is-selected repite su box-shadow dentro de @media (dark), mismo selector, solo cambia --color-brand-600 (falla contra --color-surface-selected) a --color-brand-400 — mismo patrón ya visto en interior.css/purchase-orders.css."
     },
     "src/features/inventory/InventoryAiImporter.jsx": {
       "color": 82,

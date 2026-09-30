@@ -20,7 +20,7 @@
 .inventory-identity-meta { color: var(--color-text-muted); display: block; font-size: var(--font-size-xs); margin-top: .2rem; }
 .inventory-code-input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .inventory-stock-cell { align-items: flex-start; display: flex; flex-direction: column; gap: .3rem; }
-.inventory-stock-low { background: #fff7ed; border-radius: 999px; color: #c2410c; font-weight: var(--font-weight-bold); padding: .18rem .45rem; }
+.inventory-stock-low { background: var(--color-stock-alert-50); border-radius: 999px; color: #c2410c; font-weight: var(--font-weight-bold); padding: .18rem .45rem; }
 .inventory-no-stock { color: var(--color-text-muted); font-size: var(--font-size-xs); white-space: nowrap; }
 .inventory-status { border-radius: 999px; display: inline-flex; font-size: var(--font-size-xs); font-weight: var(--font-weight-bold); padding: .22rem .48rem; white-space: nowrap; }
 .inventory-status--active { background: var(--color-success-50); color: var(--color-success-700); }
@@ -231,3 +231,112 @@
   .inventory-import-row > summary label { width: calc(100% - 24px); }
   .inventory-import-row > summary .inventory-row-status { margin-left: 34px; }
 }
+
+/* Modo oscuro (etapa 5, paso 6 de 10). Estado real de --color-stock-alert-*
+   en este archivo (investigado antes de tocar nada, la nota original de
+   design-baseline.json decía "1 literal es el naranja de stock" pero no
+   confirmaba cuál ni si coincidía por nombre): NINGÚN selector referenciaba
+   el token por var() todavía. El único candidato real es
+   .inventory-stock-low, cuyo background (#fff7ed) SÍ coincide EXACTO con
+   --color-stock-alert-50 — tokenizado arriba, en la regla de siempre (sin
+   cambio visual en claro). Su texto (#c2410c) no coincide con
+   --color-stock-alert-800 (#9a3412), así que no se tokenizó el literal
+   claro; su contraparte oscura sí reutiliza --color-stock-alert-800 más
+   abajo (mismo dominio, coincide en significado). Con esto,
+   --color-stock-alert-* pasa de 0 a 1 uso real por var() en este archivo. */
+@media (prefers-color-scheme: dark) {
+  .inventory-stock-low {
+    color: var(--color-stock-alert-800);
+  }
+
+  /* --color-brand-600/700/800 sin cambio (paso 2) como texto/ícono sobre
+     superficie que sí reacciona al tema, corregido con
+     --color-brand-400. Incluye los que quedan sobre
+     --color-surface-selected una vez redefinido más abajo (antes eran
+     fondos #f0fdfa sin tokenizar). */
+  .inventory-button--ghost,
+  .inventory-link-button,
+  .inventory-sale-price strong,
+  .inventory-catalog-select-field > span > button,
+  .inventory-catalog-row-actions button,
+  .inventory-catalog-column-empty button,
+  .inventory-import-steps li.is-current,
+  .inventory-import-steps li.is-current > span,
+  .inventory-import-file-card__type,
+  .inventory-type-selector button.is-active {
+    color: var(--color-brand-400);
+  }
+
+  .inventory-type-selector button.is-active,
+  .inventory-import-steps li.is-current > span {
+    border-color: var(--color-brand-400);
+  }
+
+  .inventory-sale-price--final {
+    border-color: var(--color-brand-400);
+  }
+
+  .inventory-catalog-list li.is-selected {
+    box-shadow: inset 3px 0 var(--color-brand-400);
+  }
+
+  /* Fondos "seleccionado/activo" (#f0fdfa, 4 veces) sin tokenizar en
+     claro: mismo rol que --color-surface-selected, ya usado tal cual en
+     .inventory-import-steps li.is-current > span más arriba en el mismo
+     archivo — se reutiliza para la contraparte oscura, sin tokenizar el
+     literal claro (fuera de alcance). */
+  .inventory-type-selector button.is-active,
+  .inventory-sale-price--final,
+  .inventory-unit-options button.is-active,
+  .inventory-unit-options button:hover,
+  .inventory-catalog-list li.is-selected {
+    background: var(--color-surface-selected);
+  }
+
+  /* Resto de literales sin coincidencia exacta: contraparte oscura
+     reutilizando el token semántico ya existente por rol (sin tokenizar
+     el literal claro):
+     - .inventory-metric--warning border #f59e0b -> --color-warning-200.
+     - .inventory-status--archived (#f1f5f9/#475569, "archivado", rol
+       neutro) -> --color-surface-subtle/--color-text-muted. OJO:
+       #475569 coincide EXACTO con --color-data-net, pero "archivado" no
+       es un dato financiero — cruzar ese token habría sido el mismo
+       error de dominio ajeno que ya se evitó con --color-stock-alert-*
+       en works.css; no se tokenizó.
+     - .inventory-feedback--success #065f46 -> --color-success-700.
+     - .inventory-feedback--error/.inventory-catalog-load-error/
+       .inventory-catalog-message--error #991b1b (3 usos) -> --color-danger-700.
+     - .inventory-feedback--notice #78350f -> --color-warning-800.
+     - .inventory-import-steps li.is-complete > span border #86d8b5
+       (muy cercano a --color-success-300 #86d5b2 pero no exacto) ->
+       --color-success-200 (rol de borde, no el mismo valor que casi
+       coincide). */
+  .inventory-metric--warning {
+    border-color: var(--color-warning-200) !important;
+  }
+
+  .inventory-status--archived {
+    background: var(--color-surface-subtle);
+    color: var(--color-text-muted);
+  }
+
+  .inventory-feedback--success {
+    color: var(--color-success-700);
+  }
+
+  .inventory-feedback--error,
+  .inventory-catalog-load-error,
+  .inventory-catalog-message--error {
+    color: var(--color-danger-700);
+  }
+
+  .inventory-feedback--notice {
+    color: var(--color-warning-800);
+  }
+
+  .inventory-import-steps li.is-complete > span {
+    border-color: var(--color-success-200);
+  }
+}
+
+/* Tokens faltantes nuevos encontrados en esta pasada: ninguno. */
