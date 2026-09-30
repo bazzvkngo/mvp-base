@@ -925,3 +925,35 @@
   }
 
 }
+
+/* Modo oscuro (etapa 5, paso 5 de 10: cadena de compras, pasada 3 de 3
+   — sales.css, que hereda de purchases.css que hereda de
+   purchase-orders.css). Sin overrides redundantes: los selectores con
+   prefijo po- o purchase- que este archivo hereda vía @import ya
+   quedaron resueltos en las pasadas 1 y 2; aquí solo lo específico de sales.css
+   (prefijo .sale-*). Sin scrims/overlays ni color-mix propios (grep
+   completo, cero resultados). */
+@media (prefers-color-scheme: dark) {
+  /* --color-brand-600/700 sin cambio (paso 2) como texto sobre una
+     superficie que sí reacciona al tema, corregido con
+     --color-brand-400 (mismo criterio y contraste ya verificado en las
+     pasadas 1-2 de este paso). */
+  .sale-inline-link,
+  .sale-stock-note,
+  .sale-history-link {
+    color: var(--color-brand-400);
+  }
+
+  /* Excepción encontrada leyendo el contexto (no adivinada):
+     .sale-back-link comparte la regla base con .sale-inline-link
+     (color: brand-600), pero una regla MÁS ESPECÍFICA/posterior
+     (línea ~120) la sobreescribe a --color-text-muted para
+     .sale-back-link en particular — su color real en claro nunca fue
+     brand-600. Ya es correcto sin tocar (case a); si se le aplicara el
+     fix de brand-400 aquí, con la misma especificidad y último en el
+     orden de la cascada, LE GANARÍA a --color-text-muted en oscuro,
+     rompiendo algo que ya funcionaba. No se incluye en la lista de
+     arriba a propósito. */
+}
+
+/* Tokens faltantes nuevos encontrados en esta pasada: ninguno. */
