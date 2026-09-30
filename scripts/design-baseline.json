@@ -156,12 +156,12 @@
       "note": "Etapa 5, paso 8: los ~193 literales de color del objeto styles se migraron a var(--color-*)/var(--shadow-*) (mecanismo de reuso-por-rol para paginas legacy, aprobado en la tarea). Queda 1 literal (rgba(15,23,42,0.45), backdrop del modal, ya congelado a proposito, mismo mecanismo de pin de scrims). radius/duration no son reactivos al tema, no se tocaron."
     },
     "src/pages/PricingPage.jsx": {
-      "color": 49,
+      "color": 0,
       "radius": 10,
       "shadow": 0,
       "duration": 0,
       "category": "b",
-      "note": "Objeto styles propio; deuda conocida documentada en Parte B, destino de migración sin decidir."
+      "note": "Etapa 5, paso 8: statusStyles, differenceMetricStyles y el objeto styles inline migrados a var(--color-*) (reuso por rol, mismo mecanismo que NewQuotePage.jsx/QuoteHistoryPage.jsx). El destino a largo plazo de la pagina sigue sin decidir, pero hoy es una pagina real montada en rutas autenticadas."
     },
     "src/pages/QuoteHistoryPage.jsx": {
       "color": 1,

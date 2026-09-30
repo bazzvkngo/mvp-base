@@ -12,38 +12,38 @@ const tipoLabels = {
 
 const statusStyles = {
   [PRICING_STATUS.SIN_REFERENCIAS]: {
-    background: "#f1f5f9",
-    color: "#475569",
+    background: "var(--color-surface-subtle)",
+    color: "var(--color-text-default)",
   },
   [PRICING_STATUS.BAJO_MERCADO]: {
-    background: "#dbeafe",
-    color: "#1d4ed8",
+    background: "var(--color-info-50)",
+    color: "var(--color-info-700)",
   },
   [PRICING_STATUS.DENTRO_DE_RANGO]: {
-    background: "#dcfce7",
-    color: "#166534",
+    background: "var(--color-success-50)",
+    color: "var(--color-success-700)",
   },
   [PRICING_STATUS.SOBRE_MERCADO]: {
-    background: "#fee2e2",
-    color: "#991b1b",
+    background: "var(--color-danger-50)",
+    color: "var(--color-danger-700)",
   },
 };
 
 const differenceMetricStyles = {
   [PRICING_STATUS.BAJO_MERCADO]: {
-    background: "#ecfdf5",
-    border: "1px solid #bbf7d0",
-    color: "#047857",
+    background: "var(--color-success-50)",
+    border: "1px solid var(--color-success-200)",
+    color: "var(--color-success-700)",
   },
   [PRICING_STATUS.DENTRO_DE_RANGO]: {
-    background: "#fffbeb",
-    border: "1px solid #fde68a",
-    color: "#92400e",
+    background: "var(--color-warning-50)",
+    border: "1px solid var(--color-warning-200)",
+    color: "var(--color-warning-800)",
   },
   [PRICING_STATUS.SOBRE_MERCADO]: {
-    background: "#fef2f2",
-    border: "1px solid #fecaca",
-    color: "#b91c1c",
+    background: "var(--color-danger-50)",
+    border: "1px solid var(--color-danger-200)",
+    color: "var(--color-danger-700)",
   },
 };
 
@@ -414,7 +414,7 @@ const styles = {
     gap: "16px",
   },
   eyebrow: {
-    color: "#0f766e",
+    color: "var(--color-brand-600)",
     fontSize: "12px",
     fontWeight: 800,
     textTransform: "uppercase",
@@ -425,11 +425,11 @@ const styles = {
   },
   subtitle: {
     margin: 0,
-    color: "#64748b",
+    color: "var(--color-text-muted)",
     lineHeight: 1.5,
   },
   logicNote: {
-    color: "#64748b",
+    color: "var(--color-text-muted)",
     fontSize: "14px",
     lineHeight: 1.45,
     margin: "8px 0 0",
@@ -442,31 +442,31 @@ const styles = {
     minWidth: 0,
   },
   metricCard: {
-    background: "#ffffff",
-    border: "1px solid #e5e7eb",
+    background: "var(--color-surface-panel)",
+    border: "1px solid var(--color-border-default)",
     borderRadius: "8px",
     padding: "16px",
   },
   metricLabel: {
-    color: "#64748b",
+    color: "var(--color-text-muted)",
     display: "block",
     fontSize: "13px",
     marginBottom: "8px",
   },
   metricValue: {
-    color: "#111827",
+    color: "var(--color-text-strong)",
     fontSize: "24px",
   },
   notice: {
-    background: "#fffbeb",
-    border: "1px solid #fde68a",
+    background: "var(--color-warning-50)",
+    border: "1px solid var(--color-warning-200)",
     borderRadius: "8px",
-    color: "#92400e",
+    color: "var(--color-warning-800)",
     padding: "12px 14px",
   },
   listCard: {
-    background: "#ffffff",
-    border: "1px solid #e5e7eb",
+    background: "var(--color-surface-panel)",
+    border: "1px solid var(--color-border-default)",
     borderRadius: "8px",
     maxWidth: "100%",
     minWidth: 0,
@@ -481,15 +481,15 @@ const styles = {
   },
   searchInput: {
     flex: "1 1 260px",
-    border: "1px solid #cbd5e1",
+    border: "1px solid var(--color-border-control)",
     borderRadius: "6px",
     padding: "10px 11px",
   },
   filterSelect: {
-    border: "1px solid #cbd5e1",
+    border: "1px solid var(--color-border-control)",
     borderRadius: "6px",
     padding: "10px 11px",
-    background: "#ffffff",
+    background: "var(--color-surface-panel)",
   },
   tableWrapper: {
     maxWidth: "100%",
@@ -502,9 +502,9 @@ const styles = {
     borderCollapse: "collapse",
   },
   th: {
-    background: "#f8fafc",
-    borderBottom: "1px solid #e5e7eb",
-    color: "#64748b",
+    background: "var(--color-surface-subtle)",
+    borderBottom: "1px solid var(--color-border-default)",
+    color: "var(--color-text-muted)",
     fontSize: "12px",
     padding: "10px",
     textAlign: "left",
@@ -512,7 +512,7 @@ const styles = {
     whiteSpace: "nowrap",
   },
   td: {
-    borderBottom: "1px solid #eef2f7",
+    borderBottom: "1px solid var(--color-border-subtle)",
     fontSize: "14px",
     padding: "12px 10px",
     verticalAlign: "top",
@@ -527,12 +527,12 @@ const styles = {
     whiteSpace: "normal",
   },
   detailCell: {
-    background: "#f8fafc",
-    borderBottom: "1px solid #eef2f7",
+    background: "var(--color-surface-subtle)",
+    borderBottom: "1px solid var(--color-border-subtle)",
     padding: "14px",
   },
   itemMeta: {
-    color: "#64748b",
+    color: "var(--color-text-muted)",
     display: "block",
     fontSize: "12px",
     marginTop: "3px",
@@ -545,9 +545,9 @@ const styles = {
     padding: "4px 9px",
   },
   smallButton: {
-    border: "1px solid #cbd5e1",
+    border: "1px solid var(--color-border-control)",
     borderRadius: "6px",
-    background: "#ffffff",
+    background: "var(--color-surface-panel)",
     cursor: "pointer",
     fontWeight: 700,
     padding: "7px 9px",
@@ -562,15 +562,15 @@ const styles = {
     gap: "10px",
   },
   detailMetric: {
-    background: "#ffffff",
-    border: "1px solid #e5e7eb",
+    background: "var(--color-surface-panel)",
+    border: "1px solid var(--color-border-default)",
     borderRadius: "8px",
     display: "grid",
     gap: "4px",
     padding: "10px 12px",
   },
   detailTitle: {
-    color: "#334155",
+    color: "var(--color-text-default)",
     fontSize: "13px",
     margin: "0 0 10px",
     textTransform: "uppercase",
@@ -581,15 +581,15 @@ const styles = {
     gap: "10px",
   },
   referenceItem: {
-    background: "#ffffff",
-    border: "1px solid #e5e7eb",
+    background: "var(--color-surface-panel)",
+    border: "1px solid var(--color-border-default)",
     borderRadius: "8px",
     display: "grid",
     gap: "4px",
     padding: "12px",
   },
   emptyState: {
-    border: "1px dashed #cbd5e1",
+    border: "1px dashed var(--color-border-control)",
     borderRadius: "8px",
     padding: "28px",
     textAlign: "center",
@@ -598,11 +598,11 @@ const styles = {
     margin: "0 0 6px",
   },
   emptyText: {
-    color: "#64748b",
+    color: "var(--color-text-muted)",
     margin: 0,
   },
   errorText: {
-    color: "#b91c1c",
+    color: "var(--color-danger-700)",
     fontSize: "14px",
     margin: "12px 0 0",
   },
