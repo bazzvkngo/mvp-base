@@ -201,7 +201,7 @@ const styles = {
   header: {
     alignItems: "flex-start",
     background: "var(--color-surface-panel)",
-    border: "1px solid #e5e7eb",
+    border: "1px solid var(--color-border-default)",
     borderRadius: "4px",
     padding: "18px",
   },
@@ -257,7 +257,7 @@ const styles = {
   },
   ratingText: {
     alignItems: "center",
-    color: "#64748b",
+    color: "var(--color-text-muted)",
     display: "flex",
     fontSize: "13px",
     gap: "4px",

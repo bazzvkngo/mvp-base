@@ -108,12 +108,12 @@
       "note": "rgba(255,255,255,a) de overlay; excepción."
     },
     "src/features/references/MarketPriceReferencesView.jsx": {
-      "color": 2,
+      "color": 0,
       "radius": 2,
       "shadow": 0,
       "duration": 0,
       "category": "c",
-      "note": "Estilos inline sin registrar."
+      "note": "Etapa 5, paso 8: los 2 literales restantes (border/color genericos) migrados a var(--color-border-default)/var(--color-text-muted); el resto del objeto styles ya estaba tokenizado de una migracion previa."
     },
     "src/features/sales/SalePrintView.jsx": {
       "color": 29,
