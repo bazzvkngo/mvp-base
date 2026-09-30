@@ -90,25 +90,33 @@
      tarjetas, montos, marcadores y leyendas): ingreso, gasto, neto y
      pendiente. "Ingreso" no tiene token propio: usar --color-brand-600
      directamente (mismo valor, #0f766e).
-     DEUDA CONOCIDA: los charts en JS (FinancialCharts.jsx,
-     OperationalComparisonChart.jsx, CostCompositionChart.jsx) todavía usan
-     literales propios (#0f766e, #1e3a5f, #475569, #d97706, etc.) y NO están
-     sincronizados con esta familia; si se cambia un valor aquí, hay que
-     cambiarlo también a mano en esos archivos. */
+     Sincronizado desde la etapa 5, paso 7: los charts en JS
+     (FinancialCharts.jsx, OperationalComparisonChart.jsx,
+     CostCompositionChart.jsx) no pueden leer var() (Chart.js pinta con
+     strings JS, no CSS), así que mantienen su propio par de constantes
+     claro/oscuro que DEBE reflejar estos mismos valores a mano — si se
+     cambia un valor aquí, hay que cambiarlo también en esos archivos
+     (mismo criterio ya documentado, ahora con el par oscuro real). */
   --color-data-expense: #1e3a5f;
   --color-data-net: #475569;
   --color-data-pending: #d97706;
   --color-data-pending-700: #b45309;
+
+  /* "Pagados" en el donut de FinancialStatusChart (antes TEAL_SOFT local
+     sin token). Mismo valor en claro y oscuro: ya mide 7.64:1/9.01:1
+     contra --color-surface-panel/--color-surface-canvas oscuros tal
+     cual, no necesitó ajuste. */
+  --color-data-paid: #8bc8c2;
 
   /* Composición de costos de proyecto (leyenda de .reports-cost-breakdown):
      paleta posicional de 4 categorías, sin relación con el esquema
      ingreso/gasto de --color-data-* de arriba. Aunque materials coincide en
      valor con --color-brand-600 y labor con --color-data-expense, se
      declaran propios para no acoplar categorías de costo a otros conceptos.
-     DEUDA CONOCIDA: CostCompositionChart.jsx (const COLORS) todavía usa
-     literales propios (#0f766e, #1e3a5f, #b7791f, #64748b) y NO está
-     sincronizado con esta familia; si se cambia un valor aquí, hay que
-     cambiarlo también a mano allí. */
+     Sincronizado desde la etapa 5, paso 7: CostCompositionChart.jsx
+     (const COLORS) mantiene su propio par claro/oscuro que debe
+     reflejar estos valores a mano (mismo motivo que la familia de
+     arriba: Chart.js no puede leer var()). */
   --color-data-cost-materials: #0f766e;
   --color-data-cost-labor: #1e3a5f;
   --color-data-cost-direct: #b7791f;
@@ -128,6 +136,22 @@
   --color-tag-green-text: #047857;
   --color-tag-amber-bg: #fef3c7;
   --color-tag-amber-text: #92400e;
+
+  /* Estado de cotización (QUOTE_CHART en DashboardPage.jsx, donut de
+     estados) — paleta categórica de 6 estados, identidad propia. NO es
+     el esquema ingreso/gasto/neto/pendiente de --color-data-*: son
+     estados de un documento, no categorías financieras (etapa 5, paso
+     7). "rechazada" no tiene token propio a propósito: usa
+     --color-danger-600 directamente (semántica real: rechazado =
+     peligro), mismo criterio que "ingreso" usa --color-brand-600 en
+     --color-data-*. Mismo motivo que --color-data-*: Chart.js no puede
+     leer var(), así que DashboardPage.jsx mantiene su propio par
+     claro/oscuro que debe reflejar estos valores a mano. */
+  --color-quote-status-draft: #94a3b8;
+  --color-quote-status-issued: #38bdf8;
+  --color-quote-status-accepted: #0f766e;
+  --color-quote-status-expired: #d97706;
+  --color-quote-status-archived: #64748b;
 
   /* Alerta de stock — familia separada de warning. Ya se usa (sin
      tokenizar) en inventory.css para "poco stock" con la paleta "orange"
@@ -259,8 +283,10 @@
    --color-document-*, --color-dark-* — decisión pendiente de si se
    congelan o llevan su propia variante oscura (ver entrega del paso 2).
    --color-stock-alert-* se decidió y definió en el paso 5 (ver más abajo,
-   fuera de este bloque :root): quedan pendientes --color-tag-*,
-   --color-data-*, --color-document-* (congelado de facto, no se ha
+   fuera de este bloque :root). --color-data-* (incluye --color-data-cost-*
+   y la nueva --color-data-paid) y --color-quote-status-* se decidieron y
+   definieron en el paso 7 (ver más abajo) — quedan pendientes
+   --color-tag-* y --color-document-* (congelado de facto, no se ha
    necesitado tocar) y --color-dark-* (congelado, no reacciona al tema
    por diseño). */
 @media (prefers-color-scheme: dark) {
@@ -310,6 +336,39 @@
     --color-stock-alert-200: #b3652b;
     --color-stock-alert-500: #e08a3f;
     --color-stock-alert-800: #f2b876;
+
+    /* Agregado en el paso 7 (etapa 5): encontrado al implementar la
+       sincronización de gráficos JS que --color-data-* nunca había
+       tenido valor oscuro pese a que el paso 2 lo daba por hecho — sus
+       valores claros (navy/slate oscuros) miden 1.25:1-2.87:1 contra
+       --color-surface-panel/--color-surface-canvas, casi invisibles
+       como relleno de gráfico. Corregidos aquí (contraste medido contra
+       ambos fondos, el más bajo de los dos reportado):
+         --color-data-expense: 3.30:1 (panel)
+         --color-data-net: 5.92:1 (panel)
+         --color-data-pending-700: 5.99:1 (panel)
+       --color-data-pending NO se toca: ya medía 4.52:1 contra panel sin
+       cambios. --color-data-paid tampoco: 7.64:1 sin cambios (ver su
+       declaración en claro). */
+    --color-data-expense: #5b7ba3;
+    --color-data-net: #9aa8b3;
+    --color-data-pending-700: #e0983f;
+
+    /* Mismo motivo para --color-data-cost-*: aunque cost-direct/-indirect
+       ya pasaban 3:1 de sobra por poco margen (3.96/3.03 contra panel),
+       se suben para dar más margen y quedar visualmente consistentes con
+       -materials/-labor, que si fallaban (2.63:1/1.25:1). */
+    --color-data-cost-materials: #45b8a8;
+    --color-data-cost-labor: #5b7ba3;
+    --color-data-cost-direct: #d1943f;
+    --color-data-cost-indirect: #93a3ac;
+
+    /* --color-quote-status-*: "aceptada" y "archivada" fallaban 3:1
+       contra panel (2.63:1/3.03:1, este último con margen demasiado
+       fino); "borrador"/"emitida"/"vencida" ya pasaban bien (5.62:1+) y
+       no se tocan. */
+    --color-quote-status-accepted: #45b8a8;
+    --color-quote-status-archived: #93a3ac;
   }
 }
 
