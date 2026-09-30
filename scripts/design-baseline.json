@@ -190,10 +190,10 @@
     "src/styles/interior.css": {
       "color": 1,
       "radius": 7,
-      "shadow": 1,
+      "shadow": 2,
       "duration": 0,
       "category": "c",
-      "note": "Solo radios/sombras sin registrar, sin colores. +1 (etapa 5, paso 4, pasada 1/6): .responsive-dialog-overlay fija su scrim a rgb(2 6 12 / 0.6) dentro de @media (prefers-color-scheme: dark), en vez de seguir usando color-mix(in srgb, var(--color-text-strong) 50%, transparent) — ese patrón se rompe en oscuro porque --color-text-strong pasa a ser un color CLARO (el scrim se volvería un velo claro en vez de oscurecer). Mismo mecanismo ya usado en layout.css (paso 3) para .business-discard-confirm/.mobile-nav-overlay. Era el único uso de ese patrón en todo el archivo (grep completo antes de tocar nada)."
+      "note": "Solo radios/sombras sin registrar, sin colores. +1 color (etapa 5, paso 4, pasada 1/6): .responsive-dialog-overlay fija su scrim a rgb(2 6 12 / 0.6) dentro de @media (prefers-color-scheme: dark), en vez de seguir usando color-mix(in srgb, var(--color-text-strong) 50%, transparent) — ese patrón se rompe en oscuro porque --color-text-strong pasa a ser un color CLARO (el scrim se volvería un velo claro en vez de oscurecer). Mismo mecanismo ya usado en layout.css (paso 3) para .business-discard-confirm/.mobile-nav-overlay. Era el único uso de ese patrón en todo el archivo (grep completo antes de tocar nada). +1 shadow (pasada 4/6): .company-settings-page .settings-subnav button.is-active repite su box-shadow: inset 3px 0 0 var(--color-brand-400) dentro de @media (dark) — mismo selector, solo cambia el color de --color-brand-600 (falla 3:1 no-textual ahí) a --color-brand-400; se cuenta como una segunda declaración de box-shadow porque el escáner cuenta por declaración de texto, no por valor final."
     },
     "src/styles/layout.css": {
       "color": 9,

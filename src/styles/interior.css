@@ -3803,6 +3803,47 @@ body:has(.reports-simple) .environment-notice {
   }
 }
 
+/* Modo oscuro (etapa 5, paso 4 de 10: interior.css, pasada 4 de 6 —
+   Empresa y cuenta). Sin scrims (el único de todo el archivo ya se
+   corrigió en la pasada 1). Pasada 3 (Reportes V5 + Rentabilidad V4)
+   revisada sin necesitar ningún cambio: no tiene ni scrims, ni
+   --color-brand-* como texto, ni fills semánticos con texto inverso. */
+@media (prefers-color-scheme: dark) {
+  .settings-subnav button.is-active,
+  .settings-verification-heading,
+  .verification-evidence-uploader__icon,
+  .account-security-row__icon,
+  .settings-protected-summary__icon,
+  .settings-logo-preview {
+    color: var(--color-brand-400);
+  }
+
+  .settings-subnav button.is-active {
+    border-color: var(--color-brand-400);
+  }
+
+  .company-settings-page .settings-subnav button.is-active {
+    box-shadow: inset 3px 0 0 var(--color-brand-400);
+  }
+
+  .settings-field input:focus,
+  .settings-field select:focus,
+  .settings-field textarea:focus {
+    border-color: var(--color-brand-400);
+  }
+
+  /* --color-danger-600 como border-color en [aria-invalid="true"]: NO
+     se toca, ya funciona (4.75:1 contra --color-surface-panel, se
+     calibró en el paso 2 para el umbral de texto 4.5:1, así que de sobra
+     pasa el 3:1 no-textual de un borde). accent-color en
+     .settings-toggle-row input[role="switch"]: NO se toca — no es texto
+     ni ícono sobre nuestra superficie, es el color nativo de un control
+     de formulario (checkbox/switch); el navegador ya resuelve el resto
+     del widget contra color-scheme: light dark (paso 1), y brand-600
+     sigue siendo un teal identificable como "activado" sin necesitar el
+     mismo ajuste que el texto. */
+}
+
 /* Clientes */
 .clients-filters {
   grid-template-columns: minmax(260px, 2fr) minmax(180px, 1fr);
