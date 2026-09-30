@@ -1,6 +1,8 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import { ArcElement, Chart as ChartJS, Legend, Tooltip } from "chart.js";
 import { Doughnut } from "react-chartjs-2";
+import useMediaQueryPreference from "../hooks/useMediaQueryPreference";
+import usePrefersDarkMode from "../hooks/usePrefersDarkMode";
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
@@ -11,24 +13,13 @@ function formatPercent(value) {
   });
 }
 
-function usePrefersReducedMotion() {
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return undefined;
-
-    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setPrefersReducedMotion(mediaQuery.matches);
-
-    const handleChange = (event) => setPrefersReducedMotion(event.matches);
-    mediaQuery.addEventListener?.("change", handleChange);
-    return () => mediaQuery.removeEventListener?.("change", handleChange);
-  }, []);
-
-  return prefersReducedMotion;
-}
-
-function createCenterTextPlugin(total) {
+// Colores de "chrome" (texto dibujado directo en el canvas, no datos):
+// par claro/oscuro, elegido en el componente vía usePrefersDarkMode y
+// pasado aquí porque este plugin de Chart.js no es un componente de
+// React y no puede usar hooks. Mismos tonos que --color-text-strong/
+// --color-text-muted en tokens.css (oscuro), sin poder leer la variable
+// CSS directamente (Chart.js pinta con strings JS, no CSS).
+function createCenterTextPlugin(total, colors) {
   return {
     id: `dashboardDonutCenterText-${total}`,
     afterDraw(chart) {
@@ -41,10 +32,10 @@ function createCenterTextPlugin(total) {
       ctx.save();
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillStyle = "#111827";
+      ctx.fillStyle = colors.strong;
       ctx.font = '700 24px Inter, "Segoe UI", sans-serif';
       ctx.fillText(String(total), centerX, centerY - 5);
-      ctx.fillStyle = "#64748b";
+      ctx.fillStyle = colors.muted;
       ctx.font = '650 13px Inter, "Segoe UI", sans-serif';
       ctx.fillText("Total", centerX, centerY + 17);
       ctx.restore();
@@ -52,8 +43,34 @@ function createCenterTextPlugin(total) {
   };
 }
 
+// "Chrome" del chart (texto/fondos alrededor de los datos, no los datos
+// en sí): pares claro/oscuro. Mismos valores que sus tokens equivalentes
+// en tokens.css (oscuro) — duplicados aquí porque Chart.js/Canvas no
+// puede leer var() directamente, mismo criterio ya documentado para
+// --color-data-* en tokens.css.
+const CHROME_COLORS = {
+  light: {
+    strong: "#111827",
+    muted: "#64748b",
+    legendLabel: "#334155",
+    panelBg: "#ffffff",
+    emptyDonutRing: "#e5e7eb",
+  },
+  dark: {
+    strong: "#e4edf1",
+    muted: "#8ba3b0",
+    legendLabel: "#8ba3b0",
+    panelBg: "#142c3d",
+    emptyDonutRing: "#2a4e63",
+  },
+};
+
 function DashboardDonutChart({ items, emptyMessage, ariaLabel }) {
-  const prefersReducedMotion = usePrefersReducedMotion();
+  const prefersReducedMotion = useMediaQueryPreference(
+    "(prefers-reduced-motion: reduce)"
+  );
+  const isDarkMode = usePrefersDarkMode();
+  const chrome = isDarkMode ? CHROME_COLORS.dark : CHROME_COLORS.light;
   const total = items.reduce((sum, item) => sum + Number(item.value || 0), 0);
   const activeItems = items.filter((item) => Number(item.value || 0) > 0);
   const visibleLegendItems = total > 0 ? activeItems : items;
@@ -65,13 +82,13 @@ function DashboardDonutChart({ items, emptyMessage, ariaLabel }) {
         {
           data: activeItems.map((item) => item.value),
           backgroundColor: activeItems.map((item) => item.color),
-          borderColor: "#ffffff",
+          borderColor: chrome.panelBg,
           borderWidth: 2,
           hoverOffset: 3,
         },
       ],
     }),
-    [activeItems]
+    [activeItems, chrome.panelBg]
   );
 
   const chartOptions = useMemo(
@@ -101,7 +118,10 @@ function DashboardDonutChart({ items, emptyMessage, ariaLabel }) {
     [prefersReducedMotion, total]
   );
 
-  const centerTextPlugin = useMemo(() => createCenterTextPlugin(total), [total]);
+  const centerTextPlugin = useMemo(
+    () => createCenterTextPlugin(total, chrome),
+    [total, chrome]
+  );
   const description = `${ariaLabel}. ${items
     .map((item) => `${item.label}: ${item.value}`)
     .join(". ")}.`;
@@ -122,9 +142,18 @@ function DashboardDonutChart({ items, emptyMessage, ariaLabel }) {
               plugins={[centerTextPlugin]}
             />
           ) : (
-            <div style={styles.emptyDonut}>
-              <strong style={styles.emptyTotal}>0</strong>
-              <span style={styles.emptyTotalLabel}>Total</span>
+            <div
+              style={{
+                ...styles.emptyDonut,
+                background: `radial-gradient(circle at center, ${chrome.panelBg} 0 48%, transparent 49%), conic-gradient(${chrome.emptyDonutRing} 0 100%)`,
+              }}
+            >
+              <strong style={{ ...styles.emptyTotal, color: chrome.strong }}>
+                0
+              </strong>
+              <span style={{ ...styles.emptyTotalLabel, color: chrome.muted }}>
+                Total
+              </span>
             </div>
           )}
         </div>
@@ -136,11 +165,19 @@ function DashboardDonutChart({ items, emptyMessage, ariaLabel }) {
                 aria-hidden="true"
                 style={{ ...styles.legendDot, background: item.color }}
               />
-              <span style={styles.legendLabel}>{item.label}</span>
-              <strong style={styles.legendValue}>{item.value}</strong>
+              <span style={{ ...styles.legendLabel, color: chrome.legendLabel }}>
+                {item.label}
+              </span>
+              <strong style={{ ...styles.legendValue, color: chrome.strong }}>
+                {item.value}
+              </strong>
             </div>
           ))}
-          {total === 0 && <p style={styles.emptyMessage}>{emptyMessage}</p>}
+          {total === 0 && (
+            <p style={{ ...styles.emptyMessage, color: chrome.muted }}>
+              {emptyMessage}
+            </p>
+          )}
         </div>
       </div>
     </div>
@@ -168,8 +205,6 @@ const styles = {
   },
   emptyDonut: {
     alignItems: "center",
-    background:
-      "radial-gradient(circle at center, #ffffff 0 48%, transparent 49%), conic-gradient(#e5e7eb 0 100%)",
     borderRadius: "50%",
     display: "flex",
     flexDirection: "column",
@@ -178,12 +213,10 @@ const styles = {
     width: "150px",
   },
   emptyTotal: {
-    color: "#111827",
     fontSize: "24px",
     lineHeight: 1,
   },
   emptyTotalLabel: {
-    color: "#64748b",
     fontSize: "13px",
     fontWeight: 700,
     marginTop: "5px",
@@ -209,17 +242,14 @@ const styles = {
     width: "9px",
   },
   legendLabel: {
-    color: "#334155",
     fontSize: "13px",
     lineHeight: 1.25,
     minWidth: 0,
   },
   legendValue: {
-    color: "#111827",
     fontSize: "13px",
   },
   emptyMessage: {
-    color: "#64748b",
     fontSize: "13px",
     margin: "3px 0 0",
   },
