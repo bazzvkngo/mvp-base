@@ -11,3 +11,34 @@
 .barcode-scanner__actions { display: flex; gap: .6rem; justify-content: flex-end; }
 .barcode-scanner__actions button:last-child { background: var(--color-brand-600); border-color: var(--color-brand-600); color: var(--color-text-inverse); }
 @media (max-width: 520px) { .barcode-input-row { grid-template-columns: 1fr; } }
+
+/* Modo oscuro (etapa 5, paso 6 de 10). El negro de overlay de escaneo
+   (categoría "a" en design-baseline.json) se confirma SIGUE siendo
+   excepción en oscuro: .barcode-scanner__camera (fondo #0f172a, la vista
+   de cámara) y su leyenda > span (rgb(15 23 42/.72) + text-shadow #000)
+   son la superposición del visor de escaneo — debe seguir viéndose como
+   una cámara real (negro/casi negro) sin importar el tema del sistema,
+   igual que predecía la tarea. Al ser literales puros sin var(), YA son
+   inmunes por construcción (mismo caso que .auth-visual__overlay en el
+   paso 3) — no se tocan.
+
+   El resto del archivo SÍ reacciona al tema: son botones/etiquetas de
+   formulario normales, no parte del visor. Ninguno tiene coincidencia
+   exacta con un token actual (son remanentes Tailwind/pre-recalibración,
+   igual que otros ya encontrados en pasos anteriores) — contraparte
+   oscura definida aquí, sin tokenizar el literal claro (fuera de
+   alcance). */
+@media (prefers-color-scheme: dark) {
+  .barcode-input-row > button,
+  .barcode-action-button,
+  .barcode-scanner__actions button {
+    border-color: #5a86a0;
+    color: #c9d6dd;
+  }
+
+  .barcode-scanner label > span {
+    color: #a9bcc6;
+  }
+}
+
+/* Tokens faltantes nuevos encontrados en esta pasada: ninguno. */
