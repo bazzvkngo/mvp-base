@@ -36,12 +36,12 @@
       "note": "Sincronizado en la etapa 5, paso 7: COLORS.light/dark reflejan a mano --color-data-cost-materials/-labor/-direct/-indirect, elegido según usePrefersDarkMode(). +5 color: el par oscuro completo (antes solo existía el claro) más el borderColor de panel oscuro."
     },
     "src/components/reports/OperationalComparisonChart.jsx": {
-      "color": 6,
+      "color": 10,
       "radius": 0,
       "shadow": 0,
       "duration": 0,
       "category": "b",
-      "note": "Colores de gráfico (Chart.js) no sincronizados con --color-data-*; deuda conocida."
+      "note": "Sincronizado en la etapa 5, paso 7: DATA_COLORS refleja --color-brand-600/--color-data-expense, CHROME_COLORS refleja --color-text-muted/--color-border-subtle, elegido según usePrefersDarkMode(). +4 color: el par oscuro completo (antes solo existía el claro)."
     },
     "src/features/inventory/inventory.css": {
       "color": 15,

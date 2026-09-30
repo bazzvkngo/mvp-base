@@ -9,8 +9,21 @@ import {
 } from "chart.js";
 import {Bar} from "react-chartjs-2";
 import {formatMoney} from "../../utils/formatters";
+import usePrefersDarkMode from "../../hooks/usePrefersDarkMode";
 
 ChartJS.register(BarElement, CategoryScale, Legend, LinearScale, Tooltip);
+
+// Refleja a mano --color-brand-600/--color-data-expense (datos) y
+// --color-text-muted/--color-border-subtle (chrome) de tokens.css
+// (etapa 5, paso 7) — Chart.js no puede leer var().
+const DATA_COLORS = {
+  light: { sales: "#0f766e", purchases: "#1e3a5f" },
+  dark: { sales: "#0f766e", purchases: "#5b7ba3" },
+};
+const CHROME_COLORS = {
+  light: { legendText: "#475569", tickText: "#64748b", grid: "#e2e8f0" },
+  dark: { legendText: "#8ba3b0", tickText: "#8ba3b0", grid: "#1d3a4d" },
+};
 
 function formatLabel(key) {
   if (/^\d{4}-\d{2}$/.test(key)) {
@@ -43,6 +56,9 @@ function formatCompactMoney(value, currency) {
 }
 
 export default function OperationalComparisonChart({currency = "CLP", items}) {
+  const isDarkMode = usePrefersDarkMode();
+  const dataColors = isDarkMode ? DATA_COLORS.dark : DATA_COLORS.light;
+  const chrome = isDarkMode ? CHROME_COLORS.dark : CHROME_COLORS.light;
   if (!items.length) {
     return (
       <div className="financial-chart-empty">
@@ -71,14 +87,14 @@ export default function OperationalComparisonChart({currency = "CLP", items}) {
             {
               label: "Ventas confirmadas",
               data: items.map((item) => item.sales),
-              backgroundColor: "#0f766e",
+              backgroundColor: dataColors.sales,
               borderRadius: 4,
               maxBarThickness: items.length === 1 ? 36 : 24,
             },
             {
               label: "Compras confirmadas",
               data: items.map((item) => item.purchases),
-              backgroundColor: "#1e3a5f",
+              backgroundColor: dataColors.purchases,
               borderRadius: 4,
               maxBarThickness: items.length === 1 ? 36 : 24,
             },
@@ -95,7 +111,7 @@ export default function OperationalComparisonChart({currency = "CLP", items}) {
               labels: {
                 boxHeight: 8,
                 boxWidth: 8,
-                color: "#475569",
+                color: chrome.legendText,
                 font: {size: 11},
                 padding: 12,
                 usePointStyle: true,
@@ -110,12 +126,12 @@ export default function OperationalComparisonChart({currency = "CLP", items}) {
             },
           },
           scales: {
-            x: {grid: {display: false}, ticks: {autoSkip: true, color: "#64748b", maxRotation: 0}},
+            x: {grid: {display: false}, ticks: {autoSkip: true, color: chrome.tickText, maxRotation: 0}},
             y: {
               beginAtZero: true,
-              grid: {color: "#e2e8f0"},
+              grid: {color: chrome.grid},
               ticks: {
-                color: "#64748b",
+                color: chrome.tickText,
                 maxTicksLimit: 5,
                 callback(value) {
                   return formatCompactMoney(value, currency);
