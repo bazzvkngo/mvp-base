@@ -779,3 +779,34 @@
   }
 }
 .quote-workspace__project-link { color: var(--color-brand-700); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); width: fit-content; }
+
+/* Modo oscuro (etapa 5, paso 6 de 10). quote-workspace.css es el
+   archivo más antiguo del proyecto (posible origen del patrón de
+   paleta local por feature); revisado con cuidado extra: no define
+   ninguna custom property propia (grep de "--algo: #"/"--algo: rgb"
+   dentro del archivo, cero resultados) — no hay ninguna paleta local
+   tipo --po-doc-* que migrar aquí, y cero literales de color (color: 0
+   en design-baseline.json, confirmado con scanCss). Sin scrims/overlays
+   (grep completo, cero resultados); su único
+   color-mix(...--color-text-strong...) (línea ~175) es una sombra de
+   elevación de tarjeta, no un telón de diálogo — mismo criterio ya
+   establecido (efecto halo reportado, no se toca). */
+@media (prefers-color-scheme: dark) {
+  /* --color-brand-600/700 sin cambio (paso 2) como texto sobre
+     superficie que sí reacciona al tema, cada uno verificado contra su
+     fondo real (surface-hover o ambient/transparent, ninguno sobre
+     --color-brand-50/100/200). Corregido con --color-brand-400. */
+  .quote-workspace__eyebrow,
+  .quote-workspace__kicker,
+  .quote-workspace__status,
+  .quote-workspace__feedback,
+  .quote-item__details summary,
+  .quote-collapsible__indicator,
+  .quote-summary__row--total strong,
+  .quote-workspace__link-button,
+  .quote-workspace__project-link {
+    color: var(--color-brand-400);
+  }
+}
+
+/* Tokens faltantes nuevos encontrados en esta pasada: ninguno. */
