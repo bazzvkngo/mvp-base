@@ -35,6 +35,7 @@ import {
 import {getQuoteStatusLabel} from "../domain/quoteModel.mjs";
 import {BUSINESS_PERMISSIONS, hasBusinessPermission} from "../domain/rbac.mjs";
 import useFinancialMovements from "../hooks/useFinancialMovements";
+import usePrefersDarkMode from "../hooks/usePrefersDarkMode";
 import {
   getCompanyProfile,
   getCompanyProfileCompletion,
@@ -42,13 +43,21 @@ import {
 import {loadReportData} from "../services/reportService";
 import {formatCLP, formatDate, formatMoney, formatPercent} from "../utils/formatters";
 
-const QUOTE_CHART = [
-  ["borrador", getQuoteStatusLabel("borrador"), "#94a3b8"],
-  ["emitida", "Emitida", "#38bdf8"],
-  ["aceptada", "Aceptada", "#0f766e"],
-  ["rechazada", "Rechazada", "#dc2626"],
-  ["vencida", "Vencida", "#d97706"],
-  ["archivada", "Archivada", "#64748b"],
+// Refleja a mano --color-quote-status-draft/issued/accepted/expired/
+// archived y --color-danger-600 de tokens.css (etapa 5, paso 7) —
+// Chart.js no puede leer var(). "rechazada" usa --color-danger-600
+// directo (semántica real: rechazado = peligro), sin token propio,
+// mismo criterio que --color-data-* usa --color-brand-600 para
+// "ingreso". "aceptada"/"archivada" se subieron en oscuro (fallaban
+// 3:1 contra el panel); "borrador"/"emitida"/"vencida" sin cambio (ya
+// pasaban bien).
+const QUOTE_STATUS = [
+  ["borrador", getQuoteStatusLabel("borrador"), {light: "#94a3b8", dark: "#94a3b8"}],
+  ["emitida", "Emitida", {light: "#38bdf8", dark: "#38bdf8"}],
+  ["aceptada", "Aceptada", {light: "#0f766e", dark: "#45b8a8"}],
+  ["rechazada", "Rechazada", {light: "#dc2626", dark: "#f2685f"}],
+  ["vencida", "Vencida", {light: "#d97706", dark: "#d97706"}],
+  ["archivada", "Archivada", {light: "#64748b", dark: "#93a3ac"}],
 ];
 
 const EMPTY_REPORT_DATA = {
@@ -190,6 +199,7 @@ function formatCurrencyGroups(groups, fallbackCurrency) {
 
 export default function DashboardPage({businessId, currencyCode = "CLP", role}) {
   const navigate = useNavigate();
+  const isDarkMode = usePrefersDarkMode();
   const today = getSantiagoDateKey();
   const [period, setPeriod] = useState("month");
   const [customPeriod, setCustomPeriod] = useState(() => {
@@ -271,9 +281,9 @@ export default function DashboardPage({businessId, currencyCode = "CLP", role}) 
     [purchaseTimeline, salesTimeline]
   );
   const operationalCurrencies = [...new Set(operationalTimeline.map((item) => item.currency))];
-  const quoteChartItems = QUOTE_CHART.map(([id, label, color]) => ({
+  const quoteChartItems = QUOTE_STATUS.map(([id, label, color]) => ({
     label,
-    color,
+    color: isDarkMode ? color.dark : color.light,
     value: quoteMetrics.counts[id],
   }));
   const reportParams = new URLSearchParams();
