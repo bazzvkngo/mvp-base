@@ -164,12 +164,12 @@
       "note": "Objeto styles propio; deuda conocida documentada en Parte B, destino de migración sin decidir."
     },
     "src/pages/QuoteHistoryPage.jsx": {
-      "color": 57,
+      "color": 1,
       "radius": 15,
-      "shadow": 1,
+      "shadow": 0,
       "duration": 0,
       "category": "c",
-      "note": "statusStyles y estilos inline con literales sin registrar; ~1/3 coincide con --color-tag-*."
+      "note": "Etapa 5, paso 8: statusStyles y el objeto styles inline se migraron a var(--color-*)/var(--shadow-*) (reuso por rol, mismo mecanismo que NewQuotePage.jsx). Queda 1 literal intencional: #128c7e en whatsappButton es el verde de marca de WhatsApp, no reacciona al tema por diseno (no es color de la app)."
     },
     "src/styles/components.css": {
       "color": 59,

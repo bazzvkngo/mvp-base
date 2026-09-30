@@ -77,28 +77,28 @@ const REJECTION_REASON_LABELS = Object.freeze({
 
 const statusStyles = {
   borrador: {
-    background: "#e0f2fe",
-    color: "#0369a1",
+    background: "var(--color-info-50)",
+    color: "var(--color-info-700)",
   },
   emitida: {
-    background: "#dbeafe",
+    background: "var(--color-info-50)",
     color: "var(--color-info-700)",
   },
   aceptada: {
-    background: "#dcfce7",
-    color: "#166534",
+    background: "var(--color-success-50)",
+    color: "var(--color-success-700)",
   },
   rechazada: {
-    background: "#fee2e2",
-    color: "#991b1b",
+    background: "var(--color-danger-50)",
+    color: "var(--color-danger-700)",
   },
   vencida: {
-    background: "#fef3c7",
+    background: "var(--color-warning-50)",
     color: "var(--color-warning-800)",
   },
   archivada: {
-    background: "#e5e7eb",
-    color: "#374151",
+    background: "var(--color-surface-subtle)",
+    color: "var(--color-text-default)",
   },
 };
 
@@ -1697,8 +1697,8 @@ function CommercialStatusTimeline({ quote }) {
 
 const styles = {
   commercialStatus: {
-    background: "#f8fafc",
-    border: "1px solid #e2e8f0",
+    background: "var(--color-surface-subtle)",
+    border: "1px solid var(--color-border-default)",
     borderRadius: "6px",
     display: "grid",
     gap: "8px",
@@ -1706,7 +1706,7 @@ const styles = {
     padding: "11px 12px",
   },
   commercialStatusTitle: {
-    color: "#0f172a",
+    color: "var(--color-text-strong)",
     fontSize: "13px",
   },
   commercialStatusGrid: {
@@ -1722,19 +1722,19 @@ const styles = {
   },
   commercialStatusCurrent: {
     background: "var(--color-surface-panel)",
-    border: "1px solid #cbd5e1",
+    border: "1px solid var(--color-border-control)",
     borderLeft: "4px solid var(--color-brand-600)",
     borderRadius: "5px",
     gridColumn: "1 / -1",
     padding: "9px 10px",
   },
   commercialStatusLabel: {
-    color: "#334155",
+    color: "var(--color-text-default)",
     fontSize: "12px",
     fontWeight: 700,
   },
   commercialStatusValue: {
-    color: "#64748b",
+    color: "var(--color-text-muted)",
     fontSize: "12px",
   },
   commercialStatusNote: {
@@ -1752,11 +1752,11 @@ const styles = {
     gap: "1px",
   },
   commercialStatusDetailLabel: {
-    color: "#334155",
+    color: "var(--color-text-default)",
     fontSize: "11px",
   },
   commercialStatusDetailValue: {
-    color: "#475569",
+    color: "var(--color-text-default)",
     fontSize: "12px",
     overflowWrap: "anywhere",
     whiteSpace: "pre-wrap",
@@ -1766,7 +1766,7 @@ const styles = {
     fontSize: "17px",
   },
   helpText: {
-    color: "#64748b",
+    color: "var(--color-text-muted)",
     margin: 0,
     fontSize: "14px",
   },
@@ -1793,10 +1793,10 @@ const styles = {
   },
   moreActionsButton: {
     alignItems: "center",
-    background: "#f8fafc",
-    border: "1px solid #cbd5e1",
+    background: "var(--color-surface-subtle)",
+    border: "1px solid var(--color-border-control)",
     borderRadius: "4px",
-    color: "#334155",
+    color: "var(--color-text-default)",
     cursor: "pointer",
     display: "inline-flex",
     fontSize: "13px",
@@ -1807,9 +1807,9 @@ const styles = {
   },
   actionsMenu: {
     background: "var(--color-surface-panel)",
-    border: "1px solid #cbd5e1",
+    border: "1px solid var(--color-border-control)",
     borderRadius: "6px",
-    boxShadow: "0 12px 30px rgba(15, 23, 42, 0.18)",
+    boxShadow: "var(--shadow-lg)",
     display: "grid",
     gap: "2px",
     padding: "6px",
@@ -1821,7 +1821,7 @@ const styles = {
     background: "transparent",
     border: 0,
     borderRadius: "4px",
-    color: "#334155",
+    color: "var(--color-text-default)",
     cursor: "pointer",
     fontSize: "13px",
     fontWeight: 700,
@@ -1831,10 +1831,10 @@ const styles = {
     width: "100%",
   },
   secondaryButton: {
-    background: "#f8fafc",
-    border: "1px solid #cbd5e1",
+    background: "var(--color-surface-subtle)",
+    border: "1px solid var(--color-border-control)",
     borderRadius: "4px",
-    color: "#334155",
+    color: "var(--color-text-default)",
     cursor: "pointer",
     fontSize: "13px",
     fontWeight: 700,
@@ -1843,7 +1843,7 @@ const styles = {
   },
   printButton: {
     alignItems: "center",
-    background: "#111827",
+    background: "var(--color-text-strong)",
     border: 0,
     borderRadius: "4px",
     color: "var(--color-text-inverse)",
@@ -1865,19 +1865,19 @@ const styles = {
     whiteSpace: "nowrap",
   },
   emailSent: {
-    background: "#dcfce7",
-    color: "#166534",
+    background: "var(--color-success-50)",
+    color: "var(--color-success-700)",
   },
   emailSimulated: {
     background: "var(--color-warning-50)",
     color: "var(--color-warning-800)",
   },
   emailError: {
-    background: "#fee2e2",
-    color: "#991b1b",
+    background: "var(--color-danger-50)",
+    color: "var(--color-danger-700)",
   },
   emailMuted: {
-    color: "#475569",
+    color: "var(--color-text-default)",
     fontSize: "13px",
     whiteSpace: "nowrap",
   },
@@ -1938,10 +1938,10 @@ const styles = {
   },
   secondaryDocumentButton: {
     alignItems: "center",
-    background: "#f8fafc",
-    border: "1px solid #cbd5e1",
+    background: "var(--color-surface-subtle)",
+    border: "1px solid var(--color-border-control)",
     borderRadius: "4px",
-    color: "#334155",
+    color: "var(--color-text-default)",
     cursor: "pointer",
     display: "inline-flex",
     fontSize: "13px",
@@ -1952,9 +1952,9 @@ const styles = {
     whiteSpace: "nowrap",
   },
   disabledButton: {
-    background: "#f1f5f9",
-    border: "1px solid #cbd5e1",
-    color: "#64748b",
+    background: "var(--color-surface-subtle)",
+    border: "1px solid var(--color-border-control)",
+    color: "var(--color-text-muted)",
     cursor: "not-allowed",
   },
   detailDocument: {
@@ -1968,22 +1968,22 @@ const styles = {
   },
   prepareSaleNotice: {
     background: "var(--color-info-50)",
-    border: "1px solid #bfdbfe",
+    border: "1px solid var(--color-info-200)",
     borderRadius: "6px",
-    color: "#1e3a8a",
+    color: "var(--color-info-700)",
     lineHeight: 1.5,
     margin: 0,
     padding: "12px 14px",
   },
   printSheet: {
     background: "var(--color-surface-panel)",
-    border: "1px solid #e5e7eb",
-    color: "#111827",
+    border: "1px solid var(--color-border-default)",
+    color: "var(--color-text-strong)",
     padding: "28px",
   },
   printHeader: {
     alignItems: "flex-start",
-    borderBottom: "2px solid #111827",
+    borderBottom: "2px solid var(--color-text-strong)",
     display: "flex",
     justifyContent: "space-between",
     gap: "20px",
@@ -1994,7 +1994,7 @@ const styles = {
     fontSize: "26px",
   },
   printMuted: {
-    color: "#64748b",
+    color: "var(--color-text-muted)",
     margin: "4px 0 0",
   },
   printMeta: {
@@ -2003,8 +2003,8 @@ const styles = {
     textAlign: "right",
   },
   clientBox: {
-    background: "#f8fafc",
-    border: "1px solid #e5e7eb",
+    background: "var(--color-surface-subtle)",
+    border: "1px solid var(--color-border-default)",
     borderRadius: "8px",
     margin: "18px 0",
     padding: "14px",
@@ -2021,7 +2021,7 @@ const styles = {
     width: "100%",
   },
   printTh: {
-    background: "#111827",
+    background: "var(--color-text-strong)",
     color: "var(--color-text-inverse)",
     fontSize: "12px",
     padding: "10px",
@@ -2029,12 +2029,12 @@ const styles = {
     textTransform: "uppercase",
   },
   printTd: {
-    borderBottom: "1px solid #e5e7eb",
+    borderBottom: "1px solid var(--color-border-default)",
     padding: "10px",
     verticalAlign: "top",
   },
   printItemMeta: {
-    color: "#64748b",
+    color: "var(--color-text-muted)",
     display: "block",
     fontSize: "12px",
     marginTop: "3px",
@@ -2046,30 +2046,30 @@ const styles = {
   },
   totalRow: {
     alignItems: "center",
-    borderBottom: "1px solid #eef2f7",
+    borderBottom: "1px solid var(--color-border-subtle)",
     display: "flex",
     justifyContent: "space-between",
     gap: "10px",
     padding: "11px 0",
   },
   totalLabel: {
-    color: "#475569",
+    color: "var(--color-text-default)",
     fontWeight: 700,
   },
   totalLabelStrong: {
-    color: "#111827",
+    color: "var(--color-text-strong)",
     fontSize: "18px",
     fontWeight: 800,
   },
   totalValue: {
-    color: "#111827",
+    color: "var(--color-text-strong)",
   },
   totalValueStrong: {
     color: "var(--color-brand-600)",
     fontSize: "22px",
   },
   observationsBox: {
-    borderTop: "1px solid #e5e7eb",
+    borderTop: "1px solid var(--color-border-default)",
     marginTop: "20px",
     paddingTop: "14px",
   },
