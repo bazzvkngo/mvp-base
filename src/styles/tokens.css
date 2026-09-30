@@ -257,7 +257,12 @@
    Deliberadamente NO definidos en este paso (excepciones de AGENTS.md):
    --color-stock-alert-*, --color-tag-*, --color-data-*,
    --color-document-*, --color-dark-* — decisión pendiente de si se
-   congelan o llevan su propia variante oscura (ver entrega del paso 2). */
+   congelan o llevan su propia variante oscura (ver entrega del paso 2).
+   --color-stock-alert-* se decidió y definió en el paso 5 (ver más abajo,
+   fuera de este bloque :root): quedan pendientes --color-tag-*,
+   --color-data-*, --color-document-* (congelado de facto, no se ha
+   necesitado tocar) y --color-dark-* (congelado, no reacciona al tema
+   por diseño). */
 @media (prefers-color-scheme: dark) {
   :root {
     --color-surface-canvas: #0c1e2b;
@@ -293,6 +298,18 @@
     --color-info-50: #0f2036;
     --color-info-200: #4779b3;
     --color-info-700: #7fb2f5;
+
+    /* Agregado en el paso 5 (etapa 5): quedó pendiente en el paso 2 (una
+       de las 5 excepciones sin decidir). Se usa 11 veces en
+       receptions.css/sales.css (badges de alerta de stock/proveedor);
+       decisión: variante oscura, mismo criterio que success/warning/
+       danger/info, midiendo -200 (borde) contra su propia -50 Y contra
+       --color-surface-panel desde el inicio (para no repetir el error
+       encontrado en el paso 4). */
+    --color-stock-alert-50: #2c1d0f;
+    --color-stock-alert-200: #b3652b;
+    --color-stock-alert-500: #e08a3f;
+    --color-stock-alert-800: #f2b876;
   }
 }
 
