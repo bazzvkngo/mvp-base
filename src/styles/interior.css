@@ -989,6 +989,52 @@
   margin: 0;
 }
 
+/* Modo oscuro (etapa 5, paso 4 de 10: interior.css, pasada 1 de 6 —
+   .erp-*, donut, ResponsiveDialog, Resumen/Finanzas/Estadísticas). */
+@media (prefers-color-scheme: dark) {
+  /* Hallazgo crítico del paso 3, aplicado aquí desde el inicio:
+     .responsive-dialog-overlay usa color-mix(in srgb,
+     var(--color-text-strong) 50%, transparent) — el ÚNICO uso de este
+     patrón en todo interior.css (grep completo). --color-text-strong
+     pasa a ser un color CLARO en oscuro (#e4edf1), así que este scrim
+     dejaría de oscurecer y se volvería un velo claro sobre lo que hay
+     detrás del diálogo — justo lo que ya se corrigió en layout.css
+     (paso 3). Mismo mecanismo ya validado ahí: se fija a un negro real,
+     independiente del token de texto. .responsive-dialog-layer usa esta
+     misma clase en TODOS los diálogos de la app (ResponsiveDialog es
+     compartido), así que este único fix cubre cualquier modal que lo
+     use. */
+  .responsive-dialog-overlay {
+    background: rgb(2 6 12 / 0.6);
+  }
+
+  /* --color-brand-600/700/800 sin cambio (paso 2) como texto/ícono/borde
+     decorativo sobre una superficie que sí reacciona al tema (todas
+     estas viven sobre --color-surface-panel/-subtle/-selected o
+     transparent-heredado-de-panel, nunca sobre --color-brand-50/100/200
+     sin cambio — verificado leyendo cada selector antes de aplicar el
+     fix, mismo criterio que el paso 3). Corregido con --color-brand-400
+     (mínimo 4.92:1 contra las 6 superficies oscuras de la fundación,
+     matriz ya verificada en el paso 3). */
+  .responsive-dialog__eyebrow,
+  .financial-metric-card__icon,
+  .financial-tab:hover,
+  .financial-type-label--income,
+  .financial-amount--income,
+  .financial-row-actions button:hover {
+    color: var(--color-brand-400);
+  }
+
+  .financial-tab.is-active {
+    border-bottom-color: var(--color-brand-400);
+  }
+
+  .financial-segmented-control input:checked + span {
+    border-color: var(--color-brand-400);
+    color: var(--color-brand-400);
+  }
+}
+
 /* Dashboard V2 */
 .dashboard-v2 {
   gap: var(--space-4);

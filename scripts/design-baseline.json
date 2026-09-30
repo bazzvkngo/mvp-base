@@ -188,12 +188,12 @@
       "note": "#ffffff dentro de @media print y 0.01ms de prefers-reduced-motion; ambos son excepciones legítimas. +2 (etapa 5, paso 3): color: #3a4744 agregado al mismo bloque @media print (le faltaba fijar el color de texto además del fondo — sin esto, imprimir con el SO en oscuro daría texto claro sobre el papel blanco fijo, casi ilegible); background: #1c4a4a en ::selection dentro de @media (prefers-color-scheme: dark), porque el par claro (--color-brand-200 sin cambio + --color-text-strong que en oscuro sí cambia a un color claro) queda roto (1.19:1) — se define un fondo propio para oscuro, verificado en 8.31:1 contra el --color-text-strong oscuro."
     },
     "src/styles/interior.css": {
-      "color": 0,
+      "color": 1,
       "radius": 7,
       "shadow": 1,
       "duration": 0,
       "category": "c",
-      "note": "Solo radios/sombras sin registrar, sin colores."
+      "note": "Solo radios/sombras sin registrar, sin colores. +1 (etapa 5, paso 4, pasada 1/6): .responsive-dialog-overlay fija su scrim a rgb(2 6 12 / 0.6) dentro de @media (prefers-color-scheme: dark), en vez de seguir usando color-mix(in srgb, var(--color-text-strong) 50%, transparent) — ese patrón se rompe en oscuro porque --color-text-strong pasa a ser un color CLARO (el scrim se volvería un velo claro en vez de oscurecer). Mismo mecanismo ya usado en layout.css (paso 3) para .business-discard-confirm/.mobile-nav-overlay. Era el único uso de ese patrón en todo el archivo (grep completo antes de tocar nada)."
     },
     "src/styles/layout.css": {
       "color": 9,
