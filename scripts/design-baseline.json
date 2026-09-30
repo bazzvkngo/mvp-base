@@ -132,12 +132,12 @@
       "note": "Solo radios/sombras sin registrar, sin colores."
     },
     "src/features/works/works.css": {
-      "color": 12,
+      "color": 14,
       "radius": 1,
       "shadow": 0,
       "duration": 0,
       "category": "c",
-      "note": "Paleta de badges de estado sin registrar; varios valores coinciden con --color-tag-*/--color-warning-*/--color-danger-*."
+      "note": "Paleta de badges de estado sin registrar; varios valores coinciden con --color-tag-*/--color-warning-*/--color-danger-*. +2 (etapa 5, paso 6): .works-task-state--en_progreso (índigo, sin familia equivalente en tokens.css) define su contraparte oscura propia (#1c2350/#a9b6f0, 7.57:1) dentro de @media (prefers-color-scheme: dark). El resto de los estados/prioridades reutiliza tokens ya existentes por var() (surface-subtle/text-muted para 'baja'; success-50/700 para 'completada'; warning-50/800 para 'alta'/'en_espera'/wait-reason, en vez de --color-stock-alert-* pese a la coincidencia exacta en claro, para no cruzar el dominio de inventario — ver commit)."
     },
     "src/pages/DashboardPage.jsx": {
       "color": 6,

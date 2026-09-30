@@ -241,3 +241,79 @@
 @media(max-width:900px) { .works-filters, .works-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .works-search { grid-column: 1 / -1; } .works-balance-grid, .works-balance-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .works-sale-materials-list article { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media(min-width:768px) { .works-form-dialog .responsive-dialog__header { padding-block: var(--space-3); } .works-form-dialog .responsive-dialog__body { padding-block: var(--space-3); } .works-form-dialog .responsive-dialog__footer { padding-block: var(--space-2); } }
 @media(max-width:767px) { .works-filters, .works-form-grid, .works-summary, .works-overview-meta, .works-commercial-list, .works-task-create, .works-task-document-form, .works-financial-columns, .works-cost-form, .works-annul-form, .works-balance-grid, .works-balance-detail-grid, .works-sale-materials-list article, .works-material-estimate { grid-template-columns: minmax(0, 1fr); } .works-field--wide, .works-search, .works-task-create textarea, .works-cost-form textarea, .works-cost-form > .ui-button { grid-column: auto; } .works-toolbar { align-items: stretch; flex-direction: column; } .works-view-switch, .works-view-switch button { flex: 1; } .works-detail-actions, .works-commercial-heading, .works-commercial-list article, .works-task-list--v2 > article > header, .works-balance-breakdown article, .works-task-metrics, .works-material-group > header { align-items: stretch; flex-direction: column; } .works-detail-actions > .ui-status-badge { align-self: flex-start; margin-right: 0; } .works-detail-actions .ui-button, .works-status-control, .works-status-control select { width: 100%; } .works-inline-form, .works-subtask-create { grid-template-columns: minmax(0, 1fr); } .works-inline-form .ui-button, .works-note-form .ui-button, .works-task-create .ui-button, .works-task-document-form .ui-button, .works-cost-form .ui-button, .works-annul-form .ui-button, .works-subtask-create .ui-button { width: 100%; } .works-task-list--v2 > article > header select { max-width: none; } .works-detail-section, .works-detail-disclosure__content, .works-costs-focus { padding: var(--space-3); } }
+
+/* Modo oscuro (etapa 5, paso 6 de 10). Sin scrims/overlays ni color-mix
+   (grep completo, cero resultados). */
+@media (prefers-color-scheme: dark) {
+  /* --color-brand-600/700/800 sin cambio (paso 2) como texto sobre
+     superficie que sí reacciona al tema, corregido con
+     --color-brand-400 (mismo criterio y contraste ya verificado en
+     pasos anteriores). .works-timeline li::before (línea ~238) NO se
+     toca: es un punto sólido decorativo sin texto encima, mismo
+     criterio que los rellenos de botón (--color-brand-600 se ve bien
+     como marcador, no necesita el ajuste de texto). */
+  .works-view-switch button.is-active,
+  .works-link strong,
+  .works-number,
+  .works-quote-selector__clear,
+  .works-commercial-list article button,
+  .works-detail-disclosure > summary::after,
+  .works-expense-evidence__list button {
+    color: var(--color-brand-400);
+  }
+
+  .works-balance-primary > div {
+    border-top-color: var(--color-brand-400);
+  }
+
+  /* Literales sin coincidencia exacta a ningún token actual (remanentes
+     Tailwind), contraparte oscura definida reutilizando tokens ya
+     existentes por rol semántico (sin tokenizar el literal claro, fuera
+     de alcance):
+     - .works-priority--baja: gris neutro de prioridad baja -> mismo rol
+       que --color-surface-subtle/--color-text-muted (ya usados en el
+       resto del archivo para "neutro/apagado").
+     - .works-task-state--completada: verde de "completado" -> mismo rol
+       que --color-success-50/-700 (semántico genérico, no específico de
+       un feature, ya reutilizado en inventory/finanzas/etc.).
+     - .works-task-state--en_progreso: índigo sin familia equivalente en
+       tokens.css -> valor propio, verificado (7.57:1). */
+  .works-priority--baja {
+    background: var(--color-surface-subtle);
+    color: var(--color-text-muted);
+  }
+
+  .works-task-state--completada {
+    background: var(--color-success-50);
+    color: var(--color-success-700);
+  }
+
+  .works-task-state--en_progreso {
+    background: #1c2350;
+    color: #a9b6f0;
+  }
+
+  /* .works-priority--alta, .works-task-state--en_espera y
+     .works-wait-reason coinciden EXACTO en claro con
+     --color-stock-alert-50/-800 (#fff7ed/#9a3412), pero son prioridad de
+     tarea y "en espera" de un proyecto, no alertas de inventario —
+     cruzar ese token específico de un feature a otro violaría el mismo
+     criterio de "nunca migrar a un dominio ajeno" que ya se aplicó en
+     pasos anteriores. En su lugar, para oscuro se reutiliza
+     --color-warning-*, que sí es un semántico genérico de "atención"
+     usado en toda la app sin atarse a inventario. Juicio propio, no
+     ambiguo al azar: reportado igual para que se pueda revertir si se
+     prefiere otro criterio. */
+  .works-priority--alta,
+  .works-task-state--en_espera {
+    background: var(--color-warning-50);
+    color: var(--color-warning-800);
+  }
+
+  .works-wait-reason {
+    background: var(--color-warning-50);
+    color: var(--color-warning-800) !important;
+  }
+}
+
+/* Tokens faltantes nuevos encontrados en esta pasada: ninguno. */
