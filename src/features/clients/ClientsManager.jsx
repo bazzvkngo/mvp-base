@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
+import EmptyStateIllustration from "../../components/ui/EmptyStateIllustration";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import {SkeletonCards, SkeletonRegion, SkeletonTable} from "../../components/ui/Skeleton";
 import StatusBadge from "../../components/ui/StatusBadge";
@@ -287,7 +288,11 @@ function ClientsManager({businessId, countryCode = "CL", role}) {
           </SkeletonRegion>
         ) : !loadError && visibleClients.length === 0 ? (
           <div className="erp-empty-state clients-empty-state">
-            <AppIcon icon={UsersRound} size={28} />
+            {hasFilters ? (
+              <AppIcon icon={UsersRound} size={28} />
+            ) : (
+              <EmptyStateIllustration variant="empty-list" />
+            )}
             <h3>{hasFilters ? "No hay coincidencias" : "Aún no hay clientes"}</h3>
             <p>
               {hasFilters
