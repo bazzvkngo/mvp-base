@@ -1,8 +1,9 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
-import {BriefcaseBusiness, Columns3, LayoutList, Pencil, Plus, Search, Trash2} from "lucide-react";
+import {Columns3, LayoutList, Pencil, Plus, Search, Trash2} from "lucide-react";
 import {useLocation, useNavigate} from "react-router-dom";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
+import EmptyStateIllustration from "../components/ui/EmptyStateIllustration";
 import LoadingState from "../components/ui/LoadingState";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import {SkeletonCards, SkeletonRegion, SkeletonTable} from "../components/ui/Skeleton";
@@ -212,7 +213,7 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
     <section className="erp-panel works-panel" aria-label="Trabajos registrados">
       <div className="works-toolbar"><div className="works-view-switch" role="group" aria-label="Vista"><button type="button" className={view === "list" ? "is-active" : ""} onClick={() => setView("list")}><AppIcon icon={LayoutList} size={17} />Lista</button><button type="button" className={view === "board" ? "is-active" : ""} onClick={() => setView("board")}><AppIcon icon={Columns3} size={17} />Tablero</button></div><span>{visibleWorks.length} trabajo{visibleWorks.length === 1 ? "" : "s"}</span></div>
       <div className="erp-filters works-filters"><label className="erp-field works-search"><span className="erp-field__label">Buscar por número, título o cliente</span><span className="works-search-control"><AppIcon icon={Search} size={18} /><input className="erp-control" value={filters.query} onChange={(event) => setFilters((current) => ({...current, query: event.target.value}))} /></span></label><Filter label="Estado" value={filters.estado} onChange={(value) => setFilters((current) => ({...current, estado: value}))}><option value="todos">Todos</option>{WORK_STATUSES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</Filter><Filter label="Prioridad" value={filters.prioridad} onChange={(value) => setFilters((current) => ({...current, prioridad: value}))}><option value="todas">Todas</option>{WORK_PRIORITIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</Filter><Filter label="Responsable principal" value={filters.responsableUid} onChange={(value) => setFilters((current) => ({...current, responsableUid: value}))}><option value="todos">Todos</option>{members.map((member) => <option key={member.uid} value={member.uid}>{getWorkMemberIdentity(member)}</option>)}</Filter></div>
-      {loading ? (view === "board" ? <LoadingState variant="section" label="Cargando trabajos..." /> : <SkeletonRegion label="Cargando trabajos..."><SkeletonTable className="erp-desktop-only" columns={7} twoLine /><SkeletonCards className="erp-card-list erp-mobile-only" /></SkeletonRegion>) : view === "board" ? <WorkBoard works={visibleWorks} onOpen={openDetail} /> : <WorkList works={visibleWorks} canManage={canManage} onEdit={openEdit} onOpen={openDetail} />}
+      {loading ? (view === "board" ? <LoadingState variant="section" label="Cargando trabajos..." /> : <SkeletonRegion label="Cargando trabajos..."><SkeletonTable className="erp-desktop-only" columns={7} twoLine /><SkeletonCards className="erp-card-list erp-mobile-only" /></SkeletonRegion>) : view === "board" ? <WorkBoard works={visibleWorks} onOpen={openDetail} /> : <WorkList works={visibleWorks} hasAnyWork={works.length > 0} canManage={canManage} onCreate={openNew} onEdit={openEdit} onOpen={openDetail} />}
     </section>
 
     <ResponsiveDialog className="works-form-dialog" open={formOpen} onClose={() => !saving && setFormOpen(false)} size="large" eyebrow="Proyectos y trabajos" title={editingWork ? `Editar ${editingWork.numero}` : "Crear proyecto"} description="Registra la información y planificación inicial del proyecto." footer={<><Button type="button" variant="secondary" disabled={saving} onClick={() => setFormOpen(false)}>Cancelar</Button><Button type="submit" form="work-form" loading={saving}>{saving ? "Guardando..." : editingWork ? "Guardar cambios" : "Crear proyecto"}</Button></>}>
@@ -599,8 +600,27 @@ function workPersonIdentity(snapshot, uid, members = [], fallback = "Sin respons
   return getWorkHistoricalPersonIdentity(snapshot, uid, members, fallback);
 }
 
-function WorkList({canManage, onEdit, onOpen, works}) {
-  if (!works.length) return <div className="erp-empty-state"><AppIcon icon={BriefcaseBusiness} size={30} /><p>No hay trabajos coincidentes.</p></div>;
+function WorkList({canManage, hasAnyWork, onCreate, onEdit, onOpen, works}) {
+  if (!works.length) {
+    return (
+      <div className="erp-empty-state ui-empty-state">
+        <EmptyStateIllustration variant={hasAnyWork ? "no-results" : "empty-list"} />
+        <h3>{hasAnyWork ? "No hay trabajos coincidentes" : "Aún no hay trabajos"}</h3>
+        <p>
+          {hasAnyWork
+            ? "Prueba con otra búsqueda, estado, prioridad o responsable."
+            : canManage
+              ? "Crea el primer trabajo para organizar tareas, costos y avance del proyecto."
+              : "Los perfiles autorizados pueden crear el primer trabajo."}
+        </p>
+        {!hasAnyWork && canManage && (
+          <div className="ui-empty-state__actions">
+            <Button type="button" icon={Plus} onClick={onCreate}>Nuevo trabajo</Button>
+          </div>
+        )}
+      </div>
+    );
+  }
   return <><div className="erp-table-region erp-desktop-only"><table className="erp-table works-table"><thead><tr><th>Trabajo</th><th>Cliente</th><th>Responsable principal</th><th>Prioridad</th><th>Término planificado</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{works.map((work) => <tr key={work.id}><td><button className="works-link" type="button" onClick={() => onOpen(work)}><strong>{work.numero}</strong><span>{work.titulo}</span></button></td><td>{work.clienteSnapshot?.nombreRazonSocial || "Sin cliente"}</td><td>{workPersonIdentity(work.responsableSnapshot, work.responsableUid)}</td><td><Priority value={work.prioridad} /></td><td>{dateLabel(work.fechaPrevista)}</td><td><Status value={work.estado} /></td><td><div className="works-row-actions"><button type="button" onClick={() => onOpen(work)}>Ver</button>{canManage && !isWorkOperationalReadOnly(work) && <button type="button" onClick={() => onEdit(work)}>Editar</button>}</div></td></tr>)}</tbody></table></div><div className="erp-card-list erp-mobile-only">{works.map((work) => <article key={work.id} className="erp-record-card"><header className="erp-record-card__header"><div><span className="works-number">{work.numero}</span><h3 className="erp-record-card__title">{work.titulo}</h3></div><Status value={work.estado} /></header><dl className="erp-meta-grid"><div className="erp-meta"><dt className="erp-meta__label">Cliente</dt><dd className="erp-meta__value">{work.clienteSnapshot?.nombreRazonSocial || "Sin cliente"}</dd></div><div className="erp-meta"><dt className="erp-meta__label">Responsable principal</dt><dd className="erp-meta__value">{workPersonIdentity(work.responsableSnapshot, work.responsableUid)}</dd></div><div className="erp-meta"><dt className="erp-meta__label">Prioridad</dt><dd className="erp-meta__value"><Priority value={work.prioridad} /></dd></div><div className="erp-meta"><dt className="erp-meta__label">Término planificado</dt><dd className="erp-meta__value">{dateLabel(work.fechaPrevista)}</dd></div></dl><div className="works-card-actions"><Button type="button" variant="secondary" onClick={() => onOpen(work)}>Ver ficha</Button>{canManage && !isWorkOperationalReadOnly(work) && <Button type="button" variant="secondary" onClick={() => onEdit(work)}>Editar</Button>}</div></article>)}</div></>;
 }
 
