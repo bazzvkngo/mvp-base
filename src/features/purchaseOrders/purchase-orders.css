@@ -888,10 +888,6 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
   text-decoration: underline;
 }
 
-.po-history__empty {
-  text-align: center;
-}
-
 .po-history__cards {
   display: none;
 }
@@ -941,15 +937,6 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
   color: var(--color-text-strong);
   font-weight: 800;
   margin: 0;
-}
-
-.po-history__cards-empty {
-  background: var(--color-surface-panel);
-  border: 1px dashed var(--color-border-default);
-  border-radius: 11px;
-  color: var(--color-text-muted);
-  padding: 24px;
-  text-align: center;
 }
 
 .po-preview-body {

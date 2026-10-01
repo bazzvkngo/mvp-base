@@ -61,7 +61,7 @@
     },
     "src/features/purchaseOrders/purchase-orders.css": {
       "color": 6,
-      "radius": 23,
+      "radius": 22,
       "shadow": 7,
       "duration": 0,
       "category": "a",
