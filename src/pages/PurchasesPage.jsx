@@ -4,6 +4,7 @@ import {useNavigate} from "react-router-dom";
 import {sileo} from "sileo";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
+import EmptyStateIllustration from "../components/ui/EmptyStateIllustration";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import {SkeletonCards, SkeletonRegion, SkeletonTable} from "../components/ui/Skeleton";
 import {formatMoney} from "../utils/formatters";
@@ -133,7 +134,24 @@ export default function PurchasesPage({businessId, role}) {
             <SkeletonTable className="po-history__desktop" columns={7} twoLine />
             <SkeletonCards className="po-history__cards" />
           </SkeletonRegion>
-        ) : loadFailed && items.length === 0 ? null : (
+        ) : loadFailed && items.length === 0 ? null : filtered.length === 0 ? (
+          <div className="erp-empty-state ui-empty-state">
+            <EmptyStateIllustration variant={items.length ? "no-results" : "empty-list"} />
+            <h3>{items.length ? "No hay compras coincidentes" : "Aún no hay compras"}</h3>
+            <p>
+              {items.length
+                ? "Prueba con otra búsqueda, estado u origen."
+                : canManage
+                  ? "Registra tu primera compra directa. Las compras derivadas de Recepciones también aparecerán aquí."
+                  : "Tu perfil es de solo lectura; los perfiles autorizados registran las compras."}
+            </p>
+            {!items.length && canManage && (
+              <div className="ui-empty-state__actions">
+                <Button type="button" icon={Plus} onClick={() => navigate("/compras/nueva")}>Nueva compra</Button>
+              </div>
+            )}
+          </div>
+        ) : (
           <>
           <section className="erp-table-region po-history__desktop">
             <table className="erp-table po-history__table">
@@ -150,7 +168,6 @@ export default function PurchasesPage({businessId, role}) {
                     <td><Actions canManage={canManage} onAction={action} processing={processing === purchase.id} purchase={purchase} /></td>
                   </tr>
                 ))}
-                {!filtered.length && <tr><td colSpan="7" className="po-history__empty">No hay compras coincidentes.</td></tr>}
               </tbody>
             </table>
           </section>
@@ -163,7 +180,6 @@ export default function PurchasesPage({businessId, role}) {
                 <Actions canManage={canManage} onAction={action} processing={processing === purchase.id} purchase={purchase} />
               </article>
             ))}
-            {!filtered.length && <div className="po-history__cards-empty">No hay compras coincidentes.</div>}
           </section>
           </>
         )}
