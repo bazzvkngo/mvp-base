@@ -141,8 +141,12 @@ try {
   const unguarded = css.match(/\.(?:ui-button--[a-z-]+|auth-submit|onboarding-submit):(?:hover|active):not\(:disabled\)(?!:not\(\.ui-button--loading\))/g);
   assert.equal(unguarded, null, "hover/active de variantes, .auth-submit y .onboarding-submit excluyen también los botones en carga");
   const guarded = css.match(/:(?:hover|active):not\(:disabled\):not\(\.ui-button--loading\)/g) || [];
-  assert.equal(guarded.length, 13, "5 variantes + 4 de .auth-submit + 4 de .onboarding-submit");
-  console.log("OK: CSS — cursor progress, sin opacidad ni foco propios, 13 selectores de hover/active excluyen la carga");
+  assert.equal(
+    guarded.length,
+    16,
+    "5 variantes + 4 de .auth-submit + 4 de .onboarding-submit + 3 overrides de modo oscuro (.ui-button--danger, .auth-submit, .onboarding-submit)"
+  );
+  console.log("OK: CSS — cursor progress, sin opacidad ni foco propios, 16 selectores de hover/active excluyen la carga");
 
   console.log("BUTTON_SMOKE_OK");
 } finally {
