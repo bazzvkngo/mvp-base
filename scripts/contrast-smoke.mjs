@@ -19,8 +19,23 @@ import {fileURLToPath} from "node:url";
 // texto/-700/-800 contra su propia -50 Y contra --color-surface-panel;
 // shade de borde/-200/-300 contra ambos también; casos puntuales medidos
 // aparte como danger-600/panel o brand-400 contra las 6 superficies), y
-// calcula el contraste real con la fórmula de luminancia relativa de
-// WCAG 2. Se verifica tanto el par claro como el oscuro.
+// calcula el contraste real con la fórmula de luminancia relativa de WCAG 2.
+//
+// SOLO modo oscuro: lo que los pasos 2-8 midieron y corrigieron a mano fue
+// exclusivamente el valor OSCURO de cada token (el claro es el diseño
+// original, nunca auditado en esta etapa). Además, varios pares (brand-400
+// contra las 6 superficies; -200/-300 de las familias semánticas contra
+// panel, no solo contra su propia -50) fueron verificados en pasos 3-5
+// como una garantía defensiva para CUALQUIER selector oscuro futuro, no
+// porque ya existiera un selector real con esa combinación exacta — así
+// que probar esas mismas combinaciones en CLARO no corresponde a ninguna
+// garantía que se haya dado nunca (confirmado con grep: brand-400 contra
+// canvas/raised/hover/selected en claro no tiene ningún selector real que
+// lo use así; solo 2 de los 6 pares sí tienen un selector real, y son
+// casos puntuales preexistentes, no la garantía general de pasos 3-4).
+// Mezclar claro y oscuro en el mismo chequeo generaba falsos positivos
+// (combinaciones que el CSS real nunca ejecuta) sin poder distinguirlos
+// de deuda real preexistente — se corrigió acotando todo a oscuro.
 //
 // Qué NO cubre a propósito: esto verifica los pares reutilizables del
 // SISTEMA de tokens, no cada uso puntual en un componente (por ejemplo
@@ -179,52 +194,31 @@ function checkTheme(themeName, tokens, results) {
 
 async function main() {
   const css = await readFile(TOKENS_CSS, "utf8");
-  const {light, dark} = parseTokens(css);
+  const {dark} = parseTokens(css);
 
   const results = {passes: [], failures: [], missing: []};
-  checkTheme("claro", light, results);
   checkTheme("oscuro", dark, results);
-
-  // El modo oscuro es lo que esta etapa verificó y corrigió a mano, par por
-  // par (pasos 2-8) — una falla ahí es una regresión real sobre ese
-  // trabajo y bloquea. El modo claro es el diseño preexistente, nunca
-  // tocado por esta etapa (fuera de su alcance); si algún par claro no
-  // cumple su umbral, es deuda que ya existía antes de este trabajo — se
-  // reporta como aviso, sin bloquear y sin forzar ningún valor a pasar.
-  const darkFailures = results.failures.filter((f) => f.theme === "oscuro");
-  const lightFailures = results.failures.filter((f) => f.theme === "claro");
-
-  if (lightFailures.length) {
-    console.log(
-      `AVISO (no falla, deuda preexistente fuera de esta etapa): ${lightFailures.length} par(es) en modo claro no cumplen su umbral WCAG. El modo claro es el diseño original, sin cambios en la etapa 5.`
-    );
-    for (const f of lightFailures) {
-      console.log(
-        `  - ${f.note}: ${f.ratio}:1 (umbral ${f.threshold}:1, ${f.kind === "text" ? "texto" : "no-textual"}) — ${f.fg} sobre ${f.bg}`
-      );
-    }
-  }
 
   if (results.missing.length) {
     console.error(`FALLÓ: ${results.missing.length} par(es) no se pudieron verificar (token inexistente).`);
     for (const m of results.missing) console.error(`  - ${m}`);
   }
 
-  if (darkFailures.length) {
-    console.error(`FALLÓ: ${darkFailures.length} par(es) en modo oscuro no cumplen su umbral WCAG (regresión sobre lo verificado en la etapa 5).`);
-    for (const f of darkFailures) {
+  if (results.failures.length) {
+    console.error(`FALLÓ: ${results.failures.length} par(es) en modo oscuro no cumplen su umbral WCAG (regresión sobre lo verificado en la etapa 5).`);
+    for (const f of results.failures) {
       console.error(
         `  - ${f.note}: ${f.ratio}:1 (umbral ${f.threshold}:1, ${f.kind === "text" ? "texto" : "no-textual"}) — ${f.fg} sobre ${f.bg}`
       );
     }
   }
 
-  if (results.missing.length || darkFailures.length) {
+  if (results.missing.length || results.failures.length) {
     assert.fail("contrast-smoke: ver violaciones arriba");
   }
 
   console.log(
-    `OK: ${results.passes.length}/${results.passes.length + lightFailures.length} pares (claro+oscuro) verificados contra tokens.css. Modo oscuro: 100% dentro de umbral. Modo claro: ${lightFailures.length} par(es) preexistentes fuera de umbral (ver aviso arriba, no bloquean).`
+    `OK: ${results.passes.length} pares de modo oscuro verificados contra tokens.css, todos cumplen su umbral WCAG (4.5:1 texto, 3:1 no-textual).`
   );
   console.log("CONTRAST_SMOKE_OK");
 }
