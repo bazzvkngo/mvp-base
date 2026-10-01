@@ -109,6 +109,7 @@
     "test:design": "node scripts/design-smoke.mjs",
     "test:design-scan": "node scripts/design-scan-smoke.mjs",
     "test:contrast": "node scripts/contrast-smoke.mjs",
+    "test:empty-state": "node scripts/empty-state-illustration-smoke.mjs",
     "test:notification-bell": "node scripts/notification-bell-smoke.mjs",
     "test:summary": "node scripts/financial-model-smoke.mjs",
     "seed:business-catalogs:emulator": "node scripts/seed-business-catalogs.mjs --emulator"
