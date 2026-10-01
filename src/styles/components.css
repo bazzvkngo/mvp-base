@@ -278,6 +278,128 @@
   color: var(--color-text-default);
 }
 
+/* Estado vacío: contenedor de <EmptyStateIllustration> + título +
+   descripción + acciones. Se combina con .erp-empty-state (fondo, borde
+   punteado, padding), que sigue siendo la "caja"; esto solo ordena el
+   contenido en columna centrada. */
+.ui-empty-state {
+  align-items: center;
+  display: grid;
+  gap: var(--space-2);
+  justify-items: center;
+}
+
+.ui-empty-state > h3,
+.ui-empty-state > p {
+  margin: 0;
+}
+
+.ui-empty-state > h3 {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-md);
+}
+
+.ui-empty-state > p {
+  max-width: 46ch;
+}
+
+.ui-empty-state__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: center;
+  margin-top: var(--space-2);
+}
+
+/* Ilustración de estado vacío (<EmptyStateIllustration>). Todo el color
+   sale de tokens que ya tienen valor oscuro, así que el dibujo cambia de
+   tema sin ningún hook. Las dos propiedades locales son alias de tokens
+   (no una paleta propia): acento + tinte del fondo circular, que cambian
+   solo en las variantes con semántica de estado (all-done, error). El
+   trazo sobre el acento usa --color-surface-panel: los acentos se aclaran
+   en oscuro y el panel se oscurece, así que el par se mantiene legible en
+   ambos temas. */
+.ui-empty-illustration {
+  --ui-empty-illustration-accent: var(--color-brand-500);
+  --ui-empty-illustration-tint: var(--color-surface-selected);
+  display: block;
+  flex: 0 0 auto;
+  height: auto;
+  max-width: 100%;
+  width: 8.5rem;
+}
+
+.ui-empty-illustration--all-done {
+  --ui-empty-illustration-accent: var(--color-success-700);
+  --ui-empty-illustration-tint: var(--color-success-50);
+}
+
+.ui-empty-illustration--error {
+  --ui-empty-illustration-accent: var(--color-danger-600);
+  --ui-empty-illustration-tint: var(--color-danger-50);
+}
+
+.ui-empty-illustration__backdrop {
+  fill: var(--ui-empty-illustration-tint);
+}
+
+.ui-empty-illustration__card {
+  fill: var(--color-surface-panel);
+  stroke: var(--color-border-control);
+  stroke-width: 2;
+}
+
+.ui-empty-illustration__line {
+  fill: var(--color-border-default);
+}
+
+.ui-empty-illustration__accent {
+  fill: var(--ui-empty-illustration-accent);
+}
+
+.ui-empty-illustration__accent-shape {
+  fill: var(--ui-empty-illustration-accent);
+  stroke: var(--ui-empty-illustration-accent);
+  stroke-linejoin: round;
+  stroke-width: 6;
+}
+
+.ui-empty-illustration__accent-line,
+.ui-empty-illustration__accent-line-thin {
+  fill: none;
+  stroke: var(--ui-empty-illustration-accent);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 6;
+}
+
+.ui-empty-illustration__accent-line-thin {
+  stroke-width: 3;
+}
+
+.ui-empty-illustration__lens,
+.ui-empty-illustration__lens-small {
+  fill: var(--color-surface-panel);
+  stroke: var(--ui-empty-illustration-accent);
+  stroke-width: 4;
+}
+
+.ui-empty-illustration__lens-small {
+  stroke-width: 3;
+}
+
+.ui-empty-illustration__glyph {
+  fill: none;
+  stroke: var(--color-surface-panel);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
+
+.ui-empty-illustration__glyph-dot {
+  fill: var(--color-surface-panel);
+}
+
 /* Contador pequeño superpuesto sobre un ícono (ej. la campana de
    notificaciones). Genérico a propósito, sin nombre de feature: el
    padre debe posicionarse (position: relative) y darle position:
