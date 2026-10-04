@@ -2702,6 +2702,54 @@
   }
 }
 
+/* Control segmentado (<SegmentedControl>, etapa 5 paso 9): pocas opciones
+   siempre visibles en una píldora. Los radios nativos quedan .sr-only; el
+   foco y el estado activo se muestran en .ui-segmented__content. */
+.ui-segmented {
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0;
+  min-width: 0;
+  padding: var(--space-1);
+}
+
+.ui-segmented__option {
+  cursor: pointer;
+  display: inline-flex;
+}
+
+.ui-segmented__content {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  color: var(--color-text-muted);
+  display: inline-flex;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: 0 var(--space-4);
+}
+
+.ui-segmented__option:hover .ui-segmented__content {
+  color: var(--color-text-strong);
+}
+
+.ui-segmented__input:checked + .ui-segmented__content {
+  background: var(--color-brand-50);
+  border-color: var(--color-brand-200);
+  color: var(--color-brand-600);
+}
+
+.ui-segmented__input:focus-visible + .ui-segmented__content {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-offset);
+}
+
 /* Modo oscuro (etapa 5, paso 3 de 10: hub compartido). Ver
    scripts/design-baseline.json para el detalle de cada literal nuevo
    registrado aquí. */

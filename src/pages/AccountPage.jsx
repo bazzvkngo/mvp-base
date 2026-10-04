@@ -3,16 +3,23 @@ import {
   KeyRound,
   MailCheck,
   MailWarning,
+  Monitor,
+  Moon,
   RefreshCw,
   Save,
   Send,
+  Sun,
+  SunMoon,
   UserRound,
 } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import LoadingState from "../components/ui/LoadingState";
+import SegmentedControl from "../components/ui/SegmentedControl";
 import StatusBadge from "../components/ui/StatusBadge";
+import usePrefersDarkMode from "../hooks/usePrefersDarkMode";
+import useThemePreference from "../hooks/useThemePreference";
 import { formatChileanRut, isValidChileanRut } from "../domain/fiscalIdentifier.mjs";
 import {
   refreshCurrentUser,
@@ -28,6 +35,12 @@ import {
 const ACCOUNT_SECTIONS = [
   { id: "perfil", label: "Perfil personal", icon: UserRound },
   { id: "acceso", label: "Acceso y seguridad", icon: KeyRound },
+  { id: "apariencia", label: "Apariencia", icon: SunMoon },
+];
+const THEME_OPTIONS = [
+  { value: "system", label: "Sistema", icon: Monitor },
+  { value: "light", label: "Claro", icon: Sun },
+  { value: "dark", label: "Oscuro", icon: Moon },
 ];
 const RESEND_COOLDOWN_SECONDS = 60;
 const PERSONAL_DOCUMENT_CONTEXT = Object.freeze({
@@ -68,6 +81,8 @@ function AccountPage({ onSessionRefresh, usuario }) {
   const [refreshing, setRefreshing] = React.useState(false);
   const [resettingPassword, setResettingPassword] = React.useState(false);
   const [resendCooldown, setResendCooldown] = React.useState(0);
+  const { preference: themePreference, setPreference: setThemePreference } = useThemePreference();
+  const isDarkTheme = usePrefersDarkMode();
 
   React.useEffect(() => {
     let active = true;
@@ -374,6 +389,38 @@ function AccountPage({ onSessionRefresh, usuario }) {
               </div>
               {securityError && <p className="settings-message settings-message--error" role="alert">{securityError}</p>}
               {securityMessage && <p className="settings-message settings-message--success" role="status">{securityMessage}</p>}
+            </div>
+          </section>
+        )}
+
+        {activeSection === "apariencia" && (
+          <section id="cuenta-apariencia" className="settings-section" aria-labelledby="account-appearance-title">
+            <header className="settings-section__header">
+              <h2 id="account-appearance-title" tabIndex="-1">Apariencia</h2>
+              <p>Elige cómo se ve ValoraCloud en este dispositivo.</p>
+            </header>
+            <div className="settings-card account-security-card">
+              <div className="account-security-row">
+                <div className="account-security-row__icon" aria-hidden="true">
+                  <AppIcon icon={SunMoon} size={20} />
+                </div>
+                <div className="account-security-row__copy">
+                  <span>Tema</span>
+                  <strong>
+                    {themePreference === "system"
+                      ? `Igual que el sistema (ahora ${isDarkTheme ? "oscuro" : "claro"})`
+                      : themePreference === "dark" ? "Oscuro" : "Claro"}
+                  </strong>
+                  <small>Es una preferencia de este dispositivo: se guarda en este navegador, no en tu cuenta.</small>
+                </div>
+                <SegmentedControl
+                  legend="Tema de ValoraCloud"
+                  name="account-theme"
+                  onChange={setThemePreference}
+                  options={THEME_OPTIONS}
+                  value={themePreference}
+                />
+              </div>
             </div>
           </section>
         )}
