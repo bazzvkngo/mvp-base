@@ -12,8 +12,8 @@ import {fileURLToPath} from "node:url";
 // --color-data-*/--color-data-cost-*/--color-quote-status-*).
 //
 // Cómo: lee tokens.css como texto, extrae cada `--token: #hex` de :root
-// (claro) y del bloque @media (prefers-color-scheme: dark) { :root {...} }
-// (oscuro, con fallback a claro para los tokens que no se redefinen ahí —
+// (claro) y del bloque :root[data-theme="dark"] { ... } (oscuro; antes del
+// paso 9 era @media (prefers-color-scheme: dark), con fallback a claro para los tokens que no se redefinen ahí —
 // el mismo comportamiento real de la cascada), arma los pares que ya se
 // verificaron a mano (mismo criterio que se aplicó en cada commit: shade de
 // texto/-700/-800 contra su propia -50 Y contra --color-surface-panel;
@@ -75,10 +75,12 @@ function parseTokens(css) {
   if (!rootMatch) throw new Error("No se encontró el bloque :root en tokens.css");
   const light = extractDeclarations(rootMatch[1]);
 
-  const darkBlockMatch = /@media\s*\(prefers-color-scheme:\s*dark\)\s*\{\s*:root\s*\{([\s\S]*?)\n\s*\}\s*\}/.exec(
-    blanked
-  );
-  const darkOverrides = darkBlockMatch ? extractDeclarations(darkBlockMatch[1]) : {};
+  const darkBlockMatch = /:root\[data-theme="dark"\]\s*\{([\s\S]*?)\n\s*\}/.exec(blanked);
+  // Sin bloque oscuro, "dark" sería en silencio una copia de los valores
+  // claros y el smoke mediría otra cosa: se falla en vez de seguir.
+  if (!darkBlockMatch) throw new Error('No se encontró el bloque :root[data-theme="dark"] en tokens.css');
+  const darkOverrides = extractDeclarations(darkBlockMatch[1]);
+  assert.ok(Object.keys(darkOverrides).length > 0, "El bloque oscuro de tokens.css no declara ningún token");
   const dark = {...light, ...darkOverrides};
 
   return {light, dark};
