@@ -1,6 +1,7 @@
-const WORK_BALANCE_MODEL_VERSION = 2;
+const WORK_BALANCE_MODEL_VERSION = 3;
 const {BALANCE_READ_ROLES: BALANCE_ROLES} = require("./rbac");
 const PROJECT_MOVEMENT_TYPES = new Set(["SALIDA_PROYECTO", "DEVOLUCION_PROYECTO"]);
+const MONTHLY_AMOUNT_FIELDS = ["ingresoNeto", "materialesVenta", "materialesAdicionales", "horasHombre", "gastosDirectos", "gastosIndirectos"];
 
 function fail(HttpsError, code, message) {
   throw new HttpsError(code, message);
@@ -24,6 +25,27 @@ function currency(value, fallback = "") {
 function amount(value) {
   const normalized = Number(value || 0);
   return Number.isFinite(normalized) && normalized >= 0 ? roundMoney(normalized) : 0;
+}
+
+// SPEC 022 §7.1: el ingreso del balance es el neto (sin IVA) ya persistido por
+// la Venta. Un neto ausente o inválido nunca se reemplaza por `total`.
+function saleNetAmount(sale) {
+  const value = sale?.neto;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? roundMoney(value) : null;
+}
+
+// SPEC 022 §5.1: mismo formato AAAA-MM-DD que validan los escritores
+// (optionalDate en workPersistence, date en salePersistence), sin zona horaria.
+function recordMonth(value) {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized) || Number.isNaN(new Date(`${normalized}T12:00:00Z`).getTime())) return null;
+  return normalized.slice(0, 7);
+}
+
+function monthlyBucket(months, month, currencyCode) {
+  const key = `${month}::${currencyCode}`;
+  if (!months.has(key)) months.set(key, {mes: month, moneda: currencyCode, ...Object.fromEntries(MONTHLY_AMOUNT_FIELDS.map((field) => [field, 0]))});
+  return months.get(key);
 }
 
 function balanceBucket(buckets, currencyCode) {
@@ -61,6 +83,7 @@ function saleMaterialEffects(sales = [], baseCurrency = "CLP") {
         ...effect,
         ventaId: String(sale.ventaId || sale.id || ""),
         ventaNumero: String(sale.numero || ""),
+        mesVenta: recordMonth(sale.fechaVenta),
         cantidad: quantity,
         moneda: currency(effect?.moneda, currency(sale.moneda, baseCurrency)),
         costoUnitario: costAvailable ? roundMoney(unitCost) : null,
@@ -86,35 +109,59 @@ function calculateWorkBalance({business = {}, expenses = [], labor = [], materia
   const includedExpenses = activeExpenses.filter((expense) => !(hasMaterialLedger && String(expense.categoria || "").toUpperCase() === "MATERIAL"));
   const excludedMaterialExpenses = activeExpenses.filter((expense) => hasMaterialLedger && String(expense.categoria || "").toUpperCase() === "MATERIAL");
   const buckets = new Map();
+  const months = new Map();
+  let undatedRecords = 0;
   balanceBucket(buckets, baseCurrency);
 
+  // SPEC 022 §5.3: el acumulado y el desglose mensual se alimentan con el mismo
+  // importe en el mismo paso, así que sólo pueden diferir por registros sin
+  // fecha válida, que aportan al acumulado pero a ningún mes.
+  const addAmount = (currencyCode, month, monthlyField, accumulatedFields, value) => {
+    const bucket = balanceBucket(buckets, currencyCode);
+    accumulatedFields.forEach((field) => { bucket[field] += value; });
+    if (month) monthlyBucket(months, month, currencyCode)[monthlyField] += value;
+  };
+  const datedMonth = (value) => {
+    const month = recordMonth(value);
+    if (!month) undatedRecords += 1;
+    return month;
+  };
+  const salesWithoutValidNet = confirmedSales.filter((sale) => saleNetAmount(sale) === null).length;
+
   confirmedSales.forEach((sale) => {
-    balanceBucket(buckets, currency(sale.moneda, baseCurrency)).valorComercial += amount(sale.total);
+    const saleCurrency = currency(sale.moneda, baseCurrency);
+    const month = datedMonth(sale.fechaVenta);
+    const net = saleNetAmount(sale);
+    if (net === null) balanceBucket(buckets, saleCurrency);
+    else addAmount(saleCurrency, month, "ingresoNeto", ["valorComercial"], net);
   });
+  // Los materiales de la Venta van al mes de la Venta: su costo se congela al confirmarla.
   availableSaleMaterials.forEach((entry) => {
-    const bucket = balanceBucket(buckets, entry.moneda);
-    bucket.materialesVenta += amount(entry.costoTotal);
-    bucket.materiales += amount(entry.costoTotal);
+    addAmount(entry.moneda, entry.mesVenta, "materialesVenta", ["materialesVenta", "materiales"], amount(entry.costoTotal));
   });
   projectMaterials.forEach((movement) => {
     const multiplier = movement.tipo === "DEVOLUCION_PROYECTO" ? -1 : 1;
-    const bucket = balanceBucket(buckets, currency(movement.moneda, baseCurrency));
-    bucket.materialesAdicionales += multiplier * amount(movement.costoTotal);
-    bucket.materiales += multiplier * amount(movement.costoTotal);
+    addAmount(currency(movement.moneda, baseCurrency), datedMonth(movement.fecha), "materialesAdicionales", ["materialesAdicionales", "materiales"], multiplier * amount(movement.costoTotal));
   });
   activeLabor.forEach((entry) => {
-    balanceBucket(buckets, currency(entry.moneda, baseCurrency)).horasHombre += amount(entry.total);
+    addAmount(currency(entry.moneda, baseCurrency), datedMonth(entry.fecha), "horasHombre", ["horasHombre"], amount(entry.total));
   });
   includedExpenses.forEach((expense) => {
-    const bucket = balanceBucket(buckets, currency(expense.moneda, baseCurrency));
-    if (expense.clasificacionCosto === "INDIRECTO" || String(expense.categoria || "").toUpperCase() === "ADMINISTRATIVO") bucket.gastosIndirectos += amount(expense.monto);
-    else bucket.gastosDirectos += amount(expense.monto);
+    const field = expense.clasificacionCosto === "INDIRECTO" || String(expense.categoria || "").toUpperCase() === "ADMINISTRATIVO" ? "gastosIndirectos" : "gastosDirectos";
+    addAmount(currency(expense.moneda, baseCurrency), datedMonth(expense.fecha), field, [field], amount(expense.monto));
   });
 
   const breakdown = [...buckets.values()].map((bucket) => {
     const normalized = Object.fromEntries(Object.entries(bucket).map(([key, value]) => [key, key === "moneda" ? value : roundMoney(value)]));
     return {...normalized, costoTotal: roundMoney(normalized.materiales + normalized.horasHombre + normalized.gastosDirectos + normalized.gastosIndirectos)};
   });
+  const monthlyBreakdown = [...months.values()]
+    .sort((left, right) => left.mes.localeCompare(right.mes) || left.moneda.localeCompare(right.moneda))
+    .map((entry) => {
+      const normalized = Object.fromEntries(Object.entries(entry).map(([key, value]) => [key, MONTHLY_AMOUNT_FIELDS.includes(key) ? roundMoney(value) : value]));
+      const monthCost = roundMoney(normalized.materialesVenta + normalized.materialesAdicionales + normalized.horasHombre + normalized.gastosDirectos + normalized.gastosIndirectos);
+      return {...normalized, costoTotal: monthCost, resultado: roundMoney(normalized.ingresoNeto - monthCost)};
+    });
   const usedCurrencies = [
     ...confirmedSales.map((sale) => currency(sale.moneda, baseCurrency)),
     ...availableSaleMaterials.map((entry) => entry.moneda),
@@ -166,8 +213,11 @@ function calculateWorkBalance({business = {}, expenses = [], labor = [], materia
     gastosMaterialExcluido: isConsistent ? roundMoney(excludedMaterialAmount) : null,
     reglaMateriales: hasMaterialLedger ? "INVENTARIO_AUTORITATIVO" : "GASTO_MATERIAL_LEGACY",
     desglosePorMoneda: breakdown,
+    desglosePorMes: monthlyBreakdown,
     fuentes: {
       ventasConfirmadas: confirmedSales.length,
+      ventasSinNetoValido: salesWithoutValidNet,
+      registrosSinFecha: undatedRecords,
       cotizacionesRechazadas: rejectedQuotes,
       movimientosMaterialesVenta: materialsFromSales.length,
       materialesVentaSinCosto: materialsFromSales.filter((entry) => !entry.costoHistoricoDisponible).length,
