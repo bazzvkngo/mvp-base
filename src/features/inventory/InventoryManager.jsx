@@ -38,7 +38,8 @@ import {
   updateManagedInventoryItem,
 } from "../../services/inventoryService";
 import { DEFAULT_INVENTORY_SETTINGS, getBusinessSettings } from "../../services/companyService";
-import { formatCLP, formatDate, formatMoney } from "../../utils/formatters";
+import { useBusinessMoney } from "../../hooks/useBusinessFormat";
+import { formatDate, formatMoney } from "../../utils/formatters";
 import InventoryCatalogManager from "./InventoryCatalogManager";
 import InventoryImportDialog from "./InventoryImportDialog";
 import UnitSelector from "./UnitSelector";
@@ -83,6 +84,7 @@ function requestId() {
 
 function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
   const navigate = useNavigate();
+  const formatBusinessAmount = useBusinessMoney();
   const cannotWrite = readOnly || !hasBusinessPermission(role, BUSINESS_PERMISSIONS.INVENTORY_WRITE);
   const canStartPurchase = !readOnly && hasBusinessPermission(role, BUSINESS_PERMISSIONS.PURCHASES_WRITE);
   const canReadCosts = hasBusinessPermission(role, BUSINESS_PERMISSIONS.INVENTORY_COSTS_READ);
@@ -459,7 +461,7 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
         <Metric label="Productos" value={summary.products} />
         <Metric label="Servicios y actividades" value={summary.servicesAndActivities} />
         <Metric label="Stock bajo" value={summary.lowStock} tone={summary.lowStock ? "warning" : ""} />
-        <Metric label="Costo del inventario" value={formatCLP(summary.inventoryCost)} />
+        <Metric label="Costo del inventario" value={formatBusinessAmount(summary.inventoryCost)} />
       </div>
 
       <section className="erp-panel inventory-list-panel" aria-labelledby="inventory-list-title">
@@ -510,7 +512,7 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
                       <option value="personalizado">Personalizado</option>
                     </select>
                   </Field>
-                  <PriceResult label="Costo pagado" value={productPriceFormation.costoPagado} detail={`IVA: ${formatCLP(productPriceFormation.montoImpuestoCompra)}`} />
+                  <PriceResult label="Costo pagado" value={productPriceFormation.costoPagado} detail={`IVA: ${formatBusinessAmount(productPriceFormation.montoImpuestoCompra)}`} />
                 </div>
                 {purchaseTaxMode === "personalizado" && <div className="inventory-custom-tax-field"><Field label="Tasa personalizada (%)" required error={fieldErrors.tasaImpuestoCompra}><input className="erp-control" type="number" min="0" max="100" step="any" value={draft.tasaImpuestoCompra} onChange={(event) => updateDraft("tasaImpuestoCompra", event.target.value)} /></Field></div>}
                 <div className="inventory-price-grid inventory-price-grid--commercial">
@@ -521,7 +523,7 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
               </> : <div className="inventory-price-grid">
                 <Field label="Costo unitario" required error={fieldErrors.costoBase}><input className="erp-control" type="number" min="0" step="any" value={draft.costoBase} onChange={(event) => updateDraft("costoBase", event.target.value)} /></Field>
                 <Field label="Recargo (%)" required error={fieldErrors.margenDeseado}><input className="erp-control" type="number" min="0" max="1000" step="any" value={draft.margenDeseado} onChange={(event) => updateDraft("margenDeseado", event.target.value)} placeholder="Ej. 30" /></Field>
-                <PriceResult label="Precio de venta final" value={effectivePrice} tone="final" detail={manualPriceEnabled && String(draft.precioManual).trim() !== "" ? `Sugerido: ${formatCLP(calculatedPrice)}` : ""} />
+                <PriceResult label="Precio de venta final" value={effectivePrice} tone="final" detail={manualPriceEnabled && String(draft.precioManual).trim() !== "" ? `Sugerido: ${formatBusinessAmount(calculatedPrice)}` : ""} />
               </div>}
               <label className="inventory-manual-price-toggle"><input type="checkbox" checked={manualPriceEnabled} onChange={(event) => { const enabled = event.target.checked; setManualPriceEnabled(enabled); if (!enabled) updateDraft("precioManual", ""); }} /><span>Definir precio de venta manual</span></label>
               {manualPriceEnabled && <div className="inventory-manual-price-field"><Field label="Precio de venta final" error={fieldErrors.precioManual}><input className="erp-control" type="number" min="0" step="any" value={draft.precioManual} onChange={(event) => updateDraft("precioManual", event.target.value)} placeholder="Define el precio que cobrarás al cliente" /></Field></div>}
@@ -542,7 +544,7 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
 function Metric({ label, tone, value }) { return <article className={`erp-metric-card${tone ? ` inventory-metric--${tone}` : ""}`}><span className="erp-metric-card__label">{label}</span><strong className="erp-metric-card__value">{value}</strong></article>; }
 function Filter({ children, disabled, label, onChange, value }) { return <label className="erp-field"><span className="erp-field__label">{label}</span><select className="erp-control" disabled={disabled} value={value} onChange={(event) => onChange(event.target.value)}>{children}</select></label>; }
 function Field({ children, error, hint, label, required }) { return <label className="erp-field"><span className="erp-field__label">{label}{required ? " *" : ""}</span>{children}{hint && <small className="inventory-field-hint">{hint}</small>}{error && <small className="inventory-field-error">{error}</small>}</label>; }
-function PriceResult({ detail, label, tone = "", value }) { return <div className={`inventory-sale-price${tone ? ` inventory-sale-price--${tone}` : ""}`}><span>{label}</span><strong>{formatCLP(value)}</strong>{detail && <small>{detail}</small>}</div>; }
+function PriceResult({ detail, label, tone = "", value }) { const formatBusinessAmount = useBusinessMoney(); return<div className={`inventory-sale-price${tone ? ` inventory-sale-price--${tone}` : ""}`}><span>{label}</span><strong>{formatBusinessAmount(value)}</strong>{detail && <small>{detail}</small>}</div>; }
 function CatalogSelect({children, createDisabled, createTitle, disabled, error, label, onChange, onCreate, value}) { return <label className="erp-field inventory-catalog-select-field"><span className="erp-field__label">{label}</span><span><select className="erp-control" disabled={disabled} value={value} onChange={(event) => onChange(event.target.value)}>{children}</select><button type="button" disabled={createDisabled} title={createTitle || `Crear ${label.toLowerCase()}`} aria-label={`Crear ${label.toLowerCase()}`} onClick={onCreate}>+</button></span>{error && <small className="inventory-field-error">{error}</small>}</label>; }
 
 function IdentityMetadata({ item }) {
@@ -558,13 +560,15 @@ function StockPresentation({ item }) {
 }
 
 function InventoryList({ areas, cannotWrite, categories, items, onArchive, onEdit, onReactivate, onView, onViewReferences }) {
-  return <><div className="erp-table-region erp-desktop-only"><table className="erp-table inventory-table"><thead><tr><th>SKU</th><th>Ítem</th><th>Tipo</th><th>Stock</th><th>Precio</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td className="inventory-code">{item.codigoInterno || item.sku || "—"}</td><td><button className="inventory-item-link" type="button" onClick={() => onView(item)}>{item.nombre}</button><IdentityMetadata item={item} /></td><td>{getInventoryTypeLabel(item.tipoItem)}<small>{item.unidad}</small></td><td><StockPresentation item={item} /></td><td><strong>{formatCLP(item.precioEfectivo)}</strong></td><td><Status item={item} /></td><td><Actions item={item} cannotWrite={cannotWrite} onArchive={onArchive} onEdit={onEdit} onReactivate={onReactivate} onViewReferences={onViewReferences} /></td></tr>)}</tbody></table></div><div className="erp-card-list erp-mobile-only">{items.map((item) => <article className="erp-record-card inventory-mobile-card" key={item.id}><header className="erp-record-card__header"><div><span className="inventory-code">{item.codigoInterno || item.sku || "Sin código"}</span><h3 className="erp-record-card__title">{item.nombre}</h3><IdentityMetadata item={item} /><p className="erp-record-card__subtitle">{getInventoryTypeLabel(item.tipoItem)} · {item.unidad}</p></div><Status item={item} /></header><dl className="erp-meta-grid"><div className="erp-meta"><dt className="erp-meta__label">Clasificación</dt><dd className="erp-meta__value">{getInventoryAreaLabel(item, areas)} / {getInventoryCategoryLabel(item, categories)}</dd></div><div className="erp-meta"><dt className="erp-meta__label">Costo / precio</dt><dd className="erp-meta__value">{formatCLP(item.costoBase)} / {formatCLP(item.precioEfectivo)}</dd></div><div className="erp-meta"><dt className="erp-meta__label">Stock</dt><dd className="erp-meta__value"><StockPresentation item={item} /></dd></div></dl><button type="button" className="inventory-button inventory-button--secondary" onClick={() => onView(item)}>Ver detalle</button><Actions item={item} cannotWrite={cannotWrite} onArchive={onArchive} onEdit={onEdit} onReactivate={onReactivate} onViewReferences={onViewReferences} /></article>)}</div></>;
+  const formatBusinessAmount = useBusinessMoney();
+  return <><div className="erp-table-region erp-desktop-only"><table className="erp-table inventory-table"><thead><tr><th>SKU</th><th>Ítem</th><th>Tipo</th><th>Stock</th><th>Precio</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td className="inventory-code">{item.codigoInterno || item.sku || "—"}</td><td><button className="inventory-item-link" type="button" onClick={() => onView(item)}>{item.nombre}</button><IdentityMetadata item={item} /></td><td>{getInventoryTypeLabel(item.tipoItem)}<small>{item.unidad}</small></td><td><StockPresentation item={item} /></td><td><strong>{formatBusinessAmount(item.precioEfectivo)}</strong></td><td><Status item={item} /></td><td><Actions item={item} cannotWrite={cannotWrite} onArchive={onArchive} onEdit={onEdit} onReactivate={onReactivate} onViewReferences={onViewReferences} /></td></tr>)}</tbody></table></div><div className="erp-card-list erp-mobile-only">{items.map((item) => <article className="erp-record-card inventory-mobile-card" key={item.id}><header className="erp-record-card__header"><div><span className="inventory-code">{item.codigoInterno || item.sku || "Sin código"}</span><h3 className="erp-record-card__title">{item.nombre}</h3><IdentityMetadata item={item} /><p className="erp-record-card__subtitle">{getInventoryTypeLabel(item.tipoItem)} · {item.unidad}</p></div><Status item={item} /></header><dl className="erp-meta-grid"><div className="erp-meta"><dt className="erp-meta__label">Clasificación</dt><dd className="erp-meta__value">{getInventoryAreaLabel(item, areas)} / {getInventoryCategoryLabel(item, categories)}</dd></div><div className="erp-meta"><dt className="erp-meta__label">Costo / precio</dt><dd className="erp-meta__value">{formatBusinessAmount(item.costoBase)} / {formatBusinessAmount(item.precioEfectivo)}</dd></div><div className="erp-meta"><dt className="erp-meta__label">Stock</dt><dd className="erp-meta__value"><StockPresentation item={item} /></dd></div></dl><button type="button" className="inventory-button inventory-button--secondary" onClick={() => onView(item)}>Ver detalle</button><Actions item={item} cannotWrite={cannotWrite} onArchive={onArchive} onEdit={onEdit} onReactivate={onReactivate} onViewReferences={onViewReferences} /></article>)}</div></>;
 }
 
 function Status({ item }) { return <span className={`inventory-status inventory-status--${item.estado === "activo" ? "active" : "archived"}`}>{item.estado === "activo" ? "Activo" : "Archivado"}</span>; }
 function Actions({ cannotWrite, item, onArchive, onEdit, onReactivate, onViewReferences }) { const canView = item.tipoItem === "producto" && item.estado === "activo"; if (cannotWrite && !canView) return null; return <div className="inventory-row-actions">{canView && <button type="button" onClick={() => onViewReferences(item)}>Ver referencias</button>}{!cannotWrite && <><button type="button" onClick={() => onEdit(item)}>Editar</button>{item.estado === "activo" ? <button type="button" onClick={() => onArchive(item)}><AppIcon icon={Archive} size={15} />Archivar</button> : <button type="button" onClick={() => onReactivate(item)}><AppIcon icon={RotateCcw} size={15} />Reactivar</button>}</>}</div>; }
 
 function ItemDetail({ acquisitions, acquisitionsState, areas, cannotWrite, categories, item, onArchive, onClose, onEdit, onReactivate, onViewReferences, showCosts }) {
+  const formatBusinessAmount = useBusinessMoney();
   if (!item) return null;
   const adapted = adaptInventoryItem(item);
   const currency = adapted.costoPromedioMoneda || "CLP";
@@ -583,21 +587,21 @@ function ItemDetail({ acquisitions, acquisitionsState, areas, cannotWrite, categ
       <Detail label="Categoría" value={getInventoryCategoryLabel(adapted, categories)} />
       <Detail label="Unidad" value={adapted.unidad} />
       {adapted.tipoItem === "producto" ? <>
-        <Detail label="Costo base / manual" value={formatCLP(adapted.costoBase)} />
-        <Detail label="IVA de compra" value={`${adapted.tasaImpuestoCompra}% · ${formatCLP(adapted.montoImpuestoCompra)}`} />
-        <Detail label="Costo pagado" value={formatCLP(adapted.costoPagado)} />
+        <Detail label="Costo base / manual" value={formatBusinessAmount(adapted.costoBase)} />
+        <Detail label="IVA de compra" value={`${adapted.tasaImpuestoCompra}% · ${formatBusinessAmount(adapted.montoImpuestoCompra)}`} />
+        <Detail label="Costo pagado" value={formatBusinessAmount(adapted.costoPagado)} />
         {showCosts && <Detail label="Costo promedio" value={adapted.costoPromedio === null ? "Sin adquisiciones" : formatMoney(adapted.costoPromedio, currency)} />}
         {showCosts && <Detail label="Último costo" value={adapted.ultimoCosto === null ? "Sin adquisiciones" : formatMoney(adapted.ultimoCosto, currency)} />}
         {showCosts && adapted.valorInventario !== null && <Detail label="Valor vigente del stock" value={formatMoney(adapted.valorInventario, adapted.valorInventarioMoneda || currency)} />}
         {showCosts && <Detail label="Último proveedor" value={providerName} />}
         <Detail label="Recargo" value={`${adapted.margenDeseado}%`} />
-        <Detail label="Precio sugerido" value={formatCLP(adapted.precioCalculado)} />
-        <Detail label="Precio de venta final" value={formatCLP(adapted.precioEfectivo)} />
+        <Detail label="Precio sugerido" value={formatBusinessAmount(adapted.precioCalculado)} />
+        <Detail label="Precio de venta final" value={formatBusinessAmount(adapted.precioEfectivo)} />
       </> : <>
-        <Detail label="Costo unitario" value={formatCLP(adapted.costoBase)} />
+        <Detail label="Costo unitario" value={formatBusinessAmount(adapted.costoBase)} />
         <Detail label="Recargo" value={`${adapted.margenDeseado}%`} />
-        <Detail label="Precio sugerido" value={formatCLP(adapted.precioCalculado)} />
-        <Detail label="Precio de venta final" value={formatCLP(adapted.precioEfectivo)} />
+        <Detail label="Precio sugerido" value={formatBusinessAmount(adapted.precioCalculado)} />
+        <Detail label="Precio de venta final" value={formatBusinessAmount(adapted.precioEfectivo)} />
       </>}
       {adapted.tipoItem === "producto" && <><Detail label="Stock actual" value={`${adapted.stock} ${adapted.unidadStock || adapted.unidad}`} /><Detail label="Stock mínimo" value={adapted.stockMinimo} /><Detail label="Nivel de stock" value={isInventoryLowStock(adapted) ? "Stock bajo" : "Disponible"} /></>}
     </dl>

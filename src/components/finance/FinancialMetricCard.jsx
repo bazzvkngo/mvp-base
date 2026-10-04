@@ -1,6 +1,6 @@
 import React from "react";
 import AppIcon from "../ui/AppIcon";
-import { formatCLP } from "../../utils/formatters";
+import { useBusinessMoney } from "../../hooks/useBusinessFormat";
 
 function FinancialMetricCard({
   icon,
@@ -9,6 +9,7 @@ function FinancialMetricCard({
   tone = "neutral",
   value,
 }) {
+  const formatBusinessAmount = useBusinessMoney();
   return (
     <article className={`financial-metric-card financial-metric-card--${tone}`}>
       <div className="financial-metric-card__heading">
@@ -19,7 +20,7 @@ function FinancialMetricCard({
         )}
         <span className="financial-metric-card__label">{label}</span>
       </div>
-      <strong className="financial-metric-card__value">{formatCLP(value)}</strong>
+      <strong className="financial-metric-card__value">{formatBusinessAmount(value)}</strong>
       {note && <span className="financial-metric-card__note">{note}</span>}
     </article>
   );

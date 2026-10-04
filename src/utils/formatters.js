@@ -1,3 +1,5 @@
+import { getCurrencyByCode } from "../domain/businessCatalog.js";
+
 export const DEFAULT_CURRENCY = "CLP";
 export const DEFAULT_LOCALE = "es-CL";
 
@@ -30,8 +32,20 @@ export function formatNumber(value, locale = DEFAULT_LOCALE, options = {}) {
   return new Intl.NumberFormat(safeLocale(locale), options).format(Number(value || 0));
 }
 
-export function formatCLP(value) {
-  return formatMoney(value, DEFAULT_CURRENCY, DEFAULT_LOCALE);
+// Reemplaza al antiguo formatCLP: moneda y locale del negocio activo. Como
+// máximo muestra los decimales que el catálogo define para la moneda, y como
+// mínimo ninguno: no agrega ",00" a montos que el sistema guarda enteros
+// (los centavos quedan para la SPEC de decimales). Con CLP es idéntico a
+// formatCLP.
+export function formatBusinessMoney(value, currency = DEFAULT_CURRENCY, locale = DEFAULT_LOCALE) {
+  const code = safeCurrency(currency);
+  const catalogDecimals = getCurrencyByCode(code)?.decimals;
+  const options = { style: "currency", currency: code };
+  if (Number.isInteger(catalogDecimals)) {
+    options.minimumFractionDigits = 0;
+    options.maximumFractionDigits = catalogDecimals;
+  }
+  return new Intl.NumberFormat(safeLocale(locale), options).format(Number(value || 0));
 }
 
 export function formatPercent(value, decimals = 1) {

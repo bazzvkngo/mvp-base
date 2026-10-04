@@ -31,7 +31,7 @@ import {
   stripProductFieldsForInventoryImport,
   validateInventoryImportPreviewRow,
 } from "../../domain/inventoryImportV2.mjs";
-import { formatCLP } from "../../utils/formatters";
+import { useBusinessMoney } from "../../hooks/useBusinessFormat";
 
 const TYPE_OPTIONS = ["producto", "servicio", "actividad"];
 const DEFAULT_MARGIN_PERCENT = 25;
@@ -370,6 +370,7 @@ function buildPayloadForSave(item) {
 }
 
 function InventoryAiImporter({ userId, onImported }) {
+  const formatBusinessAmount = useBusinessMoney();
   const fileInputRef = useRef(null);
   const analysisInFlightRef = useRef(false);
   const saveInFlightRef = useRef(false);
@@ -1348,7 +1349,7 @@ function InventoryAiImporter({ userId, onImported }) {
                           />
                         ) : (
                           <strong style={styles.calculatedPriceValue}>
-                            {formatCLP(item.precioInterno)}
+                            {formatBusinessAmount(item.precioInterno)}
                           </strong>
                         )}
                         <span style={styles.priceHint}>

@@ -1,6 +1,6 @@
 import React from "react";
 import BarcodeInput from "../../components/barcode/BarcodeInput";
-import { formatCLP } from "../../utils/formatters";
+import { useBusinessMoney } from "../../hooks/useBusinessFormat";
 
 const TYPE_LABELS = {
   producto: "Producto",
@@ -20,6 +20,7 @@ function QuoteItemsEditor({
   subtotal,
   validationError,
 }) {
+  const formatBusinessAmount = useBusinessMoney();
   return (
     <section className="quote-workspace__panel quote-items no-print">
       <header className="quote-workspace__panel-header">
@@ -29,7 +30,7 @@ function QuoteItemsEditor({
           <p>
             {items.length === 0
               ? "Sin ítems agregados"
-              : `${items.length} ítem${items.length === 1 ? "" : "s"} · Subtotal ${formatCLP(subtotal)}`}
+              : `${items.length} ítem${items.length === 1 ? "" : "s"} · Subtotal ${formatBusinessAmount(subtotal)}`}
           </p>
         </div>
         <div className="quote-workspace__inline-actions">
@@ -81,7 +82,7 @@ function QuoteItemsEditor({
                 </label>
                 <div className="quote-item__total">
                   <span>Total</span>
-                  <strong>{formatCLP(item.totalLinea)}</strong>
+                  <strong>{formatBusinessAmount(item.totalLinea)}</strong>
                 </div>
                 <div className="quote-item__actions">
                   <button type="button" aria-label={`Subir ${item.nombre}`} disabled={index === 0} onClick={() => onMove(index, -1)}>↑</button>

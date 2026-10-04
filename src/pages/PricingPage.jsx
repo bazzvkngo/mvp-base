@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import LoadingState from "../components/ui/LoadingState";
 import { PRICING_STATUS } from "../domain/pricing";
 import { subscribeToValuations } from "../services/valuationService";
-import { formatCLP, formatDate, formatPercent } from "../utils/formatters";
+import { useBusinessMoney } from "../hooks/useBusinessFormat";
+import { formatDate, formatPercent } from "../utils/formatters";
 
 const tipoLabels = {
   producto: "Producto",
@@ -75,8 +76,8 @@ function getSummary(valuations) {
   );
 }
 
-function formatOptionalCLP(value) {
-  return value === null || value === undefined ? "-" : formatCLP(value);
+function formatOptionalAmount(value, formatAmount) {
+  return value === null || value === undefined ? "-" : formatAmount(value);
 }
 
 function formatOptionalPercent(value) {
@@ -110,6 +111,7 @@ function formatReferenceDate(value) {
 }
 
 function PricingPage({ userId }) {
+  const formatBusinessAmount = useBusinessMoney();
   const [valuations, setValuations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -285,12 +287,12 @@ function PricingPage({ userId }) {
                             {tipoLabels[valuation.tipoItem] || valuation.tipoItem || "-"}
                           </span>
                         </td>
-                        <td style={styles.td}>{formatCLP(valuation.precioInterno)}</td>
+                        <td style={styles.td}>{formatBusinessAmount(valuation.precioInterno)}</td>
                         <td style={styles.td}>
-                          {formatOptionalCLP(valuation.promedioReferencias)}
+                          {formatOptionalAmount(valuation.promedioReferencias, formatBusinessAmount)}
                         </td>
                         <td style={styles.td}>
-                          <strong>{formatCLP(valuation.precioSugerido)}</strong>
+                          <strong>{formatBusinessAmount(valuation.precioSugerido)}</strong>
                         </td>
                         <td style={styles.td}>
                           <span
@@ -343,23 +345,24 @@ function MetricCard({ label, value }) {
 }
 
 function ReferenceDetail({ valuation }) {
+  const formatBusinessAmount = useBusinessMoney();
   const references = valuation.referencias || [];
   return (
     <div style={styles.detailContent}>
       <div style={styles.detailGrid}>
         <DetailMetric label="Unidad" value={formatDisplayUnit(valuation.unidad)} />
-        <DetailMetric label="Costo base" value={formatCLP(valuation.costoBase)} />
+        <DetailMetric label="Costo base" value={formatBusinessAmount(valuation.costoBase)} />
         <DetailMetric
           label={valuation.precioManual ? "Margen base" : "Margen"}
           value={formatPercent(valuation.margenDeseado, 1)}
         />
         <DetailMetric
           label="Precio interno"
-          value={formatCLP(valuation.precioInterno)}
+          value={formatBusinessAmount(valuation.precioInterno)}
         />
         <DetailMetric
           label="Promedio de referencias"
-          value={formatOptionalCLP(valuation.promedioReferencias)}
+          value={formatOptionalAmount(valuation.promedioReferencias, formatBusinessAmount)}
         />
         <DetailMetric
           label="Cantidad de referencias"
@@ -381,7 +384,7 @@ function ReferenceDetail({ valuation }) {
             {references.map((reference) => (
               <div key={reference.id} style={styles.referenceItem}>
                 <strong>{reference.nombreFuente || "Fuente sin nombre"}</strong>
-                <span>{formatCLP(reference.precioObservado)}</span>
+                <span>{formatBusinessAmount(reference.precioObservado)}</span>
                 <small>{formatReferenceDate(reference.fechaConsulta)}</small>
               </div>
             ))}

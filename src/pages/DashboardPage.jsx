@@ -41,7 +41,8 @@ import {
   getCompanyProfileCompletion,
 } from "../services/companyService";
 import {loadReportData} from "../services/reportService";
-import {formatCLP, formatDate, formatMoney, formatPercent} from "../utils/formatters";
+import {useBusinessMoney} from "../hooks/useBusinessFormat";
+import {formatDate, formatMoney, formatPercent} from "../utils/formatters";
 
 // Refleja a mano --color-quote-status-draft/issued/accepted/expired/
 // archived y --color-danger-600 de tokens.css (etapa 5, paso 7) —
@@ -200,6 +201,7 @@ function formatCurrencyGroups(groups, fallbackCurrency) {
 export default function DashboardPage({businessId, currencyCode = "CLP", role}) {
   const navigate = useNavigate();
   const isDarkMode = usePrefersDarkMode();
+  const formatBusinessAmount = useBusinessMoney();
   const today = getSantiagoDateKey();
   const [period, setPeriod] = useState("month");
   const [customPeriod, setCustomPeriod] = useState(() => {
@@ -339,7 +341,7 @@ export default function DashboardPage({businessId, currencyCode = "CLP", role}) 
             <DashboardCountCard icon={Truck} label="Total comprado" value={formatCurrencyGroups(purchaseMetrics.totalsByCurrency, currencyCode)} tone="expense" note={`${purchaseMetrics.count} compras confirmadas`} />
             <DashboardCountCard icon={ReceiptText} label="Cotizaciones" value={quoteMetrics.count.toLocaleString("es-CL")} note={`${quoteMetrics.counts.aceptada} aceptadas · ${quoteMetrics.conversion === null ? "Sin base de conversión" : formatPercent(quoteMetrics.conversion)}`} />
             <DashboardCountCard icon={Boxes} label="Inventario actual" value={inventoryMetrics.activeProducts.length.toLocaleString("es-CL")} tone={inventoryMetrics.lowStockProducts.length ? "pending" : "neutral"} note={`Estado actual · ${inventoryMetrics.lowStockProducts.length} productos con stock bajo`} />
-            <DashboardCountCard icon={WalletCards} label="Saldo financiero registrado" value={financial.loading || financial.error ? "—" : formatCLP(financial.summary.netResult)} tone="net" note={financial.error ? "Finanzas no disponible" : financial.loading ? "Actualizando movimientos registrados" : `Por cobrar ${formatCLP(financial.summary.receivable)} · Por pagar ${formatCLP(financial.summary.payable)}`} />
+            <DashboardCountCard icon={WalletCards} label="Saldo financiero registrado" value={financial.loading || financial.error ? "—" : formatBusinessAmount(financial.summary.netResult)} tone="net" note={financial.error ? "Finanzas no disponible" : financial.loading ? "Actualizando movimientos registrados" : `Por cobrar ${formatBusinessAmount(financial.summary.receivable)} · Por pagar ${formatBusinessAmount(financial.summary.payable)}`} />
           </section>
 
           {canReadFinance && <div className="dashboard-v2-financial-note">

@@ -521,7 +521,7 @@ assert.match(sourceQuoteCatalog, /initialFocusRef=\{searchRef\}/);
 assert.match(sourceQuoteCatalog, /Agregar otra vez/);
 assert.doesNotMatch(sourceQuoteItems, /<table/);
 assert.match(sourceQuoteItems, /Personalizar ítem/);
-assert.match(sourceQuoteItems, /Subtotal \$\{formatCLP\(subtotal\)\}/);
+assert.match(sourceQuoteItems, /Subtotal \$\{formatBusinessAmount\(subtotal\)\}/);
 assert.match(sourceQuoteItems, /items\.length === 1 \? "" : "s"/);
 assert.match(sourceQuoteItems, /Agrega productos, servicios o actividades para construir la cotización\./);
 assert.match(sourceNewQuote, /saveAttempted \|\| itemsInteracted/);

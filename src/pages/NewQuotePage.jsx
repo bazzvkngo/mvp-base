@@ -44,7 +44,8 @@ import {
   updateQuote,
 } from "../services/quoteService";
 import { subscribeToValuations } from "../services/valuationService";
-import { formatCLP, formatDate } from "../utils/formatters";
+import { useBusinessMoney } from "../hooks/useBusinessFormat";
+import { formatDate } from "../utils/formatters";
 
 const ASSISTANT_DESCRIPTION_MAX_LENGTH = 1200;
 const MANUAL_CATALOG_PAGE_SIZE = 10;
@@ -385,6 +386,7 @@ function buildQuoteFromSavedQuote(savedQuote = {}) {
 }
 
 function NewQuotePage({ userId }) {
+  const formatBusinessAmount = useBusinessMoney();
   const { quoteId: editQuoteId = "" } = useParams();
   const location = useLocation();
   const projectContext = location.state?.projectContext || null;
@@ -2449,7 +2451,7 @@ function NewQuotePage({ userId }) {
                   <Field label="Precio interno calculado">
                     <div style={styles.readOnlyValue}>
                       {suggestedItemDraft.precioInterno
-                        ? formatCLP(suggestedItemDraft.precioInterno)
+                        ? formatBusinessAmount(suggestedItemDraft.precioInterno)
                         : "Pendiente"}
                     </div>
                   </Field>

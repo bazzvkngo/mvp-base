@@ -38,6 +38,7 @@ import BusinessUnavailablePage from "../pages/BusinessUnavailablePage";
 import EmployeesPage from "../pages/EmployeesPage";
 import WorksPage from "../pages/WorksPage";
 import Button from "../components/ui/Button";
+import { BusinessFormatProvider } from "../hooks/useBusinessFormat";
 import { ThemePreferenceProvider } from "../hooks/useThemePreference";
 import BusinessOperationGate from "../components/BusinessOperationGate";
 import { subscribeToAuth } from "../services/authService";
@@ -683,25 +684,29 @@ function App() {
       <BrowserRouter>
         <ToastRouteSync />
         <EnvironmentNotice />
-        <AppRoutes
-          usuario={usuario}
-          loading={Boolean(cargando || platformState.loading)}
-          businessLoading={Boolean(
-            usuario && !businessState.data && !businessState.error
-          )}
-          businessError={businessState.error}
-          businessChanging={businessChanging}
-          businessSession={businessState.data}
-          initialActivationBusinessId={initialActivationBusinessId}
-          initialActivationDestination={initialActivationDestination}
-          onBusinessChanged={changeActiveBusiness}
-          onBusinessCreated={refreshBusinessSession}
-          onFirstBusinessCreated={handleFirstBusinessCreated}
-          onInitialActivationFinished={finishInitialActivation}
-          onInitialActivationSettled={settleInitialActivation}
-          onRetry={() => refreshBusinessSession().catch(() => {})}
-          platformAccess={platformState.data}
-        />
+        {/* Moneda y formato regional del negocio activo (el mismo
+            businessSession.activeBusiness que usa AppRoutes). */}
+        <BusinessFormatProvider business={businessState.data?.activeBusiness}>
+          <AppRoutes
+            usuario={usuario}
+            loading={Boolean(cargando || platformState.loading)}
+            businessLoading={Boolean(
+              usuario && !businessState.data && !businessState.error
+            )}
+            businessError={businessState.error}
+            businessChanging={businessChanging}
+            businessSession={businessState.data}
+            initialActivationBusinessId={initialActivationBusinessId}
+            initialActivationDestination={initialActivationDestination}
+            onBusinessChanged={changeActiveBusiness}
+            onBusinessCreated={refreshBusinessSession}
+            onFirstBusinessCreated={handleFirstBusinessCreated}
+            onInitialActivationFinished={finishInitialActivation}
+            onInitialActivationSettled={settleInitialActivation}
+            onRetry={() => refreshBusinessSession().catch(() => {})}
+            platformAccess={platformState.data}
+          />
+        </BusinessFormatProvider>
       </BrowserRouter>
     </ThemePreferenceProvider>
   );
