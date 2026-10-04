@@ -1,5 +1,6 @@
 import React from "react";
 import {ArrowRight} from "lucide-react";
+import OperationalComparisonChart from "../../../components/reports/OperationalComparisonChart";
 import {formatMoney} from "../../../utils/formatters";
 
 function TimelineTable({items, currency}) {
@@ -24,7 +25,7 @@ function TopEntityTable({groups, currency, columns, renderRow, emptyText}) {
 // componente de resultado comercial. No se muestra margen ni utilidad alguna
 // aquí; sólo el mismo detalle de compras confirmadas que ya calcula el
 // contenedor.
-function ReportsComprasView({canOpenPurchases, navigate, purchaseTimeline, summary, topPurchaseProducts, topPurchaseSuppliers}) {
+function ReportsComprasView({canOpenPurchases, chartGroups, navigate, purchaseTimeline, summary, topPurchaseProducts, topPurchaseSuppliers}) {
   const hasPurchases = summary.purchases.confirmed.length > 0;
   return <>
     <p className="reports-simple-project-note">Las compras muestran egresos registrados del negocio.</p>
@@ -38,6 +39,22 @@ function ReportsComprasView({canOpenPurchases, navigate, purchaseTimeline, summa
     </section>)}</div>
 
     {!hasPurchases && <div className="erp-card reports-simple-state">Aún no hay compras confirmadas en este período.</div>}
+
+    {/* SPEC 022 §6.3: el gráfico Ventas vs Compras vive aquí, sin cambios de cálculo. */}
+    <section className="erp-card reports-simple-chart">
+      <div className="reports-section-heading"><div><span>Movimiento comercial</span><h2>Ventas y compras</h2><p>Operaciones confirmadas dentro del período seleccionado.</p></div></div>
+      <p className="reports-v4-note">Comparar ventas y compras no es ganancia. Las compras incluyen stock que aún no se vende, y ambos montos incluyen IVA. El resultado está en Rentabilidad y estado.</p>
+      <div className="reports-chart-groups">{chartGroups.map((group) => <article className="reports-chart-group" key={group.currency}>
+        <div className="reports-chart-summary">
+          <span>{group.currency}</span>
+          <dl>
+            <div><dt><i className="reports-chart-summary__dot reports-chart-summary__dot--sales" aria-hidden="true" />Ventas confirmadas</dt><dd>{formatMoney(group.sales, group.currency)}</dd></div>
+            <div><dt><i className="reports-chart-summary__dot reports-chart-summary__dot--purchases" aria-hidden="true" />Compras confirmadas</dt><dd>{formatMoney(group.purchases, group.currency)}</dd></div>
+          </dl>
+        </div>
+        <OperationalComparisonChart currency={group.currency} items={group.items} />
+      </article>)}</div>
+    </section>
 
     {hasPurchases && summary.currencies.map((group) => <section className="erp-card reports-detail-section" key={group.currency}>
       <div className="reports-section-heading"><div><span>{group.currency}</span><h2>Detalle de Compras</h2><p>Evolución, principales proveedores y productos adquiridos en el período seleccionado.</p></div></div>

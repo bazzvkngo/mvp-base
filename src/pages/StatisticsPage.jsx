@@ -118,7 +118,7 @@ function StatisticsPage({businessId, currencyCode = "CLP", role = ""}) {
     {!loading && !error && <>
       {vista === "rentabilidad" && <ReportsRentabilidadView canViewProfitability={canViewProfitability} currency={selectedCurrency} links={links} navigate={navigate} onRetry={profitabilityV4.reload} operationalProfit={operationalProfit} />}
       {vista === "ventas" && <ReportsVentasView canOpenSales={links.sales} navigate={navigate} profitabilityV4={profitabilityV4} salesTimeline={salesTimeline} summary={summary} topSalesClients={topSalesClients} topSalesProducts={topSalesProducts} />}
-      {vista === "compras" && <ReportsComprasView canOpenPurchases={links.purchases} navigate={navigate} purchaseTimeline={purchaseTimeline} summary={summary} topPurchaseProducts={topPurchaseProducts} topPurchaseSuppliers={topPurchaseSuppliers} />}
+      {vista === "compras" && <ReportsComprasView canOpenPurchases={links.purchases} chartGroups={chartGroups} navigate={navigate} purchaseTimeline={purchaseTimeline} summary={summary} topPurchaseProducts={topPurchaseProducts} topPurchaseSuppliers={topPurchaseSuppliers} />}
       {vista === "ganancias" && <ReportsGananciasView profitabilityV4={profitabilityV4} />}
     </>}
   </section>;

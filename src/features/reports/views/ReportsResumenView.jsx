@@ -1,6 +1,5 @@
 import React from "react";
 import {BadgeDollarSign, Boxes, BriefcaseBusiness, ShoppingCart, TrendingUp} from "lucide-react";
-import OperationalComparisonChart from "../../../components/reports/OperationalComparisonChart";
 import {ProjectProfitabilityV4Summary} from "../ReportProfitabilityV4Section";
 import {MetricCard} from "../ReportsSharedCards";
 import {formatMoney} from "../../../utils/formatters";
@@ -12,7 +11,6 @@ import {formatMoney} from "../../../utils/formatters";
 // (ReportsPage), sin duplicar tablas ni recalcular economía.
 function ReportsResumenView({
   canViewProfitability,
-  chartGroups,
   inventoryCard,
   links,
   onSelectView,
@@ -46,20 +44,6 @@ function ReportsResumenView({
     />
 
     {canViewProfitability && <ProjectProfitabilityV4Summary canView={profitabilityV4.canView} projects={profitabilityV4.projects} />}
-
-    <section className="erp-card reports-simple-chart">
-      <div className="reports-section-heading"><div><span>Movimiento comercial</span><h2>Ventas y compras</h2><p>Operaciones confirmadas dentro del período seleccionado.</p></div></div>
-      <div className="reports-chart-groups">{chartGroups.map((group) => <article className="reports-chart-group" key={group.currency}>
-        <div className="reports-chart-summary">
-          <span>{group.currency}</span>
-          <dl>
-            <div><dt><i className="reports-chart-summary__dot reports-chart-summary__dot--sales" aria-hidden="true" />Ventas confirmadas</dt><dd>{formatMoney(group.sales, group.currency)}</dd></div>
-            <div><dt><i className="reports-chart-summary__dot reports-chart-summary__dot--purchases" aria-hidden="true" />Compras confirmadas</dt><dd>{formatMoney(group.purchases, group.currency)}</dd></div>
-          </dl>
-        </div>
-        <OperationalComparisonChart currency={group.currency} items={group.items} />
-      </article>)}</div>
-    </section>
   </>;
 }
 
