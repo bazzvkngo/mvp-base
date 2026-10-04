@@ -2,8 +2,8 @@
 
 - ValoraCloud es un ERP SaaS multiempresa.
 - Stack: React, Vite, JavaScript, Firebase Authentication, Firestore, Firebase Functions y Node.js.
-- El objetivo inmediato es completar el MVP empresarial solicitado por el profesor sin IA en el flujo principal.
-- El código existente de IA se conserva, pero no debe ampliarse ni eliminarse sin autorización.
+- ValoraCloud se construye para uso real en Bagner (soluciones integrales de informática y electricidad), con Bruno como supervisor del proyecto y a la vez dueño del negocio destinatario. Bagner es el piloto; la meta a mediano plazo es poder comercializar el sistema a otros negocios.
+- La ampliación de funciones con IA en el flujo principal está autorizada cuando el dueño del negocio la solicite explícitamente para una tarea concreta (por ejemplo, carga de facturas con ítems agregados dinámicamente, o apoyo en recepciones). No es una autorización general para agregar IA donde sea: cada ampliación se acuerda por tarea. El código existente de IA se conserva y sigue sin eliminarse sin autorización.
 
 # Arquitectura obligatoria
 
