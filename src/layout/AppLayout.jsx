@@ -6,6 +6,7 @@ import AdditionalBusinessDrawer from "../components/AdditionalBusinessDrawer";
 import BrandLogo from "../components/BrandLogo";
 import BusinessSwitcher from "../components/BusinessSwitcher";
 import NotificationBell from "../components/NotificationBell";
+import ThemeToggleButton from "../components/ThemeToggleButton";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import LoadingState from "../components/ui/LoadingState";
@@ -383,6 +384,7 @@ function AppLayout({
 
           <div className="topbar-actions">
             <NotificationBell businessId={negocioActivo?.id} role={negocioActivo?.role} />
+            <ThemeToggleButton />
 
             <div className="topbar-user topbar-user--desktop">
               {platformSuperadmin && <Button type="button" variant="secondary" icon={ShieldCheck} onClick={() => navigate("/admin/dashboard")}>Consola de Administración</Button>}

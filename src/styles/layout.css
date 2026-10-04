@@ -456,8 +456,10 @@
 /* A diferencia de topbar-menu-button/topbar-account-button (solo mobile,
    display: none por defecto, se muestran en el media query de abajo), la
    campana debe verse en desktop y mobile: sin regla de display propia,
-   nunca se oculta. */
-.topbar-notifications-button {
+   nunca se oculta. El botón de tema (etapa 5, paso 9) comparte el mismo
+   aspecto y la misma visibilidad. */
+.topbar-notifications-button,
+.topbar-theme-button {
   align-items: center;
   background: var(--color-surface-panel);
   border: 1px solid var(--color-border-control);
@@ -471,7 +473,8 @@
   width: 42px;
 }
 
-.topbar-notifications-button:hover {
+.topbar-notifications-button:hover,
+.topbar-theme-button:hover {
   background: var(--color-surface-hover);
   color: var(--color-brand-800);
 }
@@ -1161,6 +1164,7 @@
   .topbar-menu-button,
   .topbar-account-button,
   .topbar-notifications-button,
+  .topbar-theme-button,
   .mobile-nav-close {
     min-height: 44px;
   }
@@ -1191,7 +1195,8 @@
   .nav-link-active .nav-link__completion,
   .topbar-menu-button:hover,
   .topbar-account-button:hover,
-  .topbar-notifications-button:hover {
+  .topbar-notifications-button:hover,
+  .topbar-theme-button:hover {
     color: var(--color-brand-400);
   }
 
