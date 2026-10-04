@@ -156,28 +156,35 @@ function baseResult(sale, amounts, status, overrides = {}) {
   };
 }
 
-export function calculateSaleCommercialMarginV1(sale = {}) {
+// Evaluación compartida por el resultado V1 y por su desagregación por línea:
+// ambos salen del mismo `amounts` y de la misma cobertura por línea.
+function evaluateSaleCommercialMargin(sale = {}) {
   const amounts = commercialAmounts(sale);
   const state = String(sale.estado || "").trim().toLowerCase();
+  const finish = (status, overrides = {}, coverageByLine = null) => ({
+    result: baseResult(sale, amounts, status, overrides),
+    amounts,
+    coverageByLine,
+  });
 
   if (CANCELED_STATES.has(state)) {
-    return baseResult(sale, amounts, SALE_COMMERCIAL_MARGIN_STATUS.CANCELED);
+    return finish(SALE_COMMERCIAL_MARGIN_STATUS.CANCELED);
   }
   if (!CONFIRMED_STATES.has(state)) {
-    return baseResult(sale, amounts, SALE_COMMERCIAL_MARGIN_STATUS.PENDING);
+    return finish(SALE_COMMERCIAL_MARGIN_STATUS.PENDING);
   }
   if (!amounts.valid) {
-    return baseResult(sale, amounts, SALE_COMMERCIAL_MARGIN_STATUS.UNAVAILABLE);
+    return finish(SALE_COMMERCIAL_MARGIN_STATUS.UNAVAILABLE);
   }
 
   const productLines = amounts.productLines;
   if (!productLines.length) {
-    return baseResult(sale, amounts, SALE_COMMERCIAL_MARGIN_STATUS.NOT_APPLICABLE);
+    return finish(SALE_COMMERCIAL_MARGIN_STATUS.NOT_APPLICABLE);
   }
 
   const saleCurrency = normalizeCurrency(sale.moneda);
   if (!saleCurrency || productLines.some((line) => !line.lineaId || !line.itemId)) {
-    return baseResult(sale, amounts, SALE_COMMERCIAL_MARGIN_STATUS.UNAVAILABLE);
+    return finish(SALE_COMMERCIAL_MARGIN_STATUS.UNAVAILABLE);
   }
 
   const coverageByLine = new Map(productLines.map((line) => [line.lineaId, {
@@ -253,7 +260,7 @@ export function calculateSaleCommercialMarginV1(sale = {}) {
   };
 
   if (hasCurrencyMismatch) {
-    return baseResult(sale, amounts, SALE_COMMERCIAL_MARGIN_STATUS.CURRENCY_MISMATCH, {
+    return finish(SALE_COMMERCIAL_MARGIN_STATUS.CURRENCY_MISMATCH, {
       costoHistoricoCubierto: coveredCost,
       productos: coverageSummary,
     });
@@ -264,7 +271,7 @@ export function calculateSaleCommercialMarginV1(sale = {}) {
     const status = coveredQuantity > QUANTITY_EPSILON
       ? SALE_COMMERCIAL_MARGIN_STATUS.PARTIAL
       : SALE_COMMERCIAL_MARGIN_STATUS.UNAVAILABLE;
-    return baseResult(sale, amounts, status, {
+    return finish(status, {
       costoHistoricoCubierto: coveredCost,
       productos: coverageSummary,
     });
@@ -275,11 +282,81 @@ export function calculateSaleCommercialMarginV1(sale = {}) {
   const marginPercentage = amounts.ingresoNetoProductos > 0
     ? roundMoney((productMargin / amounts.ingresoNetoProductos) * 100)
     : null;
-  return baseResult(sale, amounts, SALE_COMMERCIAL_MARGIN_STATUS.COMPLETE, {
+  return finish(SALE_COMMERCIAL_MARGIN_STATUS.COMPLETE, {
     costoHistoricoProductos: historicalCost,
     costoHistoricoCubierto: historicalCost,
     margenBrutoProductos: productMargin,
     margenBrutoPct: marginPercentage,
     productos: coverageSummary,
+  }, coverageByLine);
+}
+
+export function calculateSaleCommercialMarginV1(sale = {}) {
+  return evaluateSaleCommercialMargin(sale).result;
+}
+
+// Reparte un descuento entero entre bases enteras por resto mayor: la suma
+// asignada es exactamente `total`. Empates por orden de línea.
+function allocateIntegerProportionally(total, bases) {
+  const baseSum = bases.reduce((sum, value) => sum + value, 0);
+  if (!total || baseSum <= 0) return bases.map(() => 0);
+  const shares = bases.map((base, index) => {
+    const exact = (total * base) / baseSum;
+    const floor = Math.floor(exact);
+    return {index, floor, remainder: exact - floor};
   });
+  let pending = total - shares.reduce((sum, share) => sum + share.floor, 0);
+  [...shares]
+    .sort((left, right) => right.remainder - left.remainder || left.index - right.index)
+    .forEach((share) => {
+      if (pending <= 0) return;
+      share.floor += 1;
+      pending -= 1;
+    });
+  return shares.map((share) => share.floor);
+}
+
+// SPEC 022 §6.5.3: desagregación por línea de producto del margen V1. No
+// recalcula la Venta: usa el mismo `amounts` y la misma cobertura que V1, y
+// reparte `descuentoGeneralProductos` (ya calculado por V1) entre las líneas
+// en proporción a su total de línea. Trabaja en enteros de centavos, por lo
+// que la suma de las líneas es exactamente el agregado de la Venta.
+export function calculateSaleProductLineMarginsV1(sale = {}) {
+  const {result, amounts, coverageByLine} = evaluateSaleCommercialMargin(sale);
+  const base = {
+    modeloMargenVentaVersion: SALE_COMMERCIAL_MARGIN_MODEL_VERSION,
+    estado: result.estado,
+    moneda: result.moneda,
+    margenBrutoProductos: result.margenBrutoProductos,
+    lineas: null,
+  };
+  if (result.estado !== SALE_COMMERCIAL_MARGIN_STATUS.COMPLETE || !coverageByLine) return base;
+
+  const productLines = amounts.productLines;
+  if (new Set(productLines.map((line) => line.lineaId)).size !== productLines.length) {
+    return {...base, motivo: "LINEAS_DUPLICADAS"};
+  }
+
+  const generalDiscounts = allocateIntegerProportionally(
+    amounts.descuentoGeneralProductos,
+    productLines.map((line) => line.totalLinea)
+  );
+  const toCents = (value) => Math.round(Number(value || 0) * 100);
+  return {
+    ...base,
+    lineas: productLines.map((line, position) => {
+      const netRevenue = line.totalLinea - generalDiscounts[position];
+      const costCents = toCents(coverageByLine.get(line.lineaId).costo);
+      return {
+        lineaId: line.lineaId,
+        itemId: line.itemId,
+        cantidad: line.cantidad,
+        totalLinea: line.totalLinea,
+        descuentoGeneralAsignado: generalDiscounts[position],
+        ingresoNeto: netRevenue,
+        costoHistorico: costCents / 100,
+        margenBruto: (netRevenue * 100 - costCents) / 100,
+      };
+    }),
+  };
 }
