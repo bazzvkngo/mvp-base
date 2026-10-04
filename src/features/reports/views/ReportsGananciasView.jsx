@@ -40,7 +40,6 @@ function ReportsGananciasView({currency, operationalProfit, profitabilityV4, ran
     </section>
 
     <section className="reports-ganancias-block">
-      <h2 className="reports-detail-subheading">Ganancias por Ventas</h2>
       <p className="reports-simple-project-note">Análisis de margen comercial, no se suma a la ganancia neta operacional.</p>
       <SalesCommercialMarginV4Card canView={profitabilityV4.canView} commercial={commercial} onRetry={profitabilityV4.reload} />
     </section>
