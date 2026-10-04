@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {existsSync} from "node:fs";
 import {readFile} from "node:fs/promises";
 import React from "react";
 import {renderToStaticMarkup} from "react-dom/server";
@@ -101,8 +102,10 @@ try {
   assert.match(oneCurrency, /CLP/);
   assert.match(oneCurrency, /Margen bruto de productos cubierto/);
   assert.match(oneCurrency, /Cobertura Completa/);
-  assert.doesNotMatch(oneCurrency, /utilidad neta|ganancia neta|ebitda|resultado contable/i);
-  console.log("OK casos 1/5/7: una moneda, cobertura completa, wording de SPEC 018 (sin ganancia/utilidad/EBITDA)");
+  // SPEC 022 §8.1: la tarjeta V4 no es la ganancia neta operacional; sólo esa forma calificada existe.
+  assert.doesNotMatch(oneCurrency, /utilidad neta|ganancia neta(?! operacional)|ebitda|resultado contable/i);
+  assert.doesNotMatch(oneCurrency, /ganancia neta operacional/i); // la tarjeta V4 no es la ganancia
+  console.log("OK casos 1/5/7: una moneda, cobertura completa, wording de SPEC 018/022 (sin ganancia neta a secas, utilidad ni EBITDA)");
 
   // --- Caso: múltiples monedas separadas, sin total combinado ---
   const twoCurrencies = renderCommercial({
@@ -242,7 +245,7 @@ try {
     "utf8"
   );
   for (const source of [cardsSource, hookSource]) {
-    assert.doesNotMatch(source, /rentabilidad total|resultado total|utilidad total|utilidad neta|utilidad empresarial|ebitda|resultado contable|ganancia neta/i);
+    assert.doesNotMatch(source, /rentabilidad total|resultado total|utilidad total|utilidad neta|utilidad empresarial|ebitda|resultado contable|ganancia neta(?! operacional)/i);
     assert.doesNotMatch(source, /margenBrutoProductosCubiertos\s*\+|resultado\s*\+.*margenBruto|margenBruto.*\+\s*resultado/i);
   }
   console.log("OK caso 15: el código fuente no contiene wording ni fórmula de rentabilidad combinada");
@@ -276,6 +279,19 @@ try {
   ]);
   assert.equal(staleResult, "respuesta-rango-nuevo", "una respuesta lenta de una carga anterior no debe sobrescribir la más reciente");
   console.log("OK caso 17: una respuesta lenta de un rango/negocio anterior no pisa el resultado del más reciente");
+
+  // SPEC 022 §8.1: el componente de la ganancia neta operacional (compartido
+  // por Rentabilidad y estado y Ganancias, §6.2/§6.5) EXIGE su wording honesto.
+  // Va al final para que, mientras no exista, los casos anteriores sigan corriendo.
+  const gananciaPath = "src/features/reports/OperationalNetProfitBreakdown.jsx";
+  assert.ok(existsSync(gananciaPath), `SPEC 022: falta ${gananciaPath} (componente de ganancia neta operacional, §6.2)`);
+  const gananciaSource = await readFile(new URL(`../${gananciaPath}`, import.meta.url), "utf8");
+  assert.match(gananciaSource, /Ganancia neta operacional/);
+  assert.match(gananciaSource, /No incluye gastos generales del negocio/);
+  assert.match(gananciaSource, /sin IVA/i);
+  assert.match(gananciaSource, /Ventas sin costo registrado/);
+  assert.doesNotMatch(gananciaSource, /ganancia neta(?! operacional)|utilidad neta|utilidad total|[Tt]otal de ganancias/i);
+  console.log("OK SPEC 022 §8.1: el componente de ganancia exige 'ganancia neta operacional', sin IVA, sin gastos generales y ventas sin costo registrado");
 
   console.log("REPORT_PROFITABILITY_V4_STAGE3_UI_SMOKE_OK");
 } finally {

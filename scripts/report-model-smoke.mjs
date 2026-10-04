@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import {readFileSync} from "node:fs";
+import {existsSync, readFileSync} from "node:fs";
+import {createServer} from "vite";
 import {
   REPORT_TABS,
   buildReportCsv,
@@ -360,84 +361,14 @@ assert.deepEqual(combineOperationalTimelines([], []), []);
 const reportPageSource = readFileSync("src/pages/StatisticsPage.jsx", "utf8");
 const reportServiceSource = readFileSync("src/services/reportService.js", "utf8");
 const reportsNavSource = readFileSync("src/features/reports/ReportsNav.jsx", "utf8");
-const resumenViewSource = readFileSync("src/features/reports/views/ReportsResumenView.jsx", "utf8");
 const ventasViewSource = readFileSync("src/features/reports/views/ReportsVentasView.jsx", "utf8");
 const comprasViewSource = readFileSync("src/features/reports/views/ReportsComprasView.jsx", "utf8");
-const inventarioViewSource = readFileSync("src/features/reports/views/ReportsInventarioView.jsx", "utf8");
-const proyectosViewSource = readFileSync("src/features/reports/views/ReportsProyectosView.jsx", "utf8");
 const gananciasViewSource = readFileSync("src/features/reports/views/ReportsGananciasView.jsx", "utf8");
 const operationalChartSource = readFileSync("src/components/reports/OperationalComparisonChart.jsx", "utf8");
 const costCompositionSource = readFileSync("src/components/reports/CostCompositionChart.jsx", "utf8");
 
-// REPORTES_V5: el centro de reportes switchea subvistas por query param
-// "vista", sin recargar la app, y comparte período/moneda entre todas.
-assert.deepEqual(
-  [...reportsNavSource.matchAll(/id: "(\w+)"/g)].map((match) => match[1]),
-  ["resumen", "ventas", "compras", "inventario", "proyectos", "ganancias"]
-);
-assert.match(reportPageSource, /searchParams\.get\("vista"\)/);
-assert.match(reportPageSource, /<ReportsNav active=\{vista\} onSelect=\{goToView\}/);
-assert.match(reportPageSource, /searchParams\.get\("period"\)/);
-assert.match(reportPageSource, /searchParams\.get\("currency"\)/);
-assert.match(reportPageSource, /Consulta ventas, compras, inventario, proyectos y ganancias en un solo lugar\./);
-assert.match(reportPageSource, /canAccessBusinessPath\(role, "\/ventas"\)/);
-assert.match(reportPageSource, /canAccessBusinessPath\(role, "\/compras"\)/);
-assert.match(reportPageSource, /canAccessBusinessPath\(role, "\/trabajos"\)/);
-
-// Resumen: KPIs compactos por moneda (sin la tabla completa de proyectos ni
-// el detalle de segmentos comerciales, que viven en sus propias subvistas) y
-// un único gráfico comparativo.
-assert.match(resumenViewSource, /Ganancia de proyectos/);
-assert.match(resumenViewSource, /Ganancia comercial/);
-assert.equal((resumenViewSource.match(/<OperationalComparisonChart/g) || []).length, 1);
-assert.doesNotMatch(reportPageSource, /<OperationalComparisonChart/);
-assert.match(resumenViewSource, /reports-chart-summary/);
-assert.match(resumenViewSource, /formatMoney\(group\.sales, group\.currency\)/);
-assert.match(resumenViewSource, /formatMoney\(group\.purchases, group\.currency\)/);
-assert.doesNotMatch(resumenViewSource, /reports-profitability-primary/);
-assert.doesNotMatch(resumenViewSource, /<CostCompositionChart/);
-
-// Ventas y Compras: cada subvista es exclusiva de su dominio; Compras no
-// incorpora lenguaje ni cálculo de ganancia.
-assert.match(ventasViewSource, /<SalesCommercialMarginV4Card/);
-assert.match(ventasViewSource, /topSalesClients/);
-assert.match(ventasViewSource, /topSalesProducts/);
-assert.doesNotMatch(comprasViewSource, /[Gg]anancia/);
-assert.doesNotMatch(comprasViewSource, /margenBrutoProductosCubiertos/);
-assert.match(comprasViewSource, /Las compras muestran egresos registrados del negocio/);
-assert.match(comprasViewSource, /topPurchaseSuppliers/);
-assert.match(comprasViewSource, /topPurchaseProducts/);
-
-// Inventario: sólo métricas ya soportadas por getInventoryMetrics y los
-// nuevos agregadores puros; nada de rotación ni proyecciones.
-assert.doesNotMatch(inventarioViewSource, /rotaci[oó]n|proyecci[oó]n/i);
-assert.match(inventarioViewSource, /metrics\.byCurrency/);
-assert.match(inventarioViewSource, /topValue/);
-assert.match(inventarioViewSource, /categories/);
-
-// Proyectos: usa el balance autoritativo existente sin redefinirlo (Work
-// Balance) y conserva la nota de que no se atribuye al período.
-assert.match(proyectosViewSource, /balance actual autoritativo y no se atribuye al período seleccionado/);
-assert.match(proyectosViewSource, /Rentabilidad de proyectos/);
-assert.match(proyectosViewSource, /openWorkId: project\.id/);
-assert.match(proyectosViewSource, /<CostCompositionChart currency=\{currency\} items=\{costItems\}/);
-assert.match(proyectosViewSource, /group\.materials/);
-assert.match(proyectosViewSource, /group\.labor/);
-assert.match(proyectosViewSource, /group\.directExpenses/);
-assert.match(proyectosViewSource, /group\.indirectExpenses/);
-assert.match(proyectosViewSource, /reports-profitability-primary/);
-assert.match(proyectosViewSource, /reports-profitability-secondary/);
-
-// Ganancias: dos bloques separados (COMMERCIAL_SALES vs
-// PROJECT_PROFITABILITY, vía los componentes V4 ya existentes) y ninguna
-// suma total entre ellos.
-assert.match(gananciasViewSource, /Ganancias por Ventas/);
-assert.match(gananciasViewSource, /Ganancias por Proyectos/);
-assert.match(gananciasViewSource, /<SalesCommercialMarginV4Card/);
-assert.match(gananciasViewSource, /<ProjectProfitabilityV4Summary/);
-assert.doesNotMatch(gananciasViewSource, /[Tt]otal de ganancias/);
-assert.doesNotMatch(gananciasViewSource, /commercial\.bloque.*\+.*projects\.bloque|projects\.bloque.*\+.*commercial\.bloque/);
-
+// Gráficos y servicio compartidos: sin cambios en SPEC 022. Van antes de las
+// aserciones de las vistas para seguir corriendo aunque éstas fallen.
 assert.match(operationalChartSource, /<Bar/);
 assert.doesNotMatch(operationalChartSource, /operational-comparison-single/);
 assert.match(operationalChartSource, /maxBarThickness: items\.length === 1 \? 36 : 24/);
@@ -449,6 +380,90 @@ assert.match(costCompositionSource, /formatMoney\(context\.parsed, currency\)/);
 assert.match(costCompositionSource, /formatMoney\(total, currency\)/);
 assert.match(reportServiceSource, /BUSINESS_PERMISSIONS\.PROFITABILITY_READ/);
 assert.match(reportServiceSource, /canViewProfitability \? listarTrabajos/);
-console.log("OK reportes v5: centro de reportes con subvistas, filtros compartidos por query param y separación económica Ventas/Proyectos/Ganancias preservada");
+
+// SPEC 022 Etapa 3: un archivo que la Parte B debe crear se exige con un
+// mensaje explícito, en vez de dejar caer un ENOENT.
+function readRequiredSource(path, purpose) {
+  assert.ok(existsSync(path), `SPEC 022: falta ${path} (${purpose})`);
+  return readFileSync(path, "utf8");
+}
+
+// SPEC 022 §6.1: cuatro pestañas; Inventario y Proyectos dejan de serlo.
+// Siguen compartiendo período/moneda por query param.
+assert.deepEqual(
+  [...reportsNavSource.matchAll(/id: "(\w+)"/g)].map((match) => match[1]),
+  ["rentabilidad", "ventas", "compras", "ganancias"]
+);
+assert.match(reportPageSource, /searchParams\.get\("vista"\)/);
+assert.match(reportPageSource, /<ReportsNav active=\{vista\} onSelect=\{goToView\}/);
+assert.match(reportPageSource, /searchParams\.get\("period"\)/);
+assert.match(reportPageSource, /searchParams\.get\("currency"\)/);
+assert.match(reportPageSource, /Consulta rentabilidad, ventas, compras y ganancias en un solo lugar\./);
+assert.match(reportPageSource, /canAccessBusinessPath\(role, "\/ventas"\)/);
+assert.match(reportPageSource, /canAccessBusinessPath\(role, "\/compras"\)/);
+assert.match(reportPageSource, /canAccessBusinessPath\(role, "\/trabajos"\)/);
+
+// SPEC 022 §6.1: las URL legacy redirigen sin dejar ningún perfil en una
+// vista vacía. Sin profitability.read se cae a la primera pestaña permitida.
+const navVite = await createServer({appType: "custom", logLevel: "silent", server: {middlewareMode: true}});
+try {
+  const {normalizeReportView} = await navVite.ssrLoadModule("/src/features/reports/ReportsNav.jsx");
+  const fullAccess = {canViewProfitability: true, canViewSales: true, canViewPurchases: true};
+  const salesOnly = {canViewProfitability: false, canViewSales: true, canViewPurchases: false};
+  const purchasesOnly = {canViewProfitability: false, canViewSales: false, canViewPurchases: true};
+  for (const legacy of ["resumen", "inventario", "proyectos"]) {
+    assert.equal(normalizeReportView(legacy, fullAccess), "rentabilidad", `${legacy} redirige a rentabilidad`);
+    assert.equal(normalizeReportView(legacy, salesOnly), "ventas", `${legacy} sin rentabilidad redirige a ventas`);
+    assert.equal(normalizeReportView(legacy, purchasesOnly), "compras", `${legacy} sin rentabilidad ni ventas redirige a compras`);
+  }
+  assert.equal(normalizeReportView(null, fullAccess), "rentabilidad", "la vista inicial es rentabilidad");
+  assert.equal(normalizeReportView("desconocida", fullAccess), "rentabilidad");
+  for (const view of ["rentabilidad", "ventas", "compras", "ganancias"]) {
+    assert.equal(normalizeReportView(view, fullAccess), view, `${view} es una vista válida`);
+  }
+  for (const restricted of ["rentabilidad", "ganancias"]) {
+    assert.equal(normalizeReportView(restricted, salesOnly), "ventas", `${restricted} exige profitability.read`);
+  }
+} finally {
+  await navVite.close();
+}
+
+// SPEC 022 §6.2: vista inicial "Rentabilidad y estado" con la ganancia, el
+// desglose, las ventas sin costo registrado (vía el componente compartido) y
+// la lista de alertas. Reportes ya no carga inventario ni renderiza Resumen,
+// Inventario o Proyectos como pestañas.
+const rentabilidadViewSource = readRequiredSource("src/features/reports/views/ReportsRentabilidadView.jsx", "vista inicial Rentabilidad y estado, §6.2");
+assert.match(rentabilidadViewSource, /<OperationalNetProfitBreakdown/);
+assert.match(rentabilidadViewSource, /Estado del sistema/);
+assert.doesNotMatch(rentabilidadViewSource, /<OperationalComparisonChart/);
+assert.doesNotMatch(rentabilidadViewSource, /[Tt]otal de ganancias|ganancia neta(?! operacional)|utilidad neta/i);
+assert.doesNotMatch(reportPageSource, /<OperationalComparisonChart/);
+assert.doesNotMatch(reportPageSource, /<ReportsResumenView|<ReportsInventarioView|<ReportsProyectosView/);
+assert.doesNotMatch(reportPageSource, /getInventoryItems\(/);
+
+// Ventas y Compras: cada subvista es exclusiva de su dominio. El gráfico
+// Ventas vs Compras vive en Compras con la nota "no es ganancia" (§6.3) y la
+// tarjeta de margen comercial sale de Ventas (§6.4).
+assert.doesNotMatch(ventasViewSource, /<SalesCommercialMarginV4Card/);
+assert.match(ventasViewSource, /topSalesClients/);
+assert.match(ventasViewSource, /topSalesProducts/);
+assert.equal((comprasViewSource.match(/<OperationalComparisonChart/g) || []).length, 1);
+assert.match(comprasViewSource, /Comparar ventas y compras no es ganancia/);
+assert.doesNotMatch(comprasViewSource.replace(/no es ganancia/g, ""), /[Gg]anancia/);
+assert.doesNotMatch(comprasViewSource, /margenBrutoProductosCubiertos/);
+assert.match(comprasViewSource, /Las compras muestran egresos registrados del negocio/);
+assert.match(comprasViewSource, /topPurchaseSuppliers/);
+assert.match(comprasViewSource, /topPurchaseProducts/);
+
+// Ganancias: la única suma permitida es la ganancia neta operacional, que
+// llega calculada desde el helper de dominio; la vista no suma bloques.
+assert.match(gananciasViewSource, /Ganancias por Ventas/);
+assert.match(gananciasViewSource, /Ganancias por Proyectos/);
+assert.match(gananciasViewSource, /<SalesCommercialMarginV4Card/);
+assert.match(gananciasViewSource, /<ProjectProfitabilityV4Summary/);
+assert.doesNotMatch(gananciasViewSource, /[Tt]otal de ganancias|ganancia neta(?! operacional)|utilidad neta/i);
+assert.match(gananciasViewSource, /Ganancia neta operacional/);
+assert.doesNotMatch(gananciasViewSource, /commercial\.bloque.*\+.*projects\.bloque|projects\.bloque.*\+.*commercial\.bloque/);
+console.log("OK reportes SPEC 022: cuatro pestañas, redirección legacy por permisos, Rentabilidad y estado, gráfico en Compras y wording de ganancia neta operacional");
 
 console.log("Report model smoke: OK");
