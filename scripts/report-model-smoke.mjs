@@ -458,6 +458,9 @@ assert.match(comprasViewSource, /topPurchaseProducts/);
 // Ganancias: la única suma permitida es la ganancia neta operacional, que
 // llega calculada desde el helper de dominio; la vista no suma bloques.
 assert.match(gananciasViewSource, /<SalesCommercialMarginV4Card/);
+// SPEC 022 §6.5 punto 2: la tarjeta incluye Ventas con Proyecto, así que
+// lleva el rótulo que aclara que no se suma a la ganancia.
+assert.match(gananciasViewSource, /Análisis de margen comercial, no se suma a la ganancia neta operacional/);
 // SPEC 022 §6.5 (decisión del dueño): "Ganancias por Proyectos" y
 // ProjectProfitabilityV4Summary salen de esta pestaña.
 assert.doesNotMatch(gananciasViewSource, /Ganancias por Proyectos/);
