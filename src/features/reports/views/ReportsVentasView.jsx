@@ -1,6 +1,5 @@
 import React from "react";
 import {ArrowRight} from "lucide-react";
-import {SalesCommercialMarginV4Card} from "../ReportProfitabilityV4Section";
 import {formatMoney} from "../../../utils/formatters";
 
 function TimelineTable({items, currency}) {
@@ -22,10 +21,10 @@ function TopEntityTable({groups, currency, columns, renderRow, emptyText}) {
 }
 
 // Vista dedicada a Ventas: reutiliza exactamente los datos ya calculados por
-// el contenedor (summary.sales, salesTimeline, topSalesClients/Products) y el
-// margen comercial V4 ya existente. No recalcula ni redefine ninguna fórmula
-// económica; sólo presenta ese mismo dato en un espacio propio.
-function ReportsVentasView({canOpenSales, navigate, profitabilityV4, salesTimeline, summary, topSalesClients, topSalesProducts}) {
+// el contenedor (summary.sales, salesTimeline, topSalesClients/Products). El
+// margen comercial vive en Ganancias (SPEC 022 §6.4). No recalcula ni
+// redefine ninguna fórmula económica.
+function ReportsVentasView({canOpenSales, navigate, salesTimeline, summary, topSalesClients, topSalesProducts}) {
   const hasSales = summary.sales.confirmed.length > 0;
   return <>
     <div className="reports-simple-currencies">{summary.currencies.map((group) => <section className="reports-simple-currency-group" key={group.currency}>
@@ -68,8 +67,6 @@ function ReportsVentasView({canOpenSales, navigate, profitabilityV4, salesTimeli
         </div>
       </div>
     </section>)}
-
-    <SalesCommercialMarginV4Card canView={profitabilityV4.canView} commercial={profitabilityV4.commercial} onRetry={profitabilityV4.reload} />
 
     <section className="erp-card reports-detail-section">
       <div className="reports-section-heading"><div><span>Operaciones</span><h2>Ventas del período</h2><p>Listado de ventas confirmadas usadas en las métricas de esta vista.</p></div>{canOpenSales && <button type="button" onClick={() => navigate("/ventas")}>Ir a Ventas<ArrowRight size={14} /></button>}</div>
