@@ -415,6 +415,11 @@ previa que propuso las alertas no está versionada en el repositorio: ver Q4.
    operacional", porque incluye Ventas con Proyecto.
 3. Tres gráficos:
 
+"Ganancias por Proyectos" y ProjectProfitabilityV4Summary se retiran de esta
+pestaña, no forman parte del rediseño. Decisión del dueño del negocio: junto a
+la ganancia neta operacional repetirían el problema de "dos resultados
+distintos en pantalla" que esta SPEC resuelve.
+
 #### 6.5.1 Evolución mensual
 
 - Barras por mes del período con la ganancia neta operacional, divididas en
