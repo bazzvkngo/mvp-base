@@ -244,7 +244,7 @@
    claro; su contraparte oscura sí reutiliza --color-stock-alert-800 más
    abajo (mismo dominio, coincide en significado). Con esto,
    --color-stock-alert-* pasa de 0 a 1 uso real por var() en este archivo. */
-@media (prefers-color-scheme: dark) {
+:where(:root[data-theme="dark"]) {
   .inventory-stock-low {
     color: var(--color-stock-alert-800);
   }

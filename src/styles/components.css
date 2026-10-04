@@ -2705,7 +2705,7 @@
 /* Modo oscuro (etapa 5, paso 3 de 10: hub compartido). Ver
    scripts/design-baseline.json para el detalle de cada literal nuevo
    registrado aquí. */
-@media (prefers-color-scheme: dark) {
+:where(:root[data-theme="dark"]) {
   /* Rellenos sólidos con texto inverso encima: se fijan al mismo rojo de
      siempre. --color-danger-600/700 ya tienen valor oscuro (paso 2), pero
      se calibró para TEXTO sobre un fondo -50 (badges), no para ser el

@@ -263,7 +263,7 @@
    archivo. Se fijan aquí, en .public-proposal (el contenedor raíz de toda
    la página), los mismos valores claros de tokens.css — el resto de
    selectores de este archivo los hereda sin tocarlos uno por uno. */
-@media (prefers-color-scheme: dark) {
+:where(:root[data-theme="dark"]) {
   .public-proposal {
     --color-brand-600: #0f766e;
     --color-brand-700: #0b5f59;

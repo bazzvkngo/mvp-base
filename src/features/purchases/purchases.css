@@ -79,7 +79,7 @@
    cero resultados). --color-brand-700 sin cambio (paso 2) como texto
    sobre --color-success-50, que SÍ reacciona al tema (tiene valor oscuro
    propio desde el paso 2) — corregido con --color-brand-400. */
-@media (prefers-color-scheme: dark) {
+:where(:root[data-theme="dark"]) {
   .purchase-stock-note {
     color: var(--color-brand-400);
   }

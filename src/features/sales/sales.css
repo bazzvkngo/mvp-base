@@ -933,7 +933,7 @@
    quedaron resueltos en las pasadas 1 y 2; aquí solo lo específico de sales.css
    (prefijo .sale-*). Sin scrims/overlays ni color-mix propios (grep
    completo, cero resultados). */
-@media (prefers-color-scheme: dark) {
+:where(:root[data-theme="dark"]) {
   /* --color-brand-600/700 sin cambio (paso 2) como texto sobre una
      superficie que sí reacciona al tema, corregido con
      --color-brand-400 (mismo criterio y contraste ya verificado en las

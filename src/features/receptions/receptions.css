@@ -136,7 +136,7 @@
    — receptions.css, que importa purchase-orders.css DIRECTO, no vía
    purchases.css — confirmado leyendo la línea 1 de este archivo). Sin
    scrims/overlays, sin color-mix (grep completo, cero resultados). */
-@media (prefers-color-scheme: dark) {
+:where(:root[data-theme="dark"]) {
   /* --color-brand-600/700 sin cambio (paso 2) como texto sobre una
      superficie que sí reacciona al tema. Corregido con
      --color-brand-400. */

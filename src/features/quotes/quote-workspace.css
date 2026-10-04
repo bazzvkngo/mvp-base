@@ -791,7 +791,7 @@
    color-mix(...--color-text-strong...) (línea ~175) es una sombra de
    elevación de tarjeta, no un telón de diálogo — mismo criterio ya
    establecido (efecto halo reportado, no se toca). */
-@media (prefers-color-scheme: dark) {
+:where(:root[data-theme="dark"]) {
   /* --color-brand-600/700 sin cambio (paso 2) como texto sobre
      superficie que sí reacciona al tema, cada uno verificado contra su
      fondo real (surface-hover o ambient/transparent, ninguno sobre

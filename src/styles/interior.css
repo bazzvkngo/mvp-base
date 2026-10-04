@@ -991,7 +991,7 @@
 
 /* Modo oscuro (etapa 5, paso 4 de 10: interior.css, pasada 1 de 6 —
    .erp-*, donut, ResponsiveDialog, Resumen/Finanzas/Estadísticas). */
-@media (prefers-color-scheme: dark) {
+:where(:root[data-theme="dark"]) {
   /* Hallazgo crítico del paso 3, aplicado aquí desde el inicio:
      .responsive-dialog-overlay usa color-mix(in srgb,
      var(--color-text-strong) 50%, transparent) — el ÚNICO uso de este
@@ -2292,7 +2292,7 @@ body:has(.reports-simple) .environment-notice {
 /* Modo oscuro (etapa 5, paso 4 de 10: interior.css, pasada 2 de 6 —
    Dashboard V2). Sin scrims en esta pasada (el único de todo el archivo
    ya se corrigió en la pasada 1). */
-@media (prefers-color-scheme: dark) {
+:where(:root[data-theme="dark"]) {
   /* --color-brand-600/700/800 sin cambio (paso 2) como texto/ícono sobre
      una superficie que sí reacciona al tema — mismo criterio que la
      pasada 1, cada selector verificado contra su fondo real antes de
@@ -3808,7 +3808,7 @@ body:has(.reports-simple) .environment-notice {
    corrigió en la pasada 1). Pasada 3 (Reportes V5 + Rentabilidad V4)
    revisada sin necesitar ningún cambio: no tiene ni scrims, ni
    --color-brand-* como texto, ni fills semánticos con texto inverso. */
-@media (prefers-color-scheme: dark) {
+:where(:root[data-theme="dark"]) {
   .settings-subnav button.is-active,
   .settings-verification-heading,
   .verification-evidence-uploader__icon,
@@ -4261,7 +4261,7 @@ body:has(.reports-simple) .environment-notice {
 
 /* Modo oscuro (etapa 5, paso 4 de 10: interior.css, pasada 5 de 6 —
    Clientes). Sin scrims nuevos. */
-@media (prefers-color-scheme: dark) {
+:where(:root[data-theme="dark"]) {
   .client-row-actions button:hover {
     color: var(--color-brand-400);
   }

@@ -244,7 +244,7 @@
 
 /* Modo oscuro (etapa 5, paso 6 de 10). Sin scrims/overlays ni color-mix
    (grep completo, cero resultados). */
-@media (prefers-color-scheme: dark) {
+:where(:root[data-theme="dark"]) {
   /* --color-brand-600/700/800 sin cambio (paso 2) como texto sobre
      superficie que sí reacciona al tema, corregido con
      --color-brand-400 (mismo criterio y contraste ya verificado en

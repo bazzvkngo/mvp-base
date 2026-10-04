@@ -387,7 +387,7 @@ td[align="right"] {
    Scrollbar nativo: color-scheme: light dark (tokens.css, paso 1) ya lo
    resuelve solo, sin CSS propio aquí — no hay ::-webkit-scrollbar en este
    archivo que pueda entrar en conflicto. */
-@media (prefers-color-scheme: dark) {
+:where(:root[data-theme="dark"]) {
   /* ::selection combina var(--color-brand-200) (sin cambio, paso 2) con
      var(--color-text-strong) (SÍ cambia, ahora claro: #e4edf1). Ese par
      ya no es el mismo textooscuro/fondo-claro de siempre: texto claro

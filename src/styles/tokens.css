@@ -1,17 +1,14 @@
 :root {
-  /* "light dark" (en vez de "light" fijo): le dice al navegador que la
-     página soporta ambos esquemas, para que resuelva sola el renderizado
-     de controles nativos (scrollbar, checkbox, <select>, etc.) contra la
-     preferencia real del sistema en cada momento — no requiere que este
-     archivo lo condicione con @media, el navegador ya lo hace por su
-     cuenta al tener ambos valores listados. OJO: esto NO redefine ninguna
-     custom property propia (--color-*, --shadow-*, etc.); esas siguen
-     dependiendo del bloque @media (prefers-color-scheme: dark) de abajo,
-     poblado progresivamente desde el paso 2 (fondos/texto/bordes/familias
-     semánticas) hasta el paso 7 (stock-alert, data-*, data-cost-*,
-     quote-status-*) — ya no está vacío (corregido en el paso 10; este
-     comentario decía "vacío a propósito" y dejó de ser cierto). */
-  color-scheme: light dark;
+  /* color-scheme decide cómo pinta el navegador los controles nativos
+     (scrollbar, checkbox, <select>, etc.). Paso 9 (etapa 5): era
+     "light dark" para seguir solo al sistema; ahora sigue al tema resuelto
+     en data-theme, para que un tema elegido a mano también los alcance:
+     "light" aquí y "dark" en el bloque :root[data-theme="dark"] de abajo.
+     OJO: esto NO redefine ninguna custom property propia (--color-*,
+     --shadow-*, etc.); esas viven en ese mismo bloque oscuro, poblado
+     desde el paso 2 (fondos/texto/bordes/familias semánticas) hasta el
+     paso 7 (stock-alert, data-*, data-cost-*, quote-status-*). */
+  color-scheme: light;
 
   /* Brand — mismo hue base (teal ValoraCloud), calibrado con un paso más
      y con el 500 un poco más vívido para usarlo como "acento" en UI clara */
@@ -346,8 +343,12 @@
    --color-tag-* y --color-document-* (congelado de facto, no se ha
    necesitado tocar) y --color-dark-* (congelado, no reacciona al tema
    por diseño). */
-@media (prefers-color-scheme: dark) {
-  :root {
+/* Paso 9 (etapa 5): el tema lo decide data-theme en <html>, que fija el
+   script inline de index.html antes del primer pintado ("light" o "dark",
+   resuelto desde la preferencia guardada o, si no hay, desde el sistema).
+   Antes era @media (prefers-color-scheme: dark); los valores no cambian. */
+:root[data-theme="dark"] {
+    color-scheme: dark;
     --color-surface-canvas: #0c1e2b;
     --color-surface-panel: #142c3d;
     --color-surface-subtle: #0f2534;
@@ -426,7 +427,6 @@
        no se tocan. */
     --color-quote-status-accepted: #45b8a8;
     --color-quote-status-archived: #93a3ac;
-  }
 }
 
 /* Corrección posterior al paso 2 (encontrada en el paso 4, etapa 5, al

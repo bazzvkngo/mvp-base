@@ -970,7 +970,7 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
    .po-document-preview__empty, heredado de aquí. Se fijan ambas al valor
    claro para que tokens.css (:root único, ver hallazgo del paso 1) no las
    enganche por accidente. */
-@media (prefers-color-scheme: dark) {
+:where(:root[data-theme="dark"]) {
   .po-document-preview {
     --color-surface-panel: #ffffff;
     --color-border-default: #d3cdc2;
@@ -1630,7 +1630,7 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
    sombras de elevación de tarjeta/menú, no telones de fondo de diálogo;
    mismo criterio ya establecido en el paso 3/4 (efecto halo reportado,
    no se toca, no bloquea nada funcional aquí tampoco). */
-@media (prefers-color-scheme: dark) {
+:where(:root[data-theme="dark"]) {
   /* --color-brand-600/700/800 sin cambio (paso 2) como texto/ícono sobre
      una superficie que sí reacciona al tema, cada uno verificado contra
      su fondo real antes de tocar. Corregido con --color-brand-400

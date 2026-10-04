@@ -1178,7 +1178,7 @@
 }
 
 /* Modo oscuro (etapa 5, paso 3 de 10: hub compartido). */
-@media (prefers-color-scheme: dark) {
+:where(:root[data-theme="dark"]) {
   /* Mismo criterio que components.css: --color-brand-600/700/800 se
      mantienen sin cambio (paso 2), así que como texto/ícono directo sobre
      una superficie oscura no pasan AA (2.26:1 medido en el paso 2). Se

@@ -2,6 +2,25 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      // Fija data-theme en <html> antes del primer pintado (etapa 5, paso 9).
+      // "valoracloud.theme" guarda la elección: "light", "dark" o "system";
+      // sin valor (o en Safari privado, donde localStorage puede fallar) se
+      // sigue al sistema, en vivo, igual que la antigua @media.
+      (function () {
+        var root = document.documentElement;
+        var query = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+        function applyTheme() {
+          var preference = null;
+          try { preference = window.localStorage.getItem("valoracloud.theme"); } catch (error) { preference = null; }
+          var dark = preference === "dark" || (preference !== "light" && Boolean(query && query.matches));
+          root.setAttribute("data-theme", dark ? "dark" : "light");
+        }
+        applyTheme();
+        if (query && query.addEventListener) query.addEventListener("change", applyTheme);
+        else if (query && query.addListener) query.addListener(applyTheme);
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"

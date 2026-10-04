@@ -28,7 +28,7 @@
    igual que otros ya encontrados en pasos anteriores) — contraparte
    oscura definida aquí, sin tokenizar el literal claro (fuera de
    alcance). */
-@media (prefers-color-scheme: dark) {
+:where(:root[data-theme="dark"]) {
   .barcode-input-row > button,
   .barcode-action-button,
   .barcode-scanner__actions button {
