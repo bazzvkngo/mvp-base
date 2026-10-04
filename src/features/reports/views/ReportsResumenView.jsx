@@ -3,6 +3,7 @@ import {BadgeDollarSign, Boxes, BriefcaseBusiness, ShoppingCart, TrendingUp} fro
 import {ProjectProfitabilityV4Summary} from "../ReportProfitabilityV4Section";
 import {MetricCard} from "../ReportsSharedCards";
 import {formatMoney} from "../../../utils/formatters";
+import useBusinessFormat from "../../../hooks/useBusinessFormat";
 
 // Vista ejecutiva compacta: unas pocas tarjetas de indicadores por moneda y un
 // único gráfico comparativo. El detalle completo de cada dominio (ventas,
@@ -17,6 +18,7 @@ function ReportsResumenView({
   profitabilityV4,
   summary,
 }) {
+  const { locale: businessLocale } = useBusinessFormat();
   return <>
     <div className="reports-simple-currencies">{summary.currencies.map((group) => {
       const commercialGroup = profitabilityV4.commercial.bloque?.grupos?.find((entry) => entry.moneda === group.currency);
@@ -24,10 +26,10 @@ function ReportsResumenView({
       return <section className="reports-simple-currency-group" key={group.currency}>
         <h2>{group.currency}</h2>
         <div className="reports-simple-metrics">
-          <MetricCard amount={formatMoney(group.sales.total, group.currency)} detail={group.sales.count ? `${group.sales.count} ${group.sales.count === 1 ? "venta confirmada" : "ventas confirmadas"}` : ""} emptyText="Aún no hay ventas confirmadas en este período." icon={BadgeDollarSign} linkLabel="Ver ventas" onOpen={links.sales ? () => onSelectView("ventas") : null} title="Ventas" />
-          <MetricCard amount={formatMoney(group.purchases.total, group.currency)} detail={group.purchases.count ? `${group.purchases.count} ${group.purchases.count === 1 ? "compra confirmada" : "compras confirmadas"}` : ""} emptyText="Aún no hay compras confirmadas en este período." icon={ShoppingCart} linkLabel="Ver compras" onOpen={links.purchases ? () => onSelectView("compras") : null} title="Compras" />
-          {profitabilityV4.canView && <MetricCard amount={commercialReady ? formatMoney(commercialGroup?.metricas?.margenBrutoProductosCubiertos, group.currency) : "Calculando…"} detail="Margen bruto de productos vendidos" emptyText="Sin ventas de productos con margen calculable." icon={TrendingUp} linkLabel="Ver ganancias" onOpen={() => onSelectView("ganancias")} title="Ganancia comercial" variant="margin" />}
-          <MetricCard amount={group.projects.total === null ? "—" : formatMoney(group.projects.total, group.currency)} detail={group.projects.count ? `${group.projects.count} ${group.projects.count === 1 ? "proyecto con resultado" : "proyectos con resultado"}` : ""} emptyText="Sin proyectos con resultado disponible." icon={BriefcaseBusiness} linkLabel="Ver proyectos" onOpen={links.works ? () => onSelectView("proyectos") : null} restricted={!summary.projects.accessible} title="Ganancia de proyectos" variant="result" />
+          <MetricCard amount={formatMoney(group.sales.total, group.currency, businessLocale)} detail={group.sales.count ? `${group.sales.count} ${group.sales.count === 1 ? "venta confirmada" : "ventas confirmadas"}` : ""} emptyText="Aún no hay ventas confirmadas en este período." icon={BadgeDollarSign} linkLabel="Ver ventas" onOpen={links.sales ? () => onSelectView("ventas") : null} title="Ventas" />
+          <MetricCard amount={formatMoney(group.purchases.total, group.currency, businessLocale)} detail={group.purchases.count ? `${group.purchases.count} ${group.purchases.count === 1 ? "compra confirmada" : "compras confirmadas"}` : ""} emptyText="Aún no hay compras confirmadas en este período." icon={ShoppingCart} linkLabel="Ver compras" onOpen={links.purchases ? () => onSelectView("compras") : null} title="Compras" />
+          {profitabilityV4.canView && <MetricCard amount={commercialReady ? formatMoney(commercialGroup?.metricas?.margenBrutoProductosCubiertos, group.currency, businessLocale) : "Calculando…"} detail="Margen bruto de productos vendidos" emptyText="Sin ventas de productos con margen calculable." icon={TrendingUp} linkLabel="Ver ganancias" onOpen={() => onSelectView("ganancias")} title="Ganancia comercial" variant="margin" />}
+          <MetricCard amount={group.projects.total === null ? "—" : formatMoney(group.projects.total, group.currency, businessLocale)} detail={group.projects.count ? `${group.projects.count} ${group.projects.count === 1 ? "proyecto con resultado" : "proyectos con resultado"}` : ""} emptyText="Sin proyectos con resultado disponible." icon={BriefcaseBusiness} linkLabel="Ver proyectos" onOpen={links.works ? () => onSelectView("proyectos") : null} restricted={!summary.projects.accessible} title="Ganancia de proyectos" variant="result" />
         </div>
       </section>;
     })}</div>

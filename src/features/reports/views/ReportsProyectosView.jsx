@@ -5,12 +5,14 @@ import Button from "../../../components/ui/Button";
 import {getWorkStatusLabel} from "../../../domain/workModel.mjs";
 import {formatPercent} from "../ReportsSharedCards";
 import {formatMoney} from "../../../utils/formatters";
+import useBusinessFormat from "../../../hooks/useBusinessFormat";
 
 const MAX_PROJECTS_PER_CURRENCY = 6;
 
 function ProfitabilitySummary({currency, group}) {
+  const { locale: businessLocale } = useBusinessFormat();
   if (!group) return <div className="reports-profitability-empty">Registra costos en tus proyectos para analizar su rentabilidad.</div>;
-  const money = (value) => formatMoney(value, currency);
+  const money = (value) => formatMoney(value, currency, businessLocale);
   const costItems = [
     {label: "Materiales", value: group.materials, colorIndex: 0},
     {label: "Horas hombre", value: group.labor, colorIndex: 1},
@@ -46,6 +48,7 @@ function ProfitabilitySummary({currency, group}) {
 }
 
 function ProjectResults({groups, navigate, showLink}) {
+  const { locale: businessLocale } = useBusinessFormat();
   if (!groups.length) return <div className="reports-projects-empty"><div><strong>Aún no hay proyectos con resultado disponible.</strong><span>Registra costos en tus proyectos para analizar su rentabilidad.</span></div>{showLink && <Button variant="secondary" onClick={() => navigate("/trabajos")}>Ver proyectos</Button>}</div>;
   const openProject = (project) => navigate("/trabajos", {state: {openWorkId: project.id}});
   return <div className="reports-project-groups">{groups.map((group) => {
@@ -53,7 +56,7 @@ function ProjectResults({groups, navigate, showLink}) {
       Math.abs(Number(right.balance?.resultado || 0)) - Math.abs(Number(left.balance?.resultado || 0)) ||
       String(right.actualizadoEn || right.fechaCompletado || "").localeCompare(String(left.actualizadoEn || left.fechaCompletado || ""))
     ).slice(0, MAX_PROJECTS_PER_CURRENCY);
-    const money = (value) => formatMoney(value, group.currency);
+    const money = (value) => formatMoney(value, group.currency, businessLocale);
     return <section className="reports-project-group" key={group.currency}>
       <h3>{group.currency}</h3>
       <div className="reports-project-table-wrap"><table className="reports-project-table">

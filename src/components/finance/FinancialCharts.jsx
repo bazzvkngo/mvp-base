@@ -13,6 +13,7 @@ import {
 } from "chart.js";
 import { Bar, Doughnut, Line } from "react-chartjs-2";
 import { formatMoney } from "../../utils/formatters";
+import useBusinessFormat from "../../hooks/useBusinessFormat";
 import usePrefersDarkMode from "../../hooks/usePrefersDarkMode";
 
 ChartJS.register(
@@ -83,11 +84,11 @@ function formatTimelineLabel(key) {
     .replace(" de ", " ");
 }
 
-function currencyTooltip(currency) {
-  return (context) => `${context.dataset.label || "Valor"}: ${formatMoney(context.parsed?.y ?? context.parsed ?? 0, currency)}`;
+function currencyTooltip(currency, businessLocale) {
+  return (context) => `${context.dataset.label || "Valor"}: ${formatMoney(context.parsed?.y ?? context.parsed ?? 0, currency, businessLocale)}`;
 }
 
-function baseOptions(currency = "CLP", chrome) {
+function baseOptions(currency = "CLP", chrome, businessLocale) {
   return {
     animation: { duration: 300 },
     maintainAspectRatio: false,
@@ -97,7 +98,7 @@ function baseOptions(currency = "CLP", chrome) {
         labels: { color: chrome.legendText, boxWidth: 12, boxHeight: 12, usePointStyle: true },
         position: "bottom",
       },
-      tooltip: { callbacks: { label: currencyTooltip(currency) } },
+      tooltip: { callbacks: { label: currencyTooltip(currency, businessLocale) } },
     },
     scales: {
       x: { grid: { display: false }, ticks: { color: chrome.tickText } },
@@ -121,6 +122,7 @@ function ChartEmptyState({ children }) {
 
 export function FinancialTimelineChart({ currency = "CLP", data, mode = "cashflow" }) {
   const isDarkMode = usePrefersDarkMode();
+  const { locale: businessLocale } = useBusinessFormat();
   const dataColors = isDarkMode ? DATA_COLORS.dark : DATA_COLORS.light;
   const chrome = isDarkMode ? CHROME_COLORS.dark : CHROME_COLORS.light;
   if (!data.length) {
@@ -154,15 +156,15 @@ export function FinancialTimelineChart({ currency = "CLP", data, mode = "cashflo
           },
         ];
   const description = data
-    .map((item) => `${item.key}: ingresos ${formatMoney(item.income, currency)}, egresos ${formatMoney(item.expense, currency)}, resultado ${formatMoney(item.net, currency)}`)
+    .map((item) => `${item.key}: ingresos ${formatMoney(item.income, currency, businessLocale)}, egresos ${formatMoney(item.expense, currency, businessLocale)}, resultado ${formatMoney(item.net, currency, businessLocale)}`)
     .join(". ");
 
   return (
     <div className="financial-chart" role="img" aria-label={description}>
       {mode === "net" ? (
-        <Line data={{ labels, datasets }} options={baseOptions(currency, chrome)} />
+        <Line data={{ labels, datasets }} options={baseOptions(currency, chrome, businessLocale)} />
       ) : (
-        <Bar data={{ labels, datasets }} options={baseOptions(currency, chrome)} />
+        <Bar data={{ labels, datasets }} options={baseOptions(currency, chrome, businessLocale)} />
       )}
     </div>
   );
@@ -170,16 +172,17 @@ export function FinancialTimelineChart({ currency = "CLP", data, mode = "cashflo
 
 export function FinancialCategoryChart({ currency = "CLP", data, label }) {
   const isDarkMode = usePrefersDarkMode();
+  const { locale: businessLocale } = useBusinessFormat();
   const dataColors = isDarkMode ? DATA_COLORS.dark : DATA_COLORS.light;
   const chrome = isDarkMode ? CHROME_COLORS.dark : CHROME_COLORS.light;
   if (!data.length) {
     return <ChartEmptyState>Sin datos por categoría en este periodo.</ChartEmptyState>;
   }
   const visible = data.slice(0, 7);
-  const options = baseOptions(currency, chrome);
+  const options = baseOptions(currency, chrome, businessLocale);
   options.indexAxis = "y";
   const description = visible
-    .map((item) => `${item.label}: ${formatMoney(item.value, currency)}`)
+    .map((item) => `${item.label}: ${formatMoney(item.value, currency, businessLocale)}`)
     .join(". ");
   return (
     <div className="financial-chart financial-chart--category" role="img" aria-label={`${label}. ${description}`}>
@@ -201,6 +204,7 @@ export function FinancialCategoryChart({ currency = "CLP", data, label }) {
 
 export function FinancialStatusChart({ currency = "CLP", movements }) {
   const isDarkMode = usePrefersDarkMode();
+  const { locale: businessLocale } = useBusinessFormat();
   const dataColors = isDarkMode ? DATA_COLORS.dark : DATA_COLORS.light;
   const chrome = isDarkMode ? CHROME_COLORS.dark : CHROME_COLORS.light;
   const paid = movements
@@ -216,7 +220,7 @@ export function FinancialStatusChart({ currency = "CLP", movements }) {
     <div
       className="financial-chart financial-chart--donut"
       role="img"
-      aria-label={`Movimientos pagados: ${formatMoney(paid, currency)}. Movimientos pendientes: ${formatMoney(pending, currency)}.`}
+      aria-label={`Movimientos pagados: ${formatMoney(paid, currency, businessLocale)}. Movimientos pendientes: ${formatMoney(pending, currency, businessLocale)}.`}
     >
       <Doughnut
         data={{
@@ -235,7 +239,7 @@ export function FinancialStatusChart({ currency = "CLP", movements }) {
           responsive: true,
           plugins: {
             legend: { position: "bottom", labels: { usePointStyle: true, color: chrome.legendText } },
-            tooltip: { callbacks: { label: currencyTooltip(currency) } },
+            tooltip: { callbacks: { label: currencyTooltip(currency, businessLocale) } },
           },
         }}
       />

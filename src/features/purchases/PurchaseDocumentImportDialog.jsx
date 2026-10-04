@@ -16,6 +16,7 @@ import {
 } from "../../services/inventoryAiImportService";
 import {formatMoney} from "../../utils/formatters";
 import "../receptions/receptions.css";
+import useBusinessFormat from "../../hooks/useBusinessFormat";
 
 const EMPTY_FIELDS = {
   tipoDocumento: "factura",
@@ -56,6 +57,7 @@ export default function PurchaseDocumentImportDialog({
   providers,
   taxName = "Impuesto",
 }) {
+  const { locale: businessLocale } = useBusinessFormat();
   const inputRef = useRef(null);
   const applyGuard = useRef(false);
   const [fileData, setFileData] = useState(null);
@@ -260,9 +262,9 @@ export default function PurchaseDocumentImportDialog({
         <section className="reception-import__document-summary" aria-label="Resumen de la factura">
           <div><span>Folio</span><strong>{fields.numeroDocumento || "Sin folio"}</strong></div>
           <div><span>Fecha</span><strong>{fields.fechaDocumento || "Sin fecha"}</strong></div>
-          <div><span>Neto</span><strong>{hasValue(fields.neto) ? formatMoney(fields.neto, currency) : "—"}</strong></div>
-          <div><span>{hasValue(fields.impuestoPorcentaje) ? `${taxLabel} (${fields.impuestoPorcentaje}%)` : taxLabel}</span><strong>{hasValue(fields.impuestoMonto) ? formatMoney(fields.impuestoMonto, currency) : "—"}</strong></div>
-          <div><span>Total</span><strong>{hasValue(fields.total) ? formatMoney(fields.total, currency) : "—"}</strong></div>
+          <div><span>Neto</span><strong>{hasValue(fields.neto) ? formatMoney(fields.neto, currency, businessLocale) : "—"}</strong></div>
+          <div><span>{hasValue(fields.impuestoPorcentaje) ? `${taxLabel} (${fields.impuestoPorcentaje}%)` : taxLabel}</span><strong>{hasValue(fields.impuestoMonto) ? formatMoney(fields.impuestoMonto, currency, businessLocale) : "—"}</strong></div>
+          <div><span>Total</span><strong>{hasValue(fields.total) ? formatMoney(fields.total, currency, businessLocale) : "—"}</strong></div>
           <div><span>Líneas</span><strong>{summary.vinculadas} de {summary.total} listas</strong></div>
         </section>
         <details className="reception-import__document-details">

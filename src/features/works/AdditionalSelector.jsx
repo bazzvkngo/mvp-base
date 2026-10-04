@@ -1,6 +1,7 @@
 import React from "react";
 import LoadingState from "../../components/ui/LoadingState";
 import {formatMoney} from "../../utils/formatters.js";
+import useBusinessFormat from "../../hooks/useBusinessFormat";
 
 // SPEC 020 ETAPA 5: selector de adicionales pendientes de un Proyecto, para
 // incorporarlos como líneas al crear una Venta nueva vinculada a ese mismo
@@ -15,15 +16,16 @@ import {formatMoney} from "../../utils/formatters.js";
 
 const ADDITIONAL_ITEM_TYPE_LABELS = Object.freeze({producto: "Producto", servicio: "Servicio", actividad: "Actividad"});
 
-export function getWorkAdditionalOptionLabel(additional, currencyFallback) {
+export function getWorkAdditionalOptionLabel(additional, currencyFallback, businessLocale) {
   const name = additional?.itemSnapshot?.nombre || "Ítem sin nombre";
   const type = ADDITIONAL_ITEM_TYPE_LABELS[additional?.tipoItem] || "Ítem";
   const unit = additional?.itemSnapshot?.unidad || "unidad";
-  const price = formatMoney(additional?.precioUnitario, additional?.moneda || currencyFallback);
+  const price = formatMoney(additional?.precioUnitario, additional?.moneda || currencyFallback, businessLocale);
   return `${name} · ${type} · ${Number(additional?.cantidad || 0)} ${unit} × ${price}`;
 }
 
 export default function AdditionalSelector({additionals = [], currency, loading = false, onToggle, selectedIds = []}) {
+  const { locale: businessLocale } = useBusinessFormat();
   const selected = new Set(selectedIds);
 
   return (
@@ -44,7 +46,7 @@ export default function AdditionalSelector({additionals = [], currency, loading 
                   checked={selected.has(additional.id)}
                   onChange={() => onToggle(additional)}
                 />
-                <span>{getWorkAdditionalOptionLabel(additional, currency)}</span>
+                <span>{getWorkAdditionalOptionLabel(additional, currency, businessLocale)}</span>
               </label>
             </li>
           ))}

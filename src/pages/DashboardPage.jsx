@@ -41,7 +41,7 @@ import {
   getCompanyProfileCompletion,
 } from "../services/companyService";
 import {loadReportData} from "../services/reportService";
-import {useBusinessMoney} from "../hooks/useBusinessFormat";
+import useBusinessFormat, {useBusinessMoney} from "../hooks/useBusinessFormat";
 import {formatDate, formatMoney, formatPercent} from "../utils/formatters";
 
 // Refleja a mano --color-quote-status-draft/issued/accepted/expired/
@@ -129,6 +129,7 @@ function QuickActions({actions, navigate}) {
 }
 
 function RecentActivity({items, navigate}) {
+  const { locale: businessLocale } = useBusinessFormat();
   return (
     <section className="erp-panel dashboard-v2-secondary-panel" aria-labelledby="dashboard-activity-title">
       <div className="erp-panel-header dashboard-v2-panel-header">
@@ -148,7 +149,7 @@ function RecentActivity({items, navigate}) {
                 <strong>{item.number}</strong>
                 <span>{formatDate(item.date)} · {item.counterparty}</span>
               </div>
-              <strong className="dashboard-activity-v2-amount">{formatMoney(item.amount, item.currency)}</strong>
+              <strong className="dashboard-activity-v2-amount">{formatMoney(item.amount, item.currency, businessLocale)}</strong>
               <button type="button" onClick={() => navigate(item.route)}>Ver</button>
             </article>
           ))}
@@ -192,13 +193,14 @@ function RequiredAttention({companyProfilePending, lowStockProducts, navigate}) 
   );
 }
 
-function formatCurrencyGroups(groups, fallbackCurrency) {
+function formatCurrencyGroups(groups, fallbackCurrency, businessLocale) {
   return groups.length
-    ? groups.map((group) => formatMoney(group.total, group.currency)).join(" · ")
-    : formatMoney(0, fallbackCurrency);
+    ? groups.map((group) => formatMoney(group.total, group.currency, businessLocale)).join(" · ")
+    : formatMoney(0, fallbackCurrency, businessLocale);
 }
 
 export default function DashboardPage({businessId, currencyCode = "CLP", role}) {
+  const { locale: businessLocale } = useBusinessFormat();
   const navigate = useNavigate();
   const isDarkMode = usePrefersDarkMode();
   const formatBusinessAmount = useBusinessMoney();
@@ -337,8 +339,8 @@ export default function DashboardPage({businessId, currencyCode = "CLP", role}) 
       {!reportState.loading && !reportState.error && (
         <>
           <section className="financial-metric-grid dashboard-v2-metrics" aria-label="Indicadores principales">
-            <DashboardCountCard icon={ShoppingCart} label="Total vendido" value={formatCurrencyGroups(salesMetrics.totalsByCurrency, currencyCode)} tone="income" note={`${salesMetrics.count} ventas confirmadas`} />
-            <DashboardCountCard icon={Truck} label="Total comprado" value={formatCurrencyGroups(purchaseMetrics.totalsByCurrency, currencyCode)} tone="expense" note={`${purchaseMetrics.count} compras confirmadas`} />
+            <DashboardCountCard icon={ShoppingCart} label="Total vendido" value={formatCurrencyGroups(salesMetrics.totalsByCurrency, currencyCode, businessLocale)} tone="income" note={`${salesMetrics.count} ventas confirmadas`} />
+            <DashboardCountCard icon={Truck} label="Total comprado" value={formatCurrencyGroups(purchaseMetrics.totalsByCurrency, currencyCode, businessLocale)} tone="expense" note={`${purchaseMetrics.count} compras confirmadas`} />
             <DashboardCountCard icon={ReceiptText} label="Cotizaciones" value={quoteMetrics.count.toLocaleString("es-CL")} note={`${quoteMetrics.counts.aceptada} aceptadas · ${quoteMetrics.conversion === null ? "Sin base de conversión" : formatPercent(quoteMetrics.conversion)}`} />
             <DashboardCountCard icon={Boxes} label="Inventario actual" value={inventoryMetrics.activeProducts.length.toLocaleString("es-CL")} tone={inventoryMetrics.lowStockProducts.length ? "pending" : "neutral"} note={`Estado actual · ${inventoryMetrics.lowStockProducts.length} productos con stock bajo`} />
             <DashboardCountCard icon={WalletCards} label="Saldo financiero registrado" value={financial.loading || financial.error ? "—" : formatBusinessAmount(financial.summary.netResult)} tone="net" note={financial.error ? "Finanzas no disponible" : financial.loading ? "Actualizando movimientos registrados" : `Por cobrar ${formatBusinessAmount(financial.summary.receivable)} · Por pagar ${formatBusinessAmount(financial.summary.payable)}`} />

@@ -2,13 +2,15 @@ import React from "react";
 import {ArrowRight} from "lucide-react";
 import OperationalComparisonChart from "../../../components/reports/OperationalComparisonChart";
 import {formatMoney} from "../../../utils/formatters";
+import useBusinessFormat from "../../../hooks/useBusinessFormat";
 
 function TimelineTable({items, currency}) {
+  const { locale: businessLocale } = useBusinessFormat();
   const rows = items.filter((item) => item.currency === currency);
   if (!rows.length) return <p className="reports-empty-note">Sin evolución disponible en este período.</p>;
   return <div className="reports-top-list-table-wrap"><table className="reports-top-list-table">
     <thead><tr><th>Período</th><th>Operaciones</th><th>Monto</th></tr></thead>
-    <tbody>{rows.map((row) => <tr key={row.key}><td>{row.key}</td><td>{row.count}</td><td>{formatMoney(row.value, currency)}</td></tr>)}</tbody>
+    <tbody>{rows.map((row) => <tr key={row.key}><td>{row.key}</td><td>{row.count}</td><td>{formatMoney(row.value, currency, businessLocale)}</td></tr>)}</tbody>
   </table></div>;
 }
 
@@ -26,15 +28,16 @@ function TopEntityTable({groups, currency, columns, renderRow, emptyText}) {
 // aquí; sólo el mismo detalle de compras confirmadas que ya calcula el
 // contenedor.
 function ReportsComprasView({canOpenPurchases, chartGroups, navigate, purchaseTimeline, summary, topPurchaseProducts, topPurchaseSuppliers}) {
+  const { locale: businessLocale } = useBusinessFormat();
   const hasPurchases = summary.purchases.confirmed.length > 0;
   return <>
     <p className="reports-simple-project-note">Las compras muestran egresos registrados del negocio.</p>
     <div className="reports-simple-currencies">{summary.currencies.map((group) => <section className="reports-simple-currency-group" key={group.currency}>
       <h2>{group.currency}</h2>
       <div className="reports-simple-metrics reports-simple-metrics--3col">
-        <article className="reports-simple-card"><div className="reports-simple-card__top"><span className="reports-simple-card__title">Compras confirmadas</span></div><strong className="reports-simple-card__amount">{formatMoney(group.purchases.total, group.currency)}</strong><small>{group.purchases.count} operación(es)</small></article>
+        <article className="reports-simple-card"><div className="reports-simple-card__top"><span className="reports-simple-card__title">Compras confirmadas</span></div><strong className="reports-simple-card__amount">{formatMoney(group.purchases.total, group.currency, businessLocale)}</strong><small>{group.purchases.count} operación(es)</small></article>
         <article className="reports-simple-card"><div className="reports-simple-card__top"><span className="reports-simple-card__title">Cantidad de compras</span></div><strong className="reports-simple-card__amount">{group.purchases.count}</strong><small>Confirmadas en el período</small></article>
-        <article className="reports-simple-card"><div className="reports-simple-card__top"><span className="reports-simple-card__title">Monto promedio</span></div><strong className="reports-simple-card__amount">{formatMoney(group.purchases.average, group.currency)}</strong><small>Promedio por compra confirmada</small></article>
+        <article className="reports-simple-card"><div className="reports-simple-card__top"><span className="reports-simple-card__title">Monto promedio</span></div><strong className="reports-simple-card__amount">{formatMoney(group.purchases.average, group.currency, businessLocale)}</strong><small>Promedio por compra confirmada</small></article>
       </div>
     </section>)}</div>
 
@@ -48,8 +51,8 @@ function ReportsComprasView({canOpenPurchases, chartGroups, navigate, purchaseTi
         <div className="reports-chart-summary">
           <span>{group.currency}</span>
           <dl>
-            <div><dt><i className="reports-chart-summary__dot reports-chart-summary__dot--sales" aria-hidden="true" />Ventas confirmadas</dt><dd>{formatMoney(group.sales, group.currency)}</dd></div>
-            <div><dt><i className="reports-chart-summary__dot reports-chart-summary__dot--purchases" aria-hidden="true" />Compras confirmadas</dt><dd>{formatMoney(group.purchases, group.currency)}</dd></div>
+            <div><dt><i className="reports-chart-summary__dot reports-chart-summary__dot--sales" aria-hidden="true" />Ventas confirmadas</dt><dd>{formatMoney(group.sales, group.currency, businessLocale)}</dd></div>
+            <div><dt><i className="reports-chart-summary__dot reports-chart-summary__dot--purchases" aria-hidden="true" />Compras confirmadas</dt><dd>{formatMoney(group.purchases, group.currency, businessLocale)}</dd></div>
           </dl>
         </div>
         <OperationalComparisonChart currency={group.currency} items={group.items} />
@@ -70,7 +73,7 @@ function ReportsComprasView({canOpenPurchases, chartGroups, navigate, purchaseTi
             currency={group.currency}
             emptyText="Sin proveedores con compras confirmadas."
             groups={topPurchaseSuppliers}
-            renderRow={(entry) => <tr key={entry.id}><td>{entry.name}</td><td>{entry.count}</td><td>{formatMoney(entry.total, group.currency)}</td></tr>}
+            renderRow={(entry) => <tr key={entry.id}><td>{entry.name}</td><td>{entry.count}</td><td>{formatMoney(entry.total, group.currency, businessLocale)}</td></tr>}
           />
         </div>
         <div>
@@ -80,7 +83,7 @@ function ReportsComprasView({canOpenPurchases, chartGroups, navigate, purchaseTi
             currency={group.currency}
             emptyText="Sin ítems adquiridos en el período."
             groups={topPurchaseProducts}
-            renderRow={(entry) => <tr key={entry.id}><td>{entry.name}</td><td>{entry.quantity}</td><td>{formatMoney(entry.total, group.currency)}</td></tr>}
+            renderRow={(entry) => <tr key={entry.id}><td>{entry.name}</td><td>{entry.quantity}</td><td>{formatMoney(entry.total, group.currency, businessLocale)}</td></tr>}
           />
         </div>
       </div>
@@ -96,7 +99,7 @@ function ReportsComprasView({canOpenPurchases, chartGroups, navigate, purchaseTi
             <td>{String(purchase.fechaCompra || "").slice(0, 10)}</td>
             <td>{purchase.proveedorSnapshot?.razonSocial || "Proveedor histórico"}</td>
             <td>{purchase.moneda || purchase.monedaCodigo || "CLP"}</td>
-            <td>{formatMoney(purchase.total, purchase.moneda || purchase.monedaCodigo || "CLP")}</td>
+            <td>{formatMoney(purchase.total, purchase.moneda || purchase.monedaCodigo || "CLP", businessLocale)}</td>
           </tr>)}</tbody>
         </table></div>
       )}

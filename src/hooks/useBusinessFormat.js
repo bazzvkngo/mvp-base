@@ -18,11 +18,11 @@ export function resolveBusinessFormat(business) {
 }
 
 export function BusinessFormatProvider({ business, children }) {
+  const hasBusiness = Boolean(business);
   const { monedaCodigo, locale, paisCodigo } = business || {};
   const value = useMemo(
-    () => resolveBusinessFormat(business ? { monedaCodigo, locale, paisCodigo } : null),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [Boolean(business), monedaCodigo, locale, paisCodigo]
+    () => resolveBusinessFormat(hasBusiness ? { monedaCodigo, locale, paisCodigo } : null),
+    [hasBusiness, monedaCodigo, locale, paisCodigo]
   );
   return createElement(BusinessFormatContext.Provider, { value }, children);
 }

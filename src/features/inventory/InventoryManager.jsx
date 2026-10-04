@@ -38,7 +38,7 @@ import {
   updateManagedInventoryItem,
 } from "../../services/inventoryService";
 import { DEFAULT_INVENTORY_SETTINGS, getBusinessSettings } from "../../services/companyService";
-import { useBusinessMoney } from "../../hooks/useBusinessFormat";
+import useBusinessFormat, { useBusinessMoney } from "../../hooks/useBusinessFormat";
 import { formatDate, formatMoney } from "../../utils/formatters";
 import InventoryCatalogManager from "./InventoryCatalogManager";
 import InventoryImportDialog from "./InventoryImportDialog";
@@ -569,6 +569,7 @@ function Actions({ cannotWrite, item, onArchive, onEdit, onReactivate, onViewRef
 
 function ItemDetail({ acquisitions, acquisitionsState, areas, cannotWrite, categories, item, onArchive, onClose, onEdit, onReactivate, onViewReferences, showCosts }) {
   const formatBusinessAmount = useBusinessMoney();
+  const { locale: businessLocale } = useBusinessFormat();
   if (!item) return null;
   const adapted = adaptInventoryItem(item);
   const currency = adapted.costoPromedioMoneda || "CLP";
@@ -590,9 +591,9 @@ function ItemDetail({ acquisitions, acquisitionsState, areas, cannotWrite, categ
         <Detail label="Costo base / manual" value={formatBusinessAmount(adapted.costoBase)} />
         <Detail label="IVA de compra" value={`${adapted.tasaImpuestoCompra}% · ${formatBusinessAmount(adapted.montoImpuestoCompra)}`} />
         <Detail label="Costo pagado" value={formatBusinessAmount(adapted.costoPagado)} />
-        {showCosts && <Detail label="Costo promedio" value={adapted.costoPromedio === null ? "Sin adquisiciones" : formatMoney(adapted.costoPromedio, currency)} />}
-        {showCosts && <Detail label="Último costo" value={adapted.ultimoCosto === null ? "Sin adquisiciones" : formatMoney(adapted.ultimoCosto, currency)} />}
-        {showCosts && adapted.valorInventario !== null && <Detail label="Valor vigente del stock" value={formatMoney(adapted.valorInventario, adapted.valorInventarioMoneda || currency)} />}
+        {showCosts && <Detail label="Costo promedio" value={adapted.costoPromedio === null ? "Sin adquisiciones" : formatMoney(adapted.costoPromedio, currency, businessLocale)} />}
+        {showCosts && <Detail label="Último costo" value={adapted.ultimoCosto === null ? "Sin adquisiciones" : formatMoney(adapted.ultimoCosto, currency, businessLocale)} />}
+        {showCosts && adapted.valorInventario !== null && <Detail label="Valor vigente del stock" value={formatMoney(adapted.valorInventario, adapted.valorInventarioMoneda || currency, businessLocale)} />}
         {showCosts && <Detail label="Último proveedor" value={providerName} />}
         <Detail label="Recargo" value={`${adapted.margenDeseado}%`} />
         <Detail label="Precio sugerido" value={formatBusinessAmount(adapted.precioCalculado)} />
@@ -610,6 +611,7 @@ function ItemDetail({ acquisitions, acquisitionsState, areas, cannotWrite, categ
   </ResponsiveDialog>;
 }
 function AcquisitionHistory({ acquisitions, state }) {
+  const { locale: businessLocale } = useBusinessFormat();
   return <section className="inventory-acquisition-history">
     <h3>Historial de adquisiciones</h3>
     {state.loading ? <LoadingState variant="section" label="Cargando adquisiciones…" /> : state.error ? <p className="inventory-feedback inventory-feedback--error">{state.error}</p> : acquisitions.length === 0 ? <p>Este producto aún no tiene adquisiciones registradas.</p> : <div className="inventory-acquisition-list">{acquisitions.map((entry) => {
@@ -626,9 +628,9 @@ function AcquisitionHistory({ acquisitions, state }) {
       return <article key={entry.id}>
         <div><strong>{formatDate(entry.fechaAdquisicion)}</strong><span>{active ? "Vigente" : "Revertida"}</span></div>
         <div><strong>{origin}</strong><span>{provider}</span></div>
-        <div><strong>{entry.cantidad} {entry.productoSnapshot?.unidad || "unidad"}</strong><span>{formatMoney(entry.costoPagadoUnitario, entry.moneda)} c/u · {formatMoney(entry.costoPagadoTotal, entry.moneda)} total</span></div>
-        {hasAverageTransition && <small>Promedio: {formatMoney(entry.costoPromedioAnterior, entry.moneda)} → {formatMoney(entry.costoPromedioPosterior, entry.moneda)}</small>}
-        {hasValueTransition && <small>Valor de inventario: {formatMoney(entry.valorInventarioAnterior, entry.moneda)} → {formatMoney(entry.valorInventarioPosterior, entry.moneda)}</small>}
+        <div><strong>{entry.cantidad} {entry.productoSnapshot?.unidad || "unidad"}</strong><span>{formatMoney(entry.costoPagadoUnitario, entry.moneda, businessLocale)} c/u · {formatMoney(entry.costoPagadoTotal, entry.moneda, businessLocale)} total</span></div>
+        {hasAverageTransition && <small>Promedio: {formatMoney(entry.costoPromedioAnterior, entry.moneda, businessLocale)} → {formatMoney(entry.costoPromedioPosterior, entry.moneda, businessLocale)}</small>}
+        {hasValueTransition && <small>Valor de inventario: {formatMoney(entry.valorInventarioAnterior, entry.moneda, businessLocale)} → {formatMoney(entry.valorInventarioPosterior, entry.moneda, businessLocale)}</small>}
         <small>{chain || entry.numeroDocumentoProveedor || "Origen documental no informado"} · UID {entry.registradoPorUid || "no informado"}</small>
       </article>;
     })}</div>}

@@ -7,6 +7,7 @@ import {
   OPERATIONAL_NET_PROFIT_COVERAGE as COVERAGE,
 } from "../../domain/operationalNetProfit.mjs";
 import {formatMoney} from "../../utils/formatters";
+import useBusinessFormat from "../../hooks/useBusinessFormat";
 
 // SPEC 022 §6.2: ganancia neta operacional, su desglose y la línea de ventas
 // sin costo registrado. La cifra sale de calculateOperationalNetProfit; este
@@ -40,8 +41,8 @@ export function useOperationalNetProfit(profitabilityV4, range) {
   }, [commercial, projects, range.end, range.start]);
 }
 
-function money(value, currency) {
-  return value == null ? "—" : formatMoney(value, currency);
+function money(value, currency, businessLocale) {
+  return value == null ? "—" : formatMoney(value, currency, businessLocale);
 }
 
 function percent(value) {
@@ -55,16 +56,18 @@ export function visibleOperationalGroups(result, currency) {
 }
 
 function BreakdownTable({caption, rows, currency}) {
+  const { locale: businessLocale } = useBusinessFormat();
   return <div className="reports-top-list-table-wrap"><table className="reports-top-list-table">
     <caption className="reports-detail-subheading">{caption}</caption>
     <tbody>{rows.map(([label, value, strong]) => <tr key={label}>
       <th scope="row">{strong ? <strong>{label}</strong> : label}</th>
-      <td>{strong ? <strong>{money(value, currency)}</strong> : money(value, currency)}</td>
+      <td>{strong ? <strong>{money(value, currency, businessLocale)}</strong> : money(value, currency, businessLocale)}</td>
     </tr>)}</tbody>
   </table></div>;
 }
 
 function CurrencyBreakdown({group}) {
+  const { locale: businessLocale } = useBusinessFormat();
   const partial = group.cobertura === COVERAGE.PARTIAL;
   const sales = group.componentes.ventasSinProyecto;
   const projects = group.componentes.proyectos;
@@ -78,12 +81,12 @@ function CurrencyBreakdown({group}) {
     <dl className="reports-v4-metrics">
       <div className="reports-v4-metrics__primary">
         <dt>{partial ? "Ganancia neta operacional conocida (parcial)" : "Ganancia neta operacional"}</dt>
-        <dd className={Number(group.gananciaNetaOperacional) < 0 ? "reports-negative" : undefined}>{money(group.gananciaNetaOperacional, currency)}</dd>
+        <dd className={Number(group.gananciaNetaOperacional) < 0 ? "reports-negative" : undefined}>{money(group.gananciaNetaOperacional, currency, businessLocale)}</dd>
       </div>
       <div>
         <dt>Sobre ingreso neto considerado</dt>
         <dd>{percent(group.gananciaNetaOperacionalPct)}</dd>
-        <small>{money(group.ingresoNetoConsiderado, currency)} de ingreso neto</small>
+        <small>{money(group.ingresoNetoConsiderado, currency, businessLocale)} de ingreso neto</small>
       </div>
     </dl>
     <p className="reports-v4-note">
@@ -114,7 +117,7 @@ function CurrencyBreakdown({group}) {
     </div>
 
     {group.ventasSinCostoRegistrado.ventas > 0 && <p className="reports-v4-note">
-      Ventas sin costo registrado: {money(group.ventasSinCostoRegistrado.monto, currency)} — servicios vendidos sin
+      Ventas sin costo registrado: {money(group.ventasSinCostoRegistrado.monto, currency, businessLocale)} — servicios vendidos sin
       proyecto. No se incluyen en la ganancia porque no tienen costos asociados.
     </p>}
   </article>;
@@ -164,6 +167,7 @@ const EFFECT_COPY = Object.freeze({
 const ALERT_PATHS = Object.freeze({sales: "/ventas", works: "/trabajos"});
 
 function AlertRows({alerts, currency, links, onNavigate}) {
+  const { locale: businessLocale } = useBusinessFormat();
   return alerts.map((alert) => {
     const copy = ALERT_COPY[alert.id];
     const target = copy?.target && links?.[copy.target] ? ALERT_PATHS[copy.target] : null;
@@ -171,7 +175,7 @@ function AlertRows({alerts, currency, links, onNavigate}) {
       <td>{copy?.label || alert.clave}</td>
       <td>{currency || "—"}</td>
       <td>{alert.conteo}</td>
-      <td>{alert.monto == null ? "—" : money(alert.monto, currency)}</td>
+      <td>{alert.monto == null ? "—" : money(alert.monto, currency, businessLocale)}</td>
       <td>{EFFECT_COPY[alert.efecto] || alert.efecto}</td>
       <td>{target && onNavigate ? <Button type="button" variant="secondary" onClick={() => onNavigate(target)}>Revisar</Button> : null}</td>
     </tr>;

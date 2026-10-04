@@ -6,6 +6,7 @@ import LoadingState from "../../components/ui/LoadingState";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import {normalizeWorkSearch} from "../../domain/workModel.mjs";
 import {formatMoney} from "../../utils/formatters.js";
+import useBusinessFormat from "../../hooks/useBusinessFormat";
 
 // Selector buscable de la Cotización asociada a un Proyecto (PROJECTS_V3
 // ETAPA 1, SPEC 019). Presentacional/controlado: recibe `options` ya
@@ -30,12 +31,13 @@ export function filterWorkQuoteOptions(options, search) {
   return list.filter((option) => normalizeWorkSearch(getWorkQuoteSearchText(option)).includes(query));
 }
 
-export function getWorkQuoteSummaryLabel({quote}, currencyCode) {
+export function getWorkQuoteSummaryLabel({quote}, currencyCode, businessLocale) {
   const clientName = quote.clienteNombre || quote.cliente?.empresa || "Cliente sin nombre";
-  return `${quote.numero || "COT"} · ${clientName} · ${formatMoney(quote.total, quote.moneda || currencyCode)}`;
+  return `${quote.numero || "COT"} · ${clientName} · ${formatMoney(quote.total, quote.moneda || currencyCode, businessLocale)}`;
 }
 
 export default function WorkQuoteSelector({currencyCode, disabled, loading = false, onChange, options, value}) {
+  const { locale: businessLocale } = useBusinessFormat();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
 
@@ -48,7 +50,7 @@ export default function WorkQuoteSelector({currencyCode, disabled, loading = fal
     <div className="works-quote-selector">
       <div className="works-quote-selector__summary">
         {selected
-          ? <strong>{getWorkQuoteSummaryLabel(selected, currencyCode)}</strong>
+          ? <strong>{getWorkQuoteSummaryLabel(selected, currencyCode, businessLocale)}</strong>
           : <span className="works-empty-copy">{disabled ? "Vínculo comercial existente" : "Sin cotización asociada"}</span>}
       </div>
       {!disabled && (
@@ -85,7 +87,7 @@ export default function WorkQuoteSelector({currencyCode, disabled, loading = fal
             {!loading && visible.map((option) => (
               <button type="button" key={option.quote.id} onClick={() => pick(option.quote.id)}>
                 <strong>{option.quote.numero || "COT"}</strong>
-                <span>{option.quote.clienteNombre || option.quote.cliente?.empresa || "Cliente sin nombre"} · {formatMoney(option.quote.total, option.quote.moneda || currencyCode)}</span>
+                <span>{option.quote.clienteNombre || option.quote.cliente?.empresa || "Cliente sin nombre"} · {formatMoney(option.quote.total, option.quote.moneda || currencyCode, businessLocale)}</span>
               </button>
             ))}
             {!loading && !visible.length && (

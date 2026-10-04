@@ -3,6 +3,7 @@ import {Trash2} from "lucide-react";
 import AppIcon from "../../components/ui/AppIcon";
 import {WORK_TASK_STATUSES, getTaskProgress, getWorkCostSummary, getWorkMemberIdentity, getWorkTaskStatusOptions} from "../../domain/workModel.mjs";
 import {formatDate, formatMoney} from "../../utils/formatters.js";
+import useBusinessFormat from "../../hooks/useBusinessFormat";
 
 // Tablero de tareas del Proyecto abierto (PROJECTS_V3 ETAPA 2, SPEC 019 §5).
 // Presentacional/controlado: recibe exclusivamente `tasks` ya acotadas al
@@ -20,6 +21,7 @@ function responsableLabel(task) {
 }
 
 function TaskCard({canManage, canOperate, costs, currency, onRemoveLegacy, onRequestTaskState, processing, task, terminal}) {
+  const { locale: businessLocale } = useBusinessFormat();
   const progress = getTaskProgress(task);
   const taskCost = getWorkCostSummary({...costs, taskId: task.id});
   const operable = canOperate(task);
@@ -32,7 +34,7 @@ function TaskCard({canManage, canOperate, costs, currency, onRemoveLegacy, onReq
       <dl>
         <div><dt>Responsable</dt><dd>{responsableLabel(task)}</dd></div>
         {progress.total > 0 && <div><dt>Subtareas</dt><dd>{progress.completed}/{progress.total} · {progress.percent}%</dd></div>}
-        <div><dt>Costo asignado</dt><dd>{formatMoney(taskCost.total, currency)}</dd></div>
+        <div><dt>Costo asignado</dt><dd>{formatMoney(taskCost.total, currency, businessLocale)}</dd></div>
         <div><dt>Creada</dt><dd>{formatDate(task.creadoEn)}</dd></div>
       </dl>
       {task.estado === "en_espera" && task.motivoEspera && <p className="works-wait-reason">En espera: {task.motivoEspera}</p>}

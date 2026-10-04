@@ -3,6 +3,7 @@ import Button from "../../components/ui/Button";
 import LoadingState from "../../components/ui/LoadingState";
 import StatusBadge from "../../components/ui/StatusBadge";
 import {formatMoney} from "../../utils/formatters.js";
+import useBusinessFormat from "../../hooks/useBusinessFormat";
 
 // SPEC 020 ETAPA 4: sección aditiva de Adicionales facturables dentro de la
 // ficha de Proyecto ya existente (mismo patrón visual/estructural que
@@ -82,6 +83,7 @@ export default function WorkAdditionalsSection({
   role,
   tasks = [],
 }) {
+  const { locale: businessLocale } = useBusinessFormat();
   const [draft, setDraft] = useState({...EMPTY_DRAFT});
   const [annulReasons, setAnnulReasons] = useState({});
   const canOperate = canManage || ["TECNICO", "MEMBER"].includes(role);
@@ -173,7 +175,7 @@ export default function WorkAdditionalsSection({
                 <div>
                   <strong>{entry.itemSnapshot?.nombre || "Ítem sin nombre"}</strong>
                   <span>
-                    {getAdditionalItemTypeLabel(entry.tipoItem)} · {entry.cantidad} {entry.itemSnapshot?.unidad || "unidad"} × {formatMoney(entry.precioUnitario, entry.moneda || currency)}
+                    {getAdditionalItemTypeLabel(entry.tipoItem)} · {entry.cantidad} {entry.itemSnapshot?.unidad || "unidad"} × {formatMoney(entry.precioUnitario, entry.moneda || currency, businessLocale)}
                   </span>
                   <small>
                     <StatusBadge variant={getAdditionalStatusVariant(entry.estado)}>{getAdditionalStatusLabel(entry.estado)}</StatusBadge>

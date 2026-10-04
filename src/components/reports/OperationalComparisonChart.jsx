@@ -10,6 +10,7 @@ import {
 import {Bar} from "react-chartjs-2";
 import {formatMoney} from "../../utils/formatters";
 import usePrefersDarkMode from "../../hooks/usePrefersDarkMode";
+import useBusinessFormat from "../../hooks/useBusinessFormat";
 
 ChartJS.register(BarElement, CategoryScale, Legend, LinearScale, Tooltip);
 
@@ -56,6 +57,7 @@ function formatCompactMoney(value, currency) {
 }
 
 export default function OperationalComparisonChart({currency = "CLP", items}) {
+  const { locale: businessLocale } = useBusinessFormat();
   const isDarkMode = usePrefersDarkMode();
   const dataColors = isDarkMode ? DATA_COLORS.dark : DATA_COLORS.light;
   const chrome = isDarkMode ? CHROME_COLORS.dark : CHROME_COLORS.light;
@@ -70,7 +72,7 @@ export default function OperationalComparisonChart({currency = "CLP", items}) {
   const description = items
     .map(
       (item) =>
-        `${item.key}: ventas ${formatMoney(item.sales, currency)}, compras ${formatMoney(item.purchases, currency)}`
+        `${item.key}: ventas ${formatMoney(item.sales, currency, businessLocale)}, compras ${formatMoney(item.purchases, currency, businessLocale)}`
     )
     .join(". ");
 
@@ -120,7 +122,7 @@ export default function OperationalComparisonChart({currency = "CLP", items}) {
             tooltip: {
               callbacks: {
                 label(context) {
-                  return `${context.dataset.label}: ${formatMoney(context.parsed.y, currency)}`;
+                  return `${context.dataset.label}: ${formatMoney(context.parsed.y, currency, businessLocale)}`;
                 },
               },
             },

@@ -1,13 +1,15 @@
 import React from "react";
 import {ArrowRight} from "lucide-react";
 import {formatMoney} from "../../../utils/formatters";
+import useBusinessFormat from "../../../hooks/useBusinessFormat";
 
 function TimelineTable({items, currency}) {
+  const { locale: businessLocale } = useBusinessFormat();
   const rows = items.filter((item) => item.currency === currency);
   if (!rows.length) return <p className="reports-empty-note">Sin evolución disponible en este período.</p>;
   return <div className="reports-top-list-table-wrap"><table className="reports-top-list-table">
     <thead><tr><th>Período</th><th>Operaciones</th><th>Monto</th></tr></thead>
-    <tbody>{rows.map((row) => <tr key={row.key}><td>{row.key}</td><td>{row.count}</td><td>{formatMoney(row.value, currency)}</td></tr>)}</tbody>
+    <tbody>{rows.map((row) => <tr key={row.key}><td>{row.key}</td><td>{row.count}</td><td>{formatMoney(row.value, currency, businessLocale)}</td></tr>)}</tbody>
   </table></div>;
 }
 
@@ -25,14 +27,15 @@ function TopEntityTable({groups, currency, columns, renderRow, emptyText}) {
 // margen comercial vive en Ganancias (SPEC 022 §6.4). No recalcula ni
 // redefine ninguna fórmula económica.
 function ReportsVentasView({canOpenSales, navigate, salesTimeline, summary, topSalesClients, topSalesProducts}) {
+  const { locale: businessLocale } = useBusinessFormat();
   const hasSales = summary.sales.confirmed.length > 0;
   return <>
     <div className="reports-simple-currencies">{summary.currencies.map((group) => <section className="reports-simple-currency-group" key={group.currency}>
       <h2>{group.currency}</h2>
       <div className="reports-simple-metrics reports-simple-metrics--3col">
-        <article className="reports-simple-card"><div className="reports-simple-card__top"><span className="reports-simple-card__title">Ventas confirmadas</span></div><strong className="reports-simple-card__amount">{formatMoney(group.sales.total, group.currency)}</strong><small>{group.sales.count} operación(es)</small></article>
+        <article className="reports-simple-card"><div className="reports-simple-card__top"><span className="reports-simple-card__title">Ventas confirmadas</span></div><strong className="reports-simple-card__amount">{formatMoney(group.sales.total, group.currency, businessLocale)}</strong><small>{group.sales.count} operación(es)</small></article>
         <article className="reports-simple-card"><div className="reports-simple-card__top"><span className="reports-simple-card__title">Cantidad de ventas</span></div><strong className="reports-simple-card__amount">{group.sales.count}</strong><small>Confirmadas en el período</small></article>
-        <article className="reports-simple-card"><div className="reports-simple-card__top"><span className="reports-simple-card__title">Ticket promedio</span></div><strong className="reports-simple-card__amount">{formatMoney(group.sales.average, group.currency)}</strong><small>Promedio por venta confirmada</small></article>
+        <article className="reports-simple-card"><div className="reports-simple-card__top"><span className="reports-simple-card__title">Ticket promedio</span></div><strong className="reports-simple-card__amount">{formatMoney(group.sales.average, group.currency, businessLocale)}</strong><small>Promedio por venta confirmada</small></article>
       </div>
     </section>)}</div>
 
@@ -52,7 +55,7 @@ function ReportsVentasView({canOpenSales, navigate, salesTimeline, summary, topS
             currency={group.currency}
             emptyText="Sin clientes con ventas confirmadas."
             groups={topSalesClients}
-            renderRow={(entry) => <tr key={entry.id}><td>{entry.name}</td><td>{entry.count}</td><td>{formatMoney(entry.total, group.currency)}</td></tr>}
+            renderRow={(entry) => <tr key={entry.id}><td>{entry.name}</td><td>{entry.count}</td><td>{formatMoney(entry.total, group.currency, businessLocale)}</td></tr>}
           />
         </div>
         <div>
@@ -62,7 +65,7 @@ function ReportsVentasView({canOpenSales, navigate, salesTimeline, summary, topS
             currency={group.currency}
             emptyText="Sin ítems vendidos en el período."
             groups={topSalesProducts}
-            renderRow={(entry) => <tr key={entry.id}><td>{entry.name}</td><td>{entry.quantity}</td><td>{formatMoney(entry.total, group.currency)}</td></tr>}
+            renderRow={(entry) => <tr key={entry.id}><td>{entry.name}</td><td>{entry.quantity}</td><td>{formatMoney(entry.total, group.currency, businessLocale)}</td></tr>}
           />
         </div>
       </div>
@@ -78,7 +81,7 @@ function ReportsVentasView({canOpenSales, navigate, salesTimeline, summary, topS
             <td>{String(sale.fechaVenta || "").slice(0, 10)}</td>
             <td>{sale.clienteSnapshot?.nombreRazonSocial || "Cliente histórico"}</td>
             <td>{sale.moneda || sale.monedaCodigo || "CLP"}</td>
-            <td>{formatMoney(sale.total, sale.moneda || sale.monedaCodigo || "CLP")}</td>
+            <td>{formatMoney(sale.total, sale.moneda || sale.monedaCodigo || "CLP", businessLocale)}</td>
           </tr>)}</tbody>
         </table></div>
       )}

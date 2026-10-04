@@ -6,6 +6,7 @@ import Button from "../../components/ui/Button";
 import LoadingState from "../../components/ui/LoadingState";
 import { searchInventoryMarketReferences } from "../../services/marketReferenceService";
 import { formatDate, formatMoney } from "../../utils/formatters";
+import useBusinessFormat from "../../hooks/useBusinessFormat";
 
 const CONFIDENCE_LABELS = {
   HIGH: "Alta",
@@ -29,6 +30,7 @@ function PageHeader({ onBack, title, subtitle, actions }) {
 }
 
 function MarketPriceReferencesView({ businessId, itemId }) {
+  const { locale: businessLocale } = useBusinessFormat();
   const navigate = useNavigate();
   const goToInventory = () => navigate("/inventario");
   const [status, setStatus] = useState("loading");
@@ -141,20 +143,20 @@ function MarketPriceReferencesView({ businessId, itemId }) {
           <dl className="erp-meta-grid">
             <div className="erp-meta">
               <dt className="erp-meta__label">Precio bajo</dt>
-              <dd className="erp-meta__value">{formatMoney(summary.min, summary.currency)}</dd>
+              <dd className="erp-meta__value">{formatMoney(summary.min, summary.currency, businessLocale)}</dd>
             </div>
             <div className="erp-meta">
               <dt className="erp-meta__label">Precio medio</dt>
-              <dd className="erp-meta__value">{formatMoney(summary.median, summary.currency)}</dd>
+              <dd className="erp-meta__value">{formatMoney(summary.median, summary.currency, businessLocale)}</dd>
             </div>
             <div className="erp-meta">
               <dt className="erp-meta__label">Precio alto</dt>
-              <dd className="erp-meta__value">{formatMoney(summary.max, summary.currency)}</dd>
+              <dd className="erp-meta__value">{formatMoney(summary.max, summary.currency, businessLocale)}</dd>
             </div>
             {item?.internalPrice != null && (
               <div className="erp-meta">
                 <dt className="erp-meta__label">Tu precio interno</dt>
-                <dd className="erp-meta__value">{formatMoney(item.internalPrice, item.currency)}</dd>
+                <dd className="erp-meta__value">{formatMoney(item.internalPrice, item.currency, businessLocale)}</dd>
               </div>
             )}
           </dl>
@@ -177,7 +179,7 @@ function MarketPriceReferencesView({ businessId, itemId }) {
                     <h3 className="erp-record-card__title">{result.merchant}</h3>
                     <p className="erp-record-card__subtitle">{result.title}</p>
                   </div>
-                  <strong>{formatMoney(result.price, result.currency)}</strong>
+                  <strong>{formatMoney(result.price, result.currency, businessLocale)}</strong>
                 </div>
                 {result.rating != null && (
                   <p style={styles.ratingText}>

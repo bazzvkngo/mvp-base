@@ -376,8 +376,8 @@ assert.match(operationalChartSource, /animation: false/);
 assert.match(operationalChartSource, /formatCompactMoney/);
 assert.match(costCompositionSource, /<Doughnut/);
 assert.match(costCompositionSource, /animation: false/);
-assert.match(costCompositionSource, /formatMoney\(context\.parsed, currency\)/);
-assert.match(costCompositionSource, /formatMoney\(total, currency\)/);
+assert.match(costCompositionSource, /formatMoney\(context\.parsed, currency, businessLocale\)/);
+assert.match(costCompositionSource, /formatMoney\(total, currency, businessLocale\)/);
 assert.match(reportServiceSource, /BUSINESS_PERMISSIONS\.PROFITABILITY_READ/);
 assert.match(reportServiceSource, /canViewProfitability \? listarTrabajos/);
 

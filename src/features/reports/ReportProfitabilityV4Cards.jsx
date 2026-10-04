@@ -6,14 +6,15 @@ import {
   REPORT_SALE_PROJECT_SEGMENT as SEGMENT,
 } from "../../domain/reportProfitabilityV4.mjs";
 import {formatMoney} from "../../utils/formatters";
+import useBusinessFormat from "../../hooks/useBusinessFormat";
 
 // Presentación pura de REPORTES_RENTABILIDAD_V4 (ETAPA 3): recibe el estado ya
 // resuelto por useReportProfitabilityV4 (ver ReportProfitabilityV4Section.jsx) como
 // props. No importa el service ni Firebase, para poder renderizarse en SSR/pruebas
 // sin depender del entorno de emuladores.
 
-function money(value, currency) {
-  return value == null ? "—" : formatMoney(value, currency);
+function money(value, currency, businessLocale) {
+  return value == null ? "—" : formatMoney(value, currency, businessLocale);
 }
 
 function percent(value) {
@@ -32,6 +33,7 @@ function coverageLabel(estado) {
 }
 
 function SalesCurrencyGroup({group}) {
+  const { locale: businessLocale } = useBusinessFormat();
   const m = group.metricas;
   const c = group.coberturaMargen;
   const withProject = group.segmentos[SEGMENT.WITH_PROJECT];
@@ -48,20 +50,20 @@ function SalesCurrencyGroup({group}) {
       <dl className="reports-v4-metrics">
         <div>
           <dt>Ventas netas consideradas</dt>
-          <dd>{money(m.ventasNetasConfirmadasConocidas, group.moneda)}</dd>
+          <dd>{money(m.ventasNetasConfirmadasConocidas, group.moneda, businessLocale)}</dd>
           {!m.ventasNetasEsTotal && <small>Cifra parcial: no todas las ventas confirmadas declaran un neto válido.</small>}
         </div>
         <div>
           <dt>Ingreso neto de productos cubierto</dt>
-          <dd>{money(m.ingresoNetoProductosCubiertos, group.moneda)}</dd>
+          <dd>{money(m.ingresoNetoProductosCubiertos, group.moneda, businessLocale)}</dd>
         </div>
         <div>
           <dt>Costo histórico cubierto</dt>
-          <dd>{money(m.costoHistoricoProductosCubiertos, group.moneda)}</dd>
+          <dd>{money(m.costoHistoricoProductosCubiertos, group.moneda, businessLocale)}</dd>
         </div>
         <div className="reports-v4-metrics__primary">
           <dt>Margen bruto de productos cubierto</dt>
-          <dd>{money(m.margenBrutoProductosCubiertos, group.moneda)}</dd>
+          <dd>{money(m.margenBrutoProductosCubiertos, group.moneda, businessLocale)}</dd>
         </div>
         <div>
           <dt>Margen bruto % ponderado</dt>
@@ -84,12 +86,12 @@ function SalesCurrencyGroup({group}) {
       <div className="reports-v4-segments">
         <div>
           <span>Con Proyecto</span>
-          <strong>{money(withProject.metricas.margenBrutoProductosCubiertos, group.moneda)}</strong>
+          <strong>{money(withProject.metricas.margenBrutoProductosCubiertos, group.moneda, businessLocale)}</strong>
           <small>{withProject.conteos.ventasConfirmadas} venta(s)</small>
         </div>
         <div>
           <span>Sin Proyecto</span>
-          <strong>{money(withoutProject.metricas.margenBrutoProductosCubiertos, group.moneda)}</strong>
+          <strong>{money(withoutProject.metricas.margenBrutoProductosCubiertos, group.moneda, businessLocale)}</strong>
           <small>{withoutProject.conteos.ventasConfirmadas} venta(s)</small>
         </div>
       </div>
