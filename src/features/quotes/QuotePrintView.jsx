@@ -5,6 +5,7 @@ import {
   getQuoteDisplayNumber,
   getQuoteStatusLabel,
 } from "../../domain/quoteModel.mjs";
+import { getDefaultFiscalIdentifierLabel } from "../../domain/businessCatalog";
 import { resolveDocumentCompany } from "../../domain/companySnapshot.mjs";
 import { formatDate, formatMoney } from "../../utils/formatters";
 
@@ -205,7 +206,7 @@ function QuotePrintView({ quote: rawQuote, companyProfile }) {
           <h3>Aceptación</h3>
           <p>{quote.aceptacion.texto}</p>
           <div className="quote-document-preview__signature-grid">
-            {["Nombre", "RUT", "Cargo", "Firma", "Fecha"].map((label) => (
+            {["Nombre", getDefaultFiscalIdentifierLabel(quote.paisCodigo), "Cargo", "Firma", "Fecha"].map((label) => (
               <span key={label}>{label}</span>
             ))}
           </div>

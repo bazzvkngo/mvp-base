@@ -1,5 +1,6 @@
 import { jsPDF } from "jspdf";
 import { autoTable } from "jspdf-autotable";
+import { getDefaultFiscalIdentifierLabel } from "./businessCatalog.js";
 import { resolveDocumentCompany } from "./companySnapshot.mjs";
 import {
   adaptStoredQuote,
@@ -453,7 +454,7 @@ export function buildQuotePdfDocument({ quote: rawQuote, companyProfile, logoDat
     y += 5;
     const pageWidth = doc.internal.pageSize.getWidth();
     const fieldWidth = (pageWidth - PAGE_MARGIN * 2 - 8) / 2;
-    ["Nombre", "RUT", "Cargo", "Firma", "Fecha"].forEach((label, index) => {
+    ["Nombre", getDefaultFiscalIdentifierLabel(quote.paisCodigo), "Cargo", "Firma", "Fecha"].forEach((label, index) => {
       const column = index % 2;
       const row = Math.floor(index / 2);
       const x = PAGE_MARGIN + column * (fieldWidth + 8);
