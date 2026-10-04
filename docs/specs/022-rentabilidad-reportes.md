@@ -8,8 +8,10 @@ neto (sin IVA) para que ambos universos de ganancia sean comparables y
 sumables sin doble contabilización.
 
 - Fecha conceptual: 4 de octubre de 2026.
-- Estado: especificada; implementación pendiente. Esta SPEC no declara
-  implementada ninguna métrica nueva.
+- Estado: implementada (Etapas 1-3); QA visual con datos reales pendiente — el
+  dueño del negocio revisó la UI con datos de prueba y la marcó como pendiente
+  de evaluar hasta tener inventario/proyectos reales cargados. Etapa 4 (QA y
+  documentación final) diferida hasta entonces.
 - Alcance: Core de ValoraCloud (Reportes y balance de Proyecto). Las verticales
   estudiantiles quedan excluidas.
 - Origen: decisiones definitivas del dueño del negocio piloto (Bagner), §2.
