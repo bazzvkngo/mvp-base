@@ -272,10 +272,12 @@ try {
   const balanceSale = await crearVenta({businessId, requestId: requestId("balance-create"), venta: salePayload(clientId, [line(service, "balance-1", {cantidad: 1, precioUnitario: 77777, origenAdicionalId: extraAdditional.adicionalId})], {trabajoId: workId})});
   await confirmarVenta({businessId, ventaId: balanceSale.data.venta.id, requestId: requestId("balance-confirm")});
   const balanceAfterConfirm = await callable(owner, "obtenerBalanceTrabajo")({businessId, trabajoId: workId});
-  const expectedDelta = balanceSale.data.venta.total ?? 77777 * 1.19;
+  // SPEC 022 §7: el ingreso del balance es el neto (sin IVA) de la Venta, no su total.
+  const expectedDelta = Number(balanceSale.data.venta.neto);
+  assert.ok(Number.isFinite(expectedDelta) && expectedDelta !== Number(balanceSale.data.venta.total), "la Venta de prueba debe tener neto distinto de total para distinguir ambas bases");
   const actualDelta = Number(balanceAfterConfirm.data.valorComercial || 0) - Number(balanceBeforeExtra.data.valorComercial || 0);
-  assert.ok(Math.abs(actualDelta - Number(balanceSale.data.venta.total)) < 1 || actualDelta === Number(balanceSale.data.venta.total), `caso 30/31: el balance sólo debe subir por el total real de la Venta confirmada (esperado ${balanceSale.data.venta.total}, delta real ${actualDelta}), nunca sumando el adicional aparte`);
-  console.log(`OK casos 30/31: crear un adicional pendiente no altera workBalance; confirmar la venta lo mueve exactamente por el total de la Venta (delta=${actualDelta}), sin suma paralela del adicional`);
+  assert.ok(Math.abs(actualDelta - expectedDelta) < 0.01, `caso 30/31: el balance sólo debe subir por el neto real de la Venta confirmada (esperado ${expectedDelta}, delta real ${actualDelta}), nunca por su total ni sumando el adicional aparte`);
+  console.log(`OK casos 30/31: crear un adicional pendiente no altera workBalance; confirmar la venta lo mueve exactamente por el neto de la Venta (delta=${actualDelta}), sin suma paralela del adicional`);
 
   // --- Caso 32: no existe update directo del cliente a INCORPORADO_A_VENTA ---
   await expectCallableError("cliente intenta marcar INCORPORADO_A_VENTA directamente", () => updateDoc(doc(owner.db, `negocios/${businessId}/trabajos/${workId}/adicionales/${additionalService.adicionalId}`), {estado: "INCORPORADO_A_VENTA"}), ["permission-denied"]);
