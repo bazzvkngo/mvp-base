@@ -173,6 +173,15 @@ const inventoryMetrics = getInventoryMetrics([
 ]);
 assert.equal(inventoryMetrics.activeProducts.length, 2);
 assert.equal(inventoryMetrics.lowStockProducts.length, 1);
+// Regla única de stock bajo (inventoryLowStock.mjs): mínimo 0 y stock 0 ya
+// no cuenta por su mínimo; sí por el umbral general si está activo.
+const zeroMinimumInventory = [
+  {id: "z0", tipoItem: "producto", estado: "activo", stock: 0, stockMinimo: 0, costoBase: 10},
+  {id: "z4", tipoItem: "producto", estado: "activo", stock: 4, stockMinimo: 0, costoBase: 10},
+];
+assert.deepEqual(getInventoryMetrics(zeroMinimumInventory).lowStockProducts, []);
+assert.deepEqual(getInventoryMetrics(zeroMinimumInventory, {lowStockSettings: {alertasStockBajo: false, umbralStockBajo: 5}}).lowStockProducts, []);
+assert.deepEqual(getInventoryMetrics(zeroMinimumInventory, {lowStockSettings: {alertasStockBajo: true, umbralStockBajo: 5}}).lowStockProducts.map(({id}) => id), ["z0", "z4"]);
 assert.equal(inventoryMetrics.coverage, 50);
 assert.equal(inventoryMetrics.inventoryValue, null);
 

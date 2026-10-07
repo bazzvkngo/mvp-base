@@ -12,6 +12,8 @@ import {
   summarizeInventory,
   validateInventoryDraft,
 } from "../src/domain/inventoryMvp.mjs";
+import { isLowStockByRule } from "../src/domain/inventoryLowStock.mjs";
+import { getInventoryMetrics } from "../src/domain/reportModel.mjs";
 import {
   INVENTORY_TEMPLATE_COLUMNS,
   MAX_LOCAL_INVENTORY_ROWS,
@@ -228,10 +230,11 @@ function main() {
   assert.equal(isInventoryLowStock(list[1]), false);
   assert.equal(isInventoryLowStock(list[3]), false);
 
-  // summarizeInventory(items, { lowStockThreshold }): el mínimo por ítem
+  // summarizeInventory(items, { lowStockSettings }): el mínimo por ítem
   // manda si está definido; el umbral general solo decide para ítems sin
   // mínimo propio (mismo criterio que el hint de "Umbral general de stock
   // bajo" en CompanyConfig).
+  const generalThreshold = (umbralStockBajo) => ({ alertasStockBajo: true, umbralStockBajo });
   const thresholdCases = [
     { id: "own-min-low", nombre: "Con mínimo propio, bajo", tipoItem: "producto", costoBase: 10, margenDeseado: 10, stock: 1, stockMinimo: 2, estado: "activo" },
     { id: "own-min-ok", nombre: "Con mínimo propio, ok pese al umbral general", tipoItem: "producto", costoBase: 10, margenDeseado: 10, stock: 10, stockMinimo: 2, estado: "activo" },
@@ -241,23 +244,72 @@ function main() {
   assert.equal(
     summarizeInventory(thresholdCases).lowStock,
     1,
-    "sin lowStockThreshold, solo el mínimo por ítem cuenta (own-min-low)"
+    "sin lowStockSettings, solo el mínimo por ítem cuenta (own-min-low)"
   );
   assert.equal(
-    summarizeInventory(thresholdCases, { lowStockThreshold: 0 }).lowStock,
+    summarizeInventory(thresholdCases, { lowStockSettings: { alertasStockBajo: false, umbralStockBajo: 5 } }).lowStock,
     1,
-    "lowStockThreshold: 0 (alertasStockBajo desactivado) se comporta igual que sin umbral"
+    "alertasStockBajo desactivado se comporta igual que sin umbral"
   );
   assert.equal(
-    summarizeInventory(thresholdCases, { lowStockThreshold: 5 }).lowStock,
+    summarizeInventory(thresholdCases, { lowStockSettings: generalThreshold(5) }).lowStock,
     2,
     "el umbral general suma ítems sin mínimo propio (no-min-low-by-threshold)"
   );
   assert.equal(
-    summarizeInventory(thresholdCases, { lowStockThreshold: 20 }).lowStock,
+    summarizeInventory(thresholdCases, { lowStockSettings: generalThreshold(20) }).lowStock,
     3,
     "own-min-ok sigue sin contar pese a un umbral general alto: el mínimo por ítem tiene prioridad"
   );
+
+  // Regla única de stock bajo (isLowStockByRule), la misma que usan
+  // summarizeInventory, isInventoryLowStock y getInventoryMetrics.
+  const rule = (stock, stockMinimo, settings) => isLowStockByRule({ stock, stockMinimo }, settings);
+  // Mínimo propio: stock <= mínimo (el igual cuenta).
+  assert.equal(rule(1, 2), true, "mínimo propio: bajo el mínimo");
+  assert.equal(rule(2, 2), true, "mínimo propio: igual al mínimo cuenta como bajo");
+  assert.equal(rule(3, 2), false, "mínimo propio: sobre el mínimo");
+  // Umbral general: misma comparación stock <= umbral (el igual cuenta).
+  assert.equal(rule(4, 0, generalThreshold(5)), true, "umbral general: bajo el umbral");
+  assert.equal(rule(5, 0, generalThreshold(5)), true, "umbral general: igual al umbral cuenta como bajo, igual que el mínimo");
+  assert.equal(rule(6, 0, generalThreshold(5)), false, "umbral general: sobre el umbral");
+  assert.equal(rule(5, undefined, generalThreshold(5)), true, "stockMinimo ausente usa el umbral general");
+  // El mínimo propio manda sobre el umbral general, en ambos sentidos.
+  assert.equal(rule(10, 2, generalThreshold(20)), false, "mínimo propio bajo manda sobre un umbral general alto");
+  assert.equal(rule(10, 15, generalThreshold(5)), true, "mínimo propio alto manda sobre un umbral general bajo");
+  // alertasStockBajo = false apaga solo el umbral general.
+  const alertsOff = { alertasStockBajo: false, umbralStockBajo: 5 };
+  assert.equal(rule(3, 0, alertsOff), false, "alertas apagadas: sin mínimo propio no hay stock bajo");
+  assert.equal(rule(1, 2, alertsOff), true, "alertas apagadas: el mínimo propio sigue vigente");
+  // Umbral general 0, settings ausentes o incompletos: solo el mínimo propio.
+  assert.equal(rule(0, 0, generalThreshold(0)), false, "umbral general 0 no marca nada");
+  assert.equal(rule(3, 0), false, "sin settings no hay umbral general");
+  assert.equal(rule(3, 0, {}), false, "settings sin umbral no marcan nada");
+  // Mínimo 0 y stock 0: no es bajo por su mínimo (el agotado es otro
+  // evento), pero sí por un umbral general activo.
+  assert.equal(rule(0, 0), false, "mínimo 0 y stock 0 no es stock bajo por su mínimo");
+  assert.equal(rule(0, 0, alertsOff), false, "mínimo 0 y stock 0 con alertas apagadas tampoco");
+  assert.equal(rule(0, 0, generalThreshold(5)), true, "mínimo 0 y stock 0 cuenta por el umbral general activo");
+  // Stock no numérico: no se puede evaluar.
+  assert.equal(rule(undefined, 2), false, "stock ausente no se marca");
+  assert.equal(rule("abc", 2, generalThreshold(5)), false, "stock no numérico no se marca");
+
+  // isInventoryLowStock: misma regla, solo para productos activos.
+  assert.equal(isInventoryLowStock(thresholdCases[2]), false, "sin settings, el umbral general no aplica en la fila");
+  assert.equal(isInventoryLowStock(thresholdCases[2], generalThreshold(5)), true, "la fila ahora respeta el umbral general");
+  assert.equal(isInventoryLowStock({ ...thresholdCases[0], tipoItem: "servicio" }, generalThreshold(5)), false, "un servicio nunca tiene stock bajo");
+  assert.equal(isInventoryLowStock({ ...thresholdCases[0], estado: "inactivo" }, generalThreshold(5)), false, "un ítem archivado nunca tiene stock bajo");
+
+  // Los tres puntos de uso coinciden sobre la misma lista y configuración.
+  for (const settings of [undefined, alertsOff, generalThreshold(5), generalThreshold(20)]) {
+    const expected = thresholdCases.filter((item) => isInventoryLowStock(item, settings)).map(({ id }) => id);
+    assert.equal(summarizeInventory(thresholdCases, { lowStockSettings: settings }).lowStock, expected.length);
+    assert.deepEqual(
+      getInventoryMetrics(thresholdCases, { lowStockSettings: settings }).lowStockProducts.map(({ id }) => id),
+      expected,
+      "getInventoryMetrics usa la misma regla que /inventario"
+    );
+  }
 
   const headers = mapInventoryHeaders(["TÍPO ÍTEM", "Producto", "Código", "Área", "Categoría", "Medida", "Costo Base", "Margen %", "Precio venta", "Cantidad", "Stock mínimo", "Descripción"]);
   assert.equal(headers.tipoItem, 0);

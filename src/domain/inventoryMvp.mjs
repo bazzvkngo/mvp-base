@@ -3,6 +3,7 @@ import {
   calculateEffectiveInternalPrice,
 } from "./pricing.js";
 import {formatChileanRut} from "./fiscalIdentifier.mjs";
+import {isLowStockByRule} from "./inventoryLowStock.mjs";
 
 export const INVENTORY_TYPES = Object.freeze([
   { value: "producto", label: "Producto", description: "Ítem físico con control de stock." },
@@ -221,35 +222,27 @@ export function adaptInventoryItem(item = {}) {
   return adapted;
 }
 
-export function isInventoryLowStock(item) {
+// lowStockSettings: configuración de inventario del negocio
+// ({alertasStockBajo, umbralStockBajo}). La regla vive en inventoryLowStock.mjs.
+export function isInventoryLowStock(item, lowStockSettings) {
   const adapted = adaptInventoryItem(item);
   return (
     adapted.tipoItem === "producto" &&
     adapted.estado === "activo" &&
-    adapted.stockMinimo > 0 &&
-    adapted.stock <= adapted.stockMinimo
+    isLowStockByRule(adapted, lowStockSettings)
   );
 }
 
-export function summarizeInventory(items, { lowStockThreshold = 0 } = {}) {
+export function summarizeInventory(items, { lowStockSettings } = {}) {
   const active = (Array.isArray(items) ? items : [])
     .map(adaptInventoryItem)
     .filter((item) => item.estado === "activo");
   const products = active.filter((item) => item.tipoItem === "producto");
-  // Prioridad: stockMinimo por ítem si está definido; si no, el umbral
-  // general del negocio (0 = sin umbral general, por ejemplo con
-  // alertasStockBajo desactivado). Mismo criterio que ya documenta el
-  // hint de "Umbral general de stock bajo" en CompanyConfig.
-  const threshold = Number(lowStockThreshold) > 0 ? Number(lowStockThreshold) : 0;
-  const isLowStock = (item) =>
-    item.stockMinimo > 0
-      ? item.stock <= item.stockMinimo
-      : threshold > 0 && item.stock <= threshold;
   return {
     total: active.length,
     products: products.length,
     servicesAndActivities: active.length - products.length,
-    lowStock: products.filter(isLowStock).length,
+    lowStock: products.filter((item) => isLowStockByRule(item, lowStockSettings)).length,
     inventoryCost: products.reduce(
       (total, item) => total + item.costoBase * Math.max(item.stock, 0),
       0

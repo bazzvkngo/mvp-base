@@ -37,6 +37,8 @@ import {BUSINESS_PERMISSIONS, hasBusinessPermission} from "../domain/rbac.mjs";
 import useFinancialMovements from "../hooks/useFinancialMovements";
 import usePrefersDarkMode from "../hooks/usePrefersDarkMode";
 import {
+  DEFAULT_INVENTORY_SETTINGS,
+  getBusinessSettings,
   getCompanyProfile,
   getCompanyProfileCompletion,
 } from "../services/companyService";
@@ -216,6 +218,7 @@ export default function DashboardPage({businessId, currencyCode = "CLP", role}) 
     error: "",
   });
   const [companyProfilePending, setCompanyProfilePending] = useState(false);
+  const [inventorySettings, setInventorySettings] = useState(DEFAULT_INVENTORY_SETTINGS);
   const range = useMemo(
     () => getFinancialPeriodRange(period, customPeriod, today),
     [customPeriod, period, today]
@@ -263,11 +266,23 @@ export default function DashboardPage({businessId, currencyCode = "CLP", role}) 
     return () => { active = false; };
   }, [businessId, role]);
 
+  // Umbral general de stock bajo: mismo patrón que InventoryManager. Si la
+  // carga falla se quedan los valores por defecto, en silencio.
+  useEffect(() => {
+    let active = true;
+    setInventorySettings(DEFAULT_INVENTORY_SETTINGS);
+    if (!businessId || !hasBusinessPermission(role, BUSINESS_PERMISSIONS.INVENTORY_READ)) return undefined;
+    getBusinessSettings(businessId, "inventario")
+      .then((value) => active && setInventorySettings(value))
+      .catch(() => {});
+    return () => { active = false; };
+  }, [businessId, role]);
+
   const {sales, purchases, quotes, inventory} = reportState.data;
   const salesMetrics = useMemo(() => getSalesMetrics(sales, range, {fallbackCurrency: currencyCode}), [currencyCode, range, sales]);
   const purchaseMetrics = useMemo(() => getPurchaseMetrics(purchases, range, {fallbackCurrency: currencyCode}), [currencyCode, purchases, range]);
   const quoteMetrics = useMemo(() => getQuoteMetrics(quotes, range, {fallbackCurrency: currencyCode}), [currencyCode, quotes, range]);
-  const inventoryMetrics = useMemo(() => getInventoryMetrics(inventory, {fallbackCurrency: currencyCode}), [currencyCode, inventory]);
+  const inventoryMetrics = useMemo(() => getInventoryMetrics(inventory, {fallbackCurrency: currencyCode, lowStockSettings: inventorySettings}), [currencyCode, inventory, inventorySettings]);
   const recentActivity = useMemo(
     () => getRecentOperationalActivity(sales, purchases, range, 5),
     [purchases, range, sales]

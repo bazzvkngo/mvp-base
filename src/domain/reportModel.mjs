@@ -1,3 +1,5 @@
+import {isLowStockByRule} from "./inventoryLowStock.mjs";
+
 export const REPORT_TABS = Object.freeze([
   "overview",
   "commercial",
@@ -504,7 +506,9 @@ export function getQuoteMetrics(quotes, range, options = {}) {
   };
 }
 
-export function getInventoryMetrics(items, {fallbackCurrency = "CLP"} = {}) {
+// lowStockSettings: configuración de inventario del negocio
+// ({alertasStockBajo, umbralStockBajo}); la regla vive en inventoryLowStock.mjs.
+export function getInventoryMetrics(items, {fallbackCurrency = "CLP", lowStockSettings} = {}) {
   const activeProducts = (Array.isArray(items) ? items : []).filter(
     (item) =>
       item.tipoItem === "producto" && (item.estado || "activo") === "activo"
@@ -514,11 +518,9 @@ export function getInventoryMetrics(items, {fallbackCurrency = "CLP"} = {}) {
     const stock = Number(item.stock);
     return Number.isFinite(cost) && cost > 0 && Number.isFinite(stock) && stock >= 0;
   });
-  const lowStockProducts = activeProducts.filter((item) => {
-    const stock = Number(item.stock);
-    const minimum = Number(item.stockMinimo);
-    return Number.isFinite(stock) && Number.isFinite(minimum) && stock <= minimum;
-  });
+  const lowStockProducts = activeProducts.filter((item) =>
+    isLowStockByRule(item, lowStockSettings)
+  );
   const coverage = activeProducts.length
     ? (coveredProducts.length / activeProducts.length) * 100
     : 0;
