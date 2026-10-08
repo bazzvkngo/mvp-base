@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {existsSync} from "node:fs";
 import {readFile} from "node:fs/promises";
 import {hasPlatformSuperadminClaim, isPlatformRoute} from "../src/domain/platformAccess.mjs";
 import {formatFiscalIdentifierForDisplay} from "../src/domain/fiscalIdentifier.mjs";
@@ -11,13 +12,12 @@ assert.equal(isPlatformRoute("/admin/empresas/abc"), true);
 assert.equal(isPlatformRoute("/empresa"), false);
 assert.equal(formatFiscalIdentifierForDisplay("AR", "30712345678"), "30-71234567-8");
 
-const [layoutSource, appLayoutSource, pagesSource, serviceSource, functionsSource, resetSource] = await Promise.all([
+const [layoutSource, appLayoutSource, pagesSource, serviceSource, functionsSource] = await Promise.all([
   readFile(new URL("../src/platform/PlatformAdminLayout.jsx", import.meta.url), "utf8"),
   readFile(new URL("../src/layout/AppLayout.jsx", import.meta.url), "utf8"),
   readFile(new URL("../src/platform/PlatformAdminPages.jsx", import.meta.url), "utf8"),
   readFile(new URL("../src/services/platformAdminService.js", import.meta.url), "utf8"),
   readFile(new URL("../functions/platformAdmin.js", import.meta.url), "utf8"),
-  readFile(new URL("./reset-production-for-v1-qa.mjs", import.meta.url), "utf8"),
 ]);
 assert.match(layoutSource, /Consola de Administración/);
 assert.match(layoutSource, /Administración de plataforma/);
@@ -76,15 +76,12 @@ assert.match(functionsSource, /db\.recursiveDelete\(businessRef\)/);
 assert.match(functionsSource, /customClaims\?\.platformRole === PLATFORM_SUPERADMIN/);
 assert.match(functionsSource, /const PLATFORM_SUPERADMIN = "PLATFORM_SUPERADMIN"/);
 assert.doesNotMatch(functionsSource, /Las cuentas PLATFORM_SUPERADMIN/);
-assert.match(resetSource, /const PROJECT_ID = "tesis-inventario-ia"/);
-assert.match(resetSource, /const PRESERVED_ADMIN_EMAIL = "software\.bagner@gmail\.com"/);
-assert.match(resetSource, /platformRole !== PLATFORM_SUPERADMIN/);
-assert.match(resetSource, /mode: confirm \? "confirm" : "dry-run"/);
-assert.match(resetSource, /argv\.includes\("--confirm"\)/);
-assert.match(resetSource, /GOOGLE_APPLICATION_CREDENTIALS/);
-assert.match(resetSource, /async function walk\(parentPath, collectionId\)/);
-assert.match(resetSource, /await walk\(relativePath, nestedCollectionId\)/);
-assert.match(resetSource, /right\.path\.split\("\/"\)\.length - left\.path\.split\("\/"\)\.length/);
-assert.match(resetSource, /await verifyPostReset\(api, admin\.localId\)/);
+// El reset total de producción (borraba negocios, membresías y cuentas salvo
+// la superadmin) se retiró del repo; queda sólo en el historial de git.
+assert.equal(
+  existsSync(new URL("./reset-production-for-v1-qa.mjs", import.meta.url)),
+  false,
+  "scripts/reset-production-for-v1-qa.mjs no debe volver al repo"
+);
 
 console.log("Platform admin smoke: OK");
