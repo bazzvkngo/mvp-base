@@ -44,7 +44,7 @@ export default function SalesPage({businessId, role}) {
   )), [items, origin, search, status]);
 
   const open = (sale) => navigate(sale.estado === "borrador" && canManage ? `/ventas/${sale.id}/editar` : `/ventas/${sale.id}`);
-  const openOriginQuote = (sale) => navigate(`/cotizaciones/${sale.cotizacionId}/editar`);
+  const openOriginQuote = (sale) => navigate("/cotizaciones", {state: {openQuoteId: sale.cotizacionId}});
 
   return (
     <main className="erp-page po-history sale-history">

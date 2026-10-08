@@ -94,7 +94,11 @@ assert.doesNotMatch(salePage, /globalThis\.confirm|window\.confirm/);
 assert.doesNotMatch(salesHistory, /globalThis\.confirm|window\.confirm/);
 assert.match(salePage, /ResponsiveDialog/);
 assert.match(salesHistory, /`\/ventas\/\$\{sale\.id\}\/editar`/);
-assert.match(salesHistory, /`\/cotizaciones\/\$\{sale\.cotizacionId\}\/editar`/);
+// La cotización de origen ya fue aceptada: se abre su detalle de solo lectura, no el editor.
+assert.match(salesHistory, /navigate\("\/cotizaciones", \{state: \{openQuoteId: sale\.cotizacionId\}\}\)/);
+assert.doesNotMatch(salesHistory, /\/cotizaciones\/\$\{sale\.cotizacionId\}\/editar/);
+assert.match(salePage, /navigate\("\/cotizaciones", \{state: \{openQuoteId: sale\.cotizacionId\}\}\)/);
+assert.doesNotMatch(salePage, /\/cotizaciones\/\$\{sale\.cotizacionId\}\/editar/);
 assert.doesNotMatch(salesHistory, />Editar<|>Ver</);
 assert.doesNotMatch(salesHistory, /confirmarVenta|Confirmar venta/);
 assert.match(salesHistory, /<th>Número<\/th><th>Cliente<\/th><th>Total<\/th><th>Origen<\/th><th>Estado<\/th><th>Stock<\/th><th>Fecha<\/th>/);

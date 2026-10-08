@@ -376,7 +376,7 @@ export default function NewSalePage({businessId, role}) {
               <span className={`po-status po-status--${sale?.estado || "borrador"}`}>{getSaleStatusLabel(sale?.estado || "borrador")}</span>
             </div>
             <div className="sale-context-sale__metadata">
-              {sale?.cotizacionId ? <span>Originada desde <button type="button" className="sale-inline-link" onClick={() => navigate(`/cotizaciones/${sale.cotizacionId}/editar`)}>{sale.cotizacionNumero || "cotización aceptada"}</button></span> : <span>Venta directa</span>}
+              {sale?.cotizacionId ? <span>Originada desde <button type="button" className="sale-inline-link" onClick={() => navigate("/cotizaciones", {state: {openQuoteId: sale.cotizacionId}})}>{sale.cotizacionNumero || "cotización aceptada"}</button></span> : <span>Venta directa</span>}
               {trabajoDisplay && <span>Proyecto <button type="button" className="sale-inline-link" onClick={() => navigate("/trabajos", {state: {openWorkId: trabajoDisplay.id}})}>{trabajoDisplay.numero || trabajoDisplay.titulo || trabajoDisplay.id}</button></span>}
               <span>Fecha {formatDate(draft.fechaVenta)}</span>
               {sale?.cotizacionId && sale?.aceptadaEn && <span>Aceptada {formatDate(sale.aceptadaEn)}</span>}
