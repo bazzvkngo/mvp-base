@@ -1004,6 +1004,95 @@ async function main() {
     assert.equal(canonicalFractionalData.stock, 1.000001);
     console.log("OK stock inicial: más de 6 decimales bloqueado y 6 decimales aceptado");
 
+    // SPEC 023 smoke 17: la marca "Exento de IVA" es editable con validación
+    // autoritativa; guardar la ficha deja el producto en v3.
+    const taxItem = {
+      ...commonItem,
+      tipoItem: "producto",
+      nombre: "Producto para exención",
+      stock: 0,
+      stockMinimo: 0,
+    };
+    const taxProduct = await call("createInventoryItemWithCode", {
+      requestId: "integrated_tax_product_0001",
+      item: taxItem,
+    });
+    const taxProductRef = doc(db, "negocios", businessId, "inventario", taxProduct.data.itemId);
+    const taxFields = async (reference) => {
+      const data = (await getDoc(reference)).data();
+      return [data.impuestoId, data.impuestoTasa, data.formacionPrecioVersion, data.tasaImpuestoCompra, data.costoPagado, data.precioInterno];
+    };
+    assert.deepEqual(await taxFields(taxProductRef), ["IVA_GENERAL", 19, 3, 19, 11900, 12000]);
+    await call("updateInventoryItem", {
+      requestId: "integrated_tax_exempt_0001",
+      itemId: taxProduct.data.itemId,
+      item: {...taxItem, impuestoId: "IVA_EXENTO"},
+    });
+    assert.deepEqual(await taxFields(taxProductRef), ["IVA_EXENTO", 0, 3, 0, 10000, 12000]);
+    await expectCallableCode("invalid-argument", () =>
+      call("updateInventoryItem", {
+        requestId: "integrated_tax_invalid_0001",
+        itemId: taxProduct.data.itemId,
+        item: {...taxItem, impuestoId: "IVA_REDUCIDO"},
+      })
+    );
+    await expectCallableCode("invalid-argument", () =>
+      call("createInventoryItemWithCode", {
+        requestId: "integrated_tax_service_0001",
+        item: {...commonItem, tipoItem: "servicio", nombre: "Servicio exento", unidad: "hora", impuestoId: "IVA_EXENTO"},
+      })
+    );
+    const legacyV2TaxRef = adminDb.doc(`negocios/${businessId}/inventario/legacy-v2-tax`);
+    await legacyV2TaxRef.set({
+      tipoItem: "producto",
+      nombre: "Producto v2",
+      unidad: "unidad",
+      costoBase: 10000,
+      margenDeseado: 20,
+      precioInterno: 14280,
+      precioManual: false,
+      formacionPrecioVersion: 2,
+      tasaImpuestoCompra: 19,
+      montoImpuestoCompra: 1900,
+      costoPagado: 11900,
+      precioVentaSugerido: 14280,
+      impuestoId: "IVA_GENERAL",
+      impuestoTasa: 19,
+      stock: 0,
+      stockMinimo: 0,
+      estado: "activo",
+      negocioId: businessId,
+    });
+    await call("updateInventoryItem", {
+      requestId: "integrated_tax_v2_upgrade_0001",
+      itemId: "legacy-v2-tax",
+      item: {...taxItem, nombre: "Producto v2", impuestoId: "IVA_GENERAL"},
+    });
+    const upgradedV2 = (await legacyV2TaxRef.get()).data();
+    assert.deepEqual(
+      [upgradedV2.formacionPrecioVersion, upgradedV2.costoPagado, upgradedV2.precioVentaSugerido, upgradedV2.precioInterno],
+      [3, 11900, 12000, 12000],
+      "Guardar un producto v2 lo pasa a v3 con el precio sobre el costo neto."
+    );
+    const foreignTaxRef = adminDb.doc("negocios/negocio-ajeno-impuesto/inventario/producto-ajeno");
+    await foreignTaxRef.set({
+      tipoItem: "producto",
+      nombre: "Producto ajeno",
+      negocioId: "negocio-ajeno-impuesto",
+      impuestoId: "IVA_GENERAL",
+      estado: "activo",
+    });
+    await expectCallableCode("permission-denied", () =>
+      invoke("updateInventoryItem", {
+        businessId: "negocio-ajeno-impuesto",
+        requestId: "integrated_tax_foreign_0001",
+        itemId: "producto-ajeno",
+        item: {...taxItem, impuestoId: "IVA_EXENTO"},
+      })
+    );
+    assert.equal((await foreignTaxRef.get()).data().impuestoId, "IVA_GENERAL");
+    console.log("OK exención de IVA: OWNER la cambia, valores inválidos y servicios rechazados, v2 pasa a v3, sin acceso cruzado");
+
     await signOut(auth);
     const memberCredential = await signInAnonymously(auth);
     await adminDb.doc(`membresias/${businessId}__${memberCredential.user.uid}`).set({
@@ -1021,6 +1110,40 @@ async function main() {
     await expectCallableCode("permission-denied", () =>
       call("updateInventoryItem", authoritativeUpdatePayload)
     );
+
+    // SPEC 023 §6.1: COMPRAS crea productos exentos, pero cambiar la marca de
+    // uno existente queda para OWNER/ADMIN.
+    await signOut(auth);
+    const purchasesCredential = await signInAnonymously(auth);
+    await adminDb.doc(`membresias/${businessId}__${purchasesCredential.user.uid}`).set({
+      uid: purchasesCredential.user.uid,
+      negocioId: businessId,
+      rol: "COMPRAS",
+      estado: "activo",
+    });
+    const purchasesExempt = await call("createInventoryItemWithCode", {
+      requestId: "integrated_tax_purchases_create_0001",
+      item: {...taxItem, nombre: "Exento creado por compras", impuestoId: "IVA_EXENTO"},
+    });
+    assert.equal(
+      (await adminDb.doc(`negocios/${businessId}/inventario/${purchasesExempt.data.itemId}`).get()).data().impuestoId,
+      "IVA_EXENTO"
+    );
+    await expectCallableCode("permission-denied", () =>
+      call("updateInventoryItem", {
+        requestId: "integrated_tax_purchases_change_0001",
+        itemId: taxProduct.data.itemId,
+        item: {...taxItem, impuestoId: "IVA_GENERAL"},
+      })
+    );
+    await call("updateInventoryItem", {
+      requestId: "integrated_tax_purchases_keep_0001",
+      itemId: taxProduct.data.itemId,
+      item: {...taxItem, nombre: "Exento editado por compras", impuestoId: "IVA_EXENTO"},
+    });
+    const keptExempt = (await adminDb.doc(`negocios/${businessId}/inventario/${taxProduct.data.itemId}`).get()).data();
+    assert.deepEqual([keptExempt.nombre, keptExempt.impuestoId], ["Exento editado por compras", "IVA_EXENTO"]);
+    console.log("OK exención de IVA: COMPRAS crea exentos y no cambia la marca de un producto existente");
 
     console.log(
       "INVENTORY_INTEGRATED_LOCAL_OK",

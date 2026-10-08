@@ -50,7 +50,9 @@ assert.deepEqual(taxed, {
   costoPagadoUnitario: 1071,
   costoPagadoTotal: 2142,
 });
-assert.equal(legacyPaidCost({costoBase: 1000, tasaImpuestoCompra: 19}), 1190);
+// SPEC 023 §6.3: sin promedio, el saldo inicial es el costo neto del maestro.
+assert.equal(legacyPaidCost({costoBase: 1000, tasaImpuestoCompra: 19}), 1000);
+assert.equal(legacyPaidCost({costoBase: 1000, tasaImpuestoCompra: 19, costoPagado: 1190}), 1000);
 assert.equal(legacyPaidCost({costoPromedio: 102500, costoPagado: 999}), 102500);
 
 // SPEC 023 §5.3: con tratamiento explícito al inventario entra el neto de la
@@ -150,6 +152,16 @@ const fallbackBaseline = resolveInventoryEconomicState({
 });
 assert.equal(fallbackBaseline.value, 1000);
 assert.equal(fallbackBaseline.baseline.fuente, "costoBase");
+// Caso 8 (SPEC 023 §12.2): un producto con costo con IVA guardado y sin
+// promedio inicializa su saldo con el costo neto; costoPagado no es fuente.
+const paidCostBaseline = resolveInventoryEconomicState({
+  item: {stock: 5, costoBase: 10000, formacionPrecioVersion: 2, tasaImpuestoCompra: 19, costoPagado: 11900},
+  operationCurrency: "CLP",
+});
+assert.deepEqual(
+  [paidCostBaseline.value, paidCostBaseline.average, paidCostBaseline.baseline.fuente, paidCostBaseline.baseline.costoUnitarioInicial],
+  [50000, 10000, "costoBase", 10000]
+);
 
 const acquisitionA = applyInventoryAcquisition(averageBaseline, {
   cantidad: 10,
@@ -284,7 +296,7 @@ const inventoryManagerSource = readFileSync(
   new URL("../src/features/inventory/InventoryManager.jsx", import.meta.url),
   "utf8"
 );
-for (const expected of ["Costo base / manual", "Costo promedio", "Último costo", "Historial de adquisiciones", "Compra directa", "Vigente", "Revertida", "Valor de inventario:"]) {
+for (const expected of ["Costo neto", "Costo promedio neto", "Último costo neto", "Historial de adquisiciones", "Compra directa", "Vigente", "Revertida", "Valor de inventario:"]) {
   assert.match(inventoryManagerSource, new RegExp(expected.replace("/", "\\/")));
 }
 

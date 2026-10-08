@@ -37,7 +37,15 @@ export const INVENTORY_UNITS = Object.freeze([
 
 const TYPE_VALUES = new Set(INVENTORY_TYPES.map(({ value }) => value));
 
-export const INVENTORY_PRICE_FORMATION_VERSION = 2;
+// SPEC 023 §6: v3 forma el precio sobre el costo neto y deja el costo con IVA
+// como referencia. Los productos v2 se siguen leyendo con su fórmula.
+export const INVENTORY_PRICE_FORMATION_VERSION = 3;
+export const LEGACY_PURCHASE_TAX_PRICE_FORMATION_VERSION = 2;
+const EXEMPT_INVENTORY_TAX_IDS = new Set(["IVA_EXENTO", "SIN_IMPUESTO"]);
+
+export function isExemptInventoryTaxId(impuestoId) {
+  return EXEMPT_INVENTORY_TAX_IDS.has(String(impuestoId || "").trim().toUpperCase());
+}
 
 export function normalizeInventoryText(value) {
   return String(value || "")
@@ -121,8 +129,10 @@ export function getInventoryTypeLabel(type) {
 }
 
 export function hasPurchaseTaxPriceFormation(item = {}) {
-  return item.tipoItem === "producto" &&
-    Number(item.formacionPrecioVersion) === INVENTORY_PRICE_FORMATION_VERSION;
+  return item.tipoItem === "producto" && [
+    LEGACY_PURCHASE_TAX_PRICE_FORMATION_VERSION,
+    INVENTORY_PRICE_FORMATION_VERSION,
+  ].includes(Number(item.formacionPrecioVersion));
 }
 
 export function calculateInventoryPriceFormation(item = {}) {
@@ -134,11 +144,15 @@ export function calculateInventoryPriceFormation(item = {}) {
     ? Math.min(Math.max(tasaImpuestoCompra, 0), 100)
     : 0;
   const safeMarkup = Number.isFinite(margenDeseado) ? Math.max(margenDeseado, 0) : 0;
+  const isLegacyV2 = Number(item.formacionPrecioVersion) ===
+    LEGACY_PURCHASE_TAX_PRICE_FORMATION_VERSION;
   const montoImpuestoCompra = Math.round(safeCost * safeTaxRate / 100);
-  const costoPagado = Math.round(safeCost * (1 + safeTaxRate / 100));
-  const precioVentaSugerido = Math.round(
-    safeCost * (1 + safeTaxRate / 100) * (1 + safeMarkup / 100)
-  );
+  const costoPagado = isLegacyV2
+    ? Math.round(safeCost * (1 + safeTaxRate / 100))
+    : safeCost + montoImpuestoCompra;
+  const precioVentaSugerido = isLegacyV2
+    ? Math.round(safeCost * (1 + safeTaxRate / 100) * (1 + safeMarkup / 100))
+    : Math.round(safeCost * (1 + safeMarkup / 100));
   const manualPrice = Number(item.precioInterno);
   const hasManualPrice = item.precioManual === true &&
     Number.isFinite(manualPrice) && manualPrice > 0;
@@ -187,6 +201,7 @@ export function adaptInventoryItem(item = {}) {
       type === "producto" && Number.isFinite(Number(item.stockMinimo))
         ? Number(item.stockMinimo)
         : 0,
+    exentoIva: type === "producto" && isExemptInventoryTaxId(item.impuestoId),
   };
   if (hasPurchaseTaxPriceFormation(adapted)) {
     const formation = calculateInventoryPriceFormation(adapted);
@@ -315,9 +330,6 @@ export function validateInventoryDraft(draft = {}) {
   }
   if (draft.tipoItem === "producto") {
     numericFields.push(["stock", "El stock"], ["stockMinimo", "El stock mínimo"]);
-    if (Number(draft.formacionPrecioVersion) === INVENTORY_PRICE_FORMATION_VERSION) {
-      numericFields.push(["tasaImpuestoCompra", "El IVA de compra"]);
-    }
   }
   numericFields.forEach(([field, label]) => {
     const number = parseInventoryNumber(draft[field]);
@@ -325,14 +337,11 @@ export function validateInventoryDraft(draft = {}) {
   });
   const margin = parseInventoryNumber(draft.margenDeseado);
   if (margin !== null && margin > 1000) errors.margenDeseado = "El recargo no puede superar 1000%.";
-  const purchaseTaxRate = parseInventoryNumber(draft.tasaImpuestoCompra);
   if (
     draft.tipoItem === "producto" &&
-    Number(draft.formacionPrecioVersion) === INVENTORY_PRICE_FORMATION_VERSION &&
-    purchaseTaxRate !== null &&
-    purchaseTaxRate > 100
+    ![true, false, "", null, undefined].includes(draft.exentoIva)
   ) {
-    errors.tasaImpuestoCompra = "El IVA de compra no puede superar 100%.";
+    errors.exentoIva = "Indica si el producto es exento de IVA.";
   }
   return errors;
 }
@@ -386,21 +395,10 @@ export function buildInventoryPayload(
     payload.stock = parseInventoryNumber(draft.stock);
     payload.stockMinimo = parseInventoryNumber(draft.stockMinimo);
     payload.unidadStock = String(draft.unidadStock || draft.unidad).trim();
-    if (Number(draft.formacionPrecioVersion) === INVENTORY_PRICE_FORMATION_VERSION) {
-      const formation = calculateInventoryPriceFormation({
-        costoBase: cost,
-        tasaImpuestoCompra: parseInventoryNumber(draft.tasaImpuestoCompra),
-        margenDeseado: margin,
-        precioInterno: manual,
-        precioManual: manual !== null && manual > 0,
-      });
-      payload.formacionPrecioVersion = INVENTORY_PRICE_FORMATION_VERSION;
-      payload.tasaImpuestoCompra = formation.tasaImpuestoCompra;
-      payload.montoImpuestoCompra = formation.montoImpuestoCompra;
-      payload.costoPagado = formation.costoPagado;
-      payload.precioVentaSugerido = formation.precioVentaSugerido;
-      payload.precioInterno = formation.precioVentaFinal;
-    }
+    // La formación v3 la calcula Functions; el cliente solo envía la marca.
+    // Sin marca (planilla sin columna) rige el valor por defecto del negocio.
+    if (draft.exentoIva === true) payload.impuestoId = "IVA_EXENTO";
+    if (draft.exentoIva === false) payload.impuestoId = "IVA_GENERAL";
   }
   return payload;
 }

@@ -438,8 +438,17 @@ round(costoPagado × (1 + recargo / 100))`, con `costoPagado` informativo del
 | --- | --- |
 | Alta manual (`InventoryManager`) | Siempre v3: costo neto, check de exención, precio según §6.4. |
 | Planilla (`inventoryImportService`) | `costoBase` es neto. Columna opcional `exentoIva` (sí/no) → `impuestoId`. La columna `tasaImpuestoCompra` se ignora con advertencia de fila. |
-| Importador documental (`normalizeInventoryDocument`) | Sin cambios en la extracción. `costoBase` se toma neto. Si el documento es boleta, la revisión muestra el aviso: "Los costos de una boleta incluyen IVA. Para registrar esa compra usa Compras." |
+| Importador documental (`normalizeInventoryDocument`) | Sin cambios en la extracción. `costoBase` se toma neto. Aviso de boleta: **pendiente** (ver nota). |
 | Normalización (`normalizeInventoryItems`) | Igual que la planilla. |
+
+**Pendiente: aviso de boleta en el importador documental.** Al implementar la
+etapa 2 (8 de octubre de 2026) el importador documental de Inventario
+(`InventoryAiImporter`) no está montado en ninguna pantalla, y la extracción no
+distingue boletas (sus tipos son `factura`, `cotizacion`, `lista_precios`,
+`inventario` y `otro`). El aviso "Los costos de una boleta incluyen IVA. Para
+registrar esa compra usa Compras." queda pendiente para cuando el importador se
+monte en una pantalla. Detectar la boleta requiere ampliar la extracción con
+IA, que necesita autorización por tarea (`AGENTS.md`).
 
 ## 7. Costo del inventario en `/inventario` (D6)
 
@@ -646,8 +655,16 @@ Solo se agregan campos. Ningún documento existente se reescribe.
 | `movimientosInventario/{id}` (entradas) | `costoUnitarioAplicado`, `costoTotal` | número ≥ 0 | Existentes; pasan a llevar el costo de inventario. |
 | `trabajos/{id}/gastos/{gastoId}` | `tipoDocumento` | `factura`, `boleta` | Nuevo; define el significado de `monto`. |
 
-Rules: sin cambios. Todos los campos los escribe solo Functions, igual que
-hoy.
+Todos los campos los escribe solo Functions, igual que hoy. Rules, dos ajustes
+hechos en la etapa 2 (no previstos al aprobar la SPEC):
+
+- `hasValidPurchasePriceFormation` acepta `formacionPrecioVersion` 2 o 3. Sin
+  esto, cualquier escritura de cliente sobre un producto v3 queda rechazada.
+- `impuestoId` e `impuestoTasa` entran en
+  `inventoryAuthoritativeFieldsAreImmutable`. Las reglas permiten a OWNER,
+  ADMIN y COMPRAS actualizar el documento de inventario con el SDK; sin este
+  cambio COMPRAS podría cambiar la exención saltándose la restricción a
+  OWNER/ADMIN de Functions (§6.1).
 
 ## 11. Fuera de alcance y trabajo futuro
 
@@ -666,6 +683,17 @@ hoy.
   extensión es la función que resuelve `tratamientoIvaCompra`. Hoy, un negocio
   cuyo impuesto por defecto es `IVA_EXENTO` crea productos exentos y obtiene un
   efecto parecido, pero no es una configuración diseñada para eso.
+- **Deuda conocida: escrituras de cliente a inventario.** Las reglas todavía
+  permiten a OWNER, ADMIN y COMPRAS crear y actualizar
+  `negocios/{businessId}/inventario/{itemId}` con el SDK (campos no
+  autoritativos como nombre, costo, recargo o precio). Al 8 de octubre de 2026
+  ninguna pantalla lo usa: Inventario crea, edita, importa y archiva mediante
+  Functions. Las únicas escrituras de cliente que quedan son funciones legacy
+  sin llamadores en `src/services/inventoryService.js` (`createInventoryItem`,
+  `updateInventoryItem`, `importInventoryItems`, protegidas por
+  `assertClientWriteAllowed`) y los smokes de reglas. Evaluar cerrar por
+  completo las escrituras de cliente a inventario (`allow create, update: if
+  false`), retirando esas funciones y ajustando los smokes de reglas.
 
 ## 12. Pruebas
 
@@ -747,14 +775,17 @@ Cada etapa es pequeña, deja el sistema consistente y se detiene sin commit.
    `functions/inventoryAcquisition.js`. Smokes 1-7 y ajustes de
    `purchase-model` e `inventory-acquisition`.
 2. **Ficha y canales de creación.** `impuestoId` editable, formación v3,
-   baseline neto (§6.3), formulario, planilla e importador. Smokes 8-9, 17, 21
-   y ajustes de `inventory-model` e `inventory-mvp`.
+   baseline neto (§6.3), formulario, rótulos de costo de la ficha (§6.2),
+   planilla e importador. Smokes 8-9, 17, 21 y ajustes de `inventory-model` e
+   `inventory-mvp`. **Cambio visual.** Los rótulos de la ficha se adelantaron
+   desde la etapa 4 para que un producto v3 no muestre "Costo pagado" con un
+   significado que ya no tiene.
 3. **Efectos de Compra y Recepción.** Confirmación, copia de `impuestoId` en
    líneas, Recepción, reversión y `ultimoCosto`. Smokes 12-15, 18 y ajustes de
    `purchases-integrated` y `receptions-integrated`.
 4. **UI de Compras e inventario.** Rótulos de boleta y exento en Nueva compra
-   y detalle, aviso de boleta en el importador de Compras, ficha (§6.2) y
-   "Costo del inventario" (§7). Smokes 10, 22. **Cambio visual.**
+   y detalle, aviso de boleta en el importador de Compras y "Costo del
+   inventario" (§7). Smokes 10, 22. **Cambio visual.**
 5. **Gastos de Proyecto.** `tipoDocumento` en el gasto, selector y rótulos.
    Smokes 11, 19, 23. **Cambio visual.**
 6. **Regla `MATERIAL` (P2, provisional).** `workBalance.js` y

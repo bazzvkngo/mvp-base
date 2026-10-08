@@ -10,12 +10,14 @@ import BarcodeInput from "../../components/barcode/BarcodeInput";
 import {
   INVENTORY_TYPES,
   INVENTORY_PRICE_FORMATION_VERSION,
+  LEGACY_PURCHASE_TAX_PRICE_FORMATION_VERSION,
   adaptInventoryItem,
   buildInventoryPayload,
   calculateInventoryPriceFormation,
   filterInventoryItems,
   getDefaultUnitForType,
   getInventoryTypeLabel,
+  isExemptInventoryTaxId,
   isInventoryLowStock,
   parseInventoryNumber,
   summarizeInventory,
@@ -62,8 +64,7 @@ const EMPTY_DRAFT = Object.freeze({
   unidad: "unidad",
   costoBase: "",
   margenDeseado: "",
-  formacionPrecioVersion: INVENTORY_PRICE_FORMATION_VERSION,
-  tasaImpuestoCompra: "0",
+  exentoIva: false,
   precioManual: "",
   stock: "0",
   stockMinimo: "0",
@@ -95,6 +96,7 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
   const [loadError, setLoadError] = useState("");
   const [feedback, setFeedback] = useState({ type: "", message: "" });
   const [settings, setSettings] = useState(DEFAULT_INVENTORY_SETTINGS);
+  const [taxSettings, setTaxSettings] = useState(null);
   const [filters, setFilters] = useState({ query: "", type: "todos", areaId: "todas", categoryId: "todas", status: "activo" });
   const [formOpen, setFormOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -152,6 +154,7 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
     if (!businessId) return undefined;
     let active = true;
     getBusinessSettings(businessId, "inventario").then((value) => active && setSettings(value)).catch(() => {});
+    getBusinessSettings(businessId, "impuestos").then((value) => active && setTaxSettings(value)).catch(() => {});
     return () => { active = false; };
   }, [businessId]);
 
@@ -198,9 +201,15 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
     ...(field === "areaId" ? { categoryId: "todas" } : {}),
   }));
 
+  // SPEC 023 §6.1: el valor inicial de la marca sale de la configuración de
+  // impuestos del negocio; cambiarla en un producto existente es de OWNER/ADMIN.
+  const defaultExemptFromTax = isExemptInventoryTaxId(taxSettings?.impuestoPredeterminadoId);
+  const businessTaxRate = taxSettings?.impuestoPredeterminadoTasa ?? null;
+  const canChangeTaxExemption = ["OWNER", "ADMIN"].includes(role);
+
   const openNewItem = () => {
     setEditingItem(null);
-    setDraft({ ...EMPTY_DRAFT });
+    setDraft({ ...EMPTY_DRAFT, exentoIva: defaultExemptFromTax });
     setManualPriceEnabled(false);
     setFieldErrors({});
     createRequestRef.current = "";
@@ -227,12 +236,9 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
       unidad: item.unidad,
       costoBase: String(item.costoBase),
       margenDeseado: String(item.margenDeseado),
-      formacionPrecioVersion: item.formacionPrecioVersion === INVENTORY_PRICE_FORMATION_VERSION
-        ? INVENTORY_PRICE_FORMATION_VERSION
-        : "",
-      tasaImpuestoCompra: item.formacionPrecioVersion === INVENTORY_PRICE_FORMATION_VERSION
-        ? String(item.tasaImpuestoCompra ?? 0)
-        : "0",
+      exentoIva: item.tipoItem === "producto" && (item.impuestoId
+        ? isExemptInventoryTaxId(item.impuestoId)
+        : defaultExemptFromTax),
       precioManual: item.precioManual === true ? String(item.precioInterno ?? "") : "",
       stock: String(item.stock ?? 0),
       stockMinimo: String(item.stockMinimo ?? 0),
@@ -261,11 +267,9 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
           next.numeroFacturaReferencia = "";
           next.stock = "0";
           next.stockMinimo = "0";
-          next.formacionPrecioVersion = "";
-          next.tasaImpuestoCompra = "0";
+          next.exentoIva = false;
         } else if (!editingItem) {
-          next.formacionPrecioVersion = INVENTORY_PRICE_FORMATION_VERSION;
-          next.tasaImpuestoCompra = "0";
+          next.exentoIva = defaultExemptFromTax;
         }
       }
       if (field === "areaId") next.categoriaId = "";
@@ -397,45 +401,38 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
   };
 
   const selectType = (type) => updateDraft("tipoItem", type);
-  const usesPurchaseTaxPriceFormation = draft.tipoItem === "producto" &&
-    Number(draft.formacionPrecioVersion) === INVENTORY_PRICE_FORMATION_VERSION;
-  const purchaseTaxRate = parseInventoryNumber(draft.tasaImpuestoCompra);
-  const purchaseTaxMode = !usesPurchaseTaxPriceFormation
-    ? "historico"
-    : purchaseTaxRate === 0
-      ? "0"
-      : purchaseTaxRate === 19
-        ? "19"
-        : "personalizado";
+  const isProductDraft = draft.tipoItem === "producto";
+  const draftCost = parseInventoryNumber(draft.costoBase) || 0;
+  const draftMargin = parseInventoryNumber(draft.margenDeseado) || 0;
+  const draftManualPrice = parseInventoryNumber(draft.precioManual);
+  const hasDraftManualPrice = manualPriceEnabled && String(draft.precioManual).trim() !== "";
   const productPriceFormation = calculateInventoryPriceFormation({
-    costoBase: parseInventoryNumber(draft.costoBase) || 0,
-    tasaImpuestoCompra: purchaseTaxRate || 0,
-    margenDeseado: parseInventoryNumber(draft.margenDeseado) || 0,
-    precioInterno: parseInventoryNumber(draft.precioManual),
-    precioManual: manualPriceEnabled && String(draft.precioManual).trim() !== "",
+    formacionPrecioVersion: INVENTORY_PRICE_FORMATION_VERSION,
+    costoBase: draftCost,
+    tasaImpuestoCompra: draft.exentoIva ? 0 : businessTaxRate || 0,
+    margenDeseado: draftMargin,
+    precioInterno: draftManualPrice,
+    precioManual: hasDraftManualPrice,
   });
-  const legacyCalculatedPrice = Math.round(calculateBasePrice({ costoBase: parseInventoryNumber(draft.costoBase) || 0, margenDeseado: parseInventoryNumber(draft.margenDeseado) || 0 }));
-  const calculatedPrice = usesPurchaseTaxPriceFormation
+  const legacyCalculatedPrice = Math.round(calculateBasePrice({ costoBase: draftCost, margenDeseado: draftMargin }));
+  const calculatedPrice = isProductDraft
     ? productPriceFormation.precioVentaSugerido
     : legacyCalculatedPrice;
-  const effectivePrice = usesPurchaseTaxPriceFormation
+  const effectivePrice = isProductDraft
     ? productPriceFormation.precioVentaFinal
-    : Math.round(calculateEffectiveInternalPrice({ costoBase: parseInventoryNumber(draft.costoBase) || 0, margenDeseado: parseInventoryNumber(draft.margenDeseado) || 0, precioInterno: parseInventoryNumber(draft.precioManual), precioManual: manualPriceEnabled && String(draft.precioManual).trim() !== "" }));
-  const changePurchaseTaxMode = (mode) => {
-    if (mode === "historico") return;
-    setDraft((current) => ({
-      ...current,
-      formacionPrecioVersion: INVENTORY_PRICE_FORMATION_VERSION,
-      tasaImpuestoCompra: mode === "19"
-        ? "19"
-        : mode === "0"
-          ? "0"
-          : (![0, 19].includes(parseInventoryNumber(current.tasaImpuestoCompra))
-            ? current.tasaImpuestoCompra
-            : ""),
-    }));
-    setFieldErrors((current) => ({ ...current, tasaImpuestoCompra: "" }));
-  };
+    : Math.round(calculateEffectiveInternalPrice({ costoBase: draftCost, margenDeseado: draftMargin, precioInterno: draftManualPrice, precioManual: hasDraftManualPrice }));
+  const paidCostDetail = draft.exentoIva
+    ? "Exento: no lleva IVA"
+    : businessTaxRate === null
+      ? "Sin tasa de IVA configurada"
+      : `IVA ${businessTaxRate}%: ${formatBusinessAmount(productPriceFormation.montoImpuestoCompra)}`;
+  // SPEC 023 §6.4: un producto v2 sin precio manual muestra su sugerido actual
+  // junto al nuevo; el precio solo cambia si se guarda la ficha.
+  const legacyV2SuggestedPrice = isProductDraft && !hasDraftManualPrice &&
+    Number(editingItem?.formacionPrecioVersion) === LEGACY_PURCHASE_TAX_PRICE_FORMATION_VERSION
+    ? adaptInventoryItem(editingItem).precioCalculado
+    : null;
+  const exemptionLocked = Boolean(editingItem) && !canChangeTaxExemption;
 
   return (
     <section className="erp-page inventory-page">
@@ -501,23 +498,16 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
               <h3>Precio</h3>
               {draft.tipoItem === "producto" ? <>
                 <div className="inventory-price-grid">
-                  <Field label="Costo unitario neto" required error={fieldErrors.costoBase}><input className="erp-control" type="number" min="0" step="any" value={draft.costoBase} onChange={(event) => updateDraft("costoBase", event.target.value)} placeholder="¿Cuánto pagaste por una unidad?" /></Field>
-                  <Field label="IVA de compra" required error={fieldErrors.tasaImpuestoCompra}>
-                    <select className="erp-control" value={purchaseTaxMode} onChange={(event) => changePurchaseTaxMode(event.target.value)}>
-                      {!usesPurchaseTaxPriceFormation && <option value="historico">Sin IVA / esquema anterior</option>}
-                      <option value="0">Sin IVA / 0%</option>
-                      <option value="19">19%</option>
-                      <option value="personalizado">Personalizado</option>
-                    </select>
-                  </Field>
-                  <PriceResult label="Costo pagado" value={productPriceFormation.costoPagado} detail={`IVA: ${formatBusinessAmount(productPriceFormation.montoImpuestoCompra)}`} />
+                  <Field label={draft.exentoIva ? "Costo (exento de IVA)" : "Costo neto (sin IVA)"} required error={fieldErrors.costoBase}><input className="erp-control" type="number" min="0" step="any" value={draft.costoBase} onChange={(event) => updateDraft("costoBase", event.target.value)} placeholder="¿Cuánto pagaste por una unidad, sin IVA?" /></Field>
+                  <label className="inventory-manual-price-toggle inventory-tax-exempt-toggle"><input type="checkbox" checked={draft.exentoIva === true} disabled={exemptionLocked} onChange={(event) => updateDraft("exentoIva", event.target.checked)} /><span>Exento de IVA</span>{exemptionLocked && <small className="inventory-field-hint">Solo la administración del negocio puede cambiar esta marca.</small>}</label>
+                  <PriceResult label="Costo con IVA (referencia)" value={productPriceFormation.costoPagado} detail={paidCostDetail} />
                 </div>
-                {purchaseTaxMode === "personalizado" && <div className="inventory-custom-tax-field"><Field label="Tasa personalizada (%)" required error={fieldErrors.tasaImpuestoCompra}><input className="erp-control" type="number" min="0" max="100" step="any" value={draft.tasaImpuestoCompra} onChange={(event) => updateDraft("tasaImpuestoCompra", event.target.value)} /></Field></div>}
                 <div className="inventory-price-grid inventory-price-grid--commercial">
                   <Field label="Recargo (%)" required error={fieldErrors.margenDeseado}><input className="erp-control" type="number" min="0" max="1000" step="any" value={draft.margenDeseado} onChange={(event) => updateDraft("margenDeseado", event.target.value)} placeholder="Ej. 30" /></Field>
                   <PriceResult label="Precio sugerido" value={calculatedPrice} />
                   <PriceResult label="Precio de venta final" value={effectivePrice} tone="final" />
                 </div>
+                {legacyV2SuggestedPrice !== null && legacyV2SuggestedPrice !== calculatedPrice && <p className="inventory-feedback inventory-feedback--notice">El precio sugerido de este producto incluía el IVA de compra. Al guardar se recalcula sobre el costo neto: {formatBusinessAmount(legacyV2SuggestedPrice)} → {formatBusinessAmount(calculatedPrice)}.</p>}
               </> : <div className="inventory-price-grid">
                 <Field label="Costo unitario" required error={fieldErrors.costoBase}><input className="erp-control" type="number" min="0" step="any" value={draft.costoBase} onChange={(event) => updateDraft("costoBase", event.target.value)} /></Field>
                 <Field label="Recargo (%)" required error={fieldErrors.margenDeseado}><input className="erp-control" type="number" min="0" max="1000" step="any" value={draft.margenDeseado} onChange={(event) => updateDraft("margenDeseado", event.target.value)} placeholder="Ej. 30" /></Field>
@@ -534,7 +524,7 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
       <ResponsiveDialog className="inventory-catalog-dialog" open={catalogOpen} onClose={closeCatalogManager} size="large" eyebrow="Inventario" title="Áreas y categorías" description="Organiza el catálogo según las necesidades de tu negocio."><InventoryCatalogManager areas={areas} businessId={businessId} categories={categories} loadErrors={catalogState.errors} loading={catalogState.loading} onRetry={() => setCatalogState((current) => ({ ...current, retry: current.retry + 1 }))} /></ResponsiveDialog>
       <ResponsiveDialog open={Boolean(quickCreate)} onClose={closeQuickCreate} initialFocusRef={quickNameRef} size="small" eyebrow="Clasificación" title={quickCreate === "area" ? "Nueva área" : "Nueva categoría"} description={quickCreate === "area" ? "Crea un área sin perder los datos del ítem." : "La categoría quedará asociada al área seleccionada."} footer={<><Button type="button" variant="secondary" disabled={quickSaving} onClick={closeQuickCreate}>Cancelar</Button><Button type="submit" form="inventory-quick-classification-form" loading={quickSaving}>{quickSaving ? "Creando..." : quickCreate === "area" ? "Crear área" : "Crear categoría"}</Button></>}><form id="inventory-quick-classification-form" className="inventory-quick-classification-form" onSubmit={submitQuickCreate}>{quickCreate === "category" && <p>Área: <strong>{areas.find((area) => area.id === draft.areaId)?.nombre || "Área seleccionada"}</strong></p>}<Field label="Nombre" required error={quickError}><input ref={quickNameRef} className="erp-control" maxLength={80} value={quickName} onChange={(event) => { setQuickName(event.target.value); setQuickError(""); }} /></Field></form></ResponsiveDialog>
       <InventoryImportDialog open={importOpen} onClose={() => setImportOpen(false)} onImported={(info) => setFeedback(info?.partial ? { type: "notice", message: "La importación quedó parcial; revisa el resumen antes de continuar." } : { type: "success", message: "Importación confirmada correctamente." })} businessId={businessId} areas={areas} categories={categories} existingItems={items} />
-      <ItemDetail item={detailItem} areas={areas} categories={categories} acquisitions={acquisitions} acquisitionsState={acquisitionsState} cannotWrite={cannotWrite} lowStockSettings={settings} showCosts={canReadCosts} onClose={() => setDetailItem(null)} onEdit={openEditItem} onArchive={(item) => changeStatus(item, "inactivo")} onReactivate={(item) => changeStatus(item, "activo")} onViewReferences={(item) => navigate(`/inventario/${encodeURIComponent(item.id)}/referencias`)} />
+      <ItemDetail item={detailItem} taxRate={businessTaxRate} areas={areas} categories={categories} acquisitions={acquisitions} acquisitionsState={acquisitionsState} cannotWrite={cannotWrite} lowStockSettings={settings} showCosts={canReadCosts} onClose={() => setDetailItem(null)} onEdit={openEditItem} onArchive={(item) => changeStatus(item, "inactivo")} onReactivate={(item) => changeStatus(item, "activo")} onViewReferences={(item) => navigate(`/inventario/${encodeURIComponent(item.id)}/referencias`)} />
     </section>
   );
 }
@@ -565,13 +555,19 @@ function InventoryList({ areas, cannotWrite, categories, items, lowStockSettings
 function Status({ item }) { return <span className={`inventory-status inventory-status--${item.estado === "activo" ? "active" : "archived"}`}>{item.estado === "activo" ? "Activo" : "Archivado"}</span>; }
 function Actions({ cannotWrite, item, onArchive, onEdit, onReactivate, onViewReferences }) { const canView = item.tipoItem === "producto" && item.estado === "activo"; if (cannotWrite && !canView) return null; return <div className="inventory-row-actions">{canView && <button type="button" onClick={() => onViewReferences(item)}>Ver referencias</button>}{!cannotWrite && <><button type="button" onClick={() => onEdit(item)}>Editar</button>{item.estado === "activo" ? <button type="button" onClick={() => onArchive(item)}><AppIcon icon={Archive} size={15} />Archivar</button> : <button type="button" onClick={() => onReactivate(item)}><AppIcon icon={RotateCcw} size={15} />Reactivar</button>}</>}</div>; }
 
-function ItemDetail({ acquisitions, acquisitionsState, areas, cannotWrite, categories, item, lowStockSettings, onArchive, onClose, onEdit, onReactivate, onViewReferences, showCosts }) {
+function ItemDetail({ acquisitions, acquisitionsState, areas, cannotWrite, categories, item, lowStockSettings, onArchive, onClose, onEdit, onReactivate, onViewReferences, showCosts, taxRate = null }) {
   const formatBusinessAmount = useBusinessMoney();
   const { locale: businessLocale } = useBusinessFormat();
   if (!item) return null;
   const adapted = adaptInventoryItem(item);
   const currency = adapted.costoPromedioMoneda || "CLP";
   const providerName = adapted.ultimoProveedor?.razonSocial || "Sin adquisiciones registradas";
+  // SPEC 023 §6.2: el costo con IVA es solo referencia, con la tasa vigente.
+  const paidCostReference = adapted.exentoIva
+    ? "Exento: no lleva IVA"
+    : taxRate === null
+      ? "Sin tasa de IVA configurada"
+      : formatBusinessAmount(adapted.costoBase + Math.round(adapted.costoBase * taxRate / 100));
   const hasPurchaseReference = adapted.tipoItem === "producto" && Boolean(
     adapted.proveedorNombre || adapted.proveedorRut ||
     adapted.fechaCompraReferencia || adapted.numeroFacturaReferencia
@@ -586,11 +582,10 @@ function ItemDetail({ acquisitions, acquisitionsState, areas, cannotWrite, categ
       <Detail label="Categoría" value={getInventoryCategoryLabel(adapted, categories)} />
       <Detail label="Unidad" value={adapted.unidad} />
       {adapted.tipoItem === "producto" ? <>
-        <Detail label="Costo base / manual" value={formatBusinessAmount(adapted.costoBase)} />
-        <Detail label="IVA de compra" value={`${adapted.tasaImpuestoCompra}% · ${formatBusinessAmount(adapted.montoImpuestoCompra)}`} />
-        <Detail label="Costo pagado" value={formatBusinessAmount(adapted.costoPagado)} />
-        {showCosts && <Detail label="Costo promedio" value={adapted.costoPromedio === null ? "Sin adquisiciones" : formatMoney(adapted.costoPromedio, currency, businessLocale)} />}
-        {showCosts && <Detail label="Último costo" value={adapted.ultimoCosto === null ? "Sin adquisiciones" : formatMoney(adapted.ultimoCosto, currency, businessLocale)} />}
+        <Detail label="Costo neto" value={formatBusinessAmount(adapted.costoBase)} />
+        <Detail label="Costo con IVA (referencia)" value={paidCostReference} />
+        {showCosts && <Detail label="Costo promedio neto" value={adapted.costoPromedio === null ? "Sin adquisiciones" : formatMoney(adapted.costoPromedio, currency, businessLocale)} />}
+        {showCosts && <Detail label="Último costo neto" value={adapted.ultimoCosto === null ? "Sin adquisiciones" : formatMoney(adapted.ultimoCosto, currency, businessLocale)} />}
         {showCosts && adapted.valorInventario !== null && <Detail label="Valor vigente del stock" value={formatMoney(adapted.valorInventario, adapted.valorInventarioMoneda || currency, businessLocale)} />}
         {showCosts && <Detail label="Último proveedor" value={providerName} />}
         <Detail label="Recargo" value={`${adapted.margenDeseado}%`} />

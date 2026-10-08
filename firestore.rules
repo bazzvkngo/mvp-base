@@ -375,7 +375,11 @@ service cloud.firestore {
         "ultimoCosto",
         "ultimoProveedor",
         "ultimaAdquisicionId",
-        "ultimaAdquisicionEn"
+        "ultimaAdquisicionEn",
+        // SPEC 023 §6.1: la exención de IVA solo la cambia Functions, que
+        // restringe el cambio a OWNER/ADMIN.
+        "impuestoId",
+        "impuestoTasa"
       ]);
     }
 
@@ -391,7 +395,7 @@ service cloud.firestore {
         || (
           request.resource.data.get("tipoItem", "") == "producto"
           && request.resource.data.keys().hasAll(fields)
-          && request.resource.data.get("formacionPrecioVersion", null) == 2
+          && request.resource.data.get("formacionPrecioVersion", null) in [2, 3]
           && request.resource.data.get("tasaImpuestoCompra", null) is number
           && request.resource.data.get("tasaImpuestoCompra", -1) >= 0
           && request.resource.data.get("tasaImpuestoCompra", 101) <= 100

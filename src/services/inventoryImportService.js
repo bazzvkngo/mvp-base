@@ -1,6 +1,5 @@
 import * as XLSX from "xlsx";
 import {
-  INVENTORY_PRICE_FORMATION_VERSION,
   buildInventoryPayload,
   getDefaultUnitForType,
   normalizeInventoryText,
@@ -17,7 +16,7 @@ const SAVE_BATCH_SIZE = 200;
 
 export const INVENTORY_TEMPLATE_COLUMNS = Object.freeze([
   "tipo", "nombre", "codigo", "area", "categoria", "unidad", "costo_base",
-  "margen", "precio_manual", "stock", "stock_minimo", "descripcion",
+  "exento_iva", "margen", "precio_manual", "stock", "stock_minimo", "descripcion",
 ]);
 
 const HEADER_ALIASES = Object.freeze({
@@ -30,7 +29,10 @@ const HEADER_ALIASES = Object.freeze({
   marca: ["marca", "fabricante"],
   modelo: ["modelo"],
   codigoBarras: ["codigo barras", "codigo de barras", "barcode", "ean", "upc"],
+  // SPEC 023 §6.5: la tasa de IVA ya no decide la formación; se detecta solo
+  // para advertir que se ignora. La exención va en su propia columna.
   tasaImpuestoCompra: ["iva", "iva compra", "impuesto", "tasa impuesto"],
+  exentoIva: ["exento", "exento iva", "exento de iva", "exentoiva"],
   costoBase: ["costo", "costo base", "costo_base", "costo unitario", "precio compra"],
   margenDeseado: ["margen", "margen %", "margen deseado"],
   precioManual: ["precio", "precio venta", "precio de venta", "precio_manual"],
@@ -115,16 +117,17 @@ function requestedCodeError(value) {
   return "El código contiene caracteres no permitidos.";
 }
 
-function isPurchaseTaxReviewMessage(value) {
+const IGNORED_PURCHASE_TAX_WARNING =
+  "La columna de IVA se ignora: el costo se toma como neto (sin IVA).";
+
+// "sí" → exento, "no" → afecto, vacío → valor por defecto del negocio. Un
+// valor no reconocido se conserva para que la validación lo marque.
+function parseExemptionCell(value) {
   const normalized = normalizeInventoryText(value);
-  return [
-    "impuesto no determinado",
-    "tasa de impuesto no determinada",
-    "precios no indican si incluyen impuestos",
-    "precio no indica si incluye impuestos",
-    "no se pudo determinar la tasa",
-    "revisar iva",
-  ].some((text) => normalized.includes(text));
+  if (!normalized) return "";
+  if (["si", "s", "x", "1", "true", "exento"].includes(normalized)) return true;
+  if (["no", "n", "0", "false", "afecto"].includes(normalized)) return false;
+  return String(value);
 }
 
 function uniqueImportMessages(messages) {
@@ -172,12 +175,7 @@ export function transformInventorySpreadsheetRows(
       marca: tipoItem === "producto" ? String(cell(row, headers.marca) || "").trim() : "",
       modelo: tipoItem === "producto" ? String(cell(row, headers.modelo) || "").trim() : "",
       codigoBarras: tipoItem === "producto" ? String(cell(row, headers.codigoBarras) || "").trim() : "",
-      formacionPrecioVersion:
-        tipoItem === "producto" && cell(row, headers.tasaImpuestoCompra) !== ""
-          ? INVENTORY_PRICE_FORMATION_VERSION
-          : "",
-      tasaImpuestoCompra:
-        tipoItem === "producto" ? cell(row, headers.tasaImpuestoCompra) : "",
+      exentoIva: tipoItem === "producto" ? parseExemptionCell(cell(row, headers.exentoIva)) : "",
       costoBase: cell(row, headers.costoBase),
       margenDeseado: cell(row, headers.margenDeseado) === "" ? 0 : cell(row, headers.margenDeseado),
       precioManual: cell(row, headers.precioManual),
@@ -193,6 +191,7 @@ export function transformInventorySpreadsheetRows(
     const warnings = [];
     if (areaPropuesta && !areaId) warnings.push("Área no reconocida; se guardará sin área.");
     if (categoriaPropuesta && !categoriaId) warnings.push("Categoría no reconocida; se guardará sin categoría.");
+    if (tipoItem === "producto" && cell(row, headers.tasaImpuestoCompra) !== "") warnings.push(IGNORED_PURCHASE_TAX_WARNING);
     if (tipoItem && tipoItem !== "producto" && (cell(row, headers.stock) !== "" || cell(row, headers.stockMinimo) !== "")) {
       warnings.push("El stock se ignorará porque no corresponde a este tipo.");
     }
@@ -237,13 +236,9 @@ export function transformInventoryDocumentCandidates(
       modelo: tipoItem === "producto" ? String(item?.modelo || "").trim() : "",
       codigoBarras:
         tipoItem === "producto" ? String(item?.codigoBarras || "").trim() : "",
-      formacionPrecioVersion:
-        tipoItem === "producto" && item?.tasaImpuestoCompra !== null &&
-        item?.tasaImpuestoCompra !== undefined
-          ? INVENTORY_PRICE_FORMATION_VERSION
-          : "",
-      tasaImpuestoCompra:
-        tipoItem === "producto" ? item?.tasaImpuestoCompra ?? "" : "",
+      // SPEC 023 §6.5: el costo del documento se toma neto; la tasa detectada
+      // no cambia la formación y la exención queda en el valor del negocio.
+      exentoIva: "",
       costoBase: item?.costoBase ?? 0,
       margenDeseado: item?.margenDeseado ?? 0,
       precioManual: "",
@@ -324,15 +319,9 @@ export function updateInventoryImportRow(row, field, value, context = {}) {
     draft.marca = "";
     draft.modelo = "";
     draft.codigoBarras = "";
-    draft.formacionPrecioVersion = "";
-    draft.tasaImpuestoCompra = "";
+    draft.exentoIva = "";
   }
   if (field === "areaId") draft.categoriaId = "";
-  if (field === "tasaImpuestoCompra") {
-    draft.formacionPrecioVersion = String(value).trim() === ""
-      ? ""
-      : INVENTORY_PRICE_FORMATION_VERSION;
-  }
   const fieldErrors = validateInventoryDraft(draft);
   const rawCode = String(draft.codigoSolicitado || "").trim();
   const normalizedCode = normalizeRequestedCode(rawCode);
@@ -340,25 +329,13 @@ export function updateInventoryImportRow(row, field, value, context = {}) {
   if (rawCode && !normalizedCode) {
     fieldErrors.codigoSolicitado = requestedCodeError(rawCode);
   }
-  const warnings = field === "tasaImpuestoCompra" && String(value).trim() !== ""
-    ? (row.warnings || []).filter((warning) => !isPurchaseTaxReviewMessage(warning))
-    : row.warnings;
-  return { ...row, draft, fieldErrors, warnings: uniqueImportMessages(warnings) };
+  return { ...row, draft, fieldErrors, warnings: uniqueImportMessages(row.warnings) };
 }
 
-export function applyInventoryImportPurchaseTax(rows, rate, context = {}) {
-  const normalizedRate = parseInventoryNumber(rate);
-  if (!Number.isFinite(normalizedRate) || normalizedRate < 0 || normalizedRate > 100) {
-    throw new Error("La tasa de IVA debe estar entre 0 y 100.");
-  }
+export function markInventoryImportRowsExempt(rows, context = {}) {
   return (Array.isArray(rows) ? rows : []).map((row) => {
     if (!row.included || row.draft?.tipoItem !== "producto") return row;
-    return updateInventoryImportRow(
-      row,
-      "tasaImpuestoCompra",
-      normalizedRate,
-      context
-    );
+    return updateInventoryImportRow(row, "exentoIva", true, context);
   });
 }
 
@@ -471,7 +448,7 @@ export async function confirmLocalInventoryImport({
 
 export function downloadInventoryTemplate() {
   const example = [
-    "producto", "Taladro inalámbrico", "", "", "", "unidad", 45000, 30, "", 8, 2,
+    "producto", "Taladro inalámbrico", "", "", "", "unidad", 45000, "no", 30, "", 8, 2,
     "Ejemplo: elimina esta fila antes de importar tus datos.",
   ];
   const worksheet = XLSX.utils.aoa_to_sheet([INVENTORY_TEMPLATE_COLUMNS, example]);

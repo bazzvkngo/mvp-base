@@ -142,20 +142,16 @@ function calculateWeightedAverage({
   );
 }
 
+// SPEC 023 §6.3: sin promedio válido, el saldo inicial usa el costo neto del
+// maestro sin sumar tasa. `costoPagado` dejó de ser fuente.
 function legacyPaidCost(item = {}) {
   const storedAverage = finiteNumber(item.costoPromedio, NaN);
   if (Number.isFinite(storedAverage) && storedAverage >= 0) return storedAverage;
-  const storedPaidCost = finiteNumber(item.costoPagado, NaN);
-  if (Number.isFinite(storedPaidCost) && storedPaidCost >= 0) return storedPaidCost;
   const baseCost = Math.max(
     finiteNumber(item.costoBase ?? item.costo ?? item.precioCompra, 0),
     0
   );
-  const taxRate = Math.min(
-    Math.max(finiteNumber(item.tasaImpuestoCompra, DEFAULT_TAX_RATE), 0),
-    100
-  );
-  return round(baseCost * (1 + taxRate / 100), 4);
+  return round(baseCost, 4);
 }
 
 function validStoredNumber(value) {
@@ -179,8 +175,6 @@ function economicFailure(HttpsError, message) {
 function legacyCostDescriptor(item = {}) {
   const average = validStoredNumber(item.costoPromedio);
   if (average !== null) return {cost: average, source: "costoPromedio"};
-  const paid = validStoredNumber(item.costoPagado);
-  if (paid !== null) return {cost: paid, source: "costoPagado"};
   const candidates = [
     ["costoBase", item.costoBase],
     ["costo", item.costo],

@@ -1,7 +1,7 @@
 const { createHash } = require("node:crypto");
-const {INVENTORY_WRITE_ROLES} = require("./rbac");
+const {BUSINESS_MANAGEMENT_ROLES, INVENTORY_WRITE_ROLES} = require("./rbac");
 const {formatChileanRut} = require("./fiscalIdentifier");
-const {normalizeBusinessLocalization} = require("./localization");
+const {normalizeBusinessLocalization, normalizeTaxSettings} = require("./localization");
 const {
   INVENTORY_ECONOMIC_MODEL_VERSION,
   applyInventoryAverageStockAdjustment,
@@ -11,7 +11,11 @@ const {
 } = require("./inventoryAcquisition");
 
 const INVENTORY_MODEL_VERSION = 2;
-const INVENTORY_PRICE_FORMATION_VERSION = 2;
+// SPEC 023 §6: v3 forma el precio sobre el costo neto; la tasa se deriva de la
+// marca "Exento de IVA" y de la tasa del negocio. v2 se sigue leyendo.
+const INVENTORY_PRICE_FORMATION_VERSION = 3;
+const EXEMPT_INVENTORY_TAX_IDS = new Set(["IVA_EXENTO", "SIN_IMPUESTO"]);
+const EDITABLE_INVENTORY_TAX_IDS = new Set(["IVA_GENERAL", "IVA_EXENTO"]);
 const MAX_INVENTORY_IMPORT_BATCH_SIZE = 200;
 const INVENTORY_TYPES = Object.freeze(["producto", "servicio", "actividad"]);
 const INTERNAL_CODE_PREFIXES = Object.freeze({
@@ -188,30 +192,76 @@ function normalizeInventoryCodeForComparison(value) {
 }
 
 function inventoryPersistenceData(item) {
-  const { codigoSolicitado, ...data } = item;
+  const { codigoSolicitado, impuestoIdSolicitado, ...data } = item;
   if (!data.areaId) delete data.areaId;
   if (!data.categoriaId) delete data.categoriaId;
   return data;
 }
 
+function isExemptInventoryTaxId(impuestoId) {
+  return EXEMPT_INVENTORY_TAX_IDS.has(String(impuestoId || "").trim().toUpperCase());
+}
+
+// SPEC 023 §6.2 y §6.4 (P1): `costoPagado` es solo referencia ("Costo con
+// IVA"); el precio sugerido se forma sobre el costo neto.
 function calculateInventoryPriceFormation({
   costoBase,
-  tasaImpuestoCompra,
+  impuestoId,
+  tasaNegocio,
   margenDeseado,
   precioInterno,
   precioManual,
 }) {
+  const businessRate = Number(tasaNegocio);
+  const tasaImpuestoCompra = isExemptInventoryTaxId(impuestoId) ||
+    !Number.isFinite(businessRate)
+    ? 0
+    : Math.min(Math.max(businessRate, 0), 100);
   const montoImpuestoCompra = Math.round(costoBase * tasaImpuestoCompra / 100);
-  const costoPagado = Math.round(costoBase * (1 + tasaImpuestoCompra / 100));
-  const precioVentaSugerido = Math.round(
-    costoBase * (1 + tasaImpuestoCompra / 100) * (1 + margenDeseado / 100)
-  );
+  const costoPagado = costoBase + montoImpuestoCompra;
+  const precioVentaSugerido = Math.round(costoBase * (1 + margenDeseado / 100));
   return {
+    formacionPrecioVersion: INVENTORY_PRICE_FORMATION_VERSION,
     tasaImpuestoCompra,
     montoImpuestoCompra,
     costoPagado,
     precioVentaSugerido,
     precioInterno: precioManual ? precioInterno : precioVentaSugerido,
+  };
+}
+
+function resolveBusinessTaxRate(context = {}, rawTaxSettings = {}, business = {}) {
+  const rate = context.taxSettings
+    ? context.taxSettings.impuestoPredeterminadoTasa
+    : normalizeTaxSettings(rawTaxSettings, business).impuestoPredeterminadoTasa;
+  const parsed = Number(rate);
+  return rate === null || rate === undefined || !Number.isFinite(parsed) ? 0 : parsed;
+}
+
+// La marca solicitada se compara con la vigente por exención, no por texto:
+// un `SIN_IMPUESTO` legacy que sigue marcado se conserva tal cual.
+function resolveInventoryTaxId(requestedId, currentId) {
+  if (!requestedId) return currentId;
+  if (isExemptInventoryTaxId(requestedId) && isExemptInventoryTaxId(currentId)) {
+    return currentId;
+  }
+  return requestedId;
+}
+
+function inventoryTaxPersistenceFields(item, impuestoId, tasaNegocio) {
+  if (item.tipoItem !== "producto") return {};
+  const formation = calculateInventoryPriceFormation({
+    costoBase: item.costoBase,
+    impuestoId,
+    tasaNegocio,
+    margenDeseado: item.margenDeseado,
+    precioInterno: item.precioInterno,
+    precioManual: item.precioManual,
+  });
+  return {
+    impuestoId,
+    impuestoTasa: formation.tasaImpuestoCompra,
+    ...formation,
   };
 }
 
@@ -294,14 +344,20 @@ async function readDocumentSnapshot(db, reference) {
   return db.runTransaction((transaction) => transaction.get(reference));
 }
 
-function getInventoryTaxFields(item, rawSettings = {}) {
-  if (item.tipoItem !== "producto") return {};
-  const options = {
-    IVA_GENERAL: { impuestoId: "IVA_GENERAL", impuestoTasa: 19 },
-    IVA_EXENTO: { impuestoId: "IVA_EXENTO", impuestoTasa: 0 },
-    SIN_IMPUESTO: { impuestoId: "SIN_IMPUESTO", impuestoTasa: 0 },
-  };
-  return options[rawSettings.impuestoPredeterminadoId] || options.IVA_GENERAL;
+// Valor inicial de la marca de exención para productos nuevos (SPEC 023 §6.1).
+function getDefaultInventoryTaxId(rawSettings = {}) {
+  return ["IVA_GENERAL", "IVA_EXENTO", "SIN_IMPUESTO"]
+    .includes(rawSettings.impuestoPredeterminadoId)
+    ? rawSettings.impuestoPredeterminadoId
+    : "IVA_GENERAL";
+}
+
+function getInventoryTaxFields(item, rawSettings = {}, tasaNegocio = 0) {
+  return inventoryTaxPersistenceFields(
+    item,
+    resolveInventoryTaxId(item.impuestoIdSolicitado, getDefaultInventoryTaxId(rawSettings)),
+    tasaNegocio
+  );
 }
 
 function validateInventoryItemInput(
@@ -340,13 +396,11 @@ function validateInventoryItemInput(
       "El recargo no puede superar 1000%."
     );
   }
-  const usesPurchaseTaxPriceFormation = tipoItem === "producto" &&
-    Number(source.formacionPrecioVersion) === INVENTORY_PRICE_FORMATION_VERSION;
   const calculatedPrice = Math.round(
     costoBase + (costoBase * margenDeseado) / 100
   );
   const precioManual = source.precioManual === true;
-  let precioInterno = precioManual
+  const precioInterno = precioManual
     ? toFiniteNumber(source.precioInterno, "El precio interno", HttpsError)
     : calculatedPrice;
 
@@ -372,34 +426,24 @@ function validateInventoryItemInput(
     if (codigoSolicitado) result.codigoSolicitado = codigoSolicitado;
   }
 
+  // SPEC 023 §6.1: la marca de exención es por producto. La formación de
+  // precio la calculan los handlers con la marca vigente y la tasa del negocio.
+  const impuestoIdSolicitado = safeText(source.impuestoId, 40).toUpperCase();
+  if (impuestoIdSolicitado && tipoItem !== "producto") {
+    throw new HttpsError(
+      "invalid-argument",
+      "La marca de exención de IVA solo aplica a productos."
+    );
+  }
+  if (impuestoIdSolicitado && !EDITABLE_INVENTORY_TAX_IDS.has(impuestoIdSolicitado)) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Selecciona si el producto es exento de IVA."
+    );
+  }
+
   if (tipoItem === "producto") {
-    if (usesPurchaseTaxPriceFormation) {
-      const tasaImpuestoCompra = toFiniteNumber(
-        source.tasaImpuestoCompra,
-        "El IVA de compra",
-        HttpsError
-      );
-      if (tasaImpuestoCompra > 100) {
-        throw new HttpsError(
-          "invalid-argument",
-          "El IVA de compra no puede superar 100%."
-        );
-      }
-      const formation = calculateInventoryPriceFormation({
-        costoBase,
-        tasaImpuestoCompra,
-        margenDeseado,
-        precioInterno,
-        precioManual,
-      });
-      precioInterno = formation.precioInterno;
-      result.precioInterno = precioInterno;
-      result.formacionPrecioVersion = INVENTORY_PRICE_FORMATION_VERSION;
-      result.tasaImpuestoCompra = formation.tasaImpuestoCompra;
-      result.montoImpuestoCompra = formation.montoImpuestoCompra;
-      result.costoPagado = formation.costoPagado;
-      result.precioVentaSugerido = formation.precioVentaSugerido;
-    }
+    if (impuestoIdSolicitado) result.impuestoIdSolicitado = impuestoIdSolicitado;
     const marca = safeText(source.marca, 100);
     const modelo = safeText(source.modelo, 100);
     if (marca) result.marca = marca;
@@ -532,7 +576,7 @@ function optionalField(value, FieldValue) {
   return value ? value : FieldValue.delete();
 }
 
-function inventoryEditableUpdate(item, categoryName, FieldValue) {
+function inventoryEditableUpdate(item, categoryName, FieldValue, taxFields = {}) {
   const update = {
     nombre: item.nombre,
     descripcion: item.descripcion,
@@ -558,19 +602,8 @@ function inventoryEditableUpdate(item, categoryName, FieldValue) {
     numeroFacturaReferencia: optionalField(item.numeroFacturaReferencia, FieldValue),
     unidadStock: item.unidadStock || item.unidad,
     stockMinimo: item.stockMinimo,
-    formacionPrecioVersion: item.formacionPrecioVersion || FieldValue.delete(),
-    tasaImpuestoCompra: item.formacionPrecioVersion
-      ? item.tasaImpuestoCompra
-      : FieldValue.delete(),
-    montoImpuestoCompra: item.formacionPrecioVersion
-      ? item.montoImpuestoCompra
-      : FieldValue.delete(),
-    costoPagado: item.formacionPrecioVersion
-      ? item.costoPagado
-      : FieldValue.delete(),
-    precioVentaSugerido: item.formacionPrecioVersion
-      ? item.precioVentaSugerido
-      : FieldValue.delete(),
+    // SPEC 023 §6.2: guardar la ficha de un producto la deja en v3.
+    ...taxFields,
   };
 }
 
@@ -941,8 +974,9 @@ async function createInventoryItemWithCodeHandler(
   request,
   { db, HttpsError, FieldValue, requireBusinessAccess }
 ) {
-  const { uid, businessId, businessRef: userRef } =
+  const businessContext =
     await resolveBusinessContext(request, { db, HttpsError, requireBusinessAccess });
+  const { uid, businessId, businessRef: userRef } = businessContext;
   const requestId = validateRequestId(request.data?.requestId, HttpsError);
   const [inventorySettingsSnapshot, taxSettingsSnapshot] = await Promise.all([
     readDocumentSnapshot(
@@ -1041,7 +1075,11 @@ async function createInventoryItemWithCodeHandler(
     });
     transaction.set(itemRef, {
       ...inventoryPersistenceData(item),
-      ...getInventoryTaxFields(item, taxSettingsSnapshot.data() || {}),
+      ...getInventoryTaxFields(
+        item,
+        taxSettingsSnapshot.data() || {},
+        resolveBusinessTaxRate(businessContext, taxSettingsSnapshot.data() || {})
+      ),
       categoria: categorySnapshot?.data()?.nombre || "",
       codigoInterno,
       modeloInventarioVersion: INVENTORY_MODEL_VERSION,
@@ -1076,19 +1114,27 @@ async function updateInventoryItemHandler(
   request,
   { db, HttpsError, FieldValue, requireBusinessAccess }
 ) {
-  const { uid, businessId, businessRef } = await resolveBusinessContext(
+  const businessContext = await resolveBusinessContext(
     request,
     {db, HttpsError, requireBusinessAccess}
   );
+  const { uid, businessId, businessRef } = businessContext;
   const itemId = safeText(request.data?.itemId, 160);
   if (!/^[a-zA-Z0-9_-]{1,160}$/.test(itemId)) {
     throw new HttpsError("invalid-argument", "Selecciona un ítem válido.");
   }
   const requestId = validateRequestId(request.data?.requestId, HttpsError);
-  const inventorySettingsSnapshot = await readDocumentSnapshot(
-    db,
-    businessRef.collection("configuracion").doc("inventario")
-  );
+  const [inventorySettingsSnapshot, taxSettingsSnapshot] = await Promise.all([
+    readDocumentSnapshot(
+      db,
+      businessRef.collection("configuracion").doc("inventario")
+    ),
+    readDocumentSnapshot(
+      db,
+      businessRef.collection("configuracion").doc("impuestos")
+    ),
+  ]);
+  const rawTaxSettings = taxSettingsSnapshot.data() || {};
   const item = validateInventoryItemInput(request.data?.item, HttpsError, {
     allowNegativeStock:
       inventorySettingsSnapshot.data()?.permitirStockNegativo === true,
@@ -1162,6 +1208,27 @@ async function updateInventoryItemHandler(
         "El tipo de un ítem existente no se puede modificar."
       );
     }
+    // SPEC 023 §6.1: cambiar la exención de un producto existente queda
+    // reservado a la administración del negocio.
+    const currentTaxId = current.impuestoId || getDefaultInventoryTaxId(rawTaxSettings);
+    const nextTaxId = resolveInventoryTaxId(item.impuestoIdSolicitado, currentTaxId);
+    if (
+      item.tipoItem === "producto" &&
+      isExemptInventoryTaxId(nextTaxId) !== isExemptInventoryTaxId(currentTaxId) &&
+      !BUSINESS_MANAGEMENT_ROLES.includes(businessContext.membership?.rol || "OWNER")
+    ) {
+      throw new HttpsError(
+        "permission-denied",
+        "Solo la administración del negocio puede cambiar la exención de IVA de un producto."
+      );
+    }
+    const taxFields = item.tipoItem === "producto"
+      ? inventoryTaxPersistenceFields(
+        item,
+        nextTaxId,
+        resolveBusinessTaxRate(businessContext, rawTaxSettings, businessSnapshot?.data() || {})
+      )
+      : {};
     if (
       (current.estado || "activo") === "activo" &&
       nextBarcodeKeySnapshot?.exists &&
@@ -1227,7 +1294,8 @@ async function updateInventoryItemHandler(
       ...inventoryEditableUpdate(
         item,
         categorySnapshot?.data()?.nombre || "",
-        FieldValue
+        FieldValue,
+        taxFields
       ),
       ...(stockChanged ? {
         stock: economicAdjustment.next.stock,
@@ -1427,8 +1495,9 @@ async function confirmInventoryImportV2Handler(
   request,
   { db, HttpsError, FieldValue, requireBusinessAccess }
 ) {
-  const { uid, businessId, businessRef: userRef } =
+  const businessContext =
     await resolveBusinessContext(request, { db, HttpsError, requireBusinessAccess });
+  const { uid, businessId, businessRef: userRef } = businessContext;
   const requestId = validateRequestId(request.data?.requestId, HttpsError);
   const [inventorySettingsSnapshot, taxSettingsSnapshot] = await Promise.all([
     readDocumentSnapshot(
@@ -1440,6 +1509,10 @@ async function confirmInventoryImportV2Handler(
       userRef.collection("configuracion").doc("impuestos")
     ),
   ]);
+  const businessTaxRate = resolveBusinessTaxRate(
+    businessContext,
+    taxSettingsSnapshot.data() || {}
+  );
   const rows = normalizeInventoryImportRows(request.data?.rows, HttpsError, {
     allowNegativeStock:
       inventorySettingsSnapshot.data()?.permitirStockNegativo === true,
@@ -1640,7 +1713,7 @@ async function confirmInventoryImportV2Handler(
 
       transaction.set(itemRef, {
         ...inventoryPersistenceData(row.item),
-        ...getInventoryTaxFields(row.item, taxSettingsSnapshot.data() || {}),
+        ...getInventoryTaxFields(row.item, taxSettingsSnapshot.data() || {}, businessTaxRate),
         categoria: categorySnapshot?.data()?.nombre || "",
         codigoInterno,
         modeloInventarioVersion: INVENTORY_MODEL_VERSION,
@@ -1717,5 +1790,6 @@ module.exports = {
   saveInventoryCategoryHandler,
   setInventoryItemStatusHandler,
   updateInventoryItemHandler,
+  calculateInventoryPriceFormation,
   validateInventoryItemInput,
 };

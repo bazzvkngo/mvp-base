@@ -2,7 +2,7 @@ import React, { useRef, useState } from "react";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import Spinner from "../../components/ui/Spinner";
 import {
-  applyInventoryImportPurchaseTax,
+  markInventoryImportRowsExempt,
   confirmLocalInventoryImport,
   createInventoryImportRequestIdBase,
   downloadInventoryTemplate,
@@ -143,9 +143,9 @@ function InventoryImportDialog({
     ));
   };
 
-  const applyPurchaseTax = (rate) => {
+  const markRowsExempt = () => {
     setRows((current) => revalidateInventoryImportCodes(
-      applyInventoryImportPurchaseTax(current, rate, {areas, categories}),
+      markInventoryImportRowsExempt(current, {areas, categories}),
       existingItems
     ));
   };
@@ -359,8 +359,8 @@ function InventoryImportDialog({
               <button type="button" className="inventory-link-button" disabled={saving || summary.included === rows.length} onClick={() => setAllRowsIncluded(true)}>Seleccionar todas</button>
               <button type="button" className="inventory-link-button" disabled={saving || summary.included === 0} onClick={() => setAllRowsIncluded(false)}>Excluir todas</button>
               {rows.some((row) => row.draft.tipoItem === "producto") && (
-                <button type="button" className="inventory-button inventory-button--secondary" disabled={saving || summary.included === 0} onClick={() => applyPurchaseTax(0)}>
-                  Sin IVA / Exento
+                <button type="button" className="inventory-button inventory-button--secondary" disabled={saving || summary.included === 0} onClick={markRowsExempt}>
+                  Marcar como exentos
                 </button>
               )}
             </div>
@@ -398,7 +398,7 @@ function InventoryImportDialog({
                         <ImportField label="Costo base" error={errors.costoBase}><input inputMode="decimal" value={row.draft.costoBase} onChange={(event) => updateRow(row.rowId, "costoBase", event.target.value)} /></ImportField>
                         <ImportField label="Recargo %" error={errors.margenDeseado}><input inputMode="decimal" value={row.draft.margenDeseado} onChange={(event) => updateRow(row.rowId, "margenDeseado", event.target.value)} /></ImportField>
                         <ImportField label="Precio de venta" error={errors.precioManual}><input inputMode="decimal" value={row.draft.precioManual} placeholder="Calculado si queda vacío" onChange={(event) => updateRow(row.rowId, "precioManual", event.target.value)} /></ImportField>
-                        {row.draft.tipoItem === "producto" && <><ImportField label="Marca" error={errors.marca}><input value={row.draft.marca || ""} placeholder="Ej. Marca" onChange={(event) => updateRow(row.rowId, "marca", event.target.value)} /></ImportField><ImportField label="Modelo" error={errors.modelo}><input value={row.draft.modelo || ""} placeholder="Ej. X100" onChange={(event) => updateRow(row.rowId, "modelo", event.target.value)} /></ImportField><ImportField label="Código de barras" error={errors.codigoBarras}><input value={row.draft.codigoBarras || ""} onChange={(event) => updateRow(row.rowId, "codigoBarras", event.target.value)} /></ImportField><ImportField label="IVA compra %" error={errors.tasaImpuestoCompra}><input type="number" inputMode="decimal" min="0" max="100" value={row.draft.tasaImpuestoCompra} placeholder="Revisar" onChange={(event) => updateRow(row.rowId, "tasaImpuestoCompra", event.target.value)} /></ImportField><ImportField label="Stock" error={errors.stock}><input inputMode="decimal" value={row.draft.stock} onChange={(event) => updateRow(row.rowId, "stock", event.target.value)} /></ImportField><ImportField label="Stock mínimo" error={errors.stockMinimo}><input inputMode="decimal" value={row.draft.stockMinimo} onChange={(event) => updateRow(row.rowId, "stockMinimo", event.target.value)} /></ImportField></>}
+                        {row.draft.tipoItem === "producto" && <><ImportField label="Marca" error={errors.marca}><input value={row.draft.marca || ""} placeholder="Ej. Marca" onChange={(event) => updateRow(row.rowId, "marca", event.target.value)} /></ImportField><ImportField label="Modelo" error={errors.modelo}><input value={row.draft.modelo || ""} placeholder="Ej. X100" onChange={(event) => updateRow(row.rowId, "modelo", event.target.value)} /></ImportField><ImportField label="Código de barras" error={errors.codigoBarras}><input value={row.draft.codigoBarras || ""} onChange={(event) => updateRow(row.rowId, "codigoBarras", event.target.value)} /></ImportField><ImportField label="Exento de IVA" error={errors.exentoIva}><select value={row.draft.exentoIva === true ? "si" : row.draft.exentoIva === false ? "no" : ""} onChange={(event) => updateRow(row.rowId, "exentoIva", event.target.value === "si" ? true : event.target.value === "no" ? false : "")}><option value="">Según el negocio</option><option value="no">No</option><option value="si">Sí</option></select></ImportField><ImportField label="Stock" error={errors.stock}><input inputMode="decimal" value={row.draft.stock} onChange={(event) => updateRow(row.rowId, "stock", event.target.value)} /></ImportField><ImportField label="Stock mínimo" error={errors.stockMinimo}><input inputMode="decimal" value={row.draft.stockMinimo} onChange={(event) => updateRow(row.rowId, "stockMinimo", event.target.value)} /></ImportField></>}
                         <ImportField label="Descripción" error={errors.descripcion} wide><textarea rows="2" value={row.draft.descripcion || ""} onChange={(event) => updateRow(row.rowId, "descripcion", event.target.value)} /></ImportField>
                       </div>
                       {hasWarnings && <ul className="inventory-row-warnings">{row.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>}

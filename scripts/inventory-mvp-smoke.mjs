@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import {
   INVENTORY_UNITS,
   INVENTORY_PRICE_FORMATION_VERSION,
+  LEGACY_PURCHASE_TAX_PRICE_FORMATION_VERSION,
   adaptInventoryItem,
   buildInventoryPayload,
   calculateInventoryPriceFormation,
@@ -17,7 +18,7 @@ import { getInventoryMetrics } from "../src/domain/reportModel.mjs";
 import {
   INVENTORY_TEMPLATE_COLUMNS,
   MAX_LOCAL_INVENTORY_ROWS,
-  applyInventoryImportPurchaseTax,
+  markInventoryImportRowsExempt,
   buildInventoryImportBatchRequestId,
   confirmLocalInventoryImport,
   getInventoryImportSummary,
@@ -80,17 +81,20 @@ function main() {
     margenDeseado: "25", precioManual: "", stock: "4", stockMinimo: "2",
     marca: "Cisco", modelo: "C1111", codigoBarras: "07801234567890",
     areaId: "", categoriaId: "", descripcion: "",
-    formacionPrecioVersion: INVENTORY_PRICE_FORMATION_VERSION,
-    tasaImpuestoCompra: "19",
+    exentoIva: false,
     proveedorNombre: " Prodalam S.A. ",
     proveedorRut: "937720009",
     fechaCompraReferencia: "2026-08-24",
     numeroFacturaReferencia: " 06897040 ",
   });
-  assert.equal(taxedProduct.montoImpuestoCompra, 19000);
-  assert.equal(taxedProduct.costoPagado, 119000);
-  assert.equal(taxedProduct.precioVentaSugerido, 148750);
-  assert.equal(taxedProduct.precioInterno, 148750);
+  // SPEC 023 §6: el cliente solo envía la marca; Functions calcula la v3.
+  assert.equal(taxedProduct.impuestoId, "IVA_GENERAL");
+  assert.equal(taxedProduct.precioInterno, 125000);
+  assert.equal("formacionPrecioVersion" in taxedProduct, false);
+  assert.equal("costoPagado" in taxedProduct, false);
+  assert.equal(buildInventoryPayload({...taxedProduct, exentoIva: true}).impuestoId, "IVA_EXENTO");
+  assert.equal("impuestoId" in buildInventoryPayload({...taxedProduct, exentoIva: ""}), false, "sin marca rige el valor del negocio");
+  assert.ok(validateInventoryDraft({...taxedProduct, exentoIva: "quizás"}).exentoIva);
   assert.equal(taxedProduct.barcode, "07801234567890");
   assert.equal(taxedProduct.stock, 4);
   assert.equal(taxedProduct.proveedorNombre, "Prodalam S.A.");
@@ -102,34 +106,38 @@ function main() {
     fechaCompraReferencia: "2026-02-31",
   }).fechaCompraReferencia);
 
-  const withoutPurchaseTax = calculateInventoryPriceFormation({
+  // Espejo de la v3 (P1): 125000 con y sin IVA; el exento no suma referencia.
+  const v3WithTax = calculateInventoryPriceFormation({
+    formacionPrecioVersion: INVENTORY_PRICE_FORMATION_VERSION,
+    costoBase: 100000,
+    tasaImpuestoCompra: 19,
+    margenDeseado: 25,
+  });
+  assert.deepEqual(
+    [v3WithTax.montoImpuestoCompra, v3WithTax.costoPagado, v3WithTax.precioVentaSugerido],
+    [19000, 119000, 125000]
+  );
+  const v3Exempt = calculateInventoryPriceFormation({
+    formacionPrecioVersion: INVENTORY_PRICE_FORMATION_VERSION,
     costoBase: 100000,
     tasaImpuestoCompra: 0,
     margenDeseado: 25,
   });
-  assert.equal(withoutPurchaseTax.costoPagado, 100000);
-  assert.equal(withoutPurchaseTax.precioVentaSugerido, 125000);
-
-  const customPurchaseTax = calculateInventoryPriceFormation({
+  assert.deepEqual([v3Exempt.costoPagado, v3Exempt.precioVentaSugerido], [100000, 125000]);
+  const legacyV2 = calculateInventoryPriceFormation({
+    formacionPrecioVersion: LEGACY_PURCHASE_TAX_PRICE_FORMATION_VERSION,
     costoBase: 100000,
-    tasaImpuestoCompra: 10,
-    margenDeseado: 20,
+    tasaImpuestoCompra: 19,
+    margenDeseado: 25,
   });
-  assert.equal(customPurchaseTax.montoImpuestoCompra, 10000);
-  assert.equal(customPurchaseTax.costoPagado, 110000);
-  assert.equal(customPurchaseTax.precioVentaSugerido, 132000);
+  assert.equal(legacyV2.precioVentaSugerido, 148750, "un producto v2 se lee con su fórmula (D5)");
 
   const manualTaxedProduct = buildInventoryPayload({
     ...taxedProduct,
     precioManual: "140000",
   });
-  assert.equal(manualTaxedProduct.precioVentaSugerido, 148750);
   assert.equal(manualTaxedProduct.precioInterno, 140000);
   assert.equal(manualTaxedProduct.precioManual, true);
-  assert.ok(validateInventoryDraft({
-    ...taxedProduct,
-    tasaImpuestoCompra: "101",
-  }).tasaImpuestoCompra);
   const chileanFormattedProduct = buildInventoryPayload({
     tipoItem: "producto", nombre: "Equipo", unidad: "unidad", costoBase: "520.000",
     margenDeseado: "12,5", precioManual: "", stock: "1", stockMinimo: "0",
@@ -175,6 +183,7 @@ function main() {
   assert.equal("formacionPrecioVersion" in service, false);
   assert.equal("tasaImpuestoCompra" in service, false);
   assert.equal("costoPagado" in service, false);
+  assert.equal("impuestoId" in service, false);
 
   const activity = buildInventoryPayload({
     tipoItem: "actividad", nombre: "Levantamiento", unidad: "actividad", costoBase: "0",
@@ -209,10 +218,22 @@ function main() {
   });
   assert.equal(historicalProduct.tasaImpuestoCompra, 0);
   assert.equal(historicalProduct.precioEfectivo, 125000);
-  const adaptedTaxedProduct = adaptInventoryItem(taxedProduct);
-  assert.equal(adaptedTaxedProduct.montoImpuestoCompra, 19000);
-  assert.equal(adaptedTaxedProduct.costoPagado, 119000);
-  assert.equal(adaptedTaxedProduct.precioEfectivo, 148750);
+  const storedV3Product = adaptInventoryItem({
+    tipoItem: "producto", nombre: "Router v3", costoBase: 100000, margenDeseado: 25,
+    formacionPrecioVersion: 3, tasaImpuestoCompra: 19, impuestoId: "IVA_GENERAL",
+    precioInterno: 125000,
+  });
+  assert.deepEqual(
+    [storedV3Product.costoPagado, storedV3Product.precioCalculado, storedV3Product.precioEfectivo, storedV3Product.exentoIva],
+    [119000, 125000, 125000, false]
+  );
+  const storedV2Product = adaptInventoryItem({
+    tipoItem: "producto", nombre: "Router v2", costoBase: 100000, margenDeseado: 25,
+    formacionPrecioVersion: 2, tasaImpuestoCompra: 19, precioInterno: 148750,
+  });
+  assert.equal(storedV2Product.precioEfectivo, 148750, "v2 se muestra como está guardado");
+  assert.equal(adaptInventoryItem({tipoItem: "producto", impuestoId: "SIN_IMPUESTO"}).exentoIva, true);
+  assert.equal(adaptInventoryItem({tipoItem: "servicio", impuestoId: "IVA_EXENTO"}).exentoIva, false);
   const list = [
     { id: "p", nombre: "ThinkPad", codigoInterno: "NB-001", marca: "Lenovo", modelo: "E13", codigoBarras: "07801234567890", tipoItem: "producto", costoBase: 100, margenDeseado: 20, stock: 1, stockMinimo: 2, estado: "activo" },
     { id: "s", nombre: "Soporte", tipoItem: "servicio", costoBase: 200, margenDeseado: 10, estado: "activo" },
@@ -330,6 +351,26 @@ function main() {
   assert.ok(rows[3].fieldErrors.nombre);
   assert.ok(rows[3].fieldErrors.costoBase);
   assert.equal(getInventoryImportSummary(rows).invalid, 2);
+  assert.equal(rows[0].draft.exentoIva, "", "sin columna de exención rige el valor del negocio");
+
+  // SPEC 023 §6.5: columna opcional exento_iva y columna de IVA ignorada.
+  const exemptionRows = transformInventorySpreadsheetRows([
+    ["tipo", "nombre", "unidad", "costo_base", "exento_iva", "iva", "margen"],
+    ["producto", "Libro", "unidad", 10000, "Sí", "", 30],
+    ["producto", "Cable", "unidad", 5000, "no", 19, 30],
+    ["producto", "Tubo", "unidad", 3000, "", "", 30],
+    ["producto", "Dudoso", "unidad", 3000, "quizás", "", 30],
+    ["servicio", "Asesoría", "hora", 3000, "sí", "", 30],
+  ]);
+  assert.deepEqual(exemptionRows.map((row) => row.draft.exentoIva), [true, false, "", "quizás", ""]);
+  assert.equal(buildInventoryPayload(exemptionRows[0].draft).impuestoId, "IVA_EXENTO");
+  assert.equal(buildInventoryPayload(exemptionRows[1].draft).impuestoId, "IVA_GENERAL");
+  assert.equal(buildInventoryPayload(exemptionRows[1].draft).precioInterno, 6500, "el costo de la planilla se toma neto");
+  assert.equal("impuestoId" in buildInventoryPayload(exemptionRows[2].draft), false);
+  assert.ok(exemptionRows[3].fieldErrors.exentoIva);
+  assert.ok(exemptionRows[1].warnings.some((warning) => /columna de IVA se ignora/.test(warning)));
+  assert.equal(exemptionRows[0].warnings.some((warning) => /columna de IVA/.test(warning)), false);
+  assert.equal(mapInventoryHeaders(["Exento IVA"]).exentoIva, 0);
 
   const formattedImportRows = transformInventorySpreadsheetRows([
     ["tipo", "nombre", "codigo", "area", "categoria", "unidad", "costo_base", "margen", "precio_manual", "stock", "stock_minimo", "descripcion"],
@@ -375,11 +416,10 @@ function main() {
   assert.equal(documentRows[0].draft.codigoSolicitado, "SW-02");
   assert.equal(documentRows[0].draft.marca, "Cisco");
   assert.equal(documentRows[0].draft.modelo, "CBS110");
-  assert.equal(
-    documentRows[0].draft.formacionPrecioVersion,
-    INVENTORY_PRICE_FORMATION_VERSION
-  );
-  assert.equal(documentRows[0].draft.tasaImpuestoCompra, 19);
+  // SPEC 023 §6.5: la tasa detectada no decide la formación; costo neto.
+  assert.equal("formacionPrecioVersion" in documentRows[0].draft, false);
+  assert.equal("tasaImpuestoCompra" in documentRows[0].draft, false);
+  assert.equal(documentRows[0].draft.exentoIva, "");
   assert.ok(documentRows[0].warnings.some((warning) => warning.includes("precio")));
   assert.equal(documentRows[1].included, true);
   assert.equal(documentRows[1].sourceCode, "PROV-7788");
@@ -388,10 +428,10 @@ function main() {
   assert.equal(getInventoryImportSummary(documentRows).review, 1);
   assert.equal(getInventoryImportSummary(documentRows).excluded, 1);
   assert.equal(getInventoryImportSummary(documentRows).importable, 1);
-  const taxedDocumentRows = applyInventoryImportPurchaseTax(documentRows, 19, {areas, categories});
-  assert.equal(taxedDocumentRows[1].draft.tasaImpuestoCompra, 19);
-  assert.equal(taxedDocumentRows[1].warnings.length, 0);
-  assert.equal(getInventoryImportSummary(taxedDocumentRows).ready, 1);
+  const exemptDocumentRows = markInventoryImportRowsExempt(documentRows, {areas, categories});
+  assert.equal(exemptDocumentRows[0].draft.exentoIva, "", "las filas excluidas no se marcan");
+  assert.equal(exemptDocumentRows[1].draft.exentoIva, true);
+  assert.equal(buildInventoryPayload(exemptDocumentRows[1].draft).impuestoId, "IVA_EXENTO");
 
   const duplicated = revalidateInventoryImportCodes([
     rows[0],
@@ -425,7 +465,7 @@ function main() {
   assert.equal(MAX_LOCAL_INVENTORY_ROWS, 500);
   assert.deepEqual(INVENTORY_TEMPLATE_COLUMNS, [
     "tipo", "nombre", "codigo", "area", "categoria", "unidad", "costo_base",
-    "margen", "precio_manual", "stock", "stock_minimo", "descripcion",
+    "exento_iva", "margen", "precio_manual", "stock", "stock_minimo", "descripcion",
   ]);
 }
 
@@ -526,7 +566,21 @@ async function sourceChecks() {
   assert.match(importer, /Subir archivo/);
   assert.match(importer, /Revisar/);
   assert.match(importer, /Importando inventario/);
-  assert.match(importer, /Sin IVA \/ Exento/);
+  assert.match(importer, /Marcar como exentos/);
+  assert.match(importer, /<ImportField label="Exento de IVA"/);
+  assert.doesNotMatch(importer, /IVA compra %/);
+  // Smoke 21 (SPEC 023 §12.2): formulario y ficha con costo neto y exención.
+  assert.match(manager, /"Costo neto \(sin IVA\)"/);
+  assert.match(manager, /"Costo \(exento de IVA\)"/);
+  assert.match(manager, /<span>Exento de IVA<\/span>/);
+  assert.match(manager, /label="Costo con IVA \(referencia\)"/);
+  assert.match(manager, /"Exento: no lleva IVA"/);
+  assert.match(manager, /<Detail label="Costo neto"/);
+  assert.match(manager, /<Detail label="Costo promedio neto"/);
+  assert.match(manager, /<Detail label="Último costo neto"/);
+  assert.match(manager, /disabled=\{exemptionLocked\}/);
+  assert.match(manager, /Al guardar se recalcula sobre el costo neto/);
+  assert.doesNotMatch(manager, /label="IVA de compra"|Tasa personalizada|label="Costo pagado"|Costo base \/ manual/);
   assert.match(importer, /Eliminar fila/);
   assert.doesNotMatch(manager, /Hikvision|Prodalam|06897040|93\.772\.000-9/);
   assert.match(manager, /Origen de compra/);

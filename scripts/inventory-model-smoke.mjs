@@ -6,6 +6,7 @@ const require = createRequire(import.meta.url);
 const {
   INITIAL_INVENTORY_AREAS,
   INITIAL_INVENTORY_CATEGORIES,
+  calculateInventoryPriceFormation,
   confirmInventoryImportV2Handler,
   createInventoryItemWithCodeHandler,
   formatInternalCode,
@@ -194,47 +195,73 @@ async function main() {
     () => validateInventoryItemInput(item({ stock: -2 }), TestHttpsError),
     (error) => error?.code === "invalid-argument"
   );
-  const taxedFormation = validateInventoryItemInput(item({
+  // SPEC 023 §6.2/§6.4 (P1): v3 forma el precio sobre el costo neto; el costo
+  // con IVA es solo referencia y la exención deja la tasa en 0.
+  const taxedFormation = calculateInventoryPriceFormation({
     costoBase: 100000,
-    margenDeseado: 25,
-    formacionPrecioVersion: 2,
-    tasaImpuestoCompra: 19,
-  }), TestHttpsError);
-  assert.equal(taxedFormation.montoImpuestoCompra, 19000);
-  assert.equal(taxedFormation.costoPagado, 119000);
-  assert.equal(taxedFormation.precioVentaSugerido, 148750);
-  assert.equal(taxedFormation.precioInterno, 148750);
-  const customTaxFormation = validateInventoryItemInput(item({
-    costoBase: 100000,
-    margenDeseado: 20,
-    formacionPrecioVersion: 2,
-    tasaImpuestoCompra: 10,
-  }), TestHttpsError);
-  assert.equal(customTaxFormation.costoPagado, 110000);
-  assert.equal(customTaxFormation.precioInterno, 132000);
-  const manuallyPricedFormation = validateInventoryItemInput(item({
-    costoBase: 100000,
-    margenDeseado: 25,
-    formacionPrecioVersion: 2,
-    tasaImpuestoCompra: 19,
-    precioManual: true,
-    precioInterno: 140000,
-  }), TestHttpsError);
-  assert.equal(manuallyPricedFormation.precioVentaSugerido, 148750);
-  assert.equal(manuallyPricedFormation.precioInterno, 140000);
-  const historicalFormation = validateInventoryItemInput(item({
-    costoBase: 100000,
+    impuestoId: "IVA_GENERAL",
+    tasaNegocio: 19,
     margenDeseado: 25,
     precioInterno: 125000,
+    precioManual: false,
+  });
+  assert.deepEqual(taxedFormation, {
+    formacionPrecioVersion: 3,
+    tasaImpuestoCompra: 19,
+    montoImpuestoCompra: 19000,
+    costoPagado: 119000,
+    precioVentaSugerido: 125000,
+    precioInterno: 125000,
+  });
+  const exemptFormation = calculateInventoryPriceFormation({
+    costoBase: 100000,
+    impuestoId: "IVA_EXENTO",
+    tasaNegocio: 19,
+    margenDeseado: 20,
+    precioManual: false,
+  });
+  assert.deepEqual(
+    [exemptFormation.tasaImpuestoCompra, exemptFormation.montoImpuestoCompra, exemptFormation.costoPagado, exemptFormation.precioInterno],
+    [0, 0, 100000, 120000]
+  );
+  assert.equal(calculateInventoryPriceFormation({
+    costoBase: 100000, impuestoId: "SIN_IMPUESTO", tasaNegocio: 19, margenDeseado: 0,
+  }).tasaImpuestoCompra, 0, "SIN_IMPUESTO legacy se trata como exento");
+  assert.equal(calculateInventoryPriceFormation({
+    costoBase: 100000, impuestoId: "IVA_GENERAL", tasaNegocio: null, margenDeseado: 0,
+  }).costoPagado, 100000, "sin tasa configurada el costo con IVA es el neto");
+  const manuallyPricedFormation = calculateInventoryPriceFormation({
+    costoBase: 100000,
+    impuestoId: "IVA_GENERAL",
+    tasaNegocio: 19,
+    margenDeseado: 25,
+    precioManual: true,
+    precioInterno: 140000,
+  });
+  assert.equal(manuallyPricedFormation.precioVentaSugerido, 125000);
+  assert.equal(manuallyPricedFormation.precioInterno, 140000);
+  const legacyRequest = validateInventoryItemInput(item({
+    costoBase: 100000,
+    margenDeseado: 25,
+    precioInterno: 1,
+    formacionPrecioVersion: 2,
+    tasaImpuestoCompra: 19,
   }), TestHttpsError);
-  assert.equal(historicalFormation.precioInterno, 125000);
-  assert.equal("formacionPrecioVersion" in historicalFormation, false);
+  assert.equal(legacyRequest.precioInterno, 125000, "la tasa enviada por el cliente se ignora");
+  assert.equal("formacionPrecioVersion" in legacyRequest, false);
+  assert.equal("tasaImpuestoCompra" in legacyRequest, false);
+  assert.equal(validateInventoryItemInput(item({impuestoId: "iva_exento"}), TestHttpsError).impuestoIdSolicitado, "IVA_EXENTO");
+  assert.equal("impuestoIdSolicitado" in validateInventoryItemInput(item(), TestHttpsError), false);
+  for (const invalidTaxId of ["SIN_IMPUESTO", "IVA_REDUCIDO"]) {
+    assert.throws(
+      () => validateInventoryItemInput(item({impuestoId: invalidTaxId}), TestHttpsError),
+      (error) => error?.code === "invalid-argument"
+    );
+  }
   assert.throws(
-    () => validateInventoryItemInput(item({
-      formacionPrecioVersion: 2,
-      tasaImpuestoCompra: 101,
-    }), TestHttpsError),
-    (error) => error?.code === "invalid-argument"
+    () => validateInventoryItemInput(item({tipoItem: "servicio", unidad: "hora", impuestoId: "IVA_EXENTO"}), TestHttpsError),
+    (error) => error?.code === "invalid-argument",
+    "la exención solo aplica a productos"
   );
   const serviceWithoutProductPricing = validateInventoryItemInput(item({
     tipoItem: "servicio",
@@ -399,6 +426,13 @@ async function main() {
     { impuestoId: "IVA_GENERAL", impuestoTasa: 19 },
     "Los productos nuevos deben recibir un impuesto estable sin modificar ítems previos."
   );
+  const firstProduct = db.read(`usuarios/${uid}/inventario/${first.itemId}`);
+  assert.deepEqual(
+    [firstProduct.formacionPrecioVersion, firstProduct.tasaImpuestoCompra, firstProduct.costoPagado, firstProduct.precioVentaSugerido, firstProduct.precioInterno],
+    [3, 19, 595000, 600000, 600000],
+    "El alta manual queda en v3: precio sobre el costo neto y costo con IVA informativo."
+  );
+  assert.equal("impuestoIdSolicitado" in firstProduct, false);
   assert.equal(
     db.read(`usuarios/${uid}/inventario/${first.itemId}`).barcode,
     "0012345678905",
@@ -518,6 +552,12 @@ async function main() {
     deps
   );
   assert.equal(freeImport.results[0].codigoInterno, "FREE-CODE-001");
+  const importedProduct = db.read(`usuarios/${uid}/inventario/${freeImport.results[0].itemId}`);
+  assert.deepEqual(
+    [importedProduct.formacionPrecioVersion, importedProduct.impuestoId, importedProduct.costoPagado, importedProduct.precioInterno],
+    [3, "IVA_GENERAL", 595000, 600000],
+    "La importación crea productos v3 con la marca por defecto del negocio."
+  );
   const freeImportRetry = await confirmInventoryImportV2Handler(
     freeImportRequest,
     deps
@@ -548,6 +588,20 @@ async function main() {
     ),
     true,
     "Altas manuales concurrentes deben ignorar el mismo código forzado y usar correlativos distintos."
+  );
+
+  const exemptProduct = await createInventoryItemWithCodeHandler(
+    request(uid, {
+      requestId: "request_product_exempt_0001",
+      item: item({nombre: "Libro técnico", impuestoId: "IVA_EXENTO", costoBase: 10000, margenDeseado: 30}),
+    }),
+    deps
+  );
+  const exemptData = db.read(`usuarios/${uid}/inventario/${exemptProduct.itemId}`);
+  assert.deepEqual(
+    [exemptData.impuestoId, exemptData.impuestoTasa, exemptData.tasaImpuestoCompra, exemptData.costoPagado, exemptData.precioInterno],
+    ["IVA_EXENTO", 0, 0, 10000, 13000],
+    "El alta puede marcar el producto como exento (SPEC 023 §6.1)."
   );
 
   const service = await createInventoryItemWithCodeHandler(
@@ -588,6 +642,8 @@ async function main() {
   assert.equal("proveedorRut" in serviceData, false);
   assert.equal("fechaCompraReferencia" in serviceData, false);
   assert.equal("numeroFacturaReferencia" in serviceData, false);
+  assert.equal("impuestoId" in serviceData, false);
+  assert.equal("formacionPrecioVersion" in serviceData, false);
   const activityData = db.read(`usuarios/${uid}/inventario/${activity.itemId}`);
   assert.equal("marca" in activityData, false);
   assert.equal("modelo" in activityData, false);
