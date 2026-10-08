@@ -4,6 +4,7 @@ const {buildAuthoritativeCompanySnapshot, resolveCompanySnapshot} = require("./c
 const {fiscalSnapshotFields} = require("./fiscalIdentifier");
 const {
   INVENTORY_ECONOMIC_MODEL_VERSION,
+  PURCHASE_VAT_TREATMENTS,
   applyInventoryAcquisition,
   applyInventoryEconomicDelta,
   assertCanonicalInventoryQuantity,
@@ -11,6 +12,7 @@ const {
   calculateAcquisitionAmounts,
   inventoryEconomicFields,
   resolveInventoryEconomicState,
+  resolvePurchaseVatTreatment,
 } = require("./inventoryAcquisition");
 
 const MODEL_VERSION = 3;
@@ -185,14 +187,27 @@ function storedLine(value, snapshot, HttpsError) {
   safeMoney([subtotalLinea, descuentoLinea, totalLinea], HttpsError);
   return {lineaId: value.lineaId, itemId: value.itemId, codigo: snapshot.codigoInterno, nombre: snapshot.nombre, descripcion: snapshot.descripcion, tipoItem: snapshot.tipoItem, unidad: snapshot.unidad, cantidad, costoUnitario: value.costoUnitario, descuentoPct: value.descuentoPct, subtotalLinea, descuentoLinea, totalLinea, inventarioSnapshot: snapshot};
 }
-function totals(items, HttpsError, taxRate = VAT_RATE) {
+// Sin `tipoDocumento` conserva el cálculo legacy (IVA sobre todo el neto).
+// Con él aplica SPEC 023 §5.2: la boleta no suma IVA y las líneas exentas
+// quedan fuera de la base del impuesto.
+function totals(items, HttpsError, taxRate = VAT_RATE, {tipoDocumento} = {}) {
   const subtotal = items.reduce((sum, item) => sum + item.subtotalLinea, 0);
   const descuentoTotal = items.reduce((sum, item) => sum + item.descuentoLinea, 0);
   const neto = subtotal - descuentoTotal;
-  const iva = Math.round(neto * taxRate);
+  if (tipoDocumento === undefined) {
+    const iva = Math.round(neto * taxRate);
+    const total = neto + iva;
+    safeMoney([subtotal, descuentoTotal, neto, iva, total], HttpsError);
+    return {subtotal, descuentoTotal, neto, iva, total};
+  }
+  const montoExento = items
+    .filter((item) => resolvePurchaseVatTreatment({tipoDocumento, impuestoId: item.impuestoId}) === PURCHASE_VAT_TREATMENTS.EXENTO)
+    .reduce((sum, item) => sum + item.totalLinea, 0);
+  const isBoleta = resolvePurchaseVatTreatment({tipoDocumento}) === PURCHASE_VAT_TREATMENTS.BOLETA;
+  const iva = isBoleta ? 0 : Math.round((neto - montoExento) * taxRate);
   const total = neto + iva;
-  safeMoney([subtotal, descuentoTotal, neto, iva, total], HttpsError);
-  return {subtotal, descuentoTotal, neto, iva, total};
+  safeMoney([subtotal, descuentoTotal, neto, montoExento, iva, total], HttpsError);
+  return {subtotal, descuentoTotal, neto, montoExento, iva, total};
 }
 function hash(value) { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
 async function access(request, dependencies) {

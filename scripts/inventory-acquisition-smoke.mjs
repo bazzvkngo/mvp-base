@@ -5,6 +5,7 @@ import {readFileSync} from "node:fs";
 const require = createRequire(import.meta.url);
 const {
   MAX_ATOMIC_INVENTORY_WRITES,
+  PURCHASE_VAT_TREATMENTS,
   applyInventoryAcquisition,
   applyInventoryAverageStockAdjustment,
   applyInventoryCostedOutflow,
@@ -15,6 +16,7 @@ const {
   inventoryEconomicFields,
   legacyPaidCost,
   resolveInventoryEconomicState,
+  resolvePurchaseVatTreatment,
 } = require("../functions/inventoryAcquisition.js");
 
 const first = calculateAcquisitionAmounts({
@@ -50,6 +52,91 @@ assert.deepEqual(taxed, {
 });
 assert.equal(legacyPaidCost({costoBase: 1000, tasaImpuestoCompra: 19}), 1190);
 assert.equal(legacyPaidCost({costoPromedio: 102500, costoPagado: 999}), 102500);
+
+// SPEC 023 §5.3: con tratamiento explícito al inventario entra el neto de la
+// línea; el IVA de factura queda sólo como dato informativo.
+assert.deepEqual(calculateAcquisitionAmounts({
+  cantidad: 2,
+  costoUnitario: 1000,
+  descuentoPct: 10,
+  tasaImpuestoCompra: 19,
+  tratamientoIvaCompra: PURCHASE_VAT_TREATMENTS.CREDITO_FISCAL,
+}), {
+  cantidad: 2,
+  costoUnitario: 1000,
+  descuentoPct: 10,
+  costoUnitarioNeto: 900,
+  tasaImpuestoCompra: 19,
+  impuestoCompraUnitario: 171,
+  impuestoCompraTotal: 342,
+  costoPagadoUnitario: 1071,
+  costoPagadoTotal: 2142,
+  tratamientoIvaCompra: "credito_fiscal",
+  costoInventarioUnitario: 900,
+  costoInventarioTotal: 1800,
+});
+assert.deepEqual(calculateAcquisitionAmounts({
+  cantidad: 2,
+  costoUnitario: 4165,
+  tasaImpuestoCompra: 19,
+  tratamientoIvaCompra: PURCHASE_VAT_TREATMENTS.BOLETA,
+}), {
+  cantidad: 2,
+  costoUnitario: 4165,
+  descuentoPct: 0,
+  costoUnitarioNeto: 4165,
+  tasaImpuestoCompra: 0,
+  impuestoCompraUnitario: 0,
+  impuestoCompraTotal: 0,
+  costoPagadoUnitario: 4165,
+  costoPagadoTotal: 8330,
+  tratamientoIvaCompra: "boleta",
+  costoInventarioUnitario: 4165,
+  costoInventarioTotal: 8330,
+});
+const exemptAmounts = calculateAcquisitionAmounts({
+  cantidad: 5,
+  costoUnitario: 4000,
+  tasaImpuestoCompra: 19,
+  tratamientoIvaCompra: PURCHASE_VAT_TREATMENTS.EXENTO,
+});
+assert.deepEqual(
+  [exemptAmounts.tasaImpuestoCompra, exemptAmounts.impuestoCompraTotal, exemptAmounts.costoPagadoTotal, exemptAmounts.costoInventarioUnitario, exemptAmounts.costoInventarioTotal],
+  [0, 0, 20000, 4000, 20000]
+);
+assert.equal("costoInventarioTotal" in taxed, false, "sin tratamiento el resultado es el legacy");
+assert.throws(
+  () => calculateAcquisitionAmounts({cantidad: 1, costoUnitario: 1, tratamientoIvaCompra: "desconocido"}),
+  /tratamiento de IVA/
+);
+assert.equal(resolvePurchaseVatTreatment({tipoDocumento: "boleta", impuestoId: "IVA_EXENTO"}), "boleta");
+assert.equal(resolvePurchaseVatTreatment({tipoDocumento: "factura", impuestoId: "SIN_IMPUESTO"}), "exento");
+assert.equal(resolvePurchaseVatTreatment({tipoDocumento: "sin_documento"}), "credito_fiscal");
+
+// Ejemplo A de SPEC 023: 10 rollos a 10.000 con factura entran por 100.000.
+const emptyClp = {stock: 0, value: 0, average: null, currency: "CLP", referenceCost: null, baseline: null};
+const netInvoiceEntry = applyInventoryAcquisition(emptyClp, {
+  cantidad: 10,
+  costoUnitario: 10000,
+  tasaImpuestoCompra: 19,
+  tratamientoIvaCompra: PURCHASE_VAT_TREATMENTS.CREDITO_FISCAL,
+});
+assert.deepEqual([netInvoiceEntry.next.stock, netInvoiceEntry.next.value, netInvoiceEntry.next.average], [10, 100000, 10000]);
+assert.equal(netInvoiceEntry.amounts.costoPagadoTotal, 119000);
+const boletaEntry = applyInventoryAcquisition(emptyClp, {
+  cantidad: 2,
+  costoUnitario: 4165,
+  tasaImpuestoCompra: 19,
+  tratamientoIvaCompra: PURCHASE_VAT_TREATMENTS.BOLETA,
+});
+assert.deepEqual([boletaEntry.next.stock, boletaEntry.next.value, boletaEntry.next.average], [2, 8330, 4165]);
+const legacyTaxedEntry = applyInventoryAcquisition(emptyClp, {
+  cantidad: 10,
+  costoUnitario: 10000,
+  tasaImpuestoCompra: 19,
+});
+assert.deepEqual([legacyTaxedEntry.next.value, legacyTaxedEntry.next.average], [119000, 11900], "sin tratamiento sigue entrando el costo pagado");
+console.log("OK adquisición SPEC 023: crédito fiscal, boleta, exento, legacy y tratamiento inválido");
 
 const averageBaseline = resolveInventoryEconomicState({
   item: {stock: 10, costoPromedio: 100, costoPromedioMoneda: "CLP"},

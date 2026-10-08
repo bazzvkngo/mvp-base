@@ -5,6 +5,15 @@ const MAX_ATOMIC_INVENTORY_WRITES = 450;
 const QUANTITY_DECIMALS = 6;
 const QUANTITY_EPSILON = 0.000000001;
 const VALUE_EPSILON = 0.005;
+// SPEC 023 §5.1: tratamiento del IVA de compra por línea. Sólo el crédito
+// fiscal suma IVA al documento; en boleta y exento lo pagado es costo.
+const PURCHASE_VAT_TREATMENTS = Object.freeze({
+  CREDITO_FISCAL: "credito_fiscal",
+  BOLETA: "boleta",
+  EXENTO: "exento",
+});
+const PURCHASE_VAT_TREATMENT_VALUES = new Set(Object.values(PURCHASE_VAT_TREATMENTS));
+const EXEMPT_TAX_IDS = new Set(["IVA_EXENTO", "SIN_IMPUESTO"]);
 
 function finiteNumber(value, fallback = 0) {
   if (value === "" || value == null) return fallback;
@@ -62,19 +71,36 @@ function assertInventoryTransactionWriteBudget({
   return requiredWrites;
 }
 
+function resolvePurchaseVatTreatment({tipoDocumento, impuestoId} = {}) {
+  if (String(tipoDocumento || "").trim().toLowerCase() === "boleta") {
+    return PURCHASE_VAT_TREATMENTS.BOLETA;
+  }
+  if (EXEMPT_TAX_IDS.has(String(impuestoId || "").trim().toUpperCase())) {
+    return PURCHASE_VAT_TREATMENTS.EXENTO;
+  }
+  return PURCHASE_VAT_TREATMENTS.CREDITO_FISCAL;
+}
+
+// Sin `tratamientoIvaCompra` conserva el cálculo legacy (el IVA entra al
+// costo). Con él aplica SPEC 023 §5.3: sólo el crédito fiscal lleva impuesto
+// informativo y al saldo de inventario entra siempre el neto de la línea.
 function calculateAcquisitionAmounts({
   cantidad,
   costoUnitario,
   descuentoPct = 0,
   tasaImpuestoCompra = DEFAULT_TAX_RATE,
+  tratamientoIvaCompra,
 }) {
+  const usesVatTreatment = tratamientoIvaCompra !== undefined;
+  if (usesVatTreatment && !PURCHASE_VAT_TREATMENT_VALUES.has(tratamientoIvaCompra)) {
+    economicFailure(undefined, "El tratamiento de IVA de la compra no es válido.");
+  }
   const quantity = normalizeInventoryQuantity(Math.max(finiteNumber(cantidad), 0));
   const unitCost = Math.max(finiteNumber(costoUnitario), 0);
   const discountRate = Math.min(Math.max(finiteNumber(descuentoPct), 0), 100);
-  const taxRate = Math.min(
-    Math.max(finiteNumber(tasaImpuestoCompra, DEFAULT_TAX_RATE), 0),
-    100
-  );
+  const taxRate = usesVatTreatment && tratamientoIvaCompra !== PURCHASE_VAT_TREATMENTS.CREDITO_FISCAL
+    ? 0
+    : Math.min(Math.max(finiteNumber(tasaImpuestoCompra, DEFAULT_TAX_RATE), 0), 100);
   const netUnitCost = round(unitCost * (1 - discountRate / 100), 4);
   const unitTax = round(netUnitCost * taxRate / 100, 4);
   const paidUnitCost = round(netUnitCost + unitTax, 4);
@@ -89,6 +115,11 @@ function calculateAcquisitionAmounts({
     impuestoCompraTotal: round(unitTax * quantity),
     costoPagadoUnitario: paidUnitCost,
     costoPagadoTotal: round(paidUnitCost * quantity),
+    ...(usesVatTreatment ? {
+      tratamientoIvaCompra,
+      costoInventarioUnitario: netUnitCost,
+      costoInventarioTotal: round(netUnitCost * quantity),
+    } : {}),
   };
 }
 
@@ -319,7 +350,7 @@ function applyInventoryCostedOutflow(
 
 function applyInventoryAcquisition(
   state,
-  {cantidad, costoUnitario, descuentoPct = 0, tasaImpuestoCompra = DEFAULT_TAX_RATE},
+  {cantidad, costoUnitario, descuentoPct = 0, tasaImpuestoCompra = DEFAULT_TAX_RATE, tratamientoIvaCompra},
   HttpsError
 ) {
   const canonicalQuantity = assertCanonicalInventoryQuantity(cantidad, HttpsError);
@@ -328,13 +359,14 @@ function applyInventoryAcquisition(
     costoUnitario,
     descuentoPct,
     tasaImpuestoCompra,
+    tratamientoIvaCompra,
   });
   if (amounts.cantidad <= 0) {
     economicFailure(HttpsError, "La adquisición no contiene una cantidad válida.");
   }
   const next = applyInventoryEconomicDelta(state, {
     quantityDelta: amounts.cantidad,
-    valueDelta: amounts.costoPagadoTotal,
+    valueDelta: amounts.costoInventarioTotal ?? amounts.costoPagadoTotal,
   }, HttpsError);
   return {amounts, next, previous: state};
 }
@@ -393,6 +425,7 @@ function inventoryEconomicFields(state, timestamp) {
 module.exports = {
   INVENTORY_ECONOMIC_MODEL_VERSION,
   MAX_ATOMIC_INVENTORY_WRITES,
+  PURCHASE_VAT_TREATMENTS,
   QUANTITY_DECIMALS,
   QUANTITY_EPSILON,
   applyInventoryAcquisition,
@@ -407,5 +440,6 @@ module.exports = {
   legacyPaidCost,
   normalizeInventoryQuantity,
   resolveInventoryEconomicState,
+  resolvePurchaseVatTreatment,
   round,
 };

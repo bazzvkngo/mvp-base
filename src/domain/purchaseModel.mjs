@@ -4,6 +4,19 @@ export const PURCHASE_MODEL_VERSION = 3;
 export const PURCHASE_VAT_RATE = 0.19;
 export const PURCHASE_STATUSES = Object.freeze(["borrador", "confirmada", "cancelada", "revertida"]);
 export const PURCHASE_DOCUMENT_TYPES = Object.freeze(["factura", "boleta", "otro", "sin_documento"]);
+// Espejo de functions/inventoryAcquisition.js (SPEC 023 §5.1).
+export const PURCHASE_VAT_TREATMENTS = Object.freeze({
+  CREDITO_FISCAL: "credito_fiscal",
+  BOLETA: "boleta",
+  EXENTO: "exento",
+});
+const EXEMPT_TAX_IDS = new Set(["IVA_EXENTO", "SIN_IMPUESTO"]);
+
+export function resolvePurchaseVatTreatment({tipoDocumento, impuestoId} = {}) {
+  if (String(tipoDocumento || "").trim().toLowerCase() === "boleta") return PURCHASE_VAT_TREATMENTS.BOLETA;
+  if (EXEMPT_TAX_IDS.has(String(impuestoId || "").trim().toUpperCase())) return PURCHASE_VAT_TREATMENTS.EXENTO;
+  return PURCHASE_VAT_TREATMENTS.CREDITO_FISCAL;
+}
 
 export function getPurchaseStatusLabel(value) {
   return ({borrador: "Preparada", confirmada: "Confirmada", cancelada: "Cancelada", revertida: "Revertida"})[value] || "Preparada";
@@ -137,16 +150,28 @@ export function calculatePurchaseLine(raw = {}, index = 0) {
   return {cantidad, costoUnitario, descuentoPct, subtotalLinea, descuentoLinea, totalLinea};
 }
 
-export function calculatePurchaseTotals(items = [], {tasaIva = PURCHASE_VAT_RATE} = {}) {
+// Sin `tipoDocumento` conserva el cálculo legacy; con él aplica SPEC 023 §5.2,
+// igual que `totals()` en functions/purchasePersistence.js.
+export function calculatePurchaseTotals(items = [], {tasaIva = PURCHASE_VAT_RATE, tipoDocumento} = {}) {
   if (!Array.isArray(items) || !items.length) throw new Error("Agrega al menos un ítem a la compra.");
   const lines = items.map(calculatePurchaseLine);
   const subtotal = lines.reduce((sum, line) => sum + line.subtotalLinea, 0);
   const descuentoTotal = lines.reduce((sum, line) => sum + line.descuentoLinea, 0);
   const neto = subtotal - descuentoTotal;
-  const iva = Math.round(neto * tasaIva);
+  if (tipoDocumento === undefined) {
+    const iva = Math.round(neto * tasaIva);
+    const total = neto + iva;
+    safeMoney(subtotal, descuentoTotal, neto, iva, total);
+    return {subtotal, descuentoTotal, neto, iva, total};
+  }
+  const montoExento = lines
+    .filter((line, index) => resolvePurchaseVatTreatment({tipoDocumento, impuestoId: items[index]?.impuestoId}) === PURCHASE_VAT_TREATMENTS.EXENTO)
+    .reduce((sum, line) => sum + line.totalLinea, 0);
+  const isBoleta = resolvePurchaseVatTreatment({tipoDocumento}) === PURCHASE_VAT_TREATMENTS.BOLETA;
+  const iva = isBoleta ? 0 : Math.round((neto - montoExento) * tasaIva);
   const total = neto + iva;
-  safeMoney(subtotal, descuentoTotal, neto, iva, total);
-  return {subtotal, descuentoTotal, neto, iva, total};
+  safeMoney(subtotal, descuentoTotal, neto, montoExento, iva, total);
+  return {subtotal, descuentoTotal, neto, montoExento, iva, total};
 }
 
 export function buildPurchaseMutationPayload(raw = {}) {
