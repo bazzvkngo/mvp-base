@@ -101,10 +101,28 @@ try {
   assert.equal(count(appSource, /if \(loading\) return <LoadingScreen \/>;/g), 1);
   assert.equal(count(appSource, /if \(businessLoading\) return <LoadingScreen \/>;/g), 1);
   assert.equal(count(appSource, /<LoadingScreen/g), 2, "solo los 2 puntos originales, sin key ni props");
-  assert.equal(count(appSource, /<EnvironmentNotice \/>/g), 1, "EnvironmentNotice sigue una sola vez, fuera de AppRoutes");
+  assert.equal(count(appSource, /<EnvironmentNotice \/>/g), 1, "EnvironmentNotice flotante sigue una sola vez, fuera de AppRoutes");
   assert.ok(appSource.indexOf("/propuesta/:token") < appSource.indexOf("if (!usuario)"), "la ruta pública sigue antes del guard de autenticación");
   assert.ok(appSource.indexOf("if (loading) return <LoadingScreen />;") < appSource.indexOf("if (businessLoading) return <LoadingScreen />;"));
   console.log("OK: App.jsx — 2 retornos originales, EnvironmentNotice único y ruta pública antes de if (!usuario)");
+
+  // --- Aviso de entorno: insignia en la barra superior de AppLayout ---
+  // Dentro de AppLayout no flota (no tapa filas de tablas); la versión
+  // flotante de App.jsx queda para pantallas sin barra y se oculta cuando la
+  // insignia está presente.
+  const [layoutSource, layoutCss, noticeSource] = await Promise.all([
+    readFile(new URL("../src/layout/AppLayout.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/styles/layout.css", import.meta.url), "utf8"),
+    readFile(new URL("../src/components/EnvironmentNotice.jsx", import.meta.url), "utf8"),
+  ]);
+  assert.equal(count(layoutSource, /<EnvironmentNotice inline \/>/g), 1, "una insignia de entorno en la barra superior");
+  assert.match(layoutSource, /<div className="topbar-heading">[\s\S]*?<EnvironmentNotice inline \/>\s*<\/div>/);
+  assert.match(noticeSource, /environment-notice--inline/);
+  assert.match(noticeSource, /environment-notice--floating/);
+  assert.match(layoutCss, /\.environment-notice--floating \{[^}]*position: fixed/);
+  assert.doesNotMatch(layoutCss.match(/\.environment-notice--inline \{[^}]*\}/)?.[0] || "", /position: fixed/);
+  assert.match(layoutCss, /body:has\(\.topbar \.environment-notice--inline\) \.environment-notice--floating \{\s*display: none;/);
+  console.log("OK: aviso de entorno — insignia en la barra superior; la flotante solo fuera de AppLayout");
 
   console.log("LOADING_SCREEN_SMOKE_OK");
 } finally {

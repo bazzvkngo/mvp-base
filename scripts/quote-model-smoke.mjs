@@ -11,10 +11,12 @@ import {
   calculateQuoteTotals,
   canDuplicateQuotes,
   DRAFT_QUOTE_NUMBER_LABEL,
+  getQuoteExpiryAlert,
   getQuoteStatusLabel,
   getQuotePdfFileName,
   isAdvancedQuoteScope,
   isValidQuoteDateRange,
+  matchesQuoteQuickFilter,
   normalizeQuoteItem,
   normalizeScopeSections,
   QUOTE_SIMPLE_SCOPE_TITLE,
@@ -301,6 +303,28 @@ assert.throws(() => calculateQuoteTotals([item(1)], 2000), /no puede superar/);
 console.log("OK validación: cantidades, precios, NaN y descuentos inválidos rechazados");
 
 assert.equal(calculateQuoteExpiryDate("2026-06-25", 10), "2026-07-05");
+
+// Vigencia en el historial: fechaVencimiento es el último día válido y solo
+// las emitidas generan aviso (incluidas las emitidas a mano que el job de
+// vencimiento no alcanza).
+const emitted = (fechaVencimiento) => ({estado: "emitida", fechaVencimiento});
+assert.deepEqual(getQuoteExpiryAlert(emitted("2026-10-09"), "2026-10-09"), {kind: "por_vencer", days: 0});
+assert.deepEqual(getQuoteExpiryAlert(emitted("2026-10-12"), "2026-10-09"), {kind: "por_vencer", days: 3});
+assert.deepEqual(getQuoteExpiryAlert(emitted("2026-10-13"), "2026-10-09"), {kind: "", days: 4});
+assert.deepEqual(getQuoteExpiryAlert(emitted("2026-10-08"), "2026-10-09"), {kind: "vencida_sin_marcar", days: -1});
+assert.deepEqual(getQuoteExpiryAlert(emitted("2026-11-02"), "2026-10-30"), {kind: "por_vencer", days: 3});
+assert.equal(getQuoteExpiryAlert({estado: "borrador", fechaVencimiento: "2026-10-09"}, "2026-10-09").kind, "");
+assert.equal(getQuoteExpiryAlert({estado: "aceptada", fechaVencimiento: "2026-10-01"}, "2026-10-09").kind, "");
+assert.equal(getQuoteExpiryAlert(emitted(""), "2026-10-09").kind, "");
+assert.equal(getQuoteExpiryAlert(emitted("2026-10-09"), "").kind, "");
+assert.equal(matchesQuoteQuickFilter({estado: "archivada"}, "todos", "2026-10-09"), false);
+assert.equal(matchesQuoteQuickFilter({}, "todos", "2026-10-09"), true);
+assert.equal(matchesQuoteQuickFilter({}, "borrador", "2026-10-09"), true);
+assert.equal(matchesQuoteQuickFilter({estado: "archivada"}, "archivada", "2026-10-09"), true);
+assert.equal(matchesQuoteQuickFilter(emitted("2026-10-01"), "por_vencer", "2026-10-09"), true);
+assert.equal(matchesQuoteQuickFilter(emitted("2026-10-30"), "por_vencer", "2026-10-09"), false);
+assert.equal(matchesQuoteQuickFilter({estado: "vencida", fechaVencimiento: "2026-10-01"}, "por_vencer", "2026-10-09"), false);
+console.log("OK historial: aviso de vigencia y filtros rápidos por estado");
 console.log("OK fecha: vencimiento calculado");
 
 const longDescription = "Descripción técnica con áéíóú, ñ y alcance detallado. ".repeat(30);
@@ -553,6 +577,27 @@ assert.equal((quotePrimaryActionsSource.match(/: "WhatsApp"/g) || []).length, 1)
 assert.equal((quotePrimaryActionsSource.match(/: "Descargar PDF"/g) || []).length, 1);
 assert.equal((quotePrimaryActionsSource.match(/>\s*Imprimir\s*<\/button>/g) || []).length, 1);
 assert.doesNotMatch(quoteActionsSource, /Correo|WhatsApp|Descargar PDF|Imprimir|runPdfAction/);
+// Una acción principal por estado: Enviar en pendiente (Editar y Marcar como
+// emitida pasan a "Más acciones"), Reenviar en el menú de emitidas y Ver
+// venta cuando hay venta vinculada.
+assert.match(quoteActionsSource, /onClick=\{\(\) => onSend\(quote\)\}[\s\S]*?>\s*Enviar\s*<\/button>/);
+assert.match(quoteActionsSource, /actions=\{\[editMenuAction, emitMenuAction, archiveMenuAction\]\}/);
+assert.match(quoteActionsSource, /label: "Reenviar"/);
+assert.match(quoteActionsSource, />\s*Ver venta\s*<\/button>/);
+assert.match(sourceHistory, /<SegmentedControl[\s\S]*?options=\{quickFilterOptions\}[\s\S]*?value=\{statusFilter\}/);
+assert.match(sourceHistory, /Válida hasta/);
+assert.doesNotMatch(sourceHistory, /Actualización<\/th>/);
+assert.match(sourceHistory, /getQuoteClientFiscalId\(quote\)/);
+// Cierre: solo la aceptación tiene fecha confiable (ventaRegistradaEn);
+// rechazadas y vencidas muestran solo la emisión, sin vigencia.
+assert.match(sourceHistory, /estado === "aceptada" && quote\.ventaRegistradaEn/);
+assert.match(sourceHistory, /Aceptada \{formatDate\(quote\.ventaRegistradaEn\)\}/);
+assert.match(sourceHistory, /if \(estado !== "emitida"\) \{[\s\S]*?return <span>\{emissionLabel\}<\/span>;/);
+// Sin acciones en la fila: número de venta bajo "Aceptada" (sin duplicar
+// el botón "Ver venta" de quienes sí tienen acciones).
+assert.match(sourceHistory, /!canDuplicate && quote\.estado === "aceptada" && quote\.ventaId && quote\.ventaNumero/);
+assert.match(sourceHistory, /canReadSales \? \(/);
+assert.doesNotMatch(sourceHistory, /quote-history-table__sale/);
 assert.doesNotMatch(quoteDetailSource, /icon=\{Mail\}|icon=\{MessageCircle\}|icon=\{Download\}|icon=\{Printer\}|runPdfAction/);
 assert.match(commercialStatusSource, /label: "Estado actual"/);
 assert.match(commercialStatusSource, /getQuoteStatusLabel\(quote\.estado\)/);

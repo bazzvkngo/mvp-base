@@ -5,6 +5,7 @@ import { sileo } from "sileo";
 import AdditionalBusinessDrawer from "../components/AdditionalBusinessDrawer";
 import BrandLogo from "../components/BrandLogo";
 import BusinessSwitcher from "../components/BusinessSwitcher";
+import EnvironmentNotice from "../components/EnvironmentNotice";
 import NotificationBell from "../components/NotificationBell";
 import ThemeToggleButton from "../components/ThemeToggleButton";
 import AppIcon from "../components/ui/AppIcon";
@@ -371,16 +372,19 @@ function AppLayout({
             <AppIcon icon={Menu} size={21} />
           </button>
 
-          {pageProvidesHeading ? (
-            <div className="topbar-context" aria-label="Negocio activo">
-              <span>{negocioActivo?.nombreComercial || "Módulo activo"}</span>
-            </div>
-          ) : (
-            <PageHeader
-              eyebrow={negocioActivo?.nombreComercial || "Módulo activo"}
-              title={routeMeta.title}
-            />
-          )}
+          <div className="topbar-heading">
+            {pageProvidesHeading ? (
+              <div className="topbar-context" aria-label="Negocio activo">
+                <span>{negocioActivo?.nombreComercial || "Módulo activo"}</span>
+              </div>
+            ) : (
+              <PageHeader
+                eyebrow={negocioActivo?.nombreComercial || "Módulo activo"}
+                title={routeMeta.title}
+              />
+            )}
+            <EnvironmentNotice inline />
+          </div>
 
           <div className="topbar-actions">
             <NotificationBell businessId={negocioActivo?.id} role={negocioActivo?.role} />

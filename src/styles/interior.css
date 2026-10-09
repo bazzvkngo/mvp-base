@@ -2281,10 +2281,6 @@
 .reports-projects-empty strong { color: var(--color-text-strong); }
 .reports-projects-empty span { font-size: var(--font-size-xs); }
 
-body:has(.reports-simple) .environment-notice {
-  display: none;
-}
-
 /* Modo oscuro (etapa 5, paso 4 de 10: interior.css, pasada 2 de 6 —
    Dashboard V2). Sin scrims en esta pasada (el único de todo el archivo
    ya se corrigió en la pasada 1). */
@@ -4327,8 +4323,12 @@ body:has(.reports-simple) .environment-notice {
   grid-template-columns: minmax(260px, 2fr) minmax(180px, 1fr);
 }
 
+.quote-history-quick-filters {
+  margin-bottom: var(--space-4);
+}
+
 .quote-history-table {
-  min-width: 880px;
+  min-width: 920px;
   table-layout: fixed;
 }
 
@@ -4337,7 +4337,7 @@ body:has(.reports-simple) .environment-notice {
 }
 
 .quote-history-table__client {
-  width: 19%;
+  width: 23%;
 }
 
 .quote-history-table__status {
@@ -4349,17 +4349,19 @@ body:has(.reports-simple) .environment-notice {
   width: 12%;
 }
 
-.quote-history-table__sale {
-  width: 12%;
+/* Total (a la derecha) y Válida hasta (a la izquierda) quedan contiguas:
+   más aire a la derecha del monto para que no se lean pegadas. */
+.quote-history-table .quote-history-table__total {
+  padding-right: var(--space-8);
 }
 
-.quote-history-table__updated {
-  width: 15%;
+.quote-history-table__validity {
+  width: 19%;
 }
 
 .quote-history-table__actions {
   text-align: right !important;
-  width: 18%;
+  width: 22%;
 }
 
 .quote-history-table__actions > div {
@@ -4370,6 +4372,24 @@ body:has(.reports-simple) .environment-notice {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.quote-history-table__client-cell > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quote-history-table .quote-history-sale-link {
+  display: block;
+  margin-top: var(--space-1);
+}
+
+/* Fecha de vigencia + insignia "Vence en N días" / "Venció el ...". */
+.quote-history-validity {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
 }
 
 .quote-history-table__row--selected {

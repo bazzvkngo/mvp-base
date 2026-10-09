@@ -16,17 +16,23 @@ import SendQuoteEmailModal from "../features/quotes/SendQuoteEmailModal";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
+import SegmentedControl from "../components/ui/SegmentedControl";
 import {SkeletonCards, SkeletonRegion, SkeletonTable} from "../components/ui/Skeleton";
+import UiStatusBadge from "../components/ui/StatusBadge";
 import { getCompanyProfile } from "../services/companyService";
 import {
   canDuplicateQuotes,
+  DEFAULT_QUOTE_VALIDITY_DAYS,
+  getQuoteExpiryAlert,
   getQuoteStatusLabel,
+  matchesQuoteQuickFilter,
   QUOTE_STATUS_LABELS,
 } from "../domain/quoteModel.mjs";
 import {
   createQuoteDuplicateRequestId,
   createQuoteLifecycleRequestId,
   duplicateQuoteAsDraft,
+  getChileDateInputValue,
   getQuoteEvents,
   getQuoteDisplayNumber,
   getQuotes,
@@ -49,6 +55,7 @@ import {
 const STATUS_OPTIONS = [
   "borrador",
   "emitida",
+  "por_vencer",
   "aceptada",
   "rechazada",
   "vencida",
@@ -56,6 +63,20 @@ const STATUS_OPTIONS = [
 ];
 
 const statusLabels = QUOTE_STATUS_LABELS;
+
+// "Por vencer" no es un estado: emitidas que vencen en los próximos días o
+// que ya pasaron su fecha sin marcarse (ver getQuoteExpiryAlert).
+const filterLabels = {...QUOTE_STATUS_LABELS, por_vencer: "Por vencer"};
+
+const QUICK_FILTERS = [
+  ["todos", "Todas"],
+  ["borrador", "Pendientes"],
+  ["emitida", "Emitidas"],
+  ["por_vencer", "Por vencer"],
+  ["aceptada", "Aceptadas"],
+  ["rechazada", "Rechazadas"],
+  ["vencida", "Vencidas"],
+];
 
 const statusFeedbackTitles = {
   borrador: "Cotización restaurada como pendiente",
@@ -102,8 +123,17 @@ const statusStyles = {
   },
 };
 
-function getQuoteTimestamp(quote) {
-  return quote?.actualizadoEn || quote?.creadoEn || null;
+function getQuoteClientFiscalId(quote) {
+  return quote?.cliente?.identificadorFiscalValor || quote?.clienteRut || "";
+}
+
+function getExpiryAlertLabel(alert, quote) {
+  if (alert.kind === "vencida_sin_marcar") {
+    return `Venció el ${formatDate(quote.fechaVencimiento)}`;
+  }
+  if (alert.days === 0) return "Vence hoy";
+  if (alert.days === 1) return "Vence mañana";
+  return `Vence en ${alert.days} días`;
 }
 
 function getEmailActionHint(quote) {
@@ -151,6 +181,10 @@ function QuoteHistoryPage({ userId, role }) {
   const canWriteInventory = hasBusinessPermission(
     role,
     BUSINESS_PERMISSIONS.INVENTORY_WRITE
+  );
+  const canReadSales = hasBusinessPermission(
+    role,
+    BUSINESS_PERMISSIONS.SALES_READ
   );
 
   useEffect(() => {
@@ -208,28 +242,37 @@ function QuoteHistoryPage({ userId, role }) {
     navigate(location.pathname, { replace: true, state: null });
   }, [location.pathname, location.state, navigate, quotes]);
 
-  const filteredQuotes = useMemo(() => {
+  const today = getChileDateInputValue();
+
+  const searchedQuotes = useMemo(() => {
     const query = search.trim().toLowerCase();
+    if (!query) return quotes;
 
     return quotes.filter((quote) => {
-      const estado = quote.estado || "borrador";
-
-      if (statusFilter === "todos" && estado === "archivada") {
-        return false;
-      }
-
-      if (statusFilter !== "todos" && estado !== statusFilter) {
-        return false;
-      }
-
-      if (!query) return true;
-
       const text = `${getQuoteDisplayNumber(quote, quote.id || "")} ${
         quote.clienteNombre || ""
       }`.toLowerCase();
       return text.includes(query);
     });
-  }, [quotes, search, statusFilter]);
+  }, [quotes, search]);
+
+  const filteredQuotes = useMemo(
+    () => searchedQuotes.filter((quote) =>
+      matchesQuoteQuickFilter(quote, statusFilter, today)
+    ),
+    [searchedQuotes, statusFilter, today]
+  );
+
+  // Las cantidades respetan la búsqueda, no el filtro de estado.
+  const quickFilterOptions = useMemo(
+    () => QUICK_FILTERS.map(([value, label]) => ({
+      value,
+      label: `${label} (${searchedQuotes.filter((quote) =>
+        matchesQuoteQuickFilter(quote, value, today)
+      ).length})`,
+    })),
+    [searchedQuotes, today]
+  );
 
   const selectedQuote = useMemo(
     () => {
@@ -270,6 +313,12 @@ function QuoteHistoryPage({ userId, role }) {
   };
 
   const handleCloseDetail = () => setSelectedQuoteId("");
+
+  // "Enviar"/"Reenviar": Correo y WhatsApp viven en el diálogo de detalle.
+  const handleOpenDetail = (quote) => {
+    setRestoreDetailFocus(true);
+    setSelectedQuoteId(quote.id);
+  };
 
   const handleChangeStatus = async (quoteId, estado, options = {}) => {
     const {
@@ -525,7 +574,7 @@ function QuoteHistoryPage({ userId, role }) {
         <div className="erp-panel-header">
           <div>
             <h2 className="erp-panel-title">Cotizaciones registradas</h2>
-            <p className="erp-secondary-text">{filteredQuotes.length} de {quotes.length} cotizaciones</p>
+            <p className="erp-secondary-text">{filteredQuotes.length} {filteredQuotes.length === 1 ? "cotización" : "cotizaciones"}</p>
           </div>
         </div>
 
@@ -553,7 +602,7 @@ function QuoteHistoryPage({ userId, role }) {
               <option value="todos">Todas excepto archivadas</option>
               {STATUS_OPTIONS.map((status) => (
                 <option key={status} value={status}>
-                  {statusLabels[status]}
+                  {filterLabels[status]}
                 </option>
               ))}
             </select>
@@ -561,9 +610,20 @@ function QuoteHistoryPage({ userId, role }) {
           </div>
         )}
 
+        {quotes.length > 0 && (
+          <SegmentedControl
+            className="quote-history-quick-filters"
+            legend="Filtrar cotizaciones por estado"
+            name="quote-history-quick-filter"
+            onChange={setStatusFilter}
+            options={quickFilterOptions}
+            value={statusFilter}
+          />
+        )}
+
         {loading ? (
           <SkeletonRegion label="Cargando cotizaciones...">
-            <SkeletonTable className="erp-desktop-only" columns={7} />
+            <SkeletonTable className="erp-desktop-only" columns={6} />
             <SkeletonCards className="erp-card-list erp-mobile-only" />
           </SkeletonRegion>
         ) : loadFailed && quotes.length === 0 ? null : quotes.length === 0 ? (
@@ -613,8 +673,7 @@ function QuoteHistoryPage({ userId, role }) {
                   <th className="quote-history-table__client">Cliente</th>
                   <th className="quote-history-table__status">Estado</th>
                   <th className="quote-history-table__total">Total</th>
-                  <th className="quote-history-table__sale">Venta</th>
-                  <th className="quote-history-table__updated">Actualización</th>
+                  <th className="quote-history-table__validity">Válida hasta</th>
                   <th className="quote-history-table__actions">Acciones</th>
                 </tr>
               </thead>
@@ -639,29 +698,34 @@ function QuoteHistoryPage({ userId, role }) {
                       className="quote-history-table__client-cell"
                       title={quote.clienteNombre || ""}
                     >
-                      {quote.clienteNombre || "-"}
+                      <strong className="clients-table__name">{quote.clienteNombre || "-"}</strong>
+                      {getQuoteClientFiscalId(quote) && (
+                        <small className="clients-table__secondary">{getQuoteClientFiscalId(quote)}</small>
+                      )}
                     </td>
                     <td>
                       <StatusBadge status={quote.estado} />
+                      {/* Sin acciones en la fila no hay botón "Ver venta":
+                          el número de venta queda bajo el estado. */}
+                      {!canDuplicate && quote.estado === "aceptada" && quote.ventaId && quote.ventaNumero && (
+                        canReadSales ? (
+                          <button
+                            type="button"
+                            className="quote-record-link quote-history-sale-link"
+                            onClick={() => handleOpenSale(quote)}
+                          >
+                            {quote.ventaNumero}
+                          </button>
+                        ) : (
+                          <small className="clients-table__secondary">{quote.ventaNumero}</small>
+                        )
+                      )}
                     </td>
                     <td className="quote-history-table__total">
                       <strong>{formatMoney(quote.total, quote.moneda, quote.locale)}</strong>
                     </td>
                     <td>
-                      {quote.ventaId && quote.ventaNumero ? (
-                        <button
-                          type="button"
-                          className="quote-record-link"
-                          onClick={() => handleOpenSale(quote)}
-                        >
-                          {quote.ventaNumero}
-                        </button>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td>
-                      {formatTimestamp(getQuoteTimestamp(quote))}
+                      <QuoteValidity quote={quote} today={today} />
                     </td>
                     <td className="quote-history-table__actions">
                       <div style={styles.rowActions}>
@@ -677,7 +741,9 @@ function QuoteHistoryPage({ userId, role }) {
                           duplicating={duplicatingQuoteId === quote.id}
                           onDuplicate={handleDuplicateQuote}
                           onAcceptQuote={handleAcceptQuote}
+                          onOpenSale={handleOpenSale}
                           onReopen={handleReopenQuote}
+                          onSend={handleOpenDetail}
                           accepting={acceptingQuoteId === quote.id}
                         /> )}
                       </div>
@@ -702,7 +768,9 @@ function QuoteHistoryPage({ userId, role }) {
             onEditDraft={handleEditDraft}
             onReopen={handleReopenQuote}
             onRestore={handleRestoreQuote}
+            onSend={handleOpenDetail}
             acceptingQuoteId={acceptingQuoteId}
+            today={today}
           />
           </>
         )}
@@ -747,6 +815,7 @@ function QuoteHistoryPage({ userId, role }) {
                 duplicating={duplicatingQuoteId === selectedQuote.id}
                 onDuplicate={handleDuplicateQuote}
                 onAcceptQuote={handleAcceptQuote}
+                onOpenSale={handleOpenSale}
                 onReopen={handleReopenQuote}
                 accepting={acceptingQuoteId === selectedQuote.id}
               /> )}
@@ -841,6 +910,56 @@ function StatusBadge({ status }) {
   );
 }
 
+function QuoteValidity({ quote, today }) {
+  const estado = quote.estado || "borrador";
+  const emissionLabel = quote.fechaEmision
+    ? `Emitida ${formatDate(quote.fechaEmision)}`
+    : `Creada ${formatDate(quote.fecha)}`;
+
+  if (estado === "borrador") {
+    return (
+      <>
+        <span>{quote.validezDias || DEFAULT_QUOTE_VALIDITY_DAYS} días al emitir</span>
+        <small className="clients-table__secondary">
+          Sin emitir · Creada {formatDate(quote.fecha)}
+        </small>
+      </>
+    );
+  }
+
+  // La vigencia solo tiene sentido en pendientes y emitidas. De los cierres,
+  // solo la aceptación tiene fecha confiable: ventaRegistradaEn se escribe
+  // junto con la venta y una aceptada con venta no se reabre. Rechazos y
+  // vencimientos manuales no guardan fecha, y respuestaClienteEn/vencidaEn
+  // no se limpian al reabrir.
+  if (estado !== "emitida") {
+    if (estado === "aceptada" && quote.ventaRegistradaEn) {
+      return (
+        <>
+          <span>Aceptada {formatDate(quote.ventaRegistradaEn)}</span>
+          <small className="clients-table__secondary">{emissionLabel}</small>
+        </>
+      );
+    }
+    return <span>{emissionLabel}</span>;
+  }
+
+  const alert = getQuoteExpiryAlert(quote, today);
+  return (
+    <>
+      <span className="quote-history-validity">
+        <span>{formatDate(quote.fechaVencimiento)}</span>
+        {alert.kind && (
+          <UiStatusBadge variant={alert.kind === "por_vencer" ? "warning" : "danger"}>
+            {getExpiryAlertLabel(alert, quote)}
+          </UiStatusBadge>
+        )}
+      </span>
+      <small className="clients-table__secondary">{emissionLabel}</small>
+    </>
+  );
+}
+
 function EmailStatusBadge({ quote }) {
   const status = quote.estadoEnvioCorreo || "";
 
@@ -886,7 +1005,9 @@ function QuoteCards({
   onEditDraft,
   onReopen,
   onRestore,
+  onSend,
   acceptingQuoteId,
+  today,
 }) {
   return (
     <div className="erp-card-list erp-mobile-only" aria-label="Cotizaciones">
@@ -908,13 +1029,16 @@ function QuoteCards({
               <p className="erp-record-card__subtitle">
                 {quote.clienteNombre || "Cliente sin nombre"}
               </p>
+              {getQuoteClientFiscalId(quote) && (
+                <small className="clients-table__secondary">{getQuoteClientFiscalId(quote)}</small>
+              )}
             </div>
             <StatusBadge status={quote.estado} />
           </div>
           <dl className="erp-meta-grid">
             <div className="erp-meta">
-              <dt className="erp-meta__label">Fecha</dt>
-              <dd className="erp-meta__value">{formatDate(quote.fecha)}</dd>
+              <dt className="erp-meta__label">Válida hasta</dt>
+              <dd className="erp-meta__value"><QuoteValidity quote={quote} today={today} /></dd>
             </div>
             <div className="erp-meta">
               <dt className="erp-meta__label">Total</dt>
@@ -958,7 +1082,9 @@ function QuoteCards({
                 duplicating={duplicatingQuoteId === quote.id}
                 onDuplicate={onDuplicate}
                 onAcceptQuote={onAcceptQuote}
+                onOpenSale={onOpenSale}
                 onReopen={onReopen}
+                onSend={onSend}
                 accepting={acceptingQuoteId === quote.id}
               />
             </div>
@@ -980,7 +1106,9 @@ function QuoteActions({
   duplicating,
   onDuplicate,
   onAcceptQuote,
+  onOpenSale,
   onReopen,
+  onSend,
   accepting,
 }) {
   const estado = quote.estado || "borrador";
@@ -1005,7 +1133,7 @@ function QuoteActions({
 
     return (
       <>
-        {estado === "archivada" && (
+        {estado === "archivada" ? (
           <button
             type="button"
             onClick={() => onRestore(quote)}
@@ -1013,6 +1141,15 @@ function QuoteActions({
             style={styles.secondaryButton}
           >
             Restaurar
+          </button>
+        ) : onOpenSale && (
+          <button
+            type="button"
+            onClick={() => onOpenSale(quote)}
+            disabled={disabled}
+            style={styles.secondaryButton}
+          >
+            Ver venta
           </button>
         )}
         {linkedSaleActions.length > 0 && (
@@ -1026,27 +1163,52 @@ function QuoteActions({
   }
 
   if (estado === "borrador") {
+    const editMenuAction = {
+      label: "Editar cotización",
+      disabled,
+      onSelect: () => onEditDraft(quote.id),
+    };
+    // Indica que la cotización fue enviada al cliente; no registra una venta.
+    const emitMenuAction = {
+      label: "Marcar como emitida",
+      disabled,
+      onSelect: () => onChangeStatus(quote.id, "emitida"),
+    };
+
+    // En el diálogo de detalle el envío ya está visible arriba (sin onSend):
+    // la acción principal ahí es editar.
+    if (!onSend) {
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => onEditDraft(quote.id)}
+            disabled={disabled}
+            style={styles.secondaryButton}
+          >
+            Editar cotización
+          </button>
+          <MoreActionsMenu
+            actions={[emitMenuAction, archiveMenuAction]}
+            disabled={disabled}
+          />
+        </>
+      );
+    }
+
     return (
       <>
         <button
           type="button"
-          onClick={() => onEditDraft(quote.id)}
-          disabled={disabled}
-          style={styles.secondaryButton}
-        >
-          Editar cotización
-        </button>
-        <button
-          type="button"
-          onClick={() => onChangeStatus(quote.id, "emitida")}
+          onClick={() => onSend(quote)}
           disabled={disabled}
           style={styles.primaryButton}
-          title="Indica que la cotización fue enviada al cliente. Todavía no registra una venta."
+          title="Abre la cotización para enviarla al cliente."
         >
-          Marcar como emitida
+          Enviar
         </button>
         <MoreActionsMenu
-          actions={[archiveMenuAction]}
+          actions={[editMenuAction, emitMenuAction, archiveMenuAction]}
           disabled={disabled}
         />
       </>
@@ -1067,6 +1229,10 @@ function QuoteActions({
         <MoreActionsMenu
           disabled={disabled || accepting}
           actions={[
+            onSend && {
+              label: "Reenviar",
+              onSelect: () => onSend(quote),
+            },
             {
               label: "Rechazar",
               onSelect: () => onChangeStatus(quote.id, "rechazada"),

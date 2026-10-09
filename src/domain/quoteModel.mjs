@@ -507,6 +507,40 @@ export function calculateQuoteExpiryDate(issueDate, validityDays) {
   return date.toISOString().slice(0, 10);
 }
 
+export const QUOTE_EXPIRY_WARNING_DAYS = 3;
+
+function dateOnlyToUtcDays(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(safeQuoteText(value, 40));
+  if (!match) return null;
+  return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) / 86400000;
+}
+
+// Seguimiento de vigencia en el historial. fechaVencimiento es el último día
+// válido (el backend vence la propuesta a la medianoche siguiente, hora de
+// Chile). Solo aplica a emitidas: una emitida "Marcada como emitida" no tiene
+// enlace público y el vencimiento automático nunca la alcanza, así que puede
+// seguir emitida con la fecha ya pasada ("vencida_sin_marcar").
+export function getQuoteExpiryAlert(quote = {}, today = "") {
+  const none = {kind: "", days: null};
+  if ((quote?.estado || "borrador") !== "emitida") return none;
+  const expiry = dateOnlyToUtcDays(quote.fechaVencimiento);
+  const current = dateOnlyToUtcDays(today);
+  if (expiry === null || current === null) return none;
+  const days = expiry - current;
+  if (days < 0) return {kind: "vencida_sin_marcar", days};
+  if (days <= QUOTE_EXPIRY_WARNING_DAYS) return {kind: "por_vencer", days};
+  return {kind: "", days};
+}
+
+// Filtros rápidos del historial: "todos" excluye archivadas (como el
+// selector Estado) y "por_vencer" incluye las emitidas con fecha ya pasada.
+export function matchesQuoteQuickFilter(quote = {}, filter = "todos", today = "") {
+  const estado = quote?.estado || "borrador";
+  if (filter === "todos") return estado !== "archivada";
+  if (filter === "por_vencer") return Boolean(getQuoteExpiryAlert(quote, today).kind);
+  return estado === filter;
+}
+
 export function normalizeAcceptance(raw = {}) {
   const source = raw?.aceptacion && typeof raw.aceptacion === "object"
     ? raw.aceptacion

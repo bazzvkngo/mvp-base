@@ -273,6 +273,14 @@
   color: var(--color-warning-800);
 }
 
+/* Borde -200: el par borde/fondo de peligro auditado en modo oscuro
+   (contrast-smoke); --color-danger-300 no tiene valor oscuro. */
+.ui-status-badge--danger {
+  background: var(--color-danger-50);
+  border-color: var(--color-danger-200);
+  color: var(--color-danger-700);
+}
+
 .ui-status-badge--neutral {
   background: var(--color-surface-subtle);
   color: var(--color-text-default);
