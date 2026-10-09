@@ -103,6 +103,7 @@ Las Functions esperan únicamente estos secretos por nombre:
 - `GEMINI_API_KEY`
 - `RESEND_API_KEY`
 - `RESEND_FROM_EMAIL`
+- `SERPER_API_KEY`
 
 Ejemplo de configuración, sin incluir valores en el repositorio:
 
@@ -110,6 +111,7 @@ Ejemplo de configuración, sin incluir valores en el repositorio:
 firebase functions:secrets:set GEMINI_API_KEY
 firebase functions:secrets:set RESEND_API_KEY
 firebase functions:secrets:set RESEND_FROM_EMAIL
+firebase functions:secrets:set SERPER_API_KEY
 ```
 
 ## Cloud Functions
@@ -129,31 +131,95 @@ declara en `functions/package.json`.
 
 ## Despliegue
 
-Build y Hosting, si Hosting está configurado en el proyecto Firebase:
+Este repositorio no autoriza despliegues automáticos. Cada despliegue se hace a
+mano, en este orden: reglas, Functions y frontend. Las reglas y las Functions
+nuevas aceptan al frontend anterior; un frontend nuevo contra Functions
+antiguas puede perder datos que el backend anterior no lee.
+
+Verificación previa:
 
 ```bash
+git status --short          # sin cambios pendientes
+firebase use                # debe indicar tesis-inventario-ia
 npm ci
-npm run build
-firebase deploy --only hosting
-```
-
-Functions:
-
-```bash
 npm --prefix functions ci
-npm --prefix functions run lint
-firebase deploy --only functions
+npm run test:rules          # reglas validadas en Emulator Suite
 ```
 
-Reglas:
+### 1. Reglas
 
 ```bash
-firebase deploy --only firestore:rules
-firebase deploy --only storage
+firebase deploy --only firestore:rules --project tesis-inventario-ia
+firebase deploy --only storage --project tesis-inventario-ia   # solo si cambió storage.rules
 ```
 
-Las reglas deben validarse en Emulator Suite o mediante pruebas controladas
-antes de desplegarse. Este repositorio no autoriza despliegues automáticos.
+### 2. Functions
+
+```bash
+firebase deploy --only functions --project tesis-inventario-ia
+```
+
+El `predeploy` de `firebase.json` ejecuta el lint de `functions/`. Los
+secretos de la sección anterior deben existir en Secret Manager antes del
+despliegue. Si el CLI propone eliminar Functions que no están en el código,
+responder que no salvo que se sepa cuáles son.
+
+### 3. Frontend (cPanel)
+
+El frontend no usa Firebase Hosting (`firebase.json` no tiene sección
+`hosting`). Se publica en `https://valoracloud.bagner.cl`, un hosting cPanel,
+subiendo el contenido de `dist/` con el Administrador de archivos.
+
+1. Generar el build y un zip con el **contenido** de `dist/`, no la carpeta:
+
+   ```powershell
+   npm run build
+   Compress-Archive -Path dist\* -DestinationPath valoracloud-AAAAMMDD.zip -Force
+   ```
+
+   En la raíz del zip deben quedar `index.html`, `favicon.svg` y `assets/`.
+2. En cPanel, activar "Mostrar archivos ocultos" en la configuración del
+   Administrador de archivos y abrir la raíz del documento del subdominio
+   (Dominios → raíz del documento de `valoracloud.bagner.cl`).
+3. Respaldo: seleccionar todo el contenido de la raíz del documento,
+   comprimirlo como `backup-valoracloud-AAAAMMDD.zip`, descargarlo y moverlo
+   fuera de la raíz del documento.
+4. Subir el zip nuevo a la raíz del documento y extraerlo encima, aceptando
+   sobrescribir. Se reemplazan `index.html` y `favicon.svg`, y `assets/`
+   recibe los archivos nuevos (sus nombres llevan hash y no chocan con los
+   anteriores).
+5. Conservar `.htaccess`, `.well-known/` y cualquier archivo que no provenga
+   de `dist/`. El build no incluye `.htaccess`, así que extraer el zip no lo
+   toca.
+6. Borrar el zip subido de la raíz del documento: queda descargable
+   públicamente.
+7. Verificar en una ventana privada: abrir la app, entrar directo a una ruta
+   interna (por ejemplo `/inventario`) para comprobar la reescritura a
+   `index.html`, y revisar que la consola no muestre recursos 404.
+8. Los archivos anteriores de `assets/` se pueden borrar después, cuando nadie
+   tenga abierta la versión previa. Para volver atrás, extraer el respaldo.
+
+El `.htaccess` de la raíz del documento debe reescribir las rutas de la app
+(React Router con `BrowserRouter`) a `index.html`, y evitar que el navegador
+guarde en caché `index.html`, para que una nueva versión se cargue al
+recargar:
+
+```apache
+Options -MultiViews
+RewriteEngine On
+RewriteBase /
+
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+RewriteRule ^ index.html [L]
+
+<IfModule mod_headers.c>
+  <FilesMatch "^index\.html$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>
+```
 
 ## Seguridad y privacidad
 
