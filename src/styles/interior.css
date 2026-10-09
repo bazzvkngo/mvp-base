@@ -4329,54 +4329,39 @@
 
 .quote-history-table {
   min-width: 920px;
-  table-layout: fixed;
 }
 
-.quote-history-table__number {
-  width: 13%;
+/* Mismo criterio que /clientes: sin anchos fijos ni table-layout: fixed, el
+   navegador reparte según el contenido. Todas las celdas conservan el
+   relleno de .erp-table (var(--space-3) por lado), así que la separación
+   entre columnas es uniforme, también entre Total (a la derecha) y Válida
+   hasta. Número, Estado, Total y los botones de Acciones nunca se parten. */
+.quote-history-table__number,
+.quote-history-table__number button,
+.quote-history-table__status,
+.quote-history-table__status button,
+.quote-history-table__total,
+.quote-history-table__actions,
+.quote-history-table__actions button {
+  white-space: nowrap;
 }
 
-.quote-history-table__client {
-  width: 23%;
-}
-
-.quote-history-table__status {
-  width: 11%;
-}
-
-.quote-history-table__total {
-  text-align: right !important;
-  width: 12%;
-}
-
-/* Total (a la derecha) y Válida hasta (a la izquierda) quedan contiguas:
-   más aire a la derecha del monto para que no se lean pegadas. */
-.quote-history-table .quote-history-table__total {
-  padding-right: var(--space-8);
-}
-
-.quote-history-table__validity {
-  width: 19%;
-}
-
+.quote-history-table__total,
 .quote-history-table__actions {
   text-align: right !important;
-  width: 22%;
 }
 
 .quote-history-table__actions > div {
   justify-content: flex-end;
 }
 
-.quote-history-table__client-cell {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.quote-history-table__client-cell > * {
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* Separación extra entre Total (alineado a la derecha) y Válida hasta, en la
+   tabla y en su esqueleto de carga (Válida hasta es la quinta columna, con o
+   sin la columna Acciones). */
+.quote-history-table .quote-history-table__validity,
+.quote-history-skeleton th:nth-child(5),
+.quote-history-skeleton td:nth-child(5) {
+  padding-left: var(--space-8);
 }
 
 .quote-history-table .quote-history-sale-link {

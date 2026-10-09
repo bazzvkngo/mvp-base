@@ -32,12 +32,12 @@ const company = {
   nombreComercial: "BAGNER Servicios Integrales",
   razonSocial: "Bagner Servicios Integrales SpA",
   rut: "77.091.679-8",
-  direccion: "Tamarugal 2985",
+  direccion: "Calle Ficticia 1234",
   ciudad: "Iquique",
   region: "I Región",
-  responsable: "Bruno Pairumani Altieri",
-  telefono: "+56 9 8247 0752",
-  email: "bruno.pairumani@bagner.cl",
+  responsable: "Persona de Prueba",
+  telefono: "+56 9 1234 5678",
+  email: "persona.prueba@example.test",
   condicionesPago: "50% al inicio y 50% al finalizar el trabajo",
   validezCotizacionDias: 10,
 };
@@ -583,6 +583,49 @@ assert.doesNotMatch(quoteActionsSource, /Correo|WhatsApp|Descargar PDF|Imprimir|
 assert.match(quoteActionsSource, /onClick=\{\(\) => onSend\(quote\)\}[\s\S]*?>\s*Enviar\s*<\/button>/);
 assert.match(quoteActionsSource, /actions=\{\[editMenuAction, emitMenuAction, archiveMenuAction\]\}/);
 assert.match(quoteActionsSource, /label: "Reenviar"/);
+// Filas: acciones en estilo secundario y "Más acciones" solo con ícono
+// (aria-label y title); el diálogo de detalle conserva el rótulo con texto.
+assert.match(quoteActionsSource, /const mainActionStyle = inRow \? styles\.secondaryButton : styles\.primaryButton;/);
+assert.doesNotMatch(quoteActionsSource, /style=\{styles\.primaryButton\}/);
+assert.equal((quoteActionsSource.match(/iconOnly=\{inRow\}/g) || []).length, (quoteActionsSource.match(/<MoreActionsMenu/g) || []).length);
+assert.match(sourceHistory, /aria-label=\{iconOnly \? "Más acciones" : undefined\}/);
+assert.match(sourceHistory, /title=\{iconOnly \? "Más acciones" : undefined\}/);
+assert.match(sourceHistory, /\{!iconOnly && <span>Más acciones<\/span>\}/);
+assert.equal((sourceHistory.match(/<QuoteActions\s+inRow\b/g) || []).length, 2);
+// Tabla: mismo criterio que /clientes. Sin anchos fijos ni table-layout:
+// fixed (reparto automático), mismo relleno en todas las celdas (sin margen
+// extra en Total), Número/Estado/Total/Acciones sin partirse y la columna
+// Acciones solo para roles con acciones.
+const quoteTableCss = sourceInteriorCss.slice(
+  sourceInteriorCss.indexOf(".quote-history-table {"),
+  sourceInteriorCss.indexOf(".quote-history-table .quote-history-sale-link")
+).replace(/\/\*[\s\S]*?\*\//g, "");
+assert.match(quoteTableCss, /\.quote-history-table \{\s*min-width: 920px;\s*\}/);
+assert.doesNotMatch(quoteTableCss, /table-layout|(?<!-)\bwidth:|padding-right/);
+for (const selector of [
+  ".quote-history-table__number",
+  ".quote-history-table__status",
+  ".quote-history-table__total",
+  ".quote-history-table__actions button",
+]) {
+  const nowrapRule = quoteTableCss.slice(0, quoteTableCss.indexOf("white-space: nowrap"));
+  assert.ok(nowrapRule.includes(`${selector},`) || nowrapRule.includes(`${selector} {`), selector);
+}
+assert.match(sourceHistory, /<td className="quote-history-table__number">/);
+assert.match(sourceHistory, /<td className="quote-history-table__status">/);
+assert.match(sourceHistory, /\{canDuplicate && <th className="quote-history-table__actions">Acciones<\/th>\}/);
+assert.match(sourceHistory, /\{canDuplicate && \(\s*<td className="quote-history-table__actions">/);
+assert.match(sourceHistory, /columns=\{canDuplicate \? 6 : 5\}/);
+assert.doesNotMatch(sourceHistory, /quote-history-table--readonly|quote-history-table__client-cell/);
+// Única excepción a la separación uniforme: más aire entre Total y Válida
+// hasta, en cabecera, celdas y esqueleto de carga.
+assert.match(
+  quoteTableCss,
+  /\.quote-history-table \.quote-history-table__validity,\s*\.quote-history-skeleton th:nth-child\(5\),\s*\.quote-history-skeleton td:nth-child\(5\) \{\s*padding-left: var\(--space-8\);\s*\}/
+);
+assert.match(sourceHistory, /<th className="quote-history-table__validity">Válida hasta<\/th>/);
+assert.match(sourceHistory, /<td className="quote-history-table__validity">\s*<QuoteValidity/);
+assert.match(sourceHistory, /<SkeletonTable className="erp-desktop-only quote-history-skeleton" columns=\{canDuplicate \? 6 : 5\} \/>/);
 assert.match(quoteActionsSource, />\s*Ver venta\s*<\/button>/);
 assert.match(sourceHistory, /<SegmentedControl[\s\S]*?options=\{quickFilterOptions\}[\s\S]*?value=\{statusFilter\}/);
 assert.match(sourceHistory, /Válida hasta/);

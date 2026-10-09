@@ -623,7 +623,7 @@ function QuoteHistoryPage({ userId, role }) {
 
         {loading ? (
           <SkeletonRegion label="Cargando cotizaciones...">
-            <SkeletonTable className="erp-desktop-only" columns={6} />
+            <SkeletonTable className="erp-desktop-only quote-history-skeleton" columns={canDuplicate ? 6 : 5} />
             <SkeletonCards className="erp-card-list erp-mobile-only" />
           </SkeletonRegion>
         ) : loadFailed && quotes.length === 0 ? null : quotes.length === 0 ? (
@@ -674,7 +674,7 @@ function QuoteHistoryPage({ userId, role }) {
                   <th className="quote-history-table__status">Estado</th>
                   <th className="quote-history-table__total">Total</th>
                   <th className="quote-history-table__validity">Válida hasta</th>
-                  <th className="quote-history-table__actions">Acciones</th>
+                  {canDuplicate && <th className="quote-history-table__actions">Acciones</th>}
                 </tr>
               </thead>
               <tbody>
@@ -683,7 +683,7 @@ function QuoteHistoryPage({ userId, role }) {
                     key={quote.id}
                     className={quote.id === selectedQuoteId ? "quote-history-table__row--selected" : undefined}
                   >
-                    <td>
+                    <td className="quote-history-table__number">
                       <button
                         type="button"
                         className="quote-record-link"
@@ -694,16 +694,13 @@ function QuoteHistoryPage({ userId, role }) {
                         {getQuoteDisplayNumber(quote, quote.id || "-")}
                       </button>
                     </td>
-                    <td
-                      className="quote-history-table__client-cell"
-                      title={quote.clienteNombre || ""}
-                    >
+                    <td>
                       <strong className="clients-table__name">{quote.clienteNombre || "-"}</strong>
                       {getQuoteClientFiscalId(quote) && (
                         <small className="clients-table__secondary">{getQuoteClientFiscalId(quote)}</small>
                       )}
                     </td>
-                    <td>
+                    <td className="quote-history-table__status">
                       <StatusBadge status={quote.estado} />
                       {/* Sin acciones en la fila no hay botón "Ver venta":
                           el número de venta queda bajo el estado. */}
@@ -724,13 +721,15 @@ function QuoteHistoryPage({ userId, role }) {
                     <td className="quote-history-table__total">
                       <strong>{formatMoney(quote.total, quote.moneda, quote.locale)}</strong>
                     </td>
-                    <td>
+                    <td className="quote-history-table__validity">
                       <QuoteValidity quote={quote} today={today} />
                     </td>
+                    {/* Roles sin acciones: no se muestra la columna. */}
+                    {canDuplicate && (
                     <td className="quote-history-table__actions">
                       <div style={styles.rowActions}>
-                        {canDuplicate && (
                         <QuoteActions
+                          inRow
                           quote={quote}
                           disabled={savingStatus}
                           onChangeStatus={handleChangeStatus}
@@ -745,9 +744,10 @@ function QuoteHistoryPage({ userId, role }) {
                           onReopen={handleReopenQuote}
                           onSend={handleOpenDetail}
                           accepting={acceptingQuoteId === quote.id}
-                        /> )}
+                        />
                       </div>
                     </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -1072,6 +1072,7 @@ function QuoteCards({
           {canDuplicate && (
             <div className="erp-actions" style={styles.mobileCardActions}>
               <QuoteActions
+                inRow
                 quote={quote}
                 disabled={disabled}
                 onChangeStatus={onChangeStatus}
@@ -1110,8 +1111,13 @@ function QuoteActions({
   onReopen,
   onSend,
   accepting,
+  inRow = false,
 }) {
   const estado = quote.estado || "borrador";
+  // En las filas todas las acciones van en estilo secundario (el relleno
+  // queda para "Nueva cotización") y "Más acciones" es solo ícono. El
+  // diálogo de detalle conserva su presentación.
+  const mainActionStyle = inRow ? styles.secondaryButton : styles.primaryButton;
   const duplicateMenuAction = canDuplicate && estado !== "borrador"
     ? {
         label: duplicating ? "Creando copia..." : "Duplicar como pendiente",
@@ -1154,6 +1160,7 @@ function QuoteActions({
         )}
         {linkedSaleActions.length > 0 && (
           <MoreActionsMenu
+            iconOnly={inRow}
             disabled={disabled || duplicating}
             actions={linkedSaleActions}
           />
@@ -1189,6 +1196,7 @@ function QuoteActions({
             Editar cotización
           </button>
           <MoreActionsMenu
+            iconOnly={inRow}
             actions={[emitMenuAction, archiveMenuAction]}
             disabled={disabled}
           />
@@ -1202,12 +1210,13 @@ function QuoteActions({
           type="button"
           onClick={() => onSend(quote)}
           disabled={disabled}
-          style={styles.primaryButton}
+          style={mainActionStyle}
           title="Abre la cotización para enviarla al cliente."
         >
           Enviar
         </button>
         <MoreActionsMenu
+          iconOnly={inRow}
           actions={[editMenuAction, emitMenuAction, archiveMenuAction]}
           disabled={disabled}
         />
@@ -1222,11 +1231,12 @@ function QuoteActions({
           type="button"
           onClick={() => onAcceptQuote(quote)}
           disabled={disabled || accepting}
-          style={styles.primaryButton}
+          style={mainActionStyle}
         >
           {accepting ? "Registrando..." : "Aceptar cotización"}
         </button>
         <MoreActionsMenu
+          iconOnly={inRow}
           disabled={disabled || accepting}
           actions={[
             onSend && {
@@ -1253,6 +1263,7 @@ function QuoteActions({
     return (
       <>
         <MoreActionsMenu
+          iconOnly={inRow}
           disabled={disabled}
           actions={[
             {
@@ -1279,6 +1290,7 @@ function QuoteActions({
           Reabrir como emitida
         </button>
         <MoreActionsMenu
+          iconOnly={inRow}
           disabled={disabled}
           actions={[duplicateMenuAction, archiveMenuAction].filter(Boolean)}
         />
@@ -1299,6 +1311,7 @@ function QuoteActions({
         </button>
         {duplicateMenuAction && (
           <MoreActionsMenu
+            iconOnly={inRow}
             disabled={disabled || duplicating}
             actions={[duplicateMenuAction]}
           />
@@ -1310,7 +1323,7 @@ function QuoteActions({
   return null;
 }
 
-function MoreActionsMenu({ actions, disabled }) {
+function MoreActionsMenu({ actions, disabled, iconOnly = false }) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ left: 0, top: 0 });
   const triggerRef = useRef(null);
@@ -1409,6 +1422,8 @@ function MoreActionsMenu({ actions, disabled }) {
         aria-expanded={open}
         aria-haspopup="menu"
         disabled={disabled}
+        aria-label={iconOnly ? "Más acciones" : undefined}
+        title={iconOnly ? "Más acciones" : undefined}
         onClick={() => (open ? setOpen(false) : openMenu())}
         onKeyDown={(event) => {
           if (!open && ["ArrowDown", "ArrowUp"].includes(event.key)) {
@@ -1416,9 +1431,9 @@ function MoreActionsMenu({ actions, disabled }) {
             openMenu(event.key === "ArrowUp");
           }
         }}
-        style={styles.moreActionsButton}
+        style={iconOnly ? styles.moreActionsIconButton : styles.moreActionsButton}
       >
-        <span>Más acciones</span>
+        {!iconOnly && <span>Más acciones</span>}
         <AppIcon icon={Ellipsis} size={17} />
       </button>
       {open && typeof document !== "undefined" && createPortal(
@@ -1858,6 +1873,21 @@ function CommercialStatusTimeline({ quote }) {
   );
 }
 
+const moreActionsButtonStyle = {
+  alignItems: "center",
+  background: "var(--color-surface-subtle)",
+  border: "1px solid var(--color-border-control)",
+  borderRadius: "4px",
+  color: "var(--color-text-default)",
+  cursor: "pointer",
+  display: "inline-flex",
+  fontSize: "13px",
+  fontWeight: 700,
+  gap: "6px",
+  minHeight: "38px",
+  padding: "8px 10px",
+};
+
 const styles = {
   commercialStatus: {
     background: "var(--color-surface-subtle)",
@@ -1936,7 +1966,7 @@ const styles = {
   rowActions: {
     alignItems: "center",
     display: "flex",
-    flexWrap: "wrap",
+    flexWrap: "nowrap",
     gap: "8px",
     minWidth: 0,
   },
@@ -1954,19 +1984,14 @@ const styles = {
     minHeight: "38px",
     padding: "8px 11px",
   },
-  moreActionsButton: {
-    alignItems: "center",
-    background: "var(--color-surface-subtle)",
-    border: "1px solid var(--color-border-control)",
-    borderRadius: "4px",
-    color: "var(--color-text-default)",
-    cursor: "pointer",
-    display: "inline-flex",
-    fontSize: "13px",
-    fontWeight: 700,
-    gap: "6px",
-    minHeight: "38px",
-    padding: "8px 10px",
+  moreActionsButton: moreActionsButtonStyle,
+  // Solo ícono en las filas: cuadrado de 38px, como los botones de ícono de
+  // /clientes, con el mismo estilo secundario del resto de la fila.
+  moreActionsIconButton: {
+    ...moreActionsButtonStyle,
+    justifyContent: "center",
+    padding: 0,
+    width: "38px",
   },
   actionsMenu: {
     background: "var(--color-surface-panel)",
