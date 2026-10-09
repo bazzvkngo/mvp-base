@@ -4,22 +4,6 @@
   min-width: 0;
 }
 
-.quote-workspace__header {
-  align-items: center;
-  background: linear-gradient(135deg, var(--color-brand-50) 0%, var(--color-info-50) 100%);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 12px;
-  display: flex;
-  gap: 18px;
-  justify-content: space-between;
-  padding: 16px 18px;
-}
-
-.quote-workspace__header-copy {
-  min-width: 0;
-}
-
-.quote-workspace__header h1,
 .quote-workspace__panel h2,
 .quote-summary h2 {
   color: var(--color-text-strong);
@@ -28,19 +12,6 @@
   margin: 0;
 }
 
-.quote-workspace__header h1 {
-  font-size: clamp(21px, 2vw, 27px);
-  margin-top: 2px;
-}
-
-.quote-workspace__header-copy > small {
-  color: var(--color-text-muted);
-  display: block;
-  font-size: 12px;
-  margin-top: 6px;
-}
-
-.quote-workspace__eyebrow,
 .quote-workspace__kicker {
   color: var(--color-brand-600);
   display: block;
@@ -50,14 +21,6 @@
   text-transform: uppercase;
 }
 
-.quote-workspace__header-meta {
-  align-items: end;
-  display: grid;
-  gap: 9px;
-  grid-template-columns: repeat(3, minmax(125px, 1fr)) auto;
-}
-
-.quote-workspace__header-meta label,
 .quote-workspace__field,
 .quote-item__field,
 .quote-item__details label,
@@ -201,6 +164,11 @@
   align-content: start;
   display: grid;
   gap: 9px;
+}
+
+.quote-workspace__project-field {
+  display: grid;
+  gap: var(--space-2);
 }
 
 .quote-workspace__project small {
@@ -494,6 +462,26 @@
   text-align: center;
 }
 
+/* Los avisos bajo el botón ocupan la fila completa también cuando las
+   acciones pasan a dos columnas (max-width: 1180px). */
+.quote-summary__actions > .quote-summary__hint {
+  grid-column: 1 / -1;
+}
+
+/* Qué falta para habilitar "Crear cotización" / "Guardar cambios". */
+.quote-summary__hint--blocked {
+  color: var(--color-text-default);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* Número y fecha del borrador en edición (antes en la franja superior). */
+.quote-summary__meta {
+  color: var(--color-text-muted);
+  display: block;
+  font-size: var(--font-size-xs);
+  margin-top: var(--space-1);
+}
+
 .quote-summary__clear {
   background: transparent;
   border: 0;
@@ -636,20 +624,17 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+/* Cada campo arranca arriba: "Plazo de ejecución" lleva un enlace extra y,
+   sin esto, estiraba el campo vecino de su fila ("Forma de pago"). */
+.quote-conditions-primary__grid > * {
+  align-self: start;
+}
+
 .quote-workspace__preview {
   scroll-margin-top: 14px;
 }
 
 @media (max-width: 1180px) {
-  .quote-workspace__header {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .quote-workspace__header-meta {
-    grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
-  }
-
   .quote-workspace__layout {
     grid-template-columns: 1fr;
   }
@@ -706,19 +691,9 @@
     gap: 10px;
   }
 
-  .quote-workspace__header,
   .quote-workspace__panel {
     border-radius: 9px;
     padding: 12px;
-  }
-
-  .quote-workspace__header-meta {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .quote-workspace__header-meta .quote-workspace__button {
-    grid-column: 1 / -1;
-    width: 100%;
   }
 
   .quote-workspace__panel-header {
@@ -796,7 +771,6 @@
      superficie que sí reacciona al tema, cada uno verificado contra su
      fondo real (surface-hover o ambient/transparent, ninguno sobre
      --color-brand-50/100/200). Corregido con --color-brand-400. */
-  .quote-workspace__eyebrow,
   .quote-workspace__kicker,
   .quote-workspace__status,
   .quote-workspace__feedback,

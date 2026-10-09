@@ -11,7 +11,6 @@ import {
 import {
   calculateQuoteLineAmounts,
   DEFAULT_QUOTE_CONDITIONS,
-  getQuoteStatusLabel,
   isAdvancedQuoteScope,
   isValidQuoteDateRange,
   QUOTE_SIMPLE_SCOPE_TITLE,
@@ -343,6 +342,15 @@ function normalizeStoredQuoteItems(items) {
   );
 }
 
+// "Qué incluye esta propuesta" empieza cerrado salvo que ya tenga contenido:
+// más de un apartado o alguna línea escrita (en modo simple la sección única
+// sólo lleva título mientras tiene texto).
+function hasScopeContent(sections = []) {
+  return sections.length > 1 || sections.some((section) =>
+    (section?.lineas || []).some((line) => String(line || "").trim())
+  );
+}
+
 function buildQuoteFromSavedQuote(savedQuote = {}) {
   return {
     ...buildInitialQuote(),
@@ -462,7 +470,7 @@ function NewQuotePage({ userId }) {
   const [itemsInteracted, setItemsInteracted] = useState(false);
   const [saveAttempted, setSaveAttempted] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
-  const [scopeOpen, setScopeOpen] = useState(true);
+  const [scopeOpen, setScopeOpen] = useState(false);
   const [conditionsOpen, setConditionsOpen] = useState(false);
   const [plazoRangeOpen, setPlazoRangeOpen] = useState(false);
   const [plazoRangeDraft, setPlazoRangeDraft] = useState({ desde: "", hasta: "" });
@@ -653,6 +661,7 @@ function NewQuotePage({ userId }) {
         };
         currentClienteIdRef.current = editableQuote.clienteId;
         setQuote(editableQuote);
+        setScopeOpen(hasScopeContent(editableQuote.seccionesAlcance));
         setLoadedDraftQuote(editableQuote);
         setSavedQuoteId(savedQuote.id);
         setDirty(false);
@@ -1712,6 +1721,24 @@ function NewQuotePage({ userId }) {
     !clientAvailability.hasActiveClients ||
     !quote.clienteId
   );
+  const saveBlockedByItems = quote.items.length === 0;
+  const saveBlocked = saveBlockedByClient || saveBlockedByItems;
+
+  // Qué falta para habilitar "Crear cotización" / "Guardar cambios". Los
+  // valores mal ingresados (montos, apartados) se siguen informando al pulsar.
+  const missingRequirements = [];
+  if (!isEditMode && !clientAvailability.loading && !clientAvailability.error) {
+    if (!clientAvailability.hasActiveClients) missingRequirements.push("registrar un cliente activo");
+    else if (!quote.clienteId) missingRequirements.push("cliente");
+  }
+  if (saveBlockedByItems) missingRequirements.push("al menos un ítem");
+  const saveBlockedReason = !isEditMode && clientAvailability.loading
+    ? "Cargando clientes…"
+    : !isEditMode && clientAvailability.error
+      ? "No se pudieron cargar los clientes."
+      : missingRequirements.length
+        ? `Falta: ${missingRequirements.join(" · ")}`
+        : "";
 
   const saveQuote = async () => {
     if (savingRef.current) return;
@@ -1836,36 +1863,23 @@ function NewQuotePage({ userId }) {
 
   return (
     <section className="quote-page quote-workspace">
-      <header className="quote-workspace__header no-print">
-        <div className="quote-workspace__header-copy">
-          <span className="quote-workspace__eyebrow">Cotizaciones</span>
-          <h1>{isEditMode ? "Editar cotización" : "Nueva cotización"}</h1>
-          {isEditMode ? (
-            <span className="quote-workspace__status">
-              {getQuoteDisplayNumber(quote)} · {getQuoteStatusLabel(quote.estado)}
-            </span>
-          ) : (
-            <small>El número se asignará al crear la cotización.</small>
-          )}
-          {isEditMode && quote.fecha && <small>{formatDate(quote.fecha)}</small>}
+      <section className="quote-workspace__panel quote-workspace__client-project no-print">
+        <div>
+          <span className="quote-workspace__kicker">Cliente</span>
+          <ClientSelector businessId={userId} value={quote.clienteId} snapshot={quote.cliente} onChange={handleClientChange} onAvailabilityChange={setClientAvailability} />
+        </div>
+        <div className="quote-workspace__project">
+          <label className="quote-workspace__project-field">
+            <span className="quote-workspace__kicker">Asunto</span>
+            <input type="text" value={quote.proyectoNombre} onChange={(event) => updateField("proyectoNombre", event.target.value)} placeholder="Ej. Escalera zona de estanque" />
+            <small>Resume en pocas palabras qué se cotiza. Aparece como 'Proyecto' en el PDF.</small>
+          </label>
           {quote.trabajoId && (
             <Link to="/trabajos" state={{openWorkId: quote.trabajoId}} className="quote-workspace__project-link">
               Proyecto {quote.trabajoNumero || quote.trabajoTitulo || quote.trabajoId}
             </Link>
           )}
         </div>
-      </header>
-
-      <section className="quote-workspace__panel quote-workspace__client-project no-print">
-        <div>
-          <span className="quote-workspace__kicker">Cliente</span>
-          <ClientSelector businessId={userId} value={quote.clienteId} snapshot={quote.cliente} onChange={handleClientChange} onAvailabilityChange={setClientAvailability} />
-        </div>
-        <label className="quote-workspace__project">
-          <span className="quote-workspace__kicker">Proyecto o trabajo</span>
-          <input type="text" value={quote.proyectoNombre} onChange={(event) => updateField("proyectoNombre", event.target.value)} placeholder="Ej. Escalera zona de estanque" />
-          <small>Identifica brevemente el alcance principal de esta propuesta.</small>
-        </label>
       </section>
 
       {error && <p className="no-print" style={styles.errorText}>{error}</p>}
@@ -2121,7 +2135,9 @@ function NewQuotePage({ userId }) {
         title="Qué incluye esta propuesta"
         summary={quote.seccionesAlcance.length > 1
           ? `${quote.seccionesAlcance.length} apartados`
-          : "Opcional"}
+          : hasScopeContent(quote.seccionesAlcance)
+            ? "Con descripción"
+            : "Opcional"}
         open={scopeOpen}
         onToggle={() => setScopeOpen((current) => !current)}
       >
@@ -2174,7 +2190,7 @@ function NewQuotePage({ userId }) {
           <Field label="Tratamiento tributario"><select value={quote.afectaIva === false ? "exenta" : "afecta"} onChange={(event) => updateField("afectaIva", event.target.value === "afecta")} style={styles.input}><option value="afecta">Afecta IVA 19%</option><option value="exenta">Exenta de IVA</option></select></Field>
           <Field label="Forma de pago"><input value={quote.condiciones.formaPago} onChange={(event) => updateCondition("formaPago", event.target.value)} style={styles.input} /></Field>
           <Field label="Plazo de ejecución o entrega">
-            <input value={quote.condiciones.plazoEntrega} onChange={(event) => updateCondition("plazoEntrega", event.target.value)} placeholder='Ej: "10 días hábiles desde recepción de la orden de compra"' style={styles.input} />
+            <input value={quote.condiciones.plazoEntrega} onChange={(event) => updateCondition("plazoEntrega", event.target.value)} placeholder="Ej: 10 días hábiles" style={styles.input} />
             {plazoRangeOpen ? (
               <div>
                 <div style={styles.plazoRangeRow}>
@@ -2228,7 +2244,10 @@ function NewQuotePage({ userId }) {
           taxRate={Number(quote.tasaIva ?? Number(companyProfile?.impuestoPredeterminadoTasa ?? 19) / 100) * 100}
           saving={saving}
           savingEstado={savingEstado}
-          saveBlockedByClient={saveBlockedByClient}
+          quoteDate={isEditMode && quote.fecha ? formatDate(quote.fecha) : ""}
+          quoteNumber={isEditMode ? getQuoteDisplayNumber(quote) : ""}
+          saveBlocked={saveBlocked}
+          saveBlockedReason={saveBlocked ? saveBlockedReason : ""}
           onDiscountChange={(event) => updateField("descuento", event.target.value)}
           onSave={saveQuote}
         />

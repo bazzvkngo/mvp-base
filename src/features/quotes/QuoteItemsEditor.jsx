@@ -47,9 +47,6 @@ function QuoteItemsEditor({
         <div className="quote-workspace__empty quote-workspace__empty--items">
           <strong>Agrega el detalle de la cotización</strong>
           <span>Agrega productos, servicios o actividades para construir la cotización.</span>
-          <button type="button" className="quote-workspace__button quote-workspace__button--primary" onClick={onOpenCatalog}>
-            Abrir catálogo
-          </button>
         </div>
       ) : (
         <div className="quote-items__list">

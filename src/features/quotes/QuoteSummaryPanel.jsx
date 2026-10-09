@@ -13,7 +13,10 @@ function QuoteSummaryPanel({
   onDiscountChange,
   onSave,
   quote,
-  saveBlockedByClient,
+  quoteDate,
+  quoteNumber,
+  saveBlocked,
+  saveBlockedReason,
   saving,
   savingEstado,
   totals,
@@ -26,7 +29,13 @@ function QuoteSummaryPanel({
     <aside className="quote-workspace__aside no-print" aria-label="Resumen y acciones de la cotización">
       <section className="quote-workspace__panel quote-summary">
         <header className="quote-summary__header">
-          <div><span className="quote-workspace__kicker">Resumen</span><h2>Totales</h2></div>
+          <div>
+            <span className="quote-workspace__kicker">Resumen</span>
+            <h2>Totales</h2>
+            {isEditMode && quoteNumber && (
+              <small className="quote-summary__meta">{[quoteNumber, quoteDate].filter(Boolean).join(" · ")}</small>
+            )}
+          </div>
           {isEditMode && (
             <span className={`quote-workspace__status quote-workspace__status--${quote.estado}`}>{getQuoteStatusLabel(quote.estado)}</span>
           )}
@@ -41,7 +50,9 @@ function QuoteSummaryPanel({
         </div>
         {totalsError && <p className="quote-workspace__message quote-workspace__message--error">{totalsError}</p>}
         <div className="quote-summary__actions">
-          <button type="button" className="quote-workspace__button quote-workspace__button--primary" onClick={onSave} disabled={saving || saveBlockedByClient}>{savingEstado === "borrador" ? (isEditMode ? "Guardando..." : "Creando...") : (isEditMode ? "Guardar cambios" : "Crear cotización")}</button>
+          <button type="button" className="quote-workspace__button quote-workspace__button--primary" onClick={onSave} disabled={saving || saveBlocked} aria-describedby={saveBlockedReason ? "quote-save-blocked-reason" : undefined}>{savingEstado === "borrador" ? (isEditMode ? "Guardando..." : "Creando...") : (isEditMode ? "Guardar cambios" : "Crear cotización")}</button>
+          {saveBlockedReason && <small id="quote-save-blocked-reason" className="quote-summary__hint quote-summary__hint--blocked">{saveBlockedReason}</small>}
+          {!isEditMode && <small className="quote-summary__hint">El número se asignará al crear la cotización.</small>}
         </div>
       </section>
     </aside>

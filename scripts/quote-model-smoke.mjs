@@ -538,6 +538,35 @@ assert.doesNotMatch(sourceQuoteItems, /Usar asistente/);
 assert.match(sourceQuoteSummary, /Crear cotización/);
 assert.match(sourceQuoteSummary, /Guardar cambios/);
 assert.doesNotMatch(sourceQuoteSummary, /Vista previa|Enviar por correo|Descargar PDF/);
+// Formulario: sin franja superior (la barra ya muestra el título); el aviso
+// del número va bajo el botón y, en edición, número y fecha en el resumen.
+assert.doesNotMatch(sourceNewQuote, /quote-workspace__header|quote-workspace__eyebrow/);
+assert.doesNotMatch(sourceQuoteWorkspaceCss, /quote-workspace__header|quote-workspace__eyebrow/);
+assert.match(sourceQuoteSummary, /\{!isEditMode && <small className="quote-summary__hint">El número se asignará al crear la cotización\.<\/small>\}/);
+assert.match(sourceQuoteSummary, /quoteNumber, quoteDate/);
+// "Crear cotización" también se deshabilita sin ítems y explica qué falta.
+assert.match(sourceNewQuote, /const saveBlocked = saveBlockedByClient \|\| saveBlockedByItems;/);
+assert.match(sourceNewQuote, /missingRequirements\.push\("cliente"\)/);
+assert.match(sourceNewQuote, /missingRequirements\.push\("al menos un ítem"\)/);
+assert.match(sourceNewQuote, /`Falta: \$\{missingRequirements\.join\(" · "\)\}`/);
+assert.match(sourceQuoteSummary, /disabled=\{saving \|\| saveBlocked\} aria-describedby=/);
+assert.match(sourceQuoteSummary, /id="quote-save-blocked-reason"/);
+// Ítems: un solo botón relleno (el del encabezado); el vacío es solo texto.
+assert.equal((sourceQuoteItems.match(/quote-workspace__button--primary/g) || []).length, 1);
+assert.doesNotMatch(sourceQuoteItems, /Abrir catálogo/);
+// "Asunto" sólo en el formulario: sigue guardándose como proyectoNombre y el
+// PDF y la vista de impresión conservan "Proyecto".
+assert.match(sourceNewQuote, /<span className="quote-workspace__kicker">Asunto<\/span>/);
+assert.match(sourceNewQuote, /Aparece como 'Proyecto' en el PDF\./);
+assert.doesNotMatch(sourceNewQuote, /Proyecto o trabajo/);
+assert.match(sourceQuoteDocument, /drawSectionHeading\(doc, "Proyecto"/);
+assert.match(sourceQuotePrintView, /<h3>Proyecto<\/h3>/);
+// Condiciones: campos alineados arriba, placeholder corto y "Qué incluye"
+// cerrado salvo que tenga contenido.
+assert.match(sourceQuoteWorkspaceCss, /\.quote-conditions-primary__grid > \* \{\s*align-self: start;/);
+assert.match(sourceNewQuote, /placeholder="Ej: 10 días hábiles"/);
+assert.match(sourceNewQuote, /const \[scopeOpen, setScopeOpen\] = useState\(false\);/);
+assert.match(sourceNewQuote, /setScopeOpen\(hasScopeContent\(editableQuote\.seccionesAlcance\)\);/);
 assert.match(sourceCompanyConfig, /Valores predeterminados para nuevas cotizaciones/);
 assert.doesNotMatch(sourceCompanyConfig, /Aceptación del cliente/);
 assert.match(sourceQuoteCatalog, /<ResponsiveDialog/);
