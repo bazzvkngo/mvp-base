@@ -37,6 +37,13 @@ import StatisticsPage from "../pages/StatisticsPage";
 import BusinessUnavailablePage from "../pages/BusinessUnavailablePage";
 import EmployeesPage from "../pages/EmployeesPage";
 import WorksPage from "../pages/WorksPage";
+import VehiclesPage from "../pages/VehiclesPage";
+import NewVehiclePage from "../pages/NewVehiclePage";
+import VehicleDetailPage from "../pages/VehicleDetailPage";
+import WorkOrdersPage from "../pages/WorkOrdersPage";
+import NewWorkOrderPage from "../pages/NewWorkOrderPage";
+import WorkOrderDetailPage from "../pages/WorkOrderDetailPage";
+import WorkshopPlazasPage from "../pages/WorkshopPlazasPage";
 import Button from "../components/ui/Button";
 import BusinessOperationGate from "../components/BusinessOperationGate";
 import { subscribeToAuth } from "../services/authService";
@@ -318,6 +325,77 @@ function AppRoutes({
               businessId={businessId}
               currentUserUid={usuario?.uid}
               currencyCode={activeBusiness?.monedaCodigo}
+              role={activeBusiness?.role}
+            />
+          }
+        />
+        <Route path="/taller" element={<Navigate to="/taller/ordenes" replace />} />
+        <Route
+          path="/taller/ordenes"
+          element={
+            <WorkOrdersPage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
+            />
+          }
+        />
+        <Route
+          path="/taller/ordenes/nueva"
+          element={
+            <NewWorkOrderPage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
+            />
+          }
+        />
+        <Route
+          path="/taller/ordenes/:otId"
+          element={
+            <WorkOrderDetailPage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
+            />
+          }
+        />
+        <Route
+          path="/taller/vehiculos"
+          element={
+            <VehiclesPage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
+            />
+          }
+        />
+        <Route
+          path="/taller/vehiculos/nuevo"
+          element={
+            <NewVehiclePage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
+            />
+          }
+        />
+        <Route
+          path="/taller/vehiculos/:vehiculoId"
+          element={
+            <VehicleDetailPage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
+            />
+          }
+        />
+        <Route
+          path="/taller/plazas"
+          element={
+            <WorkshopPlazasPage
+              key={businessId}
+              businessId={businessId}
               role={activeBusiness?.role}
             />
           }

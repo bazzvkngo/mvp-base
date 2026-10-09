@@ -4,7 +4,9 @@ import {
   Building2,
   ClipboardCheck,
   BriefcaseBusiness,
+  Car,
   History,
+  MapPin,
   ReceiptText,
   PackageCheck,
   UserRound,
@@ -60,6 +62,28 @@ export const navigationSections = [
         label: "Proyectos y trabajos",
         title: "Proyectos y trabajos",
         icon: BriefcaseBusiness,
+      },
+      {
+        to: "/taller/ordenes",
+        label: "Órdenes de trabajo",
+        title: "Órdenes de trabajo",
+        icon: ClipboardCheck,
+        activeWhen: (pathname) =>
+          pathname === "/taller" || pathname.startsWith("/taller/ordenes"),
+      },
+      {
+        to: "/taller/vehiculos",
+        label: "Vehículos",
+        title: "Vehículos",
+        icon: Car,
+        activeWhen: (pathname) => pathname.startsWith("/taller/vehiculos"),
+      },
+      {
+        to: "/taller/plazas",
+        label: "Plazas",
+        title: "Plazas",
+        icon: MapPin,
+        activeWhen: (pathname) => pathname.startsWith("/taller/plazas"),
       },
       {
         to: "/inventario",
@@ -152,6 +176,21 @@ export function getRouteMeta(pathname) {
   }
   if (pathname === "/ventas/nueva") {
     return { title: "Nueva venta" };
+  }
+  if (pathname === "/taller") {
+    return { title: "Taller" };
+  }
+  if (pathname === "/taller/ordenes/nueva") {
+    return { title: "Nueva orden de trabajo" };
+  }
+  if (/^\/taller\/ordenes\/[^/]+$/.test(pathname)) {
+    return { title: "Orden de trabajo" };
+  }
+  if (pathname === "/taller/vehiculos/nuevo") {
+    return { title: "Nuevo vehículo" };
+  }
+  if (/^\/taller\/vehiculos\/[^/]+$/.test(pathname)) {
+    return { title: "Vehículo" };
   }
   if (pathname === "/compras/nueva") {
     return { title: "Nueva compra" };

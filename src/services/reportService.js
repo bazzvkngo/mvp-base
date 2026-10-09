@@ -30,11 +30,12 @@ function requireBusinessId(value) {
   return businessId;
 }
 
-async function listCollectionByBusiness(path, businessId) {
+async function listCollectionByBusiness(path, businessId, filters = []) {
   const snapshot = await getDocs(
     query(
       collection(db, ...path),
-      where("negocioId", "==", businessId)
+      where("negocioId", "==", businessId),
+      ...filters
     )
   );
   return snapshot.docs.map((entry) => ({id: entry.id, ...entry.data()}));
@@ -114,7 +115,8 @@ export async function loadReportData(
       can(BUSINESS_PERMISSIONS.QUOTES_READ) ? getQuotes(businessId) : Promise.resolve([]),
       can(BUSINESS_PERMISSIONS.INVENTORY_READ) ? getInventoryItems(businessId) : Promise.resolve([]),
       can(BUSINESS_PERMISSIONS.INVENTORY_READ)
-        ? listCollectionByBusiness(inventoryMovementsCollectionPath(businessId), businessId)
+        ? listCollectionByBusiness(inventoryMovementsCollectionPath(businessId), businessId,
+          [where("tipo", "not-in", ["SALIDA_TALLER", "DEVOLUCION_TALLER"])])
         : Promise.resolve([]),
       includeTraceability && can(BUSINESS_PERMISSIONS.INVENTORY_COSTS_READ)
         ? listCollectionByBusiness(inventoryAcquisitionsCollectionPath(businessId), businessId)

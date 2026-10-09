@@ -1,6 +1,23 @@
 {
   "indexes": [
     {
+      "collectionGroup": "movimientosInventario",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "negocioId", "order": "ASCENDING" },
+        { "fieldPath": "tipo", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "movimientosInventario",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "negocioId", "order": "ASCENDING" },
+        { "fieldPath": "trabajoId", "order": "ASCENDING" },
+        { "fieldPath": "tipo", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "quotePublicTokens",
       "queryScope": "COLLECTION",
       "fields": [

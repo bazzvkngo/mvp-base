@@ -41,6 +41,16 @@
   border-color: var(--color-text-muted);
 }
 
+.ui-button--warning {
+  background: var(--color-warning-50);
+  border-color: var(--color-warning-200);
+  color: var(--color-warning-800);
+}
+
+.ui-button--warning:hover:not(:disabled) {
+  border-color: var(--color-warning-800);
+}
+
 .ui-button--ghost {
   background: transparent;
   color: var(--color-brand-700);

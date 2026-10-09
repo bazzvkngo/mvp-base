@@ -81,7 +81,7 @@ export async function cargarFichaTrabajo(rawBusinessId, rawWorkId, {role = "", c
     isTechnician ? Promise.resolve(emptySnapshot) : getDocs(query(collection(db, ...workLinksCollectionPath(id, selectedWorkId)), where("negocioId", "==", id), where("trabajoId", "==", selectedWorkId))),
     getDocs(query(collection(db, ...workExpensesCollectionPath(id, selectedWorkId)), where("negocioId", "==", id), where("trabajoId", "==", selectedWorkId), ...(isTechnician ? [where("registradoPorUid", "==", currentUserUid)] : []))),
     getDocs(query(collection(db, ...workLaborCollectionPath(id, selectedWorkId)), where("negocioId", "==", id), where("trabajoId", "==", selectedWorkId), ...(isTechnician ? [where("registradoPorUid", "==", currentUserUid)] : []))),
-    getDocs(query(collection(db, ...inventoryMovementsCollectionPath(id)), where("negocioId", "==", id), where("trabajoId", "==", selectedWorkId))),
+    getDocs(query(collection(db, ...inventoryMovementsCollectionPath(id)), where("negocioId", "==", id), where("trabajoId", "==", selectedWorkId), where("tipo", "in", ["SALIDA_PROYECTO", "DEVOLUCION_PROYECTO"]))),
   ]);
   const vinculos = sortByDate(linksSnapshot.docs.map((entry) => adaptWorkLink({...entry.data(), id: entry.id})), "creadoEn");
   const taskDocuments = tasks.docs.map((entry) => adaptWorkTask({...entry.data(), id: entry.id}));

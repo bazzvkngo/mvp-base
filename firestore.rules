@@ -971,6 +971,66 @@ service cloud.firestore {
         allow create, update, delete: if false;
       }
 
+      match /vehiculos/{vehiculoId} {
+        allow read: if hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "TECNICO", "MEMBER"], ["taller"])
+          && resource.data.negocioId == businessId;
+        allow create, update, delete: if false;
+      }
+
+      match /vehiclePlateKeys/{plateKey} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /vehicleVinKeys/{vinKey} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /vehicleCreateRequests/{requestId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /plazasTaller/{plazaId} {
+        allow read: if hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "TECNICO", "MEMBER"], ["taller"])
+          && resource.data.negocioId == businessId;
+        allow create, update, delete: if false;
+      }
+
+      match /plazaOccupancyKeys/{plazaId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /ordenesTrabajo/{otId} {
+        allow read: if hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "TECNICO", "MEMBER"], ["taller"])
+          && resource.data.negocioId == businessId;
+        allow create, update, delete: if false;
+
+        match /diagnosticos/{diagnosticoId} {
+          allow read: if hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "TECNICO", "MEMBER"], ["taller"])
+            && resource.data.negocioId == businessId
+            && resource.data.otId == otId;
+          allow create, update, delete: if false;
+        }
+
+        match /servicios/{servicioOtId} {
+          allow read: if hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "TECNICO", "MEMBER"], ["taller"])
+            && resource.data.negocioId == businessId
+            && resource.data.otId == otId;
+          allow create, update, delete: if false;
+        }
+
+        match /historial/{eventoId} {
+          allow read, create, update, delete: if false;
+        }
+      }
+
+      match /otCounters/{counterId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /otCreateRequests/{requestId} {
+        allow read, create, update, delete: if false;
+      }
+
       match /trabajos/{trabajoId} {
         allow read: if resource.data.negocioId == businessId
           && (
@@ -1159,6 +1219,14 @@ service cloud.firestore {
 
       match /movimientosInventario/{movimientoId} {
         allow read: if resource.data.negocioId == businessId
+          && (
+            (resource.data.tipo != "SALIDA_TALLER" && resource.data.tipo != "DEVOLUCION_TALLER")
+            ||
+            (
+              get(membershipPath(businessId, request.auth.uid)).data.rol in ["OWNER", "ADMIN", "COMPRAS", "FINANZAS", "MEMBER"]
+              && get(membershipPath(businessId, request.auth.uid)).data.get("profileId", "") == ""
+            )
+          )
           && (
             hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "VENTAS", "COMPRAS", "FINANZAS", "MEMBER"], ["inventario", "trabajos", "ventas", "recepciones", "compras", "reportes"])
             || (
