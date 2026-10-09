@@ -218,6 +218,7 @@ function storedLine(raw = {}, index = 0) {
     descripcion: text(raw.descripcion || snapshot.descripcion, 3000),
     tipoItem: ITEM_TYPES.has(tipo) ? tipo : "producto",
     unidad: text(raw.unidad || snapshot.unidad, 80) || "unidad",
+    ...(text(raw.impuestoId, 40) ? {impuestoId: text(raw.impuestoId, 40).toUpperCase()} : {}),
     ...calculatePurchaseLine(raw, index),
   };
 }
@@ -225,7 +226,18 @@ function storedLine(raw = {}, index = 0) {
 export function adaptStoredPurchase(raw = {}) {
   const items = (Array.isArray(raw.items) ? raw.items : []).map(storedLine);
   const localization = adaptDocumentLocalization(raw);
-  const totals = items.length ? calculatePurchaseTotals(items, {tasaIva: localization.tasaIva}) : {subtotal: 0, descuentoTotal: 0, neto: 0, iva: 0, total: 0};
+  // SPEC 023 §5.2: sólo los documentos marcados con modeloIvaCompraVersion 1
+  // se recalculan con boleta y exentos; los anteriores conservan el cálculo
+  // con el que se guardaron.
+  const usesPurchaseVatModel = Number(raw.modeloIvaCompraVersion) === 1;
+  const totals = items.length
+    ? calculatePurchaseTotals(items, {
+      tasaIva: localization.tasaIva,
+      ...(usesPurchaseVatModel
+        ? {tipoDocumento: DOCUMENT_SET.has(raw.tipoDocumento) ? raw.tipoDocumento : "sin_documento"}
+        : {}),
+    })
+    : {subtotal: 0, descuentoTotal: 0, neto: 0, montoExento: 0, iva: 0, total: 0};
   const estado = text(raw.estado, 20).toLowerCase();
   const proveedor = providerSnapshot(raw.proveedorSnapshot || {proveedorId: raw.proveedorId, razonSocial: raw.proveedorNombre, rut: raw.proveedorRut});
   return {

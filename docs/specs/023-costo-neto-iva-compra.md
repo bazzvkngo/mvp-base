@@ -785,7 +785,18 @@ Cada etapa es pequeña, deja el sistema consistente y se detiene sin commit.
    `purchases-integrated` y `receptions-integrated`.
 4. **UI de Compras e inventario.** Rótulos de boleta y exento en Nueva compra
    y detalle, aviso de boleta en el importador de Compras y "Costo del
-   inventario" (§7). Smokes 10, 22. **Cambio visual.**
+   inventario" (§7). Smokes 10, 22. **Cambio visual.** Pendientes que dejó la
+   etapa 3 (el cálculo de totales de la vista previa de Nueva compra ya se
+   corrigió en ella):
+   - El historial de adquisiciones de la ficha de inventario muestra
+     `costoPagadoUnitario` y `costoPagadoTotal` (lo pagado con IVA), mientras
+     el promedio ya es neto. Debe mostrar `costoInventario*` y dejar el IVA
+     como dato informativo; las adquisiciones anteriores, sin
+     `costoInventario*`, conservan lo pagado.
+   - El "Total compra estimado" de la confirmación de Recepción
+     (`getReceptionConfirmationImpact`) suma IVA a todas las líneas. Debe
+     aplicar §5.2 (boleta y líneas exentas), con la marca de cada línea
+     disponible en el cliente.
 5. **Gastos de Proyecto.** `tipoDocumento` en el gasto, selector y rótulos.
    Smokes 11, 19, 23. **Cambio visual.**
 6. **Regla `MATERIAL` (P2, provisional).** `workBalance.js` y

@@ -13,6 +13,7 @@ const {
   assertInventoryTransactionWriteBudget,
   inventoryEconomicFields,
   resolveInventoryEconomicState,
+  resolvePurchaseVatTreatment,
 } = require("./inventoryAcquisition");
 
 function fail(HttpsError, code, message) {
@@ -542,22 +543,6 @@ async function confirmarRecepcionHandler(request, dependencies, now = new Date()
     const purchaseSequence = Number.isSafeInteger(currentPurchaseNumber) &&
       currentPurchaseNumber >= 0 ? currentPurchaseNumber + 1 : 1;
     const purchaseNumber = formatPurchaseNumber(purchaseYear, purchaseSequence);
-    const confirmedPurchase = createsAutomaticPurchase
-      ? buildConfirmedPurchaseFromReception({
-        business: businessSnapshot.data() || {},
-        businessId,
-        companyProfile: companyProfileSnapshot.data() || {},
-        HttpsError,
-        numero: purchaseNumber,
-        order,
-        purchaseId: purchaseRef.id,
-        reception: {...reception, recepcionId: receptionId},
-        sequence: purchaseSequence,
-        timestamp: FieldValue.serverTimestamp(),
-        uid,
-        year: purchaseYear,
-      })
-      : null;
     const productLines = (reception.items || []).filter((line) =>
       line.tipoItem === "producto" && Number(line.cantidad) > EPSILON
     );
@@ -576,6 +561,31 @@ async function confirmarRecepcionHandler(request, dependencies, now = new Date()
       ? await transaction.getAll(...inventoryRefs)
       : [];
     const inventory = new Map(inventorySnapshots.map((entry) => [entry.id, entry]));
+    // SPEC 023 §5.4: la marca de exención se lee del producto en esta misma
+    // transacción y la Compra derivada usa la misma, para que su total y lo
+    // que entra a Q/V coincidan.
+    const taxIdsByItem = new Map(inventorySnapshots.map((entry) => [
+      entry.id,
+      entry.exists ? text(entry.data()?.impuestoId, 40).toUpperCase() : "",
+    ]));
+    const receptionDocumentType = text(reception.documentoOrigen?.tipoDocumento, 40);
+    const confirmedPurchase = createsAutomaticPurchase
+      ? buildConfirmedPurchaseFromReception({
+        business: businessSnapshot.data() || {},
+        businessId,
+        companyProfile: companyProfileSnapshot.data() || {},
+        HttpsError,
+        numero: purchaseNumber,
+        order,
+        purchaseId: purchaseRef.id,
+        reception: {...reception, recepcionId: receptionId},
+        sequence: purchaseSequence,
+        taxIdsByItem,
+        timestamp: FieldValue.serverTimestamp(),
+        uid,
+        year: purchaseYear,
+      })
+      : null;
     const timestamp = FieldValue.serverTimestamp();
     const receptionCurrency = text(reception.moneda, 12).toUpperCase() || "CLP";
     const providerSnapshot = reception.proveedorSnapshot || {};
@@ -598,10 +608,14 @@ async function confirmarRecepcionHandler(request, dependencies, now = new Date()
         costoUnitario: line.costoUnitario,
         descuentoPct: line.descuentoPct,
         tasaImpuestoCompra: Number(reception.tasaIva || 0) * 100,
+        tratamientoIvaCompra: resolvePurchaseVatTreatment({
+          tipoDocumento: receptionDocumentType,
+          impuestoId: taxIdsByItem.get(line.itemId),
+        }),
       }, HttpsError);
       running.set(line.itemId, {
         ...next,
-        ultimoCosto: amounts.costoPagadoUnitario,
+        ultimoCosto: amounts.costoInventarioUnitario,
         ultimaAdquisicionId: `${receptionId}__${line.lineaId}`,
       });
       const movementRef = businessRef.collection("movimientosInventario")
@@ -622,8 +636,8 @@ async function confirmarRecepcionHandler(request, dependencies, now = new Date()
         lineaId: line.lineaId,
         adquisicionId: acquisitionRef.id,
         cantidad: amounts.cantidad,
-        costoUnitarioAplicado: amounts.costoPagadoUnitario,
-        costoTotal: amounts.costoPagadoTotal,
+        costoUnitarioAplicado: amounts.costoInventarioUnitario,
+        costoTotal: amounts.costoInventarioTotal,
         moneda: receptionCurrency,
         stockAnterior: previous.stock,
         stockResultante: next.stock,

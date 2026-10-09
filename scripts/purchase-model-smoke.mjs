@@ -93,8 +93,8 @@ for (const [label, items, tipoDocumento, expected] of vatCases) {
   assert.deepEqual(calculatePurchaseTotals(items, {tasaIva: 0.19, tipoDocumento}), expected, `frontend: ${label}`);
   assert.deepEqual(calculateBackendPurchaseTotals(backendLines(items), TestHttpsError, 0.19, {tipoDocumento}), expected, `backend: ${label}`);
 }
-// Sin tipoDocumento ambos lados conservan el cálculo legacy: la boleta sigue
-// sumando 19 % y no aparece montoExento hasta conectar SPEC 023 (Etapa 3).
+// Sin tipoDocumento ambos lados conservan el cálculo legacy: así se leen las
+// compras guardadas antes de SPEC 023 (sin modeloIvaCompraVersion).
 const legacyBoleta = {subtotal: 8330, descuentoTotal: 0, neto: 8330, iva: 1583, total: 9913};
 assert.deepEqual(calculatePurchaseTotals([pvc], {tasaIva: 0.19}), legacyBoleta);
 assert.deepEqual(calculateBackendPurchaseTotals(backendLines([pvc]), TestHttpsError, 0.19), legacyBoleta);
@@ -103,6 +103,29 @@ const halfMaxLine = (lineaId) => line({lineaId, itemId: lineaId, cantidad: 1, co
 assert.throws(() => calculatePurchaseTotals([halfMaxLine("a"), halfMaxLine("b")], {tipoDocumento: "boleta"}), /máximo permitido/);
 assert.throws(() => calculateBackendPurchaseTotals(backendLines([halfMaxLine("a"), halfMaxLine("b")]), TestHttpsError, 0.19, {tipoDocumento: "boleta"}), /máximo permitido/);
 console.log("OK compras modelo SPEC 023: factura, boleta, exento, mixta, descuentos, legacy y espejo frontend/backend");
+
+// SPEC 023 etapa 3: adaptStoredPurchase activa §5.2 solo con
+// modeloIvaCompraVersion 1; una compra anterior se lee con su cálculo.
+const storedVatLine = (overrides) => ({lineaId: "l1", itemId: "p1", tipoItem: "producto", nombre: "Tubo PVC", unidad: "unidad", cantidad: 2, costoUnitario: 4165, descuentoPct: 0, ...overrides});
+const legacyStoredBoleta = adaptStoredPurchase({tipoDocumento: "boleta", tasaIva: 0.19, items: [storedVatLine()]});
+assert.deepEqual([legacyStoredBoleta.iva, legacyStoredBoleta.total], [1583, 9913], "una boleta anterior conserva el IVA con el que se guardó");
+const newStoredBoleta = adaptStoredPurchase({modeloIvaCompraVersion: 1, tipoDocumento: "boleta", tasaIva: 0.19, items: [storedVatLine()]});
+assert.deepEqual([newStoredBoleta.neto, newStoredBoleta.montoExento, newStoredBoleta.iva, newStoredBoleta.total], [8330, 0, 0, 8330]);
+const newStoredMixed = adaptStoredPurchase({
+  modeloIvaCompraVersion: 1,
+  tipoDocumento: "factura",
+  tasaIva: 0.19,
+  items: [
+    storedVatLine({lineaId: "cable", cantidad: 10, costoUnitario: 10000, impuestoId: "IVA_GENERAL"}),
+    storedVatLine({lineaId: "exento", cantidad: 5, costoUnitario: 4000, impuestoId: "iva_exento"}),
+  ],
+});
+assert.deepEqual([newStoredMixed.neto, newStoredMixed.montoExento, newStoredMixed.iva, newStoredMixed.total], [120000, 20000, 19000, 139000], "Ejemplo D");
+assert.equal(newStoredMixed.items[1].impuestoId, "IVA_EXENTO", "la línea conserva la copia de la marca");
+const legacyStoredMixed = adaptStoredPurchase({tipoDocumento: "factura", tasaIva: 0.19, items: newStoredMixed.items});
+assert.deepEqual([legacyStoredMixed.iva, legacyStoredMixed.total], [22800, 142800], "sin marca de versión la línea exenta no cambia el cálculo");
+assert.equal(adaptStoredPurchase({modeloIvaCompraVersion: 1, items: []}).montoExento, 0);
+console.log("OK compras modelo SPEC 023: adaptStoredPurchase solo recalcula con modeloIvaCompraVersion 1");
 
 const payload = buildPurchaseMutationPayload({
   proveedorId: "provider-1",
@@ -211,6 +234,13 @@ assert.match(backend, /stockAplicado/);
 assert.match(backend, /purchaseReversalRequests/);
 assert.match(backend, /salida_reversion_compra/);
 assert.doesNotMatch(backend, /cost[oe]Base\s*:/i);
+// SPEC 023 §5.3 y §8.1: lo que entra y sale de Q/V es el costo de inventario.
+assert.match(backend, /modeloIvaCompraVersion: PURCHASE_VAT_MODEL_VERSION/);
+assert.match(backend, /tratamientoIvaCompra: resolvePurchaseVatTreatment\(\{tipoDocumento: purchase\.tipoDocumento, impuestoId: line\.impuestoId\}\)/);
+assert.match(backend, /costoUnitarioAplicado: amounts\.costoInventarioUnitario, costoTotal: amounts\.costoInventarioTotal/);
+assert.match(backend, /acquisition\.costoInventarioTotal \?\? acquisition\.costoPagadoTotal/);
+assert.match(purchaseDetail, /tipoDocumento: draft\.tipoDocumento/);
+assert.match(purchaseDetail, /if \(readOnly && purchase\)/);
 assert.match(purchasesPage, /Revertir compra/);
 assert.match(purchasesPage, /Motivo de reversión \*/);
 assert.match(purchasesPage, /getPurchaseStockSemantics/);

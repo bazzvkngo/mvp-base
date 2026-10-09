@@ -15,7 +15,7 @@ process.env.FIRESTORE_EMULATOR_HOST ||= "127.0.0.1:8080";
 process.env.GCLOUD_PROJECT ||= PROJECT_ID;
 const requireFromFunctions = createRequire(new URL("../functions/package.json", import.meta.url));
 const {deleteApp: deleteAdminApp, initializeApp: initializeAdminApp} = requireFromFunctions("firebase-admin/app");
-const {getFirestore: getAdminFirestore} = requireFromFunctions("firebase-admin/firestore");
+const {FieldValue, getFirestore: getAdminFirestore} = requireFromFunctions("firebase-admin/firestore");
 
 function createClient(name) {
   const app = initializeApp({
@@ -181,9 +181,10 @@ try {
   assert.equal(confirmed.data.compra.estado, "confirmada"); assert.equal(confirmed.data.compra.stockAplicado, true);
   const productAfterDirectPurchase = (await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data();
   assert.equal(productAfterDirectPurchase.stock, beforeProduct.stock + 2);
-  assert.equal(productAfterDirectPurchase.valorInventario, 26565);
-  assert.equal(productAfterDirectPurchase.costoPromedio, 2656.5);
-  assert.equal(productAfterDirectPurchase.ultimoCosto, 10174.5);
+  // SPEC 023 §12.1: a Q/V entra el neto (17100) sobre el baseline de 6216.
+  assert.equal(productAfterDirectPurchase.valorInventario, 23316);
+  assert.equal(productAfterDirectPurchase.costoPromedio, 2331.6);
+  assert.equal(productAfterDirectPurchase.ultimoCosto, 8550);
   assert.equal(productAfterDirectPurchase.costoBase, 777);
   assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${serviceId}`).get()).data().stock, undefined);
   assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${activityId}`).get()).data().stock, undefined);
@@ -194,6 +195,8 @@ try {
   assert.equal(directAcquisition.estado, "vigente");
   assert.equal(directAcquisition.origen, "compra_directa");
   assert.equal(directAcquisition.costoPagadoTotal, 20349);
+  assert.equal(directAcquisition.costoInventarioTotal, 17100);
+  assert.equal(directAcquisition.tratamientoIvaCompra, "credito_fiscal");
   assert.equal(directAcquisition.recepcionId, undefined);
   assert.equal(directAcquisition.ordenCompraId, undefined);
   const retrySame = await call(owner, "confirmarCompra")({businessId, compraId: ownerCreated.data.compra.id, requestId: confirmId});
@@ -221,7 +224,7 @@ try {
   assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock, beforeProduct.stock);
   console.log("OK reversión V3 directa: stock restaurado, movimiento compensatorio e idempotencia");
 
-  const economicPurchase = await call(owner, "crearCompra")({businessId, requestId: requestId("economic-a-create"), compra: purchasePayload(providerId, [line(economicProduct, "economic-a", {cantidad: 10, costoUnitario: 168.0672, descuentoPct: 0})])});
+  const economicPurchase = await call(owner, "crearCompra")({businessId, requestId: requestId("economic-a-create"), compra: purchasePayload(providerId, [line(economicProduct, "economic-a", {cantidad: 10, costoUnitario: 200, descuentoPct: 0})])});
   await call(owner, "confirmarCompra")({businessId, compraId: economicPurchase.data.compra.id, requestId: requestId("economic-a-confirm")});
   let economicState = (await adminDb.doc(`negocios/${businessId}/inventario/${economicProduct}`).get()).data();
   assert.deepEqual([economicState.stock, economicState.valorInventario, economicState.costoPromedio], [20, 3000, 150]);
@@ -242,7 +245,7 @@ try {
   console.log("OK economía: adquisición A → venta congelada → reversión A conserva Q=5, V=250 y promedio=50");
 
   const unsafeReversal = async (itemId, label, corruptedValue) => {
-    const draft = await call(owner, "crearCompra")({businessId, requestId: requestId(`${label}-create`), compra: purchasePayload(providerId, [line(itemId, `${label}-line`, {cantidad: 10, costoUnitario: 168.0672, descuentoPct: 0})])});
+    const draft = await call(owner, "crearCompra")({businessId, requestId: requestId(`${label}-create`), compra: purchasePayload(providerId, [line(itemId, `${label}-line`, {cantidad: 10, costoUnitario: 200, descuentoPct: 0})])});
     await call(owner, "confirmarCompra")({businessId, compraId: draft.data.compra.id, requestId: requestId(`${label}-confirm`)});
     await adminDb.doc(`negocios/${businessId}/inventario/${itemId}`).update({valorInventario: corruptedValue});
     await expectCallableError(label, () => call(owner, "revertirCompra")({businessId, compraId: draft.data.compra.id, motivo: label, requestId: requestId(`${label}-reverse`)}), ["failed-precondition"]);
@@ -259,7 +262,7 @@ try {
   const zeroFxDraft = await call(owner, "crearCompra")({businessId, requestId: requestId("zero-fx-create"), compra: purchasePayload(providerId, [line(zeroFxProduct, "zero-fx-line", {cantidad: 1, costoUnitario: 500, descuentoPct: 0})])});
   await call(owner, "confirmarCompra")({businessId, compraId: zeroFxDraft.data.compra.id, requestId: requestId("zero-fx-confirm")});
   let zeroFxState = (await adminDb.doc(`negocios/${businessId}/inventario/${zeroFxProduct}`).get()).data();
-  assert.deepEqual([zeroFxState.stock, zeroFxState.valorInventario, zeroFxState.valorInventarioMoneda, zeroFxState.costoPromedioMoneda], [1, 595, "CLP", "CLP"]);
+  assert.deepEqual([zeroFxState.stock, zeroFxState.valorInventario, zeroFxState.valorInventarioMoneda, zeroFxState.costoPromedioMoneda], [1, 500, "CLP", "CLP"]);
   assert.equal((await adminDb.doc(`negocios/${businessId}/adquisicionesInventario/${zeroFxDraft.data.compra.id}__zero-fx-line`).get()).data().moneda, "CLP");
   await call(owner, "revertirCompra")({businessId, compraId: zeroFxDraft.data.compra.id, motivo: "Validar último costo entre monedas", requestId: requestId("zero-fx-reverse")});
   zeroFxState = (await adminDb.doc(`negocios/${businessId}/inventario/${zeroFxProduct}`).get()).data();
@@ -270,6 +273,97 @@ try {
   assert.equal(zeroFxState.ultimaAdquisicionEn, null);
   console.log("OK saldo cero cambia de USD a CLP y la reversión no presenta último costo cross-currency");
   console.log("OK bloqueos económicos: V negativo, residual con Q=0 y moneda incompatible sin FX");
+
+  // SPEC 023 etapa 3 (§5, §8.1, §12.2 casos 12, 14, 15 y 18).
+  const vatCable = `vat-cable-${RUN_ID}`; const vatPvc = `vat-pvc-${RUN_ID}`;
+  const vatMixedCable = `vat-mixed-cable-${RUN_ID}`; const vatExempt = `vat-exempt-${RUN_ID}`;
+  const vatLegacy = `vat-legacy-${RUN_ID}`; const vatDraftItem = `vat-draft-${RUN_ID}`;
+  await Promise.all([
+    adminDb.doc(`negocios/${businessId}/inventario/${vatCable}`).set({...itemFixture(vatCable, "producto", "Cable factura", 0), impuestoId: "IVA_GENERAL"}),
+    adminDb.doc(`negocios/${businessId}/inventario/${vatPvc}`).set({...itemFixture(vatPvc, "producto", "Tubo PVC boleta", 0), impuestoId: "IVA_GENERAL"}),
+    adminDb.doc(`negocios/${businessId}/inventario/${vatMixedCable}`).set({...itemFixture(vatMixedCable, "producto", "Cable factura mixta", 0), impuestoId: "IVA_GENERAL"}),
+    adminDb.doc(`negocios/${businessId}/inventario/${vatExempt}`).set({...itemFixture(vatExempt, "producto", "Producto exento", 0), impuestoId: "IVA_EXENTO"}),
+    adminDb.doc(`negocios/${businessId}/inventario/${vatLegacy}`).set({...itemFixture(vatLegacy, "producto", "Producto con compra anterior", 0), impuestoId: "IVA_GENERAL"}),
+    adminDb.doc(`negocios/${businessId}/inventario/${vatDraftItem}`).set({...itemFixture(vatDraftItem, "producto", "Producto para borrador", 0), impuestoId: "IVA_EXENTO"}),
+  ]);
+  const productState = async (itemId) => (await adminDb.doc(`negocios/${businessId}/inventario/${itemId}`).get()).data();
+  const acquisitionOf = async (purchaseId, lineaId) => (await adminDb.doc(`negocios/${businessId}/adquisicionesInventario/${purchaseId}__${lineaId}`).get()).data();
+  const movementOf = async (purchaseId, lineaId) => (await adminDb.doc(`negocios/${businessId}/movimientosInventario/${purchaseId}__${lineaId}`).get()).data();
+  const confirmNewPurchase = async (label, items, overrides = {}) => {
+    const created = await call(owner, "crearCompra")({businessId, requestId: requestId(`${label}-create`), compra: purchasePayload(providerId, items, overrides)});
+    await call(owner, "confirmarCompra")({businessId, compraId: created.data.compra.id, requestId: requestId(`${label}-confirm`)});
+    return created.data.compra;
+  };
+
+  // Caso 12, Ejemplo A: factura. El documento suma IVA; a Q/V entra el neto.
+  const invoicePurchase = await confirmNewPurchase("vat-invoice", [line(vatCable, "cable", {cantidad: 10, costoUnitario: 10000, descuentoPct: 0})]);
+  assert.deepEqual([invoicePurchase.modeloIvaCompraVersion, invoicePurchase.neto, invoicePurchase.montoExento, invoicePurchase.iva, invoicePurchase.total], [1, 100000, 0, 19000, 119000]);
+  assert.equal(invoicePurchase.items[0].impuestoId, "IVA_GENERAL");
+  let cableState = await productState(vatCable);
+  assert.deepEqual([cableState.stock, cableState.valorInventario, cableState.costoPromedio, cableState.ultimoCosto], [10, 100000, 10000, 10000]);
+  const invoiceAcquisition = await acquisitionOf(invoicePurchase.compraId, "cable");
+  assert.deepEqual(
+    [invoiceAcquisition.tratamientoIvaCompra, invoiceAcquisition.costoInventarioUnitario, invoiceAcquisition.costoInventarioTotal, invoiceAcquisition.impuestoCompraTotal, invoiceAcquisition.costoPagadoTotal],
+    ["credito_fiscal", 10000, 100000, 19000, 119000]
+  );
+  const invoiceMovement = await movementOf(invoicePurchase.compraId, "cable");
+  assert.deepEqual([invoiceMovement.costoUnitarioAplicado, invoiceMovement.costoTotal], [10000, 100000]);
+
+  // Caso 12, Ejemplo B: boleta. Sin IVA recuperable; entra lo pagado.
+  const receiptPurchase = await confirmNewPurchase("vat-receipt", [line(vatPvc, "pvc", {cantidad: 2, costoUnitario: 4165, descuentoPct: 0})], {tipoDocumento: "boleta"});
+  assert.deepEqual([receiptPurchase.neto, receiptPurchase.iva, receiptPurchase.total], [8330, 0, 8330]);
+  const pvcState = await productState(vatPvc);
+  assert.deepEqual([pvcState.valorInventario, pvcState.ultimoCosto], [8330, 4165]);
+  const receiptAcquisition = await acquisitionOf(receiptPurchase.compraId, "pvc");
+  assert.deepEqual([receiptAcquisition.tratamientoIvaCompra, receiptAcquisition.impuestoCompraTotal, receiptAcquisition.costoInventarioTotal, receiptAcquisition.costoPagadoTotal], ["boleta", 0, 8330, 8330]);
+
+  // Caso 12, Ejemplo D: factura mixta con una línea exenta.
+  const mixedPurchase = await confirmNewPurchase("vat-mixed", [
+    line(vatMixedCable, "mixed-cable", {cantidad: 10, costoUnitario: 10000, descuentoPct: 0}),
+    line(vatExempt, "mixed-exempt", {cantidad: 5, costoUnitario: 4000, descuentoPct: 0}),
+  ]);
+  assert.deepEqual([mixedPurchase.neto, mixedPurchase.montoExento, mixedPurchase.iva, mixedPurchase.total], [120000, 20000, 19000, 139000]);
+  assert.deepEqual(mixedPurchase.items.map((item) => item.impuestoId), ["IVA_GENERAL", "IVA_EXENTO"]);
+  assert.deepEqual([(await productState(vatMixedCable)).valorInventario, (await productState(vatExempt)).valorInventario, (await productState(vatExempt)).ultimoCosto], [100000, 20000, 4000]);
+  assert.equal((await acquisitionOf(mixedPurchase.compraId, "mixed-exempt")).tratamientoIvaCompra, "exento");
+  console.log("OK SPEC 023 caso 12: factura, boleta y mixta entran a Q/V por el costo de inventario");
+
+  // Caso 14: revertir una compra nueva resta costoInventarioTotal y
+  // ultimoCosto vuelve a la adquisición previa.
+  const secondInvoice = await confirmNewPurchase("vat-invoice-2", [line(vatCable, "cable-2", {cantidad: 5, costoUnitario: 12000, descuentoPct: 0})]);
+  cableState = await productState(vatCable);
+  assert.deepEqual([cableState.stock, cableState.valorInventario, cableState.ultimoCosto], [15, 160000, 12000]);
+  await call(owner, "revertirCompra")({businessId, compraId: secondInvoice.compraId, motivo: "Caso 14 SPEC 023", requestId: requestId("vat-invoice-2-reverse")});
+  cableState = await productState(vatCable);
+  assert.deepEqual([cableState.stock, cableState.valorInventario, cableState.costoPromedio, cableState.ultimoCosto], [10, 100000, 10000, 10000]);
+  console.log("OK SPEC 023 caso 14: revertir compra nueva resta el neto y restaura ultimoCosto");
+
+  // Caso 15 (§8.1): una adquisición anterior al cambio (sin
+  // tratamientoIvaCompra) entró con IVA; revertirla resta costoPagadoTotal.
+  const oldPurchase = await confirmNewPurchase("vat-old", [line(vatLegacy, "old", {cantidad: 10, costoUnitario: 10000, descuentoPct: 0})]);
+  const oldAcquisitionRef = adminDb.doc(`negocios/${businessId}/adquisicionesInventario/${oldPurchase.compraId}__old`);
+  await oldAcquisitionRef.update({tratamientoIvaCompra: FieldValue.delete(), costoInventarioUnitario: FieldValue.delete(), costoInventarioTotal: FieldValue.delete()});
+  await adminDb.doc(`negocios/${businessId}/inventario/${vatLegacy}`).update({valorInventario: 119000, costoPromedio: 11900, ultimoCosto: 11900});
+  assert.equal((await oldAcquisitionRef.get()).data().costoPagadoTotal, 119000);
+  await confirmNewPurchase("vat-new-after-old", [line(vatLegacy, "new", {cantidad: 10, costoUnitario: 10000, descuentoPct: 0})]);
+  let legacyState = await productState(vatLegacy);
+  assert.deepEqual([legacyState.stock, legacyState.valorInventario, legacyState.costoPromedio], [20, 219000, 10950]);
+  await call(owner, "revertirCompra")({businessId, compraId: oldPurchase.compraId, motivo: "Caso 15 SPEC 023", requestId: requestId("vat-old-reverse")});
+  legacyState = await productState(vatLegacy);
+  assert.deepEqual([legacyState.stock, legacyState.valorInventario, legacyState.costoPromedio, legacyState.ultimoCosto], [10, 100000, 10000, 10000]);
+  console.log("OK SPEC 023 caso 15: revertir una adquisición anterior resta lo que entonces entró");
+
+  // Caso 18 (§5.3): el borrador copia la marca del producto; un cambio
+  // posterior en la ficha no altera la línea hasta volver a guardar.
+  const vatDraft = await call(owner, "crearCompra")({businessId, requestId: requestId("vat-draft-create"), compra: purchasePayload(providerId, [line(vatDraftItem, "draft-line", {cantidad: 5, costoUnitario: 4000, descuentoPct: 0})])});
+  assert.deepEqual([vatDraft.data.compra.items[0].impuestoId, vatDraft.data.compra.montoExento, vatDraft.data.compra.iva], ["IVA_EXENTO", 20000, 0]);
+  await adminDb.doc(`negocios/${businessId}/inventario/${vatDraftItem}`).update({impuestoId: "IVA_GENERAL", impuestoTasa: 19});
+  let storedDraft = (await adminDb.doc(`negocios/${businessId}/compras/${vatDraft.data.compra.id}`).get()).data();
+  assert.deepEqual([storedDraft.items[0].impuestoId, storedDraft.montoExento, storedDraft.iva], ["IVA_EXENTO", 20000, 0], "cambiar la ficha no reescribe el borrador");
+  await call(owner, "actualizarCompraBorrador")({businessId, compraId: vatDraft.data.compra.id, compra: purchasePayload(providerId, [line(vatDraftItem, "draft-line", {cantidad: 5, costoUnitario: 4000, descuentoPct: 0})])});
+  storedDraft = (await adminDb.doc(`negocios/${businessId}/compras/${vatDraft.data.compra.id}`).get()).data();
+  assert.deepEqual([storedDraft.items[0].impuestoId, storedDraft.montoExento, storedDraft.iva, storedDraft.total, storedDraft.modeloIvaCompraVersion], ["IVA_GENERAL", 0, 3800, 23800, 1]);
+  console.log("OK SPEC 023 caso 18: el borrador copia la marca y la refresca al volver a guardar");
 
   const nonProductDraft = await call(owner, "crearCompra")({businessId, requestId: requestId("non-product-create"), compra: purchasePayload(providerId, [line(serviceId, "non-product-service", {cantidad: 1}), line(activityId, "non-product-activity", {cantidad: 1})])});
   const serviceBefore = (await adminDb.doc(`negocios/${businessId}/inventario/${serviceId}`).get()).data();

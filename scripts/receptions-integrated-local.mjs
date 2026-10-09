@@ -109,9 +109,11 @@ try {
   assert.equal(confirmed.data.compra.items.find((line) => line.tipoItem === "servicio").cantidad, 1);
   const productAfterFirst = (await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data();
   assert.equal(productAfterFirst.stock, 4);
-  assert.equal(productAfterFirst.valorInventario, 5712);
-  assert.equal(productAfterFirst.costoPromedio, 1428);
-  assert.equal(productAfterFirst.ultimoCosto, 1428);
+  // SPEC 023 §12.1: a Q/V entra el neto de la línea.
+  assert.equal(productAfterFirst.valorInventario, 4800);
+  assert.equal(productAfterFirst.costoPromedio, 1200);
+  assert.equal(productAfterFirst.ultimoCosto, 1200);
+  assert.equal(confirmed.data.compra.modeloIvaCompraVersion, 1);
   assert.equal(productAfterFirst.ultimoProveedor.razonSocial, provider.razonSocial);
   assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${serviceId}`).get()).data().stock, undefined);
   const movements = await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("recepcionId", "==", first.data.recepcion.id).get();
@@ -119,10 +121,12 @@ try {
   const firstAcquisitions = await adminDb.collection(`negocios/${businessId}/adquisicionesInventario`).where("recepcionId", "==", first.data.recepcion.id).get();
   assert.equal(firstAcquisitions.size, 1);
   assert.equal(firstAcquisitions.docs[0].data().costoPagadoTotal, 5712);
+  assert.equal(firstAcquisitions.docs[0].data().costoInventarioTotal, 4800);
+  assert.equal(firstAcquisitions.docs[0].data().tratamientoIvaCompra, "credito_fiscal");
   assert.equal(firstAcquisitions.docs[0].data().estado, "vigente");
   assert.equal(firstAcquisitions.docs[0].data().origen, "recepcion");
   assert.equal(firstAcquisitions.docs[0].data().valorInventarioAnterior, 0);
-  assert.equal(firstAcquisitions.docs[0].data().valorInventarioPosterior, 5712);
+  assert.equal(firstAcquisitions.docs[0].data().valorInventarioPosterior, 4800);
   assert.equal(firstAcquisitions.docs[0].data().proveedorId, providerId);
   assert.equal(firstAcquisitions.docs[0].data().ordenCompraId, orderId);
   assert.equal(firstAcquisitions.docs[0].data().compraId, confirmed.data.compra.id);
@@ -144,8 +148,8 @@ try {
   const secondConfirmed = await call(owner, "confirmarRecepcion")({businessId, recepcionId: second.data.recepcion.id, requestId: requestId("confirm-second")});
   const productAfterSecondReception = (await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data();
   assert.equal(productAfterSecondReception.stock, 10);
-  assert.equal(productAfterSecondReception.valorInventario, 12852);
-  assert.equal(productAfterSecondReception.costoPromedio, 1285.2);
+  assert.equal(productAfterSecondReception.valorInventario, 10800);
+  assert.equal(productAfterSecondReception.costoPromedio, 1080);
   assert.equal(secondConfirmed.data.compra.estado, "confirmada");
   assert.equal(secondConfirmed.data.compra.items.find((line) => line.tipoItem === "producto").cantidad, 6);
   assert.notEqual(secondConfirmed.data.compra.id, confirmed.data.compra.id);
@@ -167,9 +171,9 @@ try {
   assert.equal(reversedOtherRetry.data.idempotent, true);
   const productAfterFirstReversal = (await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data();
   assert.equal(productAfterFirstReversal.stock, 6);
-  assert.equal(productAfterFirstReversal.valorInventario, 7140);
-  assert.equal(productAfterFirstReversal.costoPromedio, 1190);
-  assert.equal(productAfterFirstReversal.ultimoCosto, 1190);
+  assert.equal(productAfterFirstReversal.valorInventario, 6000);
+  assert.equal(productAfterFirstReversal.costoPromedio, 1000);
+  assert.equal(productAfterFirstReversal.ultimoCosto, 1000);
   assert.equal(firstAcquisitions.docs[0].ref ? (await firstAcquisitions.docs[0].ref.get()).data().estado : "", "revertida");
   const reversalMovements = await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("compraId", "==", confirmed.data.compra.id).get();
   assert.equal(reversalMovements.docs.filter((entry) => entry.data().tipo === "salida_reversion_compra").length, 1);
@@ -189,10 +193,61 @@ try {
   await call(owner, "confirmarRecepcion")({businessId, recepcionId: averageReception.data.recepcion.id, requestId: requestId("average-confirm")});
   const productAfterSecondCost = (await adminDb.doc(`negocios/${businessId}/inventario/${productId}`).get()).data();
   assert.equal(productAfterSecondCost.stock, 7);
-  assert.equal(productAfterSecondCost.valorInventario, 8568);
-  assert.equal(productAfterSecondCost.ultimoCosto, 1428);
-  assert.equal(productAfterSecondCost.costoPromedio, 1224);
+  assert.equal(productAfterSecondCost.valorInventario, 7200);
+  assert.equal(productAfterSecondCost.ultimoCosto, 1200);
+  assert.equal(productAfterSecondCost.costoPromedio, 1028.5714);
   console.log("OK segunda adquisición recalcula costo promedio ponderado");
+
+  // SPEC 023 caso 13 (§5.4): la Recepción toma el tipo de documento de
+  // documentoOrigen y la marca de exención del producto; la Compra derivada
+  // usa las mismas, así que su total y lo que entró a Q/V coinciden.
+  const vatPvcId = `vat-pvc-${RUN_ID}`; const vatCableId = `vat-cable-${RUN_ID}`; const vatExemptId = `vat-exempt-${RUN_ID}`;
+  await Promise.all([
+    adminDb.doc(`negocios/${businessId}/inventario/${vatPvcId}`).set({negocioId: businessId, estado: "activo", tipoItem: "producto", nombre: "Tubo PVC", unidad: "unidad", stock: 0, impuestoId: "IVA_GENERAL"}),
+    adminDb.doc(`negocios/${businessId}/inventario/${vatCableId}`).set({negocioId: businessId, estado: "activo", tipoItem: "producto", nombre: "Cable", unidad: "unidad", stock: 0, impuestoId: "IVA_GENERAL"}),
+    adminDb.doc(`negocios/${businessId}/inventario/${vatExemptId}`).set({negocioId: businessId, estado: "activo", tipoItem: "producto", nombre: "Producto exento", unidad: "unidad", stock: 0, impuestoId: "IVA_EXENTO"}),
+  ]);
+  const seedVatOrder = (id, items) => adminDb.doc(`negocios/${businessId}/ordenesCompra/${id}`).set({ordenCompraId: id, negocioId: businessId, numero: `OC-${id}`, estado: "emitida", moneda: "CLP", tasaIva: 0.19, proveedorId: providerId, proveedorSnapshot: provider, empresaSnapshot: companySnapshotA, respuestaProveedor: {estado: "pendiente"}, items});
+  const receiveWithDocument = async (label, orderIdForVat, tipoDocumento) => {
+    const draft = await call(owner, "crearRecepcionDesdeOrden")({businessId, ordenCompraId: orderIdForVat, requestId: requestId(`${label}-create`)});
+    await call(owner, "actualizarRecepcionBorrador")({businessId, recepcionId: draft.data.recepcion.id, recepcion: {
+      fechaRecepcion: "2026-08-14",
+      observaciones: label,
+      documentoOrigen: {...documentoOrigen, tipoDocumento, numeroDocumento: `${label}-1`},
+      items: draft.data.recepcion.items.map((line) => ({lineaId: line.lineaId, cantidad: line.cantidad, costoUnitario: line.costoUnitario, descuentoPct: 0})),
+    }});
+    const result = await call(owner, "confirmarRecepcion")({businessId, recepcionId: draft.data.recepcion.id, requestId: requestId(`${label}-confirm`)});
+    return {receptionId: draft.data.recepcion.id, purchase: result.data.compra};
+  };
+  const vatState = async (itemId) => (await adminDb.doc(`negocios/${businessId}/inventario/${itemId}`).get()).data();
+
+  const boletaOrderId = `vat-boleta-${RUN_ID}`;
+  await seedVatOrder(boletaOrderId, [orderLine("pvc-line", vatPvcId, "Tubo PVC", "producto", 2, 4165)]);
+  const boletaReception = await receiveWithDocument("vat-boleta", boletaOrderId, "boleta");
+  const pvcAfterReception = await vatState(vatPvcId);
+  assert.deepEqual([pvcAfterReception.stock, pvcAfterReception.valorInventario, pvcAfterReception.ultimoCosto], [2, 8330, 4165]);
+  const boletaAcquisition = (await adminDb.doc(`negocios/${businessId}/adquisicionesInventario/${boletaReception.receptionId}__pvc-line`).get()).data();
+  assert.deepEqual([boletaAcquisition.tratamientoIvaCompra, boletaAcquisition.costoInventarioTotal, boletaAcquisition.impuestoCompraTotal], ["boleta", 8330, 0]);
+  assert.deepEqual(
+    [boletaReception.purchase.tipoDocumento, boletaReception.purchase.neto, boletaReception.purchase.iva, boletaReception.purchase.total, boletaReception.purchase.modeloIvaCompraVersion],
+    ["boleta", 8330, 0, 8330, 1]
+  );
+
+  const mixedOrderId = `vat-mixed-${RUN_ID}`;
+  await seedVatOrder(mixedOrderId, [
+    orderLine("cable-line", vatCableId, "Cable", "producto", 10, 10000),
+    orderLine("exempt-line", vatExemptId, "Producto exento", "producto", 5, 4000),
+  ]);
+  const mixedReception = await receiveWithDocument("vat-mixed", mixedOrderId, "factura");
+  assert.deepEqual([(await vatState(vatCableId)).valorInventario, (await vatState(vatExemptId)).valorInventario], [100000, 20000]);
+  const exemptAcquisition = (await adminDb.doc(`negocios/${businessId}/adquisicionesInventario/${mixedReception.receptionId}__exempt-line`).get()).data();
+  assert.deepEqual([exemptAcquisition.tratamientoIvaCompra, exemptAcquisition.costoInventarioTotal], ["exento", 20000]);
+  assert.deepEqual(
+    [mixedReception.purchase.neto, mixedReception.purchase.montoExento, mixedReception.purchase.iva, mixedReception.purchase.total],
+    [120000, 20000, 19000, 139000]
+  );
+  assert.deepEqual(mixedReception.purchase.items.map((line) => line.impuestoId), ["IVA_GENERAL", "IVA_EXENTO"]);
+  console.log("OK SPEC 023 caso 13: recepción con boleta y factura mixta; la Compra derivada coincide con Q/V");
 
   const incompatibleOrderId = `currency-${RUN_ID}`; await seedOrder(incompatibleOrderId, 1, "pendiente", 1000, "USD");
   const incompatibleReception = await call(owner, "crearRecepcionDesdeOrden")({businessId, ordenCompraId: incompatibleOrderId, requestId: requestId("currency-reception")});
