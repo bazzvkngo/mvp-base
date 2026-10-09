@@ -352,6 +352,7 @@ function AppRoutes({
             <ClientsPage
               key={businessId}
               businessId={businessId}
+              canCreateQuotes={canWriteQuotes}
               countryCode={activeBusiness?.paisCodigo}
               role={activeBusiness?.role}
             />

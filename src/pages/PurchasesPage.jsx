@@ -84,12 +84,11 @@ export default function PurchasesPage({businessId, role}) {
   const open = (purchase) => navigate(purchase.estado === "borrador" && canManage ? `/compras/${purchase.id}/editar` : `/compras/${purchase.id}`);
   return (
     <main className="erp-page po-history">
-      <div className="erp-module-intro">
-        <div className="erp-page-intro">
-          <p>Registra compras directas y documentos económicos derivados de Recepciones. Confirmar una Compra V3 directa incrementa stock; una Compra de Recepción no lo duplica.</p>
+      {canManage && (
+        <div className="erp-module-intro">
+          <Button type="button" icon={Plus} onClick={() => navigate("/compras/nueva")}>Nueva compra</Button>
         </div>
-        {canManage && <Button type="button" icon={Plus} onClick={() => navigate("/compras/nueva")}>Nueva compra</Button>}
-      </div>
+      )}
 
       {message && <p className="po-message" role={loadFailed ? "alert" : undefined}>{message}</p>}
 

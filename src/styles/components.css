@@ -2894,3 +2894,54 @@
     outline-color: #56c7d8;
   }
 }
+
+/* Enlaces de contacto (components/contacts/ContactLinks): correo, teléfono y
+   WhatsApp en listas de clientes y proveedores. */
+.ui-contact-links {
+  display: grid;
+  gap: var(--space-1);
+  justify-items: start;
+  min-width: 0;
+}
+
+.ui-contact-links__phone {
+  align-items: center;
+  display: inline-flex;
+  gap: var(--space-2);
+}
+
+.ui-contact-links__empty {
+  color: var(--color-text-muted);
+}
+
+.ui-contact-link {
+  color: var(--color-brand-700);
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.ui-contact-link:hover {
+  text-decoration: underline;
+}
+
+.ui-contact-link:focus-visible {
+  border-radius: var(--radius-sm);
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-offset);
+}
+
+.ui-contact-link--whatsapp {
+  align-items: center;
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-sm);
+  color: var(--color-success-700);
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 32px;
+  justify-content: center;
+  width: 32px;
+}
+
+.ui-contact-link--whatsapp:hover {
+  background: var(--color-surface-hover);
+}

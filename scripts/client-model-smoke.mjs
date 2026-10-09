@@ -14,7 +14,9 @@ import {
 } from "../src/domain/clientModel.mjs";
 import {
   formatContactPhoneInput,
+  getContactEmailHref,
   getContactPhoneError,
+  getContactPhoneLinks,
   normalizeContactPhone,
 } from "../src/domain/contactFormatting.mjs";
 
@@ -76,6 +78,27 @@ assert.equal(
   getContactPhoneError("+56 9 1234 567890", "CL")
 );
 console.log("OK teléfono: formatea pegado, normaliza Chile y conserva multipaís");
+
+assert.equal(getContactEmailHref(" contacto@example.cl "), "mailto:contacto@example.cl");
+assert.equal(getContactEmailHref("sin-arroba"), "");
+assert.equal(getContactEmailHref(""), "");
+assert.deepEqual(getContactPhoneLinks("+56 9 6123 4587", "CL"), {
+  tel: "tel:+56961234587",
+  whatsapp: "https://wa.me/56961234587",
+});
+// Registro legacy sin normalizar: mismo resultado que el número guardado hoy.
+assert.deepEqual(getContactPhoneLinks("961234587", "CL"), getContactPhoneLinks("+56 9 6123 4587", "CL"));
+// Fijo chileno: se puede llamar, pero no se ofrece WhatsApp.
+assert.deepEqual(getContactPhoneLinks("+56 2 2345 6789", "CL"), {tel: "tel:+56223456789", whatsapp: ""});
+assert.deepEqual(getContactPhoneLinks("1234", "CL"), {tel: "", whatsapp: ""});
+assert.deepEqual(getContactPhoneLinks("", "CL"), {tel: "", whatsapp: ""});
+assert.deepEqual(getContactPhoneLinks("+1 (202) 555-0100", "US"), {
+  tel: "tel:+12025550100",
+  whatsapp: "https://wa.me/12025550100",
+});
+// Sin código internacional no hay forma segura de armar wa.me.
+assert.deepEqual(getContactPhoneLinks("2025550100", "US"), {tel: "tel:2025550100", whatsapp: ""});
+console.log("OK contacto: mailto, tel y WhatsApp solo para celulares");
 
 const mutationPayload = buildClientMutationPayload({
   tipoCliente: " EMPRESA ",
@@ -214,6 +237,16 @@ const clientsManager = fs.readFileSync("src/features/clients/ClientsManager.jsx"
 assert.match(clientsManager, /openCreateClient/);
 assert.match(clientsManager, /<ClientFormDialog/);
 console.log("OK navegación: Proyectos puede abrir el formulario existente de Nuevo cliente");
+
+// Cotizar desde la lista: misma condición que protege /cotizaciones/nueva y
+// cliente preseleccionado por el projectContext que NewQuotePage ya acepta.
+const appSource = fs.readFileSync("src/app/App.jsx", "utf8");
+assert.match(appSource, /<ClientsPage[\s\S]*?canCreateQuotes=\{canWriteQuotes\}/);
+assert.match(clientsManager, /canQuote && client\.estado === "activo"/);
+assert.match(clientsManager, /navigate\("\/cotizaciones\/nueva", \{\s*state: \{projectContext: \{clienteId: client\.clienteId, clienteSnapshot: client\}\}/);
+const newQuotePage = fs.readFileSync("src/pages/NewQuotePage.jsx", "utf8");
+assert.match(newQuotePage, /location\.state\?\.projectContext/);
+console.log("OK cotizar: botón por fila solo con permiso de cotizaciones y cliente activo");
 
 const legacyPersonPayload = buildClientMutationPayload({
   tipoCliente: "persona",

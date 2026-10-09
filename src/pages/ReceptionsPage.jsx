@@ -61,9 +61,6 @@ export default function ReceptionsPage({businessId, role}) {
     : `/recepciones/${entry.id}`);
   return (
     <main className="erp-page po-history">
-      <div className="erp-module-intro">
-        <div className="erp-page-intro"><p>Confirma la recepción física; el inventario y la compra se registran automáticamente.</p></div>
-      </div>
       {message && <p className="po-message po-message--error" role="alert">{message}</p>}
       <section className="erp-panel erp-history-panel">
         <div className="erp-panel-header"><div><h2 className="erp-panel-title">Historial de recepciones</h2><p className="erp-secondary-text">{filtered.length} recepciones</p></div></div>

@@ -191,9 +191,6 @@ function FinancePage({ businessId, role }) {
   return (
     <section className="erp-page financial-page">
       <div className="financial-page-heading">
-        <div className="erp-page-intro">
-          <p>Registra y consulta el dinero que entró, salió o sigue pendiente. Esta vista operativa no reemplaza la contabilidad formal.</p>
-        </div>
         <div className="financial-page-actions no-print">
           <Button variant="secondary" icon={Download} onClick={exportFiltered} disabled={!filteredItems.length}>
             Exportar CSV

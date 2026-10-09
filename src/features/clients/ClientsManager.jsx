@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {useLocation, useNavigate} from "react-router-dom";
 import {
   Archive,
+  FilePlus2,
   Pencil,
   Plus,
   RefreshCw,
@@ -9,6 +10,7 @@ import {
   Search,
   UsersRound,
 } from "lucide-react";
+import ContactLinks from "../../components/contacts/ContactLinks";
 import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
 import EmptyStateIllustration from "../../components/ui/EmptyStateIllustration";
@@ -30,21 +32,30 @@ import ClientFormDialog from "./ClientFormDialog";
 const READ_ROLES = new Set(["OWNER", "ADMIN", "VENTAS", "MEMBER"]);
 const WRITE_ROLES = new Set(["OWNER", "ADMIN", "VENTAS"]);
 
-function contactSummary(client) {
-  return client.email || client.telefono || "Sin datos de contacto";
-}
-
 function locationSummary(client) {
   return [client.direccion, client.comunaNombre, client.regionNombre]
     .filter(Boolean)
     .join(", ") || "Sin ubicación";
 }
 
-function ClientActions({canManage, client, onArchive, onEdit, onReactivate}) {
-  if (!canManage) return <span className="client-readonly-label">Solo lectura</span>;
+function ClientActions({canManage, canQuote, client, onArchive, onEdit, onQuote, onReactivate}) {
+  const showQuote = canQuote && client.estado === "activo";
+  if (!canManage && !showQuote) return <span className="client-readonly-label">Solo lectura</span>;
   return (
     <div className="client-row-actions">
-      {client.estado === "activo" ? (
+      {showQuote && (
+        <button
+          type="button"
+          className="client-row-actions__labeled"
+          onClick={() => onQuote(client)}
+          aria-label={`Cotizar para ${client.nombreRazonSocial}`}
+          title="Nueva cotización para este cliente"
+        >
+          <AppIcon icon={FilePlus2} size={17} />
+          Cotizar
+        </button>
+      )}
+      {!canManage ? null : client.estado === "activo" ? (
         <>
           <button
             type="button"
@@ -77,7 +88,7 @@ function ClientActions({canManage, client, onArchive, onEdit, onReactivate}) {
   );
 }
 
-function ClientsManager({businessId, countryCode = "CL", role}) {
+function ClientsManager({businessId, canCreateQuotes = false, countryCode = "CL", role}) {
   const location = useLocation();
   const navigate = useNavigate();
   const createRequested = Boolean(location.state?.openCreateClient);
@@ -134,6 +145,15 @@ function ClientsManager({businessId, countryCode = "CL", role}) {
     setFeedback("");
     setFeedbackIsError(false);
     setFormState({open: true, client: null});
+  };
+
+  // NewQuotePage ya acepta el cliente preseleccionado por projectContext; el
+  // backend vuelve a leer el cliente al guardar, así que el snapshot es solo
+  // para mostrarlo.
+  const openQuote = (client) => {
+    navigate("/cotizaciones/nueva", {
+      state: {projectContext: {clienteId: client.clienteId, clienteSnapshot: client}},
+    });
   };
 
   const openEdit = (client) => {
@@ -197,18 +217,13 @@ function ClientsManager({businessId, countryCode = "CL", role}) {
 
   return (
     <section className="erp-page clients-page">
-      <div className="erp-module-intro">
-        <div className="erp-page-intro">
-          <p>
-            Mantén una ficha única por {fiscalLabel} para cada cliente del negocio activo.
-          </p>
-        </div>
-        {canManage && (
+      {canManage && (
+        <div className="erp-module-intro">
           <Button icon={Plus} onClick={openCreate}>
             Nuevo cliente
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
       {!canManage && (
         <div className="client-message client-message--warning" role="status">
@@ -317,7 +332,7 @@ function ClientsManager({businessId, countryCode = "CL", role}) {
                     <th>Contacto</th>
                     <th>Ubicación</th>
                     <th>Estado</th>
-                    <th className="clients-actions-column">Acciones</th>
+                    <th className={`clients-actions-column${canCreateQuotes ? " clients-actions-column--quote" : ""}`}>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -332,12 +347,12 @@ function ClientsManager({businessId, countryCode = "CL", role}) {
                         </span>
                       </td>
                       <td>
-                        <span>{contactSummary(client)}</span>
-                        {client.email && client.telefono && (
-                          <span className="clients-table__secondary">
-                            {client.telefono}
-                          </span>
-                        )}
+                        <ContactLinks
+                          countryCode={countryCode}
+                          email={client.email}
+                          name={client.nombreRazonSocial}
+                          telefono={client.telefono}
+                        />
                       </td>
                       <td>{locationSummary(client)}</td>
                       <td>
@@ -350,9 +365,11 @@ function ClientsManager({businessId, countryCode = "CL", role}) {
                       <td className="clients-actions-column">
                         <ClientActions
                           canManage={canManage}
+                          canQuote={canCreateQuotes}
                           client={client}
                           onArchive={(item) => setConfirmation({client: item, action: "archive"})}
                           onEdit={openEdit}
+                          onQuote={openQuote}
                           onReactivate={(item) => setConfirmation({client: item, action: "reactivate"})}
                         />
                       </td>
@@ -381,14 +398,26 @@ function ClientsManager({businessId, countryCode = "CL", role}) {
                     </StatusBadge>
                   </header>
                   <dl className="client-card__details">
-                    <div><dt>Contacto</dt><dd>{contactSummary(client)}</dd></div>
+                    <div>
+                      <dt>Contacto</dt>
+                      <dd>
+                        <ContactLinks
+                          countryCode={countryCode}
+                          email={client.email}
+                          name={client.nombreRazonSocial}
+                          telefono={client.telefono}
+                        />
+                      </dd>
+                    </div>
                     <div><dt>Ubicación</dt><dd>{locationSummary(client)}</dd></div>
                   </dl>
                   <ClientActions
                     canManage={canManage}
+                    canQuote={canCreateQuotes}
                     client={client}
                     onArchive={(item) => setConfirmation({client: item, action: "archive"})}
                     onEdit={openEdit}
+                    onQuote={openQuote}
                     onReactivate={(item) => setConfirmation({client: item, action: "reactivate"})}
                   />
                 </article>

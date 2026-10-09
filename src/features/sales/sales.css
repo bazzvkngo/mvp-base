@@ -736,33 +736,6 @@
   padding: 0;
 }
 
-.sale-history .po-history__toolbar input,
-.sale-history .po-history__toolbar select {
-  border-color: var(--color-border-control);
-  border-radius: var(--radius-md);
-  color: var(--color-text-strong);
-  font-size: var(--font-size-sm);
-  min-height: 40px;
-  padding: 0.5625rem 0.6875rem;
-}
-
-.sale-history-search-control {
-  align-items: center;
-  display: flex;
-  position: relative;
-}
-
-.sale-history-search-control .app-icon {
-  color: var(--color-text-muted);
-  left: var(--space-3);
-  pointer-events: none;
-  position: absolute;
-}
-
-.sale-history-search-control .erp-control {
-  padding-left: calc(var(--space-3) + 26px);
-}
-
 .sale-history-table th:nth-child(1) { width: 15%; }
 .sale-history-table th:nth-child(2) { width: 22%; }
 .sale-history-table th:nth-child(3) { width: 15%; }

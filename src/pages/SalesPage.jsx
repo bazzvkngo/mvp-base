@@ -48,12 +48,11 @@ export default function SalesPage({businessId, role}) {
 
   return (
     <main className="erp-page po-history sale-history">
-      <div className="erp-module-intro">
-        <div className="erp-page-intro">
-            <p>Consulta el historial de ventas directas y originadas desde cotizaciones.</p>
+      {canManage && (
+        <div className="erp-module-intro">
+          <Button type="button" icon={Plus} onClick={() => navigate("/ventas/nueva")}>Nueva venta</Button>
         </div>
-        {canManage && <Button type="button" icon={Plus} onClick={() => navigate("/ventas/nueva")}>Nueva venta</Button>}
-      </div>
+      )}
 
       {message && <p className="po-message po-message--error" role="alert">{message}</p>}
 
@@ -68,7 +67,7 @@ export default function SalesPage({businessId, role}) {
         <div className="erp-filters erp-history-filters erp-history-filters--three po-history__toolbar sale-history-filters no-print">
           <label className="erp-field erp-history-search-field sale-history-search-field">
             <span className="erp-field__label">Buscar por número, cliente, RUT o documento</span>
-            <span className="sale-history-search-control">
+            <span className="clients-search-control">
               <AppIcon icon={Search} size={18} />
               <input className="erp-control" placeholder="Ej.: VTA-2026-0001 o cliente" value={search} onChange={(event) => setSearch(event.target.value)} />
             </span>

@@ -1,8 +1,8 @@
 import React from "react";
 import ClientsManager from "../features/clients/ClientsManager";
 
-function ClientsPage({businessId, countryCode, role}) {
-  return <ClientsManager businessId={businessId} countryCode={countryCode} role={role} />;
+function ClientsPage({businessId, canCreateQuotes, countryCode, role}) {
+  return <ClientsManager businessId={businessId} canCreateQuotes={canCreateQuotes} countryCode={countryCode} role={role} />;
 }
 
 export default ClientsPage;

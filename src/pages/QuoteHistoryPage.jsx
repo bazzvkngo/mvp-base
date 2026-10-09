@@ -510,16 +510,13 @@ function QuoteHistoryPage({ userId, role }) {
 
   return (
     <section className="quote-history-page erp-page">
-      <div className="no-print erp-module-intro">
-        <div className="erp-page-intro">
-          <p>Consulta y administra las cotizaciones del negocio.</p>
-        </div>
-        {canDuplicate && quotes.length > 0 && (
+      {canDuplicate && quotes.length > 0 && (
+        <div className="no-print erp-module-intro">
           <Button type="button" icon={Plus} onClick={() => navigate("/cotizaciones/nueva")}>
             Nueva cotización
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
       {error && <div className="no-print client-message client-message--error" role="alert">{error}</div>}
       {success && <div className="no-print client-message" role="status">{success}</div>}

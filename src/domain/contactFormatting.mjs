@@ -59,3 +59,30 @@ export function getContactPhoneError(value, countryCode = "CL") {
     ? "Ingresa un teléfono chileno válido, por ejemplo +56 9 6123 4587."
     : "Ingresa un teléfono válido con código de país cuando corresponda.";
 }
+
+// Enlaces de contacto para listas y fichas. Devuelven "" cuando el valor no
+// permite un enlace confiable; la UI muestra entonces el texto sin enlace.
+export function getContactEmailHref(value) {
+  const email = String(value ?? "").trim();
+  return /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/.test(email) ? `mailto:${email}` : "";
+}
+
+// WhatsApp solo se ofrece cuando el número identifica un celular: en Chile,
+// número nacional que empieza con 9; en otros países, número con código
+// internacional (+) y entre 8 y 15 dígitos.
+export function getContactPhoneLinks(value, countryCode = "CL") {
+  const normalized = normalizeContactPhone(value, countryCode);
+  if (!normalized) return {tel: "", whatsapp: ""};
+  const digits = normalized.replace(/\D/g, "");
+  if (normalizeCountryCode(countryCode) === "CL") {
+    return {
+      tel: `tel:+${digits}`,
+      whatsapp: digits.slice(2).startsWith("9") ? `https://wa.me/${digits}` : "",
+    };
+  }
+  const international = normalized.startsWith("+") && digits.length >= 8 && digits.length <= 15;
+  return {
+    tel: `tel:${normalized}`,
+    whatsapp: international ? `https://wa.me/${digits}` : "",
+  };
+}

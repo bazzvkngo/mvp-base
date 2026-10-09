@@ -10,12 +10,8 @@
   align-items: flex-start;
   display: flex;
   gap: var(--space-4);
-  justify-content: space-between;
+  justify-content: flex-end;
   min-width: 0;
-}
-
-.erp-module-intro .erp-page-intro {
-  flex: 1 1 auto;
 }
 
 .erp-module-actions {
@@ -588,8 +584,8 @@
   min-width: 0;
 }
 
-.financial-page-heading .erp-page-intro {
-  flex: 1 1 460px;
+.financial-page-heading {
+  justify-content: flex-end;
 }
 
 .financial-page-actions {
@@ -3897,6 +3893,10 @@ body:has(.reports-simple) .environment-notice {
   width: 100px;
 }
 
+.clients-actions-column--quote {
+  width: 210px;
+}
+
 .client-row-actions {
   display: flex;
   gap: var(--space-1);
@@ -3914,6 +3914,14 @@ body:has(.reports-simple) .environment-notice {
   height: 38px;
   justify-content: center;
   width: 38px;
+}
+
+.client-row-actions button.client-row-actions__labeled {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  gap: var(--space-1);
+  padding: 0 var(--space-3);
+  width: auto;
 }
 
 .client-row-actions button:hover {

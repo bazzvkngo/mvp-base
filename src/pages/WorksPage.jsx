@@ -210,7 +210,7 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
   };
 
   return <main className="erp-page works-page">
-    <header className="erp-page-header"><div className="erp-page-header__content"><h1 className="erp-page-header__title">Proyectos y trabajos</h1><p className="erp-page-header__description">Organiza y da seguimiento al trabajo operativo del negocio.</p></div>{canManage && <Button type="button" icon={Plus} onClick={openNew}>Nuevo trabajo</Button>}</header>
+    {canManage && <div className="erp-module-intro"><Button type="button" icon={Plus} onClick={openNew}>Nuevo trabajo</Button></div>}
     {error && <div className="works-message works-message--error" role="alert">{error}</div>}
     <section className="erp-panel works-panel" aria-label="Trabajos registrados">
       <div className="works-toolbar"><div className="works-view-switch" role="group" aria-label="Vista"><button type="button" className={view === "list" ? "is-active" : ""} onClick={() => setView("list")}><AppIcon icon={LayoutList} size={17} />Lista</button><button type="button" className={view === "board" ? "is-active" : ""} onClick={() => setView("board")}><AppIcon icon={Columns3} size={17} />Tablero</button></div><span>{visibleWorks.length} trabajo{visibleWorks.length === 1 ? "" : "s"}</span></div>

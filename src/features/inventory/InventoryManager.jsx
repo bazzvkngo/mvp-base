@@ -436,16 +436,13 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
 
   return (
     <section className="erp-page inventory-page">
-      <div className="erp-module-intro">
-        <div className="erp-page-intro">
-          <p>Administra productos, servicios y actividades del negocio activo.</p>
-        </div>
-        {(!cannotWrite || canStartPurchase) && <div className="erp-module-actions inventory-header-actions">
+      {(!cannotWrite || canStartPurchase) && <div className="erp-module-intro">
+        <div className="erp-module-actions inventory-header-actions">
           {!cannotWrite && <button type="button" className="inventory-button inventory-button--secondary" onClick={() => setImportOpen(true)}><AppIcon icon={FileSpreadsheet} size={18} />Importar inventario</button>}
           {canStartPurchase && <button type="button" className="inventory-button inventory-button--secondary" onClick={() => navigate("/compras/nueva", {state: {openPurchaseImport: true}})}>Importar factura</button>}
           {!cannotWrite && <button type="button" className="inventory-button inventory-button--primary" onClick={openNewItem}><AppIcon icon={PackagePlus} size={18} />Nuevo ítem</button>}
-        </div>}
-      </div>
+        </div>
+      </div>}
 
       {cannotWrite && <p className="inventory-feedback inventory-feedback--notice">Puedes consultar el inventario. La creación y edición requieren rol Propietario o Administrador.</p>}
       {feedback.message && <p className={`inventory-feedback inventory-feedback--${feedback.type}`} role={feedback.type === "error" ? "alert" : "status"}>{feedback.message}</p>}
@@ -465,7 +462,7 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
           {!cannotWrite && <button type="button" className="inventory-button inventory-button--ghost" onClick={() => setCatalogOpen(true)}><AppIcon icon={Settings2} size={18} />Áreas y categorías</button>}
         </div>
         <div className="erp-filters inventory-filters">
-          <label className="erp-field inventory-search"><span className="erp-field__label">Buscar por nombre, SKU, código de barras, marca o modelo</span><input className="erp-control" value={filters.query} onChange={(event) => setFilter("query", event.target.value)} placeholder="Ej. NB-001, cámara o 7801234567890" /></label>
+          <label className="erp-field inventory-search"><span className="erp-field__label">Buscar</span><input className="erp-control" value={filters.query} onChange={(event) => setFilter("query", event.target.value)} placeholder="Nombre, SKU, código de barras, marca o modelo" /></label>
           <Filter label="Tipo" value={filters.type} onChange={(value) => setFilter("type", value)}><option value="todos">Todos</option>{INVENTORY_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</Filter>
           <Filter label="Área" value={filters.areaId} onChange={(value) => setFilter("areaId", value)}><option value="todas">Todas</option><option value="sin_area">Sin área</option>{areas.map((area) => <option key={area.id} value={area.id}>{area.nombre}</option>)}</Filter>
           <Filter label="Categoría" value={filters.categoryId} onChange={(value) => setFilter("categoryId", value)} disabled={!filters.areaId || filters.areaId === "todas" || filters.areaId === "sin_area"}><option value="todas">Todas</option><option value="sin_categoria">Sin categoría</option>{filterCategories.map((category) => <option key={category.id} value={category.id}>{category.nombre}</option>)}</Filter>

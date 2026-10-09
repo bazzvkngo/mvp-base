@@ -185,7 +185,7 @@ export default function EmployeesPage({businessId, role, currentUserUid = ""}) {
 
   if (!businessId || !canRead) return <section className="erp-page employees-page"><div className="erp-empty-state" role="alert">No tienes permisos para consultar empleados.</div></section>;
   return <section className="erp-page employees-page">
-    <header className="erp-page-header"><div className="erp-page-header__content"><span className="employees-eyebrow">Gestión</span><h1 className="erp-page-header__title">Empleados</h1><p className="erp-page-header__description">Usuarios, perfiles y acceso al negocio activo.</p></div>{canManage && tab === "employees" && <Button type="button" icon={UserPlus} onClick={() => {setEmail(""); setEmailError(""); setNewSelection("role:TECNICO"); setAddOpen(true);}}>Agregar usuario</Button>}</header>
+    {canManage && tab === "employees" && <div className="erp-module-intro"><Button type="button" icon={UserPlus} onClick={() => {setEmail(""); setEmailError(""); setNewSelection("role:TECNICO"); setAddOpen(true);}}>Agregar usuario</Button></div>}
     <div className="employees-tabs" role="tablist"><button type="button" role="tab" aria-selected={tab === "employees"} onClick={() => setTab("employees")}>Empleados</button><button type="button" role="tab" aria-selected={tab === "profiles"} onClick={() => setTab("profiles")}>Perfiles y permisos</button></div>
     {!canManage && <div className="employees-notice">Puedes consultar esta sección; la administración corresponde a propietarios y administradores.</div>}
     {feedback.text && <div className={`employees-message${feedback.error ? " employees-message--error" : ""}`} role={feedback.error ? "alert" : "status"}>{feedback.text}</div>}
