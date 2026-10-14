@@ -1,0 +1,206 @@
+.veterinary-patient-page {
+  display: grid;
+  gap: 1rem;
+}
+
+.veterinary-patient-header {
+  align-items: flex-start;
+}
+
+.veterinary-patient-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.veterinary-patient-eyebrow {
+  margin: 0 0 0.25rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.65;
+}
+
+.veterinary-patient-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.veterinary-patient-card {
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+}
+
+.veterinary-patient-card--full {
+  grid-column: 1 / -1;
+}
+
+.veterinary-patient-section-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.veterinary-patient-section-title h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.veterinary-patient-section-title p {
+  margin: 0.2rem 0 0;
+  opacity: 0.65;
+}
+
+.veterinary-patient-data-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 0;
+}
+
+.veterinary-patient-data-grid div {
+  min-width: 0;
+}
+
+.veterinary-patient-data-grid dt,
+.veterinary-patient-clinical-list dt {
+  margin-bottom: 0.25rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  opacity: 0.65;
+}
+
+.veterinary-patient-data-grid dd,
+.veterinary-patient-clinical-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.veterinary-patient-data-wide {
+  grid-column: 1 / -1;
+}
+
+.veterinary-patient-clinical-list {
+  display: grid;
+  gap: 1rem;
+  margin: 0;
+}
+
+.veterinary-patient-card-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.veterinary-patient-empty {
+  margin: 0;
+  padding: 1rem;
+  text-align: center;
+  border: 1px dashed currentColor;
+  border-radius: 0.75rem;
+  opacity: 0.65;
+}
+
+.veterinary-patient-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.veterinary-patient-list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.8rem 0;
+  border-bottom: 1px solid rgba(127, 127, 127, 0.2);
+}
+
+.veterinary-patient-list-item:last-child {
+  border-bottom: 0;
+}
+
+.veterinary-patient-list-item p {
+  margin: 0.25rem 0 0;
+  opacity: 0.7;
+}
+
+.veterinary-patient-history {
+  display: grid;
+  gap: 1rem;
+}
+
+.veterinary-patient-history-item {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 1rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid rgba(127, 127, 127, 0.2);
+}
+
+.veterinary-patient-history-item:last-child {
+  border-bottom: 0;
+}
+
+.veterinary-patient-history-date {
+  font-weight: 700;
+}
+
+.veterinary-patient-history-item h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
+.veterinary-patient-history-item p {
+  margin: 0.25rem 0;
+}
+
+.veterinary-patient-actions {
+  display: grid;
+  gap: 1rem;
+}
+
+.veterinary-patient-actions h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.veterinary-patient-actions__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.veterinary-patient-message--error {
+  border-color: rgba(190, 40, 40, 0.3);
+}
+
+@media (max-width: 900px) {
+  .veterinary-patient-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .veterinary-patient-card--full {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 600px) {
+  .veterinary-patient-title-row {
+    flex-direction: column;
+  }
+
+  .veterinary-patient-data-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .veterinary-patient-data-wide {
+    grid-column: auto;
+  }
+
+  .veterinary-patient-history-item {
+    grid-template-columns: 1fr;
+  }
+}
