@@ -20,6 +20,7 @@ function ClientSelector({
   businessId,
   onAvailabilityChange,
   onChange,
+  loadClients = listarClientes,
   snapshot,
   value,
 }) {
@@ -50,7 +51,7 @@ function ClientSelector({
     }
 
     setLoading(true);
-    listarClientes(businessId)
+    loadClients(businessId)
       .then((items) => {
         if (!cancelled) setClients(items);
       })
@@ -64,7 +65,7 @@ function ClientSelector({
     return () => {
       cancelled = true;
     };
-  }, [businessId, onChange]);
+  }, [businessId, loadClients, onChange]);
 
   const activeClients = useMemo(
     () => filterSelectableClients(clients, businessId),

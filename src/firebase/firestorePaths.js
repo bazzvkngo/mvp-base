@@ -89,6 +89,41 @@ export const clientDocPath = (businessId, clienteId) => [
   "clientes",
   clienteId,
 ];
+export const vehiclesCollectionPath = (businessId) => [
+  "negocios",
+  businessId,
+  "vehiculos",
+];
+export const vehicleDocPath = (businessId, vehiculoId) => [
+  "negocios",
+  businessId,
+  "vehiculos",
+  vehiculoId,
+];
+export const workOrdersCollectionPath = (businessId) => [
+  "negocios",
+  businessId,
+  "ordenesTrabajo",
+];
+export const workOrderDocPath = (businessId, otId) => [
+  "negocios",
+  businessId,
+  "ordenesTrabajo",
+  otId,
+];
+export const workOrderDiagnosesCollectionPath = (businessId, otId) => [
+  ...workOrderDocPath(businessId, otId),
+  "diagnosticos",
+];
+export const workOrderServicesCollectionPath = (businessId, otId) => [
+  ...workOrderDocPath(businessId, otId),
+  "servicios",
+];
+export const workshopPlazasCollectionPath = (businessId) => [
+  "negocios",
+  businessId,
+  "plazasTaller",
+];
 export const worksCollectionPath = (businessId) => [
   "negocios",
   businessId,

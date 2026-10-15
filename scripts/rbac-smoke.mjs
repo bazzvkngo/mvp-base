@@ -21,9 +21,30 @@ assert.ok(BUSINESS_ROLES.includes("MEMBER"));
 assert.ok(ASSIGNABLE_BUSINESS_ROLES.includes("MEMBER"));
 assert.ok(!BUSINESS_ROLES.includes("PLATFORM_SUPERADMIN"));
 assert.deepEqual(backendRbac.BUSINESS_ROLES, BUSINESS_ROLES);
+assert.deepEqual(backendRbac.TALLER_MANAGEMENT_ROLES, ["OWNER", "ADMIN"]);
+assert.deepEqual(backendRbac.TALLER_CREATION_ROLES, ["OWNER", "ADMIN", "TECNICO"]);
 console.log("OK RBAC: perfiles predefinidos compatibles y Colaborador asignable");
 
 const P = BUSINESS_PERMISSIONS;
+const {hasTallerCapability} = require("../functions/tallerAccess.js");
+const workshopCapabilities = {read: P.TALLER_READ, operate: P.TALLER_OPERATE,
+  create: P.TALLER_CREATE, approve: P.TALLER_APPROVE, manage: P.TALLER_MANAGE, costs: P.TALLER_COSTS_READ};
+for (const role of BUSINESS_ROLES) {
+  for (const [capability, permission] of Object.entries(workshopCapabilities)) {
+    assert.equal(hasTallerCapability({rol: role}, capability), hasBusinessPermission(role, permission),
+      `${role}: ${capability} debe coincidir entre UI y backend`);
+    for (const modules of [[], ["taller"], ["inventario", "reportes"]]) {
+      // Core only assigns custom profiles to MEMBER.
+      if (role !== "MEMBER") continue;
+      assert.equal(hasTallerCapability({rol: role, profileId: "custom", modules}, capability),
+        hasBusinessPermission({role, profileId: "custom", modules}, permission));
+    }
+  }
+}
+assert.equal(hasTallerCapability({rol: "OWNER", profileId: "custom", modules: ["taller"]}, "manage"), false);
+for (const capability of Object.keys(workshopCapabilities)) {
+  assert.equal(hasTallerCapability({rol: "MEMBER", profileId: "custom"}, capability), false);
+}
 assert.equal(hasBusinessPermission("VENTAS", P.SALES_WRITE), true);
 assert.equal(hasBusinessPermission("VENTAS", P.PURCHASES_READ), false);
 assert.equal(hasBusinessPermission("COMPRAS", P.PURCHASES_WRITE), true);
@@ -41,6 +62,8 @@ assert.equal(canAccessBusinessPath("VENTAS", "/compras"), false);
 assert.equal(canAccessBusinessPath("COMPRAS", "/ordenes-compra/nueva"), true);
 assert.equal(canAccessBusinessPath("COMPRAS", "/ventas"), false);
 assert.equal(canAccessBusinessPath("TECNICO", "/trabajos"), true);
+assert.equal(canAccessBusinessPath("TECNICO", "/taller/ordenes"), true);
+assert.equal(canAccessBusinessPath("VENTAS", "/taller/ordenes"), false);
 assert.equal(canAccessBusinessPath("TECNICO", "/reportes"), false);
 assert.equal(canAccessBusinessPath("FINANZAS", "/reportes"), true);
 assert.equal(canAccessBusinessPath("FINANZAS", "/empresa"), false);
@@ -66,6 +89,10 @@ assert.equal(hasBusinessPermission(customAccess, P.CLIENTS_READ), true);
 assert.equal(hasBusinessPermission(customAccess, P.CLIENTS_WRITE), false);
 assert.equal(getDefaultBusinessPath(customAccess), "/clientes");
 assert.equal(getDefaultBusinessPath({role: "MEMBER", profileId: "empty", modules: []}), "/cuenta");
+const customTallerAccess = {role: "MEMBER", profileId: "taller-profile", modules: ["taller"]};
+assert.equal(canAccessBusinessPath(customTallerAccess, "/taller/ordenes/ot-1"), true);
+assert.equal(canAccessBusinessPath(customTallerAccess, "/vehiculos"), false);
+assert.equal(getDefaultBusinessPath(customTallerAccess), "/taller/ordenes");
 console.log("OK RBAC: perfil personalizado limita módulos y resuelve landing determinista");
 
 function rejectingDependencies(role) {
