@@ -247,10 +247,12 @@ del correo y PDF.
 
 Los textos publicados en `/privacidad` y `/terminos` son una versión
 inicial (borrador técnico) y contienen marcadores `[CONFIRMAR]` y
-`[A DEFINIR]` pendientes. Bagner, como propietario del sistema, debe
-revisarlos con su asesoría legal y completar los datos del proveedor: con
-prioridad desde que se usen datos reales y, en todo caso, antes de
-comercializar el sistema a otros negocios. También deben definirse y
+`[A DEFINIR]` pendientes (plazos y decisiones). Los datos del proveedor
+(razón social, RUT, domicilio y correo de privacidad de Bagner) ya están
+completos en `LEGAL_PROVIDER`. Bagner, como propietario del sistema, debe
+revisar los textos con su asesoría legal: con prioridad desde que se usen
+datos reales y, en todo caso, antes de comercializar el sistema a otros
+negocios. También deben definirse y
 revisarse profesionalmente aviso de tratamiento, retención, respaldo,
 eliminación, rectificación, exportación y responsabilidades entre las
 partes.

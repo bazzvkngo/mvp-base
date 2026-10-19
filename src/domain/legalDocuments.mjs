@@ -1,7 +1,7 @@
 // Versión común de los documentos legales (SPEC 024). Cambiarla exige
 // re-aceptación. Duplicada en functions/legalDocuments.js: mantener ambas
 // sincronizadas (la paridad la verifica `npm run test:legal-documents`).
-export const LEGAL_DOCUMENTS_VERSION = "2026-10-15";
+export const LEGAL_DOCUMENTS_VERSION = "2026-10-19";
 
 export const LEGAL_DOCUMENT_KEYS = Object.freeze({
   PRIVACY: "privacidad",

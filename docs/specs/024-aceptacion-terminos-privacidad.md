@@ -1,6 +1,8 @@
 # SPEC 024: Aceptación de términos y política de privacidad (etapa 1)
 
-Estado: **borrador v1**. Diseño técnico cerrado con la Parte A de investigación (2026-10-15). Las decisiones de la sección 8 se confirman con Mauricio antes de construir.
+Estado: **etapas 1 a 5 construidas; textos con datos reales del proveedor, pendientes de revisión legal**. Versión vigente de los documentos: **2026-10-19** (`LEGAL_DOCUMENTS_VERSION`; antes 2026-10-15). Diseño técnico cerrado con la Parte A de investigación (2026-10-15).
+
+Actualización 2026-10-19: los datos del proveedor (razón social Servicios Integrales Bagner SpA, RUT 77.091.679-8, domicilio Tamarugal 2985, Iquique, Chile, y correo de privacidad bruno.pairumani@bagner.cl) están completos en `LEGAL_PROVIDER` (`src/domain/legalDocumentsContent.mjs`), su única fuente. La política de privacidad incluye ahora el correo de las personas invitadas a un equipo (SPEC 032; vigencia de 7 días). Siguen como marcadores solo plazos y decisiones: `[CONFIRMAR ...]` y `[A DEFINIR ...]`, incluido el plazo de eliminación de invitaciones respondidas o vencidas. Se mantiene el aviso de versión inicial pendiente de revisión legal. Al subir la versión, toda cuenta debe aceptar de nuevo una sola vez.
 
 ## 1. Objetivo
 
