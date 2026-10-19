@@ -70,7 +70,8 @@ assert.equal(
   false
 );
 
-// Grupo "Próximamente": filas deshabilitadas, sin código y fuera del buscador.
+// "Próximamente": una sola línea de texto, sin filas, etiquetas ni botones,
+// sin código y fuera del buscador.
 for (const query of [
   "taller",
   "automotriz",
@@ -82,20 +83,23 @@ for (const query of [
 ]) {
   assert.deepEqual(filterBusinessCategories(catalog.businessCategories, query), []);
 }
-assert.match(picker, /Próximamente/);
-assert.match(picker, /Taller automotriz \(en construcción\)/);
-assert.match(picker, /Clínica veterinaria \(en construcción\)/);
-assert.match(picker, /label: "Construcción y obras", tag: "Próximamente"/);
-assert.match(picker, /label: "Software y soluciones digitales", tag: "Próximamente"/);
-assert.match(picker, /label: "Servicios digitales y creativos", tag: "Próximamente"/);
-assert.match(picker, /Más rubros próximamente/);
-assert.match(picker, /aria-disabled="true"/);
-const soonBlock = picker.slice(picker.indexOf('className="business-category-soon"'));
-assert.doesNotMatch(soonBlock, /onClick|chooseOption|role="radio"/);
+assert.match(
+  picker,
+  /Próximamente: Taller automotriz, Clínica veterinaria, Construcción y obras, Software y soluciones digitales y Servicios digitales y creativos\./
+);
+assert.match(picker, /<p className="business-category-soon">\{COMING_SOON_TEXT\}<\/p>/);
+assert.doesNotMatch(picker, /COMING_SOON_CATEGORIES|business-category-option--soon|business-category-soon__/);
+assert.doesNotMatch(picker, /Más rubros próximamente|en construcción\)|aria-disabled/);
+// Fuera del radiogroup: no es seleccionable ni puede llegar al payload.
 assert.ok(
   picker.indexOf('role="radiogroup"') < picker.indexOf('className="business-category-soon"')
 );
-assert.match(componentStyles, /\.business-category-option--soon/);
+// Un solo contenedor de scroll: ni las opciones ni el contenido scrollean solos.
+const optionsRule = componentStyles.match(/\.business-category-options\s*\{[^}]*\}/)?.[0] || "";
+assert.doesNotMatch(optionsRule, /overflow/);
+const contentRule = componentStyles.match(/\.business-category-dialog__content\s*\{[^}]*\}/)?.[0] || "";
+assert.doesNotMatch(contentRule, /overflow|max-height/);
+assert.doesNotMatch(componentStyles, /\.business-category-dialog \.responsive-dialog__body/);
 
 // Nota fiscal para países distintos de Chile (solo presentación).
 assert.match(

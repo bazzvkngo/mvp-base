@@ -177,6 +177,11 @@
   color: var(--color-brand-400);
 }
 
+.brand-mark.brand-mark--on-dark {
+  --color-logo-accent: var(--color-logo-accent-on-dark);
+  color: var(--color-dark-accent);
+}
+
 :where(:root[data-theme="dark"]) .brand-logo__icon {
   background: var(--color-surface-subtle);
   border-color: var(--color-border-default);

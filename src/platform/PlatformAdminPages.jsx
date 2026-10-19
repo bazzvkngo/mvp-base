@@ -11,7 +11,7 @@ import {
   UserRound,
   Users,
 } from "lucide-react";
-import {Link, useLocation, useNavigate, useParams} from "react-router-dom";
+import {Link, useLocation, useNavigate, useOutletContext, useParams} from "react-router-dom";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import LoadingState from "../components/ui/LoadingState";
@@ -25,7 +25,6 @@ import {BUSINESS_ROLE_LABELS} from "../domain/rbac.mjs";
 import {
   createPlatformRequestId,
   getPlatformBusiness,
-  getPlatformSummary,
   getPlatformUser,
   getPlatformVerificationDocument,
   listPlatformBusinesses,
@@ -93,6 +92,34 @@ function personName(value) {
   return !normalized || normalized === "Sin nombre registrado" ? "Nombre no informado" : normalized;
 }
 
+// Identidad principal de una cuenta: el nombre si existe y, si no, el correo.
+function personIdentity(name, email) {
+  const normalizedName = String(name || "").trim();
+  if (normalizedName && normalizedName !== "Sin nombre registrado") return normalizedName;
+  return String(email || "").trim() || "Nombre no informado";
+}
+
+function CopyIdButton({value}) {
+  const [copied, setCopied] = React.useState(false);
+  const copy = async (event) => {
+    event.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
+  };
+  return <Button
+    variant="ghost"
+    className="platform-copy-id"
+    aria-label="Copiar ID de usuario"
+    onClick={copy}
+    onKeyDown={(event) => event.stopPropagation()}
+  >{copied ? "ID copiado" : "Copiar ID"}</Button>;
+}
+
 function message(error, fallback) {
   const code = String(error?.code || "");
   if (code.includes("permission-denied")) return "No tienes autorización para esta acción.";
@@ -113,7 +140,7 @@ function date(value) {
   if (!value) return "Sin registro";
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? "Sin registro" :
-    new Intl.DateTimeFormat("es-CL", {dateStyle: "medium", timeStyle: "short"}).format(parsed);
+    new Intl.DateTimeFormat("es-CL", {dateStyle: "medium", timeStyle: "short", hourCycle: "h23"}).format(parsed);
 }
 
 function countryName(code) {
@@ -159,17 +186,36 @@ function ErrorState({error, retry}) {
   return <div className="platform-state is-error"><AppIcon icon={AlertTriangle} size={24} /><p>{error}</p><Button variant="secondary" onClick={retry}>Reintentar</Button></div>;
 }
 
-export function PlatformDashboardPage() {
-  const [state, setState] = React.useState({loading: true, data: null, error: ""});
+function RecentBusinesses() {
+  const [state, setState] = React.useState({loading: true, items: [], error: ""});
   const load = React.useCallback(() => {
-    setState((current) => ({...current, loading: true, error: ""}));
-    getPlatformSummary()
-      .then((data) => setState({loading: false, data, error: ""}))
-      .catch((error) => setState({loading: false, data: null, error: message(error, "No pudimos cargar el resumen.")}));
+    setState({loading: true, items: [], error: ""});
+    listPlatformBusinesses({limit: 5})
+      .then((data) => setState({loading: false, items: data.empresas || [], error: ""}))
+      .catch((error) => setState({loading: false, items: [], error: message(error, "No pudimos cargar las empresas recientes.")}));
   }, []);
   React.useEffect(load, [load]);
+  let body;
+  if (state.loading) body = <LoadingState variant="inline" label="Cargando empresas..." />;
+  else if (state.error) body = <div className="platform-empty">{state.error} <Button variant="secondary" onClick={load}>Reintentar</Button></div>;
+  else if (!state.items.length) body = <div className="platform-empty">Aún no hay empresas registradas.</div>;
+  else body = <ul className="platform-recent-list">{state.items.map((business) => <li key={business.id}>
+    <Link to={`/admin/empresas/${business.id}`}>
+      <span>{business.nombreComercial}</span>
+      <StatusBadge variant={stateVariant(business.estado)}>{platformStateLabel(business.estado)}</StatusBadge>
+    </Link>
+  </li>)}</ul>;
+  return <section className="platform-panel" aria-labelledby="platform-recent-title">
+    <h2 id="platform-recent-title">Empresas recientes</h2>
+    {body}
+  </section>;
+}
+
+export function PlatformDashboardPage() {
+  const {summary: state, reloadSummary} = useOutletContext();
+  const load = React.useCallback(() => reloadSummary(true), [reloadSummary]);
   const heading = <PlatformHeading eyebrow="Resumen" title="Dashboard" description="Vista operativa global de ValoraCloud." />;
-  if (state.loading) return <>
+  if (state.loading && !state.data) return <>
     {heading}
     <SkeletonRegion label="Cargando datos globales...">
       <section className="platform-metric-grid">
@@ -182,7 +228,8 @@ export function PlatformDashboardPage() {
       </section>
     </SkeletonRegion>
   </>;
-  if (state.error) return <ErrorState error={state.error} retry={load} />;
+  if (state.error && !state.data) return <ErrorState error={state.error} retry={load} />;
+  const pendingVerifications = state.data.empresas.verificacionesPendientes;
   const cards = [
     {label: "Empresas", value: state.data.empresas.total, detail: `${state.data.empresas.activas} activas`, icon: Building2, to: "/admin/empresas"},
     {label: "Usuarios", value: state.data.usuarios.total, detail: `${state.data.usuarios.conMembresiaActiva} con membresía activa`, icon: Users, to: "/admin/usuarios"},
@@ -196,7 +243,15 @@ export function PlatformDashboardPage() {
         <span><AppIcon icon={card.icon} size={20} /></span><strong>{card.value}</strong><h2>{card.label}</h2><p>{card.detail}</p>
       </Link>)}
     </section>
-    <section className="platform-callout"><AppIcon icon={ShieldCheck} size={24} /><div><strong>Autoridad separada del ERP</strong><p>Las consultas y acciones globales se ejecutan mediante Functions y no conceden acceso SDK a datos empresariales.</p></div></section>
+    <div className="platform-dashboard-panels">
+      <section className="platform-panel" aria-labelledby="platform-pending-title">
+        <h2 id="platform-pending-title">Acciones pendientes</h2>
+        {pendingVerifications > 0
+          ? <p className="platform-pending-action"><Link to="/admin/verificaciones">{pendingVerifications === 1 ? "1 verificación pendiente" : `${pendingVerifications} verificaciones pendientes`}</Link></p>
+          : <p className="platform-pending-action">Todo al día</p>}
+      </section>
+      <RecentBusinesses />
+    </div>
   </>;
 }
 
@@ -207,10 +262,10 @@ function BusinessesTable({
 }) {
   const navigate = useNavigate();
   if (!businesses.length) return <div className="platform-empty">{emptyText}</div>;
-  return <div className="platform-table-wrap"><table className="platform-table">
+  return <div className="platform-table-wrap"><table className="platform-table platform-table--clickable">
     <thead><tr><th>Empresa</th><th>País</th><th>Usuarios</th><th>Estado</th><th>Verificación</th><th>{verificationOnly ? "Solicitud" : "Registro"}</th></tr></thead>
     <tbody>{businesses.map((business) => <tr key={business.id} tabIndex="0" onClick={() => navigate(`/admin/empresas/${business.id}`)} onKeyDown={(event) => event.key === "Enter" && navigate(`/admin/empresas/${business.id}`)}>
-      <td><strong>{business.nombreComercial}</strong><small>{business.propietario?.correo || "Propietario sin correo"}</small></td>
+      <td><strong>{business.nombreComercial}</strong><small className="platform-table__owner-label">Propietario</small><small>{business.propietario?.correo || "Propietario sin correo"}</small></td>
       <td>{countryName(business.paisCodigo)}</td><td>{business.usuarios}</td>
       <td><StatusBadge variant={stateVariant(business.estado)}>{platformStateLabel(business.estado)}</StatusBadge></td>
       <td><StatusBadge variant={verificationVariant(business.verificacion)}>{VERIFICATION_LABELS[business.verificacion] || business.verificacion}</StatusBadge></td><td>{date(verificationOnly ? business.fechaSolicitud : business.fechaRegistro)}</td>
@@ -307,7 +362,7 @@ export function PlatformBusinessesPage({verificationOnly = false}) {
     <PlatformListFilters draft={draft} onChange={setDraft} onReset={resetFilters} onSelectorChange={applySelector} onSubmit={applyFilters} type={verificationOnly ? "verifications" : "businesses"} />
     {state.error && <ErrorState error={state.error} retry={() => load()} />}
     {!state.error && state.loading && !state.items.length && <Loading />}
-    {!state.error && Boolean(state.items.length || !state.loading) && <BusinessesTable businesses={state.items} verificationOnly={verificationOnly} emptyText={verificationOnly ? "No hay verificaciones para los filtros seleccionados." : undefined} />}
+    {!state.error && Boolean(state.items.length || !state.loading) && <BusinessesTable businesses={state.items} verificationOnly={verificationOnly} emptyText={verificationOnly ? (filters.verification === "PENDIENTE" && !filters.search && filters.country === "TODOS" ? "No hay verificaciones pendientes." : "No hay verificaciones para los filtros seleccionados.") : undefined} />}
     {state.cursor && <div className="platform-load-more"><Button variant="secondary" loading={state.loading} onClick={() => load(state.cursor, true)}>{state.loading ? "Cargando..." : "Cargar más"}</Button></div>}
   </>;
 }
@@ -319,6 +374,7 @@ function DetailGrid({items}) {
 export function PlatformBusinessDetailPage() {
   const {businessId} = useParams();
   const navigate = useNavigate();
+  const {reloadSummary} = useOutletContext();
   const [state, setState] = React.useState({loading: true, data: null, error: ""});
   const [reason, setReason] = React.useState("");
   const [rejectionReason, setRejectionReason] = React.useState("");
@@ -351,6 +407,7 @@ export function PlatformBusinessDetailPage() {
       setOfficialLegalName("");
       setNotice("Acción aplicada correctamente.");
       load();
+      reloadSummary(true);
       return true;
     } catch (error) {
       setNotice(message(error, "No pudimos completar la acción."));
@@ -514,7 +571,7 @@ export function PlatformUsersPage() {
   return <><PlatformHeading eyebrow="Clientes de ValoraCloud" title="Usuarios" description="Directorio global de cuentas y membresías." action={<Button variant="secondary" icon={RefreshCw} onClick={() => load()}>Actualizar</Button>} />
     <PlatformListFilters draft={draft} onChange={setDraft} onReset={resetFilters} onSelectorChange={applySelector} onSubmit={applyFilters} type="users" />
     {state.error && <ErrorState error={state.error} retry={() => load()} />}{state.loading && !state.items.length && <Loading />}
-    {!state.error && Boolean(state.items.length || !state.loading) && <div className="platform-table-wrap"><table className="platform-table"><thead><tr><th>Usuario</th><th>Correo</th><th>Empresas</th><th>Estado</th><th>Fecha alta</th><th>Último acceso</th></tr></thead><tbody>{state.items.map((user) => <tr key={user.uid} onClick={() => navigate(`/admin/usuarios/${user.uid}`)}><td><strong>{personName(user.nombre)}</strong><small>{user.uid}</small></td><td>{user.correo}</td><td>{user.empresas}</td><td><StatusBadge variant={stateVariant(user.estado)}>{platformStateLabel(user.estado)}</StatusBadge></td><td>{date(user.fechaAlta)}</td><td>{date(user.ultimoAcceso)}</td></tr>)}</tbody></table></div>}
+    {!state.error && Boolean(state.items.length || !state.loading) && <div className="platform-table-wrap"><table className="platform-table"><thead><tr><th>Usuario</th><th>Correo</th><th>Empresas</th><th>Estado</th><th>Fecha alta</th><th>Último acceso</th></tr></thead><tbody>{state.items.map((user) => <tr key={user.uid} onClick={() => navigate(`/admin/usuarios/${user.uid}`)}><td><strong>{personIdentity(user.nombre, user.correo)}</strong><CopyIdButton value={user.uid} /></td><td>{user.correo}</td><td>{user.empresas}</td><td><StatusBadge variant={stateVariant(user.estado)}>{platformStateLabel(user.estado)}</StatusBadge></td><td>{date(user.fechaAlta)}</td><td>{date(user.ultimoAcceso)}</td></tr>)}</tbody></table></div>}
     {state.cursor && <div className="platform-load-more"><Button variant="secondary" disabled={state.loading} onClick={() => load(state.cursor, true)}>Cargar más</Button></div>}
   </>;
 }

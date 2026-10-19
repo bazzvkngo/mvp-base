@@ -8,7 +8,7 @@ import BusinessCategoryPicker from "./BusinessCategoryPicker";
 const NON_CHILE_FISCAL_NOTE =
   "Moneda y formato disponibles. Las reglas fiscales (facturas, boletas, IVA) están pensadas para Chile y están en revisión.";
 
-function FieldMessage({ error, help = "", id }) {
+function FieldMessage({ error, help = null, id }) {
   return (
     <div className="quick-business-field__message">
       {error ? (
@@ -21,6 +21,7 @@ function FieldMessage({ error, help = "", id }) {
 }
 
 function QuickBusinessFields({
+  countryHint = "",
   disabled = false,
   errors,
   idPrefix,
@@ -31,6 +32,17 @@ function QuickBusinessFields({
   showRegion = true,
   values,
 }) {
+  const getCountryHelp = () => {
+    const showFiscalNote = values.paisCodigo && values.paisCodigo !== "CL";
+    if (!countryHint && !showFiscalNote) return "";
+    return (
+      <>
+        {countryHint && <span>{countryHint}</span>}
+        {showFiscalNote && <span>{NON_CHILE_FISCAL_NOTE}</span>}
+      </>
+    );
+  };
+
   return (
     <div className="quick-business-fields">
       {[
@@ -96,6 +108,7 @@ function QuickBusinessFields({
                 id={controlId}
                 value={values.rubroCodigo}
                 customValue={values.rubroOtro}
+                placeholder="Selecciona un rubro"
                 disabled={disabled}
                 error={errors.rubroCodigo}
                 errorId={messageId}
@@ -132,13 +145,7 @@ function QuickBusinessFields({
             <FieldMessage
               id={messageId}
               error={errors[field]}
-              help={
-                field === "paisCodigo" &&
-                values.paisCodigo &&
-                values.paisCodigo !== "CL"
-                  ? NON_CHILE_FISCAL_NOTE
-                  : ""
-              }
+              help={field === "paisCodigo" ? getCountryHelp() : ""}
             />
           </div>
           );

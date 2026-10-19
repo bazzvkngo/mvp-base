@@ -207,16 +207,21 @@ function OnboardingPage({ usuario, onBusinessCreated, onInvitationAccepted }) {
                 onBlur={validateField}
                 showCountry
                 showRegion={false}
+                countryHint={
+                  selectedCountry && selectedCurrency
+                    ? `${selectedCountry.name} · ${selectedCurrency.code}`
+                    : "La moneda inicial se asignará según el país."
+                }
                 setFieldRef={(field, node) => {
                   fieldRefs.current[field] = node;
                 }}
               />
 
-              <p className="onboarding-form__defaults">
-                {selectedCountry && selectedCurrency
-                  ? `${selectedCountry.name} · ${selectedCurrency.code}`
-                  : "La moneda inicial se asignará según el país."}
-              </p>
+              <ol className="onboarding-form__steps">
+                <li>1. Completa los datos de tu empresa (razón social, RUT, domicilio)</li>
+                <li>2. Sube el documento y solicita la verificación</li>
+                <li>3. Te avisamos cuando esté aprobada</li>
+              </ol>
 
               <div className="onboarding-form__actions">
                 <Button

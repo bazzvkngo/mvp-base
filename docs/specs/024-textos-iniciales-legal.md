@@ -2,7 +2,7 @@
 
 
 
-Fuente de contenido para la etapa 3. \*\*Versión inicial, borrador técnico a nombre de Bagner, sin revisión legal.\*\* Todo lo marcado con `\[...]` son datos que faltan y se completan una sola vez en una constante única (`LEGAL\_PROVIDER`). Lo marcado `\[CONFIRMAR]` es una afirmación que no pudo verificarse en el código y que debe confirmarse antes de la revisión legal.
+Fuente de contenido para la etapa 3. \*\*Versión inicial, borrador técnico a nombre de Bagner, sin revisión legal.\*\* Los datos del proveedor ya están completos y viven una sola vez en una constante única (`LEGAL\_PROVIDER`, en `src/domain/legalDocumentsContent.mjs`, que es la fuente de verdad del texto de la aplicación). Lo marcado `\[CONFIRMAR]` (o `\[A DEFINIR]`) sigue pendiente: es una afirmación que no pudo verificarse en el código y que debe confirmarse antes de la revisión legal.
 
 
 
@@ -18,13 +18,13 @@ Constante de datos del proveedor (única fuente):
 
 
 
-\- Razón social: `\[RAZON\_SOCIAL\_BAGNER]`
+\- Razón social: Servicios Integrales Bagner SpA
 
-\- RUT: `\[RUT\_BAGNER]`
+\- RUT: 77.091.679-8
 
-\- Domicilio: `\[DOMICILIO\_BAGNER]`
+\- Domicilio: Tamarugal 2985, Iquique, Chile
 
-\- Correo de contacto de privacidad: `\[CORREO\_PRIVACIDAD]`
+\- Correo de contacto de privacidad: bruno.pairumani@bagner.cl
 
 \- Sitio: `https://valoracloud.bagner.cl`
 
@@ -40,7 +40,7 @@ Constante de datos del proveedor (única fuente):
 
 \### 1. Quién es responsable
 
-ValoraCloud es un sistema de inventario, cotizaciones, ventas, compras y proyectos, operado por `\[RAZON\_SOCIAL\_BAGNER]`, RUT `\[RUT\_BAGNER]`, domicilio `\[DOMICILIO\_BAGNER]` ("Bagner"). Para consultas de privacidad: `\[CORREO\_PRIVACIDAD]`.
+ValoraCloud es un sistema de inventario, cotizaciones, ventas, compras y proyectos, operado por Servicios Integrales Bagner SpA, RUT 77.091.679-8, domicilio Tamarugal 2985, Iquique, Chile ("Bagner"). Para consultas de privacidad: bruno.pairumani@bagner.cl.
 
 
 
@@ -57,6 +57,8 @@ ValoraCloud es un sistema de inventario, cotizaciones, ventas, compras y proyect
 \- \*\*Cuenta:\*\* correo electrónico y datos de acceso; si los completas, nombres y apellidos, tipo y número de documento y teléfono.
 
 \- \*\*Negocio y equipo:\*\* razón social, identificador fiscal o RUT, giro, correo, teléfono, dirección, responsable, e identidad y rol de los miembros del equipo.
+
+\- \*\*Invitaciones de equipo:\*\* el correo de las personas invitadas a un equipo, incluso si todavía no tienen cuenta, para gestionar la invitación. Cada invitación tiene una vigencia de 7 días. Las invitaciones respondidas o vencidas se conservan hasta que se defina su plazo de eliminación. `\[A DEFINIR plazo de eliminación de invitaciones]`
 
 \- \*\*Clientes y proveedores del negocio:\*\* nombre o razón social, identificador fiscal o RUT, correo, teléfono, dirección, persona de contacto y notas.
 
@@ -104,7 +106,7 @@ Cuando un negocio comparte una cotización por enlace, cualquier persona con el 
 
 \### 8. Tus derechos
 
-Entre otros, los derechos de acceso, rectificación, supresión, oposición y portabilidad de tus datos personales, en los términos de la ley chilena de protección de datos personales. Para ejercerlos, escribe a `\[CORREO\_PRIVACIDAD]`. Si tus datos fueron ingresados por un negocio, también puedes dirigirte a ese negocio.
+Entre otros, los derechos de acceso, rectificación, supresión, oposición y portabilidad de tus datos personales, en los términos de la ley chilena de protección de datos personales. Para ejercerlos, escribe a bruno.pairumani@bagner.cl. Si tus datos fueron ingresados por un negocio, también puedes dirigirte a ese negocio.
 
 
 
@@ -128,7 +130,7 @@ Si cambia, publicaremos una nueva versión y te pediremos aceptarla en tu siguie
 
 \### 12. Contacto
 
-`\[CORREO\_PRIVACIDAD]`.
+bruno.pairumani@bagner.cl.
 
 
 
@@ -142,7 +144,7 @@ Si cambia, publicaremos una nueva versión y te pediremos aceptarla en tu siguie
 
 \### 1. Quiénes somos y qué ofrecemos
 
-ValoraCloud es un sistema de inventario, cotizaciones, ventas, compras y gestión de proyectos, operado por `\[RAZON\_SOCIAL\_BAGNER]` (RUT `\[RUT\_BAGNER]`). Al crear una cuenta o seguir usando el sistema aceptas estos términos y la Política de privacidad.
+ValoraCloud es un sistema de inventario, cotizaciones, ventas, compras y gestión de proyectos, operado por Servicios Integrales Bagner SpA (RUT 77.091.679-8). Al crear una cuenta o seguir usando el sistema aceptas estos términos y la Política de privacidad.
 
 
 
@@ -184,7 +186,7 @@ Intentamos mantener el sistema disponible, pero se ofrece "tal como está", pued
 
 \### 8. Propiedad
 
-El sistema, su código y su diseño son de `\[RAZON\_SOCIAL\_BAGNER]`. Los datos que cargas siguen siendo tuyos o de tu negocio.
+El sistema, su código y su diseño son de Servicios Integrales Bagner SpA. Los datos que cargas siguen siendo tuyos o de tu negocio.
 
 
 
@@ -208,5 +210,5 @@ Estos términos se rigen por las leyes de Chile. `\[A DEFINIR con asesoría lega
 
 \### 12. Contacto
 
-`\[CORREO\_PRIVACIDAD]`.
+bruno.pairumani@bagner.cl.
 

@@ -94,6 +94,19 @@
   color: var(--color-dark-accent);
 }
 
+.platform-nav__badge {
+  background: var(--color-warning-50);
+  border-radius: var(--radius-pill);
+  color: var(--color-warning-800);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  line-height: 1;
+  margin-left: auto;
+  min-width: 1.5rem;
+  padding: var(--space-1) var(--space-2);
+  text-align: center;
+}
+
 .platform-sidebar__footer { display: grid; gap: var(--space-2); padding-top: var(--space-3); }
 .platform-sidebar__footer .ui-button { width: 100%; }
 .platform-workspace { min-width: 0; }
@@ -175,6 +188,19 @@
 .platform-table td strong,
 .platform-table td small { display: block; }
 .platform-table td small { color: var(--color-text-muted); font-size: var(--font-size-xs); margin-top: 3px; }
+.platform-table td small.platform-table__owner-label { font-weight: 700; letter-spacing: 0.05em; margin-top: var(--space-1); text-transform: uppercase; }
+.platform-table td small.platform-table__owner-label + small { margin-top: 0; }
+.platform-table--clickable tbody tr:focus-visible { background: var(--color-surface-hover); outline: 2px solid var(--color-brand-600); outline-offset: -2px; }
+.platform-table--clickable tbody tr:hover td:first-child strong { color: var(--color-brand-700); text-decoration: underline; }
+.platform-table .platform-copy-id { font-size: var(--font-size-xs); margin-top: var(--space-1); min-height: 32px; padding: 0 var(--space-2); }
+.platform-dashboard-panels { display: grid; gap: var(--space-4); grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: var(--space-5); }
+.platform-dashboard-panels .platform-panel { margin-bottom: 0; }
+.platform-pending-action { color: var(--color-text-strong); font-weight: 600; margin: 0; }
+.platform-pending-action a { color: var(--color-brand-700); }
+.platform-recent-list { display: grid; gap: var(--space-1); list-style: none; margin: 0; padding: 0; }
+.platform-recent-list a { align-items: center; border-radius: var(--radius-md); color: var(--color-text-strong); display: flex; gap: var(--space-3); justify-content: space-between; padding: var(--space-2) var(--space-3); text-decoration: none; }
+.platform-recent-list a:hover { background: var(--color-surface-hover); }
+.platform-recent-list a:focus-visible { box-shadow: var(--focus-ring); outline: none; }
 .platform-filters {
   align-items: end;
   background: var(--color-surface-panel);
@@ -273,6 +299,7 @@
   .platform-content { padding: var(--space-5) var(--space-4); }
   .platform-page-heading { align-items: flex-start; flex-direction: column; }
   .platform-page-heading .ui-button { width: 100%; }
+  .platform-dashboard-panels,
   .platform-detail-columns,
   .platform-detail-grid,
   .platform-verification-actions,

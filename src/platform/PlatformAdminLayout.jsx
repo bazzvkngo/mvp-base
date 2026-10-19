@@ -10,9 +10,11 @@ import {
   X,
 } from "lucide-react";
 import {NavLink, Outlet, useLocation, useNavigate} from "react-router-dom";
+import BrandMark from "../components/brand/BrandMark";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import {logout} from "../services/authService";
+import {getPlatformSummary} from "../services/platformAdminService";
 
 const sections = [
   {label: "Resumen", items: [{to: "/admin/dashboard", label: "Dashboard", icon: Gauge}]},
@@ -21,12 +23,14 @@ const sections = [
     items: [
       {to: "/admin/empresas", label: "Empresas", icon: Building2},
       {to: "/admin/usuarios", label: "Usuarios", icon: Users},
-      {to: "/admin/verificaciones", label: "Verificaciones", icon: ShieldCheck},
+      {to: "/admin/verificaciones", label: "Verificaciones", icon: ShieldCheck, badge: "pendingVerifications"},
     ],
   },
 ];
 
-function PlatformNavigation({onNavigate}) {
+const SUMMARY_MIN_INTERVAL_MS = 30000;
+
+function PlatformNavigation({badges = {}, onNavigate}) {
   return <nav className="platform-nav" aria-label="Administración de plataforma">
     {sections.map((section) => <div className="platform-nav__section" key={section.label}>
       <span>{section.label}</span>
@@ -38,6 +42,10 @@ function PlatformNavigation({onNavigate}) {
       >
         <AppIcon icon={item.icon} size={18} />
         {item.label}
+        {badges[item.badge] > 0 && <span
+          className="platform-nav__badge"
+          aria-label={`${badges[item.badge]} pendientes`}
+        >{badges[item.badge]}</span>}
       </NavLink>)}
     </div>)}
   </nav>;
@@ -51,6 +59,27 @@ function PlatformAdminLayout({businessSession, onReturnToErp, usuario}) {
     Boolean(businessSession?.activeBusiness);
   React.useEffect(() => setMobileOpen(false), [location.pathname]);
 
+  // El resumen lo comparten el menú (insignia) y el Dashboard. Se pide una sola
+  // vez por navegación y no más de una vez cada 30 s, salvo `force`.
+  const [summary, setSummary] = React.useState({loading: true, data: null, error: ""});
+  const summaryRef = React.useRef({inFlight: false, lastAt: 0});
+  const loadSummary = React.useCallback((force = false) => {
+    const control = summaryRef.current;
+    if (control.inFlight) return;
+    if (!force && Date.now() - control.lastAt < SUMMARY_MIN_INTERVAL_MS) return;
+    control.inFlight = true;
+    setSummary((current) => ({...current, loading: true, error: ""}));
+    getPlatformSummary()
+      .then((data) => setSummary({loading: false, data, error: ""}))
+      .catch(() => setSummary((current) => ({loading: false, data: current.data, error: "No pudimos cargar el resumen."})))
+      .finally(() => {
+        control.inFlight = false;
+        control.lastAt = Date.now();
+      });
+  }, []);
+  React.useEffect(() => loadSummary(), [loadSummary, location.pathname]);
+  const badges = {pendingVerifications: summary.data?.empresas?.verificacionesPendientes || 0};
+
   const returnToErp = async () => {
     await onReturnToErp?.();
     navigate("/cotizaciones");
@@ -59,10 +88,10 @@ function PlatformAdminLayout({businessSession, onReturnToErp, usuario}) {
   return <div className="platform-shell">
     <aside className="platform-sidebar platform-sidebar--desktop">
       <div className="platform-brand">
-        <span className="platform-brand__mark"><AppIcon icon={ShieldCheck} size={22} /></span>
+        <span className="platform-brand__mark"><BrandMark size={28} onDark /></span>
         <div><strong>ValoraCloud</strong><span>Consola de Administración</span></div>
       </div>
-      <PlatformNavigation />
+      <PlatformNavigation badges={badges} />
       <div className="platform-sidebar__footer">
         {hasErp && <Button variant="secondary" icon={RotateCcw} onClick={returnToErp}>Volver al ERP</Button>}
         <Button variant="ghost-danger" icon={LogOut} onClick={() => logout()}>Cerrar sesion</Button>
@@ -76,13 +105,13 @@ function PlatformAdminLayout({businessSession, onReturnToErp, usuario}) {
         <div><span>Contexto global</span><strong>Administración de plataforma</strong></div>
         <div className="platform-topbar__identity"><span>Administrador</span><strong>{usuario?.email}</strong></div>
       </header>
-      <main id="platform-main" className="platform-content"><Outlet /></main>
+      <main id="platform-main" className="platform-content"><Outlet context={{summary, reloadSummary: loadSummary}} /></main>
     </div>
     {mobileOpen && <div className="platform-mobile-layer">
       <button className="platform-mobile-overlay" type="button" aria-label="Cerrar navegacion" onClick={() => setMobileOpen(false)} />
       <aside className="platform-sidebar platform-sidebar--mobile" role="dialog" aria-modal="true">
         <div className="platform-mobile-heading"><strong>Consola de Administración</strong><button type="button" aria-label="Cerrar" onClick={() => setMobileOpen(false)}><AppIcon icon={X} size={20} /></button></div>
-        <PlatformNavigation onNavigate={() => setMobileOpen(false)} />
+        <PlatformNavigation badges={badges} onNavigate={() => setMobileOpen(false)} />
         <div className="platform-sidebar__footer">
           {hasErp && <Button variant="secondary" icon={RotateCcw} onClick={returnToErp}>Volver al ERP</Button>}
           <Button variant="ghost-danger" icon={LogOut} onClick={() => logout()}>Cerrar sesion</Button>

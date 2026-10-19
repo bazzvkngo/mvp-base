@@ -73,6 +73,7 @@
   --color-dark-text-faint: #7894a4;
   --color-dark-accent: #53d3c8;
   --color-dark-accent-soft: rgb(83 211 200 / 0.14);
+  --color-logo-accent-on-dark: #ffd24d;
 
   /* Formal documents (órdenes de compra y similares enviados a un tercero) —
      deliberadamente distinto del teal cálido de la app: un documento externo
