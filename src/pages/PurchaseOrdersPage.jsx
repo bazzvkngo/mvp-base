@@ -165,9 +165,9 @@ export default function PurchaseOrdersPage({businessId, role}) {
     try { await cancelarOrdenCompra(businessId, pendingAction.id); setPendingAction(null); await load(); }
     catch (error) { setMessage(error.message); } finally { setProcessingId(""); }
   };
-  const sendEmail = async ({emailProveedor, asunto, mensaje}) => {
+  const sendEmail = async ({emailProveedor, asunto, mensaje, enviarCopia}) => {
     const order = emailOrder; if (!order) return; setProcessingId(order.id);
-    try { const pdfAttachment = await buildPurchaseOrderPdfAttachment({order, companyProfile: company}); const result = await sendPurchaseOrderEmail({businessId, ordenCompraId: order.id, emailProveedor, asunto, mensaje, pdfAttachment}); if (!result.success) throw new Error(result.error || "No fue posible enviar la orden."); setEmailOrder(null); await load(); if (result.simulated) sileo.info({title: "Simulación de correo — QA local", description: "No se envió un correo real. La orden permanece pendiente de envío."}); else sileo.success({title: "Correo enviado", description: `${order.numero} fue enviada a ${emailProveedor}.`}); }
+    try { const pdfAttachment = await buildPurchaseOrderPdfAttachment({order, companyProfile: company}); const result = await sendPurchaseOrderEmail({businessId, ordenCompraId: order.id, emailProveedor, asunto, mensaje, pdfAttachment, enviarCopia}); if (!result.success) throw new Error(result.error || "No fue posible enviar la orden."); setEmailOrder(null); await load(); if (result.simulated) sileo.info({title: "Simulación de correo — QA local", description: "No se envió un correo real. La orden permanece pendiente de envío."}); else sileo.success({title: "Correo enviado", description: `${order.numero} fue enviada a ${emailProveedor}.`}); }
     catch (error) { setMessage(error.message); } finally { setProcessingId(""); }
   };
   const downloadPdf = async (order) => {

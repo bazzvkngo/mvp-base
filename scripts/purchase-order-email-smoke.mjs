@@ -88,6 +88,9 @@ assert.doesNotMatch(customHtml, /<script>/);
 async function runHandler({
   asunto,
   companyEmail = "",
+  data = {},
+  liveCompany,
+  token,
   emulator = false,
   configured = true,
   mensaje,
@@ -99,9 +102,10 @@ async function runHandler({
   const orderRef = {update: async (patch) => orderPatches.push(patch)};
   const attemptRef = {set: async (patch) => attemptPatches.push(patch)};
   const result = await sendPurchaseOrderEmailHandler({
-    auth: {uid: "owner-1"},
+    auth: {uid: "owner-1", ...(token ? {token} : {})},
     data: {
       ordenCompraId: order.id,
+      ...data,
       emailProveedor: order.proveedorSnapshot.email,
       pdfBase64: "pdf",
       ...(asunto === undefined ? {} : {asunto}),
@@ -112,7 +116,8 @@ async function runHandler({
     HttpsError: FakeHttpsError,
     escapeHtml: (value) => String(value),
     getCompanyProfile: async () => ({nombreComercial: "Valora", email: companyEmail}),
-    getEmailSender: () => configured ? "compras@empresa.cl" : "",
+    getEmailSender: () => configured ? "Valora <compras@empresa.cl>" : "",
+    ...(liveCompany ? {getLiveCompanyProfile: async () => liveCompany} : {}),
     getResendApiKey: () => configured ? "secret" : "",
     isEmulatorEnvironment: () => emulator,
     normalizePdfAttachment: () => ({filename: "OC-2026-0001.pdf", content: "pdf", contentType: "application/pdf"}),
@@ -147,6 +152,8 @@ assert.equal(sent.result.success, true);
 assert.equal(sent.result.replyToConfigured, true);
 assert.equal(sent.providerCalls[0].replyTo, "compras@empresa.cl");
 assert.match(sent.providerCalls[0].text, /responde a este correo/);
+assert.equal(sent.providerCalls[0].from, '"Valora (vía ValoraCloud)" <compras@empresa.cl>');
+assert.equal("bcc" in sent.providerCalls[0], false);
 assert.equal(sent.orderPatches.at(-1).estado, "emitida");
 assert.equal(sent.orderPatches.at(-1).canalEmision, "correo");
 assert.equal(sent.orderPatches.at(-1).cantidadEnvios, 1);
@@ -161,6 +168,50 @@ assert.match(customized.providerCalls[0].text, /Mensaje editado sin instruccion/
 assert.match(customized.providerCalls[0].text, /responde a este correo/);
 assert.equal(customized.providerCalls[0].attachments[0].filename, "OC-2026-0001.pdf");
 assert.equal(customized.providerCalls[0].replyTo, "compras@empresa.cl");
+
+// Reply-To sale del perfil vigente; el cuerpo de la solicitud nunca lo decide.
+const liveProfile = await runHandler({
+  companyEmail: "viejo@empresa.cl",
+  data: {replyTo: "atacante@x.cl", reply_to: "atacante@x.cl", bcc: "atacante@x.cl", from: "Atacante <atacante@x.cl>"},
+  liveCompany: {nombreComercial: "Bagner", email: "Vigente@Bagner.cl"},
+});
+assert.equal(liveProfile.providerCalls[0].replyTo, "vigente@bagner.cl");
+assert.equal(liveProfile.providerCalls[0].from, '"Bagner (vía ValoraCloud)" <compras@empresa.cl>');
+assert.equal("bcc" in liveProfile.providerCalls[0], false);
+
+// Sin contacto válido: respaldo a la cuenta verificada, con la frase de respuesta.
+for (const badEmail of ["", "no-correo", "a@b.cl;c@d.cl"]) {
+  const fallback = await runHandler({
+    liveCompany: {nombreComercial: "Bagner", email: badEmail},
+    token: {email: "Comprador@Bagner.cl", email_verified: true},
+  });
+  assert.equal(fallback.providerCalls[0].replyTo, "comprador@bagner.cl");
+  assert.equal(fallback.result.replyToConfigured, true);
+  assert.match(fallback.providerCalls[0].text, /responde a este correo/);
+}
+
+// Sin contacto y sin cuenta verificada: sin Reply-To y se indica el canal habitual.
+const noReplyTo = await runHandler({
+  liveCompany: {nombreComercial: "Bagner", email: ""},
+  token: {email: "comprador@bagner.cl", email_verified: false},
+});
+assert.equal("replyTo" in noReplyTo.providerCalls[0], false);
+assert.equal(noReplyTo.result.replyToConfigured, false);
+assert.match(noReplyTo.providerCalls[0].text, /canal habitual/);
+assert.doesNotMatch(noReplyTo.providerCalls[0].text, /responde a este correo/);
+
+// Copia oculta: solo con enviarCopia === true y cuenta verificada.
+const verifiedToken = {email: "comprador@bagner.cl", email_verified: true};
+const withCopy = await runHandler({data: {enviarCopia: true}, token: verifiedToken});
+assert.deepEqual(withCopy.providerCalls[0].bcc, ["comprador@bagner.cl"]);
+for (const [label, options] of Object.entries({
+  "sin casilla": {token: verifiedToken},
+  "valor no booleano": {data: {enviarCopia: "true"}, token: verifiedToken},
+  "cuenta sin verificar": {data: {enviarCopia: true}, token: {email: "comprador@bagner.cl"}},
+})) {
+  const run = await runHandler(options);
+  assert.equal("bcc" in run.providerCalls[0], false, label);
+}
 
 const originalConsoleError = console.error;
 console.error = () => {};
@@ -231,8 +282,10 @@ assert.match(dialogSource, /Orden de compra \$\{order\.numero \|\| ""\} \| \$\{c
 assert.match(dialogSource, /responde este correo para confirmar la recepci/);
 assert.match(dialogSource, /po-email-summary/);
 assert.match(dialogSource, /PDF de la orden de compra/);
-assert.match(pageSource, /sendEmail = async \(\{emailProveedor, asunto, mensaje\}\)/);
-assert.match(historySource, /sendEmail = async \(\{emailProveedor, asunto, mensaje\}\)/);
+assert.match(pageSource, /sendEmail = async \(\{emailProveedor, asunto, mensaje, enviarCopia\}\)/);
+assert.match(historySource, /sendEmail = async \(\{emailProveedor, asunto, mensaje, enviarCopia\}\)/);
+assert.match(dialogSource, /Enviarme una copia a \{accountEmail\}/);
+assert.match(dialogSource, /enviarCopia: Boolean\(accountEmail\) && enviarCopia/);
 assert.match(emailServiceSource, /asunto: asunto\.trim\(\)/);
 assert.match(emailServiceSource, /mensaje: mensaje\.trim\(\)/);
 assert.doesNotMatch(purchaseOrderCssSource, /\.po-email-dialog/);

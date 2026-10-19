@@ -2490,6 +2490,21 @@ async function getCompanyProfileForQuote(businessRef, quote) {
   });
 }
 
+// Perfil vigente de la empresa (no el snapshot del documento): de aquí salen
+// el correo de contacto para Reply-To y el nombre del remitente.
+async function getLiveCompanyProfile(businessRef) {
+  const [businessSnapshot, profileSnapshot] = await Promise.all([
+    businessRef.get(),
+    businessRef.collection("empresa").doc("perfil").get(),
+  ]);
+
+  return buildAuthoritativeCompanySnapshot({
+    businessId: businessRef.id,
+    business: businessSnapshot.data() || {},
+    profile: profileSnapshot.data() || {},
+  });
+}
+
 function getSerperApiKey() {
   if (process.env.SERPER_API_KEY) return process.env.SERPER_API_KEY;
 
@@ -2699,6 +2714,7 @@ async function sendEmailWithResend({
   text,
   attachments = [],
   replyTo = "",
+  bcc = [],
 }) {
   const resend = new Resend(apiKey);
   const { data, error } = await resend.emails.send({
@@ -2709,6 +2725,7 @@ async function sendEmailWithResend({
     text,
     attachments,
     ...(replyTo ? {replyTo} : {}),
+    ...(bcc.length ? {bcc} : {}),
   });
 
   if (error) {
@@ -2738,6 +2755,7 @@ exports.sendQuoteEmail = onCall(
       buildQuoteEmissionPatch,
       createPublicQuoteToken,
       getCompanyProfileForQuote,
+      getLiveCompanyProfile,
       getPublicBaseUrl,
       getQuoteEmailSender,
       getResendApiKey,
@@ -2769,6 +2787,7 @@ exports.sendPurchaseOrderEmail = onCall(
       escapeHtml,
       getCompanyProfile: getCompanyProfileForQuote,
       getEmailSender: getQuoteEmailSender,
+      getLiveCompanyProfile,
       getResendApiKey,
       isEmulatorEnvironment,
       normalizePdfAttachment,

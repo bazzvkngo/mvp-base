@@ -4,6 +4,7 @@ import { getFirebaseFunctions } from "../firebase/firebaseConfig";
 import { formatDate, formatMoney } from "../utils/formatters";
 import { buildQuoteValidityEmailLine } from "../domain/quoteEmailCopy.mjs";
 import {resolveDocumentCompany} from "../domain/companySnapshot.mjs";
+import { buildQuoteReplyLine, resolveReplyToHint } from "../domain/emailReplyTo.mjs";
 import { DRAFT_QUOTE_NUMBER_LABEL, getQuoteDisplayNumber } from "./quoteService";
 
 const FUNCTIONS_REGION = "us-central1";
@@ -23,7 +24,7 @@ export function isValidEmail(value) {
   );
 }
 
-export function buildDefaultQuoteEmail({ quote, companyProfile }) {
+export function buildDefaultQuoteEmail({ quote, companyProfile, accountEmail = "" }) {
   const quoteNumber = getQuoteDisplayNumber(quote, "");
   const company = resolveDocumentCompany(quote, companyProfile);
   const companyName = company.nombreComercial || company.razonSocial || "";
@@ -45,13 +46,16 @@ export function buildDefaultQuoteEmail({ quote, companyProfile }) {
   const totalLine = hasTotal && Number.isFinite(total)
     ? `, por un total de ${formatMoney(total, quote?.moneda, quote?.locale)}`
     : "";
+  const hasReplyTo = Boolean(
+    resolveReplyToHint({ companyEmail: companyProfile?.email, accountEmail })
+  );
   const paragraphs = [
     contactName ? `Hola ${contactName}:` : "Hola:",
     `Te enviamos la cotización${quoteLabel}${projectLine}${totalLine}.`,
     buildQuoteValidityEmailLine(quote, formatDate),
     "Adjuntamos el documento PDF con el detalle completo.",
     "Puedes revisar y responder la propuesta desde el enlace incluido en este correo.",
-    "Si tienes consultas o necesitas ajustes, responde a este correo.",
+    buildQuoteReplyLine(hasReplyTo),
     companyName ? `Saludos,\n${companyName}` : "Saludos,",
   ].filter(Boolean);
   const subjectParts = [
@@ -91,6 +95,7 @@ export async function sendQuoteEmail({
   mensaje,
   pdfAttachment,
   requestId,
+  enviarCopia = false,
 }) {
   assertCloudFunctionAllowed("el envío de cotizaciones por correo");
   if (!quoteId) {
@@ -131,6 +136,7 @@ export async function sendQuoteEmail({
     pdfFilename: pdfAttachment?.fileName || "",
     pdfMimeType: pdfAttachment?.contentType || "application/pdf",
     requestId: requestId || createQuoteEmailRequestId(),
+    ...(enviarCopia === true ? { enviarCopia: true } : {}),
   });
 
   return {

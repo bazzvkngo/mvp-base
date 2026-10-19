@@ -405,14 +405,14 @@ export default function NewPurchaseOrderPage({businessId, role}) {
     }
   };
 
-  const sendEmail = async ({emailProveedor, asunto, mensaje}) => {
+  const sendEmail = async ({emailProveedor, asunto, mensaje, enviarCopia}) => {
     if (!order) return;
     setSaving(true);
     setMessage("");
     try {
       const saved = await persistDraft();
       const pdfAttachment = await buildPurchaseOrderPdfAttachment({order: saved, companyProfile: company});
-      const result = await sendPurchaseOrderEmail({businessId, ordenCompraId: saved.id, emailProveedor, asunto, mensaje, pdfAttachment});
+      const result = await sendPurchaseOrderEmail({businessId, ordenCompraId: saved.id, emailProveedor, asunto, mensaje, pdfAttachment, enviarCopia});
       if (!result.success) throw new Error(result.error || "No fue posible enviar la orden de compra.");
       setEmailOpen(false);
       const refreshed = await obtenerOrdenCompra(businessId, saved.id);

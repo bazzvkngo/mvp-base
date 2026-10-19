@@ -307,7 +307,10 @@ function baseDependencies(overrides = {}, storedQuote = validQuote) {
   assert.equal("cc" in calls.provider[0], false);
   assert.equal("bcc" in calls.provider[0], false);
   assert.equal("replyTo" in calls.provider[0], false);
-  assert.equal(calls.provider[0].from, "Demo <ventas@example.com>");
+  assert.equal(
+    calls.provider[0].from,
+    '"Demo (vía ValoraCloud)" <ventas@example.com>'
+  );
   assert.equal(result.quoteEmailStatus.emailClienteDestino, "administracion@example.com");
   assert.equal(result.quoteEmailStatus.correoOriginalCliente, "cliente@example.com");
   assert.equal(result.quoteEmailStatus.destinatarioAlternativo, true);
@@ -318,6 +321,110 @@ function baseDependencies(overrides = {}, storedQuote = validQuote) {
   assert.equal("clienteEmail" in quoteUpdates.at(-1), false);
   assert.equal("clienteSnapshot" in quoteUpdates.at(-1), false);
   assert.deepEqual(validQuote, originalQuote);
+}
+
+{
+  // Reply-To: perfil vigente de la empresa; nunca el cuerpo de la solicitud.
+  const { dependencies, calls } = baseDependencies({
+    getLiveCompanyProfile: async () => ({
+      nombreComercial: "Bagner",
+      email: "Contacto@Bagner.cl",
+    }),
+  });
+  const result = await sendQuoteEmailHandler(
+    {
+      ...request,
+      auth: {
+        uid: "owner-1",
+        token: { email: "vendedor@bagner.cl", email_verified: true },
+      },
+      data: {
+        ...request.data,
+        bcc: "atacante@example.com",
+        replyTo: "atacante@example.com",
+        reply_to: "atacante@example.com",
+        from: "Atacante <atacante@example.com>",
+      },
+    },
+    dependencies
+  );
+  assert.equal(result.success, true);
+  assert.equal(calls.provider[0].replyTo, "contacto@bagner.cl");
+  assert.equal(
+    calls.provider[0].from,
+    '"Bagner (vía ValoraCloud)" <ventas@example.com>'
+  );
+  assert.equal("bcc" in calls.provider[0], false);
+}
+
+{
+  // Sin correo de contacto válido: respaldo al correo verificado de la cuenta.
+  for (const companyEmail of ["", "no-es-un-correo", "a@b.cl,c@d.cl"]) {
+    const { dependencies, calls } = baseDependencies({
+      getLiveCompanyProfile: async () => ({ nombreComercial: "Bagner", email: companyEmail }),
+    });
+    await sendQuoteEmailHandler(
+      {
+        ...request,
+        auth: {
+          uid: "owner-1",
+          token: { email: "Vendedor@Bagner.cl", email_verified: true },
+        },
+      },
+      dependencies
+    );
+    assert.equal(calls.provider[0].replyTo, "vendedor@bagner.cl");
+  }
+}
+
+{
+  // Sin contacto y sin cuenta verificada: no hay Reply-To (ni se inventa uno).
+  const { dependencies, calls } = baseDependencies({
+    getLiveCompanyProfile: async () => ({ nombreComercial: "Bagner", email: "mal" }),
+  });
+  await sendQuoteEmailHandler(
+    {
+      ...request,
+      auth: {
+        uid: "owner-1",
+        token: { email: "vendedor@bagner.cl", email_verified: false },
+      },
+    },
+    dependencies
+  );
+  assert.equal("replyTo" in calls.provider[0], false);
+}
+
+{
+  // Copia oculta: solo con la casilla, solo a la cuenta verificada de quien envía.
+  const auth = {
+    uid: "owner-1",
+    token: { email: "vendedor@bagner.cl", email_verified: true },
+  };
+  const withCopy = baseDependencies();
+  await sendQuoteEmailHandler(
+    { ...request, auth, data: { ...request.data, enviarCopia: true, bcc: "x@y.cl" } },
+    withCopy.dependencies
+  );
+  assert.deepEqual(withCopy.calls.provider[0].bcc, ["vendedor@bagner.cl"]);
+
+  const unverified = baseDependencies();
+  await sendQuoteEmailHandler(
+    {
+      ...request,
+      auth: { uid: "owner-1", token: { email: "vendedor@bagner.cl" } },
+      data: { ...request.data, enviarCopia: true },
+    },
+    unverified.dependencies
+  );
+  assert.equal("bcc" in unverified.calls.provider[0], false);
+
+  const notBoolean = baseDependencies();
+  await sendQuoteEmailHandler(
+    { ...request, auth, data: { ...request.data, enviarCopia: "true" } },
+    notBoolean.dependencies
+  );
+  assert.equal("bcc" in notBoolean.calls.provider[0], false);
 }
 
 for (const invalidRecipient of [
@@ -470,6 +577,11 @@ assert.match(emailServiceSource, /resolveDocumentCompany\(quote, companyProfile\
 assert.match(modalSource, /<ResponsiveDialog/);
 assert.match(modalSource, /Usar otro correo/);
 assert.match(modalSource, /Volver al correo del cliente/);
+assert.match(modalSource, /Enviarme una copia a \{accountEmail\}/);
+assert.match(modalSource, /enviarCopia: Boolean\(accountEmail\) && enviarCopia/);
+assert.match(emailServiceSource, /buildQuoteReplyLine\(hasReplyTo\)/);
+assert.doesNotMatch(emailServiceSource, /"Si tienes consultas o necesitas ajustes, responde a este correo\."/);
+assert.match(functionSource, /getLiveCompanyProfile/);
 assert.match(modalSource, /Simulación preparada/);
 assert.match(modalSource, /En QA local no se envió un correo real/);
 assert.match(modalSource, /setQaPublicUrl\(resultQaPublicUrl\)/);

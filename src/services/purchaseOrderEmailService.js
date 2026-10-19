@@ -15,7 +15,7 @@ export function isValidPurchaseOrderEmailMessage(value) {
   return typeof value === "string" && Boolean(value.trim()) && value.length <= 2000;
 }
 
-export async function sendPurchaseOrderEmail({businessId, ordenCompraId, emailProveedor, asunto, mensaje, pdfAttachment}) {
+export async function sendPurchaseOrderEmail({businessId, ordenCompraId, emailProveedor, asunto, mensaje, pdfAttachment, enviarCopia = false}) {
   assertCloudFunctionAllowed("el envío de órdenes de compra por correo");
   if (!ordenCompraId) throw new Error("Crea la orden antes de enviarla.");
   if (!isValidPurchaseOrderEmail(emailProveedor)) throw new Error("Ingresa un único correo de destino válido.");
@@ -33,6 +33,7 @@ export async function sendPurchaseOrderEmail({businessId, ordenCompraId, emailPr
     pdfBase64: pdfAttachment?.contentBase64 || "",
     pdfFilename: pdfAttachment?.fileName || "",
     pdfMimeType: pdfAttachment?.contentType || "application/pdf",
+    ...(enviarCopia === true ? {enviarCopia: true} : {}),
   });
   return {
     success: Boolean(response.data?.success),

@@ -2,14 +2,16 @@ import React, {useEffect, useRef, useState} from "react";
 import Button from "../../components/ui/Button";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import {resolveDocumentCompany} from "../../domain/companySnapshot.mjs";
+import {resolveReplyToHint} from "../../domain/emailReplyTo.mjs";
+import {getVerifiedAccountEmail} from "../../services/senderAccount";
 import {formatMoney} from "../../utils/formatters";
 import {isValidPurchaseOrderEmail, isValidPurchaseOrderEmailMessage, isValidPurchaseOrderEmailSubject} from "../../services/purchaseOrderEmailService";
 
-function buildInitialEmail({companyProfile = {}, order = {}}) {
+function buildInitialEmail({accountEmail = "", companyProfile = {}, order = {}}) {
   const company = resolveDocumentCompany(order, companyProfile);
   const companyName = company.nombreComercial || company.razonSocial || "Empresa compradora";
   const providerName = order.proveedorSnapshot?.razonSocial || "Proveedor";
-  const responseInstruction = isValidPurchaseOrderEmail(company.email)
+  const responseInstruction = resolveReplyToHint({companyEmail: companyProfile?.email, accountEmail})
     ? "Por favor, responde este correo para confirmar la recepción de la orden o indicar cualquier observación."
     : "Por favor, confirma la recepción de la orden por el canal habitual o indica cualquier observación.";
   return {
@@ -22,21 +24,24 @@ export default function SendPurchaseOrderEmailDialog({companyProfile, onClose, o
   const [email, setEmail] = useState("");
   const [asunto, setAsunto] = useState("");
   const [mensaje, setMensaje] = useState("");
+  const [enviarCopia, setEnviarCopia] = useState(false);
+  const accountEmail = getVerifiedAccountEmail();
   const inputRef = useRef(null);
   useEffect(() => {
     if (!open) return;
-    const initial = buildInitialEmail({companyProfile, order});
+    const initial = buildInitialEmail({accountEmail, companyProfile, order});
     setEmail(order?.proveedorSnapshot?.email || "");
     setAsunto(initial.asunto);
     setMensaje(initial.mensaje);
-  }, [companyProfile, open, order]);
+    setEnviarCopia(false);
+  }, [accountEmail, companyProfile, open, order]);
   const validEmail = isValidPurchaseOrderEmail(email);
   const validSubject = isValidPurchaseOrderEmailSubject(asunto);
   const validMessage = isValidPurchaseOrderEmailMessage(mensaje);
   const valid = validEmail && validSubject && validMessage;
   const submit = (event) => {
     event.preventDefault();
-    if (!processing && valid) onSend({emailProveedor: email.trim(), asunto: asunto.trim(), mensaje: mensaje.trim()});
+    if (!processing && valid) onSend({emailProveedor: email.trim(), asunto: asunto.trim(), mensaje: mensaje.trim(), enviarCopia: Boolean(accountEmail) && enviarCopia});
   };
   const footer = (
     <>
@@ -77,6 +82,12 @@ export default function SendPurchaseOrderEmailDialog({companyProfile, onClose, o
         {!validSubject && <p className="po-email-form__error">Ingresa un asunto de hasta 180 caracteres y sin saltos de línea.</p>}
         <label>Mensaje<textarea value={mensaje} maxLength={2000} rows="6" disabled={processing} onChange={(event) => setMensaje(event.target.value)} /></label>
         {!validMessage && <p className="po-email-form__error">Ingresa un mensaje de hasta 2000 caracteres.</p>}
+        {accountEmail && (
+          <label className="ui-checkbox po-email-form__copy">
+            <input className="ui-checkbox__input" type="checkbox" checked={enviarCopia} disabled={processing} onChange={(event) => setEnviarCopia(event.target.checked)} />
+            <span className="ui-checkbox__label">Enviarme una copia a {accountEmail}</span>
+          </label>
+        )}
         <section className="po-email-summary" aria-label="Resumen de la orden">
           <div><span>Documento</span><strong>{order?.numero || "Orden de compra"}</strong></div>
           <div><span>Proveedor</span><strong>{order?.proveedorSnapshot?.razonSocial || "Proveedor"}</strong></div>

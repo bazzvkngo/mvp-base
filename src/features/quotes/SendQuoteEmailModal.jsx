@@ -13,6 +13,7 @@ import {
   sendQuoteEmail,
 } from "../../services/quoteEmailService";
 import { getQuoteDisplayNumber } from "../../services/quoteService";
+import { getVerifiedAccountEmail } from "../../services/senderAccount";
 import {
   buildQuotePdfAttachment,
   getQuotePdfFileName,
@@ -49,9 +50,10 @@ function SendQuoteEmailModal({
   onSent,
 }) {
   const formatBusinessAmount = useBusinessMoney();
+  const accountEmail = getVerifiedAccountEmail();
   const defaults = useMemo(
-    () => buildDefaultQuoteEmail({ quote, companyProfile }),
-    [companyProfile, quote]
+    () => buildDefaultQuoteEmail({ quote, companyProfile, accountEmail }),
+    [accountEmail, companyProfile, quote]
   );
   const canSendQuote = isQuoteEmailSendable(quote, quoteId);
   const pdfFileName = useMemo(() => getQuotePdfFileName(quote), [quote]);
@@ -62,6 +64,7 @@ function SendQuoteEmailModal({
   const [usingAlternateEmail, setUsingAlternateEmail] = useState(false);
   const [asunto, setAsunto] = useState(defaults.asunto);
   const [mensaje, setMensaje] = useState(defaults.mensaje);
+  const [enviarCopia, setEnviarCopia] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [qaPublicUrl, setQaPublicUrl] = useState("");
@@ -75,6 +78,7 @@ function SendQuoteEmailModal({
     setUsingAlternateEmail(false);
     setAsunto(defaults.asunto);
     setMensaje(defaults.mensaje);
+    setEnviarCopia(false);
     setError("");
     setQaPublicUrl("");
     submittingRef.current = false;
@@ -134,6 +138,7 @@ function SendQuoteEmailModal({
           mensaje,
           pdfAttachment,
           requestId: requestIdRef.current,
+          enviarCopia: Boolean(accountEmail) && enviarCopia,
         });
         completedResult = result;
         if (!result.success) {
@@ -386,6 +391,21 @@ function SendQuoteEmailModal({
               disabled={sending}
             />
           </label>
+
+          {accountEmail && (
+            <label className="ui-checkbox">
+              <input
+                className="ui-checkbox__input"
+                type="checkbox"
+                checked={enviarCopia}
+                onChange={(event) => setEnviarCopia(event.target.checked)}
+                disabled={sending}
+              />
+              <span className="ui-checkbox__label">
+                Enviarme una copia a {accountEmail}
+              </span>
+            </label>
+          )}
         </section>
 
         <aside className="quote-email-dialog__summary">
