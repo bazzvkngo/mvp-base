@@ -1470,3 +1470,275 @@ Cualquier necesidad de modificar el Core protegido obliga a detener el desarroll
 
 
 
+## 38. Integración con Core autorizada para el traspaso
+
+La implementación aislada del módulo Clínica Veterinaria se encuentra preparada.
+La nueva `student-baseline` incorpora el mecanismo oficial de módulos verticales
+y define la forma en que Veterinaria debe integrarse con el Core.
+
+Las reglas vigentes para este traspaso corresponden a `AGENTS.md` y al manual de
+traspaso entregado por el mantenedor.
+
+### 38.1 Necesidad funcional
+
+El módulo necesita:
+
+- registrarse como módulo vertical con el identificador `veterinaria`;
+- utilizar como ruta base `/clinica-veterinaria`;
+- montar `VeterinaryPage` desde `App.jsx`;
+- habilitar lectura autorizada de:
+  - `negocios/{businessId}/pacientesVeterinarios`;
+  - `negocios/{businessId}/citasVeterinarias`;
+  - `negocios/{businessId}/atencionesVeterinarias`;
+- mantener las escrituras desde navegador deshabilitadas.
+
+Actualmente las rutas internas React, los paths Firestore y la capa de lectura
+del módulo ya se encuentran implementados, pero todavía deben alinearse con el
+nuevo registro y la nueva ruta base.
+
+### 38.2 Core afectado
+
+Los cambios de integración autorizados corresponden a:
+
+- `functions/verticalModules.js`;
+- `src/domain/verticalModules.mjs`;
+- `src/app/App.jsx`;
+- `firestore.rules`.
+
+No se debe agregar Veterinaria a `BUSINESS_MODULES`.
+
+El menú principal no requiere una entrada manual en `navigation.js`, ya que se
+genera a partir del registro de módulos verticales.
+
+La definición de permisos `VETERINARIA_*` debe proponerse primero en la
+descripción del PR y no se modificará `src/domain/rbac.mjs` hasta recibir el
+visto bueno del mantenedor.
+
+### 38.3 Por qué se requiere integración con Core
+
+La nueva base utiliza un interruptor de módulos verticales por negocio.
+
+Un negocio solamente puede acceder a Veterinaria cuando el módulo
+`veterinaria` está registrado y aparece dentro de sus módulos habilitados.
+
+Las reglas Firestore también deben comprobar que el módulo se encuentre
+habilitado, además del rol autorizado.
+
+Por esta razón, las colecciones veterinarias continúan rechazando las lecturas
+mientras no existan reglas explícitas para ellas.
+
+### 38.4 Riesgos
+
+Una modificación incorrecta podría:
+
+- permitir acceso a un negocio sin Veterinaria habilitada;
+- permitir acceso de un perfil no autorizado;
+- romper el aislamiento entre negocios;
+- habilitar lecturas o escrituras cross-tenant;
+- introducir escrituras desde frontend como autoridad;
+- modificar contratos centrales que no forman parte del módulo.
+
+Por estas razones Veterinaria no reutiliza artificialmente permisos de
+Inventario, Clientes u otros módulos para autorizar operaciones clínicas.
+
+### 38.5 Integración mínima autorizada
+
+El mantenedor autorizó para esta etapa:
+
+1. registrar:
+
+   `{ id: "veterinaria", label: "Clínica veterinaria", basePath: "/clinica-veterinaria" }`
+
+   en:
+   - `functions/verticalModules.js`;
+   - `src/domain/verticalModules.mjs`;
+
+2. alinear las rutas internas desde `/veterinaria/...` hacia
+   `/clinica-veterinaria/...`;
+
+3. montar `VeterinaryPage` en `App.jsx`;
+
+4. agregar reglas de lectura para las tres colecciones veterinarias,
+   comprobando módulo habilitado y los roles permitidos para el MVP;
+
+5. mantener:
+
+   `allow write: if false;`
+
+   para escrituras desde el navegador;
+
+6. proponer en el PR el mapa de permisos `VETERINARIA_*` antes de modificar el
+   RBAC.
+
+No se propone modificar la economía de Inventario, costos, valorización,
+ledger, Ventas, Compras o Recepciones.
+
+### 38.6 Pruebas necesarias para aprobar la integración
+
+La integración deberá validar como mínimo:
+
+- módulo habilitado: lectura permitida para un rol autorizado;
+- módulo deshabilitado: lectura denegada;
+- usuario o negocio no autorizado: lectura denegada;
+- escrituras desde navegador siempre denegadas;
+- rechazo de acceso cross-tenant;
+- integración de Inventario únicamente en lectura;
+- ausencia de escrituras directas de stock desde frontend;
+- `npm run test:veterinary`;
+- `npm run test:rules`;
+- `npm run test:rbac`;
+- `npm run test:design`;
+- `npm run test:contrast`;
+- `npm run build`;
+- `npm --prefix functions run lint`;
+- `git diff --check`.
+
+Las verificaciones deberán registrarse con su código de salida real.
+
+### 38.7 Estado actual
+
+Implementado en la feature branch:
+
+- modelo de datos veterinario;
+- paths Firestore aislados dentro del módulo;
+- capa de lectura para pacientes, citas y atenciones;
+- integración con `businessId`;
+- integración de solo lectura con Inventario Core;
+- rutas React internas;
+- `VeterinaryPage`;
+- `VeterinaryManager`;
+- modelos y smoke tests del dominio veterinario.
+
+El 19 de octubre de 2026 la rama
+`feature/clinica-veterinaria` fue trasladada mediante merge a la nueva
+`student-baseline` (`baseline-v2`).
+
+Pendiente dentro del proceso de traspaso:
+
+- registro del módulo vertical;
+- cambio de rutas a `/clinica-veterinaria`;
+- montaje global de `VeterinaryPage`;
+- reglas de lectura veterinarias;
+- correcciones visuales y de validación indicadas por el mantenedor;
+- propuesta de permisos `VETERINARIA_*`.
+
+## 39. Revisión del mantenedor y estado del traspaso
+
+### 39.1 Resultado de la revisión
+
+El mantenedor revisó el PR del módulo Clínica Veterinaria hasta el commit
+`29084be`.
+
+La revisión original correspondía a la baseline anterior. Posteriormente se
+publicó la nueva rama `student-baseline`, marcada como `baseline-v2`, y el módulo
+fue trasladado a esa nueva base mediante merge.
+
+Se confirmó especialmente que:
+
+- la integración con Inventario Core es únicamente de lectura;
+- las lecturas utilizan el `businessId` del negocio activo;
+- no existen escrituras directas desde el navegador;
+- la validación duplicada de farmacia fue corregida;
+- existe una sola implementación de `requireBusinessId`;
+- el manejo de errores distingue `permission-denied` de errores generales;
+- no se modificaron Functions centrales;
+- no se implementó descuento de stock desde Veterinaria.
+
+### 39.2 Correcciones aplicadas después de la revisión
+
+#### Manejo de errores de Firestore
+
+`VeterinaryManager.jsx` dejó de asumir que todos los errores de las
+suscripciones corresponden a permisos.
+
+Actualmente:
+
+- `permission-denied` muestra un mensaje asociado a falta de permisos;
+- errores de red, índices u otros fallos muestran un mensaje general de carga.
+
+#### Helper `requireBusinessId`
+
+Se eliminó la implementación duplicada de `requireBusinessId`.
+
+La función se exporta desde:
+
+`src/features/veterinary/data/veterinaryFirestorePaths.mjs`
+
+y es reutilizada desde:
+
+`src/features/veterinary/data/veterinaryDataService.js`.
+
+### 39.3 Rutas React
+
+Las rutas implementadas antes del traspaso utilizan todavía:
+
+- `/veterinaria`;
+- `/veterinaria/pacientes`;
+- `/veterinaria/pacientes/nuevo`;
+- `/veterinaria/pacientes/:pacienteId`;
+- `/veterinaria/agenda`;
+- `/veterinaria/agenda/nueva`;
+- `/veterinaria/citas/:citaId`.
+
+La nueva baseline establece como ruta oficial:
+
+`/clinica-veterinaria`
+
+Por lo tanto, esas rutas deben migrarse durante la etapa de registro e
+integración del módulo.
+
+Estas rutas representan la estructura de navegación y no deben considerarse
+como siete pantallas productivas independientes terminadas, ya que actualmente
+reutilizan el contenedor principal.
+
+### 39.4 Validaciones ejecutadas antes del traspaso
+
+Antes de recibir la nueva baseline se ejecutaron correctamente:
+
+- `npm run build`;
+- `npm run test:veterinary`;
+- `npm run test:rules`;
+- `npm run test:rbac`;
+- `npm run test:inventory-service`;
+- `npm run test:inventory-model`;
+- `git diff --check`.
+
+Los siete smoke tests del dominio veterinario permanecían en verde en esa
+baseline.
+
+Después del traspaso deberán ejecutarse nuevamente las verificaciones exigidas
+por la nueva base y registrarse sus códigos de salida reales.
+
+### 39.5 Integración autorizada sobre la nueva baseline
+
+El mantenedor autorizó:
+
+- registrar `veterinaria` en las dos copias del registro de módulos verticales;
+- usar `/clinica-veterinaria` como `basePath`;
+- montar `VeterinaryPage` en `App.jsx`;
+- agregar reglas Firestore de lectura para las tres colecciones veterinarias;
+- desarrollar Functions propias del módulo utilizando el mecanismo de acceso
+  autorizado del Core cuando corresponda.
+
+El menú principal se obtiene desde el registro de módulos verticales y no debe
+agregarse manualmente en `navigation.js`.
+
+El mapa de permisos `VETERINARIA_*` todavía debe ser propuesto en el PR y
+requiere visto bueno del mantenedor antes de modificar RBAC.
+
+### 39.6 Restricciones vigentes
+
+Continúa sin autorización:
+
+- modificar Functions centrales existentes;
+- descontar stock desde Farmacia Veterinaria;
+- crear un mecanismo propio de consumo de inventario;
+- escribir directamente stock, costos, valorización o movimientos de
+  Inventario;
+- utilizar el rubro del negocio como mecanismo de activación del módulo.
+
+Farmacia Veterinaria continúa operando únicamente en modo lectura hasta que el
+Core entregue un mecanismo único y autorizado de consumo de stock.
+
+La activación de Veterinaria depende del interruptor de módulos por negocio y
+será realizada por el mantenedor desde la consola de plataforma.

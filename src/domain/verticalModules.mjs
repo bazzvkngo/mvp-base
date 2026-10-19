@@ -2,7 +2,9 @@
 // Core: cada vertical agrega aquí su entrada {id, label, basePath} al
 // integrarse. No se mezcla con BUSINESS_MODULES, que son los módulos del Core
 // siempre activos. Copia exacta en functions/verticalModules.js.
-export const VERTICAL_MODULES = Object.freeze([]);
+export const VERTICAL_MODULES = Object.freeze([
+  { id: "veterinaria", label: "Clínica veterinaria", basePath: "/clinica-veterinaria" },
+]);
 
 export function isKnownVerticalModule(id, registry = VERTICAL_MODULES) {
   return registry.some((module) => module.id === id);

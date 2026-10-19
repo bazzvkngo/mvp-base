@@ -217,19 +217,19 @@ try {
   assert.ok((await call(platform, "obtenerUsuarioPlataforma")({uid: owner.uid})).data.membresias.some((item) => item.negocioId === firstId));
 
   // Interruptor de modulos por negocio (Function cambiarModulosEmpresaPlataforma).
-  // El registro real nace vacio, asi que por el emulador solo se prueban los
-  // rechazos y el caso vacio; habilitar y deshabilitar se prueba invocando el
-  // handler real con un registro de prueba inyectado por dependencias.
+  // El registro real contiene Veterinaria. Taller sigue siendo desconocido y
+  // habilitar escenarios ampliados se prueba invocando el handler real con un
+  // registro de prueba inyectado por dependencias.
   const modulesReason = "Activacion acordada con el cliente";
   await rejected("usuario normal no cambia modulos", () => call(owner, "cambiarModulosEmpresaPlataforma")({businessId: secondId, modulos: [], motivo: modulesReason, requestId: requestId("modules_normal")}), ["permission-denied"]);
-  await rejected("modulo desconocido contra el registro real vacio", () => call(platform, "cambiarModulosEmpresaPlataforma")({businessId: secondId, modulos: ["taller"], motivo: modulesReason, requestId: requestId("modules_unknown")}), ["invalid-argument"]);
+  await rejected("modulo desconocido contra el registro real", () => call(platform, "cambiarModulosEmpresaPlataforma")({businessId: secondId, modulos: ["taller"], motivo: modulesReason, requestId: requestId("modules_unknown")}), ["invalid-argument"]);
   const emptyModulesId = requestId("modules_empty");
   const emptyModules = await call(platform, "cambiarModulosEmpresaPlataforma")({businessId: secondId, modulos: [], motivo: modulesReason, requestId: emptyModulesId});
   assert.deepEqual(emptyModules.data.modulosHabilitados, []); assert.equal(emptyModules.data.idempotent, false);
   assert.equal((await call(platform, "cambiarModulosEmpresaPlataforma")({businessId: secondId, modulos: [], motivo: modulesReason, requestId: emptyModulesId})).data.idempotent, true);
   assert.equal((await adminDb.collection(`negocios/${secondId}/eventosPlataforma`).get()).size, 0);
   const secondDetail = (await call(platform, "obtenerEmpresaPlataforma")({businessId: secondId})).data;
-  assert.deepEqual(secondDetail.empresa.modulosHabilitados, []); assert.deepEqual(secondDetail.modulosDisponibles, []);
+  assert.deepEqual(secondDetail.empresa.modulosHabilitados, []); assert.deepEqual(secondDetail.modulosDisponibles, [{id: "veterinaria", label: "Clínica veterinaria", basePath: "/clinica-veterinaria"}]);
 
   const testRegistry = Object.freeze([
     {id: "taller", label: "Taller", basePath: "/taller"},

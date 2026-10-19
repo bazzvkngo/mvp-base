@@ -104,6 +104,7 @@ async function main() {
       }),
       adminDb.doc(`negocios/${businessId}`).set({
         estado: "activo",
+        creadoPorUid: ownerUid,
         verificacionEmpresa: {estado: "VERIFICADA"},
         // Toda empresa real recibe creadoPorUid al crearse
         // (functions/businessOnboarding.js) — storage.rules exige que el
@@ -403,6 +404,7 @@ async function main() {
         monedaCodigo: "CLP",
         regionCodigo: "13",
         estado: "activo",
+        creadoPorUid: ownerUid,
         verificacionEmpresa: {estado: "VERIFICADA"},
         creadoPorUid: ownerUid,
       }),
@@ -500,6 +502,105 @@ async function main() {
         modulosHabilitados: ["taller"],
       })
     );
+    // Clínica Veterinaria: el módulo vertical controla la lectura y el
+    // navegador nunca tiene autoridad de escritura.
+    const veterinaryPaths = [
+      `negocios/${businessId}/pacientesVeterinarios/patient-rules-smoke`,
+      `negocios/${businessId}/citasVeterinarias/appointment-rules-smoke`,
+      `negocios/${businessId}/atencionesVeterinarias/attention-rules-smoke`,
+    ];
+
+    await Promise.all(
+      veterinaryPaths.map((veterinaryPath) =>
+        adminDb.doc(veterinaryPath).set({
+          negocioId: businessId,
+          estado: "activo",
+        })
+      )
+    );
+
+    for (const veterinaryPath of veterinaryPaths) {
+      const collectionName = veterinaryPath.split("/")[2];
+
+      await expectDenied(
+        `Veterinaria deshabilitada bloquea lectura de ${collectionName}`,
+        () => getDoc(doc(ownerClient.db, veterinaryPath))
+      );
+    }
+
+    await adminDb.doc(`negocios/${businessId}`).update({
+      modulosHabilitados: ["veterinaria"],
+    });
+
+    for (const veterinaryPath of veterinaryPaths) {
+      const collectionName = veterinaryPath.split("/")[2];
+      const snapshot = await getDoc(doc(ownerClient.db, veterinaryPath));
+
+      if (!snapshot.exists()) {
+        throw new Error(
+          `OWNER no pudo leer ${collectionName} con Veterinaria habilitada.`
+        );
+      }
+
+      console.log(
+        `OK permitido: OWNER lee ${collectionName} con Veterinaria habilitada`
+      );
+
+      await expectDenied(
+        `usuario sin membresía lee ${collectionName}`,
+        () => getDoc(doc(otherClient.db, veterinaryPath))
+      );
+
+      await expectDenied(
+        `navegador crea en ${collectionName}`,
+        () =>
+          setDoc(
+            doc(ownerClient.db, `${veterinaryPath}-direct-create`),
+            { negocioId: businessId }
+          )
+      );
+
+      await expectDenied(
+        `navegador actualiza ${collectionName}`,
+        () =>
+          updateDoc(
+            doc(ownerClient.db, veterinaryPath),
+            { estado: "modificado" }
+          )
+      );
+
+      await expectDenied(
+        `navegador elimina ${collectionName}`,
+        () => deleteDoc(doc(ownerClient.db, veterinaryPath))
+      );
+    }
+
+    await adminDb.doc(`membresias/${businessId}__${ownerUid}`).update({
+      rol: "ADMIN",
+    });
+
+    for (const veterinaryPath of veterinaryPaths) {
+      const collectionName = veterinaryPath.split("/")[2];
+      const snapshot = await getDoc(doc(ownerClient.db, veterinaryPath));
+
+      if (!snapshot.exists()) {
+        throw new Error(
+          `ADMIN no pudo leer ${collectionName} con Veterinaria habilitada.`
+        );
+      }
+
+      console.log(
+        `OK permitido: ADMIN lee ${collectionName} con Veterinaria habilitada`
+      );
+    }
+
+    await adminDb.doc(`membresias/${businessId}__${ownerUid}`).update({
+      rol: "OWNER",
+    });
+
+    await adminDb.doc(`negocios/${businessId}`).update({
+      modulosHabilitados: [],
+    });
     const modulesRequestPath =
       `negocios/${businessId}/platformModulesRequests/modules-rules-request`;
     await adminDb.doc(modulesRequestPath).set({
