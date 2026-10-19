@@ -90,6 +90,7 @@
     "test:team-invitations-ui": "node scripts/team-invitations-ui-smoke.mjs",
     "test:rbac": "node scripts/rbac-smoke.mjs && node scripts/vertical-modules-smoke.mjs",
     "test:legal-documents": "node scripts/legal-documents-smoke.mjs",
+    "test:app-footer": "node scripts/app-footer-smoke.mjs",
     "test:login-access": "node scripts/login-access-smoke.mjs",
     "test:business-members-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/business-members-integrated-local.mjs\"",
     "test:team-invitations-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/team-invitations-integrated.mjs\"",
@@ -120,6 +121,7 @@
     "test:contrast": "node scripts/contrast-smoke.mjs",
     "test:empty-state": "node scripts/empty-state-illustration-smoke.mjs",
     "test:notification-bell": "node scripts/notification-bell-smoke.mjs",
+    "test:notification-rules": "firebase emulators:exec --only auth,firestore \"node scripts/notification-rules-smoke.mjs\"",
     "test:summary": "node scripts/financial-model-smoke.mjs",
     "seed:business-catalogs:emulator": "node scripts/seed-business-catalogs.mjs --emulator"
   },

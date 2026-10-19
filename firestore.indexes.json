@@ -1,6 +1,14 @@
 {
   "indexes": [
     {
+      "collectionGroup": "notificaciones",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "negocioId", "order": "ASCENDING" },
+        { "fieldPath": "creadoEn", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "quotePublicTokens",
       "queryScope": "COLLECTION",
       "fields": [

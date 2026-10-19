@@ -14,6 +14,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
+import AppFooter from "../components/AppFooter";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import LoadingState from "../components/ui/LoadingState";
@@ -449,6 +450,7 @@ function AccountPage({ legalAcceptance, onSessionRefresh, usuario }) {
           </section>
         )}
       </div>
+      <AppFooter variant="cuenta" />
     </section>
   );
 }

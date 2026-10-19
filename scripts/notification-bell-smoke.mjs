@@ -68,6 +68,38 @@ const guardIndex = hookSource.indexOf("if (!businessId) return undefined;");
 const subscribeIndex = hookSource.indexOf("subscribeToNotifications(");
 assert.ok(guardIndex >= 0 && subscribeIndex > guardIndex,
   "useNotifications: el guard de businessId vacío corta antes de llamar a subscribeToNotifications");
+// Consulta: debe coincidir con la regla de lectura (resource.data.negocioId ==
+// businessId). Sin where("negocioId") Firestore responde permission-denied.
+// La prueba con emuladores está en notification-rules-smoke.mjs.
+const serviceSource = stripLineComments(
+  await readFile(
+    new URL("../src/services/notificationService.js", import.meta.url),
+    "utf8"
+  )
+);
+assert.match(
+  serviceSource,
+  /query\(\s*notificationsCollectionRef\(businessId\),\s*where\("negocioId", "==", businessId\),\s*orderBy\("creadoEn", "desc"\)\s*\)/,
+  "notificationService: la consulta filtra por negocioId y ordena por creadoEn"
+);
+const indexes = JSON.parse(
+  await readFile(new URL("../firestore.indexes.json", import.meta.url), "utf8")
+);
+assert.ok(
+  indexes.indexes.some(
+    (index) =>
+      index.collectionGroup === "notificaciones" &&
+      index.queryScope === "COLLECTION" &&
+      JSON.stringify(index.fields) ===
+        JSON.stringify([
+          { fieldPath: "negocioId", order: "ASCENDING" },
+          { fieldPath: "creadoEn", order: "DESCENDING" },
+        ])
+  ),
+  "firestore.indexes.json: índice compuesto notificaciones (negocioId ASC, creadoEn DESC)"
+);
+console.log("OK consulta: where(negocioId) + orderBy(creadoEn) con su índice compuesto");
+
 console.log("OK guard de rol: businessId se blanquea y el hook corta antes de suscribirse, verificado en la fuente");
 
 const vite = await createServer({
@@ -148,6 +180,37 @@ try {
   assert.match(error, /role="alert"/, "error: alert, más urgente que slow");
   assert.match(error, /client-message--error/);
   assert.match(error, /Reintentar/);
+
+  // Error: el contador no queda en cero en silencio. Marca "!" y avisa en la etiqueta.
+  assert.match(error, /class="ui-badge-count topbar-notifications-button__badge"[^>]*>!</, "error: badge '!' en lugar de ocultarse");
+  assert.match(error, /aria-label="Notificaciones, no se pudieron cargar los avisos"/, "error: la etiqueta del botón avisa del fallo");
+  assert.match(error, /No se pudieron cargar las notificaciones\./, "error: mensaje claro en el panel");
+  assert.doesNotMatch(error, /Sin notificaciones/, "error: no se muestra el vacío engañoso");
+  assert.doesNotMatch(error, /notification-list/, "error: sin lista");
+  // Un error no cambia los estados sanos: sin error, 0 sigue sin badge (ya probado arriba).
+  // Quien no puede leer avisos (no OWNER) nunca suscribe, así que no ve el "!".
+  const errorHidden = html({ notifications: [], showNotifications: false, subscription: { status: SUBSCRIPTION_STATUS.ERROR, synced: false }, unreadCount: 0 });
+  assert.doesNotMatch(errorHidden, /ui-badge-count/, "sin permiso de avisos: no hay badge de error");
+  // Las invitaciones siguen su propio camino: con error en avisos, el conteo
+  // de invitaciones sigue en la etiqueta y su sección se dibuja intacta.
+  const errorWithInvitations = html({
+    notifications: [],
+    subscription: { status: SUBSCRIPTION_STATUS.ERROR, synced: false },
+    unreadCount: 0,
+    invitations: {
+      busyId: "",
+      feedback: { text: "", error: false },
+      invitations: [],
+      onAccept: () => {},
+      onClearFeedback: () => {},
+      onReject: () => {},
+      onRetry: () => {},
+      requiresVerification: false,
+      status: "ready",
+    },
+  });
+  assert.match(errorWithInvitations, /No tienes invitaciones pendientes\./, "error en avisos: la sección de invitaciones no cambia");
+  assert.match(errorWithInvitations, /No se pudieron cargar las notificaciones\./);
 
   const empty = html({ notifications: [], subscription: { status: SUBSCRIPTION_STATUS.READY, synced: true }, unreadCount: 0 });
   assertClean(empty, "vacío");

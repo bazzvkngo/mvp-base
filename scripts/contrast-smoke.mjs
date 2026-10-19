@@ -110,6 +110,9 @@ const PAIRS = [
   {fg: "--color-text-default", bg: "--color-surface-panel", kind: "text", note: "texto por defecto / panel"},
   {fg: "--color-text-default", bg: "--color-surface-canvas", kind: "text", note: "texto por defecto / canvas"},
   {fg: "--color-text-muted", bg: "--color-surface-subtle", kind: "text", note: "texto muted / subtle"},
+  // AppFooter: texto tenue del pie del login (panel) y texto del pie de Mi cuenta (canvas).
+  {fg: "--color-text-muted", bg: "--color-surface-panel", kind: "text", note: "texto muted / panel (pie del login)"},
+  {fg: "--color-text-muted", bg: "--color-surface-canvas", kind: "text", note: "texto muted / canvas (pie)"},
   {fg: "--color-text-strong", bg: "--color-surface-panel", kind: "text", note: "texto fuerte / panel"},
 
   // Familias semánticas — shade de texto (-700/-800) contra su -50 y contra panel.

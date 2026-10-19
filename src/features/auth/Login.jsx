@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useState } from "react";
 import { Copy, Eye, EyeOff } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import googleLogo from "../../assets/google-g.svg";
+import AppFooter from "../../components/AppFooter";
 import BrandLogo from "../../components/BrandLogo";
 import Button from "../../components/ui/Button";
 import SkipLink from "../../components/ui/SkipLink";
@@ -686,6 +687,8 @@ function Login() {
                 </TabPanel>
               </>
             )}
+
+            <AppFooter variant="ingreso" />
           </div>
         </section>
       </main>

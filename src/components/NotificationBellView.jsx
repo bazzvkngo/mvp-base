@@ -47,9 +47,17 @@ function NotificationBellView({
   const pendingInvitations = invitations?.invitations?.length || 0;
   const totalUnread = unreadCount + pendingInvitations;
   const badgeLabel = formatBadgeCount(totalUnread);
-  const bellLabel = totalUnread > 0
-    ? `Notificaciones, ${totalUnread} sin leer`
-    : "Notificaciones";
+  // Si la suscripción de avisos falló, el contador no puede mostrar "0" como si
+  // todo estuviera leído: se marca con "!" y se avisa en la etiqueta. Las
+  // invitaciones (otra fuente) conservan su propio conteo en la etiqueta.
+  const notificationsFailed =
+    showNotifications && subscription.status === SUBSCRIPTION_STATUS.ERROR;
+  const unreadLabel = totalUnread > 0 ? `${totalUnread} sin leer` : "";
+  const bellLabel = notificationsFailed
+    ? `Notificaciones, no se pudieron cargar los avisos${unreadLabel ? `, ${unreadLabel}` : ""}`
+    : totalUnread > 0
+      ? `Notificaciones, ${unreadLabel}`
+      : "Notificaciones";
 
   return (
     <>
@@ -62,12 +70,12 @@ function NotificationBellView({
         onClick={onOpen}
       >
         <AppIcon icon={Bell} size={20} />
-        {totalUnread > 0 && (
+        {(totalUnread > 0 || notificationsFailed) && (
           <span
             className="ui-badge-count topbar-notifications-button__badge"
             aria-hidden="true"
           >
-            {badgeLabel}
+            {notificationsFailed ? "!" : badgeLabel}
           </span>
         )}
       </button>

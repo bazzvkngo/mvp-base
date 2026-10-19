@@ -6,6 +6,7 @@ import {
   query,
   serverTimestamp,
   updateDoc,
+  where,
 } from "firebase/firestore";
 import { assertClientWriteAllowed } from "../config/firebaseEnvironment.mjs";
 import { db } from "../firebase/firebaseConfig";
@@ -18,8 +19,17 @@ function notificationsCollectionRef(businessId) {
   return collection(db, ...notificationsCollectionPath(businessId));
 }
 
+// La regla de lectura exige resource.data.negocioId == businessId. Firestore
+// rechaza (permission-denied) una consulta que no puede garantizar esa
+// condición, así que el filtro por negocioId es obligatorio. where + orderBy
+// sobre otro campo requiere el índice compuesto de firestore.indexes.json
+// (notificaciones: negocioId ASC, creadoEn DESC).
 function notificationsQuery(businessId) {
-  return query(notificationsCollectionRef(businessId), orderBy("creadoEn", "desc"));
+  return query(
+    notificationsCollectionRef(businessId),
+    where("negocioId", "==", businessId),
+    orderBy("creadoEn", "desc")
+  );
 }
 
 // includeMetadataChanges: sin esto, un listener que ya entregó una

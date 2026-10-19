@@ -1,0 +1,101 @@
+/* Pie mínimo de ValoraCloud (AppFooter). Solo tokens del sistema de diseño. */
+
+.app-footer {
+  align-items: center;
+  box-sizing: border-box;
+  display: flex;
+  gap: var(--space-3);
+  max-width: 100%;
+  min-width: 0;
+  width: 100%;
+}
+
+.app-footer__text {
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-default);
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Ingreso: una línea tenue y centrada, sobre el panel blanco del login
+   (--color-text-muted / --color-surface-panel supera 4.5:1). */
+.app-footer--ingreso {
+  justify-content: center;
+  margin-top: var(--space-4);
+}
+
+.app-footer--ingreso .app-footer__text {
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+/* Cuenta: marca, texto y enlaces en una fila; vive sobre el canvas de la
+   página, donde el muted claro no llega a 4.5:1, por eso usa el texto por
+   defecto. */
+.app-footer--cuenta {
+  border-top: 1px solid var(--color-border-subtle);
+  flex-wrap: wrap;
+  justify-content: space-between;
+  margin-top: var(--space-6);
+  padding-block: var(--space-4);
+}
+
+.app-footer--cuenta .app-footer__text {
+  color: var(--color-text-default);
+  flex: 1 1 auto;
+}
+
+.app-footer__links {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+}
+
+.app-footer__link {
+  border-radius: var(--radius-xs);
+  color: var(--color-brand-700);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+.app-footer__link:hover {
+  color: var(--color-brand-800);
+}
+
+.app-footer__link:focus-visible {
+  box-shadow: var(--focus-ring);
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-offset);
+}
+
+/* Modo oscuro: brand-600/700/800 no alcanzan AA como texto sobre superficies
+   oscuras; se usa brand-400 (mismo criterio que el resto de enlaces). */
+:where(:root[data-theme="dark"]) .app-footer__link,
+:where(:root[data-theme="dark"]) .app-footer__link:hover {
+  color: var(--color-brand-400);
+}
+
+:where(:root[data-theme="dark"]) .app-footer__link:focus-visible {
+  outline-color: var(--color-brand-400);
+}
+
+/* 390 px: los elementos se apilan y se centran. */
+@media (max-width: 480px) {
+  .app-footer--cuenta {
+    flex-direction: column;
+    gap: var(--space-2);
+    justify-content: center;
+    text-align: center;
+  }
+
+  .app-footer--cuenta .app-footer__text {
+    flex: 0 1 auto;
+  }
+
+  .app-footer__links {
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+}
