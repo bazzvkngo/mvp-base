@@ -149,6 +149,8 @@
 .platform-business-heading-meta { display: grid; gap: 2px; }
 .platform-business-heading-meta > span { color: var(--color-text-muted); font-size: var(--font-size-sm); }
 .platform-business-heading-meta small { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+.platform-business-heading-meta__id { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.platform-business-heading-meta .platform-copy-id { font-size: var(--font-size-xs); min-height: 32px; padding: 0 var(--space-2); }
 .platform-metric-grid { display: grid; gap: var(--space-4); grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .platform-metric,
 .platform-panel,
@@ -189,8 +191,15 @@
 .platform-table td strong,
 .platform-table td small { display: block; }
 .platform-table td small { color: var(--color-text-muted); font-size: var(--font-size-xs); margin-top: 3px; }
-.platform-table td small.platform-table__owner-label { font-weight: 700; letter-spacing: 0.05em; margin-top: var(--space-1); text-transform: uppercase; }
-.platform-table td small.platform-table__owner-label + small { margin-top: 0; }
+.platform-table td small.platform-table__owner { overflow-wrap: anywhere; }
+.platform-table__owner-label { font-weight: 700; letter-spacing: 0.05em; margin-right: var(--space-2); text-transform: uppercase; }
+.platform-table th.platform-table__go,
+.platform-table td.platform-table__go { padding-left: 0; width: 1%; }
+.platform-table td.platform-table__go { color: var(--color-text-muted); text-align: right; }
+.platform-table td.platform-table__go svg { display: block; margin-left: auto; }
+.platform-table--clickable tbody tr:hover td.platform-table__go,
+.platform-table--clickable tbody tr:focus-visible td.platform-table__go { color: var(--color-text-brand-accent); }
+.platform-no-record { color: var(--color-text-faint); font-style: italic; font-weight: 400; }
 .platform-table--clickable tbody tr:focus-visible { background: var(--color-surface-hover); outline: 2px solid var(--color-brand-600); outline-offset: -2px; }
 .platform-table--clickable tbody tr:hover td:first-child strong { color: var(--color-text-brand); text-decoration: underline; }
 .platform-table .platform-copy-id { font-size: var(--font-size-xs); margin-top: var(--space-1); min-height: 32px; padding: 0 var(--space-2); }
@@ -247,6 +256,7 @@
 .platform-verification-actions { align-items: end; border-top: 1px solid var(--color-border-subtle); display: flex; gap: var(--space-3); margin-top: var(--space-5); padding-top: var(--space-4); }
 .platform-action-form label,
 .platform-verification-actions label { color: var(--color-text-muted); display: grid; flex: 1; font-size: var(--font-size-xs); gap: var(--space-1); }
+.platform-action-form--standalone { border-top: 0; margin-top: 0; padding-top: 0; }
 .platform-action-form textarea,
 .platform-verification-actions textarea { border: 1px solid var(--color-border-control); border-radius: var(--radius-md); font: inherit; padding: var(--space-2); resize: vertical; }
 .platform-verification-summary { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-3); }
@@ -261,6 +271,10 @@
 .platform-verification-confirmation > small,
 .platform-verification-decision > small { color: var(--color-text-muted); }
 .platform-verification-review__evidence .ui-button { justify-self: start; margin-top: var(--space-1); }
+.platform-evidence-error { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-2); }
+.platform-evidence-error [role="alert"] { color: var(--color-danger-700); flex: 1 1 14rem; min-width: 0; }
+.platform-evidence-error p { font-size: var(--font-size-sm); margin: 0; }
+.platform-evidence-error small { color: var(--color-text-muted); display: block; font-size: var(--font-size-xs); margin-top: var(--space-1); }
 .platform-verification-actions { align-items: stretch; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .platform-verification-decision { border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); display: grid; gap: var(--space-2); padding: var(--space-3); }
 .platform-verification-decision .ui-button { justify-self: start; }

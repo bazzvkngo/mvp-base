@@ -190,7 +190,7 @@ const PAIRS = [
 
   // Corrección de contraste, parte 1 — pares de uso real.
   // Texto de marca, fuerte, normal y tenue contra las superficies donde viven.
-  ...["--color-text-brand", "--color-text-brand-accent", "--color-text-brand-hover", "--color-text-strong", "--color-text-default", "--color-text-muted", "--color-text-expense"]
+  ...["--color-text-brand", "--color-text-brand-accent", "--color-text-brand-hover", "--color-text-strong", "--color-text-default", "--color-text-muted", "--color-text-faint", "--color-text-expense"]
     .flatMap((fg) => SURFACES_OF_USE.map((bg) => ({
       fg, bg, kind: "text", note: `${fg.replace("--color-", "")} / ${bg.replace("--color-surface-", "")}`,
     }))),

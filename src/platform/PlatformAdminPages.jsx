@@ -4,6 +4,7 @@ import {
   Building2,
   CheckCircle2,
   ChevronLeft,
+  ChevronRight,
   Clock3,
   RefreshCw,
   ShieldCheck,
@@ -87,11 +88,6 @@ function platformOriginLabel(value) {
   return value === "VERIFICACION" ? "Verificación" : value === "PLATAFORMA" ? "Plataforma" : humanizeToken(value);
 }
 
-function personName(value) {
-  const normalized = String(value || "").trim();
-  return !normalized || normalized === "Sin nombre registrado" ? "Nombre no informado" : normalized;
-}
-
 // Identidad principal de una cuenta: el nombre si existe y, si no, el correo.
 function personIdentity(name, email) {
   const normalizedName = String(name || "").trim();
@@ -99,7 +95,15 @@ function personIdentity(name, email) {
   return String(email || "").trim() || "Nombre no informado";
 }
 
-function CopyIdButton({value}) {
+const NO_RECORD = "Sin registro";
+
+// "Sin registro" en tono tenue; cualquier otro valor se muestra tal cual.
+function RecordValue({value}) {
+  if (!value || value === NO_RECORD) return <span className="platform-no-record">{NO_RECORD}</span>;
+  return value;
+}
+
+function CopyIdButton({value, label = "Copiar ID de usuario"}) {
   const [copied, setCopied] = React.useState(false);
   const copy = async (event) => {
     event.stopPropagation();
@@ -114,7 +118,7 @@ function CopyIdButton({value}) {
   return <Button
     variant="ghost"
     className="platform-copy-id"
-    aria-label="Copiar ID de usuario"
+    aria-label={label}
     onClick={copy}
     onKeyDown={(event) => event.stopPropagation()}
   >{copied ? "ID copiado" : "Copiar ID"}</Button>;
@@ -126,6 +130,13 @@ function message(error, fallback) {
   if (code.includes("already-exists")) return "La identidad fiscal ya pertenece a otra empresa verificada.";
   if (code.includes("failed-precondition")) return error?.message || "La operación no está disponible.";
   return fallback;
+}
+
+// Código corto del error (p. ej. "permission-denied") para soporte; sin el
+// prefijo "functions/" ni texto libre del servidor.
+function evidenceErrorCode(error) {
+  const code = String(error?.code || "").replace(/^functions\//, "");
+  return /^[a-z0-9-]{1,40}$/.test(code) ? code : "";
 }
 
 function destructiveMessage(error) {
@@ -263,12 +274,13 @@ function BusinessesTable({
   const navigate = useNavigate();
   if (!businesses.length) return <div className="platform-empty">{emptyText}</div>;
   return <div className="platform-table-wrap"><table className="platform-table platform-table--clickable">
-    <thead><tr><th>Empresa</th><th>País</th><th>Usuarios</th><th>Estado</th><th>Verificación</th><th>{verificationOnly ? "Solicitud" : "Registro"}</th></tr></thead>
+    <thead><tr><th>Empresa</th><th>País</th><th>Usuarios</th><th>Estado</th><th>Verificación</th><th>{verificationOnly ? "Solicitud" : "Registro"}</th><th className="platform-table__go"><span className="sr-only">Abrir</span></th></tr></thead>
     <tbody>{businesses.map((business) => <tr key={business.id} tabIndex="0" onClick={() => navigate(`/admin/empresas/${business.id}`)} onKeyDown={(event) => event.key === "Enter" && navigate(`/admin/empresas/${business.id}`)}>
-      <td><strong>{business.nombreComercial}</strong><small className="platform-table__owner-label">Propietario</small><small>{business.propietario?.correo || "Propietario sin correo"}</small></td>
+      <td><strong>{business.nombreComercial}</strong><small className="platform-table__owner"><span className="platform-table__owner-label">Propietario</span>{business.propietario?.correo || "Propietario sin correo"}</small></td>
       <td>{countryName(business.paisCodigo)}</td><td>{business.usuarios}</td>
       <td><StatusBadge variant={stateVariant(business.estado)}>{platformStateLabel(business.estado)}</StatusBadge></td>
-      <td><StatusBadge variant={verificationVariant(business.verificacion)}>{VERIFICATION_LABELS[business.verificacion] || business.verificacion}</StatusBadge></td><td>{date(verificationOnly ? business.fechaSolicitud : business.fechaRegistro)}</td>
+      <td><StatusBadge variant={verificationVariant(business.verificacion)}>{VERIFICATION_LABELS[business.verificacion] || business.verificacion}</StatusBadge></td><td><RecordValue value={date(verificationOnly ? business.fechaSolicitud : business.fechaRegistro)} /></td>
+      <td className="platform-table__go" aria-hidden="true"><AppIcon icon={ChevronRight} size={18} /></td>
     </tr>)}</tbody>
   </table></div>;
 }
@@ -368,7 +380,7 @@ export function PlatformBusinessesPage({verificationOnly = false}) {
 }
 
 function DetailGrid({items}) {
-  return <dl className="platform-detail-grid">{items.map((item) => <div key={item.label}><dt>{item.label}</dt><dd>{item.value || "Sin registro"}</dd></div>)}</dl>;
+  return <dl className="platform-detail-grid">{items.map((item) => <div key={item.label}><dt>{item.label}</dt><dd><RecordValue value={item.value} /></dd></div>)}</dl>;
 }
 
 export function PlatformBusinessDetailPage() {
@@ -382,6 +394,7 @@ export function PlatformBusinessDetailPage() {
   const [working, setWorking] = React.useState(false);
   const [openingEvidence, setOpeningEvidence] = React.useState(false);
   const [notice, setNotice] = React.useState("");
+  const [evidenceError, setEvidenceError] = React.useState(null);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [verificationDecision, setVerificationDecision] = React.useState("");
   const [deleteConfirmation, setDeleteConfirmation] = React.useState("");
@@ -419,7 +432,7 @@ export function PlatformBusinessDetailPage() {
     setNotice("");
     const popup = window.open("", "_blank");
     if (!popup) {
-      setNotice("El navegador bloqueó la nueva pestaña. Habilita las ventanas emergentes e inténtalo nuevamente.");
+      setEvidenceError({text: "El navegador bloqueó la nueva pestaña. Habilita las ventanas emergentes e inténtalo nuevamente.", code: ""});
       return;
     }
     popup.opener = null;
@@ -435,9 +448,13 @@ export function PlatformBusinessDetailPage() {
         throw new Error("La pestaña del documento fue cerrada.");
       }
       popup.location.assign(evidence.url);
+      setEvidenceError(null);
     } catch (error) {
       if (!popup.closed) popup.close();
-      setNotice(message(error, "No pudimos abrir el documento de respaldo."));
+      setEvidenceError({
+        text: message(error, "No pudimos abrir el documento de respaldo."),
+        code: evidenceErrorCode(error),
+      });
     } finally {
       setOpeningEvidence(false);
     }
@@ -473,7 +490,7 @@ export function PlatformBusinessDetailPage() {
     empresa.verificacion?.estado || "Empresa no verificada";
   return <>
     <button className="platform-back" type="button" onClick={() => navigate(-1)}><AppIcon icon={ChevronLeft} size={18} />Volver</button>
-    <PlatformHeading eyebrow="Empresa" title={empresa.nombreComercial || "Empresa sin nombre"} description={<span className="platform-business-heading-meta"><span>{propietario?.correo || "Propietario sin correo"}</span><span>{countryName(empresa.paisCodigo)} · {verificationLabel}</span><small>ID: {empresa.id}</small></span>} action={<StatusBadge variant={stateVariant(empresa.estado)}>{platformStateLabel(empresa.estado)}</StatusBadge>} />
+    <PlatformHeading eyebrow="Empresa" title={empresa.nombreComercial || "Empresa sin nombre"} description={<span className="platform-business-heading-meta"><span>{propietario?.correo || "Propietario sin correo"}</span><span>{countryName(empresa.paisCodigo)} · {verificationLabel}</span><span className="platform-business-heading-meta__id"><small>ID: {empresa.id}</small><CopyIdButton value={empresa.id} label="Copiar ID de empresa" /></span></span>} action={<StatusBadge variant={stateVariant(empresa.estado)}>{platformStateLabel(empresa.estado)}</StatusBadge>} />
     {notice && <div className="platform-notice" role="status">{notice}</div>}
     <section className="platform-panel"><h2>Datos de la empresa</h2><DetailGrid items={[
       {label: "País", value: countryName(empresa.paisCodigo)},
@@ -484,15 +501,21 @@ export function PlatformBusinessDetailPage() {
         {label: "Razón social oficial", value: empresa.razonSocial},
         {label: fiscalFieldLabel(empresa.identificadorFiscalTipo, "confirmado"), value: fiscalIdentifier(empresa.paisCodigo, empresa.identificadorFiscalValor)},
       ] : []),
-    ]} />
-      {empresa.estado === "activo" ? <div className="platform-action-form"><label>Motivo de suspensión<textarea rows="2" value={reason} onChange={(event) => {setReason(event.target.value); requestRef.current = "";}} /></label><Button variant="danger" disabled={working || !reason.trim()} onClick={() => run("suspend_business", (requestId) => setPlatformBusinessStatus({businessId, estado: "suspendida", motivo: reason, requestId}))}>Suspender empresa</Button></div> : empresa.estado === "suspendida" ? <Button disabled={working} onClick={() => run("reactivate_business", (requestId) => setPlatformBusinessStatus({businessId, estado: "activo", motivo: "", requestId}))}>Reactivar empresa</Button> : null}
-    </section>
+    ]} /></section>
+    {(empresa.estado === "activo" || empresa.estado === "suspendida") && <section className="platform-panel"><h2>Acciones</h2>
+      {empresa.estado === "activo" ? <div className="platform-action-form platform-action-form--standalone"><label>Motivo de suspensión<textarea rows="2" value={reason} onChange={(event) => {setReason(event.target.value); requestRef.current = "";}} /></label><Button variant="danger" disabled={working || !reason.trim()} onClick={() => run("suspend_business", (requestId) => setPlatformBusinessStatus({businessId, estado: "suspendida", motivo: reason, requestId}))}>Suspender empresa</Button></div> : <Button disabled={working} onClick={() => run("reactivate_business", (requestId) => setPlatformBusinessStatus({businessId, estado: "activo", motivo: "", requestId}))}>Reactivar empresa</Button>}
+    </section>}
     <section className="platform-panel"><h2>Verificación empresarial</h2>
       <div className="platform-verification-summary"><StatusBadge variant={verificationVariant(empresa.verificacion?.estado)}>{verificationLabel}</StatusBadge>{solicitudActual && <span>Solicitud recibida {date(solicitudActual.solicitadoEn)}</span>}</div>
       {solicitudActual && <div className="platform-verification-review">
         <article><span>{fiscalFieldLabel(solicitudActual.identificadorFiscalTipo, "declarado")}</span><strong>{fiscalIdentifier(solicitudActual.paisCodigo, solicitudActual.identificadorFiscalValor)}</strong><small>{countryName(solicitudActual.paisCodigo)}</small></article>
         <article><span>Solicitante</span><strong>{solicitudActual.correoSolicitante || "Correo no informado"}</strong><small>{solicitudActual.relacionSolicitante || "Relación no informada"}{solicitudActual.telefonoSolicitante ? ` · ${solicitudActual.telefonoSolicitante}` : ""}</small></article>
-        <article className="platform-verification-review__evidence"><span>Evidencia</span><strong>{solicitudActual.documentoAcreditativo?.nombreOriginal || "Sin documento adjunto"}</strong>{solicitudActual.documentoAcreditativo && <Button variant="secondary" loading={openingEvidence} onClick={loadEvidence}>{openingEvidence ? "Abriendo…" : "Ver documento"}</Button>}</article>
+        <article className="platform-verification-review__evidence"><span>Evidencia</span><strong>{solicitudActual.documentoAcreditativo?.nombreOriginal || "Sin documento adjunto"}</strong>{solicitudActual.documentoAcreditativo && <Button variant="secondary" loading={openingEvidence} onClick={loadEvidence}>{openingEvidence ? "Abriendo…" : "Ver documento"}</Button>}
+          {evidenceError && <div className="platform-evidence-error">
+            <div role="alert"><p>{evidenceError.text}</p>{evidenceError.code && <small>código: {evidenceError.code}</small>}</div>
+            <Button variant="secondary" loading={openingEvidence} onClick={loadEvidence}>Reintentar</Button>
+          </div>}
+        </article>
         {solicitudActual.observaciones && <article><span>Observaciones</span><strong>{solicitudActual.observaciones}</strong></article>}
       </div>}
       {pending && <div className="platform-verification-actions">
@@ -509,7 +532,7 @@ export function PlatformBusinessDetailPage() {
       onEdit={() => {requestRef.current = "";}}
       onSave={(modulos, motivo) => run("update_modules", (requestId) => setPlatformBusinessModules({businessId, modulos, motivo, requestId}))}
     />
-    <section className="platform-panel"><h2>Miembros ({miembros.length})</h2><div className="platform-table-wrap"><table className="platform-table"><thead><tr><th>Usuario</th><th>Correo</th><th>Perfil</th><th>Estado</th></tr></thead><tbody>{miembros.map((member) => <tr key={member.uid} onClick={() => navigate(`/admin/usuarios/${member.uid}`)}><td>{personName(member.nombre)}</td><td>{member.correo}</td><td>{BUSINESS_ROLE_LABELS[member.rol] || humanizeToken(member.rol)}</td><td>{platformStateLabel(member.estado)}</td></tr>)}</tbody></table></div></section>
+    <section className="platform-panel"><h2>Miembros ({miembros.length})</h2><div className="platform-table-wrap"><table className="platform-table"><thead><tr><th>Usuario</th><th>Correo</th><th>Perfil</th><th>Estado</th></tr></thead><tbody>{miembros.map((member) => <tr key={member.uid} onClick={() => navigate(`/admin/usuarios/${member.uid}`)}><td>{personIdentity(member.nombre, member.correo)}</td><td>{member.correo}</td><td>{BUSINESS_ROLE_LABELS[member.rol] || humanizeToken(member.rol)}</td><td>{platformStateLabel(member.estado)}</td></tr>)}</tbody></table></div></section>
     <section className="platform-panel"><h2>Historial</h2>{eventos.length ? <ol className="platform-timeline">{eventos.map((event) => <li key={`${event.origen}-${event.id}`}><span>{platformOriginLabel(event.origen)}</span><strong>{platformEventLabel(event.tipo)}</strong><p>{event.tipo === MODULES_EVENT_TYPE ? moduleEventSummary(event, modulosDisponibles) : <>{event.estadoAnterior && `${platformStateLabel(event.estadoAnterior)} → `}{platformStateLabel(event.estadoResultante)}{event.motivo && ` · ${event.motivo}`}</>}</p><time>{date(event.creadoEn)}</time></li>)}</ol> : <div className="platform-empty">Sin eventos registrados.</div>}</section>
     <section className="platform-panel platform-danger-zone"><div><h2>Zona de peligro</h2><p>Esta acción elimina permanentemente la empresa y todos sus datos exclusivos. Los usuarios de Auth no se eliminan.</p></div><Button variant="danger" icon={Trash2} onClick={() => {setDeleteConfirmation(""); setDeleteError(""); deleteRequestRef.current = ""; setDeleteOpen(true);}}>Eliminar empresa permanentemente</Button></section>
     <ResponsiveDialog
@@ -571,7 +594,7 @@ export function PlatformUsersPage() {
   return <><PlatformHeading eyebrow="Clientes de ValoraCloud" title="Usuarios" description="Directorio global de cuentas y membresías." action={<Button variant="secondary" icon={RefreshCw} onClick={() => load()}>Actualizar</Button>} />
     <PlatformListFilters draft={draft} onChange={setDraft} onReset={resetFilters} onSelectorChange={applySelector} onSubmit={applyFilters} type="users" />
     {state.error && <ErrorState error={state.error} retry={() => load()} />}{state.loading && !state.items.length && <Loading />}
-    {!state.error && Boolean(state.items.length || !state.loading) && <div className="platform-table-wrap"><table className="platform-table"><thead><tr><th>Usuario</th><th>Correo</th><th>Empresas</th><th>Estado</th><th>Fecha alta</th><th>Último acceso</th></tr></thead><tbody>{state.items.map((user) => <tr key={user.uid} onClick={() => navigate(`/admin/usuarios/${user.uid}`)}><td><strong>{personIdentity(user.nombre, user.correo)}</strong><CopyIdButton value={user.uid} /></td><td>{user.correo}</td><td>{user.empresas}</td><td><StatusBadge variant={stateVariant(user.estado)}>{platformStateLabel(user.estado)}</StatusBadge></td><td>{date(user.fechaAlta)}</td><td>{date(user.ultimoAcceso)}</td></tr>)}</tbody></table></div>}
+    {!state.error && Boolean(state.items.length || !state.loading) && <div className="platform-table-wrap"><table className="platform-table"><thead><tr><th>Usuario</th><th>Correo</th><th>Empresas</th><th>Estado</th><th>Fecha alta</th><th>Último acceso</th></tr></thead><tbody>{state.items.map((user) => <tr key={user.uid} onClick={() => navigate(`/admin/usuarios/${user.uid}`)}><td><strong>{personIdentity(user.nombre, user.correo)}</strong><CopyIdButton value={user.uid} /></td><td>{user.correo}</td><td>{user.empresas}</td><td><StatusBadge variant={stateVariant(user.estado)}>{platformStateLabel(user.estado)}</StatusBadge></td><td><RecordValue value={date(user.fechaAlta)} /></td><td><RecordValue value={date(user.ultimoAcceso)} /></td></tr>)}</tbody></table></div>}
     {state.cursor && <div className="platform-load-more"><Button variant="secondary" disabled={state.loading} onClick={() => load(state.cursor, true)}>Cargar más</Button></div>}
   </>;
 }
@@ -586,7 +609,7 @@ export function PlatformUserDetailPage() {
   const changeStatus = async (estado) => { setWorking(true); setNotice(""); try { if (!requestRef.current) requestRef.current = createPlatformRequestId(`${estado}_user`); await setPlatformUserStatus({uid, estado, motivo: estado === "suspendido" ? reason : "", requestId: requestRef.current}); requestRef.current = ""; setReason(""); setNotice("Estado actualizado correctamente."); load(); } catch (error) { setNotice(message(error, "No pudimos actualizar el usuario.")); } finally { setWorking(false); } };
   if (state.loading && !state.data) return <Loading />; if (state.error) return <ErrorState error={state.error} retry={load} />;
   const {usuario, membresias, eventos} = state.data;
-  return <><button className="platform-back" type="button" onClick={() => navigate(-1)}><AppIcon icon={ChevronLeft} size={18} />Volver</button><PlatformHeading eyebrow="Usuario" title={personName(usuario.nombre)} description={usuario.correo} action={<StatusBadge variant={stateVariant(usuario.estado)}>{platformStateLabel(usuario.estado)}</StatusBadge>} />
+  return <><button className="platform-back" type="button" onClick={() => navigate(-1)}><AppIcon icon={ChevronLeft} size={18} />Volver</button><PlatformHeading eyebrow="Usuario" title={personIdentity(usuario.nombre, usuario.correo)} description={usuario.correo} action={<StatusBadge variant={stateVariant(usuario.estado)}>{platformStateLabel(usuario.estado)}</StatusBadge>} />
     {notice && <div className="platform-notice" role="status">{notice}</div>}
     <div className="platform-detail-columns"><section className="platform-panel"><h2>Cuenta</h2><DetailGrid items={[{label: "UID", value: usuario.uid}, {label: "Correo", value: usuario.correo}, {label: "Estado", value: platformStateLabel(usuario.estado)}, {label: "Fecha alta", value: date(usuario.fechaAlta)}, {label: "Último acceso", value: date(usuario.ultimoAcceso)}]} /></section>
       <section className="platform-panel"><h2>Control de acceso</h2>{usuario.estado === "activo" ? <div className="platform-action-form"><label>Motivo de suspensión<textarea rows="2" value={reason} onChange={(event) => {setReason(event.target.value); requestRef.current = "";}} /></label><Button variant="danger" disabled={working || !reason.trim()} onClick={() => changeStatus("suspendido")}>Suspender usuario</Button></div> : <Button disabled={working} onClick={() => changeStatus("activo")}>Reactivar usuario</Button>}<p className="platform-help">La suspensión deshabilita Auth y el acceso ERP sin borrar membresías ni históricos.</p></section></div>
