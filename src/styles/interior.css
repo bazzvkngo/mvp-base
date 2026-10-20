@@ -2415,7 +2415,7 @@
 }
 
 .reports-v4-metrics__primary {
-  background: var(--color-brand-50);
+  background: var(--color-surface-brand);
   border-color: var(--color-brand-200);
 }
 

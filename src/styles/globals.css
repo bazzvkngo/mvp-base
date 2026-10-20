@@ -67,7 +67,7 @@ svg {
 .skip-link {
   background: var(--color-text-strong);
   border-radius: var(--radius-sm);
-  color: var(--color-text-inverse);
+  color: var(--color-text-on-strong);
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
   left: var(--space-3);
@@ -137,7 +137,7 @@ td[align="right"] {
 }
 
 .eyebrow {
-  color: var(--color-brand-700);
+  color: var(--color-text-brand);
   display: block;
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-bold);

@@ -211,7 +211,7 @@ const styles = {
     alignItems: "center",
     background: "transparent",
     border: 0,
-    color: "var(--color-brand-600)",
+    color: "var(--color-text-brand-accent)",
     cursor: "pointer",
     display: "inline-flex",
     fontSize: "13px",
@@ -249,7 +249,7 @@ const styles = {
   },
   merchantLink: {
     alignItems: "center",
-    color: "var(--color-brand-600)",
+    color: "var(--color-text-brand-accent)",
     display: "inline-flex",
     fontSize: "13px",
     fontWeight: 700,

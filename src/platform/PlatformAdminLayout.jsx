@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import {NavLink, Outlet, useLocation, useNavigate} from "react-router-dom";
 import BrandMark from "../components/brand/BrandMark";
+import ThemeToggleButton from "../components/ThemeToggleButton";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import {logout} from "../services/authService";
@@ -103,7 +104,10 @@ function PlatformAdminLayout({businessSession, onReturnToErp, usuario}) {
           <AppIcon icon={Menu} size={21} />
         </button>
         <div><span>Contexto global</span><strong>Administración de plataforma</strong></div>
-        <div className="platform-topbar__identity"><span>Administrador</span><strong>{usuario?.email}</strong></div>
+        <div className="platform-topbar__actions">
+          <ThemeToggleButton />
+          <div className="platform-topbar__identity"><span>Administrador</span><strong>{usuario?.email}</strong></div>
+        </div>
       </header>
       <main id="platform-main" className="platform-content"><Outlet context={{summary, reloadSummary: loadSummary}} /></main>
     </div>

@@ -119,6 +119,7 @@
     "test:design": "node scripts/design-smoke.mjs",
     "test:design-scan": "node scripts/design-scan-smoke.mjs",
     "test:contrast": "node scripts/contrast-smoke.mjs",
+    "test:contrast-usage": "node scripts/contrast-usage-smoke.mjs",
     "test:empty-state": "node scripts/empty-state-illustration-smoke.mjs",
     "test:notification-bell": "node scripts/notification-bell-smoke.mjs",
     "test:notification-rules": "firebase emulators:exec --only auth,firestore \"node scripts/notification-rules-smoke.mjs\"",

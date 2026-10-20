@@ -40,7 +40,7 @@
 .reception-import__steps li > span { align-items: center; background: var(--color-surface-subtle); border: 1px solid var(--color-border-default); border-radius: 50%; display: flex; flex: 0 0 auto; height: 26px; justify-content: center; width: 26px; }
 .reception-import__steps li > strong { white-space: nowrap; }
 .reception-import__steps li.is-current { color: var(--color-brand-700); }
-.reception-import__steps li.is-current > span { background: var(--color-brand-50); border-color: var(--color-brand-600); }
+.reception-import__steps li.is-current > span { background: var(--color-surface-brand); border-color: var(--color-brand-600); }
 .reception-import__steps li.is-complete { color: var(--color-success-700); }
 .reception-import__steps li.is-complete > span { background: var(--color-success-50); border-color: var(--color-success-200); }
 .reception-import__dropzone { align-items: center; background: var(--color-surface-subtle); border: 2px dashed var(--color-border-default); border-radius: 10px; display: grid; gap: 10px; justify-items: center; min-height: 210px; padding: 24px; text-align: center; }
@@ -58,7 +58,7 @@
 .reception-import__processing, .reception-import__applying { align-items: center; display: flex; gap: 12px; }
 .reception-import__processing > div, .reception-import__applying > div { display: grid; gap: 2px; }
 .reception-import__processing span, .reception-import__applying span { color: var(--color-text-muted); font-size: 12px; }
-.reception-import__applying { background: var(--color-brand-50); border: 1px solid var(--color-brand-200); border-radius: 9px; padding: 14px; }
+.reception-import__applying { background: var(--color-surface-brand); border: 1px solid var(--color-brand-200); border-radius: 9px; padding: 14px; }
 .reception-import__provider-status { background: var(--color-stock-alert-50); border: 1px solid var(--color-stock-alert-200); border-radius: 8px; color: var(--color-stock-alert-800); margin: 0; padding: 10px 12px; }
 .reception-import__provider-status--coincidencia { background: var(--color-success-50); border-color: var(--color-success-200); color: var(--color-success-700); }
 .reception-import__provider-status--no_identificado, .reception-import__provider-status--sin_datos_oc { background: var(--color-warning-50); border-color: var(--color-warning-200); color: var(--color-warning-800); }
@@ -145,13 +145,13 @@
     color: var(--color-brand-400);
   }
 
-  /* Excepciones NO tocadas, confirmadas leyendo el contexto:
-     .reception-import__steps li.is-current > span (fondo
-     --color-brand-50) y .reception-import__file-type (fondo
-     --color-brand-50) usan --color-brand-600/700 sobre un fondo de la
-     MISMA familia brand, que no cambia con el tema — ya funcionan igual
-     que en claro, tocarlas rompería el contraste (texto claro sobre
-     fondo claro). --color-stock-alert-* (líneas 62-72, 107): ya tiene
+  /* Excepción NO tocada, confirmada leyendo el contexto:
+     .reception-import__file-type (fondo --color-brand-50) usa
+     --color-brand-700 sobre un fondo de la MISMA familia brand, que no
+     cambia con el tema — ya funciona igual que en claro. (Corrección de
+     contraste, parte 1: .reception-import__steps li.is-current > span y
+     .reception-import__applying ya NO son excepción: su fondo pasó a
+     --color-surface-brand, que sí cambia con el tema.) --color-stock-alert-* (líneas 62-72, 107): ya tiene
      valor oscuro definido en tokens.css (paso 5, ver commit aparte), no
      hace falta redefinirlo aquí, solo se sigue usando por var(). */
 }
