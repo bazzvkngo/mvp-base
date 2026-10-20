@@ -41,6 +41,17 @@ import {fileURLToPath} from "node:url";
 // SISTEMA de tokens, no cada uso puntual en un componente (por ejemplo
 // .environment-notice o .po-doc-* con paleta congelada) — esos ya se
 // verificaron a mano en su propio commit y no son parte de tokens.css.
+// Qué selector usa qué token como texto lo vigila scripts/contrast-usage-
+// smoke.mjs (npm run test:contrast-usage): sin él, un token "bueno" mal usado
+// (p. ej. --color-dark-ink como texto en platform.css) pasa este smoke.
+//
+// Corrección de contraste, parte 1: se agregan los pares REALES de uso —
+// texto de marca/fuerte/normal/tenue contra las cinco superficies donde
+// viven (canvas, panel, raised, hover y --color-surface-brand), foco y borde
+// de control (3:1 contra panel, raised y hover), bordes de tarjeta (1.6:1
+// contra panel, 1.8:1 contra canvas) y el texto de botones y skip-link
+// contra su fondo. Un par puede llevar `threshold` propio y usar un hex
+// literal en fg/bg (los rellenos de botón fijados en components.css).
 //
 // Si un par falla, se reporta (ver salida) y el proceso termina con código
 // distinto de cero — nunca se ajusta un valor aquí para forzar el pase.
@@ -50,6 +61,7 @@ const TOKENS_CSS = path.join(ROOT, "src/styles/tokens.css");
 
 const TEXT_THRESHOLD = 4.5;
 const NONTEXT_THRESHOLD = 3;
+const SURFACES_OF_USE = ["--color-surface-canvas", "--color-surface-panel", "--color-surface-raised", "--color-surface-hover", "--color-surface-brand"];
 
 // --- Lectura de tokens.css: valores claros y oscuros por nombre de token. ---
 
@@ -172,18 +184,47 @@ const PAIRS = [
   {fg: "--color-quote-status-accepted", bg: "--color-surface-panel", kind: "nontext", note: "quote-status-accepted / panel (paso 7)"},
   {fg: "--color-quote-status-expired", bg: "--color-surface-panel", kind: "nontext", note: "quote-status-expired / panel (paso 7)"},
   {fg: "--color-quote-status-archived", bg: "--color-surface-panel", kind: "nontext", note: "quote-status-archived / panel (paso 7)"},
+
+  // Corrección de contraste, parte 1 — pares de uso real.
+  // Texto de marca, fuerte, normal y tenue contra las superficies donde viven.
+  ...["--color-text-brand", "--color-text-brand-accent", "--color-text-brand-hover", "--color-text-strong", "--color-text-default", "--color-text-muted"]
+    .flatMap((fg) => SURFACES_OF_USE.map((bg) => ({
+      fg, bg, kind: "text", note: `${fg.replace("--color-", "")} / ${bg.replace("--color-surface-", "")}`,
+    }))),
+  // Foco y borde de control: 3:1 (WCAG 1.4.11) contra panel, raised y hover
+  // (el foco además contra canvas y surface-brand).
+  ...["--color-focus", "--color-border-control"].flatMap((fg) =>
+    ["--color-surface-panel", "--color-surface-raised", "--color-surface-hover"].map((bg) => ({
+      fg, bg, kind: "nontext", note: `${fg.replace("--color-", "")} / ${bg.replace("--color-surface-", "")}`,
+    }))),
+  {fg: "--color-focus", bg: "--color-surface-canvas", kind: "nontext", note: "focus / canvas"},
+  {fg: "--color-focus", bg: "--color-surface-brand", kind: "nontext", note: "focus / surface-brand"},
+  {fg: "--color-border-control", bg: "--color-surface-canvas", kind: "nontext", note: "border-control / canvas"},
+  // Bordes de tarjeta: no es un umbral WCAG (la tarjeta se identifica por su
+  // texto), es el objetivo de legibilidad del diseño: 1.6:1 contra el panel y
+  // 1.8:1 contra el canvas, para subtle y default.
+  ...["--color-border-subtle", "--color-border-default"].flatMap((fg) => [
+    {fg, bg: "--color-surface-panel", kind: "nontext", threshold: 1.6, note: `${fg.replace("--color-", "")} / panel (tarjeta)`},
+    {fg, bg: "--color-surface-canvas", kind: "nontext", threshold: 1.8, note: `${fg.replace("--color-", "")} / canvas (tarjeta)`},
+  ]),
+  // Texto de botones y skip-link contra su fondo. Los rellenos rojos son
+  // literales fijados en el bloque oscuro de components.css (no son tokens).
+  {fg: "--color-text-inverse", bg: "--color-brand-700", kind: "text", note: "texto inverso / brand-700 (hover del botón primario)"},
+  {fg: "--color-text-inverse", bg: "#dc2626", kind: "text", note: "texto inverso / rojo fijo (.ui-button--danger, oscuro)"},
+  {fg: "--color-text-inverse", bg: "#b91c1c", kind: "text", note: "texto inverso / rojo fijo hover y .ui-badge-count (oscuro)"},
+  {fg: "--color-text-on-strong", bg: "--color-text-strong", kind: "text", note: "texto sobre text-strong / text-strong (.skip-link y botón Descargar PDF)"},
 ];
 
 function checkTheme(themeName, tokens, results) {
   for (const pair of PAIRS) {
-    const fgHex = tokens[pair.fg];
-    const bgHex = tokens[pair.bg];
+    const fgHex = pair.fg.startsWith("#") ? normalizeHex(pair.fg) : tokens[pair.fg];
+    const bgHex = pair.bg.startsWith("#") ? normalizeHex(pair.bg) : tokens[pair.bg];
     if (!fgHex || !bgHex) {
       results.missing.push(`${themeName}: falta ${!fgHex ? pair.fg : pair.bg} para verificar "${pair.note}".`);
       continue;
     }
     const ratio = contrastRatio(fgHex, bgHex);
-    const threshold = pair.kind === "text" ? TEXT_THRESHOLD : NONTEXT_THRESHOLD;
+    const threshold = pair.threshold ?? (pair.kind === "text" ? TEXT_THRESHOLD : NONTEXT_THRESHOLD);
     const entry = {
       theme: themeName,
       note: pair.note,

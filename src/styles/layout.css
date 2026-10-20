@@ -261,7 +261,7 @@
 
 .business-switcher__trigger:hover,
 .business-switcher__trigger[aria-expanded="true"] {
-  background: var(--color-brand-50);
+  background: var(--color-surface-brand);
   border-color: var(--color-brand-200);
 }
 
@@ -329,7 +329,7 @@
 }
 
 .business-switcher__add:hover {
-  background: var(--color-brand-50);
+  background: var(--color-surface-brand);
 }
 
 .business-switcher__add-icon {
@@ -390,7 +390,7 @@
 .business-menu__item:hover,
 .business-menu__item:focus-visible,
 .business-menu__item.is-active {
-  background: var(--color-brand-50);
+  background: var(--color-surface-brand);
 }
 
 .business-menu__item:disabled {

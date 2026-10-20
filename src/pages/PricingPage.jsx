@@ -417,7 +417,7 @@ const styles = {
     gap: "16px",
   },
   eyebrow: {
-    color: "var(--color-brand-600)",
+    color: "var(--color-text-brand-accent)",
     fontSize: "12px",
     fontWeight: 800,
     textTransform: "uppercase",

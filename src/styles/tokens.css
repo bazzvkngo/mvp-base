@@ -61,6 +61,27 @@
   --color-border-default: #d3cdc2;
   --color-border-control: #93a09c;
 
+  /* Marca semántica (corrección de contraste en oscuro, parte 1). brand-50/
+     600/700/900 NO cambian con el tema: como TEXTO sobre una superficie
+     oscura no pasan AA, y como FONDO claro dejan el texto del tema (claro en
+     oscuro) ilegible. Estos tokens valen EXACTAMENTE lo mismo que el color al
+     que reemplazan en claro; solo el valor oscuro (más abajo) es nuevo. Son
+     varios porque el CSS usaba tonos distintos de marca como texto:
+       --color-text-brand         = brand-700: enlaces, pestañas activas
+       --color-text-brand-accent  = brand-600: eyebrows, iconos, etiquetas
+       --color-text-brand-hover   = brand-900: hover de enlaces de texto
+       --color-surface-brand      = brand-50:  fondo de marca con texto del tema
+       --color-focus              = brand-700: contorno de foco
+       --color-text-on-strong     = blanco:    texto sobre fondo text-strong
+     Usar brand-600/700/800/900 como color de texto en CSS nuevo lo rechaza
+     test:contrast-usage. */
+  --color-text-brand: #0b5f59;
+  --color-text-brand-accent: #0f766e;
+  --color-text-brand-hover: #0a3733;
+  --color-surface-brand: #eefaf8;
+  --color-focus: #0b5f59;
+  --color-text-on-strong: #ffffff;
+
   /* Dark surfaces — familia compartida para el sidebar del panel superadmin
      y el panel visual del login. Valores tomados tal cual del sidebar de
      PlatformAdminLayout (ya medidos: ~14.5:1 texto sobre fondo, ~9.9:1
@@ -279,7 +300,7 @@
   --breakpoint-narrow: 380px;
 
   /* Interaction */
-  --focus-outline: 2px solid var(--color-brand-700);
+  --focus-outline: 2px solid var(--color-focus);
   --focus-offset: 2px;
   --focus-ring: 0 0 0 3px color-mix(in srgb, var(--color-brand-500) 24%, transparent);
 
@@ -375,9 +396,26 @@
     --color-text-default: #c3d3db;
     --color-text-muted: #8ba3b0;
 
-    --color-border-subtle: #1d3a4d;
-    --color-border-default: #2a4e63;
-    --color-border-control: #47708a;
+    /* Bordes (corrección de contraste, parte 1). Antes: subtle 1.21:1 y
+       default 1.63:1 contra panel — las tarjetas se fundían con el fondo.
+       Ahora subtle 1.65:1/1.95:1 y default 2.30:1/2.71:1 contra
+       panel/canvas; control >= 3:1 contra panel, raised y hover (antes
+       2.71/2.47/2.24). Valores y ratios exactos en scripts/contrast-smoke.mjs. */
+    --color-border-subtle: #2c4f64;
+    --color-border-default: #3a6580;
+    --color-border-control: #5f8aa6;
+
+    /* Marca semántica en oscuro: brand-400 (>= 4.92:1 contra las 6
+       superficies y 5.45:1 contra surface-brand) para texto, foco y enlaces;
+       hover un paso más claro (brand-300); surface-brand es un tinte oscuro
+       de marca sobre el que text-strong/default/muted miden 11.1/8.6/5.0:1;
+       el texto sobre fondo text-strong (claro en oscuro) pasa a oscuro. */
+    --color-text-brand: #45b8a8;
+    --color-text-brand-accent: #45b8a8;
+    --color-text-brand-hover: #7fd0c2;
+    --color-surface-brand: #10353a;
+    --color-focus: #45b8a8;
+    --color-text-on-strong: #0c1e2b;
 
     --color-logo-accent: #ffd24d;
 

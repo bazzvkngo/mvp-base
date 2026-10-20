@@ -86,7 +86,7 @@
 }
 
 .legal-page__footer a {
-  color: var(--color-brand-700);
+  color: var(--color-text-brand);
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
 }
@@ -121,7 +121,7 @@
 }
 
 .legal-acceptance__links a {
-  color: var(--color-brand-700);
+  color: var(--color-text-brand);
   font-weight: var(--font-weight-semibold);
 }
 

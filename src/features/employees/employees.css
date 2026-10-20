@@ -20,8 +20,8 @@
 }
 
 .employees-tabs button[aria-selected="true"] {
-  border-bottom-color: var(--color-brand-600);
-  color: var(--color-brand-700);
+  border-bottom-color: var(--color-text-brand-accent);
+  color: var(--color-text-brand);
 }
 
 .employees-notice,
