@@ -1755,7 +1755,7 @@ const styles = {
     gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
   },
   commercialStatusEvent: {
-    borderLeft: "2px solid var(--color-brand-600)",
+    borderLeft: "2px solid var(--color-text-brand-accent)",
     display: "grid",
     gap: "2px",
     paddingLeft: "8px",
@@ -1763,7 +1763,7 @@ const styles = {
   commercialStatusCurrent: {
     background: "var(--color-surface-panel)",
     border: "1px solid var(--color-border-control)",
-    borderLeft: "4px solid var(--color-brand-600)",
+    borderLeft: "4px solid var(--color-text-brand-accent)",
     borderRadius: "5px",
     gridColumn: "1 / -1",
     padding: "9px 10px",

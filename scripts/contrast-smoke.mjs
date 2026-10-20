@@ -190,10 +190,11 @@ const PAIRS = [
 
   // Corrección de contraste, parte 1 — pares de uso real.
   // Texto de marca, fuerte, normal y tenue contra las superficies donde viven.
-  ...["--color-text-brand", "--color-text-brand-accent", "--color-text-brand-hover", "--color-text-strong", "--color-text-default", "--color-text-muted"]
+  ...["--color-text-brand", "--color-text-brand-accent", "--color-text-brand-hover", "--color-text-strong", "--color-text-default", "--color-text-muted", "--color-text-expense"]
     .flatMap((fg) => SURFACES_OF_USE.map((bg) => ({
       fg, bg, kind: "text", note: `${fg.replace("--color-", "")} / ${bg.replace("--color-surface-", "")}`,
     }))),
+  {fg: "--color-text-expense", bg: "--color-info-50", kind: "text", note: "text-expense / info-50 (chip de compra del Inicio)"},
   // Foco y borde de control: 3:1 (WCAG 1.4.11) contra panel, raised y hover
   // (el foco además contra canvas y surface-brand).
   ...["--color-focus", "--color-border-control"].flatMap((fg) =>
@@ -217,6 +218,47 @@ const PAIRS = [
   {fg: "--color-text-inverse", bg: "#b91c1c", kind: "text", note: "texto inverso / rojo fijo hover y .ui-badge-count (oscuro)"},
   {fg: "--color-text-on-strong", bg: "--color-text-strong", kind: "text", note: "texto sobre text-strong / text-strong (.skip-link y botón Descargar PDF)"},
 ];
+
+// Espejos de Chart.js (parte 2). Chart.js pinta con strings JS y no puede leer
+// var(), así que cada gráfico duplica a mano su par oscuro. Aquí se mide el
+// valor OSCURO real de cada espejo contra el panel oscuro y, además, se exige
+// que el hex siga escrito en el archivo (si alguien lo cambia allá sin
+// actualizar esta tabla, el smoke falla en vez de medir un valor que ya no
+// existe). kind: "text" 4.5:1 | "nontext" 3:1 | threshold propio.
+const CHART_MIRRORS = [
+  {file: "src/components/finance/FinancialCharts.jsx", hex: "#45b8a8", kind: "nontext", note: "FinancialCharts ingreso (teal)"},
+  {file: "src/components/finance/FinancialCharts.jsx", hex: "#8bc8c2", kind: "nontext", note: "FinancialCharts pagados (tealSoft)"},
+  {file: "src/components/finance/FinancialCharts.jsx", hex: "#5b7ba3", kind: "nontext", note: "FinancialCharts gasto/neto (navy)"},
+  {file: "src/components/finance/FinancialCharts.jsx", hex: "#d97706", kind: "nontext", note: "FinancialCharts pendiente (amber)"},
+  {file: "src/components/finance/FinancialCharts.jsx", hex: "#8ba3b0", kind: "text", note: "FinancialCharts leyenda y ejes"},
+  {file: "src/components/finance/FinancialCharts.jsx", hex: "#2c4f64", kind: "nontext", threshold: 1.6, note: "FinancialCharts grilla"},
+  {file: "src/components/reports/OperationalComparisonChart.jsx", hex: "#45b8a8", kind: "nontext", note: "OperationalComparisonChart ventas"},
+  {file: "src/components/reports/OperationalComparisonChart.jsx", hex: "#5b7ba3", kind: "nontext", note: "OperationalComparisonChart compras"},
+  {file: "src/components/reports/OperationalComparisonChart.jsx", hex: "#8ba3b0", kind: "text", note: "OperationalComparisonChart leyenda y ejes"},
+  {file: "src/components/reports/OperationalComparisonChart.jsx", hex: "#2c4f64", kind: "nontext", threshold: 1.6, note: "OperationalComparisonChart grilla"},
+  ...["#45b8a8", "#5b7ba3", "#d1943f", "#93a3ac"].map((hex) => ({file: "src/components/reports/CostCompositionChart.jsx", hex, kind: "nontext", note: `CostCompositionChart ${hex}`})),
+  {file: "src/components/DashboardDonutChart.jsx", hex: "#e4edf1", kind: "text", note: "DashboardDonutChart texto fuerte"},
+  {file: "src/components/DashboardDonutChart.jsx", hex: "#8ba3b0", kind: "text", note: "DashboardDonutChart texto tenue y leyenda"},
+  {file: "src/components/DashboardDonutChart.jsx", hex: "#3a6580", kind: "nontext", threshold: 1.6, note: "DashboardDonutChart aro vacío"},
+  ...["#94a3b8", "#38bdf8", "#45b8a8", "#f2685f", "#d97706", "#93a3ac"].map((hex) => ({file: "src/pages/DashboardPage.jsx", hex, kind: "nontext", note: `DashboardPage estado de cotización ${hex}`})),
+];
+
+async function checkChartMirrors(tokens, results) {
+  const panel = tokens["--color-surface-panel"];
+  const sources = new Map();
+  for (const mirror of CHART_MIRRORS) {
+    if (!sources.has(mirror.file)) sources.set(mirror.file, (await readFile(path.join(ROOT, mirror.file), "utf8")).toLowerCase());
+    if (!sources.get(mirror.file).includes(mirror.hex)) {
+      results.missing.push(`${mirror.file} ya no contiene ${mirror.hex} ("${mirror.note}"): actualiza CHART_MIRRORS.`);
+      continue;
+    }
+    const ratio = contrastRatio(mirror.hex, panel);
+    const threshold = mirror.threshold ?? (mirror.kind === "text" ? TEXT_THRESHOLD : NONTEXT_THRESHOLD);
+    const entry = {theme: "oscuro", note: mirror.note, fg: mirror.hex, bg: "--color-surface-panel", ratio: Math.round(ratio * 100) / 100, threshold, kind: mirror.kind};
+    if (ratio < threshold) results.failures.push(entry);
+    else results.passes.push(entry);
+  }
+}
 
 function checkTheme(themeName, tokens, results) {
   for (const pair of PAIRS) {
@@ -248,6 +290,7 @@ async function main() {
 
   const results = {passes: [], failures: [], missing: []};
   checkTheme("oscuro", dark, results);
+  await checkChartMirrors(dark, results);
 
   if (results.missing.length) {
     console.error(`FALLÓ: ${results.missing.length} par(es) no se pudieron verificar (token inexistente).`);

@@ -16,6 +16,6 @@
   --sileo-state-error: var(--color-danger-700);
   --sileo-state-warning: var(--color-warning-800);
   --sileo-state-info: var(--color-info-700);
-  --sileo-state-action: var(--color-brand-600);
+  --sileo-state-action: var(--color-text-brand-accent);
   --sileo-state-loading: var(--color-text-muted);
 }

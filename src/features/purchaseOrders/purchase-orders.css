@@ -1258,7 +1258,7 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-trace li::before {
-  background: var(--color-brand-600);
+  background: var(--color-text-brand-accent);
   border: 3px solid var(--color-surface-panel);
   border-radius: 50%;
   box-shadow: 0 0 0 1px var(--color-brand-300);

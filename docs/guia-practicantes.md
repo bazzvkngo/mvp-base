@@ -45,6 +45,7 @@ Lo marcado `[CONFIRMAR]` se verifica al cortar la rama. Si algo de esta guía no
 - **Saca taller de `BUSINESS_MODULES` en tu rama.** Los módulos verticales no son módulos del Core ni entran en los perfiles por módulos.
 - Un commit por etapa. Los documentos deben coincidir con el diff real.
 - Reporta siempre el código de salida real de cada prueba.
+- **Modo oscuro: color de texto.** No uses `--color-brand-600/700/800/900` ni `--color-dark-*` como color de texto (`color`, `fill`, `stroke`, en CSS o en estilos inline de JSX): no cambian con el tema y en oscuro quedan casi invisibles. Usa `--color-text-brand` (enlaces, pestañas) o `--color-text-strong` (títulos y cifras). Para fondos de marca claros usa `--color-surface-brand` (nunca `--color-brand-50`). `npm run test:contrast-usage` te lo avisa. Detalle en `docs/novedades-baseline.md`.
 
 ### Cómo registrar un módulo vertical
 
@@ -67,6 +68,7 @@ npm run test:rules
 npm run test:rbac
 npm run test:design
 npm run test:contrast
+npm run test:contrast-usage
 npm run build
 npm --prefix functions run lint
 git diff --check

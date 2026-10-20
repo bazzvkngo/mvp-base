@@ -48,6 +48,10 @@
 - Orden de los estados de datos: cargando, error, vacío, datos. Un vacío real nunca muestra skeleton, y un skeleton nunca debe quedar colgado si la carga falla.
 - Tablas y tarjetas cargan con `SkeletonTable` o `SkeletonCards`. Secciones y páginas cargan con `LoadingState`.
 - Un solo `role="status"` por estado de carga. No anidar `role="status"` ni `aria-live`. `BrandLogo` va siempre como hermano, nunca dentro de un `role="status"`.
+- Modo oscuro y color de texto: no uses `--color-brand-600/700/800/900` ni `--color-dark-*` como color de texto (`color`, `fill`, `stroke`), ni en CSS ni en estilos inline de JSX: no cambian con el tema y quedan ilegibles en oscuro. Usa `--color-text-brand` (enlaces, pestañas activas), `--color-text-brand-accent` (eyebrows, iconos, marcadores y bordes de marca), `--color-text-brand-hover`, `--color-text-strong` / `--color-text-default` / `--color-text-muted`, `--color-text-on-strong` (texto sobre un fondo `--color-text-strong`) y `--color-text-expense` (montos de gasto). Para fondos de marca claros con texto del tema encima usa `--color-surface-brand`, nunca `--color-brand-50`; para el contorno de foco, `--color-focus`.
+- `--color-dark-*` es solo para el sidebar de la consola y el panel visual del login (fondo oscuro fijo en ambos temas).
+- Un token nuevo vale en claro lo mismo que el color al que reemplaza; solo su valor oscuro es nuevo. El modo claro no cambia.
+- `npm run test:contrast-usage` es el guardia de lo anterior: falla si un CSS o un estilo inline usa uno de esos colores como texto, salvo la lista blanca comentada en `scripts/contrast-usage-smoke.mjs`. `npm run test:contrast` mide los pares de los tokens (y los espejos de Chart.js) en oscuro. Ejecutarlos si el cambio toca colores.
 - Si el cambio toca `src/components/ui/`, ejecutar además `npm run test:button`, `npm run test:skeleton` y `npm run test:loading-screen`.
 
 # Seguridad

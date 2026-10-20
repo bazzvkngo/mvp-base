@@ -3187,7 +3187,7 @@ const styles = {
   },
   secondaryButton: {
     background: "var(--color-surface-panel)",
-    border: "1px solid var(--color-brand-600)",
+    border: "1px solid var(--color-text-brand-accent)",
     borderRadius: "6px",
     color: "var(--color-text-brand-accent)",
     cursor: "pointer",
@@ -3201,7 +3201,7 @@ const styles = {
   secondaryLinkButton: {
     alignItems: "center",
     background: "var(--color-surface-panel)",
-    border: "1px solid var(--color-brand-600)",
+    border: "1px solid var(--color-text-brand-accent)",
     borderRadius: "6px",
     color: "var(--color-text-brand-accent)",
     display: "inline-flex",
@@ -3231,7 +3231,7 @@ const styles = {
   },
   dictationButton: {
     background: "var(--color-surface-panel)",
-    border: "1px solid var(--color-brand-600)",
+    border: "1px solid var(--color-text-brand-accent)",
     borderRadius: "6px",
     color: "var(--color-text-brand-accent)",
     cursor: "pointer",
@@ -3249,7 +3249,7 @@ const styles = {
     color: "var(--color-danger-700)",
   },
   micIcon: {
-    background: "var(--color-brand-600)",
+    background: "var(--color-text-brand-accent)",
     borderRadius: "999px",
     display: "inline-block",
     height: "14px",
@@ -3288,7 +3288,7 @@ const styles = {
     width: "8px",
   },
   statusDotActive: {
-    background: "var(--color-brand-600)",
+    background: "var(--color-text-brand-accent)",
   },
   statusDotWarning: {
     background: "var(--color-warning-800)",
