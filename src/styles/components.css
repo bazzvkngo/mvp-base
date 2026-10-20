@@ -861,7 +861,7 @@
 }
 
 .ui-checkbox__input {
-  accent-color: var(--color-brand-700);
+  accent-color: var(--color-text-brand);
   flex: 0 0 auto;
   height: 18px;
   margin: 0.15em 0 0;
@@ -1786,7 +1786,7 @@
 }
 
 .business-completion-progress > span {
-  background: var(--color-brand-600);
+  background: var(--color-text-brand-accent);
   border-radius: inherit;
   display: block;
   height: 100%;

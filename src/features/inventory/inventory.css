@@ -75,7 +75,7 @@
 .inventory-sale-price small { color: var(--color-text-muted); font-size: 10px; }
 .inventory-sale-price--final { background: #f0fdfa; border-color: #99f6e4; }
 .inventory-manual-price-toggle { align-items: center; color: var(--color-text-default); cursor: pointer; display: inline-flex; font-size: var(--font-size-sm); gap: var(--space-2); justify-self: start; }
-.inventory-manual-price-toggle input { accent-color: var(--color-brand-700); height: 16px; margin: 0; width: 16px; }
+.inventory-manual-price-toggle input { accent-color: var(--color-text-brand); height: 16px; margin: 0; width: 16px; }
 .inventory-tax-exempt-toggle { align-self: center; flex-wrap: wrap; }
 .inventory-manual-price-field { max-width: calc((100% - (2 * var(--space-3))) / 3); }
 .inventory-textarea { min-height: 62px; resize: vertical; }

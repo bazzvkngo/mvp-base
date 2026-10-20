@@ -654,7 +654,7 @@
   width: 3px;
 }
 
-.financial-metric-card--income::before { background: var(--color-brand-600); }
+.financial-metric-card--income::before { background: var(--color-text-brand-accent); }
 .financial-metric-card--expense::before { background: var(--color-data-expense); }
 .financial-metric-card--net::before { background: var(--color-data-net); }
 .financial-metric-card--pending::before { background: var(--color-data-pending); }
@@ -682,7 +682,7 @@
 }
 
 .financial-metric-card--expense .financial-metric-card__icon {
-  color: var(--color-data-expense);
+  color: var(--color-text-expense);
 }
 
 .financial-metric-card--pending .financial-metric-card__icon {
@@ -809,7 +809,7 @@
 .financial-type-label--income,
 .financial-amount--income { color: var(--color-brand-700); }
 .financial-type-label--expense,
-.financial-amount--expense { color: var(--color-data-expense); }
+.financial-amount--expense { color: var(--color-text-expense); }
 
 .financial-amount {
   font-size: var(--font-size-sm);
@@ -1207,7 +1207,7 @@
 .dashboard-activity-v2-type--purchase {
   background: var(--color-info-50);
   border-color: var(--color-info-200);
-  color: var(--color-data-expense);
+  color: var(--color-text-expense);
 }
 
 .dashboard-activity-v2-copy {
@@ -1927,7 +1927,7 @@
 }
 
 .reports-simple-card::after {
-  background: var(--color-brand-600);
+  background: var(--color-text-brand-accent);
   bottom: 0;
   content: "";
   height: 3px;
@@ -2009,7 +2009,7 @@
 }
 
 .reports-section-heading button:focus-visible {
-  outline: 2px solid var(--color-brand-600);
+  outline: 2px solid var(--color-text-brand-accent);
   outline-offset: 3px;
 }
 
@@ -2125,7 +2125,7 @@
   width: 7px;
 }
 
-.reports-chart-summary__dot--sales { background: var(--color-brand-600); }
+.reports-chart-summary__dot--sales { background: var(--color-text-brand-accent); }
 .reports-chart-summary__dot--purchases { background: var(--color-data-expense); }
 
 .reports-simple-chart .operational-comparison-chart {
@@ -3491,7 +3491,7 @@
 }
 
 .settings-toggle-row input[role="switch"] {
-  accent-color: var(--color-brand-600);
+  accent-color: var(--color-text-brand-accent);
   flex: 0 0 auto;
   height: 22px;
   width: 42px;

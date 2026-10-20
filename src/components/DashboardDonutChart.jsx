@@ -61,7 +61,7 @@ const CHROME_COLORS = {
     muted: "#8ba3b0",
     legendLabel: "#8ba3b0",
     panelBg: "#142c3d",
-    emptyDonutRing: "#2a4e63",
+    emptyDonutRing: "#3a6580", // --color-border-default oscuro
   },
 };
 

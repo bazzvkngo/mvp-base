@@ -81,6 +81,9 @@
   --color-surface-brand: #eefaf8;
   --color-focus: #0b5f59;
   --color-text-on-strong: #ffffff;
+  /* = --color-data-expense como TEXTO (montos de gasto, chip de compra): el token
+     data-* es de relleno de gráfico (3:1) y como texto medía 3.30:1. */
+  --color-text-expense: #1e3a5f;
 
   /* Dark surfaces — familia compartida para el sidebar del panel superadmin
      y el panel visual del login. Valores tomados tal cual del sidebar de
@@ -416,6 +419,8 @@
     --color-surface-brand: #10353a;
     --color-focus: #45b8a8;
     --color-text-on-strong: #0c1e2b;
+    /* 5.74:1 contra panel, 4.74:1 contra hover, 6.54:1 contra info-50. */
+    --color-text-expense: #86a6cf;
 
     --color-logo-accent: #ffd24d;
 

@@ -19,11 +19,11 @@ ChartJS.register(BarElement, CategoryScale, Legend, LinearScale, Tooltip);
 // (etapa 5, paso 7) — Chart.js no puede leer var().
 const DATA_COLORS = {
   light: { sales: "#0f766e", purchases: "#1e3a5f" },
-  dark: { sales: "#0f766e", purchases: "#5b7ba3" },
+  dark: { sales: "#45b8a8", purchases: "#5b7ba3" }, // sales: brand-400 (brand-600 medía 2.63:1 contra el panel oscuro)
 };
 const CHROME_COLORS = {
   light: { legendText: "#475569", tickText: "#64748b", grid: "#e2e8f0" },
-  dark: { legendText: "#8ba3b0", tickText: "#8ba3b0", grid: "#1d3a4d" },
+  dark: { legendText: "#8ba3b0", tickText: "#8ba3b0", grid: "#2c4f64" },
 };
 
 function formatLabel(key) {

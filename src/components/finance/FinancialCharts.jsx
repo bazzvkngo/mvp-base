@@ -42,7 +42,7 @@ const DATA_COLORS = {
     amber: "#d97706", // --color-data-pending
   },
   dark: {
-    teal: "#0f766e", // --color-brand-600 sin cambio (decisión del paso 2)
+    teal: "#45b8a8", // --color-brand-400: brand-600 medía 2.63:1 contra el panel oscuro (< 3:1); 5.95:1
     tealSoft: "#8bc8c2", // --color-data-paid sin cambio (ya pasaba 7.64:1)
     navy: "#5b7ba3", // --color-data-expense oscuro (3.30:1 contra panel; el claro medía 1.25:1)
     navyFill: "rgba(91, 123, 163, 0.12)",
@@ -66,7 +66,7 @@ const CHROME_COLORS = {
   dark: {
     legendText: "#8ba3b0", // --color-text-muted oscuro
     tickText: "#8ba3b0", // --color-text-muted oscuro
-    grid: "#1d3a4d", // --color-border-subtle oscuro
+    grid: "#2c4f64", // --color-border-subtle oscuro
     panelBg: "#142c3d", // --color-surface-panel oscuro (separador entre porciones del donut)
   },
 };

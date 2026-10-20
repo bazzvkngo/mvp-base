@@ -17,6 +17,28 @@ Para Matías (Taller) y Marcelo (Clínica Veterinaria). Léelo junto con `docs/g
 | **Permisos** | TECNICO tiene `INVENTORY_COSTS_READ`. El historial de adquisiciones exige además poder leer compras | `src/domain/rbac.mjs` |
 | **Componentes compartidos nuevos** | `Tabs` (pestañas accesibles), `InvitationsInbox`, `RejectInvitationDialog` | `src/components/` |
 
+### Modo oscuro: tokens nuevos
+
+El modo oscuro ya cubre toda la app. Si tu módulo pinta colores, esto te afecta:
+
+- **No uses como color de texto** `--color-brand-600/700/800/900` ni `--color-dark-*` (`color`, `fill`, `stroke`; en CSS y en estilos inline). No cambian con el tema: en oscuro dan entre 1,1:1 y 3,1:1 de contraste. `--color-dark-*` es solo del sidebar de la consola y del panel del login.
+- **Qué usar en su lugar** (en claro valen lo mismo que el color que reemplazan, así que el modo claro no cambia):
+
+| Para… | Usa |
+|---|---|
+| Enlaces, pestañas activas | `--color-text-brand` |
+| Eyebrows, iconos, marcadores y bordes de marca | `--color-text-brand-accent` |
+| Hover de un enlace de texto | `--color-text-brand-hover` |
+| Títulos, cifras | `--color-text-strong` (también `-default` y `-muted`) |
+| Texto sobre un fondo `--color-text-strong` (botón oscuro, skip-link) | `--color-text-on-strong` |
+| Montos de gasto | `--color-text-expense` |
+| Fondo de marca claro con texto del tema encima | `--color-surface-brand` (no `--color-brand-50`) |
+| Contorno de foco | `--color-focus` |
+
+- **Bordes:** `--color-border-subtle`, `--color-border-default` y `--color-border-control` suben en oscuro para que las tarjetas y los campos se distingan del fondo. No cambies sus valores claros.
+- **Gráficos (Chart.js):** pintan con hex y no leen `var()`. Si agregas uno, espeja los colores oscuros en `CHART_MIRRORS` de `scripts/contrast-smoke.mjs`.
+- **Pruebas:** `npm run test:contrast` mide los pares de los tokens y los gráficos; `npm run test:contrast-usage` falla si usas uno de los colores prohibidos como texto. Las dos van en la lista de la sección 5.
+
 También cambiaron Proyectos y trabajos (SPEC 028), Reportes (SPEC 025) y las SPEC 026 y 027 ya están numeradas en `docs/specs/`.
 
 ## 2. Qué haces tú, paso a paso
@@ -56,6 +78,7 @@ npm run test:business-members-integrated
 npm run test:team-invitations-integrated
 npm run test:design
 npm run test:contrast
+npm run test:contrast-usage
 npm run build
 npm --prefix functions run lint
 git diff --check
