@@ -25,6 +25,18 @@ export function eventDate(value) {
   return date && !Number.isNaN(date.getTime()) ? date : null;
 }
 
+// La Function devuelve la venta cancelada con los sellos de tiempo aún sin
+// resolver (llegan vacíos hasta releerla). Mientras falten, el historial usa
+// la hora local de la cancelación; al recargar manda el sello del servidor.
+export function withLocalCancellationStamp(sale, now = new Date()) {
+  if (!sale || (!sale.cancelledAt && !sale.motivoCancelacion)) return sale;
+  return {
+    ...sale,
+    cancelledAt: sale.cancelledAt || now,
+    ...(sale.stockRevertidoEn || sale.stockRevertido !== true ? {} : {stockRevertidoEn: now}),
+  };
+}
+
 const productCountLabel = (count) => (count === 1 ? "1 producto" : `${count} productos`);
 
 export function buildSaleTimeline(sale, currentUid = "") {

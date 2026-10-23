@@ -197,6 +197,21 @@ console.log("Smoke del modelo de Ventas completado.");
     assert.equal(buildSaleTimeline(quoteSale, "")[0].actor, "");
     assert.ok(quoteEvents[0].date instanceof Date);
 
+    // Cancelación recién hecha: la Function aún no devuelve el sello resuelto.
+    const {withLocalCancellationStamp} = await vite.ssrLoadModule("/src/features/sales/saleTimeline.mjs");
+    const cancelledMoment = new Date("2026-05-01T15:30:00Z");
+    const freshCancel = {estado: "cancelada", motivoCancelacion: "Error de digitación", canceladoPorUid: "u1", cancelledAt: null, stockRevertido: true, stockRevertidoEn: null, efectosInventarioReversa: [{}]};
+    assert.equal(buildSaleTimeline(freshCancel, "u1").find((e) => e.key === "cancelada").date, null, "sin sello el evento no tiene fecha");
+    const stamped = buildSaleTimeline(withLocalCancellationStamp(freshCancel, cancelledMoment), "u1");
+    assert.equal(stamped.find((e) => e.key === "cancelada").date.getTime(), cancelledMoment.getTime());
+    assert.equal(stamped.find((e) => e.key === "revertido").date.getTime(), cancelledMoment.getTime());
+    const serverStamp = stamp(1700000500);
+    assert.equal(withLocalCancellationStamp({...freshCancel, cancelledAt: serverStamp, stockRevertidoEn: serverStamp}, cancelledMoment).cancelledAt, serverStamp, "el sello del servidor manda");
+    assert.equal(withLocalCancellationStamp({...freshCancel, stockRevertido: false}, cancelledMoment).stockRevertidoEn, null, "sin reversa no se inventa 'Stock revertido'");
+    const notCancelled = {estado: "confirmada"};
+    assert.equal(withLocalCancellationStamp(notCancelled, cancelledMoment), notCancelled, "venta no cancelada intacta");
+    console.log("OK historial de venta: cancelación reciente con fecha local mientras falta el sello");
+
     const canceled = buildSaleTimeline({
       ...quoteSale, cancelledAt: stamp(1700100000), motivoCancelacion: "Error de carga", canceladoPorUid: "u2",
       stockRevertidoEn: stamp(1700100000), efectosInventarioReversa: [{}],

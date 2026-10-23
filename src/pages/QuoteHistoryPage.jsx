@@ -21,6 +21,7 @@ import UiStatusBadge from "../components/ui/StatusBadge";
 import { getCompanyProfile } from "../services/companyService";
 import {
   canDeleteQuotes,
+  canOfferQuoteDeletion,
   canDuplicateQuotes,
   DEFAULT_QUOTE_VALIDITY_DAYS,
   getQuoteExpiryAlert,
@@ -1323,9 +1324,10 @@ function QuoteActions({
       onSelect: () => onChangeStatus(quote.id, "emitida"),
     };
 
-    // Eliminar es definitivo y solo OWNER/ADMIN reciben onDelete; un borrador
-    // con envíos o enlace público lo rechaza la Function con su motivo.
-    const deleteMenuAction = onDelete
+    // Eliminar es definitivo y solo OWNER/ADMIN reciben onDelete. Se oculta en
+    // borradores que la Function rechazaría según los campos que el cliente
+    // ya tiene (canOfferQuoteDeletion); lo que no ve, lo rechaza la Function.
+    const deleteMenuAction = onDelete && canOfferQuoteDeletion(quote)
       ? {
           label: "Eliminar cotización",
           disabled,
@@ -1700,7 +1702,7 @@ function CommercialStatusTimeline({ quote }) {
         return {
           label: rejected ? "Rechazada por cliente" : "Aceptada por cliente",
           value: formatTimestamp(details.fechaRespuesta || event.creadoEn),
-          note: `Oportunidad ${details.oportunidadVersion || 1}`,
+          note: `Oportunidad: ${details.oportunidadVersion || 1}`,
           details: rejected ? [
             {
               label: "Motivo",
@@ -1718,7 +1720,9 @@ function CommercialStatusTimeline({ quote }) {
         return {
           label: "Cotización reabierta",
           value: formatTimestamp(event.creadoEn),
-          note: `Nueva oportunidad ${details.oportunidadVersion || ""}`.trim(),
+          note: details.oportunidadVersion
+            ? `Nueva oportunidad: ${details.oportunidadVersion}`
+            : "Nueva oportunidad",
         };
       }
       if (["cotizacion_enviada", "cotizacion_reenviada"].includes(event.tipo)) {

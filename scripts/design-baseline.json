@@ -91,14 +91,6 @@
       "category": "c",
       "note": "Solo radios/sombras sin registrar, sin colores."
     },
-    "src/features/quotes/QuotePrintView.jsx": {
-      "color": 11,
-      "radius": 0,
-      "shadow": 0,
-      "duration": 0,
-      "category": "a",
-      "note": "Vista de impresión de cotización; paleta de documento formal, excepción documentada (--color-document-*)."
-    },
     "src/features/receptions/receptions.css": {
       "color": 1,
       "radius": 22,

@@ -21,7 +21,7 @@ import SaleCommercialMarginPanel from "../features/sales/SaleCommercialMarginPan
 import SaleItemsEditor from "../features/sales/SaleItemsEditor";
 import SalePrintView from "../features/sales/SalePrintView";
 import SaleSummaryPanel from "../features/sales/SaleSummaryPanel";
-import {buildSaleTimeline} from "../features/sales/saleTimeline.mjs";
+import {buildSaleTimeline, withLocalCancellationStamp} from "../features/sales/saleTimeline.mjs";
 import {auth} from "../firebase/firebaseConfig";
 import {listarClientes} from "../services/clientService";
 import {getCompanyProfile} from "../services/companyService";
@@ -411,7 +411,7 @@ export default function NewSalePage({businessId, role}) {
     setMessage("");
     try {
       const result = await cancelarVenta(businessId, sale.id, motivo, {requestId: cancelId.current});
-      setSale(result.venta);
+      setSale(withLocalCancellationStamp(result.venta));
       setActionDialog("");
       setCancelReason("");
       cancelId.current = createSaleRequestId("sale-cancel");

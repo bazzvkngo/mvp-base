@@ -11,6 +11,7 @@ import {
   calculateQuoteTotals,
   canDeleteQuotes,
   canDuplicateQuotes,
+  canOfferQuoteDeletion,
   DRAFT_QUOTE_NUMBER_LABEL,
   getQuoteExpiryAlert,
   getQuoteStatusLabel,
@@ -25,7 +26,8 @@ import {
   resolveQuoteClientSelectionSnapshot,
 } from "../src/domain/quoteModel.mjs";
 import {filterSelectableClients} from "../src/domain/clientModel.mjs";
-import { buildQuotePdfDocument } from "../src/domain/quoteDocument.mjs";
+import { jsPDF } from "jspdf";
+import { buildQuotePdfDocument, drawRightLabeledLine } from "../src/domain/quoteDocument.mjs";
 import {
   buildQuoteAcceptanceLine,
   buildQuoteClientRows,
@@ -799,12 +801,92 @@ assert.doesNotMatch(
   quoteActionsSource.slice(quoteActionsSource.indexOf('if (estado === "emitida")')),
   /deleteMenuAction/
 );
+// La interfaz oculta "Eliminar cotización" donde la Function la rechazaría, con
+// los mismos campos de findDeletionBlocker que el cliente sí tiene.
+assert.match(sourceHistory, /onDelete && canOfferQuoteDeletion\(quote\)/);
+{
+  const {findDeletionBlocker} = require("../functions/quoteDeletion.js");
+  const noExternal = {envioExists: false, saleExists: false, tokenExists: false};
+  const cleanDraft = {estado: "borrador", fechaEmision: "", canalEmision: null, respuestaCliente: "", estadoEnvioCorreo: undefined};
+  assert.equal(canOfferQuoteDeletion(cleanDraft), true);
+  assert.equal(canOfferQuoteDeletion({}), true, "sin estado se trata como borrador");
+  const blockingFields = {
+    estado: "emitida",
+    fechaEmision: "2026-05-01",
+    canalEmision: "whatsapp",
+    ventaId: "v1",
+    respuestaCliente: "aceptada",
+    respuestaClienteEn: {seconds: 1},
+    fechaEnvioCorreo: {seconds: 1},
+    estadoEnvioCorreo: "enviado",
+    tokenPublicoHash: "abc",
+    tokenWhatsappHash: "abc",
+    propuestaPublicaCreadaEn: {seconds: 1},
+    whatsappPreparadoEn: {seconds: 1},
+  };
+  for (const [field, value] of Object.entries(blockingFields)) {
+    const quote = {...cleanDraft, [field]: value};
+    assert.equal(canOfferQuoteDeletion(quote), false, `${field} oculta la opción`);
+    assert.equal(canOfferQuoteDeletion(quote), findDeletionBlocker(quote, noExternal) === "", `${field}: igual que la Function`);
+  }
+  assert.equal(canOfferQuoteDeletion(cleanDraft), findDeletionBlocker(cleanDraft, noExternal) === "");
+}
 // Las reglas siguen denegando cualquier escritura de cotizaciones desde el cliente.
 const sourceFirestoreRules = fs.readFileSync("firestore.rules", "utf8");
 assert.match(
   sourceFirestoreRules,
   /match \/cotizaciones\/\{quoteId\} \{\s*allow read: if hasBusinessModuleAccess\([^\n]*\);\s*allow create: if false;\s*allow update: if false;\s*allow delete: if false;/
 );
+// Cabecera del PDF: etiqueta en negrita y valor normal (como el <strong> del
+// HTML), y una dirección larga se parte sin desalinear la columna derecha.
+assert.match(sourceQuotePrintView, /<strong>\{label\}: <\/strong>/);
+assert.match(sourceQuoteDocument, /drawRightLabeledLine\(doc, label, value, right, rightEnd, 82\)/);
+{
+  const probe = new jsPDF({ unit: "mm", format: "a4" });
+  const drawn = [];
+  const originalText = probe.text.bind(probe);
+  probe.text = (text, x, y, options) => {
+    drawn.push({ text, x, y, align: options?.align, style: probe.getFont().fontStyle });
+    return originalText(text, x, y, options);
+  };
+  probe.setFontSize(8);
+  const right = 194;
+  const maxWidth = 82;
+  const longAddress = "Avenida Libertador General Bernardo O'Higgins 1234, Oficina 567, Torre Norte, Edificio Comercial Centro";
+  const end = drawRightLabeledLine(probe, "Dirección", longAddress, right, 30, maxWidth);
+  const valueCalls = drawn.filter((call) => call.style === "normal");
+  const labelCalls = drawn.filter((call) => call.style === "bold");
+  assert.ok(valueCalls.length >= 2, "la dirección larga se parte en varias líneas");
+  assert.equal(labelCalls.length, 1, "la etiqueta se dibuja una sola vez");
+  assert.equal(labelCalls[0].text, "Dirección: ");
+  assert.equal(labelCalls[0].y, valueCalls[0].y, "etiqueta en la primera línea del valor");
+  assert.deepEqual(valueCalls.map((call) => call.x), valueCalls.map(() => right), "todas las líneas terminan en el margen derecho");
+  valueCalls.forEach((call, index) => {
+    assert.ok(Math.abs(call.y - (30 + index * 4.2)) < 1e-9, "líneas consecutivas sin saltos");
+  });
+  assert.ok(Math.abs(end - (30 + valueCalls.length * 4.2)) < 1e-9);
+  probe.setFont("helvetica", "bold");
+  const labelWidth = probe.getTextWidth("Dirección: ");
+  probe.setFont("helvetica", "normal");
+  const firstWidth = probe.getTextWidth(valueCalls[0].text);
+  assert.ok(Math.abs(labelCalls[0].x - (right - firstWidth)) < 1e-6, "la etiqueta termina donde empieza el valor");
+  assert.ok(labelWidth + firstWidth <= maxWidth + 1e-6, "etiqueta y valor caben en el ancho máximo");
+  for (const call of valueCalls) assert.ok(probe.getTextWidth(call.text) <= maxWidth - labelWidth + 1e-6, "ninguna línea excede el ancho");
+  assert.equal(probe.getFont().fontStyle, "normal", "la fuente queda en normal para lo que sigue");
+  // Un valor corto queda en una línea con la etiqueta pegada.
+  drawn.length = 0;
+  drawRightLabeledLine(probe, "RUT", "77.091.679-8", right, 20, maxWidth);
+  assert.equal(drawn.length, 2);
+  assert.equal(drawn.find((call) => call.style === "bold").text, "RUT: ");
+  // El documento completo se construye con una dirección larga.
+  const longAddressPdf = buildQuotePdfDocument({
+    quote: {
+      ...quoteFixture(),
+      empresaSnapshot: { ...company, direccion: longAddress },
+    },
+  });
+  assert.ok(longAddressPdf.doc.getNumberOfPages() >= 1);
+}
 console.log("OK documento: jerarquía común, columnas condicionales, impuesto dinámico y snapshots históricos");
 
 const outputDir = path.resolve("output/pdf/quote-validation");

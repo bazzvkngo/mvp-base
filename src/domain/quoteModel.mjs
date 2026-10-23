@@ -65,6 +65,36 @@ export function isQuoteDeleteConfirmed(value) {
   return String(value ?? "").trim().toLowerCase() === QUOTE_DELETE_CONFIRMATION_WORD;
 }
 
+// Cortesía de interfaz: replica en el cliente findDeletionBlocker
+// (functions/quoteDeletion.js) con los campos que la cotización ya trae, para
+// no ofrecer "Eliminar cotización" en un borrador que la Function va a rechazar.
+// La Function sigue siendo la autoridad. El cliente NO puede ver estos bloqueos
+// (las reglas niegan esas rutas), así que la opción puede aparecer y ser
+// rechazada igualmente:
+//   - negocios/{id}/enviosCotizaciones/{quoteId} (registro de envío);
+//   - quotePublicTokens (token público emitido);
+//   - negocios/{id}/ventas/cotizacion__{quoteId} (se cubre con ventaId);
+//   - quoteDuplicateRequests (otra cotización creada a partir de esta).
+const hasStoredValue = (value) =>
+  value !== undefined && value !== null && value !== "" && value !== false;
+
+export function canOfferQuoteDeletion(quote = {}) {
+  if ((quote.estado || "borrador") !== "borrador") return false;
+  return ![
+    "fechaEmision",
+    "canalEmision",
+    "ventaId",
+    "respuestaCliente",
+    "respuestaClienteEn",
+    "fechaEnvioCorreo",
+    "estadoEnvioCorreo",
+    "tokenPublicoHash",
+    "tokenWhatsappHash",
+    "propuestaPublicaCreadaEn",
+    "whatsappPreparadoEn",
+  ].some((field) => hasStoredValue(quote[field]));
+}
+
 function normalizeIdentifier(value, fallback = "") {
   return safeQuoteText(value, 160).replace(/[^a-zA-Z0-9_.:-]/g, "-") || fallback;
 }

@@ -87,6 +87,31 @@ function setFittedFontSize(doc, text, preferredSize, minimumSize, maxWidth) {
   return size;
 }
 
+// Línea "Etiqueta: valor" alineada a la derecha, con la etiqueta en negrita y el
+// valor normal (igual que el <strong> del HTML). Si el valor no cabe en
+// maxWidth, se parte sin contar la etiqueta; ésta va solo en la primera línea,
+// pegada al comienzo del valor. Devuelve la siguiente posición vertical.
+export function drawRightLabeledLine(doc, label, value, right, y, maxWidth, lineHeight = 4.2) {
+  const labelText = `${label}: `;
+  doc.setFont("helvetica", "bold");
+  const labelWidth = doc.getTextWidth(labelText);
+  doc.setFont("helvetica", "normal");
+  const lines = doc.splitTextToSize(String(value), maxWidth - labelWidth);
+  let cursor = y;
+  lines.forEach((line, index) => {
+    doc.setFont("helvetica", "normal");
+    doc.text(line, right, cursor, { align: "right" });
+    if (index === 0) {
+      const lineWidth = doc.getTextWidth(line);
+      doc.setFont("helvetica", "bold");
+      doc.text(labelText, right - lineWidth, cursor, { align: "right" });
+      doc.setFont("helvetica", "normal");
+    }
+    cursor += lineHeight;
+  });
+  return cursor;
+}
+
 // Cabecera de las páginas siguientes a la primera.
 function drawCompactHeader(doc, quote, company, logoDataUrl) {
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -180,20 +205,16 @@ function drawHeader(doc, quote, company, logoDataUrl) {
   const fiscal = company.identificadorFiscalValor || company.rut;
   const location = joinNonEmpty([company.ciudad, company.region], ", ");
   const companyLines = [
-    fiscal ? `${company.identificadorFiscalTipo || "Identificación fiscal"}: ${fiscal}` : "",
-    company.direccion ? `Dirección: ${company.direccion}` : "",
-    location ? `Ciudad: ${location}` : "",
-  ].filter(hasText);
+    [company.identificadorFiscalTipo || "Identificación fiscal", fiscal],
+    ["Dirección", company.direccion],
+    ["Ciudad", location],
+  ].filter(([, value]) => hasText(value));
   doc.setTextColor(...INK);
-  doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   let rightEnd = top + 9;
   rightEnd += 6;
-  companyLines.forEach((line) => {
-    doc.splitTextToSize(line, 82).forEach((wrapped) => {
-      doc.text(wrapped, right, rightEnd, { align: "right" });
-      rightEnd += 4.2;
-    });
+  companyLines.forEach(([label, value]) => {
+    rightEnd = drawRightLabeledLine(doc, label, value, right, rightEnd, 82);
   });
 
   const expiry = quote.fechaVencimiento || calculateQuoteExpiryDate(quote.fecha, quote.validezDias);
