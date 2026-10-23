@@ -765,6 +765,14 @@ async function main() {
   assert.doesNotMatch(managerSource, /Selecciona el tipo de ítem para continuar/);
   assert.match(managerSource, /Nombre del ítem/);
   assert.match(managerSource, /Administrar áreas y categorías/);
+  // El acceso a áreas y categorías ya no es un botón grande en la lista: es un
+  // enlace pequeño bajo los filtros (mismo permiso) y sigue en el formulario.
+  assert.doesNotMatch(managerSource, /inventory-button--ghost/);
+  assert.match(
+    managerSource,
+    /\{!cannotWrite && <button type="button" className="inventory-link-button inventory-catalog-link" onClick=\{openCatalogManager\}>Administrar áreas y categorías<\/button>\}/
+  );
+  assert.equal((managerSource.match(/onClick=\{openCatalogManager\}>Administrar áreas y categorías/g) || []).length, 2, "Enlace en la lista y en el formulario.");
   assert.match(managerSource, /Definir precio de venta manual/);
   assert.match(managerSource, /<h3>Precio<\/h3>/);
   assert.match(managerSource, /<h3>Existencias<\/h3>/);

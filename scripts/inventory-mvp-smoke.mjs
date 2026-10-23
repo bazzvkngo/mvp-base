@@ -609,7 +609,8 @@ async function sourceChecks() {
   assert.match(importer, /Eliminar fila/);
   assert.doesNotMatch(manager, /Hikvision|Prodalam|06897040|93\.772\.000-9/);
   assert.match(manager, /Origen de compra/);
-  assert.match(manager, /draft\.tipoItem === "producto" && <section className="inventory-form-section"><h3>Origen de compra/);
+  // El origen de compra vive dentro de la sección plegable "Más detalles".
+  assert.match(manager, /draft\.tipoItem === "producto" && <section className="inventory-subsection"><h4>Origen de compra/);
   assert.match(manager, /type="date" value=\{draft\.fechaCompraReferencia\}/);
   assert.match(manager, /<BarcodeInput actionLabel="Escanear"/);
   assert.match(manager, /value=\{editingItem \? draft\.codigoInterno : "Se asignará automáticamente"\}/);
