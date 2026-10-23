@@ -53,6 +53,18 @@ export function canDuplicateQuotes(role) {
   return ["OWNER", "ADMIN", "VENTAS"].includes(String(role || "").toUpperCase());
 }
 
+// Eliminar una cotización en borrador es definitivo: solo OWNER y ADMIN, y se
+// confirma escribiendo la palabra (la Function lo vuelve a validar).
+export const QUOTE_DELETE_CONFIRMATION_WORD = "permanente";
+
+export function canDeleteQuotes(role) {
+  return ["OWNER", "ADMIN"].includes(String(role || "").toUpperCase());
+}
+
+export function isQuoteDeleteConfirmed(value) {
+  return String(value ?? "").trim().toLowerCase() === QUOTE_DELETE_CONFIRMATION_WORD;
+}
+
 function normalizeIdentifier(value, fallback = "") {
   return safeQuoteText(value, 160).replace(/[^a-zA-Z0-9_.:-]/g, "-") || fallback;
 }

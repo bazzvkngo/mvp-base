@@ -20,16 +20,20 @@ import {SkeletonCards, SkeletonRegion, SkeletonTable} from "../components/ui/Ske
 import UiStatusBadge from "../components/ui/StatusBadge";
 import { getCompanyProfile } from "../services/companyService";
 import {
+  canDeleteQuotes,
   canDuplicateQuotes,
   DEFAULT_QUOTE_VALIDITY_DAYS,
   getQuoteExpiryAlert,
   getQuoteStatusLabel,
+  isQuoteDeleteConfirmed,
   matchesQuoteQuickFilter,
+  QUOTE_DELETE_CONFIRMATION_WORD,
   QUOTE_STATUS_LABELS,
 } from "../domain/quoteModel.mjs";
 import {
   createQuoteDuplicateRequestId,
   createQuoteLifecycleRequestId,
+  deleteQuoteDraft,
   duplicateQuoteAsDraft,
   getChileDateInputValue,
   getQuoteEvents,
@@ -184,6 +188,11 @@ function QuoteHistoryPage({ userId, role }) {
   const [quoteEventsById, setQuoteEventsById] = useState({});
   const reopenRequestIdsRef = useRef(new Map());
   const canDuplicate = canDuplicateQuotes(role);
+  const canDelete = canDeleteQuotes(role);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   const canCreateClients = hasBusinessPermission(
     role,
     BUSINESS_PERMISSIONS.CLIENTS_WRITE
@@ -417,6 +426,43 @@ function QuoteHistoryPage({ userId, role }) {
     await handleChangeStatus(quote.id, estadoRestaurado, {
       successTitle: "Cotización restaurada",
     });
+  };
+
+  const handleRequestDelete = (quote) => {
+    setDeleteConfirmation("");
+    setDeleteError("");
+    setDeleteTarget(quote);
+  };
+
+  const handleCloseDelete = () => {
+    if (deleting) return;
+    setDeleteTarget(null);
+    setDeleteConfirmation("");
+    setDeleteError("");
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget || deleting || !isQuoteDeleteConfirmed(deleteConfirmation)) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await deleteQuoteDraft(userId, deleteTarget.id, deleteConfirmation);
+      const deletedId = deleteTarget.id;
+      setQuotes((current) => current.filter((quote) => quote.id !== deletedId));
+      setQuoteEventsById((current) => {
+        const {[deletedId]: removed, ...rest} = current;
+        return rest;
+      });
+      if (selectedQuoteId === deletedId) setSelectedQuoteId("");
+      setDeleteTarget(null);
+      setDeleteConfirmation("");
+      sileo.success({title: "Cotización eliminada"});
+    } catch (err) {
+      console.error("Error al eliminar la cotización:", err);
+      setDeleteError(err.message || "No se pudo eliminar la cotización.");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const handleEditDraft = (quoteId) => {
@@ -746,6 +792,7 @@ function QuoteHistoryPage({ userId, role }) {
                           onArchive={handleArchiveQuote}
                           onRestore={handleRestoreQuote}
                           onEditDraft={handleEditDraft}
+                          onDelete={canDelete ? handleRequestDelete : undefined}
                           canDuplicate={canDuplicate}
                           duplicating={duplicatingQuoteId === quote.id}
                           onDuplicate={handleDuplicateQuote}
@@ -776,6 +823,7 @@ function QuoteHistoryPage({ userId, role }) {
             onChangeStatus={handleChangeStatus}
             onDuplicate={handleDuplicateQuote}
             onEditDraft={handleEditDraft}
+            onDelete={canDelete ? handleRequestDelete : undefined}
             onReopen={handleReopenQuote}
             onRestore={handleRestoreQuote}
             onSend={handleOpenDetail}
@@ -821,6 +869,7 @@ function QuoteHistoryPage({ userId, role }) {
                 onArchive={handleArchiveQuote}
                 onRestore={handleRestoreQuote}
                 onEditDraft={handleEditDraft}
+                onDelete={canDelete ? handleRequestDelete : undefined}
                 canDuplicate={canDuplicate}
                 duplicating={duplicatingQuoteId === selectedQuote.id}
                 onDuplicate={handleDuplicateQuote}
@@ -886,6 +935,84 @@ function QuoteHistoryPage({ userId, role }) {
           Al aceptar se registrará una venta confirmada y se actualizará el stock
           disponible. Si falta stock, la aceptación se conservará con abastecimiento pendiente.
         </p>
+      </ResponsiveDialog>
+
+      <ResponsiveDialog
+        open={Boolean(deleteTarget)}
+        onClose={handleCloseDelete}
+        size="small"
+        eyebrow="Cotizaciones"
+        title="Eliminar cotización"
+        description={
+          deleteTarget
+            ? `Vas a eliminar la cotización ${getQuoteDisplayNumber(
+                deleteTarget,
+                deleteTarget.id || "-"
+              )}, que nunca se emitió.`
+            : ""
+        }
+        footer={
+          <div className="erp-actions" style={styles.prepareSaleActions}>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={deleting}
+              onClick={handleCloseDelete}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              loading={deleting}
+              disabled={!isQuoteDeleteConfirmed(deleteConfirmation)}
+              onClick={handleConfirmDelete}
+            >
+              {deleting ? "Eliminando..." : "Eliminar definitivamente"}
+            </Button>
+          </div>
+        }
+      >
+        <div className="quote-delete">
+          <p className="quote-delete__warning">
+            Esta acción es permanente y no se puede deshacer. Se perderán:
+          </p>
+          <ul className="quote-delete__list">
+            <li>la cotización y su contenido,</li>
+            <li>su historial de eventos,</li>
+            <li>su vínculo con el proyecto, si lo tiene.</li>
+          </ul>
+          <p className="quote-delete__note">
+            Los costos del proyecto (gastos, horas, adicionales y materiales) NO se borran.
+            El número de la cotización quedará sin usar.
+          </p>
+          <label className="erp-field quote-delete__field">
+            <span>
+              Para confirmar, escribe <strong>{QUOTE_DELETE_CONFIRMATION_WORD}</strong>
+            </span>
+            <input
+              className="erp-control"
+              type="text"
+              autoComplete="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              value={deleteConfirmation}
+              disabled={deleting}
+              onChange={(event) => setDeleteConfirmation(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  handleConfirmDelete();
+                }
+              }}
+            />
+          </label>
+          {deleteError && (
+            <div className="client-message client-message--error" role="alert">
+              {deleteError}
+            </div>
+          )}
+        </div>
       </ResponsiveDialog>
 
       {emailModalQuote && (
@@ -1013,6 +1140,7 @@ function QuoteCards({
   onChangeStatus,
   onDuplicate,
   onEditDraft,
+  onDelete,
   onReopen,
   onRestore,
   onSend,
@@ -1089,6 +1217,7 @@ function QuoteCards({
                 onArchive={onArchive}
                 onRestore={onRestore}
                 onEditDraft={onEditDraft}
+                onDelete={onDelete}
                 canDuplicate={canDuplicate}
                 duplicating={duplicatingQuoteId === quote.id}
                 onDuplicate={onDuplicate}
@@ -1113,6 +1242,7 @@ function QuoteActions({
   onArchive,
   onRestore,
   onEditDraft,
+  onDelete,
   canDuplicate,
   duplicating,
   onDuplicate,
@@ -1193,6 +1323,16 @@ function QuoteActions({
       onSelect: () => onChangeStatus(quote.id, "emitida"),
     };
 
+    // Eliminar es definitivo y solo OWNER/ADMIN reciben onDelete; un borrador
+    // con envíos o enlace público lo rechaza la Function con su motivo.
+    const deleteMenuAction = onDelete
+      ? {
+          label: "Eliminar cotización",
+          disabled,
+          onSelect: () => onDelete(quote),
+        }
+      : null;
+
     // En el diálogo de detalle el envío ya está visible arriba (sin onSend):
     // la acción principal ahí es editar.
     if (!onSend) {
@@ -1209,7 +1349,7 @@ function QuoteActions({
           <MoreActionsMenu
             iconOnly={inRow}
             menuLabel="Más acciones de cotización"
-            actions={[emitMenuAction, archiveMenuAction]}
+            actions={[emitMenuAction, archiveMenuAction, deleteMenuAction]}
             disabled={disabled}
           />
         </>
@@ -1230,7 +1370,7 @@ function QuoteActions({
         <MoreActionsMenu
           iconOnly={inRow}
           menuLabel="Más acciones de cotización"
-          actions={[editMenuAction, emitMenuAction, archiveMenuAction]}
+          actions={[editMenuAction, emitMenuAction, archiveMenuAction, deleteMenuAction]}
           disabled={disabled}
         />
       </>

@@ -4333,6 +4333,37 @@
   white-space: pre-wrap;
 }
 
+/* Diálogo "Eliminar cotización" (borradores): advertencia + confirmación. */
+.quote-delete {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.quote-delete__warning {
+  color: var(--color-text-strong);
+  font-weight: var(--font-weight-semibold);
+  margin: 0;
+}
+
+.quote-delete__list {
+  color: var(--color-text-default);
+  margin: 0;
+  padding-left: var(--space-5);
+}
+
+.quote-delete__note {
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-default);
+  margin: 0;
+  padding: var(--space-3);
+}
+
+.quote-delete__field strong {
+  color: var(--color-text-strong);
+}
+
 .quote-history-empty {
   display: grid;
   gap: var(--space-2);

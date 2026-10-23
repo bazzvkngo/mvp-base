@@ -99,6 +99,7 @@ const {
   respondPublicQuoteProposalHandler,
 } = require("./quotePublicProposal");
 const {transitionQuoteStatusHandler} = require("./quoteLifecycle");
+const {deleteQuoteDraftHandler} = require("./quoteDeletion");
 const {normalizeBusinessVerificationState} = require("./businessOperations");
 const {
   createAdditionalBusinessHandler,
@@ -2083,6 +2084,23 @@ exports.duplicateQuoteAsDraft = onCall(
   },
   async (request) =>
     duplicateQuoteAsDraftHandler({
+      request,
+      db,
+      FieldValue,
+      HttpsError,
+      requireBusinessAccess: requireOperationalBusinessAccess,
+    })
+);
+
+exports.deleteQuoteDraft = onCall(
+  {
+    maxInstances: 20,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    deleteQuoteDraftHandler({
       request,
       db,
       FieldValue,

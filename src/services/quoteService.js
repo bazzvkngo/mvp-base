@@ -18,6 +18,8 @@ import {
   buildQuoteMutationPayload,
   DRAFT_QUOTE_NUMBER_LABEL,
   getQuoteDisplayNumber,
+  isQuoteDeleteConfirmed,
+  QUOTE_DELETE_CONFIRMATION_WORD,
 } from "../domain/quoteModel.mjs";
 import {
   generarPropuestaCotizacion,
@@ -234,6 +236,31 @@ export async function updateQuoteStatus(uid, quoteId, estado, options = {}) {
       error,
       "transitionQuoteStatus",
       "No se pudo cambiar el estado de la cotización."
+    );
+  }
+}
+
+// Elimina una cotización en borrador que nunca se emitió (definitivo). La
+// palabra de confirmación se valida aquí y otra vez en la Function.
+export async function deleteQuoteDraft(uid, quoteId, confirmation) {
+  assertCloudFunctionAllowed("eliminar cotizaciones");
+  if (!uid) throw new Error("Usuario no autenticado.");
+  if (!quoteId) throw new Error("Selecciona una cotización válida.");
+  if (!isQuoteDeleteConfirmed(confirmation)) {
+    throw new Error(`Escribe «${QUOTE_DELETE_CONFIRMATION_WORD}» para confirmar la eliminación.`);
+  }
+  const callable = httpsCallable(
+    getFirebaseFunctions(FUNCTIONS_REGION),
+    "deleteQuoteDraft"
+  );
+  try {
+    const response = await callable({businessId: uid, quoteId, confirmacion: confirmation});
+    return response.data || {};
+  } catch (error) {
+    throw normalizeQuoteCallableError(
+      error,
+      "deleteQuoteDraft",
+      "No se pudo eliminar la cotización."
     );
   }
 }

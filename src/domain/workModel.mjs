@@ -858,6 +858,7 @@ export function humanizeWorkEvent(event = {}, {includeAmounts = true} = {}) {
     trabajo_cancelado: `${actor} canceló el trabajo.`,
     trabajo_reabierto: `${actor} reabrió el trabajo como ${getWorkStatusLabel(detail.estadoNuevo)}.`,
     cotizacion_vinculada: `${actor} vinculó la cotización ${detail.numero || "sin número"}.`,
+    cotizacion_eliminada: `${actor} eliminó la cotización pendiente ${detail.numero || "sin número"}; sus costos no se modificaron.`,
     cotizacion_respuesta: `La cotización ${detail.cotizacionNumero || "sin número"} fue ${detail.respuesta || "respondida"}.`,
     venta_vinculada: `${actor} vinculó la venta ${detail.numero || "sin número"}${detail.cotizacionNumero ? ` desde ${detail.cotizacionNumero}` : ""}${amountText(detail.total)}.`,
     venta_confirmada: `${actor} confirmó la venta ${detail.numero || "sin número"}${detail.cotizacionNumero ? ` originada en ${detail.cotizacionNumero}` : ""}${amountText(detail.total)}.`,

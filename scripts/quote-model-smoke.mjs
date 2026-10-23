@@ -9,12 +9,14 @@ import {
   calculateQuoteExpiryDate,
   calculateQuoteLineTotal,
   calculateQuoteTotals,
+  canDeleteQuotes,
   canDuplicateQuotes,
   DRAFT_QUOTE_NUMBER_LABEL,
   getQuoteExpiryAlert,
   getQuoteStatusLabel,
   getQuotePdfFileName,
   isAdvancedQuoteScope,
+  isQuoteDeleteConfirmed,
   isValidQuoteDateRange,
   matchesQuoteQuickFilter,
   normalizeQuoteItem,
@@ -621,7 +623,7 @@ assert.doesNotMatch(quoteActionsSource, /Correo|WhatsApp|Descargar PDF|Imprimir|
 // emitida pasan a "Más acciones"), Reenviar en el menú de emitidas y Ver
 // venta cuando hay venta vinculada.
 assert.match(quoteActionsSource, /onClick=\{\(\) => onSend\(quote\)\}[\s\S]*?>\s*Enviar\s*<\/button>/);
-assert.match(quoteActionsSource, /actions=\{\[editMenuAction, emitMenuAction, archiveMenuAction\]\}/);
+assert.match(quoteActionsSource, /actions=\{\[editMenuAction, emitMenuAction, archiveMenuAction, deleteMenuAction\]\}/);
 assert.match(quoteActionsSource, /label: "Reenviar"/);
 // Filas: acciones en estilo secundario y "Más acciones" solo con ícono
 // (aria-label y title); el diálogo de detalle conserva el rótulo con texto.
@@ -771,6 +773,38 @@ assert.doesNotMatch(sourceQuotePrintView + sourceQuoteDocument + sourceQuoteDocu
 assert.doesNotMatch(sourceQuotePrintView, /19%/);
 assert.doesNotMatch(sourceQuotePrintView, /getDoc|getDocs|onSnapshot|listarClientes/);
 assert.match(sourceDashboard, /getQuoteStatusLabel\("borrador"\)/);
+// Eliminar borradores: solo OWNER/ADMIN, confirmación por palabra y vía Function.
+assert.deepEqual(
+  ["OWNER", "ADMIN", "VENTAS", "FINANZAS", "MEMBER", "", undefined].map((role) => canDeleteQuotes(role)),
+  [true, true, false, false, false, false, false]
+);
+assert.equal(canDeleteQuotes("admin"), true);
+assert.deepEqual(
+  ["permanente", "  PERMANENTE ", "Permanente", "perman", "", "permanentemente", null].map(isQuoteDeleteConfirmed),
+  [true, true, true, false, false, false, false]
+);
+assert.match(sourceQuoteService, /"deleteQuoteDraft"/);
+assert.doesNotMatch(sourceQuoteService, /deleteDoc|deleteField/);
+assert.match(sourceHistory, /label: "Eliminar cotización"/);
+assert.match(sourceHistory, /onDelete=\{canDelete \? handleRequestDelete : undefined\}/);
+assert.match(sourceHistory, /disabled=\{!isQuoteDeleteConfirmed\(deleteConfirmation\)\}/);
+assert.match(sourceHistory, /NO se borran/);
+// Solo los borradores ofrecen la opción (el menú de otros estados no la incluye).
+const draftMenuSource = quoteActionsSource.slice(
+  quoteActionsSource.indexOf('if (estado === "borrador")'),
+  quoteActionsSource.indexOf('if (estado === "emitida")')
+);
+assert.match(draftMenuSource, /deleteMenuAction/);
+assert.doesNotMatch(
+  quoteActionsSource.slice(quoteActionsSource.indexOf('if (estado === "emitida")')),
+  /deleteMenuAction/
+);
+// Las reglas siguen denegando cualquier escritura de cotizaciones desde el cliente.
+const sourceFirestoreRules = fs.readFileSync("firestore.rules", "utf8");
+assert.match(
+  sourceFirestoreRules,
+  /match \/cotizaciones\/\{quoteId\} \{\s*allow read: if hasBusinessModuleAccess\([^\n]*\);\s*allow create: if false;\s*allow update: if false;\s*allow delete: if false;/
+);
 console.log("OK documento: jerarquía común, columnas condicionales, impuesto dinámico y snapshots históricos");
 
 const outputDir = path.resolve("output/pdf/quote-validation");

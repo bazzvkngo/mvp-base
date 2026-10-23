@@ -53,6 +53,7 @@
     "test:quote-public": "node scripts/quote-public-proposal-smoke.mjs",
     "test:quote-model": "node scripts/quote-model-smoke.mjs",
     "test:quote-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/quote-integrated-local.mjs\"",
+    "test:quote-delete-draft": "firebase emulators:exec --only auth,firestore,functions \"node scripts/quote-delete-draft-integrated-local.mjs\"",
     "test:clients-model": "node scripts/client-model-smoke.mjs",
     "test:clients-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/clients-integrated-local.mjs\"",
     "test:providers-model": "node scripts/provider-model-smoke.mjs",
