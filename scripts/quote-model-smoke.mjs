@@ -621,11 +621,28 @@ assert.equal((quotePrimaryActionsSource.match(/: "WhatsApp"/g) || []).length, 1)
 assert.equal((quotePrimaryActionsSource.match(/: "Descargar PDF"/g) || []).length, 1);
 assert.equal((quotePrimaryActionsSource.match(/>\s*Imprimir\s*<\/button>/g) || []).length, 1);
 assert.doesNotMatch(quoteActionsSource, /Correo|WhatsApp|Descargar PDF|Imprimir|runPdfAction/);
-// Una acción principal por estado: Enviar en pendiente (Editar y Marcar como
-// emitida pasan a "Más acciones"), Reenviar en el menú de emitidas y Ver
-// venta cuando hay venta vinculada.
-assert.match(quoteActionsSource, /onClick=\{\(\) => onSend\(quote\)\}[\s\S]*?>\s*Enviar\s*<\/button>/);
-assert.match(quoteActionsSource, /actions=\{\[editMenuAction, emitMenuAction, archiveMenuAction, deleteMenuAction\]\}/);
+// Pendiente: Enviar y Editar visibles (en la lista el texto es "Editar"; en el
+// detalle, "Editar cotización"); Marcar como emitida, Archivar y Eliminar en
+// "Más acciones". Reenviar va en el menú de emitidas y Ver venta cuando hay
+// venta vinculada.
+assert.match(quoteActionsSource, /onClick=\{\(\) => onSend\(quote\)\}[\s\S]*?>\s*Enviar\s*<\/button>\s*<button[^>]*onClick=\{\(\) => onEditDraft\(quote\.id\)\}[\s\S]*?>\s*Editar\s*<\/button>/);
+assert.match(quoteActionsSource, /onClick=\{\(\) => onEditDraft\(quote\.id\)\}[\s\S]*?>\s*Editar cotización\s*<\/button>/);
+assert.match(quoteActionsSource, /actions=\{\[emitMenuAction, archiveMenuAction, deleteMenuAction\]\}/);
+assert.doesNotMatch(quoteActionsSource, /editMenuAction/);
+// Todo el bloque de acciones (incluido Editar) sigue limitado a quienes pueden escribir.
+assert.match(sourceHistory, /\{canDuplicate && \(\s*<div className="erp-actions" style=\{styles\.mobileCardActions\}>/);
+// Un solo filtro de estado: las pestañas, con "Archivadas" al final y su conteo.
+// Ya no hay desplegable "Estado" ni la opción "Todas excepto archivadas".
+assert.match(sourceHistory, /\["vencida", "Vencidas"\],\s*\["archivada", "Archivadas"\],\s*\];/);
+assert.doesNotMatch(sourceHistory, /Todas excepto archivadas|STATUS_OPTIONS|filterLabels/);
+assert.doesNotMatch(sourceHistory, /<span className="erp-field__label">Estado<\/span>/);
+assert.doesNotMatch(sourceHistory, /<select/);
+assert.match(sourceHistory, /className="erp-filters erp-history-filters quote-history-filters"/);
+assert.match(sourceInteriorCss, /\.quote-history-filters \{\s*grid-template-columns: minmax\(0, 1fr\);\s*\}/);
+assert.match(sourceHistory, /label: `\$\{label\} \(\$\{searchedQuotes\.filter/);
+// La celda de vigencia del pendiente es una sola línea; emitidas, aceptadas y vencidas no cambian.
+assert.match(sourceHistory, /Sin emitir · creada \{formatDate\(quote\.fecha\)\} · \{validityDays\} \{Number\(validityDays\) === 1 \? "día" : "días"\} de vigencia/);
+assert.doesNotMatch(sourceHistory, /días al emitir|Sin emitir · Creada/);
 assert.match(quoteActionsSource, /label: "Reenviar"/);
 // Filas: acciones en estilo secundario y "Más acciones" solo con ícono
 // (aria-label y title); el diálogo de detalle conserva el rótulo con texto.

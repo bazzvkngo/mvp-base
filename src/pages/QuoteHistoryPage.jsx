@@ -56,22 +56,11 @@ import {
   hasBusinessPermission,
 } from "../domain/rbac.mjs";
 
-const STATUS_OPTIONS = [
-  "borrador",
-  "emitida",
-  "por_vencer",
-  "aceptada",
-  "rechazada",
-  "vencida",
-  "archivada",
-];
-
 const statusLabels = QUOTE_STATUS_LABELS;
 
-// "Por vencer" no es un estado: emitidas que vencen en los próximos días o
-// que ya pasaron su fecha sin marcarse (ver getQuoteExpiryAlert).
-const filterLabels = {...QUOTE_STATUS_LABELS, por_vencer: "Por vencer"};
-
+// Pestañas del historial: el único filtro de estado. "Por vencer" no es un
+// estado: emitidas que vencen en los próximos días o que ya pasaron su fecha
+// sin marcarse (ver getQuoteExpiryAlert). "Todas" excluye las archivadas.
 const QUICK_FILTERS = [
   ["todos", "Todas"],
   ["borrador", "Pendientes"],
@@ -80,6 +69,7 @@ const QUICK_FILTERS = [
   ["aceptada", "Aceptadas"],
   ["rechazada", "Rechazadas"],
   ["vencida", "Vencidas"],
+  ["archivada", "Archivadas"],
 ];
 
 const statusFeedbackTitles = {
@@ -636,7 +626,7 @@ function QuoteHistoryPage({ userId, role }) {
         </div>
 
         {quotes.length > 0 && (
-          <div className="erp-filters erp-history-filters erp-history-filters--two clients-filters quote-history-filters">
+          <div className="erp-filters erp-history-filters quote-history-filters">
             <label className="erp-field erp-history-search-field">
             <span className="erp-field__label">Buscar por número o cliente</span>
             <span className="clients-search-control">
@@ -648,21 +638,6 @@ function QuoteHistoryPage({ userId, role }) {
                 placeholder="Ej.: COT-2026-0001 o cliente"
               />
             </span>
-            </label>
-            <label className="erp-field">
-            <span className="erp-field__label">Estado</span>
-            <select
-              className="erp-control"
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
-            >
-              <option value="todos">Todas excepto archivadas</option>
-              {STATUS_OPTIONS.map((status) => (
-                <option key={status} value={status}>
-                  {filterLabels[status]}
-                </option>
-              ))}
-            </select>
             </label>
           </div>
         )}
@@ -1055,13 +1030,11 @@ function QuoteValidity({ quote, today }) {
     : `Creada ${formatDate(quote.fecha)}`;
 
   if (estado === "borrador") {
+    const validityDays = quote.validezDias || DEFAULT_QUOTE_VALIDITY_DAYS;
     return (
-      <>
-        <span>{quote.validezDias || DEFAULT_QUOTE_VALIDITY_DAYS} días al emitir</span>
-        <small className="clients-table__secondary">
-          Sin emitir · Creada {formatDate(quote.fecha)}
-        </small>
-      </>
+      <span>
+        Sin emitir · creada {formatDate(quote.fecha)} · {validityDays} {Number(validityDays) === 1 ? "día" : "días"} de vigencia
+      </span>
     );
   }
 
@@ -1312,11 +1285,6 @@ function QuoteActions({
   }
 
   if (estado === "borrador") {
-    const editMenuAction = {
-      label: "Editar cotización",
-      disabled,
-      onSelect: () => onEditDraft(quote.id),
-    };
     // Indica que la cotización fue enviada al cliente; no registra una venta.
     const emitMenuAction = {
       label: "Marcar como emitida",
@@ -1369,10 +1337,18 @@ function QuoteActions({
         >
           Enviar
         </button>
+        <button
+          type="button"
+          onClick={() => onEditDraft(quote.id)}
+          disabled={disabled}
+          style={styles.secondaryButton}
+        >
+          Editar
+        </button>
         <MoreActionsMenu
           iconOnly={inRow}
           menuLabel="Más acciones de cotización"
-          actions={[editMenuAction, emitMenuAction, archiveMenuAction, deleteMenuAction]}
+          actions={[emitMenuAction, archiveMenuAction, deleteMenuAction]}
           disabled={disabled}
         />
       </>

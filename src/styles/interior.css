@@ -4154,7 +4154,7 @@
 }
 
 .quote-history-filters {
-  grid-template-columns: minmax(260px, 2fr) minmax(180px, 1fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .quote-history-quick-filters {
