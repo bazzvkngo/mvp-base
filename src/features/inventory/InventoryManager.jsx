@@ -88,6 +88,19 @@ const INVENTORY_TYPE_HINTS = Object.freeze({
   actividad: "Actividad: trabajo o tarea valorizada. No maneja existencias ni IVA de compra.",
 });
 
+// Placeholders del nombre y del costo según el tipo de ítem. El costo de un
+// servicio o actividad entra tal cual al cálculo (calculateBasePrice), sin
+// sumar ni restar IVA, por eso el texto no promete "sin IVA".
+const INVENTORY_NAME_PLACEHOLDERS = Object.freeze({
+  producto: "Ej. Cámara IP modelo X100",
+  servicio: "Ej. Instalación y configuración de cámaras",
+  actividad: "Ej. Hora técnica en terreno",
+});
+const INVENTORY_UNIT_COST_PLACEHOLDERS = Object.freeze({
+  servicio: "Costo por unidad del servicio",
+  actividad: "Costo por unidad de la actividad",
+});
+
 function requestId() {
   const id = globalThis.crypto?.randomUUID?.() || `${Date.now()}_${Math.random()}`;
   return `inventory_${String(id).replace(/[^a-zA-Z0-9_-]/g, "")}`.slice(0, 120);
@@ -508,6 +521,13 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
     ? adaptInventoryItem(editingItem).precioCalculado
     : null;
   const exemptionLocked = Boolean(editingItem) && !canChangeTaxExemption;
+  // Base real del recargo: calculateInventoryPriceFormation (productos, sobre el
+  // costo neto) y calculateBasePrice (servicios y actividades, sobre el costo).
+  const markupBaseHint = !isProductDraft
+    ? "Se aplica sobre el costo unitario."
+    : draft.exentoIva
+      ? "Se aplica sobre el costo (exento de IVA)."
+      : "Se aplica sobre el costo neto (sin IVA).";
 
   return (
     <section className="erp-page inventory-page">
@@ -567,10 +587,15 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
           <p className="inventory-type-hint">{INVENTORY_TYPE_HINTS[draft.tipoItem]}</p>
           <section className="inventory-form-section"><h3>Identificación</h3>
             <div className="inventory-essentials-grid">
-              <Field field="nombre" label="Nombre del ítem" required error={fieldErrors.nombre}><input autoFocus className="erp-control" value={draft.nombre} onChange={(event) => updateDraft("nombre", event.target.value)} maxLength={140} placeholder="Ej. Cámara IP modelo X100" /></Field>
+              <Field field="nombre" label="Nombre del ítem" required error={fieldErrors.nombre}><input autoFocus className="erp-control" value={draft.nombre} onChange={(event) => updateDraft("nombre", event.target.value)} maxLength={140} placeholder={INVENTORY_NAME_PLACEHOLDERS[draft.tipoItem]} /></Field>
               <div data-inventory-field="unidad"><UnitSelector type={draft.tipoItem} value={draft.unidad} error={fieldErrors.unidad} onChange={(value) => updateDraft("unidad", value)} /></div>
-              <Field label="Código interno" hint={editingItem ? "Código actual. No se puede modificar." : "La asignación definitiva se realiza al guardar."}><input className="erp-control inventory-code-input" readOnly aria-readonly="true" value={editingItem ? draft.codigoInterno : "Se asignará automáticamente"} /></Field>
+              <CatalogSelect field="areaId" label="Área" value={draft.areaId} onChange={(value) => updateDraft("areaId", value)} onCreate={() => openQuickCreate("area")}><option value="">Selecciona un área</option>{activeAreas.map((area) => <option key={area.id} value={area.id}>{area.nombre}</option>)}</CatalogSelect>
+              <CatalogSelect field="categoriaId" label="Categoría" value={draft.categoriaId} disabled={!draft.areaId} error={fieldErrors.categoriaId} createDisabled={!draft.areaId} createTitle={!draft.areaId ? "Selecciona un área primero" : "Crear categoría"} onChange={(value) => updateDraft("categoriaId", value)} onCreate={() => openQuickCreate("category")}><option value="">Selecciona una categoría</option>{formCategories.map((category) => <option key={category.id} value={category.id}>{category.nombre}</option>)}</CatalogSelect>
             </div>
+            <button type="button" className="inventory-link-button" onClick={openCatalogManager}>Administrar áreas y categorías</button>
+            {editingItem
+              ? <dl className="inventory-code-readout"><dt>Código interno</dt><dd className="inventory-code-input">{draft.codigoInterno || "Sin código (registro heredado)"}</dd></dl>
+              : <p className="inventory-code-help">El código interno se asigna automáticamente al guardar.</p>}
           </section>
           <section className="inventory-form-section inventory-price-card">
             <h3>Precio</h3>
@@ -579,10 +604,10 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
               <label className="inventory-manual-price-toggle inventory-tax-exempt-toggle"><input type="checkbox" checked={draft.exentoIva === true} disabled={exemptionLocked} onChange={(event) => updateDraft("exentoIva", event.target.checked)} /><span>Exento de IVA</span>{exemptionLocked && <small className="inventory-field-hint">Solo la administración del negocio puede cambiar esta marca.</small>}</label>
               <PriceResult label="Costo con IVA (referencia)" value={productPriceFormation.costoPagado} detail={paidCostDetail} />
             </div> : <div className="inventory-price-grid">
-              <Field field="costoBase" label="Costo unitario" required error={fieldErrors.costoBase}><input className="erp-control" type="number" min="0" step="any" value={draft.costoBase} onChange={(event) => updateDraft("costoBase", event.target.value)} /></Field>
+              <Field field="costoBase" label="Costo unitario" required error={fieldErrors.costoBase}><input className="erp-control" type="number" min="0" step="any" value={draft.costoBase} onChange={(event) => updateDraft("costoBase", event.target.value)} placeholder={INVENTORY_UNIT_COST_PLACEHOLDERS[draft.tipoItem]} /></Field>
             </div>}
             <div className="inventory-price-grid inventory-price-grid--commercial">
-              <Field field="margenDeseado" label="Recargo (%)" required error={fieldErrors.margenDeseado}><input className="erp-control" type="number" min="0" max="1000" step="any" value={draft.margenDeseado} onChange={(event) => updateDraft("margenDeseado", event.target.value)} placeholder="Ej. 30" /></Field>
+              <Field field="margenDeseado" label="Recargo (%)" required hint={markupBaseHint} error={fieldErrors.margenDeseado}><input className="erp-control" type="number" min="0" max="1000" step="any" value={draft.margenDeseado} onChange={(event) => updateDraft("margenDeseado", event.target.value)} placeholder="Ej. 30" /></Field>
               <PriceResult label="Precio sugerido" value={calculatedPrice} />
               <PriceResult label="Precio de venta final" value={effectivePrice} tone="final" />
             </div>
@@ -593,17 +618,13 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
           {draft.tipoItem === "producto" && <section className="inventory-form-section"><h3>Existencias</h3><div className="inventory-form-grid inventory-form-grid--three"><Field field="stock" label="Stock actual" error={fieldErrors.stock}><input className="erp-control" type="number" min="0" step="any" value={draft.stock} onChange={(event) => updateDraft("stock", event.target.value)} placeholder="¿Cuántas unidades tienes disponibles?" /></Field><Field field="stockMinimo" label="Stock mínimo" error={fieldErrors.stockMinimo}><input className="erp-control" type="number" min="0" step="any" value={draft.stockMinimo} onChange={(event) => updateDraft("stockMinimo", event.target.value)} placeholder="¿Desde cuántas unidades quieres recibir alerta?" /></Field><Field label="Unidad de inventario"><select className="erp-control" value={draft.unidadStock} onChange={(event) => updateDraft("unidadStock", event.target.value)}><option value={draft.unidad}>{draft.unidad || "Unidad seleccionada"}</option><option value="unidad">Unidad</option></select></Field></div><p className="inventory-stock-helper">Se marcará como stock bajo al alcanzar el mínimo.</p></section>}
           <section className="inventory-more">
             <button type="button" className="inventory-more__toggle" aria-expanded={detailsOpen} aria-controls={detailsOpen ? "inventory-more-details" : undefined} onClick={() => setDetailsOpen((open) => !open)}>
-              <span><strong>Más detalles</strong><small>{isProductDraft ? "Marca, modelo, código de barras, descripción, origen de compra, área y categoría" : "Descripción, área y categoría"}</small></span>
+              <span><strong>Más detalles</strong><small>{isProductDraft ? "Marca, modelo, código de barras, descripción y origen de compra" : "Descripción"}</small></span>
               <AppIcon icon={ChevronDown} size={18} />
             </button>
             {detailsOpen && <div id="inventory-more-details" className="inventory-more__body">
               {draft.tipoItem === "producto" && <section className="inventory-subsection"><h4>Identificación del producto</h4><div className="inventory-product-identity"><Field field="marca" label="Marca" error={fieldErrors.marca}><input className="erp-control" value={draft.marca} onChange={(event) => updateDraft("marca", event.target.value)} maxLength={100} placeholder="Ej. Marca" /></Field><Field field="modelo" label="Modelo" error={fieldErrors.modelo}><input className="erp-control" value={draft.modelo} onChange={(event) => updateDraft("modelo", event.target.value)} maxLength={100} placeholder="Ej. X100" /></Field><Field field="codigoBarras" label="Código de barras" error={fieldErrors.codigoBarras} hint="Conserva ceros iniciales."><BarcodeInput actionLabel="Escanear" inputClassName="erp-control inventory-code-input" value={draft.codigoBarras} onChange={(value) => updateDraft("codigoBarras", value)} /></Field></div></section>}
               <Field field="descripcion" label="Descripción"><textarea className="erp-control inventory-textarea" rows="2" maxLength={1200} value={draft.descripcion} onChange={(event) => updateDraft("descripcion", event.target.value)} placeholder="Agrega detalles útiles para identificar este producto" /></Field>
               {draft.tipoItem === "producto" && <section className="inventory-subsection"><h4>Origen de compra</h4><div className="inventory-purchase-origin-grid"><Field field="proveedorNombre" label="Proveedor" error={fieldErrors.proveedorNombre}><input className="erp-control" value={draft.proveedorNombre} onChange={(event) => updateDraft("proveedorNombre", event.target.value)} maxLength={180} placeholder="Ej. Proveedor principal" /></Field><Field field="proveedorRut" label="RUT proveedor" error={fieldErrors.proveedorRut}><input className="erp-control" value={draft.proveedorRut} onChange={(event) => updateDraft("proveedorRut", event.target.value)} onBlur={() => updateDraft("proveedorRut", formatChileanRut(draft.proveedorRut))} maxLength={20} placeholder="Ej. 76.123.456-7" /></Field><Field field="fechaCompraReferencia" label="Fecha de compra" error={fieldErrors.fechaCompraReferencia}><input className="erp-control" type="date" value={draft.fechaCompraReferencia} onChange={(event) => updateDraft("fechaCompraReferencia", event.target.value)} /></Field><Field field="numeroFacturaReferencia" label="Nº factura" error={fieldErrors.numeroFacturaReferencia}><input className="erp-control" value={draft.numeroFacturaReferencia} onChange={(event) => updateDraft("numeroFacturaReferencia", event.target.value)} maxLength={120} placeholder="Ej. 000123" /></Field></div></section>}
-              <section className="inventory-subsection"><h4>Clasificación</h4><div className="inventory-form-grid">
-                <CatalogSelect field="areaId" label="Área" value={draft.areaId} onChange={(value) => updateDraft("areaId", value)} onCreate={() => openQuickCreate("area")}><option value="">Selecciona un área</option>{activeAreas.map((area) => <option key={area.id} value={area.id}>{area.nombre}</option>)}</CatalogSelect>
-                <CatalogSelect field="categoriaId" label="Categoría" value={draft.categoriaId} disabled={!draft.areaId} error={fieldErrors.categoriaId} createDisabled={!draft.areaId} createTitle={!draft.areaId ? "Selecciona un área primero" : "Crear categoría"} onChange={(value) => updateDraft("categoriaId", value)} onCreate={() => openQuickCreate("category")}><option value="">Selecciona una categoría</option>{formCategories.map((category) => <option key={category.id} value={category.id}>{category.nombre}</option>)}</CatalogSelect>
-              </div><button type="button" className="inventory-link-button" onClick={openCatalogManager}>Administrar áreas y categorías</button></section>
             </div>}
           </section>
           {feedback.type === "error" && <p className="inventory-feedback inventory-feedback--error" role="alert">{feedback.message}</p>}
@@ -627,7 +648,7 @@ function Metric({ hint, label, onClick, pressed = false, tone, value }) {
 function Filter({ children, disabled, label, onChange, value }) { return <label className="erp-field"><span className="erp-field__label">{label}</span><select className="erp-control" disabled={disabled} value={value} onChange={(event) => onChange(event.target.value)}>{children}</select></label>; }
 function Field({ children, error, field, hint, label, required }) { return <label className="erp-field" data-inventory-field={field}><span className="erp-field__label">{label}{required ? " *" : ""}</span>{children}{hint && <small className="inventory-field-hint">{hint}</small>}{error && <small className="inventory-field-error">{error}</small>}</label>; }
 function PriceResult({ detail, label, tone = "", value }) { const formatBusinessAmount = useBusinessMoney(); return<div className={`inventory-sale-price${tone ? ` inventory-sale-price--${tone}` : ""}`}><span>{label}</span><strong>{formatBusinessAmount(value)}</strong>{detail && <small>{detail}</small>}</div>; }
-function CatalogSelect({children, createDisabled, createTitle, disabled, error, field, label, onChange, onCreate, value}) { return <label className="erp-field inventory-catalog-select-field" data-inventory-field={field}><span className="erp-field__label">{label}</span><span><select className="erp-control" disabled={disabled} value={value} onChange={(event) => onChange(event.target.value)}>{children}</select><button type="button" disabled={createDisabled} title={createTitle || `Crear ${label.toLowerCase()}`} aria-label={`Crear ${label.toLowerCase()}`} onClick={onCreate}>+</button></span>{error && <small className="inventory-field-error">{error}</small>}</label>; }
+function CatalogSelect({children, createDisabled, createTitle, disabled, error, field, label, onChange, onCreate, value}) { return <label className="erp-field inventory-catalog-select-field" data-inventory-field={field}><span className="erp-field__label">{label}</span><span><select className="erp-control" disabled={disabled} value={value} onChange={(event) => onChange(event.target.value)}>{children}</select><button type="button" disabled={createDisabled} title={createTitle || `Crear ${label.toLowerCase()}`} aria-label={`Crear ${label.toLowerCase()}`} onClick={onCreate}><span aria-hidden="true">+</span> Crear</button></span>{error && <small className="inventory-field-error">{error}</small>}</label>; }
 
 function IdentityMetadata({ item }) {
   const metadata = [item.marca, item.modelo].filter(Boolean).join(" · ");

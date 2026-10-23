@@ -723,7 +723,7 @@ async function main() {
     new URL("../src/features/inventory/InventoryManager.jsx", import.meta.url),
     "utf8"
   );
-  assert.match(managerSource, /Se asignará automáticamente/);
+  assert.match(managerSource, /El código interno se asigna automáticamente al guardar/);
   assert.doesNotMatch(managerSource, /name=["']sku["']/);
   assert.match(managerSource, /SKU \/ código interno/);
   assert.match(managerSource, /Código de barras/);

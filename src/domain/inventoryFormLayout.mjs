@@ -4,6 +4,7 @@
 
 // Campos del borrador que se muestran dentro de "Más detalles". Las claves son
 // las del borrador y las de validateInventoryDraft (codigoBarras, no barcode).
+// Área y categoría ya no viven aquí: están visibles junto a Identificación.
 export const INVENTORY_DETAIL_FIELDS = Object.freeze([
   "marca",
   "modelo",
@@ -13,8 +14,6 @@ export const INVENTORY_DETAIL_FIELDS = Object.freeze([
   "proveedorRut",
   "fechaCompraReferencia",
   "numeroFacturaReferencia",
-  "areaId",
-  "categoriaId",
 ]);
 
 // Orden visual del formulario, de arriba hacia abajo, para llevar el foco al
@@ -23,6 +22,8 @@ const INVENTORY_FIELD_ORDER = Object.freeze([
   "tipoItem",
   "nombre",
   "unidad",
+  "areaId",
+  "categoriaId",
   "costoBase",
   "exentoIva",
   "margenDeseado",

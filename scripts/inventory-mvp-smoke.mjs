@@ -613,8 +613,11 @@ async function sourceChecks() {
   assert.match(manager, /draft\.tipoItem === "producto" && <section className="inventory-subsection"><h4>Origen de compra/);
   assert.match(manager, /type="date" value=\{draft\.fechaCompraReferencia\}/);
   assert.match(manager, /<BarcodeInput actionLabel="Escanear"/);
-  assert.match(manager, /value=\{editingItem \? draft\.codigoInterno : "Se asignará automáticamente"\}/);
-  assert.match(manager, /readOnly aria-readonly="true"/);
+  // El código interno ya no es un campo: en Nuevo es una línea de ayuda y en
+  // Editar un dato de solo lectura (etiqueta y valor).
+  assert.match(manager, /El código interno se asigna automáticamente al guardar\./);
+  assert.match(manager, /<dl className="inventory-code-readout"><dt>Código interno<\/dt><dd className="inventory-code-input">\{draft\.codigoInterno \|\| "Sin código \(registro heredado\)"\}<\/dd><\/dl>/);
+  assert.doesNotMatch(manager, /label="Código interno"|Se asignará automáticamente/);
   assert.match(manager, /allowRequestedCode: false/);
 }
 
