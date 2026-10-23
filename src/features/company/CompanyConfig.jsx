@@ -109,6 +109,7 @@ function messageForError(error, fallback) {
   if (code.includes("permission-denied")) {
     return "No tienes permisos para acceder a esta sección.";
   }
+  if (code.includes("storage/unauthorized")) return error?.message || fallback;
   if (code.includes("invalid-argument")) return error?.message || fallback;
   if (code.includes("failed-precondition") || code.includes("already-exists")) {
     return error?.message || fallback;
