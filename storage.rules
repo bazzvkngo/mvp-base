@@ -45,8 +45,26 @@ service firebase.storage {
         && activeBusiness(businessId).data.estado == "activo";
     }
 
+    // Variante de canAccessBusiness para rutas que deben quedar dentro del
+    // presupuesto de Storage Rules (máximo 2 documentos de Firestore por
+    // petición): sólo membresía y negocio, sin usuarios/{uid}. A cambio no
+    // comprueba la suspensión de plataforma: una cuenta suspendida queda sin
+    // acceso porque Auth la deshabilita y revoca sus refresh tokens, pero un
+    // ID token ya emitido sigue siendo válido hasta 1 hora. Riesgo aceptado
+    // sólo para el logo de empresa (imagen de hasta 2 MB, OWNER/ADMIN). Las
+    // rutas de verificación y gastos conservan su propia comprobación.
+    function isActiveBusinessMember(businessId) {
+      return request.auth != null
+        && hasBusinessMembership(businessId)
+        && hasActiveBusinessDocument(businessId)
+        && businessMembership(businessId).data.uid == request.auth.uid
+        && businessMembership(businessId).data.negocioId == businessId
+        && businessMembership(businessId).data.estado == "activo"
+        && activeBusiness(businessId).data.estado == "activo";
+    }
+
     function canManageBusiness(businessId) {
-      return canAccessBusiness(businessId)
+      return isActiveBusinessMember(businessId)
         && businessMembership(businessId).data.rol in ["OWNER", "ADMIN"];
     }
 
@@ -155,7 +173,7 @@ service firebase.storage {
     }
 
     match /negocios/{businessId}/empresa/logo/{fileName} {
-      allow read: if canAccessBusiness(businessId);
+      allow read: if isActiveBusinessMember(businessId);
 
       allow create, update: if canManageBusiness(businessId)
         && request.resource.size <= 2 * 1024 * 1024

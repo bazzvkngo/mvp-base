@@ -51,10 +51,12 @@ const adminDb = getAdminFirestore(adminApp);
 const owner = createClient("owner");
 const admin = createClient("admin");
 const outsider = createClient("outsider");
+const member = createClient("member");
 
 const ownerUid = (await signInAnonymously(owner.auth)).user.uid;
 const adminUid = (await signInAnonymously(admin.auth)).user.uid;
 const outsiderUid = (await signInAnonymously(outsider.auth)).user.uid;
+const memberUid = (await signInAnonymously(member.auth)).user.uid;
 
 const businessId = `storage-budget-biz-${ownerUid}`;
 const legacyBusinessId = `storage-budget-legacy-${ownerUid}`;
@@ -66,6 +68,8 @@ await Promise.all([
   adminDb.doc(`usuarios/${ownerUid}`).set({estadoPlataforma: "activo"}),
   adminDb.doc(`usuarios/${adminUid}`).set({estadoPlataforma: "activo"}),
   adminDb.doc(`usuarios/${outsiderUid}`).set({estadoPlataforma: "activo"}),
+  adminDb.doc(`usuarios/${memberUid}`).set({estadoPlataforma: "activo"}),
+  adminDb.doc(`membresias/${businessId}__${memberUid}`).set({negocioId: businessId, uid: memberUid, rol: "MEMBER", estado: "activo"}),
   adminDb.doc(`negocios/${businessId}`).set({
     creadoPorUid: ownerUid, estado: "activo", verificacionEmpresa: {estado: "NO_VERIFICADA"},
   }),
@@ -256,6 +260,87 @@ await expectDenied("negocio inexistente en Firestore deniega cualquier evidencia
 
 console.log("PARTE 2 (negativos) completa — todos denegados, ninguno con error de evaluación.");
 
-await Promise.all([deleteApp(owner.app), deleteApp(admin.app), deleteApp(outsider.app)]);
+// ================================================================
+// LOGO DE EMPRESA (negocios/{id}/empresa/logo/*): canManageBusiness e
+// isActiveBusinessMember usan membresía + negocio (2 documentos). El 403 de
+// producción venía de leer también usuarios/{uid} (3 documentos).
+// ================================================================
+const logoBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+const logoPath = (id, name = "logo-empresa.png") => `negocios/${id}/empresa/logo/${name}`;
+
+// Positivos: el OWNER sube, lee y reemplaza; el ADMIN sube y elimina.
+{
+  const ownerLogo = ref(owner.storage, logoPath(businessId));
+  await uploadBytes(ownerLogo, logoBytes, {contentType: "image/png"});
+  const downloaded = await getBytes(ownerLogo);
+  if (downloaded.byteLength !== logoBytes.byteLength) {
+    throw new Error("El OWNER no pudo leer el logo que subió.");
+  }
+  await uploadBytes(ownerLogo, logoBytes, {contentType: "image/png"});
+  console.log("OK logo: OWNER sube, lee y reemplaza el logo de su negocio (2 documentos)");
+
+  const adminLogo = ref(admin.storage, logoPath(businessId, "logo-admin.png"));
+  await uploadBytes(adminLogo, logoBytes, {contentType: "image/png"});
+  await deleteObject(adminLogo);
+  console.log("OK logo: ADMIN sube y elimina un logo del negocio");
+
+  // Un MEMBER activo lee el logo (isActiveBusinessMember) pero no lo gestiona.
+  const memberRead = await getBytes(ref(member.storage, logoPath(businessId)));
+  if (memberRead.byteLength !== logoBytes.byteLength) {
+    throw new Error("El MEMBER activo no pudo leer el logo del negocio.");
+  }
+  console.log("OK logo: MEMBER activo lee el logo del negocio");
+}
+
+// Negativos: sin permiso de gestión, sin membresía, negocio inexistente,
+// membresía inactiva, tipo y tamaño inválidos.
+await expectDenied("logo: MEMBER (sin permiso de gestión) no puede subir el logo", () =>
+  uploadBytes(ref(member.storage, logoPath(businessId, "logo-member.png")), logoBytes, {contentType: "image/png"})
+);
+await expectDenied("logo: MEMBER no puede eliminar el logo", () =>
+  deleteObject(ref(member.storage, logoPath(businessId)))
+);
+await expectDenied("logo: usuario de otro negocio no puede subir el logo ajeno", () =>
+  uploadBytes(ref(outsider.storage, logoPath(businessId, "logo-outsider.png")), logoBytes, {contentType: "image/png"})
+);
+await expectDenied("logo: usuario de otro negocio no puede leer el logo ajeno", () =>
+  getBytes(ref(outsider.storage, logoPath(businessId)))
+);
+await expectDenied("logo: usuario sin permiso no puede eliminar el logo ajeno", () =>
+  deleteObject(ref(outsider.storage, logoPath(businessId)))
+);
+await expectDenied("logo: negocio inexistente deniega incluso a quien tiene membresía", async () => {
+  await adminDb.doc(`membresias/${nonexistentBusinessId}__${ownerUid}`).set({
+    negocioId: nonexistentBusinessId, uid: ownerUid, rol: "OWNER", estado: "activo",
+  });
+  await uploadBytes(ref(owner.storage, logoPath(nonexistentBusinessId)), logoBytes, {contentType: "image/png"});
+});
+{
+  const inactiveBusinessId = `storage-budget-inactive-member-${ownerUid}`;
+  await adminDb.doc(`negocios/${inactiveBusinessId}`).set({estado: "activo"});
+  await adminDb.doc(`membresias/${inactiveBusinessId}__${ownerUid}`).set({
+    negocioId: inactiveBusinessId, uid: ownerUid, rol: "OWNER", estado: "inactivo",
+  });
+  await expectDenied("logo: membresía inactiva no puede subir el logo", () =>
+    uploadBytes(ref(owner.storage, logoPath(inactiveBusinessId)), logoBytes, {contentType: "image/png"})
+  );
+  const inactiveBusinessDocId = `storage-budget-inactive-business-${ownerUid}`;
+  await adminDb.doc(`negocios/${inactiveBusinessDocId}`).set({estado: "suspendido"});
+  await adminDb.doc(`membresias/${inactiveBusinessDocId}__${ownerUid}`).set({
+    negocioId: inactiveBusinessDocId, uid: ownerUid, rol: "OWNER", estado: "activo",
+  });
+  await expectDenied("logo: negocio no activo no admite subir el logo", () =>
+    uploadBytes(ref(owner.storage, logoPath(inactiveBusinessDocId)), logoBytes, {contentType: "image/png"})
+  );
+}
+await expectDenied("logo: tipo MIME no permitido", () =>
+  uploadBytes(ref(owner.storage, logoPath(businessId, "logo.gif")), logoBytes, {contentType: "image/gif"})
+);
+await expectDenied("logo: superior a 2 MB", () =>
+  uploadBytes(ref(owner.storage, logoPath(businessId, "logo-grande.png")), new Uint8Array(2 * 1024 * 1024 + 1), {contentType: "image/png"})
+);
+console.log("PARTE 3 (logo de empresa) completa.");
+
+await Promise.all([deleteApp(owner.app), deleteApp(admin.app), deleteApp(outsider.app), deleteApp(member.app)]);
 await deleteAdmin(adminApp);
 console.log("STORAGE_RULES_BUDGET_FIX_SMOKE_OK");

@@ -662,9 +662,20 @@ export async function uploadCompanyLogo(userId, file) {
   const logoPath = `negocios/${userId}/empresa/logo/logo-empresa.${extension}`;
   const ref = storageRef(storage, logoPath);
 
-  await uploadBytes(ref, file, {
-    contentType: file.type,
-  });
+  try {
+    await uploadBytes(ref, file, {
+      contentType: file.type,
+    });
+  } catch (error) {
+    if (error?.code === "storage/unauthorized") {
+      const permissionError = new Error(
+        "No tienes permisos para subir el logo de este negocio. Solo el propietario o un administrador pueden hacerlo."
+      );
+      permissionError.code = "storage/unauthorized";
+      throw permissionError;
+    }
+    throw error;
+  }
 
   const logoUrl = await getDownloadURL(ref);
   const payload = {
