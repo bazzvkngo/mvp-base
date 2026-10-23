@@ -4221,6 +4221,118 @@
   min-height: 24px;
 }
 
+/* Bloque "Estado comercial" del detalle de cotización (solo pantalla, fuera
+   del documento formal): etiqueta de estado grande + línea de tiempo en
+   tarjetas que llenan el ancho del modal y se apilan en móvil. */
+.quote-commercial {
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-4);
+  margin-top: var(--space-3);
+  padding: var(--space-4);
+}
+
+.quote-commercial__header {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+}
+
+.quote-commercial__title {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-lg);
+}
+
+.quote-commercial__badge {
+  font-size: var(--font-size-md);
+  min-height: 2rem;
+  padding: var(--space-1) var(--space-4);
+}
+
+.quote-commercial__badge--info {
+  background: var(--color-info-50);
+  border-color: var(--color-info-200);
+  color: var(--color-info-700);
+}
+
+.quote-commercial__issued {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.quote-commercial__timeline {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.quote-commercial__event {
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-subtle);
+  border-left: 4px solid var(--color-text-brand-accent);
+  border-radius: var(--radius-sm);
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+}
+
+.quote-commercial__event-label {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+}
+
+.quote-commercial__event-date {
+  color: var(--color-text-brand);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.quote-commercial__event-note {
+  display: grid;
+  font-size: var(--font-size-sm);
+  gap: 0;
+  min-width: 0;
+}
+
+.quote-commercial__event-note-label {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+.quote-commercial__event-note-value {
+  color: var(--color-text-default);
+  overflow-wrap: anywhere;
+}
+
+.quote-commercial__details {
+  border-top: 1px solid var(--color-border-subtle);
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+}
+
+.quote-commercial__detail {
+  display: grid;
+}
+
+.quote-commercial__detail-value {
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 .quote-history-empty {
   display: grid;
   gap: var(--space-2);

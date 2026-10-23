@@ -122,6 +122,17 @@ const statusStyles = {
   },
 };
 
+// Tono de la etiqueta del bloque "Estado comercial" del detalle (clases
+// .ui-status-badge--* de components.css; info es local de quote-commercial).
+const QUOTE_STATUS_BADGE_CLASS = Object.freeze({
+  borrador: "ui-status-badge--warning",
+  emitida: "quote-commercial__badge--info",
+  aceptada: "ui-status-badge--success",
+  rechazada: "ui-status-badge--danger",
+  vencida: "ui-status-badge--warning",
+  archivada: "ui-status-badge--neutral",
+});
+
 function getQuoteClientFiscalId(quote) {
   return quote?.cliente?.identificadorFiscalValor || quote?.clienteRut || "";
 }
@@ -1705,102 +1716,68 @@ function CommercialStatusTimeline({ quote }) {
     primary: true,
   });
 
+  const [current, ...timeline] = events;
+  const tone = QUOTE_STATUS_BADGE_CLASS[quote.estado || "borrador"] || "ui-status-badge--neutral";
+
   return (
-    <section style={styles.commercialStatus} aria-label="Estado comercial">
-      <strong style={styles.commercialStatusTitle}>Estado comercial</strong>
-      <div style={styles.commercialStatusGrid}>
-        {events.map((event) => (
-          <div key={`${event.label}-${event.value}`} style={{...styles.commercialStatusEvent, ...(event.primary ? styles.commercialStatusCurrent : {})}}>
-            <span style={styles.commercialStatusLabel}>{event.label}</span>
-            <span style={styles.commercialStatusValue}>{event.value}</span>
-            {event.note && <small style={styles.commercialStatusNote}>{event.note}</small>}
-            {event.details?.length > 0 && (
-              <div style={styles.commercialStatusDetails}>
-                {event.details.map((detail) => (
-                  <div key={detail.label} style={styles.commercialStatusDetail}>
-                    <strong style={styles.commercialStatusDetailLabel}>
-                      {detail.label}:
-                    </strong>
-                    <span style={styles.commercialStatusDetailValue}>
-                      {detail.quoted ? `“${detail.value}”` : detail.value}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
+    <section className="quote-commercial" aria-label="Estado comercial">
+      <div className="quote-commercial__header">
+        <strong className="quote-commercial__title">Estado comercial</strong>
+        <span className={`ui-status-badge quote-commercial__badge ${tone}`}>
+          {current.value}
+        </span>
+        {current.note && (
+          <span className="quote-commercial__issued">{current.note}</span>
+        )}
       </div>
+      {timeline.length > 0 && (
+        <ol className="quote-commercial__timeline">
+          {timeline.map((event, index) => (
+            <li key={`${event.label}-${event.value}-${index}`} className="quote-commercial__event">
+              <span className="quote-commercial__event-label">{event.label}</span>
+              <span className="quote-commercial__event-date">{event.value}</span>
+              {splitNoteParts(event.note).map((part, partIndex) => (
+                <span key={partIndex} className="quote-commercial__event-note">
+                  {part.label && (
+                    <span className="quote-commercial__event-note-label">{part.label}</span>
+                  )}
+                  <span className="quote-commercial__event-note-value">{part.value}</span>
+                </span>
+              ))}
+              {event.details?.length > 0 && (
+                <div className="quote-commercial__details">
+                  {event.details.map((detail) => (
+                    <div key={detail.label} className="quote-commercial__detail">
+                      <span className="quote-commercial__event-note-label">{detail.label}</span>
+                      <span className="quote-commercial__detail-value">
+                        {detail.quoted ? `“${detail.value}”` : detail.value}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
     </section>
   );
 }
 
+// "Destinatario: x · Proveedor: y" -> partes {label, value}; sin ": " solo valor.
+function splitNoteParts(note) {
+  return String(note || "")
+    .split(" · ")
+    .filter(Boolean)
+    .map((part) => {
+      const separator = part.indexOf(": ");
+      return separator > 0
+        ? { label: part.slice(0, separator), value: part.slice(separator + 2) }
+        : { value: part };
+    });
+}
+
 const styles = {
-  commercialStatus: {
-    background: "var(--color-surface-subtle)",
-    border: "1px solid var(--color-border-default)",
-    borderRadius: "6px",
-    display: "grid",
-    gap: "8px",
-    marginTop: "12px",
-    padding: "11px 12px",
-  },
-  commercialStatusTitle: {
-    color: "var(--color-text-strong)",
-    fontSize: "13px",
-  },
-  commercialStatusGrid: {
-    display: "grid",
-    gap: "8px",
-    gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-  },
-  commercialStatusEvent: {
-    borderLeft: "2px solid var(--color-text-brand-accent)",
-    display: "grid",
-    gap: "2px",
-    paddingLeft: "8px",
-  },
-  commercialStatusCurrent: {
-    background: "var(--color-surface-panel)",
-    border: "1px solid var(--color-border-control)",
-    borderLeft: "4px solid var(--color-text-brand-accent)",
-    borderRadius: "5px",
-    gridColumn: "1 / -1",
-    padding: "9px 10px",
-  },
-  commercialStatusLabel: {
-    color: "var(--color-text-default)",
-    fontSize: "12px",
-    fontWeight: 700,
-  },
-  commercialStatusValue: {
-    color: "var(--color-text-muted)",
-    fontSize: "12px",
-  },
-  commercialStatusNote: {
-    color: "var(--color-text-brand-accent)",
-    fontSize: "11px",
-    fontWeight: 700,
-  },
-  commercialStatusDetails: {
-    display: "grid",
-    gap: "6px",
-    marginTop: "4px",
-  },
-  commercialStatusDetail: {
-    display: "grid",
-    gap: "1px",
-  },
-  commercialStatusDetailLabel: {
-    color: "var(--color-text-default)",
-    fontSize: "11px",
-  },
-  commercialStatusDetailValue: {
-    color: "var(--color-text-default)",
-    fontSize: "12px",
-    overflowWrap: "anywhere",
-    whiteSpace: "pre-wrap",
-  },
   panelTitle: {
     margin: "0 0 6px",
     fontSize: "17px",
