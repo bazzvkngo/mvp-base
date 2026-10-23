@@ -21,6 +21,7 @@ const require = createRequire(import.meta.url);
 const {
   GENERIC_QUERY_WARNING,
   MARKET_REFERENCE_CACHE_TTL_MS,
+  STALE_QUERY_WARNING,
   buildInventoryMarketQuery,
   normalizeSerperShoppingResults,
   summarizeMarketResults,
@@ -30,13 +31,13 @@ const {
 
 assert.deepEqual(
   buildInventoryMarketQuery({nombre: "Taladro", marca: "Marca Demo", modelo: "X20"}),
-  {query: "Marca Demo X20", confidence: "HIGH", warnings: []}
+  {query: "Taladro Marca Demo X20", warnings: []}
 );
 assert.deepEqual(
   buildInventoryMarketQuery({nombre: "Taladro inalámbrico"}),
-  {query: "Taladro inalámbrico", confidence: "LOW", warnings: [GENERIC_QUERY_WARNING]}
+  {query: "Taladro inalámbrico", warnings: [GENERIC_QUERY_WARNING]}
 );
-console.log("OK referencias de mercado: consulta determinista y advertencia para producto genérico");
+console.log("OK referencias de mercado: consulta determinista que siempre incluye el nombre");
 
 const fixture = {
   shopping: [
@@ -214,6 +215,8 @@ async function main() {
     assert.equal(firstSearch.data.cached, false);
     assert.ok(firstSearch.data.results.length > 0);
     assert.ok(firstSearch.data.summary);
+    assert.equal(firstSearch.data.status, "OK");
+    assert.equal(firstSearch.data.query, "Taladro inalámbrico Marca Demo X20");
     assert.equal(firstSearch.data.item.internalPrice, 95000);
     const cacheDocPath = `negocios/${businessId}/referenciasPrecios/${itemId}`;
     const cacheAfterFirstSearch = await adminDb.doc(cacheDocPath).get();
@@ -252,6 +255,56 @@ async function main() {
     const technicianSearch = await callable(outsider, "searchInventoryMarketReferences", { businessId, itemId });
     assert.equal(technicianSearch.data.cached, true);
     console.log("OK referencias de mercado: sin restricción de rol, cualquier miembro activo puede consultar");
+
+    // Caché vieja con datos malos (consulta = sólo el código de barras y
+    // resultados de otros rubros): se re-filtra al leer, sin llamar a Serper.
+    const steelItemId = "item-market-ref-perfil";
+    await adminDb.doc(`negocios/${businessId}/inventario/${steelItemId}`).set({
+      negocioId: businessId,
+      nombre: "PERFIL CUADRADO 40 X 40 DE 2,0 MM",
+      codigoBarras: "7802900003401",
+      tipoItem: "producto",
+      estado: "activo",
+      precioInterno: 18371,
+    });
+    const staleResults = [
+      ["Picadora Vitromix", 54990],
+      ["Pluscal comprimidos", 2990],
+      ["Detergente Omo líquido", 9990],
+      ["Crema Nivea", 4590],
+      ["Limpiavidrios 500 ml", 1390],
+    ].map(([title, price], index) => ({
+      provider: "SERPER",
+      externalId: `stale-${index}`,
+      title,
+      merchant: "Tienda",
+      priceRaw: String(price),
+      price,
+      currency: "CLP",
+      url: `https://tienda.example/${index}`,
+      position: index + 1,
+    }));
+    await adminDb.doc(`negocios/${businessId}/referenciasPrecios/${steelItemId}`).set({
+      itemId: steelItemId,
+      query: "7802900003401",
+      confidence: "HIGH",
+      results: staleResults,
+      summary: {count: 5, currency: "CLP", min: 1390, median: 4590, max: 54990},
+      warnings: [],
+      actualizadoEn: Timestamp.fromMillis(Date.now()),
+    });
+    const staleSearch = await callable(owner, "searchInventoryMarketReferences", {
+      businessId,
+      itemId: steelItemId,
+    });
+    assert.equal(staleSearch.data.cached, true);
+    assert.equal(staleSearch.data.status, "NONE");
+    assert.equal(staleSearch.data.confidence, "NONE");
+    assert.equal(staleSearch.data.summary, null);
+    assert.deepEqual(staleSearch.data.results, []);
+    assert.equal(staleSearch.data.totalFound, 5);
+    assert.ok(staleSearch.data.warnings.includes(STALE_QUERY_WARNING));
+    console.log("OK referencias de mercado: caché vieja con datos malos se re-filtra al leer (Sin coincidencias confiables)");
 
     console.log("MARKET_REFERENCES_SMOKE_OK");
   } finally {

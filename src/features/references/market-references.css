@@ -1,0 +1,309 @@
+/* Referencias de mercado de un artículo de inventario.
+   Sólo estilos de este feature; todo sale de src/styles/tokens.css y las
+   etiquetas reutilizan .ui-status-badge de components.css. */
+
+.market-ref-header {
+  align-items: flex-start;
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-xs);
+  padding: var(--space-4);
+}
+
+.market-ref-back {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--color-text-brand-accent);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  min-height: 2.75rem;
+  padding: 0;
+}
+
+.market-ref-state {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: center;
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+}
+
+.market-ref-state__title {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  margin: 0;
+}
+
+.market-ref-state p {
+  color: var(--color-text-default);
+  margin: 0;
+  max-width: 40rem;
+}
+
+.market-ref-state__query {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  overflow-wrap: anywhere;
+}
+
+.market-ref-meta {
+  align-items: center;
+  color: var(--color-text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--font-size-xs);
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+}
+
+.market-ref-query {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  margin: 0 0 var(--space-3);
+  overflow-wrap: anywhere;
+}
+
+.market-ref-warnings,
+.market-ref-note,
+.market-ref-few {
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  display: grid;
+  font-size: var(--font-size-sm);
+  gap: var(--space-1);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3);
+}
+
+.market-ref-warnings,
+.market-ref-few {
+  background: var(--color-warning-50);
+  border-color: var(--color-warning-200);
+  color: var(--color-warning-800);
+  list-style: none;
+}
+
+.market-ref-note {
+  background: var(--color-info-50);
+  border-color: var(--color-info-200);
+  color: var(--color-text-default);
+  margin: var(--space-3) 0 0;
+}
+
+.market-ref-note strong,
+.market-ref-few strong {
+  font-weight: var(--font-weight-bold);
+}
+
+/* Fila de precios: bajo, mediana, alto y tu precio interno. */
+.market-ref-prices {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+}
+
+.market-ref-price {
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-3);
+}
+
+.market-ref-price--own {
+  background: var(--color-surface-brand);
+  border-color: var(--color-text-brand-accent);
+}
+
+.market-ref-price dt {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+.market-ref-price dd {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-lg);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-bold);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Barra bajo → alto con la mediana y tu precio como marcas. */
+.market-ref-range {
+  margin-top: var(--space-4);
+}
+
+.market-ref-range__track {
+  background: var(--color-surface-selected);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-pill);
+  height: var(--space-3);
+  position: relative;
+}
+
+.market-ref-range__mark {
+  border-radius: var(--radius-pill);
+  height: var(--space-6);
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: var(--space-1);
+}
+
+.market-ref-range__mark--median {
+  background: var(--color-text-strong);
+}
+
+.market-ref-range__mark--own {
+  background: var(--color-text-brand-accent);
+  outline: var(--space-1) solid var(--color-surface-panel);
+  z-index: 1;
+}
+
+.market-ref-range__legend {
+  align-items: center;
+  color: var(--color-text-default);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--font-size-xs);
+  gap: var(--space-2) var(--space-4);
+  margin: var(--space-3) 0 0;
+}
+
+.market-ref-range__legend span {
+  align-items: center;
+  display: inline-flex;
+  gap: var(--space-2);
+}
+
+.market-ref-range__swatch {
+  border-radius: var(--radius-pill);
+  display: inline-block;
+  height: var(--space-3);
+  width: var(--space-1);
+}
+
+.market-ref-range__swatch--median {
+  background: var(--color-text-strong);
+}
+
+.market-ref-range__swatch--own {
+  background: var(--color-text-brand-accent);
+}
+
+.market-ref-position {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  margin: var(--space-3) 0 0;
+}
+
+.market-ref-basis {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  margin: var(--space-2) 0 0;
+}
+
+/* Resultados ordenados por relevancia. */
+.market-ref-results {
+  display: grid;
+  gap: var(--space-3);
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+}
+
+.market-ref-result {
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-2) var(--space-3);
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: var(--space-3);
+}
+
+.market-ref-result--outlier {
+  background: var(--color-surface-subtle);
+}
+
+.market-ref-result__title {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.market-ref-result__merchant {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+}
+
+.market-ref-result__price {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-lg);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.market-ref-result__footer {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  grid-column: 1 / -1;
+}
+
+.market-ref-result__link {
+  align-items: center;
+  color: var(--color-text-brand);
+  display: inline-flex;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  gap: var(--space-1);
+  margin-left: auto;
+  min-height: 2.75rem;
+  text-decoration: none;
+}
+
+.market-ref-result__link:hover {
+  color: var(--color-text-brand-hover);
+  text-decoration: underline;
+}
+
+@media (max-width: 640px) {
+  .market-ref-prices {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .market-ref-price dd {
+    font-size: var(--font-size-md);
+  }
+
+  .market-ref-result {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .market-ref-result__price {
+    text-align: left;
+  }
+
+  .market-ref-result__link {
+    margin-left: 0;
+  }
+}

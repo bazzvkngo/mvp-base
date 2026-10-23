@@ -1,24 +1,35 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, ArrowLeft, ExternalLink, RefreshCw, ShoppingBag, Star } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ExternalLink, RefreshCw, SearchX } from "lucide-react";
 import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
 import LoadingState from "../../components/ui/LoadingState";
+import { describeInternalPricePosition } from "../../domain/marketPricePosition.mjs";
 import { searchInventoryMarketReferences } from "../../services/marketReferenceService";
 import { formatDate, formatMoney } from "../../utils/formatters";
 import useBusinessFormat from "../../hooks/useBusinessFormat";
+import "./market-references.css";
 
+const MIN_MATCHES_FOR_SUMMARY = 3;
+
+// La confianza mide cuánto coinciden los resultados con el producto (nombre,
+// medidas y tipo), no cuántos resultados hay ni qué datos tiene el artículo.
 const CONFIDENCE_LABELS = {
   HIGH: "Alta",
   MEDIUM: "Media",
   LOW: "Baja",
 };
 
+const RELEVANCE_BADGES = {
+  ALTA: { label: "Relevancia alta", className: "ui-status-badge ui-status-badge--success" },
+  MEDIA: { label: "Relevancia media", className: "ui-status-badge ui-status-badge--neutral" },
+};
+
 function PageHeader({ onBack, title, subtitle, actions }) {
   return (
-    <header className="erp-page-header" style={styles.header}>
+    <header className="erp-page-header market-ref-header">
       <div className="erp-page-header__content">
-        <button type="button" style={styles.backButton} onClick={onBack}>
+        <button type="button" className="market-ref-back" onClick={onBack}>
           <AppIcon icon={ArrowLeft} size={16} /> Volver a Inventario
         </button>
         <h1 className="erp-page-header__title">{title}</h1>
@@ -26,6 +37,106 @@ function PageHeader({ onBack, title, subtitle, actions }) {
       </div>
       {actions}
     </header>
+  );
+}
+
+function formatDifference(fraction) {
+  if (fraction === null || fraction === undefined) return "";
+  const percent = Math.round(Math.abs(fraction) * 100);
+  if (percent === 0) return " y coincide con la mediana";
+  return ` (${percent} % ${fraction > 0 ? "sobre" : "bajo"} la mediana)`;
+}
+
+function PriceSummary({ summary, item, resultsCount, discardedCount, businessLocale }) {
+  const hasInternalPrice = item?.internalPrice !== null && item?.internalPrice !== undefined;
+  const position = describeInternalPricePosition(summary, item?.internalPrice);
+  const money = (value, currency = summary.currency) => formatMoney(value, currency, businessLocale);
+
+  return (
+    <>
+      <dl className="market-ref-prices">
+        <div className="market-ref-price">
+          <dt>Precio bajo</dt>
+          <dd>{money(summary.min)}</dd>
+        </div>
+        <div className="market-ref-price">
+          <dt>Mediana</dt>
+          <dd>{money(summary.median)}</dd>
+        </div>
+        <div className="market-ref-price">
+          <dt>Precio alto</dt>
+          <dd>{money(summary.max)}</dd>
+        </div>
+        {hasInternalPrice && (
+          <div className="market-ref-price market-ref-price--own">
+            <dt>Tu precio interno</dt>
+            <dd>{money(item.internalPrice, item.currency)}</dd>
+          </div>
+        )}
+      </dl>
+
+      {position && (
+        <div className="market-ref-range">
+          <div
+            className="market-ref-range__track"
+            role="img"
+            aria-label={`${position.label}. Rango de mercado de ${money(summary.min)} a ${money(summary.max)}.`}
+          >
+            <span className="market-ref-range__mark market-ref-range__mark--median" style={{ left: `${position.medianPercent}%` }} />
+            <span className="market-ref-range__mark market-ref-range__mark--own" style={{ left: `${position.internalPercent}%` }} />
+          </div>
+          <p className="market-ref-range__legend">
+            <span><i className="market-ref-range__swatch market-ref-range__swatch--median" /> Mediana</span>
+            <span><i className="market-ref-range__swatch market-ref-range__swatch--own" /> Tu precio interno</span>
+          </p>
+          <p className="market-ref-position">
+            {position.label}
+            {formatDifference(position.differenceVsMedian)}.
+          </p>
+        </div>
+      )}
+
+      <p className="market-ref-basis">
+        Calculado con {summary.count} coincidencias relevantes
+        {summary.outliersExcluded > 0 ? ` (se excluyó ${summary.outliersExcluded} precio atípico)` : ""}
+        {discardedCount > 0 ? `; ${discardedCount} de ${resultsCount + discardedCount} resultados se descartaron por no coincidir con el producto` : ""}.
+      </p>
+    </>
+  );
+}
+
+function UnitsNote({ unit }) {
+  return (
+    <p className="market-ref-note">
+      <span>
+        <strong>Compara unidades.</strong>
+        {unit ? ` Tu precio interno está en «${unit}».` : ""}
+        {" "}Los comercios pueden vender por barra, caja o rollo: por ejemplo, una barra de 6 m frente a un
+        precio por metro. Confirma la presentación en cada enlace antes de decidir un precio.
+      </span>
+    </p>
+  );
+}
+
+function ResultCard({ result, businessLocale }) {
+  const badge = RELEVANCE_BADGES[result.relevance?.level] || RELEVANCE_BADGES.MEDIA;
+  return (
+    <li className={`market-ref-result${result.outlier ? " market-ref-result--outlier" : ""}`}>
+      <div>
+        <h3 className="market-ref-result__title">{result.title}</h3>
+        <p className="market-ref-result__merchant">{result.merchant}</p>
+      </div>
+      <strong className="market-ref-result__price">{formatMoney(result.price, result.currency, businessLocale)}</strong>
+      <div className="market-ref-result__footer">
+        <span className={badge.className}>{badge.label}</span>
+        {result.outlier && (
+          <span className="ui-status-badge ui-status-badge--warning">Precio atípico: fuera del resumen</span>
+        )}
+        <a className="market-ref-result__link" href={result.url} target="_blank" rel="noreferrer">
+          Ver en {result.merchant} <AppIcon icon={ExternalLink} size={14} />
+        </a>
+      </div>
+    </li>
   );
 }
 
@@ -83,7 +194,7 @@ function MarketPriceReferencesView({ businessId, itemId }) {
     return (
       <section className="erp-page">
         <PageHeader onBack={goToInventory} title="Referencias de mercado" />
-        <div className="erp-empty-state" role="alert" style={styles.stateBlock}>
+        <div className="erp-empty-state market-ref-state" role="alert">
           <AppIcon icon={AlertTriangle} size={28} />
           <p>{errorMessage}</p>
         </div>
@@ -95,7 +206,7 @@ function MarketPriceReferencesView({ businessId, itemId }) {
     return (
       <section className="erp-page">
         <PageHeader onBack={goToInventory} title="Referencias de mercado" />
-        <div className="erp-empty-state" role="alert" style={styles.stateBlock}>
+        <div className="erp-empty-state market-ref-state" role="alert">
           <AppIcon icon={AlertTriangle} size={28} />
           <p>{errorMessage}</p>
           <Button type="button" variant="secondary" icon={RefreshCw} onClick={() => load()}>
@@ -106,7 +217,19 @@ function MarketPriceReferencesView({ businessId, itemId }) {
     );
   }
 
-  const { item, results = [], summary, warnings = [], cached, actualizadoEn, confidence } = data || {};
+  const {
+    item,
+    results = [],
+    summary,
+    warnings = [],
+    cached,
+    actualizadoEn,
+    confidence,
+    query,
+    discardedCount = 0,
+    status: matchStatus,
+  } = data || {};
+  const hasMatches = results.length > 0;
 
   return (
     <section className="erp-page">
@@ -125,146 +248,77 @@ function MarketPriceReferencesView({ businessId, itemId }) {
         <div className="erp-panel-header">
           <div>
             <h2 className="erp-panel-title">Resumen de precios</h2>
-            <p className="erp-secondary-text">
-              {cached ? "Resultados desde cache" : "Resultados recién consultados"}
-              {actualizadoEn ? ` · Actualizado el ${formatDate(actualizadoEn)}` : ""}
-              {confidence ? ` · Confianza de búsqueda: ${CONFIDENCE_LABELS[confidence] || confidence}` : ""}
+            <p className="market-ref-meta">
+              <span>{cached ? "Resultados desde cache" : "Resultados recién consultados"}</span>
+              {actualizadoEn && <span>Actualizado el {formatDate(actualizadoEn)}</span>}
+              {hasMatches && confidence && (
+                <span>Confianza de búsqueda: {CONFIDENCE_LABELS[confidence] || confidence}</span>
+              )}
             </p>
           </div>
         </div>
 
+        {query && <p className="market-ref-query">Búsqueda enviada: {query}</p>}
+
         {warnings.length > 0 && (
-          <ul style={styles.warningsBox}>
+          <ul className="market-ref-warnings">
             {warnings.map((warning) => <li key={warning}>{warning}</li>)}
           </ul>
         )}
 
-        {summary ? (
-          <dl className="erp-meta-grid">
-            <div className="erp-meta">
-              <dt className="erp-meta__label">Precio bajo</dt>
-              <dd className="erp-meta__value">{formatMoney(summary.min, summary.currency, businessLocale)}</dd>
+        {matchStatus === "OK" && summary && (
+          <>
+            <PriceSummary
+              summary={summary}
+              item={item}
+              resultsCount={results.length}
+              discardedCount={discardedCount}
+              businessLocale={businessLocale}
+            />
+            <UnitsNote unit={item?.unit} />
+          </>
+        )}
+
+        {matchStatus === "FEW" && (
+          <>
+            <div className="market-ref-few" role="note">
+              <strong>Pocas coincidencias</strong>
+              <span>
+                Solo {results.length === 1 ? "1 resultado coincide" : `${results.length} resultados coinciden`} con
+                el producto. Se necesitan al menos {MIN_MATCHES_FOR_SUMMARY} para calcular un resumen de precios, así
+                que no se muestra. Revisa cada resultado por separado.
+              </span>
             </div>
-            <div className="erp-meta">
-              <dt className="erp-meta__label">Precio medio</dt>
-              <dd className="erp-meta__value">{formatMoney(summary.median, summary.currency, businessLocale)}</dd>
-            </div>
-            <div className="erp-meta">
-              <dt className="erp-meta__label">Precio alto</dt>
-              <dd className="erp-meta__value">{formatMoney(summary.max, summary.currency, businessLocale)}</dd>
-            </div>
-            {item?.internalPrice != null && (
-              <div className="erp-meta">
-                <dt className="erp-meta__label">Tu precio interno</dt>
-                <dd className="erp-meta__value">{formatMoney(item.internalPrice, item.currency, businessLocale)}</dd>
-              </div>
-            )}
-          </dl>
-        ) : (
-          <div className="erp-empty-state" style={styles.stateBlock}>
-            <AppIcon icon={ShoppingBag} size={28} />
-            <p>No encontramos resultados de mercado para este producto.</p>
+            <UnitsNote unit={item?.unit} />
+          </>
+        )}
+
+        {!hasMatches && (
+          <div className="erp-empty-state market-ref-state">
+            <AppIcon icon={SearchX} size={28} />
+            <h3 className="market-ref-state__title">Sin coincidencias confiables</h3>
+            <p>
+              {discardedCount > 0
+                ? `Google Shopping devolvió ${discardedCount} resultado${discardedCount === 1 ? "" : "s"}, pero ninguno coincide con el nombre y las medidas de este producto. Por eso no mostramos precios ni un resumen.`
+                : "No encontramos resultados de mercado para este producto, así que no hay precios ni resumen que mostrar."}
+            </p>
+            <p>Revisa que el nombre del artículo incluya el tipo de producto y sus medidas, y vuelve a buscar con «Forzar refresco».</p>
           </div>
         )}
       </div>
 
-      {results.length > 0 && (
+      {hasMatches && (
         <div className="erp-panel">
-          <h2 className="erp-panel-title">Comercios encontrados</h2>
-          <div className="erp-card-list" style={styles.resultsList}>
+          <h2 className="erp-panel-title">Coincidencias por relevancia</h2>
+          <ul className="market-ref-results">
             {results.map((result) => (
-              <article className="erp-record-card" key={result.externalId || result.url}>
-                <div className="erp-record-card__header" style={styles.priceRow}>
-                  <div>
-                    <h3 className="erp-record-card__title">{result.merchant}</h3>
-                    <p className="erp-record-card__subtitle">{result.title}</p>
-                  </div>
-                  <strong>{formatMoney(result.price, result.currency, businessLocale)}</strong>
-                </div>
-                {result.rating != null && (
-                  <p style={styles.ratingText}>
-                    <AppIcon icon={Star} size={13} /> {result.rating}
-                    {result.ratingCount != null ? ` (${result.ratingCount})` : ""}
-                  </p>
-                )}
-                <a style={styles.merchantLink} href={result.url} target="_blank" rel="noreferrer">
-                  Ver en {result.merchant} <AppIcon icon={ExternalLink} size={14} />
-                </a>
-              </article>
+              <ResultCard key={result.externalId || result.url} result={result} businessLocale={businessLocale} />
             ))}
-          </div>
+          </ul>
         </div>
       )}
     </section>
   );
 }
-
-const styles = {
-  header: {
-    alignItems: "flex-start",
-    background: "var(--color-surface-panel)",
-    border: "1px solid var(--color-border-default)",
-    borderRadius: "4px",
-    padding: "18px",
-  },
-  backButton: {
-    alignItems: "center",
-    background: "transparent",
-    border: 0,
-    color: "var(--color-text-brand-accent)",
-    cursor: "pointer",
-    display: "inline-flex",
-    fontSize: "13px",
-    fontWeight: 700,
-    gap: "6px",
-    marginBottom: "8px",
-    padding: 0,
-  },
-  stateBlock: {
-    display: "grid",
-    gap: "10px",
-    justifyItems: "center",
-    padding: "28px 14px",
-    textAlign: "center",
-  },
-  warningsBox: {
-    background: "var(--color-warning-50)",
-    border: "1px solid var(--color-warning-200)",
-    borderRadius: "4px",
-    color: "var(--color-warning-800)",
-    display: "grid",
-    fontSize: "13px",
-    gap: "4px",
-    margin: "0 0 14px",
-    padding: "10px 12px",
-  },
-  priceRow: {
-    alignItems: "flex-start",
-    gap: "10px",
-    justifyContent: "space-between",
-  },
-  resultsList: {
-    display: "grid",
-    gap: "10px",
-  },
-  merchantLink: {
-    alignItems: "center",
-    color: "var(--color-text-brand-accent)",
-    display: "inline-flex",
-    fontSize: "13px",
-    fontWeight: 700,
-    gap: "4px",
-    marginTop: "8px",
-    textDecoration: "none",
-  },
-  ratingText: {
-    alignItems: "center",
-    color: "var(--color-text-muted)",
-    display: "flex",
-    fontSize: "13px",
-    gap: "4px",
-    margin: "8px 0 0",
-  },
-};
 
 export default MarketPriceReferencesView;
