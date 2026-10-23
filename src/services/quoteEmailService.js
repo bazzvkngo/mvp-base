@@ -2,9 +2,11 @@ import { httpsCallable } from "firebase/functions";
 import { assertCloudFunctionAllowed } from "../config/firebaseEnvironment.mjs";
 import { getFirebaseFunctions } from "../firebase/firebaseConfig";
 import { formatDate, formatMoney } from "../utils/formatters";
-import { buildQuoteValidityEmailLine } from "../domain/quoteEmailCopy.mjs";
-import {resolveDocumentCompany} from "../domain/companySnapshot.mjs";
-import { buildQuoteReplyLine, resolveReplyToHint } from "../domain/emailReplyTo.mjs";
+import {
+  buildQuoteEmailFromTemplate,
+  buildQuoteEmailPreview,
+  getQuoteEmailClientAddress,
+} from "../domain/quoteEmailTemplate.mjs";
 import { DRAFT_QUOTE_NUMBER_LABEL, getQuoteDisplayNumber } from "./quoteService";
 
 const FUNCTIONS_REGION = "us-central1";
@@ -25,53 +27,43 @@ export function isValidEmail(value) {
 }
 
 export function buildDefaultQuoteEmail({ quote, companyProfile, accountEmail = "" }) {
-  const quoteNumber = getQuoteDisplayNumber(quote, "");
-  const company = resolveDocumentCompany(quote, companyProfile);
-  const companyName = company.nombreComercial || company.razonSocial || "";
-  const contactName =
-    quote?.clienteNombre ||
-    quote?.cliente?.nombreRazonSocial ||
-    quote?.clienteSnapshot?.nombreRazonSocial ||
-    quote?.clienteContacto ||
-    quote?.cliente?.personaContacto ||
-    quote?.clienteSnapshot?.personaContacto ||
-    "";
-  const projectName = String(quote?.proyectoNombre || "").trim();
-  const hasTotal = quote?.total !== null && quote?.total !== undefined;
-  const total = Number(quote?.total);
-  const quoteLabel = quoteNumber ? ` ${quoteNumber}` : "";
-  const projectLine = projectName
-    ? `, correspondiente a ${projectName}`
-    : "";
-  const totalLine = hasTotal && Number.isFinite(total)
-    ? `, por un total de ${formatMoney(total, quote?.moneda, quote?.locale)}`
-    : "";
-  const hasReplyTo = Boolean(
-    resolveReplyToHint({ companyEmail: companyProfile?.email, accountEmail })
-  );
-  const paragraphs = [
-    contactName ? `Hola ${contactName}:` : "Hola:",
-    `Te enviamos la cotización${quoteLabel}${projectLine}${totalLine}.`,
-    buildQuoteValidityEmailLine(quote, formatDate),
-    "Adjuntamos el documento PDF con el detalle completo.",
-    "Puedes revisar y responder la propuesta desde el enlace incluido en este correo.",
-    buildQuoteReplyLine(hasReplyTo),
-    companyName ? `Saludos,\n${companyName}` : "Saludos,",
-  ].filter(Boolean);
-  const subjectParts = [
-    `Cotización${quoteLabel}`,
-    companyName,
-  ].filter(Boolean);
+  const { asunto, mensaje } = buildQuoteEmailFromTemplate({
+    quote,
+    companyProfile,
+    accountEmail,
+    quoteNumber: getQuoteDisplayNumber(quote, ""),
+    formatMoney,
+    formatDate,
+  });
 
   return {
-    emailCliente:
-      quote?.cliente?.email ||
-      quote?.clienteSnapshot?.email ||
-      quote?.clienteEmail ||
-      "",
-    asunto: subjectParts.join(" | "),
-    mensaje: paragraphs.join("\n\n"),
+    emailCliente: getQuoteEmailClientAddress(quote),
+    asunto,
+    mensaje,
   };
+}
+
+export function buildQuoteEmailPanelPreview({
+  quote,
+  companyProfile,
+  accountEmail = "",
+  emailCliente,
+  asunto,
+  mensaje,
+  enviarCopia,
+}) {
+  return buildQuoteEmailPreview({
+    quote,
+    companyProfile,
+    accountEmail,
+    quoteNumber: getQuoteDisplayNumber(quote, ""),
+    emailCliente,
+    asunto,
+    mensaje,
+    enviarCopia,
+    formatMoney,
+    formatDate,
+  });
 }
 
 export function isQuoteEmailSendable(quote, quoteId = quote?.id) {

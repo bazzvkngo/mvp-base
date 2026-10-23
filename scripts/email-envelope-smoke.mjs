@@ -2,8 +2,12 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import {
   buildQuoteReplyLine,
+  buildSenderDisplayName,
   normalizeReplyAddress as clientNormalizeReplyAddress,
+  resolveCopyPreview,
   resolveReplyToHint,
+  resolveReplyToPreview,
+  sanitizeSenderName as clientSanitizeSenderName,
 } from "../src/domain/emailReplyTo.mjs";
 
 const require = createRequire(import.meta.url);
@@ -169,8 +173,91 @@ assert.equal(
 assert.equal(resolveReplyToHint({ companyEmail: "mal", accountEmail: "" }), "");
 assert.match(buildQuoteReplyLine(true), /responde a este correo/);
 assert.doesNotMatch(buildQuoteReplyLine(false), /responde a este correo/);
-assert.equal(buildQuoteReplyLine(false), "Puedes responder la propuesta desde el enlace.");
+// Sin Reply-To no se agrega una segunda frase del enlace (era el texto duplicado).
+assert.equal(buildQuoteReplyLine(false), "");
+
+// Paridad: lo que el panel muestra como remitente, Reply-To y copia sale de las
+// mismas reglas que arma el servidor, para cualquier combinación de entradas.
+{
+  const names = [
+    "Bagner",
+    "",
+    undefined,
+    null,
+    "  Comercial   Andina  SpA ",
+    'Taller "El Rápido"\r\nBcc: x@y.cl <a@b.cl>',
+    "Ñandú\\ “Ltda.” «Sur»",
+    "a\u0000b c\u0085d",
+    "x".repeat(200),
+    `${"y".repeat(59)}   z`,
+    '<>"',
+    "   ",
+    12345,
+  ];
+  for (const name of names) {
+    assert.equal(clientSanitizeSenderName(name), sanitizeSenderName(name), String(name));
+    const serverFrom = buildSenderFrom({ configuredFrom: CONFIGURED, businessName: name });
+    const serverDisplay = serverFrom.match(/^"(.*)" <[^<>]+>$/)?.[1];
+    assert.equal(buildSenderDisplayName(name), serverDisplay, String(name));
+  }
+
+  const emails = [
+    "contacto@bagner.cl",
+    " Contacto@Bagner.CL ",
+    "",
+    undefined,
+    null,
+    "mal",
+    "a@b.cl,c@d.cl",
+    "a@b.cl\nBcc: x@y.cl",
+    "Nombre <a@b.cl>",
+    `${"a".repeat(200)}@b.cl`,
+    ["a@b.cl"],
+    "yo@x.cl",
+  ];
+  for (const companyEmail of emails) {
+    for (const accountEmail of emails) {
+      const server = resolveReplyTo({ companyEmail, accountEmail });
+      const client = resolveReplyToPreview({ companyEmail, accountEmail });
+      assert.deepEqual(client, server, `${companyEmail} | ${accountEmail}`);
+      assert.equal(resolveReplyToHint({ companyEmail, accountEmail }), server.replyTo);
+    }
+  }
+  for (const sendCopy of [true, false, "true", 1, undefined]) {
+    for (const accountEmail of ["yo@x.cl", "Yo@X.cl", "", "mal", undefined]) {
+      for (const to of ["c@d.cl", "yo@x.cl", "YO@X.CL", "", undefined]) {
+        const server = resolveCopyRecipient({ sendCopy, accountEmail, to })[0] || "";
+        assert.equal(
+          resolveCopyPreview({ sendCopy, accountEmail, to }),
+          server,
+          `${sendCopy} | ${accountEmail} | ${to}`
+        );
+      }
+    }
+  }
+
+  // El envelope completo coincide con lo que muestra el panel.
+  const envelope = buildDeliveryEnvelope({
+    accountEmail: "yo@x.cl",
+    businessName: "Bagner",
+    companyEmail: "contacto@bagner.cl",
+    configuredFrom: CONFIGURED,
+    sendCopy: true,
+    to: "cliente@c.cl",
+  });
+  assert.equal(
+    envelope.from,
+    `"${buildSenderDisplayName("Bagner")}" <cotizaciones@cotizaciones.bagner.cl>`
+  );
+  assert.equal(
+    envelope.replyTo,
+    resolveReplyToPreview({ companyEmail: "contacto@bagner.cl", accountEmail: "yo@x.cl" }).replyTo
+  );
+  assert.deepEqual(envelope.bcc, [
+    resolveCopyPreview({ sendCopy: true, accountEmail: "yo@x.cl", to: "cliente@c.cl" }),
+  ]);
+}
 
 console.log(
-  "EMAIL_ENVELOPE_SMOKE_OK From saneado, Reply-To con respaldo, copia oculta y texto de respuesta"
+  "EMAIL_ENVELOPE_SMOKE_OK From saneado, Reply-To con respaldo, copia oculta, texto de respuesta y paridad cliente/servidor"
 );

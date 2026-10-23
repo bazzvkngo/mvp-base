@@ -2589,30 +2589,230 @@
 }
 
 .quote-email-dialog__alternate-note {
-  background: var(--color-surface-subtle);
-  border-left: 3px solid var(--color-brand-500);
-  border-radius: var(--radius-sm);
+  align-items: flex-start;
   color: var(--color-text-muted);
-  display: grid;
+  display: flex;
   font-size: var(--font-size-xs);
-  font-weight: 400;
-  gap: 2px;
+  font-weight: var(--font-weight-regular);
+  gap: var(--space-2);
   line-height: var(--line-height-default);
-  margin-top: var(--space-1);
-  padding: var(--space-2) var(--space-3);
+  margin: var(--space-1) 0 0;
 }
 
-.quote-email-dialog__alternate-note strong {
+.quote-email-dialog__alternate-note .app-icon {
+  color: var(--color-text-brand-accent);
+  margin-top: 2px;
+}
+
+.quote-email-dialog__envelope {
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3);
+}
+
+.quote-email-dialog__envelope > div {
+  display: grid;
+  gap: var(--space-1) var(--space-3);
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+}
+
+.quote-email-dialog__envelope dt {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.quote-email-dialog__envelope dd {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-sm);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.quote-email-dialog__views {
+  justify-self: start;
+}
+
+.quote-email-dialog__reply-notice {
+  align-items: flex-start;
+  background: var(--color-surface-brand);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  display: flex;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-3);
+}
+
+.quote-email-dialog__reply-notice .app-icon {
+  color: var(--color-text-brand-accent);
+  margin-top: 2px;
+}
+
+.quote-email-dialog__reply-notice span {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.quote-email-dialog__reply-notice strong {
   color: var(--color-text-strong);
   font-size: var(--font-size-sm);
 }
 
-.quote-email-dialog__recipient-help {
+.quote-email-dialog__reply-notice small {
+  color: var(--color-text-default);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-default);
+}
+
+.quote-email-dialog__send {
+  box-shadow: var(--shadow-sm);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+  min-height: 48px;
+  padding-inline: var(--space-6);
+}
+
+.quote-email-preview {
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  display: grid;
+  overflow: hidden;
+}
+
+.quote-email-preview__headers {
+  background: var(--color-surface-subtle);
+  border-bottom: 1px solid var(--color-border-subtle);
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-3);
+}
+
+.quote-email-preview__headers > div {
+  display: grid;
+  gap: var(--space-1) var(--space-3);
+  grid-template-columns: 6rem minmax(0, 1fr);
+}
+
+.quote-email-preview__headers dt {
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
-  font-weight: 400;
+}
+
+.quote-email-preview__headers dd {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-sm);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.quote-email-preview__body {
+  color: var(--color-text-default);
+  display: grid;
+  font-size: var(--font-size-sm);
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.quote-email-preview__body p {
+  margin: 0;
+}
+
+.quote-email-preview__brand {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+}
+
+.quote-email-preview__title {
+  color: var(--color-text-strong);
+  font-weight: var(--font-weight-bold);
+}
+
+.quote-email-preview__message {
   line-height: var(--line-height-default);
-  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.quote-email-preview__message--empty {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.quote-email-preview__summary {
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-3);
+}
+
+.quote-email-preview__summary > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  justify-content: space-between;
+}
+
+.quote-email-preview__summary dt {
+  color: var(--color-text-muted);
+}
+
+.quote-email-preview__summary dd {
+  color: var(--color-text-strong);
+  font-weight: var(--font-weight-bold);
+  margin: 0;
+}
+
+.quote-email-preview__note {
+  background: var(--color-info-50);
+  border: 1px solid var(--color-info-200);
+  border-radius: var(--radius-md);
+  color: var(--color-info-700);
+  font-size: var(--font-size-xs);
+  padding: var(--space-3);
+}
+
+.quote-email-preview__cta {
+  text-align: center;
+}
+
+.quote-email-preview__cta span {
+  background: var(--color-brand-600);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-inverse);
+  display: inline-block;
+  font-weight: var(--font-weight-bold);
+  padding: var(--space-3) var(--space-4);
+}
+
+.quote-email-preview__contact {
+  border-top: 1px solid var(--color-border-subtle);
+  display: grid;
+  font-size: var(--font-size-xs);
+  gap: var(--space-1);
+  overflow-wrap: anywhere;
+  padding-top: var(--space-3);
+}
+
+.quote-email-preview__contact strong {
+  color: var(--color-text-strong);
+}
+
+.quote-email-preview__footer {
+  border-top: 1px solid var(--color-border-subtle);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  padding-top: var(--space-3);
 }
 
 .quote-email-dialog__summary {
@@ -2704,6 +2904,19 @@
 
   .quote-email-dialog__field textarea {
     min-height: 200px;
+  }
+
+  .quote-email-dialog__envelope > div,
+  .quote-email-preview__headers > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .quote-email-dialog__views {
+    justify-self: stretch;
+  }
+
+  .quote-email-dialog__send {
+    flex: 1 1 auto;
   }
 }
 

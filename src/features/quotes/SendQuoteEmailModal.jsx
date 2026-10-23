@@ -1,12 +1,24 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Copy, ExternalLink, FileText } from "lucide-react";
+import {
+  Check,
+  Copy,
+  ExternalLink,
+  Eye,
+  FileText,
+  Info,
+  PencilLine,
+  Send,
+} from "lucide-react";
 import { sileo } from "sileo";
 import Button from "../../components/ui/Button";
 import AppIcon from "../../components/ui/AppIcon";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
+import SegmentedControl from "../../components/ui/SegmentedControl";
+import QuoteEmailPreview from "./QuoteEmailPreview";
 import { firebaseEnvironment } from "../../config/firebaseEnvironment.mjs";
 import {
   buildDefaultQuoteEmail,
+  buildQuoteEmailPanelPreview,
   createQuoteEmailRequestId,
   isQuoteEmailSendable,
   isValidEmail,
@@ -68,6 +80,20 @@ function SendQuoteEmailModal({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [qaPublicUrl, setQaPublicUrl] = useState("");
+  const [view, setView] = useState("edit");
+  const preview = useMemo(
+    () =>
+      buildQuoteEmailPanelPreview({
+        quote,
+        companyProfile,
+        accountEmail,
+        emailCliente,
+        asunto,
+        mensaje,
+        enviarCopia,
+      }),
+    [accountEmail, asunto, companyProfile, emailCliente, enviarCopia, mensaje, quote]
+  );
 
   useEffect(() => {
     if (!open) {
@@ -79,6 +105,7 @@ function SendQuoteEmailModal({
     setAsunto(defaults.asunto);
     setMensaje(defaults.mensaje);
     setEnviarCopia(false);
+    setView("edit");
     setError("");
     setQaPublicUrl("");
     submittingRef.current = false;
@@ -245,6 +272,8 @@ function SendQuoteEmailModal({
       <Button
         type="submit"
         form="send-quote-email-form"
+        className="quote-email-dialog__send"
+        icon={Send}
         loading={sending} disabled={!canSendQuote}
       >
         {firebaseEnvironment.isEmulator
@@ -354,43 +383,36 @@ function SendQuoteEmailModal({
               readOnly={!usingAlternateEmail}
             />
             {usingAlternateEmail && (
-              <div
+              <p
                 className="quote-email-dialog__alternate-note"
                 role="status"
               >
-                <strong>Envío puntual a un correo alternativo</strong>
+                <AppIcon icon={Info} size={14} aria-hidden="true" />
                 <span>
-                  Este correo se utilizará sólo para este envío. Este cambio
-                  sólo aplica a esta cotización y no modifica la ficha ni los
+                  Correo alternativo: solo para este envío. No modifica los
                   datos del cliente.
                 </span>
-              </div>
+              </p>
             )}
-            <p className="quote-email-dialog__recipient-help">
-              La persona que reciba este correo podrá revisar, aceptar o rechazar
-              esta cotización.
-            </p>
           </div>
 
-          <label className="quote-email-dialog__field">
-            <span>Asunto</span>
-            <input
-              value={asunto}
-              maxLength={180}
-              onChange={(event) => setAsunto(event.target.value)}
-              disabled={sending}
-            />
-          </label>
-
-          <label className="quote-email-dialog__field">
-            <span>Mensaje</span>
-            <textarea
-              value={mensaje}
-              maxLength={2000}
-              onChange={(event) => setMensaje(event.target.value)}
-              disabled={sending}
-            />
-          </label>
+          <dl className="quote-email-dialog__envelope" aria-label="Datos de envío">
+            <div>
+              <dt>De</dt>
+              <dd>{preview.from}</dd>
+            </div>
+            <div>
+              <dt>Responder a</dt>
+              <dd>
+                {preview.replyTo ||
+                  "Sin correo de respuesta: el cliente responderá desde el enlace"}
+              </dd>
+            </div>
+            <div>
+              <dt>Copia oculta</dt>
+              <dd>{preview.copyTo || "Sin copia"}</dd>
+            </div>
+          </dl>
 
           {accountEmail && (
             <label className="ui-checkbox">
@@ -406,9 +428,57 @@ function SendQuoteEmailModal({
               </span>
             </label>
           )}
+
+          <SegmentedControl
+            className="quote-email-dialog__views"
+            legend="Contenido del correo"
+            name="quote-email-view"
+            onChange={setView}
+            options={[
+              { value: "edit", label: "Redactar", icon: PencilLine },
+              { value: "preview", label: "Vista previa", icon: Eye },
+            ]}
+            value={view}
+          />
+
+          {view === "edit" ? (
+            <>
+              <label className="quote-email-dialog__field">
+                <span>Asunto</span>
+                <input
+                  value={asunto}
+                  maxLength={180}
+                  onChange={(event) => setAsunto(event.target.value)}
+                  disabled={sending}
+                />
+              </label>
+
+              <label className="quote-email-dialog__field">
+                <span>Mensaje</span>
+                <textarea
+                  value={mensaje}
+                  maxLength={2000}
+                  onChange={(event) => setMensaje(event.target.value)}
+                  disabled={sending}
+                />
+              </label>
+            </>
+          ) : (
+            <QuoteEmailPreview preview={preview} />
+          )}
         </section>
 
         <aside className="quote-email-dialog__summary">
+          <p className="quote-email-dialog__reply-notice">
+            <AppIcon icon={Info} size={18} aria-hidden="true" />
+            <span>
+              <strong>El cliente podrá aceptar o rechazar</strong>
+              <small>
+                La persona que reciba este correo podrá revisar, aceptar o
+                rechazar esta cotización desde el enlace.
+              </small>
+            </span>
+          </p>
           <h3>Resumen</h3>
           <dl>
             <div>
