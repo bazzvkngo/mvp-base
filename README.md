@@ -140,11 +140,13 @@ antiguas puede perder datos que el backend anterior no lee.
 Verificación previa:
 
 ```bash
-git status --short          # sin cambios pendientes
-firebase use                # debe indicar tesis-inventario-ia
-npm ci
-npm --prefix functions ci
-npm run test:rules          # reglas validadas en Emulator Suite
+npm run verify:deploy
+```
+
+Antes de tocar reglas, ejecutarlo con emuladores:
+
+```bash
+npm run verify:deploy -- --emuladores
 ```
 
 ### 1. Reglas

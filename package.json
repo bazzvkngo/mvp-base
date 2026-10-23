@@ -121,7 +121,8 @@
     "test:empty-state": "node scripts/empty-state-illustration-smoke.mjs",
     "test:notification-bell": "node scripts/notification-bell-smoke.mjs",
     "test:summary": "node scripts/financial-model-smoke.mjs",
-    "seed:business-catalogs:emulator": "node scripts/seed-business-catalogs.mjs --emulator"
+    "seed:business-catalogs:emulator": "node scripts/seed-business-catalogs.mjs --emulator",
+    "verify:deploy": "node scripts/verificar-despliegue.mjs"
   },
   "browserslist": {
     "production": [
