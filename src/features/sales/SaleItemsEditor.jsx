@@ -4,7 +4,54 @@ import {getSaleItemTypeLabel} from "../../domain/saleModel.mjs";
 
 const money = (value) => `$${Math.round(Number(value || 0)).toLocaleString("es-CL")}`;
 
-export default function SaleItemsEditor({disabled, inventory, items, onChange, onOpenCatalog, onScanProduct, readOnly, referencesLocked = false}) {
+const sameText = (a, b) => String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
+
+// Vista histórica (venta confirmada o cancelada): una fila por ítem con
+// encabezados únicos. Sin stock actual: no es un dato de la venta.
+function SoldItemsTable({items}) {
+  return (
+    <div className="sale-sold">
+      <table className="sale-sold__table">
+        <thead>
+          <tr>
+            <th scope="col">Ítem</th>
+            <th scope="col">Código</th>
+            <th scope="col">Cantidad</th>
+            <th scope="col">Precio unitario</th>
+            <th scope="col">Desc. %</th>
+            <th scope="col">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item) => {
+            const discount = Number(item.descuentoPct || 0);
+            const total = item.totalLinea ?? Number(item.cantidad || 0) * Number(item.precioUnitario || 0) * (1 - discount / 100);
+            const showUnit = item.unidad && !sameText(item.unidad, "unidad");
+            return (
+              <tr key={item.lineaId}>
+                <td className="sale-sold__item" data-label="Ítem">
+                  <div className="sale-line-title">
+                    <strong title={item.nombre}>{item.nombre}</strong>
+                    <span className={`sale-item-type sale-item-type--${item.tipoItem}`}>{getSaleItemTypeLabel(item.tipoItem)}</span>
+                    {item.origenAdicionalId && <span className="sale-item-type sale-item-type--adicional">Adicional</span>}
+                  </div>
+                  {item.descripcion && !sameText(item.descripcion, item.nombre) && <p className="sale-sold__description" title={item.descripcion}>{item.descripcion}</p>}
+                </td>
+                <td className="sale-sold__code" data-label="Código" title={item.codigo || undefined}>{item.codigo || "—"}</td>
+                <td data-label="Cantidad" title={showUnit ? `${item.cantidad} ${item.unidad}` : undefined}>{item.cantidad}{showUnit ? ` ${item.unidad}` : ""}</td>
+                <td data-label="Precio unitario">{money(item.precioUnitario)}</td>
+                <td data-label="Desc. %">{discount > 0 ? `${discount}%` : "—"}</td>
+                <td className="sale-sold__total" data-label="Total">{money(total)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export default function SaleItemsEditor({disabled, historical = false, inventory, items, onChange, onOpenCatalog, onScanProduct, readOnly, referencesLocked = false}) {
   const update = (index, field, value) => onChange(items.map((item, current) => current === index ? {...item, [field]: value} : item));
   const inventoryById = new Map(inventory.map((item) => [item.id, item]));
   const canChangeReferences = !disabled && !referencesLocked;
@@ -26,6 +73,8 @@ export default function SaleItemsEditor({disabled, inventory, items, onChange, o
       </header>
       {!items.length ? (
         <div className="po-empty">Agrega productos, servicios o actividades.</div>
+      ) : historical ? (
+        <SoldItemsTable items={items} />
       ) : (
         <div className="po-lines">
           <div className="po-lines__head"><span>Ítem</span><span>Cantidad</span><span>Precio unitario</span><span>Desc. %</span><span>Total</span><span /></div>

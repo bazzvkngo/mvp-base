@@ -1,6 +1,8 @@
 import React, {useEffect, useMemo, useRef, useState} from "react";
 import {useLocation, useNavigate, useParams} from "react-router-dom";
+import {Ban, Briefcase, Eye, FileText, Printer} from "lucide-react";
 import {sileo} from "sileo";
+import Button from "../components/ui/Button";
 import LoadingState from "../components/ui/LoadingState";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import {
@@ -19,11 +21,13 @@ import SaleCommercialMarginPanel from "../features/sales/SaleCommercialMarginPan
 import SaleItemsEditor from "../features/sales/SaleItemsEditor";
 import SalePrintView from "../features/sales/SalePrintView";
 import SaleSummaryPanel from "../features/sales/SaleSummaryPanel";
+import {buildSaleTimeline} from "../features/sales/saleTimeline.mjs";
+import {auth} from "../firebase/firebaseConfig";
 import {listarClientes} from "../services/clientService";
 import {getCompanyProfile} from "../services/companyService";
 import {findActiveProductByBarcode, getInventoryItems} from "../services/inventoryService";
 import {listarAdicionalesPendientesTrabajo} from "../services/workService.js";
-import {formatDate} from "../utils/formatters";
+import {formatDate, formatTimestamp} from "../utils/formatters";
 import {
   actualizarVentaBorrador,
   cancelarVenta,
@@ -38,6 +42,67 @@ const EMPTY_TOTALS = {subtotal: 0, descuentoItems: 0, descuento: 0, descuentoTot
 const today = () => new Intl.DateTimeFormat("en-CA", {timeZone: "America/Santiago"}).format(new Date());
 const emptyDraft = () => ({clienteId: "", trabajoId: "", descuento: 0, afectaIva: true, fechaVenta: today(), fechaDocumento: "", tipoDocumento: "sin_documento", numeroDocumento: "", condicionesPago: "", observaciones: "", items: []});
 const lineId = () => `linea-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
+
+function SaleHistory({events}) {
+  if (!events.length) return null;
+  return (
+    <section className="po-panel sale-timeline-panel" aria-labelledby="sale-history-title">
+      <header className="sale-section-heading">
+        <div><span className="po-kicker">Trazabilidad</span><h2 id="sale-history-title">Historial de la venta</h2></div>
+      </header>
+      <ol className="sale-timeline">
+        {events.map((event) => {
+          const meta = [event.date ? formatTimestamp(event.date) : "", event.actor].filter(Boolean).join(" · ");
+          return (
+            <li className={`sale-timeline__event${event.tone ? ` sale-timeline__event--${event.tone}` : ""}`} key={event.key}>
+              <strong>{event.title}</strong>
+              {meta && <span className="sale-timeline__meta">{meta}</span>}
+              {event.detail && <p>{event.detail}</p>}
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+}
+
+function SaleInfoCard({alert, onOpenProject, onOpenQuote, project, sale, stockMessage}) {
+  const hasDocument = sale.tipoDocumento !== "sin_documento";
+  const documentDetail = [
+    sale.numeroDocumento ? `N° ${sale.numeroDocumento}` : "",
+    sale.fechaDocumento ? formatDate(sale.fechaDocumento) : "",
+  ].filter(Boolean).join(" · ");
+  return (
+    <section className="po-panel sale-info" aria-labelledby="sale-info-title">
+      <h2 id="sale-info-title" className="sale-info__title">Contexto de la venta</h2>
+      <dl className="sale-info__grid">
+        <div>
+          <dt>Cotización de origen</dt>
+          <dd>{sale.cotizacionId ? <button type="button" className="sale-inline-link" onClick={onOpenQuote}>{sale.cotizacionNumero || "Cotización aceptada"}</button> : "Venta directa"}</dd>
+        </div>
+        {project && (
+          <div>
+            <dt>Proyecto</dt>
+            <dd><button type="button" className="sale-inline-link" onClick={onOpenProject}>{project.numero || project.titulo || project.id}</button></dd>
+          </div>
+        )}
+        <div><dt>Fecha de venta</dt><dd>{formatDate(sale.fechaVenta)}</dd></div>
+        {hasDocument && (
+          <div>
+            <dt>Documento</dt>
+            <dd>{getSaleDocumentTypeLabel(sale.tipoDocumento)}{documentDetail ? ` · ${documentDetail}` : ""}</dd>
+          </div>
+        )}
+        {stockMessage && (
+          <div className="sale-info__wide">
+            <dt>Estado del stock</dt>
+            <dd><p className={`sale-stock-note${alert ? " po-message po-message--error" : ""}`} role={alert ? "alert" : undefined}>{stockMessage}</p></dd>
+          </div>
+        )}
+      </dl>
+    </section>
+  );
+}
 
 export default function NewSalePage({businessId, role}) {
   const {ventaId} = useParams();
@@ -79,6 +144,9 @@ export default function NewSalePage({businessId, role}) {
     canManage && sale?.cotizacionId && sale?.estado === "confirmada"
   );
   const hasProducts = draft.items.some((item) => item.tipoItem === "producto");
+  // Venta confirmada o cancelada: vista de detalle histórica. El borrador
+  // conserva el editor y sus avisos de stock tal como estaban.
+  const historical = Boolean(sale && sale.estado !== "borrador");
 
   useEffect(() => {
     setConditionsOpen(false);
@@ -373,14 +441,35 @@ export default function NewSalePage({businessId, role}) {
         ? "Stock aplicado. Disponibilidad actualizada al aceptar la cotización."
         : `${getSaleStockStatusLabel(sale.estadoStock, sale)}.`;
 
+  // Con el stock aplicado y sin alertas el historial ya lo dice: la tarjeta
+  // sólo muestra el estado del stock cuando hay faltantes u otra situación.
+  const stockSummary = historical && !(sale.stockAplicado && !sale.alertasStock?.length)
+    ? stockStatusMessage || `${getSaleStockStatusLabel(sale.estadoStock, sale)}.`
+    : "";
+  const timeline = historical ? buildSaleTimeline(sale, auth.currentUser?.uid || "") : [];
+  const openOriginQuote = () => navigate("/cotizaciones", {state: {openQuoteId: sale.cotizacionId}});
+  const openProject = () => navigate("/trabajos", {state: {openWorkId: trabajoDisplay.id}});
+
   if (loading) return <LoadingState variant="page" label="Cargando venta..." />;
+
+  const previewPanel = (
+    <section className="po-panel sale-preview-panel">
+      <header className="sale-section-heading sale-preview-heading">
+        <div><span className="po-kicker">Documento</span><h2>Vista previa imprimible</h2><p>Revisa cómo se verá el documento.</p></div>
+        <div className="sale-preview-actions">
+          {previewOpen && sale && <button type="button" className="po-button po-button--secondary" onClick={() => window.print()}>Imprimir</button>}
+          <button type="button" className="po-button po-button--secondary" aria-expanded={previewOpen} onClick={() => setPreviewOpen((current) => !current)}>{previewOpen ? "Ocultar vista previa" : "Ver vista previa"}</button>
+        </div>
+      </header>
+      {previewOpen && <div className="sale-preview-body"><SalePrintView company={company} sale={printable} /></div>}
+    </section>
+  );
 
   return (
     <main className="po-workspace sale-workspace">
       <section className="po-panel sale-context-card no-print">
         <div className="sale-context-toolbar">
           <button type="button" className="sale-back-link" onClick={() => navigate("/ventas")}>← Historial de ventas</button>
-          {canCancelConfirmedQuote && <button type="button" className="po-button po-button--danger" onClick={() => setActionDialog("cancel")}>Cancelar venta</button>}
         </div>
         <div className="sale-context-grid">
           <div className="sale-context-sale">
@@ -389,25 +478,39 @@ export default function NewSalePage({businessId, role}) {
               <h1>{sale?.numero || "Nueva venta"}</h1>
               <span className={`po-status po-status--${sale?.estado || "borrador"}`}>{getSaleStatusLabel(sale?.estado || "borrador")}</span>
             </div>
-            <div className="sale-context-sale__metadata">
-              {sale?.cotizacionId ? <span>Originada desde <button type="button" className="sale-inline-link" onClick={() => navigate("/cotizaciones", {state: {openQuoteId: sale.cotizacionId}})}>{sale.cotizacionNumero || "cotización aceptada"}</button></span> : <span>Venta directa</span>}
-              {trabajoDisplay && <span>Proyecto <button type="button" className="sale-inline-link" onClick={() => navigate("/trabajos", {state: {openWorkId: trabajoDisplay.id}})}>{trabajoDisplay.numero || trabajoDisplay.titulo || trabajoDisplay.id}</button></span>}
-              <span>Fecha {formatDate(draft.fechaVenta)}</span>
-              {sale?.cotizacionId && sale?.aceptadaEn && <span>Aceptada {formatDate(sale.aceptadaEn)}</span>}
-            </div>
+            {!historical && (
+              <div className="sale-context-sale__metadata">
+                {sale?.cotizacionId ? <span>Originada desde <button type="button" className="sale-inline-link" onClick={openOriginQuote}>{sale.cotizacionNumero || "cotización aceptada"}</button></span> : <span>Venta directa</span>}
+                {trabajoDisplay && <span>Proyecto <button type="button" className="sale-inline-link" onClick={openProject}>{trabajoDisplay.numero || trabajoDisplay.titulo || trabajoDisplay.id}</button></span>}
+                <span>Fecha {formatDate(draft.fechaVenta)}</span>
+                {sale?.cotizacionId && sale?.aceptadaEn && <span>Aceptada {formatDate(sale.aceptadaEn)}</span>}
+              </div>
+            )}
             {!readOnly && <p className="sale-header-guidance">Revisa la venta antes de confirmarla.</p>}
+            {historical && (
+              <div className="sale-actions" role="group" aria-label="Acciones de la venta">
+                <Button type="button" variant="secondary" icon={Eye} aria-expanded={previewOpen} onClick={() => setPreviewOpen((current) => !current)}>{previewOpen ? "Ocultar vista previa" : "Ver vista previa"}</Button>
+                <Button type="button" variant="secondary" icon={Printer} onClick={() => window.print()}>Imprimir</Button>
+                {sale.cotizacionId && <Button type="button" variant="secondary" icon={FileText} onClick={openOriginQuote}>Cotización de origen</Button>}
+                {trabajoDisplay && <Button type="button" variant="secondary" icon={Briefcase} onClick={openProject}>Ver proyecto</Button>}
+                {canCancelConfirmedQuote && <Button type="button" variant="ghost-danger" icon={Ban} className="sale-actions__cancel" onClick={() => setActionDialog("cancel")}>Cancelar venta</Button>}
+              </div>
+            )}
           </div>
           <SaleClientSelector clients={clients} disabled={readOnly || referencesLocked} onChange={(clienteId) => setDraft((current) => ({...current, clienteId}))} originalSnapshot={sale?.clienteSnapshot} value={draft.clienteId} />
         </div>
       </section>
 
       {message && <p className="po-message po-message--error no-print">{message}</p>}
-      {sale?.estado === "confirmada" && <p className={`sale-stock-note no-print${sale.alertasStock?.length ? " po-message po-message--error" : ""}`} role={sale.alertasStock?.length ? "alert" : undefined}>{stockStatusMessage}</p>}
 
       <div className="no-print">
         <div className="po-layout">
           <div className="po-main">
-            <SaleItemsEditor disabled={readOnly} inventory={inventory} items={draft.items} onChange={(items) => setDraft((current) => ({...current, items}))} onOpenCatalog={() => setCatalogOpen(true)} onScanProduct={addScannedProduct} readOnly={Boolean(readOnly && sale)} referencesLocked={referencesLocked} />
+            {historical && previewOpen && previewPanel}
+
+            {historical && <SaleInfoCard alert={Boolean(sale.alertasStock?.length)} onOpenProject={openProject} onOpenQuote={openOriginQuote} project={trabajoDisplay} sale={sale} stockMessage={stockSummary} />}
+
+            <SaleItemsEditor disabled={readOnly} historical={historical} inventory={inventory} items={draft.items} onChange={(items) => setDraft((current) => ({...current, items}))} onOpenCatalog={() => setCatalogOpen(true)} onScanProduct={addScannedProduct} readOnly={Boolean(readOnly && sale)} referencesLocked={referencesLocked} />
 
             {draft.trabajoId && !readOnly && (
               <AdditionalSelector
@@ -421,7 +524,7 @@ export default function NewSalePage({businessId, role}) {
 
             {isSaleDetailRoute && <SaleCommercialMarginPanel role={role} sale={sale} />}
 
-            <section className="po-panel sale-data-panel">
+            {!historical && <section className="po-panel sale-data-panel">
               <header className="sale-section-heading">
                 <div><span className="po-kicker">Datos de venta</span><h2>Documento y fechas</h2></div>
               </header>
@@ -440,7 +543,7 @@ export default function NewSalePage({businessId, role}) {
                   {draft.tipoDocumento !== "sin_documento" && <label>Fecha documento<input type="date" value={draft.fechaDocumento} onChange={(event) => setDraft({...draft, fechaDocumento: event.target.value})} /></label>}
                 </div>
               )}
-            </section>
+            </section>}
 
             <section className="po-panel sale-conditions-panel">
               <header className="sale-section-heading">
@@ -453,16 +556,9 @@ export default function NewSalePage({businessId, role}) {
               </div>
             </section>
 
-            <section className="po-panel sale-preview-panel">
-              <header className="sale-section-heading sale-preview-heading">
-                <div><span className="po-kicker">Documento</span><h2>Vista previa imprimible</h2><p>Revisa cómo se verá el documento.</p></div>
-                <div className="sale-preview-actions">
-                  {previewOpen && sale && <button type="button" className="po-button po-button--secondary" onClick={() => window.print()}>Imprimir</button>}
-                  <button type="button" className="po-button po-button--secondary" aria-expanded={previewOpen} onClick={() => setPreviewOpen((current) => !current)}>{previewOpen ? "Ocultar vista previa" : "Ver vista previa"}</button>
-                </div>
-              </header>
-              {previewOpen && <div className="sale-preview-body"><SalePrintView company={company} sale={printable} /></div>}
-            </section>
+            {historical && <SaleHistory events={timeline} />}
+
+            {!historical && previewPanel}
           </div>
           <SaleSummaryPanel currency={printable.moneda} disabled={readOnly} hasInsufficientStock={hasInsufficientStock} locale={printable.locale} onCancel={sale ? () => setActionDialog("cancel") : null} onConfirm={() => setActionDialog("confirm")} onSave={save} processing={processing} taxName={printable.impuestoNombre} taxRate={Number(printable.tasaIva || 0) * 100} totals={totals} />
         </div>

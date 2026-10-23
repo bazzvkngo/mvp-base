@@ -70,12 +70,18 @@ try {
   );
 
   const complete = render(sale());
-  assert.match(complete, /Margen comercial/);
-  assert.match(complete, /Completo/);
-  assert.match(complete, /Ingreso neto de productos/);
-  assert.match(complete, /Costo histórico de productos/);
-  assert.match(complete, /Margen bruto de productos/);
-  assert.match(complete, /Margen porcentual/);
+  assert.match(complete, /Análisis comercial/);
+  assert.match(complete, /Ganancia en productos/);
+  assert.doesNotMatch(complete, /Margen comercial|Completo/);
+  assert.match(complete, /Todos los productos con costo/);
+  assert.match(complete, /<dt>Vendido<\/dt>/);
+  assert.match(complete, /<dt>Costo de compra<\/dt>/);
+  assert.match(complete, /<dt>Ganancia<\/dt>/);
+  assert.match(complete, /<dt>Margen %<\/dt>/);
+  assert.doesNotMatch(complete, /Costo histórico|Margen bruto|Ingreso neto/);
+  assert.match(complete, /Ganaste <strong>\$600<\/strong> \(60 %\) sobre <strong>\$1\.000<\/strong> vendidos en productos\./, "frase con los valores reales");
+  assert.doesNotMatch(complete, /no se incluyen/, "venta sólo de productos: nada que excluir");
+  assert.ok(complete.indexOf("sale-commercial-margin__summary") < complete.indexOf("sale-commercial-margin__metrics"), "la frase va arriba de la fila de datos");
   console.log("OK UI margen: perfil autorizado ve el bloque completo de productos");
 
   assert.equal(render(sale(), "VENTAS"), "");
@@ -96,20 +102,32 @@ try {
     neto: 1800,
     items: [product(), service()],
   }));
-  assert.match(mixed, /Considera sólo productos/);
-  assert.match(mixed, /No evalúa la rentabilidad de servicios/);
+  assert.match(mixed, /vendidos en productos\. Los servicios, actividades y horas no se incluyen\./, "el alcance es parte de la frase");
+  assert.doesNotMatch(mixed, /sale-commercial-margin__note/);
+
+  const loss = render(sale({
+    items: [product({precioUnitario: 300})],
+    efectosInventario: [effect({costoUnitario: 400, costoTotal: 400})],
+  }));
+  assert.match(loss, /Perdiste <strong>\$100<\/strong> \(33,33 %\) sobre <strong>\$300<\/strong>/);
+  const breakEven = render(sale({
+    items: [product({precioUnitario: 400})],
+    efectosInventario: [effect({costoUnitario: 400, costoTotal: 400})],
+  }));
+  assert.match(breakEven, /No hubo ganancia/);
+  assert.doesNotMatch(breakEven, /Ganaste|Perdiste/);
   console.log("OK UI margen: Venta mixta identifica el alcance exclusivo de productos");
 
   const onlyServices = render(sale({items: [service()], efectosInventario: []}));
   assert.match(onlyServices, /No aplica/);
   assert.match(onlyServices, /no contiene productos/i);
-  assert.doesNotMatch(onlyServices, /Margen porcentual/);
+  assert.doesNotMatch(onlyServices, /Margen %|Ganaste|Perdiste/);
   console.log("OK UI margen: servicios no reciben margen de productos ni 100 % ficticio");
 
   const incompleteLegacy = render(sale({efectosInventario: []}));
   assert.match(incompleteLegacy, /No disponible/);
   assert.match(incompleteLegacy, /evidencia histórica suficiente/);
-  assert.doesNotMatch(incompleteLegacy, /Costo histórico de productos/);
+  assert.doesNotMatch(incompleteLegacy, /Costo de compra|Ganaste|Perdiste/);
   console.log("OK UI margen: legacy incompleto muestra indisponibilidad sin importes");
 
   const zeroDenominator = render(sale({
@@ -131,7 +149,7 @@ try {
   const canceled = render(sale({estado: "cancelada", estadoStock: "revertido"}));
   assert.match(canceled, /Anulada/);
   assert.match(canceled, /no aporta margen comercial/);
-  assert.doesNotMatch(canceled, /Margen porcentual/);
+  assert.doesNotMatch(canceled, /Margen %|Ganaste|Perdiste/);
   console.log("OK UI margen: Venta anulada y stock revertido no publican margen");
 
   const partial = render(sale({
@@ -145,7 +163,8 @@ try {
     efectosInventario: [effect({moneda: "USD"})],
   }));
   assert.match(currencyMismatch, /monedas diferentes/);
-  assert.doesNotMatch(currencyMismatch, /Margen porcentual/);
+  assert.doesNotMatch(currencyMismatch, /Margen %|Ganaste|Perdiste/);
+  assert.doesNotMatch(partial, /Margen %|Ganaste|Perdiste/, "parcial: sin cifras inventadas");
   console.log("OK UI margen: parcialidad y moneda inconsistente permanecen conservadoras");
 } finally {
   await vite.close();
@@ -163,7 +182,9 @@ assert.match(pageSource, /const isSaleDetailRoute = Boolean\(ventaId\)/);
 assert.match(pageSource, /isSaleDetailRoute && <SaleCommercialMarginPanel role=\{role\} sale=\{sale\}/);
 assert.match(salesStyles, /\.sale-commercial-margin__metrics\s*\{[\s\S]*minmax\(0, 1fr\)/);
 assert.match(salesStyles, /\.sale-commercial-margin__metrics dd\s*\{[\s\S]*overflow-wrap: anywhere/);
-assert.match(salesStyles, /@media \(max-width: 620px\)[\s\S]*\.sale-commercial-margin__metrics[\s\S]*grid-template-columns: 1fr/);
+assert.match(salesStyles, /\.sale-commercial-margin__metrics\s*\{[\s\S]*?repeat\(4, minmax\(0, 1fr\)\)/, "cuatro datos en una fila");
+assert.match(salesStyles, /@media \(max-width: 620px\)[\s\S]*\.sale-commercial-margin__metrics\s*\{\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/, "móvil: dos columnas");
+assert.doesNotMatch(salesStyles, /sale-commercial-margin__(note|notice)/, "sin notas en letra chica");
 console.log("OK UI margen: guard RBAC real, ruta sólo detalle y sin lecturas/campos internos nuevos");
 
 console.log("Smoke UI de Margen Comercial de Ventas V1 completado.");

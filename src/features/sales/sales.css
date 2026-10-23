@@ -494,6 +494,7 @@
 .sale-commercial-margin__header {
   align-items: center;
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   justify-content: space-between;
 }
@@ -513,7 +514,6 @@
   font-size: 11px;
   font-weight: 800;
   padding: 5px 9px;
-  white-space: nowrap;
 }
 
 .sale-commercial-margin__status--anulada,
@@ -532,34 +532,47 @@
   color: var(--color-warning-800);
 }
 
+/* Frase de resumen: lo primero que se lee; incluye el alcance (qué no entra). */
+.sale-commercial-margin__summary {
+  color: var(--color-text-default);
+  font-size: var(--font-size-md);
+  line-height: 1.5;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.sale-commercial-margin__summary strong {
+  color: var(--color-text-strong);
+  font-weight: var(--font-weight-bold);
+}
+
 .sale-commercial-margin__metrics {
   display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   margin: 0;
 }
 
 .sale-commercial-margin__metrics > div {
   background: var(--color-surface-subtle);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   display: grid;
-  gap: 4px;
-  padding: 10px 12px;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
 }
 
 .sale-commercial-margin__metrics dt {
   color: var(--color-text-muted);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
 }
 
 .sale-commercial-margin__metrics dd {
   color: var(--color-text-strong);
-  font-size: 15px;
-  font-weight: 800;
+  font-size: var(--font-size-md);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-bold);
   margin: 0;
   min-width: 0;
   overflow-wrap: anywhere;
@@ -568,26 +581,6 @@
 .sale-commercial-margin__metrics .sale-commercial-margin__primary-metric {
   background: var(--color-surface-brand);
   border-color: var(--color-brand-200);
-}
-
-.sale-commercial-margin__notice,
-.sale-commercial-margin__note {
-  color: var(--color-text-muted);
-  font-size: 12px;
-  line-height: 1.5;
-  margin: 0;
-}
-
-.sale-commercial-margin__notice {
-  background: var(--color-surface-subtle);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 7px;
-  padding: 10px 12px;
-}
-
-.sale-commercial-margin__note {
-  border-left: 3px solid var(--color-text-muted);
-  padding-left: 10px;
 }
 
 .sale-conditions-summary {
@@ -877,9 +870,12 @@
   }
 
   .sale-data-readonly,
-  .sale-conditions-summary,
-  .sale-commercial-margin__metrics {
+  .sale-conditions-summary {
     grid-template-columns: 1fr;
+  }
+
+  .sale-commercial-margin__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .sale-commercial-margin__header {
@@ -897,6 +893,338 @@
     flex-direction: column;
   }
 
+}
+
+/* Detalle histórico de la venta (confirmada o cancelada): acciones, tabla de
+   ítems de una fila, tarjeta de contexto e historial. Solo tokens: sin
+   overrides de modo oscuro porque cada token ya tiene su valor oscuro. */
+.sale-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.sale-actions__cancel {
+  margin-left: auto;
+}
+
+.sale-sold {
+  container-type: inline-size;
+  margin-top: var(--space-3);
+}
+
+/* En el detalle histórico el panel de Totales se angosta para dejar lugar a
+   la tabla; en el borrador el diseño no cambia. */
+@media (min-width: 901px) {
+  .sale-workspace .po-layout:has(.sale-sold) {
+    grid-template-columns: minmax(0, 1fr) 16rem;
+  }
+}
+
+.sale-sold__table {
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+  width: 100%;
+}
+
+.sale-sold__table th {
+  border-bottom: 1px solid var(--color-border-default);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-align: left;
+}
+
+.sale-sold__table td {
+  border-bottom: 1px solid var(--color-border-subtle);
+  color: var(--color-text-default);
+  vertical-align: middle;
+}
+
+.sale-sold__table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.sale-sold__code {
+  color: var(--color-text-muted);
+}
+
+.sale-sold__total {
+  color: var(--color-text-strong);
+  font-weight: var(--font-weight-semibold);
+}
+
+.sale-sold__description {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  margin: var(--space-1) 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Tabla: ítem flexible con truncado a una línea y columnas compactas de ancho
+   fijo, sin ningún ancho mínimo que fuerce scroll horizontal. */
+@container (min-width: 30rem) {
+  .sale-sold__table {
+    table-layout: fixed;
+  }
+
+  .sale-sold__table th,
+  .sale-sold__table td {
+    box-sizing: border-box;
+    padding: var(--space-2) var(--space-1);
+  }
+
+  .sale-sold__table th:first-child,
+  .sale-sold__table td:first-child {
+    padding-left: var(--space-2);
+  }
+
+  .sale-sold__table th:nth-child(2) { width: 4rem; }
+  .sale-sold__table th:nth-child(3) { width: 4rem; }
+  .sale-sold__table th:nth-child(4) { width: 5.5rem; }
+  .sale-sold__table th:nth-child(5) { width: 3.5rem; }
+  .sale-sold__table th:nth-child(6) { width: 5.5rem; }
+
+  .sale-sold__table th:nth-child(n + 2),
+  .sale-sold__table td:nth-child(n + 2) {
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    overflow: hidden;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sale-sold__table th:nth-child(2),
+  .sale-sold__table td:nth-child(2) {
+    text-align: left;
+  }
+
+  /* Los encabezados largos ("Precio unitario") se parten en dos líneas en vez
+     de cortarse. */
+  .sale-sold__table thead th:nth-child(n) {
+    line-height: 1.25;
+    overflow: visible;
+    vertical-align: bottom;
+    white-space: normal;
+  }
+
+  .sale-sold__item {
+    overflow: hidden;
+  }
+
+  .sale-sold__item .sale-line-title > strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* Con poco ancho el chip de tipo baja debajo del nombre para que éste tenga
+   el máximo de espacio. */
+@container (min-width: 30rem) and (max-width: 44rem) {
+  .sale-sold__item .sale-line-title {
+    flex-wrap: wrap;
+  }
+
+  .sale-sold__item .sale-line-title > strong {
+    flex: 1 1 100%;
+  }
+}
+
+/* Contenedor angosto (móvil o columna estrecha): cada ítem es una tarjeta. */
+@container (max-width: 29.99rem) {
+  .sale-sold__table,
+  .sale-sold__table tbody,
+  .sale-sold__table tr,
+  .sale-sold__table td {
+    display: block;
+  }
+
+  .sale-sold__table thead {
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    height: 1px;
+    overflow: hidden;
+    position: absolute;
+    white-space: nowrap;
+    width: 1px;
+  }
+
+  .sale-sold__table tbody tr {
+    background: var(--color-surface-subtle);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-3);
+    padding: var(--space-3);
+  }
+
+  .sale-sold__table td,
+  .sale-sold__table tbody tr:last-child td {
+    align-items: baseline;
+    border: 0;
+    display: flex;
+    font-variant-numeric: tabular-nums;
+    gap: var(--space-3);
+    justify-content: space-between;
+    padding: var(--space-1) 0;
+    text-align: right;
+  }
+
+  .sale-sold__table td::before {
+    color: var(--color-text-muted);
+    content: attr(data-label);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    text-align: left;
+    text-transform: uppercase;
+  }
+
+  .sale-sold__table td.sale-sold__item {
+    display: block;
+    padding-bottom: var(--space-2);
+    text-align: left;
+  }
+
+  .sale-sold__table td.sale-sold__item::before {
+    content: none;
+  }
+
+  .sale-sold__description {
+    white-space: normal;
+  }
+}
+
+.sale-info {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.sale-info__title {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  margin: 0;
+}
+
+.sale-info__grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  margin: 0;
+}
+
+.sale-info__grid > div {
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+}
+
+.sale-info__grid .sale-info__wide {
+  grid-column: 1 / -1;
+}
+
+.sale-info__grid dt {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+}
+
+.sale-info__grid dd {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.sale-info__grid .sale-stock-note {
+  margin: 0;
+}
+
+.sale-timeline {
+  display: grid;
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+}
+
+.sale-timeline__event {
+  display: grid;
+  gap: var(--space-1);
+  padding: 0 0 var(--space-4) var(--space-6);
+  position: relative;
+}
+
+.sale-timeline__event:last-child {
+  padding-bottom: 0;
+}
+
+.sale-timeline__event::before {
+  background: var(--color-text-brand-accent);
+  border-radius: var(--radius-pill);
+  content: "";
+  height: var(--space-3);
+  left: 0;
+  position: absolute;
+  top: var(--space-1);
+  width: var(--space-3);
+}
+
+.sale-timeline__event::after {
+  background: var(--color-border-default);
+  bottom: 0;
+  content: "";
+  left: calc(var(--space-3) / 2 - 1px);
+  position: absolute;
+  top: calc(var(--space-1) + var(--space-3));
+  width: 2px;
+}
+
+.sale-timeline__event:last-child::after {
+  display: none;
+}
+
+.sale-timeline__event--danger::before {
+  background: var(--color-danger-600);
+}
+
+.sale-timeline__event > strong {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-sm);
+}
+
+.sale-timeline__meta {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sale-timeline__event > p {
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 620px) {
+  .sale-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .sale-actions__cancel {
+    grid-column: 1 / -1;
+    margin-left: 0;
+  }
 }
 
 /* Modo oscuro (etapa 5, paso 5 de 10: cadena de compras, pasada 3 de 3

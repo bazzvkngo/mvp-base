@@ -142,3 +142,119 @@ assert.deepEqual(untouched.items.map((item) => [item.lineaId, item.cantidad]), [
 const mixed = resolveSaleScan([scanLine({lineaId: "ad", origenAdicionalId: "adic-1"}), scanLine()], "p1", scanCreate);
 assert.deepEqual(mixed.items.map((item) => [item.lineaId, item.cantidad]), [["ad", 1], ["a", 2]]);
 console.log("Smoke del modelo de Ventas completado.");
+
+// Detalle histórico (venta confirmada o cancelada): tabla de ítems de una fila,
+// historial desde campos existentes y tarjeta de contexto. Presentación pura.
+{
+  const [{default: React}, {renderToStaticMarkup}, {createServer}] = await Promise.all([
+    import("react"),
+    import("react-dom/server"),
+    import("vite"),
+  ]);
+  const vite = await createServer({appType: "custom", logLevel: "silent", server: {middlewareMode: true}});
+  try {
+    const {default: SaleItemsEditor} = await vite.ssrLoadModule("/src/features/sales/SaleItemsEditor.jsx");
+    const {buildSaleTimeline} = await vite.ssrLoadModule("/src/features/sales/saleTimeline.mjs");
+    const soldItems = [
+      {lineaId: "a", itemId: "p1", codigo: "COD-1", nombre: "Cable UTP", descripcion: "Cable UTP", tipoItem: "producto", unidad: "unidad", cantidad: 2, precioUnitario: 1000, descuentoPct: 0, totalLinea: 2000},
+      {lineaId: "b", itemId: "s1", codigo: "", nombre: "Instalación", descripcion: "Punto de red certificado", tipoItem: "servicio", unidad: "hora", cantidad: 3, precioUnitario: 5000, descuentoPct: 10, totalLinea: 13500, origenAdicionalId: "adic-1"},
+    ];
+    const editorProps = {disabled: true, inventory: [{id: "p1", stock: 0}], items: soldItems, onChange() {}, onOpenCatalog() {}, onScanProduct() {}, readOnly: true, referencesLocked: true};
+    const historical = renderToStaticMarkup(React.createElement(SaleItemsEditor, {...editorProps, historical: true}));
+    assert.equal((historical.match(/<thead>/g) || []).length, 1, "encabezados únicos arriba");
+    assert.equal((historical.match(/<tr>/g) || []).length, 3, "una fila por ítem más la de encabezados");
+    for (const heading of ["Ítem", "Código", "Cantidad", "Precio unitario", "Desc. %", "Total"]) assert.match(historical, new RegExp(`<th scope="col">${heading}</th>`));
+    assert.doesNotMatch(historical, /Disponible|Stock insuficiente|po-line__readonly/);
+    assert.equal((historical.match(/>Cable UTP</g) || []).length, 1, "descripción igual al nombre no se repite");
+    assert.match(historical, /Punto de red certificado/);
+    assert.match(historical, /<strong title="Cable UTP">Cable UTP<\/strong>/, "nombre completo en title");
+    assert.match(historical, /<strong title="Instalación">Instalación<\/strong>/);
+    assert.match(historical, /sale-item-type--adicional/);
+    assert.match(historical, /3 hora/);
+    assert.match(historical, /10%/);
+    assert.match(historical, /\$13\.500/);
+    const draftMode = renderToStaticMarkup(React.createElement(SaleItemsEditor, {...editorProps, disabled: false, referencesLocked: false, readOnly: false, historical: false}));
+    assert.match(draftMode, /Stock insuficiente/, "el borrador conserva su aviso de stock");
+    assert.doesNotMatch(draftMode, /sale-sold/);
+    console.log("OK detalle de venta: tabla compacta sólo en modo histórico, borrador intacto");
+
+    const stamp = (seconds) => ({seconds, nanoseconds: 0});
+    const titles = (events) => events.map((event) => event.key);
+    const quoteSale = {
+      cotizacionId: "c1", cotizacionNumero: "COT-1", aceptadaEn: stamp(1700000000), createdAt: stamp(1700000000), confirmedAt: stamp(1700000000),
+      stockAplicadoAt: stamp(1700000000), estadoStock: "completo", efectosInventario: [{}, {}], origenAceptacion: "aceptacion_manual",
+      creadoPorUid: "u1", confirmadoPorUid: "u1",
+    };
+    const quoteEvents = buildSaleTimeline(quoteSale, "u1");
+    assert.deepEqual(titles(quoteEvents), ["aceptada", "stock"]);
+    assert.equal(quoteEvents[0].title, "Cotización COT-1 aceptada");
+    assert.equal(quoteEvents[0].actor, "Tú");
+    assert.equal(quoteEvents[0].detail, "Registrada por el equipo", "una sola idea, sin repetir la venta confirmada");
+    assert.equal(buildSaleTimeline({...quoteSale, origenAceptacion: "portal_publico"}, "")[0].detail, "Desde la propuesta pública");
+    assert.equal(buildSaleTimeline({...quoteSale, origenAceptacion: "registro_compatibilidad"}, "")[0].detail, "");
+    assert.equal(quoteEvents[1].detail, "2 productos");
+    assert.equal(buildSaleTimeline(quoteSale, "otro")[0].actor, "", "otra persona: sin nombre");
+    assert.equal(buildSaleTimeline(quoteSale, "")[0].actor, "");
+    assert.ok(quoteEvents[0].date instanceof Date);
+
+    const canceled = buildSaleTimeline({
+      ...quoteSale, cancelledAt: stamp(1700100000), motivoCancelacion: "Error de carga", canceladoPorUid: "u2",
+      stockRevertidoEn: stamp(1700100000), efectosInventarioReversa: [{}],
+    }, "u1");
+    assert.deepEqual(titles(canceled), ["aceptada", "stock", "cancelada", "revertido"]);
+    assert.equal(canceled[2].detail, "Motivo: Error de carga");
+    assert.equal(canceled[2].actor, "", "el UID de otra persona no se muestra");
+    assert.equal(canceled[2].tone, "danger");
+    assert.equal(canceled[3].detail, "1 producto");
+
+    // Sin campos no hay eventos: nada se inventa (legacy, sin movimiento de stock, sin cancelación).
+    assert.deepEqual(buildSaleTimeline({}, "u1"), []);
+    assert.deepEqual(buildSaleTimeline(null, "u1"), []);
+    const direct = buildSaleTimeline({createdAt: stamp(1700000000), confirmedAt: stamp(1700000500), confirmadoPorUid: "u1", stockAplicadoAt: null, estadoStock: "no_aplica"}, "u1");
+    assert.deepEqual(titles(direct), ["creada", "confirmada"]);
+    assert.equal(direct[0].actor, "", "creadoPorUid ausente: sin actor");
+    // Sello recién escrito sin resolver: el evento aparece, sin fecha.
+    const unresolved = buildSaleTimeline({estado: "cancelada", cancelledAt: {}, motivoCancelacion: "Duplicada"}, "u1");
+    assert.deepEqual(titles(unresolved), ["cancelada"]);
+    assert.equal(unresolved[0].date, null);
+    // Serialización de callable ({_seconds}) también se entiende.
+    assert.ok(buildSaleTimeline({createdAt: {_seconds: 1700000000, _nanoseconds: 0}}, "")[0].date instanceof Date);
+    const partial = buildSaleTimeline({stockAplicadoAt: stamp(1700000000), estadoStock: "parcial_pendiente", efectosInventario: []}, "");
+    assert.equal(partial[0].title, "Stock aplicado parcialmente");
+    assert.equal(partial[0].detail, "");
+    console.log("OK detalle de venta: historial sólo con campos existentes, 'Tú' sólo para el usuario actual");
+  } finally {
+    await vite.close();
+  }
+}
+
+const detailPage = fs.readFileSync(new URL("../src/pages/NewSalePage.jsx", import.meta.url), "utf8");
+const detailStyles = fs.readFileSync(new URL("../src/features/sales/sales.css", import.meta.url), "utf8");
+assert.match(detailPage, /const historical = Boolean\(sale && sale\.estado !== "borrador"\)/);
+assert.match(detailPage, /\{!historical && <section className="po-panel sale-data-panel">/, "Documento y fechas sólo en edición");
+assert.match(detailPage, /Cotización de origen/);
+assert.match(detailPage, /Ver proyecto/);
+assert.match(detailPage, /variant="ghost-danger"/, "Cancelar venta como acción secundaria destructiva");
+assert.match(detailPage, /canCancelConfirmedQuote && <Button/);
+assert.doesNotMatch(detailPage, /estadoCobro|estadoPago|Cobrad|Pagad/i, "sin estado de cobro: el dato no existe");
+assert.doesNotMatch(detailPage, /<SalePrintView[^>]*historical/);
+assert.match(detailStyles, /\.sale-sold__table td::before\s*\{[\s\S]*attr\(data-label\)/);
+assert.match(detailStyles, /@container \(max-width: 29\.99rem\)[\s\S]*\.sale-sold__table tr/, "tarjetas con poco ancho");
+assert.match(detailPage, /\{project && \(\s*<div>\s*<dt>Proyecto<\/dt>/, "Proyecto sólo si hay dato");
+assert.match(detailPage, /\{hasDocument && \(\s*<div>\s*<dt>Documento<\/dt>/, "Documento sólo si hay dato");
+assert.doesNotMatch(detailPage.slice(detailPage.indexOf("function SaleInfoCard"), detailPage.indexOf("export default function NewSalePage")), /Sin proyecto|Sin documento/);
+assert.match(detailPage, /\{stockMessage && \(\s*<div className="sale-info__wide">/, "Estado del stock sólo con mensaje");
+assert.match(detailPage, /historical && !\(sale\.stockAplicado && !sale\.alertasStock\?\.length\)/, "stock aplicado sin alertas no repite el historial");
+assert.match(detailPage, /role=\{alert \? "alert" : undefined\}/, "las alertas de stock conservan role=alert");
+const soldCss = detailStyles.slice(detailStyles.indexOf(".sale-sold {"), detailStyles.indexOf(".sale-info {"));
+assert.match(soldCss, /table-layout: fixed/);
+assert.doesNotMatch(soldCss, /^\s+min-width:\s*[1-9.]/m, "ningún ancho mínimo (distinto de 0) fuerza el scroll");
+assert.doesNotMatch(soldCss, /overflow-x:\s*(auto|scroll)/, "sin scroll horizontal en la tabla");
+for (const column of [2, 3, 4, 5, 6]) assert.ok(soldCss.includes(`th:nth-child(${column}) { width:`), `columna ${column} de ancho fijo`);
+assert.match(soldCss, /\.sale-sold__item \.sale-line-title > strong\s*\{[^}]*text-overflow: ellipsis[^}]*white-space: nowrap/, "nombre truncado a una línea");
+assert.match(soldCss, /\.sale-sold__description\s*\{[^}]*text-overflow: ellipsis[^}]*white-space: nowrap/, "descripción truncada a una línea");
+const newDetailCss = detailStyles.slice(detailStyles.indexOf("/* Detalle histórico de la venta"), detailStyles.indexOf("/* Modo oscuro (etapa 5"));
+assert.ok(newDetailCss.length > 500);
+assert.doesNotMatch(newDetailCss, /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/, "sin colores literales");
+assert.doesNotMatch(newDetailCss, /--color-(brand-[6-9]00|dark-)/, "sin colores de marca fijos ni dark-* como color");
+console.log("OK detalle de venta: estructura, sin estado de cobro y CSS sólo con tokens");
