@@ -109,6 +109,16 @@
      SaaS. Valores tomados de la vista de documento de órdenes de compra. */
   --color-document-navy: #123765;
   --color-document-red: #b5222d;
+  /* Cotización formal (vista de impresión y PDF): papel blanco fijo también
+     en modo oscuro, por eso estos tokens no tienen variante oscura. */
+  --color-document-paper: #ffffff;
+  --color-document-ink: #182335;
+  --color-document-muted: #5f6b7c;
+  --color-document-border: #d8dee8;
+  --color-document-on-navy: #ffffff; /* texto sobre bandas --color-document-navy */
+  --color-document-tint: #dde5f1; /* realce del TOTAL */
+  --color-document-warning-line: #d49d28;
+  --color-document-warning-text: #704d0d;
 
   /* Semantic status — sin cambios de fondo, se mantiene compatibilidad */
   --color-success-50: #ecfdf5;

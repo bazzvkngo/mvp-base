@@ -24,6 +24,12 @@ import {
 } from "../src/domain/quoteModel.mjs";
 import {filterSelectableClients} from "../src/domain/clientModel.mjs";
 import { buildQuotePdfDocument } from "../src/domain/quoteDocument.mjs";
+import {
+  buildQuoteAcceptanceLine,
+  buildQuoteClientRows,
+  buildQuoteFooterContact,
+  buildQuoteTerms,
+} from "../src/domain/quoteDocumentLayout.mjs";
 
 const require = createRequire(import.meta.url);
 const {historicalQuoteCopyInput} = require("../functions/quotePersistence.js");
@@ -477,6 +483,7 @@ const sourceInteriorCss = fs.readFileSync("src/styles/interior.css", "utf8");
 const sourceQuoteService = fs.readFileSync("src/services/quoteService.js", "utf8");
 const sourceQuotePersistence = fs.readFileSync("functions/quotePersistence.js", "utf8");
 const sourceQuoteDocument = fs.readFileSync("src/domain/quoteDocument.mjs", "utf8");
+const sourceQuoteDocumentLayout = fs.readFileSync("src/domain/quoteDocumentLayout.mjs", "utf8");
 const sourceQuotePrintView = fs.readFileSync(
   "src/features/quotes/QuotePrintView.jsx",
   "utf8"
@@ -559,8 +566,12 @@ assert.doesNotMatch(sourceQuoteItems, /Abrir catálogo/);
 assert.match(sourceNewQuote, /<span className="quote-workspace__kicker">Asunto<\/span>/);
 assert.match(sourceNewQuote, /Aparece como 'Proyecto' en el PDF\./);
 assert.doesNotMatch(sourceNewQuote, /Proyecto o trabajo/);
-assert.match(sourceQuoteDocument, /drawSectionHeading\(doc, "Proyecto"/);
-assert.match(sourceQuotePrintView, /<h3>Proyecto<\/h3>/);
+assert.match(sourceQuoteDocument, /buildQuoteClientRows\(client, client\.proyecto \|\| quote\.trabajoTitulo\)/);
+assert.match(sourceQuotePrintView, /buildQuoteClientRows\(client, project\)/);
+assert.deepEqual(
+  buildQuoteClientRows({ empresa: "Cliente SA", contacto: "", email: "a@b.cl" }, "Escalera").map(([label]) => label),
+  ["Empresa", "Correo", "Proyecto"]
+);
 // Condiciones: campos alineados arriba, placeholder corto y "Qué incluye"
 // cerrado salvo que tenga contenido.
 assert.match(sourceQuoteWorkspaceCss, /\.quote-conditions-primary__grid > \* \{\s*align-self: start;/);
@@ -710,17 +721,53 @@ assert.match(sourceQuotePersistence, /quoteDuplicateRequests/);
 assert.match(sourceQuotePersistence, /cotizacionOrigenId/);
 assert.match(sourceQuotePersistence, /storedQuote[\s\S]*estado:\s*"borrador"/);
 assert.doesNotMatch(sourceQuoteDocument, /borrador:\s*"Borrador"/);
-assert.match(sourceQuoteDocument, /getQuoteStatusLabel\(quote\.estado\)/);
+// El documento formal ya no muestra el estado comercial (queda en el modal).
+assert.doesNotMatch(sourceQuoteDocument, /getQuoteStatusLabel|Estado comercial/);
 assert.match(sourceQuoteDocument, /showCode/);
 assert.match(sourceQuoteDocument, /showUnit/);
 assert.match(sourceQuoteDocument, /showDiscount/);
-assert.match(sourceQuoteDocument, /Condiciones de pago/);
+assert.match(sourceQuoteDocument, /buildQuoteTerms\(quote\.condiciones\)/);
+assert.match(sourceQuoteDocumentLayout, /Condiciones de pago/);
 assert.doesNotMatch(sourceQuoteDocument, /19%/);
 assert.match(sourceQuotePrintView, /@page\{size:A4/);
 assert.match(sourceQuotePrintView, /showCode/);
 assert.match(sourceQuotePrintView, /showUnit/);
 assert.match(sourceQuotePrintView, /showDiscount/);
-assert.match(sourceQuotePrintView, /Estado comercial/);
+assert.doesNotMatch(sourceQuotePrintView, /Estado comercial|getQuoteStatusLabel/);
+// El estado de envío vive solo en el modal, no en la cabecera del documento.
+assert.doesNotMatch(sourceQuotePrintView + sourceQuoteDocument, /Aún no ha sido enviada/);
+// El número de cotización no se parte en dos líneas.
+assert.match(sourceQuotePrintView, /__title strong\{[^}]*white-space:nowrap/);
+assert.match(sourceQuotePrintView, /Términos y condiciones/);
+assert.match(sourceQuotePrintView, /buildQuoteTerms\(quote\.condiciones\)/);
+assert.match(sourceQuotePrintView, /QUOTE_FOOTER_QUESTION/);
+// Documento claro y sin colores sueltos: solo tokens --color-document-*.
+assert.doesNotMatch(sourceQuotePrintView, /#[0-9a-fA-F]{3,8}|rgba?\(/);
+assert.doesNotMatch(sourceQuotePrintView, /var\(--color-(?!document)/);
+// Contenido del documento: todo sale de los datos, nada fijo de una empresa.
+assert.deepEqual(buildQuoteTerms({}), []);
+assert.deepEqual(
+  buildQuoteTerms({
+    formaPago: " 50% al inicio ",
+    garantia: "",
+    terminosAdicionales: "1. Valores por unidad\n\n2) Mantenimiento sujeto a evaluación",
+  }),
+  [
+    "Condiciones de pago: 50% al inicio",
+    "Valores por unidad",
+    "Mantenimiento sujeto a evaluación",
+  ]
+);
+assert.equal(buildQuoteFooterContact({}), "");
+assert.equal(
+  buildQuoteFooterContact({ responsable: "Ana Pérez", telefono: "", email: "ana@empresa.cl" }),
+  "Ana Pérez, ana@empresa.cl"
+);
+assert.equal(
+  buildQuoteAcceptanceLine({ texto: "Acepto los términos y condiciones de esta cotización." }),
+  "Acepto los términos y condiciones de esta cotización. (firmar a continuación)"
+);
+assert.doesNotMatch(sourceQuotePrintView + sourceQuoteDocument + sourceQuoteDocumentLayout, /Bagner|Pairumani/i);
 assert.doesNotMatch(sourceQuotePrintView, /19%/);
 assert.doesNotMatch(sourceQuotePrintView, /getDoc|getDocs|onSnapshot|listarClientes/);
 assert.match(sourceDashboard, /getQuoteStatusLabel\("borrador"\)/);
