@@ -109,11 +109,14 @@ export const WORK_PRIORITIES = Object.freeze([
   {value: "urgente", label: "Urgente"},
 ]);
 
+// Única tabla de etiquetas de tarea (estado interno -> texto visible). Las columnas del tablero
+// (WORK_BOARD_COLUMNS) toman de aquí su texto; "En espera" se muestra dentro de "En curso".
+// Los estados del proyecto (WORK_STATUSES) son otra escala y no cambian.
 export const WORK_TASK_STATUSES = Object.freeze([
-  {value: "pendiente", label: "Pendiente"},
-  {value: "en_progreso", label: "En progreso"},
+  {value: "pendiente", label: "Por hacer"},
+  {value: "en_progreso", label: "En curso"},
   {value: "en_espera", label: "En espera"},
-  {value: "completada", label: "Completada"},
+  {value: "completada", label: "Hecho"},
 ]);
 
 const STATUS_VALUES = new Set(WORK_STATUSES.map(({value}) => value));
@@ -619,10 +622,11 @@ export function getTaskProgress(task = {}) {
 // Columnas del tablero por proyecto (SPEC 028 etapa B2): tres columnas sobre los
 // cuatro estados de tarea de siempre. "En espera" no es columna: sus tareas van
 // al final de "En curso" con su etiqueta y motivo. No cambia el modelo.
+const taskStatusLabel = (value) => WORK_TASK_STATUSES.find((entry) => entry.value === value)?.label || value;
 export const WORK_BOARD_COLUMNS = Object.freeze([
-  {id: "por_hacer", label: "Por hacer", states: Object.freeze(["pendiente"])},
-  {id: "en_curso", label: "En curso", states: Object.freeze(["en_progreso", "en_espera"])},
-  {id: "hecho", label: "Hecho", states: Object.freeze(["completada"])},
+  {id: "por_hacer", label: taskStatusLabel("pendiente"), states: Object.freeze(["pendiente"])},
+  {id: "en_curso", label: taskStatusLabel("en_progreso"), states: Object.freeze(["en_progreso", "en_espera"])},
+  {id: "hecho", label: taskStatusLabel("completada"), states: Object.freeze(["completada"])},
 ]);
 
 export function groupWorkTasksByBoardColumn(tasks = []) {

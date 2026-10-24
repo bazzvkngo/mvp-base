@@ -525,10 +525,14 @@ console.log("OK frontend: búsqueda, payload restringido y eventos sin UID crudo
 
 // SPEC 028 etapa B2: tablero en tres columnas, lista de activos y vista Cerrados (dominio puro).
 {
-  const {WORK_BOARD_COLUMNS, WORK_CLOSED_BALANCE_LIMIT, getClosedWorks, getWorkClosedAt, getWorkClosedResultKind, getWorkDurationSummary, getWorkPersonShort, groupWorkTasksByBoardColumn, isWorkClosed, matchesWorkFilters, WORK_TASK_STATUSES} = workDomain;
+  const {WORK_BOARD_COLUMNS, WORK_CLOSED_BALANCE_LIMIT, getClosedWorks, getWorkClosedAt, getWorkClosedResultKind, getWorkDurationSummary, getWorkPersonShort, groupWorkTasksByBoardColumn, isWorkClosed, matchesWorkFilters, WORK_STATUSES, WORK_TASK_STATUSES, humanizeWorkEvent} = workDomain;
   // Tres columnas sobre los cuatro estados de siempre: el modelo de estados no cambia.
   assert.deepEqual(WORK_BOARD_COLUMNS.map((column) => column.label), ["Por hacer", "En curso", "Hecho"]);
   assert.deepEqual(WORK_TASK_STATUSES.map((entry) => entry.value), ["pendiente", "en_progreso", "en_espera", "completada"], "los estados de tarea no cambian");
+  assert.deepEqual(WORK_TASK_STATUSES.map((entry) => [entry.value, entry.label]), [["pendiente", "Por hacer"], ["en_progreso", "En curso"], ["en_espera", "En espera"], ["completada", "Hecho"]], "tabla única de etiquetas de tarea: estado interno -> texto visible");
+  assert.deepEqual(WORK_BOARD_COLUMNS.map((column) => [column.states[0], column.label]), [["pendiente", "Por hacer"], ["en_progreso", "En curso"], ["completada", "Hecho"]], "las columnas toman su etiqueta de la tabla de estados de tarea");
+  assert.deepEqual(WORK_STATUSES.map((entry) => [entry.value, entry.label]), [["pendiente", "Pendiente"], ["en_progreso", "En progreso"], ["en_espera", "En espera"], ["completado", "Completado"], ["cancelado", "Cancelado"]], "los estados del proyecto son otra escala y no cambian");
+  assert.match(humanizeWorkEvent({tipo: "estado_tarea_cambiado", actorSnapshot: {nombre: "Ana"}, detalle: {tareaTitulo: "Cableado", estadoNuevo: "completada"}}), /a Hecho./, "el historial usa la misma tabla");
   assert.deepEqual(WORK_BOARD_COLUMNS.flatMap((column) => column.states).sort(), WORK_TASK_STATUSES.map((entry) => entry.value).sort(), "cada estado cae en exactamente una columna");
   const grouped = groupWorkTasksByBoardColumn([
     {id: "wait", estado: "en_espera"}, {id: "done", estado: "completada"}, {id: "todo", estado: "pendiente"}, {id: "doing-b", estado: "en_progreso"}, {id: "doing-a", estado: "en_progreso"}, {id: "wait-2", estado: "en_espera"},

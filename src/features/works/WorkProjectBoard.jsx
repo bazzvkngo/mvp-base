@@ -54,8 +54,10 @@ function CostCard({amount, currency, description, label, onOpen, openLabel}) {
   const {locale: businessLocale} = useBusinessFormat();
   return (
     <article className="works-task-board__card works-project-board__cost-card">
-      <strong>{label}</strong>
-      <p className="works-project-board__description">{description}</p>
+      <div className="works-project-board__cost-text">
+        <strong>{label}</strong>
+        <p className="works-project-board__description">{description}</p>
+      </div>
       <dl><div><dt>Costo asignado</dt><dd>{formatMoney(amount, currency, businessLocale)}</dd></div></dl>
       <Button type="button" variant="secondary" onClick={onOpen}>{openLabel}</Button>
     </article>
@@ -108,29 +110,40 @@ export default function WorkProjectBoard({
           </select>
         </label>
         {work && (
-          <div className="works-project-board__summary">
-            <StatusBadge variant={work.estado === "completado" ? "success" : ["cancelado", "en_espera"].includes(work.estado) ? "warning" : "neutral"}>{getWorkStatusLabel(work.estado)}</StatusBadge>
-            <span>{work.clienteSnapshot?.nombreRazonSocial || "Sin cliente"}</span>
-            <span>Avance {progress.percent}% · {progress.completed}/{progress.total} tareas</span>
-            <span>Costo acumulado {formatMoney(projectCost, currency, businessLocale)}</span>
+          <div className="works-project-board__actions">
             <Button type="button" variant="secondary" icon={ExternalLink} onClick={onOpenFicha}>Ver ficha</Button>
             {canManage && !terminal && <Button type="button" icon={Plus} disabled={loading || Boolean(error)} onClick={() => setCreateOpen(true)}>Nueva tarea</Button>}
           </div>
         )}
       </div>
 
+      {work && (
+        <section className="works-project-board__overview" aria-label="Resumen del proyecto">
+          <div className="works-project-board__identity">
+            <StatusBadge variant={work.estado === "completado" ? "success" : ["cancelado", "en_espera"].includes(work.estado) ? "warning" : "neutral"}>{getWorkStatusLabel(work.estado)}</StatusBadge>
+            <span>{work.clienteSnapshot?.nombreRazonSocial || "Sin cliente"}</span>
+          </div>
+          <dl className="works-project-board__metrics">
+            <div className="works-project-board__metric">
+              <dt>Avance de tareas</dt>
+              <dd>
+                <strong>{Math.round(progress.percent)}%</strong>
+                <span>{progress.completed}/{progress.total} tareas</span>
+                <progress className="works-task-progress" max="100" value={progress.percent} aria-label="Avance de tareas del proyecto" />
+              </dd>
+            </div>
+            <div className="works-project-board__metric works-project-board__metric--primary">
+              <dt>Costo acumulado</dt>
+              <dd><strong>{formatMoney(projectCost, currency, businessLocale)}</strong></dd>
+            </div>
+          </dl>
+        </section>
+      )}
+
       {terminal && work && <p className="works-message works-message--warning">Este proyecto está {getWorkStatusLabel(work.estado).toLowerCase()}: el tablero es de solo lectura. Reábrelo desde la ficha para operar.</p>}
 
       {loading ? <LoadingState variant="section" label="Cargando tablero..." /> : error ? <LoadFailure message={error} onRetry={onRetry} /> : (
         <>
-          <WorkTaskBoard
-            costs={costs}
-            currency={currency}
-            emptyCopy={emptyTasksCopy}
-            onOpenTask={(task) => setSelectedTaskId(task.id)}
-            tasks={visibleTasks}
-          />
-
           <div className="works-project-board__costs" role="group" aria-label="Costos sin tarea">
             <CostCard
               amount={generalCost.total}
@@ -151,6 +164,16 @@ export default function WorkProjectBoard({
               />
             )}
           </div>
+
+          <WorkTaskBoard
+            costs={costs}
+            currency={currency}
+            emptyCopy={emptyTasksCopy}
+            members={members}
+            onAddTask={canManage && !terminal ? () => setCreateOpen(true) : undefined}
+            onOpenTask={(task) => setSelectedTaskId(task.id)}
+            tasks={visibleTasks}
+          />
         </>
       )}
 

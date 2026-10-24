@@ -1,7 +1,9 @@
 import React from "react";
+import {Plus} from "lucide-react";
+import Button from "../../components/ui/Button";
 import StatusBadge from "../../components/ui/StatusBadge";
-import {getTaskProgress, getWorkCostSummary, getWorkMemberIdentity, getWorkPersonShort, groupWorkTasksByBoardColumn} from "../../domain/workModel.mjs";
-import {formatMoney} from "../../utils/formatters.js";
+import {getTaskProgress, getWorkCostSummary, getWorkHistoricalPersonIdentity, getWorkPersonShort, groupWorkTasksByBoardColumn} from "../../domain/workModel.mjs";
+import {formatDate, formatMoney} from "../../utils/formatters.js";
 import useBusinessFormat from "../../hooks/useBusinessFormat";
 
 // Tablero de tareas del Proyecto abierto (SPEC 019 §5, compactado en SPEC 028
@@ -16,17 +18,20 @@ import useBusinessFormat from "../../hooks/useBusinessFormat";
 // identificador de negocio ni de Proyecto: por construcción no puede leer ni
 // mutar tareas de otro Proyecto. Sin drag-and-drop.
 
-function responsableLabel(task) {
-  return task.responsableUid ? getWorkMemberIdentity(task.responsableSnapshot || {}) : "";
+// Mismo criterio que el encabezado del panel de la tarea: nombre del snapshot, luego el del
+// miembro actual y, si no hay ninguno, el correo.
+function responsableLabel(task, members) {
+  return task.responsableUid ? getWorkHistoricalPersonIdentity(task.responsableSnapshot, task.responsableUid, members, "Usuario sin identificar") : "";
 }
 
-function TaskCard({costs, currency, onOpenTask, task}) {
+function TaskCard({costs, currency, members, onOpenTask, task}) {
   const {locale: businessLocale} = useBusinessFormat();
   const progress = getTaskProgress(task);
   const taskCost = getWorkCostSummary({...costs, taskId: task.id});
-  const identity = responsableLabel(task);
+  const identity = responsableLabel(task, members);
   const person = identity ? getWorkPersonShort(identity) : null;
   const waiting = task.estado === "en_espera";
+  const doneAt = task.estado === "completada" && task.completadaEn ? task.completadaEn : "";
 
   return (
     <button type="button" className="works-task-board__card" aria-haspopup="dialog" onClick={() => onOpenTask(task)}>
@@ -43,6 +48,7 @@ function TaskCard({costs, currency, onOpenTask, task}) {
         </span>
       )}
       <span className="works-task-card__cost"><span>Costo asignado</span><span>{formatMoney(taskCost.total, currency, businessLocale)}</span></span>
+      {doneAt && <span className="works-task-card__done">Hecho el {formatDate(doneAt, businessLocale)}</span>}
       {waiting && (
         <span className="works-task-card__wait">
           <StatusBadge variant="warning">En espera</StatusBadge>
@@ -53,9 +59,22 @@ function TaskCard({costs, currency, onOpenTask, task}) {
   );
 }
 
-export default function WorkTaskBoard({costs, currency, emptyCopy, onOpenTask, tasks}) {
+// "Agregar tarea" (onAddTask, solo con permiso de gestión y proyecto abierto) abre el mismo diálogo de
+// Nueva tarea: el backend crea toda tarea en Por hacer, así que solo esa columna ofrece el botón.
+function AddTaskButton({onAddTask}) {
+  return <Button type="button" variant="secondary" icon={Plus} className="works-task-board__add" onClick={onAddTask}>Agregar tarea</Button>;
+}
+
+export default function WorkTaskBoard({costs, currency, emptyCopy, members = [], onAddTask, onOpenTask, tasks}) {
   const list = Array.isArray(tasks) ? tasks : [];
-  if (!list.length) return <p className="works-empty-copy">{emptyCopy}</p>;
+  if (!list.length) {
+    return (
+      <div className="works-task-board__empty">
+        <p className="works-empty-copy">{emptyCopy}</p>
+        {onAddTask && <AddTaskButton onAddTask={onAddTask} />}
+      </div>
+    );
+  }
 
   return (
     <div className="works-task-board">
@@ -63,8 +82,9 @@ export default function WorkTaskBoard({costs, currency, emptyCopy, onOpenTask, t
         <section className="works-task-board__column" key={column.id} aria-label={column.label}>
           <header><h4>{column.label}</h4><span>{column.tasks.length}</span></header>
           {column.tasks.length > 0
-            ? <div className="works-task-board__list">{column.tasks.map((task) => <TaskCard costs={costs} currency={currency} key={task.id} onOpenTask={onOpenTask} task={task} />)}</div>
+            ? <div className="works-task-board__list">{column.tasks.map((task) => <TaskCard costs={costs} currency={currency} key={task.id} members={members} onOpenTask={onOpenTask} task={task} />)}</div>
             : <p className="works-task-board__column-empty">Sin tareas</p>}
+          {column.id === "por_hacer" && onAddTask && <AddTaskButton onAddTask={onAddTask} />}
         </section>
       ))}
     </div>

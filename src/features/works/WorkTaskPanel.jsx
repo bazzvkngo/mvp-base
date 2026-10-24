@@ -33,7 +33,11 @@ function PanelBody({actions, canManage, canOperate, costs, currency, members, on
   const showStateControl = !terminal && operable && (!task.completada || canManage);
   // Igual que en la tarjeta anterior: la acción legacy solo existe donde también se puede cambiar el estado.
   const showDelete = showStateControl && canManage && legacy && !task.completada;
-  const responsableIdentity = task.responsableUid ? getWorkMemberIdentity(task.responsableSnapshot || {}) : "Sin responsable";
+  // Nombre del snapshot, luego el del miembro actual y, si no hay ninguno, el correo (igual que la tarjeta).
+  const responsableIdentity = task.responsableUid ? getWorkHistoricalPersonIdentity(task.responsableSnapshot, task.responsableUid, members, "Usuario sin identificar") : "Sin responsable";
+  const assignedMember = members.find((entry) => entry.uid === task.responsableUid);
+  const responsableEmail = task.responsableUid ? [task.responsableSnapshot?.correo, assignedMember?.correo].map((value) => String(value || "").trim()).find((value) => value && value !== "Sin correo disponible") || "" : "";
+  const responsableSecondary = responsableEmail && responsableEmail !== responsableIdentity ? responsableEmail : "";
 
   const addSubtask = (event) => {
     event.preventDefault();
@@ -56,7 +60,10 @@ function PanelBody({actions, canManage, canOperate, costs, currency, members, on
   return (
     <div className="works-task-panel__content">
       {legacy && <span className="works-task-board__legacy">Tarea legacy</span>}
-      {task.descripcion ? <p className="works-project-board__description">{task.descripcion}</p> : <p className="works-empty-line">Sin descripción.</p>}
+      <section className="works-task-panel__block" aria-label="Descripción">
+        <h3>Descripción</h3>
+        {task.descripcion ? <p className="works-project-board__description">{task.descripcion}</p> : <p className="works-empty-line">Sin descripción.</p>}
+      </section>
       {task.estado === "en_espera" && task.motivoEspera && <p className="works-wait-reason">En espera: {task.motivoEspera}</p>}
 
       <div className="works-task-panel__row">
@@ -67,9 +74,10 @@ function PanelBody({actions, canManage, canOperate, costs, currency, members, on
               <option value="">Sin responsable</option>
               {members.map((member) => <option key={member.uid} value={member.uid}>{getWorkMemberIdentity(member)}</option>)}
             </select>
+            {responsableSecondary && <small className="works-task-panel__secondary">{responsableSecondary}</small>}
           </label>
         ) : (
-          <div className="erp-field"><span className="erp-field__label">Responsable</span><span>{responsableIdentity}</span></div>
+          <div className="erp-field"><span className="erp-field__label">Responsable</span><span className="works-task-panel__person">{responsableIdentity}</span>{responsableSecondary && <small className="works-task-panel__secondary">{responsableSecondary}</small>}</div>
         )}
         {showStateControl ? (
           <label className="erp-field">
@@ -85,7 +93,7 @@ function PanelBody({actions, canManage, canOperate, costs, currency, members, on
       {!operable && <span className="works-task-board__readonly">Sólo lectura</span>}
 
       <section className="works-task-panel__section" aria-label="Subtareas">
-        <h3>Subtareas{progress.total > 0 ? ` · ${progress.completed}/${progress.total}` : ""}</h3>
+        <h3>Subtareas{progress.total > 0 && <span className="works-task-panel__count">{progress.completed}/{progress.total}</span>}</h3>
         {progress.total > 0 && <progress className="works-task-progress" max="100" value={progress.percent} aria-label={`Avance de ${task.titulo}`} />}
         {task.subtareas.length > 0 && (
           <div className="works-subtask-list">
@@ -114,8 +122,9 @@ function PanelBody({actions, canManage, canOperate, costs, currency, members, on
         )}
       </section>
 
-      <details className="works-task-documentation">
-        <summary>Documentación ({task.documentacion.length})</summary>
+      <details className="works-task-documentation works-task-panel__docs">
+        <summary>Documentación ({task.documentacion.length}){task.documentacion.length === 0 && <span className="works-task-panel__hint">Sin registros aún</span>}</summary>
+        {task.documentacion.length === 0 && <p className="works-empty-line">{!terminal && operable ? "Aún no hay documentación. Agrega un comentario o evidencia." : "No hay documentación registrada."}</p>}
         {task.documentacion.map((entry) => (
           <div key={entry.id}>
             <p>{entry.texto}</p>
@@ -133,10 +142,12 @@ function PanelBody({actions, canManage, canOperate, costs, currency, members, on
       <section className="works-task-panel__section" aria-label="Costos de la tarea">
         <h3>Costos</h3>
         <div className="works-task-panel__cost">
-          <span>Costo asignado</span>
-          <strong>{formatMoney(taskCost.total, currency, businessLocale)}</strong>
+          <div>
+            <span>Costo asignado</span>
+            <strong>{formatMoney(taskCost.total, currency, businessLocale)}</strong>
+          </div>
+          <Button type="button" variant="secondary" onClick={() => onOpenCosts({scope: task.id, title: task.titulo})}>Gastos, HH y materiales</Button>
         </div>
-        <Button type="button" variant="secondary" onClick={() => onOpenCosts({scope: task.id, title: task.titulo})}>Gastos, HH y materiales</Button>
       </section>
 
       {showDelete && (

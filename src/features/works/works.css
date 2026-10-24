@@ -359,7 +359,7 @@
 .works-task-board__card .works-subtask-create, .works-task-board__card .works-task-document-form { grid-template-columns: minmax(0, 1fr); }
 .works-project-board__costs { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
 .works-project-board__cost-card { align-content: start; }
-.works-project-board__cost-card > strong { color: var(--color-text-strong); }
+.works-project-board__cost-text > strong { color: var(--color-text-strong); }
 @media(max-width:767px) {
   .works-project-board__header { align-items: stretch; flex-direction: column; }
   .works-project-board__picker { max-width: none; }
@@ -485,3 +485,47 @@ button.works-task-board__card:focus-visible { outline: var(--focus-outline); out
 .works-cost-live-total strong { color: var(--color-text-expense); font-size: var(--font-size-md); font-variant-numeric: tabular-nums; }
 .works-cost-live-total span { background: var(--color-surface-panel); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-pill); color: var(--color-text-muted); font-size: var(--font-size-xs); margin-left: var(--space-1); padding: 1px var(--space-2); }
 .works-cost-dialog .works-material-estimate { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+/* Entrega 2: cabecera del tablero con cifras destacadas (avance y costo acumulado; mismo patrón visual que
+   el panel de ganancia de Ventas, con clases propias), acceso a costos General arriba, "Agregar tarea" en
+   Por hacer, tarjeta con fecha de cierre y panel de la tarea con jerarquía. Solo tokens. */
+.works-project-board__actions { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.works-project-board__overview { align-items: center; background: var(--color-surface-subtle); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); display: grid; gap: var(--space-3) var(--space-6); grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); padding: var(--space-4); }
+.works-project-board__identity { color: var(--color-text-default); display: grid; font-size: var(--font-size-sm); gap: var(--space-2); justify-items: start; min-width: 0; overflow-wrap: anywhere; }
+.works-project-board__metrics { display: grid; gap: var(--space-5); grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; }
+.works-project-board__metric { align-content: start; display: grid; gap: var(--space-1); min-width: 0; }
+.works-project-board__metric dt { color: var(--color-text-muted); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); }
+.works-project-board__metric dd { display: grid; gap: var(--space-1); margin: 0; }
+.works-project-board__metric dd strong { color: var(--color-text-strong); font-size: var(--font-size-xl); font-variant-numeric: tabular-nums; line-height: 1.15; }
+.works-project-board__metric--primary dd strong { color: var(--color-text-expense); }
+.works-project-board__metric dd > span { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+.works-project-board__costs { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+.works-project-board__cost-card { align-items: center; gap: var(--space-3); grid-template-columns: minmax(0, 1fr) auto auto; padding: var(--space-3) var(--space-4); }
+.works-project-board__cost-text { display: grid; gap: 2px; min-width: 0; }
+.works-project-board__cost-card dl > div { display: grid; gap: 2px; justify-items: end; }
+.works-project-board__cost-card dt { font-size: var(--font-size-xs); text-transform: none; }
+.works-project-board__cost-card dd { color: var(--color-text-strong); font-size: var(--font-size-lg); font-variant-numeric: tabular-nums; font-weight: var(--font-weight-semibold); overflow: visible; text-align: right; white-space: normal; }
+.works-task-board__add { justify-self: stretch; }
+.works-task-board__empty { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.works-task-board__empty .works-empty-copy { margin: 0 !important; }
+.works-task-card__done { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+
+.works-task-panel__block { display: grid; gap: var(--space-1); }
+.works-task-panel__block > h3, .works-task-panel__section > h3 { align-items: center; color: var(--color-text-strong); display: flex; font-size: var(--font-size-sm); gap: var(--space-2); margin: 0; }
+.works-task-panel__count { background: var(--color-surface-selected); border-radius: var(--radius-pill); color: var(--color-text-strong); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); padding: 1px var(--space-2); }
+.works-task-panel__person { color: var(--color-text-strong); font-weight: var(--font-weight-semibold); overflow-wrap: anywhere; }
+.works-task-panel__secondary { color: var(--color-text-muted); font-size: var(--font-size-xs); overflow-wrap: anywhere; }
+.works-task-panel__cost { align-items: center; background: var(--color-surface-subtle); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); gap: var(--space-3); justify-content: space-between; padding: var(--space-3); }
+.works-task-panel__cost > div { display: grid; gap: 2px; }
+.works-task-panel__cost > div > span { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+.works-task-panel__cost > div > strong { color: var(--color-text-expense); font-size: var(--font-size-xl); font-variant-numeric: tabular-nums; }
+.works-task-panel__docs { border: 1px solid var(--color-border-subtle); }
+.works-task-panel__docs > summary { align-items: center; color: var(--color-text-strong); display: flex; font-size: var(--font-size-sm); gap: var(--space-2); justify-content: space-between; }
+.works-task-panel__hint { color: var(--color-text-muted); font-size: var(--font-size-xs); font-weight: var(--font-weight-regular); }
+@media(max-width:767px) {
+  .works-project-board__overview { grid-template-columns: minmax(0, 1fr); }
+  .works-project-board__costs { grid-template-columns: minmax(0, 1fr); }
+  .works-project-board__cost-card { grid-template-columns: minmax(0, 1fr) auto; }
+  .works-project-board__cost-card > .ui-button { grid-column: 1 / -1; }
+  .works-task-panel__cost { align-items: stretch; flex-direction: column; }
+}
