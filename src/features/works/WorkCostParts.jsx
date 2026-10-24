@@ -1,4 +1,5 @@
 import React from "react";
+import AppIcon from "../../components/ui/AppIcon";
 import {formatMoney} from "../../utils/formatters.js";
 
 // Piezas visuales del diálogo de costos (Gastos, Horas hombre y Materiales).
@@ -81,6 +82,11 @@ export function WorkCostEntry({amount, annulled = false, annulledReason = "", ch
       {children && <footer className="works-cost-entry__footer">{children}</footer>}
     </article>
   );
+}
+
+// Vacío compacto de una lista de costos: ícono pequeño y una frase.
+export function WorkCostEmpty({children, icon}) {
+  return <p className="works-cost-empty"><AppIcon icon={icon} size={16} />{children}</p>;
 }
 
 // Acción secundaria que se despliega bajo el registro. `tone="danger"` es para

@@ -1,5 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
-import {Archive, Columns3, Info, LayoutList, Pencil, Plus, RefreshCw, Search} from "lucide-react";
+import {Archive, Clock, Columns3, Info, LayoutList, PackageOpen, Pencil, Plus, Receipt, RefreshCw, Search} from "lucide-react";
 import {useLocation, useNavigate, useSearchParams} from "react-router-dom";
 import AppIcon from "../components/ui/AppIcon";
 import BarcodeInput from "../components/barcode/BarcodeInput";
@@ -13,7 +13,7 @@ import StatusBadge from "../components/ui/StatusBadge";
 import {TabPanel, Tabs} from "../components/ui/Tabs";
 import WorkAdditionalsSection from "../features/works/WorkAdditionalsSection.jsx";
 import WorkClosedProjects from "../features/works/WorkClosedProjects.jsx";
-import {CostField, CostMoneyInput, WorkCostBreakdown, WorkCostDisclosure, WorkCostEntry} from "../features/works/WorkCostParts.jsx";
+import {CostField, CostMoneyInput, WorkCostBreakdown, WorkCostDisclosure, WorkCostEmpty, WorkCostEntry} from "../features/works/WorkCostParts.jsx";
 import WorkExpenseEvidence from "../features/works/WorkExpenseEvidence.jsx";
 import WorkQuoteSelector from "../features/works/WorkQuoteSelector.jsx";
 import WorkProjectBoard from "../features/works/WorkProjectBoard.jsx";
@@ -484,6 +484,9 @@ function FinancialSection({businessId, canManage, currency, currentUserUid, expe
   const indirectExpenseTotal = activeExpenses.filter((entry) => entry.clasificacionCosto === "INDIRECTO").reduce((sum, entry) => sum + entry.monto, 0);
   const laborHours = activeLabor.reduce((sum, entry) => sum + entry.horas, 0);
   const laborTotal = activeLabor.reduce((sum, entry) => sum + entry.total, 0);
+  // Solo visual: el total real lo calcula el servidor al registrar.
+  const liveHours = Number(laborDraft.horas); const liveRate = Number(laborDraft.costoHora);
+  const liveLaborTotal = liveHours > 0 && liveRate > 0 ? liveHours * liveRate : null;
   const saveExpense = (event) => {
     event.preventDefault();
     const payload = {...expenseDraft, responsableDelGastoUid: canManage ? expenseDraft.responsableDelGastoUid : currentUserUid};
@@ -542,9 +545,9 @@ function FinancialSection({businessId, canManage, currency, currentUserUid, expe
           <CostField className="works-cost-field--wide" label="Observación" optional><textarea className="erp-control" maxLength="4000" rows="2" value={expenseDraft.observacion} onChange={(event) => setExpenseDraft((current) => ({...current, observacion: event.target.value}))} placeholder="Detalle adicional del gasto" /></CostField>
           <Button type="submit" disabled={Boolean(processing)}>Registrar gasto</Button>
         </form>}
-        {loading ? <LoadingState variant="section" label="Cargando gastos..." /> : <><h5 className="works-cost-list__title">Gastos registrados ({visibleExpenses.length})</h5><div className="works-cost-list">{visibleExpenses.map((entry) => { const key = `expense-${entry.id}`; const annulled = entry.estado === "anulado"; return <WorkCostEntry key={entry.id} amount={formatMoney(entry.monto, entry.moneda || currency, businessLocale)} annulled={annulled} annulledReason={entry.motivoAnulacion} meta={`${dateLabel(entry.fecha)} · ${personOf(entry)} · ${taskLabel(tasks, entry.tareaId)}`} note={entry.observacion} tags={[WORK_EXPENSE_CATEGORIES.find((item) => item.value === entry.categoria)?.label || entry.categoria, entry.clasificacionCosto === "INDIRECTO" ? "Indirecto" : "Directo"]} title={entry.concepto}><WorkExpenseEvidence annulled={annulled} canAttach={canAttachEvidence(entry)} entries={entry.evidencia || []} onOpen={openEvidence} onUpload={(file) => uploadEvidence(entry.id, file)} processing={processing === `evidence-${entry.id}`} />{canManage && !readOnly && entry.estado !== "anulado" && annulControl("expense", entry, key)}</WorkCostEntry>;})}{!visibleExpenses.length && <p className="works-empty-copy">Aún no se han registrado gastos.</p>}</div></>}
+        {loading ? <LoadingState variant="section" label="Cargando gastos..." /> : <><h5 className="works-cost-list__title">Gastos registrados ({visibleExpenses.length})</h5><div className="works-cost-list">{visibleExpenses.map((entry) => { const key = `expense-${entry.id}`; const annulled = entry.estado === "anulado"; return <WorkCostEntry key={entry.id} amount={formatMoney(entry.monto, entry.moneda || currency, businessLocale)} annulled={annulled} annulledReason={entry.motivoAnulacion} meta={`${dateLabel(entry.fecha)} · ${personOf(entry)} · ${taskLabel(tasks, entry.tareaId)}`} note={entry.observacion} tags={[WORK_EXPENSE_CATEGORIES.find((item) => item.value === entry.categoria)?.label || entry.categoria, entry.clasificacionCosto === "INDIRECTO" ? "Indirecto" : "Directo"]} title={entry.concepto}><WorkExpenseEvidence annulled={annulled} canAttach={canAttachEvidence(entry)} entries={entry.evidencia || []} onOpen={openEvidence} onUpload={(file) => uploadEvidence(entry.id, file)} processing={processing === `evidence-${entry.id}`} />{canManage && !readOnly && entry.estado !== "anulado" && annulControl("expense", entry, key)}</WorkCostEntry>;})}{!visibleExpenses.length && <WorkCostEmpty icon={Receipt}>Aún no se han registrado gastos.</WorkCostEmpty>}</div></>}
       </section>}
-      {(!part || part === "labor") && <section><header><div><h4>Horas hombre</h4><strong>{laborHours} HH · {formatMoney(laborTotal, currency, businessLocale)}</strong></div><small>El total lo calcula el servidor.</small></header>
+      {(!part || part === "labor") && <section><header><div><h4>Horas hombre</h4><strong>{laborHours} HH · {formatMoney(laborTotal, currency, businessLocale)}</strong></div><small>El total se calcula al registrar.</small></header>
         {canRegister && !readOnly && <form className="works-cost-form" onSubmit={saveLabor}>
           <h5 className="works-cost-form__title">Nuevas horas hombre</h5>
           <CostField className="works-cost-field--wide" label="Actividad"><input className="erp-control" maxLength="240" required value={laborDraft.concepto} onChange={(event) => setLaborDraft((current) => ({...current, concepto: event.target.value}))} placeholder="Ej.: tendido de cableado" /></CostField>
@@ -553,9 +556,10 @@ function FinancialSection({businessId, canManage, currency, currentUserUid, expe
           <CostField label="Horas"><input className="erp-control" type="number" min="0.01" max="1000" step="0.01" required value={laborDraft.horas} onChange={(event) => setLaborDraft((current) => ({...current, horas: event.target.value}))} placeholder="0" /></CostField>
           <CostField label="Costo por hora"><CostMoneyInput currency={currency} locale={businessLocale} min="0.01" max="999999999999.99" step="0.01" required value={laborDraft.costoHora} onChange={(event) => setLaborDraft((current) => ({...current, costoHora: event.target.value}))} placeholder="0" /></CostField>
           <CostField label="Fecha"><input className="erp-control" type="date" required value={laborDraft.fecha} onChange={(event) => setLaborDraft((current) => ({...current, fecha: event.target.value}))} /></CostField>
+          {liveLaborTotal != null && <p className="works-cost-live-total works-cost-field--wide">{liveHours} HH × {formatMoney(liveRate, currency, businessLocale)} = <strong>{formatMoney(liveLaborTotal, currency, businessLocale)}</strong><span>estimado</span></p>}
           <Button type="submit" disabled={Boolean(processing)}>Registrar HH</Button>
         </form>}
-        {loading ? <LoadingState variant="section" label="Cargando HH..." /> : <><h5 className="works-cost-list__title">Horas registradas ({visibleLabor.length})</h5><div className="works-cost-list">{visibleLabor.map((entry) => { const key = `labor-${entry.id}`; const annulled = entry.estado === "anulado"; return <WorkCostEntry key={entry.id} amount={formatMoney(entry.total, entry.moneda || currency, businessLocale)} annulled={annulled} annulledReason={entry.motivoAnulacion} meta={`${entry.horas} HH × ${formatMoney(entry.costoHora, entry.moneda || currency, businessLocale)} · ${dateLabel(entry.fecha)} · ${entry.tecnicoSnapshot?.nombre || entry.tecnicoSnapshot?.correo || "Técnico"} · ${taskLabel(tasks, entry.tareaId)}`} title={entry.concepto}>{canManage && !readOnly && entry.estado !== "anulado" && annulControl("labor", entry, key)}</WorkCostEntry>;})}{!visibleLabor.length && <p className="works-empty-copy">Aún no se han registrado horas hombre.</p>}</div></>}
+        {loading ? <LoadingState variant="section" label="Cargando HH..." /> : <><h5 className="works-cost-list__title">Horas registradas ({visibleLabor.length})</h5><div className="works-cost-list">{visibleLabor.map((entry) => { const key = `labor-${entry.id}`; const annulled = entry.estado === "anulado"; return <WorkCostEntry key={entry.id} amount={formatMoney(entry.total, entry.moneda || currency, businessLocale)} annulled={annulled} annulledReason={entry.motivoAnulacion} meta={`${entry.horas} HH × ${formatMoney(entry.costoHora, entry.moneda || currency, businessLocale)} · ${dateLabel(entry.fecha)} · ${entry.tecnicoSnapshot?.nombre || entry.tecnicoSnapshot?.correo || "Técnico"} · ${taskLabel(tasks, entry.tareaId)}`} title={entry.concepto}>{canManage && !readOnly && entry.estado !== "anulado" && annulControl("labor", entry, key)}</WorkCostEntry>;})}{!visibleLabor.length && <WorkCostEmpty icon={Clock}>Aún no se han registrado horas hombre.</WorkCostEmpty>}</div></>}
       </section>}
     </div>
     <p className="works-financial-note"><AppIcon icon={Info} size={14} />{readOnly ? "Costos históricos visibles: reabre el proyecto para registrar o corregir." : "Los registros no se editan: para corregir, anula el original y crea el reemplazo."}</p>
@@ -611,32 +615,29 @@ function MaterialsSection({businessId, canManage, currency, currentUserUid, load
 
   return <section className="works-detail-section works-financial-file works-financial-file--tab">
     <div className="works-section-heading"><div><h3>Materiales utilizados</h3><span>Consumo neto valorizado</span></div><strong>{formatMoney(Math.max(0, valuedTotal), currency, businessLocale)}</strong></div>
-    <section className="works-material-group">
-      <header><div><h4>Consumos adicionales</h4><p>{readOnly ? "Salidas y devoluciones registradas durante el proyecto." : "Cada salida mueve inventario y congela su costo; la devolución restituye stock al mismo costo."}</p></div><strong>{formatMoney(Math.max(0, additionalValuedTotal), currency, businessLocale)}</strong></header>
     {canConsume && !readOnly && <form className="works-cost-form works-material-form" onSubmit={saveExit}>
       <h5 className="works-cost-form__title">Nueva salida de material</h5>
       <div className="works-material-product works-cost-field--wide"><CostField label="Producto"><select className="erp-control" required value={draft.itemId} onChange={(event) => setDraft((current) => ({...current, itemId: event.target.value}))}>
         <option value="">Selecciona producto</option>
         {products.map((product) => <option key={product.id} value={product.id}>{product.nombre} · stock {Number(product.stock || 0)} {product.unidad || product.unidadStock || "unidad"}</option>)}
-      </select></CostField><BarcodeInput actionOnly actionLabel="Escanear producto" disabled={Boolean(processing)} onSubmit={scanMaterial} /></div>
+      </select>{selectedProduct && <small className="works-cost-hint">Disponible: {Number(selectedProduct.stock || 0)} {selectedProduct.unidad || selectedProduct.unidadStock || "unidad"}</small>}</CostField><BarcodeInput actionOnly actionLabel="Escanear producto" disabled={Boolean(processing)} onSubmit={scanMaterial} /></div>
       {!scoped && <TaskCostSelect tasks={tasks} value={draft.tareaId} onChange={(tareaId) => setDraft((current) => ({...current, tareaId}))} />}
       <CostField label="Cantidad"><input className="erp-control" type="number" min="0.01" max="999999999.99" step="0.01" required value={draft.cantidad} onChange={(event) => setDraft((current) => ({...current, cantidad: event.target.value}))} placeholder="0" /></CostField>
       <CostField label="Fecha"><input className="erp-control" type="date" required value={draft.fecha} onChange={(event) => setDraft((current) => ({...current, fecha: event.target.value}))} /></CostField>
       <Button type="submit" disabled={Boolean(processing)}>Registrar salida</Button>
       {selectedProduct && <dl className="works-material-estimate">
-        <div><dt>Stock disponible</dt><dd>{Number(selectedProduct.stock || 0)} {selectedProduct.unidad || selectedProduct.unidadStock || "unidad"}</dd></div>
         <div><dt>Costo unitario vigente</dt><dd>{currentUnitCost == null ? "No disponible" : formatMoney(currentUnitCost, currentCostCurrency, businessLocale)}</dd></div>
         <div><dt>Costo estimado de esta salida</dt><dd>{estimatedCost == null ? "Ingresa una cantidad" : formatMoney(estimatedCost, currentCostCurrency, businessLocale)}</dd></div>
       </dl>}
     </form>}
+    <p className="works-financial-note"><AppIcon icon={Info} size={14} />{readOnly ? "Salidas y devoluciones registradas durante el proyecto." : "Cada salida mueve inventario y congela su costo; la devolución restituye stock al mismo costo."}</p>
     {loading ? <LoadingState variant="section" label="Cargando materiales..." /> : <><h5 className="works-cost-list__title">Salidas registradas ({exits.length})</h5><div className="works-cost-list">{exits.map((exit) => {
       const returned = returnedFor(exit.id); const remaining = Math.max(0, Math.round((exit.cantidad - returned) * 100) / 100);
       const returnValue = returnDrafts[exit.id] || {cantidad: "", fecha: chileToday()};
       return <WorkCostEntry key={exit.id} amount={formatMoney(exit.costoTotal, exit.moneda || currency, businessLocale)} meta={`${exit.cantidad} ${exit.productoSnapshot?.unidad || "unidad"} × ${formatMoney(exit.costoUnitario, exit.moneda || currency, businessLocale)} · ${dateLabel(exit.fecha)} · ${exit.usuarioSnapshot?.nombre || "Equipo"} · ${taskLabel(tasks, exit.tareaId)}`} tags={[`Devuelto ${returned}`, `Pendiente ${remaining}`]} title={exit.productoSnapshot?.nombre || "Producto"}>
         {canManage && !readOnly && remaining > 0 && <WorkCostDisclosure label="Devolver"><form className="works-annul-form works-return-form" onSubmit={(event) => saveReturn(event, exit)}><CostField label="Cantidad a devolver"><input className="erp-control" type="number" min="0.01" max={remaining} step="0.01" required value={returnValue.cantidad} onChange={(event) => updateReturn(exit.id, "cantidad", event.target.value)} placeholder="0" /></CostField><CostField label="Fecha"><input className="erp-control" type="date" required value={returnValue.fecha} onChange={(event) => updateReturn(exit.id, "fecha", event.target.value)} /></CostField><Button type="submit" variant="secondary" disabled={Boolean(processing)}>Registrar devolución</Button></form></WorkCostDisclosure>}
       </WorkCostEntry>;
-    })}{!exits.length && <p className="works-empty-copy">Aún no se han registrado consumos adicionales.</p>}</div></>}
-    </section>
+    })}{!exits.length && <WorkCostEmpty icon={PackageOpen}>Aún no se han registrado consumos adicionales.</WorkCostEmpty>}</div></>}
   </section>;
 }
 
