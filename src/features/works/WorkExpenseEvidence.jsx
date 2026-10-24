@@ -12,8 +12,12 @@ import {getWorkExpenseEvidenceTypeLabel, MAX_WORK_EXPENSE_EVIDENCE_FILES, valida
 // tampoco lo hace), para poder probarse vía SSR igual que WorkQuoteSelector/
 // WorkTaskBoard. La validación de aquí es sólo UX: Storage Rules +
 // adjuntarEvidenciaGastoTrabajo siguen siendo la autoridad.
+//
+// Presentación: el estado de la evidencia se ve de un vistazo. "Sin evidencia
+// adjunta." se resalta en un gasto vigente; en uno anulado (`annulled`) queda
+// como texto discreto porque ya no admite evidencia nueva.
 
-export default function WorkExpenseEvidence({canAttach = false, entries = [], onOpen, onUpload, processing = false}) {
+export default function WorkExpenseEvidence({annulled = false, canAttach = false, entries = [], onOpen, onUpload, processing = false}) {
   const inputRef = useRef(null);
   const [selectionError, setSelectionError] = useState("");
   const atLimit = entries.length >= MAX_WORK_EXPENSE_EVIDENCE_FILES;
@@ -39,7 +43,7 @@ export default function WorkExpenseEvidence({canAttach = false, entries = [], on
           ))}
         </ul>
       )}
-      {!entries.length && <small className="works-empty-copy">Sin evidencia adjunta.</small>}
+      {!entries.length && <span className={annulled ? "works-evidence-status" : "works-evidence-status works-evidence-status--missing"}>Sin evidencia adjunta.</span>}
       {canAttach && (
         atLimit
           ? <small className="works-field-error">Se alcanzó el máximo de {MAX_WORK_EXPENSE_EVIDENCE_FILES} archivos.</small>

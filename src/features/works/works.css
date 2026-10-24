@@ -222,7 +222,7 @@
 .works-expense-evidence { display: grid; gap: var(--space-2); margin-top: var(--space-2); }
 .works-expense-evidence__list { display: flex; flex-wrap: wrap; gap: var(--space-2); list-style: none; margin: 0; padding: 0; }
 .works-expense-evidence__list li { align-items: center; background: var(--color-surface-subtle); border-radius: var(--radius-sm); display: inline-flex; gap: var(--space-1); padding: 3px 8px; }
-.works-expense-evidence__list button { background: transparent; border: 0; color: var(--color-brand-700); cursor: pointer; font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); padding: 0; }
+.works-expense-evidence__list button { background: transparent; border: 0; color: var(--color-text-brand); cursor: pointer; font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); padding: 0; }
 .works-expense-evidence__list small { color: var(--color-text-muted); font-size: 10px; }
 .works-expense-evidence__upload { align-items: center; display: inline-flex; gap: var(--space-2); }
 .works-note-form { display: grid; gap: var(--space-2); justify-items: end; }
@@ -418,4 +418,64 @@ button.works-task-board__card:focus-visible { outline: var(--focus-outline); out
   .works-task-panel__row { grid-template-columns: minmax(0, 1fr); }
   .works-closed__filters { align-items: stretch; flex-direction: column; }
   .works-closed__filters .works-search { max-width: none; }
+}
+
+/* Diálogo de costos (Gastos, Horas hombre, Materiales). Todo acotado a
+   .works-cost-dialog para no alterar la sección Adicionales, que comparte
+   algunas clases de formulario y lista. Solo tokens. */
+.works-cost-dialog .works-financial-columns > section { border: 0; padding: 0; }
+.works-cost-dialog .works-cost-breakdown { background: var(--color-surface-subtle); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); display: grid; gap: var(--space-2); padding: var(--space-3); }
+.works-cost-breakdown__summary { display: grid; gap: var(--space-3); grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; }
+.works-cost-breakdown__summary > div { display: grid; gap: 2px; }
+.works-cost-breakdown__summary dt { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+.works-cost-breakdown__summary dd { color: var(--color-text-strong); font-size: var(--font-size-md); font-weight: var(--font-weight-semibold); margin: 0; }
+.works-cost-breakdown__detail summary { color: var(--color-text-brand); cursor: pointer; font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); }
+.works-cost-breakdown__detail ul { display: grid; gap: var(--space-1); list-style: none; margin: var(--space-2) 0 0; padding: 0; }
+.works-cost-breakdown__detail li { color: var(--color-text-default); display: flex; font-size: var(--font-size-xs); justify-content: space-between; }
+.works-cost-breakdown__detail li strong { color: var(--color-text-strong); font-weight: var(--font-weight-semibold); }
+
+.works-cost-dialog .works-cost-form { align-content: start; background: var(--color-surface-subtle); border: 1px solid var(--color-border-default); border-radius: var(--radius-md); gap: var(--space-3); padding: var(--space-4); }
+.works-cost-form__title { color: var(--color-text-strong); font-size: var(--font-size-sm); grid-column: 1 / -1; margin: 0; }
+.works-cost-field { min-width: 0; }
+.works-cost-field--wide { grid-column: 1 / -1; }
+.works-money-input { display: flex; }
+.works-money-input__symbol { align-items: center; background: var(--color-surface-panel); border: 1px solid var(--color-border-control); border-bottom-left-radius: var(--radius-sm); border-right: 0; border-top-left-radius: var(--radius-sm); color: var(--color-text-muted); display: inline-flex; padding: 0 var(--space-3); }
+.works-money-input .erp-control { border-bottom-left-radius: 0; border-top-left-radius: 0; flex: 1 1 auto; min-width: 0; width: auto; }
+.works-cost-dialog .works-material-product { align-items: flex-end; }
+.works-cost-dialog .works-material-product > .works-cost-field { flex: 1 1 auto; }
+
+.works-cost-list__title { color: var(--color-text-strong); font-size: var(--font-size-sm); margin: var(--space-2) 0 0; }
+.works-cost-dialog .works-cost-list > .works-cost-entry { background: var(--color-surface-panel); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); gap: var(--space-2); padding: var(--space-3); }
+.works-cost-entry__head { align-items: baseline; display: flex; gap: var(--space-3); justify-content: space-between; }
+.works-cost-entry__title { font-weight: var(--font-weight-semibold); min-width: 0; overflow-wrap: anywhere; }
+.works-cost-list .works-cost-entry__amount { color: var(--color-text-expense); font-size: var(--font-size-md); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.works-cost-entry__tags { display: flex; flex-wrap: wrap; gap: var(--space-1); list-style: none; margin: 0; padding: 0; }
+.works-cost-tag { background: var(--color-surface-subtle); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-pill); color: var(--color-text-default); font-size: var(--font-size-xs); padding: 1px var(--space-2); }
+.works-cost-tag--danger { background: var(--color-danger-50); border-color: var(--color-danger-200); color: var(--color-danger-700); font-weight: var(--font-weight-semibold); }
+.works-cost-list .works-cost-entry__meta { color: var(--color-text-muted); }
+.works-cost-list .works-cost-entry__annulled { color: var(--color-danger-700); }
+.works-cost-entry__footer { align-items: flex-start; border-top: 1px solid var(--color-border-subtle); display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-3); justify-content: space-between; padding-top: var(--space-2); }
+.works-cost-dialog .works-expense-evidence { align-items: center; display: flex; flex-wrap: wrap; margin-top: 0; }
+.works-evidence-status { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+.works-evidence-status--missing { background: var(--color-warning-50); border: 1px solid var(--color-warning-200); border-radius: var(--radius-pill); color: var(--color-warning-800); font-weight: var(--font-weight-semibold); padding: 2px var(--space-3); }
+
+.works-cost-disclosure { margin-left: auto; }
+.works-cost-disclosure > summary { border: 1px solid; border-radius: var(--radius-sm); cursor: pointer; font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); list-style: none; padding: var(--space-1) var(--space-3); }
+.works-cost-disclosure > summary::-webkit-details-marker { display: none; }
+.works-cost-disclosure > summary:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.works-cost-disclosure--danger > summary { border-color: var(--color-danger-200); color: var(--color-danger-700); }
+.works-cost-disclosure--danger > summary:hover { background: var(--color-danger-50); }
+.works-cost-disclosure--neutral > summary { border-color: var(--color-border-control); color: var(--color-text-default); }
+.works-cost-disclosure--neutral > summary:hover { background: var(--color-surface-hover); }
+.works-cost-disclosure[open] { flex: 1 1 100%; margin-left: 0; }
+.works-cost-disclosure > form { margin-top: var(--space-2); }
+.works-cost-dialog .works-annul-form { align-items: end; }
+.works-cost-dialog .works-return-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.works-cost-dialog .works-return-form > .ui-button { grid-column: 1 / -1; justify-self: start; }
+.works-cost-dialog .works-financial-note { align-items: center; border-top: 1px solid var(--color-border-subtle); display: flex; gap: var(--space-1); margin: 0; padding-top: var(--space-2); }
+@media(max-width:767px) {
+  .works-cost-dialog .works-cost-form, .works-cost-dialog .works-annul-form, .works-cost-dialog .works-return-form { grid-template-columns: minmax(0, 1fr); }
+  .works-cost-dialog .works-material-product { flex-wrap: wrap; }
+  .works-cost-entry__footer { align-items: stretch; flex-direction: column; }
+  .works-cost-disclosure { margin-left: 0; }
 }
