@@ -712,8 +712,15 @@ console.log("OK escáner de salida de material: disponible, no disponible y cant
   assert.match(main, /Promise\.allSettled\(ids\.map\(\(id\) => obtenerBalanceTrabajo\(businessId, id\)\)\)/, "balances en paralelo, un fallo no tumba a los demás");
   assert.match(main, /if \(view === "closed" && canSeeProfitability && !loading && !loadError && closedBalanceKey\)/, "sin permiso de ganancias no se pide ningún balance");
   assert.match(main, /openDetail\(work, canSeeProfitability \? "balance" : "datos"\)/, "cada fila abre la ficha en Balance (Datos sin permiso de ganancias)");
-  assert.match(main, /matchesWorkFilters\(work, \{\.\.\.filters, incluirCerrados: showClosed\}\)/, "la Lista muestra solo activos salvo que se pida lo contrario");
-  assert.match(main, /Mostrar también cerrados/);
+  assert.match(main, /matchesWorkFilters\(work, \{\.\.\.filters, estado: \["activos", "todos"\]\.includes\(filters\.estado\) \? "todos" : filters\.estado, incluirCerrados: filters\.estado === "todos"\}\)/, "la Lista muestra solo activos salvo que se pida lo contrario");
+  assert.match(main, /estado: "activos", prioridad: "todas"/, "el filtro Estado arranca en Activos");
+  assert.match(main, /<option value="activos">Activos<\/option><option value="todos">Todos, incluidos cerrados<\/option>/);
+  assert.doesNotMatch(main, /Mostrar también cerrados|showClosed/, "el checkbox se reemplazó por el filtro Estado");
+  assert.match(page, /Elige «Todos, incluidos cerrados» en Estado/);
+  assert.match(page, /<th>Progreso<\/th>\{canManage && <th>Costo acumulado<\/th>\}/, "la Lista muestra progreso y, solo para gestión, costo acumulado");
+  assert.match(main, /costPending=\{detailLoading \|\| Boolean\(detailError\)\}/, "la ficha muestra — en lugar de $0 mientras carga");
+  assert.match(main, /onClick=\{\(\) => setDetailTab\("notas"\)\}>Agregar nota/, "la alerta de inactividad lleva a la pestaña de notas");
+  assert.match(main, /onClick=\{\(\) => requestStateChange\("completado"\)\}>Marcar como completado/, "el aviso de tareas hechas usa el cambio de estado existente");
   assert.match(page, /No hay proyectos activos/);
   // El componente: condiciona lo monetario al permiso y separa error de vacío.
   assert.doesNotMatch(closedView, /firebase|firestore|httpsCallable|getDocs|obtenerBalanceTrabajo/i, "WorkClosedProjects es presentacional");

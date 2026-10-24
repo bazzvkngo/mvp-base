@@ -529,3 +529,38 @@ button.works-task-board__card:focus-visible { outline: var(--focus-outline); out
   .works-project-board__cost-card > .ui-button { grid-column: 1 / -1; }
   .works-task-panel__cost { align-items: stretch; flex-direction: column; }
 }
+
+/* Entrega A: lista con progreso y costo, responsable con correo secundario, tarjeta de resumen de la ficha
+   (cifras destacadas, mismo patrón visual que el panel de ganancia de Ventas, con clases propias), alerta de
+   inactividad compacta y aviso de tareas hechas. Solo tokens. */
+.works-person { display: grid; gap: 2px; min-width: 0; }
+.works-person > strong { color: var(--color-text-strong); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); overflow-wrap: anywhere; }
+.works-person > small { color: var(--color-text-muted); font-size: var(--font-size-xs); overflow-wrap: anywhere; }
+.works-progress-cell { display: grid; gap: var(--space-1); min-width: 120px; }
+.works-progress-cell > span { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+.works-cost-cell { color: var(--color-text-expense); font-variant-numeric: tabular-nums; font-weight: var(--font-weight-semibold); white-space: nowrap; }
+.works-table { min-width: 1180px; }
+
+.works-summary-card { background: var(--color-surface-subtle); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); display: grid; gap: var(--space-4); padding: var(--space-4); }
+.works-summary-card__key { display: grid; gap: var(--space-5); grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; }
+.works-summary-card__metric { align-content: start; display: grid; gap: var(--space-1); min-width: 0; }
+.works-summary-card__metric dt { color: var(--color-text-muted); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); }
+.works-summary-card__metric dd { display: grid; gap: var(--space-1); margin: 0; }
+.works-summary-card__metric dd strong { color: var(--color-text-strong); font-size: var(--font-size-2xl); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.works-summary-card__metric--primary dd strong { color: var(--color-text-expense); }
+.works-summary-card__metric dd > span { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+.works-summary-card__meta { border-top: 1px solid var(--color-border-subtle); display: grid; gap: var(--space-2) var(--space-4); grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; padding-top: var(--space-3); }
+.works-summary-card__meta > div { display: grid; gap: 2px; min-width: 0; }
+.works-summary-card__meta dt { color: var(--color-text-muted); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); }
+.works-summary-card__meta dd { color: var(--color-text-strong); font-size: var(--font-size-sm); margin: 0; overflow-wrap: anywhere; }
+
+.works-detail-alert { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-3); justify-content: space-between; padding: var(--space-2) var(--space-3); }
+.works-detail-notice { align-items: center; background: var(--color-info-50); border: 1px solid var(--color-info-200); border-radius: var(--radius-md); color: var(--color-info-700); display: flex; flex-wrap: wrap; font-size: var(--font-size-sm); gap: var(--space-2) var(--space-3); justify-content: space-between; padding: var(--space-2) var(--space-3); }
+@media(max-width:900px) {
+  .works-summary-card__meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media(max-width:767px) {
+  .works-summary-card__key { grid-template-columns: minmax(0, 1fr); }
+  .works-summary-card__meta { grid-template-columns: minmax(0, 1fr); }
+  .works-detail-alert, .works-detail-notice { align-items: stretch; flex-direction: column; }
+}

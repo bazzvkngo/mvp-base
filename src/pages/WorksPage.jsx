@@ -82,9 +82,9 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
   const updateSearch = (change) => setSearchParams((current) => { const next = new URLSearchParams(current); change(next); return next; }, {replace: true});
   const setView = (next) => updateSearch((params) => { if (next === "board") params.set("vista", "tablero"); else if (next === "closed") { params.set("vista", "cerrados"); params.delete("proyecto"); } else { params.delete("vista"); params.delete("proyecto"); } });
   const selectBoardWork = (workId) => updateSearch((params) => { params.set("vista", "tablero"); params.set("proyecto", workId); });
-  const [filters, setFilters] = useState({query: "", estado: "todos", prioridad: "todas", responsableUid: "todos"});
-  // Lista: por defecto solo proyectos activos; los cerrados se ven con esta opción o en la vista Cerrados.
-  const [showClosed, setShowClosed] = useState(false);
+  const [filters, setFilters] = useState({query: "", estado: "activos", prioridad: "todas", responsableUid: "todos"});
+  // Estado de la Lista: "activos" (por defecto), "todos" (incluye cerrados) o un estado concreto; los cerrados
+  // también se ven en la vista Cerrados.
   // Vista Cerrados: balances de los cierres más recientes, con su propio estado de carga y error.
   const [closedBalances, setClosedBalances] = useState({});
   const [closedBalancesLoading, setClosedBalancesLoading] = useState(false);
@@ -198,8 +198,8 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
   };
   const openWorkBoard = (work) => { setSelectedWork(null); selectBoardWork(work.id); };
 
-  const visibleWorks = useMemo(() => works.filter((work) => matchesWorkFilters(work, {...filters, incluirCerrados: showClosed})), [filters, showClosed, works]);
-  const hiddenClosedCount = showClosed ? 0 : works.filter(isWorkClosed).length;
+  const visibleWorks = useMemo(() => works.filter((work) => matchesWorkFilters(work, {...filters, estado: ["activos", "todos"].includes(filters.estado) ? "todos" : filters.estado, incluirCerrados: filters.estado === "todos"})), [filters, works]);
+  const hiddenClosedCount = ["todos", "completado", "cancelado"].includes(filters.estado) ? 0 : works.filter(isWorkClosed).length;
   const canSeeProfitability = canViewWorkProfitability(role);
   // Los 20 cierres más recientes cargan su balance en paralelo; un fallo de uno no tumba a los demás.
   const closedBalanceIds = useMemo(() => getClosedWorks(works).slice(0, WORK_CLOSED_BALANCE_LIMIT).map((work) => work.id), [works]);
@@ -284,6 +284,8 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
   const addNote = (event) => { event.preventDefault(); const value = noteText.trim(); if (!value) return; runDetailAction("note-new", () => agregarNotaTrabajo(businessId, selectedWork.id, value)).then((success) => {if (success) setNoteText("");}); };
   const completed = selectedWork?.estado === "completado";
   const operationalReadOnly = isWorkOperationalReadOnly(selectedWork);
+  // Aviso discreto (el estado no cambia solo): todas las tareas hechas y el proyecto sigue abierto.
+  const allTasksDone = Boolean(selectedWork) && canManage && !operationalReadOnly && getWorkTaskProgress(selectedWork).percent >= 100;
   const saleMaterials = useMemo(() => getWorkSaleMaterials(detail.ventas), [detail.ventas]);
   const projectCost = useMemo(() => getWorkCostSummary({expenses: detail.gastos, labor: detail.horasHombre, materials: detail.materiales, saleMaterials}), [detail.gastos, detail.horasHombre, detail.materiales, saleMaterials]);
   const dailyCosts = useMemo(() => buildWorkDailyCostSummary({expenses: detail.gastos, labor: detail.horasHombre, materials: detail.materiales, saleMaterials, events: detail.historial}), [detail.gastos, detail.historial, detail.horasHombre, detail.materiales, saleMaterials]);
@@ -324,8 +326,8 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
     <section className="erp-panel works-panel" aria-label="Trabajos registrados">
       {loadError ? <LoadFailure message={loadError} onRetry={load} /> : <>
       <div className="works-toolbar"><div className="works-view-switch" role="group" aria-label="Vista"><button type="button" className={view === "list" ? "is-active" : ""} onClick={() => setView("list")}><AppIcon icon={LayoutList} size={17} />Lista</button><button type="button" className={view === "board" ? "is-active" : ""} onClick={() => setView("board")}><AppIcon icon={Columns3} size={17} />Tablero</button><button type="button" className={view === "closed" ? "is-active" : ""} onClick={() => setView("closed")}><AppIcon icon={Archive} size={17} />Cerrados</button></div>{view === "list" && <span>{visibleWorks.length} trabajo{visibleWorks.length === 1 ? "" : "s"}</span>}</div>
-      {view === "list" && <div className="erp-filters works-filters"><label className="erp-field works-search"><span className="erp-field__label">Buscar por número, título o cliente</span><span className="works-search-control"><AppIcon icon={Search} size={18} /><input className="erp-control" value={filters.query} onChange={(event) => setFilters((current) => ({...current, query: event.target.value}))} /></span></label><Filter label="Estado" value={filters.estado} onChange={(value) => setFilters((current) => ({...current, estado: value}))}><option value="todos">Todos</option>{WORK_STATUSES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</Filter><Filter label="Prioridad" value={filters.prioridad} onChange={(value) => setFilters((current) => ({...current, prioridad: value}))}><option value="todas">Todas</option>{WORK_PRIORITIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</Filter><Filter label="Responsable principal" value={filters.responsableUid} onChange={(value) => setFilters((current) => ({...current, responsableUid: value}))}><option value="todos">Todos</option>{members.map((member) => <option key={member.uid} value={member.uid}>{getWorkMemberIdentity(member)}</option>)}</Filter><label className="ui-checkbox works-filters__closed"><input className="ui-checkbox__input" type="checkbox" checked={showClosed} onChange={(event) => setShowClosed(event.target.checked)} /><span className="ui-checkbox__label">Mostrar también cerrados</span></label></div>}
-      {loading ? (view === "board" ? <LoadingState variant="section" label="Cargando trabajos..." /> : <SkeletonRegion label="Cargando trabajos..."><SkeletonTable className="erp-desktop-only" columns={7} twoLine /><SkeletonCards className="erp-card-list erp-mobile-only" /></SkeletonRegion>) : view === "board" ? (works.length ? <WorkProjectBoard actions={boardActions} canManage={canManage} canOperate={(task) => canOperateWorkTask(task, {canManage, role, currentUserUid})} costs={{expenses: boardDetail.gastos, labor: boardDetail.horasHombre, materials: boardDetail.materiales}} currency={boardCurrency} currentUserUid={currentUserUid} detail={boardDetail} error={boardError} loading={boardLoading} members={members} onOpenFicha={() => boardWork && openDetail(boardWork)} onRetry={() => loadBoardDetail(boardWorkId)} onSelectWork={selectBoardWork} processing={processing} projectCost={getWorkAccumulatedCost(boardWork || {})} renderCosts={renderBoardCosts} terminal={boardReadOnly} work={boardWork} workId={boardWorkId} works={works} /> : <WorksEmptyState hasAnyWork={false} canManage={canManage} onCreate={openNew} />) : view === "closed" ? <WorkClosedProjects balances={closedBalances} balancesError={closedBalancesError} balancesLoading={closedBalancesLoading} canViewProfitability={canSeeProfitability} onOpenWork={(work) => openDetail(work, canSeeProfitability ? "balance" : "datos")} onRetryBalances={() => loadClosedBalances(closedBalanceIds.filter((id) => !closedBalances[id]))} works={works} /> : <WorkList works={visibleWorks} hasAnyWork={works.length > 0} hiddenClosedCount={hiddenClosedCount} filtersActive={filters.query.trim() !== "" || filters.estado !== "todos" || filters.prioridad !== "todas" || filters.responsableUid !== "todos"} canManage={canManage} onCreate={openNew} onEdit={openEdit} onOpen={openDetail} />}
+      {view === "list" && <div className="erp-filters works-filters"><label className="erp-field works-search"><span className="erp-field__label">Buscar por número, título o cliente</span><span className="works-search-control"><AppIcon icon={Search} size={18} /><input className="erp-control" value={filters.query} onChange={(event) => setFilters((current) => ({...current, query: event.target.value}))} /></span></label><Filter label="Estado" value={filters.estado} onChange={(value) => setFilters((current) => ({...current, estado: value}))}><option value="activos">Activos</option><option value="todos">Todos, incluidos cerrados</option>{WORK_STATUSES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</Filter><Filter label="Prioridad" value={filters.prioridad} onChange={(value) => setFilters((current) => ({...current, prioridad: value}))}><option value="todas">Todas</option>{WORK_PRIORITIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</Filter><Filter label="Responsable principal" value={filters.responsableUid} onChange={(value) => setFilters((current) => ({...current, responsableUid: value}))}><option value="todos">Todos</option>{members.map((member) => <option key={member.uid} value={member.uid}>{getWorkMemberIdentity(member)}</option>)}</Filter></div>}
+      {loading ? (view === "board" ? <LoadingState variant="section" label="Cargando trabajos..." /> : <SkeletonRegion label="Cargando trabajos..."><SkeletonTable className="erp-desktop-only" columns={canManage ? 9 : 8} twoLine /><SkeletonCards className="erp-card-list erp-mobile-only" /></SkeletonRegion>) : view === "board" ? (works.length ? <WorkProjectBoard actions={boardActions} canManage={canManage} canOperate={(task) => canOperateWorkTask(task, {canManage, role, currentUserUid})} costs={{expenses: boardDetail.gastos, labor: boardDetail.horasHombre, materials: boardDetail.materiales}} currency={boardCurrency} currentUserUid={currentUserUid} detail={boardDetail} error={boardError} loading={boardLoading} members={members} onOpenFicha={() => boardWork && openDetail(boardWork)} onRetry={() => loadBoardDetail(boardWorkId)} onSelectWork={selectBoardWork} processing={processing} projectCost={getWorkAccumulatedCost(boardWork || {})} renderCosts={renderBoardCosts} terminal={boardReadOnly} work={boardWork} workId={boardWorkId} works={works} /> : <WorksEmptyState hasAnyWork={false} canManage={canManage} onCreate={openNew} />) : view === "closed" ? <WorkClosedProjects balances={closedBalances} balancesError={closedBalancesError} balancesLoading={closedBalancesLoading} canViewProfitability={canSeeProfitability} onOpenWork={(work) => openDetail(work, canSeeProfitability ? "balance" : "datos")} onRetryBalances={() => loadClosedBalances(closedBalanceIds.filter((id) => !closedBalances[id]))} works={works} /> : <WorkList works={visibleWorks} hasAnyWork={works.length > 0} hiddenClosedCount={hiddenClosedCount} filtersActive={filters.query.trim() !== "" || filters.estado !== "activos" || filters.prioridad !== "todas" || filters.responsableUid !== "todos"} canManage={canManage} members={members} onCreate={openNew} onEdit={openEdit} onOpen={openDetail} />}
       </>}
     </section>
 
@@ -380,9 +382,10 @@ export default function WorksPage({businessId, currencyCode, currentUserUid, rol
                 {!operationalReadOnly && <MoreActionsMenu actions={[{label: "Cancelar trabajo", onSelect: () => setCancelWork(selectedWork)}]} menuLabel="Más acciones del proyecto" />}
               </>}
             </div>
-            <WorkSummary work={selectedWork} cost={projectCost.total} members={members} />
+            <WorkSummary work={selectedWork} cost={projectCost.total} costPending={detailLoading || Boolean(detailError)} members={members} />
             {selectedWork.estado === "en_espera" && selectedWork.motivoEspera && <p className="works-wait-reason">En espera: {selectedWork.motivoEspera}</p>}
-            {getWorkOperationalIndicators(selectedWork).noRecentActivity && <p className="works-message works-message--warning">Sin actividad reciente (3 días o más).</p>}
+            {getWorkOperationalIndicators(selectedWork).noRecentActivity && <div className="works-message works-message--warning works-detail-alert"><span>Sin actividad reciente (3 días o más).</span>{canManage && !operationalReadOnly && <Button type="button" variant="secondary" onClick={() => setDetailTab("notas")}>Agregar nota</Button>}</div>}
+            {allTasksDone && <div className="works-detail-notice"><span>Todas las tareas están hechas.</span><Button type="button" variant="secondary" disabled={Boolean(processing)} onClick={() => requestStateChange("completado")}>Marcar como completado</Button></div>}
           </div>
 
           {detailError ? <LoadFailure message={detailError} onRetry={() => loadDetail(selectedWork.id)} /> : <>
@@ -677,7 +680,7 @@ function CommercialFile({canManage, detail, loading, navigate}) {
         return <article key={quote.id}><div><strong>{quote.numero || "Cotización"}</strong><span>{commercialStatusLabel(quote.estado)}{canManage ? ` · ${commercialTotal(quote, businessLocale)}` : ""}</span>{quote.estado === "rechazada" && rejection && <small>{rejection}</small>}</div><div><button type="button" onClick={() => navigate("/cotizaciones", {state: {openQuoteId: quote.id}})}>Abrir cotización</button>{relatedSale && <button type="button" onClick={() => navigate(`/ventas/${relatedSale.id}/editar`)}>Venta {relatedSale.numero}</button>}</div></article>;
       })}
       {detail.ventas.filter((sale) => !detail.cotizaciones.some((quote) => quote.id === sale.cotizacionId)).map((sale) => <article key={sale.id}><div><strong>{sale.numero || "Venta"}</strong><span>{commercialStatusLabel(sale.estado)}{canManage ? ` · ${commercialTotal(sale, businessLocale)}` : ""}</span></div><div><button type="button" onClick={() => navigate(`/ventas/${sale.id}/editar`)}>Abrir venta</button></div></article>)}
-      {!detail.cotizaciones.length && !detail.ventas.length && <p className="works-empty-copy">Este proyecto aún no tiene cotizaciones ni ventas vinculadas.</p>}
+      {!detail.cotizaciones.length && !detail.ventas.length && <div className="erp-empty-state ui-empty-state"><EmptyStateIllustration variant="empty-list" /><p className="works-empty-copy">Este proyecto aún no tiene cotizaciones ni ventas vinculadas.</p></div>}
     </div>}
   </div>;
 }
@@ -709,7 +712,7 @@ function WorksEmptyState({canManage, filtersActive = true, hasAnyWork, hiddenClo
       <h3>{onlyClosed ? "No hay proyectos activos" : hasAnyWork ? "No hay trabajos coincidentes" : "Aún no hay trabajos"}</h3>
       <p>
         {onlyClosed
-          ? "Todos tus proyectos están cerrados. Marca «Mostrar también cerrados» o abre la vista Cerrados."
+          ? "Todos tus proyectos están cerrados. Elige «Todos, incluidos cerrados» en Estado o abre la vista Cerrados."
           : hasAnyWork
           ? `Prueba con otra búsqueda, estado, prioridad o responsable.${hiddenClosedCount > 0 ? " Los proyectos cerrados están ocultos." : ""}`
           : canManage
@@ -725,12 +728,53 @@ function WorksEmptyState({canManage, filtersActive = true, hasAnyWork, hiddenClo
   );
 }
 
-function WorkList({canManage, filtersActive, hasAnyWork, hiddenClosedCount, onCreate, onEdit, onOpen, works}) {
-  if (!works.length) return <WorksEmptyState canManage={canManage} filtersActive={filtersActive} hasAnyWork={hasAnyWork} hiddenClosedCount={hiddenClosedCount} onCreate={onCreate} />;
-  return <><div className="erp-table-region erp-desktop-only"><table className="erp-table works-table"><thead><tr><th>Trabajo</th><th>Cliente</th><th>Responsable principal</th><th>Prioridad</th><th>Término planificado</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{works.map((work) => <tr key={work.id}><td><button className="works-link" type="button" onClick={() => onOpen(work)}><strong>{work.numero}</strong><span>{work.titulo}</span></button></td><td>{work.clienteSnapshot?.nombreRazonSocial || "Sin cliente"}</td><td>{workPersonIdentity(work.responsableSnapshot, work.responsableUid)}</td><td><Priority value={work.prioridad} /></td><td>{dateLabel(work.fechaPrevista)}</td><td><Status value={work.estado} /></td><td><div className="works-row-actions"><button type="button" onClick={() => onOpen(work)}>Ver</button>{canManage && !isWorkOperationalReadOnly(work) && <button type="button" onClick={() => onEdit(work)}>Editar</button>}</div></td></tr>)}</tbody></table></div><div className="erp-card-list erp-mobile-only">{works.map((work) => <article key={work.id} className="erp-record-card"><header className="erp-record-card__header"><div><span className="works-number">{work.numero}</span><h3 className="erp-record-card__title">{work.titulo}</h3></div><Status value={work.estado} /></header><dl className="erp-meta-grid"><div className="erp-meta"><dt className="erp-meta__label">Cliente</dt><dd className="erp-meta__value">{work.clienteSnapshot?.nombreRazonSocial || "Sin cliente"}</dd></div><div className="erp-meta"><dt className="erp-meta__label">Responsable principal</dt><dd className="erp-meta__value">{workPersonIdentity(work.responsableSnapshot, work.responsableUid)}</dd></div><div className="erp-meta"><dt className="erp-meta__label">Prioridad</dt><dd className="erp-meta__value"><Priority value={work.prioridad} /></dd></div><div className="erp-meta"><dt className="erp-meta__label">Término planificado</dt><dd className="erp-meta__value">{dateLabel(work.fechaPrevista)}</dd></div></dl><div className="works-card-actions"><Button type="button" variant="secondary" onClick={() => onOpen(work)}>Ver ficha</Button>{canManage && !isWorkOperationalReadOnly(work) && <Button type="button" variant="secondary" onClick={() => onEdit(work)}>Editar</Button>}</div></article>)}</div></>;
+function WorkPersonCell({members, snapshot, uid}) {
+  const identity = workPersonIdentity(snapshot, uid, members);
+  const email = String(snapshot?.correo || "").trim();
+  const secondary = email && email !== "Sin correo disponible" && email !== identity ? email : "";
+  return <span className="works-person"><strong>{identity}</strong>{secondary && <small>{secondary}</small>}</span>;
 }
 
-function WorkSummary({cost, members, work}) { const { locale: businessLocale } = useBusinessFormat(); const progress = getWorkTaskProgress(work); return <dl className="works-summary"><div><dt>Cliente</dt><dd>{work.clienteSnapshot?.nombreRazonSocial || "Sin cliente"}</dd></div><div><dt>Responsable principal</dt><dd>{workPersonIdentity(work.responsableSnapshot, work.responsableUid, members)}</dd></div><div><dt>Prioridad</dt><dd><Priority value={work.prioridad} /></dd></div><div><dt>Término planificado</dt><dd>{dateLabel(work.fechaPrevista)}</dd></div><div><dt>Progreso</dt><dd>{progress.percent}% · {progress.completed}/{progress.total} tareas</dd></div><div><dt>Costo acumulado</dt><dd>{formatMoney(cost, work.moneda || "CLP", businessLocale)}</dd></div></dl>; }
+function WorkProgressCell({work}) {
+  const progress = getWorkTaskProgress(work);
+  if (!progress.total) return <span className="works-empty-line">Sin tareas</span>;
+  return <span className="works-progress-cell"><progress className="works-task-progress works-task-progress--thin" max="100" value={progress.percent} aria-label={`Avance de tareas de ${work.numero}`} /><span>{Math.round(progress.percent)}% · {progress.completed}/{progress.total} tareas</span></span>;
+}
+
+// El costo de la Lista (y del Tablero) sale de los totales guardados en el proyecto
+// (getWorkAccumulatedCost): no hace lecturas extra. La ficha calcula el suyo desde el detalle cargado y
+// suma además los materiales de ventas confirmadas, que los totales guardados no incluyen; con una venta
+// confirmada ambas cifras pueden diferir. Solo lo ve quien gestiona trabajos.
+function WorkList({canManage, filtersActive, hasAnyWork, hiddenClosedCount, members = [], onCreate, onEdit, onOpen, works}) {
+  const { locale: businessLocale } = useBusinessFormat();
+  if (!works.length) return <WorksEmptyState canManage={canManage} filtersActive={filtersActive} hasAnyWork={hasAnyWork} hiddenClosedCount={hiddenClosedCount} onCreate={onCreate} />;
+  const cost = (work) => formatMoney(getWorkAccumulatedCost(work), work.moneda || "CLP", businessLocale);
+  return <><div className="erp-table-region erp-desktop-only"><table className="erp-table works-table"><thead><tr><th>Trabajo</th><th>Cliente</th><th>Responsable principal</th><th>Prioridad</th><th>Progreso</th>{canManage && <th>Costo acumulado</th>}<th>Término planificado</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{works.map((work) => <tr key={work.id}><td><button className="works-link" type="button" onClick={() => onOpen(work)}><strong>{work.numero}</strong><span>{work.titulo}</span></button></td><td>{work.clienteSnapshot?.nombreRazonSocial || "Sin cliente"}</td><td><WorkPersonCell members={members} snapshot={work.responsableSnapshot} uid={work.responsableUid} /></td><td><Priority value={work.prioridad} /></td><td><WorkProgressCell work={work} /></td>{canManage && <td className="works-cost-cell">{cost(work)}</td>}<td>{dateLabel(work.fechaPrevista)}</td><td><Status value={work.estado} /></td><td><div className="works-row-actions"><button type="button" onClick={() => onOpen(work)}>Ver</button>{canManage && !isWorkOperationalReadOnly(work) && <button type="button" onClick={() => onEdit(work)}>Editar</button>}</div></td></tr>)}</tbody></table></div><div className="erp-card-list erp-mobile-only">{works.map((work) => <article key={work.id} className="erp-record-card"><header className="erp-record-card__header"><div><span className="works-number">{work.numero}</span><h3 className="erp-record-card__title">{work.titulo}</h3></div><Status value={work.estado} /></header><dl className="erp-meta-grid"><div className="erp-meta"><dt className="erp-meta__label">Cliente</dt><dd className="erp-meta__value">{work.clienteSnapshot?.nombreRazonSocial || "Sin cliente"}</dd></div><div className="erp-meta"><dt className="erp-meta__label">Responsable principal</dt><dd className="erp-meta__value"><WorkPersonCell members={members} snapshot={work.responsableSnapshot} uid={work.responsableUid} /></dd></div><div className="erp-meta"><dt className="erp-meta__label">Prioridad</dt><dd className="erp-meta__value"><Priority value={work.prioridad} /></dd></div><div className="erp-meta"><dt className="erp-meta__label">Término planificado</dt><dd className="erp-meta__value">{dateLabel(work.fechaPrevista)}</dd></div><div className="erp-meta"><dt className="erp-meta__label">Progreso</dt><dd className="erp-meta__value"><WorkProgressCell work={work} /></dd></div>{canManage && <div className="erp-meta"><dt className="erp-meta__label">Costo acumulado</dt><dd className="erp-meta__value">{cost(work)}</dd></div>}</dl><div className="works-card-actions"><Button type="button" variant="secondary" onClick={() => onOpen(work)}>Ver ficha</Button>{canManage && !isWorkOperationalReadOnly(work) && <Button type="button" variant="secondary" onClick={() => onEdit(work)}>Editar</Button>}</div></article>)}</div></>;
+}
+
+// Tarjeta de resumen de la ficha: costo acumulado y avance destacados (mismo patrón visual que el panel de
+// ganancia de Ventas, con clases propias) y los datos del proyecto debajo. `costPending` muestra "—" mientras el
+// detalle carga o falló, porque el costo sale de ese detalle y un $0 sería engañoso. Este costo suma también
+// los materiales de ventas confirmadas; el de la Lista y el Tablero (totales guardados) no, así que pueden diferir.
+function WorkSummary({cost, costPending = false, members, work}) {
+  const { locale: businessLocale } = useBusinessFormat();
+  const progress = getWorkTaskProgress(work);
+  const email = String(work.responsableSnapshot?.correo || "").trim();
+  const identity = workPersonIdentity(work.responsableSnapshot, work.responsableUid, members);
+  const secondary = email && email !== "Sin correo disponible" && email !== identity ? email : "";
+  return <section className="works-summary-card" aria-label="Resumen del proyecto">
+    <dl className="works-summary-card__key">
+      <div className="works-summary-card__metric works-summary-card__metric--primary"><dt>Costo acumulado</dt><dd><strong>{costPending ? "—" : formatMoney(cost, work.moneda || "CLP", businessLocale)}</strong></dd></div>
+      <div className="works-summary-card__metric"><dt>Avance de tareas</dt><dd><strong>{Math.round(progress.percent)}%</strong><span>{progress.completed}/{progress.total} tareas</span><progress className="works-task-progress" max="100" value={progress.percent} aria-label="Avance de tareas del proyecto" /></dd></div>
+    </dl>
+    <dl className="works-summary-card__meta">
+      <div><dt>Cliente</dt><dd>{work.clienteSnapshot?.nombreRazonSocial || "Sin cliente"}</dd></div>
+      <div><dt>Responsable principal</dt><dd><span className="works-person"><strong>{identity}</strong>{secondary && <small>{secondary}</small>}</span></dd></div>
+      <div><dt>Prioridad</dt><dd><Priority value={work.prioridad} /></dd></div>
+      <div><dt>Término planificado</dt><dd>{dateLabel(work.fechaPrevista)}</dd></div>
+    </dl>
+  </section>;
+}
 
 function DailyCostSummary({currency, loading, rows}) { const { locale: businessLocale } = useBusinessFormat(); return <section className="works-detail-section works-daily-costs"><h3>Costos por día</h3>{loading ? <LoadingState variant="section" label="Cargando costos..." /> : rows.length ? <div className="erp-table-region"><table className="erp-table"><thead><tr><th>Fecha</th><th>Materiales</th><th>HH</th><th>Gastos</th><th>Total</th></tr></thead><tbody>{rows.map((row) => <tr key={row.date}><td>{dateLabel(row.date)}</td><td>{formatMoney(row.materials, currency, businessLocale)}</td><td>{formatMoney(row.labor, currency, businessLocale)}</td><td>{formatMoney(row.expenses, currency, businessLocale)}</td><td><strong>{formatMoney(row.total, currency, businessLocale)}</strong></td></tr>)}</tbody></table></div> : <p className="works-empty-copy">Aún no hay costos fechados para resumir.</p>}</section>; }
 
