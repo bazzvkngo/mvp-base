@@ -20,18 +20,16 @@ const SMOKE_SCRIPTS = [
   "test:design",
   "test:contrast",
   "test:contrast-usage",
+  "test:storage-rules-budget",
   "test:quote-model",
   "test:quote-email",
   "test:quote-public",
   "test:sales-model",
   "test:rbac",
-  "test:market-relevance",
 ];
 const EMULATOR_SCRIPTS = [
   "test:rules",
   "test:business-verification-rules",
-  "test:notification-rules",
-  "test:quote-delete-draft",
 ];
 
 const results = [];

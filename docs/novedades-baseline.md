@@ -86,6 +86,9 @@ git diff --check
 
 Más los smokes de tu propio módulo. Las que usan emuladores arrancan solas. Envía el resultado (código de salida de cada una) en la descripción del PR.
 
+- `npm run verify:deploy` junta en una sola corrida las comprobaciones de entrega: proyecto Firebase por defecto, JSON de configuración, scripts npm existentes, `git diff --check`, lint de functions, build y los smokes principales (incluidas las dos guardias de contraste y la de Storage). No despliega nada y termina con `Fallas: N` y código distinto de 0 si N > 0. Córrelo antes de pedir revisión; con `-- --emuladores` suma las pruebas de reglas, y úsalo así siempre que toques `firestore.rules` o `storage.rules`.
+- `npm run test:storage-rules-budget` es una guardia estática de `storage.rules`: Storage solo permite leer 2 documentos de Firestore por petición, y una regla que necesite más devuelve 403 en producción aunque el usuario tenga permiso, sin que el emulador lo avise. La guardia cuenta, para cada `allow`, las lecturas del peor caso. Córrela cada vez que agregues o cambies una ruta o una función en `storage.rules` (por ejemplo, adjuntos de tu módulo). No necesita emuladores.
+
 ## 6. Qué no tocas
 
 - Functions centrales existentes: `requireBusinessAccess`, `getBusinessSession`, las de plataforma.
