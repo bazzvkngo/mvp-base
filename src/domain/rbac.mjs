@@ -88,6 +88,7 @@ export const BUSINESS_PERMISSIONS = Object.freeze({
   COMPANY_WRITE: "company.write",
   MEMBERS_READ: "members.read",
   MEMBERS_MANAGE: "members.manage",
+  VETERINARIA_READ: "veterinaria.read",
   ACCOUNT_READ: "account.read",
 });
 
@@ -163,6 +164,7 @@ const routePermissions = Object.freeze([
   [/^\/valorizacion(?:\/|$)/, P.PRICING_READ],
   [/^\/empresa(?:\/|$)/, P.COMPANY_READ],
   [/^\/empleados(?:\/|$)/, P.MEMBERS_READ],
+  [/^\/clinica-veterinaria(?:\/|$)/, P.VETERINARIA_READ],
   [/^\/cuenta(?:\/|$)/, P.ACCOUNT_READ],
 ]);
 

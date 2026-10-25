@@ -143,6 +143,43 @@ assert.equal(canAccessBusinessPath({role: "OWNER"}, "/clientes", getBusinessPath
 for (const entry of testRegistry) assert.equal(BUSINESS_MODULES.includes(entry.id), false);
 assert.equal(BUSINESS_MODULES.includes("taller"), false);
 assert.equal(BUSINESS_MODULES.includes("veterinaria"), false);
+// Veterinaria: la ruta exige modulo habilitado y permiso clinico.
+const veterinaryDisabled = getBusinessPathOptions({
+  role: "OWNER",
+  modulosHabilitados: [],
+});
+const veterinaryEnabled = getBusinessPathOptions({
+  role: "OWNER",
+  modulosHabilitados: ["veterinaria"],
+});
+
+assert.equal(
+  canAccessBusinessPath({role: "OWNER"}, "/clinica-veterinaria", veterinaryDisabled),
+  false,
+  "OWNER no accede con veterinaria deshabilitada"
+);
+assert.equal(
+  canAccessBusinessPath({role: "OWNER"}, "/clinica-veterinaria", veterinaryEnabled),
+  true,
+  "OWNER accede con veterinaria habilitada"
+);
+assert.equal(
+  canAccessBusinessPath({role: "ADMIN"}, "/clinica-veterinaria/pacientes", veterinaryEnabled),
+  true,
+  "ADMIN accede a rutas internas con veterinaria habilitada"
+);
+assert.equal(
+  canAccessBusinessPath({role: "TECNICO"}, "/clinica-veterinaria", veterinaryEnabled),
+  false,
+  "TECNICO no tiene permiso clinico"
+);
+assert.equal(
+  canAccessBusinessPath({role: "MEMBER"}, "/clinica-veterinaria", veterinaryEnabled),
+  false,
+  "MEMBER no tiene permiso clinico"
+);
+
+console.log("OK RBAC: Veterinaria exige modulo habilitado y permiso clinico");
 console.log("OK RBAC: rutas verticales exigen modulo habilitado ademas del permiso");
 
 function rejectingDependencies(role) {

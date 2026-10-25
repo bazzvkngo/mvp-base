@@ -1315,6 +1315,25 @@ service cloud.firestore {
         allow create, delete: if false;
       }
 
+      // Clínica Veterinaria: lectura SDK solo para OWNER/ADMIN cuando el
+      // módulo vertical está habilitado. Las escrituras pasan por backend.
+      match /pacientesVeterinarios/{pacienteId} {
+        allow read: if isBusinessModuleEnabled(businessId, "veterinaria")
+          && hasBusinessRole(businessId, ["OWNER", "ADMIN"]);
+        allow write: if false;
+      }
+
+      match /citasVeterinarias/{citaId} {
+        allow read: if isBusinessModuleEnabled(businessId, "veterinaria")
+          && hasBusinessRole(businessId, ["OWNER", "ADMIN"]);
+        allow write: if false;
+      }
+
+      match /atencionesVeterinarias/{atencionId} {
+        allow read: if isBusinessModuleEnabled(businessId, "veterinaria")
+          && hasBusinessRole(businessId, ["OWNER", "ADMIN"]);
+        allow write: if false;
+      }
       match /{document=**} {
         allow read, create, update, delete: if false;
       }
