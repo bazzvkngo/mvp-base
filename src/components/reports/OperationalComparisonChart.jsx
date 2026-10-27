@@ -8,7 +8,7 @@ import {
   Tooltip,
 } from "chart.js";
 import {Bar} from "react-chartjs-2";
-import {formatMoney} from "../../utils/formatters";
+import {formatCompactMoney, formatMoney} from "../../utils/formatters";
 import usePrefersDarkMode from "../../hooks/usePrefersDarkMode";
 import useBusinessFormat from "../../hooks/useBusinessFormat";
 
@@ -45,15 +45,6 @@ function formatLabel(key) {
   })
     .format(new Date(Date.UTC(year, month - 1, day)))
     .replace(" de ", " ");
-}
-
-function formatCompactMoney(value, currency) {
-  return new Intl.NumberFormat("es-CL", {
-    style: "currency",
-    currency,
-    maximumFractionDigits: 1,
-    notation: "compact",
-  }).format(Number(value || 0));
 }
 
 export default function OperationalComparisonChart({currency = "CLP", items}) {
@@ -136,7 +127,7 @@ export default function OperationalComparisonChart({currency = "CLP", items}) {
                 color: chrome.tickText,
                 maxTicksLimit: 5,
                 callback(value) {
-                  return formatCompactMoney(value, currency);
+                  return formatCompactMoney(value, currency, businessLocale);
                 },
               },
             },

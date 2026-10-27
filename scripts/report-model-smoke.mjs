@@ -3,6 +3,7 @@ import {existsSync, readFileSync} from "node:fs";
 import React from "react";
 import {renderToStaticMarkup} from "react-dom/server";
 import {createServer} from "vite";
+import {formatCompactMoney} from "../src/utils/formatters.js";
 import {
   REPORT_TABS,
   aggregateOperationalTimeline,
@@ -524,7 +525,10 @@ assert.match(ventasViewSource, /topSalesClients/);
 assert.match(ventasViewSource, /topSalesProducts/);
 assert.equal((comprasViewSource.match(/<OperationalComparisonChart/g) || []).length, 1);
 assert.match(comprasViewSource, /Comparar ventas y compras no es ganancia/);
-assert.doesNotMatch(comprasViewSource.replace(/no es ganancia/g, ""), /[Gg]anancia/);
+// La nota señala la pestaña por su nombre, sin cifras de ganancia en esta vista.
+assert.doesNotMatch(comprasViewSource.replace(/no es ganancia|pestaña Ganancia/g, ""), /[Gg]anancia/);
+assert.match(comprasViewSource, /Cuánto ganas está en la pestaña Ganancia\./);
+assert.doesNotMatch(comprasViewSource, /Rentabilidad y estado/);
 assert.doesNotMatch(comprasViewSource, /margenBrutoProductosCubiertos/);
 assert.match(comprasViewSource, /Las compras muestran egresos registrados del negocio/);
 // SPEC 025 etapa 1: los montos de Ventas y Compras van sin IVA.
@@ -1312,4 +1316,128 @@ assert.match(marginRingSource, /<circle className="reports-ring__track"/);
 }
 console.log("OK reportes SPEC 025 (resumen visual, pulido): tarjetas alineadas arriba, círculo mayor, chip táctil de 44 px, mes sin ventas sin vacío repetido y sin nota de base sin permiso de Ventas");
 
+// Pulido de Compras: un solo mensaje de vacío y el gráfico solo si hay ventas o compras.
+assert.doesNotMatch(comprasViewSource, /Sin compras confirmadas en el período/);
+assert.equal((comprasViewSource.match(/Aún no hay compras confirmadas en este período/g) || []).length, 1, "un solo mensaje de vacío en Compras");
+assert.match(comprasViewSource, /chartGroupsWithData\.length > 0 && <section className="erp-card reports-simple-chart">/);
+assert.match(comprasViewSource, /\{hasPurchases && <section className="erp-card reports-detail-section">\s*<div className="reports-section-heading"><div><span>Operaciones<\/span>/);
+{
+  const comprasVite = await createServer({appType: "custom", logLevel: "silent", server: {middlewareMode: true}});
+  try {
+    const {default: ReportsComprasView} = await comprasVite.ssrLoadModule("/src/features/reports/views/ReportsComprasView.jsx");
+    const range = {start: "2026-09-01", end: "2026-09-30", days: 30};
+    const countOf = (text, pattern) => (text.match(pattern) || []).length;
+    const renderCompras = (sales, purchases, extra = {}) => {
+      const summary = getSimplifiedReportSummary({sales, purchases, projectBalances: [], range});
+      const salesTimeline = aggregateOperationalTimeline(summary.sales.confirmed, {range, dateField: "fechaVenta"});
+      const purchaseTimeline = aggregateOperationalTimeline(summary.purchases.confirmed, {range, dateField: "fechaCompra"});
+      const timeline = combineOperationalTimelines(salesTimeline, purchaseTimeline);
+      const chartGroups = summary.currencies.map((group) => ({
+        currency: group.currency, items: timeline.filter((item) => item.currency === group.currency), purchases: group.purchases.total, sales: group.sales.total,
+      }));
+      return plain(renderToStaticMarkup(React.createElement(ReportsComprasView, {
+        canOpenPurchases: true, chartGroups, navigate: () => {}, purchaseTimeline, summary, topPurchaseProducts: [], topPurchaseSuppliers: [], ...extra,
+      })));
+    };
+    const septemberSale = {ventaId: "v1", estado: "confirmada", moneda: "CLP", fechaVenta: "2026-09-10", neto: 1000, total: 1190, items: []};
+    const septemberPurchase = {compraId: "c1", numero: "C-1", estado: "confirmada", moneda: "CLP", fechaCompra: "2026-09-12", neto: 400, total: 476, proveedorSnapshot: {razonSocial: "Proveedor Uno"}};
+    // Mes sin ventas ni compras: un solo mensaje, sin gráfico, sin su nota y sin listado.
+    const nothing = renderCompras([], []);
+    assert.equal(countOf(nothing, /Aún no hay compras confirmadas en este período\./g), 1);
+    assert.doesNotMatch(nothing, /Sin compras confirmadas en el período|Aún no hay ventas ni compras confirmadas|Compras del período|Comparar ventas y compras no es ganancia|Movimiento comercial/);
+    assert.ok(countOf(nothing, /\$0</g) === 1 && nothing.includes("0 operación(es)"), "el $0 y el conteo siguen en las tarjetas");
+    assert.ok(nothing.includes("Ir a Compras"), "el único mensaje lleva su acceso con permiso");
+    assert.ok(!renderCompras([], [], {canOpenPurchases: false}).includes("Ir a Compras"), "sin permiso no hay acceso");
+    // Mes con una venta y sin compras: el gráfico y su nota siguen; el vacío se dice una sola vez.
+    const salesOnly = renderCompras([septemberSale], []);
+    assert.ok(salesOnly.includes("Movimiento comercial") && salesOnly.includes("Comparar ventas y compras no es ganancia."), "el gráfico sigue con ventas");
+    assert.ok(salesOnly.includes("Ventas confirmadas") && salesOnly.includes("$1.000"));
+    assert.equal(countOf(salesOnly, /Aún no hay compras confirmadas en este período\./g), 1);
+    assert.doesNotMatch(salesOnly, /Sin compras confirmadas en el período|Compras del período/);
+    assert.ok(salesOnly.includes("Cuánto ganas está en la pestaña Ganancia."));
+    // Mes con compras: sin mensaje de vacío, con el listado y el gráfico.
+    const withPurchases = renderCompras([], [septemberPurchase]);
+    assert.doesNotMatch(withPurchases, /Aún no hay compras confirmadas en este período/);
+    assert.ok(withPurchases.includes("Compras del período") && withPurchases.includes("Proveedor Uno") && withPurchases.includes("Movimiento comercial"));
+  } finally {
+    await comprasVite.close();
+  }
+}
+console.log("OK reportes Compras (limpieza): un solo mensaje de vacío, gráfico solo con ventas o compras, nota con la pestaña Ganancia");
+// Monto abreviado compartido de los ejes: una sola función, sufijo en mayúscula y signo bien formado.
+{
+  const profitChartsSource2 = readFileSync("src/components/reports/OperationalProfitCharts.jsx", "utf8");
+  for (const [name, source] of [["OperationalProfitCharts", profitChartsSource2], ["OperationalComparisonChart", operationalChartSource]]) {
+    assert.match(source, /import \{formatCompactMoney, formatMoney\} from "\.\.\/\.\.\/utils\/formatters";/, `${name} importa la función compartida`);
+    assert.doesNotMatch(source, /function formatCompactMoney|notation: "compact"/, `${name} no define su propia versión`);
+    assert.match(source, /formatCompactMoney\(value, currency, businessLocale\)/, `${name} usa el locale del negocio en el eje`);
+  }
+  assert.equal((readFileSync("src/utils/formatters.js", "utf8").match(/export function formatCompactMoney/g) || []).length, 1);
+  const axisValues = [0, 5000, 10000, 15000, 25000, 143089, 1500000, 2500000];
+  for (const locale of ["es-CL", "es-MX", "es-AR", "es"]) {
+    for (const currency of ["CLP", "USD"]) {
+      // Un mismo eje: ninguna marca con "k" minúscula, aunque el ICU la entregue así (es-MX).
+      const ticks = axisValues.map((value) => formatCompactMoney(value, currency, locale));
+      assert.ok(ticks.every((tick) => !/k/.test(tick)), `${locale} ${currency}: sin "k" minúscula en ${ticks.join(" | ")}`);
+      assert.ok(ticks.every((tick) => !/[-−]/.test(tick)), `${locale} ${currency}: los positivos no llevan signo`);
+      // Negativos: un solo signo, al comienzo, y el mismo sufijo que su positivo.
+      for (const value of [300000, 15000, 1500, 1500000]) {
+        const negative = formatCompactMoney(-value, currency, locale);
+        const positive = formatCompactMoney(value, currency, locale);
+        assert.equal((negative.match(/[-−]/g) || []).length, 1, `${locale} ${currency}: un solo signo en ${negative}`);
+        assert.match(negative, /^[-−]/, `${locale} ${currency}: el signo va primero en ${negative}`);
+        assert.equal(negative.slice(1), positive, `${locale} ${currency}: ${negative} es el negativo de ${positive}`);
+      }
+      assert.ok(!/[-−]/.test(formatCompactMoney(-0, currency, locale)), `${locale} ${currency}: el cero negativo no lleva signo`);
+    }
+  }
+  // Valores concretos en el formato del negocio piloto.
+  assert.equal(formatCompactMoney(15000, "CLP", "es-CL").replace(/\s/g, " "), "$15 K");
+  assert.equal(formatCompactMoney(5000, "CLP", "es-CL").replace(/\s/g, " "), "$5 K");
+  assert.equal(formatCompactMoney(-300000, "CLP", "es-CL").replace(/\s/g, " "), "-$300 K");
+  assert.equal(formatCompactMoney(1500000, "CLP", "es-CL").replace(/\s/g, " "), "$1,5 M");
+  assert.equal(formatCompactMoney(0, "CLP", "es-CL"), "$0");
+  assert.equal(formatCompactMoney(undefined, "CLP"), "$0");
+  assert.equal(formatCompactMoney("no", "CLP"), "$0");
+}
+console.log("OK reportes (formato compacto): una sola formatCompactMoney con sufijo en mayúscula y signo bien formado en es-CL, es-MX, es-AR y es");
+// Gráfico de Ganancia: leyenda solo con series con datos y, con un solo mes, el valor en texto.
+{
+  const monthlyChartSource = readFileSync("src/components/reports/OperationalProfitCharts.jsx", "utf8");
+  assert.match(monthlyChartSource, /const \{ locale: businessLocale \} = useBusinessFormat\(\);\s*const \{tokens, axis\} = useChartChrome\(\);/, "businessLocale sale de useBusinessFormat");
+  assert.match(monthlyChartSource, /datasets: series\.map\(/, "los conjuntos de datos salen de las series con datos");
+  assert.doesNotMatch(monthlyChartSource, /margenVentas\s*\+|\+\s*[\w.]*resultadoProyectos/, "la vista no suma componentes");
+  assert.doesNotMatch(monthlyChartSource, /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/, "sin colores literales");
+  const chartsVite = await createServer({appType: "custom", logLevel: "silent", server: {middlewareMode: true}});
+  try {
+    const {MonthlyOperationalProfitChart, profitSeriesWithData} = await chartsVite.ssrLoadModule("/src/components/reports/OperationalProfitCharts.jsx");
+    const month = (mes, margenVentas, resultadoProyectos, parcial = false) => ({mes, margenVentas, resultadoProyectos, ganancia: margenVentas + resultadoProyectos, parcial});
+    const labelsOf = (months) => profitSeriesWithData(months).map((entry) => entry.label);
+    assert.deepEqual(labelsOf([month("2026-08", 100, 0), month("2026-09", 0, 50)]), ["Ganancia por productos", "Resultado de proyectos"]);
+    assert.deepEqual(labelsOf([month("2026-08", 100, 0), month("2026-09", 20, 0)]), ["Ganancia por productos"], "sin proyectos no hay serie de proyectos");
+    assert.deepEqual(labelsOf([month("2026-08", 0, -30), month("2026-09", 0, 0)]), ["Resultado de proyectos"], "un valor negativo cuenta como dato");
+    assert.deepEqual(labelsOf([month("2026-08", 0, 0), month("2026-09", 0, 0)]), []);
+    assert.deepEqual(labelsOf([{mes: "2026-08", margenVentas: null, resultadoProyectos: undefined}]), [], "null y undefined no cuentan");
+    const chart = (months) => plain(renderToStaticMarkup(React.createElement(MonthlyOperationalProfitChart, {currency: "CLP", months})));
+    // Un solo mes: texto con los valores que ya trae el helper, sin gráfico.
+    const single = chart([month("2026-09", 200, 300)]);
+    assert.ok(single.includes("Ganancia de septiembre de 2026: <strong>$500</strong> (productos $200, proyectos $300)"), single);
+    assert.doesNotMatch(single, /<canvas|financial-chart|role="img"/);
+    assert.ok(chart([month("2026-09", 200, -300)]).includes("Ganancia de septiembre de 2026: <strong>$-100</strong> (productos $200, proyectos $-300)"), "los negativos salen con el formato de formatMoney");
+    assert.ok(chart([month("2026-09", 0, 0)]).includes("<strong>$0</strong> (productos $0, proyectos $0)"), "un mes sin movimiento también va en texto");
+    assert.ok(chart([month("2026-09", 200, 300, true)]).includes("Ganancia de septiembre de 2026 *: "), "el mes parcial lleva el asterisco que explica la nota de la vista");
+    // Varios meses: el gráfico, con su descripción accesible; sin el texto del mes único.
+    const several = chart([month("2026-08", 100, 0), month("2026-09", 40, 0)]);
+    assert.ok(several.includes("<canvas") && several.includes('aria-label="Ganancia por mes. 2026-08: $100. 2026-09: $40."'), several);
+    assert.doesNotMatch(several, /reports-monthly-single/);
+    assert.ok(chart([month("2026-08", 0, 0), month("2026-09", 0, 0)]).includes("Sin ganancia registrada en los meses del período."));
+    assert.ok(chart([]).includes("Sin meses con datos en el período."));
+  } finally {
+    await chartsVite.close();
+  }
+  const profitCss = readFileSync("src/styles/interior.css", "utf8");
+  assert.match(profitCss, /\.reports-monthly-single \{[^}]*color: var\(--color-text-default\);[^}]*font-size: var\(--font-size-md\);/);
+  assert.match(profitCss, /\.reports-monthly-single strong \{[^}]*color: var\(--color-text-strong\);/);
+}
+console.log("OK reportes (gráfico de Ganancia): leyenda solo con series con datos y, con un solo mes, el valor en texto con los componentes del helper");
 console.log("Report model smoke: OK");

@@ -1,5 +1,6 @@
 import React from "react";
 import {ArrowRight} from "lucide-react";
+import Button from "../../../components/ui/Button";
 import OperationalComparisonChart from "../../../components/reports/OperationalComparisonChart";
 import {formatMoney} from "../../../utils/formatters";
 import useBusinessFormat from "../../../hooks/useBusinessFormat";
@@ -30,6 +31,8 @@ function TopEntityTable({groups, currency, columns, renderRow, emptyText}) {
 function ReportsComprasView({canOpenPurchases, chartGroups, navigate, purchaseTimeline, summary, topPurchaseProducts, topPurchaseSuppliers}) {
   const { locale: businessLocale } = useBusinessFormat();
   const hasPurchases = summary.purchases.confirmed.length > 0;
+  // El gráfico solo se dibuja para las monedas con ventas o compras en el período.
+  const chartGroupsWithData = chartGroups.filter((group) => group.items.length > 0);
   return <>
     <p className="reports-simple-project-note">Las compras muestran egresos registrados del negocio.</p>
     <div className="reports-simple-currencies">{summary.currencies.map((group) => <section className="reports-simple-currency-group" key={group.currency}>
@@ -39,13 +42,14 @@ function ReportsComprasView({canOpenPurchases, chartGroups, navigate, purchaseTi
         <article className="reports-simple-card"><div className="reports-simple-card__top"><span className="reports-simple-card__title">Cantidad de compras</span></div><strong className="reports-simple-card__amount">{group.purchases.count}</strong><small>Confirmadas en el período</small></article>      </div>
     </section>)}</div>
 
-    {!hasPurchases && <div className="erp-card reports-simple-state">Aún no hay compras confirmadas en este período.</div>}
+    {/* Único mensaje de vacío de la pestaña: los $0 de las tarjetas no se repiten en otras secciones. */}
+    {!hasPurchases && <div className="erp-card reports-simple-state"><span>Aún no hay compras confirmadas en este período.</span>{canOpenPurchases && <Button type="button" variant="secondary" onClick={() => navigate("/compras")}>Ir a Compras<ArrowRight size={14} /></Button>}</div>}
 
-    {/* SPEC 022 §6.3: el gráfico Ventas vs Compras vive aquí, sin cambios de cálculo. */}
-    <section className="erp-card reports-simple-chart">
+    {/* SPEC 022 §6.3: el gráfico Ventas vs Compras vive aquí, sin cambios de cálculo. Sin ventas ni compras no se dibuja. */}
+    {chartGroupsWithData.length > 0 && <section className="erp-card reports-simple-chart">
       <div className="reports-section-heading"><div><span>Movimiento comercial</span><h2>Ventas y compras</h2><p>Operaciones confirmadas dentro del período seleccionado.</p></div></div>
-      <p className="reports-v4-note">Comparar ventas y compras no es ganancia. Las compras incluyen stock que aún no se vende, y ambos montos van sin IVA. El resultado está en Rentabilidad y estado.</p>
-      <div className="reports-chart-groups">{chartGroups.map((group) => <article className="reports-chart-group" key={group.currency}>
+      <p className="reports-v4-note">Comparar ventas y compras no es ganancia. Las compras incluyen stock que aún no se vende, y ambos montos van sin IVA. Cuánto ganas está en la pestaña Ganancia.</p>
+      <div className="reports-chart-groups">{chartGroupsWithData.map((group) => <article className="reports-chart-group" key={group.currency}>
         <div className="reports-chart-summary">
           <span>{group.currency}</span>
           <dl>
@@ -55,7 +59,7 @@ function ReportsComprasView({canOpenPurchases, chartGroups, navigate, purchaseTi
         </div>
         <OperationalComparisonChart currency={group.currency} items={group.items} />
       </article>)}</div>
-    </section>
+    </section>}
 
     {hasPurchases && summary.currencies.map((group) => <section className="erp-card reports-detail-section" key={group.currency}>
       <div className="reports-section-heading"><div><span>{group.currency}</span><h2>Detalle de Compras</h2><p>Evolución, principales proveedores y productos adquiridos en el período seleccionado.</p></div></div>
@@ -87,22 +91,20 @@ function ReportsComprasView({canOpenPurchases, chartGroups, navigate, purchaseTi
       </div>
     </section>)}
 
-    <section className="erp-card reports-detail-section">
+    {hasPurchases && <section className="erp-card reports-detail-section">
       <div className="reports-section-heading"><div><span>Operaciones</span><h2>Compras del período</h2><p>Listado de compras confirmadas usadas en las métricas de esta vista.</p></div>{canOpenPurchases && <button type="button" onClick={() => navigate("/compras")}>Ir a Compras<ArrowRight size={14} /></button>}</div>
-      {!hasPurchases ? <p className="reports-empty-note">Sin compras confirmadas en el período.</p> : (
-        <div className="reports-top-list-table-wrap"><table className="reports-top-list-table">
-          <thead><tr><th>Número</th><th>Fecha</th><th>Proveedor</th><th>Moneda</th><th>Neto</th><th>Total</th></tr></thead>
-          <tbody>{summary.purchases.confirmed.map((purchase) => <tr key={purchase.id || purchase.compraId || purchase.numero}>
-            <td>{purchase.numero || "Compra"}</td>
-            <td>{String(purchase.fechaCompra || "").slice(0, 10)}</td>
-            <td>{purchase.proveedorSnapshot?.razonSocial || "Proveedor histórico"}</td>
-            <td>{purchase.moneda || purchase.monedaCodigo || "CLP"}</td>
-            <td>{Number.isFinite(purchase.neto) ? formatMoney(purchase.neto, purchase.moneda || purchase.monedaCodigo || "CLP", businessLocale) : "—"}</td>
-            <td>{formatMoney(purchase.total, purchase.moneda || purchase.monedaCodigo || "CLP", businessLocale)}</td>
-          </tr>)}</tbody>
-        </table></div>
-      )}
-    </section>
+      <div className="reports-top-list-table-wrap"><table className="reports-top-list-table">
+        <thead><tr><th>Número</th><th>Fecha</th><th>Proveedor</th><th>Moneda</th><th>Neto</th><th>Total</th></tr></thead>
+        <tbody>{summary.purchases.confirmed.map((purchase) => <tr key={purchase.id || purchase.compraId || purchase.numero}>
+          <td>{purchase.numero || "Compra"}</td>
+          <td>{String(purchase.fechaCompra || "").slice(0, 10)}</td>
+          <td>{purchase.proveedorSnapshot?.razonSocial || "Proveedor histórico"}</td>
+          <td>{purchase.moneda || purchase.monedaCodigo || "CLP"}</td>
+          <td>{Number.isFinite(purchase.neto) ? formatMoney(purchase.neto, purchase.moneda || purchase.monedaCodigo || "CLP", businessLocale) : "—"}</td>
+          <td>{formatMoney(purchase.total, purchase.moneda || purchase.monedaCodigo || "CLP", businessLocale)}</td>
+        </tr>)}</tbody>
+      </table></div>
+    </section>}
   </>;
 }
 

@@ -1390,6 +1390,18 @@
   max-width: 410px;
 }
 
+/* Evolución mensual con un solo mes: el valor va en texto, no en una barra única. */
+.reports-monthly-single {
+  color: var(--color-text-default);
+  font-size: var(--font-size-md);
+  margin: 0;
+}
+
+.reports-monthly-single strong {
+  color: var(--color-text-strong);
+  font-variant-numeric: tabular-nums;
+}
+
 .financial-chart-empty {
   align-items: center;
   background: var(--color-surface-subtle);

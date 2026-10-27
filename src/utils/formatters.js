@@ -28,6 +28,25 @@ export function formatMoney(value, currency = DEFAULT_CURRENCY, locale = DEFAULT
   }).format(Number(value || 0));
 }
 
+// Monto abreviado para los ejes de los gráficos ("$15 K", "-$1,5 M"). El sufijo
+// compacto sale de Intl, que según el ICU del navegador puede dar "k" o "K" en
+// el mismo eje; aquí se fuerza a mayúscula para que todas las marcas coincidan.
+// Palabras como "mil" no se tocan: solo los sufijos de una o dos letras.
+export function formatCompactMoney(value, currency = DEFAULT_CURRENCY, locale = DEFAULT_LOCALE) {
+  const amount = Number(value);
+  return new Intl.NumberFormat(safeLocale(locale), {
+    style: "currency",
+    currency: safeCurrency(currency),
+    notation: "compact",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+    signDisplay: "negative",
+  })
+    .formatToParts(Number.isFinite(amount) ? amount : 0)
+    .map((part) => (part.type === "compact" && part.value.trim().length <= 2 ? part.value.toUpperCase() : part.value))
+    .join("");
+}
+
 export function formatNumber(value, locale = DEFAULT_LOCALE, options = {}) {
   return new Intl.NumberFormat(safeLocale(locale), options).format(Number(value || 0));
 }

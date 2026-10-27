@@ -9,7 +9,7 @@ import {
 } from "chart.js";
 import {Bar} from "react-chartjs-2";
 import useCssTokenColors from "../../hooks/useCssTokenColors";
-import {formatMoney} from "../../utils/formatters";
+import {formatCompactMoney, formatMoney} from "../../utils/formatters";
 import useBusinessFormat from "../../hooks/useBusinessFormat";
 
 ChartJS.register(BarElement, CategoryScale, Legend, LinearScale, Tooltip);
@@ -31,8 +31,25 @@ function formatMonth(month) {
     .replace(" de ", " ");
 }
 
-function formatCompactMoney(value, currency) {
-  return new Intl.NumberFormat("es-CL", {style: "currency", currency, maximumFractionDigits: 1, notation: "compact"}).format(Number(value || 0));
+function formatMonthName(month) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  return new Intl.DateTimeFormat("es-CL", {month: "long", year: "numeric", timeZone: "UTC"})
+    .format(new Date(Date.UTC(year, monthNumber - 1, 1)));
+}
+
+// Series del gráfico mensual. Solo se dibujan (y entran en la leyenda) las que
+// tienen algún valor distinto de cero en el período; el apilado no cambia.
+const PROFIT_SERIES = Object.freeze([
+  {key: "margenVentas", label: "Ganancia por productos", token: "--color-data-cost-materials"},
+  {key: "resultadoProyectos", label: "Resultado de proyectos", token: "--color-data-cost-direct"},
+]);
+
+function hasValue(value) {
+  return Number.isFinite(Number(value)) && Number(value) !== 0;
+}
+
+export function profitSeriesWithData(months) {
+  return PROFIT_SERIES.filter((series) => months.some((month) => hasValue(month[series.key])));
 }
 
 function useChartChrome() {
@@ -47,20 +64,28 @@ function useChartChrome() {
 }
 
 // §6.5.1: ganancia neta operacional por mes, apilada en sus dos componentes.
+// Con un solo mes una barra no muestra evolución: se dice el valor en texto, con
+// las cifras que ya trae buildMonthlyOperationalProfit (la vista no suma nada).
 export function MonthlyOperationalProfitChart({currency, months}) {
   const { locale: businessLocale } = useBusinessFormat();
   const {tokens, axis} = useChartChrome();
   if (!months.length) return <div className="financial-chart-empty">Sin meses con datos en el período.</div>;
+  if (months.length === 1) {
+    const [month] = months;
+    const money = (value) => formatMoney(value, currency, businessLocale);
+    return <p className="reports-monthly-single">
+      {`Ganancia de ${formatMonthName(month.mes)}${month.parcial ? " *" : ""}: `}<strong>{money(month.ganancia)}</strong>{` (productos ${money(month.margenVentas)}, proyectos ${money(month.resultadoProyectos)})`}
+    </p>;
+  }
+  const series = profitSeriesWithData(months);
+  if (!series.length) return <div className="financial-chart-empty">Sin ganancia registrada en los meses del período.</div>;
   const labels = months.map((month) => `${formatMonth(month.mes)}${month.parcial ? " *" : ""}`);
   const description = months.map((month) => `${month.mes}${month.parcial ? " (parcial)" : ""}: ${formatMoney(month.ganancia, currency, businessLocale)}`).join(". ");
   return <div className="financial-chart" role="img" aria-label={`Ganancia por mes. ${description}.`}>
     <Bar
       data={{
         labels,
-        datasets: [
-          {label: "Ganancia por productos", data: months.map((month) => month.margenVentas), backgroundColor: tokens["--color-data-cost-materials"], borderRadius: 4, maxBarThickness: 28, stack: "ganancia"},
-          {label: "Resultado de proyectos", data: months.map((month) => month.resultadoProyectos), backgroundColor: tokens["--color-data-cost-direct"], borderRadius: 4, maxBarThickness: 28, stack: "ganancia"},
-        ],
+        datasets: series.map((entry) => ({label: entry.label, data: months.map((month) => month[entry.key]), backgroundColor: tokens[entry.token], borderRadius: 4, maxBarThickness: 28, stack: "ganancia"})),
       }}
       options={{
         animation: false,
@@ -77,7 +102,7 @@ export function MonthlyOperationalProfitChart({currency, months}) {
         },
         scales: {
           x: {stacked: true, grid: {display: false}, ticks: {color: tokens["--color-text-muted"], maxRotation: 0}},
-          y: {...axis, stacked: true, ticks: {...axis.ticks, callback(value) { return formatCompactMoney(value, currency); }}},
+          y: {...axis, stacked: true, ticks: {...axis.ticks, callback(value) { return formatCompactMoney(value, currency, businessLocale); }}},
         },
       }}
     />
@@ -106,7 +131,7 @@ export function RankedMarginChart({bars, currency, label}) {
           tooltip: {callbacks: {label(context) { return `${label}: ${formatMoney(context.parsed.x, currency, businessLocale)}`; }}},
         },
         scales: {
-          x: {...axis, ticks: {...axis.ticks, callback(value) { return formatCompactMoney(value, currency); }}},
+          x: {...axis, ticks: {...axis.ticks, callback(value) { return formatCompactMoney(value, currency, businessLocale); }}},
           y: {grid: {display: false}, ticks: {color: tokens["--color-text-muted"]}},
         },
       }}
