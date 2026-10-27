@@ -1636,6 +1636,105 @@
   margin-top: var(--space-3);
 }
 
+/* Ventas y Compras (SPEC 025): cabecera "Vendí" / "Compré" y operaciones recientes. Solo tokens. */
+.reports-flow-header {
+  align-items: flex-end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-5);
+  justify-content: space-between;
+  overflow: hidden;
+  padding: var(--space-6) var(--space-6) calc(var(--space-6) + var(--space-1));
+  position: relative;
+}
+
+.reports-flow-header::after {
+  background: var(--color-text-brand-accent);
+  bottom: 0;
+  content: "";
+  height: 3px;
+  left: 0;
+  position: absolute;
+  width: 100%;
+}
+
+.reports-flow-header--purchases::after {
+  background: var(--color-data-expense);
+}
+
+.reports-flow-header__main {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.reports-flow-header__label {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.reports-flow-header__title {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-md);
+  margin: 0;
+}
+
+.reports-flow-header__currency,
+.reports-flow-header__caption {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.reports-flow-header__amount {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-2xl);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-bold);
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.reports-flow-header__note {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  margin: 0;
+  max-width: 22rem;
+  text-align: right;
+}
+
+.reports-flow-header__warning {
+  align-items: center;
+  color: var(--color-warning-800);
+  display: flex;
+  flex-basis: 100%;
+  font-size: var(--font-size-xs);
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.reports-limited-table__footer {
+  align-items: center;
+  color: var(--color-text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--font-size-xs);
+  gap: var(--space-2) var(--space-4);
+  justify-content: space-between;
+  margin-top: var(--space-3);
+}
+
+@media (max-width: 640px) {
+  .reports-flow-header {
+    padding: var(--space-4) var(--space-4) calc(var(--space-4) + var(--space-1));
+  }
+
+  .reports-flow-header__note {
+    text-align: left;
+  }
+}
+
 .financial-chart-empty {
   align-items: center;
   background: var(--color-surface-subtle);

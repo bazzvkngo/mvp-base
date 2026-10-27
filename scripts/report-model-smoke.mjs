@@ -5,6 +5,7 @@ import {renderToStaticMarkup} from "react-dom/server";
 import {createServer} from "vite";
 import {formatCompactMoney} from "../src/utils/formatters.js";
 import {describePeriod, describeProductsBar, describeProfitReasons, describeProjectsSummary} from "../src/domain/reportProfitOverview.mjs";
+import {DEFAULT_ROW_LIMIT, buildShareBars, describeFlowSummary, describeProductBars, describeQuantity, describeRowsShown, limitRows, sortByDateDesc} from "../src/domain/reportFlowOverview.mjs";
 import {
   REPORT_TABS,
   aggregateOperationalTimeline,
@@ -1855,4 +1856,212 @@ console.log("OK reportes (ganancia visual, bloque 2): Me quedó con chip Parcial
   }
 }
 console.log("OK reportes (ganancia visual, bloque 2b): relleno, grosor y espacio de la tarjeta; nota y ventas sin costo visibles; cálculo y estado del sistema plegados");
+// Ventas y Compras visuales, bloque 1: helpers puros y piezas compartidas (sin cablear en las vistas).
+{
+  const norm = (text) => String(text).replace(/\s/g, " ");
+  const flowRange = {start: "2026-10-01", end: "2026-10-31", days: 31};
+  const flowSale = (n, date, extra = {}) => ({id: `v${n}`, numero: `VTA-2026-${String(n).padStart(4, "0")}`, estado: "confirmada", moneda: "CLP", fechaVenta: date, neto: 1000 * n, total: 1190 * n, descuento: 0, items: [], ...extra});
+  const line = (itemId, nombre, cantidad, totalLinea, extra = {}) => ({lineaId: `l-${itemId || nombre}`, itemId, nombre, cantidad, totalLinea, tipoItem: "producto", unidad: "unidad", ...extra});
+
+  // --- Cabecera: rótulos, conteo y aviso de documentos sin neto válido ---
+  const sales1 = describeFlowSummary({kind: "sales", count: 1});
+  assert.deepEqual([sales1.title, sales1.countText, sales1.caption, sales1.withoutNetText], ["Vendí", "1 venta confirmada", "1 venta confirmada · sin IVA", null]);
+  const purchases3 = describeFlowSummary({kind: "purchases", count: 3});
+  assert.deepEqual([purchases3.title, purchases3.countText, purchases3.caption], ["Compré", "3 compras confirmadas", "3 compras confirmadas · sin IVA"]);
+  assert.equal(describeFlowSummary({kind: "sales", count: 0}).caption, "0 ventas confirmadas · sin IVA", "el vacío también dice sus cifras");
+  assert.equal(describeFlowSummary({kind: "sales", count: 5, withoutNetCount: 1}).withoutNetText, "1 venta sin neto válido no suma en este total.");
+  assert.equal(describeFlowSummary({kind: "purchases", count: 5, withoutNetCount: 3}).withoutNetText, "3 compras sin neto válido no suman en este total.");
+  for (const junk of [{count: Number.NaN}, {count: -2}, {count: "x"}, {count: undefined}, {kind: "otra", count: 0}, {}, undefined]) {
+    const result = describeFlowSummary(junk);
+    assert.deepEqual([result.count, result.title, result.withoutNetText], [0, "Vendí", null], JSON.stringify(junk));
+  }
+  assert.equal(describeFlowSummary({kind: "sales", count: 2, withoutNetCount: -4}).withoutNetText, null);
+
+  // --- Orden por fecha y límite de filas ---
+  const unsorted = [flowSale(1, "2026-10-03"), flowSale(2, "2026-10-08"), flowSale(10, "2026-10-08"), flowSale(3, ""), flowSale(4, "2026-10-20T15:30:00.000Z"), flowSale(5, undefined)];
+  const originalOrder = unsorted.map((sale) => sale.id);
+  assert.deepEqual(sortByDateDesc(unsorted, "fechaVenta").map((sale) => sale.id), ["v4", "v10", "v2", "v1", "v5", "v3"], "fecha descendente; el mismo día, número mayor primero (0010 antes que 0002); sin fecha al final, también por número");
+  assert.deepEqual(unsorted.map((sale) => sale.id), originalOrder, "no modifica la lista");
+  assert.deepEqual(sortByDateDesc(undefined, "fechaVenta"), []);
+  assert.deepEqual(sortByDateDesc([{id: "a", fechaCompra: "2026-09-01"}, {id: "b", fechaCompra: "2026-09-02"}], "fechaCompra").map((entry) => entry.id), ["b", "a"]);
+  assert.equal(DEFAULT_ROW_LIMIT, 5);
+  const rowsOf = (n) => Array.from({length: n}, (_, index) => ({id: index}));
+  assert.deepEqual([limitRows([]).rows.length, limitRows([]).limited, limitRows([]).total], [0, false, 0], "vacío");
+  assert.deepEqual([limitRows(rowsOf(1)).shown, limitRows(rowsOf(1)).limited], [1, false], "una fila");
+  assert.deepEqual([limitRows(rowsOf(5)).shown, limitRows(rowsOf(5)).limited, limitRows(rowsOf(5)).hidden], [5, false, 0], "justo el límite: nada que ocultar");
+  const six = limitRows(rowsOf(6));
+  assert.deepEqual([six.shown, six.total, six.hidden, six.limited, six.expanded], [5, 6, 1, true, false]);
+  const twelveAll = limitRows(rowsOf(12), {expanded: true});
+  assert.deepEqual([twelveAll.shown, twelveAll.hidden, twelveAll.expanded], [12, 0, true]);
+  assert.equal(limitRows(rowsOf(3), {expanded: true}).expanded, false, "sin nada que ocultar no hay estado expandido");
+  assert.deepEqual([limitRows(rowsOf(9), {limit: 3}).shown, limitRows(rowsOf(9), {limit: 0}).shown, limitRows(rowsOf(9), {limit: "x"}).shown, limitRows(null).total], [3, 1, 5, 0], "límite inválido: el mínimo o el de siempre");
+  const salesNoun = {singular: "venta", plural: "ventas"};
+  assert.deepEqual(describeRowsShown(limitRows(rowsOf(12)), salesNoun), {status: "Mostrando 5 de 12 ventas", toggleLabel: "Ver todas (12)"});
+  assert.deepEqual(describeRowsShown(limitRows(rowsOf(12), {expanded: true}), salesNoun), {status: "Mostrando las 12 ventas", toggleLabel: "Ver solo las 5 más recientes"});
+  assert.deepEqual(describeRowsShown(limitRows(rowsOf(7)), {singular: "compra", plural: "compras"}), {status: "Mostrando 5 de 7 compras", toggleLabel: "Ver todas (7)"});
+  assert.deepEqual(describeRowsShown(limitRows(rowsOf(4)), salesNoun), {status: null, toggleLabel: null}, "sin nada que ocultar no hay textos ni botón");
+  assert.deepEqual(describeRowsShown(undefined, salesNoun), {status: null, toggleLabel: null});
+
+  // --- Barras de porcentaje ---
+  // Compras de la maqueta: tres proveedores que suman todo el total.
+  const suppliers = [{id: "a", name: "Proveedor A", count: 1, total: 210000}, {id: "b", name: "Proveedor B", count: 1, total: 128300}, {id: "c", name: "Proveedor C", count: 1, total: 74000}];
+  const supplierBars = buildShareBars(suppliers, {total: 412300});
+  assert.equal(supplierBars.show, true);
+  assert.deepEqual(supplierBars.rows.map((row) => [row.name, row.share, norm(row.shareText), row.fraction]), [
+    ["Proveedor A", 50.9, "50,9 %", 1], ["Proveedor B", 31.1, "31,1 %", 0.611], ["Proveedor C", 17.9, "17,9 %", 0.3524],
+  ]);
+  assert.equal(supplierBars.others, null, "los tres suman el total: no hay resto");
+  assert.deepEqual(supplierBars.rows.map((row) => row.amount), [210000, 128300, 74000]);
+  // Hay más que lo listado: el resto se ve como "otros", con su porcentaje.
+  const partialBars = buildShareBars(suppliers.slice(0, 2), {total: 500000});
+  assert.deepEqual([partialBars.others.amount, partialBars.others.share, norm(partialBars.others.shareText)], [161700, 32.3, "32,3 %"]);
+  assert.equal(buildShareBars(suppliers, {total: 500000, othersCount: 4}).others.count, 4);
+  assert.equal(buildShareBars([{id: "x", name: "Solo", total: 1000}], {total: 1000}).rows[0].shareText, "100 %", "una sola fila: 100 %");
+  assert.equal(buildShareBars([{id: "x", name: "Solo", total: 1000}], {total: 1000}).rows[0].fraction, 1);
+  // Entradas desordenadas o inválidas, y el límite.
+  const messy = buildShareBars([{id: "z", name: "Cero", total: 0}, {id: "n", name: "Nada", total: Number.NaN}, {id: "m", name: "Menos", total: -5}, {id: "s", name: "Texto", total: "10"}, {id: "p", name: "Pequeño", total: 100}, {id: "g", name: "Grande", total: 300}], {total: 1000});
+  assert.deepEqual(messy.rows.map((row) => row.name), ["Grande", "Pequeño"], "ordenadas de mayor a menor y sin importes 0, negativos ni inválidos");
+  assert.equal(buildShareBars(suppliers, {total: 412300, limit: 2}).rows.length, 2);
+  assert.deepEqual(buildShareBars([{id: "a", name: "A", amount: 50}], {total: 100}).rows.map((row) => [row.amount, row.share]), [[50, 50]], "también acepta `amount`");
+  for (const total of [0, -1, Number.NaN, null, undefined, "100"]) {
+    const none = buildShareBars(suppliers, {total});
+    assert.deepEqual([none.show, none.rows, none.others], [false, [], null], `total ${String(total)}: sin barras`);
+  }
+  assert.deepEqual([buildShareBars([], {total: 100}).show, buildShareBars(undefined, {total: 100}).show, buildShareBars(null).show], [false, false, false], "sin entradas");
+  assert.deepEqual(buildShareBars(suppliers, {total: 412300, locale: "en-US"}).rows.map((row) => row.shareText), ["50.9 %", "31.1 %", "17.9 %"], "el decimal sigue el locale");
+
+  // Cantidad con unidad.
+  assert.deepEqual(
+    [[2, "unidad"], [1, "unidad"], [2, "hora"], [1, "hora"], [3, "kg"], [3, "m2"], [1.5, "caja"], [2, "global"], [2, undefined], [0, "unidad"], [2, "hora técnica"], [2, "días"]].map(([quantity, unit]) => norm(describeQuantity(quantity, unit))),
+    ["2 unidades", "1 unidad", "2 horas", "1 hora", "3 kg", "3 m2", "1,5 cajas", "2 globales", "2 unidades", "0 unidades", "2 hora técnica", "2 días"],
+    "pluraliza palabras completas y deja abreviaturas, números y frases tal cual",
+  );
+  assert.equal(describeQuantity(Number.NaN, "hora"), "");
+  assert.equal(describeQuantity("2", "hora"), "", "un texto no es una cantidad");
+
+  // Barras por producto: las cifras de la maqueta de Ventas (octubre de 2026), con el ranking real.
+  const mockupSale = flowSale(2, "2026-10-08", {
+    neto: 143089, total: 170276, items: [
+      line("a50", "Ángulo laminado 50x50x4x6.000 mm", 2, 62430),
+      line("hora", "Hora técnica en terreno", 2, 60000, {tipoItem: "servicio", unidad: "hora"}),
+      line("a20", "Ángulo laminado 20x20x3x6.000 mm", 1, 8976),
+      line("fierro", "Fierro A-63 10 mm x 6 m estriado", 1, 6277),
+      line("pletina", "Pletina comercial 20x3x6.000 mm", 1, 5406),
+    ],
+  });
+  const flowSummary = getSimplifiedReportSummary({sales: [mockupSale], purchases: [], projectBalances: [], range: flowRange});
+  const ranking = getTopSalesProducts(flowSummary.sales.confirmed);
+  const products = describeProductBars({entries: ranking[0].entries, documents: flowSummary.sales.confirmed, currency: "CLP"});
+  assert.equal(products.show, true);
+  assert.deepEqual(products.rows.map((row) => [row.name, row.amount, row.share]), [
+    ["Ángulo laminado 50x50x4x6.000 mm", 62430, 43.6], ["Hora técnica en terreno", 60000, 41.9], ["Ángulo laminado 20x20x3x6.000 mm", 8976, 6.3],
+    ["Fierro A-63 10 mm x 6 m estriado", 6277, 4.4], ["Pletina comercial 20x3x6.000 mm", 5406, 3.8],
+  ], "los mismos porcentajes de la maqueta");
+  assert.equal(products.linesTotal, flowSummary.currencies[0].sales.total, "sin descuento general las líneas suman el neto del encabezado");
+  assert.equal(products.hasGeneralDiscount, false);
+  assert.equal(products.others, null);
+  assert.deepEqual(products.rows.map((row) => [row.tipoItem, norm(row.quantityText)]), [["producto", "2 unidades"], ["servicio", "2 horas"], ["producto", "1 unidad"], ["producto", "1 unidad"], ["producto", "1 unidad"]], "tipo y unidad salen de las líneas");
+  assert.equal(products.rows[0].fraction, 1);
+  assert.equal(products.rows[1].fraction, 0.9611);
+  // Con descuento general las líneas suman más que el neto (totalLinea no lo descuenta): se avisa y no se reparte.
+  const discounted = flowSale(3, "2026-10-09", {neto: 90000, total: 107100, descuento: 10000, items: [line("p1", "Producto con descuento", 1, 100000)]});
+  const discountedProducts = describeProductBars({entries: getTopSalesProducts([discounted])[0].entries, documents: [discounted], currency: "CLP"});
+  assert.deepEqual([discountedProducts.linesTotal, discountedProducts.hasGeneralDiscount, discountedProducts.rows[0].share], [100000, true, 100]);
+  assert.notEqual(discountedProducts.linesTotal, discounted.neto, "las líneas y el neto no coinciden cuando hay descuento general");
+  // Más ítems que el límite: el todo son todas las líneas, y el resto queda como "otros" con su cuenta.
+  const manyItems = flowSale(4, "2026-10-10", {neto: 700, total: 833, items: ["a", "b", "c", "d", "e", "f", "g"].map((id, index) => line(id, `Ítem ${id}`, 1, 100 - index))});
+  const manyProducts = describeProductBars({entries: getTopSalesProducts([manyItems])[0].entries, documents: [manyItems], currency: "CLP"});
+  assert.equal(manyProducts.rows.length, 5);
+  assert.equal(manyProducts.linesTotal, 100 + 99 + 98 + 97 + 96 + 95 + 94);
+  assert.deepEqual([manyProducts.others.amount, manyProducts.others.count], [95 + 94, 2]);
+  assert.ok(Math.abs(manyProducts.rows.reduce((sum, row) => sum + row.share, 0) + manyProducts.others.share - 100) < 0.2, "filas más resto suman 100 (salvo el redondeo)");
+  // Multimoneda: cada moneda con su todo; un documento sin neto válido está en el ranking y en el todo, igual que en el ranking.
+  const usdSale = flowSale(5, "2026-10-11", {moneda: "USD", neto: 50, total: 59.5, items: [line("u1", "Licencia", 1, 50, {tipoItem: "servicio", unidad: "licencia"})]});
+  const noNet = flowSale(6, "2026-10-12", {neto: null, total: 500, items: [line("p9", "Sin neto", 1, 500)]});
+  const mixed = [mockupSale, usdSale, noNet];
+  const mixedSummary = getSimplifiedReportSummary({sales: mixed, purchases: [], projectBalances: [], range: flowRange});
+  const mixedRanking = getTopSalesProducts(mixedSummary.sales.confirmed);
+  const clpBars = describeProductBars({entries: mixedRanking.find((group) => group.currency === "CLP").entries, documents: mixedSummary.sales.confirmed, currency: "CLP"});
+  const usdBars = describeProductBars({entries: mixedRanking.find((group) => group.currency === "USD").entries, documents: mixedSummary.sales.confirmed, currency: "USD"});
+  assert.equal(clpBars.linesTotal, 143089 + 500, "el documento sin neto válido cuenta en las líneas, como en el ranking");
+  assert.deepEqual([usdBars.linesTotal, usdBars.rows.length, usdBars.rows[0].tipoItem, norm(usdBars.rows[0].quantityText)], [50, 1, "servicio", "1 licencia"], "la otra moneda no se mezcla");
+  assert.equal(clpBars.rows.some((row) => row.name === "Licencia"), false);
+  assert.ok(Math.abs(clpBars.rows.reduce((sum, row) => sum + row.amount, 0) + (clpBars.others?.amount || 0) - clpBars.linesTotal) < 0.01, "filas más resto = todas las líneas");
+  // Servicios sin itemId: el ranking los junta en "sin-identificar"; con tipos distintos el tipo queda sin decidir.
+  const noIds = flowSale(7, "2026-10-13", {items: [line("", "Servicio uno", 1, 100, {tipoItem: "servicio", unidad: "hora"}), line("", "Producto suelto", 1, 50)]});
+  const noIdBars = describeProductBars({entries: getTopSalesProducts([noIds])[0].entries, documents: [noIds], currency: "CLP"});
+  assert.deepEqual([noIdBars.rows.length, noIdBars.rows[0].id, noIdBars.rows[0].tipoItem], [1, "sin-identificar", null], "tipos distintos en el mismo grupo: null");
+  assert.equal(describeProductBars({entries: [{id: "cod", name: "Por código", quantity: 1, total: 10}], documents: [flowSale(8, "2026-10-14", {items: [line("", "Por código", 1, 10, {codigo: "cod", tipoItem: "actividad"})]})], currency: "CLP"}).rows[0].tipoItem, "actividad", "agrupa por código cuando no hay itemId, igual que el ranking");
+  // Vacíos y entradas inválidas.
+  for (const input of [undefined, {}, {entries: [], documents: []}, {entries: ranking[0].entries, documents: []}, {entries: null, documents: null}]) {
+    const none = describeProductBars(input);
+    assert.deepEqual([none.show, none.rows, none.hasGeneralDiscount], [false, [], false], JSON.stringify(input) || "sin argumentos");
+  }
+
+  // --- Piezas compartidas (sin cablear): cabecera, tabla limitada y evolución plegada ---
+  const flowSource = readFileSync("src/domain/reportFlowOverview.mjs", "utf8");
+  const flowCss = readFileSync("src/styles/interior.css", "utf8");
+  assert.doesNotMatch(flowSource, /firebase|fetch\(|Date\.now|new Date\(|#[0-9a-fA-F]{3,8}\b|rgba?\(|[Gg]anancia/, "solo presentación: sin red, reloj, colores ni ganancia");
+  for (const file of ["ReportsFlowHeader", "LimitedOperationsTable", "FoldedTimeline"]) {
+    const source = readFileSync(`src/features/reports/${file}.jsx`, "utf8");
+    assert.doesNotMatch(source, /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|\.reduce\(|[Gg]anancia/, `${file}: sin colores literales, sumas ni ganancia`);
+  }
+  const flowCssStart = flowCss.indexOf("/* Ventas y Compras (SPEC 025): cabecera");
+  const flowCssBlock = flowCss.slice(flowCssStart, flowCss.indexOf("text-align: left;", flowCssStart) + 30);
+  assert.ok(flowCssStart > -1 && flowCssBlock.length > 500);
+  assert.doesNotMatch(flowCssBlock, /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|--color-brand-[6-9]00|--color-dark-/, "solo tokens");
+  assert.match(flowCssBlock, /\.reports-flow-header \{[^}]*padding: var\(--space-6\) var\(--space-6\) calc\(var\(--space-6\) \+ var\(--space-1\)\);/, "relleno completo (.erp-card no trae)");
+  assert.match(flowCssBlock, /\.reports-flow-header__amount \{[^}]*font-size: var\(--font-size-2xl\);/);
+  assert.match(flowCssBlock, /\.reports-flow-header--purchases::after \{\s*background: var\(--color-data-expense\);/);
+
+  const flowVite = await createServer({appType: "custom", logLevel: "silent", server: {middlewareMode: true}});
+  try {
+    const {default: ReportsFlowHeader} = await flowVite.ssrLoadModule("/src/features/reports/ReportsFlowHeader.jsx");
+    const {default: LimitedOperationsTable} = await flowVite.ssrLoadModule("/src/features/reports/LimitedOperationsTable.jsx");
+    const {default: FoldedTimeline} = await flowVite.ssrLoadModule("/src/features/reports/FoldedTimeline.jsx");
+    const html = (component, props) => plain(renderToStaticMarkup(React.createElement(component, props)));
+
+    // Cabecera
+    const salesHeader = html(ReportsFlowHeader, {kind: "sales", count: 1, currency: "CLP", total: 143089});
+    for (const text of [">Vendí<", "$143.089", "1 venta confirmada · sin IVA", "reports-flow-header--sales"]) assert.ok(salesHeader.includes(text), `falta ${text}`);
+    assert.doesNotMatch(salesHeader, /reports-flow-header__currency|reports-flow-header__note|reports-flow-header__warning/, "sin moneda, nota ni aviso si no hacen falta");
+    assert.ok(salesHeader.indexOf(">Vendí<") < salesHeader.indexOf("$143.089") && salesHeader.indexOf("$143.089") < salesHeader.indexOf("1 venta confirmada"), "título, cifra y conteo");
+    const purchasesHeader = html(ReportsFlowHeader, {kind: "purchases", count: 3, currency: "USD", total: 412.3, showCurrency: true, note: "Las compras muestran egresos registrados del negocio.", withoutNetCount: 2});
+    for (const text of [">Compré<", "reports-flow-header--purchases", "3 compras confirmadas · sin IVA", 'reports-flow-header__currency">USD<', "Las compras muestran egresos registrados del negocio.", "2 compras sin neto válido no suman en este total."]) assert.ok(purchasesHeader.includes(text), `falta ${text}`);
+    assert.ok(purchasesHeader.includes("US$"), "la cifra usa la moneda del grupo");
+    assert.equal(html(ReportsFlowHeader, {kind: "sales", count: 0, currency: "CLP", total: 0}).includes("0 ventas confirmadas · sin IVA"), true, "con 0 operaciones: $0 y su conteo, sin mensajes extra");
+
+    // Tabla limitada
+    const columns = ["Número", "Fecha", "Cliente", "Neto", "Total"];
+    const renderSaleRow = (sale) => React.createElement("tr", {key: sale.id}, React.createElement("td", null, sale.numero), React.createElement("td", null, String(sale.fechaVenta || "").slice(0, 10)));
+    const tableOf = (rows, extra = {}) => html(LimitedOperationsTable, {columns, dateField: "fechaVenta", noun: {singular: "venta", plural: "ventas"}, renderRow: renderSaleRow, rows, title: "Últimas ventas", ...extra});
+    const sevenSales = [1, 2, 3, 4, 5, 6, 7].map((n) => flowSale(n, `2026-10-0${n}`));
+    const limited = tableOf(sevenSales);
+    assert.equal((limited.match(/<tr><td>VTA/g) || []).length, 5, "solo 5 filas");
+    assert.ok(limited.indexOf("VTA-2026-0007") < limited.indexOf("VTA-2026-0006") && limited.indexOf("VTA-2026-0003") > -1 && !limited.includes("VTA-2026-0002") && !limited.includes("VTA-2026-0001"), "las 5 más recientes por fecha, no las primeras de la lista");
+    assert.ok(limited.includes("Mostrando 5 de 7 ventas") && limited.includes(">Ver todas (7)<") && limited.includes('aria-expanded="false"') && /aria-controls="[^"]+"/.test(limited));
+    assert.ok(limited.includes("<th>Neto</th><th>Total</th>") || (limited.includes("<th>Neto</th>") && limited.includes("<th>Total</th>")), "las columnas de la vista se conservan");
+    const expandedTable = tableOf(sevenSales, {initialExpanded: true});
+    assert.equal((expandedTable.match(/<tr><td>VTA/g) || []).length, 7);
+    assert.ok(expandedTable.includes("Mostrando las 7 ventas") && expandedTable.includes("Ver solo las 5 más recientes") && expandedTable.includes('aria-expanded="true"'));
+    const five = tableOf(sevenSales.slice(0, 5));
+    assert.ok(!five.includes("Mostrando") && !five.includes("Ver todas") && !five.includes("aria-expanded"), "con 5 o menos no hay botón");
+    assert.equal(tableOf([]), "", "sin filas no dibuja nada: el vacío lo dice la pestaña");
+    assert.equal(tableOf(undefined), "");
+    assert.equal((tableOf([flowSale(1, "2026-10-01")]).match(/<tr><td>VTA/g) || []).length, 1, "una fila");
+    assert.ok(!tableOf(sevenSales).includes("Ir a Ventas") && tableOf(sevenSales, {onOpen: () => {}, openLabel: "Ir a Ventas"}).includes("Ir a Ventas"), "el enlace al módulo solo con acceso");
+
+    // Evolución plegada
+    const timelineDays = [{key: "2026-10-01", currency: "CLP", count: 1, value: 1000}, {key: "2026-10-02", currency: "CLP", count: 2, value: 2500}, {key: "2026-10-02", currency: "USD", count: 1, value: 50}];
+    const folded = html(FoldedTimeline, {currency: "CLP", items: timelineDays});
+    assert.ok(folded.includes('<details class="reports-calc-details reports-folded-timeline">') && !/<details[^>]*\bopen\b/.test(folded), "cerrada por defecto");
+    assert.ok(folded.includes("Ver la evolución por día (2)") && folded.includes("$2.500") && !folded.includes("US$50"), "solo las filas de la moneda");
+    assert.ok(html(FoldedTimeline, {currency: "CLP", items: [{key: "2026-09", currency: "CLP", count: 3, value: 900}]}).includes("Ver la evolución por mes (1)"));
+    assert.equal(html(FoldedTimeline, {currency: "EUR", items: timelineDays}), "", "sin filas no dibuja nada");
+    assert.equal(html(FoldedTimeline, {currency: "CLP", items: undefined}), "");
+  } finally {
+    await flowVite.close();
+  }
+}
+console.log("OK reportes (ventas y compras, bloque 1): helpers de cabecera, orden por fecha, límite de filas y barras de porcentaje, y piezas compartidas sin cablear");
 console.log("Report model smoke: OK");
