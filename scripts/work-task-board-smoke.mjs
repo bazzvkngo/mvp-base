@@ -192,27 +192,90 @@ try {
   console.log("OK caso 10: un usuario autorizado sí ve el control de cambio de estado");
 
   // --- Casos 11/12: tareas v1 (legacy) vs v2 (append-only) ---
+  // SPEC 028 §4.2: eliminar una tarea ya no depende de su versión. El panel la ofrece a gestión con el proyecto
+  // abierto, deshabilitada y con el motivo a la vista si está completada o tiene costos (también anulados) o documentación.
+  const deleteButton = (markup, title) => markup.match(new RegExp(`<button[^>]*aria-label="Eliminar ${title}"[^>]*>`))?.[0] || "";
   const legacyTask = task({id: "v1", modeloTareaVersion: 1, estado: "pendiente"});
-  assert.doesNotMatch(render([legacyTask]), /Tarea legacy|Eliminar/, "la tarjeta compacta no muestra la etiqueta legacy ni acciones: viven en el panel");
+  assert.doesNotMatch(render([legacyTask]), /Tarea legacy|Eliminar/, "sin onDeleteTask la tarjeta compacta no muestra la etiqueta legacy ni acciones");
   const legacyMarkup = renderPanel(legacyTask, {canManage: true});
   assert.match(legacyMarkup, /Tarea legacy/);
-  assert.match(legacyMarkup, new RegExp(`Eliminar ${legacyTask.titulo}`));
-  console.log("OK caso 11: una tarea v1 muestra su etiqueta legacy y conserva la acción Eliminar, ahora en el panel");
+  assert.ok(deleteButton(legacyMarkup, legacyTask.titulo), "una tarea v1 limpia ofrece Eliminar en el panel");
+  assert.doesNotMatch(deleteButton(legacyMarkup, legacyTask.titulo), /disabled/);
+  console.log("OK caso 11: una tarea v1 muestra su etiqueta legacy y puede eliminarse desde el panel");
 
   const v2Task = task({id: "v2", modeloTareaVersion: 2, estado: "pendiente"});
   const v2Markup = renderPanel(v2Task, {canManage: true});
   assert.doesNotMatch(v2Markup, /Tarea legacy/);
-  assert.doesNotMatch(v2Markup, new RegExp(`Eliminar ${v2Task.titulo}`));
-  console.log("OK caso 12: una tarea v2 nunca ofrece eliminarla (append-only), igual que en la lista");
+  assert.ok(deleteButton(v2Markup, v2Task.titulo), "una tarea v2 limpia también ofrece Eliminar (SPEC 028 §4.2)");
+  assert.doesNotMatch(deleteButton(v2Markup, v2Task.titulo), /disabled/);
+  assert.doesNotMatch(v2Markup, /No se puede eliminar|Reabre la tarea para poder eliminarla/, "sin bloqueos no hay motivo que mostrar");
+  console.log("OK caso 12: una tarea v2 sin costos ni documentación se puede eliminar desde el panel");
 
-  const legacyCompleted = renderPanel(task({id: "v1c", modeloTareaVersion: 1, estado: "completada", completada: true}), {canManage: true});
-  assert.doesNotMatch(legacyCompleted, /Eliminar tarea|aria-label="Eliminar Instalar/, "una tarea v1 ya completada tampoco se puede eliminar, igual que en la lista");
-  console.log("OK: tarea v1 completada pierde la acción Eliminar, igual que en la vista de lista");
+  const reasonOf = (markup, taskId) => markup.match(new RegExp(`<p class="works-task-panel__hint" id="task-delete-reason-${taskId}">([^<]*)</p>`))?.[1] || "";
+  for (const [label, panelTask, costs, reason] of [
+    ["gasto anulado", task({id: "b1"}), {...COSTS, expenses: [{tareaId: "b1", estado: "anulado"}]}, "No se puede eliminar la tarea porque tiene registros de gastos. Los registros anulados también cuentan."],
+    ["horas hombre", task({id: "b2"}), {...COSTS, labor: [{tareaId: "b2", estado: "vigente"}]}, "No se puede eliminar la tarea porque tiene registros de horas hombre. Los registros anulados también cuentan."],
+    ["adicional", task({id: "b3"}), {...COSTS, additionals: [{tareaId: "b3", estado: "ANULADO"}]}, "No se puede eliminar la tarea porque tiene registros de adicionales. Los registros anulados también cuentan."],
+    ["material", task({id: "b4"}), {...COSTS, materials: [{tareaId: "b4", tipo: "DEVOLUCION_PROYECTO"}]}, "No se puede eliminar la tarea porque tiene registros de materiales. Los registros anulados también cuentan."],
+    ["documentación", task({id: "b5", documentacionTotal: 1}), COSTS, "No se puede eliminar la tarea porque tiene registros de documentación. Los registros anulados también cuentan."],
+    ["varias causas", task({id: "b6", documentacion: [{id: "d"}]}), {...COSTS, expenses: [{tareaId: "b6"}], materials: [{tareaId: "b6"}]}, "No se puede eliminar la tarea porque tiene registros de gastos, materiales y documentación. Los registros anulados también cuentan."],
+  ]) {
+    const markup = renderPanel(panelTask, {canManage: true, costs});
+    assert.equal(reasonOf(markup, panelTask.id), reason, `motivo visible: ${label}`);
+    const button = deleteButton(markup, panelTask.titulo);
+    assert.match(button, /disabled=""/, `Eliminar deshabilitado: ${label}`);
+    assert.match(button, new RegExp(`aria-describedby="task-delete-reason-${panelTask.id}"`), `el motivo describe al botón: ${label}`);
+  }
+  const otherTaskCost = renderPanel(task({id: "free"}), {canManage: true, costs: {...COSTS, expenses: [{tareaId: "otra"}]}});
+  assert.doesNotMatch(deleteButton(otherTaskCost, "Instalar switch principal"), /disabled/, "el costo de otra tarea no bloquea");
+  console.log("OK: el panel deshabilita Eliminar y muestra el motivo con gastos, HH, adicionales, materiales o documentación (también anulados)");
+
+  for (const [label, completedTask] of [["v2", task({id: "v2c", modeloTareaVersion: 2, estado: "completada", completada: true})], ["v1", task({id: "v1c", modeloTareaVersion: 1, estado: "completada", completada: true})]]) {
+    const markup = renderPanel(completedTask, {canManage: true});
+    assert.equal(reasonOf(markup, completedTask.id), "Reabre la tarea para poder eliminarla.", `tarea ${label} completada: motivo visible`);
+    assert.match(deleteButton(markup, completedTask.titulo), /disabled=""/);
+  }
+  console.log("OK: una tarea completada (v1 o v2) muestra Eliminar deshabilitado con 'Reabre la tarea para poder eliminarla.'");
+
+  assert.doesNotMatch(renderPanel(v2Task, {canManage: false, canOperate: () => true}), /Eliminar/, "sin permiso de gestión no hay Eliminar");
+  assert.doesNotMatch(renderPanel(v2Task, {canManage: true, terminal: true}), /Eliminar/, "con el proyecto terminado no hay Eliminar");
+  console.log("OK: Eliminar solo con permiso de gestión y proyecto abierto");
+
+  // --- Basurero de la tarjeta (SPEC 028 §4.2) ---
+  {
+    const cardTasks = [
+      task({id: "free", titulo: "Libre"}),
+      task({id: "costly", titulo: "Con costo"}),
+      task({id: "done", titulo: "Hecha", estado: "completada", completada: true}),
+      task({id: "docs", titulo: "Con documentos", documentacionTotal: 2}),
+    ];
+    const withDelete = render(cardTasks, {costs: {...COSTS, labor: [{tareaId: "costly", estado: "anulado"}]}, onDeleteTask: () => {}});
+    const cards = withDelete.split('<div class="works-task-card works-task-card--deletable">').slice(1);
+    assert.equal(cards.length, 4, "cada tarjeta lleva su basurero");
+    const trash = (card) => card.match(/<button type="button" class="works-task-card__delete"[^>]*>/)?.[0] || "";
+    for (const card of cards) {
+      assert.match(card, /aria-label="Eliminar tarea"/);
+      assert.ok(card.indexOf("</button>") < card.indexOf("works-task-card__delete"), "el basurero es hermano del botón de la tarjeta, no está dentro de él");
+    }
+    // Las tarjetas salen agrupadas por columna (la completada va en Hecho): se buscan por título.
+    const cardOf = (title) => cards.find((card) => card.includes(`<span class="works-task-card__title">${title}</span>`));
+    assert.doesNotMatch(trash(cardOf("Libre")), /aria-disabled/); assert.match(trash(cardOf("Libre")), /title="Eliminar tarea"/, "tooltip de la acción");
+    assert.match(trash(cardOf("Con costo")), /aria-disabled="true"/); assert.match(trash(cardOf("Con costo")), /title="No se puede eliminar la tarea porque tiene registros de horas hombre\./);
+    assert.match(trash(cardOf("Hecha")), /aria-disabled="true"/); assert.match(trash(cardOf("Hecha")), /title="Reabre la tarea para poder eliminarla\."/);
+    assert.match(trash(cardOf("Con documentos")), /aria-disabled="true"/); assert.match(trash(cardOf("Con documentos")), /title="No se puede eliminar la tarea porque tiene registros de documentación\./);
+    const withoutDelete = render(cardTasks);
+    assert.doesNotMatch(withoutDelete, /works-task-card__delete|works-task-card--deletable|Eliminar/, "sin onDeleteTask (sin gestión o proyecto terminado) no hay basurero");
+    assert.equal((withoutDelete.match(/class="works-task-card"/g) || []).length, 4);
+    assert.match(boardSource, /event\.stopPropagation\(\); if \(deletion\.canDelete\) onDeleteTask\(task\);/, "el clic del basurero no abre el panel y solo actúa si se puede eliminar");
+    assert.match(boardSource, /aria-label="Eliminar tarea"/); assert.match(boardSource, /Trash2/);
+    console.log("OK basurero de la tarjeta: uno por tarea, hermano del botón, deshabilitado con motivo (costos, documentación, completada) y ausente sin permiso");
+  }
 
   // --- Caso 13 (reescrito, SPEC 028 etapa B): ni las columnas ni el contenedor interceptan errores ---
   // WorkTaskBoard (columnas y tarjetas base) sigue sin estado ni manejo de errores. El estado de borradores
   // (subtarea, documentación, tarea nueva, diálogos) vive en WorkProjectBoard, que tampoco captura errores:
   // cada acción devuelve la promesa de runBoardAction (WorksPage), el mismo camino de error que usaba la lista.
+  // Única excepción: removeTask recibe un onError para que el diálogo de eliminar muestre el mensaje del backend.
   assert.doesNotMatch(boardSource, /catch|try\s*\{|setError|useState/i, "WorkTaskBoard sigue sin estado propio ni manejo de errores");
   const projectBoardForErrors = await readFile(new URL("../src/features/works/WorkProjectBoard.jsx", import.meta.url), "utf8");
   assert.doesNotMatch(projectBoardForErrors, /catch|try\s*\{|setError/i, "WorkProjectBoard no captura errores de mutación: se propagan a runBoardAction/setError en WorksPage");

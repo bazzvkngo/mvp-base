@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import {createRequire} from "node:module";
 import * as workDomain from "../src/domain/workModel.mjs";
-import {adaptStoredWork, adaptWorkExpense, adaptWorkLabor, adaptWorkLink, adaptWorkMaterialMovement, adaptWorkTask, adaptWorkTaskDocumentation, buildQuickWorkCreationPayload, buildWorkDailyCostSummary, buildWorkMutationPayload, canManageWorks, formatWorkNumber as formatFrontendNumber, getEligibleWorkQuoteOptions, getInventoryCurrentCost, getTaskProgress, getWorkCostSummary, getWorkDraftErrors, getWorkHistoricalPersonIdentity, getWorkMemberIdentity, getWorkMemberOptionLabel, getWorkOperationalIndicators, getWorkSaleMaterials, getWorkTaskProgress, hasAdditionalWorkMembers, humanizeWorkEvent, isWorkOperationalReadOnly, matchesWorkFilters, resolveWorkMaterialScan, WORK_MODEL_VERSION} from "../src/domain/workModel.mjs";
+import {adaptStoredWork, adaptWorkExpense, adaptWorkLabor, adaptWorkLink, adaptWorkMaterialMovement, adaptWorkTask, adaptWorkTaskDocumentation, buildQuickWorkCreationPayload, buildWorkDailyCostSummary, buildWorkMutationPayload, canManageWorks, formatWorkNumber as formatFrontendNumber, getEligibleWorkQuoteOptions, getInventoryCurrentCost, getTaskProgress, getWorkCostSummary, getWorkDraftErrors, getWorkHistoricalPersonIdentity, getWorkMemberIdentity, getWorkMemberOptionLabel, getWorkOperationalIndicators, describeWorkTaskDeletionBlockers, getWorkSaleMaterials, getWorkTaskDeletionBlockers, getWorkTaskDeletionState, getWorkTaskProgress, hasAdditionalWorkMembers, humanizeWorkEvent, isWorkOperationalReadOnly, matchesWorkFilters, resolveWorkMaterialScan, WORK_MODEL_VERSION} from "../src/domain/workModel.mjs";
 
 const require = createRequire(import.meta.url);
 const {actualizarSubtareaTrabajoHandler, actualizarTrabajoHandler, agregarNotaTrabajoHandler, agregarSubtareaTrabajoHandler, anularGastoTrabajoHandler, anularHorasHombreTrabajoHandler, asignarTareaTrabajoHandler, cambiarEstadoTareaTrabajoV2Handler, cambiarEstadoTrabajoHandler, crearTareaTrabajoV2Handler, crearTrabajoHandler, documentarTareaTrabajoHandler, eliminarSubtareaTrabajoHandler, eliminarTareaTrabajoV2Handler, formatWorkNumber, normalizeWorkInput, registrarDevolucionMaterialTrabajoHandler, registrarGastoTrabajoHandler, registrarHorasHombreTrabajoHandler, registrarSalidaMaterialTrabajoHandler, WORK_EXPENSE_CATEGORIES, writeCommercialLink, writeQuoteResponseEvent, writeSaleConfirmationEvent} = require("../functions/workPersistence.js");
@@ -10,7 +10,13 @@ const {actualizarSubtareaTrabajoHandler, actualizarTrabajoHandler, agregarNotaTr
 class TestHttpsError extends Error { constructor(code, message) { super(message); this.code = code; } }
 class Snapshot { constructor(ref, value) { this.id = ref.id; this.exists = value !== undefined; this.value = value; } data() { return this.value; } }
 class DocRef { constructor(db, path) { this.db = db; this.path = path; this.id = path.split("/").at(-1); } collection(name) { return new CollectionRef(this.db, `${this.path}/${name}`); } }
-class CollectionRef { constructor(db, path) { this.db = db; this.path = path; } doc(id) { return new DocRef(this.db, `${this.path}/${id || `auto_${++this.db.autoId}`}`); } }
+// Consultas mínimas (igualdad encadenada + limit) para transaction.get(query): documentos hijos directos de la colección.
+class QueryRef {
+  constructor(db, path, filters = [], max = Infinity) { this.db = db; this.path = path; this.filters = filters; this.max = max; }
+  where(field, operator, value) { assert.equal(operator, "==", "FakeDb solo soporta igualdad"); return new QueryRef(this.db, this.path, [...this.filters, [field, value]], this.max); }
+  limit(count) { return new QueryRef(this.db, this.path, this.filters, count); }
+}
+class CollectionRef extends QueryRef { constructor(db, path) { super(db, path); } doc(id) { return new DocRef(this.db, `${this.path}/${id || `auto_${++this.db.autoId}`}`); } }
 class FakeDb {
   constructor() { this.documents = new Map(); this.autoId = 0; this.transactionQueue = Promise.resolve(); }
   collection(name) { return new CollectionRef(this, name); }
@@ -21,7 +27,17 @@ class FakeDb {
     const execute = async () => {
       const working = new Map([...this.documents.entries()].map(([path, value]) => [path, structuredClone(value)]));
       const transaction = {
-        get: async (ref) => new Snapshot(ref, working.has(ref.path) ? structuredClone(working.get(ref.path)) : undefined),
+        get: async (ref) => {
+          if (ref instanceof QueryRef) {
+            const prefix = `${ref.path}/`;
+            const docs = [...working.entries()]
+              .filter(([path, value]) => path.startsWith(prefix) && !path.slice(prefix.length).includes("/") && ref.filters.every(([field, expected]) => value?.[field] === expected))
+              .slice(0, ref.max)
+              .map(([path, value]) => new Snapshot(new DocRef(this, path), structuredClone(value)));
+            return {docs, empty: docs.length === 0, size: docs.length};
+          }
+          return new Snapshot(ref, working.has(ref.path) ? structuredClone(working.get(ref.path)) : undefined);
+        },
         create: (ref, value) => { if (working.has(ref.path)) throw new Error("already exists"); working.set(ref.path, structuredClone(value)); },
         set: (ref, value, options = {}) => working.set(ref.path, options.merge ? {...(working.get(ref.path) || {}), ...structuredClone(value)} : structuredClone(value)),
         update: (ref, value) => { if (!working.has(ref.path)) throw new Error("missing"); working.set(ref.path, {...working.get(ref.path), ...structuredClone(value)}); },
@@ -228,7 +244,9 @@ assert.equal(db.read(`${workPath}/tareas/${task.tareaId}`).responsableUid, "work
 await assert.rejects(() => asignarTareaTrabajoHandler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId, responsableUid: "ghost-user", requestId: "task-assign-invalid"}), dependencies), (error) => error.code === "failed-precondition");
 await cambiarEstadoTareaTrabajoV2Handler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId, completada: false, requestId: "task-reopen-0001"}), dependencies);
 assert.equal(db.read(`${workPath}/tareas/${task.tareaId}`).estado, "pendiente"); assert.equal(db.read(workPath).tareasCompletadas, 0);
-await assert.rejects(() => eliminarTareaTrabajoV2Handler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId, requestId: "task-delete-v2"}), dependencies), (error) => error.code === "failed-precondition");
+// Esta tarea ya tiene documentación (avance y cierre): el motivo del bloqueo es ese, no su versión (SPEC 028 §4.2).
+await assert.rejects(() => eliminarTareaTrabajoV2Handler(request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, tareaId: task.tareaId, requestId: "task-delete-v2"}), dependencies), (error) => error.code === "failed-precondition" && error.message === describeWorkTaskDeletionBlockers(["documentación"]));
+assert.ok(db.read(`${workPath}/tareas/${task.tareaId}`), "la tarea documentada se conserva");
 const taskEvents = db.matching(`${workPath}/historial/`).map(([, value]) => value.tipo);
 assert.equal(taskEvents.includes("tarea_reasignada"), true); assert.equal(taskEvents.includes("tarea_reabierta"), true); assert.equal(taskEvents.includes("tarea_completada"), true); assert.equal(taskEvents.includes("tarea_documentacion_agregada"), true);
 
@@ -264,6 +282,170 @@ assert.equal(db.read(`${workPath}/tareas/${legacyTaskId}`).modeloTareaVersion, 2
 assert.equal(adaptWorkTask({tareaId: "old", titulo: "Antigua", completada: false}).modeloTareaVersion, 1);
 assert.equal(adaptWorkTaskDocumentation({documentacionId: "doc", texto: "Informe"}).texto, "Informe");
 console.log("OK tareas V2: asignación, documentación, técnico, idempotencia, reapertura, aislamiento y legacy");
+
+// SPEC 028 §4.2: eliminar tareas. Se bloquea con costos (también anulados) o documentación, y no se elimina una
+// tarea completada. Proyecto propio para no alterar los contadores ni el historial del flujo anterior.
+{
+  const deleteWorkId = "work-task-delete";
+  const otherWorkId = "work-task-delete-other";
+  const deletePath = `negocios/business-a/trabajos/${deleteWorkId}`;
+  const baseWork = {negocioId: "business-a", trabajoId: deleteWorkId, titulo: "Eliminar tareas", estado: "en_progreso", moneda: "USD", responsableUid: "worker-a", participanteUids: [], tareasTotal: 0, tareasCompletadas: 0, progresoAcumulado: 0, progresoPct: 0, materialesSalidasTotal: 0, materialesCostoTotal: 0};
+  db.seed(deletePath, baseWork);
+  db.seed(`negocios/business-a/trabajos/${otherWorkId}`, {...baseWork, trabajoId: otherWorkId});
+  db.seed("negocios/business-a/inventario/product-task-delete", {negocioId: "business-a", itemId: "product-task-delete", tipoItem: "producto", estado: "activo", nombre: "Material de prueba", unidad: "unidad", stock: 20, costoPromedio: 1000, costoBase: 1000});
+  db.seed("membresias/business-a__member-x", {negocioId: "business-a", uid: "member-x", rol: "MEMBER", estado: "activo"});
+  let sequence = 0;
+  const requestId = (label) => `task-del-${label}-${++sequence}`;
+  const taskPath = (id) => `${deletePath}/tareas/${id}`;
+  const base = {businessId: "business-a", trabajoId: deleteWorkId};
+  const createTask = async (title) => (await crearTareaTrabajoV2Handler(request("owner-a", {...base, requestId: requestId("create"), tarea: {titulo: title, descripcion: "", responsableUid: "worker-a"}}), dependencies)).tareaId;
+  const removeTask = (uid, taskId, id = requestId("delete"), businessId = "business-a") => eliminarTareaTrabajoV2Handler(request(uid, {...base, businessId, tareaId: taskId, requestId: id}), dependencies);
+  const setTaskState = (taskId, estado) => cambiarEstadoTareaTrabajoV2Handler(request("owner-a", {...base, tareaId: taskId, estado, requestId: requestId(`state-${estado}`)}), dependencies);
+  const expenseFor = (taskId) => registrarGastoTrabajoHandler(request("owner-a", {...base, requestId: requestId("expense"), gasto: {concepto: "Compra", monto: 1000, categoria: "OTRO", responsableDelGastoUid: "", fecha: "2026-08-14", observacion: "", tareaId: taskId}}), dependencies);
+  const laborFor = (taskId) => registrarHorasHombreTrabajoHandler(request("owner-a", {...base, requestId: requestId("labor"), horasHombre: {tecnicoUid: "worker-c", horas: 2, costoHora: 5000, fecha: "2026-08-14", concepto: "Configuración", tareaId: taskId}}), dependencies);
+  const materialExitFor = (taskId, cantidad = 1) => registrarSalidaMaterialTrabajoHandler(request("owner-a", {...base, itemId: "product-task-delete", cantidad, fecha: "2026-08-14", tareaId: taskId, requestId: requestId("material")}), dependencies);
+  const documentFor = (taskId) => documentarTareaTrabajoHandler(request("owner-a", {...base, tareaId: taskId, requestId: requestId("document"), texto: "Avance registrado."}), dependencies);
+  const assertBlocked = async (taskId, blockers) => {
+    await assert.rejects(() => removeTask("owner-a", taskId), (error) => error.code === "failed-precondition" && error.message === describeWorkTaskDeletionBlockers(blockers));
+    assert.ok(db.read(taskPath(taskId)), `la tarea con ${blockers.join(", ")} se conserva`);
+  };
+  const deletedEvents = (taskId) => db.matching(`${deletePath}/historial/`).filter(([, value]) => value.tipo === "tarea_eliminada" && value.detalle.tareaId === taskId).length;
+
+  // Tarea limpia: se elimina y el avance del proyecto se recalcula. Idempotencia por requestId.
+  const keptTask = await createTask("Tarea que se queda");
+  const cleanTask = await createTask("Tarea limpia");
+  assert.equal(db.read(deletePath).tareasTotal, 2);
+  const cleanRequest = requestId("delete-clean");
+  assert.equal((await removeTask("owner-a", cleanTask, cleanRequest)).idempotent, false);
+  assert.equal(db.read(taskPath(cleanTask)), undefined); assert.equal(db.read(deletePath).tareasTotal, 1); assert.equal(deletedEvents(cleanTask), 1);
+  assert.ok(db.read(`negocios/business-a/workTaskRequests/${cleanRequest}`));
+  assert.equal((await removeTask("owner-a", cleanTask, cleanRequest)).idempotent, true);
+  assert.equal(db.read(deletePath).tareasTotal, 1); assert.equal(deletedEvents(cleanTask), 1, "el reintento no descuenta ni duplica el evento");
+  await assert.rejects(() => removeTask("owner-a", keptTask, cleanRequest), (error) => error.code === "already-exists");
+  await assert.rejects(() => removeTask("owner-a", cleanTask), (error) => error.code === "not-found" && error.message === "No se encontró la tarea.");
+  assert.ok(db.read(taskPath(keptTask)));
+
+  // En curso con subtareas (una completada): se elimina junto con sus subtareas y revierte su avance.
+  const progressTask = await createTask("Tarea con subtareas");
+  const wiring = await agregarSubtareaTrabajoHandler(request("owner-a", {...base, tareaId: progressTask, titulo: "Cablear", requestId: requestId("subtask")}), dependencies);
+  await agregarSubtareaTrabajoHandler(request("owner-a", {...base, tareaId: progressTask, titulo: "Probar", requestId: requestId("subtask")}), dependencies);
+  await actualizarSubtareaTrabajoHandler(request("owner-a", {...base, tareaId: progressTask, subtareaId: wiring.subtareaId, completada: true, requestId: requestId("subtask-check")}), dependencies);
+  await setTaskState(progressTask, "en_progreso");
+  assert.equal(db.read(deletePath).progresoAcumulado, 50); assert.equal(db.read(deletePath).tareasTotal, 2);
+  await removeTask("owner-a", progressTask);
+  assert.equal(db.read(taskPath(progressTask)), undefined);
+  assert.equal(db.read(deletePath).progresoAcumulado, 0); assert.equal(db.read(deletePath).tareasTotal, 1); assert.equal(db.read(deletePath).progresoPct, 0);
+
+  // Tarea legacy (v1) sin registros: también se elimina.
+  const legacyId = "task-del-legacy-v1";
+  db.seed(taskPath(legacyId), {tareaId: legacyId, negocioId: "business-a", trabajoId: deleteWorkId, titulo: "Checklist legacy", completada: false});
+  db.seed(deletePath, {...db.read(deletePath), tareasTotal: db.read(deletePath).tareasTotal + 1});
+  await removeTask("owner-a", legacyId);
+  assert.equal(db.read(taskPath(legacyId)), undefined); assert.equal(db.read(deletePath).tareasTotal, 1);
+
+  // Bloqueo por cada tipo de costo; el anulado también cuenta.
+  const expenseTask = await createTask("Con gasto");
+  const expenseOnTask = await expenseFor(expenseTask);
+  await assertBlocked(expenseTask, ["gastos"]);
+  await anularGastoTrabajoHandler(request("owner-a", {...base, gastoId: expenseOnTask.gastoId, motivo: "Monto incorrecto", requestId: requestId("annul-expense")}), dependencies);
+  assert.equal(db.read(`${deletePath}/gastos/${expenseOnTask.gastoId}`).estado, "anulado");
+  await assertBlocked(expenseTask, ["gastos"]);
+
+  const laborTask = await createTask("Con horas hombre");
+  const laborOnTask = await laborFor(laborTask);
+  await assertBlocked(laborTask, ["horas hombre"]);
+  await anularHorasHombreTrabajoHandler(request("owner-a", {...base, horasHombreId: laborOnTask.horasHombreId, motivo: "Registro duplicado", requestId: requestId("annul-labor")}), dependencies);
+  assert.equal(db.read(`${deletePath}/horasHombre/${laborOnTask.horasHombreId}`).estado, "anulado");
+  await assertBlocked(laborTask, ["horas hombre"]);
+
+  for (const [estado, label] of [["PENDIENTE_COBRO", "pendiente"], ["ANULADO", "anulado"]]) {
+    const additionalTask = await createTask(`Con adicional ${label}`);
+    db.seed(`${deletePath}/adicionales/additional-${label}`, {negocioId: "business-a", trabajoId: deleteWorkId, adicionalId: `additional-${label}`, tareaId: additionalTask, estado});
+    await assertBlocked(additionalTask, ["adicionales"]);
+  }
+
+  const materialTask = await createTask("Con material");
+  const materialExit = await materialExitFor(materialTask, 2);
+  await assertBlocked(materialTask, ["materiales"]);
+  await registrarDevolucionMaterialTrabajoHandler(request("owner-a", {...base, movimientoOrigenId: materialExit.movimientoId, cantidad: 2, fecha: "2026-08-14", requestId: requestId("return")}), dependencies);
+  await assertBlocked(materialTask, ["materiales"]);
+  const returnOnlyTask = await createTask("Con devolución");
+  db.seed("negocios/business-a/movimientosInventario/movement-return-only", {negocioId: "business-a", trabajoId: deleteWorkId, tareaId: returnOnlyTask, tipo: "DEVOLUCION_PROYECTO"});
+  await assertBlocked(returnOnlyTask, ["materiales"]);
+
+  // Documentación: registro real, contador sin subcolección y subcolección sin contador.
+  const documentedTask = await createTask("Con documentación");
+  await documentFor(documentedTask);
+  await assertBlocked(documentedTask, ["documentación"]);
+  const counterOnlyTask = await createTask("Con contador de documentación");
+  db.seed(taskPath(counterOnlyTask), {...db.read(taskPath(counterOnlyTask)), documentacionTotal: 1});
+  await assertBlocked(counterOnlyTask, ["documentación"]);
+  const subcollectionOnlyTask = await createTask("Con documento suelto");
+  db.seed(`${taskPath(subcollectionOnlyTask)}/documentacion/documentation-loose`, {negocioId: "business-a", trabajoId: deleteWorkId, tareaId: subcollectionOnlyTask});
+  await assertBlocked(subcollectionOnlyTask, ["documentación"]);
+
+  // Varias causas a la vez: un solo mensaje, en orden fijo, igual al del dominio del frontend.
+  const multiTask = await createTask("Con varios registros");
+  await expenseFor(multiTask); await materialExitFor(multiTask); await documentFor(multiTask);
+  await assertBlocked(multiTask, ["gastos", "materiales", "documentación"]);
+  assert.equal(describeWorkTaskDeletionBlockers(["gastos", "materiales", "documentación"]), "No se puede eliminar la tarea porque tiene registros de gastos, materiales y documentación. Los registros anulados también cuentan.");
+  assert.equal(describeWorkTaskDeletionBlockers(["horas hombre"]), "No se puede eliminar la tarea porque tiene registros de horas hombre. Los registros anulados también cuentan.");
+  assert.equal(describeWorkTaskDeletionBlockers([]), "");
+  const storedCosts = {
+    expenses: db.matching(`${deletePath}/gastos/`).map(([path, value]) => adaptWorkExpense({...value, id: path.split("/").at(-1)})),
+    labor: db.matching(`${deletePath}/horasHombre/`).map(([path, value]) => adaptWorkLabor({...value, id: path.split("/").at(-1)})),
+    materials: db.matching("negocios/business-a/movimientosInventario/").filter(([, value]) => value.trabajoId === deleteWorkId).map(([path, value]) => adaptWorkMaterialMovement({...value, id: path.split("/").at(-1)})),
+    additionals: db.matching(`${deletePath}/adicionales/`).map(([, value]) => value),
+  };
+  assert.deepEqual(getWorkTaskDeletionBlockers(adaptWorkTask({...db.read(taskPath(multiTask)), id: multiTask}), storedCosts), ["gastos", "materiales", "documentación"], "el dominio del frontend coincide con el backend");
+  assert.deepEqual(getWorkTaskDeletionBlockers(adaptWorkTask({...db.read(taskPath(laborTask)), id: laborTask}), storedCosts), ["horas hombre"]);
+  assert.deepEqual(getWorkTaskDeletionBlockers({id: "free"}, storedCosts), []);
+  assert.deepEqual(getWorkTaskDeletionBlockers({id: "x", documentacion: [{id: "d"}]}), ["documentación"]);
+  assert.deepEqual(getWorkTaskDeletionBlockers({}, {expenses: [{tareaId: ""}]}), [], "sin id de tarea no hay causas");
+  assert.deepEqual(getWorkTaskDeletionState({id: "x", estado: "completada", completada: true, documentacionTotal: 3}), {canDelete: false, reason: "Reabre la tarea para poder eliminarla."}, "la tarea completada va primero, igual que en el backend");
+  assert.deepEqual(getWorkTaskDeletionState({id: "x", estado: "pendiente"}), {canDelete: true, reason: ""});
+  assert.equal(getWorkTaskDeletionState({id: "x", estado: "en_progreso"}, {expenses: [{tareaId: "x"}]}).reason, describeWorkTaskDeletionBlockers(["gastos"]));
+
+  // Completada: no se elimina (v2 y legacy); reabierta y limpia, sí.
+  const completedTask = await createTask("Completada");
+  await setTaskState(completedTask, "completada");
+  await assert.rejects(() => removeTask("owner-a", completedTask), (error) => error.code === "failed-precondition" && error.message === "Reabre la tarea antes de eliminarla.");
+  const completedLegacyId = "task-del-legacy-completed";
+  db.seed(taskPath(completedLegacyId), {tareaId: completedLegacyId, negocioId: "business-a", trabajoId: deleteWorkId, titulo: "Legacy completada", completada: true});
+  await assert.rejects(() => removeTask("owner-a", completedLegacyId), (error) => error.code === "failed-precondition" && error.message === "Reabre la tarea antes de eliminarla.");
+  assert.ok(db.read(taskPath(completedTask))); assert.ok(db.read(taskPath(completedLegacyId)));
+  await setTaskState(completedTask, "pendiente");
+  await removeTask("owner-a", completedTask);
+  assert.equal(db.read(taskPath(completedTask)), undefined);
+
+  // Proyecto completado o cancelado: las tareas no se modifican.
+  const terminalTask = await createTask("En proyecto cerrado");
+  for (const estado of ["completado", "cancelado"]) {
+    db.seed(deletePath, {...db.read(deletePath), estado});
+    await assert.rejects(() => removeTask("owner-a", terminalTask), (error) => error.code === "failed-precondition" && error.message === "Reabre el trabajo antes de modificar sus tareas.");
+  }
+  db.seed(deletePath, {...db.read(deletePath), estado: "en_progreso"});
+  await removeTask("owner-a", terminalTask);
+  assert.equal(db.read(taskPath(terminalTask)), undefined);
+
+  // Aislamiento: costos de otro proyecto con el mismo tareaId no bloquean (ni los de otras tareas del mismo proyecto).
+  const isolatedTask = await createTask("Aislada");
+  db.seed(`negocios/business-a/trabajos/${otherWorkId}/gastos/foreign-expense`, {negocioId: "business-a", trabajoId: otherWorkId, tareaId: isolatedTask, estado: "vigente"});
+  db.seed("negocios/business-a/movimientosInventario/foreign-movement", {negocioId: "business-a", trabajoId: otherWorkId, tareaId: isolatedTask, tipo: "SALIDA_PROYECTO"});
+  await removeTask("owner-a", isolatedTask);
+  assert.equal(db.read(taskPath(isolatedTask)), undefined);
+
+  // Roles: solo OWNER/ADMIN; TECNICO (aun siendo responsable), MEMBER, otro negocio y sin sesión quedan fuera.
+  const roleTask = await createTask("Rol");
+  await assert.rejects(() => removeTask("worker-a", roleTask), (error) => error.code === "permission-denied");
+  await assert.rejects(() => removeTask("member-x", roleTask), (error) => error.code === "permission-denied");
+  await assert.rejects(() => removeTask("owner-a", roleTask, requestId("delete-cross"), "business-b"), (error) => error.code === "permission-denied");
+  await assert.rejects(() => removeTask("", roleTask), (error) => error.code === "unauthenticated");
+  assert.ok(db.read(taskPath(roleTask)));
+  await removeTask("worker-b", roleTask);
+  assert.equal(db.read(taskPath(roleTask)), undefined);
+  console.log("OK eliminar tareas: limpia v2/v1 con avance recalculado, bloqueo por gastos/HH/adicionales/materiales/documentación (también anulados), completada, proyecto cerrado, aislamiento, roles e idempotencia");
+}
 
 const expenseRequest = request("owner-a", {businessId: "business-a", trabajoId: created.trabajoId, requestId: "expense-create-0001", gasto: {concepto: "Material eléctrico", monto: 100000, categoria: "MATERIAL", responsableDelGastoUid: "worker-a", fecha: "2026-08-14", observacion: "Compra en terreno", tareaId: task.tareaId}});
 const expense = await registrarGastoTrabajoHandler(expenseRequest, dependencies);

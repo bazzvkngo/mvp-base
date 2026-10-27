@@ -109,6 +109,7 @@
     "test:works-model": "node scripts/works-model-smoke.mjs && node scripts/work-balance-smoke.mjs && node scripts/work-member-identity-smoke.mjs && node scripts/work-project-board-smoke.mjs",
     "test:projects-v3-stage1": "node scripts/work-quote-selector-smoke.mjs",
     "test:projects-v3-stage2": "node scripts/work-task-board-smoke.mjs",
+    "test:spec028-task-delete-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/work-task-delete-race-integrated-local.mjs\"",
     "test:spec020-stage1": "node scripts/work-additional-model-smoke.mjs",
     "test:spec020-stage2-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/work-additional-integrated-local.mjs\"",
     "test:spec020-stage3-storage-rules": "firebase emulators:exec --only auth,firestore,storage \"node scripts/work-expense-evidence-storage-rules-smoke.mjs\"",

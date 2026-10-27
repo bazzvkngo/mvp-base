@@ -438,6 +438,13 @@ async function assertOptionalCostTask(transaction, workRef, taskId, context, Htt
   return task;
 }
 
+// Mismo texto y orden que getWorkTaskDeletionBlockers/describeWorkTaskDeletionBlockers
+// del dominio del frontend (src/domain/workModel.mjs); works-model-smoke los compara.
+function taskDeletionBlockedMessage(blockers) {
+  const joined = blockers.length === 1 ? blockers[0] : `${blockers.slice(0, -1).join(", ")} y ${blockers.at(-1)}`;
+  return `No se puede eliminar la tarea porque tiene registros de ${joined}. Los registros anulados también cuentan.`;
+}
+
 function previousCostRequest(snapshot, {fingerprint: expectedFingerprint, operation, uid}, HttpsError) {
   if (!snapshot.exists) return null;
   const stored = snapshot.data() || {};
@@ -1210,8 +1217,27 @@ async function eliminarTareaTrabajoV2Handler(request, dependencies) {
     if (previous) { result = previous; return; }
     const work = assertWork(await transaction.get(workRef), context.businessId, HttpsError); assertTaskMutable(work, HttpsError);
     const task = assertTask(await transaction.get(taskRef), context.businessId, workId, HttpsError);
-    if (Number(task.modeloTareaVersion || 1) >= WORK_TASK_MODEL_VERSION) fail(HttpsError, "failed-precondition", "Las tareas operativas se conservan para mantener su trazabilidad.");
     if (taskIsCompleted(task)) fail(HttpsError, "failed-precondition", "Reabre la tarea antes de eliminarla.");
+    // SPEC 028 §4.2: una tarea con costos (también anulados) o documentación se conserva.
+    // Los cuatro handlers de costos con tarea leen y actualizan este mismo trabajo, así que
+    // una transacción de costo concurrente y esta no pueden confirmar ambas: la que reintenta
+    // ve el resultado de la otra (aquí, el costo; allá, la tarea inexistente).
+    const linked = (query) => transaction.get(query.limit(1)).then((snapshot) => !snapshot.empty);
+    const [hasExpenses, hasLabor, hasAdditionals, hasMaterials, hasDocumentation] = await Promise.all([
+      linked(workRef.collection("gastos").where("tareaId", "==", taskId)),
+      linked(workRef.collection("horasHombre").where("tareaId", "==", taskId)),
+      linked(workRef.collection("adicionales").where("tareaId", "==", taskId)),
+      linked(context.businessRef.collection("movimientosInventario").where("trabajoId", "==", workId).where("tareaId", "==", taskId)),
+      linked(taskRef.collection("documentacion")),
+    ]);
+    const blockers = [
+      hasExpenses && "gastos",
+      hasLabor && "horas hombre",
+      hasAdditionals && "adicionales",
+      hasMaterials && "materiales",
+      (hasDocumentation || Number(task.documentacionTotal || 0) > 0) && "documentación",
+    ].filter(Boolean);
+    if (blockers.length) fail(HttpsError, "failed-precondition", taskDeletionBlockedMessage(blockers));
     const timestamp = FieldValue.serverTimestamp(); transaction.delete(taskRef);
     const nextTotal = Math.max(0, Number(work.tareasTotal || 0) - 1); const points = Math.max(0, roundMoney(storedProgressPoints(work) - taskProgressPoints(task)));
     transaction.update(workRef, {tareasTotal: nextTotal, progresoAcumulado: points, progresoPct: nextTotal ? Math.round((points / nextTotal) * 100) / 100 : 0, ultimaActividadEn: timestamp, actualizadoPorUid: context.uid, actualizadoEn: timestamp});

@@ -605,6 +605,39 @@ export function getWorkTaskStatusOptions(task, {canManage} = {}) {
   return WORK_TASK_STATUSES.filter((entry) => canManage || entry.value !== "pendiente" || task?.estado === "pendiente");
 }
 
+// Eliminar una tarea (SPEC 028 §4.2): se bloquea si tiene costos de cualquier tipo
+// (los anulados cuentan) o documentación. Devuelve las causas en orden fijo; vacío
+// = se puede eliminar. Refleja lo que valida eliminarTareaTrabajo, que es la
+// autoridad: aquí solo sirve para explicar el bloqueo en la interfaz.
+export function getWorkTaskDeletionBlockers(task, {expenses = [], labor = [], materials = [], additionals = []} = {}) {
+  const taskId = String(task?.id || task?.tareaId || "");
+  if (!taskId) return [];
+  const linked = (records) => (Array.isArray(records) ? records : []).some((entry) => String(entry?.tareaId || "") === taskId);
+  const documented = Number(task?.documentacionTotal || 0) > 0 || (Array.isArray(task?.documentacion) && task.documentacion.length > 0);
+  return [
+    linked(expenses) && "gastos",
+    linked(labor) && "horas hombre",
+    linked(additionals) && "adicionales",
+    linked(materials) && "materiales",
+    documented && "documentación",
+  ].filter(Boolean);
+}
+
+// Estado de la acción "Eliminar" de una tarea para la interfaz: en el mismo orden que el backend, primero
+// la tarea completada (hay que reabrirla) y luego los registros que la bloquean.
+export function getWorkTaskDeletionState(task, records = {}) {
+  if (task?.completada === true || task?.estado === "completada") return {canDelete: false, reason: "Reabre la tarea para poder eliminarla."};
+  const blockers = getWorkTaskDeletionBlockers(task, records);
+  return blockers.length ? {canDelete: false, reason: describeWorkTaskDeletionBlockers(blockers)} : {canDelete: true, reason: ""};
+}
+
+export function describeWorkTaskDeletionBlockers(blockers = []) {
+  const list = Array.isArray(blockers) ? blockers : [];
+  if (!list.length) return "";
+  const joined = list.length === 1 ? list[0] : `${list.slice(0, -1).join(", ")} y ${list.at(-1)}`;
+  return `No se puede eliminar la tarea porque tiene registros de ${joined}. Los registros anulados también cuentan.`;
+}
+
 export function getWorkTaskProgress(work) {
   const total = Math.max(0, Number(work?.tareasTotal || 0));
   const completed = Math.min(total, Math.max(0, Number(work?.tareasCompletadas || 0)));

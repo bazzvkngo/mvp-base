@@ -47,7 +47,7 @@ const works = [
   {id: "w1", numero: "TRB-2026-0002", titulo: "Red oficina", estado: "en_progreso", tareasTotal: 2, tareasCompletadas: 1, progresoPct: 50, clienteSnapshot: {nombreRazonSocial: "Cliente SA"}},
   {id: "w0", numero: "TRB-2026-0001", titulo: "Cámaras", estado: "completado", tareasTotal: 1, tareasCompletadas: 1, progresoPct: 100},
 ];
-const baseActions = Object.fromEntries(["createTask", "assignTask", "changeTaskState", "addSubtask", "toggleSubtask", "renameSubtask", "removeSubtask", "addDocumentation", "removeLegacy"].map((name) => [name, async () => true]));
+const baseActions = Object.fromEntries(["createTask", "assignTask", "changeTaskState", "addSubtask", "toggleSubtask", "renameSubtask", "removeSubtask", "addDocumentation", "removeTask"].map((name) => [name, async () => true]));
 
 const vite = await createServer({appType: "custom", logLevel: "silent", server: {middlewareMode: true}});
 try {
@@ -146,6 +146,35 @@ try {
     assert.equal((createForm.match(/<textarea/g) || []).length, 1); assert.equal((createForm.match(/<input/g) || []).length, 1, "solo título, responsable y descripción");
     assert.equal(renderToStaticMarkup(React.createElement(WorkTaskCreateDialog, {members: [], onClose: () => {}, onSubmit: async () => true, open: false, processing: ""})), "");
     console.log("OK Nueva tarea: formulario corto (título, responsable y descripción opcional)");
+
+    // Eliminar tarea (SPEC 028 §4.2): diálogo de confirmación simple, con el error del backend dentro.
+    const {default: WorkTaskDeleteDialog} = await vite.ssrLoadModule("/src/features/works/WorkTaskDeleteDialog.jsx");
+    const dialog = (props = {}) => renderToStaticMarkup(React.createElement(WorkTaskDeleteDialog, {error: "", onClose: () => {}, onConfirm: () => {}, processing: "", task: task({id: "t1", titulo: "Tender cableado"}), ...props}));
+    assert.equal(dialog({task: null}), "", "sin tarea elegida el diálogo no se dibuja");
+    const confirmation = dialog();
+    assert.match(confirmation, /role="dialog"/); assert.match(confirmation, /Eliminar tarea/); assert.match(confirmation, /«Tender cableado»/, "lleva el nombre de la tarea");
+    assert.match(confirmation, /Esta acción no se puede deshacer\./); assert.match(confirmation, />Volver</); assert.match(confirmation, /ui-button--danger/); assert.match(confirmation, />Eliminar</);
+    assert.doesNotMatch(confirmation, /permanente/i, "confirmación simple, sin escribir ninguna palabra");
+    assert.doesNotMatch(confirmation, /<input|<textarea/, "sin campo de confirmación");
+    assert.doesNotMatch(confirmation, /role="alert"|subtareas/, "sin error y sin subtareas no hay avisos");
+    assert.match(dialog({task: task({id: "t1", titulo: "Con subtareas", subtareas: [{id: "s1", titulo: "Una", completada: true}]})}), /Se eliminarán también sus subtareas\./);
+    const backendError = "No se puede eliminar la tarea porque tiene registros de gastos. Los registros anulados también cuentan.";
+    const failed = dialog({error: backendError});
+    assert.match(failed, new RegExp(`<div class="works-message works-message--error" role="alert">${backendError.replace(/\./g, "\\.")}</div>`), "el error se muestra dentro del diálogo");
+    assert.ok(failed.indexOf("«Tender cableado»") < failed.indexOf('role="alert"') && failed.indexOf('role="alert"') < failed.indexOf(">Volver<"), "el error queda dentro del cuerpo del diálogo, antes de los botones");
+    const busy = dialog({processing: "task-delete-t1"});
+    assert.match(busy, /aria-busy="true"/, "Eliminar muestra la carga mientras se procesa");
+    assert.match(busy.split("<button").find((chunk) => chunk.includes("Volver")), /disabled/, "Volver se deshabilita mientras se procesa");
+    console.log("OK diálogo de eliminar: nombre de la tarea, sin texto de confirmación, error del backend dentro y carga en el botón");
+
+    // Basurero en las tarjetas: gestión y proyecto abierto; deshabilitado si la tarea tiene costos.
+    const deletable = render({detail: {tareas: [task({id: "t1", titulo: "Libre"}), task({id: "t2", titulo: "Con gasto"})]}, costs: {expenses: [{id: "g1", tareaId: "t2", estado: "anulado", monto: 1, categoria: "OTRO"}], labor: [], materials: [], additionals: []}});
+    assert.equal((deletable.match(/class="works-task-card__delete"/g) || []).length, 2, "una por tarjeta");
+    assert.equal((deletable.match(/aria-disabled="true"/g) || []).length, 1, "solo la tarea con un gasto anulado queda deshabilitada");
+    assert.match(deletable, /registros de gastos\. Los registros anulados también cuentan\./);
+    assert.doesNotMatch(render({canManage: false, canOperate: () => true, detail: {tareas: [task({id: "t1", responsableUid: "u1"})]}}), /works-task-card__delete|Eliminar/, "sin gestión no hay basurero");
+    assert.doesNotMatch(render({terminal: true, detail: {tareas: [task({id: "t1"})]}}), /works-task-card__delete|Eliminar/, "con el proyecto terminado no hay basurero");
+    console.log("OK basurero del tablero: solo con gestión y proyecto abierto, deshabilitado con costos");
   }
 
   // Vista Cerrados: lista, permisos de lo monetario, y error separado del vacío.
@@ -243,11 +272,23 @@ assert.match(page, /registrarSalidaMaterialTrabajo\(businessId, workId, draft, c
 assert.match(page, /onClick=\{\(\) => openWorkBoard\(selectedWork\)\}>Trabajar en el tablero</);
 assert.match(page, /const openWorkBoard = \(work\) => \{ setSelectedWork\(null\); selectBoardWork\(work\.id\); \};/);
 assert.match(page, /location\.state\?\.openWorkId/); assert.match(page, /navigate\(\{pathname: "\/trabajos", search: location\.search\}, \{replace: true, state: \{\}\}\)/);
-// Etapa C fuera de alcance.
+// Etapa C: "Cerrar proyecto" sigue fuera de alcance; eliminar tareas (SPEC 028 §4.2) ya está.
 for (const source of [page, board]) assert.doesNotMatch(source, /Cerrar proyecto|cerrarProyecto/);
-assert.doesNotMatch(board, /eliminarTareaTrabajo|Eliminar tarea/);
 const taskPanelSource = await readFile(new URL("../src/features/works/WorkTaskPanel.jsx", import.meta.url), "utf8");
-assert.doesNotMatch(taskPanelSource, /Eliminar tarea|eliminarTareaTrabajo/, "no se agrega eliminación de tareas nueva: solo la acción legacy que ya existía");
+const deleteDialogSource = await readFile(new URL("../src/features/works/WorkTaskDeleteDialog.jsx", import.meta.url), "utf8");
+for (const [name, source] of [["tablero", board], ["panel", taskPanelSource], ["diálogo", deleteDialogSource]]) {
+  assert.doesNotMatch(source, /eliminarTareaTrabajo|from ["'].*(workService|firebase)/, `${name}: presentacional, no llama la Function: recibe actions.removeTask de la página`);
+}
+assert.doesNotMatch(page + board + taskPanelSource, /removeLegacy/, "la acción ya no es solo para tareas legacy");
+assert.match(board, /onDeleteTask=\{canManage && !terminal \? requestDelete : undefined\}/, "el basurero solo llega con gestión y proyecto abierto");
+assert.match(board, /onRequestDelete=\{requestDelete\}/, "el panel pide confirmar con el mismo flujo");
+assert.match(board, /<WorkTaskDeleteDialog error=\{deleteError\} onClose=\{closeDelete\} onConfirm=\{confirmDelete\} processing=\{processing\} task=\{canManage && !terminal \? deletingTask : null\} \/>/);
+assert.match(board, /actions\.removeTask\(deletingTask, \(failure\) => setDeleteError\(failure\?\.message \|\| "No se pudo eliminar la tarea\."\)\)\.then\(\(success\) => \{ if \(success\) closeDelete\(\); \}\)/, "el diálogo solo se cierra si la acción se aplicó: si el backend la rechaza, queda abierto con el mensaje");
+assert.match(taskPanelSource, /const showDelete = canManage && !terminal;/); assert.match(taskPanelSource, /onClick=\{\(\) => onRequestDelete\(task\)\}/);
+assert.match(page, /const runWorkAction = async \(workId, key, action, \{onError\} = \{\}\) => \{/);
+assert.match(page, /if \(onError\) onError\(actionError\); else setError\(actionError\.message \|\| "No se pudo actualizar el trabajo\."\);/, "sin onError el comportamiento de siempre: aviso de la página");
+assert.match(page, /removeTask: \(task, onError\) => runWorkAction\(boardWorkId, `task-delete-\$\{task\.id\}`, \(\) => eliminarTareaTrabajo\(businessId, boardWorkId, task\.id, createWorkTaskRequestId\("task-delete"\)\), \{onError\}\)/);
+assert.match(page, /costs=\{\{expenses: boardDetail\.gastos, labor: boardDetail\.horasHombre, materials: boardDetail\.materiales, additionals: boardDetail\.adicionales\}\}/, "los adicionales también cuentan para explicar el bloqueo");
 console.log("OK conexiones: mismas Functions y requestId, costos acotados a la tarea, ficha→tablero y deep link");
 
 console.log("WORK_PROJECT_BOARD_SMOKE_OK");

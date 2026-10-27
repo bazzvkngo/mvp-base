@@ -10,6 +10,7 @@ import {formatMoney} from "../../utils/formatters.js";
 import useBusinessFormat from "../../hooks/useBusinessFormat";
 import WorkTaskBoard from "./WorkTaskBoard.jsx";
 import WorkTaskCreateDialog from "./WorkTaskCreateDialog.jsx";
+import WorkTaskDeleteDialog from "./WorkTaskDeleteDialog.jsx";
 import WorkTaskPanel from "./WorkTaskPanel.jsx";
 
 // Vista Tablero de /trabajos (SPEC 028 etapas B y B2): se elige UN proyecto y se
@@ -74,6 +75,8 @@ export default function WorkProjectBoard({
   const [waitingTask, setWaitingTask] = useState(null);
   const [waitReason, setWaitReason] = useState("");
   const [costTarget, setCostTarget] = useState(null);
+  const [deletingTask, setDeletingTask] = useState(null);
+  const [deleteError, setDeleteError] = useState("");
   const [costTab, setCostTab] = useState("gastos");
   const tasks = Array.isArray(detail?.tareas) ? detail.tareas : [];
   const visibleTasks = getVisibleWorkTasks(tasks, {canManage, currentUserUid});
@@ -84,6 +87,13 @@ export default function WorkProjectBoard({
   const requestTaskState = (task, estado) => {
     if (estado === "en_espera") { setWaitingTask(task); setWaitReason(""); return; }
     actions.changeTaskState(task, estado);
+  };
+  // Eliminar tarea: el diálogo queda abierto y muestra el mensaje del backend si lo rechaza.
+  const requestDelete = (task) => { setDeleteError(""); setDeletingTask(task); };
+  const closeDelete = () => { setDeletingTask(null); setDeleteError(""); };
+  const confirmDelete = () => {
+    setDeleteError("");
+    return actions.removeTask(deletingTask, (failure) => setDeleteError(failure?.message || "No se pudo eliminar la tarea.")).then((success) => { if (success) closeDelete(); });
   };
   const openCosts = (target) => { setCostTab("gastos"); setCostTarget(target); };
 
@@ -171,6 +181,7 @@ export default function WorkProjectBoard({
             emptyCopy={emptyTasksCopy}
             members={members}
             onAddTask={canManage && !terminal ? () => setCreateOpen(true) : undefined}
+            onDeleteTask={canManage && !terminal ? requestDelete : undefined}
             onOpenTask={(task) => setSelectedTaskId(task.id)}
             tasks={visibleTasks}
           />
@@ -186,6 +197,7 @@ export default function WorkProjectBoard({
         members={members}
         onClose={() => setSelectedTaskId("")}
         onOpenCosts={openCosts}
+        onRequestDelete={requestDelete}
         onRequestTaskState={requestTaskState}
         processing={processing}
         task={selectedTask}
@@ -193,6 +205,8 @@ export default function WorkProjectBoard({
       />
 
       <WorkTaskCreateDialog members={members} onClose={() => setCreateOpen(false)} onSubmit={actions.createTask} open={createOpen && canManage && !terminal} processing={processing} />
+
+      <WorkTaskDeleteDialog error={deleteError} onClose={closeDelete} onConfirm={confirmDelete} processing={processing} task={canManage && !terminal ? deletingTask : null} />
 
       <ResponsiveDialog
         open={Boolean(waitingTask)}

@@ -4,7 +4,7 @@ import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import StatusBadge from "../../components/ui/StatusBadge";
-import {WORK_TASK_STATUSES, getTaskProgress, getWorkCostSummary, getWorkHistoricalPersonIdentity, getWorkMemberIdentity, getWorkTaskStatusOptions} from "../../domain/workModel.mjs";
+import {WORK_TASK_STATUSES, getTaskProgress, getWorkCostSummary, getWorkHistoricalPersonIdentity, getWorkMemberIdentity, getWorkTaskDeletionState, getWorkTaskStatusOptions} from "../../domain/workModel.mjs";
 import {formatDate, formatMoney} from "../../utils/formatters.js";
 import useBusinessFormat from "../../hooks/useBusinessFormat";
 
@@ -20,7 +20,7 @@ import useBusinessFormat from "../../hooks/useBusinessFormat";
 // así el panel refleja los cambios que trae la recarga silenciosa; si la tarea
 // deja de existir, el panel se cierra solo.
 
-function PanelBody({actions, canManage, canOperate, costs, currency, members, onOpenCosts, onRequestTaskState, processing, task, terminal}) {
+function PanelBody({actions, canManage, canOperate, costs, currency, members, onOpenCosts, onRequestDelete, onRequestTaskState, processing, task, terminal}) {
   const {locale: businessLocale} = useBusinessFormat();
   const [subtaskTitle, setSubtaskTitle] = useState("");
   const [subtaskTitles, setSubtaskTitles] = useState({});
@@ -31,8 +31,10 @@ function PanelBody({actions, canManage, canOperate, costs, currency, members, on
   const busy = Boolean(processing);
   const legacy = task.modeloTareaVersion < 2;
   const showStateControl = !terminal && operable && (!task.completada || canManage);
-  // Igual que en la tarjeta anterior: la acción legacy solo existe donde también se puede cambiar el estado.
-  const showDelete = showStateControl && canManage && legacy && !task.completada;
+  // Eliminar (SPEC 028 §4.2): solo gestión y proyecto abierto; se deshabilita, con el motivo a la vista, si la
+  // tarea está completada o tiene costos (también anulados) o documentación. El backend decide en última instancia.
+  const showDelete = canManage && !terminal;
+  const deletion = getWorkTaskDeletionState(task, costs);
   // Nombre del snapshot, luego el del miembro actual y, si no hay ninguno, el correo (igual que la tarjeta).
   const responsableIdentity = task.responsableUid ? getWorkHistoricalPersonIdentity(task.responsableSnapshot, task.responsableUid, members, "Usuario sin identificar") : "Sin responsable";
   const assignedMember = members.find((entry) => entry.uid === task.responsableUid);
@@ -152,7 +154,8 @@ function PanelBody({actions, canManage, canOperate, costs, currency, members, on
 
       {showDelete && (
         <div className="works-task-panel__danger">
-          <button type="button" aria-label={`Eliminar ${task.titulo}`} disabled={busy} onClick={() => actions.removeLegacy(task)}>
+          {!deletion.canDelete && <p className="works-task-panel__hint" id={`task-delete-reason-${task.id}`}>{deletion.reason}</p>}
+          <button type="button" aria-label={`Eliminar ${task.titulo}`} aria-describedby={deletion.canDelete ? undefined : `task-delete-reason-${task.id}`} disabled={busy || !deletion.canDelete} onClick={() => onRequestDelete(task)}>
             <AppIcon icon={Trash2} size={15} />Eliminar
           </button>
         </div>

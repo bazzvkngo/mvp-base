@@ -381,6 +381,16 @@ button.works-task-board__card:focus-visible { outline: var(--focus-outline); out
 .works-task-card__cost > span:last-child { color: var(--color-text-default); font-weight: var(--font-weight-semibold); }
 .works-task-card__wait { align-items: flex-start; display: grid; gap: var(--space-1); justify-items: start; }
 .works-task-card__wait-reason { color: var(--color-text-default); font-size: var(--font-size-xs); overflow-wrap: anywhere; }
+/* Basurero de la tarjeta: hermano del botón que abre el panel, anclado a la esquina superior derecha. */
+.works-task-card { position: relative; }
+.works-task-card--deletable .works-task-card__title { padding-right: var(--space-8); }
+.works-task-card__delete { align-items: center; background: transparent; border: 0; border-radius: var(--radius-sm); color: var(--color-danger-700); cursor: pointer; display: inline-flex; height: var(--space-8); justify-content: center; padding: 0; position: absolute; right: var(--space-1); top: var(--space-1); width: var(--space-8); }
+.works-task-card__delete:hover:not([aria-disabled="true"]) { background: var(--color-danger-50); }
+.works-task-card__delete:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-offset); }
+.works-task-card__delete[aria-disabled="true"] { cursor: not-allowed; opacity: 0.62; }
+.works-task-delete { display: grid; gap: var(--space-3); }
+.works-task-delete__text { color: var(--color-text-default); margin: 0; overflow-wrap: anywhere; }
+.works-task-delete__text strong { color: var(--color-text-strong); }
 
 /* Panel de la tarea: lateral en escritorio, pantalla completa en móvil. */
 .works-task-panel-layer { align-items: stretch; justify-content: flex-end; padding: 0; }
@@ -391,8 +401,10 @@ button.works-task-board__card:focus-visible { outline: var(--focus-outline); out
 .works-task-panel__section > h3 { color: var(--color-text-strong); font-size: var(--font-size-sm); margin: 0; }
 .works-task-panel__cost { align-items: baseline; color: var(--color-text-muted); display: flex; font-size: var(--font-size-sm); justify-content: space-between; }
 .works-task-panel__cost > strong { color: var(--color-text-strong); }
-.works-task-panel__danger { border-top: 1px solid var(--color-border-subtle); display: flex; justify-content: flex-end; padding-top: var(--space-3); }
-.works-task-panel__danger button { align-items: center; background: transparent; border: 0; color: var(--color-danger-700); cursor: pointer; display: inline-flex; font-size: var(--font-size-xs); gap: var(--space-1); padding: var(--space-2); }
+.works-task-panel__danger { align-items: center; border-top: 1px solid var(--color-border-subtle); display: flex; gap: var(--space-3); justify-content: space-between; padding-top: var(--space-3); }
+.works-task-panel__danger .works-task-panel__hint { margin: 0; }
+.works-task-panel__danger button { align-items: center; background: transparent; border: 0; color: var(--color-danger-700); cursor: pointer; display: inline-flex; flex: 0 0 auto; font-size: var(--font-size-xs); gap: var(--space-1); margin-left: auto; padding: var(--space-2); }
+.works-task-panel__danger button:disabled { cursor: not-allowed; opacity: 0.62; }
 
 /* Diálogo de costos con pestañas (Gastos, Horas hombre, Materiales). */
 .works-cost-tabs { margin-bottom: var(--space-1); }
@@ -416,6 +428,10 @@ button.works-task-board__card:focus-visible { outline: var(--focus-outline); out
 @media(max-width:767px) {
   .works-task-panel.responsive-dialog { border-radius: 0; max-width: none; }
   .works-task-panel__row { grid-template-columns: minmax(0, 1fr); }
+  .works-task-card__delete { height: var(--space-10); width: var(--space-10); }
+  .works-task-card--deletable .works-task-card__title { padding-right: var(--space-10); }
+  .works-task-panel__danger { align-items: stretch; flex-direction: column; }
+  .works-task-panel__danger button { justify-content: center; margin-left: 0; min-height: var(--space-10); }
   .works-closed__filters { align-items: stretch; flex-direction: column; }
   .works-closed__filters .works-search { max-width: none; }
 }
