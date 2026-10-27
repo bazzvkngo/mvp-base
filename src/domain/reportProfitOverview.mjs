@@ -3,7 +3,7 @@ import {
   OPERATIONAL_NET_PROFIT_COVERAGE,
   OPERATIONAL_PROJECT_EXCLUSION,
 } from "./operationalNetProfit.mjs";
-import {formatMonthName} from "./reportMonthlySummary.mjs";
+import {formatMonthLabel, formatMonthName} from "./reportMonthlySummary.mjs";
 import {formatMoney} from "../utils/formatters.js";
 
 // SPEC 025 (Ganancia visual): helpers puros que preparan lo que la pestaña Ganancia
@@ -37,21 +37,28 @@ function moneyOf(value, currency, locale) {
 
 // --- Período -----------------------------------------------------------------
 
-// "Este mes" solo si el rango es un mes calendario (empieza el día 1 y termina en
-// el mismo mes, sea el mes completo o lo corrido de él); con cualquier otro rango
-// los textos dicen "en el período". `monthName` queda disponible para quien
-// prefiera nombrar el mes.
-export function describePeriod(range, {locale = "es-CL"} = {}) {
+// Cómo nombrar el período en los textos. Un mes calendario es un rango que empieza
+// el día 1 y termina en el mismo mes (el mes completo o lo corrido de él):
+//  - el mes ACTUAL dice "este mes";
+//  - cualquier otro mes calendario se nombra: "en octubre de 2026";
+//  - cualquier otro rango dice "en el período".
+// El helper no lee el reloj: la vista le pasa el mes actual (`currentMonthKey`,
+// "AAAA-MM"). Sin él no puede saber cuál es el actual y nombra el mes.
+export function describePeriod(range, {locale = "es-CL", currentMonthKey = null} = {}) {
   const start = String(range?.start || "");
   const end = String(range?.end || "");
   const valid = /^\d{4}-\d{2}-\d{2}$/.test(start) && /^\d{4}-\d{2}-\d{2}$/.test(end);
   const isCalendarMonth = valid && start.slice(8) === "01" && start.slice(0, 7) === end.slice(0, 7) && end >= start;
   const monthKey = isCalendarMonth ? start.slice(0, 7) : null;
+  const isCurrentMonth = Boolean(monthKey) && monthKey === currentMonthKey;
+  const monthLabel = monthKey ? formatMonthLabel(monthKey, locale).toLocaleLowerCase(locale) : null;
   return {
     isCalendarMonth,
+    isCurrentMonth,
     monthKey,
     monthName: monthKey ? formatMonthName(monthKey, locale) : null,
-    phrase: isCalendarMonth ? "este mes" : "en el período",
+    monthLabel,
+    phrase: isCurrentMonth ? "este mes" : monthLabel ? `en ${monthLabel}` : "en el período",
   };
 }
 
@@ -75,7 +82,8 @@ const HIDDEN_BAR = Object.freeze({show: false, kind: "hidden", segments: [], leg
 // `group`: un grupo de calculateOperationalNetProfit. Usa las ventas de productos
 // sin proyecto, su costo histórico y su ganancia (margen bruto), tal como vienen.
 //   kind: "profit" | "profit-only" (sin costo) | "break-even" (solo costo, ganancia 0)
-//         | "loss" (el costo supera lo vendido) | "hidden" (sin ventas de productos).
+//         | "loss" (el costo supera lo vendido) | "hidden" (sin ventas de productos o
+//         sin ningún tramo que dibujar).
 // `segments[].flex` es el propio importe (sirve de ancho relativo) y `width` la
 // fracción de la barra (0 a 1). En pérdida la barra es toda costo y la pérdida va
 // en la leyenda.
@@ -110,6 +118,9 @@ export function describeProductsBar(group, {locale = "es-CL"} = {}) {
       ariaLabel: `${title}: costo de lo vendido ${money(cost)} (${percentText(costPercent, locale)}) y una pérdida de ${money(lost)} (${percentText(lostPercent, locale)}).`,
     };
   }
+
+  // Ventas con costo 0 y ganancia 0 (cifras que no cuadran): no habría ningún tramo.
+  if (cost === 0 && profit === 0) return {...HIDDEN_BAR};
 
   const kind = cost === 0 ? "profit-only" : profit === 0 ? "break-even" : "profit";
   const {cost: costPercent, profit: profitPercent, decimals} = kind === "profit-only"
@@ -292,9 +303,9 @@ const PROJECT_ROWS = Object.freeze([
 // exacto que se pliegan detrás del botón. `status: "error"` cuando no se pudieron
 // cargar los balances (A9 general): ahí no se afirma nada sobre los proyectos.
 // Una partida sin dato (null) nunca se pliega, y "Resultado de proyectos" tampoco.
-export function describeProjectsSummary(group, {projects = [], range = null, locale = "es-CL"} = {}) {
+export function describeProjectsSummary(group, {projects = [], range = null, locale = "es-CL", currentMonthKey = null} = {}) {
   const currency = group?.moneda || undefined;
-  const period = describePeriod(range, {locale});
+  const period = describePeriod(range, {locale, currentMonthKey});
   const components = group?.componentes?.proyectos || {};
   const result = finiteOrNull(components.resultado);
   const included = Math.max(0, Math.trunc(finiteOrNull(components.proyectos) ?? 0));

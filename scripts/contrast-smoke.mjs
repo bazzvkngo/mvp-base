@@ -182,6 +182,14 @@ const PAIRS = [
   {fg: "--color-data-cost-labor", bg: "--color-surface-panel", kind: "nontext", note: "data-cost-labor / panel (paso 7)"},
   {fg: "--color-data-cost-direct", bg: "--color-surface-panel", kind: "nontext", note: "data-cost-direct / panel (paso 7)"},
   {fg: "--color-data-cost-indirect", bg: "--color-surface-panel", kind: "nontext", note: "data-cost-indirect / panel (paso 7)"},
+  // Ganancia visual (SPEC 025): barra costo | ganancia de productos. El costo va rayado
+  // (border-default y border-control) con contorno text-muted, y la ganancia lisa
+  // (success-700); aparte del color los distinguen la posición, el rayado y la leyenda.
+  {fg: "--color-success-700", bg: "--color-surface-panel", kind: "nontext", note: "success-700 / panel (tramo de ganancia de la barra)"},
+  {fg: "--color-success-700", bg: "--color-border-default", kind: "nontext", note: "success-700 / border-default (tramo de ganancia junto al costo)"},
+  {fg: "--color-border-control", bg: "--color-border-default", kind: "nontext", threshold: 1.2, note: "border-control / border-default (rayas del costo entre sí; solo textura, la forma la da el contorno)"},
+  {fg: "--color-text-muted", bg: "--color-surface-panel", kind: "nontext", note: "text-muted / panel (contorno del tramo de costo)"},
+  {fg: "--color-danger-700", bg: "--color-surface-panel", kind: "nontext", note: "danger-700 / panel (remate de pérdida de la barra)"},
   {fg: "--color-quote-status-draft", bg: "--color-surface-panel", kind: "nontext", note: "quote-status-draft / panel (paso 7)"},
   {fg: "--color-quote-status-issued", bg: "--color-surface-panel", kind: "nontext", note: "quote-status-issued / panel (paso 7)"},
   {fg: "--color-quote-status-accepted", bg: "--color-surface-panel", kind: "nontext", note: "quote-status-accepted / panel (paso 7)"},

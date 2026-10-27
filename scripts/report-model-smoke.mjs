@@ -548,7 +548,10 @@ assert.match(gananciasViewSource, /<OperationalNetProfitBreakdown/);
 assert.match(gananciasViewSource, /<MonthlyOperationalProfitChart/);
 assert.doesNotMatch(gananciasViewSource, /<SalesCommercialMarginV4Card|Análisis de margen comercial|<RankedMarginChart|Margen por cliente|Margen bruto por producto|buildClientOperationalProfit|buildProductGrossMargin/);
 assert.match(gananciasViewSource, /\{hasAlerts && <section[\s\S]*?<h2>Estado del sistema<\/h2>[\s\S]*?<OperationalSystemStatus/);
-assert.ok(gananciasViewSource.indexOf("<OperationalSystemStatus") > gananciasViewSource.indexOf("<MonthlyOperationalProfitChart"), "el estado del sistema va al final de Ganancia");
+// El estado del sistema sigue al final de Ganancia: vive dentro de `calculation`, que se dibuja después de la
+// evolución, plegado en el <details> (el orden en el archivo ya no es el de la pantalla; lo prueba el render del bloque 2b).
+assert.ok(gananciasViewSource.indexOf("<OperationalSystemStatus") < gananciasViewSource.indexOf("{foldCalculation ? <details"), "el estado del sistema está dentro del cálculo plegado");
+assert.ok(gananciasViewSource.indexOf("{foldCalculation ? <details") > gananciasViewSource.indexOf("<MonthlyOperationalProfitChart"), "el cálculo, con el estado del sistema, se dibuja después de la evolución");
 // SPEC 022 §6.5 (decisión del dueño): "Ganancias por Proyectos" y
 // ProjectProfitabilityV4Summary salen de esta pestaña.
 assert.doesNotMatch(gananciasViewSource, /Ganancias por Proyectos/);
@@ -1499,6 +1502,7 @@ console.log("OK reportes (gráfico de Ganancia): leyenda solo con series con dat
     ["sin dato de costo", overviewGroup({revenue: 100, cost: null, profit: 5})],
     ["costo negativo", overviewGroup({revenue: 100, cost: -1, profit: 101})],
     ["texto", overviewGroup({revenue: "100", cost: 10, profit: 90})],
+    ["ventas con costo 0 y ganancia 0 (sin ningún tramo)", overviewGroup({revenue: 500, cost: 0, profit: 0})],
     ["NaN", overviewGroup({revenue: Number.NaN, cost: 0, profit: 0})],
     ["sin grupo", undefined],
     ["grupo vacío", {}],
@@ -1513,17 +1517,22 @@ console.log("OK reportes (gráfico de Ganancia): leyenda solo con series con dat
   assert.ok(Math.abs(inconsistent.segments.reduce((total, segment) => total + segment.width, 0) - 1) < 0.001);
   assert.ok(norm(describeProductsBar(overviewGroup({revenue: 1000, cost: 600, profit: 400, moneda: "USD"})).title).includes("US$1.000"), "la moneda es la del grupo");
 
-  // --- Período: "este mes" solo con un mes calendario ---
-  assert.deepEqual(
-    ["2026-10-01|2026-10-31", "2026-10-01|2026-10-27", "2026-10-01|2026-10-01"].map((pair) => describePeriod({start: pair.split("|")[0], end: pair.split("|")[1]}).phrase),
-    ["este mes", "este mes", "este mes"], "mes completo, mes corrido y un solo día del día 1",
-  );
+  // --- Período: "este mes" solo con el mes calendario ACTUAL; otro mes se nombra ---
+  const monthRanges = ["2026-10-01|2026-10-31", "2026-10-01|2026-10-27", "2026-10-01|2026-10-01"].map((pair) => ({start: pair.split("|")[0], end: pair.split("|")[1]}));
+  assert.deepEqual(monthRanges.map((range) => describePeriod(range, {currentMonthKey: "2026-10"}).phrase), ["este mes", "este mes", "este mes"], "mes completo, mes corrido y un solo día del día 1, en el mes actual");
+  assert.deepEqual(monthRanges.map((range) => describePeriod(range, {currentMonthKey: "2026-11"}).phrase), ["en octubre de 2026", "en octubre de 2026", "en octubre de 2026"], "otro mes calendario se nombra");
+  assert.deepEqual(monthRanges.map((range) => describePeriod(range).phrase), ["en octubre de 2026", "en octubre de 2026", "en octubre de 2026"], "sin el mes actual el helper no puede decir \"este mes\"");
+  assert.deepEqual(monthRanges.map((range) => describePeriod(range, {currentMonthKey: "2026-10"}).isCurrentMonth), [true, true, true]);
+  assert.deepEqual([describePeriod(monthRanges[0], {currentMonthKey: "2026-11"}).isCurrentMonth, describePeriod(monthRanges[0], {currentMonthKey: "2026-11"}).monthLabel], [false, formatMonthLabel("2026-10").toLocaleLowerCase("es-CL")]);
+  assert.equal(describePeriod({start: "2025-12-01", end: "2025-12-31"}, {currentMonthKey: "2026-01"}).phrase, "en diciembre de 2025", "el mes anterior al actual, aun cruzando de año");
   for (const range of [
     {start: "2026-10-05", end: "2026-10-31"}, {start: "2026-09-01", end: "2026-10-27"}, {start: "2026-08-01", end: "2026-10-31"},
     {start: "2026-10-01", end: "2026-09-30"}, {start: "2026-10-01"}, {start: "no", end: "no"}, {}, null, undefined,
   ]) {
-    const period = describePeriod(range);
-    assert.deepEqual([period.isCalendarMonth, period.phrase, period.monthKey, period.monthName], [false, "en el período", null, null], JSON.stringify(range));
+    for (const currentMonthKey of [null, "2026-10"]) {
+      const period = describePeriod(range, {currentMonthKey});
+      assert.deepEqual([period.isCalendarMonth, period.isCurrentMonth, period.phrase, period.monthKey, period.monthName, period.monthLabel], [false, false, "en el período", null, null, null], JSON.stringify(range));
+    }
   }
   assert.deepEqual([describePeriod({start: "2026-10-01", end: "2026-10-31"}).monthKey, describePeriod({start: "2026-10-01", end: "2026-10-31"}).monthName], ["2026-10", formatMonthName("2026-10")]);
   const octoberRange = {start: "2026-10-01", end: "2026-10-31"};
@@ -1611,7 +1620,7 @@ console.log("OK reportes (gráfico de Ganancia): leyenda solo con series con dat
 
   // --- Tarjeta de proyectos ---
   const monthlyClp = monthlyProfitOctober.grupos.find((entry) => entry.moneda === "CLP");
-  const projectsCard = describeProjectsSummary(monthlyClp, {projects: projectFixtures, range: octoberRange});
+  const projectsCard = describeProjectsSummary(monthlyClp, {projects: projectFixtures, range: octoberRange, currentMonthKey: "2026-10"});
   assert.equal(projectsCard.status, "ready");
   assert.equal(projectsCard.result, monthlyClp.componentes.proyectos.resultado, "el resultado es el del grupo, sin recalcular");
   assert.deepEqual([projectsCard.included, projectsCard.excluded], [5, 1]);
@@ -1621,22 +1630,27 @@ console.log("OK reportes (gráfico de Ganancia): leyenda solo con series con dat
   assert.deepEqual([projectsCard.zeroCount, norm(projectsCard.toggle.showLabel), norm(projectsCard.toggle.hideLabel), projectsCard.toggle.show], [3, "Mostrar 3 partidas en $0", "Ocultar las partidas en $0", true]);
   assert.equal(describeProjectsSummary(monthlyClp, {projects: projectFixtures, range: customRange}).sentence, "5 proyectos con movimiento entran en la ganancia en el período. 1 proyecto quedó excluido.", "un rango que no es un mes dice \"en el período\"");
   assert.equal(describeProjectsSummary(monthlyClp, {projects: projectFixtures, range: customRange}).resultLabel, "resultado de proyectos en el período");
+  // Un mes calendario que no es el actual se nombra, no dice "este mes".
+  const pastMonthCard = describeProjectsSummary(mockupProfit, {projects: [mockupProject], range: octoberRange, currentMonthKey: "2026-11"});
+  assert.equal(pastMonthCard.sentence, "Ningún proyecto con movimiento entra en la ganancia en octubre de 2026.");
+  assert.equal(pastMonthCard.resultLabel, "resultado de proyectos en octubre de 2026");
+  assert.equal(describeProjectsSummary(mockupProfit, {projects: [mockupProject], range: octoberRange}).sentence, "Ningún proyecto con movimiento entra en la ganancia en octubre de 2026.", "sin el mes actual se nombra el mes");
   // La maqueta: ningún proyecto entra y 1 queda excluido; las seis partidas están en cero.
-  const noneIncluded = describeProjectsSummary(mockupProfit, {projects: [mockupProject], range: octoberRange});
+  const noneIncluded = describeProjectsSummary(mockupProfit, {projects: [mockupProject], range: octoberRange, currentMonthKey: "2026-10"});
   assert.equal(noneIncluded.sentence, "Ningún proyecto con movimiento entra en la ganancia este mes.");
   assert.deepEqual([noneIncluded.result, noneIncluded.zeroCount, norm(noneIncluded.toggle.showLabel)], [0, 6, "Mostrar 6 partidas en $0"]);
   assert.equal(describeProjectsSummary(mockupProfit, {projects: [mockupProject], range: customRange}).sentence, "Ningún proyecto con movimiento entra en la ganancia en el período.");
   // Sin proyectos con movimiento ni excluidos.
-  const noProjects = describeProjectsSummary(overviewGroup({revenue: 100, cost: 60, profit: 40}), {range: octoberRange});
+  const noProjects = describeProjectsSummary(overviewGroup({revenue: 100, cost: 60, profit: 40}), {range: octoberRange, currentMonthKey: "2026-10"});
   assert.deepEqual([noProjects.sentence, noProjects.zeroCount, noProjects.included, noProjects.excluded], ["Sin proyectos con movimiento este mes.", 6, 0, 0]);
   assert.equal(describeProjectsSummary(overviewGroup({}), {}).sentence, "Sin proyectos con movimiento en el período.", "sin rango: en el período");
   // Una partida sin dato no se pliega; la moneda es la del grupo; singular.
-  const partial = describeProjectsSummary(overviewGroup({moneda: "USD", projects: {ingresoNeto: null, materialesVenta: 10, materialesAdicionales: 20, horasHombre: 30, gastosDirectos: 40, gastosIndirectos: 0}}), {range: octoberRange});
+  const partial = describeProjectsSummary(overviewGroup({moneda: "USD", projects: {ingresoNeto: null, materialesVenta: 10, materialesAdicionales: 20, horasHombre: 30, gastosDirectos: 40, gastosIndirectos: 0}}), {range: octoberRange, currentMonthKey: "2026-10"});
   assert.deepEqual([partial.zeroCount, partial.rows[0].zero, partial.rows[0].value], [1, false, null]);
   assert.deepEqual([norm(partial.toggle.showLabel), norm(partial.toggle.hideLabel)], ["Mostrar 1 partida en US$0,00", "Ocultar la partida en US$0,00"]);
   assert.deepEqual(describeProjectsSummary(overviewGroup({projects: {ingresoNeto: 1, materialesVenta: 1, materialesAdicionales: 1, horasHombre: 1, gastosDirectos: 1, gastosIndirectos: 1}})).toggle, {show: false, showLabel: "Mostrar 0 partidas en $0", hideLabel: "Ocultar las partidas en $0"}, "sin partidas en cero el botón no se muestra");
   // Los balances no cargaron (A9 general): no se afirma nada sobre los proyectos.
-  const loadFailed = describeProjectsSummary(overviewGroup({cobertura: "PARCIAL", alertas: [{id: "A9", conteo: 1, monto: null, registros: []}]}), {range: octoberRange});
+  const loadFailed = describeProjectsSummary(overviewGroup({cobertura: "PARCIAL", alertas: [{id: "A9", conteo: 1, monto: null, registros: []}]}), {range: octoberRange, currentMonthKey: "2026-10"});
   assert.deepEqual([loadFailed.status, loadFailed.sentence, loadFailed.zeroCount, loadFailed.toggle.show], ["error", "No fue posible cargar los balances de los proyectos.", 0, false]);
   assert.equal(describeProjectsSummary(undefined).status, "ready");
   assert.equal(describeProjectsSummary(undefined).result, null);
@@ -1647,4 +1661,198 @@ console.log("OK reportes (gráfico de Ganancia): leyenda solo con series con dat
   assert.match(overviewSource, /import \{formatMoney\} from "\.\.\/utils\/formatters\.js";/);
 }
 console.log("OK reportes (ganancia visual, bloque 1): barra de productos, por qué es parcial, tarjeta de proyectos y período, con casos límite");
+// Ganancia visual, bloque 2: parte superior de la pestaña Ganancia ("Me quedó", margen en texto y barra de productos).
+{
+  const heroSource = readFileSync("src/features/reports/ProfitSummaryCards.jsx", "utf8");
+  const heroViewSource = readFileSync("src/features/reports/views/ReportsGananciasView.jsx", "utf8");
+  const heroCss = readFileSync("src/styles/interior.css", "utf8");
+  // La vista monta la tarjeta antes del desglose; la tarjeta solo presenta (no suma ni divide) y no usa colores literales.
+  assert.match(heroViewSource, /import ProfitSummaryCards from "\.\.\/ProfitSummaryCards";/);
+  assert.ok(heroViewSource.indexOf("<ProfitSummaryCards currency={currency} currentMonthKey={currentMonthKey} range={range} state={operationalProfit} />") > -1 && heroViewSource.indexOf("<ProfitSummaryCards") < heroViewSource.indexOf("{foldCalculation ? <details"), "la tarjeta va arriba del cálculo");
+  assert.match(heroSource, /describeProductsBar\(group, \{locale\}\)/);
+  assert.doesNotMatch(heroSource, /\s\/\s|\*\s*100|\.reduce\(|#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|[Cc]ompra/, "solo presenta: sin divisiones, sumas, colores literales ni Compras");
+  assert.doesNotMatch(heroSource, /Cobertura parcial|Ganancia neta operacional|ganancia neta|utilidad neta/);
+  // Estilos: cifra con --font-size-2xl, costo rayado y con contorno, ganancia lisa y reglas móviles; solo tokens.
+  assert.match(heroCss, /\.reports-profit-hero__amount \{[^}]*font-size: var\(--font-size-2xl\);/);
+  assert.match(heroCss, /\.reports-profit-hero__amount--up \{\s*color: var\(--color-success-700\);/);
+  assert.match(heroCss, /\.reports-profit-hero__amount--down \{\s*color: var\(--color-danger-700\);/);
+  assert.match(heroCss, /\.reports-products-bar__segment--cost,\s*\.reports-products-bar__swatch--cost \{[^}]*repeating-linear-gradient\(135deg, var\(--color-border-default\)[^}]*var\(--color-border-control\)[^}]*border: 1px solid var\(--color-text-muted\);/, "el costo va rayado y con contorno");
+  assert.match(heroCss, /\.reports-products-bar__segment--profit,\s*\.reports-products-bar__swatch--profit \{\s*background: var\(--color-success-700\);/, "la ganancia va lisa");
+  assert.match(heroCss, /\.reports-products-bar__loss,\s*\.reports-products-bar__swatch--loss \{\s*background: var\(--color-danger-700\);/);
+  assert.match(heroCss, /\.reports-products-bar__segment \{[^}]*flex-basis: 0;[^}]*min-width: var\(--space-1\);/, "el ancho sale del importe y ningún tramo desaparece");
+  assert.match(heroCss, /@media \(max-width: 640px\) \{\s*\.reports-profit-hero__margin \{\s*justify-items: start;[\s\S]*?\.reports-products-bar__legend \{\s*flex-direction: column;/);
+  const heroCssStart = heroCss.indexOf('/* Ganancia visual (SPEC 025): "Me quedó"');
+  const heroCssBlock = heroCss.slice(heroCssStart, heroCss.indexOf("flex-direction: column;", heroCssStart) + 30);
+  assert.ok(heroCssStart > -1 && heroCssBlock.length > 500);
+  assert.doesNotMatch(heroCssBlock, /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|--color-brand-[6-9]00|--color-dark-/, "solo tokens");
+  const contrastSource = readFileSync("scripts/contrast-smoke.mjs", "utf8");
+  for (const pair of ['fg: "--color-success-700", bg: "--color-border-default", kind: "nontext"', 'fg: "--color-text-muted", bg: "--color-surface-panel", kind: "nontext"', 'fg: "--color-danger-700", bg: "--color-surface-panel", kind: "nontext"']) {
+    assert.ok(contrastSource.includes(pair), `contrast-smoke mide ${pair}`);
+  }
+
+  const heroVite = await createServer({appType: "custom", logLevel: "silent", server: {middlewareMode: true}});
+  try {
+    const {default: ProfitSummaryCards} = await heroVite.ssrLoadModule("/src/features/reports/ProfitSummaryCards.jsx");
+    const zero = {proyectos: 0, ingresoNeto: 0, materialesVenta: 0, materialesAdicionales: 0, horasHombre: 0, gastosDirectos: 0, gastosIndirectos: 0, costoTotal: 0, resultado: 0};
+    const heroGroup = ({moneda = "CLP", cobertura = "COMPLETA", profit = 0, pct = null, revenue = 0, cost = 0, margin = 0} = {}) => ({
+      moneda, agregable: Boolean(moneda), cobertura, gananciaNetaOperacional: profit, gananciaNetaOperacionalPct: pct, ingresoNetoConsiderado: revenue,
+      componentes: {ventasSinProyecto: {ventas: 1, ingresoNetoProductos: revenue, costoHistoricoProductos: cost, margenBrutoProductos: margin}, proyectos: zero},
+      ventasSinCostoRegistrado: {ventas: 0, monto: 0}, alertas: [],
+    });
+    const renderHero = (grupos, {currency = "todos", status = "ready"} = {}) => plain(renderToStaticMarkup(React.createElement(ProfitSummaryCards, {
+      currency, state: {status, error: "", result: status === "ready" ? {grupos, alertasGenerales: []} : null},
+    })));
+    const countOf = (text, pattern) => (text.match(pattern) || []).length;
+
+    // La maqueta (octubre de 2026): Me quedó $16.616, Parcial, 20 % y la barra de $83.089 en productos.
+    const mockup = renderHero([heroGroup({cobertura: "PARCIAL", profit: 16616, pct: 20, revenue: 83089, cost: 66473, margin: 16616})]);
+    for (const text of [">Me quedó<", ">Parcial<", "$16.616", "20 %", "margen sobre ventas", "De los $83.089 que vendiste en productos", "Costo de lo vendido · 80 %", "Ganancia de productos · 20 %", "<strong>$66.473</strong>", "<strong>$16.616</strong>"]) {
+      assert.ok(mockup.includes(text), `falta ${text}`);
+    }
+    assert.ok(mockup.includes('role="img" aria-label="De los $83.089 que vendiste en productos: costo de lo vendido $66.473 (80 %) y ganancia $16.616 (20 %)."'), "la barra tiene su descripción accesible completa");
+    assert.ok(mockup.includes("flex-grow:66473") && mockup.includes("flex-grow:16616"), "el ancho de cada tramo es su importe");
+    assert.ok(mockup.indexOf("reports-products-bar__segment--cost") < mockup.indexOf("reports-products-bar__segment--profit"), "costo a la izquierda, ganancia a la derecha");
+    assert.ok(mockup.includes("reports-profit-hero__amount--up") && !mockup.includes("reports-products-bar__loss"));
+    assert.doesNotMatch(mockup, /Cobertura parcial|reports-v4-currency-group|reports-profit-hero__currency/, "sin la insignia larga del desglose ni rótulo de moneda con una sola");
+    assert.ok(mockup.indexOf(">Me quedó<") < mockup.indexOf(">Parcial<") && mockup.indexOf(">Parcial<") < mockup.indexOf("$16.616") && mockup.indexOf("$16.616") < mockup.indexOf("reports-products-bar"), "orden: título y chip, cifra y barra");
+    assert.equal(countOf(mockup, /<section class="erp-card reports-profit-hero">/g), 1);
+    // Cobertura completa: sin chip.
+    assert.doesNotMatch(renderHero([heroGroup({profit: 16616, pct: 20, revenue: 83089, cost: 66473, margin: 16616})]), />Parcial</);
+    // Pérdida: cifra en rojo con su signo, margen negativo en texto, barra toda costo con remate y leyenda de pérdida.
+    const loss = renderHero([heroGroup({profit: -200, pct: -20, revenue: 1000, cost: 1200, margin: -200})]);
+    assert.ok(loss.includes("reports-profit-hero__amount--down") && loss.includes("$-200") && loss.includes("-20 %"));
+    assert.ok(loss.includes("reports-products-bar__loss") && loss.includes("Pérdida de productos · 20 %") && loss.includes("Costo de lo vendido · 120 %"));
+    assert.ok(!loss.includes("reports-products-bar__segment--profit"), "no hay tramo de ganancia");
+    // Sin ventas de productos (o sin ningún tramo): la barra no se dibuja y la cifra sigue.
+    for (const input of [heroGroup({profit: 0, pct: null}), heroGroup({profit: 0, pct: null, revenue: 500, cost: 0, margin: 0})]) {
+      const noBar = renderHero([input]);
+      assert.ok(noBar.includes("$0") && !noBar.includes("reports-products-bar"), "sin barra");
+      assert.doesNotMatch(noBar, /margen sobre ventas/, "sin margen no se dice");
+    }
+    // Sin cifra (grupo sin moneda declarada): "—", sin margen ni barra.
+    const noFigure = renderHero([{...heroGroup({moneda: null, cobertura: "PARCIAL"}), gananciaNetaOperacional: null}]);
+    assert.ok(noFigure.includes("reports-profit-hero__amount--none") && noFigure.includes(">—<") && noFigure.includes(">Parcial<") && !noFigure.includes("reports-products-bar"));
+    // Varias monedas: una tarjeta por moneda, con su rótulo; el filtro deja solo la elegida; sin datos o sin cargar no se dibuja nada.
+    const two = renderHero([heroGroup({profit: 100, pct: 10, revenue: 1000, cost: 900, margin: 100}), heroGroup({moneda: "USD", profit: 5, pct: 10, revenue: 50, cost: 45, margin: 5})]);
+    assert.equal(countOf(two, /<section class="erp-card reports-profit-hero">/g), 2);
+    assert.ok(two.includes('reports-profit-hero__currency">CLP<') && two.includes('reports-profit-hero__currency">USD<'));
+    assert.ok(two.includes("US$") && two.includes("De los US$50"), "cada barra usa la moneda de su grupo");
+    const onlyUsd = renderHero([heroGroup({profit: 100, pct: 10, revenue: 1000, cost: 900, margin: 100}), heroGroup({moneda: "USD", profit: 5, pct: 10, revenue: 50, cost: 45, margin: 5})], {currency: "USD"});
+    assert.equal(countOf(onlyUsd, /<section class="erp-card reports-profit-hero">/g), 1);
+    assert.doesNotMatch(onlyUsd, /reports-profit-hero__currency/, "con un solo grupo visible no se rotula la moneda");
+    assert.equal(renderHero([heroGroup({cobertura: "SIN_DATOS", profit: null})]), "", "un grupo sin datos no tiene Me quedó");
+    assert.equal(renderHero([]), "");
+    assert.equal(renderHero([], {status: "loading"}), "", "mientras carga lo dice el desglose, no esta tarjeta");
+    assert.equal(renderHero([], {status: "error"}), "");
+  } finally {
+    await heroVite.close();
+  }
+}
+console.log("OK reportes (ganancia visual, bloque 2): Me quedó con chip Parcial, margen en texto y barra de productos con costo rayado, leyenda y descripción accesible");
+// Ganancia visual, bloque 2b: relleno y grosor de la tarjeta, nota y "Ventas sin costo registrado" visibles, y el cálculo plegado.
+{
+  const foldViewSource = readFileSync("src/features/reports/views/ReportsGananciasView.jsx", "utf8");
+  const foldBreakdownSource = readFileSync("src/features/reports/OperationalNetProfitBreakdown.jsx", "utf8");
+  const foldPageSource = readFileSync("src/pages/StatisticsPage.jsx", "utf8");
+  const foldCss = readFileSync("src/styles/interior.css", "utf8");
+  // Causa del relleno que faltaba: .erp-card no declara padding; cada tarjeta lo trae con su propia clase.
+  assert.doesNotMatch(foldCss.match(/\.erp-card \{[^}]*\}/)[0], /padding/, ".erp-card no trae relleno: la tarjeta lo declara completo");
+  assert.match(foldCss, /\.reports-profit-hero \{[^}]*padding: var\(--space-6\) var\(--space-6\) calc\(var\(--space-6\) \+ var\(--space-1\)\);/, "relleno en los cuatro lados");
+  assert.match(foldCss, /\.reports-profit-heroes \{[^}]*margin-top: var\(--space-2\);/, "espacio entre las pestañas y la tarjeta");
+  assert.match(foldCss, /\.reports-products-bar__track \{[^}]*height: var\(--space-10\);/, "la barra mide --space-10 de alto");
+  assert.match(foldCss, /\.reports-products-bar__segment \{[^}]*border-radius: var\(--radius-md\);/, "esquinas redondeadas");
+  assert.match(foldCss, /@media \(max-width: 640px\) \{[\s\S]*?\.reports-profit-hero \{\s*padding: var\(--space-4\) var\(--space-4\) calc\(var\(--space-4\) \+ var\(--space-1\)\);/, "relleno menor en móvil");
+  const foldCssStart = foldCss.indexOf('/* "Ver el cálculo paso a paso"');
+  const foldCssBlock = foldCss.slice(foldCssStart, foldCss.indexOf("margin-top: var(--space-3);", foldCssStart) + 30);
+  assert.ok(foldCssStart > -1 && foldCssBlock.length > 300);
+  assert.doesNotMatch(foldCssBlock, /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|--color-brand-[6-9]00|--color-dark-/, "solo tokens");
+  assert.match(foldCssBlock, /\.reports-calc-details__summary \{[^}]*border: 1px dashed var\(--color-border-control\);[^}]*color: var\(--color-text-brand\);/);
+  assert.match(foldCssBlock, /\.reports-calc-details\[open\] \.reports-calc-details__chevron \{\s*transform: rotate\(180deg\);/);
+  // Piezas: la nota y "Ventas sin costo registrado" salen del cálculo plegado y viven bajo "Me quedó".
+  assert.match(foldBreakdownSource, /export function ProfitNote\(\)/);
+  assert.match(foldBreakdownSource, /export function ServicesWithoutCostNote\(\{group\}\)/);
+  assert.equal((foldBreakdownSource.match(/No incluye gastos generales del negocio/g) || []).length, 1, "la nota existe una sola vez");
+  assert.equal((foldBreakdownSource.match(/Ventas sin costo registrado:/g) || []).length, 1, "la línea de ventas sin costo existe una sola vez");
+  assert.match(readFileSync("src/features/reports/ProfitSummaryCards.jsx", "utf8"), /<ProfitNote \/>\s*<ServicesWithoutCostNote group=\{group\} \/>/);
+  // Vista: el cálculo plegado y cerrado por defecto, después de la evolución; el mes actual llega desde la página.
+  assert.match(foldViewSource, /<details className="reports-calc-details">\s*<summary className="reports-calc-details__summary">\s*<span>Ver el cálculo paso a paso<\/span>/);
+  assert.doesNotMatch(foldViewSource, /<details[^>]*\bopen\b/, "cerrado por defecto");
+  assert.ok(foldViewSource.indexOf("<MonthlyOperationalProfitChart") < foldViewSource.indexOf("<details"), "el plegable va después de la evolución");
+  assert.ok(foldViewSource.indexOf("<ProfitSummaryCards") < foldViewSource.indexOf("<MonthlyOperationalProfitChart"), "Me quedó va arriba");
+  assert.doesNotMatch(foldViewSource, /revisa el estado del sistema al final de esta página/, "la nota antigua ya no es cierta");
+  assert.match(foldViewSource, /\* Mes con cobertura parcial: abre «Ver el cálculo paso a paso», más abajo, para ver el estado del sistema\./);
+  assert.match(foldViewSource, /\{hasAlerts && <section className="erp-card reports-detail-section reports-plain-headings">[\s\S]*?<h2>Estado del sistema<\/h2>[\s\S]*?<OperationalSystemStatus[\s\S]*?\{foldCalculation \? <details/, "el estado del sistema queda dentro del mismo plegable");
+  assert.match(foldViewSource, /const foldCalculation = Boolean\(result\) && visibleOperationalGroups\(result, currency\)\.some\(\(group\) => group\.cobertura !== COVERAGE\.EMPTY\);/);
+  assert.match(foldViewSource, /<ProfitSummaryCards currency=\{currency\} currentMonthKey=\{currentMonthKey\} range=\{range\} state=\{operationalProfit\} \/>/);
+  assert.match(foldPageSource, /<ReportsGananciasView currency=\{selectedCurrency\} currentMonthKey=\{currentMonthKey\(today\)\}/, "la página pasa el mes actual");
+
+  const foldVite = await createServer({appType: "custom", logLevel: "silent", server: {middlewareMode: true}});
+  try {
+    const {default: ReportsGananciasView} = await foldVite.ssrLoadModule("/src/features/reports/views/ReportsGananciasView.jsx");
+    const zeroComponents = {proyectos: 0, ingresoNeto: 0, materialesVenta: 0, materialesAdicionales: 0, horasHombre: 0, gastosDirectos: 0, gastosIndirectos: 0, costoTotal: 0, resultado: 0};
+    const foldGroup = (extra = {}) => ({
+      moneda: "CLP", agregable: true, cobertura: "PARCIAL", gananciaNetaOperacional: 16616, gananciaNetaOperacionalPct: 20, ingresoNetoConsiderado: 83089,
+      componentes: {ventasSinProyecto: {ventas: 3, ingresoNetoProductos: 83089, costoHistoricoProductos: 66473, margenBrutoProductos: 16616}, proyectos: zeroComponents},
+      ventasSinCostoRegistrado: {ventas: 2, monto: 60000},
+      alertas: [{id: "A8", clave: "LECTURA_TRUNCADA", efecto: "COBERTURA_PARCIAL", conteo: 1, monto: null, registros: []}], ...extra,
+    });
+    const foldProps = (state, extra = {}) => ({
+      currency: "todos", currentMonthKey: "2026-10", links: {sales: true, works: true}, navigate: () => {},
+      profitabilityV4: {canView: true, reload: () => {}, commercial: {status: "ready", meta: {items: [], lecturaTruncada: false}}, projects: {status: "ready", meta: {proyectos: []}}},
+      operationalProfit: state, range: {start: "2026-10-01", end: "2026-10-31", days: 31}, ...extra,
+    });
+    const readyState = (grupos, alertasGenerales = []) => ({status: "ready", error: "", result: {grupos, alertasGenerales, periodo: {proyectosPorMesCompleto: false}}});
+    const renderFold = (state, extra) => plain(renderToStaticMarkup(React.createElement(ReportsGananciasView, foldProps(state, extra))));
+
+    const folded = renderFold(readyState([foldGroup()]));
+    const detailsAt = folded.indexOf('<details class="reports-calc-details">');
+    assert.ok(detailsAt > -1, "hay un plegable");
+    const before = folded.slice(0, detailsAt);
+    const inside = folded.slice(detailsAt);
+    assert.doesNotMatch(folded.slice(detailsAt, detailsAt + 40), /\bopen\b/, "cerrado por defecto");
+    // Visible fuera del plegable: Me quedó, su barra, la nota fija y "Ventas sin costo registrado".
+    for (const text of [">Me quedó<", ">Parcial<", "$16.616", "margen sobre ventas", "De los $83.089 que vendiste en productos", "Ganancia: ventas sin IVA menos costos registrados de productos y proyectos. No incluye gastos generales del negocio.", "Ventas sin costo registrado: $60.000"]) {
+      assert.ok(before.includes(text), `fuera del plegable falta ${text}`);
+      assert.ok(!inside.includes(text) || text === ">Parcial<" || text === "$16.616", `${text} no se repite dentro del plegable`);
+    }
+    assert.equal((folded.match(/No incluye gastos generales del negocio/g) || []).length, 1);
+    assert.equal((folded.match(/Ventas sin costo registrado:/g) || []).length, 1);
+    // Lo que se pliega: el desglose antiguo (cifras, margen, insignia y tablas) y el estado del sistema.
+    for (const text of ["Ver el cálculo paso a paso", "Ganancia (parcial)", "Margen sobre ventas", "Cobertura parcial", "Ventas sin proyecto", "Resultado de proyectos", ">Total<", "Estado del sistema", "Lectura truncada"]) {
+      assert.ok(inside.includes(text), `dentro del plegable falta ${text}`);
+      assert.ok(!before.includes(text), `${text} no debe estar a la vista`);
+    }
+    assert.ok(before.indexOf(">Me quedó<") > -1 && before.indexOf(">Me quedó<") < before.indexOf("De los $83.089"), "Me quedó arriba de la barra");
+    assert.ok(inside.indexOf("Ganancia del período") < inside.indexOf("Estado del sistema"), "el estado del sistema queda dentro, al final");
+    // Con evolución mensual (proyectos de octubre): Me quedó, luego la evolución con su nota y al final el plegable con el estado del sistema.
+    const withChart = renderFold(readyState([foldGroup()]), {profitabilityV4: {...foldProps(null).profitabilityV4, projects: {status: "ready", meta: {proyectos: projectFixtures}}}});
+    const chartAt = withChart.indexOf("Evolución mensual");
+    assert.ok(withChart.indexOf(">Me quedó<") < chartAt && chartAt < withChart.indexOf("<details"), "orden: Me quedó, evolución, cálculo plegado");
+    assert.ok(withChart.indexOf("Estado del sistema") > withChart.indexOf("<details"), "el estado del sistema queda al final, dentro del plegable");
+    assert.ok(withChart.slice(0, withChart.indexOf("<details")).includes("* Mes con cobertura parcial: abre «Ver el cálculo paso a paso», más abajo, para ver el estado del sistema."), "la nota apunta a algo que existe");
+    assert.doesNotMatch(withChart, /al final de esta página/);
+    // Sin alertas: el plegable no trae la sección de estado.
+    const folded2 = renderFold(readyState([foldGroup({cobertura: "COMPLETA", alertas: [], ventasSinCostoRegistrado: {ventas: 0, monto: 0}})]));
+    assert.ok(folded2.includes('<details class="reports-calc-details">') && !folded2.includes("Estado del sistema") && !folded2.includes("Ventas sin costo registrado:"));
+    // Nombre del período para lector de pantalla: el mes actual, otro mes o un rango.
+    assert.ok(folded.includes('Me quedó<span class="sr-only"> este mes</span>'));
+    assert.ok(renderFold(readyState([foldGroup()]), {currentMonthKey: "2026-11"}).includes('Me quedó<span class="sr-only"> en octubre de 2026</span>'));
+    assert.ok(renderFold(readyState([foldGroup()]), {range: {start: "2026-09-05", end: "2026-10-31", days: 57}}).includes('Me quedó<span class="sr-only"> en el período</span>'));
+    // Cargando, con error, sin datos o sin grupos con cifra: el desglose queda a la vista (ahí viven el indicador, el error y el vacío).
+    const loading = renderFold({status: "loading", result: null, error: ""});
+    assert.ok(loading.includes("Calculando ganancia...") && !loading.includes("<details") && !loading.includes(">Me quedó<"));
+    const failed = renderFold({status: "error", result: null, error: "No se pudo calcular."});
+    assert.ok(failed.includes("No se pudo calcular.") && failed.includes("Reintentar") && !failed.includes("<details"));
+    const noGroups = renderFold(readyState([]));
+    assert.ok(noGroups.includes("No hay ventas ni costos de proyecto en el período seleccionado.") && !noGroups.includes("<details"));
+    const noData = renderFold(readyState([foldGroup({cobertura: "SIN_DATOS", gananciaNetaOperacional: null, alertas: [], ventasSinCostoRegistrado: {ventas: 0, monto: 0}})]));
+    assert.ok(!noData.includes("<details") && !noData.includes(">Me quedó<"), "un grupo sin datos no se pliega");
+    // Perfil sin permiso: el mensaje de siempre y nada de lo demás.
+    const denied = renderFold(readyState([foldGroup()]), {profitabilityV4: {...foldProps(null).profitabilityV4, canView: false}});
+    assert.ok(denied.includes("Tu perfil no incluye información de ganancias.") && !denied.includes(">Me quedó<") && !denied.includes("<details"));
+  } finally {
+    await foldVite.close();
+  }
+}
+console.log("OK reportes (ganancia visual, bloque 2b): relleno, grosor y espacio de la tarjeta; nota y ventas sin costo visibles; cálculo y estado del sistema plegados");
 console.log("Report model smoke: OK");

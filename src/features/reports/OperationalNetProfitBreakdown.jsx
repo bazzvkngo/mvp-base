@@ -67,6 +67,26 @@ function BreakdownTable({caption, rows, currency}) {
   </table></div>;
 }
 
+// Nota fija de la ganancia (SPEC 022 §6.2 punto 1): va siempre visible bajo "Me quedó",
+// no dentro del cálculo plegado.
+export function ProfitNote() {
+  return <p className="reports-v4-note">
+    Ganancia: ventas sin IVA menos costos registrados de productos y proyectos.
+    {" "}No incluye gastos generales del negocio.
+  </p>;
+}
+
+// Línea "Ventas sin costo registrado" (SPEC 022 §4.4): servicios vendidos sin
+// proyecto, fuera de la ganancia. También visible bajo "Me quedó".
+export function ServicesWithoutCostNote({group}) {
+  const { locale: businessLocale } = useBusinessFormat();
+  if (!(group?.ventasSinCostoRegistrado?.ventas > 0)) return null;
+  return <p className="reports-v4-note">
+    Ventas sin costo registrado: {money(group.ventasSinCostoRegistrado.monto, group.moneda, businessLocale)} — servicios vendidos sin
+    proyecto. No se incluyen en la ganancia porque no tienen costos asociados.
+  </p>;
+}
+
 function CurrencyBreakdown({group}) {
   const { locale: businessLocale } = useBusinessFormat();
   const partial = group.cobertura === COVERAGE.PARTIAL;
@@ -90,11 +110,6 @@ function CurrencyBreakdown({group}) {
         <small>{money(group.ingresoNetoConsiderado, currency, businessLocale)} de ingreso neto</small>
       </div>
     </dl>
-    <p className="reports-v4-note">
-      Ganancia: ventas sin IVA menos costos registrados de productos y proyectos.
-      {" "}No incluye gastos generales del negocio.
-    </p>
-
     <div className="reports-detail-grid">
       <BreakdownTable caption="Ventas sin proyecto" currency={currency} rows={[
         ["Ventas de productos (sin IVA)", sales.ingresoNetoProductos],
@@ -116,11 +131,6 @@ function CurrencyBreakdown({group}) {
         [partial ? "Ganancia (parcial)" : "Ganancia", group.gananciaNetaOperacional, true],
       ]} />
     </div>
-
-    {group.ventasSinCostoRegistrado.ventas > 0 && <p className="reports-v4-note">
-      Ventas sin costo registrado: {money(group.ventasSinCostoRegistrado.monto, currency, businessLocale)} — servicios vendidos sin
-      proyecto. No se incluyen en la ganancia porque no tienen costos asociados.
-    </p>}
   </article>;
 }
 

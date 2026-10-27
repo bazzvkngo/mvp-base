@@ -1402,6 +1402,240 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Ganancia visual (SPEC 025): "Me quedó", su margen en texto y la barra de
+   productos. Solo tokens. El costo (izquierda) va rayado y con contorno y la
+   ganancia (derecha) lisa, para que no se distingan solo por color. */
+.reports-profit-heroes {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+/* .erp-card no trae relleno propio (cada tarjeta lo declara con su clase), así que
+   el relleno va aquí completo y no solo abajo. */
+.reports-profit-hero {
+  display: grid;
+  gap: var(--space-5);
+  overflow: hidden;
+  padding: var(--space-6) var(--space-6) calc(var(--space-6) + var(--space-1));
+  position: relative;
+}
+
+.reports-profit-hero::after {
+  background: var(--color-text-brand-accent);
+  bottom: 0;
+  content: "";
+  height: 3px;
+  left: 0;
+  position: absolute;
+  width: 100%;
+}
+
+.reports-profit-hero__head {
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-5);
+  justify-content: space-between;
+}
+
+.reports-profit-hero__main {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.reports-profit-hero__label {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.reports-profit-hero__title {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-md);
+  margin: 0;
+}
+
+.reports-profit-hero__currency {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.reports-profit-hero__amount {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-2xl);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-bold);
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.reports-profit-hero__amount--up {
+  color: var(--color-success-700);
+}
+
+.reports-profit-hero__amount--down {
+  color: var(--color-danger-700);
+}
+
+.reports-profit-hero__amount--none {
+  color: var(--color-text-muted);
+}
+
+.reports-profit-hero__margin {
+  display: grid;
+  justify-items: end;
+  text-align: right;
+}
+
+.reports-profit-hero__margin strong {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-xl);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-bold);
+}
+
+.reports-profit-hero__margin span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.reports-products-bar {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.reports-products-bar__title {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  margin: 0;
+}
+
+.reports-products-bar__track {
+  display: flex;
+  gap: var(--space-1);
+  height: var(--space-10);
+}
+
+.reports-products-bar__segment {
+  border-radius: var(--radius-md);
+  flex-basis: 0;
+  flex-shrink: 1;
+  min-width: var(--space-1);
+}
+
+.reports-products-bar__segment--cost,
+.reports-products-bar__swatch--cost {
+  background-color: var(--color-border-default);
+  background-image: repeating-linear-gradient(135deg, var(--color-border-default) 0, var(--color-border-default) var(--space-1), var(--color-border-control) var(--space-1), var(--color-border-control) calc(var(--space-1) * 2));
+  border: 1px solid var(--color-text-muted);
+}
+
+.reports-products-bar__segment--profit,
+.reports-products-bar__swatch--profit {
+  background: var(--color-success-700);
+}
+
+.reports-products-bar__loss,
+.reports-products-bar__swatch--loss {
+  background: var(--color-danger-700);
+}
+
+.reports-products-bar__loss {
+  border-radius: var(--radius-md);
+  flex: 0 0 var(--space-2);
+}
+
+.reports-profit-hero__notes {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.reports-products-bar__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  justify-content: space-between;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.reports-products-bar__legend li {
+  align-items: center;
+  color: var(--color-text-default);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--font-size-sm);
+  gap: var(--space-2);
+}
+
+.reports-products-bar__legend strong {
+  color: var(--color-text-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.reports-products-bar__swatch {
+  border-radius: var(--radius-xs);
+  flex: 0 0 auto;
+  height: var(--space-3);
+  width: var(--space-5);
+}
+
+@media (max-width: 640px) {
+  .reports-profit-hero__margin {
+    justify-items: start;
+    text-align: left;
+  }
+
+  .reports-profit-hero {
+    padding: var(--space-4) var(--space-4) calc(var(--space-4) + var(--space-1));
+  }
+
+  .reports-products-bar__legend {
+    flex-direction: column;
+  }
+}
+
+/* "Ver el cálculo paso a paso": el desglose y el estado del sistema, plegados. */
+.reports-calc-details__summary {
+  align-items: center;
+  background: var(--color-surface-panel);
+  border: 1px dashed var(--color-border-control);
+  border-radius: var(--radius-md);
+  color: var(--color-text-brand);
+  cursor: pointer;
+  display: flex;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  gap: var(--space-2);
+  justify-content: space-between;
+  list-style: none;
+  padding: var(--space-3) var(--space-4);
+}
+
+.reports-calc-details__summary::-webkit-details-marker {
+  display: none;
+}
+
+.reports-calc-details__summary:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-offset);
+}
+
+.reports-calc-details[open] .reports-calc-details__chevron {
+  transform: rotate(180deg);
+}
+
+.reports-calc-details__body {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
 .financial-chart-empty {
   align-items: center;
   background: var(--color-surface-subtle);

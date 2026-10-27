@@ -161,7 +161,7 @@ function StatisticsPage({businessId, currencyCode = "CLP", role = ""}) {
       {isSummary && <ReportsMonthlySummary canRegisterPurchase={canRegisterPurchase} canRegisterSale={canRegisterSale} canViewProfitability={canViewProfitability} canViewPurchases={viewPermissions.canViewPurchases} canViewSales={viewPermissions.canViewSales} currency={selectedCurrency} links={links} month={monthKey} onMonthChange={changeMonth} onNavigate={navigate} onOpenDetail={openDetail} onRetryProfit={profitabilityV4.reload} previousProfit={previousOperationalProfit} previousSummary={previousSummary} profit={operationalProfit} projects={profitabilityV4.projects} summary={summary} todayKey={today} />}
       {vista === "ventas" && <ReportsVentasView canOpenSales={links.sales} navigate={navigate} salesTimeline={salesTimeline} summary={summary} topSalesClients={topSalesClients} topSalesProducts={topSalesProducts} />}
       {vista === "compras" && <ReportsComprasView canOpenPurchases={links.purchases} chartGroups={chartGroups} navigate={navigate} purchaseTimeline={purchaseTimeline} summary={summary} topPurchaseProducts={topPurchaseProducts} topPurchaseSuppliers={topPurchaseSuppliers} />}
-      {vista === "ganancias" && <ReportsGananciasView currency={selectedCurrency} links={links} navigate={navigate} operationalProfit={operationalProfit} profitabilityV4={profitabilityV4} range={range} />}
+      {vista === "ganancias" && <ReportsGananciasView currency={selectedCurrency} currentMonthKey={currentMonthKey(today)} links={links} navigate={navigate} operationalProfit={operationalProfit} profitabilityV4={profitabilityV4} range={range} />}
     </>}
   </section>;
 }
