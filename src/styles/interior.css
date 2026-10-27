@@ -1752,15 +1752,6 @@
   color: var(--color-danger-700);
 }
 
-.reports-month-empty > div:first-child {
-  display: grid;
-  gap: var(--space-1);
-}
-
-.reports-month-empty strong {
-  color: var(--color-text-strong);
-}
-
 .reports-month-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1777,21 +1768,6 @@
 /* "Ver detalle" como enlace de texto al pie de cada tarjeta. */
 .reports-month-card-link {
   justify-self: start;
-}
-
-.reports-month-coverage {
-  color: var(--color-text-muted);
-  display: grid;
-  font-size: var(--font-size-xs);
-  gap: var(--space-1);
-}
-
-.reports-month-coverage p {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin: 0;
 }
 
 /* SPEC 025 §3: proyectos del mes, con los que pierden primero. */
@@ -1885,18 +1861,219 @@
 }
 
 .reports-month-projects__empty,
-.reports-month-projects__note,
-.reports-month-projects__notice {
+.reports-month-projects__note {
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
   margin: 0;
 }
 
-.reports-month-projects__notice {
-  align-items: center;
+/* Resumen visual (SPEC 025): Vendí y Compré a un lado y Me quedó, más ancha, con el
+   círculo del margen y el aviso único. Solo tokens: sin colores ni sombras sueltos. */
+.reports-simple-metrics--visual {
+  align-items: flex-start;
   display: flex;
   flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.reports-simple-metrics--visual > .reports-simple-card {
+  align-content: start;
+  flex: 1 1 14rem;
+  min-height: 0;
+  min-width: 0;
+  width: auto;
+}
+
+.reports-simple-metrics--visual > .reports-simple-card--profit {
+  flex: 2 1 24rem;
+}
+
+.reports-simple-card__heading {
+  color: var(--color-text-strong);
+  display: block;
+  font-size: var(--font-size-md);
+}
+
+.reports-simple-card__subtitle {
+  color: var(--color-text-muted);
+  display: block;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+}
+
+.reports-profit-card__body {
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.reports-profit-card__main {
+  display: grid;
+  flex: 1 1 12rem;
   gap: var(--space-2);
+  min-width: 0;
+}
+
+.reports-profit-card__amount--up {
+  color: var(--color-success-700);
+}
+
+.reports-profit-card__amount--down {
+  color: var(--color-danger-700);
+}
+
+.reports-profit-card__sentence {
+  align-items: center;
+  color: var(--color-text-default);
+  display: flex;
+  font-size: var(--font-size-sm);
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.reports-profit-card__sentence svg {
+  flex: 0 0 auto;
+}
+
+.reports-profit-card__sentence--up svg {
+  color: var(--color-success-700);
+}
+
+.reports-profit-card__sentence--down svg {
+  color: var(--color-danger-700);
+}
+
+.reports-profit-card__basis {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  margin: 0;
+}
+
+/* Círculo del margen: pista y arco de trazo. Solo el margen positivo llena el arco;
+   cero y negativo lo dejan vacío y lo dicen el número, el ícono y la frase. */
+.reports-ring {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: calc(var(--space-10) * 2.75);
+  justify-content: center;
+  position: relative;
+  width: calc(var(--space-10) * 2.75);
+}
+
+.reports-ring__svg {
+  height: 100%;
+  left: 0;
+  position: absolute;
+  top: 0;
+  width: 100%;
+}
+
+.reports-ring__track {
+  fill: none;
+  stroke: var(--color-border-subtle);
+  stroke-width: 6;
+}
+
+.reports-ring__arc {
+  fill: none;
+  stroke: var(--color-text-muted);
+  stroke-linecap: round;
+  stroke-width: 6;
+}
+
+.reports-ring--up .reports-ring__arc {
+  stroke: var(--color-success-700);
+}
+
+.reports-ring--down .reports-ring__track {
+  stroke: var(--color-danger-200);
+}
+
+.reports-ring__value {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-lg);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-bold);
+  position: relative;
+}
+
+.reports-ring--down .reports-ring__value {
+  color: var(--color-danger-700);
+}
+
+/* Aviso único de la ganancia: un chip siempre visible; el detalle se abre con él. */
+.reports-profit-notice {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.reports-profit-notice__chip {
+  align-items: center;
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-pill);
+  color: var(--color-text-default);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  gap: var(--space-1);
+  justify-self: start;
+  list-style: none;
+  padding: var(--space-1) var(--space-3);
+}
+
+.reports-profit-notice__chip::-webkit-details-marker {
+  display: none;
+}
+
+.reports-profit-notice__chip:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-offset);
+}
+
+.reports-profit-notice--partial .reports-profit-notice__chip {
+  background: var(--color-warning-50);
+  border-color: var(--color-warning-300);
+  color: var(--color-warning-800);
+}
+
+.reports-profit-notice[open] .reports-profit-notice__chevron {
+  transform: rotate(180deg);
+}
+
+.reports-profit-notice__list {
+  display: grid;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.reports-profit-notice__list li {
+  align-items: center;
+  color: var(--color-text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--font-size-xs);
+  gap: var(--space-2);
+}
+
+.reports-profit-notice__list p {
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .reports-simple-metrics--visual > .reports-simple-card,
+  .reports-simple-metrics--visual > .reports-simple-card--profit {
+    flex-basis: 100%;
+  }
+
+  .reports-profit-notice__chip {
+    min-height: calc(var(--space-10) + var(--space-1));
+  }
 }
 
 .reports-simple-eyebrow,
@@ -1937,7 +2114,8 @@
   width: 100%;
 }
 
-.reports-simple-card--result::after {
+.reports-simple-card--result::after,
+.reports-simple-card--profit::after {
   opacity: 1;
 }
 
@@ -2592,8 +2770,7 @@
     padding: var(--space-4);
   }
 
-  .reports-section-heading,
-  .reports-month-empty {
+  .reports-section-heading {
     align-items: stretch;
     flex-direction: column;
   }

@@ -5,7 +5,6 @@ import LoadingState from "../../../components/ui/LoadingState";
 import {
   PROJECT_RESULT_STATUS,
   buildMonthlyProjectResults,
-  buildServicesWithoutProjectNotices,
   formatMonthLabel,
   projectResultLabel,
 } from "../../../domain/reportMonthlySummary.mjs";
@@ -40,13 +39,15 @@ function ProjectRow({locale, onOpen, row}) {
 // primero. Solo presenta lo que arma buildMonthlyProjectResults desde los mismos
 // balances que alimentan la ganancia; no calcula dinero por su cuenta. Un fallo
 // de carga es un error propio y nunca se muestra como vacío.
-function ReportsMonthlyProjects({canView, currency, inProgress, links, month, onNavigate, onRetry, profit, projects}) {
+// Los avisos de cobertura y de servicios sin proyecto ya no viven aquí: los reúne
+// el aviso único de la tarjeta de ganancia (ReportsProfitNotice). `notes` solo trae
+// lo que va en esta sección (el conteo de proyectos incompletos con varias monedas).
+function ReportsMonthlyProjects({canView, currency, inProgress, links, month, notes = [], onNavigate, onRetry, projects}) {
   const {locale} = useBusinessFormat();
   const results = useMemo(
     () => projects.status === "ready" ? buildMonthlyProjectResults({projects: projects.meta?.proyectos || [], month, currency}) : null,
     [currency, month, projects]
   );
-  const notices = useMemo(() => buildServicesWithoutProjectNotices(profit, currency), [currency, profit]);
   if (!canView) return null;
 
   const failedCount = projects.meta?.fallidos?.length || 0;
@@ -80,9 +81,6 @@ function ReportsMonthlyProjects({canView, currency, inProgress, links, month, on
   }
 
   const warnings = [];
-  if (results?.incompletos > 0) {
-    warnings.push(`${results.incompletos} ${results.incompletos === 1 ? "proyecto con movimiento no se muestra" : "proyectos con movimiento no se muestran"} porque sus datos están incompletos.`);
-  }
   if (results && failedCount > 0 && results.filas.length) {
     warnings.push(`No fue posible cargar ${failedCount} ${failedCount === 1 ? "proyecto" : "proyectos"}.`);
   }
@@ -94,11 +92,7 @@ function ReportsMonthlyProjects({canView, currency, inProgress, links, month, on
     </header>
     {body}
     {warnings.map((text) => <p className="reports-month-projects__note" key={text}>{text}</p>)}
-    {notices.map((notice) => <p className="reports-month-projects__notice" key={notice.moneda}>
-      <span className="reports-v4-badge reports-v4-badge--parcial">Aviso</span>
-      {" "}Hay {formatMoney(notice.monto, notice.moneda, locale)} en servicios vendidos sin proyecto, y no entran en la ganancia. Vincúlalos a un proyecto para saber si ganas o pierdes con ellos.
-      {links.sales && <>{" "}<Button type="button" variant="secondary" onClick={() => onNavigate("/ventas")}>Ir a Ventas</Button></>}
-    </p>)}
+    {notes.map((line) => <p className="reports-month-projects__note" key={line.key}>{line.text}</p>)}
   </section>;
 }
 

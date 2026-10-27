@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import {existsSync, readFileSync} from "node:fs";
+import React from "react";
+import {renderToStaticMarkup} from "react-dom/server";
 import {createServer} from "vite";
 import {
   REPORT_TABS,
@@ -595,8 +597,10 @@ assert.match(monthlyPageSource, /profitFetchRange/);
 // solo se declara con la ganancia lista.
 assert.match(monthlyViewSource, /profit\.status === "error"[\s\S]*?role="alert"[\s\S]*?Reintentar/);
 assert.match(monthlyViewSource, /<LoadingState variant="inline"/);
-assert.match(monthlyViewSource, /isMonthEmpty\(groups\) && <div[\s\S]*?Aún no hay ventas confirmadas este mes/);
-assert.equal((monthlyViewSource.match(/Aún no hay ventas confirmadas este mes/g) || []).length, 1);
+// Mes sin movimiento: el vacío ya lo dicen los $0 de las tarjetas; no hay una tarjeta extra que lo repita.
+assert.match(monthlyViewSource, /isMonthEmpty\(groups\) && inProgress && \(canRegisterSale \|\| canRegisterPurchase\) && <div className="reports-month-actions">/);
+assert.doesNotMatch(monthlyViewSource, /reports-month-empty|Registra tu primera venta/);
+assert.equal((monthlyViewSource.match(/Aún no hay ventas confirmadas este mes|No hubo ventas confirmadas en/g) || []).length, 0, "el vacío no se repite en texto");
 assert.match(monthlyViewSource, /"\/ventas\/nueva"/);
 assert.match(monthlyViewSource, /"\/compras\/nueva"/);
 // Cada tarjeta se oculta por su permiso; Ganancia exige PROFITABILITY_READ.
@@ -765,8 +769,6 @@ assert.match(monthlyViewSource, /formatMonthName\(shiftMonthKey\(month, -1\), lo
 assert.match(monthlyViewSource, /referenceText=\{showComparison \? referenceOf\(group\.sales\) : null\}/);
 assert.match(monthlyViewSource, /referenceText=\{showComparison \? referenceOf\(group\.purchases\) : null\}/);
 assert.match(monthlyViewSource, /group\.profit\.status === "ready" \? referenceOf\(group\.profit\)/);
-assert.match(monthlyViewSource, /No hubo ventas confirmadas en \{formatMonthLabel\(month, locale\)\.toLocaleLowerCase\(locale\)\}/);
-assert.match(monthlyViewSource, /\{inProgress && \(canRegisterSale \|\| canRegisterPurchase\) && <div className="reports-month-actions">/);
 console.log("OK reportes SPEC 025: resumen mensual por defecto, comparación sin base, cobertura, permisos y estados carga/error/vacío separados");
 
 // SPEC 025 §3: "Proyectos del mes". Lista pura, misma fuente que la ganancia.
@@ -861,11 +863,16 @@ assert.equal((monthlyProjectsSource.match(/Aún no hay proyectos con movimiento 
 // Enlaces: lista completa, ficha de cada fila y Ventas.
 assert.match(monthlyProjectsSource, /onNavigate\("\/trabajos", \{state: \{openWorkId: workId\}\}\)/);
 assert.match(monthlyProjectsSource, /Ver todos los proyectos/);
-assert.match(monthlyProjectsSource, /onNavigate\("\/ventas"\)/);
+// "Ir a Ventas" y su permiso ahora viven en el aviso único (ReportsProfitNotice) y en cómo la pantalla lo alimenta.
+const profitNoticeSource = readRequiredSource("src/features/reports/views/ReportsProfitNotice.jsx", "aviso único de la ganancia, SPEC 025 resumen visual");
+assert.match(profitNoticeSource, /onNavigate\("\/ventas"\)/);
 assert.match(monthlyProjectsSource, /links\.works/);
-assert.match(monthlyProjectsSource, /links\.sales/);
+assert.match(monthlyViewSource, /canOpenSales: Boolean\(links\.sales\),/);
 // Aviso accionable con su texto exacto, y estado por icono + texto (no solo color).
-assert.match(monthlyProjectsSource, /Hay \{formatMoney\(notice\.monto, notice\.moneda, locale\)\} en servicios vendidos sin proyecto, y no entran en la ganancia\. Vincúlalos a un proyecto para saber si ganas o pierdes con ellos\./);
+assert.match(profitNoticeSource, /Hay \{formatMoney\(line\.amount, currency, locale\)\} en servicios vendidos sin proyecto, y no entran en la ganancia\. Vincúlalos a un proyecto para saber si ganas o pierdes con ellos\./);
+// Nueva: Proyectos del mes ya no lleva el aviso de incompletos ni el de servicios (los reúne el aviso único).
+assert.doesNotMatch(monthlyProjectsSource, /datos están incompletos/);
+assert.doesNotMatch(monthlyProjectsSource, /servicios vendidos sin proyecto|buildServicesWithoutProjectNotices|Ir a Ventas/);
 assert.match(monthlyProjectsSource, /<Icon size=\{14\} aria-hidden="true" \/>\s*\{projectResultLabel\(row\.estado\)\}/);
 assert.match(monthlySummaryDomainSource, /PERDIENDO[\s\S]*?"Perdiendo"[\s\S]*?"Ganando"[\s\S]*?"Sin resultado"/);
 // Orden: perder va primero en el comparador.
@@ -1074,5 +1081,235 @@ assert.deepEqual(scaleProjectBars(), []);
 assert.deepEqual(scaleProjectBars("x"), []);
 assert.deepEqual(scaleProjectBars([{moneda: "CLP", resultado: "abc"}]).map((row) => row.bar), [{direction: "none", fraction: 0}], "un resultado inválido no dibuja barra");
 console.log("OK reportes SPEC 025 (resumen visual, bloque 1): filas con ingreso/costo/acumulado, incompletos sin cifras, margen, aviso único y barras");
+
+// Resumen visual (SPEC 025), bloque 2: aviso único, tarjetas Vendí / Compré / Me quedó y círculo del margen.
+const marginRingSource = readRequiredSource("src/features/reports/views/MarginRing.jsx", "círculo del margen, SPEC 025 resumen visual");
+// Aviso único: reemplaza CoverageLine y los avisos sueltos.
+assert.doesNotMatch(monthlyViewSource, /CoverageLine|reports-month-coverage|Cobertura parcial/);
+assert.doesNotMatch(projectsCss, /\.reports-month-coverage|\.reports-month-projects__notice/, "el estilo de lo que se reemplazó ya no queda");
+assert.match(monthlyViewSource, /buildProfitNoticeLines\(\{/);
+assert.match(monthlyViewSource, /canViewProfitability,\s*coverage: group\.profit\?\.coverage,/);
+assert.match(monthlyViewSource, /primary: index === 0,/, "lo que no es de una moneda va solo en la primera");
+assert.match(monthlyViewSource, /const withoutNetCount = \(canViewSales \? summary\.sales\.withoutNetCount : 0\) \+\s*\(canViewPurchases \? summary\.purchases\.withoutNetCount : 0\);/, "los documentos sin neto cuentan solo los de Ventas y Compras que el perfil puede ver");
+assert.match(monthlyViewSource, /notice=\{<ReportsProfitNotice currency=\{group\.currency\} lines=\{profitLines\}/, "el aviso va pegado a la tarjeta de ganancia");
+assert.match(monthlyViewSource, /\{!showsProfitCard && <ReportsProfitNotice[^>]*variant="standalone" \/>\}/, "sin permiso de ganancia el aviso sigue existiendo, suelto");
+assert.match(monthlyViewSource, /notes=\{projectsNotes\}/);
+assert.match(profitNoticeSource, /<details/);
+assert.match(profitNoticeSource, /<summary/);
+assert.match(profitNoticeSource, /Parcial · \$\{review\}/);
+assert.match(profitNoticeSource, /onOpenDetail\("ganancias"\)/);
+// Tarjetas: Vendí, Compré y Me quedó (con "Ganancia" de subtítulo). Sin signos ni operadores entre ellas.
+assert.match(monthlyViewSource, /title="Vendí">/);
+assert.match(monthlyViewSource, /title="Compré">/);
+assert.match(monthlyViewSource, /subtitle="Ganancia" title="Me quedó" variant="profit">/);
+assert.doesNotMatch(monthlyViewSource, /\stitle="(Ventas|Compras|Ganancia)"/);
+assert.match(monthlyViewSource, /<\/MonthlyCard>\}\s*\{canViewPurchases && <MonthlyCard/, "entre Vendí y Compré no hay nada");
+assert.match(monthlyViewSource, /<\/MonthlyCard>\}\s*\{canViewProfitability && group\.profit && <MonthlyCard/, "entre Compré y Me quedó no hay nada");
+assert.doesNotMatch(monthlyViewSource, />\s*[−=+×÷-]\s*</, "ningún operador suelto entre tarjetas: la ganancia no es ventas menos compras (SPEC 016 §E, 022 §4.3)");
+assert.doesNotMatch(monthlyViewSource, /\{["'`]\s*[−=+×÷-]\s*["'`]\}/);
+// Solo tokens: sin colores ni medidas sueltas en lo nuevo.
+for (const [name, source] of [["aviso", profitNoticeSource], ["círculo", marginRingSource]]) {
+  assert.doesNotMatch(source, /#[0-9a-fA-F]{3,8}\b|rgb\(|hsl\(|style=\{\{/, `${name}: sin colores ni estilos en línea`);
+}
+const visualCss = projectsCss.slice(projectsCss.indexOf("/* Resumen visual (SPEC 025)"), projectsCss.indexOf(".reports-simple-eyebrow,"));
+assert.ok(visualCss.includes(".reports-ring__arc") && visualCss.includes(".reports-profit-notice__chip"), "debe existir el bloque de estilos del resumen visual");
+assert.doesNotMatch(visualCss, /#[0-9a-fA-F]{3,8}\b|rgb\(|hsl\(|box-shadow|border-radius:\s*\d|transition|animation/);
+assert.doesNotMatch(visualCss, /(?:color|fill|stroke):\s*var\(--color-(?:brand-(?:600|700|800|900)|dark-)/, "nada de colores que no cambian con el tema como texto o trazo");
+for (const token of ["--color-success-700", "--color-danger-700", "--color-danger-200", "--color-border-subtle", "--color-warning-50", "--color-warning-800"]) {
+  assert.ok(visualCss.includes(`var(${token})`), `usa el token ${token}`);
+}
+
+// Render de la pantalla (SSR, sin navegador): permisos, aviso único, círculo y tarjetas.
+const summaryVite = await createServer({appType: "custom", logLevel: "silent", server: {middlewareMode: true}});
+try {
+  const [{default: ReportsMonthlySummary}, {default: ReportsProfitNotice}, {default: MarginRing}] = await Promise.all([
+    summaryVite.ssrLoadModule("/src/features/reports/views/ReportsMonthlySummary.jsx"),
+    summaryVite.ssrLoadModule("/src/features/reports/views/ReportsProfitNotice.jsx"),
+    summaryVite.ssrLoadModule("/src/features/reports/views/MarginRing.jsx"),
+  ]);
+  const html = (element) => plain(renderToStaticMarkup(element));
+  const count = (text, pattern) => (text.match(pattern) || []).length;
+
+  // Círculo.
+  const ringOf = (input) => html(React.createElement(MarginRing, {description: describeProfitMargin(input), locale: "es-CL"}));
+  const ringPositive = ringOf({marginPct: 23.456, consideredRevenue: 800000, salesTotal: 1000000});
+  assert.match(ringPositive, /class="reports-ring reports-ring--up" role="img" aria-label="De cada \$100 que vendes, te quedan \$23,5, sobre \$800\.000 de ventas consideradas"/);
+  assert.match(ringPositive, /stroke-dasharray="23\.46 100"/, "el arco mide el margen");
+  assert.match(ringPositive, />23,5 %</);
+  assert.match(ringPositive, /<svg[^>]*aria-hidden="true"/, "el trazo es decorativo para lectores de pantalla");
+  const ringFull = ringOf({marginPct: 150});
+  assert.match(ringFull, /stroke-dasharray="100 100"/, "más de 100 % llena el círculo");
+  assert.match(ringFull, />150 %</, "el número es el real");
+  for (const [label, input, text, tone] of [
+    ["negativo", {marginPct: -12.34}, "−12,3 %", "down"],
+    ["muy negativo", {marginPct: -500}, "−500 %", "down"],
+    ["cero", {marginPct: 0}, "0 %", "none"],
+    ["sin margen", {marginPct: null}, "—", "none"],
+  ]) {
+    const ring = ringOf(input);
+    assert.doesNotMatch(ring, /reports-ring__arc/, `${label}: el círculo queda vacío`);
+    assert.match(ring, new RegExp(`reports-ring--${tone}`), `${label}: tono ${tone}`);
+    assert.ok(ring.includes(`>${text}<`), `${label}: el centro dice ${text}`);
+  }
+  assert.match(ringOf({marginPct: -12.34}), /pierdes \$12,3/, "el sentido también está en la etiqueta accesible");
+  assert.equal(ringOf({marginPct: 10, status: "loading"}), "", "con la ganancia sin listar no hay círculo");
+  assert.match(ringOf({marginPct: 10, coverage: "partial"}), /Cobertura parcial/);
+
+  // Aviso único (componente).
+  const noticeHtml = (overrides = {}, props = {}) => html(React.createElement(ReportsProfitNotice, {
+    currency: "CLP", locale: "es-CL", onNavigate: () => {}, onOpenDetail: () => {},
+    lines: buildProfitNoticeLines({canViewProfitability: true, canOpenSales: true, ...overrides}), ...props,
+  }));
+  assert.equal(noticeHtml(), "", "sin nada que avisar no se dibuja nada");
+  const fullNotice = noticeHtml({coverage: "partial", incompleteCount: 2, servicesAmount: 15000, withoutNetCount: 1});
+  assert.match(fullNotice, /<details class="reports-profit-notice reports-profit-notice--card reports-profit-notice--partial">/);
+  assert.match(fullNotice, /<summary class="reports-profit-notice__chip">[\s\S]*?<span>Parcial · 3 cosas por revisar<\/span>/);
+  assert.ok(fullNotice.includes("La ganancia del mes es parcial: hay registros que no se incluyen. 2 proyectos con movimiento no se muestran porque sus datos están incompletos."));
+  assert.ok(fullNotice.includes("Hay $15.000 en servicios vendidos sin proyecto, y no entran en la ganancia. Vincúlalos a un proyecto para saber si ganas o pierdes con ellos."));
+  assert.ok(fullNotice.includes("Hay 1 documento confirmado sin neto válido, que no se suma en Ventas y Compras."));
+  assert.equal(count(fullNotice, /Ver estado del sistema/g), 1);
+  assert.equal(count(fullNotice, /Ir a Ventas/g), 1);
+  assert.doesNotMatch(noticeHtml({servicesAmount: 15000, canOpenSales: false}), /Ir a Ventas/, "sin permiso de Ventas no hay botón");
+  assert.match(noticeHtml({servicesAmount: 15000}), /<span>1 cosa por revisar<\/span>/);
+  assert.doesNotMatch(noticeHtml({servicesAmount: 15000}), /Parcial/, "sin cobertura parcial no se dice Parcial");
+  assert.match(noticeHtml({coverage: "partial"}), /<span>Parcial · 1 cosa por revisar<\/span>/);
+  assert.match(noticeHtml({withoutNetCount: 2}, {variant: "standalone"}), /reports-profit-notice--standalone/);
+
+  // Pantalla completa.
+  const marginProfit = {status: "ready", error: "", result: {grupos: [{moneda: "CLP", gananciaNetaOperacional: 500, cobertura: "PARCIAL", gananciaNetaOperacionalPct: 25, ingresoNetoConsiderado: 2000}]}};
+  const screenProps = (overrides = {}) => ({
+    canRegisterPurchase: true, canRegisterSale: true, canViewProfitability: true, canViewPurchases: true, canViewSales: true,
+    currency: "todos", links: {sales: true, purchases: true, works: true}, month: "2026-10",
+    onMonthChange: () => {}, onNavigate: () => {}, onOpenDetail: () => {}, onRetryProfit: () => {},
+    previousProfit: readyProfit(300), previousSummary: monthlySummaryOf(monthRangeSeptember), profit: marginProfit,
+    projects: {status: "ready", error: "", meta: {proyectos: projectFixtures, fallidos: []}},
+    summary: octoberSummary, todayKey: "2026-10-15", ...overrides,
+  });
+  const screen = (overrides) => html(React.createElement(ReportsMonthlySummary, screenProps(overrides)));
+  const full = screen();
+  assert.ok(full.indexOf(">Vendí<") < full.indexOf(">Compré<") && full.indexOf(">Compré<") < full.indexOf(">Me quedó<"), "orden: Vendí, Compré, Me quedó");
+  assert.match(full, /class="reports-simple-card__subtitle">Ganancia</);
+  assert.doesNotMatch(full, /<span class="reports-simple-card__title">(Ventas|Compras|Ganancia)</);
+  assert.match(full, /reports-simple-card--profit/);
+  assert.match(full, /reports-ring reports-ring--up/);
+  assert.ok(full.includes("De cada $100 que vendes, te quedan $25"));
+  assert.ok(full.includes("sobre $2.000 de ventas consideradas"), "la base difiere de Vendí ($3.000): se aclara");
+  assert.match(full, /<summary class="reports-profit-notice__chip">[\s\S]*?<span>Parcial · 2 cosas por revisar<\/span>/, "Parcial siempre visible, con sus 2 cosas por revisar");
+  assert.ok(full.includes("1 proyecto con movimiento no se muestra porque sus datos están incompletos."));
+  assert.equal(count(full, /Hay 1 documento confirmado sin neto válido/g), 1, "los documentos sin neto se avisan una sola vez");
+  assert.equal(count(full, /Ver estado del sistema/g), 1);
+  assert.doesNotMatch(full, /reports-month-coverage|reports-v4-badge/, "la línea de cobertura y su insignia ya no existen");
+  assert.match(full, /aria-label="[^"]*\. Cobertura parcial"/, "pero el círculo dice en su etiqueta accesible que la ganancia es parcial");
+  const projectsSection = full.slice(full.indexOf('<section class="erp-card reports-month-projects"'), full.indexOf("</section>", full.indexOf('<section class="erp-card reports-month-projects"')));
+  assert.ok(projectsSection.length > 100 && projectsSection.includes("Proyectos del mes"));
+  assert.doesNotMatch(projectsSection, /datos están incompletos|servicios vendidos sin proyecto/, "Proyectos del mes ya no lleva avisos propios");
+  // Ganancia sin listar: sin círculo ni frase.
+  const loadingScreen = screen({profit: {status: "loading"}});
+  assert.doesNotMatch(loadingScreen, /reports-ring|De cada \$100/);
+  assert.match(loadingScreen, /Calculando ganancia/);
+  // Sin ventas consideradas (margen null) y margen negativo.
+  const noMarginProfit = {status: "ready", error: "", result: {grupos: [{moneda: "CLP", gananciaNetaOperacional: 0, cobertura: "COMPLETA"}]}};
+  assert.ok(screen({profit: noMarginProfit}).includes("Aún no hay ventas para calcular el margen"));
+  const lossProfit = {status: "ready", error: "", result: {grupos: [{moneda: "CLP", gananciaNetaOperacional: -300, cobertura: "COMPLETA", gananciaNetaOperacionalPct: -12.3, ingresoNetoConsiderado: 3000}]}};
+  const lossScreen = screen({profit: lossProfit});
+  assert.match(lossScreen, /reports-ring reports-ring--down/);
+  assert.ok(lossScreen.includes("De cada $100 que vendes, pierdes $12,3"));
+  assert.match(lossScreen, /reports-profit-card__amount--down/);
+  assert.doesNotMatch(lossScreen, /sobre \$[\d.]+ de ventas consideradas/, "base igual a Vendí: sin nota");
+
+  // Permisos de Ventas y Compras para la línea de documentos sin neto.
+  const salesNoNet = monthlySummaryOf(monthRangeOctober, [...monthlySales, {fechaVenta: "2026-10-09", estado: "confirmada", total: 1190, moneda: "CLP"}], []);
+  assert.equal(salesNoNet.sales.withoutNetCount, 1);
+  assert.equal(salesNoNet.purchases.withoutNetCount, 0);
+  const noProfit = {canViewProfitability: false};
+  const withoutProfitCard = screen({...noProfit});
+  assert.doesNotMatch(withoutProfitCard, /Me quedó|reports-ring|reports-month-projects/, "sin permiso de ganancia no hay tarjeta, círculo ni proyectos");
+  assert.match(withoutProfitCard, /reports-profit-notice--standalone/, "pero el aviso de documentos sin neto sigue, suelto");
+  assert.ok(withoutProfitCard.includes("Hay 1 documento confirmado sin neto válido"));
+  assert.match(withoutProfitCard, /<span>1 cosa por revisar<\/span>/);
+  assert.doesNotMatch(screen({...noProfit, canViewPurchases: false}), /reports-profit-notice/, "solo Ventas: la compra sin neto no se cuenta ni se avisa");
+  assert.ok(screen({...noProfit, canViewSales: false}).includes("Hay 1 documento confirmado sin neto válido"), "solo Compras: se avisa su compra sin neto");
+  assert.ok(screen({...noProfit, canViewPurchases: false, summary: salesNoNet}).includes("Hay 1 documento confirmado sin neto válido"), "solo Ventas: se avisa su venta sin neto");
+  assert.doesNotMatch(screen({...noProfit, canViewSales: false, summary: salesNoNet}), /sin neto válido/, "solo Compras: la venta sin neto de Ventas no se cuenta");
+  assert.doesNotMatch(screen({...noProfit, canViewSales: false, canViewPurchases: false}), /reports-profit-notice|Vendí|Compré/, "sin ningún permiso no hay tarjetas ni aviso");
+
+  // Varias monedas: el conteo de incompletos va una vez, en Proyectos del mes; lo que no es de una moneda, solo en la primera.
+  const multiSummary = monthlySummaryOf(monthRangeOctober, [...monthlySales, {fechaVenta: "2026-10-02", estado: "confirmada", neto: 300, total: 357, moneda: "USD"}]);
+  const multiProfit = {status: "ready", error: "", result: {grupos: [
+    {moneda: "CLP", gananciaNetaOperacional: 500, cobertura: "PARCIAL", gananciaNetaOperacionalPct: 25, ingresoNetoConsiderado: 2000},
+    {moneda: "USD", gananciaNetaOperacional: 30, cobertura: "COMPLETA", gananciaNetaOperacionalPct: 10, ingresoNetoConsiderado: 300},
+  ]}};
+  const multi = screen({summary: multiSummary, profit: multiProfit});
+  assert.equal(count(multi, /<details class="reports-profit-notice/g), 1, "solo la moneda con algo que avisar lleva aviso");
+  assert.equal(count(multi, /1 proyecto con movimiento no se muestra porque sus datos están incompletos\./g), 1, "el conteo de incompletos va una sola vez");
+  assert.equal(count(multi.slice(multi.indexOf('<section class="erp-card reports-month-projects"')), /1 proyecto con movimiento no se muestra porque sus datos están incompletos\./g), 1, "y va en Proyectos del mes");
+  assert.equal(count(multi, /Hay 1 documento confirmado sin neto válido/g), 1, "los documentos sin neto, una sola vez");
+  assert.match(multi, /<span>Parcial · 2 cosas por revisar<\/span>/);
+  assert.equal(count(multi, /reports-ring reports-ring--up/g), 2, "un círculo por moneda");
+} finally {
+  await summaryVite.close();
+}
+console.log("OK reportes SPEC 025 (resumen visual, bloque 2): aviso único con Parcial siempre visible, tarjetas Vendí / Compré / Me quedó, círculo del margen y permisos de la línea de documentos sin neto");
+
+// Pulido del resumen visual: tarjetas alineadas arriba, círculo mayor y grueso, chip táctil y vacíos sin repetir.
+assert.match(visualCss, /\.reports-simple-metrics--visual \{[^}]*align-items: flex-start;/, "Vendí y Compré no se estiran hasta la altura de Me quedó");
+assert.match(visualCss, /\.reports-simple-metrics--visual > \.reports-simple-card \{[^}]*align-content: start;[^}]*min-height: 0;/);
+assert.match(visualCss, /\.reports-profit-card__body \{[^}]*align-items: flex-start;/, "el círculo se alinea arriba, con el monto");
+assert.match(visualCss, /\.reports-ring \{[^}]*height: calc\(var\(--space-10\) \* 2\.75\);[^}]*width: calc\(var\(--space-10\) \* 2\.75\);/);
+assert.equal((visualCss.match(/stroke-width: 6;/g) || []).length, 2, "pista y arco con el trazo grueso");
+assert.match(visualCss, /@media \(max-width: 640px\) \{[\s\S]*?\.reports-profit-notice__chip \{\s*min-height: calc\(var\(--space-10\) \+ var\(--space-1\)\);/, "zona táctil de 44 px (2,75 rem) del chip en móvil");
+assert.doesNotMatch(projectsCss, /\.reports-month-empty/, "el estilo de la tarjeta de vacío repetido ya no existe");
+assert.match(marginRingSource, /<circle className="reports-ring__track"/);
+{
+  const summaryVite2 = await createServer({appType: "custom", logLevel: "silent", server: {middlewareMode: true}});
+  try {
+    const {default: ReportsMonthlySummary} = await summaryVite2.ssrLoadModule("/src/features/reports/views/ReportsMonthlySummary.jsx");
+    const html = (props) => plain(renderToStaticMarkup(React.createElement(ReportsMonthlySummary, {
+      canRegisterPurchase: true, canRegisterSale: true, canViewProfitability: true, canViewPurchases: true, canViewSales: true,
+      currency: "todos", links: {sales: true, purchases: true, works: true}, month: "2026-10",
+      onMonthChange: () => {}, onNavigate: () => {}, onOpenDetail: () => {}, onRetryProfit: () => {},
+      projects: {status: "ready", error: "", meta: {proyectos: [], fallidos: []}}, todayKey: "2026-10-15", ...props,
+    })));
+    const emptyProfit = {status: "ready", error: "", result: {grupos: [{moneda: "CLP", gananciaNetaOperacional: null, cobertura: "SIN_DATOS"}]}};
+    const emptyProps = (month, extra = {}) => ({
+      month, profit: emptyProfit, previousProfit: emptyProfit,
+      summary: monthlySummaryOf(getMonthRange(month), [], []), previousSummary: monthlySummaryOf(getMonthRange(shiftMonthKey(month, -1)), [], []), ...extra,
+    });
+    const countOf = (text, pattern) => (text.match(pattern) || []).length;
+    const marginProfit = {status: "ready", error: "", result: {grupos: [{moneda: "CLP", gananciaNetaOperacional: 500, cobertura: "PARCIAL", gananciaNetaOperacionalPct: 25, ingresoNetoConsiderado: 2000}]}};
+    const screen = (props) => html({
+      profit: marginProfit, previousProfit: readyProfit(300), previousSummary: monthlySummaryOf(monthRangeSeptember), summary: octoberSummary,
+      projects: {status: "ready", error: "", meta: {proyectos: projectFixtures, fallidos: []}}, ...props,
+    });
+    const full = screen({});
+    // Mes en curso sin movimiento: los $0 de las tarjetas, sin tarjeta extra, y las dos acciones una sola vez.
+    const emptyCurrent = html(emptyProps("2026-10"));
+    assert.ok(countOf(emptyCurrent, /\$0</g) >= 2, "los $0 están en las tarjetas");
+    assert.doesNotMatch(emptyCurrent, /reports-month-empty|Aún no hay ventas confirmadas|Registra tu primera venta|No hubo ventas confirmadas/);
+    assert.equal(countOf(emptyCurrent, /class="reports-month-actions"/g), 1);
+    assert.ok(emptyCurrent.includes("Registrar venta") && emptyCurrent.includes("Registrar compra"));
+    assert.doesNotMatch(html(emptyProps("2026-10", {canRegisterSale: false, canRegisterPurchase: false})), /reports-month-actions/, "sin permiso de registrar no hay acciones");
+    assert.equal(countOf(html(emptyProps("2026-10", {canRegisterPurchase: false})), /Registrar compra/g), 0);
+    // Mes pasado sin movimiento: solo los $0, ni tarjeta ni acciones.
+    const emptyPast = html(emptyProps("2026-09"));
+    assert.ok(countOf(emptyPast, /\$0</g) >= 2);
+    assert.doesNotMatch(emptyPast, /reports-month-empty|reports-month-actions|No hubo ventas confirmadas|Aún no hay ventas confirmadas/);
+    // Con movimiento no hay acciones de "primera venta".
+    assert.doesNotMatch(full, /reports-month-actions/);
+    // Sin permiso de Ventas no se muestra la nota "sobre $N de ventas consideradas" (aunque la base difiera).
+    assert.ok(screen({}).includes("sobre $2.000 de ventas consideradas"));
+    const noSalesPermission = screen({canViewSales: false});
+    assert.doesNotMatch(noSalesPermission, /sobre \$[\d.]+ de ventas consideradas/);
+    assert.ok(noSalesPermission.includes("De cada $100 que vendes, te quedan $25"), "la frase del margen sigue");
+    assert.doesNotMatch(noSalesPermission, />Vendí</);
+    // La fila del título va arriba y a todo el ancho; el círculo queda junto al monto, no junto al título.
+    const profitCard = full.slice(full.indexOf("reports-simple-card--profit"));
+    assert.ok(profitCard.indexOf("reports-simple-card__top") < profitCard.indexOf("reports-profit-card__body"), "título arriba");
+    assert.ok(profitCard.indexOf("reports-profit-card__body") < profitCard.indexOf("reports-ring ") && profitCard.indexOf("reports-ring ") < profitCard.indexOf("reports-simple-card__amount"), "el círculo está en el cuerpo, junto al monto");
+  } finally {
+    await summaryVite2.close();
+  }
+}
+console.log("OK reportes SPEC 025 (resumen visual, pulido): tarjetas alineadas arriba, círculo mayor, chip táctil de 44 px, mes sin ventas sin vacío repetido y sin nota de base sin permiso de Ventas");
 
 console.log("Report model smoke: OK");
