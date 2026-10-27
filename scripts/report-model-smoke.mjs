@@ -4,6 +4,7 @@ import React from "react";
 import {renderToStaticMarkup} from "react-dom/server";
 import {createServer} from "vite";
 import {formatCompactMoney} from "../src/utils/formatters.js";
+import {describePeriod, describeProductsBar, describeProfitReasons, describeProjectsSummary} from "../src/domain/reportProfitOverview.mjs";
 import {
   REPORT_TABS,
   aggregateOperationalTimeline,
@@ -1440,4 +1441,210 @@ console.log("OK reportes (formato compacto): una sola formatCompactMoney con suf
   assert.match(profitCss, /\.reports-monthly-single strong \{[^}]*color: var\(--color-text-strong\);/);
 }
 console.log("OK reportes (gráfico de Ganancia): leyenda solo con series con datos y, con un solo mes, el valor en texto con los componentes del helper");
+// Ganancia visual, bloque 1: helpers puros de la barra, del "por qué" y de la tarjeta de proyectos.
+{
+  const norm = (text) => String(text).replace(/\s/g, " ");
+  const zeroProjects = {proyectos: 0, ingresoNeto: 0, materialesVenta: 0, materialesAdicionales: 0, horasHombre: 0, gastosDirectos: 0, gastosIndirectos: 0, costoTotal: 0, resultado: 0};
+  const overviewGroup = ({revenue = 0, cost = 0, profit = 0, moneda = "CLP", projects = {}, ...rest} = {}) => ({
+    moneda, agregable: true, cobertura: "COMPLETA",
+    componentes: {ventasSinProyecto: {ventas: 1, ingresoNetoProductos: revenue, costoHistoricoProductos: cost, margenBrutoProductos: profit}, proyectos: {...zeroProjects, ...projects}},
+    ventasSinCostoRegistrado: {ventas: 0, monto: 0}, alertas: [], ...rest,
+  });
+
+  // --- Barra: cifras de la maqueta (octubre de 2026) ---
+  const mockupGroup = overviewGroup({revenue: 83089, cost: 66473, profit: 16616});
+  const frozenBefore = JSON.stringify(mockupGroup);
+  const mockupBar = describeProductsBar(mockupGroup);
+  assert.equal(JSON.stringify(mockupGroup), frozenBefore, "el helper no modifica el grupo");
+  assert.deepEqual([mockupBar.show, mockupBar.kind], [true, "profit"]);
+  assert.equal(norm(mockupBar.title), "De los $83.089 que vendiste en productos");
+  assert.equal(mockupBar.scopeLabel, "de productos");
+  assert.deepEqual([mockupBar.costPercent, mockupBar.profitPercent], [80, 20]);
+  assert.deepEqual(mockupBar.legend.map((item) => norm(item.text)), ["Costo de lo vendido · 80 %", "Ganancia de productos · 20 %"]);
+  assert.deepEqual(mockupBar.legend.map((item) => item.amount), [66473, 16616]);
+  assert.deepEqual(mockupBar.segments.map((segment) => [segment.id, segment.flex]), [["cost", 66473], ["profit", 16616]], "el ancho relativo es el propio importe");
+  assert.ok(Math.abs(mockupBar.segments[0].width - 0.8) < 0.001 && Math.abs(mockupBar.segments[1].width - 0.2) < 0.001);
+  assert.ok(Math.abs(mockupBar.segments.reduce((total, segment) => total + segment.width, 0) - 1) < 0.001, "los tramos llenan la barra");
+  assert.equal(norm(mockupBar.ariaLabel), "De los $83.089 que vendiste en productos: costo de lo vendido $66.473 (80 %) y ganancia $16.616 (20 %).");
+  // Los porcentajes ya redondeados suman 100: enteros si cuadran, un decimal si no.
+  const halves = describeProductsBar(overviewGroup({revenue: 1000, cost: 335, profit: 665}));
+  assert.deepEqual([halves.costPercent, halves.profitPercent], [33.5, 66.5]);
+  assert.deepEqual(halves.legend.map((item) => norm(item.text)), ["Costo de lo vendido · 33,5 %", "Ganancia de productos · 66,5 %"]);
+  const thirds = describeProductsBar(overviewGroup({revenue: 3, cost: 1, profit: 2}));
+  assert.deepEqual([thirds.costPercent, thirds.profitPercent], [33, 67]);
+  for (const [revenue, cost] of [[7, 3], [9, 4], [1000, 123], [90000, 33333], [83089, 12345]]) {
+    const bar = describeProductsBar(overviewGroup({revenue, cost, profit: revenue - cost}));
+    assert.ok(Math.abs(bar.costPercent + bar.profitPercent - 100) < 1e-9, `${cost}/${revenue}: los porcentajes redondeados suman 100`);
+  }
+  // Solo costo (ganancia 0): toda la barra es costo.
+  const breakEven = describeProductsBar(overviewGroup({revenue: 1000, cost: 1000, profit: 0}));
+  assert.deepEqual([breakEven.kind, breakEven.costPercent, breakEven.profitPercent], ["break-even", 100, 0]);
+  assert.deepEqual(breakEven.segments.map((segment) => segment.id), ["cost"]);
+  assert.equal(norm(breakEven.legend[1].text), "Ganancia de productos · 0 %");
+  // Sin costo: toda la barra es ganancia.
+  const profitOnly = describeProductsBar(overviewGroup({revenue: 500, cost: 0, profit: 500}));
+  assert.deepEqual([profitOnly.kind, profitOnly.costPercent, profitOnly.profitPercent], ["profit-only", 0, 100]);
+  assert.deepEqual(profitOnly.segments.map((segment) => [segment.id, segment.width]), [["profit", 1]]);
+  // Pérdida: la barra es toda costo y la pérdida va en la leyenda, sin tramo de ganancia.
+  const loss = describeProductsBar(overviewGroup({revenue: 1000, cost: 1200, profit: -200}));
+  assert.deepEqual([loss.kind, loss.costPercent, loss.profitPercent], ["loss", 120, -20]);
+  assert.deepEqual(loss.segments.map((segment) => [segment.id, segment.width]), [["cost", 1]]);
+  assert.deepEqual(loss.legend.map((item) => [item.id, item.amount, norm(item.text)]), [["cost", 1200, "Costo de lo vendido · 120 %"], ["loss", 200, "Pérdida de productos · 20 %"]]);
+  assert.equal(norm(loss.ariaLabel), "De los $1.000 que vendiste en productos: costo de lo vendido $1.200 (120 %) y una pérdida de $200 (20 %).");
+  // Sin ventas de productos (o datos que no sirven): la barra no se dibuja.
+  for (const [label, input] of [
+    ["ventas 0", overviewGroup({revenue: 0, cost: 0, profit: 0})],
+    ["ventas negativas", overviewGroup({revenue: -5, cost: 0, profit: -5})],
+    ["sin dato de ventas", overviewGroup({revenue: null, cost: 10, profit: 5})],
+    ["sin dato de costo", overviewGroup({revenue: 100, cost: null, profit: 5})],
+    ["costo negativo", overviewGroup({revenue: 100, cost: -1, profit: 101})],
+    ["texto", overviewGroup({revenue: "100", cost: 10, profit: 90})],
+    ["NaN", overviewGroup({revenue: Number.NaN, cost: 0, profit: 0})],
+    ["sin grupo", undefined],
+    ["grupo vacío", {}],
+    ["sin componentes", {moneda: "CLP"}],
+  ]) {
+    const hidden = describeProductsBar(input);
+    assert.deepEqual([hidden.show, hidden.kind, hidden.segments, hidden.legend], [false, "hidden", [], []], label);
+  }
+  // Cifras que no cuadran entre sí: no se fuerza nada y los anchos siguen sumando 1.
+  const inconsistent = describeProductsBar(overviewGroup({revenue: 100, cost: 30, profit: 60}));
+  assert.deepEqual([inconsistent.costPercent, inconsistent.profitPercent], [30, 60]);
+  assert.ok(Math.abs(inconsistent.segments.reduce((total, segment) => total + segment.width, 0) - 1) < 0.001);
+  assert.ok(norm(describeProductsBar(overviewGroup({revenue: 1000, cost: 600, profit: 400, moneda: "USD"})).title).includes("US$1.000"), "la moneda es la del grupo");
+
+  // --- Período: "este mes" solo con un mes calendario ---
+  assert.deepEqual(
+    ["2026-10-01|2026-10-31", "2026-10-01|2026-10-27", "2026-10-01|2026-10-01"].map((pair) => describePeriod({start: pair.split("|")[0], end: pair.split("|")[1]}).phrase),
+    ["este mes", "este mes", "este mes"], "mes completo, mes corrido y un solo día del día 1",
+  );
+  for (const range of [
+    {start: "2026-10-05", end: "2026-10-31"}, {start: "2026-09-01", end: "2026-10-27"}, {start: "2026-08-01", end: "2026-10-31"},
+    {start: "2026-10-01", end: "2026-09-30"}, {start: "2026-10-01"}, {start: "no", end: "no"}, {}, null, undefined,
+  ]) {
+    const period = describePeriod(range);
+    assert.deepEqual([period.isCalendarMonth, period.phrase, period.monthKey, period.monthName], [false, "en el período", null, null], JSON.stringify(range));
+  }
+  assert.deepEqual([describePeriod({start: "2026-10-01", end: "2026-10-31"}).monthKey, describePeriod({start: "2026-10-01", end: "2026-10-31"}).monthName], ["2026-10", formatMonthName("2026-10")]);
+  const octoberRange = {start: "2026-10-01", end: "2026-10-31"};
+  const customRange = {start: "2026-10-05", end: "2026-10-31"};
+
+  // --- "Por qué es parcial / Qué conviene revisar" ---
+  const links = {sales: true, works: true};
+  const sinAvisos = describeProfitReasons(overviewGroup({revenue: 100, cost: 60, profit: 40}), {links});
+  assert.deepEqual([sinAvisos.show, sinAvisos.count, sinAvisos.lines, sinAvisos.partial], [false, 0, [], false], "sin causas ni servicios no hay bloque");
+  assert.equal(describeProfitReasons(undefined).show, false);
+  assert.equal(describeProfitReasons({}).show, false);
+  // Cobertura completa con servicios pendientes: se avisa, pero no se dice que es parcial.
+  const servicesOnly = describeProfitReasons(overviewGroup({ventasSinCostoRegistrado: {ventas: 2, monto: 60000}}), {links});
+  assert.deepEqual([servicesOnly.show, servicesOnly.partial, servicesOnly.title, servicesOnly.count], [true, false, "Qué conviene revisar", 1]);
+  assert.equal(norm(servicesOnly.lines[0].text), "Hay $60.000 en servicios vendidos sin proyecto, y no entran en la ganancia. Vincúlalos a un proyecto para saber si ganas o pierdes con ellos.");
+  assert.deepEqual([servicesOnly.lines[0].kind, servicesOnly.lines[0].amount, servicesOnly.lines[0].action], ["services", 60000, {id: "sales", label: "Ir a Ventas"}]);
+  assert.equal(describeProfitReasons(overviewGroup({ventasSinCostoRegistrado: {ventas: 2, monto: 60000}}), {links: {works: true}}).lines[0].action, null, "sin permiso de Ventas no hay acción");
+  assert.equal(describeProfitReasons(overviewGroup({ventasSinCostoRegistrado: {ventas: 0, monto: 0}})).show, false, "monto 0: no hay aviso");
+  assert.equal(describeProfitReasons(overviewGroup({ventasSinCostoRegistrado: {ventas: 1, monto: null}})).show, false, "monto sin dato: no hay aviso");
+
+  // Cobertura parcial con un proyecto excluido y servicios (la maqueta), con el cálculo real de la ganancia.
+  const mockupProject = projectEntry("p-mock", "TR-0012", "Instalación Norte", [projectMonth("2026-10", {horasHombre: 1000})], {fuentes: {materialesVentaSinCosto: 1}});
+  const mockupResult = calculateOperationalNetProfit({sales: [], projectBalances: [mockupProject], period: octoberPeriod});
+  const mockupProfit = mockupResult.grupos.find((entry) => entry.moneda === "CLP");
+  assert.equal(mockupProfit.cobertura, "PARCIAL");
+  const mockupReasons = describeProfitReasons({...mockupProfit, ventasSinCostoRegistrado: {ventas: 3, monto: 60000}}, {projects: [mockupProject], links});
+  assert.deepEqual([mockupReasons.show, mockupReasons.partial, mockupReasons.title, mockupReasons.count], [true, true, "Por qué es parcial", 2]);
+  assert.deepEqual(mockupReasons.lines.map((line) => line.key), ["services", "project:MATERIALES_VENTA_SIN_COSTO"]);
+  assert.equal(mockupReasons.lines[1].text, "1 proyecto con materiales vendidos sin costo histórico quedó excluido.");
+  assert.deepEqual(mockupReasons.lines[1].projects, [{id: "p-mock", numero: "TR-0012", titulo: "Instalación Norte"}], "con nombre y número");
+  assert.deepEqual(mockupReasons.lines[1].action, {id: "works", label: "Ir a Proyectos", workId: "p-mock"}, "un solo proyecto: su ficha");
+  assert.equal(describeProfitReasons({...mockupProfit}, {projects: [mockupProject], links: {sales: true}}).lines[0].action, null, "sin permiso de Proyectos no hay acción");
+
+  // Varios proyectos por motivo, con el conteo de ventas sin neto de A3 bien atribuido y sin línea genérica de más.
+  const incompleteResult = calculateOperationalNetProfit({sales: [], projectBalances: incompleteFixtures, period: octoberPeriod});
+  const incompleteClp = incompleteResult.grupos.find((entry) => entry.moneda === "CLP");
+  const clpReasons = describeProfitReasons(incompleteClp, {projects: incompleteFixtures, links});
+  assert.deepEqual(clpReasons.lines.map((line) => [line.key, line.text]), [
+    ["project:REGISTROS_SIN_FECHA", "1 proyecto con registros sin fecha válida quedó excluido."],
+    ["project:VENTAS_SIN_NETO_VALIDO", "1 proyecto con ventas sin neto válido quedó excluido."],
+  ], "A3 con 2 ventas de un proyecto nombrado no deja una línea genérica");
+  assert.deepEqual(clpReasons.lines.map((line) => line.projects.map((project) => project.titulo)), [["Zeta"], ["Alfa"]]);
+  const manyProjects = [
+    projectEntry("p-b", "TR-0031", "Beta", [projectMonth("2026-10", {horasHombre: 1})], {fuentes: {materialesVentaSinCosto: 1}}),
+    projectEntry("p-a", "TR-0030", "Alfa", [projectMonth("2026-10", {horasHombre: 1})], {fuentes: {materialesVentaSinCosto: 2}}),
+  ];
+  const manyResult = calculateOperationalNetProfit({sales: [], projectBalances: manyProjects, period: octoberPeriod}).grupos[0];
+  const manyReasons = describeProfitReasons(manyResult, {projects: manyProjects, links});
+  assert.equal(manyReasons.lines.length, 1);
+  assert.equal(manyReasons.lines[0].text, "2 proyectos con materiales vendidos sin costo histórico quedaron excluidos.");
+  assert.deepEqual(manyReasons.lines[0].projects.map((project) => project.titulo), ["Alfa", "Beta"], "ordenados por título");
+  assert.deepEqual(manyReasons.lines[0].action, {id: "works", label: "Ir a Proyectos"}, "con varios proyectos no hay ficha única");
+  // Moneda sin declarar: el grupo no es agregable, lo dice una línea propia y el proyecto sigue con nombre.
+  const noCurrency = incompleteResult.grupos.find((entry) => entry.moneda === null);
+  const noCurrencyReasons = describeProfitReasons(noCurrency, {projects: incompleteFixtures, links});
+  assert.equal(noCurrency.agregable, false);
+  assert.deepEqual(noCurrencyReasons.lines.map((line) => line.kind), ["no-currency", "project"]);
+  assert.deepEqual(noCurrencyReasons.lines[0].action, {id: "calculation", label: "Ver el cálculo paso a paso"});
+  // El grupo USD tiene su propio proyecto excluido: cada moneda se explica por separado.
+  const usdReasons = describeProfitReasons(incompleteResult.grupos.find((entry) => entry.moneda === "USD"), {projects: incompleteFixtures, links});
+  assert.deepEqual(usdReasons.lines.map((line) => [line.key, line.projects.map((project) => project.titulo)]), [["project:MATERIALES_VENTA_SIN_COSTO", ["Dólar roto"]]]);
+  // Toda cobertura parcial de un cálculo real tiene al menos una línea que la explica.
+  for (const result of [mockupResult, incompleteResult, manyResult && {grupos: [manyResult]}, monthlyProfitOctober]) {
+    result.grupos.filter((entry) => entry.cobertura === "PARCIAL").forEach((entry) => {
+      assert.equal(describeProfitReasons(entry, {projects: [...incompleteFixtures, ...manyProjects, mockupProject, ...projectFixtures], links}).show, true, `${entry.moneda}: parcial sin explicación`);
+    });
+  }
+
+  // Alertas sin frase propia (A1, A2, A8, A9 general) o sin nombre: una sola línea genérica con el conteo.
+  const genericGroup = overviewGroup({cobertura: "PARCIAL", alertas: [
+    {id: "A1", conteo: 3, monto: 100, registros: ["v1", "v2", "v3"]},
+    {id: "A2", conteo: 1, monto: 10, registros: ["v4"]},
+    {id: "A4", conteo: 2, monto: 50, registros: ["p-4"]},
+    {id: "A8", conteo: 1, monto: null, registros: []},
+  ]});
+  const genericReasons = describeProfitReasons(genericGroup, {links});
+  assert.deepEqual(genericReasons.lines.map((line) => [line.key, line.count, line.text, line.action]), [["generic", 5, "Hay 5 cosas más por revisar en el cálculo.", {id: "calculation", label: "Ver el cálculo paso a paso"}]], "A4 no cuenta");
+  assert.equal(describeProfitReasons(overviewGroup({cobertura: "PARCIAL", alertas: [{id: "A8", conteo: 1, monto: null, registros: []}]}), {links}).lines[0].text, "Hay 1 cosa más por revisar en el cálculo.");
+  assert.equal(describeProfitReasons(overviewGroup({alertas: [{id: "A4", conteo: 2, monto: 50, registros: ["p-4"]}]}), {links}).show, false, "A4 sola no es aviso (queda en la tabla plegada)");
+  const ghost = describeProfitReasons(overviewGroup({cobertura: "PARCIAL", alertas: [{id: "A5", conteo: 1, monto: null, registros: ["p-ghost"]}]}), {projects: [], links});
+  assert.deepEqual(ghost.lines.map((line) => [line.kind, line.count]), [["generic", 1]], "un proyecto que no se encuentra no se nombra: va al conteo genérico");
+  const withGeneric = describeProfitReasons({...mockupProfit, ventasSinCostoRegistrado: {ventas: 1, monto: 5}, alertas: [...mockupProfit.alertas, {id: "A8", conteo: 1, monto: null, registros: []}]}, {projects: [mockupProject], links});
+  assert.deepEqual(withGeneric.lines.map((line) => line.kind), ["services", "project", "generic"], "orden: servicios, proyectos, genérica");
+  assert.equal(withGeneric.count, 3);
+
+  // --- Tarjeta de proyectos ---
+  const monthlyClp = monthlyProfitOctober.grupos.find((entry) => entry.moneda === "CLP");
+  const projectsCard = describeProjectsSummary(monthlyClp, {projects: projectFixtures, range: octoberRange});
+  assert.equal(projectsCard.status, "ready");
+  assert.equal(projectsCard.result, monthlyClp.componentes.proyectos.resultado, "el resultado es el del grupo, sin recalcular");
+  assert.deepEqual([projectsCard.included, projectsCard.excluded], [5, 1]);
+  assert.equal(projectsCard.sentence, "5 proyectos con movimiento entran en la ganancia este mes. 1 proyecto quedó excluido.");
+  assert.equal(projectsCard.resultLabel, "resultado de proyectos este mes");
+  assert.deepEqual(projectsCard.rows.filter((row) => row.zero).map((row) => row.key), ["materialesAdicionales", "gastosDirectos", "gastosIndirectos"]);
+  assert.deepEqual([projectsCard.zeroCount, norm(projectsCard.toggle.showLabel), norm(projectsCard.toggle.hideLabel), projectsCard.toggle.show], [3, "Mostrar 3 partidas en $0", "Ocultar las partidas en $0", true]);
+  assert.equal(describeProjectsSummary(monthlyClp, {projects: projectFixtures, range: customRange}).sentence, "5 proyectos con movimiento entran en la ganancia en el período. 1 proyecto quedó excluido.", "un rango que no es un mes dice \"en el período\"");
+  assert.equal(describeProjectsSummary(monthlyClp, {projects: projectFixtures, range: customRange}).resultLabel, "resultado de proyectos en el período");
+  // La maqueta: ningún proyecto entra y 1 queda excluido; las seis partidas están en cero.
+  const noneIncluded = describeProjectsSummary(mockupProfit, {projects: [mockupProject], range: octoberRange});
+  assert.equal(noneIncluded.sentence, "Ningún proyecto con movimiento entra en la ganancia este mes.");
+  assert.deepEqual([noneIncluded.result, noneIncluded.zeroCount, norm(noneIncluded.toggle.showLabel)], [0, 6, "Mostrar 6 partidas en $0"]);
+  assert.equal(describeProjectsSummary(mockupProfit, {projects: [mockupProject], range: customRange}).sentence, "Ningún proyecto con movimiento entra en la ganancia en el período.");
+  // Sin proyectos con movimiento ni excluidos.
+  const noProjects = describeProjectsSummary(overviewGroup({revenue: 100, cost: 60, profit: 40}), {range: octoberRange});
+  assert.deepEqual([noProjects.sentence, noProjects.zeroCount, noProjects.included, noProjects.excluded], ["Sin proyectos con movimiento este mes.", 6, 0, 0]);
+  assert.equal(describeProjectsSummary(overviewGroup({}), {}).sentence, "Sin proyectos con movimiento en el período.", "sin rango: en el período");
+  // Una partida sin dato no se pliega; la moneda es la del grupo; singular.
+  const partial = describeProjectsSummary(overviewGroup({moneda: "USD", projects: {ingresoNeto: null, materialesVenta: 10, materialesAdicionales: 20, horasHombre: 30, gastosDirectos: 40, gastosIndirectos: 0}}), {range: octoberRange});
+  assert.deepEqual([partial.zeroCount, partial.rows[0].zero, partial.rows[0].value], [1, false, null]);
+  assert.deepEqual([norm(partial.toggle.showLabel), norm(partial.toggle.hideLabel)], ["Mostrar 1 partida en US$0,00", "Ocultar la partida en US$0,00"]);
+  assert.deepEqual(describeProjectsSummary(overviewGroup({projects: {ingresoNeto: 1, materialesVenta: 1, materialesAdicionales: 1, horasHombre: 1, gastosDirectos: 1, gastosIndirectos: 1}})).toggle, {show: false, showLabel: "Mostrar 0 partidas en $0", hideLabel: "Ocultar las partidas en $0"}, "sin partidas en cero el botón no se muestra");
+  // Los balances no cargaron (A9 general): no se afirma nada sobre los proyectos.
+  const loadFailed = describeProjectsSummary(overviewGroup({cobertura: "PARCIAL", alertas: [{id: "A9", conteo: 1, monto: null, registros: []}]}), {range: octoberRange});
+  assert.deepEqual([loadFailed.status, loadFailed.sentence, loadFailed.zeroCount, loadFailed.toggle.show], ["error", "No fue posible cargar los balances de los proyectos.", 0, false]);
+  assert.equal(describeProjectsSummary(undefined).status, "ready");
+  assert.equal(describeProjectsSummary(undefined).result, null);
+
+  // Solo presentación: ningún helper toca Firebase, la red ni nombra Compras (la ganancia no es ventas - compras).
+  const overviewSource = readFileSync("src/domain/reportProfitOverview.mjs", "utf8");
+  assert.doesNotMatch(overviewSource, /firebase|fetch\(|Date\.now|new Date\(|[Cc]ompra|#[0-9a-fA-F]{3,8}\b|rgba?\(/);
+  assert.match(overviewSource, /import \{formatMoney\} from "\.\.\/utils\/formatters\.js";/);
+}
+console.log("OK reportes (ganancia visual, bloque 1): barra de productos, por qué es parcial, tarjeta de proyectos y período, con casos límite");
 console.log("Report model smoke: OK");
