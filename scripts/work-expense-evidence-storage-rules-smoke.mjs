@@ -11,6 +11,11 @@ import {connectStorageEmulator, deleteObject, getBytes, getStorage, ref, uploadB
 // (KNOWN_PREEXISTING_RULES_BUDGET_ISSUE): firestore.get()/firestore.exists()
 // dentro de Storage Rules es un camino distinto, no afectado por ese límite,
 // y así lo confirma este propio smoke al pasar en verde.
+//
+// Presupuesto: la regla lee membresía + gasto (2 documentos de Firestore, sin
+// usuarios/{uid} ni negocios/{id}). Este smoke NO prueba ese límite: el
+// emulador puede no aplicar el tope de 2 documentos que sí impone producción.
+// Lo protege el guardia estático (npm run test:storage-rules-budget).
 
 const PROJECT_ID = "tesis-inventario-ia";
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -46,7 +51,11 @@ async function main() {
   const technicianOther = createClient("wkevidence-rules-tech-other");
   const finance = createClient("wkevidence-rules-finance");
   const outsider = createClient("wkevidence-rules-outsider");
-  const clients = [owner, technicianOwn, technicianOther, finance, outsider];
+  const admin = createClient("wkevidence-rules-admin");
+  const memberOwn = createClient("wkevidence-rules-member-own");
+  const memberOther = createClient("wkevidence-rules-member-other");
+  const inactiveMember = createClient("wkevidence-rules-inactive");
+  const clients = [owner, technicianOwn, technicianOther, finance, outsider, admin, memberOwn, memberOther, inactiveMember];
   const adminApp = initializeAdminApp({projectId: PROJECT_ID}, `wkevidence-rules-admin-${RUN_ID}`);
   const adminDb = getAdminFirestore(adminApp);
 
@@ -56,6 +65,10 @@ async function main() {
     const technicianOtherUid = (await signInAnonymously(technicianOther.auth)).user.uid;
     const financeUid = (await signInAnonymously(finance.auth)).user.uid;
     const outsiderUid = (await signInAnonymously(outsider.auth)).user.uid;
+    const adminUid = (await signInAnonymously(admin.auth)).user.uid;
+    const memberOwnUid = (await signInAnonymously(memberOwn.auth)).user.uid;
+    const memberOtherUid = (await signInAnonymously(memberOther.auth)).user.uid;
+    const inactiveMemberUid = (await signInAnonymously(inactiveMember.auth)).user.uid;
 
     const businessId = `wkevidence-rules-biz-${RUN_ID}`;
     const otherBusinessId = `wkevidence-rules-other-biz-${RUN_ID}`;
@@ -63,6 +76,7 @@ async function main() {
     const otherWorkId = `wkevidence-rules-other-work-${RUN_ID}`;
     const expenseId = `wkevidence-rules-expense-${RUN_ID}`;
     const annulledExpenseId = `wkevidence-rules-annulled-expense-${RUN_ID}`;
+    const memberExpenseId = `wkevidence-rules-member-expense-${RUN_ID}`;
 
     await Promise.all([
       adminDb.doc(`negocios/${businessId}`).set({estado: "activo"}),
@@ -74,6 +88,11 @@ async function main() {
       adminDb.doc(`negocios/${businessId}/trabajos/${workId}`).set({negocioId: businessId, trabajoId: workId, estado: "pendiente"}),
       adminDb.doc(`negocios/${businessId}/trabajos/${otherWorkId}`).set({negocioId: businessId, trabajoId: otherWorkId, estado: "pendiente"}),
       adminDb.doc(`negocios/${businessId}/trabajos/${workId}/gastos/${expenseId}`).set({negocioId: businessId, trabajoId: workId, gastoId: expenseId, estado: "vigente", registradoPorUid: technicianOwnUid, responsableDelGastoUid: ""}),
+      adminDb.doc(`membresias/${businessId}__${adminUid}`).set({negocioId: businessId, uid: adminUid, estado: "activo", rol: "ADMIN"}),
+      adminDb.doc(`membresias/${businessId}__${memberOwnUid}`).set({negocioId: businessId, uid: memberOwnUid, estado: "activo", rol: "MEMBER"}),
+      adminDb.doc(`membresias/${businessId}__${memberOtherUid}`).set({negocioId: businessId, uid: memberOtherUid, estado: "activo", rol: "MEMBER"}),
+      adminDb.doc(`membresias/${businessId}__${inactiveMemberUid}`).set({negocioId: businessId, uid: inactiveMemberUid, estado: "suspendido", rol: "OWNER"}),
+      adminDb.doc(`negocios/${businessId}/trabajos/${workId}/gastos/${memberExpenseId}`).set({negocioId: businessId, trabajoId: workId, gastoId: memberExpenseId, estado: "vigente", registradoPorUid: memberOwnUid, responsableDelGastoUid: ""}),
       adminDb.doc(`negocios/${businessId}/trabajos/${workId}/gastos/${annulledExpenseId}`).set({negocioId: businessId, trabajoId: workId, gastoId: annulledExpenseId, estado: "anulado", registradoPorUid: ownerUid, responsableDelGastoUid: ""}),
     ]);
 
@@ -166,6 +185,50 @@ async function main() {
       evidenceBytes,
       {contentType: "application/pdf"},
     ));
+
+    // --- ADMIN: sube y lee (sin restricción de autoría) ---
+    const adminRef = ref(admin.storage, path(expenseId, "documento-admin.pdf"));
+    await uploadBytes(adminRef, evidenceBytes, {contentType: "application/pdf"});
+    await getBytes(adminRef);
+    await getBytes(pdfRef);
+    console.log("OK ADMIN: sube y lee evidencia de un gasto ajeno");
+
+    // --- OWNER y FINANZAS leen ---
+    await getBytes(ref(owner.storage, path(expenseId, "documento-admin.pdf")));
+    await getBytes(ref(finance.storage, path(expenseId, "documento.pdf")));
+    console.log("OK OWNER y FINANZAS: leen evidencia");
+
+    // --- TECNICO: lee sólo la evidencia de su propio gasto ---
+    await getBytes(ref(technicianOwn.storage, path(expenseId, "documento.pdf")));
+    console.log("OK TECNICO: lee evidencia de su propio gasto");
+    await expectDenied("TECNICO no lee evidencia de un gasto ajeno", () => getBytes(ref(technicianOther.storage, path(expenseId, "documento.pdf"))));
+
+    // --- MEMBER: sube sólo sobre su propio gasto ---
+    const memberRef = ref(memberOwn.storage, path(memberExpenseId, "documento-member.pdf"));
+    await uploadBytes(memberRef, evidenceBytes, {contentType: "application/pdf"});
+    await getBytes(memberRef);
+    console.log("OK MEMBER: sube y lee evidencia de su propio gasto");
+    await expectDenied("MEMBER sobre un gasto que no es suyo", () => uploadBytes(
+      ref(memberOther.storage, path(memberExpenseId, "documento-member-ajeno.pdf")),
+      evidenceBytes,
+      {contentType: "application/pdf"},
+    ));
+    await expectDenied("MEMBER no sube sobre el gasto de un TECNICO", () => uploadBytes(
+      ref(memberOwn.storage, path(expenseId, "documento-member-sobre-tecnico.pdf")),
+      evidenceBytes,
+      {contentType: "application/pdf"},
+    ));
+
+    // --- Membresía no activa denegada (aunque el rol sea OWNER) ---
+    await expectDenied("membresía suspendida (sube)", () => uploadBytes(
+      ref(inactiveMember.storage, path(expenseId, "documento-inactivo.pdf")),
+      evidenceBytes,
+      {contentType: "application/pdf"},
+    ));
+    await expectDenied("membresía suspendida (lee)", () => getBytes(ref(inactiveMember.storage, path(expenseId, "documento.pdf"))));
+
+    // --- Gasto inexistente: tampoco se lee ---
+    await expectDenied("lectura sobre gasto inexistente", () => getBytes(ref(owner.storage, path("expense-inexistente", "documento.pdf"))));
 
     // --- Bonus: lectura cross-tenant rechazada ---
     await expectDenied("lectura cross-tenant", () => getBytes(ref(outsider.storage, path(expenseId, "documento.pdf"))));

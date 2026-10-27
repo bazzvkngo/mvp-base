@@ -51,8 +51,9 @@ service firebase.storage {
     // comprueba la suspensión de plataforma: una cuenta suspendida queda sin
     // acceso porque Auth la deshabilita y revoca sus refresh tokens, pero un
     // ID token ya emitido sigue siendo válido hasta 1 hora. Riesgo aceptado
-    // sólo para el logo de empresa (imagen de hasta 2 MB, OWNER/ADMIN). Las
-    // rutas de verificación y gastos conservan su propia comprobación.
+    // para el logo de empresa (imagen de hasta 2 MB, OWNER/ADMIN). La
+    // evidencia de verificación conserva su propia comprobación; la de gastos
+    // usa hasActiveMembership (más abajo), con el mismo riesgo aceptado.
     function isActiveBusinessMember(businessId) {
       return request.auth != null
         && hasBusinessMembership(businessId)
@@ -61,6 +62,18 @@ service firebase.storage {
         && businessMembership(businessId).data.negocioId == businessId
         && businessMembership(businessId).data.estado == "activo"
         && activeBusiness(businessId).data.estado == "activo";
+    }
+
+    // Sólo membresía activa (1 documento de Firestore): no lee negocios/{id}
+    // ni usuarios/{uid}, para dejar presupuesto al documento del recurso
+    // (p. ej. el gasto). Mismo riesgo aceptado que isActiveBusinessMember:
+    // una cuenta suspendida con ID token vigente conserva acceso hasta 1 hora.
+    function hasActiveMembership(businessId) {
+      return request.auth != null
+        && hasBusinessMembership(businessId)
+        && businessMembership(businessId).data.uid == request.auth.uid
+        && businessMembership(businessId).data.negocioId == businessId
+        && businessMembership(businessId).data.estado == "activo";
     }
 
     function canManageBusiness(businessId) {
@@ -91,7 +104,9 @@ service firebase.storage {
     // para Storage, exactamente el mismo criterio de autorización que ya usan
     // Functions/Firestore Rules para gastos (WORK_OPERATION_ROLES para operar,
     // autoatribución para TECNICO/MEMBER, canReadWorkCosts para lectura) —
-    // ningún rol ni permiso nuevo.
+    // ningún rol ni permiso nuevo. Presupuesto: membresía + gasto = 2
+    // documentos de Firestore por petición (límite de Storage Rules); lo
+    // protege scripts/storage-rules-budget-smoke.mjs.
     function workExpensePath(businessId, workId, expenseId) {
       return /databases/(default)/documents/negocios/$(businessId)/trabajos/$(workId)/gastos/$(expenseId);
     }
@@ -112,7 +127,7 @@ service firebase.storage {
     // FINANZAS/MEMBER sin restricción adicional, TECNICO sólo sobre un gasto
     // propio (registrado por él o del que es responsable).
     function canReadWorkExpenseEvidence(businessId, workId, expenseId) {
-      return canAccessBusiness(businessId)
+      return hasActiveMembership(businessId)
         && workExpenseBelongsToWork(businessId, workId, expenseId)
         && (
           businessMembership(businessId).data.rol in ["OWNER", "ADMIN", "FINANZAS", "MEMBER"]
@@ -127,7 +142,7 @@ service firebase.storage {
     // restricción, TECNICO/MEMBER sólo sobre un gasto propio; el gasto debe
     // seguir vigente (un gasto anulado no admite evidencia nueva).
     function canCreateWorkExpenseEvidence(businessId, workId, expenseId) {
-      return canAccessBusiness(businessId)
+      return hasActiveMembership(businessId)
         && workExpenseBelongsToWork(businessId, workId, expenseId)
         && firestore.get(workExpensePath(businessId, workId, expenseId)).data.estado == "vigente"
         && (

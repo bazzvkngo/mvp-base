@@ -22,20 +22,12 @@ import {readFileSync} from "node:fs";
 
 const MAX_FIRESTORE_DOCUMENTS = 2;
 
-// Excepciones documentadas. Cada una fija el máximo tolerado: si la regla
-// empeora por encima de `maxDocuments`, el guardia vuelve a fallar. Si la
-// regla ya no existe, el guardia falla para obligar a retirar la excepción.
-const ALLOWLIST = [
-  {
-    match: "/negocios/{businessId}/trabajos/{workId}/gastos/{expenseId}/{fileName}",
-    maxDocuments: 4,
-    // EXCEPCIÓN CONOCIDA Y PENDIENTE: la evidencia de gastos de Proyectos
-    // (SPEC 020) lee membresía, usuario, negocio y gasto (4 documentos), por
-    // encima del límite de 2. Se tolera hoy para no mezclarla con el arreglo
-    // del logo; debe rediseñarse en una tarea propia.
-    reason: "evidencia de gastos de Proyectos (SPEC 020): membresía + usuario + negocio + gasto",
-  },
-];
+// Excepciones documentadas. Hoy no hay ninguna: todas las reglas respetan el
+// máximo. Si se agregara una, cada entrada fija el máximo tolerado
+// (`{match, maxDocuments, reason}`): si la regla empeora por encima de
+// `maxDocuments`, el guardia vuelve a fallar, y si la regla ya no existe,
+// falla para obligar a retirar la excepción.
+const ALLOWLIST = [];
 
 const ignoreAllowlist = process.argv.includes("--no-allowlist");
 const rulesSource = readFileSync(new URL("../storage.rules", import.meta.url), "utf8");
