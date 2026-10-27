@@ -26,6 +26,7 @@ import {
   resolveQuoteClientSelectionSnapshot,
 } from "../src/domain/quoteModel.mjs";
 import {filterSelectableClients} from "../src/domain/clientModel.mjs";
+import {stepQuoteQuantity} from "../src/features/quotes/quoteLineStepper.mjs";
 import { jsPDF } from "jspdf";
 import { buildQuotePdfDocument, drawRightLabeledLine } from "../src/domain/quoteDocument.mjs";
 import {
@@ -588,9 +589,10 @@ assert.match(sourceQuoteCatalog, /<ResponsiveDialog/);
 assert.match(sourceQuoteCatalog, /initialFocusRef=\{searchRef\}/);
 assert.match(sourceQuoteCatalog, /Agregar otra vez/);
 assert.doesNotMatch(sourceQuoteItems, /<table/);
-assert.match(sourceQuoteItems, /Personalizar ítem/);
-assert.match(sourceQuoteItems, /Subtotal \$\{formatBusinessAmount\(subtotal\)\}/);
-assert.match(sourceQuoteItems, /items\.length === 1 \? "" : "s"/);
+assert.match(sourceQuoteItems, /Descripción, unidad y descuento/);
+assert.doesNotMatch(sourceQuoteItems, /Personalizar ítem/);
+assert.doesNotMatch(sourceQuoteItems, /Subtotal/, "el encabezado de ítems muestra solo el conteo; el subtotal vive en el resumen");
+assert.match(sourceQuoteItems, /items\.length === 1 \? "1 ítem" : `\$\{items\.length\} ítems`/);
 assert.match(sourceQuoteItems, /Agrega productos, servicios o actividades para construir la cotización\./);
 assert.match(sourceNewQuote, /saveAttempted \|\| itemsInteracted/);
 assert.match(sourceNewQuote, /setSaveAttempted\(true\)/);
@@ -601,6 +603,81 @@ assert.match(sourceHistory, />\s*Ir al inventario/);
 assert.doesNotMatch(sourceHistory, /Ya puedes comenzar a trabajar con ValoraCloud/);
 assert.match(sourceQuoteItems, /Sin ítems agregados/);
 assert.match(sourceNewQuote, /subtotal=\{totals\.subtotal\}/);
+// Filas de ítems compactas: mismos manejadores y mismos campos que antes; solo cambia la presentación.
+assert.match(sourceQuoteItems, /<h2 id="quote-items-title">2 · ¿Qué cotizas\?<\/h2>/);
+assert.match(sourceQuoteItems, /onUpdate\(lineId, "cantidad", event\.target\.value\)/);
+assert.match(sourceQuoteItems, /onUpdate\(lineId, "cantidad", next\)/, "− y + usan el mismo manejador de cantidad");
+assert.match(sourceQuoteItems, /onUpdate\(lineId, "precioUnitarioEditable", event\.target\.value\)/);
+assert.match(sourceQuoteItems, /onUpdate\(lineId, "descripcionComercial", event\.target\.value\)/);
+assert.match(sourceQuoteItems, /onUpdate\(lineId, "unidad", event\.target\.value\)/);
+assert.match(sourceQuoteItems, /onUpdate\(lineId, "descuentoPorcentaje", event\.target\.value\)/);
+assert.match(sourceQuoteItems, /onMove\(index, -1\)/);
+assert.match(sourceQuoteItems, /onMove\(index, 1\)/);
+assert.match(sourceQuoteItems, /onRemove\(lineId\)/);
+assert.match(sourceQuoteItems, /aria-label=\{`Subir \$\{item\.nombre\}`\}/);
+assert.match(sourceQuoteItems, /aria-label=\{`Bajar \$\{item\.nombre\}`\}/);
+assert.match(sourceQuoteItems, /aria-label=\{`Quitar \$\{item\.nombre\}`\}/);
+assert.match(sourceQuoteItems, /variant="ghost-danger"/, "Quitar usa el Button compartido, sin otra familia de botón");
+assert.match(sourceQuoteItems, /aria-label=\{`Disminuir cantidad de \$\{item\.nombre\}`\}/);
+assert.match(sourceQuoteItems, /aria-label=\{`Aumentar cantidad de \$\{item\.nombre\}`\}/);
+assert.match(sourceQuoteItems, /Unidad de cobro/);
+assert.match(sourceQuoteItems, /No modifica el producto del catálogo\./);
+assert.match(sourceQuoteItems, /quote-line__chip/);
+assert.match(sourceQuoteItems, /key=\{lineId\}/, "la fila conserva su clave estable: el plegable no se cierra al reordenar");
+assert.doesNotMatch(sourceQuoteItems, /features\/sales|\.\.\/sales\//, "Cotización no importa nada de Venta");
+assert.doesNotMatch(sourceQuoteWorkspaceCss, /\.quote-item\b|\.quote-item__|\.quote-items__head/, "sin reglas de la fila anterior");
+assert.match(sourceQuoteWorkspaceCss, /\.quote-line \.quote-line__icon-button \{[^}]*min-height: 2\.75rem;[^}]*min-width: 2\.75rem;/, "íconos de 44 px");
+assert.match(sourceQuoteWorkspaceCss, /@container \(max-width: 38rem\)/);
+// Stepper propio de Cotización: devuelve la cantidad siguiente o null; la validación real sigue en calculateQuoteLineAmounts.
+assert.equal(stepQuoteQuantity(1, 1), 2);
+assert.equal(stepQuoteQuantity("2", 1), 3);
+assert.equal(stepQuoteQuantity(2.5, -1), 1.5);
+assert.equal(stepQuoteQuantity(2.3, 1), 3.3, "sin deriva de punto flotante");
+assert.equal(stepQuoteQuantity(1, -1), null, "1 − 1 sería 0");
+assert.equal(stepQuoteQuantity(0.5, -1), null, "0,5 − 1 sería negativo");
+assert.equal(stepQuoteQuantity(0.000001, -1), null);
+assert.equal(stepQuoteQuantity("", 1), 1, "campo vacío: + parte de 0");
+assert.equal(stepQuoteQuantity("", -1), null);
+assert.equal(stepQuoteQuantity(7, 1), 8, "sin tope");
+assert.equal(calculateQuoteLineTotal({cantidad: stepQuoteQuantity(2, 1), precioUnitarioEditable: 1000, descuentoPorcentaje: 10}), 2700, "el valor del stepper pasa por la fórmula de siempre");
+// Ningún .jsx de Cotización escribe tildes ni símbolos como secuencias de escape: en texto JSX y en atributos
+// entre comillas se mostrarían literales ("identificaci" + barra + "u00f3n"). Solo se tolera el rango de
+// diacríticos de un regex (normalize("NFD")). Las secuencias se arman con código para no escribirlas aquí.
+{
+  const BS = String.fromCharCode(92);
+  const escapeSequence = new RegExp(`${BS}${BS}u[0-9a-fA-F]{4}`);
+  const diacriticsRange = `${BS}u0300-${BS}u036f`;
+  const quotesDir = new URL("../src/features/quotes/", import.meta.url);
+  const jsxFiles = [...fs.readdirSync(quotesDir).filter((name) => name.endsWith(".jsx")).map((name) => new URL(name, quotesDir)), new URL("../src/pages/NewQuotePage.jsx", import.meta.url)];
+  const checkedNames = jsxFiles.map((file) => file.pathname.split("/").pop());
+  for (const required of ["QuoteItemsEditor.jsx", "QuoteSummaryPanel.jsx", "NewQuotePage.jsx"]) assert.ok(checkedNames.includes(required), `se revisa ${required}`);
+  for (const file of jsxFiles) {
+    const lines = fs.readFileSync(file, "utf8").split(diacriticsRange).join("").split(/\r?\n/);
+    const bad = lines.findIndex((line) => escapeSequence.test(line));
+    assert.equal(bad, -1, `${file.pathname.split("/").pop()}:${bad + 1} contiene una secuencia de escape unicode fuera de un regex; escribe el carácter real en UTF-8`);
+  }
+  assert.ok(escapeSequence.test(`x${BS}u00f3y`), "la aserción detecta una secuencia de escape");
+  assert.equal(escapeSequence.test("identificación · línea"), false, "los caracteres reales no se marcan");
+}
+console.log("OK editor de ítems de cotización: filas compactas, stepper propio, plegable por fila y sin escapes unicode");
+// Cabecera corta, paso 1 (cliente y asunto en línea) y resumen: solo presentación.
+assert.match(sourceNewQuote, /<header className="quote-head no-print">/);
+assert.match(sourceNewQuote, /<Link to="\/cotizaciones" className="quote-back-link">← Cotizaciones<\/Link>/);
+assert.match(sourceNewQuote, /<p className="quote-head__title">\{isEditMode \? getQuoteDisplayNumber\(quote, "Editar cotización"\) : "Nueva cotización"\}<\/p>/);
+assert.doesNotMatch(sourceNewQuote, /<h1/, "el único h1 de la pantalla es el de la barra superior");
+assert.match(sourceNewQuote, /<h2 id="quote-client-title">1 · ¿A quién le cotizas\?<\/h2>/);
+assert.match(sourceNewQuote, /<ClientSelector inline businessId=\{userId\} value=\{quote\.clienteId\} snapshot=\{quote\.cliente\} onChange=\{handleClientChange\} onAvailabilityChange=\{setClientAvailability\} \/>/, "mismo onChange y misma disponibilidad que antes");
+assert.equal((sourceNewQuote.match(/La cotización guarda una copia histórica de los datos del cliente\./g) || []).length, 1, "el texto de guía no se repite");
+assert.match(sourceClientSelector, /inline = false/, "la prop inline es opcional: sin ella el selector es el de siempre");
+assert.match(sourceClientSelector, /\{!inline && <ResponsiveDialog/, "el diálogo se conserva para el modo sin inline");
+assert.match(sourceClientSelector, /filterSelectableClients\(clients, businessId, search\)/, "mismo filtro");
+assert.equal((sourceClientSelector.match(/onChange\?\.\(client\)/g) || []).length, 1, "un solo punto de elección: onChange(client) con el objeto");
+assert.match(sourceClientSelector, /placeholder="Buscar cliente por nombre o RUT"/);
+assert.match(sourceQuoteSummary, /<h2>Resumen<\/h2>/);
+assert.doesNotMatch(sourceQuoteSummary, /Totales|quote-workspace__kicker/, "el resumen ya no repite el rótulo");
+assert.match(sourceQuoteWorkspaceCss, /\.quote-summary__row--total strong \{\s*color: var\(--color-text-brand\);\s*font-size: var\(--font-size-2xl\);/, "Total en color de marca, como en Venta");
+assert.match(sourceQuoteWorkspaceCss, /\.quote-summary__discount input \{\s*max-width: 8rem;/, "campo de descuento con ancho razonable");
+assert.doesNotMatch(sourceQuoteWorkspaceCss, /quote-workspace__client-project/);
 assert.match(sourceQuoteCollapsible, /aria-expanded=\{open\}/);
 assert.match(sourceQuoteWorkspaceCss, /position:\s*sticky/);
 assert.match(sourceQuoteWorkspaceCss, /@media \(max-width: 620px\)/);

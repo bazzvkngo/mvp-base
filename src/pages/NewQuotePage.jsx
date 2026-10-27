@@ -1864,23 +1864,33 @@ function NewQuotePage({ userId }) {
 
   return (
     <section className="quote-page quote-workspace">
-      <section className="quote-workspace__panel quote-workspace__client-project no-print">
-        <div>
-          <span className="quote-workspace__kicker">Cliente</span>
-          <ClientSelector businessId={userId} value={quote.clienteId} snapshot={quote.cliente} onChange={handleClientChange} onAvailabilityChange={setClientAvailability} />
+      {/* Un solo h1 por pantalla: el de la barra superior (navigation.js). Por eso el título va en un <p>. */}
+      <header className="quote-head no-print">
+        <Link to="/cotizaciones" className="quote-back-link">← Cotizaciones</Link>
+        <p className="quote-head__title">{isEditMode ? getQuoteDisplayNumber(quote, "Editar cotización") : "Nueva cotización"}</p>
+      </header>
+
+      <section className="quote-workspace__panel quote-client-project no-print" aria-labelledby="quote-client-title">
+        <h2 id="quote-client-title">1 · ¿A quién le cotizas?</h2>
+        <div className="quote-client-project__grid">
+          <div className="quote-client-project__client">
+            <span className="quote-workspace__kicker">Cliente</span>
+            <ClientSelector inline businessId={userId} value={quote.clienteId} snapshot={quote.cliente} onChange={handleClientChange} onAvailabilityChange={setClientAvailability} />
+          </div>
+          <div className="quote-workspace__project">
+            <label className="quote-workspace__project-field">
+              <span className="quote-workspace__kicker">Asunto</span>
+              <input type="text" value={quote.proyectoNombre} onChange={(event) => updateField("proyectoNombre", event.target.value)} placeholder="Ej. Escalera zona de estanque" />
+              <small>Resume en pocas palabras qué se cotiza. Aparece como 'Proyecto' en el PDF.</small>
+            </label>
+            {quote.trabajoId && (
+              <Link to="/trabajos" state={{openWorkId: quote.trabajoId}} className="quote-workspace__project-link">
+                Proyecto {quote.trabajoNumero || quote.trabajoTitulo || quote.trabajoId}
+              </Link>
+            )}
+          </div>
         </div>
-        <div className="quote-workspace__project">
-          <label className="quote-workspace__project-field">
-            <span className="quote-workspace__kicker">Asunto</span>
-            <input type="text" value={quote.proyectoNombre} onChange={(event) => updateField("proyectoNombre", event.target.value)} placeholder="Ej. Escalera zona de estanque" />
-            <small>Resume en pocas palabras qué se cotiza. Aparece como 'Proyecto' en el PDF.</small>
-          </label>
-          {quote.trabajoId && (
-            <Link to="/trabajos" state={{openWorkId: quote.trabajoId}} className="quote-workspace__project-link">
-              Proyecto {quote.trabajoNumero || quote.trabajoTitulo || quote.trabajoId}
-            </Link>
-          )}
-        </div>
+        <p className="quote-client-project__note">La cotización guarda una copia histórica de los datos del cliente.</p>
       </section>
 
       {error && <p className="no-print" style={styles.errorText}>{error}</p>}

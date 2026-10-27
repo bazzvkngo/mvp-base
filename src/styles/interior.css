@@ -4741,6 +4741,32 @@
   text-align: center;
 }
 
+/* Selector de cliente en línea (prop inline): buscador y lista dentro de la tarjeta. Los selectores con
+   dos clases ganan a las reglas generales de campos del formulario de Cotización. */
+.client-selector--inline {
+  margin-bottom: 0;
+}
+
+.client-selector__inline-picker {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.client-selector--inline .client-selector__search input,
+.client-selector--inline .client-selector__search input:focus {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
+.client-selector--inline .client-selector__results {
+  margin-top: 0;
+  max-height: 14rem;
+}
+
 .quote-legacy-client-note {
   background: var(--color-warning-50);
   border: 1px solid var(--color-warning-200);

@@ -22,8 +22,7 @@
 }
 
 .quote-workspace__field,
-.quote-item__field,
-.quote-item__details label,
+.quote-line__more-body label,
 .quote-catalog__search,
 .quote-catalog__filter {
   color: var(--color-text-muted);
@@ -99,14 +98,12 @@
 
 .quote-workspace__button:focus-visible,
 .quote-collapsible__trigger:focus-visible,
-.quote-item__actions button:focus-visible,
 .quote-summary__clear:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--color-brand-500) 30%, transparent);
   outline-offset: 2px;
 }
 
-.quote-workspace__button:disabled,
-.quote-item__actions button:disabled {
+.quote-workspace__button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
@@ -154,10 +151,69 @@
   margin: 3px 0 0;
 }
 
-.quote-workspace__client-project {
+/* Cabecera corta: una sola fila. El h1 de la pantalla es el de la barra superior. */
+.quote-head {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  min-width: 0;
+}
+
+.quote-back-link {
+  align-items: center;
+  color: var(--color-text-muted);
+  display: inline-flex;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  min-height: 2.75rem;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: var(--space-1);
+}
+
+.quote-back-link:hover {
+  text-decoration-color: currentColor;
+}
+
+.quote-back-link:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--space-1);
+}
+
+.quote-head__title {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-tight);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Paso 1: cliente y asunto juntos. */
+.quote-client-project {
   display: grid;
-  gap: 14px;
-  grid-template-columns: minmax(0, 1.6fr) minmax(260px, 0.8fr);
+  gap: var(--space-3);
+}
+
+.quote-client-project__grid {
+  align-items: start;
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.quote-client-project__client {
+  align-content: start;
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.quote-client-project__note {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  margin: 0;
 }
 
 .quote-workspace__project {
@@ -176,13 +232,13 @@
   line-height: 1.4;
 }
 
-.quote-workspace__client-project .client-selector__summary,
-.quote-workspace__client-project .client-selector__empty-selection {
+.quote-client-project .client-selector__summary,
+.quote-client-project .client-selector__empty-selection {
   min-height: 0;
   padding: 10px 12px;
 }
 
-.quote-workspace__client-project .client-selector__summary p {
+.quote-client-project .client-selector__summary p {
   display: inline;
   margin-right: 8px;
 }
@@ -244,116 +300,282 @@
   color: var(--color-danger-700);
 }
 
-.quote-items__head,
-.quote-item {
+/* Filas de ítems compactas (Nueva cotización). Solo presentación: mismos campos, mismos
+   manejadores y misma fórmula de línea que antes. El panel es contenedor para que la fila
+   pase a dos líneas según el ancho de la tarjeta y no el de la ventana. */
+.quote-items {
+  container-type: inline-size;
+}
+
+.quote-lines {
   display: grid;
-  gap: 8px;
-  grid-template-columns: minmax(190px, 1.7fr) minmax(64px, 0.52fr) minmax(88px, 0.72fr) minmax(68px, 0.55fr) minmax(96px, 0.75fr) minmax(104px, 0.8fr);
 }
 
-.quote-items__head {
-  color: var(--color-text-muted);
-  font-size: 10px;
-  font-weight: 850;
-  letter-spacing: 0.05em;
-  padding: 0 10px 6px;
-  text-transform: uppercase;
-}
-
-.quote-item {
-  align-items: center;
+.quote-line {
   border-top: 1px solid var(--color-border-subtle);
-  padding: 10px;
+  display: grid;
+  gap: var(--space-1);
+  padding-top: var(--space-2);
 }
 
-.quote-item--highlighted {
+.quote-line--highlighted {
   background: var(--color-surface-hover);
-  box-shadow: inset 3px 0 var(--color-brand-500);
 }
 
-.quote-item__identity,
-.quote-item__total {
+.quote-line__row {
+  align-items: center;
+  display: grid;
+  gap: var(--space-3);
+  grid-template-areas: "identity qty price total actions";
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
+}
+
+.quote-line__identity {
+  display: grid;
+  gap: var(--space-1);
+  grid-area: identity;
   min-width: 0;
 }
 
-.quote-item__identity strong {
+.quote-line__title {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.quote-line__name {
   color: var(--color-text-strong);
-  display: block;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.quote-item__identity span,
-.quote-item__field span,
-.quote-item__total span {
+.quote-line__chip {
+  background: var(--color-surface-brand);
+  border-radius: var(--radius-pill);
+  color: var(--color-text-brand);
+  flex: 0 0 auto;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+  padding: var(--space-1) var(--space-2);
+}
+
+.quote-line__meta {
   color: var(--color-text-muted);
-  display: block;
-  font-size: 11px;
-  margin-bottom: 3px;
-}
-
-.quote-item__field input {
-  padding: 7px;
-}
-
-.quote-item__total strong {
-  color: var(--color-text-strong);
+  font-size: var(--font-size-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.quote-item__actions {
-  display: flex;
-  gap: 4px;
-  justify-content: flex-end;
-}
-
-.quote-item__actions button {
+.quote-qty {
   background: var(--color-surface-panel);
   border: 1px solid var(--color-border-control);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  grid-area: qty;
+  overflow: hidden;
+}
+
+.quote-qty__button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--color-text-default);
+  cursor: pointer;
+  display: inline-flex;
+  justify-content: center;
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+  padding: 0;
+}
+
+.quote-qty__button:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+}
+
+.quote-qty__button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* Los campos de la fila ganan a la regla general ".quote-items input" (caja con borde y relleno). */
+.quote-items .quote-qty__input,
+.quote-items .quote-price__input {
+  -moz-appearance: textfield;
+  appearance: textfield;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--color-text-strong);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  min-height: 2.75rem;
+  padding: 0;
+}
+
+.quote-qty__input::-webkit-inner-spin-button,
+.quote-qty__input::-webkit-outer-spin-button,
+.quote-price__input::-webkit-inner-spin-button,
+.quote-price__input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.quote-items .quote-qty__input {
+  border-left: 1px solid var(--color-border-subtle);
+  border-right: 1px solid var(--color-border-subtle);
+  font-weight: var(--font-weight-semibold);
+  text-align: center;
+  width: 3.5rem;
+}
+
+.quote-items .quote-qty__input:focus,
+.quote-items .quote-price__input:focus {
+  border-color: var(--color-border-subtle);
+  box-shadow: none;
+}
+
+.quote-qty__button:focus-visible,
+.quote-qty__input:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: calc(var(--space-1) * -1);
+}
+
+.quote-price {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
   color: var(--color-text-muted);
+  cursor: text;
+  display: inline-flex;
+  gap: var(--space-1);
+  grid-area: price;
+  min-height: 2.75rem;
+  padding: 0 var(--space-2);
+}
+
+.quote-price:hover {
+  border-color: var(--color-border-control);
+}
+
+.quote-price:focus-within {
+  border-color: var(--color-border-control);
+  outline: var(--focus-outline);
+  outline-offset: var(--space-1);
+}
+
+.quote-items .quote-price__input {
+  color: var(--color-text-default);
+  text-align: right;
+  width: 5.5rem;
+}
+
+.quote-price__input:focus-visible {
+  outline: none;
+}
+
+.quote-price__edit {
+  display: inline-flex;
+}
+
+.quote-line__total {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  grid-area: total;
+  min-width: 5rem;
+  text-align: right;
+}
+
+.quote-line__actions {
+  display: inline-flex;
+  grid-area: actions;
+}
+
+/* Subir, bajar y quitar: botones de ícono de 44 px. */
+.quote-line .quote-line__icon-button {
+  border-color: transparent;
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+  padding: 0;
+}
+
+.quote-line .quote-line__icon-button:not(.quote-line__remove) {
+  background: transparent;
+  color: var(--color-text-default);
+}
+
+.quote-line__more > summary {
+  align-items: center;
+  color: var(--color-text-brand);
   cursor: pointer;
-  min-height: 31px;
-  padding: 4px 8px;
+  display: inline-flex;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  gap: var(--space-1);
+  list-style: none;
+  min-height: 2.75rem;
 }
 
-.quote-item__actions .quote-item__remove {
-  color: var(--color-danger-700);
-  font-size: 11px;
-  font-weight: 750;
+.quote-line__more > summary::-webkit-details-marker {
+  display: none;
 }
 
-.quote-item__details {
-  grid-column: 1 / -1;
+.quote-line__more > summary:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--space-1);
 }
 
-.quote-item__details summary {
-  color: var(--color-brand-600);
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 750;
-  width: fit-content;
+.quote-line__chevron {
+  display: inline-flex;
 }
 
-.quote-item__details > div {
+.quote-line__more[open] .quote-line__chevron {
+  transform: rotate(180deg);
+}
+
+.quote-line__more-body {
   display: grid;
-  gap: 10px;
-  grid-template-columns: minmax(0, 1fr) minmax(140px, 0.25fr);
-  margin-top: 9px;
+  gap: var(--space-3);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 10rem);
+  padding-bottom: var(--space-3);
 }
 
-.quote-item__details textarea {
-  min-height: 62px;
+.quote-line__more-body textarea {
+  min-height: 4rem;
   resize: vertical;
 }
 
-.quote-item__details-help {
-  color: var(--color-text-muted);
-  font-size: 11px;
+.quote-line__field--wide,
+.quote-line__help {
   grid-column: 1 / -1;
-  line-height: 1.4;
-  margin: -3px 0 0;
+}
+
+.quote-line__help {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-tight);
+  margin: 0;
+}
+
+@container (max-width: 38rem) {
+  .quote-line__row {
+    grid-template-areas:
+      "identity identity actions"
+      "qty price total";
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .quote-line__more-body {
+    grid-template-columns: 1fr;
+  }
 }
 
 .quote-collapsible {
@@ -433,21 +655,30 @@
 }
 
 .quote-summary__row--total {
+  align-items: baseline;
   border-bottom: 0;
+  border-top: 1px solid var(--color-border-default);
   color: var(--color-text-strong);
   font-size: 17px;
+  margin-top: var(--space-1);
   padding: 13px 0 8px;
 }
 
 .quote-summary__row--total strong {
-  color: var(--color-brand-600);
-  font-size: 22px;
+  color: var(--color-text-brand);
+  font-size: var(--font-size-2xl);
+  line-height: var(--line-height-tight);
 }
 
 .quote-summary__discount input {
-  max-width: 118px;
+  max-width: 8rem;
   padding: 7px;
   text-align: right;
+  width: 8rem;
+}
+
+.quote-summary__actions .quote-workspace__button--primary {
+  min-height: 3rem;
 }
 
 .quote-summary__actions {
@@ -471,6 +702,7 @@
 /* Qué falta para habilitar "Crear cotización" / "Guardar cambios". */
 .quote-summary__hint--blocked {
   color: var(--color-text-default);
+  font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
 }
 
@@ -649,7 +881,7 @@
 }
 
 @media (max-width: 820px) {
-  .quote-workspace__client-project,
+  .quote-client-project__grid,
   .quote-catalog__toolbar {
     grid-template-columns: 1fr;
   }
@@ -666,23 +898,6 @@
     grid-column: 1 / -1;
     grid-template-columns: 1fr auto;
     align-items: center;
-  }
-
-  .quote-items__head {
-    display: none;
-  }
-
-  .quote-item {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .quote-item__identity {
-    grid-column: 1 / -1;
-  }
-
-  .quote-item__actions {
-    grid-column: 1 / -1;
-    justify-content: flex-start;
   }
 }
 
@@ -711,28 +926,6 @@
     width: 100%;
   }
 
-  .quote-item {
-    background: var(--color-surface-panel);
-    border: 1px solid var(--color-border-subtle);
-    border-radius: 9px;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    margin-top: 9px;
-  }
-
-  .quote-item__identity,
-  .quote-item__actions,
-  .quote-item__details {
-    grid-column: 1 / -1;
-  }
-
-  .quote-item__details > div {
-    grid-template-columns: 1fr;
-  }
-
-  .quote-item__actions button {
-    flex: 1;
-  }
-
   .quote-catalog__item {
     align-items: start;
     grid-template-columns: 1fr;
@@ -743,8 +936,8 @@
     grid-template-columns: 1fr;
   }
 
-  .quote-workspace__client-project .client-selector__summary,
-  .quote-workspace__client-project .client-selector__empty-selection {
+  .quote-client-project .client-selector__summary,
+  .quote-client-project .client-selector__empty-selection {
     align-items: stretch;
     grid-template-columns: 1fr;
   }
@@ -774,9 +967,7 @@
   .quote-workspace__kicker,
   .quote-workspace__status,
   .quote-workspace__feedback,
-  .quote-item__details summary,
   .quote-collapsible__indicator,
-  .quote-summary__row--total strong,
   .quote-workspace__link-button,
   .quote-workspace__project-link {
     color: var(--color-brand-400);

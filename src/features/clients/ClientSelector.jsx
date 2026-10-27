@@ -17,8 +17,11 @@ function clientName(client) {
   return client?.nombreRazonSocial || client?.empresa || "Cliente sin nombre";
 }
 
+// Con `inline` el buscador y la lista van en la propia tarjeta (sin diálogo); es opcional y sin él el
+// componente se comporta exactamente como siempre: mismo filtro, mismo onChange(client).
 function ClientSelector({
   businessId,
+  inline = false,
   onAvailabilityChange,
   onChange,
   snapshot,
@@ -29,7 +32,10 @@ function ClientSelector({
   const [error, setError] = useState("");
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [changing, setChanging] = useState(false);
   const searchInputRef = useRef(null);
+  const changeButtonRef = useRef(null);
+  const restoreFocusRef = useRef(false);
   const previousBusinessIdRef = useRef(businessId);
 
   useEffect(() => {
@@ -41,6 +47,7 @@ function ClientSelector({
     setError("");
     setOpen(false);
     setSearch("");
+    setChanging(false);
     if (businessChanged) onChange?.(null);
 
     if (!businessId) {
@@ -84,19 +91,87 @@ function ClientSelector({
     });
   }, [activeClients.length, error, loading, onAvailabilityChange]);
 
+  const hasHistoricalSnapshot = !value && Boolean(
+    snapshot?.nombreRazonSocial || snapshot?.empresa || snapshot?.rut
+  );
+  const hasSelection = Boolean(value) || hasHistoricalSnapshot;
+  const picking = inline && (!hasSelection || changing);
+
+  const finishInlinePicking = () => {
+    restoreFocusRef.current = true;
+    setChanging(false);
+    setSearch("");
+  };
+
   const selectClient = (client) => {
     onChange?.(client);
     setOpen(false);
     setSearch("");
+    if (inline) finishInlinePicking();
   };
 
-  const hasHistoricalSnapshot = !value && Boolean(
-    snapshot?.nombreRazonSocial || snapshot?.empresa || snapshot?.rut
-  );
+  useEffect(() => {
+    if (changing) searchInputRef.current?.focus();
+  }, [changing]);
+
+  useEffect(() => {
+    if (!picking && restoreFocusRef.current) {
+      restoreFocusRef.current = false;
+      changeButtonRef.current?.focus();
+    }
+  }, [picking]);
 
   return (
-    <div className="client-selector">
-      {value || hasHistoricalSnapshot ? (
+    <div className={inline ? "client-selector client-selector--inline" : "client-selector"}>
+      {picking ? (
+        <div className="client-selector__inline-picker">
+          <label className="client-selector__search">
+            <span className="sr-only">Buscar cliente</span>
+            <div>
+              <AppIcon icon={Search} size={18} />
+              <input
+                ref={searchInputRef}
+                type="search"
+                value={search}
+                maxLength={SEARCH_MAX_LENGTH}
+                disabled={!businessId || loading || Boolean(error)}
+                onChange={(event) => setSearch(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape" && hasSelection) finishInlinePicking();
+                }}
+                placeholder="Buscar cliente por nombre o RUT"
+              />
+            </div>
+          </label>
+          {visibleClients.length > 0 ? (
+            <div className="client-selector__results" role="list">
+              {visibleClients.map((client) => (
+                <div key={client.clienteId} role="listitem">
+                  <button
+                    type="button"
+                    className="client-selector__result"
+                    aria-pressed={client.clienteId === value}
+                    onClick={() => selectClient(client)}
+                  >
+                    <strong>{clientName(client)}</strong>
+                    <span>{client.identificadorFiscalValor || client.rut}</span>
+                    <small>{client.email || client.telefono || "Sin datos de contacto"}</small>
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            !loading && !error && activeClients.length > 0 && (
+              <p className="client-selector__status">No encontramos coincidencias.</p>
+            )
+          )}
+          {hasSelection && (
+            <Button type="button" variant="ghost" onClick={finishInlinePicking}>
+              Cancelar
+            </Button>
+          )}
+        </div>
+      ) : hasSelection ? (
         <div className="client-selector__summary">
           <div>
             <div className="client-selector__heading">
@@ -119,9 +194,10 @@ function ClientSelector({
             </p>
           </div>
           <Button
+            ref={changeButtonRef}
             type="button"
             variant="secondary"
-            onClick={() => setOpen(true)}
+            onClick={() => (inline ? setChanging(true) : setOpen(true))}
           >
             Cambiar cliente
           </Button>
@@ -152,7 +228,7 @@ function ClientSelector({
         </p>
       )}
 
-      <ResponsiveDialog
+      {!inline && <ResponsiveDialog
         open={open}
         onClose={() => setOpen(false)}
         initialFocusRef={searchInputRef}
@@ -199,7 +275,7 @@ function ClientSelector({
             <Link to="/clientes" onClick={() => setOpen(false)}>Ir a Clientes</Link>
           </div>
         )}
-      </ResponsiveDialog>
+      </ResponsiveDialog>}
     </div>
   );
 }

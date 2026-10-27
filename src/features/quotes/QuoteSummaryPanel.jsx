@@ -30,8 +30,7 @@ function QuoteSummaryPanel({
       <section className="quote-workspace__panel quote-summary">
         <header className="quote-summary__header">
           <div>
-            <span className="quote-workspace__kicker">Resumen</span>
-            <h2>Totales</h2>
+            <h2>Resumen</h2>
             {isEditMode && quoteNumber && (
               <small className="quote-summary__meta">{[quoteNumber, quoteDate].filter(Boolean).join(" · ")}</small>
             )}
