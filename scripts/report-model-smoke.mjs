@@ -5,7 +5,7 @@ import {renderToStaticMarkup} from "react-dom/server";
 import {createServer} from "vite";
 import {formatCompactMoney} from "../src/utils/formatters.js";
 import {describePeriod, describeProductsBar, describeProfitReasons, describeProjectsSummary} from "../src/domain/reportProfitOverview.mjs";
-import {DEFAULT_ROW_LIMIT, buildShareBars, describeFlowSummary, describeProductBars, describeQuantity, describeRowsShown, limitRows, sortByDateDesc} from "../src/domain/reportFlowOverview.mjs";
+import {DEFAULT_ROW_LIMIT, buildShareBars, countWithoutNet, describeFlowSummary, describeProductBars, describeQuantity, describeRowsShown, limitRows, sortByDateDesc} from "../src/domain/reportFlowOverview.mjs";
 import {
   REPORT_TABS,
   aggregateOperationalTimeline,
@@ -532,12 +532,14 @@ assert.doesNotMatch(comprasViewSource.replace(/no es ganancia|pestaña Ganancia/
 assert.match(comprasViewSource, /Cuánto ganas está en la pestaña Ganancia\./);
 assert.doesNotMatch(comprasViewSource, /Rentabilidad y estado/);
 assert.doesNotMatch(comprasViewSource, /margenBrutoProductosCubiertos/);
-assert.match(comprasViewSource, /Las compras muestran egresos registrados del negocio/);
+// La nota pasa a ser el subtítulo de la cabecera "Compré" (solo en la primera moneda).
+assert.match(comprasViewSource, /note=\{index === 0 \? "Las compras muestran egresos registrados del negocio\." : ""\}/);
 // SPEC 025 etapa 1: los montos de Ventas y Compras van sin IVA.
 assert.match(comprasViewSource, /ambos montos van sin IVA/);
 assert.doesNotMatch(comprasViewSource, /incluyen IVA/);
-assert.match(comprasViewSource, /<th>Neto<\/th><th>Total<\/th>/);
-assert.match(ventasViewSource, /<th>Neto<\/th><th>Total<\/th>/);
+// Neto y Total siguen en la tabla: ahora las columnas se declaran como rótulos de LimitedOperationsTable (que dibuja los <th>).
+assert.match(comprasViewSource, /columns=\{\["Número", "Fecha", "Proveedor", "Moneda", "Neto", "Total"\]\}/);
+assert.match(ventasViewSource, /columns=\{\["Número", "Fecha", "Cliente", "Moneda", "Neto", "Total"\]\}/);
 assert.match(comprasViewSource, /topPurchaseSuppliers/);
 assert.match(comprasViewSource, /topPurchaseProducts/);
 
@@ -1325,7 +1327,8 @@ console.log("OK reportes SPEC 025 (resumen visual, pulido): tarjetas alineadas a
 assert.doesNotMatch(comprasViewSource, /Sin compras confirmadas en el período/);
 assert.equal((comprasViewSource.match(/Aún no hay compras confirmadas en este período/g) || []).length, 1, "un solo mensaje de vacío en Compras");
 assert.match(comprasViewSource, /chartGroupsWithData\.length > 0 && <section className="erp-card reports-simple-chart">/);
-assert.match(comprasViewSource, /\{hasPurchases && <section className="erp-card reports-detail-section">\s*<div className="reports-section-heading"><div><span>Operaciones<\/span>/);
+// Las operaciones: LimitedOperationsTable no dibuja nada sin filas, así que ya no necesita la guarda `hasPurchases &&`.
+assert.match(comprasViewSource, /<LimitedOperationsTable[\s\S]*?dateField="fechaCompra"[\s\S]*?title="Últimas compras"/);
 {
   const comprasVite = await createServer({appType: "custom", logLevel: "silent", server: {middlewareMode: true}});
   try {
@@ -1349,8 +1352,8 @@ assert.match(comprasViewSource, /\{hasPurchases && <section className="erp-card 
     // Mes sin ventas ni compras: un solo mensaje, sin gráfico, sin su nota y sin listado.
     const nothing = renderCompras([], []);
     assert.equal(countOf(nothing, /Aún no hay compras confirmadas en este período\./g), 1);
-    assert.doesNotMatch(nothing, /Sin compras confirmadas en el período|Aún no hay ventas ni compras confirmadas|Compras del período|Comparar ventas y compras no es ganancia|Movimiento comercial/);
-    assert.ok(countOf(nothing, /\$0</g) === 1 && nothing.includes("0 operación(es)"), "el $0 y el conteo siguen en las tarjetas");
+    assert.doesNotMatch(nothing, /Sin compras confirmadas en el período|Aún no hay ventas ni compras confirmadas|Últimas compras|Comparar ventas y compras no es ganancia|Movimiento comercial/);
+    assert.ok(countOf(nothing, /\$0</g) === 1 && nothing.includes("0 compras confirmadas · sin IVA"), "el $0 y el conteo siguen en la cabecera");
     assert.ok(nothing.includes("Ir a Compras"), "el único mensaje lleva su acceso con permiso");
     assert.ok(!renderCompras([], [], {canOpenPurchases: false}).includes("Ir a Compras"), "sin permiso no hay acceso");
     // Mes con una venta y sin compras: el gráfico y su nota siguen; el vacío se dice una sola vez.
@@ -1358,12 +1361,12 @@ assert.match(comprasViewSource, /\{hasPurchases && <section className="erp-card 
     assert.ok(salesOnly.includes("Movimiento comercial") && salesOnly.includes("Comparar ventas y compras no es ganancia."), "el gráfico sigue con ventas");
     assert.ok(salesOnly.includes("Ventas confirmadas") && salesOnly.includes("$1.000"));
     assert.equal(countOf(salesOnly, /Aún no hay compras confirmadas en este período\./g), 1);
-    assert.doesNotMatch(salesOnly, /Sin compras confirmadas en el período|Compras del período/);
+    assert.doesNotMatch(salesOnly, /Sin compras confirmadas en el período|Últimas compras/);
     assert.ok(salesOnly.includes("Cuánto ganas está en la pestaña Ganancia."));
     // Mes con compras: sin mensaje de vacío, con el listado y el gráfico.
     const withPurchases = renderCompras([], [septemberPurchase]);
     assert.doesNotMatch(withPurchases, /Aún no hay compras confirmadas en este período/);
-    assert.ok(withPurchases.includes("Compras del período") && withPurchases.includes("Proveedor Uno") && withPurchases.includes("Movimiento comercial"));
+    assert.ok(withPurchases.includes("Últimas compras") && withPurchases.includes("Proveedor Uno") && withPurchases.includes("Movimiento comercial"));
   } finally {
     await comprasVite.close();
   }
@@ -2064,4 +2067,170 @@ console.log("OK reportes (ganancia visual, bloque 2b): relleno, grosor y espacio
   }
 }
 console.log("OK reportes (ventas y compras, bloque 1): helpers de cabecera, orden por fecha, límite de filas y barras de porcentaje, y piezas compartidas sin cablear");
+// Ventas y Compras visuales, bloque 2: las dos pestañas cableadas con las piezas compartidas.
+{
+  const vcVentasSource = readFileSync("src/features/reports/views/ReportsVentasView.jsx", "utf8");
+  const vcComprasSource = readFileSync("src/features/reports/views/ReportsComprasView.jsx", "utf8");
+  const vcPageSource = readFileSync("src/pages/StatisticsPage.jsx", "utf8");
+  const vcCss = readFileSync("src/styles/interior.css", "utf8");
+  const vcNorm = (text) => String(text).replace(/\s/g, " ");
+  const vcRange = {start: "2026-10-01", end: "2026-10-31", days: 31};
+  const vcCount = (text, pattern) => (text.match(pattern) || []).length;
+
+  // --- Helpers nuevos ---
+  const noNetDocs = [{moneda: "CLP", neto: 100}, {moneda: "CLP", neto: null}, {moneda: "CLP", neto: -5}, {moneda: "CLP", neto: "10"}, {moneda: "CLP", neto: Number.NaN}, {moneda: "USD", neto: undefined}, {moneda: "USD", neto: 0}];
+  assert.deepEqual([countWithoutNet(noNetDocs), countWithoutNet(noNetDocs, {currency: "CLP"}), countWithoutNet(noNetDocs, {currency: "USD"}), countWithoutNet(undefined), countWithoutNet([])], [5, 4, 1, 0, 0], "sin neto válido: faltante, negativo, texto o NaN; el 0 sí es válido");
+  const flowDocs = [{id: "a", estado: "confirmada", moneda: "CLP", fechaVenta: "2026-10-02", neto: 100, total: 119}, {id: "b", estado: "confirmada", moneda: "CLP", fechaVenta: "2026-10-03", neto: null, total: 59}];
+  assert.equal(countWithoutNet(flowDocs, {currency: "CLP"}), getSalesMetrics(flowDocs, vcRange).withoutNetCount, "con una moneda coincide con la cuenta de reportModel");
+  assert.equal(buildShareBars([{id: "a", name: "A", total: 50}], {total: 200}).others.fraction, 1, "el resto no pasa de 1 aunque supere a la mayor");
+  assert.equal(buildShareBars([{id: "a", name: "A", total: 100}, {id: "b", name: "B", total: 50}], {total: 400}).others.fraction, 1);
+  assert.equal(buildShareBars([{id: "a", name: "A", total: 100}], {total: 125}).others.fraction, 0.25);
+
+  // --- Código: piezas compartidas, sin copias ni descripciones, columnas y universo de datos ---
+  for (const [name, source] of [["Ventas", vcVentasSource], ["Compras", vcComprasSource]]) {
+    for (const piece of ["ReportsFlowHeader", "ReportsShareBars", "LimitedOperationsTable", "FoldedEntityTable", "FoldedTimeline"]) {
+      assert.match(source, new RegExp(`import ${piece} from "\\.\\./${piece}";`), `${name} usa ${piece}`);
+    }
+    assert.doesNotMatch(source, /function TimelineTable|function TopEntityTable/, `${name}: sin copias de las tablas`);
+    assert.doesNotMatch(source, /con datos del período seleccionado|usadas en las métricas de esta vista|Detalle de (Ventas|Compras)|Ventas del período|Compras del período|Cantidad de (ventas|compras)|operación\(es\)|Confirmadas en el período/, `${name}: sin descripciones que explican lo obvio ni tarjetas de conteo`);
+    assert.doesNotMatch(source, /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/, `${name}: sin colores literales`);
+    assert.equal(vcCount(source, /<ReportsFlowHeader/g), 1, `${name}: una cabecera por moneda`);
+  }
+  assert.match(vcVentasSource, /const confirmed = summary\.sales\.confirmed;/, "las barras de producto usan solo las ventas confirmadas del período");
+  assert.match(vcVentasSource, /documents: confirmed/);
+  assert.doesNotMatch(vcVentasSource, /documents: (summary\.sales(?!\.confirmed)|data\.sales|sales[,}])/);
+  assert.match(vcVentasSource, /describeProductBars\(/);
+  assert.match(vcVentasSource, /Los montos por producto van antes del descuento general de la venta\./);
+  assert.match(vcVentasSource, /label=\{`Ver los principales clientes/);
+  assert.match(vcComprasSource, /title="¿A quién le compré\?"/);
+  assert.match(vcComprasSource, /label=\{`Ver los productos adquiridos/);
+  assert.match(vcPageSource, /<ReportsVentasView canOpenSales=\{links\.sales\} fallbackCurrency=\{currencyCode\}/, "la moneda de respaldo es la que la página usó para armar el resumen y los rankings");
+  assert.match(vcPageSource, /<ReportsComprasView canOpenPurchases=\{links\.purchases\} chartGroups=\{chartGroups\} fallbackCurrency=\{currencyCode\}/);
+  // El gráfico Ventas vs Compras y su nota siguen intactos en Compras (SPEC 022 §6.3).
+  assert.equal(vcCount(vcComprasSource, /<OperationalComparisonChart/g), 1);
+  assert.ok(vcComprasSource.includes("Comparar ventas y compras no es ganancia. Las compras incluyen stock que aún no se vende, y ambos montos van sin IVA. Cuánto ganas está en la pestaña Ganancia."));
+  // Estilos: el relleno de cada tarjeta se declara completo (.erp-card no trae padding) y todo con tokens.
+  assert.match(vcCss, /\.reports-flow-header \{[^}]*padding: var\(--space-6\) var\(--space-6\) calc\(var\(--space-6\) \+ var\(--space-1\)\);/);
+  assert.match(vcCss, /\.reports-share-bars \{[^}]*padding: var\(--space-5\) var\(--space-6\);/);
+  assert.match(vcCss, /@media \(max-width: 640px\) \{\s*\.reports-share-bars \{\s*padding: var\(--space-4\);/);
+  const vcBarsStart = vcCss.indexOf("/* Barras de Ventas y Compras (SPEC 025)");
+  const vcBarsBlock = vcCss.slice(vcBarsStart, vcCss.indexOf("grid-row: 2;", vcBarsStart) + 30);
+  assert.ok(vcBarsStart > -1 && vcBarsBlock.length > 800);
+  assert.doesNotMatch(vcBarsBlock, /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|--color-brand-[6-9]00|--color-dark-/, "solo tokens");
+  assert.match(vcBarsBlock, /\.reports-share-bars__fill \{[^}]*background: var\(--color-text-brand-accent\);/);
+  assert.match(vcBarsBlock, /\.reports-share-bars--purchases \.reports-share-bars__fill \{\s*background: var\(--color-data-expense\);/);
+  assert.match(vcBarsBlock, /\.reports-share-bars__track \{[^}]*height: var\(--space-5\);/);
+  const vcBarsSource = readFileSync("src/features/reports/ReportsShareBars.jsx", "utf8");
+  assert.doesNotMatch(vcBarsSource, /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|\.reduce\(|[Gg]anancia/);
+  assert.match(vcBarsSource, /className="reports-share-bars__track" aria-hidden="true"/, "la barra es decorativa: el texto dice lo mismo");
+
+  const vcVite = await createServer({appType: "custom", logLevel: "silent", server: {middlewareMode: true}});
+  try {
+    const {default: VentasView} = await vcVite.ssrLoadModule("/src/features/reports/views/ReportsVentasView.jsx");
+    const {default: ComprasView} = await vcVite.ssrLoadModule("/src/features/reports/views/ReportsComprasView.jsx");
+    const vcLine = (itemId, nombre, cantidad, totalLinea, extra = {}) => ({lineaId: `l-${itemId}`, itemId, nombre, cantidad, totalLinea, tipoItem: "producto", unidad: "unidad", ...extra});
+    const vcSale = (n, date, extra = {}) => ({id: `v${n}`, numero: `VTA-2026-${String(n).padStart(4, "0")}`, estado: "confirmada", moneda: "CLP", fechaVenta: date, clienteId: "c1", clienteSnapshot: {nombreRazonSocial: "Comercial Andina SpA"}, neto: 1000 * n, total: 1190 * n, descuento: 0, items: [], ...extra});
+    const mockupSale = vcSale(2, "2026-10-08", {neto: 143089, total: 170276, items: [
+      vcLine("a50", "Ángulo laminado 50x50x4x6.000 mm", 2, 62430), vcLine("hora", "Hora técnica en terreno", 2, 60000, {tipoItem: "servicio", unidad: "hora"}),
+      vcLine("a20", "Ángulo laminado 20x20x3x6.000 mm", 1, 8976), vcLine("fierro", "Fierro A-63 10 mm x 6 m estriado", 1, 6277), vcLine("pletina", "Pletina comercial 20x3x6.000 mm", 1, 5406),
+    ]});
+    const renderVentas = (sales, extra = {}) => {
+      const summary = getSimplifiedReportSummary({sales, purchases: [], projectBalances: [], range: vcRange});
+      return plain(renderToStaticMarkup(React.createElement(VentasView, {
+        canOpenSales: true, fallbackCurrency: "CLP", navigate: () => {}, summary,
+        salesTimeline: aggregateOperationalTimeline(summary.sales.confirmed, {range: vcRange, dateField: "fechaVenta"}),
+        topSalesClients: getTopSalesClients(summary.sales.confirmed), topSalesProducts: getTopSalesProducts(summary.sales.confirmed), ...extra,
+      })));
+    };
+
+    // Ventas con las cifras de la maqueta (octubre de 2026).
+    const ventas = renderVentas([mockupSale]);
+    for (const text of [">Vendí<", "$143.089", "1 venta confirmada · sin IVA", "¿De dónde vienen mis ventas?", "Ángulo laminado 50x50x4x6.000 mm", "$62.430", "43,6 %", "2 unidades", "2 horas · servicio", "$8.976", "6,3 %", "4,4 %", "3,8 %", "Últimas ventas", "VTA-2026-0002", "<th>Neto</th><th>Total</th>", "Ver los principales clientes (1)", "Ver la evolución por día (1)", "Ir a Ventas"]) {
+      assert.ok(ventas.includes(text), `Ventas: falta ${text}`);
+    }
+    assert.doesNotMatch(ventas, /reports-flow-header__currency|Aún no hay ventas|Mostrando|operación\(es\)|Cantidad de ventas|Detalle de Ventas|Otros productos|descuento general/, "una moneda, con datos, sin avisos de más");
+    assert.ok(ventas.indexOf(">Vendí<") < ventas.indexOf("¿De dónde vienen mis ventas?") && ventas.indexOf("¿De dónde vienen mis ventas?") < ventas.indexOf("Últimas ventas") && ventas.indexOf("Últimas ventas") < ventas.indexOf("Ver los principales clientes"), "orden: cabecera, barras, operaciones, plegables");
+    assert.ok(!/<details[^>]*\bopen\b/.test(ventas) && vcCount(ventas, /<details/g) === 2, "clientes y evolución, plegados");
+    assert.equal(vcCount(ventas, /class="reports-share-bars__track"/g), 5, "una barra por producto");
+    assert.ok(ventas.includes("width:100%") && ventas.includes("width:96.11%"), "el largo es relativo a la fila mayor");
+    // Solo las ventas confirmadas del período: ni una fuera de rango ni una cancelada entran en las barras.
+    const outside = vcSale(3, "2026-09-30", {items: [vcLine("fuera", "Producto fuera de rango", 1, 999999)], neto: 999999});
+    const cancelled = vcSale(4, "2026-10-09", {estado: "cancelada", items: [vcLine("canc", "Producto cancelado", 1, 888888)], neto: 888888});
+    const onlyConfirmed = renderVentas([mockupSale, outside, cancelled]);
+    assert.ok(!onlyConfirmed.includes("Producto fuera de rango") && !onlyConfirmed.includes("Producto cancelado") && onlyConfirmed.includes("43,6 %"), "los porcentajes no cambian con ventas que no cuentan");
+    assert.ok(onlyConfirmed.includes("1 venta confirmada · sin IVA"));
+    // Descuento general: una línea bajo las barras, solo cuando lo hay.
+    const discounted = renderVentas([vcSale(5, "2026-10-10", {neto: 90000, total: 107100, descuento: 10000, items: [vcLine("p1", "Producto con descuento", 1, 100000)]})]);
+    assert.equal(vcCount(discounted, /Los montos por producto van antes del descuento general de la venta\./g), 1);
+    assert.ok(discounted.indexOf("reports-share-bars__list") < discounted.indexOf("Los montos por producto van antes"), "la línea va bajo las barras");
+    // Más productos que el límite: el resto se ve como "Otros productos".
+    const manyItems = renderVentas([vcSale(6, "2026-10-11", {neto: 700, total: 833, items: ["a", "b", "c", "d", "e", "f", "g"].map((id, index) => vcLine(id, `Ítem ${id}`, 1, 100 - index))})]);
+    assert.ok(manyItems.includes("Otros productos") && manyItems.includes("2 más"));
+    // Un solo mensaje de vacío; la cabecera dice $0 y su conteo, y no hay nada más.
+    const emptySales = renderVentas([]);
+    assert.equal(vcCount(emptySales, /Aún no hay ventas confirmadas en este período\./g), 1);
+    assert.ok(emptySales.includes("$0") && emptySales.includes("0 ventas confirmadas · sin IVA") && vcCount(emptySales, /Ir a Ventas/g) === 1);
+    assert.doesNotMatch(emptySales, /Últimas ventas|reports-share-bars|<details|Sin ventas confirmadas en el período|Detalle/);
+    assert.doesNotMatch(renderVentas([], {canOpenSales: false}), /Ir a Ventas/, "sin acceso a Ventas no hay enlace");
+    // Ventas sin neto válido: la cabecera lo avisa en una línea.
+    const noNet = renderVentas([mockupSale, vcSale(7, "2026-10-12", {neto: null, total: 500, items: [vcLine("sn", "Sin neto", 1, 500)]})]);
+    assert.ok(noNet.includes("1 venta sin neto válido no suma en este total.") && noNet.includes("$143.089") && noNet.includes("2 ventas confirmadas · sin IVA"));
+    assert.ok(!ventas.includes("sin neto válido"), "sin avisos cuando no hay ninguna");
+    // Más de 5 operaciones: las 5 más recientes y "Ver todas".
+    const sevenSales = renderVentas([1, 2, 3, 4, 5, 6, 7].map((n) => vcSale(n, `2026-10-0${n}`)));
+    assert.ok(sevenSales.includes("Mostrando 5 de 7 ventas") && sevenSales.includes("Ver todas (7)") && sevenSales.includes("VTA-2026-0007") && !sevenSales.includes("VTA-2026-0001"));
+    // Varias monedas: una cabecera y unas barras por moneda, con la moneda rotulada, y una sola tabla de operaciones.
+    const usdSale = vcSale(8, "2026-10-13", {moneda: "USD", neto: 50, total: 59.5, items: [vcLine("lic", "Licencia", 1, 50, {tipoItem: "servicio", unidad: "licencia"})]});
+    const multi = renderVentas([mockupSale, usdSale]);
+    assert.equal(vcCount(multi, /<section class="erp-card reports-flow-header reports-flow-header--sales">/g), 2);
+    assert.ok(multi.includes('reports-flow-header__currency">CLP<') && multi.includes('reports-flow-header__currency">USD<') && multi.includes("US$50") && multi.includes("1 licencia · servicio"));
+    assert.equal(vcCount(multi, /class="erp-card reports-share-bars reports-share-bars--sales"/g), 2);
+    assert.ok(multi.includes("Ver los principales clientes en CLP") && multi.includes("Ver los principales clientes en USD") && multi.includes("Ver la evolución por día en USD (1)"));
+    assert.equal(vcCount(multi, /Últimas ventas/g), 1, "una sola tabla de operaciones (con su columna Moneda)");
+
+    // --- Compras ---
+    const vcPurchase = (id, numero, date, supplier, total, extra = {}) => ({id, numero, estado: "confirmada", moneda: "CLP", fechaCompra: date, neto: total, total: Math.round(total * 1.19), proveedorId: `prov-${supplier}`, proveedorSnapshot: {proveedorId: `prov-${supplier}`, razonSocial: `Proveedor ${supplier}`}, items: [{itemId: `it-${id}`, nombre: `Ítem ${id}`, cantidad: 2, totalLinea: total}], ...extra});
+    const mockupPurchases = [vcPurchase("c1", "COM-0001", "2026-10-05", "A", 210000), vcPurchase("c2", "COM-0002", "2026-10-07", "B", 128300), vcPurchase("c3", "COM-0003", "2026-10-09", "C", 74000)];
+    const renderCompras = (sales, purchases, extra = {}) => {
+      const summary = getSimplifiedReportSummary({sales, purchases, projectBalances: [], range: vcRange});
+      const salesTimeline = aggregateOperationalTimeline(summary.sales.confirmed, {range: vcRange, dateField: "fechaVenta"});
+      const purchaseTimeline = aggregateOperationalTimeline(summary.purchases.confirmed, {range: vcRange, dateField: "fechaCompra"});
+      const timeline = combineOperationalTimelines(salesTimeline, purchaseTimeline);
+      const chartGroups = summary.currencies.map((group) => ({currency: group.currency, items: timeline.filter((item) => item.currency === group.currency), purchases: group.purchases.total, sales: group.sales.total}));
+      return plain(renderToStaticMarkup(React.createElement(ComprasView, {
+        canOpenPurchases: true, chartGroups, fallbackCurrency: "CLP", navigate: () => {}, purchaseTimeline, summary,
+        topPurchaseProducts: getTopPurchaseProducts(summary.purchases.confirmed), topPurchaseSuppliers: getTopPurchaseSuppliers(summary.purchases.confirmed), ...extra,
+      })));
+    };
+    const compras = renderCompras([vcSale(1, "2026-10-02")], mockupPurchases);
+    for (const text of [">Compré<", "$412.300", "3 compras confirmadas · sin IVA", "¿A quién le compré?", "Proveedor A", "50,9 %", "$210.000", "31,1 %", "17,9 %", "reports-share-bars--purchases", "Movimiento comercial", "Comparar ventas y compras no es ganancia.", "Últimas compras", "COM-0003", "Ver los productos adquiridos (3)", "Ver la evolución por día (3)", "<th>Neto</th><th>Total</th>", "Ir a Compras"]) {
+      assert.ok(compras.includes(text), `Compras: falta ${text}`);
+    }
+    assert.equal(vcCount(compras, /Las compras muestran egresos registrados del negocio\./g), 1, "la nota va una sola vez, en la cabecera");
+    assert.ok(compras.indexOf(">Compré<") < compras.indexOf("Las compras muestran egresos") && compras.indexOf("Las compras muestran egresos") < compras.indexOf("Movimiento comercial"), "la nota es el subtítulo de la cabecera");
+    assert.ok(compras.indexOf("Movimiento comercial") < compras.indexOf("¿A quién le compré?") && compras.indexOf("¿A quién le compré?") < compras.indexOf("Últimas compras") && compras.indexOf("Últimas compras") < compras.indexOf("Ver los productos adquiridos"), "orden: cabecera, gráfico, proveedores, operaciones, plegables");
+    assert.doesNotMatch(compras, /Aún no hay compras|Detalle de Compras|Principales proveedores|operación\(es\)|Cantidad de compras/);
+    assert.equal(vcCount(compras, /class="reports-share-bars__track"/g), 3, "una barra por proveedor");
+    assert.ok(compras.includes("1 compra") && !/>\s*1 compras</.test(compras));
+    assert.ok(!/<details[^>]*\bopen\b/.test(compras) && vcCount(compras, /<details/g) === 2);
+    // Vacío único, sin ventas ni compras, y la cabecera con su $0.
+    const emptyPurchases = renderCompras([], []);
+    assert.equal(vcCount(emptyPurchases, /Aún no hay compras confirmadas en este período\./g), 1);
+    assert.ok(emptyPurchases.includes("0 compras confirmadas · sin IVA") && !emptyPurchases.includes("reports-share-bars") && !emptyPurchases.includes("<details") && !emptyPurchases.includes("Movimiento comercial"));
+    // Compras sin neto válido, y la nota solo en la primera cabecera con varias monedas.
+    assert.ok(renderCompras([], [...mockupPurchases, vcPurchase("c4", "COM-0004", "2026-10-10", "D", 500, {neto: null})]).includes("1 compra sin neto válido no suma en este total."));
+    const multiPurchases = renderCompras([], [...mockupPurchases, vcPurchase("c5", "COM-0005", "2026-10-11", "E", 50, {moneda: "USD"})]);
+    assert.equal(vcCount(multiPurchases, /<section class="erp-card reports-flow-header reports-flow-header--purchases">/g), 2);
+    assert.equal(vcCount(multiPurchases, /Las compras muestran egresos registrados del negocio\./g), 1, "la nota no se repite por moneda");
+    assert.equal(vcCount(multiPurchases, /class="erp-card reports-share-bars reports-share-bars--purchases"/g), 2);
+    assert.ok(multiPurchases.includes("Ver los productos adquiridos en USD (1)"));
+    // Más de 5 compras: las 5 más recientes y "Ver todas"; el resto de los proveedores queda como "Otros proveedores".
+    const manyPurchases = [1, 2, 3, 4, 5, 6, 7].map((n) => vcPurchase(`m${n}`, `COM-01${n}`, `2026-10-0${n}`, `P${n}`, 1000 * (10 - n)));
+    const manyView = renderCompras([], manyPurchases);
+    assert.ok(manyView.includes("Mostrando 5 de 7 compras") && manyView.includes("Ver todas (7)") && manyView.includes("Otros proveedores") && manyView.includes("2 más") === false, "proveedores sin cuenta del resto");
+  } finally {
+    await vcVite.close();
+  }
+}
+console.log("OK reportes (ventas y compras, bloque 2): cabecera, barras por producto y por proveedor, vacío único, operaciones limitadas y tablas plegadas en las dos pestañas");
 console.log("Report model smoke: OK");

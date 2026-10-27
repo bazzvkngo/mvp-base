@@ -190,6 +190,9 @@ const PAIRS = [
   {fg: "--color-border-control", bg: "--color-border-default", kind: "nontext", threshold: 1.2, note: "border-control / border-default (rayas del costo entre sí; solo textura, la forma la da el contorno)"},
   {fg: "--color-text-muted", bg: "--color-surface-panel", kind: "nontext", note: "text-muted / panel (contorno del tramo de costo)"},
   {fg: "--color-danger-700", bg: "--color-surface-panel", kind: "nontext", note: "danger-700 / panel (remate de pérdida de la barra)"},
+  // Barras de Ventas y Compras (SPEC 025): relleno sobre su pista (surface-subtle) y sobre el panel.
+  {fg: "--color-text-brand-accent", bg: "--color-surface-subtle", kind: "nontext", note: "text-brand-accent / subtle (barra de ventas sobre su pista)"},
+  {fg: "--color-data-expense", bg: "--color-surface-subtle", kind: "nontext", note: "data-expense / subtle (barra de compras sobre su pista)"},
   {fg: "--color-quote-status-draft", bg: "--color-surface-panel", kind: "nontext", note: "quote-status-draft / panel (paso 7)"},
   {fg: "--color-quote-status-issued", bg: "--color-surface-panel", kind: "nontext", note: "quote-status-issued / panel (paso 7)"},
   {fg: "--color-quote-status-accepted", bg: "--color-surface-panel", kind: "nontext", note: "quote-status-accepted / panel (paso 7)"},

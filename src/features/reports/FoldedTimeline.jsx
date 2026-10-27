@@ -8,14 +8,14 @@ import {formatMoney} from "../../utils/formatters";
 // de "Ver el cálculo paso a paso" (clases reports-calc-details). `items` es la lista que ya arma
 // aggregateOperationalTimeline ({key, currency, count, value}); aquí solo se
 // filtra por moneda. Sin filas no dibuja nada.
-function FoldedTimeline({currency, items}) {
+function FoldedTimeline({currency, items, showCurrency = false}) {
   const {locale} = useBusinessFormat();
   const rows = (Array.isArray(items) ? items : []).filter((item) => item.currency === currency);
   if (!rows.length) return null;
   const byMonth = rows.every((row) => /^\d{4}-\d{2}$/.test(String(row.key)));
   return <details className="reports-calc-details reports-folded-timeline">
     <summary className="reports-calc-details__summary">
-      <span>{`Ver la evolución por ${byMonth ? "mes" : "día"} (${rows.length})`}</span>
+      <span>{`Ver la evolución por ${byMonth ? "mes" : "día"}${showCurrency ? ` en ${currency}` : ""} (${rows.length})`}</span>
       <ChevronDown className="reports-calc-details__chevron" size={16} aria-hidden="true" />
     </summary>
     <div className="reports-calc-details__body">

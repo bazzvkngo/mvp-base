@@ -60,6 +60,17 @@ export function describeFlowSummary({kind = "sales", count = 0, withoutNetCount 
   };
 }
 
+// Documentos sin neto válido de una moneda: aportan 0 al total (mismo criterio que
+// reportModel.hasValidNet: un número finito ≥ 0, nunca se sustituye por `total`).
+// reportModel solo entrega la cuenta de todas las monedas juntas; con varias monedas
+// cada cabecera necesita la suya.
+export function countWithoutNet(documents, {currency = null, fallbackCurrency = "CLP"} = {}) {
+  return (Array.isArray(documents) ? documents : [])
+    .filter((record) => !currency || resolveReportCurrency(record, fallbackCurrency) === currency)
+    .filter((record) => !(typeof record?.neto === "number" && Number.isFinite(record.neto) && record.neto >= 0))
+    .length;
+}
+
 // --- Operaciones: orden por fecha y límite de filas ---------------------------
 
 function dateKey(value) {
@@ -128,7 +139,14 @@ export function buildShareBars(entries, {total, limit = DEFAULT_ROW_LIMIT, local
   });
   const remaining = roundTo(whole - list.reduce((sum, entry) => sum + entry.amount, 0), 2);
   const others = remaining > 0
-    ? {amount: remaining, share: roundTo((remaining / whole) * 100, 1), shareText: percentText(roundTo((remaining / whole) * 100, 1), locale), count: finiteOrNull(othersCount)}
+    ? {
+      amount: remaining,
+      share: roundTo((remaining / whole) * 100, 1),
+      shareText: percentText(roundTo((remaining / whole) * 100, 1), locale),
+      // Largo de la barra respecto de la mayor, sin pasar de 1 (el resto puede sumar más que la primera fila).
+      fraction: Math.min(1, roundTo(remaining / largest, 4)),
+      count: finiteOrNull(othersCount),
+    }
     : null;
   return {show: true, total: whole, rows, others};
 }
