@@ -465,29 +465,22 @@ export default function NewSalePage({businessId, role}) {
     </section>
   );
 
+  const changeClient = (clienteId) => setDraft((current) => ({...current, clienteId}));
+
   return (
     <main className="po-workspace sale-workspace">
-      <section className="po-panel sale-context-card no-print">
-        <div className="sale-context-toolbar">
-          <button type="button" className="sale-back-link" onClick={() => navigate("/ventas")}>← Historial de ventas</button>
-        </div>
-        <div className="sale-context-grid">
-          <div className="sale-context-sale">
-            <span className="po-kicker">Venta</span>
-            <div className="sale-context-sale__title">
-              <h1>{sale?.numero || "Nueva venta"}</h1>
-              <span className={`po-status po-status--${sale?.estado || "borrador"}`}>{getSaleStatusLabel(sale?.estado || "borrador")}</span>
-            </div>
-            {!historical && (
-              <div className="sale-context-sale__metadata">
-                {sale?.cotizacionId ? <span>Originada desde <button type="button" className="sale-inline-link" onClick={openOriginQuote}>{sale.cotizacionNumero || "cotización aceptada"}</button></span> : <span>Venta directa</span>}
-                {trabajoDisplay && <span>Proyecto <button type="button" className="sale-inline-link" onClick={openProject}>{trabajoDisplay.numero || trabajoDisplay.titulo || trabajoDisplay.id}</button></span>}
-                <span>Fecha {formatDate(draft.fechaVenta)}</span>
-                {sale?.cotizacionId && sale?.aceptadaEn && <span>Aceptada {formatDate(sale.aceptadaEn)}</span>}
+      {historical ? (
+        <section className="po-panel sale-context-card no-print">
+          <div className="sale-context-toolbar">
+            <button type="button" className="sale-back-link" onClick={() => navigate("/ventas")}>← Historial de ventas</button>
+          </div>
+          <div className="sale-context-grid">
+            <div className="sale-context-sale">
+              <span className="po-kicker">Venta</span>
+              <div className="sale-context-sale__title">
+                <h1>{sale?.numero || "Nueva venta"}</h1>
+                <span className={`po-status po-status--${sale?.estado || "borrador"}`}>{getSaleStatusLabel(sale?.estado || "borrador")}</span>
               </div>
-            )}
-            {!readOnly && <p className="sale-header-guidance">Revisa la venta antes de confirmarla.</p>}
-            {historical && (
               <div className="sale-actions" role="group" aria-label="Acciones de la venta">
                 <Button type="button" variant="secondary" icon={Eye} aria-expanded={previewOpen} onClick={() => setPreviewOpen((current) => !current)}>{previewOpen ? "Ocultar vista previa" : "Ver vista previa"}</Button>
                 <Button type="button" variant="secondary" icon={Printer} onClick={() => window.print()}>Imprimir</Button>
@@ -495,11 +488,32 @@ export default function NewSalePage({businessId, role}) {
                 {trabajoDisplay && <Button type="button" variant="secondary" icon={Briefcase} onClick={openProject}>Ver proyecto</Button>}
                 {canCancelConfirmedQuote && <Button type="button" variant="ghost-danger" icon={Ban} className="sale-actions__cancel" onClick={() => setActionDialog("cancel")}>Cancelar venta</Button>}
               </div>
-            )}
+            </div>
+            <SaleClientSelector clients={clients} disabled={readOnly || referencesLocked} onChange={changeClient} originalSnapshot={sale?.clienteSnapshot} value={draft.clienteId} />
           </div>
-          <SaleClientSelector clients={clients} disabled={readOnly || referencesLocked} onChange={(clienteId) => setDraft((current) => ({...current, clienteId}))} originalSnapshot={sale?.clienteSnapshot} value={draft.clienteId} />
-        </div>
-      </section>
+        </section>
+      ) : (
+        <>
+          {/* Un solo h1 por pantalla: el de la barra superior (navigation.js). Por eso el título va en un <p>. */}
+          <header className="sale-head no-print">
+            <div className="sale-head__main">
+              <button type="button" className="sale-back-link" onClick={() => navigate("/ventas")}>← Ventas</button>
+              <p className="sale-head__title">{sale?.numero || "Nueva venta"}</p>
+              <span className={`po-status po-status--${sale?.estado || "borrador"}`}>{getSaleStatusLabel(sale?.estado || "borrador")}</span>
+            </div>
+            <div className="sale-head__meta">
+              <span>{formatDate(draft.fechaVenta)}</span>
+              {sale?.cotizacionId ? <span>Originada desde <button type="button" className="sale-inline-link" onClick={openOriginQuote}>{sale.cotizacionNumero || "cotización aceptada"}</button></span> : <span>Venta directa</span>}
+              {trabajoDisplay && <span>Proyecto <button type="button" className="sale-inline-link" onClick={openProject}>{trabajoDisplay.numero || trabajoDisplay.titulo || trabajoDisplay.id}</button></span>}
+              {sale?.cotizacionId && sale?.aceptadaEn && <span>Aceptada {formatDate(sale.aceptadaEn)}</span>}
+            </div>
+          </header>
+          <section className="sale-client-card no-print" aria-labelledby="sale-client-title">
+            <h2 id="sale-client-title" className="sale-step-title">¿A quién le vendes?</h2>
+            <SaleClientSelector inline clients={clients} disabled={readOnly || referencesLocked} onChange={changeClient} originalSnapshot={sale?.clienteSnapshot} value={draft.clienteId} />
+          </section>
+        </>
+      )}
 
       {message && <p className="po-message po-message--error no-print">{message}</p>}
 
@@ -560,7 +574,7 @@ export default function NewSalePage({businessId, role}) {
 
             {!historical && previewPanel}
           </div>
-          <SaleSummaryPanel currency={printable.moneda} disabled={readOnly} hasInsufficientStock={hasInsufficientStock} locale={printable.locale} onCancel={sale ? () => setActionDialog("cancel") : null} onConfirm={() => setActionDialog("confirm")} onSave={save} processing={processing} taxName={printable.impuestoNombre} taxRate={Number(printable.tasaIva || 0) * 100} totals={totals} />
+          <SaleSummaryPanel simple={!historical} currency={printable.moneda} disabled={readOnly} hasInsufficientStock={hasInsufficientStock} locale={printable.locale} onCancel={sale ? () => setActionDialog("cancel") : null} onConfirm={() => setActionDialog("confirm")} onSave={save} processing={processing} taxName={printable.impuestoNombre} taxRate={Number(printable.tasaIva || 0) * 100} totals={totals} />
         </div>
       </div>
 

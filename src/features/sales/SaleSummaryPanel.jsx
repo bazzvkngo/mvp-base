@@ -1,6 +1,7 @@
 import React from "react";
 import {Ellipsis} from "lucide-react";
 import AppIcon from "../../components/ui/AppIcon";
+import Button from "../../components/ui/Button";
 import {formatMoney} from "../../utils/formatters";
 
 export default function SaleSummaryPanel({
@@ -12,6 +13,7 @@ export default function SaleSummaryPanel({
   onConfirm,
   onSave,
   processing,
+  simple = false,
   totals,
   taxName = "IVA",
   taxRate = 19,
@@ -19,10 +21,14 @@ export default function SaleSummaryPanel({
   const money = (value) => formatMoney(value, currency, locale);
   const discountTotal = Number(totals.descuentoTotal || 0);
   return (
-    <aside className="po-panel po-summary sale-summary">
+    <aside className={`po-panel po-summary sale-summary${simple ? " sale-summary--simple" : ""}`}>
       <header className="po-summary__header">
-        <span className="po-kicker">Resumen</span>
-        <h2>Totales</h2>
+        {simple ? <h2>Resumen</h2> : (
+          <>
+            <span className="po-kicker">Resumen</span>
+            <h2>Totales</h2>
+          </>
+        )}
       </header>
       <div className="po-summary__amounts">
         <div><span>Subtotal</span><strong>{money(totals.subtotal)}</strong></div>
@@ -38,19 +44,19 @@ export default function SaleSummaryPanel({
               No puedes confirmar esta venta porque uno o más productos no tienen stock suficiente.
             </p>
           )}
-          <button
+          <Button
             type="button"
-            className="po-button po-button--primary sale-confirm-button"
+            className="sale-summary__confirm"
             disabled={processing || hasInsufficientStock}
             onClick={onConfirm}
           >
             Confirmar venta
-          </button>
-          <button type="button" className="po-button po-button--secondary" disabled={processing} onClick={onSave}>
-            Guardar cambios
-          </button>
+          </Button>
+          <Button type="button" variant="ghost" className="sale-summary__save" disabled={processing} onClick={onSave}>
+            Guardar para después
+          </Button>
           <p className="sale-action-help">
-            Al confirmar se registrará la venta y se descontará el stock de los productos correspondientes.
+            Al confirmar se descuenta el stock de los productos.
           </p>
           {onCancel && (
             <details className="sale-more-actions">

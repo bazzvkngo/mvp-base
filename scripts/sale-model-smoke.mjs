@@ -105,15 +105,60 @@ assert.doesNotMatch(salesHistory, /confirmarVenta|Confirmar venta/);
 assert.match(salesHistory, /<th>Número<\/th><th>Cliente<\/th><th>Total<\/th><th>Origen<\/th><th>Estado<\/th><th>Stock<\/th><th>Fecha<\/th>/);
 assert.match(salesHistory, /formatDate\(sale\.fechaVenta\)/);
 assert.match(salesHistory, /getSaleStockStatusLabel/);
-assert.match(saleSummary, /Guardar cambios/);
+// Bloque 1: "Guardar cambios" pasa a "Guardar para después" (enlace). Sigue existiendo la acción de guardar
+// con el mismo handler, y el resumen tiene UN solo botón principal ("Confirmar venta").
+assert.match(saleSummary, /Guardar para después/);
+assert.doesNotMatch(saleSummary, /Guardar cambios/);
+assert.match(saleSummary, /variant="ghost" className="sale-summary__save" disabled=\{processing\} onClick=\{onSave\}/, "guardar para después usa el mismo onSave");
+assert.match(saleSummary, /className="sale-summary__confirm"\s+disabled=\{processing \|\| hasInsufficientStock\}\s+onClick=\{onConfirm\}/, "confirmar conserva su bloqueo por stock");
+assert.doesNotMatch(saleSummary, /po-button--primary/, "un solo botón principal, sin otra familia de botón");
+assert.equal((saleSummary.match(/<Button\b/g) || []).length, 2, "dos acciones: Confirmar venta y el enlace Guardar para después");
+assert.match(saleSummary, /simple = false/, "el detalle histórico conserva el resumen anterior");
 assert.match(saleSummary, /discountTotal > 0 \? `-\$\{money\(discountTotal\)\}` : money\(0\)/);
 assert.match(saleSummary, /Ellipsis/);
 assert.match(saleSummary, /No puedes confirmar esta venta porque uno o más productos no tienen stock suficiente/);
 assert.match(salePage, /sale-context-card/);
 assert.match(salePage, /className="sale-context-toolbar"/);
+// Líneas 112-113 siguen vigentes: ahora describen la cabecera del DETALLE histórico, que no cambia.
+// Bloque 1: el editor (borrador) tiene cabecera corta y un solo h1 en pantalla (el de la barra superior).
+assert.match(salePage, /\{historical \? \(\s*<section className="po-panel sale-context-card no-print">/, "la tarjeta de contexto es sólo del detalle histórico");
+assert.match(salePage, /<header className="sale-head no-print">/);
+assert.match(salePage, /<p className="sale-head__title">\{sale\?\.numero \|\| "Nueva venta"\}<\/p>/, "título del editor sin h1");
+assert.equal((salePage.match(/<h1\b/g) || []).length, 1, "NewSalePage dibuja un solo h1 y es el del detalle histórico");
+assert.ok(salePage.indexOf("<h1") < salePage.indexOf('<header className="sale-head no-print">'), "el h1 vive en la rama histórica, antes de la cabecera del editor");
+assert.match(salePage, /<SaleClientSelector inline /, "el editor elige el cliente en línea");
+assert.match(salePage, /<SaleClientSelector clients=\{clients\} disabled=\{readOnly \|\| referencesLocked\} onChange=\{changeClient\}/, "el detalle histórico conserva el selector anterior");
+assert.match(salePage, /<SaleSummaryPanel simple=\{!historical\}/);
+assert.doesNotMatch(salePage, /sale-header-guidance|Revisa la venta antes de confirmarla/);
 assert.match(salePage, /Stock aplicado\. Disponibilidad actualizada al aceptar la cotización\./);
 assert.doesNotMatch(salePage, /Stock: Stock aplicado/);
 assert.match(saleClient, /sale-context-client__snapshot/);
+// Bloque 1: selector en línea con la misma lista (clientes activos), filtro y onChange; el diálogo sigue para el histórico.
+assert.match(saleClient, /function InlineSaleClientSelector/);
+assert.match(saleClient, /client\.estado === "activo" && searchable\(`\$\{client\.nombreRazonSocial\} \$\{client\.rut\}`\)/, "sólo clientes activos, mismo filtro");
+assert.match(saleClient, /onChange\(client\.clienteId\); finish\(\)/, "elegir cliente usa el mismo onChange");
+assert.match(saleClient, /function DialogSaleClientSelector/);
+assert.match(saleClient, /<ResponsiveDialog open=\{open\}/);
+assert.doesNotMatch(saleClient, /Crear cliente/, "sin función nueva: crear cliente queda fuera");
+// Ningún .jsx de Ventas escribe tildes ni símbolos como secuencias de escape: en texto JSX y en atributos
+// entre comillas se mostrarían literales ("identificaci" + barra + "u00f3n"). Sólo se tolera el rango de
+// diacríticos de un regex (normalize("NFD")). Las secuencias se arman con código para no escribirlas aquí.
+{
+  const BS = String.fromCharCode(92);
+  const escapeSequence = new RegExp(`${BS}${BS}u[0-9a-fA-F]{4}`);
+  const diacriticsRange = `${BS}u0300-${BS}u036f`;
+  const salesDir = new URL("../src/features/sales/", import.meta.url);
+  const jsxFiles = [...fs.readdirSync(salesDir).filter((name) => name.endsWith(".jsx")).map((name) => new URL(name, salesDir)), new URL("../src/pages/NewSalePage.jsx", import.meta.url)];
+  const checkedNames = jsxFiles.map((file) => file.pathname.split("/").pop());
+  for (const required of ["SaleClientSelector.jsx", "SaleSummaryPanel.jsx", "SaleItemsEditor.jsx", "NewSalePage.jsx"]) assert.ok(checkedNames.includes(required), `se revisa ${required}`);
+  for (const file of jsxFiles) {
+    const lines = fs.readFileSync(file, "utf8").split(diacriticsRange).join("").split(/\r?\n/);
+    const bad = lines.findIndex((line) => escapeSequence.test(line));
+    assert.equal(bad, -1, `${file.pathname.split("/").pop()}:${bad + 1} contiene una secuencia de escape unicode fuera de un regex; escribe el carácter real en UTF-8`);
+  }
+  assert.ok(escapeSequence.test(`x${BS}u00f3y`), "la aserción detecta una secuencia de escape");
+  assert.equal(escapeSequence.test("identificación · línea"), false, "los caracteres reales no se marcan");
+}
 assert.match(saleItems, /Stock insuficiente/);
 assert.match(saleItems, /Disponible: \{stock\} · Solicitado: \{requested\}/);
 assert.match(salePrint, /getSaleStatusLabel/);

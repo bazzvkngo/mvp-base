@@ -41,15 +41,6 @@
   margin: 0;
 }
 
-.sale-context-sale__metadata {
-  color: var(--color-text-muted);
-  display: flex;
-  flex-wrap: wrap;
-  font-size: 12px;
-  gap: 5px 14px;
-  margin-top: 6px;
-}
-
 .sale-context-client {
   align-items: center;
   display: flex;
@@ -95,6 +86,201 @@
   flex: 0 0 auto;
 }
 
+/* Cabecera corta y cliente en línea del editor (borrador). El detalle histórico
+   conserva .sale-context-card. Solo tokens. */
+.sale-head {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.sale-head__main {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+}
+
+.sale-head .sale-back-link {
+  align-items: center;
+  font-size: var(--font-size-xs);
+  margin-bottom: 0;
+  min-height: 44px;
+}
+
+.sale-head__title {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-tight);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.sale-head__meta {
+  color: var(--color-text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--font-size-xs);
+  gap: var(--space-1) var(--space-2);
+}
+
+.sale-head__meta > span + span::before {
+  content: "·";
+  margin-right: var(--space-2);
+}
+
+.sale-client-card {
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4) var(--space-5);
+}
+
+.sale-step-title {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+  margin: 0;
+}
+
+.sale-client {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.sale-client__selected {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+.sale-client__info {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.sale-client__name {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-md);
+  overflow-wrap: anywhere;
+}
+
+.sale-client__info > span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sale-client__empty {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+}
+
+.sale-client__picker {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.sale-client__search {
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-sm);
+  box-sizing: border-box;
+  color: var(--color-text-default);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  width: 100%;
+}
+
+.sale-client__search:focus-visible,
+.sale-client__option:focus-visible,
+.sale-client__cancel:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.sale-client__list {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  display: grid;
+  max-height: 14rem;
+  overflow-y: auto;
+}
+
+.sale-client__option {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+  color: var(--color-text-default);
+  cursor: pointer;
+  display: grid;
+  font: inherit;
+  gap: var(--space-1);
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+}
+
+.sale-client__option:last-child {
+  border-bottom: 0;
+}
+
+.sale-client__option:hover {
+  background: var(--color-surface-hover);
+}
+
+.sale-client__option strong {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.sale-client__option span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sale-client__cancel {
+  background: transparent;
+  border: 0;
+  color: var(--color-text-brand);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  justify-self: start;
+  min-height: 44px;
+  padding: 0 var(--space-2);
+  text-decoration: underline;
+  text-underline-offset: var(--space-1);
+}
+
+@media (max-width: 620px) {
+  .sale-client-card {
+    padding: var(--space-4);
+  }
+
+  .sale-client__selected .sale-client__change {
+    width: 100%;
+  }
+}
+
 .sale-workspace .po-layout {
   margin-top: 0;
 }
@@ -133,12 +319,6 @@
 .sale-back-link:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--color-brand-500) 30%, transparent);
   outline-offset: 2px;
-}
-
-.sale-header-guidance {
-  color: var(--color-text-muted);
-  font-size: 13px;
-  margin: 5px 0 0;
 }
 
 .sale-action-help {
@@ -357,8 +537,44 @@
   padding: 9px 10px;
 }
 
-.sale-confirm-button {
-  min-height: 40px;
+/* Resumen del editor (borrador): un solo botón principal y "Guardar para después"
+   como enlace. El detalle histórico no usa --simple y conserva su resumen. */
+.sale-summary--simple .po-summary__header h2 {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-lg);
+  margin: 0;
+}
+
+.sale-summary--simple .po-summary__amounts .po-summary__total {
+  align-items: baseline;
+  border-top: 1px solid var(--color-border-default);
+  color: var(--color-text-strong);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  margin-top: var(--space-1);
+  padding: var(--space-4) 0 var(--space-2);
+}
+
+.sale-summary--simple .po-summary__total strong {
+  color: var(--color-text-brand);
+  font-size: var(--font-size-2xl);
+  line-height: var(--line-height-tight);
+}
+
+.sale-summary__confirm {
+  min-height: 48px;
+}
+
+.sale-summary .sale-summary__save {
+  color: var(--color-text-brand);
+  min-height: 44px;
+  text-decoration: underline;
+  text-underline-offset: var(--space-1);
+}
+
+.sale-summary .sale-summary__save:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
 }
 
 .sale-summary .po-summary__amounts > div {
