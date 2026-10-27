@@ -1,6 +1,11 @@
 import React from "react";
+import {ChevronDown, Minus, Pencil, Plus, X} from "lucide-react";
 import BarcodeInput from "../../components/barcode/BarcodeInput";
+import AppIcon from "../../components/ui/AppIcon";
+import Button from "../../components/ui/Button";
 import {getSaleItemTypeLabel} from "../../domain/saleModel.mjs";
+import {lineDescriptionToShow} from "./saleLineText.mjs";
+import {stepSaleQuantity} from "./saleLineStepper.mjs";
 
 const money = (value) => `$${Math.round(Number(value || 0)).toLocaleString("es-CL")}`;
 
@@ -55,29 +60,43 @@ export default function SaleItemsEditor({disabled, historical = false, inventory
   const update = (index, field, value) => onChange(items.map((item, current) => current === index ? {...item, [field]: value} : item));
   const inventoryById = new Map(inventory.map((item) => [item.id, item]));
   const canChangeReferences = !disabled && !referencesLocked;
+  const countLabel = items.length === 1 ? "1 ítem" : `${items.length} ítems`;
+  const actions = canChangeReferences && (
+    <div className="po-header__actions">
+      <BarcodeInput actionOnly continuous actionLabel="Escanear producto" onSubmit={onScanProduct} />
+      <button type="button" className="po-button po-button--secondary" onClick={onOpenCatalog}>Agregar desde inventario</button>
+    </div>
+  );
+
+  if (historical) {
+    return (
+      <section className="po-panel">
+        <header className="po-panel__header">
+          <div>
+            <span className="po-kicker">Detalle de venta</span>
+            <h2>Ítems vendidos</h2>
+            <p>{countLabel}</p>
+          </div>
+          {actions}
+        </header>
+        {!items.length ? <div className="po-empty">Agrega productos, servicios o actividades.</div> : <SoldItemsTable items={items} />}
+      </section>
+    );
+  }
 
   return (
-    <section className="po-panel">
-      <header className="po-panel__header">
-        <div>
-          <span className="po-kicker">Detalle de venta</span>
-          <h2>Ítems vendidos</h2>
-          <p>{items.length === 1 ? "1 ítem" : `${items.length} ítems`}</p>
+    <section className="sale-items-card" aria-labelledby="sale-items-title">
+      <header className="sale-items-head">
+        <div className="sale-items-head__text">
+          <h2 id="sale-items-title" className="sale-step-title">¿Qué vendes?</h2>
+          <p className="sale-items-count">{countLabel}</p>
         </div>
-        {canChangeReferences && (
-          <div className="po-header__actions">
-            <BarcodeInput actionOnly continuous actionLabel="Escanear producto" onSubmit={onScanProduct} />
-            <button type="button" className="po-button po-button--secondary" onClick={onOpenCatalog}>Agregar desde inventario</button>
-          </div>
-        )}
+        {actions}
       </header>
       {!items.length ? (
         <div className="po-empty">Agrega productos, servicios o actividades.</div>
-      ) : historical ? (
-        <SoldItemsTable items={items} />
       ) : (
-        <div className="po-lines">
-          <div className="po-lines__head"><span>Ítem</span><span>Cantidad</span><span>Precio unitario</span><span>Desc. %</span><span>Total</span><span /></div>
+        <div className="sale-lines">
           {items.map((item, index) => {
             const total = Number(item.cantidad || 0) * Number(item.precioUnitario || 0) * (1 - Number(item.descuentoPct || 0) / 100);
             const inventoryItem = inventoryById.get(item.itemId);
@@ -85,44 +104,72 @@ export default function SaleItemsEditor({disabled, historical = false, inventory
             const requested = Number(item.cantidad || 0);
             const hasKnownStock = item.tipoItem === "producto" && Number.isFinite(stock);
             const exceedsStock = hasKnownStock && requested > stock;
+            const discountPct = Number(item.descuentoPct || 0);
+            const showDiscount = Number.isFinite(discountPct) && discountPct !== 0;
+            const maxQuantity = referencesLocked && item.cantidadCotizada != null ? item.cantidadCotizada : undefined;
+            const canDecrease = !disabled && stepSaleQuantity(item.cantidad, -1) !== null;
+            const canIncrease = !disabled && stepSaleQuantity(item.cantidad, 1, {max: maxQuantity}) !== null;
+            const step = (direction) => {
+              const next = stepSaleQuantity(item.cantidad, direction, {max: maxQuantity});
+              if (next !== null) update(index, "cantidad", next);
+            };
+            const showUnit = item.unidad && !sameText(item.unidad, "unidad");
+            const description = lineDescriptionToShow(item);
 
             return (
-              <article className={`po-line${readOnly ? " po-line--readonly" : ""}`} key={item.lineaId}>
-                <div className="po-line__identity">
-                  <div className="sale-line-title">
-                    <strong>{item.nombre}</strong>
-                    <span className={`sale-item-type sale-item-type--${item.tipoItem}`}>{getSaleItemTypeLabel(item.tipoItem)}</span>
-                    {item.origenAdicionalId && <span className="sale-item-type sale-item-type--adicional">Adicional</span>}
+              <article className="sale-line" key={item.lineaId}>
+                <div className="sale-line__row">
+                  <div className="sale-line__identity">
+                    <div className="sale-line__title">
+                      <strong className="sale-line__name" title={item.nombre}>{item.nombre}</strong>
+                      {item.origenAdicionalId && <span className="sale-item-type sale-item-type--adicional">Adicional</span>}
+                      {showDiscount && <span className="sale-line__chip">{`-${Math.abs(discountPct).toLocaleString("es-CL", {maximumFractionDigits: 4})} %`}</span>}
+                    </div>
+                    <small className="sale-line__meta">{item.codigo || "Sin código"} · {getSaleItemTypeLabel(item.tipoItem)}{showUnit ? ` · ${item.unidad}` : ""}{hasKnownStock && !exceedsStock ? ` · Disponible ${stock}` : ""}</small>
                   </div>
-                  <small>{item.codigo || "Sin código"} · {item.unidad}</small>
-                  {item.descripcion && <p className="sale-line-description">{item.descripcion}</p>}
-                  {hasKnownStock && (
-                    exceedsStock ? (
-                      <div className="sale-stock-warning" role="alert">
-                        <strong>Stock insuficiente</strong>
-                        <span>Disponible: {stock} · Solicitado: {requested}</span>
+                  {readOnly ? (
+                    <>
+                      <span className="sale-line__static sale-line__static--qty"><span className="sr-only">Cantidad: </span>{item.cantidad}</span>
+                      <span className="sale-line__static sale-line__static--price"><span className="sr-only">Precio unitario: </span>{money(item.precioUnitario)}</span>
+                    </>
+                  ) : (
+                    <>
+                      <div className="sale-qty">
+                        <button type="button" className="sale-qty__button" aria-label={`Disminuir cantidad de ${item.nombre}`} disabled={!canDecrease} onClick={() => step(-1)}><AppIcon icon={Minus} size={16} /></button>
+                        <input className="sale-qty__input" aria-label={`Cantidad de ${item.nombre}`} disabled={disabled} type="number" min="0.000001" max={maxQuantity} step="any" value={item.cantidad} onChange={(event) => update(index, "cantidad", event.target.value)} />
+                        <button type="button" className="sale-qty__button" aria-label={`Aumentar cantidad de ${item.nombre}`} disabled={!canIncrease} onClick={() => step(1)}><AppIcon icon={Plus} size={16} /></button>
                       </div>
-                    ) : (
-                      <small className="sale-stock">Disponible: {stock}</small>
-                    )
+                      <label className="sale-price">
+                        <span className="sr-only">Precio unitario de {item.nombre}</span>
+                        <span className="sale-price__symbol" aria-hidden="true">$</span>
+                        <input className="sale-price__input" disabled={disabled} type="number" min="0" step="any" value={item.precioUnitario} onChange={(event) => update(index, "precioUnitario", event.target.value)} />
+                        <span className="sale-price__edit" aria-hidden="true"><AppIcon icon={Pencil} size={14} /></span>
+                      </label>
+                    </>
                   )}
+                  <strong className="sale-line__total">{money(total)}</strong>
+                  {canChangeReferences && !readOnly && <Button type="button" variant="ghost-danger" icon={X} className="sale-line__remove" aria-label={`Quitar ${item.nombre}`} onClick={() => onChange(items.filter((_, current) => current !== index))} />}
                 </div>
-                {readOnly ? (
-                  <dl className="po-line__readonly">
-                    <div><dt>Cantidad</dt><dd>{item.cantidad}</dd></div>
-                    <div><dt>Precio unitario</dt><dd>{money(item.precioUnitario)}</dd></div>
-                    <div><dt>Descuento</dt><dd>{item.descuentoPct}%</dd></div>
-                    <div className="po-line__readonly-total"><dt>Total</dt><dd>{money(total)}</dd></div>
-                  </dl>
-                ) : (
-                  <>
-                    <label><span>Cantidad</span><input disabled={disabled} type="number" min="0.000001" max={referencesLocked && item.cantidadCotizada != null ? item.cantidadCotizada : undefined} step="any" value={item.cantidad} onChange={(event) => update(index, "cantidad", event.target.value)} /></label>
-                    <label><span>Precio unitario</span><input disabled={disabled} type="number" min="0" step="any" value={item.precioUnitario} onChange={(event) => update(index, "precioUnitario", event.target.value)} /></label>
-                    <label><span>Desc. %</span><input disabled={disabled} type="number" min="0" max="100" step="any" value={item.descuentoPct} onChange={(event) => update(index, "descuentoPct", event.target.value)} /></label>
-                    <strong className="po-line__total">{money(total)}</strong>
-                    {canChangeReferences && <button type="button" className="po-line__remove" onClick={() => onChange(items.filter((_, current) => current !== index))}>Quitar</button>}
-                  </>
+                {exceedsStock && (
+                  <div className="sale-stock-warning" role="alert">
+                    <strong>Stock insuficiente</strong>
+                    <span>Disponible: {stock} · Solicitado: {requested}</span>
+                  </div>
                 )}
+                <details className="sale-line__more">
+                  <summary><span>Descuento</span><span className="sale-line__chevron" aria-hidden="true"><AppIcon icon={ChevronDown} size={16} /></span></summary>
+                  <div className="sale-line__more-body">
+                    {readOnly ? (
+                      <p className="sale-line__discount-static">{`Descuento: ${Math.abs(discountPct).toLocaleString("es-CL", {maximumFractionDigits: 4})} %`}</p>
+                    ) : (
+                      <label className="sale-line__discount">
+                        <span>Descuento %</span>
+                        <input className="sale-line__discount-input" disabled={disabled} type="number" min="0" max="100" step="any" value={item.descuentoPct} onChange={(event) => update(index, "descuentoPct", event.target.value)} />
+                      </label>
+                    )}
+                    {description && <p className="sale-line-description">{description}</p>}
+                  </div>
+                </details>
               </article>
             );
           })}

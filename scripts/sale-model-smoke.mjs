@@ -16,6 +16,8 @@ import {
   SALE_STATUSES,
   shouldReconcileSaleConfirmation,
 } from "../src/domain/saleModel.mjs";
+import {stepSaleQuantity} from "../src/features/sales/saleLineStepper.mjs";
+import {lineDescriptionToShow} from "../src/features/sales/saleLineText.mjs";
 
 const require = createRequire(import.meta.url);
 const {normalizeSaleInput} = require("../functions/salePersistence.js");
@@ -161,6 +163,32 @@ assert.doesNotMatch(saleClient, /Crear cliente/, "sin función nueva: crear clie
 }
 assert.match(saleItems, /Stock insuficiente/);
 assert.match(saleItems, /Disponible: \{stock\} · Solicitado: \{requested\}/);
+// Bloque 2: filas compactas del editor. Mismos manejadores y misma fórmula de línea que antes; sólo cambia la presentación.
+assert.match(saleItems, /<h2 id="sale-items-title" className="sale-step-title">¿Qué vendes\?<\/h2>/, "el editor titula la tarjeta sin número");
+assert.match(saleItems, /<h2>Ítems vendidos<\/h2>/, "el detalle histórico conserva su título");
+assert.match(saleItems, /onChange=\{\(event\) => update\(index, "cantidad", event\.target\.value\)\}/, "la cantidad escrita usa el mismo manejador");
+assert.match(saleItems, /onChange=\{\(event\) => update\(index, "precioUnitario", event\.target\.value\)\}/, "el precio usa el mismo manejador");
+assert.match(saleItems, /onChange=\{\(event\) => update\(index, "descuentoPct", event\.target\.value\)\}/, "el descuento usa el mismo manejador");
+assert.match(saleItems, /if \(next !== null\) update\(index, "cantidad", next\)/, "− y + entregan la cantidad al mismo manejador");
+assert.match(saleItems, /const total = Number\(item\.cantidad \|\| 0\) \* Number\(item\.precioUnitario \|\| 0\) \* \(1 - Number\(item\.descuentoPct \|\| 0\) \/ 100\);/, "la fórmula del total de línea no cambia");
+assert.match(saleItems, /min="0\.000001" max=\{maxQuantity\} step="any"/, "misma validación de cantidad (decimales y máximo de la cotización)");
+assert.match(saleItems, /aria-label=\{`Quitar \$\{item\.nombre\}`\}/, "quitar es un botón de ícono con aria-label");
+assert.ok(saleItems.indexOf('role="alert"') < saleItems.indexOf('<details className="sale-line__more">'), "el aviso de stock va fuera del plegable");
+{
+  const salesCss = fs.readFileSync(new URL("../src/features/sales/sales.css", import.meta.url), "utf8");
+  const rowsCss = salesCss.slice(salesCss.indexOf("/* Editor de ítems (borrador)"), salesCss.search(/^\.sale-item-type \{/m));
+  const rules = (selector) => rowsCss.split(`${selector} {`)[1]?.split("}")[0] || "";
+  assert.ok(rowsCss.length > 1500, "bloque de CSS de las filas presente");
+  assert.doesNotMatch(rowsCss, /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/, "filas: sin colores literales");
+  assert.doesNotMatch(rowsCss, /--color-(brand-[6-9]00|dark-)/, "filas: sin colores de marca fijos ni dark-* como color");
+  assert.doesNotMatch(rowsCss, /\.po-/, "filas: estilos con prefijo propio, sin tocar po-*");
+  assert.doesNotMatch(rowsCss, /border-radius:\s*[0-9]|box-shadow:\s*[0-9]/, "filas: sin radios ni sombras literales");
+  for (const selector of [".sale-qty__button", ".sale-price", ".sale-line__more > summary", ".sale-line .sale-line__remove"]) assert.match(rules(selector), /min-height: 2\.75rem/, `${selector}: área táctil de 44 px`);
+  assert.match(rules(".sale-qty__button"), /min-width: 2\.75rem/);
+  assert.match(rules(".sale-line__discount"), /width: 6rem/, "el campo de descuento mide unos 6 rem");
+  assert.match(rules(".sale-line__discount"), /max-width: 100%/);
+  assert.match(rowsCss, /@container \(max-width: 38rem\)/, "con poco ancho la fila baja a dos renglones");
+}
 assert.match(salePrint, /getSaleStatusLabel/);
 assert.match(salePrint, /CubeIcon/);
 assert.match(salePrint, /sale-document-preview__header/);
@@ -221,6 +249,73 @@ console.log("Smoke del modelo de Ventas completado.");
     const draftMode = renderToStaticMarkup(React.createElement(SaleItemsEditor, {...editorProps, disabled: false, referencesLocked: false, readOnly: false, historical: false}));
     assert.match(draftMode, /Stock insuficiente/, "el borrador conserva su aviso de stock");
     assert.doesNotMatch(draftMode, /sale-sold/);
+    // Bloque 2: filas compactas del editor (borrador).
+    assert.match(draftMode, /¿Qué vendes\?/);
+    assert.doesNotMatch(draftMode, /Ítems vendidos|<h1|po-line/, "el editor no repite el título histórico, no dibuja h1 y no usa po-line");
+    assert.match(draftMode, /aria-label="Quitar Cable UTP"/);
+    assert.match(draftMode, /aria-label="Quitar Instalación"/);
+    assert.equal((draftMode.match(/sale-line__chip/g) || []).length, 1, "chip de descuento sólo en la línea con descuento distinto de 0");
+    assert.match(draftMode, /<span class="sale-line__chip">-10 %<\/span>/);
+    assert.match(draftMode, /Escanear producto/);
+    assert.match(draftMode, /Agregar desde inventario/);
+    assert.match(draftMode, /Stock insuficiente/);
+    assert.match(draftMode.replace(/<details[\s\S]*?<\/details>/g, ""), /Stock insuficiente/, "el aviso de stock nunca queda dentro del plegable");
+    assert.match(draftMode, /<details class="sale-line__more">[\s\S]*Punto de red certificado[\s\S]*<\/details>/, "la descripción larga va plegada");
+    assert.doesNotMatch(draftMode.replace(/<details[\s\S]*?<\/details>/g, ""), /Punto de red certificado/);
+    // Ajuste: el rótulo del plegable es siempre "Descuento"; la descripción sólo se muestra si difiere del nombre.
+    assert.doesNotMatch(draftMode, /Descuento y descripción|Descripción</, "rótulo único del plegable");
+    assert.equal((draftMode.match(/<summary><span>Descuento<\/span>/g) || []).length, 2, "cada fila editable tiene su plegable de Descuento, haya o no descripción que mostrar");
+    assert.equal((draftMode.match(/sale-line__discount-input/g) || []).length, 2, "el descuento se puede escribir en todas las filas");
+    assert.equal((draftMode.match(/sale-line-description/g) || []).length, 1, "la descripción igual al nombre no se repite; la distinta sí");
+    assert.match(draftMode, /<small class="sale-line__meta">COD-1 · Producto<\/small>/, "código · tipo en la segunda línea (con stock insuficiente el dato va en el aviso)");
+    assert.match(draftMode, /Sin código · Servicio · hora/, "la unidad distinta de 'unidad' se muestra");
+    const withStock = renderToStaticMarkup(React.createElement(SaleItemsEditor, {...editorProps, disabled: false, referencesLocked: false, readOnly: false, historical: false, inventory: [{id: "p1", stock: 7}]}));
+    assert.match(withStock, /COD-1 · Producto · Disponible 7/, "código · tipo · Disponible N");
+    assert.doesNotMatch(withStock, /Stock insuficiente/);
+    const single = [{...soldItems[0], cantidad: 1}];
+    const atOne = renderToStaticMarkup(React.createElement(SaleItemsEditor, {...editorProps, disabled: false, referencesLocked: false, readOnly: false, historical: false, items: single, inventory: [{id: "p1", stock: 7}]}));
+    assert.match(atOne, /aria-label="Disminuir cantidad de Cable UTP"[^>]*disabled=""/, "con cantidad 1 el − queda deshabilitado");
+    assert.doesNotMatch(atOne, /aria-label="Aumentar cantidad de Cable UTP"[^>]*disabled=""/);
+    const atMax = renderToStaticMarkup(React.createElement(SaleItemsEditor, {...editorProps, disabled: false, referencesLocked: true, readOnly: false, historical: false, items: [{...soldItems[0], cantidad: 2, cantidadCotizada: 2}], inventory: [{id: "p1", stock: 7}]}));
+    assert.match(atMax, /aria-label="Aumentar cantidad de Cable UTP"[^>]*disabled=""/, "en el máximo de la cotización el + queda deshabilitado");
+    assert.match(atMax, /max="2"/);
+    assert.doesNotMatch(atMax, /Quitar Cable UTP|Escanear producto|Agregar desde inventario/, "con referencias bloqueadas no se quita ni se agrega");
+    const readOnlyRows = renderToStaticMarkup(React.createElement(SaleItemsEditor, {...editorProps, disabled: true, referencesLocked: true, readOnly: true, historical: false}));
+    assert.doesNotMatch(readOnlyRows, /<input|Quitar|sale-qty__button/, "borrador de sólo lectura: sin campos ni botones");
+    assert.match(readOnlyRows, /Punto de red certificado/);
+    assert.match(readOnlyRows, /Descuento: 10 %/, "sólo lectura: el descuento se ve como texto");
+    console.log("OK editor de ítems: filas compactas, chip de descuento, stock siempre visible, − y + con máximo, sólo lectura");
+
+    // Descripción de línea: sólo si es distinta del nombre (sin tildes, mayúsculas ni espacios sobrantes).
+    assert.equal(lineDescriptionToShow({nombre: "Cable UTP", descripcion: "Cable UTP"}), "");
+    assert.equal(lineDescriptionToShow({nombre: "Cable UTP", descripcion: "  cable   utp "}), "");
+    assert.equal(lineDescriptionToShow({nombre: "Instalación", descripcion: "INSTALACION"}), "");
+    assert.equal(lineDescriptionToShow({nombre: "Instalacion", descripcion: "instalación"}), "");
+    assert.equal(lineDescriptionToShow({nombre: "Cable UTP", descripcion: ""}), "");
+    assert.equal(lineDescriptionToShow({nombre: "Cable UTP"}), "");
+    assert.equal(lineDescriptionToShow({nombre: "Instalación", descripcion: "  Punto de red   certificado "}), "Punto de red certificado");
+    assert.equal(lineDescriptionToShow({nombre: "Cable UTP", descripcion: "Cable UTP cat 6"}), "Cable UTP cat 6", "una descripción que sólo contiene el nombre sí es distinta");
+    assert.equal(lineDescriptionToShow(null), "");
+    console.log("OK descripción de línea: sólo se muestra si difiere del nombre");
+
+    // − y + : mismos decimales que el campo, nunca 0 o menos, y sin superar el máximo de la cotización.
+    assert.equal(stepSaleQuantity(1, 1), 2);
+    assert.equal(stepSaleQuantity("2", 1), 3);
+    assert.equal(stepSaleQuantity(2.5, -1), 1.5);
+    assert.equal(stepSaleQuantity(2.3, 1), 3.3, "sin deriva de punto flotante");
+    assert.equal(stepSaleQuantity(1, -1), null, "1 − 1 sería 0");
+    assert.equal(stepSaleQuantity(0.5, -1), null, "0,5 − 1 sería negativo");
+    assert.equal(stepSaleQuantity(0.000001, -1), null);
+    assert.equal(stepSaleQuantity("", 1), 1, "campo vacío: + parte de 0");
+    assert.equal(stepSaleQuantity("", -1), null);
+    assert.equal(stepSaleQuantity(2, 1, {max: 3}), 3);
+    assert.equal(stepSaleQuantity(2.5, 1, {max: 3}), 3, "no supera el máximo");
+    assert.equal(stepSaleQuantity(3, 1, {max: 3}), null, "en el máximo no avanza");
+    assert.equal(stepSaleQuantity(5, 1, {max: 3}), null);
+    assert.equal(stepSaleQuantity(4, -1, {max: 3}), 3, "bajar siempre se permite mientras quede más de 0");
+    assert.equal(stepSaleQuantity(1, 1, {max: null}), 2, "sin máximo (null) no hay tope");
+    assert.equal(stepSaleQuantity(1, 1, {max: undefined}), 2);
+    console.log("OK stepper de cantidad: decimales, mínimo y máximo");
     console.log("OK detalle de venta: tabla compacta sólo en modo histórico, borrador intacto");
 
     const stamp = (seconds) => ({seconds, nanoseconds: 0});
