@@ -165,6 +165,23 @@ const hiddenRouteMeta = Object.freeze({
   "/valorizacion": { title: "Valorización" },
 });
 
+// Rutas cuya página dibuja su propio h1 (ModuleHeader o cabecera propia). En ellas la barra
+// superior muestra solo el negocio activo; en las demás, eyebrow + título (ui/PageHeader).
+// Coincidencia exacta: las rutas hijas (/nueva, /:id/editar...) conservan el título de la barra.
+export const PAGE_HEADING_ROUTES = Object.freeze([
+  "/reportes",
+  "/clientes",
+  "/ventas",
+  "/proveedores",
+  "/ordenes-compra",
+  "/recepciones",
+  "/compras",
+]);
+
+export function routeProvidesPageHeading(pathname) {
+  return PAGE_HEADING_ROUTES.includes(pathname);
+}
+
 export function getRouteMeta(pathname) {
   if (pathname === "/resumen") {
     return { title: "Resumen" };

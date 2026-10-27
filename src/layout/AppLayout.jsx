@@ -11,10 +11,10 @@ import ThemeToggleButton from "../components/ThemeToggleButton";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import LoadingState from "../components/ui/LoadingState";
-import PageHeader from "../components/ui/PageHeader";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import SkipLink from "../components/ui/SkipLink";
-import { buildNavigationSections, getRouteMeta } from "../app/navigation";
+import { buildNavigationSections } from "../app/navigation";
+import TopbarHeading from "./TopbarHeading";
 import {
   filterNavigationSections,
   getBusinessPathOptions,
@@ -293,9 +293,6 @@ function AppLayout({
       );
   }, []);
 
-  const routeMeta = getRouteMeta(location.pathname);
-  const pageProvidesHeading = location.pathname === "/reportes";
-
   const handleOpenBusinessDrawer = () => {
     if (mobileNavigationOpen) {
       setMobileNavigationOpen(false);
@@ -388,16 +385,10 @@ function AppLayout({
           </button>
 
           <div className="topbar-heading">
-            {pageProvidesHeading ? (
-              <div className="topbar-context" aria-label="Negocio activo">
-                <span>{negocioActivo?.nombreComercial || "Módulo activo"}</span>
-              </div>
-            ) : (
-              <PageHeader
-                eyebrow={negocioActivo?.nombreComercial || "Módulo activo"}
-                title={routeMeta.title}
-              />
-            )}
+            <TopbarHeading
+              businessName={negocioActivo?.nombreComercial}
+              pathname={location.pathname}
+            />
             <EnvironmentNotice inline />
           </div>
 

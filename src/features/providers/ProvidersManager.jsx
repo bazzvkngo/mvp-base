@@ -11,9 +11,12 @@ import {
 import ContactLinks from "../../components/contacts/ContactLinks";
 import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
+import EmptyState from "../../components/ui/EmptyState";
+import ModuleHeader from "../../components/ui/ModuleHeader";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import {SkeletonCards, SkeletonRegion, SkeletonTable} from "../../components/ui/Skeleton";
 import StatusBadge from "../../components/ui/StatusBadge";
+import {getRouteMeta} from "../../app/navigation";
 import {
   canManageProviders,
   canReadProviders,
@@ -29,6 +32,9 @@ import {
   reactivarProveedor,
 } from "../../services/providerService";
 import ProviderFormDialog from "./ProviderFormDialog";
+
+const MODULE = getRouteMeta("/proveedores");
+const MODULE_DESCRIPTION = "Las empresas y personas a las que les compras.";
 
 const PAYMENT_LABELS = {
   contado: "Contado",
@@ -192,6 +198,7 @@ function ProvidersManager({businessId, countryCode = "CL", role}) {
   if (!businessId || !canRead) {
     return (
       <section className="erp-page clients-page">
+        <ModuleHeader description={MODULE_DESCRIPTION} icon={MODULE.icon} title={MODULE.title} />
         <div className="erp-empty-state" role="alert">
           No tienes permisos para consultar proveedores en el negocio activo.
         </div>
@@ -201,14 +208,23 @@ function ProvidersManager({businessId, countryCode = "CL", role}) {
 
   const hasFilters = Boolean(search.trim() || statusFilter);
   const confirmationIsArchive = confirmation?.action === "archive";
+  // Lista realmente vacía (cargada, sin error y sin proveedores): el único botón principal vive en el
+  // vacío y la cabecera no recibe acciones. Con datos, o con filtros sin resultados, se ve la lista.
+  const showEmpty = !loading && !loadError && providers.length === 0;
+  const chips = !loadError && (!loading || providers.length > 0)
+    ? [`${providers.length} ${providers.length === 1 ? "proveedor" : "proveedores"}`]
+    : [];
 
   return (
     <section className="erp-page clients-page providers-page">
-      {canManage && (
-        <div className="erp-module-intro">
-          <Button icon={Plus} onClick={openCreate}>Nuevo proveedor</Button>
-        </div>
-      )}
+      <ModuleHeader
+        actions={canManage ? <Button icon={Plus} onClick={openCreate}>Nuevo proveedor</Button> : null}
+        chips={chips}
+        description={MODULE_DESCRIPTION}
+        hasData={!showEmpty}
+        icon={MODULE.icon}
+        title={MODULE.title}
+      />
 
       {!canManage && (
         <div className="client-message client-message--warning" role="status">
@@ -227,7 +243,16 @@ function ProvidersManager({businessId, countryCode = "CL", role}) {
         </div>
       )}
 
-      <section className="erp-panel" aria-labelledby="providers-list-title">
+      {showEmpty ? (
+        <EmptyState
+          action={canManage ? {label: "Crear primer proveedor", icon: Plus, onClick: openCreate} : undefined}
+          description={canManage
+            ? "Crea el primer proveedor para comenzar tu registro comercial."
+            : "OWNER o ADMIN pueden registrar el primer proveedor."}
+          icon={MODULE.icon}
+          title="No hay proveedores registrados"
+        />
+      ) : <section className="erp-panel" aria-labelledby="providers-list-title">
         <div className="erp-panel-header clients-panel-header">
           <div>
             <h2 id="providers-list-title" className="erp-panel-title">Proveedores registrados</h2>
@@ -265,15 +290,8 @@ function ProvidersManager({businessId, countryCode = "CL", role}) {
         ) : !loadError && visibleProviders.length === 0 ? (
           <div className="erp-empty-state clients-empty-state">
             <AppIcon icon={Truck} size={28} />
-            <h3>{hasFilters ? "No hay coincidencias" : "No hay proveedores registrados"}</h3>
-            <p>
-              {hasFilters
-                ? `Prueba con otro nombre, ${fiscalLabel} o estado.`
-                : canManage
-                  ? "Crea el primer proveedor para comenzar tu registro comercial."
-                  : "OWNER o ADMIN pueden registrar el primer proveedor."}
-            </p>
-            {!hasFilters && canManage && <Button type="button" icon={Plus} onClick={openCreate}>Crear primer proveedor</Button>}
+            <h3>No hay coincidencias</h3>
+            <p>{`Prueba con otro nombre, ${fiscalLabel} o estado.`}</p>
           </div>
         ) : !loadError ? (
           <>
@@ -318,7 +336,7 @@ function ProvidersManager({businessId, countryCode = "CL", role}) {
             </div>
           </>
         ) : null}
-      </section>
+      </section>}
 
       <ProviderFormDialog countryCode={countryCode} provider={formState.provider} onClose={() => setFormState({open: false, provider: null})} onSubmit={saveProvider} open={formState.open} />
 

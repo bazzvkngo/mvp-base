@@ -2,12 +2,16 @@ import React, {useEffect, useMemo, useState} from "react";
 import {Search} from "lucide-react";
 import {useNavigate} from "react-router-dom";
 import AppIcon from "../components/ui/AppIcon";
-import Button from "../components/ui/Button";
+import EmptyState from "../components/ui/EmptyState";
 import EmptyStateIllustration from "../components/ui/EmptyStateIllustration";
+import ModuleHeader from "../components/ui/ModuleHeader";
 import {SkeletonRegion, SkeletonTable} from "../components/ui/Skeleton";
+import {getRouteMeta} from "../app/navigation";
 import {canManageReceptions, getReceptionStatusLabel} from "../domain/receptionModel.mjs";
 import {listarRecepciones} from "../services/receptionService";
 import "../features/receptions/receptions.css";
+
+const MODULE = getRouteMeta("/recepciones");
 
 const normalize = (value) => String(value || "").normalize("NFD")
   .replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -44,6 +48,10 @@ export default function ReceptionsPage({businessId, role}) {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const canManage = canManageReceptions(role);
+  // Lista realmente vacía (cargada, sin error y sin recepciones): se ve el vacío con su única acción.
+  // Recepciones no tiene botón en la cabecera: las recepciones nacen desde una orden de compra.
+  const showEmpty = !loading && !message && items.length === 0;
+  const chips = !loading && !message ? [`${items.length} ${items.length === 1 ? "recepción" : "recepciones"}`] : [];
   useEffect(() => {
     let active = true;
     listarRecepciones(businessId).then((values) => active && setItems(values))
@@ -61,8 +69,21 @@ export default function ReceptionsPage({businessId, role}) {
     : `/recepciones/${entry.id}`);
   return (
     <main className="erp-page po-history">
+      <ModuleHeader
+        chips={chips}
+        description="La mercadería que llega según tus órdenes de compra."
+        icon={MODULE.icon}
+        title={MODULE.title}
+      />
       {message && <p className="po-message po-message--error" role="alert">{message}</p>}
-      <section className="erp-panel erp-history-panel">
+      {showEmpty ? (
+        <EmptyState
+          action={canManage ? {label: "Ir a órdenes de compra", onClick: () => navigate("/ordenes-compra")} : undefined}
+          description="Las recepciones se inician desde una orden de compra, cuando llega la mercadería."
+          icon={MODULE.icon}
+          title="Aún no hay recepciones"
+        />
+      ) : <section className="erp-panel erp-history-panel">
         <div className="erp-panel-header"><div><h2 className="erp-panel-title">Historial de recepciones</h2><p className="erp-secondary-text">{filtered.length} recepciones</p></div></div>
         <div className="erp-filters erp-history-filters po-history__toolbar">
           <label className="erp-field erp-history-search-field"><span className="erp-field__label">Buscar por recepcion, OC o proveedor</span><span className="clients-search-control"><AppIcon icon={Search} size={18} /><input className="erp-control" value={search} onChange={(event) => setSearch(event.target.value)} /></span></label>
@@ -70,18 +91,9 @@ export default function ReceptionsPage({businessId, role}) {
         </div>
         {loading ? <SkeletonRegion label="Cargando recepciones..."><SkeletonTable columns={7} /></SkeletonRegion> : message && items.length === 0 ? null : filtered.length === 0 ? (
           <div className="erp-empty-state ui-empty-state">
-            <EmptyStateIllustration variant={items.length ? "no-results" : "empty-list"} />
-            <h3>{items.length ? "No hay recepciones coincidentes" : "Aún no hay recepciones"}</h3>
-            <p>
-              {items.length
-                ? "Prueba con otra búsqueda o estado."
-                : "Las recepciones se inician desde una orden de compra, cuando llega la mercadería."}
-            </p>
-            {!items.length && canManage && (
-              <div className="ui-empty-state__actions">
-                <Button type="button" variant="secondary" onClick={() => navigate("/ordenes-compra")}>Ir a órdenes de compra</Button>
-              </div>
-            )}
+            <EmptyStateIllustration variant="no-results" />
+            <h3>No hay recepciones coincidentes</h3>
+            <p>Prueba con otra búsqueda o estado.</p>
           </div>
         ) : <section className="erp-table-region">
           <table className="erp-table po-history__table"><thead><tr><th>Recepción</th><th>Proveedor</th><th>Orden de compra</th><th>Compra</th><th>Fecha</th><th>Recibido</th><th>Estado</th></tr></thead><tbody>
@@ -96,7 +108,7 @@ export default function ReceptionsPage({businessId, role}) {
             </tr>)}
           </tbody></table>
         </section>}
-      </section>
+      </section>}
     </main>
   );
 }

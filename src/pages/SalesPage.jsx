@@ -3,7 +3,9 @@ import {Plus, Search} from "lucide-react";
 import {useNavigate} from "react-router-dom";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
+import EmptyState from "../components/ui/EmptyState";
 import EmptyStateIllustration from "../components/ui/EmptyStateIllustration";
+import ModuleHeader from "../components/ui/ModuleHeader";
 import {SkeletonCards, SkeletonRegion, SkeletonTable} from "../components/ui/Skeleton";
 import {
   canManageSales,
@@ -11,11 +13,13 @@ import {
   getSaleStockStatusLabel,
   matchesSaleSearch,
 } from "../domain/saleModel.mjs";
+import {getRouteMeta} from "../app/navigation";
 import {listarVentas} from "../services/saleService";
 import {formatDate, formatMoney} from "../utils/formatters";
 import "../features/sales/sales.css";
 
 const money = (value, document) => formatMoney(value, document?.moneda, document?.locale);
+const MODULE = getRouteMeta("/ventas");
 
 export default function SalesPage({businessId, role}) {
   const navigate = useNavigate();
@@ -26,6 +30,10 @@ export default function SalesPage({businessId, role}) {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const canManage = canManageSales(role);
+  // Lista realmente vacía (cargada, sin error y sin ventas): el único botón principal vive en el
+  // vacío y la cabecera no recibe acciones. Con datos, o con filtros sin resultados, se ve la lista.
+  const showEmpty = !loading && !message && items.length === 0;
+  const chips = !loading && !message ? [`${items.length} ${items.length === 1 ? "venta" : "ventas"}`] : [];
 
   useEffect(() => {
     let active = true;
@@ -48,15 +56,27 @@ export default function SalesPage({businessId, role}) {
 
   return (
     <main className="erp-page po-history sale-history">
-      {canManage && (
-        <div className="erp-module-intro">
-          <Button type="button" icon={Plus} onClick={() => navigate("/ventas/nueva")}>Nueva venta</Button>
-        </div>
-      )}
+      <ModuleHeader
+        actions={canManage ? <Button type="button" icon={Plus} onClick={() => navigate("/ventas/nueva")}>Nueva venta</Button> : null}
+        chips={chips}
+        description="Lo que le vendes a tus clientes, directo o desde una cotización."
+        hasData={!showEmpty}
+        icon={MODULE.icon}
+        title={MODULE.title}
+      />
 
       {message && <p className="po-message po-message--error" role="alert">{message}</p>}
 
-      <section className="erp-panel erp-history-panel sale-history-panel" aria-labelledby="sales-history-title">
+      {showEmpty ? (
+        <EmptyState
+          action={canManage ? {label: "Nueva venta", icon: Plus, onClick: () => navigate("/ventas/nueva")} : undefined}
+          description={canManage
+            ? "Registra tu primera venta directa o créala desde una cotización."
+            : "Tu perfil es de solo lectura; los perfiles autorizados registran las ventas."}
+          icon={MODULE.icon}
+          title="Aún no hay ventas"
+        />
+      ) : <section className="erp-panel erp-history-panel sale-history-panel" aria-labelledby="sales-history-title">
         <div className="erp-panel-header">
           <div>
             <h2 id="sales-history-title" className="erp-panel-title">Ventas registradas</h2>
@@ -89,20 +109,9 @@ export default function SalesPage({businessId, role}) {
           </SkeletonRegion>
         ) : message && items.length === 0 ? null : filtered.length === 0 ? (
           <div className="erp-empty-state ui-empty-state">
-            <EmptyStateIllustration variant={items.length ? "no-results" : "empty-list"} />
-            <h3>{items.length ? "No hay ventas coincidentes" : "Aún no hay ventas"}</h3>
-            <p>
-              {items.length
-                ? "Prueba con otra búsqueda, estado u origen."
-                : canManage
-                  ? "Registra tu primera venta directa o créala desde una cotización."
-                  : "Tu perfil es de solo lectura; los perfiles autorizados registran las ventas."}
-            </p>
-            {!items.length && canManage && (
-              <div className="ui-empty-state__actions">
-                <Button type="button" icon={Plus} onClick={() => navigate("/ventas/nueva")}>Nueva venta</Button>
-              </div>
-            )}
+            <EmptyStateIllustration variant="no-results" />
+            <h3>No hay ventas coincidentes</h3>
+            <p>Prueba con otra búsqueda, estado u origen.</p>
           </div>
         ) : (
           <>
@@ -139,7 +148,7 @@ export default function SalesPage({businessId, role}) {
           </section>
           </>
         )}
-      </section>
+      </section>}
     </main>
   );
 }

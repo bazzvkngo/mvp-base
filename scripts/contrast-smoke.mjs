@@ -190,6 +190,9 @@ const PAIRS = [
   {fg: "--color-border-control", bg: "--color-border-default", kind: "nontext", threshold: 1.2, note: "border-control / border-default (rayas del costo entre sí; solo textura, la forma la da el contorno)"},
   {fg: "--color-text-muted", bg: "--color-surface-panel", kind: "nontext", note: "text-muted / panel (contorno del tramo de costo)"},
   {fg: "--color-danger-700", bg: "--color-surface-panel", kind: "nontext", note: "danger-700 / panel (remate de pérdida de la barra)"},
+  // <EmptyState> (ui-empty-state--panel): enlace de texto sobre el fondo subtle del vacío.
+  {fg: "--color-text-brand", bg: "--color-surface-subtle", kind: "text", note: "text-brand / subtle (enlace del estado vacío)"},
+  {fg: "--color-text-brand-hover", bg: "--color-surface-subtle", kind: "text", note: "text-brand-hover / subtle (enlace del estado vacío, hover)"},
   // Barras de Ventas y Compras (SPEC 025): relleno sobre su pista (surface-subtle) y sobre el panel.
   {fg: "--color-text-brand-accent", bg: "--color-surface-subtle", kind: "nontext", note: "text-brand-accent / subtle (barra de ventas sobre su pista)"},
   {fg: "--color-data-expense", bg: "--color-surface-subtle", kind: "nontext", note: "data-expense / subtle (barra de compras sobre su pista)"},

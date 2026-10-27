@@ -401,6 +401,71 @@
   margin-top: var(--space-2);
 }
 
+/* <EmptyState> (vacío de módulo): tarjeta punteada con círculo de ícono, título,
+   descripción, UN botón principal y enlaces de texto. No se combina con .erp-empty-state:
+   declara aquí su fondo, borde y relleno completos (.erp-card no trae relleno propio). */
+.ui-empty-state--panel {
+  background: var(--color-surface-subtle);
+  border: 1px dashed var(--color-border-control);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  gap: var(--space-3);
+  padding: var(--space-10) var(--space-6);
+  text-align: center;
+}
+
+.ui-empty-state__icon {
+  align-items: center;
+  background: var(--color-surface-brand);
+  border-radius: var(--radius-pill);
+  color: var(--color-text-brand-accent);
+  display: inline-flex;
+  height: calc(var(--space-10) + var(--space-4));
+  justify-content: center;
+  width: calc(var(--space-10) + var(--space-4));
+}
+
+.ui-empty-state--panel > .ui-empty-state__title {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+}
+
+.ui-empty-state--panel > .ui-empty-state__description {
+  line-height: var(--line-height-default);
+}
+
+.ui-empty-state__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  justify-content: center;
+}
+
+.ui-empty-state__link {
+  background: none;
+  border: 0;
+  border-radius: var(--radius-md);
+  color: var(--color-text-brand);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  padding: var(--space-1) var(--space-2);
+}
+
+.ui-empty-state__link:hover {
+  color: var(--color-text-brand-hover);
+  text-decoration: underline;
+}
+
+.ui-empty-state__link:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 2px;
+}
+
 /* Ilustración de estado vacío (<EmptyStateIllustration>). Todo el color
    sale de tokens que ya tienen valor oscuro, así que el dibujo cambia de
    tema sin ningún hook. Las dos propiedades locales son alias de tokens
@@ -536,6 +601,83 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* <ModuleHeader>: ícono + título (h1) + descripción a la izquierda, acciones a la derecha. */
+.ui-module-header {
+  align-items: flex-start;
+  display: flex;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.ui-module-header__icon {
+  align-items: center;
+  background: var(--color-surface-brand);
+  border-radius: var(--radius-md);
+  color: var(--color-text-brand-accent);
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: calc(var(--space-10) + var(--space-1));
+  justify-content: center;
+  width: calc(var(--space-10) + var(--space-1));
+}
+
+.ui-module-header__text {
+  display: grid;
+  flex: 1 1 auto;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.ui-module-header__title {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.ui-module-header__description {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-default);
+  margin: 0;
+  max-width: 62ch;
+}
+
+.ui-module-header__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  list-style: none;
+  margin: var(--space-1) 0 0;
+  padding: 0;
+}
+
+.ui-module-header__actions {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+@media (max-width: 640px) {
+  .ui-module-header {
+    flex-wrap: wrap;
+  }
+
+  .ui-module-header__actions {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
+
+  .ui-empty-state--panel {
+    padding: var(--space-8) var(--space-4);
+  }
 }
 
 .ai-availability {
