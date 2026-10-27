@@ -1,6 +1,7 @@
 import {
   classifyOperationalProject,
   OPERATIONAL_NET_PROFIT_COVERAGE as COVERAGE,
+  OPERATIONAL_PROJECT_EXCLUSION,
 } from "./operationalNetProfit.mjs";
 
 // SPEC 025 etapa 3: resumen mensual de Reportes. Este módulo solo resuelve
@@ -102,6 +103,13 @@ export function formatComparisonText(comparison, locale = "es-CL") {
   return `${amount} % ${comparison.direction === "up" ? "más" : "menos"} que el mes anterior`;
 }
 
+// Número finito o null: nunca convierte null/""/texto en 0.
+function finiteOrNull(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 function profitGroups(profit, currency) {
   const groups = profit?.status === "ready" ? profit.result?.grupos || [] : [];
   return groups.filter((group) => group.moneda && (!currency || currency === "todos" || group.moneda === currency));
@@ -174,6 +182,11 @@ export function buildMonthlySummaryGroups({
       error: profit?.error || "",
       amount,
       coverage: summarizeProfitCoverage(profit, group.currency),
+      // Margen sobre ventas y base de ventas consideradas tal como las entrega la
+      // ganancia (gananciaNetaOperacionalPct / ingresoNetoConsiderado): solo se
+      // traspasan, no se recalculan. Sin ganancia lista, o sin esos campos, son null.
+      marginPct: ready ? finiteOrNull(current?.gananciaNetaOperacionalPct) : null,
+      consideredRevenue: ready ? finiteOrNull(current?.ingresoNetoConsiderado) : null,
       // La referencia de la ganancia solo existe con la ganancia anterior lista.
       ...compareOrRefer(amount, previousProfit?.status === "ready" ? before?.gananciaNetaOperacional : null),
     };
@@ -252,19 +265,33 @@ export function compareProjectResultRows(left, right) {
     left.numero.localeCompare(right.numero, "es");
 }
 
+// Mes elegido de un proyecto: su clasificación (misma regla que la ganancia), los
+// registros mensuales de ese mes y si el filtro de moneda lo deja fuera. Lo
+// comparten la lista de resultados y la de proyectos incompletos para que
+// cuenten exactamente lo mismo.
+function inspectMonthlyProject(entry, month, currency) {
+  const months = Array.isArray(entry?.balance?.desglosePorMes)
+    ? entry.balance.desglosePorMes.filter((item) => item?.mes === month)
+    : [];
+  const classification = classifyOperationalProject(entry);
+  const filtered = Boolean(currency && currency !== "todos" && classification.moneda && classification.moneda !== currency);
+  return {classification, months, filtered};
+}
+
 // `projects` son las entradas de `projects.meta.proyectos` del hook de
 // rentabilidad: el trabajo con su `balance`. Un proyecto no incluible (misma
 // regla que la ganancia) no tiene resultado confiable: no se lista y se cuenta
 // en `incompletos` si tuvo movimiento ese mes.
+// Cada fila trae, además del resultado del mes, el ingreso y el costo de ese mes
+// (suma de los mismos registros mensuales), el acumulado del proyecto completo
+// (`resultado` y `rentabilidadPct` tal como los entrega el balance, null si el
+// balance no los tiene, p. ej. sin venta) y el estado del balance. No hay
+// ninguna división ni fórmula nueva.
 export function buildMonthlyProjectResults({projects = [], month, currency = "todos"} = {}) {
   const rows = [];
   let incomplete = 0;
   (Array.isArray(projects) ? projects : []).forEach((entry) => {
-    const months = Array.isArray(entry?.balance?.desglosePorMes)
-      ? entry.balance.desglosePorMes.filter((item) => item?.mes === month)
-      : [];
-    const classification = classifyOperationalProject(entry);
-    const filtered = currency && currency !== "todos" && classification.moneda && classification.moneda !== currency;
+    const {classification, months, filtered} = inspectMonthlyProject(entry, month, currency);
     if (!classification.incluible) {
       if (months.length && !filtered) incomplete += 1;
       return;
@@ -272,7 +299,8 @@ export function buildMonthlyProjectResults({projects = [], month, currency = "to
     if (filtered) return;
     const monthRows = months.filter((item) => item.moneda === classification.moneda);
     if (!monthRows.length) return;
-    const result = roundMoney(monthRows.reduce((total, item) => total + item.resultado, 0));
+    const sumOf = (field) => roundMoney(monthRows.reduce((total, item) => total + item[field], 0));
+    const result = sumOf("resultado");
     rows.push({
       id: classification.proyectoId,
       numero: String(entry.numero || ""),
@@ -281,9 +309,48 @@ export function buildMonthlyProjectResults({projects = [], month, currency = "to
       moneda: classification.moneda,
       resultado: result,
       estado: projectResultStatus(result),
+      ingresoNeto: sumOf("ingresoNeto"),
+      costoTotal: sumOf("costoTotal"),
+      acumulado: {
+        resultado: finiteOrNull(entry.balance?.resultado),
+        rentabilidadPct: finiteOrNull(entry.balance?.rentabilidadPct),
+      },
+      estadoBalance: classification.estadoBalance,
     });
   });
   return {filas: rows.sort(compareProjectResultRows), incompletos: incomplete};
+}
+
+// Motivo, en palabras, por el que un proyecto no entra en la ganancia. Sin cifras:
+// sus importes no son confiables.
+export const INCOMPLETE_PROJECT_REASONS = Object.freeze({
+  [OPERATIONAL_PROJECT_EXCLUSION.INVALID_STRUCTURE]: "El balance del proyecto no tiene un formato válido.",
+  [OPERATIONAL_PROJECT_EXCLUSION.UNSUPPORTED_STATUS]: "El balance del proyecto no está disponible para la ganancia.",
+  [OPERATIONAL_PROJECT_EXCLUSION.CURRENCY_MISMATCH]: "Tiene registros en más de una moneda.",
+  [OPERATIONAL_PROJECT_EXCLUSION.MISSING_SALE_MATERIAL_COST]: "Tiene materiales vendidos sin costo histórico.",
+  [OPERATIONAL_PROJECT_EXCLUSION.INVALID_SALE_NET]: "Tiene ventas sin neto válido.",
+  [OPERATIONAL_PROJECT_EXCLUSION.UNDATED_RECORDS]: "Tiene registros sin fecha válida.",
+  [OPERATIONAL_PROJECT_EXCLUSION.NON_FINITE_AMOUNTS]: "Tiene importes que no son números válidos.",
+});
+const INCOMPLETE_REASON_FALLBACK = "Sus datos están incompletos.";
+
+// Los proyectos que `buildMonthlyProjectResults` cuenta en `incompletos`
+// (mismo criterio: no incluibles, con movimiento en el mes y no filtrados por
+// moneda), con nombre y motivo y sin ninguna cifra. Ordenados por título.
+export function listIncompleteMonthlyProjects({projects = [], month, currency = "todos"} = {}) {
+  const list = [];
+  (Array.isArray(projects) ? projects : []).forEach((entry) => {
+    const {classification, months, filtered} = inspectMonthlyProject(entry, month, currency);
+    if (classification.incluible || filtered || !months.length) return;
+    list.push({
+      id: classification.proyectoId,
+      numero: String(entry.numero || ""),
+      titulo: String(entry.titulo || "").trim() || "Proyecto sin título",
+      motivo: classification.motivo,
+      motivoTexto: INCOMPLETE_PROJECT_REASONS[classification.motivo] || INCOMPLETE_REASON_FALLBACK,
+    });
+  });
+  return list.sort((left, right) => left.titulo.localeCompare(right.titulo, "es") || left.numero.localeCompare(right.numero, "es"));
 }
 
 // Monto de servicios vendidos sin proyecto del mes, por moneda, tal como lo
@@ -295,4 +362,172 @@ export function buildServicesWithoutProjectNotices(profit, currency = "todos") {
     .filter((group) => group.moneda && (!currency || currency === "todos" || group.moneda === currency))
     .map((group) => ({moneda: group.moneda, monto: group.ventasSinCostoRegistrado?.monto}))
     .filter((notice) => Number.isFinite(notice.monto) && notice.monto > 0);
+}
+
+// --- Resumen visual (SPEC 025): helpers puros para el círculo del margen, el
+// aviso único de la ganancia y las barras de proyectos. Solo presentan lo que ya
+// calculan operationalNetProfit y buildMonthlyProjectResults; no definen
+// ninguna fórmula económica.
+
+function numberFormatters(locale, currency) {
+  const build = (options) => {
+    try {
+      return new Intl.NumberFormat(locale, {style: "currency", currency, ...options});
+    } catch (error) {
+      return new Intl.NumberFormat("es-CL", {style: "currency", currency: "CLP", ...options});
+    }
+  };
+  // Hasta un decimal para lo "por cada $100" (sin ceros de relleno, también en
+  // monedas con centavos) y los decimales propios de la moneda para el resto.
+  const perHundred = build({minimumFractionDigits: 0, maximumFractionDigits: 1});
+  const full = build({});
+  return {perHundred: (value) => perHundred.format(value), full: (value) => full.format(value)};
+}
+
+const MARGIN_BASE = 100;
+export const NO_MARGIN_TEXT = "Aún no hay ventas para calcular el margen";
+
+// Círculo y frase del margen sobre ventas. `marginPct` es
+// gananciaNetaOperacionalPct tal cual (ganancia ÷ ventas consideradas × 100).
+//  - pending: la ganancia aún no está lista (sin frase ni círculo).
+//  - none: sin margen (null: no hay ventas consideradas) → sin círculo.
+//  - zero / positive / negative: frase con el valor real, sin tope. Solo un
+//    margen positivo llena el círculo (hasta 100 %); cero y negativo lo dejan
+//    vacío, y la frase y el ícono dicen el sentido.
+// `basis` pide la nota "sobre $N de ventas consideradas" solo si esa base
+// difiere del total "Vendí" (`salesTotal`) del mismo grupo.
+export function describeProfitMargin({
+  marginPct = null,
+  consideredRevenue = null,
+  salesTotal = null,
+  status = "ready",
+  coverage = "complete",
+  currency = "CLP",
+  locale = "es-CL",
+} = {}) {
+  const partial = coverage === "partial";
+  const empty = {
+    kind: "pending",
+    partial,
+    percent: null,
+    dollarsPer100: null,
+    ring: {fraction: 0, tone: "none"},
+    sentence: "",
+    basis: {show: false, amount: null, text: ""},
+    ariaLabel: "",
+  };
+  if (status !== "ready") return empty;
+
+  const money = numberFormatters(locale, currency);
+  const withPartial = (text) => (partial ? `${text}. Cobertura parcial` : text);
+  const pct = finiteOrNull(marginPct);
+  if (pct === null) {
+    return {...empty, kind: "none", sentence: NO_MARGIN_TEXT, ariaLabel: withPartial(NO_MARGIN_TEXT)};
+  }
+
+  const rounded = Math.round(pct * 10) / 10 || 0;
+  const kind = rounded > 0 ? "positive" : rounded < 0 ? "negative" : "zero";
+  const dollars = Math.abs(rounded);
+  const sentence = kind === "negative"
+    ? `De cada ${money.perHundred(MARGIN_BASE)} que vendes, pierdes ${money.perHundred(dollars)}`
+    : `De cada ${money.perHundred(MARGIN_BASE)} que vendes, te quedan ${money.perHundred(dollars)}`;
+
+  const considered = finiteOrNull(consideredRevenue);
+  const sold = finiteOrNull(salesTotal);
+  const differs = considered !== null && sold !== null && Math.abs(roundMoney(considered) - roundMoney(sold)) >= 0.01;
+  const basisText = differs ? `sobre ${money.full(considered)} de ventas consideradas` : "";
+
+  return {
+    kind,
+    partial,
+    percent: rounded,
+    dollarsPer100: dollars,
+    ring: {
+      fraction: kind === "positive" ? Math.round((Math.min(pct, MARGIN_BASE) / MARGIN_BASE) * 10000) / 10000 : 0,
+      tone: kind === "positive" ? "up" : kind === "negative" ? "down" : "none",
+    },
+    sentence,
+    basis: {show: differs, amount: differs ? considered : null, text: basisText},
+    ariaLabel: withPartial(basisText ? `${sentence}, ${basisText}` : sentence),
+  };
+}
+
+const PARTIAL_PROFIT_TEXT = "La ganancia del mes es parcial: hay registros que no se incluyen.";
+
+function incompleteProjectsText(count) {
+  return `${count} ${count === 1 ? "proyecto con movimiento no se muestra" : "proyectos con movimiento no se muestran"} porque sus datos están incompletos.`;
+}
+
+function withoutNetText(count) {
+  return `Hay ${count} ${count === 1 ? "documento confirmado sin neto válido, que no se suma" : "documentos confirmados sin neto válido, que no se suman"} en Ventas y Compras.`;
+}
+
+// Líneas del aviso único de la ganancia (una moneda por llamada). Cada línea:
+// {key, placement, text, detail, amount, action}.
+//  - placement "profit": va pegada a la tarjeta de ganancia; "projects": va
+//    una sola vez en la sección de proyectos.
+//  - partial: cobertura parcial (con permiso de ganancia). Con una sola moneda
+//    suma en `detail` cuántos proyectos con movimiento quedaron fuera.
+//  - incomplete: lo mismo, pero sin cobertura parcial (caso raro): línea propia.
+//  - services: monto de servicios vendidos sin proyecto (el texto lo arma la
+//    pantalla porque lleva el monto formateado); solo con monto mayor que 0.
+//  - without-net: documentos sin neto válido de Ventas y Compras (una vez:
+//    solo en el grupo `primary`).
+//  - incomplete-projects: con 2 o más monedas el conteo no se puede atribuir
+//    a una moneda, así que va una sola vez, en la sección de proyectos.
+// Sin líneas no se muestra aviso.
+export function buildProfitNoticeLines({
+  coverage = "complete",
+  incompleteCount = 0,
+  servicesAmount = null,
+  withoutNetCount = 0,
+  currencyCount = 1,
+  primary = true,
+  canViewProfitability = false,
+  canOpenSales = false,
+} = {}) {
+  const lines = [];
+  const line = (key, placement, extra = {}) => ({key, placement, text: null, detail: "", amount: null, action: null, ...extra});
+  const incomplete = Math.max(0, Math.trunc(finiteOrNull(incompleteCount) ?? 0));
+  const multiCurrency = (finiteOrNull(currencyCount) ?? 1) > 1;
+
+  if (canViewProfitability) {
+    const detail = !multiCurrency && incomplete > 0 ? incompleteProjectsText(incomplete) : "";
+    if (coverage === "partial") {
+      lines.push(line("partial", "profit", {text: PARTIAL_PROFIT_TEXT, detail, action: {id: "system-state", label: "Ver estado del sistema"}}));
+    } else if (detail) {
+      lines.push(line("incomplete", "profit", {text: detail}));
+    }
+    const services = finiteOrNull(servicesAmount);
+    if (services !== null && services > 0) {
+      lines.push(line("services", "profit", {amount: services, action: canOpenSales ? {id: "sales", label: "Ir a Ventas"} : null}));
+    }
+  }
+
+  const withoutNet = Math.max(0, Math.trunc(finiteOrNull(withoutNetCount) ?? 0));
+  if (primary && withoutNet > 0) lines.push(line("without-net", "profit", {text: withoutNetText(withoutNet)}));
+  if (canViewProfitability && primary && multiCurrency && incomplete > 0) {
+    lines.push(line("incomplete-projects", "projects", {text: incompleteProjectsText(incomplete)}));
+  }
+  return lines;
+}
+
+// Barras del resultado del mes. Escala por moneda (no se comparan monedas): la
+// barra más larga de cada moneda mide 1 y las demás son proporcionales a su
+// valor absoluto. `direction`: "right" para el que gana, "left" para el que
+// pierde y "none" para resultado 0 (fracción 0). Devuelve filas nuevas con
+// `bar`, en el mismo orden, sin modificar las originales.
+export function scaleProjectBars(rows = []) {
+  const list = Array.isArray(rows) ? rows : [];
+  const largest = new Map();
+  list.forEach((row) => {
+    const size = Math.abs(finiteOrNull(row?.resultado) ?? 0);
+    largest.set(row?.moneda, Math.max(largest.get(row?.moneda) || 0, size));
+  });
+  return list.map((row) => {
+    const value = finiteOrNull(row?.resultado) ?? 0;
+    const max = largest.get(row?.moneda) || 0;
+    const fraction = value !== 0 && max > 0 ? Math.round((Math.abs(value) / max) * 10000) / 10000 : 0;
+    return {...row, bar: {direction: value > 0 ? "right" : value < 0 ? "left" : "none", fraction}};
+  });
 }

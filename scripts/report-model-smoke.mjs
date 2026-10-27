@@ -29,14 +29,20 @@ import {
   normalizeWorkCost,
   resolveReportCurrency,
 } from "../src/domain/reportModel.mjs";
-import {calculateOperationalNetProfit} from "../src/domain/operationalNetProfit.mjs";
+import {calculateOperationalNetProfit, OPERATIONAL_PROJECT_EXCLUSION} from "../src/domain/operationalNetProfit.mjs";
 import {
+  INCOMPLETE_PROJECT_REASONS,
   MONTHLY_EXPLANATIONS,
+  NO_MARGIN_TEXT,
   NO_PREVIOUS_MONTH_TEXT,
   PROJECT_RESULT_STATUS,
   buildMonthlyProjectResults,
   buildMonthlySummaryGroups,
+  buildProfitNoticeLines,
   buildServicesWithoutProjectNotices,
+  describeProfitMargin,
+  listIncompleteMonthlyProjects,
+  scaleProjectBars,
   projectResultLabel,
   canShowNextMonth,
   compareWithPreviousMonth,
@@ -808,7 +814,7 @@ assert.equal(monthlyProjects.filas.find((row) => row.id === "p-zero").resultado,
 assert.equal(projectResultLabel(PROJECT_RESULT_STATUS.NEUTRAL), "Sin resultado");
 assert.equal(projectResultLabel(PROJECT_RESULT_STATUS.LOSING), "Perdiendo");
 assert.equal(projectResultLabel(PROJECT_RESULT_STATUS.WINNING), "Ganando");
-assert.deepEqual(monthlyProjects.filas.find((row) => row.id === "p-loss"), {id: "p-loss", numero: "TR-0001", titulo: "Cableado oficina", cliente: "Cliente A", moneda: "CLP", resultado: -30000, estado: "PERDIENDO"});
+assert.deepEqual(monthlyProjects.filas.find((row) => row.id === "p-loss"), {id: "p-loss", numero: "TR-0001", titulo: "Cableado oficina", cliente: "Cliente A", moneda: "CLP", resultado: -30000, estado: "PERDIENDO", ingresoNeto: 0, costoTotal: 30000, acumulado: {resultado: 870000, rentabilidadPct: null}, estadoBalance: "COMPLETO"});
 assert.equal(monthlyProjects.incompletos, 1, "un proyecto con movimiento y datos incompletos no se lista, se cuenta");
 assert.equal(monthlyProjects.filas.some((row) => ["p-unreliable", "p-other-month", "p-failed"].includes(row.id)), false);
 // La suma de la lista coincide con el "Resultado de proyectos" de la ganancia del mismo mes.
@@ -871,5 +877,202 @@ const projectsCssBlock = projectsCss.slice(projectsCss.indexOf(".reports-month-p
 assert.ok(projectsCssBlock.length > 200, "debe existir el bloque de estilos de proyectos del mes");
 assert.doesNotMatch(projectsCssBlock, /#[0-9a-fA-F]{3,8}\b|rgb\(|hsl\(/);
 console.log("OK reportes SPEC 025: proyectos del mes (orden, suma = resultado de proyectos de la ganancia, permiso, estados y aviso de servicios sin proyecto)");
+
+// Resumen visual (SPEC 025), bloque 1: datos y helpers puros. Nada de esto calcula dinero nuevo.
+const plain = (text) => text.replace(/ /g, " ");
+const projectRow = (id) => monthlyProjects.filas.find((row) => row.id === id);
+
+// Filas: ingreso y costo del mes (suma de los mismos registros mensuales), acumulado del proyecto y estado del balance.
+assert.deepEqual([projectRow("p-win").ingresoNeto, projectRow("p-win").costoTotal, projectRow("p-win").resultado], [100000, 20000, 80000]);
+assert.deepEqual([projectRow("p-worse").ingresoNeto, projectRow("p-worse").costoTotal, projectRow("p-worse").resultado], [20000, 70000, -50000]);
+assert.deepEqual(projectRow("p-win").acumulado, {resultado: 80000, rentabilidadPct: null}, "sin rentabilidadPct en el balance no se inventa");
+assert.deepEqual([projectRow("p-cents").ingresoNeto, projectRow("p-cents").costoTotal], [0.3, 0.1], "los centavos se suman redondeados a 2 decimales");
+for (const row of monthlyProjects.filas) {
+  assert.equal(Math.round((row.ingresoNeto - row.costoTotal) * 100) / 100, row.resultado, `${row.id}: ingreso − costo del mes es el resultado que ya se mostraba`);
+}
+const pctEntry = projectEntry("p-pct", "TR-0010", "Con rentabilidad", [projectMonth("2026-10", {ingresoNeto: 50000, horasHombre: 10000})]);
+pctEntry.balance.rentabilidadPct = 80;
+const noSaleEntry = projectEntry("p-nosale", "TR-0011", "Sin venta aún", [projectMonth("2026-10", {horasHombre: 8000})]);
+Object.assign(noSaleEntry.balance, {estado: "PARCIAL_SIN_VENTA", valorComercial: null, resultado: null, rentabilidadPct: null});
+const nanPctEntry = projectEntry("p-nan", "TR-0012", "Rentabilidad inválida", [projectMonth("2026-10", {ingresoNeto: 1000})]);
+nanPctEntry.balance.rentabilidadPct = Number.NaN;
+const extraRows = buildMonthlyProjectResults({projects: [pctEntry, noSaleEntry, nanPctEntry], month: "2026-10"}).filas;
+const extraRow = (id) => extraRows.find((row) => row.id === id);
+assert.deepEqual(extraRow("p-pct").acumulado, {resultado: 40000, rentabilidadPct: 80}, "el acumulado y la rentabilidad salen tal cual del balance");
+assert.equal(extraRow("p-pct").estadoBalance, "COMPLETO");
+assert.deepEqual(extraRow("p-nosale").acumulado, {resultado: null, rentabilidadPct: null}, "sin venta el balance no trae acumulado: null, no 0");
+assert.equal(extraRow("p-nosale").estadoBalance, "PARCIAL_SIN_VENTA");
+assert.deepEqual([extraRow("p-nosale").ingresoNeto, extraRow("p-nosale").costoTotal, extraRow("p-nosale").resultado], [0, 8000, -8000]);
+assert.equal(extraRow("p-nan").acumulado.rentabilidadPct, null, "un valor no numérico del balance queda en null");
+
+// Proyectos incompletos: nombre y motivo, sin cifras; mismo criterio que el conteo `incompletos`.
+const incompleteList = listIncompleteMonthlyProjects({projects: projectFixtures, month: "2026-10"});
+assert.deepEqual(incompleteList, [{id: "p-unreliable", numero: "TR-0006", titulo: "Materiales sin costo", motivo: "MATERIALES_VENTA_SIN_COSTO", motivoTexto: INCOMPLETE_PROJECT_REASONS.MATERIALES_VENTA_SIN_COSTO}]);
+assert.deepEqual(Object.keys(incompleteList[0]).sort(), ["id", "motivo", "motivoTexto", "numero", "titulo"], "ninguna cifra: solo identidad y motivo");
+assert.equal(incompleteList.length, monthlyProjects.incompletos);
+assert.deepEqual(listIncompleteMonthlyProjects({projects: projectFixtures, month: "2026-07"}), [], "sin movimiento en el mes no hay incompletos");
+assert.deepEqual(listIncompleteMonthlyProjects({projects: [], month: "2026-10"}), []);
+assert.deepEqual(listIncompleteMonthlyProjects(), []);
+assert.equal(listIncompleteMonthlyProjects({projects: projectFixtures, month: "2026-10"}).some((row) => row.id === "p-failed"), false, "un balance fallido (null) no tiene movimiento que listar");
+const incompleteFixtures = [
+  projectEntry("p-zeta", "TR-0021", "Zeta", [projectMonth("2026-10", {horasHombre: 1})], {fuentes: {registrosSinFecha: 1}}),
+  projectEntry("p-alfa", "TR-0020", "Alfa", [projectMonth("2026-10", {horasHombre: 1})], {fuentes: {ventasSinNetoValido: 2}}),
+  {id: "p-bad", numero: "TR-0022", titulo: "", balance: {trabajoId: "p-bad", moneda: "", desglosePorMes: [{mes: "2026-10", moneda: "CLP"}]}},
+  projectEntry("p-usd-bad", "TR-0023", "Dólar roto", [projectMonth("2026-10", {horasHombre: 1, moneda: "USD"})], {moneda: "USD", fuentes: {materialesVentaSinCosto: 1}}),
+  projectEntry("p-fine", "TR-0024", "Sin problemas", [projectMonth("2026-10", {ingresoNeto: 10})]),
+];
+assert.deepEqual(
+  listIncompleteMonthlyProjects({projects: incompleteFixtures, month: "2026-10"}).map((row) => [row.titulo, row.motivo]),
+  [["Alfa", "VENTAS_SIN_NETO_VALIDO"], ["Dólar roto", "MATERIALES_VENTA_SIN_COSTO"], ["Proyecto sin título", "ESTRUCTURA_INVALIDA"], ["Zeta", "REGISTROS_SIN_FECHA"]],
+  "ordenados por título, con título de respaldo y su motivo"
+);
+for (const currency of ["todos", "CLP", "USD"]) {
+  assert.equal(
+    listIncompleteMonthlyProjects({projects: incompleteFixtures, month: "2026-10", currency}).length,
+    buildMonthlyProjectResults({projects: incompleteFixtures, month: "2026-10", currency}).incompletos,
+    `${currency}: la lista y el conteo coinciden`
+  );
+}
+assert.deepEqual(listIncompleteMonthlyProjects({projects: incompleteFixtures, month: "2026-10", currency: "USD"}).map((row) => row.id), ["p-usd-bad", "p-bad"], "con filtro USD queda el de USD y el de moneda desconocida, como en el conteo");
+assert.ok(Object.values(OPERATIONAL_PROJECT_EXCLUSION).every((code) => typeof INCOMPLETE_PROJECT_REASONS[code] === "string" && INCOMPLETE_PROJECT_REASONS[code]), "todos los motivos de exclusión tienen texto");
+
+// La ganancia del mes entrega margen y ventas consideradas; el grupo solo los traspasa (null por defecto).
+const profitWithMargin = {status: "ready", error: "", result: {grupos: [{moneda: "CLP", gananciaNetaOperacional: 500, cobertura: "COMPLETA", gananciaNetaOperacionalPct: 25, ingresoNetoConsiderado: 2000}]}};
+const marginInput = {summary: octoberSummary, previousSummary: monthlySummaryOf(monthRangeSeptember), previousProfit: readyProfit(300)};
+assert.deepEqual(
+  (({marginPct, consideredRevenue}) => ({marginPct, consideredRevenue}))(buildMonthlySummaryGroups({...marginInput, profit: profitWithMargin})[0].profit),
+  {marginPct: 25, consideredRevenue: 2000}
+);
+assert.deepEqual([withData.profit.marginPct, withData.profit.consideredRevenue], [null, null], "sin esos campos en la ganancia: null, no 0");
+assert.deepEqual(
+  [buildMonthlySummaryGroups({...marginInput, profit: {status: "loading"}})[0].profit.marginPct, buildMonthlySummaryGroups({...marginInput, profit: {status: "error", error: "x"}})[0].profit.consideredRevenue],
+  [null, null],
+  "con la ganancia sin listar no hay margen"
+);
+const junkProfit = {status: "ready", error: "", result: {grupos: [{moneda: "CLP", gananciaNetaOperacional: 1, cobertura: "COMPLETA", gananciaNetaOperacionalPct: "abc", ingresoNetoConsiderado: Number.NaN}]}};
+assert.deepEqual(
+  (({marginPct, consideredRevenue}) => ({marginPct, consideredRevenue}))(buildMonthlySummaryGroups({...marginInput, profit: junkProfit})[0].profit),
+  {marginPct: null, consideredRevenue: null}
+);
+const realProfitGroup = monthlyProfitOctober.grupos.find((entry) => entry.moneda === "CLP");
+const realMarginGroup = buildMonthlySummaryGroups({...marginInput, profit: {status: "ready", error: "", result: monthlyProfitOctober}}).find((entry) => entry.currency === "CLP");
+assert.equal(realMarginGroup.profit.marginPct, realProfitGroup.gananciaNetaOperacionalPct, "mismo margen que calcula la ganancia");
+assert.equal(realMarginGroup.profit.consideredRevenue, realProfitGroup.ingresoNetoConsiderado, "misma base de ventas consideradas que la ganancia");
+
+// describeProfitMargin: frase "De cada $100 que vendes…", círculo y nota de base.
+const positive = describeProfitMargin({marginPct: 23.456, consideredRevenue: 800000, salesTotal: 1000000});
+assert.equal(positive.kind, "positive");
+assert.equal(plain(positive.sentence), "De cada $100 que vendes, te quedan $23,5");
+assert.deepEqual([positive.percent, positive.dollarsPer100], [23.5, 23.5]);
+assert.deepEqual(positive.ring, {fraction: 0.2346, tone: "up"});
+assert.deepEqual([positive.basis.show, positive.basis.amount, plain(positive.basis.text)], [true, 800000, "sobre $800.000 de ventas consideradas"]);
+assert.equal(plain(positive.ariaLabel), "De cada $100 que vendes, te quedan $23,5, sobre $800.000 de ventas consideradas");
+assert.equal(positive.partial, false);
+// La nota de base solo aparece si la base difiere de "Vendí".
+for (const [considered, sold, label] of [[1000000, 1000000, "iguales"], [1000000.004, 1000000, "difieren menos de un centavo"], [800000, null, "sin total vendido para comparar"], [null, 1000000, "sin ventas consideradas"]]) {
+  const basis = describeProfitMargin({marginPct: 10, consideredRevenue: considered, salesTotal: sold}).basis;
+  assert.deepEqual(basis, {show: false, amount: null, text: ""}, `sin nota de base: ${label}`);
+}
+// Cero: ni gana ni pierde; el círculo queda vacío.
+for (const zero of [0, 0.04, -0.04]) {
+  const result = describeProfitMargin({marginPct: zero});
+  assert.equal(result.kind, "zero", `${zero} se redondea a 0`);
+  assert.equal(plain(result.sentence), "De cada $100 que vendes, te quedan $0");
+  assert.deepEqual(result.ring, {fraction: 0, tone: "none"});
+  assert.equal(Object.is(result.percent, -0), false, "nunca -0");
+}
+// Negativo: número real, círculo vacío y frase de pérdida; sin tope.
+const negative = describeProfitMargin({marginPct: -12.34});
+assert.deepEqual([negative.kind, negative.percent, negative.dollarsPer100], ["negative", -12.3, 12.3]);
+assert.equal(plain(negative.sentence), "De cada $100 que vendes, pierdes $12,3");
+assert.deepEqual(negative.ring, {fraction: 0, tone: "down"});
+const veryNegative = describeProfitMargin({marginPct: -500});
+assert.deepEqual([veryNegative.kind, veryNegative.percent, plain(veryNegative.sentence)], ["negative", -500, "De cada $100 que vendes, pierdes $500"]);
+assert.deepEqual(veryNegative.ring, {fraction: 0, tone: "down"}, "sin tope y con el círculo vacío");
+// Más de 100: el número es el real; solo el círculo se llena al máximo.
+const overHundred = describeProfitMargin({marginPct: 150});
+assert.equal(plain(overHundred.sentence), "De cada $100 que vendes, te quedan $150");
+assert.deepEqual(overHundred.ring, {fraction: 1, tone: "up"});
+// Ventas 0 o sin margen: sin círculo ni número inventado.
+for (const missing of [null, undefined, Number.NaN, "", "abc"]) {
+  const result = describeProfitMargin({marginPct: missing});
+  assert.equal(result.kind, "none", `${String(missing)} no es un margen`);
+  assert.deepEqual([result.sentence, result.percent, result.dollarsPer100, result.ring], [NO_MARGIN_TEXT, null, null, {fraction: 0, tone: "none"}]);
+}
+assert.equal(describeProfitMargin().kind, "none");
+// Ganancia sin listar: nada que mostrar.
+for (const status of ["loading", "error", "pending"]) {
+  const result = describeProfitMargin({marginPct: 50, status});
+  assert.deepEqual([result.kind, result.sentence, result.ariaLabel], ["pending", "", ""], `${status}: sin frase`);
+}
+// Cobertura parcial: el aviso viaja en la etiqueta accesible.
+assert.equal(describeProfitMargin({marginPct: 10, coverage: "partial"}).partial, true);
+assert.match(describeProfitMargin({marginPct: 10, coverage: "partial"}).ariaLabel, /\. Cobertura parcial$/);
+assert.match(describeProfitMargin({marginPct: null, coverage: "partial"}).ariaLabel, /\. Cobertura parcial$/);
+assert.doesNotMatch(describeProfitMargin({marginPct: 10, coverage: "complete"}).ariaLabel, /parcial/i);
+// Otra moneda y moneda inválida (no revienta).
+const dollars = describeProfitMargin({marginPct: 12.34, currency: "USD", consideredRevenue: 300.5, salesTotal: 400});
+assert.equal(plain(dollars.sentence), "De cada US$100 que vendes, te quedan US$12,3");
+assert.equal(plain(dollars.basis.text), "sobre US$300,50 de ventas consideradas");
+assert.doesNotThrow(() => describeProfitMargin({marginPct: 12, currency: "XXXX", locale: "es-CL"}));
+
+// buildProfitNoticeLines: aviso único pegado a la ganancia.
+const notice = (overrides = {}) => buildProfitNoticeLines({canViewProfitability: true, canOpenSales: true, ...overrides});
+assert.deepEqual(notice(), [], "cobertura completa y nada que avisar: no hay aviso");
+assert.deepEqual(notice({coverage: "empty"}), []);
+const partialOnly = notice({coverage: "partial"});
+assert.deepEqual(partialOnly.map((entry) => [entry.key, entry.placement]), [["partial", "profit"]]);
+assert.equal(partialOnly[0].text, "La ganancia del mes es parcial: hay registros que no se incluyen.");
+assert.equal(partialOnly[0].detail, "", "sin proyectos incompletos no hay detalle");
+assert.deepEqual(partialOnly[0].action, {id: "system-state", label: "Ver estado del sistema"});
+assert.equal(notice({coverage: "partial", incompleteCount: 1})[0].detail, "1 proyecto con movimiento no se muestra porque sus datos están incompletos.");
+assert.equal(notice({coverage: "partial", incompleteCount: 3})[0].detail, "3 proyectos con movimiento no se muestran porque sus datos están incompletos.");
+assert.deepEqual(notice({coverage: "partial", canViewProfitability: false}), [], "sin permiso de ganancia no se avisa de la ganancia");
+// Incompletos sin cobertura parcial (caso raro): línea propia, no se esconde.
+assert.deepEqual(notice({incompleteCount: 2}).map((entry) => [entry.key, entry.text]), [["incomplete", "2 proyectos con movimiento no se muestran porque sus datos están incompletos."]]);
+// Servicios vendidos sin proyecto: solo con monto mayor que 0; el enlace a Ventas depende del permiso.
+const services = notice({servicesAmount: 15000});
+assert.deepEqual([services[0].key, services[0].amount, services[0].text, services[0].action], ["services", 15000, null, {id: "sales", label: "Ir a Ventas"}]);
+assert.equal(notice({servicesAmount: 15000, canOpenSales: false})[0].action, null);
+for (const none of [0, -5, null, undefined, Number.NaN, "x"]) assert.deepEqual(notice({servicesAmount: none}), [], `monto ${String(none)}: sin aviso de servicios`);
+assert.deepEqual(notice({servicesAmount: 15000, canViewProfitability: false}), [], "los servicios sin proyecto son parte de la ganancia: requieren su permiso");
+// Documentos sin neto válido: una sola vez (grupo principal), con plural, y no dependen de la ganancia.
+assert.equal(notice({withoutNetCount: 1})[0].text, "Hay 1 documento confirmado sin neto válido, que no se suma en Ventas y Compras.");
+assert.equal(notice({withoutNetCount: 4})[0].text, "Hay 4 documentos confirmados sin neto válido, que no se suman en Ventas y Compras.");
+assert.deepEqual(notice({withoutNetCount: 4, primary: false}), [], "en el segundo grupo de moneda no se repite");
+assert.equal(buildProfitNoticeLines({withoutNetCount: 2})[0].key, "without-net", "se avisa aunque el perfil no vea la ganancia");
+// Orden: parcial, servicios, documentos.
+assert.deepEqual(notice({coverage: "partial", incompleteCount: 1, servicesAmount: 10, withoutNetCount: 2}).map((entry) => entry.key), ["partial", "services", "without-net"]);
+// Varias monedas: el conteo de incompletos va una sola vez, en la sección de proyectos.
+const multi = notice({coverage: "partial", incompleteCount: 2, currencyCount: 2});
+assert.deepEqual(multi.map((entry) => [entry.key, entry.placement]), [["partial", "profit"], ["incomplete-projects", "projects"]]);
+assert.equal(multi[0].detail, "", "con varias monedas el aviso de la ganancia no repite el conteo");
+assert.equal(multi[1].text, "2 proyectos con movimiento no se muestran porque sus datos están incompletos.");
+assert.deepEqual(notice({coverage: "partial", incompleteCount: 2, currencyCount: 2, primary: false}).map((entry) => entry.key), ["partial"], "solo el grupo principal lleva el conteo");
+assert.deepEqual(notice({incompleteCount: 2, currencyCount: 2}).map((entry) => entry.key), ["incomplete-projects"]);
+assert.deepEqual(notice({coverage: "partial", incompleteCount: 0, currencyCount: 3}).map((entry) => entry.key), ["partial"], "sin incompletos no hay línea de proyectos");
+// Entradas raras no revientan.
+assert.deepEqual(buildProfitNoticeLines(), []);
+assert.deepEqual(notice({incompleteCount: "abc", withoutNetCount: -3}), []);
+assert.deepEqual(notice({incompleteCount: 2.9, coverage: "partial"}).map((entry) => entry.detail), ["2 proyectos con movimiento no se muestran porque sus datos están incompletos."]);
+
+// scaleProjectBars: escala por moneda, el que gana a la derecha y el que pierde a la izquierda.
+const barRows = scaleProjectBars(monthlyProjects.filas);
+const barOf = (id) => barRows.find((row) => row.id === id).bar;
+assert.deepEqual(barRows.map((row) => row.id), monthlyProjects.filas.map((row) => row.id), "mismo orden");
+assert.deepEqual(barOf("p-win"), {direction: "right", fraction: 1}, "el mayor valor absoluto de la moneda mide 1");
+assert.deepEqual(barOf("p-worse"), {direction: "left", fraction: 0.625});
+assert.deepEqual(barOf("p-loss"), {direction: "left", fraction: 0.375});
+assert.deepEqual(barOf("p-zero"), {direction: "none", fraction: 0});
+assert.deepEqual(barOf("p-cents"), {direction: "right", fraction: 0}, "un resultado minúsculo mantiene su sentido y casi no mide");
+assert.deepEqual(barOf("p-usd"), {direction: "right", fraction: 1}, "cada moneda tiene su propia escala");
+assert.equal("bar" in monthlyProjects.filas[0], false, "no modifica las filas originales");
+assert.deepEqual(scaleProjectBars([{moneda: "CLP", resultado: -10}]).map((row) => row.bar), [{direction: "left", fraction: 1}]);
+assert.deepEqual(scaleProjectBars([{moneda: "CLP", resultado: 0}, {moneda: "CLP", resultado: 0}]).map((row) => row.bar), [{direction: "none", fraction: 0}, {direction: "none", fraction: 0}]);
+assert.deepEqual(scaleProjectBars([]), []);
+assert.deepEqual(scaleProjectBars(), []);
+assert.deepEqual(scaleProjectBars("x"), []);
+assert.deepEqual(scaleProjectBars([{moneda: "CLP", resultado: "abc"}]).map((row) => row.bar), [{direction: "none", fraction: 0}], "un resultado inválido no dibuja barra");
+console.log("OK reportes SPEC 025 (resumen visual, bloque 1): filas con ingreso/costo/acumulado, incompletos sin cifras, margen, aviso único y barras");
 
 console.log("Report model smoke: OK");
