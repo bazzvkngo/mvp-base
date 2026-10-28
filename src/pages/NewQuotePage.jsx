@@ -24,6 +24,7 @@ import useAiRateLimit from "../hooks/useAiRateLimit";
 import ClientSelector from "../features/clients/ClientSelector";
 import QuoteCatalogDialog from "../features/quotes/QuoteCatalogDialog";
 import QuoteCollapsibleSection from "../features/quotes/QuoteCollapsibleSection";
+import QuoteConditionsPanel from "../features/quotes/QuoteConditionsPanel";
 import QuoteItemsEditor from "../features/quotes/QuoteItemsEditor";
 import QuoteSummaryPanel from "../features/quotes/QuoteSummaryPanel";
 import "../features/quotes/quote-workspace.css";
@@ -2142,106 +2143,37 @@ function NewQuotePage({ userId }) {
         />
       </div>
 
-      <QuoteCollapsibleSection
-        title="Qué incluye esta propuesta"
-        summary={quote.seccionesAlcance.length > 1
-          ? `${quote.seccionesAlcance.length} apartados`
-          : hasScopeContent(quote.seccionesAlcance)
-            ? "Con descripción"
-            : "Opcional"}
-        open={scopeOpen}
-        onToggle={() => setScopeOpen((current) => !current)}
-      >
-        <div className="quote-workspace__secondary-body">
-          <div className="quote-workspace__secondary-header">
-            <p style={styles.helpText}>Describe brevemente los trabajos, servicios o entregables incluidos en la cotización. Las secciones vacías no aparecerán en el PDF.</p>
-            <button type="button" onClick={addScopeSection} className="quote-workspace__button quote-workspace__button--secondary">+ Agregar apartado</button>
-          </div>
-          {isAdvancedScope ? (
-            <div style={styles.scopeList}>
-              {quote.seccionesAlcance.map((section, index) => (
-                <article key={section.id} style={styles.scopeCard}>
-                  <div style={styles.scopeHeader}>
-                    <input value={section.titulo} onChange={(event) => updateScopeSection(section.id, { titulo: event.target.value })} placeholder="Título del apartado" style={styles.input} />
-                    <div style={styles.scopeActions}>
-                      <button type="button" aria-label="Subir apartado" disabled={index === 0} onClick={() => moveScopeSection(index, -1)} style={styles.orderButton}>↑</button>
-                      <button type="button" aria-label="Bajar apartado" disabled={index === quote.seccionesAlcance.length - 1} onClick={() => moveScopeSection(index, 1)} style={styles.orderButton}>↓</button>
-                      <button type="button" onClick={() => removeScopeSection(section.id)} style={styles.removeButton}>Eliminar</button>
-                    </div>
-                  </div>
-                  <textarea rows={4} value={(section.lineas || []).join("\n")} onChange={(event) => updateScopeSection(section.id, { lineas: event.target.value.split(/\r?\n/) })} placeholder="Una línea descriptiva por renglón" style={styles.textarea} />
-                  {(quoteValidation.fieldErrors[`alcance.${index}.titulo`] || quoteValidation.fieldErrors[`alcance.${index}.lineas`]) && (
-                    <span style={styles.fieldErrorText}>{quoteValidation.fieldErrors[`alcance.${index}.titulo`] || quoteValidation.fieldErrors[`alcance.${index}.lineas`]}</span>
-                  )}
-                </article>
-              ))}
-            </div>
-          ) : (
-            <textarea
-              rows={4}
-              value={primaryScopeText}
-              onChange={(event) => updatePrimaryScopeText(event.target.value)}
-              placeholder="Ej: instalación completa, materiales incluidos, pruebas de funcionamiento..."
-              style={styles.textarea}
-            />
-          )}
-        </div>
-      </QuoteCollapsibleSection>
-
-      <section className="quote-workspace__panel quote-conditions-primary no-print">
-        <header className="quote-workspace__panel-header">
-          <div>
-            <span className="quote-workspace__kicker">Condiciones comerciales</span>
-            <h2>Condiciones principales</h2>
-            <p>Los valores de Empresa se copiaron a este documento y puedes ajustarlos sólo para esta cotización.</p>
-          </div>
-        </header>
-        <div className="quote-conditions-primary__grid">
-          <Field label="Vigencia (días)"><input type="number" min="1" max="3650" value={quote.validezDias} onChange={(event) => updateField("validezDias", event.target.value)} style={styles.input} /></Field>
-          <Field label="Tratamiento tributario"><select value={quote.afectaIva === false ? "exenta" : "afecta"} onChange={(event) => updateField("afectaIva", event.target.value === "afecta")} style={styles.input}><option value="afecta">Afecta IVA 19%</option><option value="exenta">Exenta de IVA</option></select></Field>
-          <Field label="Forma de pago"><input value={quote.condiciones.formaPago} onChange={(event) => updateCondition("formaPago", event.target.value)} style={styles.input} /></Field>
-          <Field label="Plazo de ejecución o entrega">
-            <input value={quote.condiciones.plazoEntrega} onChange={(event) => updateCondition("plazoEntrega", event.target.value)} placeholder="Ej: 10 días hábiles" style={styles.input} />
-            {plazoRangeOpen ? (
-              <div>
-                <div style={styles.plazoRangeRow}>
-                  <input type="date" value={plazoRangeDraft.desde} onChange={(event) => setPlazoRangeDraft((current) => ({ ...current, desde: event.target.value }))} style={{ ...styles.input, width: "auto" }} />
-                  <span aria-hidden="true">→</span>
-                  <input type="date" min={plazoRangeDraft.desde || undefined} value={plazoRangeDraft.hasta} onChange={(event) => setPlazoRangeDraft((current) => ({ ...current, hasta: event.target.value }))} style={{ ...styles.input, width: "auto" }} />
-                  <button type="button" disabled={!plazoRangeValid} onClick={applyPlazoRange} className="quote-workspace__button quote-workspace__button--primary">Aceptar</button>
-                  <button type="button" onClick={() => setPlazoRangeOpen(false)} className="quote-workspace__button quote-workspace__button--secondary">Cancelar</button>
-                </div>
-                {plazoRangeShowError && (
-                  <span style={styles.fieldErrorText}>La fecha "hasta" no puede ser anterior a "desde".</span>
-                )}
-              </div>
-            ) : (
-              <button type="button" onClick={() => setPlazoRangeOpen(true)} className="quote-workspace__link-button">Definir con fecha desde/hasta</button>
-            )}
-          </Field>
-        </div>
-      </section>
-
-      <QuoteCollapsibleSection
-        title="Más condiciones"
-        summary={[quote.condiciones.garantia, quote.condiciones.alcanceGeografico, quote.condiciones.observaciones].filter(Boolean).length ? "Hay condiciones adicionales configuradas" : "Garantía, alcance, observaciones, exclusiones y términos"}
-        open={conditionsOpen}
-        onToggle={() => setConditionsOpen((current) => !current)}
-      >
-        <div className="quote-workspace__secondary-body">
-          <div className="quote-workspace__secondary-header">
-            <p style={styles.helpText}>Estos cambios afectan sólo a este documento.</p>
-            <button type="button" onClick={restoreDefaultConditions} className="quote-summary__clear">Restaurar valores de Empresa</button>
-          </div>
-          <div style={styles.conditionsGrid}>
-            <Field label="Garantía"><input value={quote.condiciones.garantia} onChange={(event) => updateCondition("garantia", event.target.value)} style={styles.input} /></Field>
-            <Field label="Alcance geográfico"><input value={quote.condiciones.alcanceGeografico} onChange={(event) => updateCondition("alcanceGeografico", event.target.value)} style={styles.input} /></Field>
-            <CompactConditionField label="Observaciones" value={quote.condiciones.observaciones} onChange={(value) => updateCondition("observaciones", value)} />
-            <CompactConditionField label="Exclusiones" value={quote.condiciones.exclusiones} onChange={(value) => updateCondition("exclusiones", value)} />
-            <CompactConditionField label="Otras condiciones" value={quote.condiciones.terminosAdicionales} onChange={(value) => updateCondition("terminosAdicionales", value)} />
-          </div>
-        </div>
-      </QuoteCollapsibleSection>
+      <QuoteConditionsPanel
+        afectaIva={quote.afectaIva}
+        conditions={quote.condiciones}
+        fieldErrors={quoteValidation.fieldErrors}
+        isAdvancedScope={isAdvancedScope}
+        isEditMode={isEditMode}
+        onAddScopeSection={addScopeSection}
+        onCondition={updateCondition}
+        onField={updateField}
+        onMoveScopeSection={moveScopeSection}
+        onPlazoApply={applyPlazoRange}
+        onPrimaryScopeText={updatePrimaryScopeText}
+        onRemoveScopeSection={removeScopeSection}
+        onRestore={restoreDefaultConditions}
+        onUpdateScopeSection={updateScopeSection}
+        plazoRangeDraft={plazoRangeDraft}
+        plazoRangeOpen={plazoRangeOpen}
+        plazoRangeShowError={plazoRangeShowError}
+        plazoRangeValid={plazoRangeValid}
+        primaryScopeText={primaryScopeText}
+        restoreDisabled={!companyProfile}
+        scopeHasContent={hasScopeContent(quote.seccionesAlcance) || isAdvancedScope}
+        scopeOpen={scopeOpen}
+        scopeSections={quote.seccionesAlcance}
+        setPlazoRangeDraft={setPlazoRangeDraft}
+        setPlazoRangeOpen={setPlazoRangeOpen}
+        setScopeOpen={setScopeOpen}
+        taxName={quote.impuestoNombre || companyProfile?.impuestoPredeterminadoNombre || "IVA"}
+        taxRate={Number(quote.tasaIva ?? Number(companyProfile?.impuestoPredeterminadoTasa ?? 19) / 100) * 100}
+        validezDias={quote.validezDias}
+      />
         </main>
 
         <QuoteSummaryPanel
@@ -2596,37 +2528,6 @@ function Field({ label, helpText, helpTone = "default", wide = false, children }
       )}
       {children}
     </label>
-  );
-}
-
-function CompactConditionField({ label, onChange, value }) {
-  const hasContent = Boolean((value || "").trim());
-  const [expanded, setExpanded] = React.useState(hasContent);
-  const showTextarea = expanded || hasContent;
-  const rows = Math.min(8, Math.max(3, (value || "").split(/\r?\n/).length + 1));
-  return (
-    <Field label={label} wide>
-      {showTextarea ? (
-        <textarea
-          autoFocus={expanded && !hasContent}
-          onBlur={() => {
-            if (!(value || "").trim()) setExpanded(false);
-          }}
-          onChange={(event) => onChange(event.target.value)}
-          rows={rows}
-          style={styles.compactTextarea}
-          value={value || ""}
-        />
-      ) : (
-        <button
-          className="quote-workspace__button quote-workspace__button--secondary"
-          onClick={() => setExpanded(true)}
-          type="button"
-        >
-          + Agregar {label.toLowerCase()}
-        </button>
-      )}
-    </Field>
   );
 }
 

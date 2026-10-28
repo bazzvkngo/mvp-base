@@ -12,6 +12,8 @@ import {
 } from "../../services/clientService";
 
 const SEARCH_MAX_LENGTH = 200;
+// En el modo en línea se dibujan solo los primeros resultados; el resto se alcanza escribiendo.
+const INLINE_RESULTS_LIMIT = 6;
 
 function clientName(client) {
   return client?.nombreRazonSocial || client?.empresa || "Cliente sin nombre";
@@ -32,8 +34,11 @@ function ClientSelector({
   const [error, setError] = useState("");
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  // La ventana de clientes tiene su propio buscador: así no mueve el selector en línea que queda detrás.
+  const [dialogSearch, setDialogSearch] = useState("");
   const [changing, setChanging] = useState(false);
   const searchInputRef = useRef(null);
+  const dialogSearchRef = useRef(null);
   const changeButtonRef = useRef(null);
   const restoreFocusRef = useRef(false);
   const previousBusinessIdRef = useRef(businessId);
@@ -47,6 +52,7 @@ function ClientSelector({
     setError("");
     setOpen(false);
     setSearch("");
+    setDialogSearch("");
     setChanging(false);
     if (businessChanged) onChange?.(null);
 
@@ -82,6 +88,10 @@ function ClientSelector({
     () => filterSelectableClients(clients, businessId, search),
     [businessId, clients, search]
   );
+  const dialogClients = useMemo(
+    () => filterSelectableClients(clients, businessId, dialogSearch),
+    [businessId, clients, dialogSearch]
+  );
 
   useEffect(() => {
     onAvailabilityChange?.({
@@ -96,6 +106,9 @@ function ClientSelector({
   );
   const hasSelection = Boolean(value) || hasHistoricalSnapshot;
   const picking = inline && (!hasSelection || changing);
+  const noClients = !loading && !error && activeClients.length === 0;
+  // En línea no se dibuja ninguna lista hasta que se escribe: solo el buscador y cuántos clientes hay.
+  const searching = search.trim().length > 0;
 
   const finishInlinePicking = () => {
     restoreFocusRef.current = true;
@@ -107,6 +120,7 @@ function ClientSelector({
     onChange?.(client);
     setOpen(false);
     setSearch("");
+    setDialogSearch("");
     if (inline) finishInlinePicking();
   };
 
@@ -123,7 +137,18 @@ function ClientSelector({
 
   return (
     <div className={inline ? "client-selector client-selector--inline" : "client-selector"}>
-      {picking ? (
+      {picking && noClients ? (
+        <div className="client-selector__none">
+          <strong>Aún no tienes clientes</strong>
+          <p>Crea uno en Clientes para poder cotizar.</p>
+          <Link className="client-selector__link" to="/clientes">Ir a Clientes</Link>
+          {hasSelection && (
+            <Button type="button" variant="ghost" onClick={finishInlinePicking}>
+              Cancelar
+            </Button>
+          )}
+        </div>
+      ) : picking ? (
         <div className="client-selector__inline-picker">
           <label className="client-selector__search">
             <span className="sr-only">Buscar cliente</span>
@@ -143,9 +168,20 @@ function ClientSelector({
               />
             </div>
           </label>
-          {visibleClients.length > 0 ? (
+          <p className="sr-only" aria-live="polite">
+            {searching ? (visibleClients.length === 0 ? "Sin resultados" : visibleClients.length === 1 ? "1 resultado" : `${visibleClients.length} resultados`) : ""}
+          </p>
+          {!searching && !loading && !error && activeClients.length > 0 && (
+            <div className="client-selector__count">
+              <p className="client-selector__status">
+                Tienes {activeClients.length === 1 ? "1 cliente activo" : `${activeClients.length} clientes activos`} · escribe un nombre o RUT para buscar
+              </p>
+              <button type="button" className="client-selector__all" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>Ver todos los clientes</button>
+            </div>
+          )}
+          {searching && (visibleClients.length > 0 ? (
             <div className="client-selector__results" role="list">
-              {visibleClients.map((client) => (
+              {visibleClients.slice(0, INLINE_RESULTS_LIMIT).map((client) => (
                 <div key={client.clienteId} role="listitem">
                   <button
                     type="button"
@@ -164,6 +200,11 @@ function ClientSelector({
             !loading && !error && activeClients.length > 0 && (
               <p className="client-selector__status">No encontramos coincidencias.</p>
             )
+          ))}
+          {searching && visibleClients.length > INLINE_RESULTS_LIMIT && (
+            <p className="client-selector__status">
+              Mostrando {INLINE_RESULTS_LIMIT} de {visibleClients.length} · sigue escribiendo para afinar
+            </p>
           )}
           {hasSelection && (
             <Button type="button" variant="ghost" onClick={finishInlinePicking}>
@@ -222,16 +263,16 @@ function ClientSelector({
 
       {loading && <LoadingState variant="inline" label="Cargando clientes activos…" />}
       {error && <p className="client-selector__status client-selector__status--error" role="alert">{error}</p>}
-      {!loading && !error && activeClients.length === 0 && (
+      {noClients && !picking && (
         <p className="client-selector__status">
           No hay clientes activos. <Link to="/clientes">Ir a Clientes</Link>
         </p>
       )}
 
-      {!inline && <ResponsiveDialog
+      <ResponsiveDialog
         open={open}
-        onClose={() => setOpen(false)}
-        initialFocusRef={searchInputRef}
+        onClose={() => { setOpen(false); setDialogSearch(""); }}
+        initialFocusRef={dialogSearchRef}
         size="medium"
         eyebrow="Cotización"
         title="Seleccionar cliente"
@@ -242,19 +283,19 @@ function ClientSelector({
           <div>
             <AppIcon icon={Search} size={18} />
             <input
-              ref={searchInputRef}
+              ref={dialogSearchRef}
               type="search"
-              value={search}
+              value={dialogSearch}
               maxLength={SEARCH_MAX_LENGTH}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) => setDialogSearch(event.target.value)}
               placeholder="Nombre o identificación fiscal"
             />
           </div>
         </label>
 
-        {visibleClients.length > 0 ? (
+        {dialogClients.length > 0 ? (
           <div className="client-selector__results" role="list">
-            {visibleClients.map((client) => (
+            {dialogClients.map((client) => (
               <div key={client.clienteId} role="listitem">
                 <button
                   type="button"
@@ -271,11 +312,11 @@ function ClientSelector({
           </div>
         ) : (
           <div className="client-selector__no-results" role="status">
-            <p>{search ? "No encontramos coincidencias." : "No hay clientes activos."}</p>
+            <p>{dialogSearch ? "No encontramos coincidencias." : "No hay clientes activos."}</p>
             <Link to="/clientes" onClick={() => setOpen(false)}>Ir a Clientes</Link>
           </div>
         )}
-      </ResponsiveDialog>}
+      </ResponsiveDialog>
     </div>
   );
 }

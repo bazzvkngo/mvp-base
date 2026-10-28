@@ -161,6 +161,27 @@ assert.doesNotMatch(saleClient, /Crear cliente/, "sin función nueva: crear clie
   assert.ok(escapeSequence.test(`x${BS}u00f3y`), "la aserción detecta una secuencia de escape");
   assert.equal(escapeSequence.test("identificación · línea"), false, "los caracteres reales no se marcan");
 }
+// Selección de cliente en línea: solo los primeros 6 resultados, aviso del total y mensaje claro sin clientes. Mismo filtro y mismo onChange.
+assert.match(saleClient, /const INLINE_RESULTS_LIMIT = 6;/);
+assert.match(saleClient, /visible\.slice\(0, INLINE_RESULTS_LIMIT\)\.map/);
+assert.match(saleClient, /Mostrando \{INLINE_RESULTS_LIMIT\} de \{visible\.length\} · sigue escribiendo para afinar/);
+assert.match(saleClient, /const searching = search\.trim\(\)\.length > 0;/, "sin escribir no se dibuja ninguna lista");
+assert.match(saleClient, /\{searching && \(\s*<div className="sale-client__list">/, "la lista solo existe al escribir");
+assert.match(saleClient, /Tienes \{activeCount === 1 \? "1 cliente activo" : `\$\{activeCount\} clientes activos`\} · escribe un nombre o RUT para buscar/);
+assert.match(saleClient, /<p className="sr-only" aria-live="polite">/, "aviso para lectores de pantalla con la cantidad de resultados");
+assert.match(saleClient, /<strong>Aún no tienes clientes<\/strong>/);
+assert.match(saleClient, /<Link className="sale-client__link" to="\/clientes">Ir a Clientes<\/Link>/);
+assert.match(saleClient, /const activeCount = clients\.filter\(\(client\) => client\.estado === "activo"\)\.length;/);
+assert.match(saleClient, /const noClients = activeCount === 0;/);
+assert.match(saleClient, /No hay clientes activos coincidentes\./, "con clientes pero sin coincidencias se conserva el texto de búsqueda");
+assert.equal((saleClient.match(/visible\.map\(/g) || []).length, 1, "la ventana conserva su lista completa (una sola lista completa, en SaleClientDialog)");
+// "Ver todos los clientes": enlace junto a "Tienes N…" que abre la misma ventana de clientes (SaleClientDialog).
+assert.equal((saleClient.match(/<SaleClientDialog /g) || []).length, 2, "la ventana la usan el selector con diálogo y el selector en línea");
+assert.match(saleClient, /<button type="button" className="sale-client__all" aria-haspopup="dialog" aria-expanded=\{dialogOpen\} onClick=\{\(\) => setDialogOpen\(true\)\}>Ver todos los clientes<\/button>/);
+assert.match(saleClient, /<div className="sale-client__count">\s*<p className="sale-client__more">Tienes /, "el enlace va junto a la línea Tienes N clientes activos (solo con clientes y sin escribir)");
+assert.match(saleClient, /onPick=\{\(clienteId\) => \{ onChange\(clienteId\); setDialogOpen\(false\); finish\(\); \}\}/, "elegir en la ventana usa el mismo onChange, la cierra y devuelve el foco");
+assert.match(saleClient, /const close = \(\) => \{ onClose\(\); setSearch\(""\); \};/, "Escape y la X cierran sin cambiar nada");
+assert.match(fs.readFileSync("src/features/sales/sales.css", "utf8"), /\.sale-client__all \{[^}]*min-height: 44px;/, "área táctil de 44 px");
 assert.match(saleItems, /Stock insuficiente/);
 assert.match(saleItems, /Disponible: \{stock\} · Solicitado: \{requested\}/);
 // Bloque 2: filas compactas del editor. Mismos manejadores y misma fórmula de línea que antes; sólo cambia la presentación.

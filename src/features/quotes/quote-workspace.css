@@ -544,18 +544,18 @@
 .quote-line__more-body {
   display: grid;
   gap: var(--space-3);
-  grid-template-columns: minmax(0, 1fr) minmax(0, 10rem);
   padding-bottom: var(--space-3);
+}
+
+.quote-line__discount {
+  justify-self: start;
+  max-width: 100%;
+  width: 6rem;
 }
 
 .quote-line__more-body textarea {
   min-height: 4rem;
   resize: vertical;
-}
-
-.quote-line__field--wide,
-.quote-line__help {
-  grid-column: 1 / -1;
 }
 
 .quote-line__help {
@@ -571,10 +571,6 @@
       "identity identity actions"
       "qty price total";
     grid-template-columns: auto minmax(0, 1fr) auto;
-  }
-
-  .quote-line__more-body {
-    grid-template-columns: 1fr;
   }
 }
 
@@ -864,6 +860,186 @@
 
 .quote-workspace__preview {
   scroll-margin-top: 14px;
+}
+
+/* Paso 3: condiciones. Los apartados opcionales son botones "+" que despliegan su campo. */
+.quote-conditions {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.quote-conditions__head {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.quote-conditions__head p,
+.quote-conditions__foot p {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  margin: 0;
+}
+
+.quote-conditions__add {
+  border-top: 1px solid var(--color-border-subtle);
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-4);
+}
+
+.quote-conditions__add-title {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  margin: 0;
+}
+
+.quote-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.quote-chip {
+  align-items: center;
+  background: transparent;
+  border: 1px dashed var(--color-border-control);
+  border-radius: var(--radius-pill);
+  color: var(--color-text-brand);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  gap: var(--space-1);
+  min-height: 2.75rem;
+  padding: 0 var(--space-3);
+}
+
+.quote-chip:hover {
+  background: var(--color-surface-brand);
+}
+
+/* Abierto: borde de marca continuo. Con contenido además lleva el relleno de marca y el ✓. */
+.quote-chip--active {
+  border-color: var(--color-text-brand-accent);
+  border-style: solid;
+}
+
+.quote-chip--filled {
+  background: var(--color-surface-brand);
+}
+
+.quote-chip:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--space-1);
+}
+
+.quote-conditions__fields {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.quote-conditions__fields:empty {
+  display: none;
+}
+
+.quote-conditions__hint {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+}
+
+.quote-conditions__error {
+  color: var(--color-danger-700);
+  font-size: var(--font-size-xs);
+}
+
+.quote-conditions__add-section {
+  justify-self: start;
+  margin-top: var(--space-1);
+}
+
+.quote-scope-list {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.quote-scope-card {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.quote-scope-card__head {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.quote-scope-card__head input {
+  flex: 1 1 12rem;
+  width: auto;
+}
+
+.quote-scope-card__actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.quote-plazo-range {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.quote-plazo-range input {
+  width: auto;
+}
+
+.quote-conditions__foot {
+  align-items: center;
+  border-top: 1px solid var(--color-border-subtle);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  justify-content: space-between;
+  padding-top: var(--space-2);
+}
+
+.quote-conditions__link,
+.quote-conditions__restore {
+  background: transparent;
+  border: 0;
+  color: var(--color-text-brand);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  min-height: 2.75rem;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: var(--space-1);
+}
+
+.quote-conditions__link {
+  justify-self: start;
+}
+
+.quote-conditions__restore:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.quote-conditions__link:focus-visible,
+.quote-conditions__restore:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--space-1);
 }
 
 @media (max-width: 1180px) {

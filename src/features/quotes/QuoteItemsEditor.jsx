@@ -92,23 +92,17 @@ function QuoteItemsEditor({
                   </div>
                 </div>
                 <details className="quote-line__more">
-                  <summary><span>Descripción, unidad y descuento</span><span className="quote-line__chevron" aria-hidden="true"><AppIcon icon={ChevronDown} size={16} /></span></summary>
+                  <summary><span>Descripción y descuento</span><span className="quote-line__chevron" aria-hidden="true"><AppIcon icon={ChevronDown} size={16} /></span></summary>
                   <div className="quote-line__more-body">
                     <label className="quote-line__field--wide">
                       <span>Descripción para esta cotización</span>
                       <textarea rows="2" value={item.descripcionComercial ?? item.descripcion ?? ""} onChange={(event) => onUpdate(lineId, "descripcionComercial", event.target.value)} />
                     </label>
-                    <p className="quote-line__help">
-                      Personaliza cómo aparecerá este ítem en la propuesta. No modifica el producto del catálogo.
-                    </p>
-                    <label>
-                      <span>Unidad de cobro</span>
-                      <input value={item.unidad || ""} onChange={(event) => onUpdate(lineId, "unidad", event.target.value)} />
-                    </label>
-                    <label>
+                    <label className="quote-line__discount">
                       <span>Descuento %</span>
                       <input type="number" min="0" max="100" step="0.01" value={item.descuentoPorcentaje ?? 0} onChange={(event) => onUpdate(lineId, "descuentoPorcentaje", event.target.value)} />
                     </label>
+                    <p className="quote-line__help">Solo cambia esta cotización; el inventario no se modifica.</p>
                   </div>
                 </details>
               </article>

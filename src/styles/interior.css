@@ -4767,6 +4767,76 @@
   max-height: 14rem;
 }
 
+/* "Ver todos los clientes": enlace junto a la línea "Tienes N clientes activos"; abre la ventana de clientes. */
+.client-selector__count {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-3);
+}
+
+.client-selector__count .client-selector__status {
+  margin: 0;
+}
+
+.client-selector__all {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--color-text-brand);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  min-height: 2.75rem;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: var(--space-1);
+}
+
+.client-selector__all:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--space-1);
+}
+
+/* Sin clientes activos: mensaje claro con enlace a Clientes. */
+.client-selector__none {
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-1);
+  justify-items: start;
+  padding: var(--space-3);
+}
+
+.client-selector__none strong {
+  color: var(--color-text-strong);
+}
+
+.client-selector__none p {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.client-selector__link {
+  color: var(--color-text-brand);
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  min-height: 2.75rem;
+  text-decoration: underline;
+  text-underline-offset: var(--space-1);
+}
+
+.client-selector__link:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--space-1);
+}
+
 .quote-legacy-client-note {
   background: var(--color-warning-50);
   border: 1px solid var(--color-warning-200);

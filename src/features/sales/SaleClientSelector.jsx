@@ -1,6 +1,10 @@
 import React, {useEffect, useMemo, useRef, useState} from "react";
+import {Link} from "react-router-dom";
 import Button from "../../components/ui/Button";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
+
+// En el modo en línea se dibujan solo los primeros resultados; el resto se alcanza escribiendo.
+const INLINE_RESULTS_LIMIT = 6;
 
 const searchable = (value) => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
@@ -9,6 +13,7 @@ const searchable = (value) => String(value || "").normalize("NFD").replace(/[\u0
 function InlineSaleClientSelector({clients, disabled, onChange, originalSnapshot, value}) {
   const [changing, setChanging] = useState(false);
   const [search, setSearch] = useState("");
+  const [dialogOpen, setDialogOpen] = useState(false);
   const searchRef = useRef(null);
   const changeRef = useRef(null);
   const restoreFocus = useRef(false);
@@ -16,6 +21,10 @@ function InlineSaleClientSelector({clients, disabled, onChange, originalSnapshot
   const historical = originalSnapshot?.clienteId === value;
   const display = historical ? originalSnapshot : selected;
   const visible = useMemo(() => clients.filter((client) => client.estado === "activo" && searchable(`${client.nombreRazonSocial} ${client.rut}`).includes(searchable(search))), [clients, search]);
+  const activeCount = clients.filter((client) => client.estado === "activo").length;
+  const noClients = activeCount === 0;
+  // En línea no se dibuja ninguna lista hasta que se escribe: solo el buscador y cuántos clientes hay.
+  const searching = search.trim().length > 0;
   const picking = !disabled && (!display || changing);
 
   useEffect(() => {
@@ -49,21 +58,40 @@ function InlineSaleClientSelector({clients, disabled, onChange, originalSnapshot
         </div>
       )}
       {!display && disabled && <p className="sale-client__empty">Selecciona un cliente activo.</p>}
-      {picking && (
-        <div className="sale-client__picker">
-          <input ref={searchRef} className="sale-client__search" type="search" aria-label="Buscar cliente" placeholder="Buscar por nombre o identificación fiscal" value={search} onChange={(event) => setSearch(event.target.value)} />
-          <div className="sale-client__list">
-            {visible.map((client) => (
-              <button type="button" className="sale-client__option" key={client.clienteId} onClick={() => { onChange(client.clienteId); finish(); }}>
-                <strong>{client.nombreRazonSocial}</strong>
-                <span>{client.identificadorFiscalValor || client.rut || "Sin identificación fiscal"} · {client.email || client.telefono || "Sin contacto"}</span>
-              </button>
-            ))}
-            {!visible.length && <p className="sale-client__empty">No hay clientes activos coincidentes.</p>}
-          </div>
+      {picking && noClients && (
+        <div className="sale-client__none">
+          <strong>Aún no tienes clientes</strong>
+          <p>Crea uno en Clientes para poder vender.</p>
+          <Link className="sale-client__link" to="/clientes">Ir a Clientes</Link>
           {display && <button type="button" className="sale-client__cancel" onClick={finish}>Cancelar</button>}
         </div>
       )}
+      {picking && !noClients && (
+        <div className="sale-client__picker">
+          <input ref={searchRef} className="sale-client__search" type="search" aria-label="Buscar cliente" placeholder="Buscar por nombre o identificación fiscal" value={search} onChange={(event) => setSearch(event.target.value)} />
+          <p className="sr-only" aria-live="polite">{searching ? (visible.length === 0 ? "Sin resultados" : visible.length === 1 ? "1 resultado" : `${visible.length} resultados`) : ""}</p>
+          {!searching && (
+            <div className="sale-client__count">
+              <p className="sale-client__more">Tienes {activeCount === 1 ? "1 cliente activo" : `${activeCount} clientes activos`} · escribe un nombre o RUT para buscar</p>
+              <button type="button" className="sale-client__all" aria-haspopup="dialog" aria-expanded={dialogOpen} onClick={() => setDialogOpen(true)}>Ver todos los clientes</button>
+            </div>
+          )}
+          {searching && (
+            <div className="sale-client__list">
+              {visible.slice(0, INLINE_RESULTS_LIMIT).map((client) => (
+                <button type="button" className="sale-client__option" key={client.clienteId} onClick={() => { onChange(client.clienteId); finish(); }}>
+                  <strong>{client.nombreRazonSocial}</strong>
+                  <span>{client.identificadorFiscalValor || client.rut || "Sin identificación fiscal"} · {client.email || client.telefono || "Sin contacto"}</span>
+                </button>
+              ))}
+              {!visible.length && <p className="sale-client__empty">No hay clientes activos coincidentes.</p>}
+            </div>
+          )}
+          {searching && visible.length > INLINE_RESULTS_LIMIT && <p className="sale-client__more">Mostrando {INLINE_RESULTS_LIMIT} de {visible.length} · sigue escribiendo para afinar</p>}
+          {display && <button type="button" className="sale-client__cancel" onClick={finish}>Cancelar</button>}
+        </div>
+      )}
+      <SaleClientDialog clients={clients} open={dialogOpen} onClose={() => setDialogOpen(false)} onPick={(clienteId) => { onChange(clienteId); setDialogOpen(false); finish(); }} />
     </div>
   );
 }
@@ -72,13 +100,31 @@ export default function SaleClientSelector({inline = false, ...props}) {
   return inline ? <InlineSaleClientSelector {...props} /> : <DialogSaleClientSelector {...props} />;
 }
 
+// Ventana con la lista completa de clientes activos y su buscador. La usan el selector con diálogo y el
+// enlace "Ver todos los clientes" del selector en línea: misma lista, mismo filtro.
+function SaleClientDialog({clients, onClose, onPick, open}) {
+  const [search, setSearch] = useState("");
+  const visible = useMemo(() => clients.filter((client) => client.estado === "activo" && searchable(`${client.nombreRazonSocial} ${client.rut}`).includes(searchable(search))), [clients, search]);
+  const close = () => { onClose(); setSearch(""); };
+
+  return (
+    <ResponsiveDialog open={open} onClose={close} title="Seleccionar cliente" description="Solo se muestran clientes activos del negocio." size="medium">
+      <div className="po-selector">
+        <input aria-label="Buscar cliente" placeholder="Buscar por nombre o identificación fiscal" value={search} onChange={(event) => setSearch(event.target.value)} />
+        <div className="po-selector__list">
+          {visible.map((client) => <button type="button" key={client.clienteId} onClick={() => { onPick(client.clienteId); setSearch(""); }}><strong>{client.nombreRazonSocial}</strong><span>{client.identificadorFiscalValor || client.rut || "Sin identificación fiscal"} · {client.email || client.telefono || "Sin contacto"}</span></button>)}
+          {!visible.length && <p>No hay clientes activos coincidentes.</p>}
+        </div>
+      </div>
+    </ResponsiveDialog>
+  );
+}
+
 function DialogSaleClientSelector({clients, disabled, onChange, originalSnapshot, value}) {
   const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState("");
   const selected = clients.find((client) => client.clienteId === value);
   const historical = originalSnapshot?.clienteId === value;
   const display = historical ? originalSnapshot : selected;
-  const visible = useMemo(() => clients.filter((client) => client.estado === "activo" && searchable(`${client.nombreRazonSocial} ${client.rut}`).includes(searchable(search))), [clients, search]);
 
   return (
     <div className="sale-context-client">
@@ -97,15 +143,7 @@ function DialogSaleClientSelector({clients, disabled, onChange, originalSnapshot
       </div>
       {!disabled && <button type="button" className="po-button po-button--secondary sale-context-client__action" onClick={() => setOpen(true)}>{display ? "Cambiar cliente" : "Seleccionar cliente"}</button>}
 
-      <ResponsiveDialog open={open} onClose={() => setOpen(false)} title="Seleccionar cliente" description="Solo se muestran clientes activos del negocio." size="medium">
-        <div className="po-selector">
-          <input aria-label="Buscar cliente" placeholder="Buscar por nombre o identificación fiscal" value={search} onChange={(event) => setSearch(event.target.value)} />
-          <div className="po-selector__list">
-            {visible.map((client) => <button type="button" key={client.clienteId} onClick={() => { onChange(client.clienteId); setOpen(false); setSearch(""); }}><strong>{client.nombreRazonSocial}</strong><span>{client.identificadorFiscalValor || client.rut || "Sin identificación fiscal"} · {client.email || client.telefono || "Sin contacto"}</span></button>)}
-            {!visible.length && <p>No hay clientes activos coincidentes.</p>}
-          </div>
-        </div>
-      </ResponsiveDialog>
+      <SaleClientDialog clients={clients} open={open} onClose={() => setOpen(false)} onPick={(clienteId) => { onChange(clienteId); setOpen(false); }} />
     </div>
   );
 }

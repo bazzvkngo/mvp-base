@@ -196,6 +196,78 @@
   gap: var(--space-2);
 }
 
+.sale-client__more {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  margin: 0;
+}
+
+/* "Ver todos los clientes": enlace junto a la línea "Tienes N clientes activos"; abre la ventana de clientes. */
+.sale-client__count {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-3);
+}
+
+.sale-client__all {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--color-text-brand);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  min-height: 44px;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: var(--space-1);
+}
+
+.sale-client__all:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* Sin clientes activos: mensaje claro con enlace a Clientes. */
+.sale-client__none {
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: var(--space-1);
+  justify-items: start;
+  padding: var(--space-3);
+}
+
+.sale-client__none strong {
+  color: var(--color-text-strong);
+}
+
+.sale-client__none p {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.sale-client__link {
+  align-items: center;
+  color: var(--color-text-brand);
+  display: inline-flex;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  min-height: 44px;
+  text-decoration: underline;
+  text-underline-offset: var(--space-1);
+}
+
+.sale-client__link:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
 .sale-client__search,
 .sale-line__discount-input {
   background: var(--color-surface-panel);

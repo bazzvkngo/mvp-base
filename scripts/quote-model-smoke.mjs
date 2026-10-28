@@ -27,6 +27,7 @@ import {
 } from "../src/domain/quoteModel.mjs";
 import {filterSelectableClients} from "../src/domain/clientModel.mjs";
 import {stepQuoteQuantity} from "../src/features/quotes/quoteLineStepper.mjs";
+import {createQuoteItemFromValuation} from "../src/domain/quoteItemFactory.js";
 import { jsPDF } from "jspdf";
 import { buildQuotePdfDocument, drawRightLabeledLine } from "../src/domain/quoteDocument.mjs";
 import {
@@ -465,6 +466,10 @@ const sourceQuoteItems = fs.readFileSync(
   "src/features/quotes/QuoteItemsEditor.jsx",
   "utf8"
 );
+const sourceQuoteConditions = fs.readFileSync(
+  "src/features/quotes/QuoteConditionsPanel.jsx",
+  "utf8"
+);
 const sourceQuoteSummary = fs.readFileSync(
   "src/features/quotes/QuoteSummaryPanel.jsx",
   "utf8"
@@ -536,10 +541,12 @@ assert.match(sourceNewQuote, /<QuoteSummaryPanel/);
 assert.match(sourceNewQuote, /savingRef\.current/);
 assert.match(sourceNewQuote, /estado:\s*"borrador"/);
 assert.match(sourceNewQuote, /openQuoteId/);
-assert.match(sourceNewQuote, /Más condiciones/);
+assert.match(sourceNewQuote, /<QuoteConditionsPanel/);
+assert.doesNotMatch(sourceNewQuote, /Más condiciones|CompactConditionField/, "las condiciones opcionales son botones + dentro del paso 3");
 assert.match(sourceNewQuote, /isAdvancedQuoteScope\(quote\.seccionesAlcance\)/);
 assert.match(sourceNewQuote, /isValidQuoteDateRange\(plazoRangeDraft\.desde, plazoRangeDraft\.hasta\)/);
-assert.match(sourceNewQuote, /Restaurar valores de Empresa/);
+assert.match(sourceQuoteConditions, /Restaurar valores de Empresa/);
+assert.match(sourceNewQuote, /onRestore=\{restoreDefaultConditions\}/, "Restaurar conserva su manejador de siempre");
 assert.match(sourceNewQuote, /if \(isEditMode\) return;/);
 assert.match(sourceNewQuote, /profile\.plazoEntregaCotizacion/);
 assert.match(sourceNewQuote, /profile\.garantiaCotizacion/);
@@ -580,7 +587,7 @@ assert.deepEqual(
 // Condiciones: campos alineados arriba, placeholder corto y "Qué incluye"
 // cerrado salvo que tenga contenido.
 assert.match(sourceQuoteWorkspaceCss, /\.quote-conditions-primary__grid > \* \{\s*align-self: start;/);
-assert.match(sourceNewQuote, /placeholder="Ej: 10 días hábiles"/);
+assert.match(sourceQuoteConditions, /placeholder="Ej: 10 días hábiles"/);
 assert.match(sourceNewQuote, /const \[scopeOpen, setScopeOpen\] = useState\(false\);/);
 assert.match(sourceNewQuote, /setScopeOpen\(hasScopeContent\(editableQuote\.seccionesAlcance\)\);/);
 assert.match(sourceCompanyConfig, /Valores predeterminados para nuevas cotizaciones/);
@@ -589,7 +596,8 @@ assert.match(sourceQuoteCatalog, /<ResponsiveDialog/);
 assert.match(sourceQuoteCatalog, /initialFocusRef=\{searchRef\}/);
 assert.match(sourceQuoteCatalog, /Agregar otra vez/);
 assert.doesNotMatch(sourceQuoteItems, /<table/);
-assert.match(sourceQuoteItems, /Descripción, unidad y descuento/);
+assert.match(sourceQuoteItems, /Descripción y descuento/);
+assert.doesNotMatch(sourceQuoteItems, /Descripción, unidad y descuento/);
 assert.doesNotMatch(sourceQuoteItems, /Personalizar ítem/);
 assert.doesNotMatch(sourceQuoteItems, /Subtotal/, "el encabezado de ítems muestra solo el conteo; el subtotal vive en el resumen");
 assert.match(sourceQuoteItems, /items\.length === 1 \? "1 ítem" : `\$\{items\.length\} ítems`/);
@@ -609,7 +617,7 @@ assert.match(sourceQuoteItems, /onUpdate\(lineId, "cantidad", event\.target\.val
 assert.match(sourceQuoteItems, /onUpdate\(lineId, "cantidad", next\)/, "− y + usan el mismo manejador de cantidad");
 assert.match(sourceQuoteItems, /onUpdate\(lineId, "precioUnitarioEditable", event\.target\.value\)/);
 assert.match(sourceQuoteItems, /onUpdate\(lineId, "descripcionComercial", event\.target\.value\)/);
-assert.match(sourceQuoteItems, /onUpdate\(lineId, "unidad", event\.target\.value\)/);
+assert.doesNotMatch(sourceQuoteItems, /onUpdate\(lineId, "unidad"/, "la unidad ya no se edita en la cotización");
 assert.match(sourceQuoteItems, /onUpdate\(lineId, "descuentoPorcentaje", event\.target\.value\)/);
 assert.match(sourceQuoteItems, /onMove\(index, -1\)/);
 assert.match(sourceQuoteItems, /onMove\(index, 1\)/);
@@ -620,8 +628,17 @@ assert.match(sourceQuoteItems, /aria-label=\{`Quitar \$\{item\.nombre\}`\}/);
 assert.match(sourceQuoteItems, /variant="ghost-danger"/, "Quitar usa el Button compartido, sin otra familia de botón");
 assert.match(sourceQuoteItems, /aria-label=\{`Disminuir cantidad de \$\{item\.nombre\}`\}/);
 assert.match(sourceQuoteItems, /aria-label=\{`Aumentar cantidad de \$\{item\.nombre\}`\}/);
-assert.match(sourceQuoteItems, /Unidad de cobro/);
-assert.match(sourceQuoteItems, /No modifica el producto del catálogo\./);
+assert.doesNotMatch(sourceQuoteItems, /Unidad de cobro/);
+assert.match(sourceQuoteItems, /Solo cambia esta cotización; el inventario no se modifica\./);
+assert.match(sourceQuoteItems, /\{item\.unidad \|\| "Sin unidad"\}/, "la unidad se sigue mostrando en la fila, sin editar");
+// La unidad la leen el PDF, la vista formal y la propuesta pública de la línea guardada (item.unidad), no de un campo del formulario.
+assert.match(sourceQuoteDocument, /unit: item\.unidad \|\| "-"/);
+assert.match(sourceQuotePrintView, /\{item\.unidad \|\| "-"\}/);
+assert.equal(normalizeQuoteItem({nombre: "Pintura", cantidad: 1, precioUnitarioEditable: 100, unidad: "m2"}).unidad, "m2", "una línea guardada conserva su unidad");
+assert.equal(normalizeQuoteItem({nombre: "Pintura", cantidad: 1, precioUnitarioEditable: 100}).unidad, "unidad");
+assert.equal(createQuoteItemFromValuation({itemId: "i1", nombre: "Cable", unidad: "metro", item: {id: "i1", unidad: "rollo", precioInterno: 10}}).unidad, "metro", "una línea nueva toma la unidad del inventario");
+assert.equal(createQuoteItemFromValuation({itemId: "i2", nombre: "Cable", item: {id: "i2", unidad: "rollo", precioInterno: 10}}).unidad, "rollo");
+assert.equal(buildQuotePayload("uid-1", {items: [{nombre: "Pintura", cantidad: 1, precioUnitarioEditable: 100, unidad: "m2"}], clienteId: "c1", cliente: {nombreRazonSocial: "X"}}).items[0].unidad, "m2", "el payload conserva la unidad guardada");
 assert.match(sourceQuoteItems, /quote-line__chip/);
 assert.match(sourceQuoteItems, /key=\{lineId\}/, "la fila conserva su clave estable: el plegable no se cierra al reordenar");
 assert.doesNotMatch(sourceQuoteItems, /features\/sales|\.\.\/sales\//, "Cotización no importa nada de Venta");
@@ -660,6 +677,64 @@ assert.equal(calculateQuoteLineTotal({cantidad: stepQuoteQuantity(2, 1), precioU
   assert.equal(escapeSequence.test("identificación · línea"), false, "los caracteres reales no se marcan");
 }
 console.log("OK editor de ítems de cotización: filas compactas, stepper propio, plegable por fila y sin escapes unicode");
+// Paso 3: condiciones. Botones "+" de borde punteado; con contenido el apartado queda activo y visible; sin "Quitar" nuevo.
+assert.match(sourceQuoteConditions, /<h2 id="quote-conditions-title">3 · Condiciones<\/h2>/);
+assert.match(sourceQuoteConditions, /isEditMode \? "" : "Vienen de los valores de Empresa\. "/, "la primera frase solo vale al crear");
+assert.match(sourceQuoteConditions, /Cambiarlas solo afecta a esta cotización\./);
+assert.doesNotMatch(sourceNewQuote, /se copiaron a este documento/);
+assert.match(sourceQuoteConditions, /aria-pressed=\{active\}/);
+assert.match(sourceQuoteConditions, /Boolean\(opened\[key\]\) \|\| hasText\(conditions\[key\]\)/, "con contenido el botón aparece activo");
+assert.match(sourceQuoteConditions, /if \(!opened\[key\] && !hasText\(conditions\[key\]\)\) return null;/, "con contenido el campo siempre es visible");
+assert.doesNotMatch(sourceQuoteConditions, /Quitar/, "sin botón Quitar nuevo");
+for (const label of ["Qué incluye", "Garantía", "Alcance geográfico", "Observaciones", "Exclusiones", "Otras condiciones"]) assert.match(sourceQuoteConditions, new RegExp(label), label);
+assert.match(sourceQuoteConditions, /placeholder: "Ej: 12 meses por defectos de fabricación"/);
+assert.match(sourceQuoteConditions, /placeholder: "Ej: Región de Tarapacá"/);
+assert.match(sourceQuoteConditions, /key: "observaciones"[^\n]*placeholder: "Ej: /);
+assert.match(sourceQuoteConditions, /key: "exclusiones"[^\n]*placeholder: "Ej: /);
+assert.match(sourceQuoteConditions, /hint: "Una condición por línea; cada una sale numerada en el PDF\."/);
+assert.match(sourceQuoteConditions, /placeholder="Ej: 50% al iniciar y 50% contra entrega"/);
+// El formato de "Otras condiciones" y "Qué incluye" es uno por renglón: así lo imprimen el documento y el modelo.
+assert.deepEqual(buildQuoteTerms({terminosAdicionales: "Los materiales se facturan al confirmar\nLa instalación se agenda según disponibilidad"}), ["Los materiales se facturan al confirmar", "La instalación se agenda según disponibilidad"]);
+assert.deepEqual(normalizeScopeSections([{titulo: "Qué incluye", lineas: ["Instalación completa", "Materiales incluidos"]}])[0].lineas, ["Instalación completa", "Materiales incluidos"]);
+// El ✓ solo significa "tiene contenido": un campo abierto y vacío se ve abierto (flecha, borde de marca), sin ✓.
+assert.match(sourceQuoteConditions, /filled \? "✓" : active \? <AppIcon icon=\{ChevronDown\} size=\{14\} \/> : "\+"/);
+assert.match(sourceQuoteConditions, /filled=\{scopeHasContent\}/);
+assert.match(sourceQuoteConditions, /title=\{locked \? "Tiene contenido; sale en el PDF" : undefined\}/);
+assert.doesNotMatch(sourceQuoteConditions, /vacía el campo/, "el aviso no promete que vaciar el campo lo oculte (en edición no persiste)");
+assert.match(sourceQuoteConditions, /filled=\{hasText\(conditions\[key\]\)\}/);
+assert.match(sourceQuoteWorkspaceCss, /\.quote-chip--filled \{\s*background: var\(--color-surface-brand\);/);
+// "Dividir en apartados con título": enlace pequeño, solo con texto en el primer bloque y con el mismo manejador de siempre.
+assert.match(sourceQuoteConditions, /hasText\(primaryScopeText\) && \(/);
+assert.match(sourceQuoteConditions, /onClick=\{onAddScopeSection\} className="quote-conditions__link">Dividir en apartados con título</);
+// "Qué incluye" conserva agregar apartado, orden y eliminar por apartado.
+assert.match(sourceQuoteConditions, /\+ Agregar apartado/);
+assert.match(sourceQuoteConditions, /aria-label="Subir apartado"/);
+assert.match(sourceQuoteConditions, /aria-label="Bajar apartado"/);
+assert.match(sourceQuoteConditions, />Eliminar<\/Button>/);
+assert.match(sourceQuoteWorkspaceCss, /\.quote-chip \{[^}]*border: 1px dashed var\(--color-border-control\);/, "botones + de borde punteado");
+assert.match(sourceQuoteWorkspaceCss, /\.quote-line__discount \{[^}]*width: 6rem;/, "descuento en un campo de 6 rem");
+// Selección de cliente en línea: solo los primeros 6 resultados, aviso del total y mensaje claro sin clientes. Mismo filtro y mismo onChange.
+assert.match(sourceClientSelector, /const INLINE_RESULTS_LIMIT = 6;/);
+assert.match(sourceClientSelector, /visibleClients\.slice\(0, INLINE_RESULTS_LIMIT\)\.map/);
+assert.match(sourceClientSelector, /visibleClients\.length > INLINE_RESULTS_LIMIT/);
+assert.match(sourceClientSelector, /Mostrando \{INLINE_RESULTS_LIMIT\} de \{visibleClients\.length\} · sigue escribiendo para afinar/);
+assert.match(sourceClientSelector, /const searching = search\.trim\(\)\.length > 0;/, "sin escribir no se dibuja ninguna lista");
+assert.match(sourceClientSelector, /\{searching && \(visibleClients\.length > 0 \? \(/, "la lista solo existe al escribir");
+assert.match(sourceClientSelector, /Tienes \{activeClients\.length === 1 \? "1 cliente activo" : `\$\{activeClients\.length\} clientes activos`\} · escribe un nombre o RUT para buscar/);
+assert.match(sourceClientSelector, /<p className="sr-only" aria-live="polite">/, "aviso para lectores de pantalla con la cantidad de resultados");
+assert.match(sourceClientSelector, /<strong>Aún no tienes clientes<\/strong>/);
+assert.match(sourceClientSelector, /<Link className="client-selector__link" to="\/clientes">Ir a Clientes<\/Link>/);
+assert.match(sourceClientSelector, /\{noClients && !picking && \(/, "el aviso general solo se ve cuando no hay selector en línea");
+assert.equal((sourceClientSelector.match(/dialogClients\.map\(/g) || []).length, 1, "la ventana conserva su lista completa");
+assert.equal((sourceClientSelector.match(/visibleClients\.map\(/g) || []).length, 0, "el selector en línea nunca dibuja la lista completa");
+assert.match(sourceClientSelector, /filterSelectableClients\(clients, businessId, dialogSearch\)/, "la ventana usa el mismo filtro, con su propio buscador");
+assert.match(sourceClientSelector, /initialFocusRef=\{dialogSearchRef\}/);
+// "Ver todos los clientes": enlace junto a "Tienes N…" que abre la ventana de clientes que ya existe.
+assert.match(sourceClientSelector, /<button type="button" className="client-selector__all" aria-haspopup="dialog" aria-expanded=\{open\} onClick=\{\(\) => setOpen\(true\)\}>Ver todos los clientes<\/button>/);
+assert.match(sourceClientSelector, /<div className="client-selector__count">\s*<p className="client-selector__status">\s*Tienes /, "el enlace va junto a la línea Tienes N clientes activos (solo con clientes y sin escribir)");
+assert.match(sourceClientSelector, /onClose=\{\(\) => \{ setOpen\(false\); setDialogSearch\(""\); \}\}/, "Escape y la X cierran sin cambiar nada");
+assert.match(sourceClientSelector + fs.readFileSync("src/styles/interior.css", "utf8"), /\.client-selector__all \{[^}]*min-height: 2\.75rem;/, "área táctil de 44 px");
+assert.match(sourceQuoteWorkspaceCss + fs.readFileSync("src/styles/interior.css", "utf8"), /\.client-selector--inline \.client-selector__results \{[^}]*max-height: 14rem;/, "alto máximo con scroll");
 // Cabecera corta, paso 1 (cliente y asunto en línea) y resumen: solo presentación.
 assert.match(sourceNewQuote, /<header className="quote-head no-print">/);
 assert.match(sourceNewQuote, /<Link to="\/cotizaciones" className="quote-back-link">← Cotizaciones<\/Link>/);
@@ -669,7 +744,8 @@ assert.match(sourceNewQuote, /<h2 id="quote-client-title">1 · ¿A quién le cot
 assert.match(sourceNewQuote, /<ClientSelector inline businessId=\{userId\} value=\{quote\.clienteId\} snapshot=\{quote\.cliente\} onChange=\{handleClientChange\} onAvailabilityChange=\{setClientAvailability\} \/>/, "mismo onChange y misma disponibilidad que antes");
 assert.equal((sourceNewQuote.match(/La cotización guarda una copia histórica de los datos del cliente\./g) || []).length, 1, "el texto de guía no se repite");
 assert.match(sourceClientSelector, /inline = false/, "la prop inline es opcional: sin ella el selector es el de siempre");
-assert.match(sourceClientSelector, /\{!inline && <ResponsiveDialog/, "el diálogo se conserva para el modo sin inline");
+assert.doesNotMatch(sourceClientSelector, /\{!inline && <ResponsiveDialog/, "con inline la ventana también se dibuja (cerrada) y se abre con el enlace");
+assert.match(sourceClientSelector, /<ResponsiveDialog\s+open=\{open\}/);
 assert.match(sourceClientSelector, /filterSelectableClients\(clients, businessId, search\)/, "mismo filtro");
 assert.equal((sourceClientSelector.match(/onChange\?\.\(client\)/g) || []).length, 1, "un solo punto de elección: onChange(client) con el objeto");
 assert.match(sourceClientSelector, /placeholder="Buscar cliente por nombre o RUT"/);
