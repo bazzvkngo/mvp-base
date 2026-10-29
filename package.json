@@ -128,6 +128,7 @@
     "test:contrast-usage": "node scripts/contrast-usage-smoke.mjs",
     "test:empty-state": "node scripts/empty-state-illustration-smoke.mjs",
     "test:module-header": "node scripts/module-header-smoke.mjs",
+    "test:disclosure": "node scripts/disclosure-smoke.mjs",
     "test:notification-bell": "node scripts/notification-bell-smoke.mjs",
     "test:notification-rules": "firebase emulators:exec --only auth,firestore \"node scripts/notification-rules-smoke.mjs\"",
     "test:summary": "node scripts/financial-model-smoke.mjs",

@@ -176,6 +176,7 @@ export const PAGE_HEADING_ROUTES = Object.freeze([
   "/ordenes-compra",
   "/recepciones",
   "/compras",
+  "/empresa",
 ]);
 
 export function routeProvidesPageHeading(pathname) {

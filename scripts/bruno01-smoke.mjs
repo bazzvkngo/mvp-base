@@ -297,7 +297,12 @@ assert.match(companyUi, /Empresa no verificada/);
 assert.doesNotMatch(companyUi, /Empresa pendiente de verificación/);
 assert.doesNotMatch(companyUi, /Pendiente de verificación/);
 assert.match(businessCompletion, /Correo del propietario verificado/);
-assert.match(companyUi, /<h1>Empresa<\/h1>/);
+// A2: el h1 de Empresa lo dibuja ModuleHeader (ícono y título de navigation.js); la barra superior
+// solo muestra el negocio porque /empresa está en PAGE_HEADING_ROUTES. Un único h1 por pantalla.
+assert.doesNotMatch(companyUi, /<h1\b/);
+assert.match(companyUi, /const MODULE = getRouteMeta\("\/empresa"\);/);
+assert.match(companyUi, /<ModuleHeader description=\{MODULE_DESCRIPTION\} icon=\{MODULE\.icon\} title=\{MODULE\.title\} \/>/);
+assert.equal((companyUi.match(/<ModuleHeader\b/g) || []).length, 2, "ModuleHeader con y sin negocio activo");
 assert.doesNotMatch(companyUi, /OWNER · Puede editar/);
 for (const label of [
   "Razón social",

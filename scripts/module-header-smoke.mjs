@@ -144,9 +144,9 @@ try {
   // =================== Barra superior ===================
 
   const business = "PRUEBA Simulación";
-  // Bloque 2: /reportes (cabecera propia) + las seis páginas simples con ModuleHeader.
-  const WIRED_ROUTES = ["/clientes", "/ventas", "/compras", "/ordenes-compra", "/proveedores", "/recepciones"];
-  assert.deepEqual([...navigation.PAGE_HEADING_ROUTES].sort(), ["/reportes", ...WIRED_ROUTES].sort(), "las rutas con título propio son /reportes y las seis páginas cableadas");
+  // Bloque 2: /reportes (cabecera propia) + las seis páginas simples con ModuleHeader; A2 suma /empresa.
+  const WIRED_ROUTES = ["/clientes", "/ventas", "/compras", "/ordenes-compra", "/proveedores", "/recepciones", "/empresa"];
+  assert.deepEqual([...navigation.PAGE_HEADING_ROUTES].sort(), ["/reportes", ...WIRED_ROUTES].sort(), "las rutas con título propio son /reportes, las seis páginas cableadas y /empresa");
   assert.ok(Object.isFrozen(navigation.PAGE_HEADING_ROUTES), "la lista está congelada");
   assert.equal(navigation.routeProvidesPageHeading("/reportes"), true);
   for (const path of ["/inventario", "/cotizaciones", "/trabajos", "/empleados", "/reportes/otro", "/reportes/", "/ventas/nueva", "/compras/abc", "/clientes/", "", undefined]) {
@@ -188,7 +188,7 @@ try {
     assert.equal(count(bar, /<h1|ui-page-header/g), 0, `${path}: la barra no dibuja título`);
     assert.match(bar, /^<div class="topbar-context" aria-label="Negocio activo"><span>PRUEBA Simulación<\/span><\/div>$/, `${path}: solo el negocio activo`);
   }
-  console.log("OK: barra superior — /reportes y las seis rutas cableadas solo muestran el negocio; en el resto, eyebrow + título; barra + ModuleHeader = un h1");
+  console.log("OK: barra superior — /reportes, las seis rutas cableadas y /empresa solo muestran el negocio; en el resto, eyebrow + título; barra + ModuleHeader = un h1");
 
   // =================== Páginas cableadas (Bloque 2) ===================
   // Las páginas cargan datos con Firebase y no se pueden renderizar aquí (el SSR no corre useEffect, solo
@@ -231,6 +231,16 @@ try {
     assert.doesNotMatch(source, /ui-empty-state__actions/, `${name}: sin el markup viejo del vacío`);
   }
   console.log("OK: páginas — ModuleHeader con ícono y título de navigation.js, un solo vacío, acciones de la cabecera solo con datos y un botón principal por pantalla");
+
+  // --- Empresa (A2): ModuleHeader sin acciones (su botón principal es "Guardar información" de cada sección) ---
+  const companySource = await readFile(new URL("../src/features/company/CompanyConfig.jsx", import.meta.url), "utf8");
+  assert.ok(navigation.routeProvidesPageHeading("/empresa"), "CompanyConfig.jsx: /empresa está en PAGE_HEADING_ROUTES");
+  assert.ok(companySource.includes('const MODULE = getRouteMeta("/empresa");'), "CompanyConfig.jsx: ícono y título salen de navigation.js");
+  assert.equal(count(companySource, /<ModuleHeader\b/g), 2, "CompanyConfig.jsx: ModuleHeader con y sin negocio activo");
+  assert.doesNotMatch(companySource, /<h1\b|settings-page-intro/, "CompanyConfig.jsx: el h1 lo dibuja ModuleHeader");
+  assert.doesNotMatch(companySource, /<ModuleHeader[^>]*actions=/, "CompanyConfig.jsx: la cabecera no repite el botón Guardar");
+  assert.equal(count(companySource, /<Disclosure\b/g), 1, "CompanyConfig.jsx: un solo plegable de opcionales");
+  assert.equal(navigation.getRouteMeta("/empresa").title, "Empresa");
 
   // --- AppLayout usa el componente y no conserva la condición fija ---
   const layoutSource = await readFile(new URL("../src/layout/AppLayout.jsx", import.meta.url), "utf8");

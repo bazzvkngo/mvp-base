@@ -125,6 +125,12 @@ assert.match(
   picker,
   /OTRO_SERVICIO_PROYECTOS: "Otro servicio técnico o profesional"/
 );
+// A2: el resumen de Empresa usa el mismo nombre visible que el selector (el nombre canónico del
+// catálogo, "Otro servicio por proyectos", sigue siendo el que se guarda).
+assert.match(picker, /export function getBusinessCategoryVisibleName\(code, customName = "", historicalName = ""\)/);
+assert.match(picker, /return CATEGORY_DISPLAY_NAMES\[code\] \|\| getBusinessCategoryDisplayName\(code, customName, historicalName\);/);
+assert.match(company, /getBusinessCategoryVisibleName\(form\.rubroCodigo, form\.rubroOtro, form\.rubroNombre\)/);
+assert.doesNotMatch(company, /<dd>\{form\.rubroNombre \|\|/, "el resumen ya no muestra el nombre canónico");
 assert.match(picker, /role="radiogroup"/);
 assert.match(picker, /role="radio"/);
 assert.match(picker, /draftCode/);

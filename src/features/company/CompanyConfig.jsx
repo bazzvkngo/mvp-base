@@ -13,10 +13,15 @@ import {
   Trash2,
 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import BusinessCategoryPicker from "../../components/BusinessCategoryPicker";
+import { getRouteMeta } from "../../app/navigation";
+import BusinessCategoryPicker, {
+  getBusinessCategoryVisibleName,
+} from "../../components/BusinessCategoryPicker";
 import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
+import Disclosure from "../../components/ui/Disclosure";
 import LoadingState from "../../components/ui/LoadingState";
+import ModuleHeader from "../../components/ui/ModuleHeader";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import {
   CHILE_REGIONS,
@@ -67,6 +72,8 @@ const SECTIONS = [
   { id: "eliminacion", label: "Eliminar empresa", icon: Trash2, ownerOnly: true },
 ];
 const ACTIVATION_SECTION_IDS = new Set(["informacion", "verificacion"]);
+const MODULE = getRouteMeta("/empresa");
+const MODULE_DESCRIPTION = "Datos de identificación, ubicación y verificación del negocio.";
 
 const COMPLETION_TARGETS = Object.freeze({
   identity: "identidad",
@@ -76,6 +83,11 @@ const COMPLETION_TARGETS = Object.freeze({
   address: "direccion",
   logo: "logo",
 });
+
+// Campos opcionales que van plegados en "Más datos de la empresa". El plegable se abre solo
+// si alguno trae contenido o un error, o si se pide enfocar el objetivo "contacto".
+const OPTIONAL_INFORMATION_FIELDS = Object.freeze(["giro", "codigoPostal", "telefono", "email", "sitioWeb"]);
+const OPTIONAL_FOCUS_TARGETS = new Set(["contacto"]);
 
 // Campos que decide la verificación (no el formulario). Cuando cambia el estado de
 // verificación se vuelven a leer sin tocar lo que la persona esté editando.
@@ -212,7 +224,7 @@ function SettingsField({
       </span>
       {children}
       <span className="settings-field__support">
-        {error ? <span className="settings-field__error">{error}</span> : hint || "\u00a0"}
+        {error ? <span className="settings-field__error">{error}</span> : hint || <>&nbsp;</>}
       </span>
     </label>
   );
@@ -266,6 +278,7 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
   const [error, setError] = React.useState("");
   const [success, setSuccess] = React.useState("");
   const [logoError, setLogoError] = React.useState("");
+  const [optionalOpen, setOptionalOpen] = React.useState(false);
   const communes = React.useMemo(
     () => getCommunesForRegion(form.regionCodigo),
     [form.regionCodigo]
@@ -313,12 +326,6 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
   }, [businessId, verificationKey]);
 
   React.useEffect(() => {
-    if (loading || !focusTarget) return undefined;
-    const frameId = window.requestAnimationFrame(() => focusCompanyTarget(focusTarget));
-    return () => window.cancelAnimationFrame(frameId);
-  }, [focusTarget, loading]);
-
-  React.useEffect(() => {
     if (!logoFile) {
       setLogoPreview("");
       return undefined;
@@ -348,13 +355,23 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
     }
     return errors;
   }, [form]);
-  const recommendedPending = React.useMemo(() => {
-    const fields = [];
-    if (form.paisCodigo === "CL" && !form.comunaCodigo) fields.push("comuna");
-    if (!form.direccion.trim()) fields.push("dirección");
-    if (!form.telefono.trim() && !form.email.trim()) fields.push("contacto comercial");
-    return fields;
-  }, [form]);
+  // Los campos plegados con contenido (o con error) nunca quedan ocultos; para enfocar uno de
+  // ellos se abre primero el plegable y el foco se pide en la siguiente pasada del efecto.
+  const optionalNeedsOpen = OPTIONAL_INFORMATION_FIELDS.some((field) => String(form[field] || "").trim()) ||
+    Boolean(touched.email && fieldErrors.email) || Boolean(touched.sitioWeb && fieldErrors.sitioWeb);
+  React.useEffect(() => {
+    if (!loading && optionalNeedsOpen) setOptionalOpen(true);
+  }, [loading, optionalNeedsOpen]);
+
+  React.useEffect(() => {
+    if (loading || !focusTarget) return undefined;
+    if (OPTIONAL_FOCUS_TARGETS.has(focusTarget) && !optionalOpen) {
+      setOptionalOpen(true);
+      return undefined;
+    }
+    const frameId = window.requestAnimationFrame(() => focusCompanyTarget(focusTarget));
+    return () => window.cancelAnimationFrame(frameId);
+  }, [focusTarget, loading, optionalOpen]);
 
   const change = (event) => {
     const { name, value } = event.target;
@@ -455,11 +472,6 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
       title="Información de la empresa"
       description="Identidad, ubicación y datos necesarios para la activación."
     >
-      {form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.PENDING && (
-        <p className="settings-message settings-message--warning" role="status">
-          Cambiar la razón social invalidará la verificación actual y requerirá una nueva solicitud.
-        </p>
-      )}
       <dl className="company-profile-summary" aria-label="Resumen de la empresa">
         <div>
           <dt>Estado</dt>
@@ -484,7 +496,7 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
         </div>
         <div>
           <dt>Rubro</dt>
-          <dd>{form.rubroNombre || getBusinessCategoryDisplayName(form.rubroCodigo, form.rubroOtro) || "No informado"}</dd>
+          <dd>{getBusinessCategoryVisibleName(form.rubroCodigo, form.rubroOtro, form.rubroNombre) || "No informado"}</dd>
         </div>
       </dl>
       <form onSubmit={save} noValidate>
@@ -555,7 +567,7 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
                   <span>{form.razonSocial || "Aún no registrada"}</span>
                   <AppIcon icon={Lock} size={16} />
                 </div>
-                {form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.VERIFIED && (
+                {[BUSINESS_VERIFICATION_STATES.PENDING, BUSINESS_VERIFICATION_STATES.VERIFIED].includes(form.verificacionEmpresa?.estado) && (
                   <span className="settings-field__support">
                     Este dato forma parte de la verificación. Si cambia, ValoraCloud solicitará una nueva revisión.
                   </span>
@@ -597,9 +609,6 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
                   ) : "Selecciona la actividad que mejor representa los servicios de tu empresa."}
                 </span>
               </div>
-              <SettingsField label="Giro" wide>
-                <input name="giro" value={form.giro} onChange={change} />
-              </SettingsField>
             </div>
             <div id="empresa-logo" className="settings-logo-card settings-logo-card--embedded">
               <div className="settings-logo-preview">
@@ -654,13 +663,13 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
               {form.paisCodigo === "CL" ? (
                 <>
                   <SettingsField label="Región" required error={touched.regionCodigo ? fieldErrors.regionCodigo : ""}>
-                    <select name="regionCodigo" value={form.regionCodigo} onChange={change} onBlur={() => touch("regionCodigo")}>
+                    <select name="regionCodigo" autoComplete="off" value={form.regionCodigo} onChange={change} onBlur={() => touch("regionCodigo")}>
                       <option value="">Selecciona una región</option>
                       {CHILE_REGIONS.map((region) => <option key={region.code} value={region.code}>{region.name}</option>)}
                     </select>
                   </SettingsField>
                   <SettingsField label="Comuna / ciudad" error={touched.comunaCodigo ? fieldErrors.comunaCodigo : ""}>
-                    <select name="comunaCodigo" value={form.comunaCodigo} onChange={change} onBlur={() => touch("comunaCodigo")} disabled={!form.regionCodigo || !canEdit || saving}>
+                    <select name="comunaCodigo" autoComplete="off" value={form.comunaCodigo} onChange={change} onBlur={() => touch("comunaCodigo")} disabled={!form.regionCodigo || !canEdit || saving}>
                       <option value="">Sin comuna</option>
                       {communes.map((commune) => <option key={commune.code} value={commune.code}>{commune.name}</option>)}
                     </select>
@@ -676,32 +685,38 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
                   </SettingsField>
                 </>
               )}
-              <SettingsField label="Código postal">
-                <input name="codigoPostal" value={form.codigoPostal} onChange={change} />
-              </SettingsField>
               <SettingsField label="Dirección comercial" targetId="empresa-direccion" wide>
                 <input name="direccion" value={form.direccion} onChange={change} />
               </SettingsField>
-              <SettingsField label="Teléfono comercial" targetId="empresa-contacto">
-                <input name="telefono" type="tel" value={form.telefono} onChange={change} />
-              </SettingsField>
-              <SettingsField label="Correo comercial" error={touched.email ? fieldErrors.email : ""}>
-                <input name="email" type="email" value={form.email} onChange={change} onBlur={() => touch("email")} aria-invalid={Boolean(touched.email && fieldErrors.email)} />
-              </SettingsField>
-              <SettingsField label="Sitio web" wide error={touched.sitioWeb ? fieldErrors.sitioWeb : ""}>
-                <input name="sitioWeb" type="url" placeholder="https://www.empresa.com" value={form.sitioWeb} onChange={change} onBlur={() => touch("sitioWeb")} aria-invalid={Boolean(touched.sitioWeb && fieldErrors.sitioWeb)} />
-              </SettingsField>
             </div>
+            <Disclosure
+              description="Giro, código postal, teléfono, correo y sitio web."
+              disabled={!canEdit}
+              id="company-optional-information"
+              onOpenChange={setOptionalOpen}
+              open={optionalOpen || !canEdit}
+              title="Más datos de la empresa (opcional)"
+            >
+              <div className="settings-form-grid">
+                <SettingsField label="Giro" wide>
+                  <input name="giro" value={form.giro} onChange={change} />
+                </SettingsField>
+                <SettingsField label="Código postal">
+                  <input name="codigoPostal" value={form.codigoPostal} onChange={change} />
+                </SettingsField>
+                <SettingsField label="Teléfono comercial" targetId="empresa-contacto">
+                  <input name="telefono" type="tel" value={form.telefono} onChange={change} />
+                </SettingsField>
+                <SettingsField label="Correo comercial" error={touched.email ? fieldErrors.email : ""}>
+                  <input name="email" type="email" value={form.email} onChange={change} onBlur={() => touch("email")} aria-invalid={Boolean(touched.email && fieldErrors.email)} />
+                </SettingsField>
+                <SettingsField label="Sitio web" wide error={touched.sitioWeb ? fieldErrors.sitioWeb : ""}>
+                  <input name="sitioWeb" type="url" placeholder="https://www.empresa.com" value={form.sitioWeb} onChange={change} onBlur={() => touch("sitioWeb")} aria-invalid={Boolean(touched.sitioWeb && fieldErrors.sitioWeb)} />
+                </SettingsField>
+              </div>
+            </Disclosure>
           </div>
         </fieldset>
-        {form.nombreComercial.trim() &&
-          (form.rubroCodigo || form.rubroNombre) &&
-          (form.regionCodigo || form.regionEstado) &&
-          recommendedPending.length > 0 && (
-          <p className="settings-message settings-message--warning" role="status">
-            Pendiente por completar: {recommendedPending.join(", ")}.
-          </p>
-        )}
         <SectionStatus error={error} success={success} />
         <div className="settings-save-row">
           {!canEdit && <p>Tu rol permite consultar estos datos, pero no editarlos.</p>}
@@ -1460,16 +1475,18 @@ function CompanyConfig({
     }
   };
 
-  if (!businessId) return <p className="settings-message settings-message--error">No hay un negocio activo.</p>;
+  if (!businessId) {
+    return (
+      <section className="erp-page company-settings-page">
+        <ModuleHeader description={MODULE_DESCRIPTION} icon={MODULE.icon} title={MODULE.title} />
+        <p className="settings-message settings-message--error">No hay un negocio activo.</p>
+      </section>
+    );
+  }
 
   return (
     <section className="erp-page company-settings-page">
-      <div className="settings-page-intro">
-        <div>
-          <h1>Empresa</h1>
-          <p>Datos de identificación, ubicación y verificación del negocio.</p>
-        </div>
-      </div>
+      <ModuleHeader description={MODULE_DESCRIPTION} icon={MODULE.icon} title={MODULE.title} />
       {!businessVerified && activeSection !== "verificacion" && (
         <p className="settings-activation-notice" role="status">
           {activationStatus === BUSINESS_VERIFICATION_STATES.PENDING

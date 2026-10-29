@@ -284,7 +284,13 @@ assert.match(companyConfig, /Empresa verificada/);
 assert.match(companyConfig, /aria-label="Resumen de la empresa"/);
 assert.match(companyConfig, /<dt>Estado<\/dt>[\s\S]*<dt>País<\/dt>[\s\S]*<dt>Razón social<\/dt>[\s\S]*<dt>Rubro<\/dt>/);
 assert.match(companyConfig, /Este dato forma parte de la verificación\. Si cambia, ValoraCloud solicitará una nueva revisión\./);
-assert.match(companyConfig, /estado === BUSINESS_VERIFICATION_STATES\.PENDING && \(\s*<p className="settings-message settings-message--warning"/);
+// A2: sin aviso amarillo de "invalidará la verificación" (la pantalla no ofrece editar la razón social);
+// la misma advertencia vive como nota bajo "Razón social oficial", en PENDIENTE y en VERIFICADA.
+assert.doesNotMatch(companyConfig, /Cambiar la razón social invalidará/);
+assert.doesNotMatch(companyConfig, /Pendiente por completar|recommendedPending/);
+assert.match(companyConfig, /\[BUSINESS_VERIFICATION_STATES\.PENDING, BUSINESS_VERIFICATION_STATES\.VERIFIED\]\.includes\(form\.verificacionEmpresa\?\.estado\) && \(\s*<span className="settings-field__support">\s*Este dato forma parte de la verificación/);
+assert.doesNotMatch(companyConfig, /name="razonSocial"/, "la razón social sigue bloqueada: no hay campo para editarla");
+assert.doesNotMatch(companyConfig, new RegExp(String.fromCharCode(92) + "u00a0"), "sin secuencias de escape en la fuente");
 assert.match(companyConfig, /Resumen tributario protegido/);
 assert.match(companyConfig, /Pago y validez/);
 assert.match(companyConfig, /Entrega y garantía/);
