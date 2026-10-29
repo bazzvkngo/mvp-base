@@ -23,6 +23,7 @@ import {
 import {
   canBusinessOperate,
   filterNavigationForBusinessVerification,
+  isObservedProfileOfBusiness,
   normalizeBusinessVerificationState,
   shouldRefreshBusinessSessionForVerification,
 } from "../domain/businessOperations.mjs";
@@ -238,9 +239,7 @@ function AppLayout({
 
   React.useEffect(() => {
     const businessId = negocioActivo?.id || "";
-    const observedBusinessId =
-      observedBusinessProfile?.negocioId || observedBusinessProfile?.id || "";
-    if (!businessId || observedBusinessId !== businessId) return undefined;
+    if (!isObservedProfileOfBusiness(observedBusinessProfile, businessId)) return undefined;
 
     const sessionState = normalizeBusinessVerificationState(
       negocioActivo?.verificacionEmpresa?.estado

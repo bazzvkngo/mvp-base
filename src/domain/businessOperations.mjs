@@ -23,6 +23,19 @@ export function shouldRefreshBusinessSessionForVerification(
     normalizeBusinessVerificationState(observedState);
 }
 
+// El perfil que entrega subscribeToCompanyProfile pasa por normalizeCompanyProfile, que
+// no devuelve `negocioId` ni `id`. useBusinessCompletionStatus lo rotula con el negocio
+// que está observando y AppLayout lo compara antes de revalidar la sesión; sin el
+// rótulo la comparación daba "" contra businessId y la sesión nunca se refrescaba.
+export function withObservedBusinessId(profile, businessId) {
+  return { ...(profile || {}), negocioId: businessId };
+}
+
+export function isObservedProfileOfBusiness(profile, businessId) {
+  if (!businessId) return false;
+  return (profile?.negocioId || profile?.id || "") === businessId;
+}
+
 function normalizedPath(pathname = "") {
   return String(pathname || "").replace(/\/+$/, "") || "/";
 }

@@ -77,6 +77,16 @@ const COMPLETION_TARGETS = Object.freeze({
   logo: "logo",
 });
 
+// Campos que decide la verificación (no el formulario). Cuando cambia el estado de
+// verificación se vuelven a leer sin tocar lo que la persona esté editando.
+const VERIFICATION_DRIVEN_FIELDS = Object.freeze([
+  "verificacionEmpresa",
+  "razonSocial",
+  "identificadorFiscalTipo",
+  "identificadorFiscalValor",
+  "rut",
+]);
+
 const EMPTY_INFORMATION = {
   nombreComercial: "",
   rubroCodigo: "",
@@ -242,7 +252,7 @@ function focusCompanyTarget(target) {
   control?.focus({ preventScroll: true });
 }
 
-function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusinessUpdated }) {
+function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusinessUpdated, verificationKey }) {
   const navigate = useNavigate();
   const fileInputRef = React.useRef(null);
   const [form, setForm] = React.useState(EMPTY_INFORMATION);
@@ -280,6 +290,27 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
       active = false;
     };
   }, [businessId]);
+
+  const verificationKeyRef = React.useRef(verificationKey);
+  React.useEffect(() => {
+    if (verificationKeyRef.current === verificationKey) return undefined;
+    verificationKeyRef.current = verificationKey;
+    let active = true;
+    getCompanyProfile(businessId)
+      .then((profile) => {
+        if (!active) return;
+        setForm((current) => ({
+          ...current,
+          ...Object.fromEntries(
+            VERIFICATION_DRIVEN_FIELDS.map((field) => [field, profile[field]])
+          ),
+        }));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [businessId, verificationKey]);
 
   React.useEffect(() => {
     if (loading || !focusTarget) return undefined;
@@ -687,6 +718,7 @@ function BusinessVerificationSection({
   currentUserPhone,
   currentUserUid,
   role,
+  verificationKey,
 }) {
   const [profile, setProfile] = React.useState(null);
   const [form, setForm] = React.useState({
@@ -760,6 +792,15 @@ function BusinessVerificationSection({
       .finally(() => active && setLoading(false));
     return () => { active = false; };
   }, [load]);
+
+  // Un cambio de estado que llega desde fuera (aprobación, rechazo) vuelve a leer el
+  // perfil sin remontar la sección, para conservar el mensaje de la solicitud enviada.
+  const verificationKeyRef = React.useRef(verificationKey);
+  React.useEffect(() => {
+    if (verificationKeyRef.current === verificationKey) return;
+    verificationKeyRef.current = verificationKey;
+    load().catch(() => {});
+  }, [load, verificationKey]);
 
   const verification = profile?.verificacionEmpresa || {
     estado: BUSINESS_VERIFICATION_STATES.NOT_VERIFIED,
@@ -1374,6 +1415,8 @@ function CompanyConfig({
   const canEdit = role === "OWNER" || role === "ADMIN";
   const activationStatus = businessCompletionStatus?.verificationStatus ||
     BUSINESS_VERIFICATION_STATES.NOT_VERIFIED;
+  // Cambia cuando la verificación cambia (en vivo o en la sesión): las secciones vuelven a leer el perfil.
+  const verificationKey = `${activationStatus}:${businessVerified ? "operativa" : "bloqueada"}`;
   const canActOnCompletionItem = (item) =>
     item.id !== "ownerEmail" || role === "OWNER";
   const focusActiveSection = React.useCallback(() => {
@@ -1461,7 +1504,7 @@ function CompanyConfig({
           ))}
         </nav>
         <div ref={settingsContentRef} className="settings-content">
-          {activeSection === "informacion" && <BusinessInformationSection businessId={businessId} canEdit={canEdit} focusTarget={focusTarget} onBusinessUpdated={onBusinessUpdated} />}
+          {activeSection === "informacion" && <BusinessInformationSection businessId={businessId} canEdit={canEdit} focusTarget={focusTarget} onBusinessUpdated={onBusinessUpdated} verificationKey={verificationKey} />}
           {activeSection === "verificacion" && (
             <BusinessVerificationSection
               businessId={businessId}
@@ -1469,6 +1512,7 @@ function CompanyConfig({
               currentUserPhone={currentUserPhone}
               currentUserUid={currentUserUid}
               role={role}
+              verificationKey={verificationKey}
             />
           )}
           {activeSection === "impuestos" && <TaxSection businessId={businessId} />}
