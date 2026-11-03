@@ -9,7 +9,8 @@ import {
 } from "chart.js";
 import {Bar} from "react-chartjs-2";
 import useCssTokenColors from "../../hooks/useCssTokenColors";
-import {formatCompactMoney, formatMoney} from "../../utils/formatters";
+import {formatCompactMoney} from "../../utils/formatters";
+import {formatReportMoney} from "../../utils/formatReportMoney";
 import useBusinessFormat from "../../hooks/useBusinessFormat";
 
 ChartJS.register(BarElement, CategoryScale, Legend, LinearScale, Tooltip);
@@ -24,16 +25,16 @@ const CHART_TOKENS = [
   "--color-border-subtle",
 ];
 
-function formatMonth(month) {
+function formatMonth(month, locale) {
   const [year, monthNumber] = month.split("-").map(Number);
-  return new Intl.DateTimeFormat("es-CL", {month: "short", year: "2-digit", timeZone: "UTC"})
+  return new Intl.DateTimeFormat(locale, {month: "short", year: "2-digit", timeZone: "UTC"})
     .format(new Date(Date.UTC(year, monthNumber - 1, 1)))
     .replace(" de ", " ");
 }
 
-function formatMonthName(month) {
+function formatMonthName(month, locale) {
   const [year, monthNumber] = month.split("-").map(Number);
-  return new Intl.DateTimeFormat("es-CL", {month: "long", year: "numeric", timeZone: "UTC"})
+  return new Intl.DateTimeFormat(locale, {month: "long", year: "numeric", timeZone: "UTC"})
     .format(new Date(Date.UTC(year, monthNumber - 1, 1)));
 }
 
@@ -72,15 +73,15 @@ export function MonthlyOperationalProfitChart({currency, months}) {
   if (!months.length) return <div className="financial-chart-empty">Sin meses con datos en el período.</div>;
   if (months.length === 1) {
     const [month] = months;
-    const money = (value) => formatMoney(value, currency, businessLocale);
+    const money = (value) => formatReportMoney(value, currency, businessLocale);
     return <p className="reports-monthly-single">
-      {`Ganancia de ${formatMonthName(month.mes)}${month.parcial ? " *" : ""}: `}<strong>{money(month.ganancia)}</strong>{` (productos ${money(month.margenVentas)}, proyectos ${money(month.resultadoProyectos)})`}
+      {`Ganancia de ${formatMonthName(month.mes, businessLocale)}${month.parcial ? " *" : ""}: `}<strong>{money(month.ganancia)}</strong>{` (productos ${money(month.margenVentas)}, proyectos ${money(month.resultadoProyectos)})`}
     </p>;
   }
   const series = profitSeriesWithData(months);
   if (!series.length) return <div className="financial-chart-empty">Sin ganancia registrada en los meses del período.</div>;
-  const labels = months.map((month) => `${formatMonth(month.mes)}${month.parcial ? " *" : ""}`);
-  const description = months.map((month) => `${month.mes}${month.parcial ? " (parcial)" : ""}: ${formatMoney(month.ganancia, currency, businessLocale)}`).join(". ");
+  const labels = months.map((month) => `${formatMonth(month.mes, businessLocale)}${month.parcial ? " *" : ""}`);
+  const description = months.map((month) => `${month.mes}${month.parcial ? " (parcial)" : ""}: ${formatReportMoney(month.ganancia, currency, businessLocale)}`).join(". ");
   return <div className="financial-chart" role="img" aria-label={`Ganancia por mes. ${description}.`}>
     <Bar
       data={{
@@ -95,8 +96,8 @@ export function MonthlyOperationalProfitChart({currency, months}) {
           legend: {position: "bottom", labels: {boxHeight: 8, boxWidth: 8, color: tokens["--color-text-muted"], font: {size: 11}, padding: 12, usePointStyle: true}},
           tooltip: {
             callbacks: {
-              label(context) { return `${context.dataset.label}: ${formatMoney(context.parsed.y, currency, businessLocale)}`; },
-              footer(items) { return `Ganancia: ${formatMoney(months[items[0].dataIndex].ganancia, currency, businessLocale)}`; },
+              label(context) { return `${context.dataset.label}: ${formatReportMoney(context.parsed.y, currency, businessLocale)}`; },
+              footer(items) { return `Ganancia: ${formatReportMoney(months[items[0].dataIndex].ganancia, currency, businessLocale)}`; },
             },
           },
         },
@@ -114,7 +115,7 @@ export function RankedMarginChart({bars, currency, label}) {
   const { locale: businessLocale } = useBusinessFormat();
   const {tokens, axis} = useChartChrome();
   if (!bars.length) return <div className="financial-chart-empty">Sin datos en el período.</div>;
-  const description = bars.map((bar) => `${bar.nombre}: ${formatMoney(bar.valor, currency, businessLocale)}`).join(". ");
+  const description = bars.map((bar) => `${bar.nombre}: ${formatReportMoney(bar.valor, currency, businessLocale)}`).join(". ");
   return <div className="financial-chart" role="img" aria-label={`${label}. ${description}.`}>
     <Bar
       data={{
@@ -128,7 +129,7 @@ export function RankedMarginChart({bars, currency, label}) {
         responsive: true,
         plugins: {
           legend: {display: false},
-          tooltip: {callbacks: {label(context) { return `${label}: ${formatMoney(context.parsed.x, currency, businessLocale)}`; }}},
+          tooltip: {callbacks: {label(context) { return `${label}: ${formatReportMoney(context.parsed.x, currency, businessLocale)}`; }}},
         },
         scales: {
           x: {...axis, ticks: {...axis.ticks, callback(value) { return formatCompactMoney(value, currency, businessLocale); }}},

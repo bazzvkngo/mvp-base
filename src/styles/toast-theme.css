@@ -19,3 +19,9 @@
   --sileo-state-action: var(--color-text-brand-accent);
   --sileo-state-loading: var(--color-text-muted);
 }
+
+/* sileo pone text-transform: capitalize en el título del toast ("Fue Creado
+   Correctamente"). El texto ya viene bien escrito: se respeta tal cual. */
+:root:root [data-sileo-title] {
+  text-transform: none;
+}

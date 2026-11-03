@@ -33,7 +33,7 @@ import {
   shiftMonthKey,
 } from "../../../domain/reportMonthlySummary.mjs";
 import useBusinessFormat from "../../../hooks/useBusinessFormat";
-import {formatMoney} from "../../../utils/formatters";
+import {formatReportMoney} from "../../../utils/formatReportMoney";
 import MarginRing from "./MarginRing";
 import ReportsMonthlyProjects from "./ReportsMonthlyProjects";
 import ReportsProfitNotice from "./ReportsProfitNotice";
@@ -182,7 +182,7 @@ function ReportsMonthlySummary({
     {!hasCards && <div className="erp-card reports-simple-state">Tu perfil no incluye informes con cifras del mes.</div>}
 
     {hasCards && <div className="reports-simple-currencies">{groups.map((group, index) => {
-      const money = (value) => formatMoney(value, group.currency, locale);
+      const money = (value) => formatReportMoney(value, group.currency, locale);
       const referenceOf = (metric) => metric.reference
         ? formatReferenceText(metric.reference, previousMonthName, money(metric.reference.amount))
         : null;

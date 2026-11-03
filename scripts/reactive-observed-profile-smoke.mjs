@@ -129,7 +129,11 @@ try {
   assert.match(companyConfig, /verificationKey=\{verificationKey\}/, "se entrega a las secciones");
   assert.match(companyConfig, /VERIFICATION_DRIVEN_FIELDS/, "solo se refrescan los campos que decide la verificación");
   assert.equal((companyConfig.match(/verificationKeyRef\.current === verificationKey/g) || []).length, 2, "Información y Verificación se refrescan");
-  assert.doesNotMatch(companyConfig, /key=\{verificationKey\}/, "no se remonta: se conservan ediciones y el mensaje de solicitud enviada");
+  // El aviso amarillo solo afirma un estado cuando se conoce: sin businessCompletionStatus (null) no dice "no verificada".
+  assert.match(companyConfig, /const knownActivationStatus = businessCompletionStatus\?\.verificationStatus \|\| null;/, "el estado desconocido es null, no NO_VERIFICADA");
+  assert.match(companyConfig, /: knownActivationStatus\s*\? "Empresa no verificada\. Envía una solicitud[^"]*"\s*: "Los módulos operativos se activan cuando la empresa está verificada\."/, "sin estado conocido el aviso es neutro");
+  assert.doesNotMatch(companyConfig, /activationStatus === BUSINESS_VERIFICATION_STATES\.(PENDING|REJECTED)/, "el aviso no decide con el estado por defecto");
+  assert.doesNotMatch(companyConfig, /key=\{verificationKey\}/,"no se remonta: se conservan ediciones y el mensaje de solicitud enviada");
   console.log("OK: cableado — hook, AppLayout y secciones de Empresa");
 } finally {
   await vite.close();

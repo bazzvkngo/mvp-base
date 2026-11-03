@@ -1428,8 +1428,10 @@ function CompanyConfig({
       : "verificacion";
   const focusTarget = searchParams.get("objetivo") || "";
   const canEdit = role === "OWNER" || role === "ADMIN";
-  const activationStatus = businessCompletionStatus?.verificationStatus ||
-    BUSINESS_VERIFICATION_STATES.NOT_VERIFIED;
+  // Sin estado conocido (null en perfiles que no gestionan el negocio) el aviso no afirma
+  // "no verificada": la sección Verificación muestra el estado real.
+  const knownActivationStatus = businessCompletionStatus?.verificationStatus || null;
+  const activationStatus = knownActivationStatus || BUSINESS_VERIFICATION_STATES.NOT_VERIFIED;
   // Cambia cuando la verificación cambia (en vivo o en la sesión): las secciones vuelven a leer el perfil.
   const verificationKey = `${activationStatus}:${businessVerified ? "operativa" : "bloqueada"}`;
   const canActOnCompletionItem = (item) =>
@@ -1489,11 +1491,13 @@ function CompanyConfig({
       <ModuleHeader description={MODULE_DESCRIPTION} icon={MODULE.icon} title={MODULE.title} />
       {!businessVerified && activeSection !== "verificacion" && (
         <p className="settings-activation-notice" role="status">
-          {activationStatus === BUSINESS_VERIFICATION_STATES.PENDING
+          {knownActivationStatus === BUSINESS_VERIFICATION_STATES.PENDING
             ? "La solicitud de verificación está en revisión."
-            : activationStatus === BUSINESS_VERIFICATION_STATES.REJECTED
+            : knownActivationStatus === BUSINESS_VERIFICATION_STATES.REJECTED
               ? "La verificación fue rechazada. Revisa el motivo y envía una nueva solicitud."
-              : "Empresa no verificada. Envía una solicitud para activar los módulos operativos."}
+              : knownActivationStatus
+                ? "Empresa no verificada. Envía una solicitud para activar los módulos operativos."
+                : "Los módulos operativos se activan cuando la empresa está verificada."}
         </p>
       )}
       {canEdit && businessCompletionStatus && (

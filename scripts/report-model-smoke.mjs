@@ -1375,8 +1375,11 @@ console.log("OK reportes Compras (limpieza): un solo mensaje de vacío, gráfico
 // Monto abreviado compartido de los ejes: una sola función, sufijo en mayúscula y signo bien formado.
 {
   const profitChartsSource2 = readFileSync("src/components/reports/OperationalProfitCharts.jsx", "utf8");
-  for (const [name, source] of [["OperationalProfitCharts", profitChartsSource2], ["OperationalComparisonChart", operationalChartSource]]) {
-    assert.match(source, /import \{formatCompactMoney, formatMoney\} from "\.\.\/\.\.\/utils\/formatters";/, `${name} importa la función compartida`);
+  for (const [name, source, sharedImport] of [
+    ["OperationalProfitCharts", profitChartsSource2, /import \{formatCompactMoney\} from "\.\.\/\.\.\/utils\/formatters";/],
+    ["OperationalComparisonChart", operationalChartSource, /import \{formatCompactMoney, formatMoney\} from "\.\.\/\.\.\/utils\/formatters";/],
+  ]) {
+    assert.match(source, sharedImport, `${name} importa la función compartida`);
     assert.doesNotMatch(source, /function formatCompactMoney|notation: "compact"/, `${name} no define su propia versión`);
     assert.match(source, /formatCompactMoney\(value, currency, businessLocale\)/, `${name} usa el locale del negocio en el eje`);
   }
@@ -1431,8 +1434,22 @@ console.log("OK reportes (formato compacto): una sola formatCompactMoney con suf
     const single = chart([month("2026-09", 200, 300)]);
     assert.ok(single.includes("Ganancia de septiembre de 2026: <strong>$500</strong> (productos $200, proyectos $300)"), single);
     assert.doesNotMatch(single, /<canvas|financial-chart|role="img"/);
-    assert.ok(chart([month("2026-09", 200, -300)]).includes("Ganancia de septiembre de 2026: <strong>$-100</strong> (productos $200, proyectos $-300)"), "los negativos salen con el formato de formatMoney");
+    assert.ok(chart([month("2026-09", 200, -300)]).includes("Ganancia de septiembre de 2026: <strong>-$100</strong> (productos $200, proyectos -$300)"), "los negativos llevan el signo delante (formatReportMoney)");
     assert.ok(chart([month("2026-09", 0, 0)]).includes("<strong>$0</strong> (productos $0, proyectos $0)"), "un mes sin movimiento también va en texto");
+    // Pérdida con signo delante: helper local de Reportes; formatMoney compartido no cambia.
+    const {formatReportMoney} = await chartsVite.ssrLoadModule("/src/utils/formatReportMoney.js");
+    assert.equal(formatReportMoney(-100, "CLP", "es-CL"), "-$100");
+    assert.equal(formatReportMoney(100, "CLP", "es-CL"), "$100");
+    assert.equal(formatReportMoney(-0.2, "CLP", "es-CL"), "$0", "lo que redondea a cero no lleva signo");
+    assert.equal(formatReportMoney(-1500.5, "USD", "es-CL").replace(/\s/g, " "), "-US$1.500,50");
+    assert.equal(new Intl.NumberFormat("es-CL", {style: "currency", currency: "CLP"}).format(-100), "$-100", "formatMoney (Intl) conserva su salida: el cambio es solo local");
+    assert.match(monthlyChartSource, /import \{formatReportMoney\} from "\.\.\/\.\.\/utils\/formatReportMoney";/);
+    assert.match(monthlyViewSource, /import \{formatReportMoney\} from "\.\.\/\.\.\/\.\.\/utils\/formatReportMoney";/);
+    assert.doesNotMatch(monthlyViewSource, /\bformatMoney\(/, "el resumen mensual formatea con formatReportMoney");
+    // El mes del gráfico respeta el locale del negocio, no un es-CL fijo.
+    assert.doesNotMatch(monthlyChartSource, /DateTimeFormat\("es-CL"/, "sin locale fijo en los meses del gráfico");
+    assert.match(monthlyChartSource, /formatMonthName\(month\.mes, businessLocale\)/);
+    assert.match(monthlyChartSource, /formatMonth\(month\.mes, businessLocale\)/);
     assert.ok(chart([month("2026-09", 200, 300, true)]).includes("Ganancia de septiembre de 2026 *: "), "el mes parcial lleva el asterisco que explica la nota de la vista");
     // Varios meses: el gráfico, con su descripción accesible; sin el texto del mes único.
     const several = chart([month("2026-08", 100, 0), month("2026-09", 40, 0)]);
