@@ -2062,6 +2062,44 @@
   background: var(--color-surface-subtle);
 }
 
+/* Plegada: una fila (título, barra, porcentaje, estado y control). Declara su relleno completo. */
+.business-completion-card--collapsible {
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-4);
+}
+
+.business-completion-card__row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+
+.business-completion-card__row h2 {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-lg);
+  margin: 0;
+}
+
+.business-completion-card__row .business-completion-progress {
+  flex: 1 1 8rem;
+  min-width: 6rem;
+}
+
+.business-completion-card__row > strong {
+  color: var(--color-text-brand);
+  font-size: var(--font-size-xl);
+  line-height: 1;
+}
+
+.business-completion-card__row > .ui-button {
+  margin-left: auto;
+}
+
+.business-completion-card__body {
+  display: grid;
+  gap: var(--space-3);
+}
+
 .activation-checklist {
   background: var(--color-border-subtle);
   border: 1px solid var(--color-border-subtle);

@@ -1502,6 +1502,7 @@ function CompanyConfig({
       )}
       {canEdit && businessCompletionStatus && (
         <BusinessCompletionCard
+          collapsible
           error={businessCompletionError}
           status={businessCompletionStatus}
           canActOnItem={canActOnCompletionItem}
