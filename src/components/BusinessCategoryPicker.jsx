@@ -205,6 +205,7 @@ const BusinessCategoryPicker = React.forwardRef(
           name={name}
           type="button"
           className="business-category-picker"
+          title={selectedName || undefined}
           aria-label={ariaLabel}
           aria-describedby={errorId}
           aria-expanded={open}
