@@ -5,6 +5,7 @@ import {
   INITIAL_QUICK_BUSINESS_VALUES,
   normalizeQuickBusinessPayload,
   QUICK_BUSINESS_FIELD_ORDER,
+  shouldValidateOnBlur,
   validateQuickBusiness,
 } from "../domain/businessForm";
 import {
@@ -25,6 +26,7 @@ function AdditionalBusinessDrawer({
   const [values, setValues] = React.useState(INITIAL_QUICK_BUSINESS_VALUES);
   const [errors, setErrors] = React.useState({});
   const [touched, setTouched] = React.useState({});
+  const [editedFields, setEditedFields] = React.useState({});
   const [submitted, setSubmitted] = React.useState(false);
   const [submitError, setSubmitError] = React.useState("");
   const [isSubmitting, setIsSubmitting] = React.useState(false);
@@ -38,6 +40,7 @@ function AdditionalBusinessDrawer({
     setValues(INITIAL_QUICK_BUSINESS_VALUES);
     setErrors({});
     setTouched({});
+    setEditedFields({});
     setSubmitted(false);
     setSubmitError("");
     setIsSubmitting(false);
@@ -92,6 +95,11 @@ function AdditionalBusinessDrawer({
     const nextValues = { ...values, ...patch };
     const nextErrors = validateQuickBusiness(nextValues);
     setValues(nextValues);
+    setEditedFields((current) => {
+      const next = { ...current };
+      for (const changedField of Object.keys(patch)) next[changedField] = true;
+      return next;
+    });
     setErrors((current) => {
       if (submitted) return nextErrors;
       const next = { ...current };
@@ -107,6 +115,15 @@ function AdditionalBusinessDrawer({
   };
 
   const validateField = (field, patch = {}) => {
+    if (
+      !shouldValidateOnBlur({
+        submitted,
+        dirty: Boolean(editedFields[field]),
+        hasPatch: Object.keys(patch).length > 0,
+      })
+    ) {
+      return;
+    }
     const nextErrors = validateQuickBusiness({ ...values, ...patch });
     setTouched((current) => ({ ...current, [field]: true }));
     setErrors((current) => ({ ...current, [field]: nextErrors[field] }));

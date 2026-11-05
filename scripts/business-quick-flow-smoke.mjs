@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { createServer } from "vite";
 import { normalizeQuickBusinessPayload } from "../src/domain/businessQuickPayload.mjs";
 import { resolveInitialActivationRoute } from "../src/domain/initialActivationNavigation.mjs";
 import { filterNavigationSections } from "../src/domain/rbac.mjs";
@@ -306,5 +307,92 @@ assert.match(appLayout, /shouldRefreshBusinessSessionForVerification/);
 assert.match(appLayout, /verificationToastTitle: "Empresa verificada"/);
 assert.match(appLayout, /verificationToastDescription: "Los módulos operativos ya están disponibles\."/);
 assert.doesNotMatch(appLayout, /window\.location\.reload|setInterval/);
+
+// --- Salir de un campo (blur): el error no aparece antes de que el usuario edite ---
+// businessForm.js importa sin extensión, así que se carga con Vite (mismo patrón que disclosure-smoke).
+const vite = await createServer({ appType: "custom", logLevel: "silent", server: { middlewareMode: true } });
+let shouldValidateOnBlur;
+let validateQuickBusiness;
+let INITIAL_ONBOARDING_BUSINESS_VALUES;
+try {
+  ({ INITIAL_ONBOARDING_BUSINESS_VALUES, shouldValidateOnBlur, validateQuickBusiness } = await vite.ssrLoadModule(
+    "/src/domain/businessForm.js"
+  ));
+} finally {
+  await vite.close();
+}
+const picker = await readFile(new URL("../src/components/BusinessCategoryPicker.jsx", import.meta.url), "utf8");
+
+assert.equal(typeof shouldValidateOnBlur, "function");
+// Salir sin editar (ni intentar enviar): sin error.
+assert.equal(shouldValidateOnBlur({ submitted: false, dirty: false, hasPatch: false }), false, "salir sin editar no valida");
+assert.equal(shouldValidateOnBlur({}), false, "sin datos no valida");
+assert.equal(shouldValidateOnBlur(), false, "sin argumento no valida");
+// Editar y salir: con error (el validador lo da: nombre de 1 letra).
+assert.equal(shouldValidateOnBlur({ submitted: false, dirty: true, hasPatch: false }), true, "editar y salir valida");
+assert.equal(
+  validateQuickBusiness({ ...INITIAL_ONBOARDING_BUSINESS_VALUES, nombreComercial: "a" }, { requireCountry: true, requireRegion: false })
+    .nombreComercial,
+  "El nombre debe tener al menos 2 caracteres."
+);
+// Escribir y borrar: el campo sigue editado aunque el valor vuelva a vacío, y entonces sí hay error.
+for (const [name, source, stateName] of [
+  ["OnboardingPage", onboarding, "dirty"],
+  ["AdditionalBusinessDrawer", drawer, "editedFields"],
+]) {
+  const setter = stateName === "dirty" ? "setDirty" : "setEditedFields";
+  assert.match(
+    source,
+    new RegExp(String.raw`${setter}\(\(current\) => \{\s*const next = \{ \.\.\.current \};\s*for \(const changedField of Object\.keys\(patch\)\) next\[changedField\] = true;`),
+    `${name}: editar marca el campo sin mirar el valor (escribir y borrar sigue editado)`
+  );
+}
+assert.equal(shouldValidateOnBlur({ submitted: false, dirty: true, hasPatch: false }), true, "escribir y borrar valida");
+assert.equal(
+  validateQuickBusiness({ ...INITIAL_ONBOARDING_BUSINESS_VALUES, nombreComercial: "" }, { requireCountry: true, requireRegion: false })
+    .nombreComercial,
+  "Ingresa el nombre del negocio."
+);
+// Cerrar el selector de rubro sin elegir: onTouched() sin parche, y el campo no está editado: sin error.
+assert.match(picker, /const closePicker = \(\) => \{\s*setOpen\(false\);\s*onTouched\?\.\(\);\s*\};/, "cerrar el selector no manda parche");
+assert.match(fields, /onTouched=\{\(patch\) => onBlur\(field, patch\)\}/, "el parche del selector llega a onBlur tal cual");
+assert.equal(shouldValidateOnBlur({ submitted: false, dirty: false, hasPatch: false }), false, "cerrar el rubro sin elegir no valida");
+// Confirmar un rubro (con parche): valida aunque el campo no figure como editado.
+assert.match(picker, /onTouched\?\.\(\{\s*rubroCodigo: draftCode,/, "confirmar manda el parche con el rubro elegido");
+assert.equal(shouldValidateOnBlur({ submitted: false, dirty: false, hasPatch: true }), true, "confirmar con parche valida");
+const withCategory = (rubroCodigo) =>
+  validateQuickBusiness(
+    { ...INITIAL_ONBOARDING_BUSINESS_VALUES, rubroCodigo, rubroOtro: "" },
+    { requireCountry: true, requireRegion: false }
+  ).rubroCodigo;
+assert.equal(withCategory("INGENIERIA_CONSULTORIA"), undefined, "el rubro confirmado no da error");
+assert.equal(withCategory(""), "Selecciona el rubro principal.", "sin rubro elegido el validador sí da error");
+// Después de intentar enviar: siempre valida.
+for (const state of [
+  { submitted: true, dirty: false, hasPatch: false },
+  { submitted: true, dirty: true, hasPatch: true },
+  { submitted: true },
+]) {
+  assert.equal(shouldValidateOnBlur(state), true, `submitted siempre valida: ${JSON.stringify(state)}`);
+}
+// Las dos pantallas usan la función antes de marcar el campo como tocado.
+for (const [name, source, stateName] of [
+  ["OnboardingPage", onboarding, "dirty"],
+  ["AdditionalBusinessDrawer", drawer, "editedFields"],
+]) {
+  assert.match(source, /shouldValidateOnBlur,\s*validateQuickBusiness,\s*\} from "\.\.\/domain\/businessForm";/, `${name}: importa shouldValidateOnBlur`);
+  const body = source.slice(source.indexOf("const validateField = "));
+  assert.match(
+    body,
+    new RegExp(String.raw`if \(\s*!shouldValidateOnBlur\(\{\s*submitted,\s*dirty: Boolean\(${stateName}\[field\]\),\s*hasPatch: Object\.keys\(patch\)\.length > 0,\s*\}\)\s*\) \{\s*return;\s*\}`),
+    `${name}: validateField sale temprano sin editar`
+  );
+  assert.ok(
+    body.indexOf("shouldValidateOnBlur") < body.indexOf("setTouched((current) => ({ ...current, [field]: true }))"),
+    `${name}: el guard va antes de marcar el campo como tocado`
+  );
+}
+assert.match(drawer, /setErrors\(\{\}\);\s*setTouched\(\{\}\);\s*setEditedFields\(\{\}\);\s*setSubmitted\(false\);/, "el drawer reinicia lo editado al abrirse");
+console.log("OK: blur — sin error al salir sin editar, con error tras editar o borrar, selector sin elegir sin error, parche y submitted validan");
 
 console.log("BUSINESS_QUICK_FLOW_SMOKE_OK");

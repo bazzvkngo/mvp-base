@@ -11,6 +11,7 @@ import {
   INITIAL_ONBOARDING_BUSINESS_VALUES,
   normalizeQuickBusinessPayload,
   ONBOARDING_BUSINESS_FIELD_ORDER,
+  shouldValidateOnBlur,
   validateQuickBusiness,
 } from "../domain/businessForm";
 import {
@@ -33,6 +34,7 @@ function OnboardingPage({ usuario, onBusinessCreated, onInvitationAccepted }) {
   );
   const [errors, setErrors] = React.useState({});
   const [touched, setTouched] = React.useState({});
+  const [dirty, setDirty] = React.useState({});
   const [submitted, setSubmitted] = React.useState(false);
   const [submitError, setSubmitError] = React.useState("");
   const [isSubmitting, setIsSubmitting] = React.useState(false);
@@ -57,6 +59,11 @@ function OnboardingPage({ usuario, onBusinessCreated, onInvitationAccepted }) {
       requireRegion: false,
     });
     setValues(nextValues);
+    setDirty((current) => {
+      const next = { ...current };
+      for (const changedField of Object.keys(patch)) next[changedField] = true;
+      return next;
+    });
     setErrors((current) => {
       if (submitted) return nextErrors;
       const next = { ...current };
@@ -72,6 +79,15 @@ function OnboardingPage({ usuario, onBusinessCreated, onInvitationAccepted }) {
   };
 
   const validateField = (field, patch = {}) => {
+    if (
+      !shouldValidateOnBlur({
+        submitted,
+        dirty: Boolean(dirty[field]),
+        hasPatch: Object.keys(patch).length > 0,
+      })
+    ) {
+      return;
+    }
     const nextErrors = validateQuickBusiness(
       { ...values, ...patch },
       { requireCountry: true, requireRegion: false }

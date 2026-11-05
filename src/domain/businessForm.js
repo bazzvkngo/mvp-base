@@ -65,6 +65,13 @@ export function isValidBusinessEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
 }
 
+// Salir de un campo (blur) valida solo si ya se intentó enviar, si el usuario editó ese campo
+// o si el cierre trae un valor elegido (parche del selector de rubro). Salir de un campo que
+// nunca se editó, o cerrar el selector de rubro sin elegir, no es un error todavía.
+export function shouldValidateOnBlur({ submitted = false, dirty = false, hasPatch = false } = {}) {
+  return Boolean(submitted || dirty || hasPatch);
+}
+
 export function validateQuickBusiness(
   values,
   { requireCountry = false, requireRegion = true } = {}
