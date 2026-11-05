@@ -234,9 +234,19 @@ function OnboardingPage({ usuario, onBusinessCreated, onInvitationAccepted }) {
               />
 
               <ol className="onboarding-form__steps">
-                <li>1. Completa los datos de tu empresa (razón social, RUT, domicilio)</li>
-                <li>2. Sube el documento y solicita la verificación</li>
-                <li>3. Te avisamos cuando esté aprobada</li>
+                <li className="onboarding-form__step onboarding-form__step--current" aria-current="step">
+                  <span className="onboarding-form__step-number" aria-hidden="true">1</span>
+                  <span className="onboarding-form__step-text">Completa los datos de tu empresa (razón social, RUT, domicilio)</span>
+                  <span className="onboarding-form__step-state">Paso actual</span>
+                </li>
+                <li className="onboarding-form__step">
+                  <span className="onboarding-form__step-number" aria-hidden="true">2</span>
+                  <span className="onboarding-form__step-text">Sube el documento y solicita la verificación</span>
+                </li>
+                <li className="onboarding-form__step">
+                  <span className="onboarding-form__step-number" aria-hidden="true">3</span>
+                  <span className="onboarding-form__step-text">Te avisamos cuando esté aprobada</span>
+                </li>
               </ol>
 
               <div className="onboarding-form__actions">
