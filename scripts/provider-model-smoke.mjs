@@ -171,6 +171,8 @@ assert.match(sourceManager, /loadSequenceRef/);
 assert.match(sourceManager, /setProviders\(\[\]\)/);
 assert.match(sourceManager, /No hay proveedores registrados/);
 assert.match(sourceManager, /canManage &&/);
+assert.match(sourceManager, /const \[statusFilter, setStatusFilter\] = useState\("activo"\);/, "el filtro Estado parte en Activos");
+assert.match(sourceManager, /\$\{visibleProviders\.length\} de \$\{providers\.length\} proveedores/, "subtítulo N de M proveedores con filtro");
 assert.match(sourceForm, /initialFocusRef=\{firstInputRef\}/);
 assert.match(sourceForm, /getCommuneByCode/);
 assert.match(sourceForm, /onChange=\{handleRutChange\}/);
