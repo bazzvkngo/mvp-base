@@ -109,7 +109,7 @@ function PlatformAdminLayout({businessSession, onReturnToErp, usuario}) {
           <div className="platform-topbar__identity"><span>Administrador</span><strong>{usuario?.email}</strong></div>
         </div>
       </header>
-      <main id="platform-main" className="platform-content"><Outlet context={{summary, reloadSummary: loadSummary}} /></main>
+      <main id="platform-main" className="platform-content"><Outlet context={{summary, reloadSummary: loadSummary, currentUid: usuario?.uid || ""}} /></main>
     </div>
     {mobileOpen && <div className="platform-mobile-layer">
       <button className="platform-mobile-overlay" type="button" aria-label="Cerrar navegacion" onClick={() => setMobileOpen(false)} />

@@ -76,6 +76,15 @@ assert.match(functionsSource, /db\.recursiveDelete\(businessRef\)/);
 assert.match(functionsSource, /customClaims\?\.platformRole === PLATFORM_SUPERADMIN/);
 assert.match(functionsSource, /const PLATFORM_SUPERADMIN = "PLATFORM_SUPERADMIN"/);
 assert.doesNotMatch(functionsSource, /Las cuentas PLATFORM_SUPERADMIN/);
+// Guardas de la Function: autosuspension y destino con claim de plataforma.
+assert.match(functionsSource, /if \(uid === actor\.uid\) fail\(HttpsError, "failed-precondition", "No puedes suspender tu propia cuenta\."\)/);
+assert.match(functionsSource, /Las cuentas Administrador no se suspenden desde este panel\./);
+// Ficha de usuario: la cuenta propia no muestra el formulario de suspension.
+assert.match(layoutSource, /currentUid: usuario\?\.uid \|\| ""/);
+assert.match(pagesSource, /const \{currentUid\} = useOutletContext\(\) \|\| \{\};/);
+assert.match(pagesSource, /const isOwnAccount = Boolean\(currentUid\) && usuario\.uid === currentUid;/);
+assert.match(pagesSource, /\{isOwnAccount \? <p className="platform-help platform-help--flush">Tu propia cuenta de plataforma no se suspende desde aquí\.<\/p> : <>/);
+assert.equal((pagesSource.match(/Suspender usuario/g) || []).length, 1);
 // El reset total de producción (borraba negocios, membresías y cuentas salvo
 // la superadmin) se retiró del repo; queda sólo en el historial de git.
 assert.equal(

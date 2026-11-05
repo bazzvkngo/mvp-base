@@ -95,7 +95,8 @@ const editableProfile = (value) => {
 const platform = await authenticate(client("superadmin"), "superadmin");
 const owner = await authenticate(client("owner"), "owner");
 const secondOwner = await authenticate(client("second-owner"), "second-owner");
-const clients = [platform, owner, secondOwner];
+const secondPlatform = await authenticate(client("second-platform"), "second-platform");
+const clients = [platform, owner, secondOwner, secondPlatform];
 const adminApp = initializeAdminApp({
   projectId: PROJECT_ID,
   storageBucket: `${PROJECT_ID}.firebasestorage.app`,
@@ -107,6 +108,8 @@ try {
   await rejected("usuario normal lista plataforma", () => call(owner, "listarEmpresasPlataforma")({}), ["permission-denied"]);
   await adminAuth.setCustomUserClaims(platform.uid, {platformRole: "PLATFORM_SUPERADMIN"});
   await platform.user.getIdToken(true);
+  await adminAuth.setCustomUserClaims(secondPlatform.uid, {platformRole: "PLATFORM_SUPERADMIN"});
+  await secondPlatform.user.getIdToken(true);
 
   const first = await call(owner, "createFirstBusiness")(businessInput("Empresa Platform Uno", "one"));
   const second = await call(secondOwner, "createFirstBusiness")(businessInput("Empresa Platform Dos", "two"));
@@ -341,6 +344,21 @@ try {
   const signedIn = await signInWithEmailAndPassword(owner.auth, owner.email, owner.password); owner.user = signedIn.user;
   assert.equal((await call(owner, "getBusinessSession")({})).data.accessState, "active");
   assert.equal((await adminDb.collection(`usuarios/${owner.uid}/eventosPlataforma`).get()).size, 2);
+
+  // Las cuentas de plataforma no se suspenden desde el panel: ni la propia ni otra con claim.
+  const selfSuspendRequestId = requestId("suspend_self");
+  const platformTargetRequestId = requestId("suspend_platform");
+  await rejected("superadmin no se suspende a si mismo", () => call(platform, "cambiarEstadoUsuarioPlataforma")({uid: platform.uid, estado: "suspendido", motivo: "Prueba de autosuspension", requestId: selfSuspendRequestId}), ["failed-precondition"]);
+  await rejected("superadmin no suspende a otra cuenta de plataforma", () => call(platform, "cambiarEstadoUsuarioPlataforma")({uid: secondPlatform.uid, estado: "suspendido", motivo: "Prueba de cuenta de plataforma", requestId: platformTargetRequestId}), ["failed-precondition"]);
+  for (const target of [platform, secondPlatform]) {
+    assert.equal((await adminAuth.getUser(target.uid)).disabled, false);
+    assert.equal((await adminDb.collection(`usuarios/${target.uid}/eventosPlataforma`).get()).size, 0);
+    assert.notEqual((await adminDb.doc(`usuarios/${target.uid}`).get()).data()?.estadoPlataforma, "suspendido");
+  }
+  for (const operationId of [selfSuspendRequestId, platformTargetRequestId]) {
+    assert.equal((await adminDb.doc(`platformUserStatusRequests/${operationId}`).get()).exists, false);
+  }
+  assert.equal((await call(platform, "obtenerUsuarioPlataforma")({uid: secondPlatform.uid})).data.usuario.estado, "activo");
 
   await adminDb.doc(`quotePublicTokens/delete-${RUN_ID}`).set({
     negocioId: firstId,
