@@ -89,11 +89,6 @@ export function validateQuickBusiness(
   const category = getBusinessCategoryByCode(values.rubroCodigo);
   if (!isSelectableBusinessCategory(category, BUSINESS_CATEGORY_CATALOG_VERSION)) {
     errors.rubroCodigo = "Selecciona el rubro principal.";
-  } else if (
-    category.code === "OTRO" &&
-    normalizeBusinessText(values.rubroOtro).length < 2
-  ) {
-    errors.rubroCodigo = "Describe el rubro de tu negocio.";
   }
   if (requireRegion && !getRegionByCode(values.regionCodigo)) {
     errors.regionCodigo = "Selecciona una región.";
