@@ -15,6 +15,7 @@ import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
 import EmptyState from "../../components/ui/EmptyState";
 import ModuleHeader from "../../components/ui/ModuleHeader";
+import Notice from "../../components/ui/Notice";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import {SkeletonCards, SkeletonRegion, SkeletonTable} from "../../components/ui/Skeleton";
 import StatusBadge from "../../components/ui/StatusBadge";
@@ -239,10 +240,10 @@ function ClientsManager({businessId, canCreateQuotes = false, countryCode = "CL"
       />
 
       {!canManage && (
-        <div className="client-message client-message--warning" role="status">
+        <Notice variant="warning" className="client-message--warning">
           Tu perfil tiene acceso de lectura. Los perfiles autorizados deben crear y
           modificar clientes.
-        </div>
+        </Notice>
       )}
       {feedback && (
         <div

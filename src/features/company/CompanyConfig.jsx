@@ -22,6 +22,7 @@ import Button from "../../components/ui/Button";
 import Disclosure from "../../components/ui/Disclosure";
 import LoadingState from "../../components/ui/LoadingState";
 import ModuleHeader from "../../components/ui/ModuleHeader";
+import Notice from "../../components/ui/Notice";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import {
   CHILE_REGIONS,
@@ -1126,9 +1127,9 @@ function TaxSection({ businessId }) {
             Los documentos históricos conservan la configuración tributaria con la que fueron emitidos.
           </p>
           {profile?.configuracionTributariaBaseCompleta === false && (
-            <p className="settings-message settings-message--warning" role="status">
+            <Notice variant="warning" className="settings-message--warning">
               Este país requiere una configuración tributaria específica de plataforma antes de operar.
-            </p>
+            </Notice>
           )}
         </div>
       )}
@@ -1490,7 +1491,7 @@ function CompanyConfig({
     <section className="erp-page company-settings-page">
       <ModuleHeader description={MODULE_DESCRIPTION} icon={MODULE.icon} title={MODULE.title} />
       {!businessVerified && activeSection !== "verificacion" && (
-        <p className="settings-activation-notice" role="status">
+        <Notice variant="warning" className="settings-activation-notice">
           {knownActivationStatus === BUSINESS_VERIFICATION_STATES.PENDING
             ? "La solicitud de verificación está en revisión."
             : knownActivationStatus === BUSINESS_VERIFICATION_STATES.REJECTED
@@ -1498,7 +1499,7 @@ function CompanyConfig({
               : knownActivationStatus
                 ? "Empresa no verificada. Envía una solicitud para activar los módulos operativos."
                 : "Los módulos operativos se activan cuando la empresa está verificada."}
-        </p>
+        </Notice>
       )}
       {canEdit && businessCompletionStatus && (
         <BusinessCompletionCard

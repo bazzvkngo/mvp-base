@@ -2,6 +2,7 @@ import React from "react";
 import { Bell, RefreshCw } from "lucide-react";
 import AppIcon from "./ui/AppIcon";
 import Button from "./ui/Button";
+import Notice from "./ui/Notice";
 import InvitationsInbox from "./InvitationsInbox";
 import ResponsiveDialog from "./ui/ResponsiveDialog";
 import { SkeletonCards, SkeletonRegion } from "./ui/Skeleton";
@@ -104,23 +105,26 @@ function NotificationBellView({
               </SkeletonRegion>
             ) : subscription.status === SUBSCRIPTION_STATUS.SLOW ||
               subscription.status === SUBSCRIPTION_STATUS.ERROR ? (
-              <div
-                className={
-                  subscription.status === SUBSCRIPTION_STATUS.ERROR
-                    ? "client-message client-message--error"
-                    : "client-message client-message--warning"
-                }
-                role={subscription.status === SUBSCRIPTION_STATUS.ERROR ? "alert" : "status"}
-              >
-                <span>
-                  {subscription.status === SUBSCRIPTION_STATUS.ERROR
-                    ? "No se pudieron cargar las notificaciones."
-                    : "La conexión está lenta o no hay conexión. Sigue intentando..."}
-                </span>
-                <Button type="button" variant="secondary" icon={RefreshCw} onClick={retry}>
-                  Reintentar
-                </Button>
-              </div>
+              subscription.status === SUBSCRIPTION_STATUS.ERROR ? (
+                <div className="client-message client-message--error" role="alert">
+                  <span>No se pudieron cargar las notificaciones.</span>
+                  <Button type="button" variant="secondary" icon={RefreshCw} onClick={retry}>
+                    Reintentar
+                  </Button>
+                </div>
+              ) : (
+                <Notice
+                  variant="warning"
+                  className="client-message--warning"
+                  actions={
+                    <Button type="button" variant="secondary" icon={RefreshCw} onClick={retry}>
+                      Reintentar
+                    </Button>
+                  }
+                >
+                  La conexión está lenta o no hay conexión. Sigue intentando...
+                </Notice>
+              )
             ) : notifications.length === 0 ? (
               <p className="erp-empty-state">Sin notificaciones</p>
             ) : (

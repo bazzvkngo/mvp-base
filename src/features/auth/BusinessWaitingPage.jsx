@@ -4,6 +4,7 @@ import BrandLogo from "../../components/BrandLogo";
 import Button from "../../components/ui/Button";
 import InvitationsInbox from "../../components/InvitationsInbox";
 import LoadingState from "../../components/ui/LoadingState";
+import Notice from "../../components/ui/Notice";
 import SkipLink from "../../components/ui/SkipLink";
 import useMyInvitations from "../../hooks/useMyInvitations";
 import {
@@ -218,38 +219,48 @@ function BusinessWaitingPage({ usuario, onRefresh, onCreateOwnBusiness }) {
 
             <div className="auth-body">
               {needsVerification && (
-                <div className="auth-wait__notice">
+                // role={null}: el aviso no es una región viva. La única región
+                // de estado del aviso es su feedback, y solo existe con texto.
+                <Notice
+                  variant="warning"
+                  role={null}
+                  className="auth-wait__notice"
+                  actions={
+                    <>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="auth-wait__notice-button"
+                        loading={resending}
+                        disabled={cooldownLeft > 0}
+                        onClick={handleResend}
+                      >
+                        {cooldownLeft > 0
+                          ? `Reenviar en ${cooldownLeft} s`
+                          : "Reenviar correo de verificación"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="auth-wait__notice-button"
+                        loading={checkingVerification}
+                        onClick={handleAlreadyVerified}
+                      >
+                        Ya lo verifiqué
+                      </Button>
+                      {verifyFeedback && (
+                        <p className="auth-wait__notice-feedback" role="status">
+                          {verifyFeedback}
+                        </p>
+                      )}
+                    </>
+                  }
+                >
                   <p className="auth-wait__notice-text">
                     Primero verifica tu correo. Te enviamos un mensaje; sin eso
                     tu empresa no podrá agregarte.
                   </p>
-                  <div className="auth-wait__notice-actions">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="auth-wait__notice-button"
-                      loading={resending}
-                      disabled={cooldownLeft > 0}
-                      onClick={handleResend}
-                    >
-                      {cooldownLeft > 0
-                        ? `Reenviar en ${cooldownLeft} s`
-                        : "Reenviar correo de verificación"}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="auth-wait__notice-button"
-                      loading={checkingVerification}
-                      onClick={handleAlreadyVerified}
-                    >
-                      Ya lo verifiqué
-                    </Button>
-                  </div>
-                  <span className="auth-wait__notice-feedback" aria-live="polite">
-                    {verifyFeedback}
-                  </span>
-                </div>
+                </Notice>
               )}
 
               <div className="auth-body__title">

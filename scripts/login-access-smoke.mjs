@@ -207,8 +207,9 @@ assert.match(waitingSource, /icon=\{LogOut\}\s*onClick=\{logout\}/);
 // SPEC 032: las invitaciones reemplazan al campo de código de acceso.
 assert.doesNotMatch(waitingSource, /<input\b|código de acceso|access-code|Próximamente/i, "ya no hay campo de código");
 assert.match(waitingSource, /<InvitationsInbox\b/, "la espera lista las invitaciones pendientes");
-assert.equal(waitingSource.match(/role="status"/g), null, "role=status solo viene de LoadingState");
-assert.equal(waitingSource.match(/<LoadingState\b/g).length, 1);
+// Antes: ningún role="status" en la página (todo venía de LoadingState). Ahora hay uno solo más: el feedback
+// condicional del aviso de verificación (el aviso va con role={null}, así que no se anidan dos estados).
+assert.equal(waitingSource.match(/role="status"/g).length, 1, "role=status en la página: solo el feedback del aviso; el resto viene de LoadingState");assert.equal(waitingSource.match(/<LoadingState\b/g).length, 1);
 assert.match(waitingSource, /<SkipLink\b/);
 assert.match(waitingSource, /<BrandLogo\b/);
 console.log("OK Espera: correo con Copiar, estado, invitaciones (sin campo de código), salidas y consulta con tope");
@@ -223,7 +224,14 @@ assert.match(
 );
 assert.match(waitingSource, /\{!needsVerification && \(\s*<section className="auth-wait__invitations"/, "con el correo sin verificar el aviso reemplaza a la lista");
 assert.match(waitingSource, /useState\(\s*usuario\?\.emailVerified === true\s*\)/, "las cuentas ya verificadas (Google) parten sin aviso");
-assert.match(waitingSource, /\{needsVerification && \(\s*<div className="auth-wait__notice">/);
+// El aviso es <Notice variant="warning"> con la clase antigua como extra (antes: <div className="auth-wait__notice">).
+assert.match(waitingSource, /\{needsVerification && \(\s*(?:\/\/[^\n]*\s*)*<Notice\s+variant="warning"\s+role=\{null\}\s+className="auth-wait__notice"/);
+assert.match(waitingSource, /import Notice from "\.\.\/\.\.\/components\/ui\/Notice";/);
+// Feedback solo con texto, un único role="status" (el aviso va con role={null}) y sin altura reservada.
+assert.match(waitingSource, /\{verifyFeedback && \(\s*<p className="auth-wait__notice-feedback" role="status">/, "el feedback del aviso solo existe con texto");
+assert.doesNotMatch(waitingSource, /<span className="auth-wait__notice-feedback"/, "ya no hay span de feedback siempre presente");
+assert.equal((waitingSource.match(/auth-wait__notice-feedback/g) || []).length, 1, "un solo feedback en el aviso");
+assert.doesNotMatch(loginCss.match(/\.auth-wait__notice-feedback \{[^}]*\}/)?.[0] || "", /min-height/, "el feedback no reserva altura");
 assert.ok(
   waitingSource.indexOf("auth-wait__notice") < waitingSource.indexOf("auth-body__title"),
   "el aviso va arriba del título"
@@ -246,7 +254,7 @@ assert.ok(
     checkSessionBody.indexOf("await reloadVerification()") < checkSessionBody.indexOf("await onRefresh()"),
   "cada consulta periódica recarga al usuario antes de consultar la sesión"
 );
-assert.equal(waitingSource.match(/role="status"/g), null);
+assert.equal(waitingSource.match(/role="status"/g).length, 1, "solo el feedback condicional del aviso lleva role=status (ver la aserción de más arriba)");
 assert.match(waitingSource, /<span className="auth-wait__copy-feedback"/, "el correo con Copiar queda igual");
 console.log("OK Espera: aviso de correo sin verificar con reenvío (60 s), \"Ya lo verifiqué\" y recarga en cada consulta");
 

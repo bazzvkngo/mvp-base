@@ -477,27 +477,11 @@
 
 /* ---- Aviso de correo sin verificar (BusinessWaitingPage) ---- */
 
-.auth-wait__notice {
-  background: var(--color-warning-50);
-  border: 1px solid var(--color-warning-300);
-  border-radius: var(--radius-md);
-  color: var(--color-warning-800);
-  display: grid;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-}
-
+/* El aspecto del aviso (fondo, borde, padding, icono) es de <Notice>/ui-notice.
+   .auth-wait__notice queda como gancho sin reglas; aquí solo tipografía y botones. */
 .auth-wait__notice-text {
-  font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
-  line-height: var(--line-height-default);
   margin: 0;
-}
-
-.auth-wait__notice-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
 }
 
 .auth-card .auth-wait__notice-button {
@@ -505,10 +489,13 @@
   flex: 1 1 auto;
 }
 
+/* Existe solo cuando hay texto (sin altura reservada). Ocupa su propia fila bajo
+   los botones dentro de .ui-notice__actions. */
 .auth-wait__notice-feedback {
+  flex: 0 0 100%;
   font-size: var(--font-size-xs);
   line-height: var(--line-height-default);
-  min-height: 1.25rem;
+  margin: 0;
 }
 
 /* ---- Navegador integrado: sin botón de Google ---- */

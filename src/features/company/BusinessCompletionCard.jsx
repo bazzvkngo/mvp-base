@@ -2,6 +2,7 @@ import React from "react";
 import { Check, ChevronDown, ChevronUp, Circle } from "lucide-react";
 import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
+import Notice from "../../components/ui/Notice";
 
 // `collapsible` pliega la tarjeta a una fila (título, barra, porcentaje y estado) con un
 // control "Ver pendientes (N)": arranca siempre plegada y no persiste. Sin `collapsible`
@@ -40,9 +41,9 @@ function BusinessCompletionCard({
     </div>
   );
   const errorNotice = error && (
-    <p className="settings-message settings-message--warning" role="status">
+    <Notice variant="warning" className="settings-message--warning">
       No pudimos actualizar el estado de la empresa. Los datos pueden estar desactualizados.
-    </p>
+    </Notice>
   );
   const summary = showSummary && (
     <p className="business-completion-card__summary">

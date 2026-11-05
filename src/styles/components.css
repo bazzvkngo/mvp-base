@@ -368,6 +368,78 @@
   color: var(--color-text-default);
 }
 
+/* Aviso en bloque (<Notice>): cuatro variantes con icono. Fondo -50, borde -200 y
+   texto -700/-800, pares ya medidos por test:contrast en modo oscuro. Borde -200 en
+   todas: --color-danger-300 no tiene valor oscuro. El icono se alinea con la primera
+   línea de texto y el aviso no reserva altura para contenido que no existe. */
+.ui-notice {
+  align-items: flex-start;
+  border: 1px solid;
+  border-radius: var(--radius-md);
+  display: flex;
+  font-size: var(--font-size-sm);
+  gap: var(--space-3);
+  line-height: var(--line-height-default);
+  padding: var(--space-3) var(--space-4);
+}
+
+.ui-notice__icon {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  height: calc(var(--font-size-sm) * var(--line-height-default));
+}
+
+.ui-notice__content {
+  display: grid;
+  flex: 1 1 auto;
+  gap: var(--space-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ui-notice__title {
+  font-weight: var(--font-weight-semibold);
+}
+
+.ui-notice__body > :first-child {
+  margin-top: 0;
+}
+
+.ui-notice__body > :last-child {
+  margin-bottom: 0;
+}
+
+.ui-notice__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.ui-notice--info {
+  background: var(--color-info-50);
+  border-color: var(--color-info-200);
+  color: var(--color-info-700);
+}
+
+.ui-notice--warning {
+  background: var(--color-warning-50);
+  border-color: var(--color-warning-200);
+  color: var(--color-warning-800);
+}
+
+.ui-notice--error {
+  background: var(--color-danger-50);
+  border-color: var(--color-danger-200);
+  color: var(--color-danger-700);
+}
+
+.ui-notice--success {
+  background: var(--color-success-50);
+  border-color: var(--color-success-200);
+  color: var(--color-success-700);
+}
+
 /* Estado vacío: contenedor de <EmptyStateIllustration> + título +
    descripción + acciones. Se combina con .erp-empty-state (fondo, borde
    punteado, padding), que sigue siendo la "caja"; esto solo ordena el

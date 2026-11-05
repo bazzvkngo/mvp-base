@@ -3356,17 +3356,7 @@
   min-width: 0;
 }
 
-.settings-activation-notice {
-  background: var(--color-warning-50);
-  border: 1px solid var(--color-warning-200);
-  border-left: 3px solid var(--color-warning-800);
-  border-radius: var(--radius-sm);
-  color: var(--color-warning-800);
-  font-size: var(--font-size-sm);
-  line-height: 1.4;
-  margin: 0;
-  padding: 7px 10px;
-}
+/* .settings-activation-notice: gancho sin reglas; el aspecto es de <Notice>/ui-notice. */
 
 .settings-subnav {
   background: var(--color-surface-panel);
@@ -4092,10 +4082,10 @@
   color: var(--color-danger-700);
 }
 
+/* Gancho de los avisos migrados a <Notice>: el color, el borde y el padding son de
+   ui-notice. Solo conserva el margen de .settings-message, que es layout. */
 .settings-message--warning {
-  background: var(--color-warning-50);
-  border-color: var(--color-warning-200);
-  color: var(--color-warning-800);
+  margin: var(--space-3) 0 0;
 }
 
 .settings-save-row {
@@ -4431,11 +4421,8 @@
   padding: var(--space-3);
 }
 
-.client-message--warning {
-  background: var(--color-warning-50);
-  border-color: var(--color-warning-200);
-  color: var(--color-warning-800);
-}
+/* .client-message--warning: gancho sin reglas; los avisos amarillos son <Notice> y ya no
+   heredan el azul de .client-message (esa base queda para error e info). */
 
 .client-message--error {
   background: var(--color-danger-50);
