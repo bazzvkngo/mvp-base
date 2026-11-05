@@ -4585,6 +4585,24 @@
   font-size: var(--font-size-xs);
 }
 
+/* Sub-grupos discretos dentro de "Más datos del proveedor": leyenda sobre una línea fina, sin caja. */
+.provider-form-subsection {
+  border: 0;
+  border-top: 1px solid var(--color-border-subtle);
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  min-width: 0;
+  padding: var(--space-2) 0 0;
+}
+
+.provider-form-subsection > legend {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  padding: 0 var(--space-2) 0 0;
+}
+
 .client-confirmation-copy {
   color: var(--color-text-strong);
   font-weight: var(--font-weight-semibold);
