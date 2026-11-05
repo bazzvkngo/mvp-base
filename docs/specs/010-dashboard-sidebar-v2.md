@@ -45,7 +45,7 @@ Incluye hasta cinco productos con stock bajo y el aviso de perfil empresarial in
 
 Se conservan todas las rutas y agrupaciones. En Análisis se ordenan Reportes, Finanzas, Valorización, Referencias y Tareas de referencias. Mi cuenta se presenta en un footer visible y el resto de la navegación utiliza scroll interno. No existen secciones colapsables.
 
-Branding, selector de empresa y “Agregar otro negocio” permanecen estables. El subtítulo de marca pasa a “Gestión empresarial”.
+Branding y selector de empresa permanecen estables. “Agregar otro negocio” pasa al menú del selector de empresa, como último ítem (enmienda del 2026-11-05): en pantallas de 600-700 px de alto ocupaba 52 px fijos de la cabecera y obligaba a hacer scroll para llegar a Compras, Empresa y Empleados. El subtítulo de marca pasa a “Gestión empresarial”.
 
 ## Shell y topbar
 
