@@ -121,3 +121,36 @@ export function formatTimestamp(value, locale = DEFAULT_LOCALE) {
     minute: "2-digit",
   }).format(date);
 }
+
+// Fecha corta y legible para listas de avisos: "ahora", "hace 5 minutos",
+// "hace 2 horas", "ayer", "anteayer", "hace 4 días" y, pasados 7 días, la fecha
+// completa (formatDate). `now` (ms o Date) se inyecta para poder probarla sin
+// depender del reloj. Si no hay fecha válida devuelve "-", como formatTimestamp.
+const RELATIVE_MAX_DAYS = 7;
+
+export function formatRelativeTimestamp(value, now = Date.now(), locale = DEFAULT_LOCALE) {
+  if (!value) return "-";
+
+  const date =
+    typeof value?.toDate === "function"
+      ? value.toDate()
+      : value instanceof Date
+      ? value
+      : new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "-";
+
+  const nowMs = now instanceof Date ? now.getTime() : Number(now);
+  if (!Number.isFinite(nowMs)) return formatDate(date, locale);
+
+  const formatter = new Intl.RelativeTimeFormat(safeLocale(locale), { numeric: "auto" });
+  const minutes = Math.floor((nowMs - date.getTime()) / 60000);
+  // Un reloj atrasado (fecha futura) cuenta como "ahora", no como "dentro de".
+  if (minutes < 1) return formatter.format(0, "second");
+  if (minutes < 60) return formatter.format(-minutes, "minute");
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return formatter.format(-hours, "hour");
+  const days = Math.floor(hours / 24);
+  if (days <= RELATIVE_MAX_DAYS) return formatter.format(-days, "day");
+  return formatDate(date, locale);
+}

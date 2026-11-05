@@ -109,8 +109,14 @@ const vite = await createServer({
 });
 
 try {
-  const { default: NotificationBellView, canViewBusinessNotifications, formatBadgeCount } =
-    await vite.ssrLoadModule("/src/components/NotificationBellView.jsx");
+  const {
+    default: NotificationBellView,
+    canViewBusinessNotifications,
+    formatBadgeCount,
+    notificationIcon,
+    shouldShowInvitations,
+  } = await vite.ssrLoadModule("/src/components/NotificationBellView.jsx");
+  const { formatRelativeTimestamp } = await vite.ssrLoadModule("/src/utils/formatters.js");
   const { SUBSCRIPTION_STATUS } = await vite.ssrLoadModule(
     "/src/domain/subscriptionStatus.mjs"
   );
@@ -209,21 +215,28 @@ try {
       status: "ready",
     },
   });
-  assert.match(errorWithInvitations, /No tienes invitaciones pendientes\./, "error en avisos: la sección de invitaciones no cambia");
+  // Invitaciones terminadas bien, sin ninguna y con el correo verificado: la sección
+  // no se dibuja (ni título ni texto de vacío). El error de avisos no la devuelve.
+  assert.doesNotMatch(errorWithInvitations, /No tienes invitaciones pendientes\./, "sin invitaciones: no se dibuja la sección");
+  assert.doesNotMatch(errorWithInvitations, /notification-invitations-title/, "sin invitaciones: sin título Invitaciones");
+  assert.doesNotMatch(errorWithInvitations, />Avisos</, "sin sección Invitaciones: el título del modal basta, sin h3 Avisos");
   assert.match(errorWithInvitations, /No se pudieron cargar las notificaciones\./);
 
   const empty = html({ notifications: [], subscription: { status: SUBSCRIPTION_STATUS.READY, synced: true }, unreadCount: 0 });
   assertClean(empty, "vacío");
   assertSingleStatusRole(empty, "vacío");
   assert.doesNotMatch(empty, /role="status"|role="alert"/, "vacío real: no es un estado de carga ni de error, sin role propio");
-  assert.match(empty, /class="erp-empty-state">Sin notificaciones</, "vacío: mensaje esperado, sin skeleton colgado");
+  assert.match(empty, /class="notification-empty">Sin notificaciones</, "vacío: texto discreto con clase propia del panel, sin skeleton colgado");
+  assert.doesNotMatch(empty, /erp-empty-state/, "vacío: sin la caja punteada");
+  assert.doesNotMatch(empty, /responsive-dialog__eyebrow|ValoraCloud/, "el panel ya no lleva pretítulo");
   console.log("OK estados: loading/slow/error/vacío con un solo role=status o alert, nunca anidados");
 
   // --- Con datos reales: leídas y no leídas ---
   const withData = html({
     notifications: [
-      { id: "n1", titulo: "Empresa verificada", descripcion: "Los módulos operativos ya están disponibles.", leida: false, creadoEn: new Date("2026-01-05T10:30:00") },
-      { id: "n2", titulo: "Verificación rechazada", descripcion: "Documentación insuficiente.", leida: true, creadoEn: new Date("2026-01-04T09:00:00") },
+      { id: "n1", tipo: "VERIFICACION_APROBADA", titulo: "Empresa verificada", descripcion: "Los módulos operativos ya están disponibles.", leida: false, creadoEn: new Date(Date.now() - 5 * 60 * 1000 - 5000) },
+      { id: "n2", tipo: "VERIFICACION_RECHAZADA", titulo: "Verificación rechazada", descripcion: "Documentación insuficiente.", leida: true, creadoEn: new Date("2026-01-04T09:00:00") },
+      { id: "n3", tipo: "TIPO_FUTURO", titulo: "Aviso de un tipo nuevo", leida: true, creadoEn: new Date("2026-01-03T09:00:00") },
     ],
     subscription: { status: SUBSCRIPTION_STATUS.READY, synced: true },
     unreadCount: 1,
@@ -238,8 +251,111 @@ try {
   );
   assert.match(withData, /Empresa verificada/);
   assert.match(withData, /Verificación rechazada/);
-  assert.doesNotMatch(withData, /erp-empty-state/, "con datos: no muestra el vacío");
-  console.log("OK con datos: leídas/no leídas se distinguen, sin markup roto");
+  assert.doesNotMatch(withData, /erp-empty-state|notification-empty/, "con datos: no muestra el vacío");
+
+  // Icono por tipo: ShieldCheck / ShieldAlert / Bell de respaldo; siempre decorativo.
+  const iconOf = (id) => {
+    const item = withData.split("<li").find((chunk) => chunk.includes(id)) || "";
+    return (item.match(/notification-list__icon"><svg[^>]*class="([^"]*)"[^>]*>/) || [])[0] || "";
+  };
+  assert.match(iconOf("Empresa verificada"), /lucide-shield-check/, "aprobada: ShieldCheck");
+  assert.match(iconOf("Verificación rechazada"), /lucide-shield-alert/, "rechazada: ShieldAlert");
+  assert.match(iconOf("Aviso de un tipo nuevo"), /lucide-bell/, "tipo desconocido: Bell de respaldo");
+  assert.equal((withData.match(/notification-list__icon"><svg[^>]*aria-hidden="true"/g) || []).length, 3, "los tres iconos son decorativos (aria-hidden)");
+  assert.equal(notificationIcon(undefined).displayName, notificationIcon("OTRO").displayName, "sin tipo: mismo respaldo");
+
+  // No leída: punto decorativo + texto para lectores de pantalla, solo en la no leída.
+  assert.equal((withData.match(/notification-list__dot" aria-hidden="true"/g) || []).length, 1, "un solo punto de no leído");
+  assert.equal((withData.match(/class="sr-only">No leída</g) || []).length, 1, "el estado no leído también va en texto");
+
+  // Fecha: relativa y con la fecha completa en title; las viejas caen a fecha.
+  assert.match(withData, /<small title="[^"]+">hace 5 minutos<\/small>/, "fecha relativa con title de fecha completa");
+  assert.match(withData, /<small title="[^"]+">\d{2}[-/]\d{2}[-/]\d{4}<\/small>/, "pasados 7 días: fecha completa");
+  console.log("OK con datos: leídas/no leídas, icono por tipo, punto y fecha relativa");
+
+  // --- Sección Invitaciones: solo si hay algo que mostrar ---
+  const inv = (extra) => ({
+    busyId: "", feedback: { text: "", error: false }, invitations: [], onAccept: () => {},
+    onClearFeedback: () => {}, onReject: () => {}, onRetry: () => {}, requiresVerification: false,
+    status: "ready", ...extra,
+  });
+  const ready = { status: SUBSCRIPTION_STATUS.READY, synced: true };
+  assert.equal(shouldShowInvitations(null), false);
+  assert.equal(shouldShowInvitations(inv({})), false, "terminó bien, sin invitaciones y verificado: oculta");
+  assert.equal(shouldShowInvitations(inv({ status: "loading" })), true, "cargando: visible");
+  assert.equal(shouldShowInvitations(inv({ status: "error" })), true, "error: visible");
+  assert.equal(shouldShowInvitations(inv({ requiresVerification: true })), true, "correo sin verificar: visible");
+  assert.equal(shouldShowInvitations(inv({ invitations: [{ id: "x" }] })), true, "con invitaciones: visible");
+
+  const hiddenSection = html({ notifications: [], subscription: ready, unreadCount: 0, invitations: inv({}) });
+  assert.doesNotMatch(hiddenSection, /Invitaciones|notification-invitations-title/, "oculta: ni título ni texto");
+  assert.match(hiddenSection, /Sin notificaciones/);
+  assert.equal((hiddenSection.match(/Sin notificaciones/g) || []).length, 1, "OWNER: el vacío se dice una sola vez");
+
+  // ADMIN/MEMBER (sin permiso de avisos), sin invitaciones, correo verificado y sin cargar:
+  // ninguna sección se dibuja, así que el cuerpo muestra el texto discreto en vez de quedar vacío.
+  const adminEmpty = html({ notifications: [], showNotifications: false, subscription: ready, unreadCount: 0, invitations: inv({}) });
+  assertClean(adminEmpty, "ADMIN sin nada que mostrar");
+  assertSingleStatusRole(adminEmpty, "ADMIN sin nada que mostrar");
+  assert.match(adminEmpty, /class="notification-empty">Sin notificaciones</, "ADMIN sin invitaciones: texto discreto, no cuerpo vacío");
+  assert.equal((adminEmpty.match(/Sin notificaciones/g) || []).length, 1);
+  assert.doesNotMatch(adminEmpty, /erp-empty-state|notification-section|notification-invitations-title/, "sin caja punteada ni secciones");
+  // Con algo que mostrar, el texto no aparece: cargando, error, correo sin verificar o invitaciones.
+  for (const [name, extra] of [
+    ["cargando", { status: "loading" }],
+    ["error", { status: "error" }],
+    ["correo sin verificar", { requiresVerification: true }],
+    ["con invitaciones", { invitations: [{ id: "i1", negocioNombre: "Bagner", rolEtiqueta: "Técnico" }] }],
+  ]) {
+    const markup = html({ notifications: [], showNotifications: false, subscription: ready, unreadCount: 0, invitations: inv(extra) });
+    assert.doesNotMatch(markup, /Sin notificaciones/, `ADMIN ${name}: la sección de invitaciones ocupa el cuerpo, sin el texto de vacío`);
+  }
+
+  const verify = html({ notifications: [], subscription: ready, unreadCount: 0, invitations: inv({ requiresVerification: true }), verification: { cooldownLeft: 0, feedback: "", onResend: () => {}, resending: false } });
+  assertClean(verify, "verificar correo");
+  assertSingleStatusRole(verify, "verificar correo");
+  assert.match(verify, /ui-notice ui-notice--info notification-notice/, "correo sin verificar: Notice informativo compacto");
+  assert.match(verify, /Verifica tu correo para ver y responder tus invitaciones\./);
+  assert.match(verify, />Reenviar correo</, "con acción de reenviar");
+  assert.doesNotMatch(verify, /erp-empty-state/, "sin caja punteada");
+  assert.doesNotMatch(verify, /ui-notice[^>]*role=/, "el Notice estático no es región viva");
+  assert.doesNotMatch(verify, /ui-button--primary/, "sin botón principal en el aviso");
+  assert.doesNotMatch(verify, />Aceptar</);
+
+  const cooling = html({ notifications: [], subscription: ready, unreadCount: 0, invitations: inv({ requiresVerification: true }), verification: { cooldownLeft: 45, feedback: "Te enviamos el correo de verificación.", onResend: () => {}, resending: false } });
+  assert.match(cooling, />Reenviar en 45 s</, "cuenta atrás del reenvío");
+  assert.match(cooling, /<button[^>]*disabled[^>]*>[^<]*(<[^>]*>)*[^<]*Reenviar en 45 s/, "el reenvío se bloquea durante la espera");
+  assert.match(cooling, /role="status"[^>]*>Te enviamos el correo de verificación\./, "el feedback es el único role=status");
+  assertSingleStatusRole(cooling, "verificar con feedback");
+
+  const loadingInv = html({ notifications: [], subscription: ready, unreadCount: 0, invitations: inv({ status: "loading" }) });
+  assert.match(loadingInv, /Invitaciones/);
+  assert.match(loadingInv, /ui-skeleton-cards/, "cargando: la sección sigue visible con su skeleton");
+  const errorInv = html({ notifications: [], subscription: ready, unreadCount: 0, invitations: inv({ status: "error" }) });
+  assert.match(errorInv, /No se pudieron cargar las invitaciones\./, "error: la sección sigue visible");
+  const bothSections = html({ notifications: [], subscription: ready, unreadCount: 0, invitations: inv({ status: "error" }) });
+  assert.match(bothSections, />Avisos</, "con ambas secciones, cada una conserva su título");
+
+  // Fecha relativa (pura): se inyecta now.
+  const now = new Date("2026-06-15T12:00:00Z").getTime();
+  const ago = (ms) => new Date(now - ms);
+  assert.equal(formatRelativeTimestamp(ago(20 * 1000), now), "ahora");
+  assert.equal(formatRelativeTimestamp(new Date(now + 90 * 1000), now), "ahora", "fecha futura por reloj atrasado: ahora");
+  assert.equal(formatRelativeTimestamp(ago(5 * 60 * 1000), now), "hace 5 minutos");
+  assert.equal(formatRelativeTimestamp(ago(2 * 60 * 60 * 1000), now), "hace 2 horas");
+  assert.equal(formatRelativeTimestamp(ago(30 * 60 * 60 * 1000), now), "ayer");
+  assert.equal(formatRelativeTimestamp(ago(3 * 24 * 60 * 60 * 1000), now), "hace 3 días");
+  assert.match(formatRelativeTimestamp(ago(30 * 24 * 60 * 60 * 1000), now), /^\d{2}[-/]\d{2}[-/]\d{4}$/, "pasados 7 días: fecha completa");
+  assert.equal(formatRelativeTimestamp(null, now), "-");
+  assert.equal(formatRelativeTimestamp("no es fecha", now), "-");
+  assert.equal(formatRelativeTimestamp({ toDate: () => ago(5 * 60 * 1000) }, now), "hace 5 minutos", "acepta Timestamp de Firestore");
+  console.log("OK invitaciones condicionales, aviso de verificación y fecha relativa");
+
+  // Fuentes del panel: sin escapes unicode ni colores literales (solo tokens).
+  const viewSource = await readFile(new URL("../src/components/NotificationBellView.jsx", import.meta.url), "utf8");
+  assert.doesNotMatch(viewSource, /\\u[0-9a-fA-F]{4}/, "NotificationBellView: sin escapes unicode");
+  assert.doesNotMatch(viewSource, /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/, "NotificationBellView: sin colores literales");
+  assert.match(bellSource, /sendVerificationEmail\(\)/, "NotificationBell: el reenvío usa sendVerificationEmail");
 } finally {
   await vite.close();
 }

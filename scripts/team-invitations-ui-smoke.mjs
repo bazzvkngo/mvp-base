@@ -147,9 +147,29 @@ try {
   assert.match(asAdmin, />Rechazar</);
   assert.match(asAdmin, /aria-label="Notificaciones, 1 sin leer"/, "las invitaciones cuentan en el badge");
   assert.doesNotMatch(asAdmin, /Sin notificaciones/, "sin permiso para avisos, no se dibuja esa sección");
+  // Sin invitaciones, verificado y terminó de cargar: la sección no se dibuja en el centro
+  // (el texto "No tienes invitaciones pendientes." sigue en la lista de espera y onboarding).
   const asOwner = bell({invitations: {...base, invitations: []}});
-  assert.match(asOwner, /No tienes invitaciones pendientes\./);
-  assert.match(asOwner, /Sin notificaciones/, "invitaciones y avisos tienen vacío propio");
+  assert.doesNotMatch(asOwner, /No tienes invitaciones pendientes\./, "el centro no dibuja la sección vacía");
+  assert.doesNotMatch(asOwner, /notification-invitations-title/);
+  assert.match(asOwner, /Sin notificaciones/, "los avisos conservan su vacío propio");
+  // ADMIN sin invitaciones, correo verificado y no cargando: sin avisos ni invitaciones que dibujar,
+  // el cuerpo muestra el texto discreto (no queda vacío ni vuelve el texto de invitaciones).
+  const adminEmpty = bell({showNotifications: false, invitations: {...base, invitations: []}});
+  assert.match(adminEmpty, /class="notification-empty">Sin notificaciones</, "ADMIN sin invitaciones: texto discreto");
+  assert.doesNotMatch(adminEmpty, /No tienes invitaciones pendientes\.|notification-section|erp-empty-state/);
+  assert.doesNotMatch(bell({showNotifications: false, invitations: {...base, status: "loading"}}), /Sin notificaciones/, "ADMIN cargando: se ve el skeleton de invitaciones, no el vacío");
+  assert.doesNotMatch(bell({showNotifications: false, invitations: {...base, invitations: [mine]}}), /Sin notificaciones/, "ADMIN con invitaciones: se ven las invitaciones");
+  const unverified = bell({invitations: {...base, requiresVerification: true}, verification: {cooldownLeft: 0, feedback: "", onResend() {}, resending: false}});
+  assert.match(unverified, /ui-notice--info/, "correo sin verificar: aviso informativo");
+  assert.match(unverified, /Verifica tu correo para ver y responder tus invitaciones\./);
+  assert.match(unverified, />Reenviar correo</);
+  assert.doesNotMatch(unverified, /erp-empty-state[^>]*>Verifica/, "ya no es una caja punteada");
+  assert.doesNotMatch(unverified, />Aceptar</);
+  const loadingSection = bell({invitations: {...base, status: "loading"}});
+  assert.match(loadingSection, /Invitaciones/, "cargando: la sección sigue visible");
+  const failedSection = bell({invitations: {...base, status: "error"}});
+  assert.match(failedSection, /No se pudieron cargar las invitaciones\./, "error: la sección sigue visible");
   const bothLoading = bell({subscription: {status: SUBSCRIPTION_STATUS.ERROR, synced: false}, invitations: {...base, status: "loading"}});
   assert.match(bothLoading, /ui-skeleton-cards/, "la carga de invitaciones es independiente del error de avisos");
   assert.match(bothLoading, /No se pudieron cargar las notificaciones\./);
