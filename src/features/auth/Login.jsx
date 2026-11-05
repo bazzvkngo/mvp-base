@@ -16,6 +16,13 @@ import {
 import { detectInAppBrowser } from "../../domain/inAppBrowser.mjs";
 import { LEGAL_DOCUMENTS } from "../../domain/legalDocuments.mjs";
 import {
+  PASSWORD_POLICY_MESSAGE,
+  PASSWORD_STRENGTH_LABELS,
+  describePasswordHelp,
+  evaluatePassword,
+  getPasswordStrength,
+} from "../../domain/passwordPolicy.mjs";
+import {
   readAccessHint,
   setAccessHint,
   useAccessHint,
@@ -55,7 +62,7 @@ function getAuthErrorMessage(code) {
     case "auth/invalid-email":
       return "Ingresa un correo electrónico válido.";
     case "auth/weak-password":
-      return "La contraseña debe tener al menos 6 caracteres.";
+      return PASSWORD_POLICY_MESSAGE;
     case "auth/invalid-credential":
       return "Credenciales inválidas.";
     case "auth/too-many-requests":
@@ -179,12 +186,12 @@ function Login() {
       return;
     }
 
-    if (password.length < 6) {
-      setError("La contraseña debe tener al menos 6 caracteres.");
-      return;
-    }
-
     if (!isLoginView) {
+      if (!evaluatePassword(password).ok) {
+        setError(PASSWORD_POLICY_MESSAGE);
+        return;
+      }
+
       if (!confirmPassword) {
         setError("Repite la contraseña.");
         return;
@@ -303,6 +310,7 @@ function Login() {
     setSuccess("");
   };
 
+  const passwordStrength = getPasswordStrength(password);
   const showPasswordField = !isResetView;
   const showConfirmPasswordField = !isResetView && !isLoginView;
   const primaryDisabled = isResetView ? isResetting : isSubmitting;
@@ -449,7 +457,6 @@ function Login() {
                     .filter(Boolean)
                     .join(" ") || undefined
                 }
-                minLength="6"
                 required
               />
               <button
@@ -469,9 +476,28 @@ function Login() {
               </button>
             </div>
             {!isLoginView && (
-              <p id="auth-password-hint" className="auth-field__hint">
-                Mínimo 6 caracteres.
-              </p>
+              <div
+                id="auth-password-hint"
+                className={
+                  password
+                    ? `ui-password-meter ui-password-meter--${passwordStrength}`
+                    : "ui-password-meter"
+                }
+              >
+                {password && (
+                  <div className="ui-password-meter__row">
+                    <span className="ui-password-meter__bar" aria-hidden="true">
+                      <span className="ui-password-meter__fill" />
+                    </span>
+                    <span className="ui-password-meter__label">
+                      {PASSWORD_STRENGTH_LABELS[passwordStrength]}
+                    </span>
+                  </div>
+                )}
+                <p className="ui-password-meter__hint" aria-live="polite">
+                  {describePasswordHelp(password)}
+                </p>
+              </div>
             )}
           </div>
         )}
@@ -495,7 +521,6 @@ function Login() {
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 aria-invalid={Boolean(error)}
                 aria-describedby={feedbackId}
-                minLength="6"
                 required
               />
               <button

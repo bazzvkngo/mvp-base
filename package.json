@@ -97,6 +97,7 @@
     "test:legal-documents": "node scripts/legal-documents-smoke.mjs",
     "test:app-footer": "node scripts/app-footer-smoke.mjs",
     "test:login-access": "node scripts/login-access-smoke.mjs",
+    "test:password-policy": "node scripts/password-policy-smoke.mjs",
     "test:business-members-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/business-members-integrated-local.mjs\"",
     "test:team-invitations-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/team-invitations-integrated.mjs\"",
     "test:finance": "node scripts/financial-model-smoke.mjs",

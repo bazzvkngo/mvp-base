@@ -341,12 +341,12 @@
 
 .auth-card .auth-tabpanel {
   display: block;
-  padding-top: var(--space-6);
+  padding-top: var(--space-3);
 }
 
 .auth-card .auth-body {
   display: grid;
-  gap: var(--space-4);
+  gap: var(--space-3);
 }
 
 .auth-card .auth-body > .auth-actions,
@@ -355,7 +355,7 @@
 }
 
 .auth-card .auth-body__title .auth-card__title {
-  margin: 0 0 var(--space-2);
+  margin: 0 0 var(--space-1);
 }
 
 /* El subtítulo existe en las dos pestañas aunque vaya vacío: su altura mínima
@@ -545,9 +545,10 @@
 
 /* ---- Ingreso con Google apagado (GOOGLE_LOGIN_ENABLED) ---- */
 
+/* La nota va pegada bajo el botón, en una línea y sin separación extra. */
 .auth-google-group {
   display: grid;
-  gap: var(--space-2);
+  gap: 0;
 }
 
 .auth-google--disabled .auth-google__logo {
@@ -561,4 +562,30 @@
   line-height: var(--line-height-default);
   margin: 0;
   text-align: center;
+}
+
+/* ---- Ventanas bajas en dos columnas: espaciado más compacto ----
+   Solo se reducen separaciones; los tamaños de letra, campos y botones no
+   cambian. Los selectores .auth-screen ... pesan más que los de components.css,
+   que se empaqueta después. */
+@media (min-width: 901px) and (max-height: 800px) {
+  .auth-screen .auth-panel {
+    padding-block: var(--space-3);
+  }
+
+  .auth-screen .auth-card__header {
+    margin-bottom: var(--space-3);
+  }
+
+  .auth-card .auth-tabpanel {
+    padding-top: var(--space-2);
+  }
+
+  .auth-card .auth-body {
+    gap: var(--space-2);
+  }
+
+  .auth-card .auth-form {
+    gap: var(--space-2);
+  }
 }
