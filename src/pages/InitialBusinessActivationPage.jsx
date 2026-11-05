@@ -61,13 +61,7 @@ function InitialBusinessActivationPage({
   title="Estado inicial de tu empresa"
 />
 
-            <div
-              className="activation-actions"
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-              }}
-            >
+            <div className="activation-actions">
               <Button
                 type="button"
                 onClick={() => finish("/empresa?seccion=verificacion")}
