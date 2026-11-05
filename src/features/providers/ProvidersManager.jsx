@@ -6,6 +6,7 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  Trash2,
   Truck,
 } from "lucide-react";
 import ContactLinks from "../../components/contacts/ContactLinks";
@@ -19,8 +20,11 @@ import {SkeletonCards, SkeletonRegion, SkeletonTable} from "../../components/ui/
 import StatusBadge from "../../components/ui/StatusBadge";
 import {getRouteMeta} from "../../app/navigation";
 import {
+  PROVIDER_DELETE_CONFIRMATION_WORD,
+  canDeleteProviders,
   canManageProviders,
   canReadProviders,
+  isProviderDeleteConfirmed,
   matchesProviderSearch,
 } from "../../domain/providerModel.mjs";
 import {getFiscalIdentifierLabel} from "../../domain/fiscalIdentifier.mjs";
@@ -28,6 +32,7 @@ import {
   actualizarProveedor,
   archivarProveedor,
   crearProveedor,
+  eliminarProveedor,
   getProviderErrorMessage,
   listarProveedores,
   reactivarProveedor,
@@ -69,7 +74,7 @@ function paymentSummary(provider) {
     : label;
 }
 
-function ProviderActions({canManage, onArchive, onEdit, onReactivate, provider}) {
+function ProviderActions({canDelete, canManage, onArchive, onDelete, onEdit, onReactivate, provider}) {
   if (!canManage) return <span className="client-readonly-label">Solo lectura</span>;
   return (
     <div className="client-row-actions">
@@ -87,6 +92,11 @@ function ProviderActions({canManage, onArchive, onEdit, onReactivate, provider})
           <AppIcon icon={RotateCcw} size={17} />
         </button>
       )}
+      {canDelete && (
+        <button type="button" onClick={() => onDelete(provider)} aria-label={`Eliminar permanentemente a ${provider.razonSocial}`} title="Eliminar permanentemente">
+          <AppIcon icon={Trash2} size={17} />
+        </button>
+      )}
     </div>
   );
 }
@@ -102,9 +112,14 @@ function ProvidersManager({businessId, countryCode = "CL", role}) {
   const [formState, setFormState] = useState({open: false, provider: null});
   const [confirmation, setConfirmation] = useState(null);
   const [changingStatus, setChangingStatus] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deleteError, setDeleteError] = useState("");
+  const [deleting, setDeleting] = useState(false);
   const loadSequenceRef = useRef(0);
   const canRead = canReadProviders(role);
   const canManage = canManageProviders(role);
+  const canDelete = canDeleteProviders(role);
   const fiscalLabel = getFiscalIdentifierLabel(countryCode);
 
   const loadProviders = useCallback(async () => {
@@ -193,6 +208,39 @@ function ProvidersManager({businessId, countryCode = "CL", role}) {
       setConfirmation(null);
     } finally {
       setChangingStatus(false);
+    }
+  };
+
+  const openDelete = (provider) => {
+    setFeedback("");
+    setFeedbackIsError(false);
+    setDeleteConfirmation("");
+    setDeleteError("");
+    setDeleteTarget(provider);
+  };
+
+  const closeDelete = () => {
+    if (deleting) return;
+    setDeleteTarget(null);
+    setDeleteConfirmation("");
+    setDeleteError("");
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget || deleting || !isProviderDeleteConfirmed(deleteConfirmation)) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await eliminarProveedor(businessId, deleteTarget.proveedorId, deleteConfirmation);
+      setFeedback(`Proveedor eliminado permanentemente. Su ${fiscalLabel} quedó libre.`);
+      setFeedbackIsError(false);
+      setDeleteTarget(null);
+      setDeleteConfirmation("");
+      await loadProviders();
+    } catch (error) {
+      setDeleteError(getProviderErrorMessage(error));
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -311,7 +359,7 @@ function ProvidersManager({businessId, countryCode = "CL", role}) {
                       <td>{paymentSummary(provider)}</td>
                       <td><StatusBadge variant={provider.estado === "activo" ? "success" : "neutral"}>{provider.estado === "activo" ? "Activo" : "Archivado"}</StatusBadge></td>
                       <td className="clients-actions-column">
-                        <ProviderActions canManage={canManage} provider={provider} onArchive={(item) => setConfirmation({provider: item, action: "archive"})} onEdit={openEdit} onReactivate={(item) => setConfirmation({provider: item, action: "reactivate"})} />
+                        <ProviderActions canDelete={canDelete} canManage={canManage} provider={provider} onArchive={(item) => setConfirmation({provider: item, action: "archive"})} onDelete={openDelete} onEdit={openEdit} onReactivate={(item) => setConfirmation({provider: item, action: "reactivate"})} />
                       </td>
                     </tr>
                   ))}
@@ -331,7 +379,7 @@ function ProvidersManager({businessId, countryCode = "CL", role}) {
                     <div><dt>Ubicación</dt><dd>{locationSummary(provider)}</dd></div>
                     <div><dt>Condiciones</dt><dd>{paymentSummary(provider)}</dd></div>
                   </dl>
-                  <ProviderActions canManage={canManage} provider={provider} onArchive={(item) => setConfirmation({provider: item, action: "archive"})} onEdit={openEdit} onReactivate={(item) => setConfirmation({provider: item, action: "reactivate"})} />
+                  <ProviderActions canDelete={canDelete} canManage={canManage} provider={provider} onArchive={(item) => setConfirmation({provider: item, action: "archive"})} onDelete={openDelete} onEdit={openEdit} onReactivate={(item) => setConfirmation({provider: item, action: "reactivate"})} />
                 </article>
               ))}
             </div>
@@ -359,6 +407,57 @@ function ProvidersManager({businessId, countryCode = "CL", role}) {
         title={confirmationIsArchive ? "Archivar proveedor" : "Reactivar proveedor"}
       >
         <p className="client-confirmation-copy">{confirmation?.provider.razonSocial}</p>
+      </ResponsiveDialog>
+
+      <ResponsiveDialog
+        description={deleteTarget ? `Vas a eliminar a ${deleteTarget.razonSocial}.` : ""}
+        eyebrow="Proveedores"
+        footer={(
+          <>
+            <Button type="button" variant="secondary" disabled={deleting} onClick={closeDelete}>Cancelar</Button>
+            <Button type="button" variant="danger" loading={deleting} disabled={!isProviderDeleteConfirmed(deleteConfirmation)} onClick={confirmDelete}>
+              {deleting ? "Eliminando..." : "Eliminar permanentemente"}
+            </Button>
+          </>
+        )}
+        onClose={closeDelete}
+        open={Boolean(deleteTarget)}
+        size="small"
+        title="Eliminar proveedor"
+      >
+        <div className="provider-delete">
+          <p className="provider-delete__warning">Esta acción es permanente y no se puede deshacer. Se perderán:</p>
+          <ul className="provider-delete__list">
+            <li>el registro del proveedor,</li>
+            <li>{`su ${fiscalLabel}, que quedará libre para registrarse de nuevo.`}</li>
+          </ul>
+          <p className="provider-delete__note">
+            Solo se puede eliminar un proveedor sin movimientos (órdenes de compra, compras, recepciones ni inventario).
+            Si los tiene, archívalo en su lugar.
+          </p>
+          <label className="erp-field provider-delete__field">
+            <span>Para confirmar, escribe <strong>{PROVIDER_DELETE_CONFIRMATION_WORD}</strong></span>
+            <input
+              className="erp-control"
+              type="text"
+              autoComplete="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              value={deleteConfirmation}
+              disabled={deleting}
+              onChange={(event) => setDeleteConfirmation(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  confirmDelete();
+                }
+              }}
+            />
+          </label>
+          {deleteError && (
+            <div className="client-message client-message--error" role="alert">{deleteError}</div>
+          )}
+        </div>
       </ResponsiveDialog>
     </section>
   );

@@ -49,6 +49,7 @@ const {
   crearProveedorHandler,
   reactivarProveedorHandler,
 } = require("./providerPersistence");
+const {eliminarProveedorHandler} = require("./providerDeletion");
 const {
   actualizarOrdenCompraBorradorHandler,
   cancelarOrdenCompraHandler,
@@ -2488,6 +2489,17 @@ exports.reactivarProveedor = onCall(
   },
   async (request) =>
     reactivarProveedorHandler(request, providerPersistenceDependencies)
+);
+
+exports.eliminarProveedor = onCall(
+  {
+    maxInstances: 20,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    eliminarProveedorHandler(request, providerPersistenceDependencies)
 );
 
 async function getCompanyProfileForQuote(businessRef, quote) {

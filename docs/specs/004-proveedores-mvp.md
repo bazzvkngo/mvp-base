@@ -13,6 +13,51 @@ conservado por compatibilidad con Rules y reservas. Los documentos modelo 1 con
 `rut`/`rutNormalizado` continúan operables sin migración. Las secciones RUT
 siguientes aplican a CL/legacy; para documentos nuevos prevalece esta enmienda.
 
+## Enmienda 2026-11-05: eliminación permanente y roles vigentes
+
+Motivo: poder quitar proveedores creados por error o duplicados que
+nunca se usaron, sin dejar basura en el listado ni un RUT reservado para
+siempre. Archivar sigue disponible y es la vía para proveedores con historia.
+Esta enmienda reemplaza únicamente los puntos que se indican; el resto de la
+SPEC y sus invariantes siguen vigentes (AGENTS.md y SPEC 016: no se eliminan
+físicamente registros referenciados ni se reescribe historia).
+
+- **Reemplaza** «No existe eliminación física» (sección Modelo Firestore) y el
+  criterio de aceptación «No existen eliminaciones físicas…». Ahora existe una
+  única vía de eliminación física, la Function `eliminarProveedor`, y solo para
+  un proveedor sin movimientos.
+- **Roles (corrige la redacción original, que estaba desactualizada)**: crean,
+  editan, archivan y reactivan `OWNER`, `ADMIN` y `COMPRAS`
+  (`PURCHASE_WRITE_ROLES`). Eliminan permanentemente solo `OWNER` y `ADMIN`
+  (`BUSINESS_MANAGEMENT_ROLES`). El rol se valida en el servidor; la interfaz
+  solo oculta el botón.
+- **`eliminarProveedor`**: exige negocio verificado, membresía activa de
+  `OWNER`/`ADMIN` y que el usuario escriba la palabra «permanente» (validada
+  también en el backend). Una sola transacción lee el proveedor, su reserva
+  fiscal y las dependencias, y si no hay ninguna borra el documento, libera la
+  reserva en `providerRutKeys` y retira sus solicitudes en
+  `providerCreateRequests`. El RUT queda libre para volver a registrarse.
+- **Dependencias que bloquean** (se buscan por `proveedorId` y por el id dentro
+  de `proveedorSnapshot`, porque los documentos antiguos pueden traer solo uno):
+  `ordenesCompra`, `compras`, `recepciones` y `adquisicionesInventario`; y en
+  `inventario`, `ultimoProveedor.proveedorId`. Cualquier estado cuenta (también
+  borradores). Si hay alguna, la Function responde `failed-precondition` con
+  la cantidad por tipo («…tiene movimientos: 2 órdenes de compra, 1 compra.
+  Archívalo para dejar de usarlo.») y no borra nada. Los textos libres
+  `proveedorNombre`/`proveedorRut` del inventario no son referencias y no
+  bloquean.
+- **Carrera**: las Functions que crean órdenes de compra y compras leen el
+  documento del proveedor dentro de su propia transacción, de modo que
+  Firestore serializa esas operaciones con el borrado: o gana la creación y el
+  borrado se rechaza, o gana el borrado y la creación falla con «No se
+  encontró el proveedor». No puede quedar un documento apuntando a un
+  proveedor inexistente.
+- **Interfaz**: botón «Eliminar permanentemente» en proveedores activos y
+  archivados, visible solo para `OWNER` y `ADMIN`, con diálogo que pide escribir
+  «permanente». El filtro Estado de la lista parte en «Activos».
+- No cambian las Rules (`delete` directo sigue denegado) ni los índices
+  (consultas de igualdad sobre un campo).
+
 ## Objetivo
 
 Administrar proveedores registrados por empresa con aislamiento multiempresa, RUT chileno único dentro de cada negocio, persistencia autoritativa y archivado lógico. El módulo deja definido el contrato que podrán consumir posteriormente Órdenes de Compra, Compras e Inventario, sin implementar todavía esos flujos.
@@ -53,7 +98,7 @@ Campos autoritativos:
 - `creadoPorUid` y `actualizadoPorUid`;
 - `creadoEn`, `actualizadoEn` y `archivadoEn`.
 
-Los estados admitidos son `activo` y `archivado`. No existe eliminación física.
+Los estados admitidos son `activo` y `archivado`. La eliminación física solo existe como `eliminarProveedor` para proveedores sin movimientos (enmienda 2026-11-05).
 
 ## RUT único y reservas
 
@@ -77,19 +122,22 @@ Una misma solicitud y payload devuelven el proveedor ya creado. Solicitudes conc
 
 ## Roles y autoridad
 
-Los miembros activos con rol `OWNER`, `ADMIN` o `MEMBER` pueden leer proveedores del negocio autorizado. Sólo `OWNER` y `ADMIN` pueden:
+Los miembros activos con rol `OWNER`, `ADMIN`, `COMPRAS` o `MEMBER` pueden leer proveedores del negocio autorizado. Sólo `OWNER`, `ADMIN` y `COMPRAS` pueden (enmienda 2026-11-05):
 
 - crear;
 - editar;
 - archivar;
 - reactivar.
 
+Sólo `OWNER` y `ADMIN` pueden además eliminar permanentemente un proveedor sin movimientos.
+
 Las escrituras se realizan exclusivamente mediante las Functions:
 
 - `crearProveedor`;
 - `actualizarProveedor`;
 - `archivarProveedor`;
-- `reactivarProveedor`.
+- `reactivarProveedor`;
+- `eliminarProveedor`.
 
 Cada operación valida autenticación, `businessId`, membresía activa, negocio activo y rol. `negocioActivoId` sólo selecciona contexto de navegación y nunca concede autoridad.
 
@@ -119,9 +167,10 @@ La ruta `/proveedores`, ubicada bajo Comercial junto a Clientes, permite:
 
 - listar proveedores;
 - buscar por razón social, nombre de fantasía o RUT;
-- filtrar activos y archivados;
+- filtrar activos y archivados (parte en Activos);
 - crear y editar;
-- archivar y reactivar.
+- archivar y reactivar;
+- eliminar permanentemente un proveedor sin movimientos (`OWNER` y `ADMIN`).
 
 En escritorio se muestran las columnas Proveedor, Contacto, Ubicación, Condiciones, Estado y Acciones. En móvil se usan tarjetas sin tabla ni scroll horizontal. `MEMBER` ve un aviso de solo lectura y no recibe controles de escritura.
 
@@ -172,13 +221,22 @@ Este MVP no implementa Órdenes de Compra, compras, pagos, facturas, cuentas por
 - bloqueo de escritura directa;
 - inaccesibilidad de reservas y solicitudes internas.
 
+`provider-delete-integrated-local.mjs` (emulador) cubre `eliminarProveedor`:
+
+- borrado de un proveedor activo y de uno archivado sin movimientos;
+- liberación de la reserva y de la solicitud de creación, y reutilización del RUT;
+- rechazo de `COMPRAS`, `MEMBER`, usuarios de otro negocio, palabra de confirmación ausente o incorrecta, id inválido, proveedor inexistente y SDK cliente;
+- rechazo con cada dependencia (id directo e id en el snapshot), con su cantidad y sin borrar nada;
+- aislamiento entre negocios;
+- carrera entre crear una orden de compra y eliminar el proveedor, sin órdenes huérfanas.
+
 ## Criterios de aceptación
 
 - `/proveedores` funciona para los tres roles de lectura.
-- `OWNER` y `ADMIN` administran; `MEMBER` sólo consulta.
+- `OWNER`, `ADMIN` y `COMPRAS` administran; `MEMBER` sólo consulta. Sólo `OWNER` y `ADMIN` eliminan.
 - RUT se valida y reserva por negocio mediante Functions.
 - Un proveedor archivado conserva su RUT y puede reactivarse.
-- No existen eliminaciones físicas ni accesos directos a colecciones internas.
+- La única eliminación física es `eliminarProveedor` (sin movimientos, `OWNER`/`ADMIN`, con confirmación); no hay accesos directos a colecciones internas ni escrituras directas desde el cliente.
 - La interfaz presenta estados de carga, error, vacío y filtros.
 - La lista usa tabla en escritorio y tarjetas en móvil.
 - No se implementan módulos de compras u órdenes de compra.

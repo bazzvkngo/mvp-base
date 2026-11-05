@@ -3,7 +3,10 @@ import fs from "node:fs";
 import {
   adaptStoredProvider,
   buildProviderMutationPayload,
+  PROVIDER_DELETE_CONFIRMATION_WORD,
+  canDeleteProviders,
   canManageProviders,
+  isProviderDeleteConfirmed,
   canReadProviders,
   formatProviderRut,
   getProviderFieldErrors,
@@ -151,6 +154,17 @@ assert.equal(canManageProviders("COMPRAS"), true);
 assert.equal(canReadProviders("VENTAS"), false);
 console.log("OK roles UI: COMPRAS administra y VENTAS queda fuera");
 
+// Eliminación permanente (SPEC 004, enmienda 2026-11-05): solo OWNER y ADMIN, con palabra de confirmación.
+for (const role of ["OWNER", "ADMIN", "owner"]) assert.equal(canDeleteProviders(role), true, `${role} elimina`);
+for (const role of ["COMPRAS", "MEMBER", "VENTAS", "FINANZAS", "TECNICO", "", undefined]) assert.equal(canDeleteProviders(role), false, `${role} no elimina`);
+assert.equal(PROVIDER_DELETE_CONFIRMATION_WORD, "permanente");
+assert.equal(isProviderDeleteConfirmed("permanente"), true);
+assert.equal(isProviderDeleteConfirmed("  Permanente "), true);
+assert.equal(isProviderDeleteConfirmed("perm"), false);
+assert.equal(isProviderDeleteConfirmed(""), false);
+assert.equal(isProviderDeleteConfirmed(undefined), false);
+console.log("OK eliminación: solo OWNER/ADMIN y palabra «permanente»");
+
 const sourceService = fs.readFileSync("src/services/providerService.js", "utf8");
 const sourceManager = fs.readFileSync(
   "src/features/providers/ProvidersManager.jsx",
@@ -215,6 +229,35 @@ assert.doesNotMatch(subsectionRules.map((m) => m[2]).join("\n"), /#[0-9a-fA-F]{3
 assert.equal(normalizeProviderInput(providerFixture({condicionesPago: "credito", diasCredito: ""})).diasCredito, 0);
 assert.equal(buildProviderMutationPayload(providerFixture({condicionesPago: "", diasCredito: ""})).diasCredito, 0);
 assert.match(sourceRules, /match \/proveedores\/\{proveedorId\}/);
+assert.match(sourceRules, /match \/proveedores\/\{proveedorId\}\s*\{[^}]*allow create, update, delete: if false;/, "las Rules siguen sin permitir borrar desde el cliente");
+
+// Eliminación permanente: Function, servicio y UI.
+const sourceDeletion = fs.readFileSync("functions/providerDeletion.js", "utf8");
+const sourceIndex = fs.readFileSync("functions/index.js", "utf8");
+assert.match(sourceIndex, /exports\.eliminarProveedor = onCall\([\s\S]{0,260}eliminarProveedorHandler\(request, providerPersistenceDependencies\)/);
+assert.match(sourceDeletion, /roles: BUSINESS_MANAGEMENT_ROLES/, "roles comprobados en el servidor");
+assert.match(sourceDeletion, /isDeleteConfirmed\(request\?\.data\?\.confirmacion\)/, "la palabra se exige también en el backend");
+assert.match(sourceDeletion, /db\.runTransaction/);
+assert.match(sourceDeletion, /transaction\.delete\(proveedorRef\);\s+transaction\.delete\(reservationRef\);/, "borra el proveedor y libera la reserva en la misma transacción");
+for (const collectionName of ["ordenesCompra", "compras", "recepciones", "adquisicionesInventario", "inventario"]) {
+  assert.match(sourceDeletion, new RegExp(`collection: "${collectionName}"`), `comprueba dependencias en ${collectionName}`);
+}
+assert.equal((sourceDeletion.match(/"proveedorSnapshot\.proveedorId"/g) || []).length, 4, "comprueba el id directo y el id dentro del snapshot");
+assert.match(sourceDeletion, /ultimoProveedor\.proveedorId/);
+assert.doesNotMatch(sourceDeletion, /module\.exports[\s\S]*deleteBusiness/);
+assert.match(sourceService, /httpsCallable\(functions, "eliminarProveedor"\)/);
+assert.match(sourceService, /isProviderDeleteConfirmed\(confirmacion\)/, "el servicio valida la palabra antes de llamar");
+assert.match(sourceManager, /canDelete = canDeleteProviders\(role\)/);
+assert.match(sourceManager, /\{canDelete && \(/, "el botón solo se muestra con permiso");
+assert.match(sourceManager, /Eliminar permanentemente a \$\{provider\.razonSocial\}/);
+assert.match(sourceManager, /disabled=\{!isProviderDeleteConfirmed\(deleteConfirmation\)\}/, "el botón rojo exige escribir la palabra");
+assert.equal((sourceManager.match(/variant="danger"/g) || []).length, 1, "el diálogo de eliminación tiene un solo botón principal");
+const unicodeEscape = new RegExp("\\\\" + "u[0-9a-fA-F]{4}");
+assert.doesNotMatch(sourceManager, /#[0-9a-fA-F]{3,8}|rgba?\(|hsla?\(/, "sin colores literales en la interfaz");
+assert.doesNotMatch(sourceManager, unicodeEscape, "sin escapes unicode en la interfaz");
+const deleteCss = interiorCss.slice(interiorCss.indexOf(".provider-delete {"), interiorCss.indexOf(".client-confirmation-copy"));
+assert.ok(deleteCss.length > 0, "existen los estilos del diálogo de eliminación");
+assert.doesNotMatch(deleteCss, /#[0-9a-fA-F]{3,8}|rgba?\(|hsla?\(|\d+(px|ms)/, "estilos de eliminación sin literales");
 assert.match(sourceRules, /match \/providerRutKeys\/\{rutKey\}/);
 assert.match(sourcePersistence, /PURCHASE_WRITE_ROLES: AUTHORIZED_ROLES/);
 assert.match(sourcePersistence, /collection\("providerCreateRequests"\)/);
