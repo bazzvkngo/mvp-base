@@ -744,7 +744,24 @@ async function main() {
   // tarjetas y botón Importar.
   assert.match(managerSource, /import MoreActionsMenu from "\.\.\/\.\.\/components\/ui\/MoreActionsMenu";/);
   assert.match(managerSource, /<button type="button" onClick=\{\(\) => onEdit\(item\)\}>Editar<\/button>\s*<MoreActionsMenu\s+iconOnly/);
-  assert.match(managerSource, /canView && \{ label: "Ver referencias"/);
+  // Referencias de mercado: lupa visible en la fila (también para solo lectura), diálogo en vez de
+  // navegar, "Ver referencias" fuera del menú ⋯ y conservado en el pie de la ficha.
+  assert.doesNotMatch(managerSource, /label: "Ver referencias"/, "El menú ⋯ ya no trae Ver referencias.");
+  assert.match(managerSource, /className="inventory-row-actions__search" aria-label=\{`Ver referencias de mercado de \$\{item\.nombre\}`\} title="Ver referencias de mercado"/);
+  assert.match(managerSource, /<AppIcon icon=\{Search\} size=\{17\} \/>/);
+  assert.match(managerSource, /onViewReferences\(item, event\.currentTarget\)/, "El botón entrega su elemento para devolverle el foco.");
+  assert.equal((managerSource.match(/<ReferencesButton /g) || []).length, 2, "Lupa para escritura y para solo lectura.");
+  assert.doesNotMatch(managerSource, /\/referencias`\)/, "Ya no navega: abre el diálogo.");
+  assert.match(managerSource, /<MarketReferencesDialog businessId=\{businessId\} item=\{referencesItem\} onClose=\{closeReferences\} \/>/);
+  assert.match(managerSource, /if \(trigger\?\.isConnected\) trigger\.focus\(\)/, "Devuelve el foco a mano a la lupa.");
+  assert.match(managerSource, />Ver referencias<\/button>\}\{!cannotWrite/, "El pie de la ficha conserva Ver referencias.");
+  const { describeMarketCacheAge } = await import("../src/domain/marketCacheAge.mjs");
+  const cacheNow = Date.parse("2026-11-06T12:00:00Z");
+  assert.equal(describeMarketCacheAge("2026-11-06T09:00:00Z", cacheNow), "hace 3 horas");
+  assert.equal(describeMarketCacheAge("2026-11-06T11:00:00Z", cacheNow), "hace 1 hora");
+  assert.equal(describeMarketCacheAge("2026-11-06T11:30:00Z", cacheNow), "hace 30 minutos");
+  assert.equal(describeMarketCacheAge("2026-11-06T11:59:50Z", cacheNow), "hace unos segundos");
+  assert.equal(describeMarketCacheAge("no es fecha", cacheNow), "");
   assert.match(managerSource, /\{ label: "Archivar", onSelect: \(\) => onArchive\(item\) \}/);
   assert.equal((managerSource.match(/<RowActions /g) || []).length, 2, "Tabla y tarjeta móvil usan las acciones por fila.");
   assert.match(managerSource, /footer=\{<Actions /, "El pie de la ficha conserva sus botones visibles.");

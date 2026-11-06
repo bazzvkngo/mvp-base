@@ -4,9 +4,11 @@ import { AlertTriangle, ArrowLeft, ExternalLink, RefreshCw, SearchX } from "luci
 import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
 import LoadingState from "../../components/ui/LoadingState";
+import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
+import { describeMarketCacheAge } from "../../domain/marketCacheAge.mjs";
 import { describeInternalPricePosition } from "../../domain/marketPricePosition.mjs";
 import { searchInventoryMarketReferences } from "../../services/marketReferenceService";
-import { formatDate, formatMoney } from "../../utils/formatters";
+import { formatMoney } from "../../utils/formatters";
 import useBusinessFormat from "../../hooks/useBusinessFormat";
 import "./market-references.css";
 
@@ -118,12 +120,12 @@ function UnitsNote({ unit }) {
   );
 }
 
-function ResultCard({ result, businessLocale }) {
+function ResultCard({ result, businessLocale, TitleTag = "h3" }) {
   const badge = RELEVANCE_BADGES[result.relevance?.level] || RELEVANCE_BADGES.MEDIA;
   return (
     <li className={`market-ref-result${result.outlier ? " market-ref-result--outlier" : ""}`}>
       <div>
-        <h3 className="market-ref-result__title">{result.title}</h3>
+        <TitleTag className="market-ref-result__title">{result.title}</TitleTag>
         <p className="market-ref-result__merchant">{result.merchant}</p>
       </div>
       <strong className="market-ref-result__price">{formatMoney(result.price, result.currency, businessLocale)}</strong>
@@ -140,10 +142,11 @@ function ResultCard({ result, businessLocale }) {
   );
 }
 
-function MarketPriceReferencesView({ businessId, itemId }) {
-  const { locale: businessLocale } = useBusinessFormat();
-  const navigate = useNavigate();
-  const goToInventory = () => navigate("/inventario");
+// Estado y carga compartidos por la página y el diálogo. Abrir llama a la
+// Function sin forceRefresh: si hay caché de menos de 24 horas no se busca
+// de nuevo; si no la hay, la Function hace una búsqueda. Solo forceRefresh
+// obliga a buscar otra vez.
+function useMarketReferences(businessId, itemId) {
   const [status, setStatus] = useState("loading");
   const [data, setData] = useState(null);
   const [errorMessage, setErrorMessage] = useState("");
@@ -181,39 +184,58 @@ function MarketPriceReferencesView({ businessId, itemId }) {
     if (confirmed) load({ forceRefresh: true });
   };
 
+  return { status, data, errorMessage, refreshing, load, handleRefresh };
+}
+
+function RefreshButton({ refreshing, onClick }) {
+  return (
+    <Button type="button" variant="secondary" icon={RefreshCw} loading={refreshing} onClick={onClick}>
+      {refreshing ? "Actualizando…" : "Forzar refresco"}
+    </Button>
+  );
+}
+
+// Contenido sin marco: lo envuelven la página (con su encabezado) y el
+// diálogo. `variant="page"` conserva paneles y títulos de la página;
+// `variant="dialog"` usa bloques sin borde y un nivel de título más.
+function MarketReferencesContent({ state, variant = "dialog" }) {
+  const { locale: businessLocale } = useBusinessFormat();
+  const { status, data, errorMessage, refreshing, load, handleRefresh } = state;
+  const isPage = variant === "page";
+  const panelClass = isPage ? "erp-panel" : "market-ref-block";
+  const SectionTitle = isPage ? "h2" : "h3";
+  const ResultTitleTag = isPage ? "h3" : "h4";
+
   if (status === "loading") {
     return (
-      <section className="erp-page">
-        <PageHeader onBack={goToInventory} title="Referencias de mercado" subtitle="Consultando precios en Google Shopping…" />
-        <LoadingState variant="page" label="Buscando precios…" />
-      </section>
+      <>
+        <LoadingState variant={isPage ? "page" : "section"} label="Buscando precios…" />
+        <p className="market-ref-loading-note">
+          Si hay precios guardados de las últimas 24 horas, se muestran sin buscar. Si no los hay, se hace
+          una búsqueda nueva en Google Shopping.
+        </p>
+      </>
     );
   }
 
   if (status === "denied") {
     return (
-      <section className="erp-page">
-        <PageHeader onBack={goToInventory} title="Referencias de mercado" />
-        <div className="erp-empty-state market-ref-state" role="alert">
-          <AppIcon icon={AlertTriangle} size={28} />
-          <p>{errorMessage}</p>
-        </div>
-      </section>
+      <div className="erp-empty-state market-ref-state" role="alert">
+        <AppIcon icon={AlertTriangle} size={28} />
+        <p>{errorMessage}</p>
+      </div>
     );
   }
 
   if (status === "error") {
     return (
-      <section className="erp-page">
-        <PageHeader onBack={goToInventory} title="Referencias de mercado" />
-        <div className="erp-empty-state market-ref-state" role="alert">
-          <AppIcon icon={AlertTriangle} size={28} />
-          <p>{errorMessage}</p>
-          <Button type="button" variant="secondary" icon={RefreshCw} onClick={() => load()}>
-            Reintentar
-          </Button>
-        </div>
-      </section>
+      <div className="erp-empty-state market-ref-state" role="alert">
+        <AppIcon icon={AlertTriangle} size={28} />
+        <p>{errorMessage}</p>
+        <Button type="button" variant="secondary" icon={RefreshCw} onClick={() => load()}>
+          Reintentar
+        </Button>
+      </div>
     );
   }
 
@@ -230,32 +252,31 @@ function MarketPriceReferencesView({ businessId, itemId }) {
     status: matchStatus,
   } = data || {};
   const hasMatches = results.length > 0;
+  const cacheAge = cached ? describeMarketCacheAge(actualizadoEn) : "";
 
   return (
-    <section className="erp-page">
-      <PageHeader
-        onBack={goToInventory}
-        title="Referencias de mercado"
-        subtitle={item?.name}
-        actions={
-          <Button type="button" variant="secondary" icon={RefreshCw} loading={refreshing} onClick={handleRefresh}>
-            {refreshing ? "Actualizando…" : "Forzar refresco"}
-          </Button>
-        }
-      />
-
-      <div className="erp-panel">
+    <>
+      <div className={panelClass}>
         <div className="erp-panel-header">
           <div>
-            <h2 className="erp-panel-title">Resumen de precios</h2>
+            <SectionTitle className="erp-panel-title">Resumen de precios</SectionTitle>
             <p className="market-ref-meta">
-              <span>{cached ? "Resultados desde cache" : "Resultados recién consultados"}</span>
-              {actualizadoEn && <span>Actualizado el {formatDate(actualizadoEn)}</span>}
+              <span>
+                {cached
+                  ? `Precios guardados${cacheAge ? ` · Actualizado ${cacheAge}` : ""}`
+                  : "Búsqueda recién realizada en Google Shopping"}
+              </span>
               {hasMatches && confidence && (
                 <span>Confianza de búsqueda: {CONFIDENCE_LABELS[confidence] || confidence}</span>
               )}
             </p>
+            <p className="market-ref-cache-note">
+              {cached
+                ? "Abrir esta ventana no gasta búsquedas: solo «Forzar refresco» vuelve a buscar."
+                : "Estos precios se guardan 24 horas: volver a abrir esta ventana no gasta otra búsqueda."}
+            </p>
           </div>
+          {hasMatches && <RefreshButton refreshing={refreshing} onClick={handleRefresh} />}
         </div>
 
         {query && <p className="market-ref-query">Búsqueda enviada: {query}</p>}
@@ -296,28 +317,82 @@ function MarketPriceReferencesView({ businessId, itemId }) {
         {!hasMatches && (
           <div className="erp-empty-state market-ref-state">
             <AppIcon icon={SearchX} size={28} />
-            <h3 className="market-ref-state__title">Sin coincidencias confiables</h3>
+            <h4 className="market-ref-state__title">Sin coincidencias confiables</h4>
             <p>
               {discardedCount > 0
-                ? `Google Shopping devolvió ${discardedCount} resultado${discardedCount === 1 ? "" : "s"}, pero ninguno coincide con el nombre y las medidas de este producto. Por eso no mostramos precios ni un resumen.`
+                ? `Google Shopping devolvió ${discardedCount} resultado${discardedCount === 1 ? "" : "s"}, pero ninguno coincide con suficiente seguridad con este producto. Por eso no mostramos precios ni un resumen.`
                 : "No encontramos resultados de mercado para este producto, así que no hay precios ni resumen que mostrar."}
             </p>
-            <p>Revisa que el nombre del artículo incluya el tipo de producto y sus medidas, y vuelve a buscar con «Forzar refresco».</p>
+            <p>
+              No encontramos productos que coincidan con suficiente seguridad. Puedes probar con «Forzar refresco»
+              o ajustar el nombre del ítem.
+            </p>
+            <RefreshButton refreshing={refreshing} onClick={handleRefresh} />
           </div>
         )}
       </div>
 
       {hasMatches && (
-        <div className="erp-panel">
-          <h2 className="erp-panel-title">Coincidencias por relevancia</h2>
+        <div className={panelClass}>
+          <SectionTitle className="erp-panel-title">Coincidencias por relevancia</SectionTitle>
           <ul className="market-ref-results">
             {results.map((result) => (
-              <ResultCard key={result.externalId || result.url} result={result} businessLocale={businessLocale} />
+              <ResultCard
+                key={result.externalId || result.url}
+                result={result}
+                businessLocale={businessLocale}
+                TitleTag={ResultTitleTag}
+              />
             ))}
           </ul>
         </div>
       )}
+    </>
+  );
+}
+
+// Vista de página (ruta /inventario/:itemId/referencias).
+function MarketPriceReferencesView({ businessId, itemId }) {
+  const navigate = useNavigate();
+  const state = useMarketReferences(businessId, itemId);
+  const subtitle = state.status === "loading"
+    ? "Consultando precios en Google Shopping…"
+    : state.data?.item?.name;
+
+  return (
+    <section className="erp-page">
+      <PageHeader
+        onBack={() => navigate("/inventario")}
+        title="Referencias de mercado"
+        subtitle={subtitle}
+      />
+      <MarketReferencesContent state={state} variant="page" />
     </section>
+  );
+}
+
+function MarketReferencesDialogBody({ businessId, itemId }) {
+  const state = useMarketReferences(businessId, itemId);
+  return <MarketReferencesContent state={state} variant="dialog" />;
+}
+
+// Diálogo para abrir las referencias desde la lista de Inventario. El cuerpo
+// solo se monta con el diálogo abierto, así que no consulta nada mientras está
+// cerrado. El foco de vuelta lo gestiona quien lo abre (restoreFocus=false).
+export function MarketReferencesDialog({ businessId, item, onClose }) {
+  return (
+    <ResponsiveDialog
+      className="market-ref-dialog"
+      open={Boolean(item)}
+      onClose={onClose}
+      restoreFocus={false}
+      eyebrow="Inventario"
+      title="Referencias de mercado"
+      description={item?.nombre}
+      footer={<Button type="button" onClick={onClose}>Cerrar</Button>}
+    >
+      {item && <MarketReferencesDialogBody key={item.id} businessId={businessId} itemId={item.id} />}
+    </ResponsiveDialog>
   );
 }
 

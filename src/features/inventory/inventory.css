@@ -49,6 +49,10 @@
    después de la regla general de botones de fila, que tiene igual especificidad. */
 .inventory-row-actions--menu { align-items: center; }
 .inventory-row-actions--menu > button:not([aria-haspopup]) { background: var(--color-surface-subtle); border-radius: var(--radius-xs); font-weight: var(--font-weight-bold); justify-content: center; min-height: 38px; padding: 0 var(--space-3); }
+/* Lupa de referencias de mercado: cuadrada como el ⋯, antes de Editar. Lleva un
+   selector más específico que la regla de botones de fila (mismo patrón). */
+.inventory-row-actions--menu > .inventory-row-actions__search:not([aria-haspopup]) { flex: 0 0 auto; justify-content: center; padding: 0; width: 38px; }
+@media (pointer: coarse) { .inventory-row-actions--menu > .inventory-row-actions__search:not([aria-haspopup]) { width: 44px; } }
 .inventory-empty-state { align-items: center; display: grid; gap: var(--space-2); justify-items: center; }
 .inventory-empty-state h3, .inventory-empty-state p { margin: 0; }
 .inventory-feedback { border-radius: var(--radius-md); font-size: var(--font-size-sm); margin: 0; padding: var(--space-3); }
@@ -220,6 +224,7 @@
 .inventory-mobile-card .inventory-row-actions { display: grid; grid-template-columns: repeat(2, 1fr); }
 .inventory-mobile-card .inventory-row-actions--menu { display: flex; }
 .inventory-mobile-card .inventory-row-actions--menu > button:not([aria-haspopup]) { flex: 1 1 auto; }
+.inventory-mobile-card .inventory-row-actions--menu > .inventory-row-actions__search:not([aria-haspopup]) { flex: 0 0 auto; }
 
 /* Formulario de ítem reorganizado: esenciales arriba, tarjeta de precio,
    "Más detalles" plegable y resumen de precio en el pie del diálogo. */

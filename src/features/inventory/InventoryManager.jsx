@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {useNavigate} from "react-router-dom";
-import { Activity, Archive, Boxes, BriefcaseBusiness, ChevronDown, FileSpreadsheet, Package, PackagePlus, RotateCcw, X } from "lucide-react";
+import { Activity, Archive, Boxes, BriefcaseBusiness, ChevronDown, FileSpreadsheet, Package, PackagePlus, RotateCcw, Search, X } from "lucide-react";
 import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
 import LoadingState from "../../components/ui/LoadingState";
@@ -49,6 +49,7 @@ import useBusinessFormat, { useBusinessMoney } from "../../hooks/useBusinessForm
 import { formatDate, formatMoney } from "../../utils/formatters";
 import InventoryCatalogManager from "./InventoryCatalogManager";
 import InventoryImportDialog from "./InventoryImportDialog";
+import { MarketReferencesDialog } from "../references/MarketPriceReferencesView";
 import UnitSelector from "./UnitSelector";
 import "./inventory.css";
 
@@ -140,6 +141,11 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
   const [quickError, setQuickError] = useState("");
   const [quickSaving, setQuickSaving] = useState(false);
   const [detailItem, setDetailItem] = useState(null);
+  const [referencesItem, setReferencesItem] = useState(null);
+  // Botón que abrió las referencias (la lupa de la fila o el de la ficha): al
+  // cerrar se le devuelve el foco a mano porque Safari no enfoca los botones
+  // al hacer clic y el diálogo no sabría a dónde volver.
+  const referencesTriggerRef = useRef(null);
   const [acquisitions, setAcquisitions] = useState([]);
   const [acquisitionsState, setAcquisitionsState] = useState({loading: false, error: ""});
   const [editingItem, setEditingItem] = useState(null);
@@ -359,6 +365,18 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
     setFieldErrors((current) => ({ ...current, [field]: "" }));
   };
 
+  const openReferences = (item, trigger) => {
+    referencesTriggerRef.current = trigger instanceof HTMLElement ? trigger : null;
+    setReferencesItem(item);
+  };
+  const closeReferences = () => {
+    const trigger = referencesTriggerRef.current;
+    referencesTriggerRef.current = null;
+    setReferencesItem(null);
+    window.requestAnimationFrame(() => {
+      if (trigger?.isConnected) trigger.focus();
+    });
+  };
   const closeForm = () => {
     if (saving) return;
     setFormOpen(false);
@@ -587,7 +605,7 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
 
         {loading ? <SkeletonRegion label="Cargando inventario…"><SkeletonTable className="erp-desktop-only inventory-skeleton" columns={7} twoLine /><SkeletonCards className="erp-card-list erp-mobile-only" /></SkeletonRegion> : loadError && items.length === 0 ? null : visibleItems.length === 0 ? (
           <div className="erp-empty-state inventory-empty-state"><AppIcon icon={Boxes} size={34} /><h3>{items.length ? "No hay resultados" : "Tu inventario está listo para comenzar"}</h3><p>{items.length ? "Prueba cambiando la búsqueda o los filtros." : "Crea manualmente tu primer ítem o importa una planilla existente."}</p>{!cannotWrite && <div><button type="button" className="inventory-button inventory-button--primary" onClick={openNewItem}>Crear primer ítem</button><button type="button" className="inventory-button inventory-button--secondary" onClick={() => setImportOpen(true)}>Importar desde Excel</button></div>}</div>
-        ) : <InventoryList items={visibleItems} areas={areas} categories={categories} cannotWrite={cannotWrite} lowStockSettings={settings} onArchive={(item) => changeStatus(item, "inactivo")} onEdit={openEditItem} onReactivate={(item) => changeStatus(item, "activo")} onView={setDetailItem} onViewReferences={(item) => navigate(`/inventario/${encodeURIComponent(item.id)}/referencias`)} />}
+        ) : <InventoryList items={visibleItems} areas={areas} categories={categories} cannotWrite={cannotWrite} lowStockSettings={settings} onArchive={(item) => changeStatus(item, "inactivo")} onEdit={openEditItem} onReactivate={(item) => changeStatus(item, "activo")} onView={setDetailItem} onViewReferences={openReferences} />}
       </section>
 
       <ResponsiveDialog className="inventory-item-dialog" open={formOpen} onClose={closeForm} size="large" eyebrow="Inventario" title={editingItem ? "Editar ítem" : "Nuevo ítem"} description={editingItem ? `Código ${editingItem.codigoInterno || editingItem.sku || "heredado"}` : "Registra la identidad, clasificación y valores comerciales del ítem."} footer={<><div className="inventory-footer-price"><span>Precio de venta (neto)</span><strong>{formatBusinessAmount(effectivePrice)}</strong>{manualPriceEnabled && <small>Sugerido {formatBusinessAmount(calculatedPrice)}</small>}</div><Button type="button" variant="secondary" disabled={saving} onClick={closeForm}>Cancelar</Button><Button type="submit" form="inventory-item-form" loading={saving}>{saving ? "Guardando…" : editingItem ? "Guardar cambios" : "Crear ítem"}</Button></>}>
@@ -637,7 +655,8 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
       <ResponsiveDialog className="inventory-catalog-dialog" open={catalogOpen} onClose={closeCatalogManager} size="large" eyebrow="Inventario" title="Áreas y categorías" description="Organiza el catálogo según las necesidades de tu negocio."><InventoryCatalogManager areas={areas} businessId={businessId} categories={categories} loadErrors={catalogState.errors} loading={catalogState.loading} onRetry={() => setCatalogState((current) => ({ ...current, retry: current.retry + 1 }))} /></ResponsiveDialog>
       <ResponsiveDialog open={Boolean(quickCreate)} onClose={closeQuickCreate} initialFocusRef={quickNameRef} size="small" eyebrow="Clasificación" title={quickCreate === "area" ? "Nueva área" : "Nueva categoría"} description={quickCreate === "area" ? "Crea un área sin perder los datos del ítem." : "La categoría quedará asociada al área seleccionada."} footer={<><Button type="button" variant="secondary" disabled={quickSaving} onClick={closeQuickCreate}>Cancelar</Button><Button type="submit" form="inventory-quick-classification-form" loading={quickSaving}>{quickSaving ? "Creando..." : quickCreate === "area" ? "Crear área" : "Crear categoría"}</Button></>}><form id="inventory-quick-classification-form" className="inventory-quick-classification-form" onSubmit={submitQuickCreate}>{quickCreate === "category" && <p>Área: <strong>{areas.find((area) => area.id === draft.areaId)?.nombre || "Área seleccionada"}</strong></p>}<Field label="Nombre" required error={quickError}><input ref={quickNameRef} className="erp-control" maxLength={80} value={quickName} onChange={(event) => { setQuickName(event.target.value); setQuickError(""); }} /></Field></form></ResponsiveDialog>
       <InventoryImportDialog open={importOpen} onClose={() => setImportOpen(false)} onImported={(info) => setFeedback(info?.partial ? { type: "notice", message: "La importación quedó parcial; revisa el resumen antes de continuar." } : { type: "success", message: "Importación confirmada correctamente." })} businessId={businessId} areas={areas} categories={categories} existingItems={items} />
-      <ItemDetail item={detailItem} taxRate={businessTaxRate} areas={areas} categories={categories} acquisitions={acquisitions} acquisitionsState={acquisitionsState} cannotWrite={cannotWrite} lowStockSettings={settings} showCosts={canReadCosts} showAcquisitions={canReadAcquisitions} onClose={() => setDetailItem(null)} onEdit={openEditItem} onArchive={(item) => changeStatus(item, "inactivo")} onReactivate={(item) => changeStatus(item, "activo")} onViewReferences={(item) => navigate(`/inventario/${encodeURIComponent(item.id)}/referencias`)} />
+      <ItemDetail item={detailItem} taxRate={businessTaxRate} areas={areas} categories={categories} acquisitions={acquisitions} acquisitionsState={acquisitionsState} cannotWrite={cannotWrite} lowStockSettings={settings} showCosts={canReadCosts} showAcquisitions={canReadAcquisitions} onClose={() => setDetailItem(null)} onEdit={openEditItem} onArchive={(item) => changeStatus(item, "inactivo")} onReactivate={(item) => changeStatus(item, "activo")} onViewReferences={openReferences} />
+      <MarketReferencesDialog businessId={businessId} item={referencesItem} onClose={closeReferences} />
     </section>
   );
 }
@@ -671,21 +690,28 @@ function InventoryList({ areas, cannotWrite, categories, items, lowStockSettings
   return <><div className="erp-table-region erp-desktop-only"><table className="erp-table inventory-table"><thead><tr><th>SKU</th><th>Ítem</th><th>Tipo</th><th>Stock</th><th className="inventory-table__price">Precio</th><th className="inventory-table__status">Estado</th><th>Acciones</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td className="inventory-code">{item.codigoInterno || item.sku || "—"}</td><td><button className="inventory-item-link" type="button" onClick={() => onView(item)}>{item.nombre}</button><IdentityMetadata item={item} /></td><td>{getInventoryTypeLabel(item.tipoItem)}{item.tipoItem !== "producto" && <small>{item.unidad}</small>}</td><td><StockPresentation item={item} lowStockSettings={lowStockSettings} /></td><td className="inventory-table__price"><strong>{formatBusinessAmount(item.precioEfectivo)}</strong></td><td className="inventory-table__status"><Status item={item} /></td><td><RowActions item={item} cannotWrite={cannotWrite} onArchive={onArchive} onEdit={onEdit} onReactivate={onReactivate} onViewReferences={onViewReferences} /></td></tr>)}</tbody></table></div><div className="erp-card-list erp-mobile-only">{items.map((item) => <article className="erp-record-card inventory-mobile-card" key={item.id}><header className="erp-record-card__header"><div><span className="inventory-code">{item.codigoInterno || item.sku || "Sin código"}</span><h3 className="erp-record-card__title">{item.nombre}</h3><IdentityMetadata item={item} /><p className="erp-record-card__subtitle">{getInventoryTypeLabel(item.tipoItem)} · {item.unidad}</p></div><Status item={item} /></header><dl className="erp-meta-grid"><div className="erp-meta"><dt className="erp-meta__label">Clasificación</dt><dd className="erp-meta__value">{getInventoryAreaLabel(item, areas)} / {getInventoryCategoryLabel(item, categories)}</dd></div><div className="erp-meta"><dt className="erp-meta__label">Costo / precio</dt><dd className="erp-meta__value">{formatBusinessAmount(item.costoBase)} / {formatBusinessAmount(item.precioEfectivo)}</dd></div><div className="erp-meta"><dt className="erp-meta__label">Stock</dt><dd className="erp-meta__value"><StockPresentation item={item} lowStockSettings={lowStockSettings} /></dd></div></dl><button type="button" className="inventory-button inventory-button--secondary" onClick={() => onView(item)}>Ver detalle</button><RowActions item={item} cannotWrite={cannotWrite} onArchive={onArchive} onEdit={onEdit} onReactivate={onReactivate} onViewReferences={onViewReferences} /></article>)}</div></>;
 }
 
-// Acciones de una fila (tabla y tarjeta móvil): "Editar" visible y el resto en
-// el menú ⋯. Mismos permisos que Actions, que sigue en el pie de la ficha. Un
-// rol de solo lectura con referencias ve ese botón directo, sin menú.
+// Lupa de referencias de mercado: botón visible en la fila (tabla y tarjeta
+// móvil), también para el rol de solo lectura. Entrega el propio botón para
+// devolverle el foco al cerrar el diálogo.
+function ReferencesButton({ item, onViewReferences }) {
+  return <button type="button" className="inventory-row-actions__search" aria-label={`Ver referencias de mercado de ${item.nombre}`} title="Ver referencias de mercado" onClick={(event) => onViewReferences(item, event.currentTarget)}><AppIcon icon={Search} size={17} /></button>;
+}
+
+// Acciones de una fila (tabla y tarjeta móvil): lupa de referencias y
+// "Editar" visibles, y el resto en el menú ⋯. Mismos permisos que Actions, que
+// sigue en el pie de la ficha. Un rol de solo lectura ve solo la lupa.
 function RowActions({ cannotWrite, item, onArchive, onEdit, onReactivate, onViewReferences }) {
   const canView = item.tipoItem === "producto" && item.estado === "activo";
   if (cannotWrite) {
-    return canView ? <div className="inventory-row-actions"><button type="button" onClick={() => onViewReferences(item)}>Ver referencias</button></div> : null;
+    return canView ? <div className="inventory-row-actions inventory-row-actions--menu"><ReferencesButton item={item} onViewReferences={onViewReferences} /></div> : null;
   }
   return <div className="inventory-row-actions inventory-row-actions--menu">
+    {canView && <ReferencesButton item={item} onViewReferences={onViewReferences} />}
     <button type="button" onClick={() => onEdit(item)}>Editar</button>
     <MoreActionsMenu
       iconOnly
       menuLabel={`Más acciones de ${item.nombre}`}
       actions={[
-        canView && { label: "Ver referencias", onSelect: () => onViewReferences(item) },
         item.estado === "activo"
           ? { label: "Archivar", onSelect: () => onArchive(item) }
           : { label: "Reactivar", onSelect: () => onReactivate(item) },
@@ -695,7 +721,7 @@ function RowActions({ cannotWrite, item, onArchive, onEdit, onReactivate, onView
 }
 
 function Status({ item }) { return <span className={`inventory-status inventory-status--${item.estado === "activo" ? "active" : "archived"}`}>{item.estado === "activo" ? "Activo" : "Archivado"}</span>; }
-function Actions({ cannotWrite, item, onArchive, onEdit, onReactivate, onViewReferences }) { const canView = item.tipoItem === "producto" && item.estado === "activo"; if (cannotWrite && !canView) return null; return <div className="inventory-row-actions">{canView && <button type="button" onClick={() => onViewReferences(item)}>Ver referencias</button>}{!cannotWrite && <><button type="button" onClick={() => onEdit(item)}>Editar</button>{item.estado === "activo" ? <button type="button" onClick={() => onArchive(item)}><AppIcon icon={Archive} size={15} />Archivar</button> : <button type="button" onClick={() => onReactivate(item)}><AppIcon icon={RotateCcw} size={15} />Reactivar</button>}</>}</div>; }
+function Actions({ cannotWrite, item, onArchive, onEdit, onReactivate, onViewReferences }) { const canView = item.tipoItem === "producto" && item.estado === "activo"; if (cannotWrite && !canView) return null; return <div className="inventory-row-actions">{canView && <button type="button" onClick={(event) => onViewReferences(item, event.currentTarget)}>Ver referencias</button>}{!cannotWrite && <><button type="button" onClick={() => onEdit(item)}>Editar</button>{item.estado === "activo" ? <button type="button" onClick={() => onArchive(item)}><AppIcon icon={Archive} size={15} />Archivar</button> : <button type="button" onClick={() => onReactivate(item)}><AppIcon icon={RotateCcw} size={15} />Reactivar</button>}</>}</div>; }
 
 function ItemDetail({ acquisitions, acquisitionsState, areas, cannotWrite, categories, item, lowStockSettings, onArchive, onClose, onEdit, onReactivate, onViewReferences, showAcquisitions, showCosts, taxRate = null }) {
   const formatBusinessAmount = useBusinessMoney();

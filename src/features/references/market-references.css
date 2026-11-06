@@ -62,6 +62,24 @@
   margin: 0;
 }
 
+/* Aviso de caché: dice si abrir gasta o no una búsqueda. */
+.market-ref-cache-note,
+.market-ref-loading-note {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  margin: var(--space-1) 0 0;
+}
+
+.market-ref-loading-note {
+  text-align: center;
+}
+
+/* Bloques del diálogo: mismo orden que los paneles de la página, sin marco
+   propio porque el diálogo ya lo tiene. */
+.market-ref-block + .market-ref-block {
+  margin-top: var(--space-5);
+}
+
 .market-ref-query {
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
