@@ -6,19 +6,18 @@ import LoadingState from "../components/ui/LoadingState";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import SupplyTrace from "../components/ui/SupplyTrace";
 import {
-  DELETE_CONFIRMATION_WORD,
   calculatePurchaseOrderTotals,
   canManagePurchaseOrders,
   canOfferPurchaseOrderDeletion,
   getSupplierResponseLabel,
   getSupplierResponseState,
   getProviderPurchaseOrderPaymentTerms,
-  isDeleteConfirmed,
   resolvePurchaseOrderProviderPreview,
 } from "../domain/purchaseOrderModel.mjs";
 import {getOrderReceptionStatus, getOrderReceptionStatusLabel} from "../domain/receptionModel.mjs";
 import {incrementScannedItem} from "../domain/barcode.mjs";
 import ProviderSelector from "../features/purchaseOrders/ProviderSelector";
+import PurchaseOrderDeleteDialog from "../features/purchaseOrders/PurchaseOrderDeleteDialog";
 import PurchaseOrderCatalogDialog from "../features/purchaseOrders/PurchaseOrderCatalogDialog";
 import PurchaseOrderDetailView from "../features/purchaseOrders/PurchaseOrderDetailView";
 import PurchaseOrderItemsEditor from "../features/purchaseOrders/PurchaseOrderItemsEditor";
@@ -37,7 +36,6 @@ import {
   createPurchaseOrderRequestId,
   crearOrdenCompra,
   duplicarOrdenCompraComoBorrador,
-  eliminarOrdenCompra,
   emitirOrdenCompra,
   obtenerOrdenCompra,
   registrarRespuestaProveedor,
@@ -119,10 +117,6 @@ export default function NewPurchaseOrderPage({businessId, role}) {
   const [saving, setSaving] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
   const [message, setMessage] = useState("");
-  const [deleteConfirmation, setDeleteConfirmation] = useState("");
-  const [deleteError, setDeleteError] = useState("");
-  const [deleting, setDeleting] = useState(false);
-  const deleteGuard = useRef(false);
   const [supplierAnswer, setSupplierAnswer] = useState({estado: "pendiente", comentario: ""});
   const requestIdRef = useRef(createPurchaseOrderRequestId());
   const duplicateRequestIdRef = useRef("");
@@ -332,39 +326,10 @@ export default function NewPurchaseOrderPage({businessId, role}) {
     }
   };
 
+  // La confirmación «permanente», el aviso y la guarda viven en PurchaseOrderDeleteDialog (compartido con la lista).
   const openDelete = () => {
-    if (!canDeleteOrder || deleting) return;
-    setDeleteConfirmation("");
-    setDeleteError("");
+    if (!canDeleteOrder) return;
     setActionDialog("delete");
-  };
-
-  const closeDelete = () => {
-    if (deleting) return;
-    setActionDialog("");
-    setDeleteConfirmation("");
-    setDeleteError("");
-  };
-
-  // Eliminación permanente: si el backend rechaza, se muestra su mensaje tal cual y la orden queda intacta.
-  const confirmDelete = async () => {
-    if (!order || deleteGuard.current || !isDeleteConfirmed(deleteConfirmation)) return;
-    deleteGuard.current = true;
-    setDeleting(true);
-    setDeleteError("");
-    try {
-      await eliminarOrdenCompra(businessId, order.id, deleteConfirmation);
-      sileo.success({
-        title: `Orden ${order.numero} eliminada`,
-        description: "Se eliminó para siempre. Su número no se vuelve a usar.",
-      });
-      navigate("/ordenes-compra", {replace: true});
-    } catch (error) {
-      setDeleteError(error.message || "No pudimos eliminar la orden de compra.");
-      setDeleting(false);
-    } finally {
-      deleteGuard.current = false;
-    }
   };
 
   const duplicate = async () => {
@@ -597,7 +562,7 @@ export default function NewPurchaseOrderPage({businessId, role}) {
               {canManage && order.estado === "emitida" && supplierResponseState === "rechazada" && !receptionCompleted && <button type="button" className="po-button po-button--primary" disabled={saving} onClick={openSupplierConfirmation}>Actualizar confirmación</button>}
               {canManage && order.estado === "borrador" && <button type="button" className="po-button po-button--primary" disabled={saving} onClick={() => setEmailOpen(true)}>Enviar por correo</button>}
               {canManage && order.estado !== "cancelada" && !receptionCompleted && <button type="button" className="po-button po-button--danger-subtle" disabled={saving} onClick={() => setActionDialog("cancel")}>Cancelar</button>}
-              {canDeleteOrder && order.estado === "borrador" && <button type="button" className="po-button po-button--danger-subtle purchase-order-delete__trigger" disabled={saving || deleting} onClick={openDelete}>Eliminar</button>}
+              {canDeleteOrder && order.estado === "borrador" && <button type="button" className="po-button po-button--danger-subtle purchase-order-delete__trigger" disabled={saving} onClick={openDelete}>Eliminar</button>}
               {canManage && order.estado === "emitida" && supplierResponseState !== "rechazada" && !receptionCompleted && <button type="button" className="po-button po-button--secondary" disabled={saving} onClick={openSupplierConfirmation}>Registrar confirmación</button>}
               {canManage && order.estado === "emitida" && <button type="button" className="po-button po-button--secondary" disabled={saving} onClick={() => setEmailOpen(true)}>Reenviar correo</button>}
               {canManage && order.estado !== "cancelada" && <button type="button" className="po-button po-button--secondary" disabled={saving || !whatsAppAvailability.enabled} title={whatsAppAvailability.help} onClick={openWhatsApp}>{order.estado === "emitida" ? "Reenviar por WhatsApp" : "WhatsApp"}</button>}
@@ -703,55 +668,13 @@ export default function NewPurchaseOrderPage({businessId, role}) {
       <ResponsiveDialog open={actionDialog === "whatsapp"} onClose={() => !saving && setActionDialog("")} eyebrow="WhatsApp" title="¿Enviaste la orden de compra?" description="Abrir WhatsApp no confirma que el proveedor haya recibido la orden." size="small" footer={<><Button type="button" variant="secondary" disabled={saving} onClick={() => setActionDialog("")}>Mantener pendiente</Button><Button type="button" loading={saving} onClick={confirmWhatsApp}>{saving ? "Registrando..." : "Sí, fue enviada"}</Button></>}><p>ValoraCloud registrará la emisión por WhatsApp, sin afirmar entrega ni lectura.</p></ResponsiveDialog>
       <ResponsiveDialog open={actionDialog === "manual"} onClose={() => !saving && setActionDialog("")} eyebrow="Emisión" title="Marcar emisión manual" description="Usa esta opción solo si la orden ya fue entregada al proveedor por otro medio." size="small" footer={<><Button type="button" variant="secondary" disabled={saving} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" loading={saving} onClick={emitManual}>{saving ? "Registrando..." : "Marcar como emitida"}</Button></>}><p>Se guardará fecha, canal y usuario de la emisión.</p></ResponsiveDialog>
       <ResponsiveDialog open={actionDialog === "cancel"} onClose={() => !saving && setActionDialog("")} eyebrow="Acción de orden" title="Cancelar orden de compra" description={cancellationDescription} size="small" footer={<><Button type="button" variant="secondary" disabled={saving} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" variant="danger" loading={saving} onClick={cancel}>{saving ? "Cancelando..." : "Cancelar orden"}</Button></>}>{hasConfirmedReceptions ? <p>La cancelación no revierte inventario ni compras ya generadas.</p> : null}</ResponsiveDialog>
-      <ResponsiveDialog
-        description={order ? `Vas a eliminar la orden ${order.numero}.` : ""}
-        eyebrow="Orden de compra"
-        footer={(
-          <>
-            <Button type="button" variant="secondary" disabled={deleting} onClick={closeDelete}>Volver</Button>
-            <Button type="button" variant="danger" loading={deleting} disabled={!isDeleteConfirmed(deleteConfirmation)} onClick={confirmDelete}>
-              {deleting ? "Eliminando..." : "Eliminar permanentemente"}
-            </Button>
-          </>
-        )}
-        onClose={closeDelete}
+      <PurchaseOrderDeleteDialog
+        businessId={businessId}
+        onClose={() => setActionDialog("")}
+        onDeleted={() => navigate("/ordenes-compra", {replace: true})}
         open={actionDialog === "delete" && Boolean(order)}
-        size="small"
-        title="Eliminar orden de compra"
-      >
-        <div className="purchase-order-delete">
-          <p className="purchase-order-delete__warning">Esta acción es permanente y no se puede deshacer. Se perderán:</p>
-          <ul className="purchase-order-delete__list">
-            <li>la orden con sus ítems y su historial,</li>
-            <li>sus registros de creación y de intentos de envío.</li>
-          </ul>
-          <p className="purchase-order-delete__note">
-            El número {order?.numero} no se vuelve a usar: quedará un hueco en la numeración de las órdenes.
-            Solo se eliminan órdenes que nunca se enviaron al proveedor y que no tienen recepciones ni compras.
-            Si ya no la necesitas pero conviene dejar constancia, cancélala: cancelar conserva la orden en el historial.
-          </p>
-          <label className="erp-field purchase-order-delete__field">
-            <span>Para confirmar, escribe <strong>{DELETE_CONFIRMATION_WORD}</strong></span>
-            <input
-              className="erp-control"
-              type="text"
-              autoComplete="off"
-              autoCapitalize="off"
-              spellCheck={false}
-              value={deleteConfirmation}
-              disabled={deleting}
-              onChange={(event) => setDeleteConfirmation(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  confirmDelete();
-                }
-              }}
-            />
-          </label>
-          {deleteError && <div className="po-message po-message--error" role="alert">{deleteError}</div>}
-        </div>
-      </ResponsiveDialog>
+        order={order}
+      />
     </main>
   );
 }

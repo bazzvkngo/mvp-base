@@ -43,3 +43,37 @@
     width: 100%;
   }
 }
+
+/* Papelera en las filas de la lista: reutiliza .client-row-actions (interior.css, como Proveedores e
+   Inventario) fuera de .po-history__actions, para no heredar los botones de texto de esa fila. */
+.purchase-order-delete__row {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+}
+
+.purchase-order-delete__row > .po-history__actions {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.purchase-order-delete__row-icon {
+  flex: none;
+}
+
+@media (pointer: coarse) {
+  .purchase-order-delete__row-icon button {
+    height: 44px;
+    width: 44px;
+  }
+}
+
+/* Tarjeta móvil: las acciones de texto ocupan el ancho y la papelera queda a la derecha, debajo. */
+.po-history-card .purchase-order-delete__row {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.po-history-card .purchase-order-delete__row-icon {
+  align-self: flex-end;
+}

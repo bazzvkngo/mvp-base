@@ -286,6 +286,20 @@ export function canOfferPurchaseOrderDeletion(order, role) {
   );
 }
 
+// Mensaje de un intento de eliminar fallido. Los mensajes reales de la Function (en español, de
+// varias palabras: failed-precondition, permission-denied, not-found de una orden...) se muestran
+// tal cual. Si el error no trae un texto legible (vacío, una sola palabra técnica como "internal"
+// o "NOT_FOUND", o un fallo de red del navegador), se muestra un mensaje genérico.
+export const DELETE_FALLBACK_MESSAGE = "No pudimos eliminar la orden de compra. Inténtalo de nuevo.";
+const NETWORK_MESSAGE = /failed to fetch|network ?(request )?(error|failed)|load failed|networkerror/i;
+
+export function getPurchaseOrderDeleteErrorMessage(error) {
+  const message = String(error?.message ?? "").trim();
+  // Una sola palabra ("internal", "unavailable", "NOT_FOUND"...) es el estado técnico del SDK, no un mensaje.
+  if (!message || !/\s/.test(message) || NETWORK_MESSAGE.test(message)) return DELETE_FALLBACK_MESSAGE;
+  return message;
+}
+
 export function getSupplierResponseState(order) {
   const value = text(order?.respuestaProveedor?.estado, 40).toLowerCase();
   return ["pendiente", "confirmada", "rechazada", "confirmada_con_observaciones"].includes(value)

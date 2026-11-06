@@ -4,6 +4,7 @@ import {createRequire} from "node:module";
 import path from "node:path";
 import {
   DELETE_CONFIRMATION_WORD,
+  DELETE_FALLBACK_MESSAGE,
   adaptStoredPurchaseOrder,
   buildPurchaseOrderMutationPayload,
   calculatePurchaseOrderLine,
@@ -11,6 +12,7 @@ import {
   canDeletePurchaseOrder,
   canManagePurchaseOrders,
   canOfferPurchaseOrderDeletion,
+  getPurchaseOrderDeleteErrorMessage,
   hasPurchaseOrderEmissionTrace,
   isDeleteConfirmed as isFrontendDeleteConfirmed,
   getProviderPurchaseOrderPaymentTerms,
@@ -576,20 +578,23 @@ assert.match(deleteViewSource, /canDelete && \{label: "Eliminar", onSelect: onDe
 assert.doesNotMatch(deleteViewSource, /issued && \{label: "Eliminar"/);
 // 3. Diálogo: palabra «permanente», botón rojo deshabilitado hasta que coincida, carga, sin doble envío y avisos.
 assert.match(pageSource, /import "\.\.\/features\/purchaseOrders\/purchase-order-delete\.css"/);
-assert.match(pageSource, /eliminarOrdenCompra\(businessId, order\.id, deleteConfirmation\)/);
-assert.match(pageSource, /deleteGuard\.current \|\| !isDeleteConfirmed\(deleteConfirmation\)/);
-assert.match(pageSource, /variant="danger" loading=\{deleting\} disabled=\{!isDeleteConfirmed\(deleteConfirmation\)\} onClick=\{confirmDelete\}/);
-assert.match(pageSource, /Para confirmar, escribe <strong>\{DELETE_CONFIRMATION_WORD\}<\/strong>/);
-assert.match(pageSource, /Esta acción es permanente y no se puede deshacer/);
-assert.match(pageSource, /no se vuelve a usar: quedará un hueco en la numeración/);
-assert.match(pageSource, /Solo se eliminan órdenes que nunca se enviaron al proveedor y que no tienen recepciones ni compras/);
-assert.match(pageSource, /onClose=\{closeDelete\}/);
-assert.match(pageSource, /if \(deleting\) return;/);
+// Etapa 5: el diálogo se extrajo a PurchaseOrderDeleteDialog (compartido con la lista); estas aserciones
+// de la etapa 4 apuntan ahora al componente. Cambian solo los nombres internos (confirmation/error/guard).
+const deleteDialogSource = fs.readFileSync("src/features/purchaseOrders/PurchaseOrderDeleteDialog.jsx", "utf8");
+assert.match(deleteDialogSource, /eliminarOrdenCompra\(businessId, order\.id, confirmation\)/);
+assert.match(deleteDialogSource, /guard\.current \|\| deleting \|\| !isDeleteConfirmed\(confirmation\)/);
+assert.match(deleteDialogSource, /variant="danger" loading=\{deleting\} disabled=\{!isDeleteConfirmed\(confirmation\)\} onClick=\{confirm\}/);
+assert.match(deleteDialogSource, /Para confirmar, escribe <strong>\{DELETE_CONFIRMATION_WORD\}<\/strong>/);
+assert.match(deleteDialogSource, /Esta acción es permanente y no se puede deshacer/);
+assert.match(deleteDialogSource, /no se vuelve a usar: quedará un hueco en la numeración/);
+assert.match(deleteDialogSource, /Solo se eliminan órdenes que nunca se enviaron al proveedor y que no tienen recepciones ni compras/);
+assert.match(deleteDialogSource, /onClose=\{close\}/);
+assert.match(deleteDialogSource, /if \(deleting\) return;/);
 // 4. Éxito: aviso y vuelta al listado; rechazo: mensaje del backend tal cual, con la orden intacta.
-assert.match(pageSource, /title: `Orden \$\{order\.numero\} eliminada`/);
-assert.match(pageSource, /navigate\("\/ordenes-compra", \{replace: true\}\)/);
-assert.match(pageSource, /setDeleteError\(error\.message \|\| "No pudimos eliminar la orden de compra\."\)/);
-assert.match(pageSource, /deleteError && <div className="po-message po-message--error" role="alert">\{deleteError\}<\/div>/);
+assert.match(deleteDialogSource, /title: `Orden \$\{order\.numero\} eliminada`/);
+assert.match(pageSource, /onDeleted=\{\(\) => navigate\("\/ordenes-compra", \{replace: true\}\)\}/);
+assert.match(deleteDialogSource, /setError\(getPurchaseOrderDeleteErrorMessage\(failure\)\)/);
+assert.match(deleteDialogSource, /error && <div className="po-message po-message--error" role="alert">\{error\}<\/div>/);
 // Las acciones existentes no cambian de lógica.
 assert.match(pageSource, /cancelarOrdenCompra\(businessId, order\.id\)/);
 assert.match(pageSource, /emitirOrdenCompra\(businessId, order\.id, \{canalEmision: "manual"\}\)|emitirOrdenCompra\(businessId, saved\.id, \{canalEmision: "manual"\}\)/);
@@ -597,6 +602,94 @@ assert.match(pageSource, /emitirOrdenCompra\(businessId, order\.id, \{canalEmisi
 assert.doesNotMatch(deleteCssSource, /#[0-9a-fA-F]{3,8}\b|rgb\(|hsl\(/);
 assert.match(deleteCssSource, /\.purchase-order-delete__note[\s\S]*?var\(--color-surface-subtle\)/);
 console.log("OK eliminación de OC (interfaz): botón del borrador, menú Más de la cancelada y diálogo con «permanente»");
+
+// ---- Etapa 5: papelera en la lista y diálogo compartido ----
+// 1. Papelera en tabla y tarjeta móvil, solo si canOfferPurchaseOrderDeletion y sin recepciones en la lista.
+assert.equal(
+  historySource.split("canDelete={canOfferPurchaseOrderDeletion(order, role) && relatedReceptions.length === 0}").length - 1,
+  2,
+  "la papelera debe decidirse igual en la tabla y en la tarjeta móvil",
+);
+assert.match(historySource, /function OrderRowActions\(\{canDelete, onDelete, \.\.\.actionProps\}\)/);
+assert.match(historySource, /if \(!canDelete\) return <OrderActions \{\.\.\.actionProps\} \/>/);
+assert.match(historySource, /aria-label=\{`Eliminar orden \$\{actionProps\.order\.numero\}`\} title="Eliminar"/);
+assert.match(historySource, /<AppIcon icon=\{Trash2\} size=\{17\} \/>/);
+assert.match(historySource, /className="client-row-actions purchase-order-delete__row-icon"/);
+assert.doesNotMatch(historySource, /canManage && canOfferPurchaseOrderDeletion|canDelete=\{canManage/, "la papelera no depende de canManage (COMPRAS no elimina)");
+assert.match(deleteCssSource, /@media \(pointer: coarse\)[\s\S]*?\.purchase-order-delete__row-icon button[\s\S]*?height: 44px;[\s\S]*?width: 44px;/);
+// 5. Filtro «Activas» (borrador y emitida): la papelera nunca aparece en emitidas ni para OWNER/ADMIN.
+assert.match(historySource, /const ACTIVE_ORDER_STATES = \["borrador", "emitida"\]/);
+{
+  const rowRoles = ["OWNER", "ADMIN", "COMPRAS", "MEMBER", "VENTAS", "TECNICO", "FINANZAS"];
+  const showTrash = (order, role, receptions = []) =>
+    canOfferPurchaseOrderDeletion(order, role) && receptions.filter((entry) => entry.ordenCompraId === order.id).length === 0;
+  for (const role of rowRoles) {
+    const manager = role === "OWNER" || role === "ADMIN";
+    assert.equal(showTrash({id: "a", estado: "borrador"}, role), manager, `borrador ${role}`);
+    assert.equal(showTrash({id: "b", estado: "cancelada"}, role), manager, `cancelada limpia ${role}`);
+    assert.equal(showTrash({id: "c", estado: "emitida"}, role), false, `emitida ${role}`);
+    assert.equal(showTrash({id: "d", estado: "emitida", emitidaEn: "2026-01-01"}, role), false, `emitida con rastro ${role}`);
+    assert.equal(showTrash({id: "e", estado: "cancelada", emitidaEn: "2026-01-01"}, role), false, `cancelada tras emitirse ${role}`);
+    // Con una recepción (aunque sea borrador) la fila no ofrece eliminar.
+    assert.equal(showTrash({id: "f", estado: "borrador"}, role, [{ordenCompraId: "f", estado: "borrador"}]), false, `con recepción ${role}`);
+  }
+}
+// 2. Un solo diálogo: la página de detalle y la lista usan el componente compartido y ninguna duplica su contenido.
+assert.match(pageSource, /import PurchaseOrderDeleteDialog from "\.\.\/features\/purchaseOrders\/PurchaseOrderDeleteDialog"/);
+assert.match(historySource, /import PurchaseOrderDeleteDialog from "\.\.\/features\/purchaseOrders\/PurchaseOrderDeleteDialog"/);
+assert.equal(pageSource.split("<PurchaseOrderDeleteDialog").length - 1, 1);
+assert.equal(historySource.split("<PurchaseOrderDeleteDialog").length - 1, 1);
+for (const [name, source] of [["detalle", pageSource], ["lista", historySource]]) {
+  assert.doesNotMatch(source, /Para confirmar, escribe|Esta acción es permanente y no se puede deshacer|eliminarOrdenCompra\(|isDeleteConfirmed/, `${name} no debe duplicar el diálogo`);
+}
+assert.match(deleteDialogSource, /import "\.\/purchase-order-delete\.css"/);
+assert.match(deleteDialogSource, /const guard = useRef\(false\)/);
+// 3. Éxito: la fila desaparece sin recargar; el aviso lo muestra el diálogo. Rechazo: el diálogo sigue abierto.
+assert.match(historySource, /onDeleted=\{handleDeleted\}/);
+{
+  const handler = historySource.match(/const handleDeleted = \(deleted\) => \{[\s\S]*?\n {2}\};/)?.[0] || "";
+  assert.match(handler, /setOrders\(\(current\) => current\.filter\(\(order\) => order\.id !== deleted\.id\)\)/);
+  assert.match(handler, /setDeleteOrder\(null\)/);
+  assert.doesNotMatch(handler, /load\(|listarOrdenesCompra/, "eliminar no debe recargar la lista");
+}
+assert.ok(
+  deleteDialogSource.indexOf("sileo.success") < deleteDialogSource.indexOf("onDeleted(order)"),
+  "el aviso de éxito se muestra antes de entregar el control a quien usa el diálogo",
+);
+assert.match(deleteDialogSource, /catch \(failure\) \{[\s\S]*?setError\([\s\S]*?setDeleting\(false\);/);
+// 4. Mensaje legible: errores técnicos o de red -> mensaje genérico; mensajes reales del backend, tal cual.
+assert.equal(DELETE_FALLBACK_MESSAGE, "No pudimos eliminar la orden de compra. Inténtalo de nuevo.");
+for (const technical of [
+  {code: "functions/internal", message: "internal"},
+  {code: "functions/internal", message: "INTERNAL"},
+  {code: "functions/unavailable", message: "unavailable"},
+  {code: "functions/not-found", message: "NOT_FOUND"},
+  {code: "functions/unknown", message: "unknown"},
+  {message: "Failed to fetch"},
+  {message: "Load failed"},
+  {message: "NetworkError when attempting to fetch resource."},
+  {message: "Network request failed"},
+  {message: ""},
+  {message: "   "},
+  {},
+  new Error("internal"),
+  null,
+  undefined,
+]) {
+  assert.equal(getPurchaseOrderDeleteErrorMessage(technical), DELETE_FALLBACK_MESSAGE, JSON.stringify(technical));
+}
+for (const real of [
+  "No se encontró la orden de compra.",
+  "No puedes eliminar esta orden de compra.",
+  "No se puede eliminar: la orden ya fue enviada al proveedor.",
+  "La orden tiene recepciones asociadas y no se puede eliminar.",
+  "Escribe «permanente» para confirmar la eliminación.",
+]) {
+  assert.equal(getPurchaseOrderDeleteErrorMessage({code: "functions/failed-precondition", message: real}), real);
+}
+assert.doesNotMatch(deleteDialogSource, /setError\(failure\.message/);
+assert.match(deleteDialogSource, /getPurchaseOrderDeleteErrorMessage/);
+console.log("OK eliminación de OC (lista): papelera en filas, diálogo compartido, fila sin recarga y mensaje legible");
 assert.match(pageSource, /PurchaseOrderPrintView/);
 assert.doesNotMatch(pageSource, /Quote[A-Z]/);
 assert.match(pageSource, /navigate\("\/ordenes-compra", \{[\s\S]*createdOrder: saved[\s\S]*openOrderId: saved\.id/);
