@@ -475,6 +475,16 @@ console.log("OK OC recibida total: recepción dominante sin confirmación ni can
 assert.doesNotMatch(historySource, />Ver<|"Ver"/);
 assert.match(pageSource, /getProviderPurchaseOrderPaymentTerms/);
 assert.match(pageSource, /SupplyTrace/);
+// OC emitida o cancelada: detalle de solo lectura en PurchaseOrderDetailView; el borrador conserva el formulario.
+const detailViewSource = fs.readFileSync("src/features/purchaseOrders/PurchaseOrderDetailView.jsx", "utf8");
+assert.match(pageSource, /showDetailView \? <PurchaseOrderDetailView/);
+assert.match(detailViewSource, />Reenviar correo</);
+assert.match(detailViewSource, />Descargar PDF</);
+assert.match(detailViewSource, /label="Más"/);
+assert.match(detailViewSource, /Duplicar como nueva orden/);
+assert.match(detailViewSource, /canCancel = canManage && !cancelled && !receptionCompleted/);
+assert.match(detailViewSource, /cancelled \? "—" : getOrderReceptionStatusLabel/);
+assert.doesNotMatch(detailViewSource, /Snapshot hist[oó]rico|"Nombre no informado"|Sin contacto|"Sin correo"|Sin teléfono|Sin dirección|<input|<textarea|<select/);
 assert.match(historySource, /po-history__danger/);
 assert.match(historySource, /PurchaseOrderPreviewBoundary/);
 assert.match(historySource, /className="po-order-preview-dialog"/);

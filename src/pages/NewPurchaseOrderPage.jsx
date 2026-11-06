@@ -17,6 +17,7 @@ import {getOrderReceptionStatus, getOrderReceptionStatusLabel} from "../domain/r
 import {incrementScannedItem} from "../domain/barcode.mjs";
 import ProviderSelector from "../features/purchaseOrders/ProviderSelector";
 import PurchaseOrderCatalogDialog from "../features/purchaseOrders/PurchaseOrderCatalogDialog";
+import PurchaseOrderDetailView from "../features/purchaseOrders/PurchaseOrderDetailView";
 import PurchaseOrderItemsEditor from "../features/purchaseOrders/PurchaseOrderItemsEditor";
 import PurchaseOrderPrintView from "../features/purchaseOrders/PurchaseOrderPrintView";
 import PurchaseOrderSummary from "../features/purchaseOrders/PurchaseOrderSummary";
@@ -489,8 +490,34 @@ export default function NewPurchaseOrderPage({businessId, role}) {
 
   if (loading) return <LoadingState variant="page" label="Cargando orden de compra..." />;
 
+  // Orden emitida o cancelada: detalle de solo lectura. El borrador y la orden nueva conservan el formulario.
+  const showDetailView = Boolean(order && order.estado !== "borrador");
+
   return (
     <main className="po-workspace">
+      {showDetailView ? <PurchaseOrderDetailView
+        canManage={canManage}
+        company={company}
+        currentUser={auth.currentUser}
+        duplicating={duplicating}
+        memberByUid={memberByUid}
+        message={message}
+        onCancel={() => setActionDialog("cancel")}
+        onCreateReception={createReception}
+        onDownloadPdf={downloadPdf}
+        onDuplicate={duplicate}
+        onEmail={() => setEmailOpen(true)}
+        onSupplierConfirmation={openSupplierConfirmation}
+        onWhatsApp={openWhatsApp}
+        order={order}
+        printableOrder={printableOrder}
+        receptionActionLabel={receptionActionLabel}
+        receptionStatus={receptionStatus}
+        receptions={receptions}
+        saving={saving}
+        totals={totals}
+        whatsAppAvailability={whatsAppAvailability}
+      /> : <>
       <button type="button" className="po-back-link no-print" onClick={() => navigate("/ordenes-compra")}>← Volver al historial</button>
       <header className="po-header no-print">
         <div className="po-header__copy">
@@ -613,6 +640,7 @@ export default function NewPurchaseOrderPage({businessId, role}) {
         </div>
       </div>
       <div className="print-only"><PurchaseOrderPrintView company={company} order={printableOrder} /></div>
+      </>}
       <PurchaseOrderCatalogDialog
         items={inventory}
         onAdd={addItem}
