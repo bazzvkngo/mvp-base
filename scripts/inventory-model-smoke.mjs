@@ -743,11 +743,16 @@ async function main() {
   // Rediseño de /inventario: acciones por fila, stock de servicios, Tipo, Precio,
   // tarjetas y botón Importar.
   assert.match(managerSource, /import MoreActionsMenu from "\.\.\/\.\.\/components\/ui\/MoreActionsMenu";/);
-  assert.match(managerSource, /<button type="button" onClick=\{\(\) => onEdit\(item\)\}>Editar<\/button>\s*<MoreActionsMenu\s+iconOnly/);
+  // Acciones por fila: tres botones de ícono como en Proveedores (lupa, lápiz y Archivar/Reactivar),
+  // sin el botón de texto "Editar" ni el menú ⋯; MoreActionsMenu sigue en el Importar y otras pantallas.
+  assert.match(managerSource, /<div className="client-row-actions inventory-row-icons">/);
+  assert.match(managerSource, /onClick=\{\(\) => onEdit\(item\)\} aria-label=\{`Editar \$\{item\.nombre\}`\} title="Editar ítem"><AppIcon icon=\{Pencil\} size=\{17\} \/>/);
+  assert.doesNotMatch(managerSource, /onClick=\{\(\) => onEdit\(item\)\}>Editar<\/button>\s*<MoreActionsMenu/, "La fila ya no lleva el botón de texto Editar ni el menú ⋯.");
+  assert.doesNotMatch(managerSource, /menuLabel=\{`Más acciones de \$\{item\.nombre\}`\}/);
   // Referencias de mercado: lupa visible en la fila (también para solo lectura), diálogo en vez de
   // navegar, "Ver referencias" fuera del menú ⋯ y conservado en el pie de la ficha.
   assert.doesNotMatch(managerSource, /label: "Ver referencias"/, "El menú ⋯ ya no trae Ver referencias.");
-  assert.match(managerSource, /className="inventory-row-actions__search" aria-label=\{`Ver referencias de mercado de \$\{item\.nombre\}`\} title="Ver referencias de mercado"/);
+  assert.match(managerSource, /<button type="button" aria-label=\{`Ver referencias de mercado de \$\{item\.nombre\}`\} title="Ver referencias de mercado"/);
   assert.match(managerSource, /<AppIcon icon=\{Search\} size=\{17\} \/>/);
   assert.match(managerSource, /onViewReferences\(item, event\.currentTarget\)/, "El botón entrega su elemento para devolverle el foco.");
   assert.equal((managerSource.match(/<ReferencesButton /g) || []).length, 2, "Lupa para escritura y para solo lectura.");
@@ -762,7 +767,11 @@ async function main() {
   assert.equal(describeMarketCacheAge("2026-11-06T11:30:00Z", cacheNow), "hace 30 minutos");
   assert.equal(describeMarketCacheAge("2026-11-06T11:59:50Z", cacheNow), "hace unos segundos");
   assert.equal(describeMarketCacheAge("no es fecha", cacheNow), "");
-  assert.match(managerSource, /\{ label: "Archivar", onSelect: \(\) => onArchive\(item\) \}/);
+  assert.match(managerSource, /onClick=\{\(\) => onArchive\(item\)\} aria-label=\{`Archivar \$\{item\.nombre\}`\} title="Archivar ítem"><AppIcon icon=\{Archive\} size=\{17\} \/>/);
+  assert.match(managerSource, /onClick=\{\(\) => onReactivate\(item\)\} aria-label=\{`Reactivar \$\{item\.nombre\}`\} title="Reactivar ítem"><AppIcon icon=\{RotateCcw\} size=\{17\} \/>/);
+  assert.doesNotMatch(managerSource, /\{ label: "Archivar", onSelect/, "Archivar y Reactivar ya no viven en un menú.");
+  const inventoryCssSource = await readFile(new URL("../src/features/inventory/inventory.css", import.meta.url), "utf8");
+  assert.match(inventoryCssSource, /@media \(pointer: coarse\) \{ \.client-row-actions\.inventory-row-icons button \{ height: 44px; width: 44px; \} \}/, "Área táctil de 44 px con puntero táctil.");
   assert.equal((managerSource.match(/<RowActions /g) || []).length, 2, "Tabla y tarjeta móvil usan las acciones por fila.");
   assert.match(managerSource, /footer=\{<Actions /, "El pie de la ficha conserva sus botones visibles.");
   assert.match(managerSource, /No aplica/);

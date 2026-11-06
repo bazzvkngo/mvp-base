@@ -45,14 +45,11 @@
 .inventory-row-actions { flex-wrap: nowrap; }
 /* El botón ⋯ (menú compartido, con aria-haspopup) conserva su propio estilo. */
 .inventory-row-actions button:not([aria-haspopup]) { align-items: center; background: var(--color-surface-panel); border: 1px solid var(--color-border-control); border-radius: var(--radius-sm); color: var(--color-text-default); cursor: pointer; display: inline-flex; font-size: var(--font-size-xs); gap: .25rem; min-height: 32px; padding: .35rem .5rem; }
-/* Fila con "Editar" y menú ⋯: Editar con las mismas medidas que el ⋯. Va
-   después de la regla general de botones de fila, que tiene igual especificidad. */
-.inventory-row-actions--menu { align-items: center; }
-.inventory-row-actions--menu > button:not([aria-haspopup]) { background: var(--color-surface-subtle); border-radius: var(--radius-xs); font-weight: var(--font-weight-bold); justify-content: center; min-height: 38px; padding: 0 var(--space-3); }
-/* Lupa de referencias de mercado: cuadrada como el ⋯, antes de Editar. Lleva un
-   selector más específico que la regla de botones de fila (mismo patrón). */
-.inventory-row-actions--menu > .inventory-row-actions__search:not([aria-haspopup]) { flex: 0 0 auto; justify-content: center; padding: 0; width: 38px; }
-@media (pointer: coarse) { .inventory-row-actions--menu > .inventory-row-actions__search:not([aria-haspopup]) { width: 44px; } }
+/* Acciones de fila en íconos: reutilizan .client-row-actions (interior.css, como Proveedores).
+   Aquí solo la alineación a la izquierda y el área táctil de 44 px con puntero táctil; el
+   selector doble gana a la regla de botones de fila sin depender del orden del CSS. */
+.client-row-actions.inventory-row-icons { align-items: center; flex-wrap: nowrap; justify-content: flex-start; }
+@media (pointer: coarse) { .client-row-actions.inventory-row-icons button { height: 44px; width: 44px; } }
 .inventory-empty-state { align-items: center; display: grid; gap: var(--space-2); justify-items: center; }
 .inventory-empty-state h3, .inventory-empty-state p { margin: 0; }
 .inventory-feedback { border-radius: var(--radius-md); font-size: var(--font-size-sm); margin: 0; padding: var(--space-3); }
@@ -222,9 +219,6 @@
 .inventory-import-result { align-items: center; background: var(--color-success-50); border: 1px solid var(--color-success-200); border-radius: var(--radius-md); display: grid; gap: var(--space-3); justify-items: center; padding: var(--space-6); text-align: center; }
 .inventory-import-result h3, .inventory-import-result p { margin: 0; }
 .inventory-mobile-card .inventory-row-actions { display: grid; grid-template-columns: repeat(2, 1fr); }
-.inventory-mobile-card .inventory-row-actions--menu { display: flex; }
-.inventory-mobile-card .inventory-row-actions--menu > button:not([aria-haspopup]) { flex: 1 1 auto; }
-.inventory-mobile-card .inventory-row-actions--menu > .inventory-row-actions__search:not([aria-haspopup]) { flex: 0 0 auto; }
 
 /* Formulario de ítem reorganizado: esenciales arriba, tarjeta de precio,
    "Más detalles" plegable y resumen de precio en el pie del diálogo. */

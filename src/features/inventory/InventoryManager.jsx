@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {useNavigate} from "react-router-dom";
-import { Activity, Archive, Boxes, BriefcaseBusiness, ChevronDown, FileSpreadsheet, Package, PackagePlus, RotateCcw, Search, X } from "lucide-react";
+import { Activity, Archive, Boxes, BriefcaseBusiness, ChevronDown, FileSpreadsheet, Package, PackagePlus, Pencil, RotateCcw, Search, X } from "lucide-react";
 import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
 import LoadingState from "../../components/ui/LoadingState";
@@ -690,33 +690,29 @@ function InventoryList({ areas, cannotWrite, categories, items, lowStockSettings
   return <><div className="erp-table-region erp-desktop-only"><table className="erp-table inventory-table"><thead><tr><th>SKU</th><th>Ítem</th><th>Tipo</th><th>Stock</th><th className="inventory-table__price">Precio</th><th className="inventory-table__status">Estado</th><th>Acciones</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td className="inventory-code">{item.codigoInterno || item.sku || "—"}</td><td><button className="inventory-item-link" type="button" onClick={() => onView(item)}>{item.nombre}</button><IdentityMetadata item={item} /></td><td>{getInventoryTypeLabel(item.tipoItem)}{item.tipoItem !== "producto" && <small>{item.unidad}</small>}</td><td><StockPresentation item={item} lowStockSettings={lowStockSettings} /></td><td className="inventory-table__price"><strong>{formatBusinessAmount(item.precioEfectivo)}</strong></td><td className="inventory-table__status"><Status item={item} /></td><td><RowActions item={item} cannotWrite={cannotWrite} onArchive={onArchive} onEdit={onEdit} onReactivate={onReactivate} onViewReferences={onViewReferences} /></td></tr>)}</tbody></table></div><div className="erp-card-list erp-mobile-only">{items.map((item) => <article className="erp-record-card inventory-mobile-card" key={item.id}><header className="erp-record-card__header"><div><span className="inventory-code">{item.codigoInterno || item.sku || "Sin código"}</span><h3 className="erp-record-card__title">{item.nombre}</h3><IdentityMetadata item={item} /><p className="erp-record-card__subtitle">{getInventoryTypeLabel(item.tipoItem)} · {item.unidad}</p></div><Status item={item} /></header><dl className="erp-meta-grid"><div className="erp-meta"><dt className="erp-meta__label">Clasificación</dt><dd className="erp-meta__value">{getInventoryAreaLabel(item, areas)} / {getInventoryCategoryLabel(item, categories)}</dd></div><div className="erp-meta"><dt className="erp-meta__label">Costo / precio</dt><dd className="erp-meta__value">{formatBusinessAmount(item.costoBase)} / {formatBusinessAmount(item.precioEfectivo)}</dd></div><div className="erp-meta"><dt className="erp-meta__label">Stock</dt><dd className="erp-meta__value"><StockPresentation item={item} lowStockSettings={lowStockSettings} /></dd></div></dl><button type="button" className="inventory-button inventory-button--secondary" onClick={() => onView(item)}>Ver detalle</button><RowActions item={item} cannotWrite={cannotWrite} onArchive={onArchive} onEdit={onEdit} onReactivate={onReactivate} onViewReferences={onViewReferences} /></article>)}</div></>;
 }
 
-// Lupa de referencias de mercado: botón visible en la fila (tabla y tarjeta
-// móvil), también para el rol de solo lectura. Entrega el propio botón para
-// devolverle el foco al cerrar el diálogo.
+// Lupa de referencias de mercado: botón de ícono visible en la fila (tabla y
+// tarjeta móvil), también para el rol de solo lectura. Entrega el propio botón
+// para devolverle el foco al cerrar el diálogo. Se estiliza con la clase
+// client-row-actions de su contenedor (la misma que usa Proveedores).
 function ReferencesButton({ item, onViewReferences }) {
-  return <button type="button" className="inventory-row-actions__search" aria-label={`Ver referencias de mercado de ${item.nombre}`} title="Ver referencias de mercado" onClick={(event) => onViewReferences(item, event.currentTarget)}><AppIcon icon={Search} size={17} /></button>;
+  return <button type="button" aria-label={`Ver referencias de mercado de ${item.nombre}`} title="Ver referencias de mercado" onClick={(event) => onViewReferences(item, event.currentTarget)}><AppIcon icon={Search} size={17} /></button>;
 }
 
-// Acciones de una fila (tabla y tarjeta móvil): lupa de referencias y
-// "Editar" visibles, y el resto en el menú ⋯. Mismos permisos que Actions, que
-// sigue en el pie de la ficha. Un rol de solo lectura ve solo la lupa.
+// Acciones de una fila (tabla y tarjeta móvil): tres botones de ícono, como en
+// Proveedores: lupa de referencias, lápiz para editar y Archivar o Reactivar
+// según el estado. Mismos permisos que Actions, que sigue en el pie de la ficha
+// con botones de texto. Un rol de solo lectura ve solo la lupa.
 function RowActions({ cannotWrite, item, onArchive, onEdit, onReactivate, onViewReferences }) {
   const canView = item.tipoItem === "producto" && item.estado === "activo";
   if (cannotWrite) {
-    return canView ? <div className="inventory-row-actions inventory-row-actions--menu"><ReferencesButton item={item} onViewReferences={onViewReferences} /></div> : null;
+    return canView ? <div className="client-row-actions inventory-row-icons"><ReferencesButton item={item} onViewReferences={onViewReferences} /></div> : null;
   }
-  return <div className="inventory-row-actions inventory-row-actions--menu">
+  return <div className="client-row-actions inventory-row-icons">
     {canView && <ReferencesButton item={item} onViewReferences={onViewReferences} />}
-    <button type="button" onClick={() => onEdit(item)}>Editar</button>
-    <MoreActionsMenu
-      iconOnly
-      menuLabel={`Más acciones de ${item.nombre}`}
-      actions={[
-        item.estado === "activo"
-          ? { label: "Archivar", onSelect: () => onArchive(item) }
-          : { label: "Reactivar", onSelect: () => onReactivate(item) },
-      ]}
-    />
+    <button type="button" onClick={() => onEdit(item)} aria-label={`Editar ${item.nombre}`} title="Editar ítem"><AppIcon icon={Pencil} size={17} /></button>
+    {item.estado === "activo"
+      ? <button type="button" onClick={() => onArchive(item)} aria-label={`Archivar ${item.nombre}`} title="Archivar ítem"><AppIcon icon={Archive} size={17} /></button>
+      : <button type="button" onClick={() => onReactivate(item)} aria-label={`Reactivar ${item.nombre}`} title="Reactivar ítem"><AppIcon icon={RotateCcw} size={17} /></button>}
   </div>;
 }
 
