@@ -141,12 +141,14 @@ assert.match(receptionDetailSource, /Confirmar recepción y registrar compra/);
 assert.match(receptionDetailSource, /Recibir ahora/);
 assert.match(receptionDetailSource, /Confirmar prestación/);
 assert.match(receptionDetailSource, /SupplyTrace/);
-assert.match(receptionDetailSource, /Recepción completada correctamente/);
+// Recepción confirmada: aviso corto, sin el título repetido, y el número de la compra una sola vez, como enlace.
+assert.doesNotMatch(receptionDetailSource, /Recepción completada correctamente/);
+assert.match(receptionDetailSource, />Ver compra \{reception\.compraNumero/);
 // El diálogo de confirmación sigue abierto mientras dura la llamada y se cierra solo en el finally.
 assert.doesNotMatch(receptionDetailSource, /confirmGuard\.current = true;\s*setDialog\(""\)/);
 assert.match(receptionDetailSource, /finally \{ confirmGuard\.current = false; setProcessing\(false\); setDialog\(""\); \}/);
 assert.match(receptionDetailSource, /\{processing && <p className="erp-secondary-text" role="status">/);
-assert.doesNotMatch(receptionDetailSource, /Inventario y compra registrados|Ver compra/);
+assert.doesNotMatch(receptionDetailSource, /Inventario y compra registrados/);
 
 const scanItems = [
   {lineaId: "l1", itemId: "p1", tipoItem: "producto", nombre: "Cable", cantidadSolicitada: 5, cantidadRecibidaAnterior: 3, cantidad: 0},
