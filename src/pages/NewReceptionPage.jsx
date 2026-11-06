@@ -83,7 +83,7 @@ export default function NewReceptionPage({businessId, role}) {
   };
   const confirm = async () => {
     if (confirmGuard.current || processing) return;
-    confirmGuard.current = true; setDialog(""); setProcessing(true); setMessage("");
+    confirmGuard.current = true; setProcessing(true); setMessage("");
     try {
       await actualizarRecepcionBorrador(businessId, reception.id, draft);
       const result = await confirmarRecepcion(businessId, reception.id, {requestId: confirmId.current});
@@ -102,7 +102,8 @@ export default function NewReceptionPage({businessId, role}) {
           } else setMessage("La recepción continúa preparada. Puedes reintentar con seguridad.");
         } catch { setMessage("No se pudo verificar la confirmación. Recarga antes de reintentar."); }
       } else setMessage(error.message);
-    } finally { confirmGuard.current = false; setProcessing(false); }
+    // El diálogo se mantiene abierto mientras dura la llamada y se cierra aquí, tanto en éxito como en error.
+    } finally { confirmGuard.current = false; setProcessing(false); setDialog(""); }
   };
   const cancel = async () => {
     if (processing) return;
@@ -159,6 +160,7 @@ export default function NewReceptionPage({businessId, role}) {
 
     <ResponsiveDialog open={dialog === "confirm"} onClose={() => !processing && setDialog("")} eyebrow="Lista para confirmar" title="Confirma el impacto de esta recepción" description="Al confirmar, ValoraCloud registrará esta recepción, actualizará el stock de los productos recibidos y generará automáticamente la compra correspondiente. Los servicios y actividades no modificarán existencias." size="small" footer={<><Button type="button" variant="secondary" disabled={processing} onClick={() => setDialog("")}>Volver</Button><Button type="button" loading={processing} onClick={confirm}>{processing ? "Confirmando recepción…" : "Confirmar recepción y registrar compra"}</Button></>}>
       <div className="reception-confirm-impact"><div><span>Productos que actualizan stock</span><strong>{plural(confirmationImpact.productos, "producto", "productos")}</strong></div><div><span>Servicios sin movimiento de stock</span><strong>{plural(confirmationImpact.servicios, "servicio", "servicios")}</strong></div><div><span>Actividades sin movimiento de stock</span><strong>{plural(confirmationImpact.actividades, "actividad", "actividades")}</strong></div><div><span>Total estimado de la compra</span><strong>{formatMoney(confirmationImpact.totalCompraEstimado, reception.moneda, reception.locale)}</strong></div></div>
+      {processing && <p className="erp-secondary-text" role="status">Esto puede tardar unos segundos. No cierres ni recargues esta página.</p>}
     </ResponsiveDialog>
     <ResponsiveDialog open={dialog === "cancel"} onClose={() => !processing && setDialog("")} eyebrow="Cancelar recepción" title="Cancelar recepción" description="La recepción quedará cancelada sin modificar stock." size="small" footer={<><Button type="button" variant="secondary" disabled={processing} onClick={() => setDialog("")}>Volver</Button><Button type="button" variant="danger" loading={processing} onClick={cancel}>{processing ? "Cancelando..." : "Cancelar recepción"}</Button></>}><p>Esta acción no se puede deshacer.</p></ResponsiveDialog>
     <ReceptionDocumentImportDialog open={importOpen} onClose={() => setImportOpen(false)} onApply={applyImport} businessId={businessId} providerSnapshot={reception.proveedorSnapshot} receptionItems={draft.items} />

@@ -142,6 +142,10 @@ assert.match(receptionDetailSource, /Recibir ahora/);
 assert.match(receptionDetailSource, /Confirmar prestación/);
 assert.match(receptionDetailSource, /SupplyTrace/);
 assert.match(receptionDetailSource, /Recepción completada correctamente/);
+// El diálogo de confirmación sigue abierto mientras dura la llamada y se cierra solo en el finally.
+assert.doesNotMatch(receptionDetailSource, /confirmGuard\.current = true;\s*setDialog\(""\)/);
+assert.match(receptionDetailSource, /finally \{ confirmGuard\.current = false; setProcessing\(false\); setDialog\(""\); \}/);
+assert.match(receptionDetailSource, /\{processing && <p className="erp-secondary-text" role="status">/);
 assert.doesNotMatch(receptionDetailSource, /Inventario y compra registrados|Ver compra/);
 
 const scanItems = [
