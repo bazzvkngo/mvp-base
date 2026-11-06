@@ -72,16 +72,8 @@ export default function PurchaseOrderDeleteDialog({businessId, onClose, onDelete
       title="Eliminar orden de compra"
     >
       <div className="purchase-order-delete">
-        <p className="purchase-order-delete__warning">Esta acción es permanente y no se puede deshacer. Se perderán:</p>
-        <ul className="purchase-order-delete__list">
-          <li>la orden con sus ítems y su historial,</li>
-          <li>sus registros de creación y de intentos de envío.</li>
-        </ul>
-        <p className="purchase-order-delete__note">
-          El número {order?.numero} no se vuelve a usar: quedará un hueco en la numeración de las órdenes.
-          Solo se eliminan órdenes que nunca se enviaron al proveedor y que no tienen recepciones ni compras.
-          Si ya no la necesitas pero conviene dejar constancia, cancélala: cancelar conserva la orden en el historial.
-        </p>
+        <p className="purchase-order-delete__warning">Se eliminará la orden {order?.numero} con sus ítems e historial. No se puede deshacer.</p>
+        <p className="purchase-order-delete__hint">El número no se reutiliza: quedará un hueco en la numeración.</p>
         <label className="erp-field purchase-order-delete__field">
           <span>Para confirmar, escribe <strong>{DELETE_CONFIRMATION_WORD}</strong></span>
           <input

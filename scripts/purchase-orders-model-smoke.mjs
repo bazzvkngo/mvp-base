@@ -585,9 +585,10 @@ assert.match(deleteDialogSource, /eliminarOrdenCompra\(businessId, order\.id, co
 assert.match(deleteDialogSource, /guard\.current \|\| deleting \|\| !isDeleteConfirmed\(confirmation\)/);
 assert.match(deleteDialogSource, /variant="danger" loading=\{deleting\} disabled=\{!isDeleteConfirmed\(confirmation\)\} onClick=\{confirm\}/);
 assert.match(deleteDialogSource, /Para confirmar, escribe <strong>\{DELETE_CONFIRMATION_WORD\}<\/strong>/);
-assert.match(deleteDialogSource, /Esta acción es permanente y no se puede deshacer/);
-assert.match(deleteDialogSource, /no se vuelve a usar: quedará un hueco en la numeración/);
-assert.match(deleteDialogSource, /Solo se eliminan órdenes que nunca se enviaron al proveedor y que no tienen recepciones ni compras/);
+// Pulido del diálogo: tres piezas cortas (frase con el número, línea del hueco, campo «permanente»).
+assert.match(deleteDialogSource, /Se eliminará la orden \{order\?\.numero\} con sus ítems e historial\. No se puede deshacer\./);
+assert.match(deleteDialogSource, /El número no se reutiliza: quedará un hueco en la numeración\./);
+assert.doesNotMatch(deleteDialogSource, /Se perderán|purchase-order-delete__list|purchase-order-delete__note|Solo se eliminan órdenes|cancélala/);
 assert.match(deleteDialogSource, /onClose=\{close\}/);
 assert.match(deleteDialogSource, /if \(deleting\) return;/);
 // 4. Éxito: aviso y vuelta al listado; rechazo: mensaje del backend tal cual, con la orden intacta.
@@ -640,7 +641,7 @@ assert.match(historySource, /import PurchaseOrderDeleteDialog from "\.\.\/featur
 assert.equal(pageSource.split("<PurchaseOrderDeleteDialog").length - 1, 1);
 assert.equal(historySource.split("<PurchaseOrderDeleteDialog").length - 1, 1);
 for (const [name, source] of [["detalle", pageSource], ["lista", historySource]]) {
-  assert.doesNotMatch(source, /Para confirmar, escribe|Esta acción es permanente y no se puede deshacer|eliminarOrdenCompra\(|isDeleteConfirmed/, `${name} no debe duplicar el diálogo`);
+  assert.doesNotMatch(source, /Para confirmar, escribe|Se eliminará la orden|eliminarOrdenCompra\(|isDeleteConfirmed/, `${name} no debe duplicar el diálogo`);
 }
 assert.match(deleteDialogSource, /import "\.\/purchase-order-delete\.css"/);
 assert.match(deleteDialogSource, /const guard = useRef\(false\)/);
