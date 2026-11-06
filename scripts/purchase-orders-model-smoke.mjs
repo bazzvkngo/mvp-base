@@ -440,6 +440,52 @@ assert.match(backendSource, /inventorySnapshotFromDocument/);
 assert.doesNotMatch(backendSource, /condicionesPago:\s*input\.condicionesPago\s*\|\|/);
 assert.match(rulesSource, /match \/ordenesCompra\/\{ordenCompraId\}/);
 assert.match(rulesSource, /allow create, update, delete: if false/);
+// Eliminación permanente (SPEC 005, enmienda 2026-11-06): Function propia, solo OWNER/ADMIN, sin tocar reglas ni contador.
+const deletionSource = fs.readFileSync("functions/purchaseOrderDeletion.js", "utf8");
+const functionsIndexSource = fs.readFileSync("functions/index.js", "utf8");
+const functionsPackageSource = fs.readFileSync("functions/package.json", "utf8");
+const rootPackageSource = fs.readFileSync("package.json", "utf8");
+assert.match(functionsIndexSource, /exports\.eliminarOrdenCompra = onCall\([\s\S]{0,260}eliminarOrdenCompraHandler\(request, purchaseOrderPersistenceDependencies\)/);
+assert.match(functionsPackageSource, /purchaseOrderDeletion\.js/);
+assert.match(rootPackageSource, /"test:purchase-order-delete"/);
+assert.match(deletionSource, /roles: BUSINESS_MANAGEMENT_ROLES, requiresVerifiedBusiness: true/);
+assert.match(deletionSource, /DELETE_CONFIRMATION_WORD = "permanente"/);
+assert.match(deletionSource, /db\.runTransaction/);
+for (const collectionName of [
+  "recepciones", "compras", "adquisicionesInventario", "movimientosInventario",
+  "receptionCreateRequests", "purchaseOrderConversionRequests",
+  "purchaseOrderDuplicateRequests", "purchaseOrderCreateRequests", "purchaseOrderEmailAttempts",
+]) assert.match(deletionSource, new RegExp(`"${collectionName}"`), `la eliminación debe considerar ${collectionName}`);
+for (const field of [
+  "emitidaEn", "emitidaPorUid", "canalEmision", "destinatarioEmision", "cantidadEnvios",
+  "ultimoEnvioEn", "reenviadaEn", "respuestaProveedor", "enviadoPorCorreo", "estadoEnvioCorreo",
+  "compraId", "comprasDesdeRecepciones", "estadoRecepcion", "recepcionResumen",
+  "ordenCompraOrigenId",
+]) assert.match(deletionSource, new RegExp(`\\b${field}\\b`), `la eliminación debe revisar ${field}`);
+assert.match(deletionSource, /"enviando"/);
+assert.match(deletionSource, /"enviado"/);
+// El contador de numeración no se toca: el número eliminado no se reutiliza.
+assert.doesNotMatch(deletionSource, /collection\("purchaseOrderCounters"\)/);
+assert.match(rulesSource, /match \/purchaseOrderEmailAttempts\/\{attemptId\}\s*\{\s*allow read, create, update, delete: if false;/);
+assert.match(rulesSource, /match \/ordenesCompra\/\{ordenCompraId\}\s*\{[^}]*allow create, update, delete: if false;/);
+const {findEmissionTrace, hasOrderLinks, isDeleteConfirmed} = require("../functions/purchaseOrderDeletion.js");
+assert.equal(isDeleteConfirmed("  Permanente "), true);
+assert.equal(isDeleteConfirmed("borrar"), false);
+assert.equal(findEmissionTrace({estado: "borrador"}), false);
+assert.equal(findEmissionTrace({estado: "cancelada"}), false);
+assert.equal(findEmissionTrace({estado: "borrador", estadoEnvioCorreo: "simulado", fechaEnvioCorreo: "x", enviadoPorCorreo: false}), false, "un envío simulado no bloquea");
+assert.equal(findEmissionTrace({estado: "borrador", estadoEnvioCorreo: "error", fechaEnvioCorreo: "x"}), false, "un envío fallido no bloquea");
+assert.equal(findEmissionTrace({estado: "emitida"}), true);
+assert.equal(findEmissionTrace({estado: "cancelada", emitidaEn: "x"}), true, "una cancelada que se emitió no se elimina");
+assert.equal(findEmissionTrace({estado: "borrador", cantidadEnvios: 1}), true);
+assert.equal(findEmissionTrace({estado: "borrador", respuestaProveedor: {estado: "rechazada"}}), true);
+assert.equal(findEmissionTrace({estado: "borrador", respuestaProveedor: {estado: "pendiente"}}), false);
+assert.equal(findEmissionTrace({estado: "borrador", enviadoPorCorreo: true}), true);
+assert.equal(hasOrderLinks({estado: "borrador"}), false);
+assert.equal(hasOrderLinks({compraId: "c1"}), true);
+assert.equal(hasOrderLinks({comprasDesdeRecepciones: []}), false);
+assert.equal(hasOrderLinks({comprasDesdeRecepciones: [{compraId: "c1"}]}), true);
+console.log("OK eliminación de OC: Function solo OWNER/ADMIN, bloqueos, contador intacto y reglas sin cambios");
 assert.match(pageSource, /PurchaseOrderPrintView/);
 assert.doesNotMatch(pageSource, /Quote[A-Z]/);
 assert.match(pageSource, /navigate\("\/ordenes-compra", \{[\s\S]*createdOrder: saved[\s\S]*openOrderId: saved\.id/);

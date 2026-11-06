@@ -50,6 +50,7 @@ const {
   reactivarProveedorHandler,
 } = require("./providerPersistence");
 const {eliminarProveedorHandler} = require("./providerDeletion");
+const {eliminarOrdenCompraHandler} = require("./purchaseOrderDeletion");
 const {
   actualizarOrdenCompraBorradorHandler,
   cancelarOrdenCompraHandler,
@@ -2176,6 +2177,18 @@ exports.cancelarOrdenCompra = onCall(
   },
   async (request) =>
     cancelarOrdenCompraHandler(request, purchaseOrderPersistenceDependencies)
+);
+
+// Eliminación permanente de una orden nunca enviada (SPEC 005, enmienda 2026-11-06).
+exports.eliminarOrdenCompra = onCall(
+  {
+    maxInstances: 20,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    eliminarOrdenCompraHandler(request, purchaseOrderPersistenceDependencies)
 );
 
 exports.registrarRespuestaProveedorOrdenCompra = onCall(

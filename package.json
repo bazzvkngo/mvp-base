@@ -63,6 +63,7 @@
     "test:providers-delete-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/provider-delete-integrated-local.mjs\"",
     "test:purchase-orders-model": "node scripts/purchase-orders-model-smoke.mjs",
     "test:purchase-order-email": "node scripts/purchase-order-email-smoke.mjs",
+    "test:purchase-order-delete": "firebase emulators:exec --only auth,firestore,functions \"node scripts/purchase-order-delete-integrated-local.mjs\"",
     "test:purchase-orders-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/purchase-orders-integrated-local.mjs\"",
     "test:purchases-model": "node scripts/purchase-model-smoke.mjs",
     "test:purchases-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/purchases-integrated-local.mjs\"",
