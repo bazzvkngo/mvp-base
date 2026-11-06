@@ -562,6 +562,41 @@ assert.equal(
 );
 assert.equal(canOfferPurchaseOrderDeletion(adaptStoredPurchaseOrder({id: "oc-2", estado: "borrador", items: []}), "OWNER"), true);
 console.log("OK eliminación de OC (frontend): servicio, roles y casos de la orden alineados con la Function");
+
+// Interfaz de la eliminación (etapa 4): borrador, menú "Más" de la cancelada y diálogo de confirmación.
+const deleteCssSource = fs.readFileSync("src/features/purchaseOrders/purchase-order-delete.css", "utf8");
+const deleteViewSource = fs.readFileSync("src/features/purchaseOrders/PurchaseOrderDetailView.jsx", "utf8");
+// 1. Borrador: "Eliminar" junto a "Cancelar", solo con canOfferPurchaseOrderDeletion y con la diferencia explicada.
+assert.match(pageSource, /canDeleteOrder = canOfferPurchaseOrderDeletion\(order, role\) && receptions\.length === 0/);
+assert.match(pageSource, />Cancelar<\/button>\}\s*\{canDeleteOrder && order\.estado === "borrador" && <button[^>]*onClick=\{openDelete\}>Eliminar<\/button>\}/);
+assert.match(pageSource, /Cancelar conserva la orden en el historial; eliminar la quita para siempre\./);
+// 2. Cancelada: "Eliminar" en el menú "Más", con la misma condición y sin aparecer en emitidas.
+assert.match(pageSource, /canDelete=\{canDeleteOrder\}[\s\S]*?onDelete=\{openDelete\}/);
+assert.match(deleteViewSource, /canDelete && \{label: "Eliminar", onSelect: onDelete, disabled: saving\}/);
+assert.doesNotMatch(deleteViewSource, /issued && \{label: "Eliminar"/);
+// 3. Diálogo: palabra «permanente», botón rojo deshabilitado hasta que coincida, carga, sin doble envío y avisos.
+assert.match(pageSource, /import "\.\.\/features\/purchaseOrders\/purchase-order-delete\.css"/);
+assert.match(pageSource, /eliminarOrdenCompra\(businessId, order\.id, deleteConfirmation\)/);
+assert.match(pageSource, /deleteGuard\.current \|\| !isDeleteConfirmed\(deleteConfirmation\)/);
+assert.match(pageSource, /variant="danger" loading=\{deleting\} disabled=\{!isDeleteConfirmed\(deleteConfirmation\)\} onClick=\{confirmDelete\}/);
+assert.match(pageSource, /Para confirmar, escribe <strong>\{DELETE_CONFIRMATION_WORD\}<\/strong>/);
+assert.match(pageSource, /Esta acción es permanente y no se puede deshacer/);
+assert.match(pageSource, /no se vuelve a usar: quedará un hueco en la numeración/);
+assert.match(pageSource, /Solo se eliminan órdenes que nunca se enviaron al proveedor y que no tienen recepciones ni compras/);
+assert.match(pageSource, /onClose=\{closeDelete\}/);
+assert.match(pageSource, /if \(deleting\) return;/);
+// 4. Éxito: aviso y vuelta al listado; rechazo: mensaje del backend tal cual, con la orden intacta.
+assert.match(pageSource, /title: `Orden \$\{order\.numero\} eliminada`/);
+assert.match(pageSource, /navigate\("\/ordenes-compra", \{replace: true\}\)/);
+assert.match(pageSource, /setDeleteError\(error\.message \|\| "No pudimos eliminar la orden de compra\."\)/);
+assert.match(pageSource, /deleteError && <div className="po-message po-message--error" role="alert">\{deleteError\}<\/div>/);
+// Las acciones existentes no cambian de lógica.
+assert.match(pageSource, /cancelarOrdenCompra\(businessId, order\.id\)/);
+assert.match(pageSource, /emitirOrdenCompra\(businessId, order\.id, \{canalEmision: "manual"\}\)|emitirOrdenCompra\(businessId, saved\.id, \{canalEmision: "manual"\}\)/);
+// 5. Estilos propios, solo con tokens.
+assert.doesNotMatch(deleteCssSource, /#[0-9a-fA-F]{3,8}\b|rgb\(|hsl\(/);
+assert.match(deleteCssSource, /\.purchase-order-delete__note[\s\S]*?var\(--color-surface-subtle\)/);
+console.log("OK eliminación de OC (interfaz): botón del borrador, menú Más de la cancelada y diálogo con «permanente»");
 assert.match(pageSource, /PurchaseOrderPrintView/);
 assert.doesNotMatch(pageSource, /Quote[A-Z]/);
 assert.match(pageSource, /navigate\("\/ordenes-compra", \{[\s\S]*createdOrder: saved[\s\S]*openOrderId: saved\.id/);

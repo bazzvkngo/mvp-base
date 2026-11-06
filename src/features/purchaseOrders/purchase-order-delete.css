@@ -1,0 +1,45 @@
+/* Eliminación permanente de una orden de compra (SPEC 005, enmienda 2026-11-06): el botón del
+   borrador y el diálogo de confirmación. Solo tokens; el modo oscuro sale de los propios tokens.
+   Hoja propia para no tocar purchase-orders.css, que comparten Compras, Recepciones y Ventas. */
+.purchase-order-delete {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.purchase-order-delete__warning {
+  color: var(--color-text-strong);
+  font-weight: var(--font-weight-semibold);
+  margin: 0;
+}
+
+.purchase-order-delete__list {
+  color: var(--color-text-default);
+  margin: 0;
+  padding-left: var(--space-5);
+}
+
+.purchase-order-delete__note {
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-default);
+  margin: 0;
+  overflow-wrap: anywhere;
+  padding: var(--space-3);
+}
+
+.purchase-order-delete__field strong {
+  color: var(--color-text-strong);
+}
+
+.purchase-order-delete__hint {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-default);
+}
+
+@media (max-width: 640px) {
+  .purchase-order-delete__trigger {
+    width: 100%;
+  }
+}

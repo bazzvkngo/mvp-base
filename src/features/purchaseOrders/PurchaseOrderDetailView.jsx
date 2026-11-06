@@ -27,6 +27,7 @@ const lineTotal = (line) => Number(line.cantidad || 0) * Number(line.costoUnitar
 // Detalle de una orden de compra emitida o cancelada: solo lectura, sin campos deshabilitados.
 // El borrador y la orden nueva siguen usando el formulario de NewPurchaseOrderPage.
 export default function PurchaseOrderDetailView({
+  canDelete,
   canManage,
   company,
   currentUser,
@@ -35,6 +36,7 @@ export default function PurchaseOrderDetailView({
   message,
   onCancel,
   onCreateReception,
+  onDelete,
   onDownloadPdf,
   onDuplicate,
   onEmail,
@@ -71,6 +73,8 @@ export default function PurchaseOrderDetailView({
     {label: "Imprimir", onSelect: () => window.print()},
     canManage && {label: duplicating ? "Creando copia..." : "Duplicar como nueva orden", onSelect: onDuplicate, disabled: saving || duplicating},
     canCancel && {label: "Cancelar", onSelect: onCancel, disabled: saving},
+    // Eliminar para siempre: solo órdenes nunca enviadas y para OWNER/ADMIN (decide la página y la Function).
+    canDelete && {label: "Eliminar", onSelect: onDelete, disabled: saving},
   ].filter(Boolean);
 
   const actorLabel = (uid) => {
