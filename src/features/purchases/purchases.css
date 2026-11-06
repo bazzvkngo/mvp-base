@@ -86,3 +86,49 @@
 }
 
 /* Tokens faltantes nuevos encontrados en esta pasada: ninguno. */
+
+/* Detalle de una compra confirmada, revertida o cancelada (PurchaseDetailView): solo lectura.
+   Solo tokens; el modo oscuro sale de los propios tokens. */
+.purchase-detail__screen { display: grid; gap: var(--space-4); min-width: 0; }
+.purchase-detail__context { display: grid; gap: var(--space-3); }
+.purchase-detail__top { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-3); justify-content: space-between; }
+.purchase-detail__title { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.purchase-detail__title h1 { color: var(--color-text-strong); font-size: var(--font-size-xl); margin: 0; overflow-wrap: anywhere; }
+.purchase-detail__facts { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); margin: 0; }
+.purchase-detail__facts > div { background: var(--color-surface-subtle); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm); display: grid; gap: var(--space-1); min-width: 0; padding: var(--space-2) var(--space-3); }
+.purchase-detail__facts dt { color: var(--color-text-muted); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); text-transform: uppercase; }
+.purchase-detail__facts dd { color: var(--color-text-strong); display: grid; font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); gap: var(--space-1); margin: 0; overflow-wrap: anywhere; }
+.purchase-detail__heading { margin: 0 0 var(--space-3); }
+.purchase-detail__items { container-type: inline-size; }
+.purchase-detail__table { border-collapse: collapse; font-size: var(--font-size-sm); font-variant-numeric: tabular-nums; width: 100%; }
+.purchase-detail__table th { border-bottom: 1px solid var(--color-border-default); color: var(--color-text-muted); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); padding: var(--space-2) var(--space-3); text-align: right; }
+.purchase-detail__table td { border-bottom: 1px solid var(--color-border-subtle); color: var(--color-text-default); padding: var(--space-2) var(--space-3); text-align: right; vertical-align: middle; }
+.purchase-detail__table th:first-child, .purchase-detail__table td:first-child { text-align: left; }
+.purchase-detail__table tbody tr:last-child td { border-bottom: 0; }
+.purchase-detail__total { color: var(--color-text-strong); font-weight: var(--font-weight-semibold); }
+.purchase-detail__item { min-width: 12rem; }
+.purchase-detail__item small { color: var(--color-text-muted); display: block; font-size: var(--font-size-xs); margin-top: var(--space-1); }
+.purchase-detail__item-title { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.purchase-detail__item-title strong { color: var(--color-text-strong); overflow-wrap: anywhere; }
+.purchase-detail__totals { display: grid; gap: var(--space-2); justify-items: end; margin: var(--space-4) 0 0; }
+.purchase-detail__totals > div { display: flex; font-size: var(--font-size-sm); gap: var(--space-6); justify-content: space-between; min-width: 14rem; }
+.purchase-detail__totals dt { color: var(--color-text-muted); }
+.purchase-detail__totals dd { color: var(--color-text-default); font-variant-numeric: tabular-nums; margin: 0; }
+.purchase-detail__totals .purchase-detail__grand-total { border-top: 1px solid var(--color-border-default); font-weight: var(--font-weight-bold); padding-top: var(--space-2); }
+.purchase-detail__totals .purchase-detail__grand-total dt, .purchase-detail__totals .purchase-detail__grand-total dd { color: var(--color-text-strong); }
+
+/* Contenedor angosto (móvil): cada ítem es una tarjeta con su etiqueta. */
+@container (max-width: 35rem) {
+  .purchase-detail__table, .purchase-detail__table tbody, .purchase-detail__table tr, .purchase-detail__table td { display: block; }
+  .purchase-detail__table thead { clip: rect(0 0 0 0); clip-path: inset(50%); height: 1px; overflow: hidden; position: absolute; white-space: nowrap; width: 1px; }
+  .purchase-detail__table tbody tr { background: var(--color-surface-subtle); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); margin-bottom: var(--space-3); padding: var(--space-3); }
+  .purchase-detail__table td, .purchase-detail__table tbody tr:last-child td { align-items: baseline; border: 0; display: flex; gap: var(--space-3); justify-content: space-between; padding: var(--space-1) 0; text-align: right; }
+  .purchase-detail__table td::before { color: var(--color-text-muted); content: attr(data-label); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); text-align: left; text-transform: uppercase; }
+  .purchase-detail__table td.purchase-detail__item { display: block; padding-bottom: var(--space-2); text-align: left; }
+  .purchase-detail__table td.purchase-detail__item::before { content: none; }
+}
+
+@media (max-width: 640px) {
+  .purchase-detail__totals { justify-items: stretch; }
+  .purchase-detail__totals > div { min-width: 0; }
+}

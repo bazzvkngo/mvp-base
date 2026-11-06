@@ -15,6 +15,7 @@ import {
 } from "../domain/purchaseModel.mjs";
 import ProviderSelector from "../features/purchaseOrders/ProviderSelector";
 import PurchaseCatalogDialog from "../features/purchases/PurchaseCatalogDialog";
+import PurchaseDetailView from "../features/purchases/PurchaseDetailView";
 import PurchaseDocumentImportDialog from "../features/purchases/PurchaseDocumentImportDialog";
 import PurchaseItemsEditor from "../features/purchases/PurchaseItemsEditor";
 import PurchasePrintView from "../features/purchases/PurchasePrintView";
@@ -50,10 +51,6 @@ const emptyDraft = () => ({
 });
 const lineId = () => `linea-${globalThis.crypto?.randomUUID?.() ||
   `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
-const timestampLabel = (value) => {
-  const date = value?.toDate?.() || (value instanceof Date ? value : null);
-  return date ? date.toLocaleString("es-CL") : "Fecha registrada en servidor";
-};
 const hasText = (value) => Boolean(String(value ?? "").trim());
 const visibleObservation = (value, purchase) => {
   const observation = String(value || "").trim();
@@ -343,6 +340,7 @@ export default function NewPurchasePage({businessId, role}) {
   }));
 
   if (loading) return <LoadingState variant="page" label="Cargando compra..." />;
+  if (purchase && purchase.estado !== "borrador") return <PurchaseDetailView company={company} message={message} printable={printable} purchase={purchase} />;
 
   return (
     <main className="po-workspace">
@@ -378,21 +376,6 @@ export default function NewPurchasePage({businessId, role}) {
       </header>
       {message && <p className="po-message po-message--error no-print">{message}</p>}
       {purchase && <div className="no-print"><SupplyTrace currentType="purchase" purchase={purchase} /></div>}
-      {purchase?.registroAutomatico && (
-        <section className="po-panel purchase-inventory-trace no-print">
-          <header><div><span className="po-kicker">Inventario</span><h2>Trazabilidad de entradas</h2></div><small>Compra registrada {timestampLabel(purchase.registradoEn)}</small></header>
-          {purchase.efectosInventario.length > 0 ? <ul className="purchase-movement-list">{purchase.efectosInventario.map((effect) => <li key={effect.movimientoEntradaId}><strong title={effect.nombre}>{effect.nombre}</strong><span>Entrada: {effect.cantidad} {effect.unidad}</span><span>Origen: {purchase.recepcionNumero || "Recepción asociada"}</span>{purchase.estado === "revertida" && <em>Entrada compensada por reversión</em>}</li>)}</ul> : <p className="purchase-empty-copy">Esta compra sólo contiene servicios o actividades; no generó entradas de stock.</p>}
-          {purchase.estado === "revertida" && <div className="purchase-reversal-note"><strong>Compra revertida</strong><span>{timestampLabel(purchase.revertidaEn)} · {purchase.reversionMotivo}</span></div>}
-        </section>
-      )}
-      {purchase?.estado === "confirmada" && purchase.stockAplicado &&
-        purchase.items.some((item) => item.tipoItem === "producto") && (
-        <p className="purchase-stock-note no-print">El inventario se actualizó al confirmar esta compra.</p>
-      )}
-      {purchase?.estado === "confirmada" && stockSemantics.kind === "reception" && (
-        <p className="purchase-stock-note no-print">El stock de esta compra fue gestionado mediante la recepción vinculada.</p>
-      )}
-      {purchase?.estado === "revertida" && <p className="purchase-stock-note no-print">La compra permanece en el historial y sus entradas de inventario fueron compensadas cuando correspondía.</p>}
       <div className="no-print">
         {readOnly && purchase ? <PurchaseProviderSnapshot provider={purchase.proveedorSnapshot} /> : <ProviderSelector
           disabled={readOnly || referencesLocked}

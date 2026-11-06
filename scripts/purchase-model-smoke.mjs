@@ -226,6 +226,8 @@ const backend = fs.readFileSync(new URL("../functions/purchasePersistence.js", i
 const rules = fs.readFileSync(new URL("../firestore.rules", import.meta.url), "utf8");
 const purchasesPage = fs.readFileSync(new URL("../src/pages/PurchasesPage.jsx", import.meta.url), "utf8");
 const purchaseDetail = fs.readFileSync(new URL("../src/pages/NewPurchasePage.jsx", import.meta.url), "utf8");
+// Compra confirmada, revertida o cancelada: solo lectura en PurchaseDetailView; el borrador y la compra nueva conservan el formulario.
+const purchaseReadOnlyView = fs.readFileSync(new URL("../src/features/purchases/PurchaseDetailView.jsx", import.meta.url), "utf8");
 const purchasePrint = fs.readFileSync(new URL("../src/features/purchases/PurchasePrintView.jsx", import.meta.url), "utf8");
 const purchaseSummary = fs.readFileSync(new URL("../src/features/purchases/PurchaseSummaryPanel.jsx", import.meta.url), "utf8");
 assert.match(backend, /purchaseConfirmRequests/);
@@ -245,7 +247,8 @@ assert.match(purchasesPage, /Revertir compra/);
 assert.match(purchasesPage, /Motivo de reversión \*/);
 assert.match(purchasesPage, /getPurchaseStockSemantics/);
 assert.match(purchaseDetail, /getPurchaseStockSemantics/);
-assert.match(purchaseDetail, /stockSemantics\.kind === "reception"/);
+assert.match(purchaseDetail, /purchase\.estado !== "borrador"\) return <PurchaseDetailView/);
+assert.match(purchaseReadOnlyView, /stockSemantics\.kind === "reception"/);
 assert.doesNotMatch(purchaseDetail, /purchase\.stockGestionadoPor === "recepcion"/);
 assert.doesNotMatch(purchasesPage, /El stock se gestiona en Recepciones|El stock no cambiará en este paso|Confirmar compra histórica/);
 assert.doesNotMatch(purchasesPage, />Ver<|onOpen=\{open\}/);
@@ -258,7 +261,8 @@ console.log("OK compras modelo: defensas backend y reglas declaradas");
 
 assert.match(purchaseDetail, /SupplyTrace/);
 assert.doesNotMatch(purchaseDetail, /Originada desde recepción|Originada desde orden de compra/);
-assert.match(purchaseDetail, /Trazabilidad de entradas/);
+assert.match(purchaseReadOnlyView, /Trazabilidad de entradas/);
+assert.doesNotMatch(purchaseReadOnlyView, /Snapshot hist[oó]rico conservado|SupplyTrace|disabled=|<input|<textarea/);
 assert.match(purchaseDetail, /No hay un documento asociado a esta compra\./);
 assert.match(purchaseDetail, /Snapshot hist[oó]rico conservado/);
 assert.doesNotMatch(purchaseDetail, />\s*\{effect\.movimientoEntradaId\}/);
