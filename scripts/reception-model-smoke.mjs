@@ -143,7 +143,13 @@ assert.match(receptionDetailSource, /Confirmar prestación/);
 assert.match(receptionDetailSource, /SupplyTrace/);
 // Recepción confirmada: aviso corto, sin el título repetido, y el número de la compra una sola vez, como enlace.
 assert.doesNotMatch(receptionDetailSource, /Recepción completada correctamente/);
-assert.match(receptionDetailSource, />Ver compra \{reception\.compraNumero/);
+// El detalle confirmado o cancelado vive en ReceptionDetailView (solo lectura); el borrador conserva el formulario.
+const receptionReadOnlyViewSource = fs.readFileSync("src/features/receptions/ReceptionDetailView.jsx", "utf8");
+assert.match(receptionDetailSource, /reception\.estado !== "borrador"\) return <ReceptionDetailView/);
+assert.match(receptionReadOnlyViewSource, />Ver compra \{reception\.compraNumero/);
+assert.match(receptionReadOnlyViewSource, /SupplyTrace/);
+assert.match(receptionReadOnlyViewSource, /formatDate\(reception\.fechaRecepcion/);
+assert.doesNotMatch(receptionReadOnlyViewSource, /disabled=|<input|<textarea|Recibir ahora|Cantidad actual|Registra productos recibidos/);
 // El diálogo de confirmación sigue abierto mientras dura la llamada y se cierra solo en el finally.
 assert.doesNotMatch(receptionDetailSource, /confirmGuard\.current = true;\s*setDialog\(""\)/);
 assert.match(receptionDetailSource, /finally \{ confirmGuard\.current = false; setProcessing\(false\); setDialog\(""\); \}/);

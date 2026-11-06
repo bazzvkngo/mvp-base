@@ -24,6 +24,7 @@ import {
 import {obtenerCompra} from "../services/purchaseService";
 import {findActiveProductByBarcode} from "../services/inventoryService";
 import {formatMoney} from "../utils/formatters";
+import ReceptionDetailView from "../features/receptions/ReceptionDetailView";
 import ReceptionDocumentImportDialog from "../features/receptions/ReceptionDocumentImportDialog";
 import "../features/receptions/receptions.css";
 
@@ -50,8 +51,6 @@ export default function NewReceptionPage({businessId, role}) {
   draftRef.current = draft;
   const canManage = canManageReceptions(role);
   const readOnly = !canManage || reception?.estado !== "borrador";
-  const receivedProducts = reception?.items?.some((line) => line.tipoItem === "producto" && Number(line.cantidad) > 0);
-  const receivedServices = reception?.items?.some((line) => line.tipoItem !== "producto" && Number(line.cantidad) > 0);
   const confirmationImpact = getReceptionConfirmationImpact(draft.items, reception?.tasaIva);
 
   useEffect(() => {
@@ -134,20 +133,17 @@ export default function NewReceptionPage({businessId, role}) {
 
   if (loading) return <LoadingState variant="page" label="Cargando recepción..." />;
   if (!reception) return <p className="po-message po-message--error">{message}</p>;
+  if (reception.estado !== "borrador") return <ReceptionDetailView linkedPurchase={linkedPurchase} message={message} reception={reception} />;
   return <main className="po-workspace">
     <header className="po-header"><div className="po-header__copy"><span className="po-kicker">Recepción</span><div className="po-header__title-row"><h1>{reception.numero}</h1><span className={`po-status po-status--${reception.estado}`}>{getReceptionStatusLabel(reception.estado)}</span></div><div className="po-header__meta"><strong>{reception.proveedorSnapshot?.razonSocial}</strong><span>{draft.fechaRecepcion}</span></div></div><div className="po-header__actions"><button type="button" className="po-button po-button--secondary" onClick={() => navigate("/recepciones")}>Volver al historial</button></div></header>
     {message && <p className="po-message po-message--error">{message}</p>}
 
-    {reception.estado === "confirmada" && <section className="reception-success" role="status" aria-live="polite">
-      <div className="reception-success__copy"><span className="reception-success__eyebrow">Recepción confirmada</span><p>{receivedProducts ? "Los productos recibidos actualizaron existencias." : "Esta recepción no incluía productos; no hubo cambios de existencias."}</p>{receivedServices && <p>Los servicios y actividades recibidos quedaron confirmados.</p>}<p className="reception-success__next">{reception.compraId ? <>{reception.compraEstado === "revertida" ? `La compra fue revertida${reception.compraReversionMotivo ? `: ${reception.compraReversionMotivo}` : "."}` : "La compra se registró automáticamente."} <button type="button" className="po-inline-link" onClick={() => navigate(`/compras/${reception.compraId}`)}>Ver compra {reception.compraNumero || linkedPurchase?.numero || ""}</button></> : "Esta recepción histórica conserva el vínculo económico previo de su orden."}</p></div>
-    </section>}
-
     {reception.estado !== "confirmada" && <section className="reception-order-origin">
       <div><span>Confirmación del proveedor</span><strong>{getSupplierResponseLabel(reception.respuestaProveedorEstado)}</strong></div>
     </section>}
-    <SupplyTrace currentType="reception" order={{id: reception.ordenCompraId, numero: reception.ordenCompraNumero}} receptions={[{...reception, compraId: "", compraNumero: ""}]} />
+    <SupplyTrace currentType="reception" order={{id: reception.ordenCompraId, numero: reception.ordenCompraNumero}} receptions={[reception]} />
 
-    {(reception.estado !== "confirmada" || draft.observaciones) && <section className="po-panel"><h2>Datos de recepción</h2><div className="reception-grid">{reception.estado !== "confirmada" && <label>Fecha de recepción<input type="date" disabled={readOnly} value={draft.fechaRecepcion} onChange={(event) => setDraft({...draft, fechaRecepcion: event.target.value})} /></label>}<label className="reception-grid__wide">Observaciones<textarea disabled={readOnly} value={draft.observaciones} onChange={(event) => setDraft({...draft, observaciones: event.target.value})} /></label></div></section>}
+    <section className="po-panel"><h2>Datos de recepción</h2><div className="reception-grid"><label>Fecha de recepción<input type="date" disabled={readOnly} value={draft.fechaRecepcion} onChange={(event) => setDraft({...draft, fechaRecepcion: event.target.value})} /></label><label className="reception-grid__wide">Observaciones<textarea disabled={readOnly} value={draft.observaciones} onChange={(event) => setDraft({...draft, observaciones: event.target.value})} /></label></div></section>
     <section className="po-panel">
       <div className="reception-items-heading"><div><h2>Ítems de la recepción</h2><p>Registra productos recibidos y confirma servicios o actividades prestadas.</p></div>{!readOnly && <div className="po-header__actions"><BarcodeInput actionOnly continuous actionLabel="Escanear producto" disabled={processing} onSubmit={scanReceivedProduct} /><button type="button" className="po-button po-button--secondary" disabled={processing} onClick={() => setImportOpen(true)}>Importar factura o documento</button></div>}</div>
       {draft.documentoOrigen && <div className="reception-document-source"><div><span>Documento conciliado</span><strong>{draft.documentoOrigen.nombreArchivo}</strong></div><div><span>Documento</span><strong>{draft.documentoOrigen.tipoDocumento === "factura" ? "Factura" : draft.documentoOrigen.tipoDocumento === "boleta" ? "Boleta" : "Documento"}{draft.documentoOrigen.numeroDocumento ? ` N° ${draft.documentoOrigen.numeroDocumento}` : ""}</strong></div>{hasDocumentValue(draft.documentoOrigen.neto) && <div><span>Neto</span><strong>{formatMoney(draft.documentoOrigen.neto, draft.documentoOrigen.moneda || reception.moneda, reception.locale)}</strong></div>}{hasDocumentValue(draft.documentoOrigen.impuestoMonto) && <div><span>{hasDocumentValue(draft.documentoOrigen.impuestoPorcentaje) ? `IVA (${draft.documentoOrigen.impuestoPorcentaje}%)` : "IVA"}</span><strong>{formatMoney(draft.documentoOrigen.impuestoMonto, draft.documentoOrigen.moneda || reception.moneda, reception.locale)}</strong></div>}{hasDocumentValue(draft.documentoOrigen.total) && <div><span>Total</span><strong>{formatMoney(draft.documentoOrigen.total, draft.documentoOrigen.moneda || reception.moneda, reception.locale)}</strong></div>}<div><span>Conciliación</span><strong>{draft.documentoOrigen.lineasAplicadas || 0} de {draft.documentoOrigen.lineasDetectadas || 0} líneas aplicadas</strong></div></div>}
