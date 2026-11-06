@@ -90,21 +90,29 @@ function canonicalUnit(raw) {
 // Devuelve las medidas de un texto: `dimensions` (los números de cada grupo
 // "AxB[xC]") y `values` (número + unidad, ej. 2 mm). El texto restante, sin
 // medidas, sirve para extraer las palabras del nombre.
+const DIMENSION_TERM_REGEX = new RegExp(`(${NUMBER_PATTERN})(?:\\s*(${UNIT_PATTERN}))?`, "g");
+// "3M" (mayúscula, sin espacio) es la marca, no 3 metros. "3 m" y "3m" siguen siendo medidas.
+const BRAND_3M_REGEX = /(?<![\d.,x×*]\s*)\b3M\b(?!\s*[xX×*]\s*\d)/g;
 function extractMeasures(text) {
-  const folded = foldText(text);
+  const folded = foldText(safeText(text, 400).replace(BRAND_3M_REGEX, " "));
   const dimensions = [];
+  const dimensionTerms = [];
   const values = [];
   const remainder = folded
     .replace(DIMENSION_REGEX, (match) => {
-      const numbers = match.match(new RegExp(NUMBER_PATTERN, "g")) || [];
-      dimensions.push(numbers.map(canonicalNumber));
+      const terms = [...match.matchAll(DIMENSION_TERM_REGEX)].map((term) => ({
+        number: canonicalNumber(term[1]),
+        unit: term[2] ? canonicalUnit(term[2]) : null,
+      }));
+      dimensions.push(terms.map((term) => term.number));
+      dimensionTerms.push(terms);
       return " ";
     })
     .replace(UNIT_VALUE_REGEX, (match, number, unit) => {
       values.push({number: canonicalNumber(number), unit: canonicalUnit(unit)});
       return " ";
     });
-  return {dimensions, values, remainder};
+  return {dimensions, dimensionTerms, values, remainder};
 }
 
 function stemWord(word) {
@@ -122,14 +130,61 @@ function significantWords(text) {
     .map(stemWord);
 }
 
+// "kit" y "set" no se usan: pueden ser el producto real. Solo cuentan packs evidentes.
+const PACK_WORD_REGEX = /\b(pack|packs|combo|combos|lote|lotes|docena|docenas|bulto|bultos)\b/;
+const PACK_COUNT_REGEX = /(?:^|[^\d.])(\d+)\s*(?:un|und|unds|unid|unids|unidad|unidades|uds|pzs|pzas|pza|piezas|pcs|rollos|rolls)\b/g;
+function packInfo(text) {
+  const folded = foldText(text);
+  const counts = [...folded.matchAll(PACK_COUNT_REGEX)].map((m) => Number(m[1])).filter((n) => n >= 2);
+  return {word: PACK_WORD_REGEX.test(folded), count: counts.length > 0};
+}
+// Solo tokens con dígito y 3+ caracteres del modelo (1700, x20). Se usan para
+// descartar por conflicto evidente, nunca para exigir que aparezcan.
+function modelTokens(modelo) {
+  return foldText(modelo).split(/[^a-z0-9]+/).filter((t) => t.length >= 3 && /\d/.test(t));
+}
+const UNIT_SUFFIX_REGEX = new RegExp(`^(?:${UNIT_PATTERN})$`);
+function hasModelVariant(tokens, foldedTitle) {
+  if (!tokens.length) return false;
+  const titleTokens = foldedTitle.split(/[^a-z0-9]+/).filter(Boolean);
+  return tokens.some((t) => titleTokens.some((x) => {
+    if (x.length <= t.length) return false;
+    const extra = x.startsWith(t) ? x.slice(t.length) : x.endsWith(t) ? x.slice(0, x.length - t.length) : null;
+    return extra !== null && !UNIT_SUFFIX_REGEX.test(extra);
+  })) || tokens.some((t) => {
+    // "1700-C": sufijo de 1-2 letras unido por guion.
+    const match = foldedTitle.match(new RegExp(`(?<![a-z0-9])${t}-([a-z]{1,2})(?![a-z0-9])`));
+    return Boolean(match) && !UNIT_SUFFIX_REGEX.test(match[1]);
+  });
+}
 function buildItemProfile(item = {}) {
   const measures = extractMeasures(item.nombre);
   return {
+    pack: packInfo(item.nombre),
+    modelTokens: modelTokens(item.modelo),
     nameWords: [...new Set(significantWords(measures.remainder))],
     measures,
     categoryWords: [...new Set(significantWords(item.categoria))].filter((word) => word.length >= 4),
     unitWords: [...new Set(significantWords(item.unidad))].filter((word) => word.length >= 3 && word !== "unidad"),
   };
+}
+
+const unitsCompatible = (left, right) => !left || !right || left === right;
+// Mismos números en otro orden ("18x10" frente a "10x18") es otro producto,
+// salvo que ambos lados traigan unidad en cada término ("10 m x 18 mm").
+function hasDimensionOrderConflict(itemGroups, titleGroups) {
+  return itemGroups.some((group) => {
+    if (group.length < 2) return false;
+    const sameSequence = titleGroups.some((other) => other.length >= group.length
+      && group.every((term, i) => term.number === other[i].number && unitsCompatible(term.unit, other[i].unit)));
+    if (sameSequence) return false;
+    const numbersKey = (g) => g.map((t) => t.number).sort().join("|");
+    const reordered = titleGroups.filter((other) => other.length === group.length && numbersKey(other) === numbersKey(group));
+    if (!reordered.length) return false;
+    const labelled = (g) => g.every((t) => t.unit);
+    const pairsKey = (g) => g.map((t) => t.number + t.unit).sort().join("|");
+    return !reordered.some((other) => labelled(group) && labelled(other) && pairsKey(other) === pairsKey(group));
+  });
 }
 
 function scoreMarketResult(profile, result) {
@@ -141,7 +196,7 @@ function scoreMarketResult(profile, result) {
 
   // Pool de números que declara el resultado: dimensiones (sin unidad) y valores con unidad.
   const pool = [
-    ...titleMeasures.dimensions.flat().map((number) => ({number, unit: null})),
+    ...titleMeasures.dimensionTerms.flat().map(({number, unit}) => ({number, unit})),
     ...titleMeasures.values,
   ];
   const consume = (number, unit) => {
@@ -154,9 +209,9 @@ function scoreMarketResult(profile, result) {
   };
   let dimensionTotal = 0;
   let dimensionMatched = 0;
-  profile.measures.dimensions.flat().forEach((number) => {
+  profile.measures.dimensionTerms.flat().forEach(({number, unit}) => {
     dimensionTotal += 1;
-    if (consume(number, null)) dimensionMatched += 1;
+    if (consume(number, unit)) dimensionMatched += 1;
   });
   let valueMatched = 0;
   profile.measures.values.forEach(({number, unit}) => {
@@ -167,7 +222,11 @@ function scoreMarketResult(profile, result) {
   // El resultado declara otra medida del mismo tipo (ej. 30x30 frente a 40x40): otro producto.
   const dimensionConflict = dimensionTotal > 0
     && titleMeasures.dimensions.length > 0
-    && dimensionMatched < dimensionTotal;
+    && (dimensionMatched < dimensionTotal
+      || hasDimensionOrderConflict(profile.measures.dimensionTerms, titleMeasures.dimensionTerms));
+  const titlePack = packInfo(result?.title);
+  const multipack = (titlePack.word && !profile.pack.word) || (titlePack.count && !profile.pack.count);
+  const modelVariant = hasModelVariant(profile.modelTokens, foldText(result?.title));
 
   const core = measureTotal ? (coverage + measureScore) / 2 : coverage;
   const folded = foldText(result?.title);
@@ -178,6 +237,8 @@ function scoreMarketResult(profile, result) {
   );
   const relevant = coverage >= MIN_NAME_COVERAGE
     && !dimensionConflict
+    && !multipack
+    && !modelVariant
     && measureScore >= MIN_MEASURE_SCORE;
   return {
     relevant,
@@ -456,7 +517,9 @@ async function searchInventoryMarketReferencesHandler(request, dependencies) {
   if (!/^[a-zA-Z0-9_-]{1,160}$/.test(itemId)) {
     throw new HttpsError("invalid-argument", "Selecciona un producto válido.");
   }
-  const forceRefresh = request?.data?.forceRefresh === true;
+  // cacheOnly gana sobre forceRefresh: solo lee la caché y nunca consulta al proveedor.
+  const cacheOnly = request?.data?.cacheOnly === true;
+  const forceRefresh = request?.data?.forceRefresh === true && !cacheOnly;
 
   const itemSnapshot = await access.businessRef.collection("inventario")
     .doc(itemId).get();
@@ -509,6 +572,24 @@ async function searchInventoryMarketReferencesHandler(request, dependencies) {
         });
       }
     }
+  }
+
+  if (cacheOnly) {
+    // Sin caché vigente (inexistente o de más de 24 h) no se busca: la vista
+    // ofrece «Buscar precios». Esta rama va antes de la llave y del proveedor.
+    return {
+      item: itemInfo,
+      query: queryInfo.query,
+      status: "NO_CACHE",
+      confidence: "NONE",
+      results: [],
+      summary: null,
+      totalFound: 0,
+      discardedCount: 0,
+      warnings: [...queryInfo.warnings],
+      cached: false,
+      actualizadoEn: null,
+    };
   }
 
   if (!queryInfo.query) {

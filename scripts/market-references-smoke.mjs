@@ -211,6 +211,31 @@ async function main() {
     );
     console.log("OK referencias de mercado: rechazo para ítems que no son producto");
 
+    // cacheOnly: no busca nunca. Sin caché responde NO_CACHE y no escribe nada
+    // (el proveedor simulado siempre escribe caché, así que el doc ausente
+    // prueba que no hubo búsqueda).
+    const preCacheDocPath = `negocios/${businessId}/referenciasPrecios/${itemId}`;
+    await expectCallableCode("permission-denied", () =>
+      callable(outsider, "searchInventoryMarketReferences", { businessId, itemId, cacheOnly: true })
+    );
+    const noCache = await callable(owner, "searchInventoryMarketReferences", { businessId, itemId, cacheOnly: true });
+    assert.equal(noCache.data.status, "NO_CACHE");
+    assert.equal(noCache.data.cached, false);
+    assert.deepEqual(noCache.data.results, []);
+    assert.equal(noCache.data.summary, null);
+    assert.equal(noCache.data.actualizadoEn, null);
+    assert.equal(noCache.data.query, "Taladro inalámbrico Marca Demo X20");
+    assert.equal((await adminDb.doc(preCacheDocPath).get()).exists, false, "cacheOnly sin caché no debe buscar ni guardar");
+    const noCacheForced = await callable(owner, "searchInventoryMarketReferences", {
+      businessId,
+      itemId,
+      cacheOnly: true,
+      forceRefresh: true,
+    });
+    assert.equal(noCacheForced.data.status, "NO_CACHE", "cacheOnly gana sobre forceRefresh");
+    assert.equal((await adminDb.doc(preCacheDocPath).get()).exists, false, "cacheOnly + forceRefresh tampoco busca");
+    console.log("OK referencias de mercado: cacheOnly sin caché responde NO_CACHE sin buscar (también con forceRefresh)");
+
     const firstSearch = await callable(owner, "searchInventoryMarketReferences", { businessId, itemId });
     assert.equal(firstSearch.data.cached, false);
     assert.ok(firstSearch.data.results.length > 0);
@@ -227,6 +252,12 @@ async function main() {
     assert.equal(secondSearch.data.cached, true);
     assert.deepEqual(secondSearch.data.results, firstSearch.data.results);
     console.log("OK referencias de mercado: usa cache vigente sin volver a consultar Serper");
+
+    const cacheOnlyHit = await callable(owner, "searchInventoryMarketReferences", { businessId, itemId, cacheOnly: true });
+    assert.equal(cacheOnlyHit.data.cached, true);
+    assert.equal(cacheOnlyHit.data.status, "OK");
+    assert.deepEqual(cacheOnlyHit.data.results, firstSearch.data.results);
+    console.log("OK referencias de mercado: cacheOnly con caché vigente devuelve los precios guardados");
 
     const forcedSearch = await callable(owner, "searchInventoryMarketReferences", {
       businessId,
@@ -245,6 +276,28 @@ async function main() {
     const cacheAfterExpiry = await adminDb.doc(cacheDocPath).get();
     assert.ok(cacheAfterExpiry.data().actualizadoEn.toMillis() > expiredMillis);
     console.log("OK referencias de mercado: refresca automáticamente cuando el cache expiró (TTL 24h)");
+
+    // Caché vencida + cacheOnly: NO_CACHE y la caché no se toca.
+    const staleMillis = Date.now() - (MARKET_REFERENCE_CACHE_TTL_MS + 60 * 1000);
+    await adminDb.doc(cacheDocPath).update({ actualizadoEn: Timestamp.fromMillis(staleMillis) });
+    for (const extra of [{}, { forceRefresh: true }]) {
+      const expiredCacheOnly = await callable(owner, "searchInventoryMarketReferences", {
+        businessId,
+        itemId,
+        cacheOnly: true,
+        ...extra,
+      });
+      assert.equal(expiredCacheOnly.data.status, "NO_CACHE", "una caché de más de 24 h cuenta como NO_CACHE");
+      assert.equal(expiredCacheOnly.data.cached, false);
+    }
+    assert.equal(
+      (await adminDb.doc(cacheDocPath).get()).data().actualizadoEn.toMillis(),
+      staleMillis,
+      "cacheOnly no debe refrescar una caché vencida"
+    );
+    console.log("OK referencias de mercado: cacheOnly con caché vencida responde NO_CACHE y no la toca");
+    // Se deja la caché vigente de nuevo para la prueba de rol que sigue.
+    await adminDb.doc(cacheDocPath).update({ actualizadoEn: Timestamp.fromMillis(Date.now()) });
 
     await adminDb.doc(`membresias/${businessId}__${outsiderUid}`).set({
       negocioId: businessId,
@@ -305,6 +358,51 @@ async function main() {
     assert.equal(staleSearch.data.totalFound, 5);
     assert.ok(staleSearch.data.warnings.includes(STALE_QUERY_WARNING));
     console.log("OK referencias de mercado: caché vieja con datos malos se re-filtra al leer (Sin coincidencias confiables)");
+
+    // Vacío guardado: cacheOnly lo devuelve como caché (no como NO_CACHE).
+    const emptyItemId = "item-market-ref-vacio";
+    await adminDb.doc(`negocios/${businessId}/inventario/${emptyItemId}`).set({
+      negocioId: businessId,
+      nombre: "Cinta aislante Temflex 18 mm x 10 m",
+      tipoItem: "producto",
+      estado: "activo",
+    });
+    await adminDb.doc(`negocios/${businessId}/referenciasPrecios/${emptyItemId}`).set({
+      itemId: emptyItemId,
+      query: "Cinta aislante Temflex 18 mm x 10 m",
+      confidence: "NONE",
+      results: [],
+      summary: null,
+      warnings: [],
+      actualizadoEn: Timestamp.fromMillis(Date.now()),
+    });
+    const savedEmpty = await callable(owner, "searchInventoryMarketReferences", {
+      businessId,
+      itemId: emptyItemId,
+      cacheOnly: true,
+    });
+    assert.equal(savedEmpty.data.cached, true);
+    assert.equal(savedEmpty.data.status, "NONE");
+    assert.deepEqual(savedEmpty.data.results, []);
+    assert.equal(savedEmpty.data.totalFound, 0);
+    console.log("OK referencias de mercado: cacheOnly devuelve un vacío guardado como caché");
+
+    // cacheOnly solo cuenta si es el booleano true (igual que forceRefresh).
+    const stringFlagItemId = "item-market-ref-flag-texto";
+    await adminDb.doc(`negocios/${businessId}/inventario/${stringFlagItemId}`).set({
+      negocioId: businessId,
+      nombre: "Taladro percutor",
+      tipoItem: "producto",
+      estado: "activo",
+    });
+    const stringFlag = await callable(owner, "searchInventoryMarketReferences", {
+      businessId,
+      itemId: stringFlagItemId,
+      cacheOnly: "true",
+    });
+    assert.equal(stringFlag.data.cached, false);
+    assert.notEqual(stringFlag.data.status, "NO_CACHE", "cacheOnly como texto no activa el modo solo caché");
+    console.log("OK referencias de mercado: cacheOnly solo se respeta como booleano true");
 
     console.log("MARKET_REFERENCES_SMOKE_OK");
   } finally {

@@ -159,6 +159,65 @@ assert.equal(plainAssessment.results.length, 3);
 assert.equal(plainAssessment.results[0].title, "Taladros inalámbricos Herramientas 12V", "ordenado por relevancia (bono de categoría)");
 console.log("OK relevancia: acentos, plurales, orden por relevancia y moneda distinta");
 
+// --- Medidas con unidad y en orden, marca 3M, multipacks y variantes de modelo ---
+const accepts = (item, title) => assessMarketResults(item, [result(title, 1000)], "CLP").results.length === 1;
+const tape = { nombre: "Cinta aislante Temflex 18 mm x 10 m", marca: "3M", modelo: "Temflex 1700" };
+
+// Lectura: cada término conserva su unidad; "3M" (marca) no es 3 metros.
+assert.deepEqual(extractMeasures("Cinta 18 mm x 10 m").dimensionTerms, [
+  [{ number: "18", unit: "mm" }, { number: "10", unit: "m" }],
+]);
+assert.deepEqual(extractMeasures("Perfil 40x40x2mm").dimensionTerms, [
+  [{ number: "40", unit: null }, { number: "40", unit: null }, { number: "2", unit: "mm" }],
+]);
+assert.deepEqual(extractMeasures("Cinta aislante 3M Temflex 1700 18 mm x 10 m").values, []);
+assert.deepEqual(extractMeasures("Cable 3 m").values, [{ number: "3", unit: "m" }]);
+assert.deepEqual(extractMeasures("Cable 3m").values, [{ number: "3", unit: "m" }]);
+
+// Falsos positivos reportados: ancho y largo invertidos.
+assert.equal(accepts(tape, "Cinta aislante Temflex 10 mm x 18 m"), false, "10 mm x 18 m no es 18 mm x 10 m");
+assert.equal(accepts(tape, "Cinta aislante Temflex 18 m x 10 mm"), false, "unidades cruzadas");
+assert.equal(accepts(tape, "Cinta aislante Temflex 10 x 18"), false, "invertido sin unidad");
+assert.equal(accepts({ nombre: "Cinta aislante 18 x 10" }, "Cinta aislante 10 x 18"), false);
+assert.equal(accepts(tape, "Cinta aislante 3M Temflex 1700 19 mm x 20 m"), false, "otras medidas");
+// Variantes de modelo evidentes (solo conflicto; la marca no entra).
+assert.equal(accepts(tape, "Cinta aislante 3M Temflex 1700C 18 mm x 10 m"), false);
+assert.equal(accepts(tape, "Cinta aislante 3M Temflex 1700-C 18 mm x 10 m"), false);
+assert.equal(accepts(tape, "Cinta aislante Temflex 17000 18 mm x 10 m"), false);
+assert.equal(accepts({ nombre: "Taladro inalámbrico", modelo: "X20" }, "Taladro inalámbrico X200"), false);
+// Multipacks cuando el ítem no los declara.
+assert.equal(accepts(tape, "Pack 10 Cinta aislante Temflex 18 mm x 10 m"), false);
+assert.equal(accepts(tape, "Combo cinta aislante Temflex 18 mm x 10 m"), false);
+assert.equal(accepts(tape, "Cinta aislante Temflex 18 mm x 10 m x 10 unidades"), false);
+assert.equal(accepts(tape, "Cinta aislante Temflex 18 mm x 10 m 12 rollos"), false);
+console.log("OK relevancia: medidas con unidad y en orden, variantes de modelo y multipacks se descartan");
+
+// Lo que hoy pasa bien debe seguir pasando.
+assert.equal(accepts(tape, "Cinta aislante 3M Temflex 1700 18 mm x 10 m"), true);
+assert.equal(accepts(tape, "Cinta aislante Temflex 18 mm x 10 m"), true);
+assert.equal(accepts(tape, "Cinta Aislante Temflex 18mm x 10m Negra"), true);
+assert.equal(accepts(tape, "Cinta aislante Temflex 10 m x 18 mm"), true, "invertido pero con unidad en cada término");
+assert.equal(accepts(tape, "Cinta aislante Temflex 18 x 10"), true, "sin unidad pero en orden");
+assert.equal(accepts(tape, "Cinta aislante Temflex 1700 18 mm x 10 m 3M"), true);
+assert.equal(accepts(tape, "Cinta aislante Temflex 3M 18 mm x 10 m"), true, "la marca 3M no se lee como medida");
+assert.equal(accepts(tape, "Cinta aislante Temflex 1700mm 18 mm x 10 m"), true, "1700mm es una medida, no otra variante");
+assert.equal(accepts(tape, "Cinta aislante Temflex 18 mm x 10 m 1 unidad"), true, "1 unidad no es un pack");
+assert.equal(accepts(tape, "Cinta aislante Temflex 18 mm x 10 m rollo"), true);
+assert.equal(accepts(tape, "Kit cinta aislante Temflex 18 mm x 10 m"), true, "kit no es palabra de descarte");
+assert.equal(accepts(tape, "Set cinta aislante Temflex 18 mm x 10 m"), true, "set no es palabra de descarte");
+assert.equal(accepts({ nombre: "Cinta aislante 3M 19 mm x 20 m" }, "Cinta aislante 19 mm x 20 m"), true, "3M no es palabra requerida");
+assert.equal(accepts({ nombre: "Cable 3 m" }, "Cable 3 m negro"), true);
+assert.equal(accepts({ nombre: "Cable 3 m" }, "Cable 3m negro"), true);
+assert.equal(accepts({ nombre: "Pack 10 cinta aislante 18 mm x 10 m" }, "Pack 10 cinta aislante 18 mm x 10 m"), true, "el ítem declara el pack");
+assert.equal(accepts({ nombre: "Taladro inalámbrico", modelo: "X20" }, "Taladro inalámbrico Marca Demo X20 - Tienda Emulada Uno"), true);
+assert.equal(accepts({ nombre: "Taladro inalámbrico", modelo: "X20" }, "Taladro inalámbrico"), true, "el modelo ausente no descarta");
+assert.equal(accepts(profile, "Perfil cuadrado 40x40x2 mm"), true);
+assert.equal(accepts(profile, "Perfil cuadrado 30x30x2 mm"), false);
+// Marca y modelo nunca son requisito: cambiarlos no cambia la decisión.
+assert.equal(accepts({ ...tape, marca: "Otra", modelo: "ZZZ" }, "Cinta aislante Temflex 18 mm x 10 m"), true);
+assert.equal(accepts({ nombre: tape.nombre }, "Cinta aislante Temflex 18 mm x 10 m"), true);
+console.log("OK relevancia: lo que ya coincidía sigue coincidiendo (3M, unidad cruzada válida, kit/set, 1 unidad, modelo ausente)");
+
 // --- Entradas vacías o raras ---
 assert.equal(assessMarketResults(profile, [], "CLP").status, "NONE");
 assert.equal(assessMarketResults(profile, undefined, "CLP").status, "NONE");

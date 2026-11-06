@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, ArrowLeft, ExternalLink, RefreshCw, SearchX } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ExternalLink, RefreshCw, Search, SearchX } from "lucide-react";
 import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
 import LoadingState from "../../components/ui/LoadingState";
@@ -143,22 +143,26 @@ function ResultCard({ result, businessLocale, TitleTag = "h3" }) {
 }
 
 // Estado y carga compartidos por la página y el diálogo. Abrir llama a la
-// Function sin forceRefresh: si hay caché de menos de 24 horas no se busca
-// de nuevo; si no la hay, la Function hace una búsqueda. Solo forceRefresh
-// obliga a buscar otra vez.
+// Function con cacheOnly: muestra los precios guardados de las últimas 24
+// horas y, si no hay, la Function responde NO_CACHE sin buscar. Solo el botón
+// «Buscar precios» (mode "search") y «Forzar refresco» (mode "force")
+// consultan a Google Shopping.
 function useMarketReferences(businessId, itemId) {
   const [status, setStatus] = useState("loading");
   const [data, setData] = useState(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async ({ forceRefresh = false } = {}) => {
+  const load = useCallback(async ({ mode = "cache" } = {}) => {
     if (!businessId || !itemId) return;
-    if (forceRefresh) setRefreshing(true);
-    else setStatus("loading");
+    if (mode === "cache") setStatus("loading");
+    else setRefreshing(true);
     setErrorMessage("");
     try {
-      const response = await searchInventoryMarketReferences(businessId, itemId, { forceRefresh });
+      const response = await searchInventoryMarketReferences(businessId, itemId, {
+        forceRefresh: mode === "force",
+        cacheOnly: mode === "cache",
+      });
       setData(response);
       setStatus("ready");
     } catch (error) {
@@ -173,18 +177,20 @@ function useMarketReferences(businessId, itemId) {
     load();
   }, [load]);
 
+  // Siempre pide confirmación: cada búsqueda nueva gasta cuota del proveedor,
+  // también cuando los precios que se ven acaban de buscarse.
   const handleRefresh = () => {
-    if (data && data.cached === false) {
-      load({ forceRefresh: true });
-      return;
-    }
     const confirmed = window.confirm(
-      "Los precios en cache todavía están vigentes (hasta 24 horas). ¿Deseas forzar una nueva búsqueda en Google Shopping ahora?"
+      data?.cached
+        ? "Los precios guardados todavía están vigentes (hasta 24 horas). ¿Deseas forzar una nueva búsqueda en Google Shopping? Gasta una búsqueda de tu cuota."
+        : "Estos precios se acaban de buscar. ¿Deseas buscar otra vez en Google Shopping? Gasta una búsqueda de tu cuota."
     );
-    if (confirmed) load({ forceRefresh: true });
+    if (confirmed) load({ mode: "force" });
   };
 
-  return { status, data, errorMessage, refreshing, load, handleRefresh };
+  const handleSearch = () => load({ mode: "search" });
+
+  return { status, data, errorMessage, refreshing, load, handleRefresh, handleSearch };
 }
 
 function RefreshButton({ refreshing, onClick }) {
@@ -200,7 +206,7 @@ function RefreshButton({ refreshing, onClick }) {
 // `variant="dialog"` usa bloques sin borde y un nivel de título más.
 function MarketReferencesContent({ state, variant = "dialog" }) {
   const { locale: businessLocale } = useBusinessFormat();
-  const { status, data, errorMessage, refreshing, load, handleRefresh } = state;
+  const { status, data, errorMessage, refreshing, load, handleRefresh, handleSearch } = state;
   const isPage = variant === "page";
   const panelClass = isPage ? "erp-panel" : "market-ref-block";
   const SectionTitle = isPage ? "h2" : "h3";
@@ -209,10 +215,9 @@ function MarketReferencesContent({ state, variant = "dialog" }) {
   if (status === "loading") {
     return (
       <>
-        <LoadingState variant={isPage ? "page" : "section"} label="Buscando precios…" />
+        <LoadingState variant={isPage ? "page" : "section"} label="Revisando precios guardados…" />
         <p className="market-ref-loading-note">
-          Si hay precios guardados de las últimas 24 horas, se muestran sin buscar. Si no los hay, se hace
-          una búsqueda nueva en Google Shopping.
+          Solo se revisan los precios guardados de las últimas 24 horas. No se hace ninguna búsqueda nueva.
         </p>
       </>
     );
@@ -234,6 +239,23 @@ function MarketReferencesContent({ state, variant = "dialog" }) {
         <p>{errorMessage}</p>
         <Button type="button" variant="secondary" icon={RefreshCw} onClick={() => load()}>
           Reintentar
+        </Button>
+      </div>
+    );
+  }
+
+  if (data?.status === "NO_CACHE") {
+    return (
+      <div className="erp-empty-state market-ref-state">
+        <AppIcon icon={Search} size={28} />
+        <SectionTitle className="market-ref-state__title">Aún no hay precios guardados</SectionTitle>
+        <p>
+          «Buscar precios» consulta Google Shopping una vez y guarda el resultado 24 horas. Abrir esta ventana
+          no gasta búsquedas.
+        </p>
+        {data.query && <p className="market-ref-state__query">Se buscará: {data.query}</p>}
+        <Button type="button" icon={Search} loading={refreshing} onClick={handleSearch}>
+          {refreshing ? "Buscando…" : "Buscar precios"}
         </Button>
       </div>
     );
@@ -356,7 +378,7 @@ function MarketPriceReferencesView({ businessId, itemId }) {
   const navigate = useNavigate();
   const state = useMarketReferences(businessId, itemId);
   const subtitle = state.status === "loading"
-    ? "Consultando precios en Google Shopping…"
+    ? "Revisando precios guardados…"
     : state.data?.item?.name;
 
   return (
