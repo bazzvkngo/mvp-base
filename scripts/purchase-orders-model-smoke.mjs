@@ -3,11 +3,16 @@ import fs from "node:fs";
 import {createRequire} from "node:module";
 import path from "node:path";
 import {
+  DELETE_CONFIRMATION_WORD,
   adaptStoredPurchaseOrder,
   buildPurchaseOrderMutationPayload,
   calculatePurchaseOrderLine,
   calculatePurchaseOrderTotals,
+  canDeletePurchaseOrder,
   canManagePurchaseOrders,
+  canOfferPurchaseOrderDeletion,
+  hasPurchaseOrderEmissionTrace,
+  isDeleteConfirmed as isFrontendDeleteConfirmed,
   getProviderPurchaseOrderPaymentTerms,
   getSupplierResponseLabel,
   getSupplierResponseState,
@@ -486,6 +491,77 @@ assert.equal(hasOrderLinks({compraId: "c1"}), true);
 assert.equal(hasOrderLinks({comprasDesdeRecepciones: []}), false);
 assert.equal(hasOrderLinks({comprasDesdeRecepciones: [{compraId: "c1"}]}), true);
 console.log("OK eliminación de OC: Function solo OWNER/ADMIN, bloqueos, contador intacto y reglas sin cambios");
+
+// Frontend de la eliminación (SPEC 005, enmienda 2026-11-06): solo orienta la interfaz.
+const orderServiceSource = fs.readFileSync("src/services/purchaseOrderService.js", "utf8");
+assert.match(orderServiceSource, /export async function eliminarOrdenCompra\(businessId, ordenCompraId, confirmacion\)/);
+assert.match(orderServiceSource, /httpsCallable\(functions, "eliminarOrdenCompra"\)/);
+assert.match(orderServiceSource, /assertCloudFunctionAllowed\("eliminar órdenes de compra"\)/);
+assert.match(orderServiceSource, /ordenCompraId: requireOrderId\(ordenCompraId\),\s*confirmacion,/);
+assert.doesNotMatch(
+  orderServiceSource.slice(orderServiceSource.indexOf("export async function eliminarOrdenCompra")).split("export function actualizarOrdenCompraBorrador")[0],
+  /callPurchaseOrder|errorMessage/,
+  "los mensajes del backend se muestran tal cual"
+);
+assert.equal(DELETE_CONFIRMATION_WORD, "permanente");
+for (const value of ["permanente", "  PERMANENTE ", "Permanente"]) {
+  assert.equal(isFrontendDeleteConfirmed(value), true, value);
+  assert.equal(isFrontendDeleteConfirmed(value), isDeleteConfirmed(value), "igual que el backend");
+}
+for (const value of ["", "borrar", "permanent", null, undefined, "permanente!"]) {
+  assert.equal(isFrontendDeleteConfirmed(value), false, String(value));
+  assert.equal(isFrontendDeleteConfirmed(value), isDeleteConfirmed(value), "igual que el backend");
+}
+// Roles: solo OWNER y ADMIN eliminan (COMPRAS crea y cancela, pero no elimina).
+for (const role of ["OWNER", "ADMIN", "owner", " admin".trim()]) assert.equal(canDeletePurchaseOrder(role), true, role);
+for (const role of ["COMPRAS", "MEMBER", "VENTAS", "TECNICO", "FINANZAS", "", null, undefined]) {
+  assert.equal(canDeletePurchaseOrder(role), false, String(role));
+}
+const cleanDraft = {estado: "borrador"};
+const cleanCancelled = {estado: "cancelada", canceladaEn: "t", canceladaPorUid: "u"};
+const offerCases = [
+  ["borrador", cleanDraft, true],
+  ["cancelada sin rastro de emisión", cleanCancelled, true],
+  ["envío simulado", {estado: "borrador", estadoEnvioCorreo: "simulado", fechaEnvioCorreo: "t", enviadoPorCorreo: false}, true],
+  ["envío fallido", {estado: "borrador", estadoEnvioCorreo: "error", fechaEnvioCorreo: "t", ultimoErrorEnvio: "x"}, true],
+  ["cancelada con envío fallido", {estado: "cancelada", estadoEnvioCorreo: "error"}, true],
+  ["respuesta del proveedor pendiente", {estado: "borrador", respuestaProveedor: {estado: "pendiente"}}, true],
+  ["emitida", {estado: "emitida", emitidaEn: "t"}, false],
+  ["cancelada tras emitirse (emitidaEn)", {...cleanCancelled, emitidaEn: "t"}, false],
+  ["cancelada tras emitirse (canal)", {...cleanCancelled, canalEmision: "manual"}, false],
+  ["cancelada con envíos", {...cleanCancelled, cantidadEnvios: 2}, false],
+  ["borrador con emitidaPorUid", {estado: "borrador", emitidaPorUid: "u"}, false],
+  ["borrador con destinatario de emisión", {estado: "borrador", destinatarioEmision: "a@b.test"}, false],
+  ["borrador con ultimoEnvioEn", {estado: "borrador", ultimoEnvioEn: "t"}, false],
+  ["borrador con reenviadaEn", {estado: "borrador", reenviadaEn: "t"}, false],
+  ["respuesta del proveedor registrada", {estado: "borrador", respuestaProveedor: {estado: "confirmada"}}, false],
+  ["respuesta del proveedor con fecha", {estado: "borrador", respuestaProveedor: {estado: "pendiente", fecha: "t"}}, false],
+  ["correo enviado", {estado: "borrador", enviadoPorCorreo: true, estadoEnvioCorreo: "enviado"}, false],
+  ["correo en curso", {estado: "borrador", estadoEnvioCorreo: "enviando"}, false],
+  ["con compraId", {estado: "borrador", compraId: "c1"}, false],
+  ["con compras desde recepciones", {estado: "borrador", comprasDesdeRecepciones: [{compraId: "c1"}]}, false],
+  ["con estado de recepción", {estado: "borrador", estadoRecepcion: "recibida_parcial"}, false],
+  ["con resumen de recepción", {estado: "borrador", recepcionResumen: {estado: "recibida_parcial"}}, false],
+  ["sin orden", null, false],
+];
+for (const [label, order, expected] of offerCases) {
+  assert.equal(canOfferPurchaseOrderDeletion(order, "OWNER"), expected, `OWNER: ${label}`);
+  assert.equal(canOfferPurchaseOrderDeletion(order, "ADMIN"), expected, `ADMIN: ${label}`);
+  assert.equal(canOfferPurchaseOrderDeletion(order, "COMPRAS"), false, `COMPRAS nunca: ${label}`);
+  assert.equal(canOfferPurchaseOrderDeletion(order, "MEMBER"), false, `MEMBER nunca: ${label}`);
+}
+// El rastro de emisión del cliente coincide con el del backend en todos los casos.
+for (const [label, order] of offerCases) {
+  if (!order) continue;
+  assert.equal(hasPurchaseOrderEmissionTrace(order), findEmissionTrace(order), `rastro igual que el backend: ${label}`);
+}
+// Una orden adaptada conserva los campos de emisión que decide el botón.
+assert.equal(
+  canOfferPurchaseOrderDeletion(adaptStoredPurchaseOrder({id: "oc-1", estado: "cancelada", emitidaEn: "t", items: []}), "OWNER"),
+  false
+);
+assert.equal(canOfferPurchaseOrderDeletion(adaptStoredPurchaseOrder({id: "oc-2", estado: "borrador", items: []}), "OWNER"), true);
+console.log("OK eliminación de OC (frontend): servicio, roles y casos de la orden alineados con la Function");
 assert.match(pageSource, /PurchaseOrderPrintView/);
 assert.doesNotMatch(pageSource, /Quote[A-Z]/);
 assert.match(pageSource, /navigate\("\/ordenes-compra", \{[\s\S]*createdOrder: saved[\s\S]*openOrderId: saved\.id/);

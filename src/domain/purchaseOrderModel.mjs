@@ -221,6 +221,71 @@ export function canManagePurchaseOrders(role) {
   return ["OWNER", "ADMIN", "COMPRAS"].includes(String(role || "").toUpperCase());
 }
 
+// Eliminación permanente (SPEC 005, enmienda 2026-11-06). Estas funciones solo
+// orientan la interfaz (ocultan el botón); la autoridad real es la Function
+// eliminarOrdenCompra, que vuelve a validar rol, palabra, estado y dependencias.
+// Espejo de functions/purchaseOrderDeletion.js: si cambia allí, cambia aquí.
+export const DELETE_CONFIRMATION_WORD = "permanente";
+const DELETE_ROLES = new Set(["OWNER", "ADMIN"]);
+
+export function canDeletePurchaseOrder(role) {
+  return DELETE_ROLES.has(String(role || "").toUpperCase());
+}
+
+export function isDeleteConfirmed(value) {
+  return String(value ?? "").trim().slice(0, 100).toLowerCase() === DELETE_CONFIRMATION_WORD;
+}
+
+const hasStoredValue = (value) =>
+  value !== undefined && value !== null && value !== "" && value !== false;
+
+// Rastro de que la orden se emitió o se envió alguna vez (misma lista que
+// findEmissionTrace en el backend). Un envío fallido o simulado no cuenta.
+export function hasPurchaseOrderEmissionTrace(order) {
+  const safe = order || {};
+  if (safe.estado === "emitida") return true;
+  if (
+    hasStoredValue(safe.emitidaEn) ||
+    hasStoredValue(safe.emitidaPorUid) ||
+    hasStoredValue(safe.canalEmision) ||
+    hasStoredValue(safe.destinatarioEmision)
+  ) {
+    return true;
+  }
+  if (
+    Number(safe.cantidadEnvios || 0) > 0 ||
+    hasStoredValue(safe.ultimoEnvioEn) ||
+    hasStoredValue(safe.reenviadaEn)
+  ) {
+    return true;
+  }
+  const response = safe.respuestaProveedor || {};
+  if (
+    hasStoredValue(response.fecha) ||
+    (hasStoredValue(response.estado) && response.estado !== "pendiente")
+  ) {
+    return true;
+  }
+  return safe.enviadoPorCorreo === true || safe.estadoEnvioCorreo === "enviado";
+}
+
+// ¿Se ofrece "Eliminar" para esta orden? Solo si el rol puede y la orden es un
+// borrador, o una cancelada sin ningún rastro de emisión. Además se oculta con
+// un envío por correo en curso o con vínculos a recepciones o compras, que la
+// Function también rechaza.
+export function canOfferPurchaseOrderDeletion(order, role) {
+  if (!order || !canDeletePurchaseOrder(role)) return false;
+  if (!["borrador", "cancelada"].includes(order.estado)) return false;
+  if (hasPurchaseOrderEmissionTrace(order)) return false;
+  if (order.estadoEnvioCorreo === "enviando") return false;
+  return !(
+    hasStoredValue(order.compraId) ||
+    (Array.isArray(order.comprasDesdeRecepciones) && order.comprasDesdeRecepciones.length > 0) ||
+    hasStoredValue(order.estadoRecepcion) ||
+    hasStoredValue(order.recepcionResumen)
+  );
+}
+
 export function getSupplierResponseState(order) {
   const value = text(order?.respuestaProveedor?.estado, 40).toLowerCase();
   return ["pendiente", "confirmada", "rechazada", "confirmada_con_observaciones"].includes(value)
