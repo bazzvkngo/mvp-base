@@ -48,7 +48,7 @@ export async function listarRecepciones(businessId) {
 export async function obtenerRecepcion(businessId, recepcionId) {
   const snapshot = await getDoc(doc(db, ...receptionDocPath(
     required(businessId, "un negocio activo"),
-    required(recepcionId, "una recepcion valida")
+    required(recepcionId, "una recepción valida")
   )));
   return snapshot.exists() ? adaptStoredReception({id: snapshot.id, ...snapshot.data()}) : null;
 }
@@ -58,24 +58,24 @@ export const crearRecepcionDesdeOrden = (businessId, ordenCompraId, options = {}
     businessId: required(businessId, "un negocio activo"),
     ordenCompraId: required(ordenCompraId, "una orden valida"),
     requestId: options.requestId || createReceptionRequestId("reception-create"),
-  }, "No pudimos preparar la recepcion.");
+  }, "No pudimos preparar la recepción.");
 
 export const actualizarRecepcionBorrador = (businessId, recepcionId, raw) =>
   call("actualizarRecepcionBorrador", {
     businessId: required(businessId, "un negocio activo"),
-    recepcionId: required(recepcionId, "una recepcion valida"),
+    recepcionId: required(recepcionId, "una recepción valida"),
     recepcion: buildReceptionMutationPayload(raw),
-  }, "No pudimos guardar la recepcion.");
+  }, "No pudimos guardar la recepción.");
 
 export const confirmarRecepcion = (businessId, recepcionId, options = {}) =>
   call("confirmarRecepcion", {
     businessId: required(businessId, "un negocio activo"),
-    recepcionId: required(recepcionId, "una recepcion valida"),
+    recepcionId: required(recepcionId, "una recepción valida"),
     requestId: options.requestId || createReceptionRequestId("reception-confirm"),
-  }, "No pudimos confirmar la recepcion.");
+  }, "No pudimos confirmar la recepción.");
 
 export const cancelarRecepcionBorrador = (businessId, recepcionId) =>
   call("cancelarRecepcionBorrador", {
     businessId: required(businessId, "un negocio activo"),
-    recepcionId: required(recepcionId, "una recepcion valida"),
-  }, "No pudimos cancelar la recepcion.");
+    recepcionId: required(recepcionId, "una recepción valida"),
+  }, "No pudimos cancelar la recepción.");

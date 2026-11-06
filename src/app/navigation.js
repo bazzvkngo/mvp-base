@@ -197,10 +197,10 @@ export function getRouteMeta(pathname) {
     return { title: "Nueva compra" };
   }
   if (/^\/recepciones\/[^/]+\/editar$/.test(pathname)) {
-    return { title: "Editar recepcion" };
+    return { title: "Editar recepción" };
   }
   if (/^\/recepciones\/[^/]+$/.test(pathname)) {
-    return { title: "Ver recepcion" };
+    return { title: "Ver recepción" };
   }
   if (pathname === "/ordenes-compra/nueva") {
     return { title: "Nueva orden de compra" };

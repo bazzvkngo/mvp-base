@@ -167,7 +167,7 @@ try {
   assert.match(inventoryBar, /<h1 class="ui-page-header__title">Inventario<\/h1>/, "título del menú, igual que antes");
   assert.match(renderBar({pathname: "/inventario"}), /ui-page-header__eyebrow">Módulo activo</, "sin negocio: 'Módulo activo'");
   // Las rutas hijas de las páginas cableadas conservan el título de la barra (siguen sin ModuleHeader).
-  for (const [path, title] of [["/ventas/nueva", "Nueva venta"], ["/compras/nueva", "Nueva compra"], ["/ordenes-compra/nueva", "Nueva orden de compra"], ["/recepciones/abc", "Ver recepcion"]]) {
+  for (const [path, title] of [["/ventas/nueva", "Nueva venta"], ["/compras/nueva", "Nueva compra"], ["/ordenes-compra/nueva", "Nueva orden de compra"], ["/recepciones/abc", "Ver recepción"]]) {
     assert.match(renderBar({businessName: business, pathname: path}), new RegExp(`<h1 class="ui-page-header__title">${title}</h1>`), `${path}: la barra conserva su título`);
   }
   assert.match(renderBar({pathname: "/reportes"}), /<span>Módulo activo<\/span>/);

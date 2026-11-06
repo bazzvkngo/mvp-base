@@ -86,7 +86,7 @@ export default function ReceptionsPage({businessId, role}) {
       ) : <section className="erp-panel erp-history-panel">
         <div className="erp-panel-header"><div><h2 className="erp-panel-title">Historial de recepciones</h2><p className="erp-secondary-text">{filtered.length} recepciones</p></div></div>
         <div className="erp-filters erp-history-filters po-history__toolbar">
-          <label className="erp-field erp-history-search-field"><span className="erp-field__label">Buscar por recepcion, OC o proveedor</span><span className="clients-search-control"><AppIcon icon={Search} size={18} /><input className="erp-control" value={search} onChange={(event) => setSearch(event.target.value)} /></span></label>
+          <label className="erp-field erp-history-search-field"><span className="erp-field__label">Buscar por recepción, OC o proveedor</span><span className="clients-search-control"><AppIcon icon={Search} size={18} /><input className="erp-control" value={search} onChange={(event) => setSearch(event.target.value)} /></span></label>
           <label className="erp-field"><span className="erp-field__label">Estado</span><select className="erp-control" value={status} onChange={(event) => setStatus(event.target.value)}><option value="todos">Todos</option><option value="borrador">Preparadas</option><option value="confirmada">Recibidas</option><option value="cancelada">Canceladas</option></select></label>
         </div>
         {loading ? <SkeletonRegion label="Cargando recepciones..."><SkeletonTable columns={7} /></SkeletonRegion> : message && items.length === 0 ? null : filtered.length === 0 ? (

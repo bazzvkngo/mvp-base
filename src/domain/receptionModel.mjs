@@ -147,7 +147,7 @@ export function adaptStoredReception(raw = {}) {
 export function buildReceptionMutationPayload(raw = {}) {
   const fechaRecepcion = text(raw.fechaRecepcion, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaRecepcion)) {
-    throw new Error("Selecciona una fecha de recepcion valida.");
+    throw new Error("Selecciona una fecha de recepción valida.");
   }
   const items = (Array.isArray(raw.items) ? raw.items : []).map((line) => ({
     lineaId: text(line.lineaId || line.ordenLineaId, 160),
@@ -160,11 +160,11 @@ export function buildReceptionMutationPayload(raw = {}) {
     throw new Error("Registra al menos una cantidad recibida.");
   }
   if (items.some((line) => !line.lineaId || !Number.isFinite(line.cantidad) || line.cantidad < 0)) {
-    throw new Error("Las cantidades de la recepcion no son validas.");
+    throw new Error("Las cantidades de la recepción no son validas.");
   }
   if (items.some((line) => !Number.isFinite(line.costoUnitario) || line.costoUnitario < 0 ||
     !Number.isFinite(line.descuentoPct) || line.descuentoPct < 0 || line.descuentoPct > 100)) {
-    throw new Error("Los costos o descuentos de la recepcion no son validos.");
+    throw new Error("Los costos o descuentos de la recepción no son validos.");
   }
   return {
     fechaRecepcion,
