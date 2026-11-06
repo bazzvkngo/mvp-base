@@ -6,9 +6,9 @@ En una OC nueva o pendiente, “Escanear producto” resuelve por consulta exact
 
 ## Enmienda 2026-11-06: eliminación permanente de órdenes de compra
 
-> **Estado: acordada, pendiente de implementar** (etapas 2 a 5 del plan). Hasta
-> que la Function exista y se despliegue, la eliminación física de órdenes sigue
-> sin estar disponible en el producto.
+> **Estado: implementada, pendiente de desplegar.** Hasta que la Function
+> `eliminarOrdenCompra` y el frontend se desplieguen (primero la Function), la
+> eliminación física de órdenes sigue sin estar disponible en el producto.
 
 Motivo: poder quitar órdenes de compra creadas por error o canceladas que
 nunca se enviaron al proveedor, sin dejar basura en el historial. Cancelar sigue
@@ -97,12 +97,11 @@ referenciados ni se reescribe historia).
   canceladas que sí se emitieron pero carezcan de `emitidaEn` (datos anteriores
   al modelo vigente). Si no se puede verificar, se habilita primero solo el
   borrador.
-- **Pregunta abierta para Bruno**: ¿incluir el rol `COMPRAS` entre quienes
-  pueden eliminar? Hoy `COMPRAS` crea y cancela órdenes pero no las elimina.
-  Incluirlo no requiere una constante nueva (`PURCHASE_WRITE_ROLES` ya lo
-  contiene), pero es una decisión de política del negocio. Hasta que Bruno la
-  tome, esta enmienda vale solo para `OWNER` y `ADMIN`; si decide incluirlo, se
-  enmienda este punto antes de implementarlo.
+- **Decisión sobre el rol `COMPRAS`**: Decidido por el desarrollador el
+  2026-11-06: `COMPRAS` crea, edita, emite y cancela, pero no elimina; eliminar
+  queda solo para `OWNER` y `ADMIN`. Revisable por Bruno: si decide incluir
+  `COMPRAS`, se enmienda este punto y se ajusta la lista de roles en
+  `functions/purchaseOrderDeletion.js` y en `purchaseOrderModel.mjs`.
 - No cambian las Rules (`delete` directo sigue denegado en `ordenesCompra` y en
   sus colecciones internas) ni los índices (consultas de igualdad sobre un
   campo). Se despliega primero la Function y después el frontend.
