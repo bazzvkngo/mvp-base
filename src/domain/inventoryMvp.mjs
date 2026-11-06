@@ -125,6 +125,26 @@ export function getDefaultUnitForType(type) {
   return "unidad";
 }
 
+// La unidad de stock (unidadStock) sigue a la unidad del ítem mientras ambas
+// coincidan o la de stock esté vacía. Si ya difieren (dato legado), se conserva
+// tal cual: el formulario ya no ofrece un selector aparte para corregirla.
+export function followInventoryStockUnit(currentUnit, currentStockUnit, nextUnit) {
+  const stockUnit = String(currentStockUnit ?? "").trim();
+  if (!stockUnit || stockUnit === String(currentUnit ?? "").trim()) return nextUnit;
+  return currentStockUnit;
+}
+
+// Precio con IVA que se muestra junto al precio de venta neto. Mismo redondeo que
+// Ventas y Cotizaciones (iva = round(neto × tasa)). Sin tasa configurada devuelve
+// null: no se inventa un IVA.
+export function calculateInventoryPriceWithTax(netPrice, taxRate) {
+  if (taxRate === null || taxRate === undefined || taxRate === "") return null;
+  const net = Number(netPrice);
+  const rate = Number(taxRate);
+  if (!Number.isFinite(net) || !Number.isFinite(rate)) return null;
+  return net + Math.round((net * Math.min(Math.max(rate, 0), 100)) / 100);
+}
+
 export function getInventoryTypeLabel(type) {
   return INVENTORY_TYPES.find(({ value }) => value === type)?.label || "Ítem";
 }

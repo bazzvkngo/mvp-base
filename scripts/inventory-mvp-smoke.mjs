@@ -7,7 +7,9 @@ import {
   adaptInventoryItem,
   buildInventoryPayload,
   calculateInventoryPriceFormation,
+  calculateInventoryPriceWithTax,
   filterInventoryItems,
+  followInventoryStockUnit,
   isInventoryLowStock,
   parseInventoryNumber,
   resolveInventoryBarcodeScan,
@@ -565,6 +567,60 @@ async function retryChecks() {
   );
 }
 
+// Formulario de ítem con una sola unidad y precio de venta con IVA informativo.
+function unitAndTaxPriceChecks() {
+  // Compatibilidad de unidades: el selector único ofrece INVENTORY_UNITS; todas
+  // caben en unidadStock (la Function admite hasta 40 caracteres) y incluyen las dos
+  // únicas opciones que ofrecía el select retirado ("unidad" y la unidad elegida).
+  const unitValues = INVENTORY_UNITS.map((unit) => unit.value);
+  assert.equal(new Set(unitValues).size, unitValues.length, "Unidades sin duplicados.");
+  assert.ok(unitValues.includes("unidad"));
+  assert.ok(unitValues.every((value) => value.length > 0 && value.length <= 40));
+  // unidadStock sigue a la unidad en un ítem nuevo (ambas parten en "unidad").
+  assert.equal(followInventoryStockUnit("unidad", "unidad", "kg"), "kg");
+  assert.equal(followInventoryStockUnit("kg", "kg", "m"), "m", "Cambios sucesivos siguen mientras coincidan.");
+  assert.equal(followInventoryStockUnit("unidad", "", "hora"), "hora", "Sin unidad de stock guardada, sigue.");
+  assert.equal(followInventoryStockUnit("unidad", undefined, "hora"), "hora");
+  assert.equal(followInventoryStockUnit("unidad", " unidad ", "hora"), "hora", "Se compara sin espacios.");
+  // Dato legado divergente: se conserva tal cual.
+  assert.equal(followInventoryStockUnit("kg", "unidad", "m"), "unidad");
+  const draft = {
+    tipoItem: "producto", nombre: "Cable UTP", unidad: "unidad", unidadStock: "unidad", costoBase: "100",
+    margenDeseado: "30", precioManual: "", exentoIva: false, stock: "10", stockMinimo: "0",
+  };
+  const afterChange = {...draft, unidad: "m", unidadStock: followInventoryStockUnit(draft.unidad, draft.unidadStock, "m")};
+  assert.equal(buildInventoryPayload(afterChange).unidad, "m");
+  assert.equal(buildInventoryPayload(afterChange).unidadStock, "m", "El ítem nuevo guarda unidadStock = unidad.");
+  assert.equal(buildInventoryPayload({...draft, unidad: "m"}).unidadStock, "unidad", "Sin seguimiento sería la divergencia de antes.");
+  // Servicios y actividades no envían unidad de stock.
+  assert.equal("unidadStock" in buildInventoryPayload({...draft, tipoItem: "servicio", unidad: "hora", unidadStock: "hora"}), false);
+  // El recargo 0 es válido y el vacío no.
+  assert.equal(buildInventoryPayload({...draft, margenDeseado: "0"}).precioInterno, 100);
+  assert.throws(() => buildInventoryPayload({...draft, margenDeseado: ""}), /recargo/i);
+  // El "con IVA" de la fila de precio usa el mismo redondeo que el costo con IVA del recuadro
+  // retirado (costoPagado de calculateInventoryPriceFormation); la fila siempre usa la tasa del negocio.
+  for (const base of [0, 1, 99, 1000, 12345, 99999]) {
+    for (const rate of [0, 5, 19, 21.5]) {
+      assert.equal(
+        calculateInventoryPriceWithTax(base, rate),
+        calculateInventoryPriceFormation({costoBase: base, tasaImpuestoCompra: rate, formacionPrecioVersion: INVENTORY_PRICE_FORMATION_VERSION}).costoPagado,
+        `base ${base} tasa ${rate}`
+      );
+    }
+  }
+  // Precio con IVA: neto + round(neto × tasa), como Ventas y Cotizaciones; sin tasa no hay IVA.
+  assert.equal(calculateInventoryPriceWithTax(10000, 19), 11900);
+  assert.equal(calculateInventoryPriceWithTax(9999, 19), 11899);
+  assert.equal(calculateInventoryPriceWithTax(1000, 0), 1000);
+  assert.equal(calculateInventoryPriceWithTax(0, 19), 0);
+  assert.equal(calculateInventoryPriceWithTax(1000, null), null);
+  assert.equal(calculateInventoryPriceWithTax(1000, undefined), null);
+  assert.equal(calculateInventoryPriceWithTax(1000, ""), null);
+  assert.equal(calculateInventoryPriceWithTax("abc", 19), null);
+  assert.equal(calculateInventoryPriceWithTax(1000, 150), 2000, "La tasa se limita a 100.");
+  assert.equal(calculateInventoryPriceWithTax(1000, -5), 1000, "La tasa negativa no resta.");
+}
+
 async function sourceChecks() {
   const page = await readFile(new URL("../src/pages/InventoryPage.jsx", import.meta.url), "utf8");
   const manager = await readFile(new URL("../src/features/inventory/InventoryManager.jsx", import.meta.url), "utf8");
@@ -609,8 +665,8 @@ async function sourceChecks() {
   assert.match(importer, /Eliminar fila/);
   assert.doesNotMatch(manager, /Hikvision|Prodalam|06897040|93\.772\.000-9/);
   assert.match(manager, /Origen de compra/);
-  // El origen de compra vive dentro de la sección plegable "Más detalles".
-  assert.match(manager, /draft\.tipoItem === "producto" && <section className="inventory-subsection"><h4>Origen de compra/);
+  // El origen de compra va al final del formulario, bajo "Descripción y origen de compra" (sin título propio).
+  assert.match(manager, /draft\.tipoItem === "producto" && <div className="inventory-purchase-origin-grid" role="group" aria-label="Origen de compra">/);
   assert.match(manager, /type="date" value=\{draft\.fechaCompraReferencia\}/);
   assert.match(manager, /<BarcodeInput actionLabel="Escanear"/);
   // El código interno ya no es un campo: en Nuevo es una línea de ayuda y en
@@ -622,6 +678,7 @@ async function sourceChecks() {
 }
 
 main();
+unitAndTaxPriceChecks();
 await retryChecks();
 await sourceChecks();
 console.log("INVENTORY_MVP_SMOKE_OK");
