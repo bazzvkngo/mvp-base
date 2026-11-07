@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { getRouteMeta } from "../../app/navigation";
+import { getCompanyDocumentSuggestions } from "../../domain/companyDocumentSuggestions.mjs";
 import BusinessCategoryPicker, {
   getBusinessCategoryVisibleName,
 } from "../../components/BusinessCategoryPicker";
@@ -269,6 +270,23 @@ function CompanyFact({ accent = false, children, label, targetId, trailing = nul
   );
 }
 
+// Nota discreta con los datos opcionales que faltan y para qué sirven. No es una alerta: texto pequeño,
+// sin ícono, sin role ni aria-live.
+function CompanySuggestions({ items }) {
+  if (!items.length) return null;
+  return (
+    <ul className="company-suggestions" aria-label="Sugerencias para tus documentos">
+      {items.map((item) => (
+        <li key={item.id}>
+          <strong>{item.label}</strong>
+          {": "}
+          {item.text}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function SectionFrame({ children, description, title }) {
   return (
     <section className="settings-section" aria-labelledby={`settings-${title.replaceAll(" ", "-")}`}>
@@ -482,6 +500,9 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
 
   if (loading) return <LoadingState variant="section" label="Cargando información..." />;
   const isVerified = form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.VERIFIED;
+  const documentSuggestions = getCompanyDocumentSuggestions(form, { canEdit });
+  const commercialSuggestions = documentSuggestions.filter((item) => item.section === "comerciales");
+  const contactSuggestions = documentSuggestions.filter((item) => item.section === "contacto");
 
   return (
     <SectionFrame
@@ -676,6 +697,7 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
               {logoFile && <p className="settings-logo-file">Seleccionado: {logoFile.name}</p>}
               {logoError && <p className="settings-field__error" role="alert">{logoError}</p>}
             </div>
+            <CompanySuggestions items={commercialSuggestions} />
           </div>
 
           <div className="settings-card company-information-card">
@@ -695,6 +717,7 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
                 <input name="sitioWeb" type="url" placeholder="https://www.empresa.cl" value={form.sitioWeb} onChange={change} onBlur={() => touch("sitioWeb")} aria-invalid={Boolean(touched.sitioWeb && fieldErrors.sitioWeb)} />
               </SettingsField>
             </div>
+            <CompanySuggestions items={contactSuggestions} />
           </div>
         </fieldset>
         <SectionStatus error={error} success={success} />

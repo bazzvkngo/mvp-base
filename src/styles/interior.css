@@ -3659,6 +3659,22 @@
   }
 }
 
+/* Sugerencias de datos para los documentos (EM3): texto pequeño y discreto, sin ícono ni color propio. */
+.company-suggestions {
+  color: var(--color-text-muted);
+  display: grid;
+  font-size: var(--font-size-xs);
+  gap: var(--space-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.company-suggestions strong {
+  color: var(--color-text-default);
+  font-weight: var(--font-weight-semibold);
+}
+
 .settings-danger-zone {
   align-items: center;
   border-color: var(--color-danger-200);
