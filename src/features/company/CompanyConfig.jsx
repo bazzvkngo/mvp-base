@@ -2,6 +2,7 @@ import React from "react";
 import {
   BellRing,
   Building2,
+  Check,
   FileUp,
   FileText,
   ImagePlus,
@@ -248,6 +249,26 @@ function LockedSetting({label, value, targetId, trailing}) {
   );
 }
 
+// Dato de solo lectura de la franja fiscal: recuadro suave con la etiqueta pequeña arriba y el valor
+// en negrita abajo, sin candado propio. `wide` ocupa dos columnas; `accent` pinta el recuadro en verde
+// sobrio (solo el RUT verificado); `trailing` es un ícono al final del valor.
+function CompanyFact({ accent = false, children, label, targetId, trailing = null, value, wide = false }) {
+  const classes = [
+    "company-verification-strip__fact",
+    wide ? "company-verification-strip__fact--wide" : "",
+    accent ? "company-verification-strip__fact--verified" : "",
+  ].filter(Boolean).join(" ");
+  return (
+    <div id={targetId} className={classes}>
+      <dt>{label}</dt>
+      <dd>
+        <span className="company-verification-strip__value">{children || value || "—"}</span>
+        {trailing}
+      </dd>
+    </div>
+  );
+}
+
 function SectionFrame({ children, description, title }) {
   return (
     <section className="settings-section" aria-labelledby={`settings-${title.replaceAll(" ", "-")}`}>
@@ -460,13 +481,14 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
   };
 
   if (loading) return <LoadingState variant="section" label="Cargando información..." />;
+  const isVerified = form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.VERIFIED;
 
   return (
     <SectionFrame
       title="Información de la empresa"
       description="Identidad, ubicación y datos necesarios para la activación."
     >
-      <dl className="company-profile-summary" aria-label="Resumen de la empresa">
+      <dl className="company-profile-summary company-profile-summary--compact" aria-label="Resumen de la empresa">
         <div>
           <dt>Estado</dt>
           <dd className={form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.VERIFIED ? "is-verified" : ""}>
@@ -477,18 +499,6 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
           </dd>
         </div>
         <div>
-          <dt>País</dt>
-          <dd>{form.paisNombre || getCountryByCode(form.paisCodigo)?.name || form.paisCodigo || "—"}</dd>
-        </div>
-        <div>
-          <dt>{form.identificadorFiscalTipo || "Identificación fiscal"}</dt>
-          <dd>{form.identificadorFiscalValor || "No informado"}</dd>
-        </div>
-        <div>
-          <dt>Razón social</dt>
-          <dd>{form.razonSocial || "No informada"}</dd>
-        </div>
-        <div>
           <dt>Rubro</dt>
           <dd>{getBusinessCategoryVisibleName(form.rubroCodigo, form.rubroOtro, form.rubroNombre) || "No informado"}</dd>
         </div>
@@ -496,46 +506,40 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
       <form onSubmit={save} noValidate>
         <fieldset className="settings-fieldset" disabled={!canEdit || saving}>
           <legend className="sr-only">Información de la empresa</legend>
-          <div className={`settings-card company-information-card company-authoritative-card${form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.VERIFIED ? " is-verified" : ""}`}>
-            <div className="company-information-card__header">
-              <div>
-                <h3>{form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.VERIFIED ? "Empresa verificada" : "Datos fiscales y autoritativos"}</h3>
-                <p>Identidad fiscal protegida y datos definidos al crear la empresa.</p>
-              </div>
-              {form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.VERIFIED && (
-                <span className="company-verified-status">
-                  <AppIcon icon={ShieldCheck} size={17} />
-                  Verificación vigente
-                </span>
-              )}
+          <div className={`settings-card company-information-card company-verification-strip${isVerified ? " company-verification-strip--verified" : ""}`}>
+            <div className="company-information-card__header company-verification-strip__header">
+              <h3>Datos fiscales</h3>
+              <span className="company-verification-strip__lock" role="img" aria-label="Solo lectura" title="Solo lectura">
+                <AppIcon icon={Lock} size={16} />
+              </span>
             </div>
-            <div className="settings-form-grid">
-              <LockedSetting
+            <dl className="company-verification-strip__facts">
+              <CompanyFact
                 label="País"
                 targetId="empresa-configuracion"
                 value={form.paisNombre || getCountryByCode(form.paisCodigo)?.name || form.paisCodigo}
               />
-              <LockedSetting
+              <CompanyFact
                 label="Moneda nacional"
                 value={`${form.monedaNombre || form.monedaCodigo} (${form.monedaCodigo})`}
               />
-              <LockedSetting label="Formato regional" value={form.locale} />
-              <LockedSetting
-                label="Identificación fiscal"
-                value={form.identificadorFiscalTipo}
-              />
-              <div id="empresa-fiscal" className="settings-field settings-locked-field settings-field--wide">
-                <span className="settings-field__label">
-                  {form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.VERIFIED
-                    ? `${form.identificadorFiscalTipo || "Identificador fiscal"} verificado`
-                    : `Estado del ${form.identificadorFiscalTipo || "identificador fiscal"}`}
-                </span>
-                {form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.VERIFIED ? (
-                  <div className="settings-locked-field__value is-verified">
-                    <strong>{form.identificadorFiscalValor || "—"}</strong>
-                    <span>✓ Verificado</span>
-                  </div>
-                ) : (
+              <CompanyFact label="Formato regional" value={form.locale} />
+              <CompanyFact label="Identificación fiscal" value={form.identificadorFiscalTipo} />
+              <CompanyFact
+                label={form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.VERIFIED
+                  ? (form.identificadorFiscalTipo || "Identificador fiscal")
+                  : `Estado del ${form.identificadorFiscalTipo || "identificador fiscal"}`}
+                targetId="empresa-fiscal"
+                value={form.identificadorFiscalValor}
+                wide
+                accent={isVerified}
+                trailing={isVerified ? (
+                  <span className="company-verification-strip__check" role="img" aria-label="Verificado">
+                    <AppIcon icon={Check} size={15} />
+                  </span>
+                ) : null}
+              >
+                {form.verificacionEmpresa?.estado !== BUSINESS_VERIFICATION_STATES.VERIFIED && (
                   <div className="settings-fiscal-pending">
                     <span className={`settings-verification-pill is-${(form.verificacionEmpresa?.estado || BUSINESS_VERIFICATION_STATES.NOT_VERIFIED).toLowerCase()}`}>
                       {(form.verificacionEmpresa?.estado || BUSINESS_VERIFICATION_STATES.NOT_VERIFIED) === BUSINESS_VERIFICATION_STATES.NOT_VERIFIED
@@ -554,20 +558,14 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
                     </Button>
                   </div>
                 )}
-              </div>
-              <div className="settings-field settings-locked-field settings-field--wide company-official-name">
-                <span className="settings-field__label">Razón social oficial</span>
-                <div className="settings-locked-field__value">
-                  <span>{form.razonSocial || "Aún no registrada"}</span>
-                  <AppIcon icon={Lock} size={16} />
-                </div>
-                {[BUSINESS_VERIFICATION_STATES.PENDING, BUSINESS_VERIFICATION_STATES.VERIFIED].includes(form.verificacionEmpresa?.estado) && (
-                  <span className="settings-field__support">
-                    Este dato forma parte de la verificación. Si cambia, ValoraCloud solicitará una nueva revisión.
-                  </span>
-                )}
-              </div>
-            </div>
+              </CompanyFact>
+              <CompanyFact label="Razón social oficial" value={form.razonSocial || "Aún no registrada"} wide />
+            </dl>
+            {[BUSINESS_VERIFICATION_STATES.PENDING, BUSINESS_VERIFICATION_STATES.VERIFIED].includes(form.verificacionEmpresa?.estado) && (
+              <p className="company-verification-strip__note">
+                Estos datos forman parte de la verificación. Si cambian, ValoraCloud solicitará una nueva revisión.
+              </p>
+            )}
           </div>
 
           <div className="settings-card company-information-card">

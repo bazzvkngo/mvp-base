@@ -3543,6 +3543,122 @@
   font-size: var(--font-size-sm);
 }
 
+/* Resumen compacto (Estado y Rubro): la franja fiscal ya muestra país, identificación y razón social. */
+.company-profile-summary.company-profile-summary--compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* Franja fiscal de solo lectura (EM2): un solo candado y una sola nota para todos los datos. */
+.company-verification-strip__header {
+  align-items: center;
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+.company-verification-strip__lock {
+  align-items: center;
+  color: var(--color-text-muted);
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+/* Verificada: un toque del color de marca en el borde de la tarjeta (neutra en los demás estados). */
+.company-verification-strip.company-verification-strip--verified {
+  border-color: var(--color-text-brand-accent);
+}
+
+/* Cuatro datos en la primera fila; RUT y razón social (2 columnas cada uno) en la segunda. */
+.company-verification-strip__facts {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+}
+
+.company-verification-strip__fact {
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+}
+
+.company-verification-strip__fact--wide {
+  grid-column: span 2;
+}
+
+.company-verification-strip__fact dt {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+}
+
+.company-verification-strip__fact dd {
+  align-items: center;
+  color: var(--color-text-strong);
+  display: flex;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  gap: var(--space-2);
+  justify-content: space-between;
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.company-verification-strip__value {
+  min-width: 0;
+}
+
+/* Acento verde sobrio: solo el recuadro del RUT cuando la empresa está verificada. */
+.company-verification-strip__fact--verified {
+  background: var(--color-success-50);
+  border-color: var(--color-success-200);
+}
+
+.company-verification-strip__fact--verified dt,
+.company-verification-strip__fact--verified dd {
+  color: var(--color-success-700);
+}
+
+.company-verification-strip__check {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.company-verification-strip__note {
+  border-top: 1px solid var(--color-border-subtle);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  margin: 0;
+  padding-top: var(--space-3);
+}
+
+@media (max-width: 900px) {
+  .company-verification-strip__facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .company-profile-summary.company-profile-summary--compact {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .company-verification-strip__facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .company-verification-strip__fact--wide {
+    grid-column: auto;
+  }
+}
+
 .settings-danger-zone {
   align-items: center;
   border-color: var(--color-danger-200);
