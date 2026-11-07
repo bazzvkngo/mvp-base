@@ -120,6 +120,7 @@ export const navigationSections = [
         to: "/empleados",
         label: "Empleados",
         title: "Empleados",
+        description: "Quiénes tienen acceso a tu negocio y con qué perfil.",
         icon: UsersRound,
       },
     ],
@@ -177,6 +178,7 @@ export const PAGE_HEADING_ROUTES = Object.freeze([
   "/recepciones",
   "/compras",
   "/empresa",
+  "/empleados",
 ]);
 
 export function routeProvidesPageHeading(pathname) {

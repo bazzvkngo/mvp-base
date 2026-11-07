@@ -108,4 +108,24 @@ const e1Css = cssSource.slice(cssSource.indexOf(".employees-person__name"), cssS
 assert.doesNotMatch(e1Css, /#[0-9a-fA-F]{3,8}\b|rgb\(|hsl\(|\d+px/, "los estilos nuevos usan solo tokens");
 console.log("OK Empleados E1: sin columna Correo, Solo lectura del propietario y error de carga sin tabla vacía");
 
+// Empleados E2: cabecera ModuleHeader con "Invitar usuario" como acción, sin la fila flotante.
+// La ruta (título, descripción, ícono y título propio) se comprueba sobre navigation.js; module-header-smoke la renderiza.
+const employeesNav = navigationSource.match(/to: "\/empleados",[\s\S]*?\n      \},/)?.[0] || "";
+assert.match(employeesNav, /title: "Empleados"/);
+assert.match(employeesNav, /icon: UsersRound/, "la ruta trae ícono");
+assert.match(employeesNav, /description: "[^"\n]{10,90}\."/, "la ruta trae una descripción corta");
+assert.match(navigationSource, /PAGE_HEADING_ROUTES = Object\.freeze\([\s\S]*?"\/empleados",[\s\S]*?\]\)/, "la barra superior no repite el título (un solo h1)");
+assert.match(pageSource, /const MODULE = getRouteMeta\("\/empleados"\);/, "ícono, título y descripción salen de navigation.js");
+assert.equal((pageSource.match(/<ModuleHeader\b/g) || []).length, 2, "ModuleHeader con y sin permiso de lectura");
+assert.match(pageSource, /icon=\{MODULE\.icon\}[\s\S]*?title=\{MODULE\.title\}/);
+assert.doesNotMatch(pageSource, /erp-module-intro/, "ya no usa la fila alineada a la derecha");
+assert.doesNotMatch(pageSource, /<h1\b/, "el h1 lo dibuja ModuleHeader");
+assert.match(pageSource, /actions=\{canManage && tab === "employees" \? <Button[^\n]*>Invitar usuario<\/Button> : null\}/, "Invitar usuario va en la cabecera, solo con permiso de administrar y en la pestaña Empleados");
+assert.equal((pageSource.match(/>Invitar usuario<\/Button>/g) || []).length, 1, "un solo botón Invitar usuario");
+assert.match(pageSource, /role="tablist"/, "las pestañas siguen en la página");
+assert.match(pageSource, /setTab\("profiles"\)/);
+assert.match(pageSource, /className="employees-count">\{members\.length\}/, "se conserva el contador de personas");
+assert.match(pageSource, /className="employees-notice">Puedes consultar esta sección/, "se conserva el aviso de solo consulta");
+console.log("OK Empleados E2: ModuleHeader con Invitar usuario en la cabecera, ruta con título propio y pestañas, contador y aviso conservados");
+
 console.log("BUSINESS_MEMBERS_MODEL_SMOKE_OK");

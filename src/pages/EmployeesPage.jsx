@@ -2,6 +2,7 @@ import React, {useCallback, useEffect, useRef, useState} from "react";
 import {Lock, Pencil, RefreshCw, ShieldCheck, Trash2, UserPlus} from "lucide-react";
 import Button from "../components/ui/Button";
 import LoadingState from "../components/ui/LoadingState";
+import ModuleHeader from "../components/ui/ModuleHeader";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import {SkeletonRegion, SkeletonTable} from "../components/ui/Skeleton";
 import StatusBadge from "../components/ui/StatusBadge";
@@ -37,7 +38,10 @@ import {
   listarInvitacionesNegocio,
   revocarInvitacionNegocio,
 } from "../services/teamInvitationService.js";
+import {getRouteMeta} from "../app/navigation";
 import "../features/employees/employees.css";
+
+const MODULE = getRouteMeta("/empleados");
 
 const PREDEFINED_PROFILES = ["OWNER", ...MANAGEABLE_BUSINESS_MEMBER_ROLES];
 const PREDEFINED_PROFILE_DESCRIPTIONS = Object.freeze({
@@ -245,9 +249,14 @@ export default function EmployeesPage({businessId, role, currentUserUid = ""}) {
     catch (error) { setFeedback({text: cleanError(error, "No pudimos eliminar el perfil."), error: true}); }
   };
 
-  if (!businessId || !canRead) return <section className="erp-page employees-page"><div className="erp-empty-state" role="alert">No tienes permisos para consultar empleados.</div></section>;
+  if (!businessId || !canRead) return <section className="erp-page employees-page"><ModuleHeader description={MODULE.description} icon={MODULE.icon} title={MODULE.title} /><div className="erp-empty-state" role="alert">No tienes permisos para consultar empleados.</div></section>;
   return <section className="erp-page employees-page">
-    {canManage && tab === "employees" && <div className="erp-module-intro"><Button type="button" icon={UserPlus} onClick={() => {setEmail(""); setEmailError(""); setNewSelection("role:TECNICO"); setAddOpen(true);}}>Invitar usuario</Button></div>}
+    <ModuleHeader
+      actions={canManage && tab === "employees" ? <Button type="button" icon={UserPlus} onClick={() => {setEmail(""); setEmailError(""); setNewSelection("role:TECNICO"); setAddOpen(true);}}>Invitar usuario</Button> : null}
+      description={MODULE.description}
+      icon={MODULE.icon}
+      title={MODULE.title}
+    />
     <div className="employees-tabs" role="tablist"><button type="button" role="tab" aria-selected={tab === "employees"} onClick={() => setTab("employees")}>Empleados</button><button type="button" role="tab" aria-selected={tab === "profiles"} onClick={() => setTab("profiles")}>Perfiles y permisos</button></div>
     {!canManage && <div className="employees-notice">Puedes consultar esta sección; la administración corresponde a propietarios y administradores.</div>}
     {feedback.text && <div className={`employees-message${feedback.error ? " employees-message--error" : ""}`} role={feedback.error ? "alert" : "status"}>{feedback.text}</div>}

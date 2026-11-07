@@ -144,12 +144,12 @@ try {
   // =================== Barra superior ===================
 
   const business = "PRUEBA Simulación";
-  // Bloque 2: /reportes (cabecera propia) + las seis páginas simples con ModuleHeader; A2 suma /empresa.
-  const WIRED_ROUTES = ["/clientes", "/ventas", "/compras", "/ordenes-compra", "/proveedores", "/recepciones", "/empresa"];
-  assert.deepEqual([...navigation.PAGE_HEADING_ROUTES].sort(), ["/reportes", ...WIRED_ROUTES].sort(), "las rutas con título propio son /reportes, las seis páginas cableadas y /empresa");
+  // Bloque 2: /reportes (cabecera propia) + las seis páginas simples con ModuleHeader; A2 suma /empresa; Empleados E2 suma /empleados.
+  const WIRED_ROUTES = ["/clientes", "/ventas", "/compras", "/ordenes-compra", "/proveedores", "/recepciones", "/empresa", "/empleados"];
+  assert.deepEqual([...navigation.PAGE_HEADING_ROUTES].sort(), ["/reportes", ...WIRED_ROUTES].sort(), "las rutas con título propio son /reportes, las seis páginas cableadas, /empresa y /empleados");
   assert.ok(Object.isFrozen(navigation.PAGE_HEADING_ROUTES), "la lista está congelada");
   assert.equal(navigation.routeProvidesPageHeading("/reportes"), true);
-  for (const path of ["/inventario", "/cotizaciones", "/trabajos", "/empleados", "/reportes/otro", "/reportes/", "/ventas/nueva", "/compras/abc", "/clientes/", "", undefined]) {
+  for (const path of ["/inventario", "/cotizaciones", "/trabajos", "/reportes/otro", "/reportes/", "/ventas/nueva", "/compras/abc", "/clientes/", "", undefined]) {
     assert.equal(navigation.routeProvidesPageHeading(path), false, `${String(path)} no trae su propio título`);
   }
 
