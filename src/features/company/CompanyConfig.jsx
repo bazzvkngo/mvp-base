@@ -19,7 +19,6 @@ import BusinessCategoryPicker, {
 } from "../../components/BusinessCategoryPicker";
 import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
-import Disclosure from "../../components/ui/Disclosure";
 import LoadingState from "../../components/ui/LoadingState";
 import ModuleHeader from "../../components/ui/ModuleHeader";
 import Notice from "../../components/ui/Notice";
@@ -84,11 +83,6 @@ const COMPLETION_TARGETS = Object.freeze({
   address: "direccion",
   logo: "logo",
 });
-
-// Campos opcionales que van plegados en "Más datos de la empresa". El plegable se abre solo
-// si alguno trae contenido o un error, o si se pide enfocar el objetivo "contacto".
-const OPTIONAL_INFORMATION_FIELDS = Object.freeze(["giro", "codigoPostal", "telefono", "email", "sitioWeb"]);
-const OPTIONAL_FOCUS_TARGETS = new Set(["contacto"]);
 
 // Campos que decide la verificación (no el formulario). Cuando cambia el estado de
 // verificación se vuelven a leer sin tocar lo que la persona esté editando.
@@ -206,6 +200,9 @@ function SectionStatus({ error, success }) {
   return null;
 }
 
+// Etiqueta con "*" (obligatorio) u "Opcional". La línea de ayuda o de error solo existe si hay texto;
+// entonces el control la apunta con aria-describedby y dentro de la etiqueta se oculta a los lectores
+// de pantalla para que no se lea dos veces (una como parte del nombre y otra como descripción).
 function SettingsField({
   children,
   error,
@@ -216,6 +213,12 @@ function SettingsField({
   targetId,
   wide = false,
 }) {
+  const supportId = React.useId();
+  const support = error || hint || null;
+  const canDescribe = Boolean(support) && React.isValidElement(children);
+  const control = canDescribe
+    ? React.cloneElement(children, { "aria-describedby": supportId })
+    : children;
   return (
     <label id={targetId} className={`settings-field${wide ? " settings-field--wide" : ""}`}>
       <span className="settings-field__label">
@@ -223,10 +226,12 @@ function SettingsField({
         {required && <span aria-hidden="true"> *</span>}
         {optional && <span className="settings-field__optional">Opcional</span>}
       </span>
-      {children}
-      <span className="settings-field__support">
-        {error ? <span className="settings-field__error">{error}</span> : hint || <>&nbsp;</>}
-      </span>
+      {control}
+      {support && (
+        <span id={supportId} className="settings-field__support" aria-hidden={canDescribe ? "true" : undefined}>
+          {error ? <span className="settings-field__error">{error}</span> : hint}
+        </span>
+      )}
     </label>
   );
 }
@@ -279,7 +284,6 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
   const [error, setError] = React.useState("");
   const [success, setSuccess] = React.useState("");
   const [logoError, setLogoError] = React.useState("");
-  const [optionalOpen, setOptionalOpen] = React.useState(false);
   const communes = React.useMemo(
     () => getCommunesForRegion(form.regionCodigo),
     [form.regionCodigo]
@@ -356,23 +360,12 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
     }
     return errors;
   }, [form]);
-  // Los campos plegados con contenido (o con error) nunca quedan ocultos; para enfocar uno de
-  // ellos se abre primero el plegable y el foco se pide en la siguiente pasada del efecto.
-  const optionalNeedsOpen = OPTIONAL_INFORMATION_FIELDS.some((field) => String(form[field] || "").trim()) ||
-    Boolean(touched.email && fieldErrors.email) || Boolean(touched.sitioWeb && fieldErrors.sitioWeb);
-  React.useEffect(() => {
-    if (!loading && optionalNeedsOpen) setOptionalOpen(true);
-  }, [loading, optionalNeedsOpen]);
-
+  // Todos los campos están siempre visibles: el foco pedido desde fuera (objetivo=...) no necesita abrir nada.
   React.useEffect(() => {
     if (loading || !focusTarget) return undefined;
-    if (OPTIONAL_FOCUS_TARGETS.has(focusTarget) && !optionalOpen) {
-      setOptionalOpen(true);
-      return undefined;
-    }
     const frameId = window.requestAnimationFrame(() => focusCompanyTarget(focusTarget));
     return () => window.cancelAnimationFrame(frameId);
-  }, [focusTarget, loading, optionalOpen]);
+  }, [focusTarget, loading]);
 
   const change = (event) => {
     const { name, value } = event.target;
@@ -580,16 +573,16 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
           <div className="settings-card company-information-card">
             <div className="company-information-card__header">
               <div>
-                <h3>Datos comerciales editables</h3>
-                <p>Información con la que la empresa se presenta a clientes y proveedores.</p>
+                <h3>Datos comerciales</h3>
+                <p>Los campos con * son obligatorios.</p>
               </div>
             </div>
             <div className="settings-form-grid">
               <SettingsField label="Nombre comercial" required error={touched.nombreComercial ? fieldErrors.nombreComercial : ""} targetId="empresa-identidad">
-                <input name="nombreComercial" value={form.nombreComercial} onChange={change} onBlur={() => touch("nombreComercial")} aria-invalid={Boolean(touched.nombreComercial && fieldErrors.nombreComercial)} />
+                <input name="nombreComercial" value={form.nombreComercial} onChange={change} onBlur={() => touch("nombreComercial")} aria-invalid={Boolean(touched.nombreComercial && fieldErrors.nombreComercial)} placeholder="Ej.: Servicios Eléctricos Pérez" />
               </SettingsField>
               <div className="settings-field">
-                <span className="settings-field__label">Rubro principal <span aria-hidden="true">*</span></span>
+                <span className="settings-field__label">Rubro principal<span aria-hidden="true"> *</span></span>
                 <BusinessCategoryPicker
                   id="company-category"
                   value={form.rubroCodigo}
@@ -610,6 +603,40 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
                   ) : "Selecciona la actividad que mejor representa los servicios de tu empresa."}
                 </span>
               </div>
+              <SettingsField label="Giro" optional wide>
+                <input name="giro" value={form.giro} onChange={change} placeholder="Ej.: Servicios de ingeniería" />
+              </SettingsField>
+              {form.paisCodigo === "CL" ? (
+                <>
+                  <SettingsField label="Región" required error={touched.regionCodigo ? fieldErrors.regionCodigo : ""}>
+                    <select name="regionCodigo" autoComplete="off" value={form.regionCodigo} onChange={change} onBlur={() => touch("regionCodigo")}>
+                      <option value="">Selecciona una región</option>
+                      {CHILE_REGIONS.map((region) => <option key={region.code} value={region.code}>{region.name}</option>)}
+                    </select>
+                  </SettingsField>
+                  <SettingsField label="Comuna / ciudad" optional error={touched.comunaCodigo ? fieldErrors.comunaCodigo : ""}>
+                    <select name="comunaCodigo" autoComplete="off" value={form.comunaCodigo} onChange={change} onBlur={() => touch("comunaCodigo")} disabled={!form.regionCodigo || !canEdit || saving}>
+                      <option value="">Selecciona una comuna</option>
+                      {communes.map((commune) => <option key={commune.code} value={commune.code}>{commune.name}</option>)}
+                    </select>
+                  </SettingsField>
+                </>
+              ) : (
+                <>
+                  <SettingsField label="Región / Estado" required error={fieldErrors.regionEstado}>
+                    <input name="regionEstado" value={form.regionEstado} onChange={change} placeholder="Ej.: Florida" />
+                  </SettingsField>
+                  <SettingsField label="Ciudad" optional>
+                    <input name="ciudad" value={form.ciudad} onChange={change} placeholder="Ej.: Miami" />
+                  </SettingsField>
+                </>
+              )}
+              <SettingsField label="Dirección comercial" optional targetId="empresa-direccion">
+                <input name="direccion" value={form.direccion} onChange={change} placeholder="Calle y número" />
+              </SettingsField>
+              <SettingsField label="Código postal" optional>
+                <input name="codigoPostal" value={form.codigoPostal} onChange={change} placeholder="Ej.: 1100000" />
+              </SettingsField>
             </div>
             <div id="empresa-logo" className="settings-logo-card settings-logo-card--embedded">
               <div className="settings-logo-preview">
@@ -653,69 +680,23 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
             </div>
           </div>
 
-          <div className="settings-card company-information-card company-information-card--secondary">
+          <div className="settings-card company-information-card">
             <div className="company-information-card__header">
               <div>
-                <h3>Ubicación y contacto</h3>
-                <p>Datos complementarios para documentos y comunicaciones comerciales.</p>
+                <h3>Contacto</h3>
               </div>
             </div>
             <div className="settings-form-grid">
-              {form.paisCodigo === "CL" ? (
-                <>
-                  <SettingsField label="Región" required error={touched.regionCodigo ? fieldErrors.regionCodigo : ""}>
-                    <select name="regionCodigo" autoComplete="off" value={form.regionCodigo} onChange={change} onBlur={() => touch("regionCodigo")}>
-                      <option value="">Selecciona una región</option>
-                      {CHILE_REGIONS.map((region) => <option key={region.code} value={region.code}>{region.name}</option>)}
-                    </select>
-                  </SettingsField>
-                  <SettingsField label="Comuna / ciudad" error={touched.comunaCodigo ? fieldErrors.comunaCodigo : ""}>
-                    <select name="comunaCodigo" autoComplete="off" value={form.comunaCodigo} onChange={change} onBlur={() => touch("comunaCodigo")} disabled={!form.regionCodigo || !canEdit || saving}>
-                      <option value="">Sin comuna</option>
-                      {communes.map((commune) => <option key={commune.code} value={commune.code}>{commune.name}</option>)}
-                    </select>
-                  </SettingsField>
-                </>
-              ) : (
-                <>
-                  <SettingsField label="Región / Estado" required error={fieldErrors.regionEstado}>
-                    <input name="regionEstado" value={form.regionEstado} onChange={change} />
-                  </SettingsField>
-                  <SettingsField label="Ciudad">
-                    <input name="ciudad" value={form.ciudad} onChange={change} />
-                  </SettingsField>
-                </>
-              )}
-              <SettingsField label="Dirección comercial" targetId="empresa-direccion" wide>
-                <input name="direccion" value={form.direccion} onChange={change} />
+              <SettingsField label="Teléfono comercial" optional targetId="empresa-contacto">
+                <input name="telefono" type="tel" value={form.telefono} onChange={change} placeholder="+56 9 1234 5678" />
+              </SettingsField>
+              <SettingsField label="Correo comercial" optional error={touched.email ? fieldErrors.email : ""}>
+                <input name="email" type="email" value={form.email} onChange={change} onBlur={() => touch("email")} aria-invalid={Boolean(touched.email && fieldErrors.email)} placeholder="contacto@empresa.cl" />
+              </SettingsField>
+              <SettingsField label="Sitio web" optional wide error={touched.sitioWeb ? fieldErrors.sitioWeb : ""}>
+                <input name="sitioWeb" type="url" placeholder="https://www.empresa.cl" value={form.sitioWeb} onChange={change} onBlur={() => touch("sitioWeb")} aria-invalid={Boolean(touched.sitioWeb && fieldErrors.sitioWeb)} />
               </SettingsField>
             </div>
-            <Disclosure
-              description="Giro, código postal, teléfono, correo y sitio web."
-              disabled={!canEdit}
-              id="company-optional-information"
-              onOpenChange={setOptionalOpen}
-              open={optionalOpen || !canEdit}
-              title="Más datos de la empresa (opcional)"
-            >
-              <div className="settings-form-grid">
-                <SettingsField label="Giro" wide>
-                  <input name="giro" value={form.giro} onChange={change} />
-                </SettingsField>
-                <SettingsField label="Código postal">
-                  <input name="codigoPostal" value={form.codigoPostal} onChange={change} />
-                </SettingsField>
-                <SettingsField label="Teléfono comercial" targetId="empresa-contacto">
-                  <input name="telefono" type="tel" value={form.telefono} onChange={change} />
-                </SettingsField>
-                <SettingsField label="Correo comercial" error={touched.email ? fieldErrors.email : ""}>
-                  <input name="email" type="email" value={form.email} onChange={change} onBlur={() => touch("email")} aria-invalid={Boolean(touched.email && fieldErrors.email)} />
-                </SettingsField>
-                <SettingsField label="Sitio web" wide error={touched.sitioWeb ? fieldErrors.sitioWeb : ""}>
-                  <input name="sitioWeb" type="url" placeholder="https://www.empresa.com" value={form.sitioWeb} onChange={change} onBlur={() => touch("sitioWeb")} aria-invalid={Boolean(touched.sitioWeb && fieldErrors.sitioWeb)} />
-                </SettingsField>
-              </div>
-            </Disclosure>
           </div>
         </fieldset>
         <SectionStatus error={error} success={success} />

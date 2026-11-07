@@ -239,7 +239,7 @@ try {
   assert.equal(count(companySource, /<ModuleHeader\b/g), 2, "CompanyConfig.jsx: ModuleHeader con y sin negocio activo");
   assert.doesNotMatch(companySource, /<h1\b|settings-page-intro/, "CompanyConfig.jsx: el h1 lo dibuja ModuleHeader");
   assert.doesNotMatch(companySource, /<ModuleHeader[^>]*actions=/, "CompanyConfig.jsx: la cabecera no repite el botón Guardar");
-  assert.equal(count(companySource, /<Disclosure\b/g), 1, "CompanyConfig.jsx: un solo plegable de opcionales");
+  assert.equal(count(companySource, /<Disclosure\b/g), 0, "CompanyConfig.jsx: sin plegable de opcionales (EM1: todos los campos van visibles)");
   assert.equal(navigation.getRouteMeta("/empresa").title, "Empresa");
 
   // --- AppLayout usa el componente y no conserva la condición fija ---

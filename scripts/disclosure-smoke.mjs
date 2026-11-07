@@ -65,30 +65,56 @@ try {
   assert.doesNotMatch(componentSource, /style=|#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/);
   console.log("OK: estilos del plegable — 0 literales, tokens existentes, clases con regla, foco visible");
 
-  // --- Uso en Empresa: opcionales plegados, obligatorios visibles ---
+  // --- Uso en Empresa (EM1): sin plegable; todo visible y agrupado en "Datos comerciales" y "Contacto" ---
   const company = await readFile(new URL("../src/features/company/CompanyConfig.jsx", import.meta.url), "utf8");
-  const folded = company.slice(company.indexOf("<Disclosure"), company.indexOf("</Disclosure>"));
-  assert.ok(folded.length > 0, "Empresa usa el plegable");
-  for (const field of ["giro", "codigoPostal", "telefono", "email", "sitioWeb"]) {
-    assert.match(folded, new RegExp(`name="${field}"`), `${field} va dentro del plegable`);
+  assert.doesNotMatch(company, /<Disclosure\b|ui\/Disclosure|optionalOpen|setOptionalOpen|OPTIONAL_INFORMATION_FIELDS|OPTIONAL_FOCUS_TARGETS|Más datos de la empresa/, "Empresa ya no usa el plegable ni deja su estado");
+  const providerForm = await readFile(new URL("../src/features/providers/ProviderFormDialog.jsx", import.meta.url), "utf8");
+  assert.match(providerForm, /<Disclosure\b/, "el componente se conserva: lo usa el formulario de proveedores");
+  assert.equal(count(company, /<h3>Datos comerciales<\/h3>/g), 1, "un solo título 'Datos comerciales'");
+  assert.equal(count(company, /<h3>Contacto<\/h3>/g), 1, "un solo título 'Contacto'");
+  const commercial = company.slice(company.indexOf("<h3>Datos comerciales</h3>"), company.indexOf("<h3>Contacto</h3>"));
+  const contact = company.slice(company.indexOf("<h3>Contacto</h3>"), company.indexOf("</fieldset>", company.indexOf("<h3>Contacto</h3>")));
+  for (const field of ["nombreComercial", "giro", "regionCodigo", "comunaCodigo", "direccion", "codigoPostal"]) {
+    assert.match(commercial, new RegExp(`name="${field}"`), `${field} está visible en Datos comerciales`);
   }
-  assert.deepEqual(
-    [...company.matchAll(/OPTIONAL_INFORMATION_FIELDS = Object\.freeze\(\[([^\]]*)\]/g)][0][1].split(",").map((x) => x.trim().replaceAll('"', "")),
-    ["giro", "codigoPostal", "telefono", "email", "sitioWeb"],
-    "la lista de opcionales coincide con lo plegado"
-  );
-  for (const visible of ['name="nombreComercial"', "<BusinessCategoryPicker", 'name="regionCodigo"', 'name="comunaCodigo"', 'name="direccion"']) {
-    assert.ok(company.includes(visible), `${visible} existe`);
-    assert.ok(!folded.includes(visible), `${visible} NO va plegado`);
+  assert.match(commercial, /<BusinessCategoryPicker/, "el rubro está visible en Datos comerciales");
+  for (const field of ["telefono", "email", "sitioWeb"]) {
+    assert.match(contact, new RegExp(`name="${field}"`), `${field} está visible en Contacto`);
   }
-  assert.match(folded, /label="Teléfono comercial" targetId="empresa-contacto"/, "el objetivo de foco 'contacto' sigue dentro del plegable");
-  // Nada con contenido o con error queda oculto; el foco pedido desde fuera lo abre primero.
-  assert.match(company, /OPTIONAL_INFORMATION_FIELDS\.some\(\(field\) => String\(form\[field\] \|\| ""\)\.trim\(\)\)/, "se abre si algún opcional trae contenido");
-  assert.match(company, /touched\.email && fieldErrors\.email[\s\S]{0,80}touched\.sitioWeb && fieldErrors\.sitioWeb/, "se abre si hay error de correo o sitio web");
-  assert.match(company, /OPTIONAL_FOCUS_TARGETS\.has\(focusTarget\) && !optionalOpen[\s\S]{0,60}setOptionalOpen\(true\)/, "enfocar 'contacto' abre antes de enfocar");
-  assert.match(company, /open=\{optionalOpen \|\| !canEdit\}/, "solo lectura: siempre abierto");
-  assert.match(company, /disabled=\{!canEdit\}/);
-  console.log("OK: Empresa — opcionales plegados, obligatorios visibles, se abre con contenido, error o foco");
+  assert.match(contact, /label="Teléfono comercial" optional targetId="empresa-contacto"/, "el objetivo de foco 'contacto' sigue en el teléfono");
+  // Obligatorios con "*" y opcionales con "Opcional" (la prop que SettingsField ya soporta).
+  assert.match(commercial, /<SettingsField label="Nombre comercial" required /);
+  assert.match(commercial, /Rubro principal<span aria-hidden="true"> \*<\/span>/, "el rubro lleva el mismo '*' que los demás");
+  assert.match(commercial, /<SettingsField label="Región" required /);
+  assert.match(commercial, /<SettingsField label="Región \/ Estado" required /);
+  assert.match(commercial, /Los campos con \* son obligatorios\./, "leyenda de obligatorios");
+  for (const label of ["Giro", "Comuna / ciudad", "Ciudad", "Dirección comercial", "Código postal", "Teléfono comercial", "Correo comercial", "Sitio web"]) {
+    assert.match(company, new RegExp(`<SettingsField label="${label.replace("/", "\\/")}" optional`), `${label} lleva 'Opcional'`);
+  }
+  assert.doesNotMatch(company, /<SettingsField label="(Nombre comercial|Región|Región \/ Estado)"[^>]*optional/, "los obligatorios no llevan 'Opcional'");
+  // Placeholders concretos (español de Chile).
+  for (const [field, placeholder] of [
+    ["nombreComercial", "Ej\\.: Servicios Eléctricos Pérez"],
+    ["giro", "Ej\\.: Servicios de ingeniería"],
+    ["codigoPostal", "Ej\\.: 1100000"],
+    ["direccion", "Calle y número"],
+    ["telefono", "\\+56 9 1234 5678"],
+    ["email", "contacto@empresa\\.cl"],
+    ["sitioWeb", "https:\\/\\/www\\.empresa\\.cl"],
+  ]) {
+    assert.match(company, new RegExp(`<input name="${field}"[^\\n]*placeholder="${placeholder}"`), `${field} trae su placeholder`);
+  }
+  // SettingsField no reserva una línea de ayuda vacía y solo usa aria-describedby cuando hay texto.
+  const settingsField = company.slice(company.indexOf("function SettingsField("), company.indexOf("function LockedSetting("));
+  assert.doesNotMatch(settingsField, /&nbsp;|\u00a0/, "sin línea de ayuda vacía");
+  assert.match(settingsField, /\{support && \(\s*<span id=\{supportId\} className="settings-field__support"/, "la ayuda solo existe si hay texto");
+  assert.match(settingsField, /React\.cloneElement\(children, \{ "aria-describedby": supportId \}\)/, "el control apunta a la ayuda con aria-describedby");
+  assert.match(settingsField, /const canDescribe = Boolean\(support\) && React\.isValidElement\(children\);/, "aria-describedby solo con texto");
+  // Sin cambios de validación ni de textos de error.
+  for (const message of ["Ingresa el nombre comercial.", "Selecciona un rubro.", "Selecciona una región.", "Ingresa un correo comercial válido.", "Incluye http:// o https:// en la dirección web."]) {
+    assert.ok(company.includes(message), `se conserva el texto de error: ${message}`);
+  }
+  console.log("OK: Empresa — sin plegable, Datos comerciales y Contacto visibles, obligatorios con *, opcionales marcados, placeholders y sin ayuda vacía");
 
   console.log("DISCLOSURE_SMOKE_OK");
 } finally {
