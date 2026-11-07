@@ -116,6 +116,13 @@ assert.match(quickFields, /Elige la actividad que mejor representa tu servicio p
 assert.match(company, /Selecciona la actividad que mejor representa los servicios de tu empresa\./);
 assert.doesNotMatch(quickFields, /BUSINESS_CATEGORIES\.filter/);
 assert.doesNotMatch(company, /BUSINESS_CATEGORIES\.filter/);
+// EM4: el selector expone su obligatoriedad y su error sin cambiar su comportamiento.
+assert.match(picker, /required = false,/, "required es opcional: los demás usos no cambian");
+assert.match(picker, /aria-label=\{`\$\{ariaLabel\}\$\{required \? " \(obligatorio\)" : ""\}: \$\{selectedName \|\| "sin seleccionar"\}/, "el nombre accesible incluye 'obligatorio' solo si se pide");
+assert.match(picker, /aria-describedby=\{errorId\}/);
+assert.match(picker, /aria-invalid=\{Boolean\(error\)\}/);
+assert.match(company, /<BusinessCategoryPicker\s+id="company-category"\s+required\b/, "Empresa lo declara obligatorio");
+assert.doesNotMatch(quickFields.slice(quickFields.indexOf("<BusinessCategoryPicker"), quickFields.indexOf("/>", quickFields.indexOf("<BusinessCategoryPicker"))), /\brequired\b/, "el alta rápida no cambia");
 assert.match(picker, /title="Selecciona un rubro"/);
 assert.match(picker, /description="Elige la actividad principal de tu negocio\."/);
 assert.match(picker, /Selecciona el rubro de tu negocio/);

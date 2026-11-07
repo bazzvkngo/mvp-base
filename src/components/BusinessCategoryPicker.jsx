@@ -63,6 +63,7 @@ const BusinessCategoryPicker = React.forwardRef(
       onChange,
       onTouched,
       placeholder = "Selecciona el rubro de tu negocio",
+      required = false,
       value = "",
     },
     ref
@@ -206,7 +207,7 @@ const BusinessCategoryPicker = React.forwardRef(
           type="button"
           className="business-category-picker"
           title={selectedName || undefined}
-          aria-label={`${ariaLabel}: ${selectedName || "sin seleccionar"}${isHistoricalSelection ? ", rubro histórico" : ""}`}
+          aria-label={`${ariaLabel}${required ? " (obligatorio)" : ""}: ${selectedName || "sin seleccionar"}${isHistoricalSelection ? ", rubro histórico" : ""}`}
           aria-describedby={errorId}
           aria-expanded={open}
           aria-haspopup="dialog"

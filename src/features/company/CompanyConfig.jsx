@@ -202,9 +202,10 @@ function SectionStatus({ error, success }) {
   return null;
 }
 
-// Etiqueta con "*" (obligatorio) u "Opcional". La línea de ayuda o de error solo existe si hay texto;
-// entonces el control la apunta con aria-describedby y dentro de la etiqueta se oculta a los lectores
-// de pantalla para que no se lea dos veces (una como parte del nombre y otra como descripción).
+// Etiqueta con "*" (obligatorio, solo visual) u "Opcional" (parte del nombre accesible, una sola vez).
+// El control recibe aria-required si es obligatorio, y aria-invalid + aria-describedby si hay error o
+// ayuda. La línea de ayuda o de error solo existe si hay texto; dentro de la etiqueta se oculta a los
+// lectores de pantalla (aria-hidden) para que no se lea dos veces: una vez como nombre y otra como descripción.
 function SettingsField({
   children,
   error,
@@ -218,15 +219,24 @@ function SettingsField({
   const supportId = React.useId();
   const support = error || hint || null;
   const canDescribe = Boolean(support) && React.isValidElement(children);
-  const control = canDescribe
-    ? React.cloneElement(children, { "aria-describedby": supportId })
+  const controlProps = {};
+  if (canDescribe) controlProps["aria-describedby"] = supportId;
+  if (error && React.isValidElement(children)) controlProps["aria-invalid"] = true;
+  if (required && React.isValidElement(children)) controlProps["aria-required"] = true;
+  const control = Object.keys(controlProps).length > 0
+    ? React.cloneElement(children, controlProps)
     : children;
   return (
     <label id={targetId} className={`settings-field${wide ? " settings-field--wide" : ""}`}>
       <span className="settings-field__label">
         {label}
         {required && <span aria-hidden="true"> *</span>}
-        {optional && <span className="settings-field__optional">Opcional</span>}
+        {optional && (
+          <>
+            <span className="sr-only">, </span>
+            <span className="settings-field__optional">Opcional</span>
+          </>
+        )}
       </span>
       {control}
       {support && (
@@ -525,7 +535,7 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
         </div>
       </dl>
       <form onSubmit={save} noValidate>
-        <fieldset className="settings-fieldset" disabled={!canEdit || saving}>
+        <fieldset className="settings-fieldset" disabled={!canEdit || saving} aria-describedby="empresa-leyenda-obligatorios">
           <legend className="sr-only">Información de la empresa</legend>
           <div className={`settings-card company-information-card company-verification-strip${isVerified ? " company-verification-strip--verified" : ""}`}>
             <div className="company-information-card__header company-verification-strip__header">
@@ -593,7 +603,7 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
             <div className="company-information-card__header">
               <div>
                 <h3>Datos comerciales</h3>
-                <p>Los campos con * son obligatorios.</p>
+                <p id="empresa-leyenda-obligatorios">Los campos con * son obligatorios.</p>
               </div>
             </div>
             <div className="settings-form-grid">
@@ -604,21 +614,22 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
                 <span className="settings-field__label">Rubro principal<span aria-hidden="true"> *</span></span>
                 <BusinessCategoryPicker
                   id="company-category"
+                  required
                   value={form.rubroCodigo}
                   customValue={form.rubroOtro}
                   fallbackName={form.rubroNombre}
                   disabled={!canEdit || saving}
                   error={touched.rubroCodigo ? fieldErrors.rubroCodigo : ""}
-                  errorId="company-category-error"
+                  errorId="company-category-support"
                   onTouched={() => touch("rubroCodigo")}
                   onChange={({ code, customName }) => {
                     setForm((current) => ({ ...current, rubroCodigo: code, rubroOtro: customName, rubroNombre: getBusinessCategoryDisplayName(code, customName) }));
                     setTouched((current) => ({ ...current, rubroCodigo: true }));
                   }}
                 />
-                <span className="settings-field__support">
+                <span id="company-category-support" className="settings-field__support">
                   {touched.rubroCodigo && fieldErrors.rubroCodigo ? (
-                    <span id="company-category-error" className="settings-field__error">{fieldErrors.rubroCodigo}</span>
+                    <span className="settings-field__error">{fieldErrors.rubroCodigo}</span>
                   ) : "Selecciona la actividad que mejor representa los servicios de tu empresa."}
                 </span>
               </div>

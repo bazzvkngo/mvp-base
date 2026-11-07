@@ -108,13 +108,48 @@ try {
   const settingsField = company.slice(company.indexOf("function SettingsField("), company.indexOf("function LockedSetting("));
   assert.doesNotMatch(settingsField, /&nbsp;|\u00a0/, "sin línea de ayuda vacía");
   assert.match(settingsField, /\{support && \(\s*<span id=\{supportId\} className="settings-field__support"/, "la ayuda solo existe si hay texto");
-  assert.match(settingsField, /React\.cloneElement\(children, \{ "aria-describedby": supportId \}\)/, "el control apunta a la ayuda con aria-describedby");
+  assert.match(settingsField, /if \(canDescribe\) controlProps\["aria-describedby"\] = supportId;/, "el control apunta a la ayuda con aria-describedby solo si hay texto");
+  assert.match(settingsField, /React\.cloneElement\(children, controlProps\)/, "las propiedades de accesibilidad se agregan al control");
   assert.match(settingsField, /const canDescribe = Boolean\(support\) && React\.isValidElement\(children\);/, "aria-describedby solo con texto");
   // Sin cambios de validación ni de textos de error.
   for (const message of ["Ingresa el nombre comercial.", "Selecciona un rubro.", "Selecciona una región.", "Ingresa un correo comercial válido.", "Incluye http:// o https:// en la dirección web."]) {
     assert.ok(company.includes(message), `se conserva el texto de error: ${message}`);
   }
   console.log("OK: Empresa — sin plegable, Datos comerciales y Contacto visibles, obligatorios con *, opcionales marcados, placeholders y sin ayuda vacía");
+
+  // --- Accesibilidad de obligatorios, opcionales, errores y leyenda (EM4) ---
+  const a11yField = company.slice(company.indexOf("function SettingsField("), company.indexOf("function LockedSetting("));
+  // 1. Obligatorios: aria-required en el control; el "*" visual queda aria-hidden. Sin required nativo (el formulario usa noValidate).
+  assert.match(a11yField, /if \(required && React\.isValidElement\(children\)\) controlProps\["aria-required"\] = true;/, "el control obligatorio se anuncia con aria-required");
+  assert.match(a11yField, /\{required && <span aria-hidden="true"> \*<\/span>\}/, "el '*' es solo visual");
+  assert.doesNotMatch(a11yField, /controlProps\.required|"required"\s*:/, "no se usa required nativo");
+  assert.equal(count(company, /<form onSubmit=\{save\} noValidate>/g), 1, "el formulario sigue con noValidate (el comportamiento no cambia)");
+  for (const label of ["Nombre comercial", "Región", "Región \\/ Estado"]) {
+    assert.match(company, new RegExp(`<SettingsField label="${label}" required `), `${label} es obligatorio`);
+  }
+  // 2. Opcionales: nunca aria-required; "Opcional" forma parte del nombre accesible, una sola vez (con separador oculto).
+  assert.match(a11yField, /\{optional && \(\s*<>\s*<span className="sr-only">, <\/span>\s*<span className="settings-field__optional">Opcional<\/span>/, "'Opcional' va en el nombre, separado de la etiqueta");
+  assert.equal(count(a11yField, /Opcional/g), 1, "'Opcional' aparece una sola vez (no se repite como descripción)");
+  assert.equal(count(company, /controlProps\["aria-required"\]/g), 1, "aria-required solo se asigna a los obligatorios, en un único lugar");
+  assert.doesNotMatch(company, /<SettingsField label="[^"]+" optional[^>]*required/, "ningún campo es obligatorio y opcional a la vez");
+  // 3. Errores: aria-invalid y aria-describedby al mensaje; el mensaje no se duplica (aria-hidden dentro de la etiqueta).
+  assert.match(a11yField, /if \(error && React\.isValidElement\(children\)\) controlProps\["aria-invalid"\] = true;/, "aria-invalid con error en cualquier campo");
+  assert.match(a11yField, /aria-hidden=\{canDescribe \? "true" : undefined\}/, "el mensaje se lee como descripción, no también como nombre");
+  for (const label of ["Región", "Región \\/ Estado", "Comuna \\/ ciudad", "Nombre comercial", "Correo comercial", "Sitio web"]) {
+    assert.match(company, new RegExp(`<SettingsField label="${label}"[^\\n]*error=\\{`), `${label} pasa su error al campo (aria-invalid y aria-describedby)`);
+  }
+  // 4. Selector de rubro: obligatorio y error accesibles, sin cambiar su comportamiento.
+  assert.match(company, /<BusinessCategoryPicker\s+id="company-category"\s+required\b/, "el selector de rubro se declara obligatorio");
+  assert.match(company, /errorId="company-category-support"/);
+  assert.match(company, /<span id="company-category-support" className="settings-field__support">/, "el mensaje (ayuda o error) existe siempre y el botón lo apunta");
+  assert.doesNotMatch(company, /company-category-error/, "ya no hay un id que solo existe con error");
+  // 5. Leyenda asociada al formulario.
+  const fieldsetAt = company.indexOf('<fieldset className="settings-fieldset" disabled={!canEdit || saving} aria-describedby="empresa-leyenda-obligatorios">');
+  const legendAt = company.indexOf('<p id="empresa-leyenda-obligatorios">Los campos con * son obligatorios.</p>');
+  assert.ok(fieldsetAt > 0 && legendAt > fieldsetAt, "la leyenda está dentro del fieldset que la describe");
+  assert.ok(legendAt < company.indexOf("</fieldset>", fieldsetAt), "la leyenda y el fieldset son del mismo formulario");
+  assert.equal(count(company, /id="empresa-leyenda-obligatorios"/g), 1, "el id es único");
+  console.log("OK: Empresa — accesibilidad: aria-required, Opcional en el nombre, aria-invalid/aria-describedby, rubro y leyenda");
 
   console.log("DISCLOSURE_SMOKE_OK");
 } finally {
