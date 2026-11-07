@@ -5,6 +5,7 @@ import {
   businessMemberProfileLabel,
   canManageBusinessMembers,
   canReadBusinessMembers,
+  MANAGEABLE_BUSINESS_MEMBER_ROLES,
   isValidBusinessMemberEmail,
   normalizeBusinessMemberEmail,
 } from "../src/domain/businessMemberModel.mjs";
@@ -137,7 +138,7 @@ assert.equal((profilesPanel.match(/<table\b/g) || []).length, 2, "una tabla para
 assert.equal((profilesPanel.match(/<th>Qué puede ver<\/th>/g) || []).length, 2, "columnas Perfil y Qué puede ver en ambas tablas");
 assert.match(profilesPanel, /\{canManage && <th className="clients-actions-column">Acciones<\/th>\}/, "Acciones solo en personalizados y solo con permiso de administrar");
 assert.match(profilesPanel, /role="img" aria-label="Perfil protegido"/, "un candado pequeño con texto accesible por fila del sistema");
-assert.equal((pageSource.match(/Los perfiles del sistema están protegidos y no se pueden modificar\./g) || []).length, 1, "una sola nota breve de protección");
+assert.equal((pageSource.match(/Son perfiles fijos y no se pueden modificar\./g) || []).length, 1, "una sola nota breve de protección");
 assert.match(profilesPanel, /PREDEFINED_PROFILE_DESCRIPTIONS\[role\]\}>\{PREDEFINED_PROFILE_DESCRIPTIONS\[role\]\}/, "descripción completa en title y truncada en pantalla");
 assert.doesNotMatch(profilesPanel, /<h2[^>]*>Perfiles y permisos<\/h2>/, "sin encabezado repetido de Perfiles y permisos");
 assert.equal((profilesPanel.match(/<h2\b/g) || []).length, 2, "un encabezado por sección");
@@ -174,5 +175,28 @@ const modulesCss = cssSource.slice(cssSource.indexOf(".employees-modules-grid {"
 assert.match(modulesCss, /\.employees-module-option[\s\S]*?@media \(pointer: coarse\)[\s\S]*?min-height: 44px/, "filas de 44 px en táctil");
 assert.doesNotMatch(modulesCss, /#[0-9a-fA-F]{3,8}\b|rgb\(|hsl\(|var\(--color-(brand|dark)-/, "casillas con tokens semánticos, claro y oscuro");
 console.log("OK Empleados E4: módulos agrupados como el menú, casillas clicables de 44 px táctil y guardado intacto");
+
+// Empleados E8: textos de apoyo de Perfiles y permisos (ciertos según ProfileOptions) y avisos con tokens que tienen variante oscura.
+assert.match(pageSource, /Son perfiles fijos y no se pueden modificar\. Los asignas al invitar a alguien o desde la pestaña Empleados \(Propietario no se asigna y Administrador solo lo asigna el propietario\)\./, "apoyo de perfiles del sistema");
+assert.match(pageSource, /Crea perfiles propios y asígnalos igual que los del sistema\./, "apoyo de perfiles personalizados");
+assert.doesNotMatch(pageSource, /Dan acceso a los módulos completos que elijas/, "texto anterior de personalizados retirado");
+// Lo que afirman los textos: el selector de "Invitar usuario" y el de Acciones usan ProfileOptions con los perfiles personalizados;
+// Propietario no es asignable y Administrador solo lo ofrece el propietario.
+assert.equal((pageSource.match(/<ProfileOptions profiles=\{profiles\} actorRole=\{(role|actorRole)\} \/>/g) || []).length, 2, "ProfileOptions en Invitar usuario y en Acciones");
+assert.match(pageSource, /<optgroup label="Perfiles personalizados">\s*\{profiles\.map/, "ProfileOptions lista los perfiles personalizados");
+assert.match(pageSource, /\.filter\(\(item\) => actorRole === "OWNER" \|\| item !== "ADMIN"\)/, "Administrador solo lo asigna el propietario");
+assert.ok(!MANAGEABLE_BUSINESS_MEMBER_ROLES.includes("OWNER"), "Propietario no es un perfil asignable");
+const noticeStart = cssSource.indexOf(".employees-notice,");
+const noticeRule = cssSource.slice(noticeStart, cssSource.indexOf("}", noticeStart));
+assert.match(noticeRule, /background: var\(--color-surface-brand\);/, "aviso con fondo de marca que cambia en oscuro");
+assert.match(noticeRule, /color: var\(--color-text-brand\);/, "aviso con texto de marca que cambia en oscuro");
+assert.match(noticeRule, /border: 1px solid var\(--color-text-brand-accent\);/, "borde de marca con variante oscura");
+assert.doesNotMatch(noticeRule, /var\(--color-(brand|dark)-\d+\)/, "el aviso ya no usa brand-* ni dark-*");
+const noticeErrorRule = cssSource.slice(cssSource.indexOf(".employees-message--error {"), cssSource.indexOf("}", cssSource.indexOf(".employees-message--error {")));
+assert.match(noticeErrorRule, /background: var\(--color-danger-50\);[\s\S]*border-color: var\(--color-danger-200\);/, "el aviso de error conserva sus tokens de peligro");
+assert.ok(cssSource.indexOf(".employees-message--error,") > noticeStart, "el color de error se declara después del aviso base y gana la cascada");
+// Caracteres de control: un \b mal escrito se vuelve un retroceso (0x08) y deja la aserción vacía.
+assert.ok(!/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(fs.readFileSync("scripts/business-members-model-smoke.mjs", "utf8")), "este smoke no contiene caracteres de control");
+console.log("OK Empleados E8: apoyos de Perfiles y permisos verificados contra ProfileOptions y avisos con tokens semánticos");
 
 console.log("BUSINESS_MEMBERS_MODEL_SMOKE_OK");
