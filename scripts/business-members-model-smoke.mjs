@@ -104,7 +104,7 @@ assert.match(pageSource, /\{!loadError && <span className="employees-count">/, "
 for (const cssClass of ["employees-person__name", "employees-person__email", "employees-readonly-label"]) {
   assert.match(cssSource, new RegExp(`\\.${cssClass}\\b`), `employees.css define .${cssClass}`);
 }
-const e1Css = cssSource.slice(cssSource.indexOf(".employees-person__name"), cssSource.indexOf(".employees-actions {"));
+const e1Css = cssSource.slice(cssSource.indexOf(".employees-person__name"), cssSource.indexOf(".employees-profiles {"));
 assert.doesNotMatch(e1Css, /#[0-9a-fA-F]{3,8}\b|rgb\(|hsl\(|\d+px/, "los estilos nuevos usan solo tokens");
 console.log("OK Empleados E1: sin columna Correo, Solo lectura del propietario y error de carga sin tabla vacía");
 
@@ -127,5 +127,32 @@ assert.match(pageSource, /setTab\("profiles"\)/);
 assert.match(pageSource, /className="employees-count">\{members\.length\}/, "se conserva el contador de personas");
 assert.match(pageSource, /className="employees-notice">Puedes consultar esta sección/, "se conserva el aviso de solo consulta");
 console.log("OK Empleados E2: ModuleHeader con Invitar usuario en la cabecera, ruta con título propio y pestañas, contador y aviso conservados");
+
+// Empleados E3: Perfiles y permisos como tablas compactas (una fila por perfil), sin tarjetas ni insignia repetida.
+const profilesPanel = pageSource.slice(pageSource.indexOf("function ProfileRowActions("), pageSource.indexOf("export default function EmployeesPage"));
+assert.doesNotMatch(profilesPanel, /employees-profile-card|employees-profile-grid|employees-module-list|<article/, "ya no hay tarjetas de perfiles");
+assert.doesNotMatch(profilesPanel, /<StatusBadge/, "sin insignia repetida por perfil");
+assert.equal((profilesPanel.match(/<table\b/g) || []).length, 2, "una tabla para los del sistema y otra para los personalizados");
+assert.equal((profilesPanel.match(/<th>Qué puede ver<\/th>/g) || []).length, 2, "columnas Perfil y Qué puede ver en ambas tablas");
+assert.match(profilesPanel, /\{canManage && <th className="clients-actions-column">Acciones<\/th>\}/, "Acciones solo en personalizados y solo con permiso de administrar");
+assert.match(profilesPanel, /role="img" aria-label="Perfil protegido"/, "un candado pequeño con texto accesible por fila del sistema");
+assert.equal((pageSource.match(/Los perfiles del sistema están protegidos y no se pueden modificar\./g) || []).length, 1, "una sola nota breve de protección");
+assert.match(profilesPanel, /PREDEFINED_PROFILE_DESCRIPTIONS\[role\]\}>\{PREDEFINED_PROFILE_DESCRIPTIONS\[role\]\}/, "descripción completa en title y truncada en pantalla");
+assert.doesNotMatch(profilesPanel, /<h2[^>]*>Perfiles y permisos<\/h2>/, "sin encabezado repetido de Perfiles y permisos");
+assert.equal((profilesPanel.match(/<h2\b/g) || []).length, 2, "un encabezado por sección");
+assert.match(profilesPanel, /aria-label=\{`Editar perfil \$\{profile\.nombre\}`\}[\s\S]*?aria-label=\{`Eliminar perfil \$\{profile\.nombre\}`\}/, "editar y eliminar como íconos con texto accesible");
+assert.match(profilesPanel, /\{canManage && <Button type="button" icon=\{ShieldCheck\} onClick=\{onCreate\}>Crear perfil<\/Button>\}/, "Crear perfil se conserva, solo con permiso");
+assert.match(profilesPanel, /\{canManage && <td className="clients-actions-column"><ProfileRowActions/, "las acciones por fila solo con permiso");
+assert.match(profilesPanel, /Aún no hay perfiles personalizados\./, "vacío en una sola línea");
+assert.match(profilesPanel, /const showCustom = !\(loadFailed && profiles\.length === 0\);/, "con error de carga no se muestra el falso vacío");
+assert.match(pageSource, /loadFailed=\{Boolean\(loadError\)\}/, "la página informa el error al panel");
+assert.match(pageSource, /<SkeletonRegion label="Cargando perfiles\.\.\."><SkeletonTable columns=\{2\} rows=\{5\} twoLine \/>/, "esqueleto con forma de tabla");
+assert.match(cssSource, /\.employees-row-icons button[\s\S]*?height: 44px/, "íconos de 44 px en táctil");
+assert.match(cssSource, /@media \(pointer: coarse\)/);
+const e3Start = cssSource.indexOf(".employees-profiles {");
+const e3Css = cssSource.slice(e3Start, cssSource.indexOf("@media (pointer: coarse)", e3Start)); // el único px permitido es el de 44 px táctil, ya comprobado arriba
+assert.ok(e3Css.length > 200, "se encontró el bloque de estilos nuevos");
+assert.doesNotMatch(e3Css, /#[0-9a-fA-F]{3,8}\b|rgb\(|hsl\(|(?<![\d.])(?!1px\b)\d+px|var\(--color-(brand|dark)-/, "los estilos nuevos usan solo tokens semánticos (solo se admite el borde de 1px)");
+console.log("OK Empleados E3: perfiles en tablas compactas, candado por fila, acciones con permiso, vacío y error sin falso vacío");
 
 console.log("BUSINESS_MEMBERS_MODEL_SMOKE_OK");

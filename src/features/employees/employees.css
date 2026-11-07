@@ -97,9 +97,10 @@
   background: var(--color-surface-subtle);
   border: 1px dashed var(--employees-border);
   border-radius: var(--radius-md);
-  display: grid;
-  gap: var(--space-1);
-  padding: var(--space-4);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
 }
 
 .employees-profile-card {
@@ -223,6 +224,57 @@
 .employees-readonly-label {
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
+}
+
+/* Pestaña Perfiles y permisos: una tabla compacta por tipo de perfil. */
+.employees-profiles {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.employees-profiles__section + .employees-profiles__section {
+  border-top: 1px solid var(--employees-border);
+  padding-top: var(--space-5);
+}
+
+.employees-profile-name {
+  align-items: center;
+  display: inline-flex;
+  gap: var(--space-2);
+}
+
+.employees-profile-name strong {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-sm);
+}
+
+.employees-profile-lock {
+  align-items: center;
+  color: var(--color-text-muted);
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+/* Texto largo en la tabla: máximo dos líneas; el texto completo queda en el atributo title. */
+.employees-profile-text {
+  -webkit-box-orient: vertical;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  margin: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.employees-profiles-table .employees-person__email.employees-profile-text {
+  display: -webkit-box;
+}
+
+@media (pointer: coarse) {
+  .client-row-actions.employees-row-icons button {
+    height: 44px;
+    width: 44px;
+  }
 }
 
 .employees-actions {
