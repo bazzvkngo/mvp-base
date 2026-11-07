@@ -91,4 +91,21 @@ assert.doesNotMatch(pageSource, /legacy/i);
 assert.match(navigationSource, /to: "\/empleados"/);
 console.log("OK miembros integración estática: backend autoritativo, Rules y UI responsive");
 
+// Empleados E1: tabla sin columna Correo, "Solo lectura" para el propietario y sin tabla vacía si falla la carga.
+const cssSource = fs.readFileSync("src/features/employees/employees.css", "utf8");
+assert.doesNotMatch(pageSource, /<th>Correo<\/th>/, "la tabla de miembros ya no tiene columna Correo");
+assert.match(pageSource, /<th>Nombre<\/th><th>Perfil<\/th>/, "el correo se muestra bajo el nombre, no en columna propia");
+assert.match(pageSource, /employees-person__email/, "el correo va como segunda línea bajo el nombre");
+assert.match(pageSource, /email\.toLowerCase\(\) === memberName\(member\)\.toLowerCase\(\) \? "" : email/, "el correo no se repite cuando coincide con el nombre");
+assert.match(pageSource, /member\.rol === "OWNER"\) return <span className="employees-readonly-label">Solo lectura<\/span>/, "el propietario muestra Solo lectura en Acciones");
+assert.match(pageSource, /<SkeletonTable columns=\{canManage \? 5 : 4\} \/>/, "el esqueleto tiene una columna menos");
+assert.match(pageSource, /loadError && members\.length === 0 \? null :/, "si falla la carga sin miembros no se dibuja la tabla");
+assert.match(pageSource, /\{!loadError && <span className="employees-count">/, "con error de carga se oculta el contador");
+for (const cssClass of ["employees-person__name", "employees-person__email", "employees-readonly-label"]) {
+  assert.match(cssSource, new RegExp(`\\.${cssClass}\\b`), `employees.css define .${cssClass}`);
+}
+const e1Css = cssSource.slice(cssSource.indexOf(".employees-person__name"), cssSource.indexOf(".employees-actions {"));
+assert.doesNotMatch(e1Css, /#[0-9a-fA-F]{3,8}\b|rgb\(|hsl\(|\d+px/, "los estilos nuevos usan solo tokens");
+console.log("OK Empleados E1: sin columna Correo, Solo lectura del propietario y error de carga sin tabla vacía");
+
 console.log("BUSINESS_MEMBERS_MODEL_SMOKE_OK");

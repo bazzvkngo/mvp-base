@@ -201,6 +201,30 @@
   vertical-align: middle;
 }
 
+/* Nombre en una línea y, si hay nombre real, el correo debajo en pequeño. */
+.employees-person__name,
+.employees-person__email {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.employees-person__name {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-sm);
+}
+
+.employees-person__email {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  margin-top: var(--space-1);
+}
+
+/* Acciones del propietario: no se modifica, igual que "Solo lectura" de Proveedores. */
+.employees-readonly-label {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
 .employees-actions {
   align-items: center;
   display: flex;
