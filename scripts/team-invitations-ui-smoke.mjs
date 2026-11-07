@@ -192,6 +192,42 @@ try {
   assert.match(renderToStaticMarkup(React.createElement(TeamInvitationsPanel, {...panelProps, status: "loading", groups: model.groupBusinessInvitations([])})), /role="status"/);
   console.log("OK Empleados: pendientes con Revocar, rechazadas con motivo y vencidas con Volver a invitar");
 
+  // Empleados E5: tabla compacta de invitaciones (sin tarjetas), estado con su color y perfil neutro.
+  const render = (props) => renderToStaticMarkup(React.createElement(TeamInvitationsPanel, {...panelProps, ...props}));
+  const tablePanel = render({groups: model.groupBusinessInvitations([invite("vencida"), invite("pendiente"), invite("rechazada", {motivoRechazo: "No me interesa"})])});
+  assert.equal((tablePanel.match(/<table\b/g) || []).length, 1, "una sola tabla de invitaciones");
+  assert.match(tablePanel, /<th>Correo<\/th><th>Perfil<\/th><th>Estado<\/th><th>Vence \/ Fecha<\/th><th class="clients-actions-column">Acciones<\/th>/, "columnas Correo, Perfil, Estado, Vence / Fecha y Acciones");
+  assert.equal((tablePanel.match(/<tr>(?:<td)/g) || []).length, 3, "una fila por invitación");
+  assert.doesNotMatch(tablePanel, /<ul\b|<li\b|<article|class="employees-invitation"|employees-invitations__/, "sin lista ni tarjetas");
+  assert.doesNotMatch(tablePanel, /<h3\b/, "sin subtítulos por grupo");
+  assert.equal((tablePanel.match(/<h2\b/g) || []).length, 1, "un solo encabezado de sección");
+  assert.ok(tablePanel.indexOf("Pendiente</span>") < tablePanel.indexOf("Rechazada</span>") && tablePanel.indexOf("Rechazada</span>") < tablePanel.indexOf("Vencida</span>"), "orden: pendientes, rechazadas y vencidas");
+  assert.match(tablePanel, /ui-status-badge--warning">Pendiente</, "pendiente en advertencia");
+  assert.match(tablePanel, /ui-status-badge--danger">Rechazada</, "rechazada en peligro");
+  assert.match(tablePanel, /ui-status-badge--neutral">Vencida</, "vencida en neutro");
+  assert.match(tablePanel, /ui-status-badge--neutral">Ventas</, "el perfil va en insignia neutra, sin el color del estado");
+  assert.doesNotMatch(tablePanel, /ui-status-badge--(warning|danger)">Ventas</, "el perfil nunca toma el color del estado");
+  assert.match(tablePanel, /class="client-row-actions__labeled"[^>]*aria-label="Revocar pendiente@x\.cl"[^>]*><svg[\s\S]*?<\/svg>Revocar<\/button>/, "Revocar con ícono, texto visible y nombre accesible");
+  assert.match(tablePanel, /aria-label="Volver a invitar vencida@x\.cl"[^>]*><svg[\s\S]*?<\/svg>Volver a invitar<\/button>/, "Volver a invitar con ícono y texto visible");
+  assert.equal((tablePanel.match(/client-row-actions__labeled/g) || []).length, 2, "acciones solo en pendientes (Revocar) y vencidas (Volver a invitar)");
+  const busyPanel = render({busyId: "n__pendiente", groups: model.groupBusinessInvitations([invite("pendiente"), invite("vencida")])});
+  assert.equal((busyPanel.match(/ aria-busy="true"/g) || []).length, 1, "solo la fila en proceso se marca ocupada");
+  assert.equal((busyPanel.match(/disabled=""/g) || []).length, 2, "mientras una acción corre, las demás se desactivan (igual que antes)");
+  const emptyPanel = render({groups: model.groupBusinessInvitations([])});
+  assert.match(emptyPanel, /<p class="employees-profile-empty">Aún no hay invitaciones enviadas\.<\/p>/, "vacío en una sola línea");
+  assert.doesNotMatch(emptyPanel, /<table|ui-skeleton|role="alert"/, "vacío real: sin tabla, esqueleto ni error");
+  const errorPanel = render({status: "error", groups: model.groupBusinessInvitations([invite("pendiente")])});
+  assert.match(errorPanel, /No pudimos cargar las invitaciones\.[\s\S]*Reintentar/, "error con Reintentar");
+  assert.doesNotMatch(errorPanel, /Aún no hay invitaciones|<table|ui-skeleton/, "error: ni falso vacío ni tabla ni esqueleto");
+  const loadingPanel = render({status: "loading", groups: model.groupBusinessInvitations([])});
+  assert.equal((loadingPanel.match(/role="status"/g) || []).length, 1, "carga: un solo role=status");
+  assert.match(loadingPanel, /ui-skeleton-table/, "carga: esqueleto con forma de tabla");
+  assert.doesNotMatch(loadingPanel, /Aún no hay invitaciones/, "carga: sin falso vacío");
+  const panelSource = await read("src/features/employees/TeamInvitationsPanel.jsx");
+  assert.doesNotMatch(panelSource, /title: "(Pendientes|Rechazadas|Vencidas)"/, "los títulos de grupo ya no existen");
+  assert.equal((panelSource.match(/badgeLabel/g) || []).length >= 4, true, "badgeLabel se usa en la insignia de Estado");
+  console.log("OK Empleados E5: tabla compacta, estado con color, perfil neutro, acciones con texto, vacío/error/carga sin falso vacío");
+
   // Diálogo de rechazo (usa un portal: se verifica la fuente)
   const reject = await read("src/components/RejectInvitationDialog.jsx");
   assert.match(reject, /maxLength=\{MAX_INVITATION_REJECTION_REASON_LENGTH\}/);

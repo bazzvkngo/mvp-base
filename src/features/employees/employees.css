@@ -277,6 +277,17 @@
   }
 }
 
+/* Panel de invitaciones: botones de fila con ícono y texto, sin saltos de línea. En táctil miden
+   44 px por la regla general de interior.css para .erp-page button. */
+.employees-invitations-table .client-row-actions button {
+  white-space: nowrap;
+}
+
+.employees-invitations-table .client-row-actions button:disabled {
+  color: var(--color-text-muted);
+  cursor: default;
+}
+
 .employees-actions {
   align-items: center;
   display: flex;
