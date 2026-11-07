@@ -42,57 +42,6 @@
   color: var(--color-danger-700);
 }
 
-.employees-profile-grid {
-  display: grid;
-  gap: var(--space-4);
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-}
-
-.employees-profile-section {
-  display: grid;
-  gap: var(--space-3);
-}
-
-.employees-profile-section + .employees-profile-section {
-  border-top: 1px solid var(--employees-border);
-  margin-top: var(--space-5);
-  padding-top: var(--space-5);
-}
-
-.employees-profile-section__header {
-  align-items: end;
-  display: flex;
-  gap: var(--space-4);
-  justify-content: space-between;
-}
-
-.employees-profile-section__header h3,
-.employees-profile-section__header p {
-  margin: 0;
-}
-
-.employees-profile-section__header h3 {
-  color: var(--color-text-strong);
-  font-size: var(--font-size-md);
-}
-
-.employees-profile-section__header p,
-.employees-profile-section__header > span,
-.employees-profile-empty span {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
-}
-
-.employees-profile-card--system {
-  background: var(--color-surface-subtle);
-  box-shadow: none;
-}
-
-.employees-profile-card .ui-status-badge {
-  gap: 4px;
-  justify-self: start;
-}
-
 .employees-profile-empty {
   background: var(--color-surface-subtle);
   border: 1px dashed var(--employees-border);
@@ -101,38 +50,6 @@
   font-size: var(--font-size-sm);
   margin: 0;
   padding: var(--space-3) var(--space-4);
-}
-
-.employees-profile-card {
-  border: 1px solid var(--employees-border);
-  border-radius: var(--radius-lg);
-  display: grid;
-  gap: var(--space-3);
-  padding: var(--space-4);
-}
-
-.employees-profile-card h3,
-.employees-profile-card p {
-  margin: 0;
-}
-
-.employees-profile-card p {
-  color: var(--color-text-muted);
-}
-
-.employees-module-list,
-.employees-profile-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.employees-module-list span {
-  background: var(--color-brand-50);
-  border-radius: var(--radius-pill);
-  color: var(--color-brand-800);
-  font-size: var(--font-size-xs);
-  padding: var(--space-1) var(--space-2);
 }
 
 .employees-modules {
@@ -161,16 +78,48 @@
   gap: var(--space-2);
 }
 
+/* Módulos agrupados como el menú: una columna en móvil y dos desde tablet. */
 .employees-modules-grid {
+  align-items: start;
   display: grid;
-  gap: var(--space-2);
+  gap: var(--space-4);
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.employees-modules label {
+.employees-modules-group {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.employees-modules-group__title {
+  border-bottom: 1px solid var(--color-border-subtle);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  margin: 0 0 var(--space-1);
+  padding-bottom: var(--space-1);
+}
+
+/* La fila completa es la etiqueta clicable (ui-checkbox); en táctil la fila mide 44 px. */
+.employees-module-option {
   align-items: center;
-  display: flex;
-  gap: var(--space-2);
+  border-radius: var(--radius-sm);
+  min-height: 32px;
+  padding: var(--space-1) var(--space-2);
+}
+
+.employees-module-option:hover {
+  background: var(--color-surface-subtle);
+}
+
+.employees-module-option__input {
+  margin: 0;
+}
+
+@media (pointer: coarse) {
+  .employees-module-option {
+    min-height: 44px;
+  }
 }
 
 .employees-actions small {
@@ -310,45 +259,6 @@
   outline-offset: var(--focus-offset);
 }
 
-.employees-empty-state h3,
-.employees-empty-state p {
-  margin: 0;
-}
-
-.employees-card {
-  display: grid;
-  gap: var(--space-3);
-}
-
-.employees-card__email {
-  color: var(--color-text-muted);
-  display: block;
-  font-size: var(--font-size-xs);
-  margin-top: var(--space-1);
-  overflow-wrap: anywhere;
-}
-
-.employees-card__details {
-  display: grid;
-  gap: var(--space-3);
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin: 0;
-}
-
-.employees-card__details div {
-  display: grid;
-  gap: var(--space-1);
-}
-
-.employees-card__details dt {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
-}
-
-.employees-card__details dd {
-  margin: 0;
-}
-
 .employees-add-form {
   display: grid;
   gap: var(--space-3);
@@ -381,8 +291,7 @@
     grid-template-columns: 1fr;
   }
 
-  .employees-modules-toolbar,
-  .employees-profile-section__header {
+  .employees-modules-toolbar {
     align-items: stretch;
     flex-direction: column;
   }
@@ -396,83 +305,18 @@
   }
 }
 
-@media (max-width: 420px) {
-  .employees-card__details {
-    grid-template-columns: 1fr;
-  }
-}
-
 /* Invitaciones enviadas (TeamInvitationsPanel) */
 
-.employees-invitations__group {
-  display: grid;
-  gap: var(--space-2);
-}
-
-.employees-invitations__group + .employees-invitations__group {
-  border-top: 1px solid var(--employees-border);
-  margin-top: var(--space-4);
-  padding-top: var(--space-4);
-}
-
-.employees-invitations__group h3 {
-  color: var(--color-text-strong);
-  font-size: var(--font-size-sm);
-  margin: 0;
-}
-
-.employees-invitations__group h3 span {
-  color: var(--color-text-muted);
-  font-weight: var(--font-weight-regular);
-}
-
-.employees-invitations__list {
-  display: grid;
-  gap: var(--space-2);
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.employees-invitation {
-  align-items: center;
-  background: var(--color-surface-panel);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
-  display: grid;
-  gap: var(--space-3);
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.5fr) auto;
-  padding: var(--space-3);
-}
-
-.employees-invitation__identity,
 .employees-invitation__detail {
+  color: var(--color-text-default);
   display: grid;
+  font-size: var(--font-size-sm);
   gap: var(--space-1);
   justify-items: start;
   min-width: 0;
 }
 
-.employees-invitation__identity strong {
-  overflow-wrap: anywhere;
-}
-
-.employees-invitation__detail {
-  color: var(--color-text-default);
-  font-size: var(--font-size-sm);
-}
-
 .employees-invitation__reason {
   color: var(--color-text-muted);
   overflow-wrap: anywhere;
-}
-
-@media (max-width: 720px) {
-  .employees-invitation {
-    grid-template-columns: 1fr;
-  }
-
-  .employees-invitation__actions .ui-button {
-    width: 100%;
-  }
 }
