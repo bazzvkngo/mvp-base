@@ -315,15 +315,12 @@ Quedan pendientes para una etapa posterior:
 
 ---
 
-## 14. Cambios visuales pendientes
+## 14. Ficha del paciente pendiente
 
-Los siguientes ajustes se realizarán en una etapa posterior:
-
-- `LoadingState`;
-- `SkeletonCards`;
-- ajustes visuales asociados a la nueva guía de diseño.
-
-Estos cambios pueden realizarse en otro PR, según lo indicado por el mantenedor.
+`src/features/veterinary/patients/PatientDetail.jsx` y
+`src/features/veterinary/patients/patient-detail.css` se conservan para
+integrar la ficha del paciente en una etapa posterior. La navegación actual
+del módulo todavía no monta esa ficha.
 
 ---
 
