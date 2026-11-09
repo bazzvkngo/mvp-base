@@ -191,7 +191,23 @@ for (const role of ["VENTAS", "COMPRAS", "FINANZAS"]) {
     `${role} no tiene permiso clinico`
   );
 }
-console.log("OK RBAC: Veterinaria exige modulo habilitado y permiso clinico");
+const veterinaryMember = {role: "MEMBER", profileId: "p", modules: ["clientes", "ventas"]};
+const veterinaryMenu = [{label: "Módulos", items: [
+  {to: "/clientes"},
+  {to: "/clinica-veterinaria"},
+]}];
+const visibleVeterinaryTargets = (access, options) =>
+  filterNavigationSections(veterinaryMenu, access, options)
+    .flatMap((section) => section.items.map((item) => item.to));
+
+assert.equal(canAccessBusinessPath(veterinaryMember, "/clinica-veterinaria", veterinaryEnabled), false);
+assert.deepEqual(visibleVeterinaryTargets(veterinaryMember, veterinaryEnabled), ["/clientes"]);
+assert.deepEqual(visibleVeterinaryTargets({role: "ADMIN"}, veterinaryDisabled), ["/clientes"]);
+assert.deepEqual(visibleVeterinaryTargets({role: "ADMIN"}, veterinaryEnabled), ["/clientes", "/clinica-veterinaria"]);
+for (const role of ["VENTAS", "TECNICO"]) {
+  assert.ok(!visibleVeterinaryTargets({role}, veterinaryEnabled).includes("/clinica-veterinaria"));
+}
+console.log("OK RBAC: Veterinaria exige módulo habilitado y permiso clínico en ruta y menú");
 console.log("OK RBAC: rutas verticales exigen modulo habilitado ademas del permiso");
 
 function rejectingDependencies(role) {
