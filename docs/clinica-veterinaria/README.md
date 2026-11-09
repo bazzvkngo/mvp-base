@@ -149,10 +149,11 @@ del Inventario Core.
 
 ## 7. Rutas React
 
-Actualmente están definidas las siguientes rutas internas:
+La ruta operativa es `/clinica-veterinaria`. Las seis subrutas siguientes están
+pendientes de implementación. Por ahora muestran el mismo resumen clínico que
+la ruta raíz.
 
 ```text
-/clinica-veterinaria
 /clinica-veterinaria/pacientes
 /clinica-veterinaria/pacientes/nuevo
 /clinica-veterinaria/pacientes/:pacienteId
@@ -160,11 +161,6 @@ Actualmente están definidas las siguientes rutas internas:
 /clinica-veterinaria/agenda/nueva
 /clinica-veterinaria/citas/:citaId
 ```
-
-Estas rutas representan la estructura inicial de navegación.
-
-Actualmente reutilizan el contenedor principal del módulo, por lo que no deben
-considerarse como siete pantallas productivas independientes terminadas.
 
 La ruta global `/clinica-veterinaria/*` ya se encuentra integrada en `App.jsx`.
 
