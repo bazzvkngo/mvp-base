@@ -143,6 +143,71 @@ assert.equal(canAccessBusinessPath({role: "OWNER"}, "/clientes", getBusinessPath
 for (const entry of testRegistry) assert.equal(BUSINESS_MODULES.includes(entry.id), false);
 assert.equal(BUSINESS_MODULES.includes("taller"), false);
 assert.equal(BUSINESS_MODULES.includes("veterinaria"), false);
+// Veterinaria: la ruta exige modulo habilitado y permiso clinico.
+const veterinaryDisabled = getBusinessPathOptions({
+  role: "OWNER",
+  modulosHabilitados: [],
+});
+const veterinaryEnabled = getBusinessPathOptions({
+  role: "OWNER",
+  modulosHabilitados: ["veterinaria"],
+});
+
+assert.equal(
+  canAccessBusinessPath({role: "OWNER"}, "/clinica-veterinaria", veterinaryDisabled),
+  false,
+  "OWNER no accede con veterinaria deshabilitada"
+);
+assert.equal(
+  canAccessBusinessPath({role: "ADMIN"}, "/clinica-veterinaria", veterinaryDisabled),
+  false,
+  "ADMIN no accede con veterinaria deshabilitada"
+);
+assert.equal(
+  canAccessBusinessPath({role: "OWNER"}, "/clinica-veterinaria", veterinaryEnabled),
+  true,
+  "OWNER accede con veterinaria habilitada"
+);
+assert.equal(
+  canAccessBusinessPath({role: "ADMIN"}, "/clinica-veterinaria/pacientes", veterinaryEnabled),
+  true,
+  "ADMIN accede a rutas internas con veterinaria habilitada"
+);
+assert.equal(
+  canAccessBusinessPath({role: "TECNICO"}, "/clinica-veterinaria", veterinaryEnabled),
+  false,
+  "TECNICO no tiene permiso clinico"
+);
+assert.equal(
+  canAccessBusinessPath({role: "MEMBER"}, "/clinica-veterinaria", veterinaryEnabled),
+  false,
+  "MEMBER no tiene permiso clinico"
+);
+
+for (const role of ["VENTAS", "COMPRAS", "FINANZAS"]) {
+  assert.equal(
+    canAccessBusinessPath({role}, "/clinica-veterinaria", veterinaryEnabled),
+    false,
+    `${role} no tiene permiso clinico`
+  );
+}
+const veterinaryMember = {role: "MEMBER", profileId: "p", modules: ["clientes", "ventas"]};
+const veterinaryMenu = [{label: "Módulos", items: [
+  {to: "/clientes"},
+  {to: "/clinica-veterinaria"},
+]}];
+const visibleVeterinaryTargets = (access, options) =>
+  filterNavigationSections(veterinaryMenu, access, options)
+    .flatMap((section) => section.items.map((item) => item.to));
+
+assert.equal(canAccessBusinessPath(veterinaryMember, "/clinica-veterinaria", veterinaryEnabled), false);
+assert.deepEqual(visibleVeterinaryTargets(veterinaryMember, veterinaryEnabled), ["/clientes"]);
+assert.deepEqual(visibleVeterinaryTargets({role: "ADMIN"}, veterinaryDisabled), ["/clientes"]);
+assert.deepEqual(visibleVeterinaryTargets({role: "ADMIN"}, veterinaryEnabled), ["/clientes", "/clinica-veterinaria"]);
+for (const role of ["VENTAS", "TECNICO"]) {
+  assert.ok(!visibleVeterinaryTargets({role}, veterinaryEnabled).includes("/clinica-veterinaria"));
+}
+console.log("OK RBAC: Veterinaria exige módulo habilitado y permiso clínico en ruta y menú");
 console.log("OK RBAC: rutas verticales exigen modulo habilitado ademas del permiso");
 
 function rejectingDependencies(role) {

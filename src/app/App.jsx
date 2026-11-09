@@ -42,6 +42,7 @@ import StatisticsPage from "../pages/StatisticsPage";
 import BusinessUnavailablePage from "../pages/BusinessUnavailablePage";
 import EmployeesPage from "../pages/EmployeesPage";
 import WorksPage from "../pages/WorksPage";
+import VeterinaryPage from "../pages/VeterinaryPage";
 import Button from "../components/ui/Button";
 import { BusinessFormatProvider } from "../hooks/useBusinessFormat";
 import { ThemePreferenceProvider } from "../hooks/useThemePreference";
@@ -390,6 +391,16 @@ function AppRoutes({
               businessId={businessId}
               currentUserUid={usuario?.uid}
               currencyCode={activeBusiness?.monedaCodigo}
+              role={activeBusiness?.role}
+            />
+          }
+        />
+        <Route
+          path="/clinica-veterinaria/*"
+          element={
+            <VeterinaryPage
+              key={businessId}
+              businessId={businessId}
               role={activeBusiness?.role}
             />
           }

@@ -28,7 +28,7 @@ import {
   uploadBytes,
 } from "firebase/storage";
 
-const PROJECT_ID = "tesis-inventario-ia";
+const PROJECT_ID = process.env.GCLOUD_PROJECT || "tesis-inventario-ia";
 const requireFromFunctions = createRequire(
   new URL("../functions/package.json", import.meta.url)
 );
@@ -403,8 +403,8 @@ async function main() {
         monedaCodigo: "CLP",
         regionCodigo: "13",
         estado: "activo",
-        verificacionEmpresa: {estado: "VERIFICADA"},
         creadoPorUid: ownerUid,
+        verificacionEmpresa: {estado: "VERIFICADA"},
       }),
       adminDb.doc(`membresias/${businessId}__${ownerUid}`).set({
         negocioId: businessId,
@@ -500,6 +500,139 @@ async function main() {
         modulosHabilitados: ["taller"],
       })
     );
+    // Clínica Veterinaria: el módulo vertical controla la lectura y el
+    // navegador nunca tiene autoridad de escritura.
+    const veterinaryPaths = [
+      `negocios/${businessId}/pacientesVeterinarios/patient-rules-smoke`,
+      `negocios/${businessId}/citasVeterinarias/appointment-rules-smoke`,
+      `negocios/${businessId}/atencionesVeterinarias/attention-rules-smoke`,
+    ];
+
+    const veterinaryBusiness = adminDb.doc(`negocios/${businessId}`);
+    const veterinaryMembership = adminDb.doc(`membresias/${businessId}__${ownerUid}`);
+    const veterinaryQuery = (path) => query(
+      collection(ownerClient.db, path.slice(0, path.lastIndexOf("/"))),
+      where("negocioId", "==", businessId)
+    );
+    const denyVeterinaryReads = async (label) => {
+      for (const path of veterinaryPaths) {
+        const collectionName = path.split("/")[2];
+        await expectDenied(`${label}: documento de ${collectionName}`, () =>
+          getDoc(doc(ownerClient.db, path))
+        );
+        await expectDenied(`${label}: consulta de ${collectionName}`, () =>
+          getDocs(veterinaryQuery(path))
+        );
+      }
+    };
+
+    await Promise.all(
+      veterinaryPaths.map((veterinaryPath) =>
+        adminDb.doc(veterinaryPath).set({
+          negocioId: businessId,
+          estado: "activo",
+        })
+      )
+    );
+
+    await denyVeterinaryReads("OWNER con Veterinaria deshabilitada");
+    await veterinaryMembership.update({rol: "ADMIN"});
+    await denyVeterinaryReads("ADMIN con Veterinaria deshabilitada");
+    await veterinaryMembership.update({rol: "OWNER"});
+    await veterinaryBusiness.update({modulosHabilitados: ["veterinaria"]});
+
+    for (const veterinaryPath of veterinaryPaths) {
+      const collectionName = veterinaryPath.split("/")[2];
+      const snapshot = await getDoc(doc(ownerClient.db, veterinaryPath));
+
+      if (!snapshot.exists()) {
+        throw new Error(
+          `OWNER no pudo leer ${collectionName} con Veterinaria habilitada.`
+        );
+      }
+
+      console.log(
+        `OK permitido: OWNER lee ${collectionName} con Veterinaria habilitada`
+      );
+
+      const mismatchedPath = `${veterinaryPath}-otro-negocio`;
+      await adminDb.doc(mismatchedPath).set({negocioId: `${businessId}-otro`});
+      await expectDenied(
+        `OWNER lee documento de ${collectionName} con negocioId ajeno`,
+        () => getDoc(doc(ownerClient.db, mismatchedPath))
+      );
+      const results = await getDocs(veterinaryQuery(veterinaryPath));
+      if (results.size !== 1 || results.docs[0].ref.path !== veterinaryPath) {
+        throw new Error(`La consulta filtrada de ${collectionName} devolvió documentos inesperados.`);
+      }
+      await expectDenied(
+        `OWNER lista ${collectionName} sin filtro de negocioId`,
+        () => getDocs(collection(ownerClient.db, veterinaryPath.slice(0, veterinaryPath.lastIndexOf("/"))))
+      );
+
+      await expectDenied(
+        `usuario sin membresía lee ${collectionName}`,
+        () => getDoc(doc(otherClient.db, veterinaryPath))
+      );
+
+      await expectDenied(
+        `navegador crea en ${collectionName}`,
+        () =>
+          setDoc(
+            doc(ownerClient.db, `${veterinaryPath}-direct-create`),
+            { negocioId: businessId }
+          )
+      );
+
+      await expectDenied(
+        `navegador actualiza ${collectionName}`,
+        () =>
+          updateDoc(
+            doc(ownerClient.db, veterinaryPath),
+            { estado: "modificado" }
+          )
+      );
+
+      await expectDenied(
+        `navegador elimina ${collectionName}`,
+        () => deleteDoc(doc(ownerClient.db, veterinaryPath))
+      );
+    }
+
+    await adminDb.doc(`membresias/${businessId}__${ownerUid}`).update({
+      rol: "ADMIN",
+    });
+
+    for (const veterinaryPath of veterinaryPaths) {
+      const collectionName = veterinaryPath.split("/")[2];
+      const snapshot = await getDoc(doc(ownerClient.db, veterinaryPath));
+
+      if (!snapshot.exists()) {
+        throw new Error(
+          `ADMIN no pudo leer ${collectionName} con Veterinaria habilitada.`
+        );
+      }
+
+      console.log(
+        `OK permitido: ADMIN lee ${collectionName} con Veterinaria habilitada`
+      );
+    }
+
+    for (const rol of ["VENTAS", "TECNICO"]) {
+      await veterinaryMembership.update({rol});
+      await denyVeterinaryReads(rol);
+    }
+
+    await veterinaryMembership.update({rol: "OWNER"});
+    await veterinaryBusiness.update({"verificacionEmpresa.estado": "NO_VERIFICADA"});
+    await denyVeterinaryReads("OWNER de empresa no verificada");
+    await veterinaryMembership.update({rol: "ADMIN"});
+    await denyVeterinaryReads("ADMIN de empresa no verificada");
+    await veterinaryMembership.update({rol: "OWNER"});
+    await veterinaryBusiness.update({
+      "verificacionEmpresa.estado": "VERIFICADA",
+      modulosHabilitados: [],
+    });
     const modulesRequestPath =
       `negocios/${businessId}/platformModulesRequests/modules-rules-request`;
     await adminDb.doc(modulesRequestPath).set({

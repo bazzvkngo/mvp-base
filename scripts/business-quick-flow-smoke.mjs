@@ -260,7 +260,7 @@ assert.deepEqual(visibleRoutesFor("FINANZAS"), [
 ]);
 // Módulos verticales: con el registro vacío del Core el menú no cambia y no hay
 // grupo "Módulos"; con un registro de prueba solo aparece el módulo habilitado.
-assert.equal(buildNavigationSections(), navigationSections);
+assert.equal(buildNavigationSections([]), navigationSections);
 assert.equal(navigationSections.some((section) => section.label === "Módulos"), false);
 assert.deepEqual(
   filterNavigationSections(buildNavigationSections(), "OWNER").map((section) => section.label),
