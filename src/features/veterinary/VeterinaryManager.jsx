@@ -4,6 +4,8 @@ import React, {
   useState,
 } from "react";
 
+import LoadingState from "../../components/ui/LoadingState";
+
 import {
   subscribeToInventory,
 } from "../../services/inventoryService";
@@ -22,7 +24,6 @@ import {
 
 function VeterinaryManager({
   businessId,
-  role,
 }) {
   const [
     inventoryItems,
@@ -137,7 +138,6 @@ function VeterinaryManager({
     };
 
     const handleError = (
-      key,
       label,
       error
     ) => {
@@ -164,7 +164,7 @@ function VeterinaryManager({
         );
       }
 
-      markLoaded(key);
+      setLoadingVeterinaryData(false);
     };
 
     const unsubscribePatients =
@@ -178,7 +178,6 @@ function VeterinaryManager({
 
         (error) => {
           handleError(
-            "patients",
             "pacientes",
             error
           );
@@ -196,7 +195,6 @@ function VeterinaryManager({
 
         (error) => {
           handleError(
-            "appointments",
             "citas",
             error
           );
@@ -214,7 +212,6 @@ function VeterinaryManager({
 
         (error) => {
           handleError(
-            "attentions",
             "atenciones",
             error
           );
@@ -276,113 +273,47 @@ function VeterinaryManager({
             Gestión clínica de pacientes, agenda,
             atenciones y farmacia veterinaria.
           </p>
-
-          <p>
-            Rol activo:{" "}
-            <strong>
-              {role || "Sin rol"}
-            </strong>
-          </p>
         </div>
       </div>
 
 
-      <div className="erp-panel">
-        <h2>
-          Modelo de datos veterinario
-        </h2>
+      {loadingVeterinaryData || loadingInventory ? (
+        <LoadingState variant="section" label="Cargando Clínica Veterinaria..." />
+      ) : (
+        <>
+          <div className="erp-panel">
+            <h2>Resumen clínico</h2>
 
-        {loadingVeterinaryData && (
-          <p>
-            Cargando datos clínicos...
-          </p>
-        )}
-
-        {veterinaryDataError && (
-          <div
-            className="erp-empty-state"
-            role="alert"
-          >
-            {veterinaryDataError}
+            {veterinaryDataError ? (
+              <div className="erp-empty-state" role="alert">
+                {veterinaryDataError}
+              </div>
+            ) : patients.length === 0 ? (
+              <div className="erp-empty-state">
+                No hay pacientes veterinarios registrados.
+              </div>
+            ) : (
+              <>
+                <p>Pacientes: <strong>{patients.length}</strong></p>
+                <p>Citas: <strong>{appointments.length}</strong></p>
+                <p>Atenciones: <strong>{attentions.length}</strong></p>
+              </>
+            )}
           </div>
-        )}
 
-        {!loadingVeterinaryData &&
-          !veterinaryDataError &&
-          patients.length === 0 && (
-            <div className="erp-empty-state">
-              No hay pacientes veterinarios registrados.
+          {inventoryError ? (
+            <div className="erp-empty-state" role="alert">
+              {inventoryError}
+            </div>
+          ) : (
+            <div className="erp-panel">
+              <h2>Servicios y farmacia</h2>
+              <p>Servicios disponibles: <strong>{veterinaryServices.length}</strong></p>
+              <p>Productos de farmacia: <strong>{pharmacyProducts.length}</strong></p>
             </div>
           )}
-
-        {!loadingVeterinaryData &&
-          !veterinaryDataError &&
-          patients.length > 0 && (
-            <>
-              <p>
-                Pacientes:{" "}
-                <strong>
-                  {patients.length}
-                </strong>
-              </p>
-
-              <p>
-                Citas:{" "}
-                <strong>
-                  {appointments.length}
-                </strong>
-              </p>
-
-              <p>
-                Atenciones:{" "}
-                <strong>
-                  {attentions.length}
-                </strong>
-              </p>
-            </>
-          )}
-      </div>
-
-
-      {loadingInventory && (
-        <div className="erp-empty-state">
-          Cargando inventario...
-        </div>
+        </>
       )}
-
-
-      {inventoryError && (
-        <div
-          className="erp-empty-state"
-          role="alert"
-        >
-          {inventoryError}
-        </div>
-      )}
-
-
-      {!loadingInventory &&
-        !inventoryError && (
-          <div className="erp-panel">
-            <h2>
-              Integración con Inventario
-            </h2>
-
-            <p>
-              Servicios disponibles:{" "}
-              <strong>
-                {veterinaryServices.length}
-              </strong>
-            </p>
-
-            <p>
-              Productos de farmacia:{" "}
-              <strong>
-                {pharmacyProducts.length}
-              </strong>
-            </p>
-          </div>
-        )}
     </section>
   );
 }
