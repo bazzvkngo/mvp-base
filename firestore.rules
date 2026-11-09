@@ -1319,18 +1319,21 @@ service cloud.firestore {
       // módulo vertical está habilitado. Las escrituras pasan por backend.
       match /pacientesVeterinarios/{pacienteId} {
         allow read: if isBusinessModuleEnabled(businessId, "veterinaria")
+          && resource.data.negocioId == businessId
           && hasBusinessRole(businessId, ["OWNER", "ADMIN"]);
         allow write: if false;
       }
 
       match /citasVeterinarias/{citaId} {
         allow read: if isBusinessModuleEnabled(businessId, "veterinaria")
+          && resource.data.negocioId == businessId
           && hasBusinessRole(businessId, ["OWNER", "ADMIN"]);
         allow write: if false;
       }
 
       match /atencionesVeterinarias/{atencionId} {
         allow read: if isBusinessModuleEnabled(businessId, "veterinaria")
+          && resource.data.negocioId == businessId
           && hasBusinessRole(businessId, ["OWNER", "ADMIN"]);
         allow write: if false;
       }

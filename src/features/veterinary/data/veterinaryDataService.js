@@ -3,6 +3,8 @@ import {
   doc,
   getDoc,
   onSnapshot,
+  query,
+  where,
 } from "firebase/firestore";
 
 import { db } from "../../../firebase/firebaseConfig";
@@ -18,6 +20,11 @@ import {
 } from "./veterinaryFirestorePaths.mjs";
 
 
+
+
+function veterinaryBusinessQuery(collectionPath, businessId) {
+  return query(collection(db, ...collectionPath), where("negocioId", "==", businessId));
+}
 
 
 function mapSnapshot(snapshot) {
@@ -37,11 +44,9 @@ export function subscribeToVeterinaryPatients(
     requireBusinessId(businessId);
 
   return onSnapshot(
-    collection(
-      db,
-      ...veterinaryPatientsCollectionPath(
-        normalizedBusinessId
-      )
+    veterinaryBusinessQuery(
+      veterinaryPatientsCollectionPath(normalizedBusinessId),
+      normalizedBusinessId
     ),
     (snapshot) => {
       onItems(
@@ -88,11 +93,9 @@ export function subscribeToVeterinaryAppointments(
     requireBusinessId(businessId);
 
   return onSnapshot(
-    collection(
-      db,
-      ...veterinaryAppointmentsCollectionPath(
-        normalizedBusinessId
-      )
+    veterinaryBusinessQuery(
+      veterinaryAppointmentsCollectionPath(normalizedBusinessId),
+      normalizedBusinessId
     ),
     (snapshot) => {
       onItems(
@@ -139,11 +142,9 @@ export function subscribeToVeterinaryAttentions(
     requireBusinessId(businessId);
 
   return onSnapshot(
-    collection(
-      db,
-      ...veterinaryAttentionsCollectionPath(
-        normalizedBusinessId
-      )
+    veterinaryBusinessQuery(
+      veterinaryAttentionsCollectionPath(normalizedBusinessId),
+      normalizedBusinessId
     ),
     (snapshot) => {
       onItems(
