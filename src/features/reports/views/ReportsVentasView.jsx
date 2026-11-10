@@ -2,7 +2,7 @@ import React from "react";
 import {ArrowRight} from "lucide-react";
 import Button from "../../../components/ui/Button";
 import {countWithoutNet, describeProductBars} from "../../../domain/reportFlowOverview.mjs";
-import {formatMoney} from "../../../utils/formatters";
+import {formatDate, formatMoney} from "../../../utils/formatters";
 import useBusinessFormat from "../../../hooks/useBusinessFormat";
 import FoldedEntityTable from "../FoldedEntityTable";
 import FoldedTimeline from "../FoldedTimeline";
@@ -31,13 +31,13 @@ function ReportsVentasView({canOpenSales, fallbackCurrency = "CLP", navigate, sa
   const hasSales = confirmed.length > 0;
   const showCurrency = summary.currencies.length > 1;
   return <>
-    {summary.currencies.map((group) => {
+    {summary.currencies.map((group, index) => {
       const bars = describeProductBars({
         currency: group.currency, documents: confirmed, fallbackCurrency, locale: businessLocale,
         entries: topSalesProducts.find((entry) => entry.currency === group.currency)?.entries || [],
       });
       return <React.Fragment key={group.currency}>
-        <ReportsFlowHeader count={group.sales.count} currency={group.currency} kind="sales" showCurrency={showCurrency} total={group.sales.total} withoutNetCount={countWithoutNet(confirmed, {currency: group.currency, fallbackCurrency})} />
+        <ReportsFlowHeader count={group.sales.count} currency={group.currency} kind="sales" note={index === 0 ? "Incluye servicios y ventas con proyecto. No cuentan las canceladas." : ""} showCurrency={showCurrency} total={group.sales.total} withoutNetCount={countWithoutNet(confirmed, {currency: group.currency, fallbackCurrency})} />
         <ReportsShareBars bars={bars} currency={group.currency} kind="sales" note={bars.hasGeneralDiscount ? "Los montos por producto van antes del descuento general de la venta." : ""} othersLabel="Otros productos" showCurrency={showCurrency} subtitle={productSubtitle} title="¿De dónde vienen mis ventas?" />
       </React.Fragment>;
     })}
@@ -53,7 +53,7 @@ function ReportsVentasView({canOpenSales, fallbackCurrency = "CLP", navigate, sa
       openLabel="Ir a Ventas"
       renderRow={(sale) => <tr key={sale.id || sale.ventaId || sale.numero}>
         <td>{sale.numero || "Venta"}</td>
-        <td>{String(sale.fechaVenta || "").slice(0, 10)}</td>
+        <td>{formatDate(String(sale.fechaVenta || "").slice(0, 10), businessLocale)}</td>
         <td>{sale.clienteSnapshot?.nombreRazonSocial || "Cliente histórico"}</td>
         <td>{sale.moneda || sale.monedaCodigo || "CLP"}</td>
         <td>{Number.isFinite(sale.neto) ? formatMoney(sale.neto, sale.moneda || sale.monedaCodigo || "CLP", businessLocale) : "—"}</td>

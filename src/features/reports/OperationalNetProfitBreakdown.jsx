@@ -71,7 +71,7 @@ function BreakdownTable({caption, rows, currency}) {
 // no dentro del cálculo plegado.
 export function ProfitNote() {
   return <p className="reports-v4-note">
-    Ganancia: ventas sin IVA menos costos registrados de productos y proyectos.
+    Ventas sin IVA menos sus costos, en productos y proyectos.
     {" "}No incluye gastos generales del negocio.
   </p>;
 }
@@ -82,8 +82,8 @@ export function ServicesWithoutCostNote({group}) {
   const { locale: businessLocale } = useBusinessFormat();
   if (!(group?.ventasSinCostoRegistrado?.ventas > 0)) return null;
   return <p className="reports-v4-note">
-    Ventas sin costo registrado: {money(group.ventasSinCostoRegistrado.monto, group.moneda, businessLocale)} — servicios vendidos sin
-    proyecto. No se incluyen en la ganancia porque no tienen costos asociados.
+    Ventas sin costo registrado: {money(group.ventasSinCostoRegistrado.monto, group.moneda, businessLocale)}, servicios vendidos sin
+    proyecto. No entran en la ganancia.
   </p>;
 }
 

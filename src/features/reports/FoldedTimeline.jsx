@@ -1,7 +1,8 @@
 import React from "react";
 import {ChevronDown} from "lucide-react";
 import useBusinessFormat from "../../hooks/useBusinessFormat";
-import {formatMoney} from "../../utils/formatters";
+import {formatMonthLabel} from "../../domain/reportMonthlySummary.mjs";
+import {formatDate, formatMoney} from "../../utils/formatters";
 
 // Evolución del período de Ventas y Compras, plegada (SPEC 025): puede tener una
 // fila por día (hasta 92) y no es lo primero que se busca. Usa el mismo plegable
@@ -21,7 +22,7 @@ function FoldedTimeline({currency, items, showCurrency = false}) {
     <div className="reports-calc-details__body">
       <div className="reports-top-list-table-wrap"><table className="reports-top-list-table">
         <thead><tr><th>Período</th><th>Operaciones</th><th>Monto</th></tr></thead>
-        <tbody>{rows.map((row) => <tr key={row.key}><td>{row.key}</td><td>{row.count}</td><td>{formatMoney(row.value, currency, locale)}</td></tr>)}</tbody>
+        <tbody>{rows.map((row) => <tr key={row.key}><td>{byMonth ? formatMonthLabel(row.key, locale) : formatDate(row.key, locale)}</td><td>{row.count}</td><td>{formatMoney(row.value, currency, locale)}</td></tr>)}</tbody>
       </table></div>
     </div>
   </details>;

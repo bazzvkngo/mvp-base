@@ -533,7 +533,7 @@ assert.match(comprasViewSource, /Cuánto ganas está en la pestaña Ganancia\./)
 assert.doesNotMatch(comprasViewSource, /Rentabilidad y estado/);
 assert.doesNotMatch(comprasViewSource, /margenBrutoProductosCubiertos/);
 // La nota pasa a ser el subtítulo de la cabecera "Compré" (solo en la primera moneda).
-assert.match(comprasViewSource, /note=\{index === 0 \? "Las compras muestran egresos registrados del negocio\." : ""\}/);
+assert.match(comprasViewSource, /note=\{index === 0 \? "Incluye stock que aún no vendes\. No cuentan las revertidas ni las canceladas\." : ""\}/);
 // SPEC 025 etapa 1: los montos de Ventas y Compras van sin IVA.
 assert.match(comprasViewSource, /Operaciones confirmadas del período, sin IVA\./);
 assert.doesNotMatch(comprasViewSource, /incluyen IVA/);
@@ -622,9 +622,9 @@ assert.match(monthlyPageSource, /canViewProfitability = hasBusinessPermission\(r
 assert.match(monthlyPageSource, /canRegisterSale = hasBusinessPermission\(role, BUSINESS_PERMISSIONS\.SALES_WRITE\)/);
 assert.match(monthlyPageSource, /canRegisterPurchase = hasBusinessPermission\(role, BUSINESS_PERMISSIONS\.PURCHASES_WRITE\)/);
 // Textos exactos de la SPEC §3.
-assert.equal(MONTHLY_EXPLANATIONS.sales, "Confirmadas, sin IVA.");
-assert.equal(MONTHLY_EXPLANATIONS.purchases, "Confirmadas, sin IVA. Incluye stock aún no vendido.");
-assert.equal(MONTHLY_EXPLANATIONS.profit, "Lo vendido menos su costo, más lo que dejaron los proyectos.");
+assert.equal(MONTHLY_EXPLANATIONS.sales, "Confirmadas, sin IVA. No cuentan las canceladas.");
+assert.equal(MONTHLY_EXPLANATIONS.purchases, "Confirmadas, sin IVA. Incluye stock que aún no vendes. No cuentan las revertidas.");
+assert.equal(MONTHLY_EXPLANATIONS.profit, "Lo vendido menos su costo, más lo que dejaron los proyectos. Los servicios sin proyecto no entran.");
 // Resumen: cobertura solo como aviso parcial, "Ver detalle" dentro de cada tarjeta
 // y una sola línea cuando ningún mes anterior tiene base.
 assert.doesNotMatch(monthlyViewSource, /Cobertura completa/);
@@ -1882,7 +1882,7 @@ console.log("OK reportes (ganancia visual, bloque 2): Me quedó con chip Parcial
     const inside = folded.slice(detailsAt);
     assert.doesNotMatch(folded.slice(detailsAt, detailsAt + 40), /\bopen\b/, "cerrado por defecto");
     // Visible fuera del plegable: Me quedó, su barra, la nota fija y "Ventas sin costo registrado".
-    for (const text of [">Me quedó<", ">Parcial<", "$16.616", "margen sobre ventas", "De los $83.089 que vendiste en productos", "Ganancia: ventas sin IVA menos costos registrados de productos y proyectos. No incluye gastos generales del negocio.", "Ventas sin costo registrado: $60.000"]) {
+    for (const text of [">Me quedó<", ">Parcial<", "$16.616", "margen sobre ventas", "De los $83.089 que vendiste en productos", "Ventas sin IVA menos sus costos, en productos y proyectos. No incluye gastos generales del negocio.", "Ventas sin costo registrado: $60.000"]) {
       assert.ok(before.includes(text), `fuera del plegable falta ${text}`);
       assert.ok(!inside.includes(text) || text === ">Parcial<" || text === "$16.616", `${text} no se repite dentro del plegable`);
     }
@@ -2096,8 +2096,8 @@ console.log("OK reportes (ganancia visual, bloque 2b): relleno, grosor y espacio
     for (const text of [">Vendí<", "$143.089", "1 venta confirmada · sin IVA", "reports-flow-header--sales"]) assert.ok(salesHeader.includes(text), `falta ${text}`);
     assert.doesNotMatch(salesHeader, /reports-flow-header__currency|reports-flow-header__note|reports-flow-header__warning/, "sin moneda, nota ni aviso si no hacen falta");
     assert.ok(salesHeader.indexOf(">Vendí<") < salesHeader.indexOf("$143.089") && salesHeader.indexOf("$143.089") < salesHeader.indexOf("1 venta confirmada"), "título, cifra y conteo");
-    const purchasesHeader = html(ReportsFlowHeader, {kind: "purchases", count: 3, currency: "USD", total: 412.3, showCurrency: true, note: "Las compras muestran egresos registrados del negocio.", withoutNetCount: 2});
-    for (const text of [">Compré<", "reports-flow-header--purchases", "3 compras confirmadas · sin IVA", 'reports-flow-header__currency">USD<', "Las compras muestran egresos registrados del negocio.", "2 compras sin neto válido no suman en este total."]) assert.ok(purchasesHeader.includes(text), `falta ${text}`);
+    const purchasesHeader = html(ReportsFlowHeader, {kind: "purchases", count: 3, currency: "USD", total: 412.3, showCurrency: true, note: "Incluye stock que aún no vendes. No cuentan las revertidas ni las canceladas.", withoutNetCount: 2});
+    for (const text of [">Compré<", "reports-flow-header--purchases", "3 compras confirmadas · sin IVA", 'reports-flow-header__currency">USD<', "Incluye stock que aún no vendes. No cuentan las revertidas ni las canceladas.", "2 compras sin neto válido no suman en este total."]) assert.ok(purchasesHeader.includes(text), `falta ${text}`);
     assert.ok(purchasesHeader.includes("US$"), "la cifra usa la moneda del grupo");
     assert.equal(html(ReportsFlowHeader, {kind: "sales", count: 0, currency: "CLP", total: 0}).includes("0 ventas confirmadas · sin IVA"), true, "con 0 operaciones: $0 y su conteo, sin mensajes extra");
 
@@ -2274,8 +2274,8 @@ console.log("OK reportes (ventas y compras, bloque 1): helpers de cabecera, orde
     for (const text of [">Compré<", "$412.300", "3 compras confirmadas · sin IVA", "¿A quién le compré?", "Proveedor A", "50,9 %", "$210.000", "31,1 %", "17,9 %", "reports-share-bars--purchases", "Movimiento comercial", "Comparar ventas y compras no es ganancia.", "Últimas compras", "COM-0003", "Ver los productos adquiridos (3)", "Ver la evolución por día (3)", "<th>Neto</th><th>Total</th>", "Ir a Compras"]) {
       assert.ok(compras.includes(text), `Compras: falta ${text}`);
     }
-    assert.equal(vcCount(compras, /Las compras muestran egresos registrados del negocio\./g), 1, "la nota va una sola vez, en la cabecera");
-    assert.ok(compras.indexOf(">Compré<") < compras.indexOf("Las compras muestran egresos") && compras.indexOf("Las compras muestran egresos") < compras.indexOf("Movimiento comercial"), "la nota es el subtítulo de la cabecera");
+    assert.equal(vcCount(compras, /Incluye stock que aún no vendes\. No cuentan las revertidas ni las canceladas\./g), 1, "la nota va una sola vez, en la cabecera");
+    assert.ok(compras.indexOf(">Compré<") < compras.indexOf("Incluye stock que aún no vendes") && compras.indexOf("Incluye stock que aún no vendes") < compras.indexOf("Movimiento comercial"), "la nota va bajo la cifra de la cabecera");
     assert.ok(compras.indexOf("Movimiento comercial") < compras.indexOf("¿A quién le compré?") && compras.indexOf("¿A quién le compré?") < compras.indexOf("Últimas compras") && compras.indexOf("Últimas compras") < compras.indexOf("Ver los productos adquiridos"), "orden: cabecera, gráfico, proveedores, operaciones, plegables");
     assert.doesNotMatch(compras, /Aún no hay compras|Detalle de Compras|Principales proveedores|operación\(es\)|Cantidad de compras/);
     assert.equal(vcCount(compras, /class="reports-share-bars__track"/g), 3, "una barra por proveedor");
@@ -2289,7 +2289,7 @@ console.log("OK reportes (ventas y compras, bloque 1): helpers de cabecera, orde
     assert.ok(renderCompras([], [...mockupPurchases, vcPurchase("c4", "COM-0004", "2026-10-10", "D", 500, {neto: null})]).includes("1 compra sin neto válido no suma en este total."));
     const multiPurchases = renderCompras([], [...mockupPurchases, vcPurchase("c5", "COM-0005", "2026-10-11", "E", 50, {moneda: "USD"})]);
     assert.equal(vcCount(multiPurchases, /<section class="erp-card reports-flow-header reports-flow-header--purchases">/g), 2);
-    assert.equal(vcCount(multiPurchases, /Las compras muestran egresos registrados del negocio\./g), 1, "la nota no se repite por moneda");
+    assert.equal(vcCount(multiPurchases, /Incluye stock que aún no vendes\. No cuentan las revertidas ni las canceladas\./g), 1, "la nota no se repite por moneda");
     assert.equal(vcCount(multiPurchases, /class="erp-card reports-share-bars reports-share-bars--purchases"/g), 2);
     assert.ok(multiPurchases.includes("Ver los productos adquiridos en USD (1)"));
     // Más de 5 compras: las 5 más recientes y "Ver todas"; el resto de los proveedores queda como "Otros proveedores".
@@ -2301,4 +2301,91 @@ console.log("OK reportes (ventas y compras, bloque 1): helpers de cabecera, orde
   }
 }
 console.log("OK reportes (ventas y compras, bloque 2): cabecera, barras por producto y por proveedor, vacío único, operaciones limitadas y tablas plegadas en las dos pestañas");
+// R2 y R3 de Reportes: fechas en un solo formato, qué incluye cada cifra, notas legibles, un solo ítem sin barra al 100 % y tablas de Ganancia con su propio alto.
+{
+  const r2Css = readFileSync("src/styles/interior.css", "utf8");
+  const r2Vite = await createServer({appType: "custom", logLevel: "silent", server: {middlewareMode: true}});
+  try {
+    const render = (component, props) => plain(renderToStaticMarkup(React.createElement(component, props)));
+    const count = (text, pattern) => (text.match(pattern) || []).length;
+    const [{default: VentasView}, {default: ComprasView}, {default: ShareBars}, {default: Timeline}, {default: FlowHeader}] = await Promise.all([
+      r2Vite.ssrLoadModule("/src/features/reports/views/ReportsVentasView.jsx"),
+      r2Vite.ssrLoadModule("/src/features/reports/views/ReportsComprasView.jsx"),
+      r2Vite.ssrLoadModule("/src/features/reports/ReportsShareBars.jsx"),
+      r2Vite.ssrLoadModule("/src/features/reports/FoldedTimeline.jsx"),
+      r2Vite.ssrLoadModule("/src/features/reports/ReportsFlowHeader.jsx"),
+    ]);
+    const range = {start: "2026-10-01", end: "2026-10-31", days: 31};
+    const sale = {ventaId: "v1", numero: "VTA-1", estado: "confirmada", moneda: "CLP", fechaVenta: "2026-10-02", neto: 1000, total: 1190, clienteSnapshot: {nombreRazonSocial: "Cliente Uno"}, items: []};
+    const purchase = {compraId: "c1", numero: "COM-1", estado: "confirmada", moneda: "CLP", fechaCompra: "2026-10-05", neto: 400, total: 476, proveedorSnapshot: {razonSocial: "Proveedor Uno"}};
+    const purchase2 = {...purchase, compraId: "c2", numero: "COM-2", fechaCompra: "2026-10-07", neto: 600, total: 714};
+    const summary = getSimplifiedReportSummary({sales: [sale], purchases: [purchase, purchase2], projectBalances: [], range});
+    const purchaseTimeline = aggregateOperationalTimeline(summary.purchases.confirmed, {range, dateField: "fechaCompra"});
+    const salesTimeline = aggregateOperationalTimeline(summary.sales.confirmed, {range, dateField: "fechaVenta"});
+
+    // 1. Fechas: dd-mm-aaaa con formatDate en las tablas y en la evolución por día; por mes, el nombre del mes.
+    const ventas = render(VentasView, {canOpenSales: true, navigate: () => {}, salesTimeline, summary, topSalesClients: [], topSalesProducts: []});
+    assert.ok(ventas.includes("<td>02-10-2026</td>") && !ventas.includes("<td>2026-10-02</td>"), "Últimas ventas: fecha con formatDate");
+    const compras = render(ComprasView, {canOpenPurchases: true, chartGroups: [], navigate: () => {}, purchaseTimeline, summary, topPurchaseProducts: [], topPurchaseSuppliers: []});
+    assert.ok(compras.includes("<td>05-10-2026</td>") && compras.includes("<td>07-10-2026</td>") && !compras.includes("<td>2026-10-05</td>"), "Últimas compras: fecha con formatDate");
+    const days = render(Timeline, {currency: "CLP", items: [{key: "2026-10-01", currency: "CLP", count: 1, value: 1000}]});
+    assert.ok(days.includes("<td>01-10-2026</td>") && !days.includes("<td>2026-10-01</td>"), "evolución por día con formatDate");
+    const months = render(Timeline, {currency: "CLP", items: [{key: "2026-09", currency: "CLP", count: 3, value: 900}]});
+    assert.ok(months.includes("<td>Septiembre de 2026</td>") && !months.includes("<td>2026-09</td>"), "evolución por mes con el nombre del mes");
+    for (const file of ["ReportsVentasView", "ReportsComprasView"]) {
+      const source = readFileSync(`src/features/reports/views/${file}.jsx`, "utf8");
+      assert.match(source, /formatDate\(String\(\w+\.fecha(Venta|Compra) \|\| ""\)\.slice\(0, 10\), businessLocale\)/, `${file}: usa formatDate`);
+    }
+    assert.doesNotMatch(readFileSync("src/features/reports/FoldedTimeline.jsx", "utf8"), /<td>\{row\.key\}<\/td>/, "la clave cruda ya no se muestra");
+
+    // 2. Qué incluye cada cifra, debajo de la cifra: cabecera de Ventas y de Compras, y las tarjetas del Resumen.
+    const salesNote = "Incluye servicios y ventas con proyecto. No cuentan las canceladas.";
+    const purchasesNote = "Incluye stock que aún no vendes. No cuentan las revertidas ni las canceladas.";
+    assert.equal(count(ventas, /Incluye servicios y ventas con proyecto\. No cuentan las canceladas\./g), 1);
+    assert.equal(count(compras, /Incluye stock que aún no vendes\. No cuentan las revertidas ni las canceladas\./g), 1);
+    assert.ok(ventas.indexOf("$1.000") < ventas.indexOf("confirmada") && ventas.indexOf("confirmada") < ventas.indexOf(salesNote), "Ventas: cifra, conteo y, debajo, qué incluye");
+    assert.ok(compras.indexOf("$1.000") < compras.indexOf("confirmadas") && compras.indexOf("confirmadas") < compras.indexOf(purchasesNote), "Compras: cifra, conteo y, debajo, qué incluye");
+    const headerHtml = render(FlowHeader, {kind: "sales", count: 1, currency: "CLP", total: 1000, note: salesNote});
+    assert.match(headerHtml, /<div class="reports-flow-header__main">[\s\S]*reports-flow-header__caption[\s\S]*<p class="reports-flow-header__note">[^<]+<\/p><\/div>/, "la nota vive dentro del bloque de la cifra, no a un lado");
+    assert.doesNotMatch(r2Css, /\.reports-flow-header__note \{[^}]*text-align: right/, "ya no va alineada a la derecha");
+    assert.match(r2Css, /\.reports-flow-header__note \{[^}]*font-size: var\(--font-size-xs\);[^}]*max-width: 40rem;/);
+    for (const text of [MONTHLY_EXPLANATIONS.sales, MONTHLY_EXPLANATIONS.purchases, MONTHLY_EXPLANATIONS.profit]) assert.ok(text.length <= 105, `corta: ${text}`);
+    assert.match(MONTHLY_EXPLANATIONS.sales, /canceladas/);
+    assert.match(MONTHLY_EXPLANATIONS.purchases, /stock que aún no vendes/);
+    assert.match(MONTHLY_EXPLANATIONS.profit, /servicios sin proyecto no entran/);
+
+    // 3. Nota de Ganancia en un tamaño de token.
+    assert.match(r2Css, /\.reports-v4-note \{[^}]*font-size: var\(--font-size-xs\);/);
+    assert.match(r2Css, /\.reports-profit-hero__notes \.reports-v4-note \{\s*font-size: var\(--font-size-sm\);/);
+    assert.doesNotMatch(r2Css, /\.reports-v4-note \{[^}]*0\.6875rem/, "la letra de 11 px ya no está");
+    const breakdownSource = readFileSync("src/features/reports/OperationalNetProfitBreakdown.jsx", "utf8");
+    assert.ok(breakdownSource.includes("Ventas sin IVA menos sus costos, en productos y proyectos.") && breakdownSource.includes("No incluye gastos generales del negocio."));
+    assert.ok(breakdownSource.includes("Ventas sin costo registrado:") && breakdownSource.includes("No entran en la ganancia."));
+
+    // 4. Un solo ítem: una línea de texto; con dos o más, las barras de siempre.
+    const supplierRows = (...totals) => totals.map((total, index) => ({id: `p${index}`, name: `Proveedor ${index + 1}`, count: 2, total}));
+    const bars = (entries, total) => render(ShareBars, {bars: buildShareBars(entries, {total}), currency: "CLP", kind: "purchases", subtitle: (row) => `${row.count} compras`, title: "¿A quién le compré?"});
+    const one = bars(supplierRows(1000), 1000);
+    assert.ok(one.includes('<p class="reports-share-bars__single">') && one.includes("<strong>Proveedor 1</strong>") && one.includes("$1.000") && one.includes("<small>2 compras</small>"), "nombre, monto y cantidad");
+    assert.doesNotMatch(one, /reports-share-bars__track|reports-share-bars__list|100 %/, "sin barra al 100 %");
+    assert.ok(one.includes("¿A quién le compré?"), "conserva su título");
+    const two = bars(supplierRows(600, 400), 1000);
+    assert.equal(count(two, /class="reports-share-bars__track"/g), 2);
+    assert.doesNotMatch(two, /reports-share-bars__single/);
+    const oneAndOthers = bars(supplierRows(600), 1000);
+    assert.equal(count(oneAndOthers, /class="reports-share-bars__track"/g), 2, "un ítem más «otros» son dos filas: barras");
+    assert.equal(render(ShareBars, {bars: buildShareBars([], {total: 0}), currency: "CLP", title: "x"}), "", "sin ítems no dibuja nada");
+    const salesOne = render(ShareBars, {bars: buildShareBars([{id: "a", name: "Cable", quantityText: "3 metros", total: 3000}], {total: 3000}), currency: "CLP", kind: "sales", subtitle: (row) => row.quantityText, note: "Nota de descuento", title: "¿De dónde vienen mis ventas?"});
+    assert.ok(salesOne.includes("<strong>Cable</strong>") && salesOne.includes("$3.000") && salesOne.includes("<small>3 metros</small>") && salesOne.includes("Nota de descuento") && !salesOne.includes("reports-share-bars__track"), "Ventas: producto, monto y cantidad, y la nota se conserva");
+    assert.match(readFileSync("src/features/reports/ReportsShareBars.jsx", "utf8"), /const single = rows\.length === 1 && !rows\[0\]\.others \? rows\[0\] : null;/);
+    assert.match(r2Css, /\.reports-share-bars__single \{[^}]*display: flex;/);
+    assert.doesNotMatch(readFileSync("src/domain/reportFlowOverview.mjs", "utf8"), /single|reports-share-bars__single/, "los cálculos de reportFlowOverview no cambian");
+
+    // 5. Ganancia: las tres tablas no se estiran hasta la más alta.
+    assert.match(r2Css, /\.reports-detail-grid \{\s*align-items: start;\s*display: grid;/);
+  } finally {
+    await r2Vite.close();
+  }
+}
+console.log("OK reportes R2 y R3: fechas dd-mm-aaaa, qué incluye cada cifra, notas legibles, un ítem sin barra al 100 % y tablas de Ganancia sin vacío");
 console.log("Report model smoke: OK");

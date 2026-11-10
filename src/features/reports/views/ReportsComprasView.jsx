@@ -3,7 +3,7 @@ import {ArrowRight} from "lucide-react";
 import Button from "../../../components/ui/Button";
 import OperationalComparisonChart from "../../../components/reports/OperationalComparisonChart";
 import {buildShareBars, countWithoutNet} from "../../../domain/reportFlowOverview.mjs";
-import {formatMoney} from "../../../utils/formatters";
+import {formatDate, formatMoney} from "../../../utils/formatters";
 import useBusinessFormat from "../../../hooks/useBusinessFormat";
 import FoldedEntityTable from "../FoldedEntityTable";
 import FoldedTimeline from "../FoldedTimeline";
@@ -25,7 +25,7 @@ function ReportsComprasView({canOpenPurchases, chartGroups, fallbackCurrency = "
   // El gráfico solo se dibuja para las monedas con ventas o compras en el período.
   const chartGroupsWithData = chartGroups.filter((group) => group.items.length > 0);
   return <>
-    {summary.currencies.map((group, index) => <ReportsFlowHeader count={group.purchases.count} currency={group.currency} key={group.currency} kind="purchases" note={index === 0 ? "Las compras muestran egresos registrados del negocio." : ""} showCurrency={showCurrency} total={group.purchases.total} withoutNetCount={countWithoutNet(confirmed, {currency: group.currency, fallbackCurrency})} />)}
+    {summary.currencies.map((group, index) => <ReportsFlowHeader count={group.purchases.count} currency={group.currency} key={group.currency} kind="purchases" note={index === 0 ? "Incluye stock que aún no vendes. No cuentan las revertidas ni las canceladas." : ""} showCurrency={showCurrency} total={group.purchases.total} withoutNetCount={countWithoutNet(confirmed, {currency: group.currency, fallbackCurrency})} />)}
 
     {/* Único mensaje de vacío de la pestaña: los $0 de la cabecera no se repiten en otras secciones. */}
     {!hasPurchases && <div className="erp-card reports-simple-state"><span>Aún no hay compras confirmadas en este período.</span>{canOpenPurchases && <Button type="button" variant="secondary" onClick={() => navigate("/compras")}>Ir a Compras<ArrowRight size={14} /></Button>}</div>}
@@ -65,7 +65,7 @@ function ReportsComprasView({canOpenPurchases, chartGroups, fallbackCurrency = "
       openLabel="Ir a Compras"
       renderRow={(purchase) => <tr key={purchase.id || purchase.compraId || purchase.numero}>
         <td>{purchase.numero || "Compra"}</td>
-        <td>{String(purchase.fechaCompra || "").slice(0, 10)}</td>
+        <td>{formatDate(String(purchase.fechaCompra || "").slice(0, 10), businessLocale)}</td>
         <td>{purchase.proveedorSnapshot?.razonSocial || "Proveedor histórico"}</td>
         <td>{purchase.moneda || purchase.monedaCodigo || "CLP"}</td>
         <td>{Number.isFinite(purchase.neto) ? formatMoney(purchase.neto, purchase.moneda || purchase.monedaCodigo || "CLP", businessLocale) : "—"}</td>

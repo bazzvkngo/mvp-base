@@ -12,9 +12,9 @@ import {
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 export const MONTHLY_EXPLANATIONS = Object.freeze({
-  sales: "Confirmadas, sin IVA.",
-  purchases: "Confirmadas, sin IVA. Incluye stock aún no vendido.",
-  profit: "Lo vendido menos su costo, más lo que dejaron los proyectos.",
+  sales: "Confirmadas, sin IVA. No cuentan las canceladas.",
+  purchases: "Confirmadas, sin IVA. Incluye stock que aún no vendes. No cuentan las revertidas.",
+  profit: "Lo vendido menos su costo, más lo que dejaron los proyectos. Los servicios sin proyecto no entran.",
 });
 
 export const NO_PREVIOUS_MONTH_TEXT = "Sin datos del mes anterior para comparar";

@@ -8,8 +8,8 @@ import {formatMoney} from "../../utils/formatters";
 // con el total sin IVA y cuántas operaciones lo forman. Una por moneda. El total y
 // el conteo llegan ya calculados (reportModel); este componente solo los presenta.
 //
-// `kind`: "sales" | "purchases". `note` es el subtítulo de la derecha (en Compras,
-// "Las compras muestran egresos registrados del negocio."). Si hay documentos sin
+// `kind`: "sales" | "purchases". `note` es la línea que dice qué incluye la cifra y qué no,
+// justo debajo del total. Si hay documentos sin
 // neto válido, una línea lo avisa: aportan 0 al total.
 function ReportsFlowHeader({count, currency, kind = "sales", note = "", showCurrency = false, total, withoutNetCount = 0}) {
   const {locale} = useBusinessFormat();
@@ -22,8 +22,8 @@ function ReportsFlowHeader({count, currency, kind = "sales", note = "", showCurr
       </div>
       <strong className="reports-flow-header__amount">{formatMoney(total, currency, locale)}</strong>
       <span className="reports-flow-header__caption">{summary.caption}</span>
+      {note && <p className="reports-flow-header__note">{note}</p>}
     </div>
-    {note && <p className="reports-flow-header__note">{note}</p>}
     {summary.withoutNetText && <p className="reports-flow-header__warning"><TriangleAlert size={14} aria-hidden="true" /><span>{summary.withoutNetText}</span></p>}
   </section>;
 }

@@ -1699,9 +1699,8 @@
 .reports-flow-header__note {
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
-  margin: 0;
-  max-width: 22rem;
-  text-align: right;
+  margin: var(--space-1) 0 0;
+  max-width: 40rem;
 }
 
 .reports-flow-header__warning {
@@ -1834,6 +1833,31 @@
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
+}
+
+.reports-share-bars__single {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+}
+
+.reports-share-bars__single strong {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-md);
+  overflow-wrap: anywhere;
+}
+
+.reports-share-bars__single span {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.reports-share-bars__single small {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
 }
 
 .reports-share-bars__note {
@@ -2837,6 +2861,7 @@
 }
 
 .reports-detail-grid {
+  align-items: start;
   display: grid;
   gap: var(--space-4);
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3128,8 +3153,13 @@
 
 .reports-v4-note {
   color: var(--color-text-muted);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-xs);
   margin: 0;
+}
+
+/* Notas bajo "Me quedó": un paso más grandes que el resto de las notas del detalle. */
+.reports-profit-hero__notes .reports-v4-note {
+  font-size: var(--font-size-sm);
 }
 
 .reports-v4-projects-summary {
