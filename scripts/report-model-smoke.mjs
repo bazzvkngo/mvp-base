@@ -1263,10 +1263,26 @@ try {
 console.log("OK reportes SPEC 025 (resumen visual, bloque 2): aviso único con Parcial siempre visible, tarjetas Vendí / Compré / Me quedó, círculo del margen y permisos de la línea de documentos sin neto");
 
 // Pulido del resumen visual: tarjetas alineadas arriba, círculo mayor y grueso, chip táctil y vacíos sin repetir.
-assert.match(visualCss, /\.reports-simple-metrics--visual \{[^}]*align-items: flex-start;/, "Vendí y Compré no se estiran hasta la altura de Me quedó");
-assert.match(visualCss, /\.reports-simple-metrics--visual > \.reports-simple-card \{[^}]*align-content: start;[^}]*min-height: 0;/);
+// R4 (decisión de diseño de esta etapa): antes Vendí y Compré NO se estiraban hasta la altura de Me quedó
+// (align-items: flex-start y flex con Me quedó al doble de ancho). Ahora las tres tarjetas son columnas
+// iguales de una grilla, del mismo alto (la grilla las estira: sin align-items: flex-start), y "Ver detalle"
+// baja al pie con margin-top: auto. Se conserva lo demás: sin min-height propio, contenido arriba y círculo junto al monto.
+// Corregido tras ver la pantalla: con repeat(auto-fill, minmax(17rem, 1fr)) y una sola clase, la regla posterior
+// .reports-simple-metrics { repeat(4, ...) } ganaba por orden (4 columnas de ~300 px y un hueco a la derecha).
+assert.match(visualCss, /\.reports-simple-metrics--visual \{[^}]*display: grid;/);
+assert.match(visualCss, /\.reports-simple-metrics\.reports-simple-metrics--visual \{[^}]*grid-auto-columns: minmax\(0, 1fr\);[^}]*grid-auto-flow: column;[^}]*grid-template-columns: none;/, "una columna igual por tarjeta, repartidas en el 100 % de la fila (con dos clases para ganarle a repeat(4))");
+assert.ok(projectsCss.indexOf(".reports-simple-metrics.reports-simple-metrics--visual {") > projectsCss.indexOf(".reports-simple-metrics {"), "la regla de la fila va después de la general de 4 columnas, y además con más especificidad");
+assert.doesNotMatch(visualCss, /\.reports-simple-metrics--visual \{[^}]*align-items: flex-start;/, "las tarjetas ya no se alinean arriba con alturas distintas");
+assert.doesNotMatch(visualCss, /\.reports-simple-card--profit \{\s*flex: 2 1 24rem;/, "Me quedó ya no es más ancha");
+assert.match(visualCss, /\.reports-simple-metrics--visual > \.reports-simple-card \{[^}]*align-content: start;[^}]*display: flex;[^}]*flex-direction: column;[^}]*min-height: 0;/);
+assert.match(visualCss, /\.reports-simple-metrics--visual > \.reports-simple-card > small \{\s*margin-top: auto;/, "lo que incluye baja al pie y queda pegado a «Ver detalle»: el vacío sobrante queda bajo la cifra");
+assert.match(visualCss, /\.reports-simple-metrics--visual > \.reports-simple-card \.reports-month-card-link \{\s*align-self: flex-start;\s*\}/, "Ver detalle a la izquierda, en las tres, sin margen que lo separe del texto");
+assert.match(visualCss, /@media \(max-width: 960px\) \{\s*\.reports-simple-metrics\.reports-simple-metrics--visual \{\s*grid-auto-flow: row;\s*grid-template-columns: minmax\(0, 1fr\);/, "una columna en pantallas angostas");
+assert.match(visualCss, /\.reports-profit-card__body \{[^}]*gap: var\(--space-3\) var\(--space-5\);/, "más aire entre la frase y el círculo");
+assert.match(visualCss, /\.reports-profit-card__main \{[^}]*flex: 1 1 12rem;/, "la frase tiene su ancho propio; si no cabe junto al círculo, el círculo baja en vez de pisarla");
 assert.match(visualCss, /\.reports-profit-card__body \{[^}]*align-items: flex-start;/, "el círculo se alinea arriba, con el monto");
-assert.match(visualCss, /\.reports-ring \{[^}]*height: calc\(var\(--space-10\) \* 2\.75\);[^}]*width: calc\(var\(--space-10\) \* 2\.75\);/);
+assert.match(visualCss, /\.reports-ring \{[^}]*height: calc\(var\(--space-10\) \* 2\);[^}]*width: calc\(var\(--space-10\) \* 2\);/, "el círculo del margen pasa a dato secundario (80 px en vez de 110 px)");
+assert.match(visualCss, /\.reports-ring__value \{[^}]*font-size: var\(--font-size-xs\);/, "el porcentaje del círculo cabe en el círculo más chico");
 assert.equal((visualCss.match(/stroke-width: 6;/g) || []).length, 2, "pista y arco con el trazo grueso");
 assert.match(visualCss, /@media \(max-width: 640px\) \{[\s\S]*?\.reports-profit-notice__chip \{\s*min-height: calc\(var\(--space-10\) \+ var\(--space-1\)\);/, "zona táctil de 44 px (2,75 rem) del chip en móvil");
 assert.doesNotMatch(projectsCss, /\.reports-month-empty/, "el estilo de la tarjeta de vacío repetido ya no existe");
@@ -1316,10 +1332,45 @@ assert.match(marginRingSource, /<circle className="reports-ring__track"/);
     // La fila del título va arriba y a todo el ancho; el círculo queda junto al monto, no junto al título.
     const profitCard = full.slice(full.indexOf("reports-simple-card--profit"));
     assert.ok(profitCard.indexOf("reports-simple-card__top") < profitCard.indexOf("reports-profit-card__body"), "título arriba");
-    assert.ok(profitCard.indexOf("reports-profit-card__body") < profitCard.indexOf("reports-ring ") && profitCard.indexOf("reports-ring ") < profitCard.indexOf("reports-simple-card__amount"), "el círculo está en el cuerpo, junto al monto");
+    // R4: la cifra va primero y el círculo (dato secundario) queda a su derecha; antes iba a su izquierda.
+    assert.ok(profitCard.indexOf("reports-profit-card__body") < profitCard.indexOf("reports-simple-card__amount") && profitCard.indexOf("reports-simple-card__amount") < profitCard.indexOf("reports-ring "), "la cifra primero y el círculo a su derecha, dentro del mismo cuerpo");
+    // R4: las tres tarjetas con el mismo orden interno y un solo "Ver detalle" cada una.
+    const cards = full.split('<article class="reports-simple-card ').slice(1).map((card) => card.slice(0, card.indexOf("</article>")));
+    assert.equal(cards.length, 3, "Vendí, Compré y Me quedó");
+    for (const card of cards) {
+      assert.equal(countOf(card, /Ver detalle/g), 1, "un solo «Ver detalle» por tarjeta");
+      const order = ["reports-simple-card__top", "reports-simple-card__amount", "<small>", "reports-month-card-link"].map((piece) => card.indexOf(piece));
+      assert.ok(order.every((index) => index > -1) && order.every((index, position) => position === 0 || index > order[position - 1]), "mismo orden: título, cifra, qué incluye y «Ver detalle» al final");
+    }
+    assert.equal(countOf(full, /class="ui-button ui-button--ghost reports-month-card-link"/g), 3, "el mismo estilo de enlace en las tres");
+    assert.ok(cards[2].indexOf("reports-profit-notice") > cards[2].indexOf("reports-simple-card__amount") && cards[2].indexOf("reports-profit-notice") < cards[2].indexOf("<small>"), "Me quedó: la cifra, luego el aviso y después qué incluye");
+    // Me quedó conserva el porcentaje, la frase y la base; el círculo es un dato secundario.
+    assert.ok(cards[2].includes("De cada $100 que vendes, te quedan $25") && cards[2].includes("sobre $2.000 de ventas consideradas") && cards[2].includes('class="reports-ring__value" aria-hidden="true">25 %'), "porcentaje de margen, frase y base se conservan");
+    // La línea de comparación sin base vive en la misma fila que el selector de mes.
+    const noBase = html(emptyProps("2026-09"));
+    assert.match(noBase, /<div class="reports-month-bar"><div class="reports-month-nav"[\s\S]*?<\/div><p class="reports-month-no-previous">Sin datos del mes anterior para comparar<\/p><\/div>/, "el aviso va junto al selector de mes, no en una línea propia");
+    assert.equal(countOf(noBase, /Sin datos del mes anterior para comparar/g), 1);
+    // Proyectos del mes sin proyectos: una sola línea, sin bloque; el enlace se conserva.
+    const noProjects = html(emptyProps("2026-10"));
+    assert.match(noProjects, /<section class="erp-card reports-month-projects" aria-labelledby="reports-month-projects-title" data-state="empty"><header class="reports-month-projects__header"><h2 id="reports-month-projects-title">Proyectos del mes<\/h2><button[^>]*>[\s\S]*?Ver todos los proyectos[\s\S]*?<\/button><\/header><p class="reports-month-projects__empty">Aún no hay proyectos con movimiento este mes<\/p><\/section>/, "título, enlace y frase breve, sin lista");
+    assert.doesNotMatch(noProjects, /reports-month-projects__list|reports-month-projects__group/);
+    assert.doesNotMatch(screen({}).slice(screen({}).indexOf("reports-month-projects")), /data-state="empty"/, "con proyectos no se aplica el modo de una línea");
+    assert.doesNotMatch(html(emptyProps("2026-10", {projects: {status: "error", error: "Falló", meta: null}})), /data-state="empty"/, "un error no es un vacío");
+    assert.doesNotMatch(html(emptyProps("2026-10", {projects: {status: "loading", error: "", meta: null}})), /data-state="empty"/, "cargando no es un vacío");
   } finally {
     await summaryVite2.close();
   }
+}
+{
+  const r4Css = readFileSync("src/styles/interior.css", "utf8");
+  const r4Summary = readFileSync("src/features/reports/views/ReportsMonthlySummary.jsx", "utf8");
+  assert.match(r4Summary, /const figure = aside\s*\?\s*<div className="reports-profit-card__body"><div className="reports-profit-card__main">\{children\}<\/div>\{aside\}<\/div>\s*:\s*children;/, "la cifra y su círculo, luego el resto a todo el ancho");
+  assert.doesNotMatch(r4Summary, /\{aside\}<div className="reports-profit-card__main">/, "el círculo ya no va a la izquierda de la cifra");
+  assert.equal((r4Summary.match(/>Ver detalle<\/Button>/g) || []).length, 1, "el botón «Ver detalle» existe una sola vez en el código (un componente, tres tarjetas)");
+  assert.match(r4Css, /\.reports-month-bar \{[^}]*display: flex;[^}]*flex-wrap: wrap;/);
+  assert.match(r4Css, /\.reports-month-projects\[data-state="empty"\] \{[^}]*display: flex;[^}]*flex-wrap: wrap;/);
+  assert.match(r4Css, /\.reports-month-projects\[data-state="empty"\] \.reports-month-projects__header \{\s*display: contents;/);
+  assert.doesNotMatch(r4Css.slice(r4Css.indexOf(".reports-month-bar {"), r4Css.indexOf(".reports-simple-eyebrow,")), /#[0-9a-fA-F]{3,8}\b|rgb\(|hsl\(/, "solo tokens");
 }
 console.log("OK reportes SPEC 025 (resumen visual, pulido): tarjetas alineadas arriba, círculo mayor, chip táctil de 44 px, mes sin ventas sin vacío repetido y sin nota de base sin permiso de Ventas");
 

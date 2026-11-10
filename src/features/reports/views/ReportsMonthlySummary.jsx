@@ -55,20 +55,18 @@ function ReferenceLine({text}) {
   return <span className="reports-month-delta reports-month-delta--none">{text}</span>;
 }
 
-// Tarjeta del resumen. Las tarjetas "Vendí" y "Compré" son la versión simple; la
-// de "Me quedó" suma `subtitle` ("Ganancia"), `aside` (el círculo del margen) y
-// `notice` (el aviso único, pegado a la cifra). No hay ningún signo ni operador
-// entre las tarjetas: la ganancia no se define como ventas menos compras.
+// Tarjeta del resumen. Las tres tienen el mismo orden: título, cifra, aviso (solo
+// "Me quedó"), comparación con el mes anterior, qué incluye y "Ver detalle" al pie,
+// a la izquierda. "Vendí" y "Compré" son la versión simple; la de "Me quedó" suma
+// `subtitle` ("Ganancia"), `aside` (el círculo del margen, como dato secundario a
+// la derecha de la cifra) y `notice` (el aviso único). No hay ningún signo ni
+// operador entre las tarjetas: la ganancia no se define como ventas menos compras.
 function MonthlyCard({aside, children, comparison, explanation, icon: Icon, locale, notice, onOpenDetail, referenceText, signed, subtitle, title, variant = "default"}) {
-  // La fila del título va siempre arriba y a todo el ancho; el círculo (aside) se
-  // alinea con el monto, que es lo primero del cuerpo.
-  const body = <>
-    {children}
-    {notice}
-    {referenceText ? <ReferenceLine text={referenceText} /> : comparison && <ComparisonLine comparison={comparison} locale={locale} signed={signed} />}
-    <small>{explanation}</small>
-    {onOpenDetail && <Button type="button" variant="ghost" className="reports-month-card-link" icon={ArrowRight} iconSize={14} onClick={onOpenDetail}>Ver detalle</Button>}
-  </>;
+  // La cifra va siempre justo bajo el título; el círculo (aside) queda a su derecha y el resto
+  // (aviso, comparación, qué incluye, enlace) baja a todo el ancho de la tarjeta.
+  const figure = aside
+    ? <div className="reports-profit-card__body"><div className="reports-profit-card__main">{children}</div>{aside}</div>
+    : children;
   return <article className={`reports-simple-card reports-simple-card--${variant}`}>
     <div className="reports-simple-card__top">
       <span className="reports-simple-card__icon"><Icon size={19} aria-hidden="true" /></span>
@@ -77,7 +75,11 @@ function MonthlyCard({aside, children, comparison, explanation, icon: Icon, loca
         {subtitle && <span className="reports-simple-card__subtitle">{subtitle}</span>}
       </span>
     </div>
-    {aside ? <div className="reports-profit-card__body">{aside}<div className="reports-profit-card__main">{body}</div></div> : body}
+    {figure}
+    {notice}
+    {referenceText ? <ReferenceLine text={referenceText} /> : comparison && <ComparisonLine comparison={comparison} locale={locale} signed={signed} />}
+    <small>{explanation}</small>
+    {onOpenDetail && <Button type="button" variant="ghost" className="reports-month-card-link" icon={ArrowRight} iconSize={14} onClick={onOpenDetail}>Ver detalle</Button>}
   </article>;
 }
 
@@ -172,12 +174,15 @@ function ReportsMonthlySummary({
   const projectsNotes = noticeLines.flat().filter((line) => line.placement === "projects");
 
   return <>
-    <div className="reports-month-nav" role="group" aria-label="Mes del resumen">
-      <Button type="button" variant="secondary" icon={ChevronLeft} aria-label="Mes anterior" onClick={() => onMonthChange(shiftMonthKey(month, -1))} />
-      <strong className="reports-month-nav__label">{formatMonthLabel(month, locale)}</strong>
-      <Button type="button" variant="secondary" icon={ChevronRight} aria-label="Mes siguiente" disabled={!canShowNextMonth(month, todayKey)} onClick={() => onMonthChange(shiftMonthKey(month, 1))} />
+    {/* El aviso de "sin datos del mes anterior" va en la misma fila del selector de mes (en pantallas angostas baja debajo), sin ocupar una línea propia. */}
+    <div className="reports-month-bar">
+      <div className="reports-month-nav" role="group" aria-label="Mes del resumen">
+        <Button type="button" variant="secondary" icon={ChevronLeft} aria-label="Mes anterior" onClick={() => onMonthChange(shiftMonthKey(month, -1))} />
+        <strong className="reports-month-nav__label">{formatMonthLabel(month, locale)}</strong>
+        <Button type="button" variant="secondary" icon={ChevronRight} aria-label="Mes siguiente" disabled={!canShowNextMonth(month, todayKey)} onClick={() => onMonthChange(shiftMonthKey(month, 1))} />
+      </div>
+      {hasCards && !showComparison && <p className="reports-month-no-previous">{NO_PREVIOUS_MONTH_TEXT}</p>}
     </div>
-    {hasCards && !showComparison && <p className="reports-month-no-previous">{NO_PREVIOUS_MONTH_TEXT}</p>}
 
     {!hasCards && <div className="erp-card reports-simple-state">Tu perfil no incluye informes con cifras del mes.</div>}
 

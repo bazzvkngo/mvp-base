@@ -85,7 +85,9 @@ function ReportsMonthlyProjects({canView, currency, inProgress, links, month, no
     warnings.push(`No fue posible cargar ${failedCount} ${failedCount === 1 ? "proyecto" : "proyectos"}.`);
   }
 
-  return <section className="erp-card reports-month-projects" aria-labelledby="reports-month-projects-title">
+  // Sin proyectos (y sin error ni carga): título, una frase y el enlace en una sola línea, sin bloque.
+  const isEmpty = projects.status !== "loading" && !loadError && Boolean(results) && !results.filas.length;
+  return <section className="erp-card reports-month-projects" aria-labelledby="reports-month-projects-title" data-state={isEmpty ? "empty" : undefined}>
     <header className="reports-month-projects__header">
       <h2 id="reports-month-projects-title">Proyectos del mes</h2>
       {links.works && <Button type="button" variant="ghost" icon={ArrowRight} iconSize={14} onClick={() => onNavigate("/trabajos")}>Ver todos los proyectos</Button>}
