@@ -55,6 +55,7 @@ function ProfitSummaryCard({currentMonthKey, group, range, showCurrency}) {
       <div className="reports-profit-hero__main">
         <div className="reports-profit-hero__label">
           <h2 className="reports-profit-hero__title">Me quedó<span className="sr-only"> {period.phrase}</span></h2>
+          <ProfitNote />
           {group.cobertura === COVERAGE.PARTIAL && <span className="reports-v4-badge reports-v4-badge--parcial">Parcial</span>}
           {showCurrency && <span className="reports-profit-hero__currency">{currency || "Moneda no declarada"}</span>}
         </div>
@@ -67,7 +68,6 @@ function ProfitSummaryCard({currentMonthKey, group, range, showCurrency}) {
     </div>
     {bar.show && <ProductsBar bar={bar} currency={currency} locale={locale} />}
     <div className="reports-profit-hero__notes">
-      <ProfitNote />
       <ServicesWithoutCostNote group={group} />
     </div>
   </section>;

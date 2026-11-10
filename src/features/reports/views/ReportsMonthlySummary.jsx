@@ -18,6 +18,7 @@ import StatusBadge from "../../../components/ui/StatusBadge";
 import {SPARKLINE_MIN_POINTS, trendItemsFor} from "../../../domain/reportTrend.mjs";
 import {
   MONTHLY_EXPLANATIONS,
+  MONTHLY_SHORT_NOTES,
   NO_PREVIOUS_MONTH_TEXT,
   buildMonthlyProjectResults,
   buildMonthlySummaryGroups,
@@ -38,6 +39,7 @@ import {
 import useBusinessFormat from "../../../hooks/useBusinessFormat";
 import {formatDate} from "../../../utils/formatters";
 import {formatReportMoney} from "../../../utils/formatReportMoney";
+import ReportsInfoTip from "../ReportsInfoTip";
 import MarginRing from "./MarginRing";
 import ReportsMonthlyProjects from "./ReportsMonthlyProjects";
 import ReportsMonthlyTrend from "./ReportsMonthlyTrend";
@@ -58,22 +60,23 @@ const DELTA_ICONS = Object.freeze({up: ArrowUpRight, down: ArrowDownRight, flat:
 const CHIP_VARIANTS = Object.freeze({up: "success", down: "danger", flat: "neutral"});
 
 // Mes cerrado con base: chip "+X %" / "-X %" con la variación que ya calcula
-// compareWithPreviousMonth. Sin base no hay chip: solo el aviso en texto.
-function ComparisonLine({comparison, locale, chipTone = "signed"}) {
+// compareWithPreviousMonth, junto a la cifra (R6). El "frente al mes anterior" va solo para
+// lectores de pantalla. Sin base no hay chip: solo el aviso en texto bajo la cifra.
+function ComparisonChip({comparison, locale, chipTone = "signed"}) {
   const Icon = DELTA_ICONS[comparison.direction];
-  if (!comparison.hasBase) {
-    return <span className="reports-month-delta reports-month-delta--none">
-      <Icon size={14} aria-hidden="true" />
-      {formatComparisonText(comparison, locale)}
-    </span>;
-  }
   const variant = chipTone === "signed" ? CHIP_VARIANTS[comparison.direction] : "neutral";
+  return <StatusBadge className={`reports-month-chip reports-month-chip--${comparison.direction}`} variant={variant}>
+    <Icon size={14} aria-hidden="true" />
+    {formatComparisonChip(comparison, locale)}
+    <span className="sr-only"> frente al mes anterior</span>
+  </StatusBadge>;
+}
+
+function ComparisonLine({comparison, locale}) {
+  const Icon = DELTA_ICONS[comparison.direction];
   return <span className="reports-month-delta reports-month-delta--none">
-    <StatusBadge className={`reports-month-chip reports-month-chip--${comparison.direction}`} variant={variant}>
-      <Icon size={14} aria-hidden="true" />
-      {formatComparisonChip(comparison, locale)}
-    </StatusBadge>
-    <span>frente al mes anterior</span>
+    <Icon size={14} aria-hidden="true" />
+    {formatComparisonText(comparison, locale)}
   </span>;
 }
 
@@ -83,21 +86,27 @@ function ReferenceLine({text}) {
   return <span className="reports-month-delta reports-month-delta--none">{text}</span>;
 }
 
-// Tarjeta del resumen. Las tres tienen el mismo orden: título, cifra, aviso (solo
-// "Me quedó"), comparación con el mes anterior, qué incluye y "Ver detalle" al pie,
-// a la izquierda. "Vendí" y "Compré" son la versión simple; la de "Me quedó" suma
-// `subtitle` ("Ganancia"), `aside` (el círculo del margen, como dato secundario a
-// la derecha de la cifra) y `notice` (el aviso único). No hay ningún signo ni
-// operador entre las tarjetas: la ganancia no se define como ventas menos compras.
-function MonthlyCard({aside, children, chipTone = "signed", comparison, explanation, icon: Icon, locale, notice, onOpenDetail, referenceText, sparkline = null, subtitle, title, variant = "default"}) {
-  // La cifra va siempre justo bajo el título; el círculo (aside) queda a su derecha y el resto
-  // (aviso, comparación, qué incluye, enlace) baja a todo el ancho de la tarjeta.
-  // `sparkline` (Vendí y Compré) es la mini-línea del mes, a la derecha de la cifra; solo llega con 3 o más puntos.
+// Tarjeta del resumen (R6). Las tres tienen franja de acento arriba (ventas, compras o
+// ganancia) y el mismo orden: título con su ícono "i", cifra grande con el chip de variación
+// al lado, aviso (solo "Me quedó"), nota corta, y "Ver detalle" al pie, a la izquierda.
+// `amount` es la cifra; `children` lo que va bajo ella (en "Me quedó", la frase del margen).
+// "Me quedó" suma `subtitle` ("Ganancia"), `aside` (el círculo del margen, a la derecha de la
+// cifra) y `notice` (el aviso único); "Vendí" y "Compré" pueden traer `sparkline`. No hay ningún
+// signo ni operador entre las tarjetas: la ganancia no se define como ventas menos compras.
+function MonthlyCard({amount, aside, children, chipTone = "signed", comparison, explanation, icon: Icon, locale, notice, onOpenDetail, referenceText, shortNote, sparkline = null, subtitle, title, variant = "default"}) {
+  // El chip solo existe con mes cerrado y base; en el mes en curso va la referencia del mes anterior completo.
+  const chip = !referenceText && comparison?.hasBase ? <ComparisonChip chipTone={chipTone} comparison={comparison} locale={locale} /> : null;
+  const main = <>
+    <div className="reports-month-amount-row">{amount}{chip}</div>
+    {children}
+  </>;
+  // La cifra va siempre justo bajo el título; el círculo (aside) o la mini-línea quedan a su derecha
+  // y el resto (aviso, nota, enlace) baja a todo el ancho de la tarjeta. La mini-línea solo llega con 3 o más puntos.
   const figure = aside
-    ? <div className="reports-profit-card__body"><div className="reports-profit-card__main">{children}</div>{aside}</div>
+    ? <div className="reports-profit-card__body"><div className="reports-profit-card__main">{main}</div>{aside}</div>
     : sparkline
-      ? <div className="reports-month-figure">{children}{sparkline}</div>
-      : children;
+      ? <div className="reports-month-figure">{main}{sparkline}</div>
+      : main;
   return <article className={`reports-simple-card reports-simple-card--${variant}`}>
     <div className="reports-simple-card__top">
       <span className="reports-simple-card__icon"><Icon size={19} aria-hidden="true" /></span>
@@ -105,11 +114,12 @@ function MonthlyCard({aside, children, chipTone = "signed", comparison, explanat
         {subtitle ? <strong className="reports-simple-card__heading">{title}</strong> : title}
         {subtitle && <span className="reports-simple-card__subtitle">{subtitle}</span>}
       </span>
+      <ReportsInfoTip label={`Qué incluye ${title}`}>{explanation}</ReportsInfoTip>
     </div>
     {figure}
     {notice}
-    {referenceText ? <ReferenceLine text={referenceText} /> : comparison && <ComparisonLine chipTone={chipTone} comparison={comparison} locale={locale} />}
-    <small>{explanation}</small>
+    {referenceText ? <ReferenceLine text={referenceText} /> : comparison && !comparison.hasBase && <ComparisonLine comparison={comparison} locale={locale} />}
+    <small>{shortNote}</small>
     {onOpenDetail && <Button type="button" variant="ghost" className="reports-month-card-link" icon={ArrowRight} iconSize={14} onClick={onOpenDetail}>Ver detalle</Button>}
   </article>;
 }
@@ -129,14 +139,13 @@ function ProfitAmount({amountText, onRetry, profit}) {
 
 const MARGIN_ICONS = Object.freeze({up: TrendingUp, down: TrendingDown});
 
-// La cifra de "Me quedó": el monto y, debajo, la frase del margen ("De cada $100
-// que vendes, te quedan $X") con su nota de base ("sobre $N de ventas
-// consideradas") solo cuando difiere de "Vendí". El ícono de sentido (sube o
-// baja) acompaña al color; ambos son refuerzo de la frase, que dice el sentido.
-function ProfitFigures({amountText, description, onRetry, profit}) {
+// Bajo la cifra de "Me quedó": la frase del margen ("De cada $100 que vendes, te quedan
+// $X") con su nota de base ("sobre $N de ventas consideradas") solo cuando difiere de
+// "Vendí". El ícono de sentido (sube o baja) acompaña al color; ambos son refuerzo de la
+// frase, que dice el sentido.
+function ProfitDetails({description}) {
   const Icon = MARGIN_ICONS[description.ring.tone];
   return <>
-    <ProfitAmount amountText={amountText} onRetry={onRetry} profit={profit} />
     {description.sentence && <p className={`reports-profit-card__sentence reports-profit-card__sentence--${description.ring.tone}`}>
       {Icon && <Icon size={14} aria-hidden="true" />}
       <span>{description.sentence}</span>
@@ -250,14 +259,10 @@ function ReportsMonthlySummary({
       return <section className="reports-simple-currency-group" key={group.currency}>
         {groups.length > 1 && <h2>{group.currency}</h2>}
         <div className="reports-simple-metrics reports-simple-metrics--visual">
-          {canViewSales && <MonthlyCard comparison={showComparison ? group.sales.comparison : null} explanation={MONTHLY_EXPLANATIONS.sales} icon={BadgeDollarSign} locale={locale} onOpenDetail={links.sales ? () => onOpenDetail("ventas") : null} referenceText={showComparison ? referenceOf(group.sales) : null} sparkline={sparklineOf(salesTimeline, "sales", "Ventas")} title="Vendí">
-            <strong className="reports-simple-card__amount">{money(group.sales.total)}</strong>
-          </MonthlyCard>}
-          {canViewPurchases && <MonthlyCard chipTone="neutral" comparison={showComparison ? group.purchases.comparison : null} explanation={MONTHLY_EXPLANATIONS.purchases} icon={ShoppingCart} locale={locale} onOpenDetail={links.purchases ? () => onOpenDetail("compras") : null} referenceText={showComparison ? referenceOf(group.purchases) : null} sparkline={sparklineOf(purchaseTimeline, "purchases", "Compras")} title="Compré">
-            <strong className="reports-simple-card__amount">{money(group.purchases.total)}</strong>
-          </MonthlyCard>}
-          {canViewProfitability && group.profit && <MonthlyCard aside={marginDescription.kind === "pending" ? null : <MarginRing description={marginDescription} locale={locale} />} comparison={showComparison && group.profit.status === "ready" ? group.profit.comparison : null} explanation={MONTHLY_EXPLANATIONS.profit} icon={TrendingUp} locale={locale} notice={<ReportsProfitNotice currency={group.currency} lines={profitLines} locale={locale} onNavigate={onNavigate} onOpenDetail={onOpenDetail} />} onOpenDetail={() => onOpenDetail("ganancias")} referenceText={showComparison && group.profit.status === "ready" ? referenceOf(group.profit) : null} subtitle="Ganancia" title="Me quedó" variant="profit">
-            <ProfitFigures amountText={money(group.profit.amount)} description={marginDescription} onRetry={onRetryProfit} profit={group.profit} />
+          {canViewSales && <MonthlyCard amount={<strong className="reports-simple-card__amount">{money(group.sales.total)}</strong>} comparison={showComparison ? group.sales.comparison : null} explanation={MONTHLY_EXPLANATIONS.sales} icon={BadgeDollarSign} locale={locale} onOpenDetail={links.sales ? () => onOpenDetail("ventas") : null} referenceText={showComparison ? referenceOf(group.sales) : null} shortNote={MONTHLY_SHORT_NOTES.sales} sparkline={sparklineOf(salesTimeline, "sales", "Ventas")} title="Vendí" variant="sales" />}
+          {canViewPurchases && <MonthlyCard amount={<strong className="reports-simple-card__amount">{money(group.purchases.total)}</strong>} chipTone="neutral" comparison={showComparison ? group.purchases.comparison : null} explanation={MONTHLY_EXPLANATIONS.purchases} icon={ShoppingCart} locale={locale} onOpenDetail={links.purchases ? () => onOpenDetail("compras") : null} referenceText={showComparison ? referenceOf(group.purchases) : null} shortNote={MONTHLY_SHORT_NOTES.purchases} sparkline={sparklineOf(purchaseTimeline, "purchases", "Compras")} title="Compré" variant="purchases" />}
+          {canViewProfitability && group.profit && <MonthlyCard amount={<ProfitAmount amountText={money(group.profit.amount)} onRetry={onRetryProfit} profit={group.profit} />} aside={marginDescription.kind === "pending" ? null : <MarginRing description={marginDescription} locale={locale} />} comparison={showComparison && group.profit.status === "ready" ? group.profit.comparison : null} explanation={MONTHLY_EXPLANATIONS.profit} icon={TrendingUp} locale={locale} notice={<ReportsProfitNotice currency={group.currency} lines={profitLines} locale={locale} onNavigate={onNavigate} onOpenDetail={onOpenDetail} />} onOpenDetail={() => onOpenDetail("ganancias")} referenceText={showComparison && group.profit.status === "ready" ? referenceOf(group.profit) : null} shortNote={MONTHLY_SHORT_NOTES.profit} subtitle="Ganancia" title="Me quedó" variant="profit">
+            <ProfitDetails description={marginDescription} />
           </MonthlyCard>}
         </div>
         {!showsProfitCard && <ReportsProfitNotice currency={group.currency} lines={profitLines} locale={locale} onNavigate={onNavigate} onOpenDetail={onOpenDetail} variant="standalone" />}

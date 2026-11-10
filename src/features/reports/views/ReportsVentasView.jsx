@@ -47,6 +47,7 @@ function ReportsVentasView({canOpenSales, fallbackCurrency = "CLP", navigate, sa
 
     <LimitedOperationsTable
       columns={["Número", "Fecha", "Cliente", "Moneda", "Neto", "Total"]}
+      numericColumns={[4, 5]}
       dateField="fechaVenta"
       noun={{singular: "venta", plural: "ventas"}}
       onOpen={canOpenSales ? () => navigate("/ventas") : null}
@@ -56,8 +57,8 @@ function ReportsVentasView({canOpenSales, fallbackCurrency = "CLP", navigate, sa
         <td>{formatDate(String(sale.fechaVenta || "").slice(0, 10), businessLocale)}</td>
         <td>{sale.clienteSnapshot?.nombreRazonSocial || "Cliente histórico"}</td>
         <td>{sale.moneda || sale.monedaCodigo || "CLP"}</td>
-        <td>{Number.isFinite(sale.neto) ? formatMoney(sale.neto, sale.moneda || sale.monedaCodigo || "CLP", businessLocale) : "—"}</td>
-        <td>{formatMoney(sale.total, sale.moneda || sale.monedaCodigo || "CLP", businessLocale)}</td>
+        <td className="is-numeric">{Number.isFinite(sale.neto) ? formatMoney(sale.neto, sale.moneda || sale.monedaCodigo || "CLP", businessLocale) : "—"}</td>
+        <td className="is-numeric">{formatMoney(sale.total, sale.moneda || sale.monedaCodigo || "CLP", businessLocale)}</td>
       </tr>}
       rows={confirmed}
       title="Últimas ventas"

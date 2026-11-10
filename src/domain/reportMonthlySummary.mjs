@@ -17,6 +17,13 @@ export const MONTHLY_EXPLANATIONS = Object.freeze({
   profit: "Lo vendido menos su costo, más lo que dejaron los proyectos. Los servicios sin proyecto no entran.",
 });
 
+// Lo único que queda a la vista bajo cada cifra; la aclaración completa (MONTHLY_EXPLANATIONS) va en el ícono "i".
+export const MONTHLY_SHORT_NOTES = Object.freeze({
+  sales: "Sin IVA",
+  purchases: "Sin IVA",
+  profit: "Sin IVA",
+});
+
 export const NO_PREVIOUS_MONTH_TEXT = "Sin datos del mes anterior para comparar";
 
 export function currentMonthKey(todayKey) {

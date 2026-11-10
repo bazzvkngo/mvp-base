@@ -8,6 +8,7 @@ import {
 } from "../../domain/operationalNetProfit.mjs";
 import {formatMoney} from "../../utils/formatters";
 import useBusinessFormat from "../../hooks/useBusinessFormat";
+import ReportsInfoTip from "./ReportsInfoTip";
 
 // SPEC 022 §6.2: ganancia neta operacional, su desglose y la línea de ventas
 // sin costo registrado. La cifra sale de calculateOperationalNetProfit; este
@@ -67,13 +68,13 @@ function BreakdownTable({caption, rows, currency}) {
   </table></div>;
 }
 
-// Nota fija de la ganancia (SPEC 022 §6.2 punto 1): va siempre visible bajo "Me quedó",
-// no dentro del cálculo plegado.
+// Nota fija de la ganancia (SPEC 022 §6.2 punto 1): sigue fuera del cálculo plegado, ahora en un
+// ícono "i" junto al título "Me quedó" (R6): el texto no cambia, solo se abre a pedido.
 export function ProfitNote() {
-  return <p className="reports-v4-note">
+  return <ReportsInfoTip label="Qué incluye la ganancia">
     Ventas sin IVA menos sus costos, en productos y proyectos.
     {" "}No incluye gastos generales del negocio.
-  </p>;
+  </ReportsInfoTip>;
 }
 
 // Línea "Ventas sin costo registrado" (SPEC 022 §4.4): servicios vendidos sin

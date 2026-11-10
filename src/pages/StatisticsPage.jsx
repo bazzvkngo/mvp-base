@@ -30,12 +30,14 @@ import {
 } from "../domain/reportMonthlySummary.mjs";
 import {useOperationalNetProfit} from "../features/reports/OperationalNetProfitBreakdown";
 import {useReportProfitabilityV4} from "../features/reports/ReportProfitabilityV4Section";
-import ReportsNav, {DEFAULT_REPORT_VIEW_ID, normalizeReportView} from "../features/reports/ReportsNav";
+import ReportsNav, {DEFAULT_REPORT_VIEW_ID, REPORT_VIEWS, normalizeReportView} from "../features/reports/ReportsNav";
 import ReportsComprasView from "../features/reports/views/ReportsComprasView";
 import ReportsGananciasView from "../features/reports/views/ReportsGananciasView";
 import ReportsMonthlySummary from "../features/reports/views/ReportsMonthlySummary";
 import ReportsVentasView from "../features/reports/views/ReportsVentasView";
+import useBusinessFormat from "../hooks/useBusinessFormat";
 import {loadSimplifiedReportData} from "../services/reportService";
+import {formatDate} from "../utils/formatters";
 
 const VALID_PERIODS = new Set(REPORT_PERIOD_OPTIONS.map((option) => option.id));
 const EMPTY_DATA = Object.freeze({projectBalances: [], purchases: [], sales: []});
@@ -52,6 +54,7 @@ function updateSearchParams(searchParams, setSearchParams, changes) {
 
 function StatisticsPage({businessId, currencyCode = "CLP", role = ""}) {
   const navigate = useNavigate();
+  const {locale: formatLocale} = useBusinessFormat();
   const [searchParams, setSearchParams] = useSearchParams();
   const canViewProfitability = hasBusinessPermission(role, BUSINESS_PERMISSIONS.PROFITABILITY_READ);
   const viewPermissions = {
@@ -146,12 +149,19 @@ function StatisticsPage({businessId, currencyCode = "CLP", role = ""}) {
     <header className="erp-page-header reports-simple-header">
       <div className="erp-page-intro"><span className="reports-simple-eyebrow">Reportes</span><h1>Centro de reportes</h1><p>{REPORTS_SUBTITLE}</p></div>
       <div className="reports-simple-toolbar">
-        {!isSummary && <FinancialPeriodSelector customEnd={customEnd} customStart={customStart} idPrefix="reports-period" onCustomEndChange={(value) => updateSearchParams(searchParams, setSearchParams, {to: value})} onCustomStartChange={(value) => updateSearchParams(searchParams, setSearchParams, {from: value})} onPeriodChange={(value) => updateSearchParams(searchParams, setSearchParams, {period: value})} options={REPORT_PERIOD_OPTIONS} period={period} />}
         {showCurrencyControls && <label className="erp-field reports-simple-currency"><span className="erp-field__label">Moneda</span><select className="erp-control" value={selectedCurrency} onChange={(event) => updateSearchParams(searchParams, setSearchParams, {currency: event.target.value})}><option value="todos">Todas, separadas</option>{availableCurrencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}</select></label>}
       </div>
     </header>
 
     <ReportsNav active={vista} onSelect={goToView} permissions={viewPermissions} />
+    {/* El selector de período vive junto al título de la pestaña (antes, arriba a la derecha de la página). El Resumen navega por mes y no lo usa. */}
+    {!isSummary && <div className="reports-period-bar">
+      <div className="reports-period-bar__title">
+        <h2>{REPORT_VIEWS.find((view) => view.id === vista)?.label}</h2>
+        <p>{formatDate(periodRange.start, formatLocale)} al {formatDate(periodRange.end, formatLocale)}</p>
+      </div>
+      <FinancialPeriodSelector customEnd={customEnd} customStart={customStart} idPrefix="reports-period" onCustomEndChange={(value) => updateSearchParams(searchParams, setSearchParams, {to: value})} onCustomStartChange={(value) => updateSearchParams(searchParams, setSearchParams, {from: value})} onPeriodChange={(value) => updateSearchParams(searchParams, setSearchParams, {period: value})} options={REPORT_PERIOD_OPTIONS} period={period} />
+    </div>}
     {showCurrencyControls && <p className="reports-simple-help">Las monedas se muestran por separado y no se convierten.</p>}
 
     {error && <div className="erp-card reports-simple-state reports-simple-state--error" role="alert"><span>{error}</span><Button variant="secondary" onClick={() => setReloadKey((value) => value + 1)}><RefreshCw size={16} /> Reintentar</Button></div>}

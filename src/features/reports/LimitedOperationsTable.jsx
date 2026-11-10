@@ -12,8 +12,9 @@ import {DEFAULT_ROW_LIMIT, describeRowsShown, limitRows, sortByDateDesc} from ".
 // pestaña una sola vez.
 //
 // `rows`: documentos; `dateField`: "fechaVenta" | "fechaCompra"; `columns`: rótulos de
-// la cabecera de la tabla; `noun`: {singular, plural} para "Mostrando X de N ventas".
-function LimitedOperationsTable({columns, dateField, initialExpanded = false, limit = DEFAULT_ROW_LIMIT, noun, onOpen = null, openLabel = "", renderRow, rows, title}) {
+// la cabecera de la tabla; `numericColumns`: posiciones de las columnas de montos (a la derecha,
+// con cifras tabulares; el resto va a la izquierda); `noun`: {singular, plural} para "Mostrando X de N ventas".
+function LimitedOperationsTable({columns, dateField, initialExpanded = false, limit = DEFAULT_ROW_LIMIT, noun, numericColumns = [], onOpen = null, openLabel = "", renderRow, rows, title}) {
   const [expanded, setExpanded] = useState(Boolean(initialExpanded));
   const tableId = useId();
   const sorted = sortByDateDesc(rows, dateField);
@@ -28,7 +29,7 @@ function LimitedOperationsTable({columns, dateField, initialExpanded = false, li
     </div>
     <div className="reports-top-list-table-wrap" id={tableId}>
       <table className="reports-top-list-table">
-        <thead><tr>{columns.map((label) => <th key={label}>{label}</th>)}</tr></thead>
+        <thead><tr>{columns.map((label, index) => <th className={numericColumns.includes(index) ? "is-numeric" : undefined} key={label}>{label}</th>)}</tr></thead>
         <tbody>{view.rows.map(renderRow)}</tbody>
       </table>
     </div>

@@ -6,6 +6,7 @@ import {buildShareBars, countWithoutNet} from "../../../domain/reportFlowOvervie
 import {formatDate, formatMoney} from "../../../utils/formatters";
 import useBusinessFormat from "../../../hooks/useBusinessFormat";
 import FoldedEntityTable from "../FoldedEntityTable";
+import ReportsInfoTip from "../ReportsInfoTip";
 import FoldedTimeline from "../FoldedTimeline";
 import LimitedOperationsTable from "../LimitedOperationsTable";
 import ReportsFlowHeader from "../ReportsFlowHeader";
@@ -32,8 +33,7 @@ function ReportsComprasView({canOpenPurchases, chartGroups, fallbackCurrency = "
 
     {/* SPEC 022 §6.3: el gráfico Ventas vs Compras vive aquí, sin cambios de cálculo. Sin ventas ni compras no se dibuja. */}
     {chartGroupsWithData.length > 0 && <section className="erp-card reports-simple-chart">
-      <div className="reports-section-heading"><div><span>Movimiento comercial</span><h2>Ventas y compras</h2><p>Operaciones confirmadas del período, sin IVA.</p></div></div>
-      <p className="reports-chart-note">Comparar ventas y compras no es ganancia. Las compras incluyen stock que aún no se vende. Cuánto ganas está en la pestaña Ganancia.</p>
+      <div className="reports-section-heading"><div><span>Movimiento comercial</span><h2>Ventas y compras</h2><p>Operaciones confirmadas del período, sin IVA.</p></div><ReportsInfoTip label="Cómo leer Ventas y compras">Comparar ventas y compras no es ganancia. Las compras incluyen stock que aún no se vende. Cuánto ganas está en la pestaña Ganancia.</ReportsInfoTip></div>
       <div className="reports-chart-groups">{chartGroupsWithData.map((group) => <article className="reports-chart-group" key={group.currency}>
         <div className="reports-chart-summary">
           <span>{group.currency}</span>
@@ -59,6 +59,7 @@ function ReportsComprasView({canOpenPurchases, chartGroups, fallbackCurrency = "
 
     <LimitedOperationsTable
       columns={["Número", "Fecha", "Proveedor", "Moneda", "Neto", "Total"]}
+      numericColumns={[4, 5]}
       dateField="fechaCompra"
       noun={{singular: "compra", plural: "compras"}}
       onOpen={canOpenPurchases ? () => navigate("/compras") : null}
@@ -68,8 +69,8 @@ function ReportsComprasView({canOpenPurchases, chartGroups, fallbackCurrency = "
         <td>{formatDate(String(purchase.fechaCompra || "").slice(0, 10), businessLocale)}</td>
         <td>{purchase.proveedorSnapshot?.razonSocial || "Proveedor histórico"}</td>
         <td>{purchase.moneda || purchase.monedaCodigo || "CLP"}</td>
-        <td>{Number.isFinite(purchase.neto) ? formatMoney(purchase.neto, purchase.moneda || purchase.monedaCodigo || "CLP", businessLocale) : "—"}</td>
-        <td>{formatMoney(purchase.total, purchase.moneda || purchase.monedaCodigo || "CLP", businessLocale)}</td>
+        <td className="is-numeric">{Number.isFinite(purchase.neto) ? formatMoney(purchase.neto, purchase.moneda || purchase.monedaCodigo || "CLP", businessLocale) : "—"}</td>
+        <td className="is-numeric">{formatMoney(purchase.total, purchase.moneda || purchase.monedaCodigo || "CLP", businessLocale)}</td>
       </tr>}
       rows={confirmed}
       title="Últimas compras"

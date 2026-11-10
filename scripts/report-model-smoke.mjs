@@ -1110,12 +1110,13 @@ assert.match(profitNoticeSource, /<summary/);
 assert.match(profitNoticeSource, /Parcial · \$\{review\}/);
 assert.match(profitNoticeSource, /onOpenDetail\("ganancias"\)/);
 // Tarjetas: Vendí, Compré y Me quedó (con "Ganancia" de subtítulo). Sin signos ni operadores entre ellas.
-assert.match(monthlyViewSource, /title="Vendí">/);
-assert.match(monthlyViewSource, /title="Compré">/);
+// R6: Vendí y Compré pasan su cifra en la prop `amount` y se cierran solas (antes la cifra iba como hijo).
+assert.match(monthlyViewSource, /title="Vendí" variant="sales" \/>/);
+assert.match(monthlyViewSource, /title="Compré" variant="purchases" \/>/);
 assert.match(monthlyViewSource, /subtitle="Ganancia" title="Me quedó" variant="profit">/);
 assert.doesNotMatch(monthlyViewSource, /\stitle="(Ventas|Compras|Ganancia)"/);
-assert.match(monthlyViewSource, /<\/MonthlyCard>\}\s*\{canViewPurchases && <MonthlyCard/, "entre Vendí y Compré no hay nada");
-assert.match(monthlyViewSource, /<\/MonthlyCard>\}\s*\{canViewProfitability && group\.profit && <MonthlyCard/, "entre Compré y Me quedó no hay nada");
+assert.match(monthlyViewSource, /\/>\}\s*\{canViewPurchases && <MonthlyCard/, "entre Vendí y Compré no hay nada");
+assert.match(monthlyViewSource, /\/>\}\s*\{canViewProfitability && group\.profit && <MonthlyCard/, "entre Compré y Me quedó no hay nada");
 assert.doesNotMatch(monthlyViewSource, />\s*[−=+×÷-]\s*</, "ningún operador suelto entre tarjetas: la ganancia no es ventas menos compras (SPEC 016 §E, 022 §4.3)");
 assert.doesNotMatch(monthlyViewSource, /\{["'`]\s*[−=+×÷-]\s*["'`]\}/);
 // Solo tokens: sin colores ni medidas sueltas en lo nuevo.
@@ -1364,7 +1365,7 @@ assert.match(marginRingSource, /<circle className="reports-ring__track"/);
 {
   const r4Css = readFileSync("src/styles/interior.css", "utf8");
   const r4Summary = readFileSync("src/features/reports/views/ReportsMonthlySummary.jsx", "utf8");
-  assert.match(r4Summary, /const figure = aside\s*\?\s*<div className="reports-profit-card__body"><div className="reports-profit-card__main">\{children\}<\/div>\{aside\}<\/div>\s*:\s*sparkline\s*\?\s*<div className="reports-month-figure">\{children\}\{sparkline\}<\/div>\s*:\s*children;/, "la cifra y su círculo (o su mini-línea, R5), luego el resto a todo el ancho");
+  assert.match(r4Summary, /const figure = aside\s*\?\s*<div className="reports-profit-card__body"><div className="reports-profit-card__main">\{main\}<\/div>\{aside\}<\/div>\s*:\s*sparkline\s*\?\s*<div className="reports-month-figure">\{main\}\{sparkline\}<\/div>\s*:\s*main;/, "la cifra (con su chip, R6) y su círculo o mini-línea, luego el resto a todo el ancho");
   assert.doesNotMatch(r4Summary, /\{aside\}<div className="reports-profit-card__main">/, "el círculo ya no va a la izquierda de la cifra");
   assert.equal((r4Summary.match(/>Ver detalle<\/Button>/g) || []).length, 1, "el botón «Ver detalle» existe una sola vez en el código (un componente, tres tarjetas)");
   assert.match(r4Css, /\.reports-month-bar \{[^}]*display: flex;[^}]*flex-wrap: wrap;/);
@@ -1425,7 +1426,9 @@ assert.match(comprasViewSource, /<LimitedOperationsTable[\s\S]*?dateField="fecha
     assert.equal(countOf(both, />Ventas confirmadas</g), 1, "una sola leyenda en el DOM: la tarjeta de ventas");
     assert.equal(countOf(both, />Compras confirmadas</g), 1, "una sola leyenda en el DOM: la tarjeta de compras");
     assert.equal(countOf(both, /class="reports-chart-summary__dot reports-chart-summary__dot--(sales|purchases)"/g), 2, "cada tarjeta lleva el punto de color de su serie");
-    assert.ok(both.includes('<p class="reports-chart-note">Comparar ventas y compras no es ganancia.') && !both.includes("reports-v4-note"), "la nota del gráfico ya no usa la letra de 11 px");
+    // R6: la nota del gráfico dejó de ser un párrafo siempre visible: el mismo texto vive en el panel del ícono "i" (en el DOM, oculto hasta abrirlo).
+    assert.match(both, /<span class="reports-info__panel" hidden="" id="[^"]*" role="note">Comparar ventas y compras no es ganancia\. Las compras incluyen stock que aún no se vende\. Cuánto ganas está en la pestaña Ganancia\.<\/span>/, "la nota del gráfico sigue en el DOM, dentro del ícono de aclaración");
+    assert.ok(!both.includes("reports-v4-note") && !both.includes("reports-chart-note"), "ni la letra de 11 px ni el párrafo de la nota");
     assert.ok(both.includes("10-09-2026: ventas $1.000, compras $0") && both.includes("12-09-2026: ventas $0, compras $400"), "los días se rotulan con formatDate");
     const {default: ComparisonChart} = await comprasVite.ssrLoadModule("/src/components/reports/OperationalComparisonChart.jsx");
     const chartItems = [{key: "2026-09-10", currency: "CLP", sales: 1000, purchases: 0}];
@@ -1468,7 +1471,7 @@ console.log("OK reportes Compras (limpieza): un solo mensaje de vacío, gráfico
   assert.match(r1Css, /\.reports-simple-chart \.operational-comparison-chart--report \{\s*height: clamp\(220px, 24vw, 300px\);\s*width: 100%;\s*\}/);
   assert.doesNotMatch(r1Css, /\.reports-simple-chart \.operational-comparison-chart \{/, "sin reglas de alto para el gráfico sin variante dentro de Reportes");
   assert.match(r1Css, /\.operational-comparison-chart \{\s*height: 300px;\s*min-width: 0;\s*position: relative;\s*\}/, "la regla base (Dashboard) no cambia");
-  assert.match(r1Css, /\.reports-chart-note \{[^}]*font-size: var\(--font-size-sm\);/, "la nota usa un tamaño de token");
+  assert.doesNotMatch(r1Css, /\.reports-chart-note/, "R6: la nota del gráfico pasó al ícono \"i\"; su estilo de párrafo ya no existe");
   assert.match(r1Css, /\.reports-chart-summary dt \{[^}]*font-size: var\(--font-size-xs\);/, "la leyenda (tarjetas) usa un tamaño de token");
   assert.doesNotMatch(comprasViewSource, /reports-v4-note/);
 }
@@ -1895,7 +1898,10 @@ console.log("OK reportes (ganancia visual, bloque 2): Me quedó con chip Parcial
   assert.match(foldBreakdownSource, /export function ServicesWithoutCostNote\(\{group\}\)/);
   assert.equal((foldBreakdownSource.match(/No incluye gastos generales del negocio/g) || []).length, 1, "la nota existe una sola vez");
   assert.equal((foldBreakdownSource.match(/Ventas sin costo registrado:/g) || []).length, 1, "la línea de ventas sin costo existe una sola vez");
-  assert.match(readFileSync("src/features/reports/ProfitSummaryCards.jsx", "utf8"), /<ProfitNote \/>\s*<ServicesWithoutCostNote group=\{group\} \/>/);
+  // R6: la nota fija pasó a un ícono "i" junto al título "Me quedó"; "Ventas sin costo registrado" es un aviso y sigue visible bajo la barra.
+  const foldCardsSource = readFileSync("src/features/reports/ProfitSummaryCards.jsx", "utf8");
+  assert.match(foldCardsSource, /<\/h2>\s*<ProfitNote \/>/, "la nota fija va en el ícono junto al título");
+  assert.match(foldCardsSource, /<div className="reports-profit-hero__notes">\s*<ServicesWithoutCostNote group=\{group\} \/>\s*<\/div>/, "el aviso de ventas sin costo sigue a la vista");
   // Vista: el cálculo plegado y cerrado por defecto, después de la evolución; el mes actual llega desde la página.
   assert.match(foldViewSource, /<details className="reports-calc-details">\s*<summary className="reports-calc-details__summary">\s*<span>Ver el cálculo paso a paso<\/span>/);
   assert.doesNotMatch(foldViewSource, /<details[^>]*\bopen\b/, "cerrado por defecto");
@@ -2264,7 +2270,7 @@ console.log("OK reportes (ventas y compras, bloque 1): helpers de cabecera, orde
 
     // Ventas con las cifras de la maqueta (octubre de 2026).
     const ventas = renderVentas([mockupSale]);
-    for (const text of [">Vendí<", "$143.089", "1 venta confirmada · sin IVA", "¿De dónde vienen mis ventas?", "Ángulo laminado 50x50x4x6.000 mm", "$62.430", "43,6 %", "2 unidades", "2 horas · servicio", "$8.976", "6,3 %", "4,4 %", "3,8 %", "Últimas ventas", "VTA-2026-0002", "<th>Neto</th><th>Total</th>", "Ver los principales clientes (1)", "Ver la evolución por día (1)", "Ir a Ventas"]) {
+    for (const text of [">Vendí<", "$143.089", "1 venta confirmada · sin IVA", "¿De dónde vienen mis ventas?", "Ángulo laminado 50x50x4x6.000 mm", "$62.430", "43,6 %", "2 unidades", "2 horas · servicio", "$8.976", "6,3 %", "4,4 %", "3,8 %", "Últimas ventas", "VTA-2026-0002", "<th class=\"is-numeric\">Neto</th><th class=\"is-numeric\">Total</th>", "Ver los principales clientes (1)", "Ver la evolución por día (1)", "Ir a Ventas"]) {
       assert.ok(ventas.includes(text), `Ventas: falta ${text}`);
     }
     assert.doesNotMatch(ventas, /reports-flow-header__currency|Aún no hay ventas|Mostrando|operación\(es\)|Cantidad de ventas|Detalle de Ventas|Otros productos|descuento general/, "una moneda, con datos, sin avisos de más");
@@ -2322,7 +2328,7 @@ console.log("OK reportes (ventas y compras, bloque 1): helpers de cabecera, orde
       })));
     };
     const compras = renderCompras([vcSale(1, "2026-10-02")], mockupPurchases);
-    for (const text of [">Compré<", "$412.300", "3 compras confirmadas · sin IVA", "¿A quién le compré?", "Proveedor A", "50,9 %", "$210.000", "31,1 %", "17,9 %", "reports-share-bars--purchases", "Movimiento comercial", "Comparar ventas y compras no es ganancia.", "Últimas compras", "COM-0003", "Ver los productos adquiridos (3)", "Ver la evolución por día (3)", "<th>Neto</th><th>Total</th>", "Ir a Compras"]) {
+    for (const text of [">Compré<", "$412.300", "3 compras confirmadas · sin IVA", "¿A quién le compré?", "Proveedor A", "50,9 %", "$210.000", "31,1 %", "17,9 %", "reports-share-bars--purchases", "Movimiento comercial", "Comparar ventas y compras no es ganancia.", "Últimas compras", "COM-0003", "Ver los productos adquiridos (3)", "Ver la evolución por día (3)", "<th class=\"is-numeric\">Neto</th><th class=\"is-numeric\">Total</th>", "Ir a Compras"]) {
       assert.ok(compras.includes(text), `Compras: falta ${text}`);
     }
     assert.equal(vcCount(compras, /Incluye stock que aún no vendes\. No cuentan las revertidas ni las canceladas\./g), 1, "la nota va una sola vez, en la cabecera");
@@ -2397,9 +2403,12 @@ console.log("OK reportes (ventas y compras, bloque 2): cabecera, barras por prod
     assert.ok(ventas.indexOf("$1.000") < ventas.indexOf("confirmada") && ventas.indexOf("confirmada") < ventas.indexOf(salesNote), "Ventas: cifra, conteo y, debajo, qué incluye");
     assert.ok(compras.indexOf("$1.000") < compras.indexOf("confirmadas") && compras.indexOf("confirmadas") < compras.indexOf(purchasesNote), "Compras: cifra, conteo y, debajo, qué incluye");
     const headerHtml = render(FlowHeader, {kind: "sales", count: 1, currency: "CLP", total: 1000, note: salesNote});
-    assert.match(headerHtml, /<div class="reports-flow-header__main">[\s\S]*reports-flow-header__caption[\s\S]*<p class="reports-flow-header__note">[^<]+<\/p><\/div>/, "la nota vive dentro del bloque de la cifra, no a un lado");
+    // R6: la nota pasó a un ícono "i" pegado al conteo (misma fila), con el texto intacto en el panel del ícono.
+    assert.match(headerHtml, /<div class="reports-flow-header__main">[\s\S]*<div class="reports-flow-header__caption-row"><span class="reports-flow-header__caption">1 venta confirmada · sin IVA<\/span><span class="reports-info reports-flow-header__note"><button [^>]*aria-label="Qué incluye Vendí"[^>]*>[\s\S]*?<\/button><span class="reports-info__panel" hidden="" id="[^"]*" role="note">Incluye servicios y ventas con proyecto\. No cuentan las canceladas\.<\/span><\/span><\/div><\/div>/, "la nota vive junto al conteo, dentro del bloque de la cifra, y su texto sigue en el DOM");
+    assert.doesNotMatch(headerHtml, /<p class="reports-flow-header__note">/, "ya no es un párrafo siempre visible");
     assert.doesNotMatch(r2Css, /\.reports-flow-header__note \{[^}]*text-align: right/, "ya no va alineada a la derecha");
-    assert.match(r2Css, /\.reports-flow-header__note \{[^}]*font-size: var\(--font-size-xs\);[^}]*max-width: 40rem;/);
+    assert.match(r2Css, /\.reports-flow-header__caption-row \{[^}]*display: flex;[^}]*flex-wrap: wrap;/, "R6: el conteo y su ícono en una fila");
+    assert.match(r2Css, /\.reports-flow-header__note \{\s*flex: 0 0 auto;\s*\}/);
     for (const text of [MONTHLY_EXPLANATIONS.sales, MONTHLY_EXPLANATIONS.purchases, MONTHLY_EXPLANATIONS.profit]) assert.ok(text.length <= 105, `corta: ${text}`);
     assert.match(MONTHLY_EXPLANATIONS.sales, /canceladas/);
     assert.match(MONTHLY_EXPLANATIONS.purchases, /stock que aún no vendes/);
@@ -2525,16 +2534,16 @@ console.log("OK reportes R2 y R3: fechas dd-mm-aaaa, qué incluye cada cifra, no
     // 2. Chip de variación: mes cerrado con base. Vendí sube (verde), Compré baja (neutro con flecha), Me quedó baja (rojo).
     const closed = screen("2026-09");
     const [soldCard, boughtCard, profitCard] = cardsOf(closed);
-    assert.match(soldCard, /<span class="ui-status-badge ui-status-badge--success reports-month-chip reports-month-chip--up"><svg[\s\S]*?<\/svg>\+500 %<\/span><span>frente al mes anterior<\/span>/, "Vendí: +X % en verde");
-    assert.match(boughtCard, /<span class="ui-status-badge ui-status-badge--neutral reports-month-chip reports-month-chip--down"><svg[\s\S]*?<\/svg>-50 %<\/span><span>frente al mes anterior<\/span>/, "Compré: neutro, con la flecha del sentido");
+    assert.match(soldCard, /<span class="ui-status-badge ui-status-badge--success reports-month-chip reports-month-chip--up"><svg[\s\S]*?<\/svg>\+500 %<span class="sr-only"> frente al mes anterior<\/span><\/span>/, "Vendí: +X % en verde");
+    assert.match(boughtCard, /<span class="ui-status-badge ui-status-badge--neutral reports-month-chip reports-month-chip--down"><svg[\s\S]*?<\/svg>-50 %<span class="sr-only"> frente al mes anterior<\/span><\/span>/, "Compré: neutro, con la flecha del sentido");
     assert.doesNotMatch(boughtCard, /ui-status-badge--(success|danger)/, "en Compré subir o bajar no es bueno ni malo");
-    assert.match(profitCard, /<span class="ui-status-badge ui-status-badge--danger reports-month-chip reports-month-chip--down"><svg[\s\S]*?<\/svg>-50 %<\/span><span>frente al mes anterior<\/span>/, "Me quedó: -X % en rojo");
+    assert.match(profitCard, /<span class="ui-status-badge ui-status-badge--danger reports-month-chip reports-month-chip--down"><svg[\s\S]*?<\/svg>-50 %<span class="sr-only"> frente al mes anterior<\/span><\/span>/, "Me quedó: -X % en rojo");
     assert.equal(count(closed, /reports-month-chip /g), 3, "un chip por tarjeta");
     const flat = cardsOf(screen("2026-09", {salesList: [sale("2026-08-10", 1000), sale("2026-09-03", 1000)]}))[0];
-    assert.match(flat, /ui-status-badge--neutral reports-month-chip reports-month-chip--flat"><svg[\s\S]*?<\/svg>0 %<\/span>/, "sin variación: chip neutro");
+    assert.match(flat, /ui-status-badge--neutral reports-month-chip reports-month-chip--flat"><svg[\s\S]*?<\/svg>0 %<span class="sr-only"> frente al mes anterior<\/span><\/span>/, "sin variación: chip neutro");
     // Compré que sube también es neutro.
     const boughtUp = cardsOf(screen("2026-09", {purchasesList: [purchase("2026-08-05", 100), purchase("2026-09-05", 500)]}))[1];
-    assert.match(boughtUp, /ui-status-badge--neutral reports-month-chip reports-month-chip--up"><svg[\s\S]*?<\/svg>\+400 %<\/span>/);
+    assert.match(boughtUp, /ui-status-badge--neutral reports-month-chip reports-month-chip--up"><svg[\s\S]*?<\/svg>\+400 %<span class="sr-only"> frente al mes anterior<\/span><\/span>/);
     // Sin mes anterior no hay chip (queda el aviso). Mes en curso: tampoco, el módulo no calcula porcentaje.
     const noBase = screen("2026-08", {previousProfit: {status: "ready", error: "", result: {grupos: []}}});
     assert.doesNotMatch(noBase, /reports-month-chip/, "sin mes anterior no hay chip");
@@ -2542,11 +2551,11 @@ console.log("OK reportes R2 y R3: fechas dd-mm-aaaa, qué incluye cada cifra, no
     const inProgress = screen("2026-10", {salesList: [...sales, sale("2026-10-02", 500)]});
     assert.doesNotMatch(inProgress, /reports-month-chip/, "mes en curso: sin porcentaje, como decide el módulo");
     assert.ok(inProgress.includes("Septiembre completo: $6.000"), "y conserva la referencia del mes anterior completo");
-    assert.match(r5SummarySource, /\{canViewPurchases && <MonthlyCard chipTone="neutral"/, "solo Compré pide el chip neutro");
+    assert.match(r5SummarySource, /canViewPurchases && <MonthlyCard[^\n]*chipTone="neutral"/, "solo Compré pide el chip neutro");
     assert.equal(count(r5SummarySource, /chipTone="neutral"/g), 1);
 
     // 3. Mini-línea: solo con 3 o más puntos, sin ejes ni leyenda; Me quedó no lleva (no hay ganancia por día).
-    assert.match(soldCard, /<div class="reports-month-figure"><strong class="reports-simple-card__amount">\$6\.000<\/strong><svg class="reports-sparkline reports-sparkline--sales" viewBox="0 0 100 28" preserveAspectRatio="none" role="img" aria-label="Ventas por día en el mes: 3 días con movimiento, de \$1\.000 el 03-09-2026 a \$3\.000 el 20-09-2026\." focusable="false"><polyline class="reports-sparkline__line" points="3,25 50,14 97,3"><\/polyline><\/svg><\/div>/);
+    assert.match(soldCard, /<div class="reports-month-figure"><div class="reports-month-amount-row"><strong class="reports-simple-card__amount">\$6\.000<\/strong><span class="ui-status-badge[^"]*"[\s\S]*?<\/span><\/span><\/div><svg class="reports-sparkline reports-sparkline--sales" viewBox="0 0 100 28" preserveAspectRatio="none" role="img" aria-label="Ventas por día en el mes: 3 días con movimiento, de \$1\.000 el 03-09-2026 a \$3\.000 el 20-09-2026\." focusable="false"><polyline class="reports-sparkline__line" points="3,25 50,14 97,3"><\/polyline><\/svg><\/div>/);
     assert.doesNotMatch(boughtCard, /reports-sparkline|reports-month-figure/, "Compré con 2 puntos: nada");
     assert.doesNotMatch(profitCard, /reports-sparkline/, "Me quedó no lleva mini-línea");
     assert.equal(count(closed, /<svg class="reports-sparkline/g), 1);
@@ -2588,4 +2597,152 @@ console.log("OK reportes R2 y R3: fechas dd-mm-aaaa, qué incluye cada cifra, no
   }
 }
 console.log("OK reportes R5: gráfico de línea del mes en el Resumen, chip de variación por tarjeta, mini-línea con 3 o más puntos y Dashboard sin cambios");
+// R6 de Reportes: aclaraciones en un ícono "i", tarjetas KPI con franja y chip junto a la cifra, pieza protagonista, tablas y selector de período.
+{
+  const r6Css = readFileSync("src/styles/interior.css", "utf8");
+  const tipSource = readFileSync("src/features/reports/ReportsInfoTip.jsx", "utf8");
+  const r6Page = readFileSync("src/pages/StatisticsPage.jsx", "utf8");
+  const r6Summary = readFileSync("src/features/reports/views/ReportsMonthlySummary.jsx", "utf8");
+  const count = (text, pattern) => (text.match(pattern) || []).length;
+  const {MONTHLY_SHORT_NOTES} = await import("../src/domain/reportMonthlySummary.mjs");
+  const {REPORT_PERIOD_OPTIONS} = await import("../src/domain/reportModel.mjs");
+
+  // --- 1. Aclaraciones: botón real, foco, aria, Escape; el texto nunca se pierde ---
+  assert.match(tipSource, /<button[\s\S]*?aria-controls=\{panelId\}[\s\S]*?aria-describedby=\{panelId\}[\s\S]*?aria-expanded=\{open\}[\s\S]*?aria-label=\{label\}[\s\S]*?type="button"/, "botón real con nombre accesible y descripción");
+  assert.match(tipSource, /event\.key !== "Escape"[\s\S]*?close\(\);[\s\S]*?buttonRef\.current\?\.focus\(\);/, "Escape cierra y devuelve el foco al botón");
+  assert.match(tipSource, /hidden=\{!open\}/, "el texto vive siempre en el DOM; oculto mientras está cerrado");
+  assert.match(tipSource, /pointerdown/, "un clic fuera lo cierra");
+  assert.doesNotMatch(tipSource, /from "(?!react"|lucide-react")/, "sin librerías nuevas: solo React y los íconos que ya están");
+  assert.doesNotMatch(tipSource, /#[0-9a-fA-F]{3,8}[^0-9a-zA-Z]|rgba?\(|hsla?\(/, "sin colores literales");
+  assert.match(r6Css, /\.reports-info \.reports-info__button:focus-visible \{\s*outline: var\(--focus-outline\);/, "foco visible por teclado");
+  assert.match(r6Css, /\.reports-info__panel \{[^}]*position: fixed;[^}]*z-index: var\(--z-dialog\);/, "el panel no lo recortan las tarjetas");
+  assert.match(r6Css, /\.reports-info__panel\[hidden\] \{\s*display: none;/);
+  assert.match(r6Css, /\.reports-info__panel \{[^}]*box-shadow: var\(--shadow-lg\);/, "sombra con token");
+
+  const r6Vite = await createServer({appType: "custom", logLevel: "silent", server: {middlewareMode: true}});
+  try {
+    const render = (component, props) => plain(renderToStaticMarkup(React.createElement(component, props)));
+    const [{default: InfoTip}, {default: Summary}, {default: FlowHeader}, {default: VentasView}, {default: TrendView}, breakdown] = await Promise.all([
+      r6Vite.ssrLoadModule("/src/features/reports/ReportsInfoTip.jsx"),
+      r6Vite.ssrLoadModule("/src/features/reports/views/ReportsMonthlySummary.jsx"),
+      r6Vite.ssrLoadModule("/src/features/reports/ReportsFlowHeader.jsx"),
+      r6Vite.ssrLoadModule("/src/features/reports/views/ReportsVentasView.jsx"),
+      r6Vite.ssrLoadModule("/src/features/reports/views/ReportsMonthlyTrend.jsx"),
+      r6Vite.ssrLoadModule("/src/features/reports/OperationalNetProfitBreakdown.jsx"),
+    ]);
+
+    const tip = render(InfoTip, {label: "Qué incluye X", children: "Texto completo de la aclaración."});
+    assert.match(tip, /^<span class="reports-info"><button aria-controls="[^"]+" aria-describedby="[^"]+" aria-expanded="false" aria-label="Qué incluye X" class="reports-info__button" type="button"><svg[\s\S]*?<\/svg><\/button><span class="reports-info__panel" hidden="" id="[^"]+" role="note">Texto completo de la aclaración\.<\/span><\/span>$/, "cerrado: botón accesible y texto oculto pero en el DOM");
+    assert.match(render(InfoTip, {label: "x", className: "extra", children: "t"}), /^<span class="reports-info extra">/);
+
+    // Tarjetas del Resumen: el texto completo de cada cifra está en su ícono y a la vista solo "Sin IVA".
+    const range = getMonthRange("2026-09");
+    const sale = (date, neto) => ({estado: "confirmada", moneda: "CLP", fechaVenta: date, neto, total: neto, items: []});
+    const purchase = (date, neto) => ({estado: "confirmada", moneda: "CLP", fechaCompra: date, neto, total: neto, proveedorSnapshot: {razonSocial: "Proveedor Uno"}});
+    const sales = [sale("2026-08-10", 1000), sale("2026-09-03", 1000), sale("2026-09-10", 2000), sale("2026-09-20", 3000)];
+    const purchases = [purchase("2026-08-05", 2000), purchase("2026-09-05", 500), purchase("2026-09-12", 500)];
+    const summaryOf = (month, salesList = sales, purchasesList = purchases) => getSimplifiedReportSummary({sales: salesList, purchases: purchasesList, projectBalances: [], range: getMonthRange(month)});
+    const screen = (month, {profit = readyProfit(300), previousProfit = readyProfit(600), salesList = sales, purchasesList = purchases, ...extra} = {}) => {
+      const current = summaryOf(month, salesList, purchasesList);
+      const salesTimeline = aggregateOperationalTimeline(current.sales.confirmed, {range: getMonthRange(month), dateField: "fechaVenta"});
+      const purchaseTimeline = aggregateOperationalTimeline(current.purchases.confirmed, {range: getMonthRange(month), dateField: "fechaCompra"});
+      return plain(renderToStaticMarkup(React.createElement(Summary, {
+        canRegisterPurchase: true, canRegisterSale: true, canViewProfitability: true, canViewPurchases: true, canViewSales: true,
+        currency: "todos", links: {sales: true, purchases: true, works: true}, month,
+        onMonthChange: () => {}, onNavigate: () => {}, onOpenDetail: () => {}, onRetryProfit: () => {},
+        operationalTimeline: combineOperationalTimelines(salesTimeline, purchaseTimeline), purchaseTimeline, salesTimeline,
+        previousProfit, previousSummary: summaryOf(shiftMonthKey(month, -1), salesList, purchasesList),
+        profit, projects: {status: "ready", error: "", meta: {proyectos: [], fallidos: []}}, summary: current, todayKey: "2026-10-15", ...extra,
+      })));
+    };
+    const cardsOf = (html) => html.split('<article class="reports-simple-card ').slice(1).map((card) => card.slice(0, card.indexOf("</article>")));
+    const closed = screen("2026-09");
+    const [soldCard, boughtCard, profitCard] = cardsOf(closed);
+    for (const [card, label, text] of [[soldCard, "Qué incluye Vendí", MONTHLY_EXPLANATIONS.sales], [boughtCard, "Qué incluye Compré", MONTHLY_EXPLANATIONS.purchases], [profitCard, "Qué incluye Me quedó", MONTHLY_EXPLANATIONS.profit]]) {
+      assert.ok(card.includes(`aria-label="${label}"`), `${label}: botón con nombre accesible`);
+      assert.equal(count(card, new RegExp(`role="note">${text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}</span>`, "g")), 1, `${label}: el texto completo sigue en el DOM, una vez, dentro del ícono`);
+      assert.doesNotMatch(card, /<small>[^<]*(Confirmadas|No cuentan|stock|servicios)/, `${label}: la frase larga ya no está a la vista`);
+      assert.match(card, /<small>Sin IVA<\/small>/, `${label}: queda a la vista solo la frase corta`);
+    }
+    assert.deepEqual([soldCard, boughtCard, profitCard].map((card) => count(card, /class="reports-info__button"/g)), [1, 1, 1], "un ícono por tarjeta");
+    assert.equal(count(closed, /class="reports-info__button"/g), 4, "tres tarjetas y el gráfico de línea, cada uno con el suyo");
+    assert.deepEqual(MONTHLY_SHORT_NOTES, {sales: "Sin IVA", purchases: "Sin IVA", profit: "Sin IVA"});
+    assert.ok(MONTHLY_EXPLANATIONS.sales.length > 0 && MONTHLY_EXPLANATIONS.purchases.length > 0 && MONTHLY_EXPLANATIONS.profit.length > 0, "los textos completos no se alteran ni se pierden");
+
+    // Cabeceras de Ventas y Compras, gráfico de Compras y evolución del mes: textos intactos en su ícono; los avisos de datos faltantes siguen visibles.
+    const flowHtml = render(FlowHeader, {kind: "purchases", count: 2, currency: "CLP", total: 500, note: "Incluye stock que aún no vendes. No cuentan las revertidas ni las canceladas.", withoutNetCount: 1});
+    assert.match(flowHtml, /aria-label="Qué incluye Compré"/);
+    assert.match(flowHtml, /<p class="reports-flow-header__warning"><svg[\s\S]*?<\/svg><span>1 compra sin neto válido no suma en este total\.<\/span><\/p>/, "el aviso de datos faltantes sigue visible");
+    assert.match(closed, /<p class="reports-trend__caption">Confirmadas por día, sin IVA\.<span class="reports-info">[\s\S]*?aria-label="Cómo leer la evolución del mes"[\s\S]*?role="note">Solo aparecen los días con movimiento\. La ganancia se ve por mes en la pestaña Ganancia\.<\/span><\/span><\/p>/, "evolución: lo esencial a la vista y el resto en el ícono");
+    const comprasSource = readFileSync("src/features/reports/views/ReportsComprasView.jsx", "utf8");
+    assert.match(comprasSource, /<ReportsInfoTip label="Cómo leer Ventas y compras">Comparar ventas y compras no es ganancia\. Las compras incluyen stock que aún no se vende\. Cuánto ganas está en la pestaña Ganancia\.<\/ReportsInfoTip>/, "la nota del gráfico: mismo texto, en el ícono");
+    const noteHtml = renderToStaticMarkup(React.createElement(breakdown.ProfitNote));
+    assert.match(noteHtml, /aria-label="Qué incluye la ganancia"/);
+    assert.ok(plain(noteHtml).includes("Ventas sin IVA menos sus costos, en productos y proyectos. No incluye gastos generales del negocio."), "la nota de Ganancia no cambia, solo dónde se ve");
+    const servicesHtml = renderToStaticMarkup(React.createElement(breakdown.ServicesWithoutCostNote, {group: {moneda: "CLP", ventasSinCostoRegistrado: {ventas: 1, monto: 60000}}}));
+    assert.match(plain(servicesHtml), /^<p class="reports-v4-note">Ventas sin costo registrado: \$60\.000, servicios vendidos sin proyecto\. No entran en la ganancia\.<\/p>$/, "«Ventas sin costo registrado» es un aviso de datos faltantes: sigue visible");
+    assert.match(screen("2026-09", {profit: readyProfit(300, "PARCIAL")}), /<summary class="reports-profit-notice__chip">[\s\S]*?Parcial · \d+ cosas? por revisar/, "el aviso de ganancia parcial sigue visible");
+
+    // --- 2. KPI: franja de acento por cifra, cifra más grande, chip junto a la cifra, color por signo ---
+    assert.deepEqual(cardsOf(closed).map((card) => card.slice(0, card.indexOf('"'))), ["reports-simple-card--sales", "reports-simple-card--purchases", "reports-simple-card--profit"]);
+    const visualR6 = r6Css.slice(r6Css.indexOf("/* Resumen visual (SPEC 025)"), r6Css.indexOf(".reports-simple-eyebrow,"));
+    assert.match(visualR6, /\.reports-simple-metrics--visual > \.reports-simple-card::after \{[^}]*bottom: auto;[^}]*opacity: 1;[^}]*top: 0;/, "franja arriba, en las tres");
+    assert.match(visualR6, /\.reports-simple-card--sales::after \{\s*background: var\(--color-text-brand-accent\);/, "ventas teal");
+    assert.match(visualR6, /\.reports-simple-card--purchases::after \{\s*background: var\(--color-data-expense\);/, "compras azul");
+    assert.match(visualR6, /\.reports-simple-card--profit::after \{\s*background: var\(--color-success-700\);/, "ganancia verde");
+    assert.match(visualR6, /\.reports-simple-metrics--visual \.reports-simple-card__amount \{[^}]*font-size: clamp\(1\.625rem, 2\.6vw, 2\.25rem\);/, "cifra más grande que la anterior (1,35 a 1,75 rem)");
+    for (const card of [soldCard, boughtCard, profitCard]) {
+      assert.match(card, /<div class="reports-month-amount-row">[\s\S]*?class="reports-simple-card__amount[\s\S]*?class="ui-status-badge[^"]*reports-month-chip[\s\S]*?<\/div>/, "el chip está en la misma fila que la cifra");
+    }
+    const grown = cardsOf(screen("2026-09", {profit: readyProfit(900), previousProfit: readyProfit(600)}))[2];
+    assert.match(grown, /reports-simple-card__amount reports-profit-card__amount--up/, "ganancia positiva en verde");
+    assert.match(grown, /ui-status-badge--success[^"]*reports-month-chip--up/, "y su chip, en verde");
+    const loss = cardsOf(screen("2026-09", {profit: readyProfit(-200), previousProfit: readyProfit(600)}))[2];
+    assert.match(loss, /reports-simple-card__amount reports-profit-card__amount--down/, "ganancia negativa en rojo");
+    assert.match(loss, /ui-status-badge--danger[^"]*reports-month-chip--down/, "y su chip, en rojo");
+    assert.match(visualR6, /\.reports-profit-card__amount--up \{\s*color: var\(--color-success-700\);/);
+    assert.match(visualR6, /\.reports-profit-card__amount--down \{\s*color: var\(--color-danger-700\);/);
+    assert.equal(count(closed, /class="reports-simple-card reports-simple-card--(sales|purchases|profit)"/g), 3, "misma estructura en las tres");
+    assert.ok(r6Summary.includes('variant="sales"') && r6Summary.includes('variant="purchases"') && r6Summary.includes('variant="profit"'));
+
+    // --- 3. Pieza protagonista: justo después de las tarjetas, con título claro ---
+    assert.ok(closed.indexOf("</article></div>") < closed.indexOf('<h2 class="reports-trend__title">Evolución del mes</h2>') && closed.indexOf('<h2 class="reports-trend__title">Evolución del mes</h2>') < closed.indexOf("reports-month-projects"), "Resumen: el gráfico va justo después de las tarjetas");
+    assert.match(r6Css, /\.reports-trend__title \{[^}]*font-size: var\(--font-size-xl\);/, "título de sección claro (Resumen)");
+    assert.match(r6Css, /\.reports-simple-chart \.reports-section-heading h2 \{\s*font-size: var\(--font-size-xl\);/, "título de sección claro (Compras)");
+    assert.ok(comprasSource.indexOf("<ReportsFlowHeader") < comprasSource.indexOf('<section className="erp-card reports-simple-chart">') && comprasSource.indexOf('<section className="erp-card reports-simple-chart">') < comprasSource.indexOf("<ReportsShareBars") && comprasSource.indexOf('<section className="erp-card reports-simple-chart">') < comprasSource.indexOf("<LimitedOperationsTable"), "Compras: el gráfico va justo después de la cabecera, antes de proveedores y tablas");
+
+    // --- 4. Tablas: encabezado con peso, hover, montos a la derecha en tabular, sin orden inventado ---
+    assert.match(r6Css, /\.reports-top-list-table th \{[^}]*background: var\(--color-surface-subtle\);[^}]*border-bottom: 1px solid var\(--color-border-default\);[^}]*font-weight: var\(--font-weight-bold\);/, "encabezado con peso, fondo sutil y borde");
+    assert.match(r6Css, /\.reports-top-list-table tbody tr:hover > td,\s*\.reports-top-list-table tbody tr:hover > th \{\s*background: var\(--color-surface-hover\);/, "filas con hover");
+    assert.match(r6Css, /\.reports-limited-table \.reports-top-list-table \.is-numeric \{[^}]*font-variant-numeric: tabular-nums;[^}]*text-align: right;/, "montos a la derecha, en tabular");
+    assert.match(r6Css, /\.reports-limited-table \.reports-top-list-table td:not\(\.is-numeric\) \{\s*text-align: left;/, "el resto, a la izquierda");
+    const saleDoc = {ventaId: "v1", numero: "VTA-1", estado: "confirmada", moneda: "CLP", fechaVenta: "2026-10-02", neto: 1000, total: 1190, clienteSnapshot: {nombreRazonSocial: "Cliente Uno"}, items: []};
+    const sumR6 = getSimplifiedReportSummary({sales: [saleDoc], purchases: [], projectBalances: [], range: {start: "2026-10-01", end: "2026-10-31", days: 31}});
+    const ventas = render(VentasView, {canOpenSales: true, navigate: () => {}, salesTimeline: [], summary: sumR6, topSalesClients: [], topSalesProducts: []});
+    assert.match(ventas, /<th>Número<\/th><th>Fecha<\/th><th>Cliente<\/th><th>Moneda<\/th><th class="is-numeric">Neto<\/th><th class="is-numeric">Total<\/th>/, "las mismas seis columnas; solo Neto y Total son numéricas");
+    assert.match(ventas, /<td>VTA-1<\/td><td>02-10-2026<\/td><td>Cliente Uno<\/td><td>CLP<\/td><td class="is-numeric">\$1\.000<\/td><td class="is-numeric">\$1\.190<\/td>/, "mismos datos de la fila");
+    const tableSource = readFileSync("src/features/reports/LimitedOperationsTable.jsx", "utf8");
+    assert.doesNotMatch(tableSource, /aria-sort|<th[^>]*onClick/, "sin orden clicable: esa lógica no existe y no se inventó");
+
+    // --- 5. Selector de período junto al título de la pestaña ---
+    assert.match(r6Page, /\{!isSummary && <div className="reports-period-bar">\s*<div className="reports-period-bar__title">\s*<h2>\{REPORT_VIEWS\.find\(\(view\) => view\.id === vista\)\?\.label\}<\/h2>\s*<p>\{formatDate\(periodRange\.start, formatLocale\)\} al \{formatDate\(periodRange\.end, formatLocale\)\}<\/p>\s*<\/div>\s*<FinancialPeriodSelector /, "título de la pestaña, rango en dd-mm-aaaa y el selector");
+    assert.equal(count(r6Page, /<FinancialPeriodSelector /g), 1, "el selector existe una sola vez");
+    assert.ok(r6Page.indexOf("<ReportsNav") < r6Page.indexOf('className="reports-period-bar"') && r6Page.indexOf('className="reports-period-bar"') < r6Page.indexOf("{loading && !error"), "bajo las pestañas y antes del contenido");
+    assert.match(r6Page, /<div className="reports-simple-toolbar">\s*\{showCurrencyControls && <label className="erp-field reports-simple-currency">/, "la barra superior conserva solo el selector de moneda");
+    assert.match(r6Css, /\.reports-period-bar \{[^}]*background: var\(--color-surface-panel\);[^}]*border: 1px solid var\(--color-border-subtle\);/);
+    assert.match(r6Css, /\.reports-period-bar__title h2 \{[^}]*font-size: var\(--font-size-xl\);/);
+    assert.deepEqual(REPORT_PERIOD_OPTIONS.map((option) => option.id), ["week", "month", "three_months", "six_months", "year", "custom"], "los mismos períodos de siempre: no se agregaron filtros");
+
+    // --- Colores: solo tokens en lo nuevo ---
+    const r6Start = r6Css.indexOf("/* Aclaraciones en un ícono");
+    const r6Block = r6Css.slice(r6Start, r6Css.indexOf(".reports-simple-eyebrow,", r6Start));
+    assert.ok(r6Start > -1 && r6Block.length > 2000);
+    assert.doesNotMatch(r6Block, /#[0-9a-fA-F]{3,8}[^0-9a-zA-Z]|rgba?\(|hsla?\(|--color-brand-[6-9]00|--color-dark-/, "solo tokens semánticos");
+    // Dashboard: nada de esto.
+    assert.doesNotMatch(dashboardSource, /ReportsInfoTip|reports-info|reports-period-bar|reports-month-amount-row/, "el Dashboard no cambia");
+  } finally {
+    await r6Vite.close();
+  }
+}
+console.log("OK reportes R6: aclaraciones en ícono, tarjetas KPI con franja y chip junto a la cifra, pieza protagonista, tablas legibles y selector de período junto al título");
 console.log("Report model smoke: OK");

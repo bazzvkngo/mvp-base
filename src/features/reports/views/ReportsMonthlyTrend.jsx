@@ -1,6 +1,7 @@
 import React from "react";
 import OperationalTrendChart, {TREND_SERIES} from "../../../components/reports/OperationalTrendChart";
 import {NOT_ENOUGH_TREND_TEXT, hasEnoughTrendPoints, trendItemsFor} from "../../../domain/reportTrend.mjs";
+import ReportsInfoTip from "../ReportsInfoTip";
 
 // Evolución del mes en el Resumen (R5): ventas y compras confirmadas por día, sin IVA,
 // en una línea a todo el ancho. Usa la misma serie del gráfico de barras de Compras
@@ -24,7 +25,9 @@ function ReportsMonthlyTrend({canViewPurchases, canViewSales, currency, items, s
     <div className="reports-trend__heading">
       <div>
         <h2 className="reports-trend__title">{title}</h2>
-        <p className="reports-trend__caption">Confirmadas por día, sin IVA. Solo aparecen los días con movimiento. La ganancia se ve por mes en la pestaña Ganancia.</p>
+        <p className="reports-trend__caption">Confirmadas por día, sin IVA.
+          <ReportsInfoTip label="Cómo leer la evolución del mes">Solo aparecen los días con movimiento. La ganancia se ve por mes en la pestaña Ganancia.</ReportsInfoTip>
+        </p>
       </div>
       <ul className="reports-trend__legend">
         {series.map((id) => <li key={id}>

@@ -1696,11 +1696,16 @@
   overflow-wrap: anywhere;
 }
 
+.reports-flow-header__caption-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+}
+
+/* La aclaración de la cifra es un ícono "i" (ReportsInfoTip) pegado al conteo. */
 .reports-flow-header__note {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
-  margin: var(--space-1) 0 0;
-  max-width: 40rem;
+  flex: 0 0 auto;
 }
 
 .reports-flow-header__warning {
@@ -2398,6 +2403,112 @@
   order: 3;
 }
 
+/* Aclaraciones en un ícono "i" (R6, ReportsInfoTip): el texto vive en el DOM y se abre a pedido. */
+.reports-info {
+  display: inline-flex;
+  flex: 0 0 auto;
+  position: relative;
+}
+
+.reports-info .reports-info__button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-pill);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  height: var(--space-6);
+  justify-content: center;
+  padding: 0;
+  width: var(--space-6);
+}
+
+.reports-info .reports-info__button:hover,
+.reports-info .reports-info__button[aria-expanded="true"] {
+  background: var(--color-surface-hover);
+  color: var(--color-text-brand);
+}
+
+.reports-info .reports-info__button:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-offset);
+}
+
+@media (pointer: coarse) {
+  .reports-info .reports-info__button {
+    height: calc(var(--space-10) + var(--space-1));
+    width: calc(var(--space-10) + var(--space-1));
+  }
+}
+
+/* Panel fixed (lo coloca ReportsInfoTip junto al botón): no lo recortan las tarjetas con overflow oculto. 20rem = PANEL_WIDTH. */
+.reports-info__panel {
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  color: var(--color-text-default);
+  display: block;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-default);
+  padding: var(--space-3);
+  position: fixed;
+  text-align: left;
+  width: min(20rem, calc(100vw - 1rem));
+  z-index: var(--z-dialog);
+}
+
+.reports-info__panel[hidden] {
+  display: none;
+}
+
+/* Selector de período junto al título de la pestaña (R6). */
+.reports-period-bar {
+  align-items: flex-end;
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-5);
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+}
+
+.reports-period-bar__title h2 {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-xl);
+  line-height: var(--line-height-tight);
+  margin: 0;
+}
+
+.reports-period-bar__title p {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  margin: var(--space-1) 0 0;
+}
+
+.reports-period-bar .financial-period-control {
+  gap: var(--space-2);
+}
+
+.reports-period-bar .financial-period-control .erp-field,
+.reports-period-bar .financial-period-control .erp-field:first-child {
+  flex: 0 0 11rem;
+}
+
+.reports-period-bar .erp-field {
+  gap: var(--space-1);
+}
+
+.reports-period-bar .erp-field__label {
+  color: var(--color-text-default);
+  font-weight: var(--font-weight-semibold);
+}
+
 /* Resumen visual (SPEC 025): Vendí, Compré y Me quedó en columnas iguales (R4) y del mismo alto
    (la grilla las estira), cada una con el mismo orden interno y "Ver detalle" al pie, a la
    izquierda. En pantallas angostas, una columna. Solo tokens: sin colores ni sombras sueltos. */
@@ -2429,7 +2540,41 @@
   gap: var(--space-2);
   min-height: 0;
   min-width: 0;
+  padding-top: var(--space-4);
   width: auto;
+}
+
+/* R6: franja de acento arriba, con el color de cada cifra: ventas teal, compras azul y ganancia verde. */
+.reports-simple-metrics--visual > .reports-simple-card::after {
+  bottom: auto;
+  height: var(--space-1);
+  opacity: 1;
+  top: 0;
+}
+
+.reports-simple-metrics--visual > .reports-simple-card--sales::after {
+  background: var(--color-text-brand-accent);
+}
+
+.reports-simple-metrics--visual > .reports-simple-card--purchases::after {
+  background: var(--color-data-expense);
+}
+
+.reports-simple-metrics--visual > .reports-simple-card--profit::after {
+  background: var(--color-success-700);
+}
+
+/* R6: la cifra manda; el chip de variación va a su lado. */
+.reports-simple-metrics--visual .reports-simple-card__amount {
+  font-size: clamp(1.625rem, 2.6vw, 2.25rem);
+  line-height: var(--line-height-tight);
+}
+
+.reports-month-amount-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
 }
 
 /* El vacío sobrante de la tarjeta (la de Me quedó es más alta) queda entre la cifra y el texto: lo que
@@ -2681,7 +2826,8 @@
 
 .reports-trend__title {
   color: var(--color-text-strong);
-  font-size: var(--font-size-lg);
+  font-size: var(--font-size-xl);
+  line-height: var(--line-height-tight);
   margin: 0;
 }
 
@@ -2693,6 +2839,10 @@
 }
 
 .reports-trend__caption {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
   margin-top: var(--space-1);
   max-width: 70ch;
 }
@@ -2979,19 +3129,17 @@
 
 /* Gráfico de Reportes (variant="report"): todo el ancho de la tarjeta y más alto,
    para que la proporción no quede aplastada. El Dashboard no usa esta clase. */
+/* R6: el gráfico de Compras es la pieza protagonista de la pestaña: título de sección claro. */
+.reports-simple-chart .reports-section-heading h2 {
+  font-size: var(--font-size-xl);
+  line-height: var(--line-height-tight);
+}
+
 .reports-simple-chart .operational-comparison-chart--report {
   height: clamp(220px, 24vw, 300px);
   width: 100%;
 }
 
-/* Nota del gráfico: texto normal y legible (antes .reports-v4-note, 11 px). */
-.reports-chart-note {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
-  line-height: var(--line-height-default);
-  margin: 0 0 var(--space-3);
-  max-width: 70ch;
-}
 
 .reports-positive { color: var(--color-success-700) !important; font-weight: var(--font-weight-bold); }
 .reports-negative { color: var(--color-danger-700) !important; font-weight: var(--font-weight-bold); }
@@ -3085,9 +3233,10 @@
 
 .reports-top-list-table th {
   background: var(--color-surface-subtle);
+  border-bottom: 1px solid var(--color-border-default);
   color: var(--color-text-muted);
   font-size: 0.6875rem;
-  font-weight: var(--font-weight-semibold);
+  font-weight: var(--font-weight-bold);
   padding: 7px 9px;
   text-align: left;
   text-transform: uppercase;
@@ -3102,6 +3251,26 @@
 
 .reports-top-list-table th:not(:first-child),
 .reports-top-list-table td:not(:first-child) {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* R6: la fila resalta al pasar el cursor, para seguirla de punta a punta. */
+.reports-top-list-table tbody tr:hover > td,
+.reports-top-list-table tbody tr:hover > th {
+  background: var(--color-surface-hover);
+}
+
+/* R6: en "Últimas ventas/compras" solo los montos van a la derecha (columnas .is-numeric, en tabular);
+   número, fecha, cliente o proveedor y moneda quedan a la izquierda. */
+.reports-limited-table .reports-top-list-table th:not(.is-numeric),
+.reports-limited-table .reports-top-list-table td:not(.is-numeric) {
+  text-align: left;
+  white-space: normal;
+}
+
+.reports-limited-table .reports-top-list-table .is-numeric {
   font-variant-numeric: tabular-nums;
   text-align: right;
   white-space: nowrap;
