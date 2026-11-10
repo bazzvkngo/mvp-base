@@ -2180,10 +2180,6 @@
   padding: var(--space-4);
 }
 
-.reports-simple-chart .operational-comparison-chart {
-  height: 280px;
-}
-
 .reports-simple-state {
   align-items: center;
   color: var(--color-text-muted);
@@ -2619,9 +2615,10 @@
   flex-direction: column;
 }
 
+/* Sin justify-content: center: en una grilla sin columnas declaradas encogía la
+   columna al ancho del contenido y el gráfico quedaba angosto y centrado. */
 .reports-simple-chart .reports-chart-groups {
   flex: 1 1 auto;
-  justify-content: center;
 }
 
 .reports-section-heading {
@@ -2759,7 +2756,7 @@
   align-items: center;
   color: var(--color-text-muted);
   display: flex;
-  font-size: 0.625rem;
+  font-size: var(--font-size-xs);
   gap: 6px;
 }
 
@@ -2783,8 +2780,20 @@
 .reports-chart-summary__dot--sales { background: var(--color-text-brand-accent); }
 .reports-chart-summary__dot--purchases { background: var(--color-data-expense); }
 
-.reports-simple-chart .operational-comparison-chart {
-  height: 184px;
+/* Gráfico de Reportes (variant="report"): todo el ancho de la tarjeta y más alto,
+   para que la proporción no quede aplastada. El Dashboard no usa esta clase. */
+.reports-simple-chart .operational-comparison-chart--report {
+  height: clamp(220px, 24vw, 300px);
+  width: 100%;
+}
+
+/* Nota del gráfico: texto normal y legible (antes .reports-v4-note, 11 px). */
+.reports-chart-note {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-default);
+  margin: 0 0 var(--space-3);
+  max-width: 70ch;
 }
 
 .reports-positive { color: var(--color-success-700) !important; font-weight: var(--font-weight-bold); }

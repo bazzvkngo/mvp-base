@@ -430,7 +430,7 @@ const costCompositionSource = readFileSync("src/components/reports/CostCompositi
 // aserciones de las vistas para seguir corriendo aunque éstas fallen.
 assert.match(operationalChartSource, /<Bar/);
 assert.doesNotMatch(operationalChartSource, /operational-comparison-single/);
-assert.match(operationalChartSource, /maxBarThickness: items\.length === 1 \? 36 : 24/);
+assert.match(operationalChartSource, /items\.length === 1 \? 36 : 24/);
 assert.match(operationalChartSource, /animation: false/);
 assert.match(operationalChartSource, /formatCompactMoney/);
 assert.match(costCompositionSource, /<Doughnut/);
@@ -535,7 +535,7 @@ assert.doesNotMatch(comprasViewSource, /margenBrutoProductosCubiertos/);
 // La nota pasa a ser el subtítulo de la cabecera "Compré" (solo en la primera moneda).
 assert.match(comprasViewSource, /note=\{index === 0 \? "Las compras muestran egresos registrados del negocio\." : ""\}/);
 // SPEC 025 etapa 1: los montos de Ventas y Compras van sin IVA.
-assert.match(comprasViewSource, /ambos montos van sin IVA/);
+assert.match(comprasViewSource, /Operaciones confirmadas del período, sin IVA\./);
 assert.doesNotMatch(comprasViewSource, /incluyen IVA/);
 // Neto y Total siguen en la tabla: ahora las columnas se declaran como rótulos de LimitedOperationsTable (que dibuja los <th>).
 assert.match(comprasViewSource, /columns=\{\["Número", "Fecha", "Proveedor", "Moneda", "Neto", "Total"\]\}/);
@@ -1367,17 +1367,67 @@ assert.match(comprasViewSource, /<LimitedOperationsTable[\s\S]*?dateField="fecha
     const withPurchases = renderCompras([], [septemberPurchase]);
     assert.doesNotMatch(withPurchases, /Aún no hay compras confirmadas en este período/);
     assert.ok(withPurchases.includes("Últimas compras") && withPurchases.includes("Proveedor Uno") && withPurchases.includes("Movimiento comercial"));
+    // R1: en Reportes el gráfico va con la variante "report" (todo el ancho, sin leyenda propia) y la
+    // única leyenda son las tarjetas de totales; sin la prop (Dashboard) el componente no cambia.
+    const both = renderCompras([septemberSale], [septemberPurchase]);
+    assert.equal(countOf(both, /class="operational-comparison-chart operational-comparison-chart--report"/g), 1);
+    assert.equal(countOf(both, />Ventas confirmadas</g), 1, "una sola leyenda en el DOM: la tarjeta de ventas");
+    assert.equal(countOf(both, />Compras confirmadas</g), 1, "una sola leyenda en el DOM: la tarjeta de compras");
+    assert.equal(countOf(both, /class="reports-chart-summary__dot reports-chart-summary__dot--(sales|purchases)"/g), 2, "cada tarjeta lleva el punto de color de su serie");
+    assert.ok(both.includes('<p class="reports-chart-note">Comparar ventas y compras no es ganancia.') && !both.includes("reports-v4-note"), "la nota del gráfico ya no usa la letra de 11 px");
+    assert.ok(both.includes("10-09-2026: ventas $1.000, compras $0") && both.includes("12-09-2026: ventas $0, compras $400"), "los días se rotulan con formatDate");
+    const {default: ComparisonChart} = await comprasVite.ssrLoadModule("/src/components/reports/OperationalComparisonChart.jsx");
+    const chartItems = [{key: "2026-09-10", currency: "CLP", sales: 1000, purchases: 0}];
+    const defaultChart = renderToStaticMarkup(React.createElement(ComparisonChart, {currency: "CLP", items: chartItems}));
+    assert.match(defaultChart, /^<div class="operational-comparison-chart" role="img" aria-label="Evolución operacional\. 2026-09-10: ventas /, "sin la prop: misma clase y misma descripción que antes");
+    assert.doesNotMatch(defaultChart, /operational-comparison-chart--report/);
+    const reportChart = renderToStaticMarkup(React.createElement(ComparisonChart, {currency: "CLP", items: chartItems, variant: "report"}));
+    assert.match(reportChart, /^<div class="operational-comparison-chart operational-comparison-chart--report" role="img" aria-label="Evolución operacional\. 10-09-2026: ventas /);
+    for (const variant of [undefined, "report"]) {
+      assert.match(renderToStaticMarkup(React.createElement(ComparisonChart, {currency: "CLP", items: [], variant})), /^<div class="financial-chart-empty">/, "sin datos: el mismo vacío en las dos variantes");
+    }
   } finally {
     await comprasVite.close();
   }
 }
 console.log("OK reportes Compras (limpieza): un solo mensaje de vacío, gráfico solo con ventas o compras, nota con la pestaña Ganancia");
+// R1 (gráfico Ventas y compras): la variante "report" solo se pide en Reportes, el Dashboard sigue
+// con el componente por defecto y la leyenda de Chart.js se apaga solo en la variante.
+{
+  const r1Css = readFileSync("src/styles/interior.css", "utf8");
+  assert.equal((comprasViewSource.match(/<OperationalComparisonChart currency=\{group\.currency\} items=\{group\.items\} variant="report" \/>/g) || []).length, 1, "Reportes pide la variante");
+  const dashboardCharts = dashboardSource.match(/<OperationalComparisonChart[^>]*>/g) || [];
+  assert.equal(dashboardCharts.length, 2, "el Dashboard sigue montando el gráfico (con datos y vacío)");
+  assert.ok(dashboardCharts.every((tag) => !tag.includes("variant")), "el Dashboard no usa la variante de Reportes");
+  const variantUsers = ["src/pages/DashboardPage.jsx", "src/pages/StatisticsPage.jsx", "src/features/reports/views/ReportsVentasView.jsx", "src/features/reports/views/ReportsGananciasView.jsx"]
+    .filter((file) => readFileSync(file, "utf8").includes('variant="report"'));
+  assert.deepEqual(variantUsers, [], "la variante solo se activa en la pestaña Compras de Reportes");
+  assert.match(operationalChartSource, /export default function OperationalComparisonChart\(\{currency = "CLP", items, variant = "default"\}\)/, "por defecto, el comportamiento anterior");
+  assert.match(operationalChartSource, /const isReport = variant === "report";/);
+  assert.match(operationalChartSource, /legend: \{\s*display: !isReport,\s*position: "bottom",/, "la leyenda propia solo se oculta en la variante");
+  assert.ok(operationalChartSource.includes("const barThickness = isReport && items.length <= 3 ? 72 : items.length === 1 ? 36 : 24;"), "sin la variante, el grosor de siempre (36 con un dato, 24 con más)");
+  assert.equal((operationalChartSource.match(/maxBarThickness: barThickness,/g) || []).length, 2);
+  assert.ok(operationalChartSource.includes(".test(key) ? formatDate(key, businessLocale) : formatLabel(key));"), "días con formatDate solo en la variante; meses y Dashboard con el rótulo de eje de siempre");
+  assert.ok(operationalChartSource.includes("const labelOf = (key) => (isReport && "));
+  for (const hex of ["#0f766e", "#1e3a5f", "#45b8a8", "#5b7ba3"]) assert.ok(operationalChartSource.includes(hex), `sin colores nuevos: sigue ${hex}`);
+  assert.equal((operationalChartSource.match(/#[0-9a-fA-F]{6}/g) || []).length, 10, "los mismos diez literales de color de la línea base");
+  // El ancho: la grilla del gráfico ya no centra su columna, y la variante ocupa el 100 %.
+  assert.match(r1Css, /\.reports-simple-chart \.reports-chart-groups \{\s*flex: 1 1 auto;\s*\}/);
+  assert.doesNotMatch(r1Css, /\.reports-chart-groups \{[^}]*justify-content: center/);
+  assert.match(r1Css, /\.reports-simple-chart \.operational-comparison-chart--report \{\s*height: clamp\(220px, 24vw, 300px\);\s*width: 100%;\s*\}/);
+  assert.doesNotMatch(r1Css, /\.reports-simple-chart \.operational-comparison-chart \{/, "sin reglas de alto para el gráfico sin variante dentro de Reportes");
+  assert.match(r1Css, /\.operational-comparison-chart \{\s*height: 300px;\s*min-width: 0;\s*position: relative;\s*\}/, "la regla base (Dashboard) no cambia");
+  assert.match(r1Css, /\.reports-chart-note \{[^}]*font-size: var\(--font-size-sm\);/, "la nota usa un tamaño de token");
+  assert.match(r1Css, /\.reports-chart-summary dt \{[^}]*font-size: var\(--font-size-xs\);/, "la leyenda (tarjetas) usa un tamaño de token");
+  assert.doesNotMatch(comprasViewSource, /reports-v4-note/);
+}
+console.log("OK reportes R1: gráfico a todo el ancho solo en Reportes, una sola leyenda, Dashboard sin cambios y nota legible");
 // Monto abreviado compartido de los ejes: una sola función, sufijo en mayúscula y signo bien formado.
 {
   const profitChartsSource2 = readFileSync("src/components/reports/OperationalProfitCharts.jsx", "utf8");
   for (const [name, source, sharedImport] of [
     ["OperationalProfitCharts", profitChartsSource2, /import \{formatCompactMoney\} from "\.\.\/\.\.\/utils\/formatters";/],
-    ["OperationalComparisonChart", operationalChartSource, /import \{formatCompactMoney, formatMoney\} from "\.\.\/\.\.\/utils\/formatters";/],
+    ["OperationalComparisonChart", operationalChartSource, /import \{formatCompactMoney, formatDate, formatMoney\} from "\.\.\/\.\.\/utils\/formatters";/],
   ]) {
     assert.match(source, sharedImport, `${name} importa la función compartida`);
     assert.doesNotMatch(source, /function formatCompactMoney|notation: "compact"/, `${name} no define su propia versión`);
@@ -2125,7 +2175,8 @@ console.log("OK reportes (ventas y compras, bloque 1): helpers de cabecera, orde
   assert.match(vcPageSource, /<ReportsComprasView canOpenPurchases=\{links\.purchases\} chartGroups=\{chartGroups\} fallbackCurrency=\{currencyCode\}/);
   // El gráfico Ventas vs Compras y su nota siguen intactos en Compras (SPEC 022 §6.3).
   assert.equal(vcCount(vcComprasSource, /<OperationalComparisonChart/g), 1);
-  assert.ok(vcComprasSource.includes("Comparar ventas y compras no es ganancia. Las compras incluyen stock que aún no se vende, y ambos montos van sin IVA. Cuánto ganas está en la pestaña Ganancia."));
+  assert.ok(vcComprasSource.includes("Comparar ventas y compras no es ganancia. Las compras incluyen stock que aún no se vende. Cuánto ganas está en la pestaña Ganancia."));
+  assert.ok(vcComprasSource.includes("<p>Operaciones confirmadas del período, sin IVA.</p>"), "el «sin IVA» de la nota pasó al subtítulo del gráfico");
   // Estilos: el relleno de cada tarjeta se declara completo (.erp-card no trae padding) y todo con tokens.
   assert.match(vcCss, /\.reports-flow-header \{[^}]*padding: var\(--space-6\) var\(--space-6\) calc\(var\(--space-6\) \+ var\(--space-1\)\);/);
   assert.match(vcCss, /\.reports-share-bars \{[^}]*padding: var\(--space-5\) var\(--space-6\);/);

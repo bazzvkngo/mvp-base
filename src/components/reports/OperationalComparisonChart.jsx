@@ -8,7 +8,7 @@ import {
   Tooltip,
 } from "chart.js";
 import {Bar} from "react-chartjs-2";
-import {formatCompactMoney, formatMoney} from "../../utils/formatters";
+import {formatCompactMoney, formatDate, formatMoney} from "../../utils/formatters";
 import usePrefersDarkMode from "../../hooks/usePrefersDarkMode";
 import useBusinessFormat from "../../hooks/useBusinessFormat";
 
@@ -47,8 +47,16 @@ function formatLabel(key) {
     .replace(" de ", " ");
 }
 
-export default function OperationalComparisonChart({currency = "CLP", items}) {
+// `variant="report"` es la presentación de Reportes (pestaña Compras): ocupa todo
+// el ancho, no dibuja la leyenda de Chart.js (las tarjetas con los totales ya
+// nombran cada serie) y rotula los días con formatDate, igual que el resto de la
+// app. Sin la prop (Dashboard) el gráfico queda exactamente como estaba.
+export default function OperationalComparisonChart({currency = "CLP", items, variant = "default"}) {
   const { locale: businessLocale } = useBusinessFormat();
+  const isReport = variant === "report";
+  const labelOf = (key) => (isReport && /^\d{4}-\d{2}-\d{2}$/.test(key) ? formatDate(key, businessLocale) : formatLabel(key));
+  // En Reportes, con pocas columnas la barra puede ser más gruesa para no dejar el lienzo vacío.
+  const barThickness = isReport && items.length <= 3 ? 72 : items.length === 1 ? 36 : 24;
   const isDarkMode = usePrefersDarkMode();
   const dataColors = isDarkMode ? DATA_COLORS.dark : DATA_COLORS.light;
   const chrome = isDarkMode ? CHROME_COLORS.dark : CHROME_COLORS.light;
@@ -63,33 +71,33 @@ export default function OperationalComparisonChart({currency = "CLP", items}) {
   const description = items
     .map(
       (item) =>
-        `${item.key}: ventas ${formatMoney(item.sales, currency, businessLocale)}, compras ${formatMoney(item.purchases, currency, businessLocale)}`
+        `${isReport ? labelOf(item.key) : item.key}: ventas ${formatMoney(item.sales, currency, businessLocale)}, compras ${formatMoney(item.purchases, currency, businessLocale)}`
     )
     .join(". ");
 
   return (
     <div
-      className="operational-comparison-chart"
+      className={isReport ? "operational-comparison-chart operational-comparison-chart--report" : "operational-comparison-chart"}
       role="img"
       aria-label={`Evolución operacional. ${description}.`}
     >
       <Bar
         data={{
-          labels: items.map((item) => formatLabel(item.key)),
+          labels: items.map((item) => labelOf(item.key)),
           datasets: [
             {
               label: "Ventas confirmadas",
               data: items.map((item) => item.sales),
               backgroundColor: dataColors.sales,
               borderRadius: 4,
-              maxBarThickness: items.length === 1 ? 36 : 24,
+              maxBarThickness: barThickness,
             },
             {
               label: "Compras confirmadas",
               data: items.map((item) => item.purchases),
               backgroundColor: dataColors.purchases,
               borderRadius: 4,
-              maxBarThickness: items.length === 1 ? 36 : 24,
+              maxBarThickness: barThickness,
             },
           ],
         }}
@@ -100,6 +108,7 @@ export default function OperationalComparisonChart({currency = "CLP", items}) {
           responsive: true,
           plugins: {
             legend: {
+              display: !isReport,
               position: "bottom",
               labels: {
                 boxHeight: 8,

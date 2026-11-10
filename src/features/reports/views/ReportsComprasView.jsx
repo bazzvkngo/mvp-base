@@ -14,7 +14,7 @@ import ReportsShareBars from "../ReportsShareBars";
 // Vista dedicada a Compras (SPEC 025, visual): son egresos registrados del negocio, no un
 // componente de resultado comercial. No se muestra margen ni utilidad alguna aquí:
 // la cabecera "Compré" por moneda, a quién se le compró (barras por proveedor), el
-// gráfico Ventas vs Compras con su nota, las últimas compras y, plegados, los
+// gráfico Ventas vs Compras (a todo el ancho y con las tarjetas de totales como única leyenda) con su nota, las últimas compras y, plegados, los
 // productos adquiridos y la evolución. Reutiliza los datos ya calculados por el
 // contenedor.
 function ReportsComprasView({canOpenPurchases, chartGroups, fallbackCurrency = "CLP", navigate, purchaseTimeline, summary, topPurchaseProducts, topPurchaseSuppliers}) {
@@ -32,8 +32,8 @@ function ReportsComprasView({canOpenPurchases, chartGroups, fallbackCurrency = "
 
     {/* SPEC 022 §6.3: el gráfico Ventas vs Compras vive aquí, sin cambios de cálculo. Sin ventas ni compras no se dibuja. */}
     {chartGroupsWithData.length > 0 && <section className="erp-card reports-simple-chart">
-      <div className="reports-section-heading"><div><span>Movimiento comercial</span><h2>Ventas y compras</h2><p>Operaciones confirmadas dentro del período seleccionado.</p></div></div>
-      <p className="reports-v4-note">Comparar ventas y compras no es ganancia. Las compras incluyen stock que aún no se vende, y ambos montos van sin IVA. Cuánto ganas está en la pestaña Ganancia.</p>
+      <div className="reports-section-heading"><div><span>Movimiento comercial</span><h2>Ventas y compras</h2><p>Operaciones confirmadas del período, sin IVA.</p></div></div>
+      <p className="reports-chart-note">Comparar ventas y compras no es ganancia. Las compras incluyen stock que aún no se vende. Cuánto ganas está en la pestaña Ganancia.</p>
       <div className="reports-chart-groups">{chartGroupsWithData.map((group) => <article className="reports-chart-group" key={group.currency}>
         <div className="reports-chart-summary">
           <span>{group.currency}</span>
@@ -42,7 +42,7 @@ function ReportsComprasView({canOpenPurchases, chartGroups, fallbackCurrency = "
             <div><dt><i className="reports-chart-summary__dot reports-chart-summary__dot--purchases" aria-hidden="true" />Compras confirmadas</dt><dd>{formatMoney(group.purchases, group.currency, businessLocale)}</dd></div>
           </dl>
         </div>
-        <OperationalComparisonChart currency={group.currency} items={group.items} />
+        <OperationalComparisonChart currency={group.currency} items={group.items} variant="report" />
       </article>)}</div>
     </section>}
 
