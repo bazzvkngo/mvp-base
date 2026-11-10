@@ -1364,7 +1364,7 @@ assert.match(marginRingSource, /<circle className="reports-ring__track"/);
 {
   const r4Css = readFileSync("src/styles/interior.css", "utf8");
   const r4Summary = readFileSync("src/features/reports/views/ReportsMonthlySummary.jsx", "utf8");
-  assert.match(r4Summary, /const figure = aside\s*\?\s*<div className="reports-profit-card__body"><div className="reports-profit-card__main">\{children\}<\/div>\{aside\}<\/div>\s*:\s*children;/, "la cifra y su círculo, luego el resto a todo el ancho");
+  assert.match(r4Summary, /const figure = aside\s*\?\s*<div className="reports-profit-card__body"><div className="reports-profit-card__main">\{children\}<\/div>\{aside\}<\/div>\s*:\s*sparkline\s*\?\s*<div className="reports-month-figure">\{children\}\{sparkline\}<\/div>\s*:\s*children;/, "la cifra y su círculo (o su mini-línea, R5), luego el resto a todo el ancho");
   assert.doesNotMatch(r4Summary, /\{aside\}<div className="reports-profit-card__main">/, "el círculo ya no va a la izquierda de la cifra");
   assert.equal((r4Summary.match(/>Ver detalle<\/Button>/g) || []).length, 1, "el botón «Ver detalle» existe una sola vez en el código (un componente, tres tarjetas)");
   assert.match(r4Css, /\.reports-month-bar \{[^}]*display: flex;[^}]*flex-wrap: wrap;/);
@@ -2439,4 +2439,153 @@ console.log("OK reportes (ventas y compras, bloque 2): cabecera, barras por prod
   }
 }
 console.log("OK reportes R2 y R3: fechas dd-mm-aaaa, qué incluye cada cifra, notas legibles, un ítem sin barra al 100 % y tablas de Ganancia sin vacío");
+// R5 de Reportes: tendencia en el Resumen. Gráfico de línea del mes, chip de variación en las tarjetas y mini-líneas con 3 o más puntos.
+{
+  const {NOT_ENOUGH_TREND_TEXT, SPARKLINE_MIN_POINTS, TREND_MIN_POINTS, buildSparkline, hasEnoughTrendPoints, trendItemsFor} = await import("../src/domain/reportTrend.mjs");
+  const {formatComparisonChip} = await import("../src/domain/reportMonthlySummary.mjs");
+  const count = (text, pattern) => (text.match(pattern) || []).length;
+
+  // --- Helpers puros (solo presentación) ---
+  assert.deepEqual([TREND_MIN_POINTS, SPARKLINE_MIN_POINTS], [2, 3]);
+  assert.equal(NOT_ENOUGH_TREND_TEXT, "Aún no hay suficientes datos para mostrar una tendencia");
+  assert.deepEqual([hasEnoughTrendPoints([]), hasEnoughTrendPoints([{}]), hasEnoughTrendPoints([{}, {}]), hasEnoughTrendPoints(undefined)], [false, false, true, false]);
+  assert.deepEqual(trendItemsFor([{currency: "CLP", key: "a"}, {currency: "USD", key: "b"}], "CLP"), [{currency: "CLP", key: "a"}]);
+  assert.deepEqual(trendItemsFor(undefined, "CLP"), []);
+  assert.deepEqual([buildSparkline([]).show, buildSparkline([1, 2]).show, buildSparkline(undefined).show, buildSparkline([1, Number.NaN, "3", null]).show], [false, false, false, false], "menos de 3 valores válidos: nada");
+  assert.deepEqual(buildSparkline([0, 50, 100]), {show: true, points: "3,25 50,14 97,3", count: 3}, "el menor abajo, el mayor arriba, repartidos en el ancho");
+  assert.equal(buildSparkline([7, 7, 7]).points, "3,14 50,14 97,14", "valores iguales: línea al medio, sin dividir por cero");
+  assert.equal(buildSparkline([5, Number.NaN, 1, 9, 3]).count, 4, "los valores no numéricos se ignoran");
+  assert.equal(formatComparisonChip(compareWithPreviousMonth(150, 100)), "+50 %");
+  assert.equal(formatComparisonChip(compareWithPreviousMonth(80, 100)), "-20 %");
+  assert.equal(formatComparisonChip(compareWithPreviousMonth(100, 100)), "0 %");
+  assert.equal(formatComparisonChip(compareWithPreviousMonth(112.5, 100)), "+12,5 %");
+  assert.equal(formatComparisonChip(compareWithPreviousMonth(100, 0)), "", "sin base no hay chip");
+  assert.equal(formatComparisonChip(undefined), "");
+  const trendDomainSource = readFileSync("src/domain/reportTrend.mjs", "utf8");
+  assert.doesNotMatch(trendDomainSource, /firebase|fetch\(|neto|total|\.reduce\(/, "el helper de tendencia no suma dinero ni toca la red");
+
+  // --- Fuente: el Dashboard no cambia, nada instalado, sin colores literales ---
+  const trendChartSource = readFileSync("src/components/reports/OperationalTrendChart.jsx", "utf8");
+  const trendViewSource = readFileSync("src/features/reports/views/ReportsMonthlyTrend.jsx", "utf8");
+  const sparklineSource = readFileSync("src/features/reports/views/ReportsSparkline.jsx", "utf8");
+  const r5SummarySource = readFileSync("src/features/reports/views/ReportsMonthlySummary.jsx", "utf8");
+  const r5PageSource = readFileSync("src/pages/StatisticsPage.jsx", "utf8");
+  const r5Css = readFileSync("src/styles/interior.css", "utf8");
+  assert.doesNotMatch(dashboardSource, /OperationalTrendChart|ReportsSparkline|ReportsMonthlyTrend|reports-trend|reports-sparkline|reports-month-chip/, "el Dashboard no usa nada de la tendencia de Reportes");
+  for (const [name, source] of [["OperationalTrendChart", trendChartSource], ["ReportsMonthlyTrend", trendViewSource], ["ReportsSparkline", sparklineSource]]) {
+    assert.doesNotMatch(source, /#[0-9a-fA-F]{3,8}[^0-9a-zA-Z]|rgba?\(|hsla?\(|style=\{\{/, `${name}: sin colores literales ni estilos en línea`);
+  }
+  assert.match(trendChartSource, /from "chart\.js";/);
+  assert.match(trendChartSource, /import \{Line\} from "react-chartjs-2";/, "usa Chart.js, que ya está en el proyecto");
+  assert.match(trendChartSource, /useCssTokenColors\(\[\.\.\.SERIES_TOKENS, \.\.\.CHROME_TOKENS\]\)/, "los colores salen de los tokens, en claro y oscuro");
+  assert.ok(trendChartSource.includes('token: "--color-text-brand-accent"') && trendChartSource.includes('token: "--color-data-expense"'), "ventas y compras con los mismos colores de las tarjetas");
+  assert.match(trendChartSource, /legend: \{display: false\}/, "una sola leyenda: la de texto");
+  assert.match(trendChartSource, /pointRadius: 4,/, "la línea lleva puntos");
+  assert.match(trendChartSource, /return `\$\{context\.dataset\.label\}: \$\{formatMoney\(context\.parsed\.y, currency, locale\)\}`;/, "tooltip con el monto formateado");
+  assert.match(trendChartSource, /formatMonthLabel\(key, locale\) : formatDate\(key, locale\)/, "eje: dd-mm-aaaa en días y nombre del mes en períodos largos");
+  assert.match(r5PageSource, /operationalTimeline=\{operationalTimeline\}/);
+  assert.match(r5PageSource, /purchaseTimeline=\{purchaseTimeline\} salesTimeline=\{salesTimeline\}/, "la página pasa las series que ya calcula; no agrega cálculos");
+  assert.doesNotMatch(r5PageSource, /<OperationalTrendChart|<ReportsSparkline/);
+  assert.doesNotMatch(r5SummarySource, /aggregateOperationalTimeline|combineOperationalTimelines|\.reduce\(/, "el Resumen no recalcula las series");
+  const r5CssStart = r5Css.indexOf("/* Tendencia del Resumen (R5)");
+  const r5CssBlock = r5Css.slice(r5CssStart, r5Css.indexOf(".reports-simple-eyebrow,", r5CssStart));
+  assert.ok(r5CssStart > -1 && r5CssBlock.length > 1500);
+  assert.doesNotMatch(r5CssBlock, /#[0-9a-fA-F]{3,8}[^0-9a-zA-Z]|rgba?\(|hsla?\(|--color-brand-[6-9]00|--color-dark-/, "solo tokens");
+  assert.match(r5CssBlock, /\.reports-sparkline--sales \.reports-sparkline__line \{\s*stroke: var\(--color-text-brand-accent\);/);
+  assert.match(r5CssBlock, /\.reports-sparkline--purchases \.reports-sparkline__line \{\s*stroke: var\(--color-data-expense\);/);
+  assert.match(r5CssBlock, /\.reports-trend-chart \{[^}]*width: 100%;/, "el gráfico ocupa todo el ancho");
+  assert.match(r5CssBlock, /\.reports-trend__mark--purchases \{[^}]*border-top-style: dashed;/, "compras no se distingue solo por color");
+
+  // --- Render ---
+  const r5Vite = await createServer({appType: "custom", logLevel: "silent", server: {middlewareMode: true}});
+  try {
+    const {default: Summary} = await r5Vite.ssrLoadModule("/src/features/reports/views/ReportsMonthlySummary.jsx");
+    const {default: TrendChart, trendLabel} = await r5Vite.ssrLoadModule("/src/components/reports/OperationalTrendChart.jsx");
+    const {default: Sparkline} = await r5Vite.ssrLoadModule("/src/features/reports/views/ReportsSparkline.jsx");
+    const sale = (date, neto) => ({estado: "confirmada", moneda: "CLP", fechaVenta: date, neto, total: neto, items: []});
+    const purchase = (date, neto) => ({estado: "confirmada", moneda: "CLP", fechaCompra: date, neto, total: neto});
+    const sales = [sale("2026-08-10", 1000), sale("2026-09-03", 1000), sale("2026-09-10", 2000), sale("2026-09-20", 3000)];
+    const purchases = [purchase("2026-08-05", 2000), purchase("2026-09-05", 500), purchase("2026-09-12", 500)];
+    const screen = (month, {salesList = sales, purchasesList = purchases, profit = readyProfit(300), previousProfit = readyProfit(600), ...extra} = {}) => {
+      const range = getMonthRange(month);
+      const summary = getSimplifiedReportSummary({sales: salesList, purchases: purchasesList, projectBalances: [], range});
+      const salesTimeline = aggregateOperationalTimeline(summary.sales.confirmed, {range, dateField: "fechaVenta"});
+      const purchaseTimeline = aggregateOperationalTimeline(summary.purchases.confirmed, {range, dateField: "fechaCompra"});
+      return plain(renderToStaticMarkup(React.createElement(Summary, {
+        canRegisterPurchase: true, canRegisterSale: true, canViewProfitability: true, canViewPurchases: true, canViewSales: true,
+        currency: "todos", links: {sales: true, purchases: true, works: true}, month,
+        onMonthChange: () => {}, onNavigate: () => {}, onOpenDetail: () => {}, onRetryProfit: () => {},
+        operationalTimeline: combineOperationalTimelines(salesTimeline, purchaseTimeline), purchaseTimeline, salesTimeline,
+        previousProfit, previousSummary: getSimplifiedReportSummary({sales: salesList, purchases: purchasesList, projectBalances: [], range: getMonthRange(shiftMonthKey(month, -1))}),
+        profit, projects: {status: "ready", error: "", meta: {proyectos: [], fallidos: []}}, summary, todayKey: "2026-10-15", ...extra,
+      })));
+    };
+    const cardsOf = (html) => html.split('<article class="reports-simple-card ').slice(1).map((card) => card.slice(0, card.indexOf("</article>")));
+
+    // 2. Chip de variación: mes cerrado con base. Vendí sube (verde), Compré baja (neutro con flecha), Me quedó baja (rojo).
+    const closed = screen("2026-09");
+    const [soldCard, boughtCard, profitCard] = cardsOf(closed);
+    assert.match(soldCard, /<span class="ui-status-badge ui-status-badge--success reports-month-chip reports-month-chip--up"><svg[\s\S]*?<\/svg>\+500 %<\/span><span>frente al mes anterior<\/span>/, "Vendí: +X % en verde");
+    assert.match(boughtCard, /<span class="ui-status-badge ui-status-badge--neutral reports-month-chip reports-month-chip--down"><svg[\s\S]*?<\/svg>-50 %<\/span><span>frente al mes anterior<\/span>/, "Compré: neutro, con la flecha del sentido");
+    assert.doesNotMatch(boughtCard, /ui-status-badge--(success|danger)/, "en Compré subir o bajar no es bueno ni malo");
+    assert.match(profitCard, /<span class="ui-status-badge ui-status-badge--danger reports-month-chip reports-month-chip--down"><svg[\s\S]*?<\/svg>-50 %<\/span><span>frente al mes anterior<\/span>/, "Me quedó: -X % en rojo");
+    assert.equal(count(closed, /reports-month-chip /g), 3, "un chip por tarjeta");
+    const flat = cardsOf(screen("2026-09", {salesList: [sale("2026-08-10", 1000), sale("2026-09-03", 1000)]}))[0];
+    assert.match(flat, /ui-status-badge--neutral reports-month-chip reports-month-chip--flat"><svg[\s\S]*?<\/svg>0 %<\/span>/, "sin variación: chip neutro");
+    // Compré que sube también es neutro.
+    const boughtUp = cardsOf(screen("2026-09", {purchasesList: [purchase("2026-08-05", 100), purchase("2026-09-05", 500)]}))[1];
+    assert.match(boughtUp, /ui-status-badge--neutral reports-month-chip reports-month-chip--up"><svg[\s\S]*?<\/svg>\+400 %<\/span>/);
+    // Sin mes anterior no hay chip (queda el aviso). Mes en curso: tampoco, el módulo no calcula porcentaje.
+    const noBase = screen("2026-08", {previousProfit: {status: "ready", error: "", result: {grupos: []}}});
+    assert.doesNotMatch(noBase, /reports-month-chip/, "sin mes anterior no hay chip");
+    assert.equal(count(noBase, /Sin datos del mes anterior para comparar/g), 1);
+    const inProgress = screen("2026-10", {salesList: [...sales, sale("2026-10-02", 500)]});
+    assert.doesNotMatch(inProgress, /reports-month-chip/, "mes en curso: sin porcentaje, como decide el módulo");
+    assert.ok(inProgress.includes("Septiembre completo: $6.000"), "y conserva la referencia del mes anterior completo");
+    assert.match(r5SummarySource, /\{canViewPurchases && <MonthlyCard chipTone="neutral"/, "solo Compré pide el chip neutro");
+    assert.equal(count(r5SummarySource, /chipTone="neutral"/g), 1);
+
+    // 3. Mini-línea: solo con 3 o más puntos, sin ejes ni leyenda; Me quedó no lleva (no hay ganancia por día).
+    assert.match(soldCard, /<div class="reports-month-figure"><strong class="reports-simple-card__amount">\$6\.000<\/strong><svg class="reports-sparkline reports-sparkline--sales" viewBox="0 0 100 28" preserveAspectRatio="none" role="img" aria-label="Ventas por día en el mes: 3 días con movimiento, de \$1\.000 el 03-09-2026 a \$3\.000 el 20-09-2026\." focusable="false"><polyline class="reports-sparkline__line" points="3,25 50,14 97,3"><\/polyline><\/svg><\/div>/);
+    assert.doesNotMatch(boughtCard, /reports-sparkline|reports-month-figure/, "Compré con 2 puntos: nada");
+    assert.doesNotMatch(profitCard, /reports-sparkline/, "Me quedó no lleva mini-línea");
+    assert.equal(count(closed, /<svg class="reports-sparkline/g), 1);
+    const sparkPoints = [{key: "2026-09-01", value: 10}, {key: "2026-09-02", value: 30}, {key: "2026-09-03", value: 20}];
+    const spark = renderToStaticMarkup(React.createElement(Sparkline, {kind: "purchases", label: "Compras", points: sparkPoints}));
+    assert.ok(spark.startsWith('<svg class="reports-sparkline reports-sparkline--purchases"') && !/<text|<line |<path|<g /.test(spark), "sin ejes ni leyenda: solo la línea");
+    assert.equal(renderToStaticMarkup(React.createElement(Sparkline, {label: "x", points: sparkPoints.slice(0, 2)})), "", "con 2 puntos no dibuja nada");
+    assert.equal(renderToStaticMarkup(React.createElement(Sparkline, {label: "x", points: undefined})), "");
+
+    // 1. Gráfico de línea del mes: debajo de las tarjetas y antes de Proyectos del mes, con leyenda de texto y resumen accesible.
+    assert.ok(closed.indexOf("</article></div>") < closed.indexOf('<section class="erp-card reports-trend">') && closed.indexOf('<section class="erp-card reports-trend">') < closed.indexOf("reports-month-projects"), "debajo de las tarjetas, antes de Proyectos del mes");
+    assert.equal(count(closed, /<section class="erp-card reports-trend">/g), 1);
+    assert.ok(closed.includes('<h2 class="reports-trend__title">Evolución del mes</h2>') && closed.includes("Confirmadas por día, sin IVA."));
+    assert.match(closed, /<div class="reports-trend-chart" role="img" aria-label="Evolución de ventas y compras\. 03-09-2026: ventas \$1\.000, compras \$0\. 05-09-2026: ventas \$0, compras \$500\. 10-09-2026: ventas \$2\.000, compras \$0\. 12-09-2026: ventas \$0, compras \$500\. 20-09-2026: ventas \$3\.000, compras \$0\."><canvas/, "resumen en texto con fechas dd-mm-aaaa y montos formateados");
+    assert.match(closed, /<ul class="reports-trend__legend"><li><i class="reports-trend__mark reports-trend__mark--sales" aria-hidden="true"><\/i>Ventas confirmadas<\/li><li><i class="reports-trend__mark reports-trend__mark--purchases" aria-hidden="true"><\/i>Compras confirmadas<\/li><\/ul>/, "una sola leyenda, en texto");
+    assert.doesNotMatch(closed, /ganancia \$|Ganancia confirmada/, "la ganancia no se dibuja: no existe por día");
+    // Con 0 o 1 punto: una frase, sin lienzo.
+    for (const [label, html] of [["1 punto", screen("2026-09", {salesList: [sale("2026-09-03", 1000)], purchasesList: []})], ["0 puntos", screen("2026-09", {salesList: [], purchasesList: []})]]) {
+      assert.match(html, /<section class="erp-card reports-trend reports-trend--empty"><h2 class="reports-trend__title">Evolución del mes<\/h2><p class="reports-trend__empty">Aún no hay suficientes datos para mostrar una tendencia<\/p><\/section>/, `${label}: texto breve`);
+      assert.doesNotMatch(html, /reports-trend-chart|<canvas/, `${label}: sin línea rota`);
+    }
+    // Dos puntos ya son una línea.
+    assert.match(screen("2026-09", {salesList: [sale("2026-09-03", 1000), sale("2026-09-04", 500)], purchasesList: []}), /reports-trend-chart/);
+    // Permisos: solo las series que el perfil puede ver; sin Ventas ni Compras no hay gráfico.
+    const onlySales = screen("2026-09", {canViewPurchases: false});
+    assert.ok(onlySales.includes('aria-label="Evolución de ventas. 03-09-2026: ventas $1.000.') && !onlySales.includes("reports-trend__mark--purchases"), "sin permiso de Compras: solo ventas");
+    assert.doesNotMatch(screen("2026-09", {canViewPurchases: false, canViewSales: false}), /reports-trend/, "sin Ventas ni Compras no hay gráfico");
+    // Dos monedas: un gráfico por moneda, con su nombre.
+    const twoCurrencies = screen("2026-09", {salesList: [...sales, {...sale("2026-09-04", 50), moneda: "USD"}, {...sale("2026-09-08", 70), moneda: "USD"}]});
+    assert.ok(twoCurrencies.includes("Evolución del mes en CLP") && twoCurrencies.includes("Evolución del mes en USD") && twoCurrencies.includes("04-09-2026: ventas US$50"));
+    // Componente: días y meses en el eje; sin puntos o sin series no dibuja nada.
+    assert.deepEqual([trendLabel("2026-09-03", "es-CL"), trendLabel("2026-09", "es-CL")], ["03-09-2026", "Septiembre de 2026"]);
+    const monthsChart = plain(renderToStaticMarkup(React.createElement(TrendChart, {currency: "CLP", items: [{key: "2026-08", sales: 1000, purchases: 2000}, {key: "2026-09", sales: 6000, purchases: 1000}]})));
+    assert.ok(monthsChart.includes("Agosto de 2026: ventas $1.000, compras $2.000. Septiembre de 2026: ventas $6.000, compras $1.000."), "períodos largos: por mes");
+    assert.equal(renderToStaticMarkup(React.createElement(TrendChart, {currency: "CLP", items: []})), "");
+    assert.equal(renderToStaticMarkup(React.createElement(TrendChart, {currency: "CLP", items: [{key: "2026-09-03", sales: 1, purchases: 1}], series: []})), "");
+  } finally {
+    await r5Vite.close();
+  }
+}
+console.log("OK reportes R5: gráfico de línea del mes en el Resumen, chip de variación por tarjeta, mini-línea con 3 o más puntos y Dashboard sin cambios");
 console.log("Report model smoke: OK");

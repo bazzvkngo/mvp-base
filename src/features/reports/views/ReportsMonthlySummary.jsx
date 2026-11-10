@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import Button from "../../../components/ui/Button";
 import LoadingState from "../../../components/ui/LoadingState";
+import StatusBadge from "../../../components/ui/StatusBadge";
+import {SPARKLINE_MIN_POINTS, trendItemsFor} from "../../../domain/reportTrend.mjs";
 import {
   MONTHLY_EXPLANATIONS,
   NO_PREVIOUS_MONTH_TEXT,
@@ -23,6 +25,7 @@ import {
   buildServicesWithoutProjectNotices,
   canShowNextMonth,
   describeProfitMargin,
+  formatComparisonChip,
   formatComparisonText,
   formatMonthLabel,
   formatMonthName,
@@ -33,19 +36,44 @@ import {
   shiftMonthKey,
 } from "../../../domain/reportMonthlySummary.mjs";
 import useBusinessFormat from "../../../hooks/useBusinessFormat";
+import {formatDate} from "../../../utils/formatters";
 import {formatReportMoney} from "../../../utils/formatReportMoney";
 import MarginRing from "./MarginRing";
 import ReportsMonthlyProjects from "./ReportsMonthlyProjects";
+import ReportsMonthlyTrend from "./ReportsMonthlyTrend";
 import ReportsProfitNotice from "./ReportsProfitNotice";
+import ReportsSparkline from "./ReportsSparkline";
+
+// Resumen en texto de la mini-línea, para lectores de pantalla: cuántos días y de qué monto a qué monto.
+function sparklineLabel(points, noun, money, locale) {
+  const first = points[0];
+  const last = points[points.length - 1];
+  return `${noun} por día en el mes: ${points.length} días con movimiento, de ${money(first.value)} el ${formatDate(first.key, locale)} a ${money(last.value)} el ${formatDate(last.key, locale)}.`;
+}
 
 const DELTA_ICONS = Object.freeze({up: ArrowUpRight, down: ArrowDownRight, flat: Minus, none: Minus});
+// Chip de variación (R5). "signed": subir es bueno (verde) y bajar es malo (rojo), para
+// Vendí y Me quedó. "neutral": en Compré subir no es bueno ni malo, así que el chip va
+// sin color y solo la flecha dice el sentido.
+const CHIP_VARIANTS = Object.freeze({up: "success", down: "danger", flat: "neutral"});
 
-function ComparisonLine({comparison, locale, signed = false}) {
+// Mes cerrado con base: chip "+X %" / "-X %" con la variación que ya calcula
+// compareWithPreviousMonth. Sin base no hay chip: solo el aviso en texto.
+function ComparisonLine({comparison, locale, chipTone = "signed"}) {
   const Icon = DELTA_ICONS[comparison.direction];
-  const tone = signed ? comparison.direction : "none";
-  return <span className={`reports-month-delta reports-month-delta--${tone}`}>
-    <Icon size={14} aria-hidden="true" />
-    {formatComparisonText(comparison, locale)}
+  if (!comparison.hasBase) {
+    return <span className="reports-month-delta reports-month-delta--none">
+      <Icon size={14} aria-hidden="true" />
+      {formatComparisonText(comparison, locale)}
+    </span>;
+  }
+  const variant = chipTone === "signed" ? CHIP_VARIANTS[comparison.direction] : "neutral";
+  return <span className="reports-month-delta reports-month-delta--none">
+    <StatusBadge className={`reports-month-chip reports-month-chip--${comparison.direction}`} variant={variant}>
+      <Icon size={14} aria-hidden="true" />
+      {formatComparisonChip(comparison, locale)}
+    </StatusBadge>
+    <span>frente al mes anterior</span>
   </span>;
 }
 
@@ -61,12 +89,15 @@ function ReferenceLine({text}) {
 // `subtitle` ("Ganancia"), `aside` (el círculo del margen, como dato secundario a
 // la derecha de la cifra) y `notice` (el aviso único). No hay ningún signo ni
 // operador entre las tarjetas: la ganancia no se define como ventas menos compras.
-function MonthlyCard({aside, children, comparison, explanation, icon: Icon, locale, notice, onOpenDetail, referenceText, signed, subtitle, title, variant = "default"}) {
+function MonthlyCard({aside, children, chipTone = "signed", comparison, explanation, icon: Icon, locale, notice, onOpenDetail, referenceText, sparkline = null, subtitle, title, variant = "default"}) {
   // La cifra va siempre justo bajo el título; el círculo (aside) queda a su derecha y el resto
   // (aviso, comparación, qué incluye, enlace) baja a todo el ancho de la tarjeta.
+  // `sparkline` (Vendí y Compré) es la mini-línea del mes, a la derecha de la cifra; solo llega con 3 o más puntos.
   const figure = aside
     ? <div className="reports-profit-card__body"><div className="reports-profit-card__main">{children}</div>{aside}</div>
-    : children;
+    : sparkline
+      ? <div className="reports-month-figure">{children}{sparkline}</div>
+      : children;
   return <article className={`reports-simple-card reports-simple-card--${variant}`}>
     <div className="reports-simple-card__top">
       <span className="reports-simple-card__icon"><Icon size={19} aria-hidden="true" /></span>
@@ -77,7 +108,7 @@ function MonthlyCard({aside, children, comparison, explanation, icon: Icon, loca
     </div>
     {figure}
     {notice}
-    {referenceText ? <ReferenceLine text={referenceText} /> : comparison && <ComparisonLine comparison={comparison} locale={locale} signed={signed} />}
+    {referenceText ? <ReferenceLine text={referenceText} /> : comparison && <ComparisonLine chipTone={chipTone} comparison={comparison} locale={locale} />}
     <small>{explanation}</small>
     {onOpenDetail && <Button type="button" variant="ghost" className="reports-month-card-link" icon={ArrowRight} iconSize={14} onClick={onOpenDetail}>Ver detalle</Button>}
   </article>;
@@ -130,10 +161,13 @@ function ReportsMonthlySummary({
   onNavigate,
   onOpenDetail,
   onRetryProfit,
+  operationalTimeline = [],
   previousProfit,
   previousSummary,
   profit,
   projects,
+  purchaseTimeline = [],
+  salesTimeline = [],
   summary,
   todayKey,
 }) {
@@ -205,20 +239,29 @@ function ReportsMonthlySummary({
           status: group.profit.status,
         })
         : null;
+      // Mini-líneas: los días con ventas (o compras) del mes, tal como los entrega la línea de tiempo.
+      // Con menos de 3 puntos no se dibuja nada. "Me quedó" no lleva: la ganancia no existe por día.
+      const sparklineOf = (timeline, kind, noun) => {
+        const points = trendItemsFor(timeline, group.currency);
+        return points.length >= SPARKLINE_MIN_POINTS
+          ? <ReportsSparkline kind={kind} label={sparklineLabel(points, noun, money, locale)} points={points} />
+          : null;
+      };
       return <section className="reports-simple-currency-group" key={group.currency}>
         {groups.length > 1 && <h2>{group.currency}</h2>}
         <div className="reports-simple-metrics reports-simple-metrics--visual">
-          {canViewSales && <MonthlyCard comparison={showComparison ? group.sales.comparison : null} explanation={MONTHLY_EXPLANATIONS.sales} icon={BadgeDollarSign} locale={locale} onOpenDetail={links.sales ? () => onOpenDetail("ventas") : null} referenceText={showComparison ? referenceOf(group.sales) : null} title="Vendí">
+          {canViewSales && <MonthlyCard comparison={showComparison ? group.sales.comparison : null} explanation={MONTHLY_EXPLANATIONS.sales} icon={BadgeDollarSign} locale={locale} onOpenDetail={links.sales ? () => onOpenDetail("ventas") : null} referenceText={showComparison ? referenceOf(group.sales) : null} sparkline={sparklineOf(salesTimeline, "sales", "Ventas")} title="Vendí">
             <strong className="reports-simple-card__amount">{money(group.sales.total)}</strong>
           </MonthlyCard>}
-          {canViewPurchases && <MonthlyCard comparison={showComparison ? group.purchases.comparison : null} explanation={MONTHLY_EXPLANATIONS.purchases} icon={ShoppingCart} locale={locale} onOpenDetail={links.purchases ? () => onOpenDetail("compras") : null} referenceText={showComparison ? referenceOf(group.purchases) : null} title="Compré">
+          {canViewPurchases && <MonthlyCard chipTone="neutral" comparison={showComparison ? group.purchases.comparison : null} explanation={MONTHLY_EXPLANATIONS.purchases} icon={ShoppingCart} locale={locale} onOpenDetail={links.purchases ? () => onOpenDetail("compras") : null} referenceText={showComparison ? referenceOf(group.purchases) : null} sparkline={sparklineOf(purchaseTimeline, "purchases", "Compras")} title="Compré">
             <strong className="reports-simple-card__amount">{money(group.purchases.total)}</strong>
           </MonthlyCard>}
-          {canViewProfitability && group.profit && <MonthlyCard aside={marginDescription.kind === "pending" ? null : <MarginRing description={marginDescription} locale={locale} />} comparison={showComparison && group.profit.status === "ready" ? group.profit.comparison : null} explanation={MONTHLY_EXPLANATIONS.profit} icon={TrendingUp} locale={locale} notice={<ReportsProfitNotice currency={group.currency} lines={profitLines} locale={locale} onNavigate={onNavigate} onOpenDetail={onOpenDetail} />} onOpenDetail={() => onOpenDetail("ganancias")} referenceText={showComparison && group.profit.status === "ready" ? referenceOf(group.profit) : null} signed subtitle="Ganancia" title="Me quedó" variant="profit">
+          {canViewProfitability && group.profit && <MonthlyCard aside={marginDescription.kind === "pending" ? null : <MarginRing description={marginDescription} locale={locale} />} comparison={showComparison && group.profit.status === "ready" ? group.profit.comparison : null} explanation={MONTHLY_EXPLANATIONS.profit} icon={TrendingUp} locale={locale} notice={<ReportsProfitNotice currency={group.currency} lines={profitLines} locale={locale} onNavigate={onNavigate} onOpenDetail={onOpenDetail} />} onOpenDetail={() => onOpenDetail("ganancias")} referenceText={showComparison && group.profit.status === "ready" ? referenceOf(group.profit) : null} subtitle="Ganancia" title="Me quedó" variant="profit">
             <ProfitFigures amountText={money(group.profit.amount)} description={marginDescription} onRetry={onRetryProfit} profit={group.profit} />
           </MonthlyCard>}
         </div>
         {!showsProfitCard && <ReportsProfitNotice currency={group.currency} lines={profitLines} locale={locale} onNavigate={onNavigate} onOpenDetail={onOpenDetail} variant="standalone" />}
+        <ReportsMonthlyTrend canViewPurchases={canViewPurchases} canViewSales={canViewSales} currency={group.currency} items={operationalTimeline} showCurrency={groups.length > 1} />
       </section>;
     })}</div>}
 

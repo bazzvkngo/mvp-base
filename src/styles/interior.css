@@ -2625,6 +2625,127 @@
   }
 }
 
+/* Tendencia del Resumen (R5): chip de variación, mini-línea de las tarjetas y gráfico de
+   línea del mes. Solo tokens; los colores de las series son los de las tarjetas de Compras. */
+.reports-month-chip {
+  font-variant-numeric: tabular-nums;
+  gap: var(--space-1);
+}
+
+.reports-month-figure {
+  align-items: flex-end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  justify-content: space-between;
+}
+
+.reports-sparkline {
+  flex: 0 1 calc(var(--space-10) * 3);
+  height: var(--space-8);
+  min-width: var(--space-10);
+  overflow: visible;
+}
+
+.reports-sparkline__line {
+  fill: none;
+  stroke: var(--color-text-muted);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.reports-sparkline--sales .reports-sparkline__line {
+  stroke: var(--color-text-brand-accent);
+}
+
+.reports-sparkline--purchases .reports-sparkline__line {
+  stroke: var(--color-data-expense);
+}
+
+.reports-trend {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+}
+
+.reports-trend__heading {
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  justify-content: space-between;
+}
+
+.reports-trend__title {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-lg);
+  margin: 0;
+}
+
+.reports-trend__caption,
+.reports-trend__empty {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.reports-trend__caption {
+  margin-top: var(--space-1);
+  max-width: 70ch;
+}
+
+.reports-trend__legend {
+  color: var(--color-text-default);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--font-size-xs);
+  gap: var(--space-1) var(--space-4);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.reports-trend__legend li {
+  align-items: center;
+  display: inline-flex;
+  gap: var(--space-2);
+}
+
+/* Marca de la leyenda: un trazo del color de la serie; compras discontinuo, como su línea. */
+.reports-trend__mark {
+  border-top: 2px solid var(--color-text-muted);
+  flex: 0 0 auto;
+  width: var(--space-5);
+}
+
+.reports-trend__mark--sales {
+  border-top-color: var(--color-text-brand-accent);
+}
+
+.reports-trend__mark--purchases {
+  border-top-color: var(--color-data-expense);
+  border-top-style: dashed;
+}
+
+.reports-trend-chart {
+  height: clamp(220px, 24vw, 300px);
+  min-width: 0;
+  position: relative;
+  width: 100%;
+}
+
+/* Con 0 o 1 punto: título y frase en una sola línea, sin bloque grande. */
+.reports-trend--empty {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  padding: var(--space-3) var(--space-4);
+}
+
 .reports-simple-eyebrow,
 .reports-section-heading > div > span {
   color: var(--color-brand-700);

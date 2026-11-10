@@ -103,6 +103,15 @@ export function formatComparisonText(comparison, locale = "es-CL") {
   return `${amount} % ${comparison.direction === "up" ? "más" : "menos"} que el mes anterior`;
 }
 
+// Texto del chip de variación: "+12,5 %", "-20 %" o "0 %". Solo da formato al porcentaje
+// que ya calculó compareWithPreviousMonth; sin base no hay chip (cadena vacía).
+export function formatComparisonChip(comparison, locale = "es-CL") {
+  if (!comparison?.hasBase) return "";
+  const amount = Math.abs(comparison.percent).toLocaleString(locale, {maximumFractionDigits: 1});
+  const sign = comparison.direction === "up" ? "+" : comparison.direction === "down" ? "-" : "";
+  return `${sign}${amount} %`;
+}
+
 // Número finito o null: nunca convierte null/""/texto en 0.
 function finiteOrNull(value) {
   if (value === null || value === undefined || value === "") return null;
