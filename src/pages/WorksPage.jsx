@@ -13,6 +13,8 @@ import StatusBadge from "../components/ui/StatusBadge";
 import {TabPanel, Tabs} from "../components/ui/Tabs";
 import WorkAdditionalsSection from "../features/works/WorkAdditionalsSection.jsx";
 import WorkClosedProjects from "../features/works/WorkClosedProjects.jsx";
+import {WORK_BALANCE_HELP, WorkBalanceResult, getExcludedMaterialExpense} from "../features/works/WorkBalanceParts.jsx";
+import WorkInfoTip from "../features/works/WorkInfoTip.jsx";
 import {CostField, CostMoneyInput, WorkCostBreakdown, WorkCostDisclosure, WorkCostEmpty, WorkCostEntry} from "../features/works/WorkCostParts.jsx";
 import WorkExpenseEvidence from "../features/works/WorkExpenseEvidence.jsx";
 import WorkQuoteSelector from "../features/works/WorkQuoteSelector.jsx";
@@ -618,7 +620,7 @@ function MaterialsSection({businessId, canManage, currency, currentUserUid, load
   const updateReturn = (exitId, field, value) => setReturnDrafts((current) => ({...current, [exitId]: {...(current[exitId] || {cantidad: "", fecha: chileToday()}), [field]: value}}));
 
   return <section className="works-detail-section works-financial-file works-financial-file--tab">
-    <div className="works-section-heading"><div><h3>Materiales utilizados</h3><span>Consumo neto valorizado</span></div><strong>{formatMoney(Math.max(0, valuedTotal), currency, businessLocale)}</strong></div>
+    <div className="works-section-heading"><div><h3>Materiales utilizados</h3><span>Salidas menos devoluciones, a su costo</span></div><strong>{formatMoney(Math.max(0, valuedTotal), currency, businessLocale)}</strong></div>
     {canConsume && !readOnly && <form className="works-cost-form works-material-form" onSubmit={saveExit}>
       <h5 className="works-cost-form__title">Nueva salida de material</h5>
       <div className="works-material-product works-cost-field--wide"><CostField label="Producto"><select className="erp-control" required value={draft.itemId} onChange={(event) => setDraft((current) => ({...current, itemId: event.target.value}))}>
@@ -781,27 +783,28 @@ function DailyCostSummary({currency, loading, rows}) { const { locale: businessL
 
 function WorkBalanceSection({balance, loading}) {
   const { locale: businessLocale } = useBusinessFormat();
-  if (loading) return <section className="works-detail-section"><h3>Balance y margen</h3><LoadingState variant="section" label="Calculando desde fuentes autoritativas..." /></section>;
+  if (loading) return <section className="works-detail-section"><h3>Balance y margen</h3><LoadingState variant="section" label="Calculando el balance..." /></section>;
   if (!balance) return null;
   const money = (value) => value == null ? "No disponible" : formatMoney(value, balance.moneda, businessLocale);
   const inconsistent = balance.estado === "INCONSISTENTE_MONEDA";
   const unavailableHistoricalCosts = Number(balance.fuentes?.materialesVentaSinCosto || 0);
+  const excludedMaterialExpense = getExcludedMaterialExpense(balance);
   return <section className="works-detail-section works-balance">
     <div className="works-section-heading"><div><h3>Balance y margen</h3><span>{balance.estado === "COMPLETO" ? "Con Ventas confirmadas" : balance.estado === "PARCIAL_SIN_VENTA" ? "Balance parcial · sin Venta confirmada" : "Balance bloqueado · monedas incompatibles"}</span></div><strong>{balance.moneda}</strong></div>
     {inconsistent && <div className="works-message works-message--error" role="alert">No se mezclaron importes. Moneda base {balance.moneda}; incompatibles: {balance.monedasIncompatibles.join(", ")}.</div>}
     {balance.estado === "PARCIAL_SIN_VENTA" && <p className="works-empty-copy">Aún no hay venta confirmada para calcular resultado y margen. Los costos registrados se muestran igualmente.</p>}
     {!inconsistent && <><dl className="works-balance-grid works-balance-primary">
-      <div><dt>Ingresos</dt><dd>{balance.valorComercial == null ? "Sin ingreso confirmado" : money(balance.valorComercial)}</dd></div>
-      <div><dt>Costos</dt><dd>{money(balance.costoTotal)}</dd></div>
-      <div><dt>Resultado</dt><dd>{money(balance.resultado)}</dd></div>
-      <div><dt>Margen</dt><dd>{balance.rentabilidadPct == null ? "No disponible" : `${balance.rentabilidadPct.toLocaleString("es-CL", {maximumFractionDigits: 2})}%`}</dd></div>
+      <div><dt><span>Ingresos</span><WorkInfoTip label="Qué incluye Ingresos">{WORK_BALANCE_HELP.ingresos}</WorkInfoTip></dt><dd>{balance.valorComercial == null ? "Sin ingreso confirmado" : money(balance.valorComercial)}</dd></div>
+      <div><dt><span>Costos</span><WorkInfoTip label="Qué incluye Costos">{WORK_BALANCE_HELP.costos}</WorkInfoTip></dt><dd>{money(balance.costoTotal)}</dd></div>
+      <div><dt><span>Resultado</span><WorkInfoTip label="Cómo se calcula el Resultado">{WORK_BALANCE_HELP.resultado}</WorkInfoTip></dt><dd><WorkBalanceResult balance={balance} money={money} /></dd></div>
+      <div><dt><span>Margen</span><WorkInfoTip label="Cómo se calcula el Margen">{WORK_BALANCE_HELP.margen}</WorkInfoTip></dt><dd>{balance.rentabilidadPct == null ? "No disponible" : `${balance.rentabilidadPct.toLocaleString("es-CL", {maximumFractionDigits: 2})}%`}</dd></div>
     </dl><dl className="works-balance-detail-grid">
       <div><dt>Materiales de la venta</dt><dd>{money(balance.materialesVenta)}</dd></div>
       <div><dt>Materiales adicionales</dt><dd>{money(balance.materialesAdicionales)}</dd></div>
       <div><dt>Horas hombre</dt><dd>{money(balance.horasHombre)}</dd></div>
       <div><dt>Gastos directos</dt><dd>{money(balance.gastosDirectos)}</dd></div>
       <div><dt>Gastos indirectos</dt><dd>{money(balance.gastosIndirectos)}</dd></div>
-    </dl></>}
+    </dl>{excludedMaterialExpense != null && <p className="works-message works-message--warning">Hay {money(excludedMaterialExpense)} en gastos de tipo Material que no suman al balance porque el proyecto ya tiene materiales de inventario.</p>}</>}
     {inconsistent && <div className="works-balance-breakdown">{balance.desglosePorMoneda.map((entry) => <article key={entry.moneda}><strong>{entry.moneda}</strong><span>Ingresos {formatMoney(entry.valorComercial, entry.moneda, businessLocale)} · costos {formatMoney(entry.costoTotal, entry.moneda, businessLocale)}</span></article>)}</div>}
     {unavailableHistoricalCosts > 0 && <p className="works-message works-message--warning">El costo histórico de {unavailableHistoricalCosts} material{unavailableHistoricalCosts === 1 ? "" : "es"} no está disponible.</p>}
   </section>;

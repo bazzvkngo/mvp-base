@@ -797,7 +797,7 @@ assert.match(page, /!operationalReadOnly && <MoreActionsMenu actions=\{\[\{label
 assert.match(page, /open=\{Boolean\(cancelWork\) && !isWorkOperationalReadOnly\(cancelWork\)\}/);
 assert.match(page, /Reabrir proyecto/);
 assert.match(page, /visibleExpenses\.map/); assert.match(page, /visibleLabor\.map/); assert.match(page, /exits\.map/); assert.match(page, /saleMaterials\.map/);
-assert.match(page, /works-balance-grid works-balance-primary/); assert.match(page, /<dt>Ingresos<\/dt>/); assert.match(page, /<dt>Costos<\/dt>/); assert.match(page, /<dt>Resultado<\/dt>/); assert.match(page, /<dt>Margen<\/dt>/);
+assert.match(page, /works-balance-grid works-balance-primary/); assert.match(page, /<dt><span>Ingresos<\/span>/); assert.match(page, /<dt><span>Costos<\/span>/); assert.match(page, /<dt><span>Resultado<\/span>/); assert.match(page, /<dt><span>Margen<\/span>/);
 assert.doesNotMatch(page, /Costos \/ ingreso|<dt>Rentabilidad<\/dt>|<th>Avance<\/th>|movimiento\(s\)|gasto\(s\) MATERIAL|Inventario es la fuente de materiales/);
 assert.match(page, /El costo histórico de/);
 assert.match(backend, /agregarSubtareaTrabajoHandler/); assert.match(backend, /actualizarSubtareaTrabajoHandler/); assert.match(backend, /eliminarSubtareaTrabajoHandler/); assert.match(backend, /tareaId: taskId/);
@@ -873,8 +873,8 @@ console.log("OK escáner de salida de material: disponible, no disponible y cant
   // Menores.
   assert.doesNotMatch(page, /window\.alert/);
   assert.match(page, /setEvidenceError\("No se pudo abrir el documento\. Intenta nuevamente\."\)/);
-  assert.match(page, /<LoadingState variant="section" label="Calculando desde fuentes autoritativas\.\.\." \/>/);
-  assert.doesNotMatch(page, /<p>Calculando desde fuentes autoritativas/);
+  assert.match(page, /<LoadingState variant="section" label="Calculando el balance\.\.\." \/>/);
+  assert.doesNotMatch(page, /<p>Calculando el balance/);
   assert.match(page, /function CommercialFile[\s\S]*?useBusinessFormat\(\)/);
   assert.doesNotMatch(page.slice(page.indexOf("function commercialTotal"), page.indexOf("function CommercialFile")), /es-CL/);
   // Móvil: los tableros se apilan en una columna, sin scroll horizontal.

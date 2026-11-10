@@ -29,7 +29,7 @@ function durationText({plannedDays, actualDays, deltaDays}) {
   return `Plan ${days(plannedDays)} · Real ${days(actualDays)}${delta}`;
 }
 
-function ResultBadge({balance, kind}) {
+export function ResultBadge({balance, kind}) {
   if (kind === "gano") return <StatusBadge variant="success"><AppIcon icon={TrendingUp} size={14} />Ganó</StatusBadge>;
   if (kind === "perdio") return <StatusBadge variant="danger"><AppIcon icon={TrendingDown} size={14} />Perdió</StatusBadge>;
   if (kind === "equilibrio") return <StatusBadge variant="neutral"><AppIcon icon={Scale} size={14} />Sin ganancia ni pérdida</StatusBadge>;

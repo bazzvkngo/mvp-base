@@ -226,6 +226,56 @@ try {
     console.log("OK Cerrados: orden, duración, resultado con icono y texto, permiso de ganancias, error separado del vacío y límite de 20");
   }
 
+  // Balance de la ficha (T1-T3): ícono "i" con la explicación de cada cifra, resultado con Ganó/Perdió, color y signo,
+  // y el aviso de gastos de tipo Material que no suman. WorkBalanceSection vive en WorksPage.jsx (no se carga por este
+  // camino): aquí se prueban sus piezas y abajo, por texto fuente, su conexión.
+  {
+    const {default: WorkInfoTip} = await vite.ssrLoadModule("/src/features/works/WorkInfoTip.jsx");
+    const {WORK_BALANCE_HELP, WorkBalanceResult, getExcludedMaterialExpense} = await vite.ssrLoadModule("/src/features/works/WorkBalanceParts.jsx");
+    const {adaptWorkBalance, getWorkClosedResultKind} = await import("../src/domain/workModel.mjs");
+    const money = (value) => (value == null ? "No disponible" : new Intl.NumberFormat("es-CL", {style: "currency", currency: "CLP"}).format(value));
+
+    // Ícono "i": botón real con nombre accesible, panel oculto en el DOM y enlazado con aria-describedby.
+    const tip = renderToStaticMarkup(React.createElement(WorkInfoTip, {label: "Qué incluye Ingresos"}, "Texto de prueba"));
+    assert.match(tip, /<button[^>]*class="works-info__button"/); assert.match(tip, /<button[^>]*type="button"/);
+    assert.match(tip, /<button[^>]*aria-label="Qué incluye Ingresos"/); assert.match(tip, /<button[^>]*aria-expanded="false"/);
+    const panelId = tip.match(/<span class="works-info__panel"[^>]*id="([^"]+)"/)?.[1];
+    assert.ok(panelId, "el panel tiene id");
+    assert.ok(tip.includes(`aria-describedby="${panelId}"`) && tip.includes(`aria-controls="${panelId}"`), "el botón apunta al panel");
+    assert.match(tip, /<span class="works-info__panel"[^>]*hidden=""/, "cerrado: el texto está en el DOM pero oculto");
+    assert.match(tip, /<span class="works-info__panel"[^>]*role="note"[^>]*>Texto de prueba<\/span>/);
+
+    // Textos: cada cifra con su explicación, sin jerga.
+    assert.deepEqual(Object.keys(WORK_BALANCE_HELP), ["ingresos", "costos", "resultado", "margen"]);
+    assert.match(WORK_BALANCE_HELP.ingresos, /ventas confirmadas/); assert.match(WORK_BALANCE_HELP.ingresos, /sin IVA/);
+    assert.match(WORK_BALANCE_HELP.costos, /materiales/); assert.match(WORK_BALANCE_HELP.costos, /horas hombre/); assert.match(WORK_BALANCE_HELP.costos, /gastos/);
+    assert.match(WORK_BALANCE_HELP.costos, /No incluye los registros anulados/); assert.match(WORK_BALANCE_HELP.costos, /gastos de tipo Material/);
+    assert.match(WORK_BALANCE_HELP.resultado, /Ingresos menos costos/); assert.match(WORK_BALANCE_HELP.margen, /Resultado dividido por los ingresos/);
+    for (const text of Object.values(WORK_BALANCE_HELP)) assert.doesNotMatch(text, /autoritativ|valorizad|snapshot/i, "sin jerga");
+
+    // Resultado: Ganó / Perdió con icono, color y signo; con 0, neutro y sin signo; sin venta, el texto de siempre.
+    const result = (resultado, estado = "COMPLETO") => renderToStaticMarkup(React.createElement(WorkBalanceResult, {balance: {estado, moneda: "CLP", valorComercial: 500000, costoTotal: 300000, resultado, rentabilidadPct: 40}, money}));
+    const won = result(200000);
+    assert.match(won, /works-balance-result--gano/); assert.match(won, /Ganó/); assert.match(won, /lucide-trending-up/); assert.match(won, /works-balance-result__amount">\+\$\s?200\.000</, "ganancia con signo +");
+    const lost = result(-50000);
+    assert.match(lost, /works-balance-result--perdio/); assert.match(lost, /Perdió/); assert.match(lost, /lucide-trending-down/); assert.match(lost, /works-balance-result__amount">(?:[-−]\$|\$[-−])\s?50\.000</, "pérdida con signo menos");
+    assert.doesNotMatch(lost, /\+\$/);
+    const even = result(0);
+    assert.match(even, /works-balance-result--equilibrio/); assert.match(even, /Sin ganancia ni pérdida/); assert.doesNotMatch(even, /Ganó|Perdió|\+\$|[-−]\$|\$[-−]/, "con resultado 0, texto neutro y sin signo");
+    const partial = result(null, "PARCIAL_SIN_VENTA");
+    assert.equal(partial, "No disponible", "sin venta confirmada no se inventa un resultado"); assert.doesNotMatch(partial, /works-balance-result/);
+    assert.equal(getWorkClosedResultKind({estado: "COMPLETO", resultado: 200000}), "gano", "misma regla que Cerrados");
+
+    // Gastos Material excluidos: solo se informa el monto que ya entrega el backend; si no llega, no hay aviso.
+    assert.equal(adaptWorkBalance({estado: "COMPLETO", gastosMaterialExcluido: 150000}).gastosMaterialExcluido, 150000, "el campo llega a la pantalla");
+    assert.equal(getExcludedMaterialExpense(adaptWorkBalance({estado: "COMPLETO", gastosMaterialExcluido: 150000})), 150000);
+    assert.equal(getExcludedMaterialExpense(adaptWorkBalance({estado: "COMPLETO", gastosMaterialExcluido: 0})), null);
+    assert.equal(getExcludedMaterialExpense(adaptWorkBalance({estado: "COMPLETO"})), null, "sin el campo no se calcula nada");
+    assert.equal(getExcludedMaterialExpense(adaptWorkBalance({estado: "INCONSISTENTE_MONEDA", gastosMaterialExcluido: 150000})), null, "con monedas incompatibles no hay aviso");
+    assert.equal(getExcludedMaterialExpense(null), null);
+    console.log("OK balance de la ficha: ícono de ayuda, textos sin jerga, resultado Ganó/Perdió/neutro con color y signo, aviso de gastos Material");
+  }
+
   // Estados de datos: cargando, error y vacío.
   const loading = render({loading: true});
   assert.match(loading, /Cargando tablero/); assert.doesNotMatch(loading, /works-task-board__column/);
@@ -289,6 +339,28 @@ assert.match(page, /const runWorkAction = async \(workId, key, action, \{onError
 assert.match(page, /if \(onError\) onError\(actionError\); else setError\(actionError\.message \|\| "No se pudo actualizar el trabajo\."\);/, "sin onError el comportamiento de siempre: aviso de la página");
 assert.match(page, /removeTask: \(task, onError\) => runWorkAction\(boardWorkId, `task-delete-\$\{task\.id\}`, \(\) => eliminarTareaTrabajo\(businessId, boardWorkId, task\.id, createWorkTaskRequestId\("task-delete"\)\), \{onError\}\)/);
 assert.match(page, /costs=\{\{expenses: boardDetail\.gastos, labor: boardDetail\.horasHombre, materials: boardDetail\.materiales, additionals: boardDetail\.adicionales\}\}/, "los adicionales también cuentan para explicar el bloqueo");
+// Balance de la ficha (T1-T3): conexión en la página y piezas sin imports de otro feature.
+assert.match(page, /import \{WORK_BALANCE_HELP, WorkBalanceResult, getExcludedMaterialExpense\} from "\.\.\/features\/works\/WorkBalanceParts\.jsx";/);
+assert.match(page, /import WorkInfoTip from "\.\.\/features\/works\/WorkInfoTip\.jsx";/);
+assert.match(page, /<dt><span>Ingresos<\/span><WorkInfoTip label="Qué incluye Ingresos">\{WORK_BALANCE_HELP\.ingresos\}<\/WorkInfoTip><\/dt>/);
+assert.match(page, /<dt><span>Costos<\/span><WorkInfoTip label="Qué incluye Costos">\{WORK_BALANCE_HELP\.costos\}<\/WorkInfoTip><\/dt>/);
+assert.match(page, /<dt><span>Resultado<\/span><WorkInfoTip label="Cómo se calcula el Resultado">\{WORK_BALANCE_HELP\.resultado\}<\/WorkInfoTip><\/dt><dd><WorkBalanceResult balance=\{balance\} money=\{money\} \/><\/dd>/);
+assert.match(page, /<dt><span>Margen<\/span><WorkInfoTip label="Cómo se calcula el Margen">\{WORK_BALANCE_HELP\.margen\}<\/WorkInfoTip><\/dt>/);
+assert.match(page, /const excludedMaterialExpense = getExcludedMaterialExpense\(balance\);/);
+assert.match(page, /\{excludedMaterialExpense != null && <p className="works-message works-message--warning">Hay \{money\(excludedMaterialExpense\)\} en gastos de tipo Material que no suman al balance porque el proyecto ya tiene materiales de inventario\.<\/p>\}/);
+assert.doesNotMatch(page, /Calculando desde fuentes autoritativas|Consumo neto valorizado/, "sin jerga en la ficha");
+const balancePartsSource = await readFile(new URL("../src/features/works/WorkBalanceParts.jsx", import.meta.url), "utf8");
+const infoTipSource = await readFile(new URL("../src/features/works/WorkInfoTip.jsx", import.meta.url), "utf8");
+for (const [name, source] of [["WorkBalanceParts", balancePartsSource], ["WorkInfoTip", infoTipSource]]) {
+  assert.doesNotMatch(source, /from ["'][^"']*(features\/reports|\/reports\/|firebase|workService)/, `${name}: sin imports de Reportes ni de servicios`);
+}
+assert.match(infoTipSource, /className="works-info__button"/); assert.match(infoTipSource, /className="works-info__panel"/);
+const worksStyles = await readFile(new URL("../src/features/works/works.css", import.meta.url), "utf8");
+for (const selector of [".works-info__button", ".works-info__panel", ".works-balance-result--gano", ".works-balance-result--perdio"]) assert.ok(worksStyles.includes(selector), `works.css define ${selector}`);
+const newCss = worksStyles.slice(worksStyles.indexOf('/* Balance: ícono "i"'));
+assert.doesNotMatch(newCss, /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/, "los estilos nuevos usan solo tokens (sin colores literales)");
+assert.match(newCss, /\.works-balance-result--gano \.works-balance-result__amount \{ color: var\(--color-success-700\); \}/);
+assert.match(newCss, /\.works-balance-result--perdio \.works-balance-result__amount \{ color: var\(--color-danger-700\); \}/);
 console.log("OK conexiones: mismas Functions y requestId, costos acotados a la tarea, ficha→tablero y deep link");
 
 console.log("WORK_PROJECT_BOARD_SMOKE_OK");

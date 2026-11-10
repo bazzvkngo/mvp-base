@@ -580,3 +580,17 @@ button.works-task-board__card:focus-visible { outline: var(--focus-outline); out
   .works-summary-card__meta { grid-template-columns: minmax(0, 1fr); }
   .works-detail-alert, .works-detail-notice { align-items: stretch; flex-direction: column; }
 }
+
+/* Balance: ícono "i" con la explicación de cada cifra (WorkInfoTip, mismo patrón que Reportes) y resultado con color. */
+.works-balance-primary dt { align-items: center; display: flex; gap: var(--space-1); }
+.works-info { display: inline-flex; flex: 0 0 auto; position: relative; }
+.works-info .works-info__button { align-items: center; background: transparent; border: 0; border-radius: var(--radius-pill); color: var(--color-text-muted); cursor: pointer; display: inline-flex; height: var(--space-6); justify-content: center; padding: 0; width: var(--space-6); }
+.works-info .works-info__button:hover, .works-info .works-info__button[aria-expanded="true"] { background: var(--color-surface-hover); color: var(--color-text-brand); }
+.works-info .works-info__button:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-offset); }
+@media (pointer: coarse) { .works-info .works-info__button { height: calc(var(--space-10) + var(--space-1)); width: calc(var(--space-10) + var(--space-1)); } }
+/* Panel fixed (lo coloca WorkInfoTip junto al botón): no lo recorta el cuerpo con scroll del diálogo. 20rem = PANEL_WIDTH. */
+.works-info__panel { background: var(--color-surface-panel); border: 1px solid var(--color-border-control); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); color: var(--color-text-default); display: block; font-size: var(--font-size-sm); font-weight: var(--font-weight-regular); line-height: var(--line-height-default); padding: var(--space-3); position: fixed; text-align: left; width: min(20rem, calc(100vw - 1rem)); z-index: var(--z-dialog); }
+.works-info__panel[hidden] { display: none; }
+.works-balance-result { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2); }
+.works-balance-result--gano .works-balance-result__amount { color: var(--color-success-700); }
+.works-balance-result--perdio .works-balance-result__amount { color: var(--color-danger-700); }
