@@ -2227,7 +2227,7 @@ console.log("OK reportes (ventas y compras, bloque 1): helpers de cabecera, orde
   assert.match(vcVentasSource, /Los montos por producto van antes del descuento general de la venta\./);
   assert.match(vcVentasSource, /label=\{`Ver los principales clientes/);
   assert.match(vcComprasSource, /title="¿A quién le compré\?"/);
-  assert.match(vcComprasSource, /label=\{`Ver los productos adquiridos/);
+  assert.match(vcComprasSource, /label=\{`Ver los principales productos adquiridos/);
   assert.match(vcPageSource, /<ReportsVentasView canOpenSales=\{links\.sales\} fallbackCurrency=\{currencyCode\}/, "la moneda de respaldo es la que la página usó para armar el resumen y los rankings");
   assert.match(vcPageSource, /<ReportsComprasView canOpenPurchases=\{links\.purchases\} chartGroups=\{chartGroups\} fallbackCurrency=\{currencyCode\}/);
   // El gráfico Ventas vs Compras y su nota siguen intactos en Compras (SPEC 022 §6.3).
@@ -2328,12 +2328,12 @@ console.log("OK reportes (ventas y compras, bloque 1): helpers de cabecera, orde
       })));
     };
     const compras = renderCompras([vcSale(1, "2026-10-02")], mockupPurchases);
-    for (const text of [">Compré<", "$412.300", "3 compras confirmadas · sin IVA", "¿A quién le compré?", "Proveedor A", "50,9 %", "$210.000", "31,1 %", "17,9 %", "reports-share-bars--purchases", "Movimiento comercial", "Comparar ventas y compras no es ganancia.", "Últimas compras", "COM-0003", "Ver los productos adquiridos (3)", "Ver la evolución por día (3)", "<th class=\"is-numeric\">Neto</th><th class=\"is-numeric\">Total</th>", "Ir a Compras"]) {
+    for (const text of [">Compré<", "$412.300", "3 compras confirmadas · sin IVA", "¿A quién le compré?", "Proveedor A", "50,9 %", "$210.000", "31,1 %", "17,9 %", "reports-share-bars--purchases", "Movimiento comercial", "Comparar ventas y compras no es ganancia.", "Últimas compras", "COM-0003", "Ver los principales productos adquiridos (3)", "Ver la evolución por día (3)", "<th class=\"is-numeric\">Neto</th><th class=\"is-numeric\">Total</th>", "Ir a Compras"]) {
       assert.ok(compras.includes(text), `Compras: falta ${text}`);
     }
     assert.equal(vcCount(compras, /Incluye stock que aún no vendes\. No cuentan las revertidas ni las canceladas\./g), 1, "la nota va una sola vez, en la cabecera");
     assert.ok(compras.indexOf(">Compré<") < compras.indexOf("Incluye stock que aún no vendes") && compras.indexOf("Incluye stock que aún no vendes") < compras.indexOf("Movimiento comercial"), "la nota va bajo la cifra de la cabecera");
-    assert.ok(compras.indexOf("Movimiento comercial") < compras.indexOf("¿A quién le compré?") && compras.indexOf("¿A quién le compré?") < compras.indexOf("Últimas compras") && compras.indexOf("Últimas compras") < compras.indexOf("Ver los productos adquiridos"), "orden: cabecera, gráfico, proveedores, operaciones, plegables");
+    assert.ok(compras.indexOf("Movimiento comercial") < compras.indexOf("¿A quién le compré?") && compras.indexOf("¿A quién le compré?") < compras.indexOf("Últimas compras") && compras.indexOf("Últimas compras") < compras.indexOf("Ver los principales productos adquiridos"), "orden: cabecera, gráfico, proveedores, operaciones, plegables");
     assert.doesNotMatch(compras, /Aún no hay compras|Detalle de Compras|Principales proveedores|operación\(es\)|Cantidad de compras/);
     assert.equal(vcCount(compras, /class="reports-share-bars__track"/g), 3, "una barra por proveedor");
     assert.ok(compras.includes("1 compra") && !/>\s*1 compras</.test(compras));
@@ -2348,7 +2348,7 @@ console.log("OK reportes (ventas y compras, bloque 1): helpers de cabecera, orde
     assert.equal(vcCount(multiPurchases, /<section class="erp-card reports-flow-header reports-flow-header--purchases">/g), 2);
     assert.equal(vcCount(multiPurchases, /Incluye stock que aún no vendes\. No cuentan las revertidas ni las canceladas\./g), 1, "la nota no se repite por moneda");
     assert.equal(vcCount(multiPurchases, /class="erp-card reports-share-bars reports-share-bars--purchases"/g), 2);
-    assert.ok(multiPurchases.includes("Ver los productos adquiridos en USD (1)"));
+    assert.ok(multiPurchases.includes("Ver los principales productos adquiridos en USD (1)"));
     // Más de 5 compras: las 5 más recientes y "Ver todas"; el resto de los proveedores queda como "Otros proveedores".
     const manyPurchases = [1, 2, 3, 4, 5, 6, 7].map((n) => vcPurchase(`m${n}`, `COM-01${n}`, `2026-10-0${n}`, `P${n}`, 1000 * (10 - n)));
     const manyView = renderCompras([], manyPurchases);

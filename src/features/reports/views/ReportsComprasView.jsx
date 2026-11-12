@@ -81,7 +81,7 @@ function ReportsComprasView({canOpenPurchases, chartGroups, fallbackCurrency = "
         columns={["Ítem", "Cantidad", "Monto"]}
         currency={group.currency}
         groups={topPurchaseProducts}
-        label={`Ver los productos adquiridos${showCurrency ? ` en ${group.currency}` : ""}`}
+        label={`Ver los principales productos adquiridos${showCurrency ? ` en ${group.currency}` : ""}`}
         renderRow={(entry) => <tr key={entry.id}><td>{entry.name}</td><td>{entry.quantity}</td><td>{formatMoney(entry.total, group.currency, businessLocale)}</td></tr>}
       />
       <FoldedTimeline currency={group.currency} items={purchaseTimeline} showCurrency={showCurrency} />
