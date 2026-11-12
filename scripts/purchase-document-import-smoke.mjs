@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
+  acceptExactPurchaseDocumentMatches,
   applyPurchaseDocumentImport,
   buildPurchaseDocumentPreview,
   getPurchaseDocumentImportSummary,
   matchPurchaseDocumentProvider,
+  selectExactPurchaseDocumentMatches,
   updatePurchaseDocumentRow,
 } from "../src/domain/purchaseDocumentImport.mjs";
 
@@ -88,6 +90,94 @@ assert.equal(applied.documentoOrigen.total, 9520);
 assert.equal(Object.hasOwn(applied.documentoOrigen, "base64"), false);
 console.log("OK importador compra: vínculos revisados, cantidades/costos/descuentos y datos tributarios");
 
+// F1: "Aceptar coincidencias exactas". Los estados por defecto NO cambian (ver
+// aserción de la línea 46: el nombre exacto nace "revisar"); aceptar es una
+// acción aparte, con resumen y segundo clic.
+const exactInventory = [
+  {id: "ex-cable", estado: "activo", nombre: "Cable UTP Cat6 305 m", codigoInterno: "CB-001", unidad: "unidad"},
+  {id: "ex-switch", estado: "activo", nombre: "Switch 24 puertos", codigoInterno: "SW-024", unidad: "unidad"},
+  {id: "ex-router-a", estado: "activo", nombre: "Router doble banda", codigoInterno: "RT-001", unidad: "unidad"},
+  {id: "ex-router-b", estado: "activo", nombre: "Router doble banda", codigoInterno: "RT-002", unidad: "unidad"},
+  {id: "ex-panel", estado: "activo", nombre: "Patch panel 24 puertos", codigoInterno: "PP-024", unidad: "unidad"},
+  {id: "ex-rack", estado: "activo", nombre: "Rack mural 12U", codigoInterno: "RK-012", unidad: "unidad"},
+  {id: "ex-caja", estado: "activo", nombre: "Caja de paso", codigoInterno: "CJ-001", unidad: "unidad"},
+  {id: "ex-inactivo", estado: "inactivo", nombre: "Cable HDMI 2 m", codigoInterno: "CB-HDMI", unidad: "unidad"},
+];
+const exactCandidates = [
+  {id: "x-nombre", nombre: "Cable UTP Cat6 305 m", cantidadOrigen: 2, costoUnitario: 90000},
+  {id: "x-contenido", nombre: "Switch 24 puertos gigabit administrable", cantidadOrigen: 1, costoUnitario: 120000},
+  {id: "x-varios", nombre: "Router doble banda", cantidadOrigen: 1, costoUnitario: 50000},
+  {id: "x-aviso", nombre: "Patch panel 24 puertos", cantidadOrigen: 1, costoUnitario: 30000, advertencias: ["Cantidad poco legible"]},
+  {id: "x-ia", nombre: "Rack mural 12U", cantidadOrigen: 1, costoUnitario: 70000, revisionRequerida: true},
+  {id: "x-interno-ok", nombre: "Texto OCR", sku: "CJ-001", cantidadOrigen: 1, costoUnitario: 1},
+  {id: "x-sin", nombre: "Producto que no existe", cantidadOrigen: 1, costoUnitario: 10},
+];
+const exactRows = buildPurchaseDocumentPreview(exactCandidates, exactInventory);
+const byId = (list, id) => list.find((row) => row.rowId === id);
+// Estados por defecto intactos: nombre exacto, contenido, varios, aviso e IA siguen sin aceptarse.
+assert.equal(byId(exactRows, "x-nombre").estado, "revisar");
+assert.equal(byId(exactRows, "x-nombre").matchKind, "nombre");
+assert.equal(byId(exactRows, "x-nombre").revisionAceptada, false);
+assert.equal(byId(exactRows, "x-contenido").matchKind, "descripcion");
+assert.equal(byId(exactRows, "x-contenido").estado, "revisar");
+assert.equal(byId(exactRows, "x-varios").selectedItemId, "");
+assert.equal(byId(exactRows, "x-varios").estado, "sin_coincidencia");
+assert.equal(byId(exactRows, "x-interno-ok").estado, "vinculada");
+assert.equal(byId(exactRows, "x-sin").estado, "sin_coincidencia");
+
+const exactSelection = selectExactPurchaseDocumentMatches(exactRows, exactInventory);
+// Solo el nombre idéntico con un único ítem y sin avisos. Nunca contenido, varios candidatos, aviso ni revisión de la IA.
+assert.deepEqual(exactSelection.matches.map((match) => match.rowId), ["x-nombre"]);
+assert.equal(exactSelection.matches[0].itemNombre, "Cable UTP Cat6 305 m");
+assert.equal(exactSelection.matches.some((match) => match.rowId === "x-contenido"), false);
+assert.equal(exactSelection.matches.some((match) => match.rowId === "x-varios"), false);
+assert.equal(exactSelection.matches.some((match) => match.rowId === "x-aviso"), false);
+assert.equal(exactSelection.matches.some((match) => match.rowId === "x-ia"), false);
+// Pendientes = lo no vinculado que no se aceptará (contenido, varios, aviso, IA y sin coincidencia).
+assert.equal(exactSelection.pendientes, 5);
+// Seleccionar no modifica las filas.
+assert.equal(byId(exactRows, "x-nombre").estado, "revisar");
+
+// El segundo clic es obligatorio: sin confirmación no se acepta nada.
+assert.throws(() => acceptExactPurchaseDocumentMatches(exactRows, exactInventory), /Confirma el resumen/);
+assert.throws(() => acceptExactPurchaseDocumentMatches(exactRows, exactInventory, {}), /Confirma el resumen/);
+assert.throws(() => acceptExactPurchaseDocumentMatches(exactRows, exactInventory, {confirmed: "true"}), /Confirma el resumen/);
+assert.throws(() => acceptExactPurchaseDocumentMatches(exactRows, exactInventory, {confirmed: 1}), /Confirma el resumen/);
+const accepted = acceptExactPurchaseDocumentMatches(exactRows, exactInventory, {confirmed: true});
+assert.equal(byId(accepted, "x-nombre").estado, "vinculada");
+assert.equal(byId(accepted, "x-nombre").revisionAceptada, true);
+assert.equal(byId(accepted, "x-nombre").matchKind, "nombre");
+// Lo que no es exacto sigue igual, fila por fila.
+["x-contenido", "x-varios", "x-aviso", "x-ia", "x-interno-ok", "x-sin"].forEach((rowId) =>
+  assert.deepEqual(byId(accepted, rowId), byId(exactRows, rowId)));
+// Aceptar no aplica la compra: sigue bloqueada mientras haya líneas sin resolver.
+assert.equal(getPurchaseDocumentImportSummary(accepted).lista, false);
+assert.throws(() => applyPurchaseDocumentImport({rows: accepted, inventory: exactInventory, selectedProviderId: "provider-fiscal"}), /Resuelve y revisa todas las líneas/);
+// Solo acepta las filas del resumen que la persona vio.
+assert.equal(byId(acceptExactPurchaseDocumentMatches(exactRows, exactInventory, {confirmed: true, rowIds: ["x-contenido"]}), "x-nombre").estado, "revisar");
+
+// Dos renglones al mismo ítem: ninguno es exacto (puede ser un error de lectura).
+const duplicated = buildPurchaseDocumentPreview([
+  {id: "d-1", nombre: "Cable UTP Cat6 305 m", cantidadOrigen: 1, costoUnitario: 90000},
+  {id: "d-2", nombre: "Cable UTP Cat6 305 m", cantidadOrigen: 1, costoUnitario: 90000},
+], exactInventory);
+assert.deepEqual(selectExactPurchaseDocumentMatches(duplicated, exactInventory).matches, []);
+// Cantidad inválida, ítem cambiado a mano o inactivo: tampoco.
+const badQuantity = updatePurchaseDocumentRow(exactRows, "x-nombre", "cantidad", 0, exactInventory);
+assert.deepEqual(selectExactPurchaseDocumentMatches(badQuantity, exactInventory).matches, []);
+const manual = updatePurchaseDocumentRow(exactRows, "x-nombre", "selectedItemId", "ex-switch", exactInventory);
+assert.equal(byId(manual, "x-nombre").estado, "vinculada");
+assert.deepEqual(selectExactPurchaseDocumentMatches(manual, exactInventory).matches, []);
+const inactiveInventory = exactInventory.map((item) => item.id === "ex-cable" ? {...item, estado: "inactivo"} : item);
+assert.deepEqual(selectExactPurchaseDocumentMatches(exactRows, inactiveInventory).matches, []);
+// Si aparece otro ítem con el mismo nombre, deja de ser exacta (nunca con varios candidatos).
+const twinInventory = [...exactInventory, {id: "ex-cable-2", estado: "activo", nombre: "Cable UTP Cat6 305 m", codigoInterno: "CB-002", unidad: "unidad"}];
+assert.deepEqual(selectExactPurchaseDocumentMatches(exactRows, twinInventory).matches, []);
+// "Aceptar vínculo revisado" por línea sigue funcionando igual.
+const singleAccepted = updatePurchaseDocumentRow(exactRows, "x-contenido", "revisionAceptada", true, exactInventory);
+assert.equal(byId(singleAccepted, "x-contenido").estado, "vinculada");
+console.log("OK importador compra: aceptar coincidencias exactas (solo exactas, resumen y segundo clic obligatorio)");
+
 const dialog = fs.readFileSync(new URL("../src/features/purchases/PurchaseDocumentImportDialog.jsx", import.meta.url), "utf8");
 const page = fs.readFileSync(new URL("../src/pages/NewPurchasePage.jsx", import.meta.url), "utf8");
 const purchaseModel = fs.readFileSync(new URL("../src/domain/purchaseModel.mjs", import.meta.url), "utf8");
@@ -108,6 +198,30 @@ assert.match(page, /getPurchaseStockSemantics/);
 assert.match(purchaseModel, /Al confirmar esta compra se incrementará el stock de los productos/);
 assert.doesNotMatch(dialog, /crearProveedor|crearInventoryItem|confirmarCompra/);
 assert.match(dialog, /stripInventoryDocumentPayload/);
+assert.match(dialog, /Aceptar coincidencias exactas/);
+assert.match(dialog, /Aceptar vínculo revisado/);
+assert.match(dialog, /Revisa antes de aceptar/);
+assert.match(dialog, /por revisar a mano/);
+assert.match(dialog, /aria-label=\{`Aceptar coincidencias exactas/);
+// "Aplicar a Nueva compra" sigue bloqueado mientras haya líneas sin resolver.
+assert.match(dialog, /disabled=\{analyzing \|\| !summary\.lista \|\| !selectedProviderId\}/);
+// El primer clic solo abre el resumen: no llama a la función que acepta ni cambia filas.
+const openExactBody = dialog.match(/const openExactSummary = \(\) => \{[\s\S]*?\n {2}\};/)?.[0] || "";
+assert.ok(openExactBody.length > 0);
+assert.doesNotMatch(openExactBody, /acceptExactPurchaseDocumentMatches|setRows/);
+assert.match(openExactBody, /setExactSummaryOpen\(true\)/);
+// Solo el segundo clic acepta, con confirmación explícita.
+assert.equal((dialog.match(/acceptExactPurchaseDocumentMatches\(/g) || []).length, 1);
+assert.match(dialog, /confirmed: true/);
+assert.match(dialog, /onClick=\{confirmExactMatches\}/);
+// Escape (cierre del diálogo) cierra primero el resumen.
+assert.match(dialog, /if \(exactSummaryOpen\) \{\s*closeExactSummary\(\);\s*return;\s*\}/);
+// Sin colores ni medidas sueltas en el CSS nuevo.
+const purchasesCss = fs.readFileSync(new URL("../src/features/purchases/purchases.css", import.meta.url), "utf8");
+const exactCss = purchasesCss.slice(purchasesCss.indexOf(".purchase-exact-accept {"));
+assert.ok(exactCss.length > 0);
+// El ancho de borde "1px solid var(--color-border-*)" es la convención del repo (no hay token de ancho).
+assert.doesNotMatch(exactCss.replaceAll("1px solid var(--color-border-", ""), /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|\d(px|ms)\b/);
 assert.match(inventoryDialog, /const SPREADSHEET_ACCEPT = "\.csv,\.xls,\.xlsx"/);
 assert.doesNotMatch(inventoryDialog, /onPurchaseDocument|readInventorySourceFile|PDF|JPG|PNG|WEBP/);
 assert.match(inventoryManager, /navigate\("\/compras\/nueva", \{state: \{openPurchaseImport: true\}\}\)/);

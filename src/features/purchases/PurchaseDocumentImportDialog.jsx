@@ -3,10 +3,12 @@ import Button from "../../components/ui/Button";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import Spinner from "../../components/ui/Spinner";
 import {
+  acceptExactPurchaseDocumentMatches,
   applyPurchaseDocumentImport,
   buildPurchaseDocumentPreview,
   getPurchaseDocumentImportSummary,
   matchPurchaseDocumentProvider,
+  selectExactPurchaseDocumentMatches,
   updatePurchaseDocumentRow,
 } from "../../domain/purchaseDocumentImport.mjs";
 import {
@@ -60,6 +62,8 @@ export default function PurchaseDocumentImportDialog({
   const { locale: businessLocale } = useBusinessFormat();
   const inputRef = useRef(null);
   const applyGuard = useRef(false);
+  const exactTriggerRef = useRef(null);
+  const exactPanelRef = useRef(null);
   const [fileData, setFileData] = useState(null);
   const [analysis, setAnalysis] = useState(null);
   const [rows, setRows] = useState([]);
@@ -70,11 +74,17 @@ export default function PurchaseDocumentImportDialog({
   const [applying, setApplying] = useState(false);
   const [analysisMessageIndex, setAnalysisMessageIndex] = useState(0);
   const [error, setError] = useState("");
+  const [exactSummaryOpen, setExactSummaryOpen] = useState(false);
   const providerMatch = useMemo(
     () => matchPurchaseDocumentProvider(analysis || {}, providers),
     [analysis, providers]
   );
   const summary = getPurchaseDocumentImportSummary(rows);
+  const exact = useMemo(
+    () => selectExactPurchaseDocumentMatches(rows, inventory),
+    [rows, inventory]
+  );
+  const exactPanelVisible = exactSummaryOpen && !summary.lista;
   const activePhase = applying ? 3 : rows.length ? 2 : fileData ? 1 : 0;
   const currency = fields.moneda || analysis?.documento?.moneda || "CLP";
   const taxLabel = String(taxName || "").trim() || "Impuesto";
@@ -94,7 +104,38 @@ export default function PurchaseDocumentImportDialog({
     setSelectedProviderId(providerMatch.proveedorId || "");
   }, [analysis, providerMatch.proveedorId]);
 
+  // El foco pasa al resumen al abrirlo y vuelve al botón al cerrarlo.
+  useEffect(() => {
+    if (exactPanelVisible) exactPanelRef.current?.focus();
+  }, [exactPanelVisible]);
+
+  const closeExactSummary = () => {
+    setExactSummaryOpen(false);
+    window.requestAnimationFrame(() => exactTriggerRef.current?.focus());
+  };
+
+  // Primer clic: solo abre el resumen. No cambia ninguna línea.
+  const openExactSummary = () => {
+    if (!exact.matches.length) return;
+    setExactSummaryOpen(true);
+  };
+
+  // Segundo clic: acepta únicamente las líneas del resumen que siguen siendo exactas.
+  const confirmExactMatches = () => {
+    try {
+      setRows(acceptExactPurchaseDocumentMatches(rows, inventory, {
+        confirmed: true,
+        rowIds: exact.matches.map((match) => match.rowId),
+      }));
+      setError("");
+    } catch (acceptError) {
+      setError(acceptError.message || "No se pudieron aceptar las coincidencias exactas.");
+    }
+    closeExactSummary();
+  };
+
   const reset = () => {
+    setExactSummaryOpen(false);
     setFileData(null);
     setAnalysis(null);
     setRows([]);
@@ -108,6 +149,11 @@ export default function PurchaseDocumentImportDialog({
 
   const close = () => {
     if (loading || analyzing || applying) return;
+    // Escape (y el fondo) cierran primero el resumen, no el diálogo.
+    if (exactSummaryOpen) {
+      closeExactSummary();
+      return;
+    }
     reset();
     onClose();
   };
@@ -288,6 +334,32 @@ export default function PurchaseDocumentImportDialog({
           <article><span>Autoridad</span><strong>Revisión humana obligatoria</strong><p>Una propuesta de IA nunca crea ni autoriza ítems.</p></article>
           {analysis?.coherencia?.estado === "revisar" && <span className="reception-import__review-totals">Revisar totales</span>}
         </section>
+        {!summary.lista && <div className="purchase-exact-accept">
+          <Button
+            ref={exactTriggerRef}
+            type="button"
+            variant="secondary"
+            disabled={!exact.matches.length || analyzing || applying}
+            aria-label={`Aceptar coincidencias exactas: ${exact.matches.length} ${exact.matches.length === 1 ? "línea" : "líneas"}. Se muestra un resumen antes de aceptar.`}
+            aria-expanded={exactPanelVisible}
+            onClick={openExactSummary}
+          >Aceptar coincidencias exactas ({exact.matches.length})</Button>
+          <span>Solo código de barras, código interno o nombre idéntico con un único ítem. Primero verás un resumen.</span>
+        </div>}
+        {exactPanelVisible && <section ref={exactPanelRef} className="purchase-exact-accept__panel" tabIndex={-1} aria-labelledby="purchase-exact-accept-title">
+          <h3 id="purchase-exact-accept-title">Revisa antes de aceptar</h3>
+          {exact.matches.length > 0 ? <>
+            <p>{exact.matches.length} {exact.matches.length === 1 ? "línea se aceptará" : "líneas se aceptarán"}:</p>
+            <ul className="purchase-exact-accept__list" aria-label="Líneas que se aceptarán">
+              {exact.matches.map((match) => <li key={match.rowId}><span>{match.nombreOrigen}</span><span aria-hidden="true">→</span><strong>{match.itemNombre}</strong></li>)}
+            </ul>
+          </> : <p>Ya no quedan líneas con coincidencia exacta para aceptar.</p>}
+          <p>{exact.pendientes} {exact.pendientes === 1 ? "queda" : "quedan"} por revisar a mano.</p>
+          <div className="purchase-exact-accept__actions">
+            <Button type="button" variant="secondary" onClick={closeExactSummary}>Volver</Button>
+            <Button type="button" disabled={!exact.matches.length} onClick={confirmExactMatches}>{`Aceptar ${exact.matches.length} ${exact.matches.length === 1 ? "vínculo" : "vínculos"}`}</Button>
+          </div>
+        </section>}
         <section className="reception-import__rows" aria-label="Líneas de la factura">
           {rows.map((row) => {
             const target = inventory.find((item) => itemId(item) === row.selectedItemId);
