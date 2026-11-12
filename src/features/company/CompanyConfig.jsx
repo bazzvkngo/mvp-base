@@ -984,6 +984,7 @@ function BusinessVerificationSection({
       >
         <input
           value={form.identificadorFiscalValor}
+          maxLength={form.paisCodigo === "CL" ? 12 : 20}
           onChange={(event) =>
             update("identificadorFiscalValor", event.target.value)
           }
