@@ -18,7 +18,7 @@ import {
 } from "../src/domain/purchaseModel.mjs";
 
 const require = createRequire(import.meta.url);
-const {calculatePurchaseTotals: calculateBackendPurchaseTotals, normalizePurchaseInput, normalizeSupplierDocumentNumber} = require("../functions/purchasePersistence.js");
+const {calculatePurchaseTotals: calculateBackendPurchaseTotals, normalizePurchaseInput, normalizeSupplierDocumentNumber, documentCoherenceState, DOCUMENT_TOTALS_TOLERANCE} = require("../functions/purchasePersistence.js");
 const {resolvePurchaseVatTreatment: resolveBackendPurchaseVatTreatment} = require("../functions/inventoryAcquisition.js");
 class TestHttpsError extends Error {
   constructor(code, message) { super(message); this.code = code; }
@@ -273,7 +273,7 @@ assert.match(purchasePrint, /Unidad \/ naturaleza/);
 assert.match(purchasePrint, /Orden de compra/);
 assert.match(purchasePrint, /Recepci[oó]n/);
 assert.match(purchaseSummary, /discounts > 0 \? `-\$\{money\(discounts\)\}` : money\(0\)/);
-console.log("OK compras presentaciÃ³n: trazabilidad humana, documento imprimible y descuento cero");
+console.log("OK compras presentación: trazabilidad humana, documento imprimible y descuento cero");
 
 // Factura duplicada: el número de documento se compara sin espacios sobrantes y en mayúsculas; guiones y ceros cuentan.
 assert.equal(normalizeSupplierDocumentNumber("  f-100 "), "F-100");
@@ -282,5 +282,25 @@ assert.notEqual(normalizeSupplierDocumentNumber("F-100"), normalizeSupplierDocum
 assert.equal(normalizeSupplierDocumentNumber(null), "");
 assert.equal(normalizeSupplierDocumentNumber("   "), "");
 console.log("OK factura duplicada: normalización del número de documento");
+
+// Verificación de totales del documento: el servidor decide coherenciaEstado; tolerancia de 1 por total.
+assert.equal(DOCUMENT_TOTALS_TOLERANCE, 1);
+const calculatedTotals = {neto: 10000, iva: 1900, total: 11900};
+const coherence = (source, options = {}) => documentCoherenceState(source, calculatedTotals, {currency: "CLP", tipoDocumento: "factura", ...options});
+assert.equal(coherence({neto: 10000, impuestoMonto: 1900, total: 11900}), "coherente");
+assert.equal(coherence({neto: 10001, impuestoMonto: 1899, total: 11901}), "coherente", "1 de diferencia por total");
+assert.equal(coherence({total: 11900}), "coherente", "basta un total declarado");
+assert.equal(coherence({neto: 10002, impuestoMonto: 1900, total: 11900}), "revisar", "2 de diferencia en el neto");
+assert.equal(coherence({neto: 10000, impuestoMonto: 1900, total: 11898}), "revisar", "2 de diferencia en el total");
+assert.equal(coherence({neto: 10000, impuestoMonto: 0, total: 11900}), "revisar", "impuesto distinto");
+assert.equal(coherence({coherenciaEstado: "coherente", total: 99999}), "revisar", "lo que declara el cliente en coherenciaEstado no cuenta");
+assert.equal(coherence({coherenciaEstado: "revisar", total: 11900}), "coherente", "ni cuando dice 'revisar' con totales que calzan");
+assert.equal(coherence({neto: null, impuestoMonto: null, total: null}), "sin_datos");
+assert.equal(coherence({}), "sin_datos");
+assert.equal(coherence({moneda: "USD", total: 5}), "sin_datos", "moneda distinta: no comparable");
+assert.equal(coherence({moneda: "clp", total: 11900}), "coherente", "misma moneda en minúsculas");
+assert.equal(documentCoherenceState({neto: 8403, impuestoMonto: 1597, total: 10000}, {neto: 10000, iva: 0, total: 10000}, {currency: "CLP", tipoDocumento: "boleta"}), "coherente", "boleta: solo se compara el total");
+assert.equal(documentCoherenceState({total: 10005}, {neto: 10000, iva: 0, total: 10000}, {currency: "CLP", tipoDocumento: "boleta"}), "revisar");
+console.log("OK verificación de totales del documento: tolerancia, cliente no confiable, moneda y boleta");
 
 console.log("Smoke del modelo de Compras completado.");

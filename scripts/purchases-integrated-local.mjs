@@ -430,6 +430,9 @@ try {
   await duplicateConfirm(dupOtherProvider, "other-provider");
   const dupOtherType = await duplicateDraft("other-type", {tipoDocumento: "boleta"});
   await duplicateConfirm(dupOtherType, "other-type");
+  const dupBoletaSecond = await duplicateDraft("boleta-second", {tipoDocumento: "boleta"});
+  await assert.rejects(() => duplicateConfirm(dupBoletaSecond, "boleta-second"), (error) => /failed-precondition/.test(String(error?.code)) && /con la boleta N° F-DUP-1/.test(String(error?.message)) && /Revisa que la boleta no se haya ingresado antes\./.test(String(error?.message)));
+  await assert.rejects(() => duplicateConfirm(dupSecond, "second-label"), (error) => /Revisa que la factura no se haya ingresado antes\./.test(String(error?.message)));
   const dupNoDocumentA = await duplicateDraft("nodoc-a", {tipoDocumento: "sin_documento", numeroDocumentoProveedor: ""});
   const dupNoDocumentB = await duplicateDraft("nodoc-b", {tipoDocumento: "sin_documento", numeroDocumentoProveedor: ""});
   await duplicateConfirm(dupNoDocumentA, "nodoc-a"); await duplicateConfirm(dupNoDocumentB, "nodoc-b");
@@ -466,6 +469,32 @@ try {
   assert.equal((await adminDb.doc(`negocios/${businessId}/compras/${importedDraft.data.compra.id}`).get()).data().estado, "borrador");
   assert.equal((await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("compraId", "==", importedDraft.data.compra.id).get()).size, 0);
   console.log("OK importador: factura prepara borrador, conserva tributos y bloquea líneas sin resolver sin stock");
+
+  // Verificación de totales en el servidor: coherenciaEstado sale de comparar los totales declarados con los calculados
+  // desde las líneas (tolerancia de 1 unidad por total), nunca de lo que manda el cliente. La línea vale neto 10000 + IVA 1900 = 11900.
+  const storedCoherence = async (draft) => (await adminDb.doc(`negocios/${businessId}/compras/${draft.data.compra.id}`).get()).data().documentoOrigen?.coherenciaEstado;
+  const coherenceDraft = (suffix, documentOverrides = {}, compraOverrides = {}) => call(owner, "crearCompra")({businessId, requestId: requestId(`coherence-${suffix}`), compra: purchasePayload(providerId, [line(productA, `coherence-${suffix}`, {cantidad: 1, costoUnitario: 10000, descuentoPct: 0})], {documentoOrigen: {...unresolvedDocument, lineasDetectadas: 1, lineasAplicadas: 1, ...documentOverrides}, ...compraOverrides})});
+  const coherentDraft = await coherenceDraft("ok", {coherenciaEstado: "revisar"});
+  assert.equal(coherentDraft.data.compra.documentoOrigen.coherenciaEstado, "coherente");
+  assert.equal(await storedCoherence(coherentDraft), "coherente", "totales que calzan: el servidor corrige un 'revisar' falso del cliente");
+  assert.equal(await storedCoherence(await coherenceDraft("tol-total", {total: 11901})), "coherente", "total con 1 de diferencia: dentro de la tolerancia");
+  assert.equal(await storedCoherence(await coherenceDraft("tol-all", {neto: 10001, impuestoMonto: 1899, total: 11899})), "coherente", "cada total se compara con su propia tolerancia");
+  assert.equal(await storedCoherence(await coherenceDraft("out-total", {total: 11902})), "revisar", "total con 2 de diferencia: fuera de la tolerancia");
+  assert.equal(await storedCoherence(await coherenceDraft("out-tax", {impuestoMonto: 1000})), "revisar", "impuesto distinto: revisar");
+  assert.equal(await storedCoherence(await coherenceDraft("fake", {total: 99999, coherenciaEstado: "coherente"})), "revisar", "el cliente declara 'coherente' con totales falsos: el servidor lo marca 'revisar'");
+  assert.equal(await storedCoherence(await coherenceDraft("empty", {neto: null, impuestoMonto: null, total: null, coherenciaEstado: "coherente"})), "sin_datos", "sin totales declarados no hay nada que comparar");
+  assert.equal(await storedCoherence(await coherenceDraft("currency", {moneda: "USD", total: 5, coherenciaEstado: "coherente"})), "sin_datos", "otra moneda: no comparable");
+  const boletaCoherent = await coherenceDraft("boleta", {tipoDocumento: "boleta", neto: 8403, impuestoMonto: 1597, total: 10000}, {tipoDocumento: "boleta"});
+  assert.equal(await storedCoherence(boletaCoherent), "coherente", "boleta: solo se compara el total (el IVA va incluido en las líneas)");
+  const manualDraft = await call(owner, "crearCompra")({businessId, requestId: requestId("coherence-manual"), compra: purchasePayload(providerId, [line(productA, "coherence-manual", {cantidad: 1, costoUnitario: 10000, descuentoPct: 0})], {tipoDocumento: "sin_documento", numeroDocumentoProveedor: ""})});
+  assert.equal(manualDraft.data.compra.documentoOrigen, null);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/compras/${manualDraft.data.compra.id}`).get()).data().documentoOrigen, null, "compra manual sin documento: no se inventa documentoOrigen");
+  const updatedFake = await call(owner, "actualizarCompraBorrador")({businessId, compraId: coherentDraft.data.compra.id, compra: purchasePayload(providerId, [line(productA, "coherence-ok", {cantidad: 2, costoUnitario: 10000, descuentoPct: 0})], {documentoOrigen: {...unresolvedDocument, lineasDetectadas: 1, lineasAplicadas: 1, coherenciaEstado: "coherente"}})});
+  assert.equal(updatedFake.data.compra.documentoOrigen.coherenciaEstado, "revisar");
+  assert.equal(await storedCoherence(coherentDraft), "revisar", "editar las líneas sin cambiar los totales declarados deja la compra en 'revisar'");
+  await call(owner, "actualizarCompraBorrador")({businessId, compraId: coherentDraft.data.compra.id, compra: purchasePayload(providerId, [line(productA, "coherence-ok", {cantidad: 1, costoUnitario: 10000, descuentoPct: 0})], {documentoOrigen: {...unresolvedDocument, lineasDetectadas: 1, lineasAplicadas: 1, coherenciaEstado: "revisar"}})});
+  assert.equal(await storedCoherence(coherentDraft), "coherente", "al volver a calzar, el servidor lo vuelve a marcar 'coherente'");
+  console.log("OK verificación de totales: coherente, dentro/fuera de tolerancia, cliente con totales falsos, boleta, moneda, sin datos y compra manual");
 
   const rollbackDraft = await call(owner, "crearCompra")({businessId, requestId: requestId("rollback-create"), compra: purchasePayload(providerId, [line(productA, "rollback-a", {cantidad: 1}), line(productB, "rollback-b", {cantidad: 1})])});
   const stockBeforeRollback = (await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock;

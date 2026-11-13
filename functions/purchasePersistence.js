@@ -225,6 +225,28 @@ function totals(items, HttpsError, taxRate = VAT_RATE, {tipoDocumento} = {}) {
   safeMoney([subtotal, descuentoTotal, neto, montoExento, iva, total], HttpsError);
   return {subtotal, descuentoTotal, neto, montoExento, iva, total};
 }
+// Verificación de totales del documento importado (SPEC de compras, opción A del informe del importador): el
+// servidor compara los totales que declara el documento con los que calcula desde las líneas guardadas.
+// Tolerancia: 1 unidad de la moneda por cada total comparado (neto, impuesto y total), para absorber el redondeo
+// de cada línea al centavo/peso. Es una diferencia absoluta y no un porcentaje: una diferencia de 2 ya es "revisar".
+const DOCUMENT_TOTALS_TOLERANCE = 1;
+// Devuelve el estado que se guarda en documentoOrigen.coherenciaEstado, sin confiar en el que manda el cliente:
+//  - "coherente": hay al menos un total declarado y todos los declarados están dentro de la tolerancia.
+//  - "revisar": algún total declarado difiere del calculado en más de la tolerancia.
+//  - "sin_datos": el documento no declara totales, o su moneda no es la de la compra (no son comparables).
+// Boleta: el IVA va incluido en los precios y el servidor no lo separa (iva 0), así que solo se compara el total.
+// No bloquea ninguna operación: solo marca la compra para revisión.
+function documentCoherenceState(source, calculated, {currency, tipoDocumento}) {
+  const sourceCurrency = text(source?.moneda, 12).toUpperCase();
+  if (sourceCurrency && currency && sourceCurrency !== currency) return "sin_datos";
+  const isBoleta = resolvePurchaseVatTreatment({tipoDocumento}) === PURCHASE_VAT_TREATMENTS.BOLETA;
+  const pairs = isBoleta
+    ? [[source?.total, calculated.total]]
+    : [[source?.neto, calculated.neto], [source?.impuestoMonto, calculated.iva], [source?.total, calculated.total]];
+  const compared = pairs.filter(([declared]) => Number.isFinite(declared));
+  if (!compared.length) return "sin_datos";
+  return compared.every(([declared, expected]) => Math.abs(declared - expected) <= DOCUMENT_TOTALS_TOLERANCE + 1e-9) ? "coherente" : "revisar";
+}
 function hash(value) { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
 async function access(request, dependencies) {
   return dependencies.requireBusinessAccess(request, {db: dependencies.db, HttpsError: dependencies.HttpsError}, {roles: WRITE_ROLES, requiresVerifiedBusiness: true});
@@ -232,12 +254,14 @@ async function access(request, dependencies) {
 function formatNumber(year, sequence) { return `COM-${year}-${String(sequence).padStart(4, "0")}`; }
 function baseStored({businessId, uid, purchaseId, numero, sequence, now, normalized, proveedorSnapshot, items, localization, empresaSnapshot, modelVersion = MODEL_VERSION, stockManagedBy = "compra_directa", origin = {}, timestamp, HttpsError}) {
   const location = localization || adaptDocumentLocalization({});
+  const calculatedTotals = totals(items, HttpsError, location.tasaIva, {tipoDocumento: normalized.tipoDocumento});
   const documentoOrigen = normalized.documentoOrigen ? {
     ...normalized.documentoOrigen,
+    coherenciaEstado: documentCoherenceState(normalized.documentoOrigen, calculatedTotals, {currency: location.moneda, tipoDocumento: normalized.tipoDocumento}),
     importadoEn: timestamp,
     actualizadoEn: timestamp,
   } : null;
-  return {modeloCompraVersion: modelVersion, compraId: purchaseId, negocioId: businessId, numero, anio: now.year, correlativo: sequence, estado: "borrador", paisCodigo: location.paisCodigo, moneda: location.moneda, locale: location.locale, impuestoNombre: location.impuestoNombre, tasaIva: location.tasaIva, empresaSnapshot, proveedorId: normalized.proveedorId, proveedorSnapshot, ...origin, documentoOrigen: origin.documentoOrigen || documentoOrigen, items, ...totals(items, HttpsError, location.tasaIva, {tipoDocumento: normalized.tipoDocumento}), modeloIvaCompraVersion: PURCHASE_VAT_MODEL_VERSION, fechaCompra: normalized.fechaCompra, fechaDocumento: normalized.fechaDocumento, tipoDocumento: normalized.tipoDocumento, numeroDocumentoProveedor: normalized.numeroDocumentoProveedor, condicionesPago: normalized.condicionesPago || text(proveedorSnapshot.condicionesPago, 2000), observaciones: normalized.observaciones, stockGestionadoPor: stockManagedBy, stockAplicado: false, stockAplicadoEn: null, creadoPorUid: uid, actualizadoPorUid: uid, creadoEn: timestamp, actualizadoEn: timestamp};
+  return {modeloCompraVersion: modelVersion, compraId: purchaseId, negocioId: businessId, numero, anio: now.year, correlativo: sequence, estado: "borrador", paisCodigo: location.paisCodigo, moneda: location.moneda, locale: location.locale, impuestoNombre: location.impuestoNombre, tasaIva: location.tasaIva, empresaSnapshot, proveedorId: normalized.proveedorId, proveedorSnapshot, ...origin, documentoOrigen: origin.documentoOrigen || documentoOrigen, items, ...calculatedTotals, modeloIvaCompraVersion: PURCHASE_VAT_MODEL_VERSION, fechaCompra: normalized.fechaCompra, fechaDocumento: normalized.fechaDocumento, tipoDocumento: normalized.tipoDocumento, numeroDocumentoProveedor: normalized.numeroDocumentoProveedor, condicionesPago: normalized.condicionesPago || text(proveedorSnapshot.condicionesPago, 2000), observaciones: normalized.observaciones, stockGestionadoPor: stockManagedBy, stockAplicado: false, stockAplicadoEn: null, creadoPorUid: uid, actualizadoPorUid: uid, creadoEn: timestamp, actualizadoEn: timestamp};
 }
 
 function buildConfirmedPurchaseFromReception({
@@ -355,7 +379,7 @@ async function assertSupplierDocumentIsNew(transaction, businessRef, purchase, p
   const duplicate = snapshot.docs.find((document) => document.id !== purchaseId &&
     normalizeSupplierDocumentNumber(document.data()?.numeroDocumentoProveedor) === documentNumber);
   if (duplicate) {
-    fail(HttpsError, "failed-precondition", `Este proveedor ya tiene una compra confirmada con ${DOCUMENT_TYPE_LABELS[documentType]} N° ${text(purchase.numeroDocumentoProveedor, 120)} (${text(duplicate.data()?.numero, 60) || duplicate.id}). Revisa que la factura no se haya ingresado antes.`);
+    fail(HttpsError, "failed-precondition", `Este proveedor ya tiene una compra confirmada con ${DOCUMENT_TYPE_LABELS[documentType]} N° ${text(purchase.numeroDocumentoProveedor, 120)} (${text(duplicate.data()?.numero, 60) || duplicate.id}). Revisa que ${DOCUMENT_TYPE_LABELS[documentType]} no se haya ingresado antes.`);
   }
 }
 function retryable(error) { return Number(error?.code) === 10 || String(error?.message || "").toLowerCase().includes("transaction is invalid"); }
@@ -633,12 +657,15 @@ async function actualizarCompraBorradorHandler(request, dependencies) {
       return storedLine(item, itemChanged[index] ? inventory(inventorySnapshot, businessId, item.itemId, HttpsError) : preservedItem(previousLines.get(item.lineaId)), HttpsError, productTaxId(inventorySnapshot));
     });
     const timestamp = FieldValue.serverTimestamp();
+    const localization = adaptDocumentLocalization(existing);
+    const calculatedTotals = totals(items, HttpsError, localization.tasaIva, {tipoDocumento: normalized.tipoDocumento});
     const documentoOrigen = normalized.documentoOrigen ? {
       ...normalized.documentoOrigen,
+      coherenciaEstado: documentCoherenceState(normalized.documentoOrigen, calculatedTotals, {currency: localization.moneda, tipoDocumento: normalized.tipoDocumento}),
       importadoEn: existing.documentoOrigen?.importadoEn || timestamp,
       actualizadoEn: timestamp,
     } : null;
-    const update = {...normalized, documentoOrigen, proveedorSnapshot, items, ...totals(items, HttpsError, adaptDocumentLocalization(existing).tasaIva, {tipoDocumento: normalized.tipoDocumento}), modeloIvaCompraVersion: PURCHASE_VAT_MODEL_VERSION, actualizadoPorUid: uid, actualizadoEn: timestamp};
+    const update = {...normalized, documentoOrigen, proveedorSnapshot, items, ...calculatedTotals, modeloIvaCompraVersion: PURCHASE_VAT_MODEL_VERSION, actualizadoPorUid: uid, actualizadoEn: timestamp};
     delete update.itemsInput;
     transaction.update(purchaseRef, update);
     return {compra: {id: purchaseId, ...existing, ...update, actualizadoEn: null}};
@@ -1171,4 +1198,4 @@ async function cancelarCompraBorradorHandler(request, dependencies) {
   });
 }
 
-module.exports = {actualizarCompraBorradorHandler, buildConfirmedPurchaseFromReception, cancelarCompraBorradorHandler, confirmarCompraHandler, crearCompraDesdeOrdenHandler, crearCompraDesdeRecepcionHandler, crearCompraHandler, formatPurchaseNumber: formatNumber, normalizePurchaseInput: input, normalizeSupplierDocumentNumber, calculatePurchaseTotals: totals, providerSnapshotFromDocument: provider, revertirCompraHandler};
+module.exports = {actualizarCompraBorradorHandler, buildConfirmedPurchaseFromReception, cancelarCompraBorradorHandler, confirmarCompraHandler, crearCompraDesdeOrdenHandler, crearCompraDesdeRecepcionHandler, crearCompraHandler, formatPurchaseNumber: formatNumber, normalizePurchaseInput: input, normalizeSupplierDocumentNumber, documentCoherenceState, DOCUMENT_TOTALS_TOLERANCE, calculatePurchaseTotals: totals, providerSnapshotFromDocument: provider, revertirCompraHandler};
