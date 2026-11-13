@@ -1,6 +1,7 @@
 import {ArrowLeft, Printer} from "lucide-react";
 import {useNavigate} from "react-router-dom";
 import Button from "../../components/ui/Button";
+import Notice from "../../components/ui/Notice";
 import StatusBadge from "../../components/ui/StatusBadge";
 import {
   getPurchaseDocumentTypeLabel,
@@ -145,6 +146,9 @@ export default function PurchaseDetailView({company, message, printable, purchas
         {hasDocument
           ? <dl className="purchase-document-summary">{documentValues.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
           : <p className="purchase-empty-copy">No hay un documento asociado a esta compra.</p>}
+        {hasDocument && source.coherenciaEstado === "revisar" && <section className="purchase-detail__totals-notice">
+          <Notice variant="warning" role={null}>Los totales del documento no coinciden con las líneas.</Notice>
+        </section>}
       </details>
       <details className="po-panel po-details">
         <summary>

@@ -240,4 +240,18 @@ assert.match(backend, /lineasSinResolver/);
 assert.match(backend, /tipoOrigen: "compra_directa"/);
 console.log("OK importador compra: pipeline reutilizado, borrador explícito y confirmación separada");
 
+// Aviso de totales: solo con coherenciaEstado "revisar" (la verificación la hace el servidor), con <Notice> existente,
+// sin role propio (el panel que lo contiene ya es role="status"), sin bloquear nada y sin mensaje para coherente/sin_datos.
+assert.match(page, /import Notice from "\.\.\/components\/ui\/Notice"/);
+const pageNotice = page.match(/\{draft\.documentoOrigen\.coherenciaEstado === "revisar" && <Notice variant="warning" role=\{null\}>([^<]*)<\/Notice>\}/);
+assert.ok(pageNotice, "aviso de totales en Nueva compra, solo con estado revisar");
+assert.equal(pageNotice[1], "Los totales del documento no coinciden con las líneas. Revisa antes de confirmar.");
+assert.equal((page.match(/coherenciaEstado/g) || []).length, 1, "ninguna otra rama lee coherenciaEstado en la pantalla");
+const importedStart = page.indexOf('<div className="purchase-imported-document-summary" role="status">');
+const importedPanel = importedStart >= 0 ? page.slice(importedStart, page.indexOf("</details>", importedStart)) : "";
+assert.match(importedPanel, /<Notice variant="warning" role=\{null\}>/, "el aviso va dentro del panel importado y sin role anidado");
+assert.equal((importedPanel.match(/role=/g) || []).length, 2, "un solo role=\"status\" (el del panel) más el role={null} del aviso");
+assert.doesNotMatch(page, /variant="error"[^>]*>Los totales|disabled=\{[^}]*coherencia/, "el aviso no usa tono de error ni bloquea acciones");
+console.log("OK importador compra: aviso visible de totales solo con estado revisar");
+
 console.log("Smoke del importador documental de Compras completado.");

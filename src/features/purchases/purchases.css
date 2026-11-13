@@ -33,6 +33,7 @@
 .purchase-document-grid input, .purchase-document-grid select, .purchase-document-grid textarea { border: 1px solid var(--color-border-control); border-radius: 6px; font: inherit; min-height: 44px; padding: 9px 11px; }
 .purchase-document-grid .purchase-field-wide { grid-column: 1 / -1; }
 .purchase-document-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 14px; }
+.purchase-detail__totals-notice { padding: 0 var(--space-4) var(--space-4); }
 .purchase-notes-grid { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 14px; }
 .purchase-notes-grid section { background: var(--color-surface-subtle); border-radius: 8px; display: grid; gap: 5px; padding: 11px 12px; }
 .purchase-notes-grid section > span { color: var(--color-text-muted); font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }

@@ -1,5 +1,5 @@
 const {createHash} = require("node:crypto");
-const {adaptDocumentLocalization, documentLocalizationSnapshot} = require("./localization");
+const {adaptDocumentLocalization, currencyDecimals, documentLocalizationSnapshot} = require("./localization");
 const {buildAuthoritativeCompanySnapshot, resolveCompanySnapshot} = require("./companySnapshot");
 const {fiscalSnapshotFields} = require("./fiscalIdentifier");
 const {
@@ -227,16 +227,31 @@ function totals(items, HttpsError, taxRate = VAT_RATE, {tipoDocumento} = {}) {
 }
 // Verificación de totales del documento importado (SPEC de compras, opción A del informe del importador): el
 // servidor compara los totales que declara el documento con los que calcula desde las líneas guardadas.
-// Tolerancia: 1 unidad de la moneda por cada total comparado (neto, impuesto y total), para absorber el redondeo
-// de cada línea al centavo/peso. Es una diferencia absoluta y no un porcentaje: una diferencia de 2 ya es "revisar".
+// Tolerancia por cada total comparado (neto, impuesto y total), como diferencia absoluta y no porcentaje:
+//   tolerancia = unidad mínima de la moneda × max(1, número de líneas)
+//  - unidad mínima: moneda sin decimales según el catálogo (CLP, PYG) o código desconocido = 1; con decimales
+//    (USD, EUR...) = 10^-decimales, 0,01 con 2 decimales.
+//  - por el número de líneas: cada línea se redondea por separado (el servidor redondea subtotal y descuento de cada
+//    línea; otro emisor puede redondear distinto) y el error de cada línea llega a ~1 unidad, así que el peor caso
+//    acumulado crece con las líneas. Con 1 línea (o 0) la tolerancia es la de siempre: 1 en CLP, una diferencia de 2
+//    ya es "revisar". Con 21 líneas en CLP es 21: una factura que calza con diferencias de +3/+1/+4 es "coherente",
+//    y una diferencia de 100 pesos sigue en "revisar" (21 sobre un neto de 317.911 es 0,007 %).
+//  - se aplica la misma tolerancia al neto, al impuesto y al total (el impuesto y el total también se calculan desde
+//    las mismas líneas), en vez de derivar las de impuesto y total de la del neto.
 const DOCUMENT_TOTALS_TOLERANCE = 1;
+function documentTotalsTolerance(currency, lineCount = 1) {
+  const decimals = currencyDecimals(currency);
+  const unit = decimals > 0 ? 10 ** -decimals : DOCUMENT_TOTALS_TOLERANCE;
+  const lines = Number.isInteger(lineCount) && lineCount > 1 ? lineCount : 1;
+  return unit * lines;
+}
 // Devuelve el estado que se guarda en documentoOrigen.coherenciaEstado, sin confiar en el que manda el cliente:
 //  - "coherente": hay al menos un total declarado y todos los declarados están dentro de la tolerancia.
 //  - "revisar": algún total declarado difiere del calculado en más de la tolerancia.
 //  - "sin_datos": el documento no declara totales, o su moneda no es la de la compra (no son comparables).
 // Boleta: el IVA va incluido en los precios y el servidor no lo separa (iva 0), así que solo se compara el total.
 // No bloquea ninguna operación: solo marca la compra para revisión.
-function documentCoherenceState(source, calculated, {currency, tipoDocumento}) {
+function documentCoherenceState(source, calculated, {currency, tipoDocumento, lineCount = 1}) {
   const sourceCurrency = text(source?.moneda, 12).toUpperCase();
   if (sourceCurrency && currency && sourceCurrency !== currency) return "sin_datos";
   const isBoleta = resolvePurchaseVatTreatment({tipoDocumento}) === PURCHASE_VAT_TREATMENTS.BOLETA;
@@ -245,7 +260,8 @@ function documentCoherenceState(source, calculated, {currency, tipoDocumento}) {
     : [[source?.neto, calculated.neto], [source?.impuestoMonto, calculated.iva], [source?.total, calculated.total]];
   const compared = pairs.filter(([declared]) => Number.isFinite(declared));
   if (!compared.length) return "sin_datos";
-  return compared.every(([declared, expected]) => Math.abs(declared - expected) <= DOCUMENT_TOTALS_TOLERANCE + 1e-9) ? "coherente" : "revisar";
+  const tolerance = documentTotalsTolerance(currency, lineCount);
+  return compared.every(([declared, expected]) => Math.abs(declared - expected) <= tolerance + 1e-9) ? "coherente" : "revisar";
 }
 function hash(value) { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
 async function access(request, dependencies) {
@@ -257,7 +273,7 @@ function baseStored({businessId, uid, purchaseId, numero, sequence, now, normali
   const calculatedTotals = totals(items, HttpsError, location.tasaIva, {tipoDocumento: normalized.tipoDocumento});
   const documentoOrigen = normalized.documentoOrigen ? {
     ...normalized.documentoOrigen,
-    coherenciaEstado: documentCoherenceState(normalized.documentoOrigen, calculatedTotals, {currency: location.moneda, tipoDocumento: normalized.tipoDocumento}),
+    coherenciaEstado: documentCoherenceState(normalized.documentoOrigen, calculatedTotals, {currency: location.moneda, tipoDocumento: normalized.tipoDocumento, lineCount: items.length}),
     importadoEn: timestamp,
     actualizadoEn: timestamp,
   } : null;
@@ -661,7 +677,7 @@ async function actualizarCompraBorradorHandler(request, dependencies) {
     const calculatedTotals = totals(items, HttpsError, localization.tasaIva, {tipoDocumento: normalized.tipoDocumento});
     const documentoOrigen = normalized.documentoOrigen ? {
       ...normalized.documentoOrigen,
-      coherenciaEstado: documentCoherenceState(normalized.documentoOrigen, calculatedTotals, {currency: localization.moneda, tipoDocumento: normalized.tipoDocumento}),
+      coherenciaEstado: documentCoherenceState(normalized.documentoOrigen, calculatedTotals, {currency: localization.moneda, tipoDocumento: normalized.tipoDocumento, lineCount: items.length}),
       importadoEn: existing.documentoOrigen?.importadoEn || timestamp,
       actualizadoEn: timestamp,
     } : null;
@@ -1198,4 +1214,4 @@ async function cancelarCompraBorradorHandler(request, dependencies) {
   });
 }
 
-module.exports = {actualizarCompraBorradorHandler, buildConfirmedPurchaseFromReception, cancelarCompraBorradorHandler, confirmarCompraHandler, crearCompraDesdeOrdenHandler, crearCompraDesdeRecepcionHandler, crearCompraHandler, formatPurchaseNumber: formatNumber, normalizePurchaseInput: input, normalizeSupplierDocumentNumber, documentCoherenceState, DOCUMENT_TOTALS_TOLERANCE, calculatePurchaseTotals: totals, providerSnapshotFromDocument: provider, revertirCompraHandler};
+module.exports = {actualizarCompraBorradorHandler, buildConfirmedPurchaseFromReception, cancelarCompraBorradorHandler, confirmarCompraHandler, crearCompraDesdeOrdenHandler, crearCompraDesdeRecepcionHandler, crearCompraHandler, formatPurchaseNumber: formatNumber, normalizePurchaseInput: input, normalizeSupplierDocumentNumber, documentCoherenceState, documentTotalsTolerance, DOCUMENT_TOTALS_TOLERANCE, calculatePurchaseTotals: totals, providerSnapshotFromDocument: provider, revertirCompraHandler};

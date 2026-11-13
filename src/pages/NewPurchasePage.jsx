@@ -3,6 +3,7 @@ import {useLocation, useNavigate, useParams} from "react-router-dom";
 import {sileo} from "sileo";
 import Button from "../components/ui/Button";
 import LoadingState from "../components/ui/LoadingState";
+import Notice from "../components/ui/Notice";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import SupplyTrace from "../components/ui/SupplyTrace";
 import {
@@ -428,6 +429,7 @@ export default function NewPurchasePage({businessId, role}) {
                   {hasText(draft.documentoOrigen.impuestoMonto) && <div><dt>{hasText(draft.documentoOrigen.impuestoPorcentaje) ? `${printable.impuestoNombre} (${draft.documentoOrigen.impuestoPorcentaje}%)` : printable.impuestoNombre}</dt><dd>{money(draft.documentoOrigen.impuestoMonto)}</dd></div>}
                   {hasText(draft.documentoOrigen.total) && <div><dt>Total</dt><dd>{money(draft.documentoOrigen.total)}</dd></div>}
                 </dl>
+                {draft.documentoOrigen.coherenciaEstado === "revisar" && <Notice variant="warning" role={null}>Los totales del documento no coinciden con las líneas. Revisa antes de confirmar.</Notice>}
               </div>}
             </details>
             <details className="po-panel po-details">

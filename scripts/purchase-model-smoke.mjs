@@ -18,7 +18,7 @@ import {
 } from "../src/domain/purchaseModel.mjs";
 
 const require = createRequire(import.meta.url);
-const {calculatePurchaseTotals: calculateBackendPurchaseTotals, normalizePurchaseInput, normalizeSupplierDocumentNumber, documentCoherenceState, DOCUMENT_TOTALS_TOLERANCE} = require("../functions/purchasePersistence.js");
+const {calculatePurchaseTotals: calculateBackendPurchaseTotals, normalizePurchaseInput, normalizeSupplierDocumentNumber, documentCoherenceState, documentTotalsTolerance, DOCUMENT_TOTALS_TOLERANCE} = require("../functions/purchasePersistence.js");
 const {resolvePurchaseVatTreatment: resolveBackendPurchaseVatTreatment} = require("../functions/inventoryAcquisition.js");
 class TestHttpsError extends Error {
   constructor(code, message) { super(message); this.code = code; }
@@ -263,6 +263,15 @@ assert.match(purchaseDetail, /SupplyTrace/);
 assert.doesNotMatch(purchaseDetail, /Originada desde recepción|Originada desde orden de compra/);
 assert.match(purchaseReadOnlyView, /Trazabilidad de entradas/);
 assert.doesNotMatch(purchaseReadOnlyView, /Snapshot hist[oó]rico conservado|SupplyTrace|disabled=|<input|<textarea/);
+// Aviso de totales en el detalle: solo con coherenciaEstado "revisar" y documento asociado; fuera de la vista imprimible; CSS solo con tokens.
+assert.match(purchaseReadOnlyView, /import Notice from "\.\.\/\.\.\/components\/ui\/Notice"/);
+assert.match(purchaseReadOnlyView, /\{hasDocument && source\.coherenciaEstado === "revisar" && <section className="purchase-detail__totals-notice">\s*<Notice variant="warning" role=\{null\}>Los totales del documento no coinciden con las líneas\.<\/Notice>\s*<\/section>\}/);
+assert.equal((purchaseReadOnlyView.match(/coherenciaEstado/g) || []).length, 1);
+assert.ok(purchaseReadOnlyView.indexOf("purchase-detail__totals-notice") < purchaseReadOnlyView.indexOf('className="print-only"'), "el aviso queda en la parte de pantalla, no en la impresión");
+const purchasesCss = fs.readFileSync(new URL("../src/features/purchases/purchases.css", import.meta.url), "utf8");
+const noticeRule = purchasesCss.match(/\.purchase-detail__totals-notice \{([^}]*)\}/)?.[1] || "";
+assert.match(noticeRule, /padding: 0 var\(--space-4\) var\(--space-4\)/);
+assert.doesNotMatch(noticeRule, /#[0-9a-fA-F]{3,8}|rgb|hsl/, "el aviso no introduce colores literales");
 assert.match(purchaseDetail, /No hay un documento asociado a esta compra\./);
 assert.match(purchaseDetail, /Snapshot hist[oó]rico conservado/);
 assert.doesNotMatch(purchaseDetail, />\s*\{effect\.movimientoEntradaId\}/);
@@ -302,5 +311,85 @@ assert.equal(coherence({moneda: "clp", total: 11900}), "coherente", "misma moned
 assert.equal(documentCoherenceState({neto: 8403, impuestoMonto: 1597, total: 10000}, {neto: 10000, iva: 0, total: 10000}, {currency: "CLP", tipoDocumento: "boleta"}), "coherente", "boleta: solo se compara el total");
 assert.equal(documentCoherenceState({total: 10005}, {neto: 10000, iva: 0, total: 10000}, {currency: "CLP", tipoDocumento: "boleta"}), "revisar");
 console.log("OK verificación de totales del documento: tolerancia, cliente no confiable, moneda y boleta");
+
+// Tolerancia por moneda: el número de decimales sale del catálogo (businessCatalog.json), igual que en formatBusinessMoney.
+// Sin decimales (CLP, PYG) o código desconocido: 1. Con decimales (USD, EUR...): 0,01 por total.
+for (const [currency, expected] of [["CLP", 1], ["PYG", 1], ["clp", 1], ["USD", 0.01], ["EUR", 0.01], ["COP", 0.01], ["XXX", 1], ["", 1]]) {
+  assert.equal(documentTotalsTolerance(currency), expected, `tolerancia de ${currency || "moneda vacía"}`);
+}
+const decimalCoherence = (source, currency) => documentCoherenceState(source, calculatedTotals, {currency, tipoDocumento: "factura"});
+assert.equal(decimalCoherence({total: 11901}, "CLP"), "coherente", "CLP: 1 de diferencia se tolera");
+assert.equal(decimalCoherence({total: 11901}, "PYG"), "coherente", "PYG (0 decimales): 1 de diferencia se tolera");
+assert.equal(decimalCoherence({total: 11901}, "USD"), "revisar", "USD: 1 de diferencia ya es demasiado (la tolerancia es 0,01)");
+assert.equal(decimalCoherence({total: 11900.01}, "USD"), "coherente", "USD: 0,01 de diferencia se tolera");
+assert.equal(decimalCoherence({total: 11899.99}, "EUR"), "coherente", "EUR: -0,01 de diferencia se tolera");
+assert.equal(decimalCoherence({total: 11900.02}, "USD"), "revisar", "USD: 0,02 de diferencia es 'revisar'");
+assert.equal(decimalCoherence({neto: 10000.01, impuestoMonto: 1899.99, total: 11900.01}, "USD"), "coherente", "USD: 0,01 en cada total");
+assert.equal(decimalCoherence({neto: 10000.02, impuestoMonto: 1900, total: 11900}, "USD"), "revisar", "USD: 0,02 en el neto");
+assert.equal(decimalCoherence({total: 11901}, "XXX"), "coherente", "moneda fuera del catálogo: se conserva la tolerancia de 1");
+console.log("OK verificación de totales del documento: tolerancia por moneda según los decimales del catálogo");
+
+// Factura de 21 líneas con cantidades, precios y descuentos distintos (ferretería eléctrica e informática).
+// Se compara el cálculo del servidor (redondea el subtotal y el descuento de cada línea) con dos emisores plausibles que SÍ calzan
+// con sus propias líneas: A redondea una sola vez al final; B redondea el total de cada línea en una sola operación.
+const INVOICE_21 = [
+  [3, 1290, 0], [7.5, 845, 5], [12, 2390, 10], [2.25, 15990, 0], [48, 359, 12.5],
+  [1.5, 7490, 7], [6, 3150, 0], [10, 1875, 15], [0.75, 22990, 5], [24, 649, 10],
+  [5, 4590, 3], [8.5, 1120, 0], [2, 18900, 8], [15, 735, 12], [4.5, 2680, 6],
+  [30, 249, 10], [1.25, 9990, 0], [9, 1590, 5], [18, 479, 7.5], [3.5, 5230, 10], [11, 990, 2.5],
+];
+const invoice21Items = INVOICE_21.map(([cantidad, costoUnitario, descuentoPct], index) => line({lineaId: `l${index}`, itemId: `i${index}`, cantidad, costoUnitario, descuentoPct, impuestoId: "IVA_GENERAL"}));
+assert.equal(invoice21Items.length, 21);
+const invoice21 = calculateBackendPurchaseTotals(backendLines(invoice21Items), TestHttpsError, 0.19, {tipoDocumento: "factura"});
+assert.equal(new Set(INVOICE_21.map(([cantidad]) => cantidad)).size, 21, "21 cantidades distintas");
+assert.ok(new Set(INVOICE_21.map(([, , descuentoPct]) => descuentoPct)).size >= 8, "descuentos variados, algunas líneas sin descuento");
+assert.deepEqual({neto: invoice21.neto, iva: invoice21.iva, total: invoice21.total}, {neto: 317911, iva: 60403, total: 378314});
+const issuerA = {neto: 317911, impuestoMonto: 60403, total: 378314}; // suma exacta de q·c·(1-d) = 317911,45 redondeada una sola vez
+const issuerBNeto = INVOICE_21.reduce((sum, [q, c, d]) => sum + Math.round(q * c * (1 - d / 100)), 0);
+const issuerB = {neto: issuerBNeto, impuestoMonto: Math.round(issuerBNeto * 0.19), total: issuerBNeto + Math.round(issuerBNeto * 0.19)};
+assert.deepEqual(issuerB, {neto: 317914, impuestoMonto: 60404, total: 378318});
+assert.equal(documentCoherenceState(issuerA, invoice21, {currency: "CLP", tipoDocumento: "factura"}), "coherente", "21 líneas, emisor A: calza exacto");
+// El emisor B calza con sus líneas pero difiere por el redondeo por línea (neto +3, IVA +1, total +4). La tolerancia crece con el
+// número de líneas (unidad de la moneda × max(1, líneas)), así que con lineCount 21 es 'coherente'; sin lineCount (1 línea) sería 'revisar'.
+assert.deepEqual({neto: issuerB.neto - invoice21.neto, iva: issuerB.impuestoMonto - invoice21.iva, total: issuerB.total - invoice21.total}, {neto: 3, iva: 1, total: 4});
+const coherence21 = (source, options = {}) => documentCoherenceState(source, invoice21, {currency: "CLP", tipoDocumento: "factura", lineCount: 21, ...options});
+assert.equal(coherence21(issuerA), "coherente", "21 líneas, emisor A: calza exacto");
+assert.equal(coherence21(issuerB), "coherente", "21 líneas, emisor B: el redondeo por línea cae dentro de la tolerancia de 21");
+assert.equal(coherence21({...issuerB, total: issuerB.total + 100}), "revisar", "21 líneas: 100 pesos de diferencia en el total siguen en 'revisar'");
+assert.equal(coherence21({...issuerA, neto: issuerA.neto + 100}), "revisar", "21 líneas: 100 pesos de diferencia en el neto siguen en 'revisar'");
+assert.equal(coherence21({...issuerA, impuestoMonto: issuerA.impuestoMonto + 22}), "revisar", "21 líneas: 22 de diferencia (fuera de 21) en el IVA es 'revisar'");
+assert.equal(coherence21({total: invoice21.total + 21}), "coherente", "21 líneas: justo en el límite (21)");
+assert.equal(coherence21({total: invoice21.total + 22}), "revisar", "21 líneas: 22 ya es 'revisar'");
+assert.equal(documentCoherenceState(issuerB, invoice21, {currency: "CLP", tipoDocumento: "factura", lineCount: 1}), "revisar", "el mismo documento con tolerancia de 1 línea sigue en 'revisar' (el cambio depende de lineCount)");
+assert.equal(documentCoherenceState(issuerB, invoice21, {currency: "CLP", tipoDocumento: "factura"}), "revisar", "sin lineCount se asume 1 línea");
+console.log("OK verificación de totales: factura de 21 líneas (emisores A y B coherentes; una diferencia de 100 sigue en 'revisar')");
+
+// Tolerancia según el número de líneas: unidad de la moneda × max(1, líneas). Con 1 línea es idéntica a la de antes del cambio.
+for (const [currency, lineCount, expected] of [
+  ["CLP", 1, 1], ["CLP", 0, 1], ["CLP", undefined, 1], ["CLP", 2, 2], ["CLP", 21, 21], ["PYG", 21, 21],
+  ["USD", 1, 0.01], ["USD", 21, 0.21], ["BOB", 21, 0.21], ["XXX", 21, 21], ["CLP", -3, 1], ["CLP", 2.5, 1], ["CLP", "21", 1],
+]) {
+  assert.ok(Math.abs(documentTotalsTolerance(currency, lineCount) - expected) < 1e-9, `tolerancia de ${currency} con ${lineCount} líneas`);
+}
+// 1 línea: idéntico al comportamiento anterior (1 se tolera, 2 no), con y sin lineCount explícito.
+for (const lineCount of [undefined, 1]) {
+  const oneLine = (source) => documentCoherenceState(source, calculatedTotals, {currency: "CLP", tipoDocumento: "factura", ...(lineCount ? {lineCount} : {})});
+  assert.equal(oneLine({total: 11901}), "coherente", `1 línea (${lineCount}): 1 de diferencia se tolera`);
+  assert.equal(oneLine({total: 11902}), "revisar", `1 línea (${lineCount}): 2 de diferencia es 'revisar'`);
+  assert.equal(oneLine({neto: 10002, impuestoMonto: 1900, total: 11900}), "revisar", `1 línea (${lineCount}): 2 en el neto es 'revisar'`);
+}
+// 21 líneas con una diferencia grande: la tolerancia crece, pero no tanto como para esconder un error real.
+const coherenceManyLines = (source, lineCount, currency = "CLP") => documentCoherenceState(source, calculatedTotals, {currency, tipoDocumento: "factura", lineCount});
+assert.equal(coherenceManyLines({total: 11900 + 21}, 21), "coherente", "21 líneas: 21 de diferencia en el total se tolera");
+assert.equal(coherenceManyLines({total: 11900 + 100}, 21), "revisar", "21 líneas: 100 de diferencia es 'revisar'");
+assert.equal(coherenceManyLines({neto: 10000 - 100, impuestoMonto: 1900, total: 11900}, 21), "revisar", "21 líneas: 100 de diferencia en el neto es 'revisar'");
+// Moneda de 2 decimales: la unidad es 0,01 y también crece con las líneas (0,21 con 21 líneas).
+assert.equal(coherenceManyLines({total: 11900.01}, 1, "USD"), "coherente", "USD 1 línea: 0,01 se tolera");
+assert.equal(coherenceManyLines({total: 11900.02}, 1, "USD"), "revisar", "USD 1 línea: 0,02 es 'revisar' (igual que antes)");
+assert.equal(coherenceManyLines({total: 11900.21}, 21, "USD"), "coherente", "USD 21 líneas: 0,21 se tolera");
+assert.equal(coherenceManyLines({neto: 10000.2, impuestoMonto: 1899.8, total: 11900.2}, 21, "BOB"), "coherente", "BOB 21 líneas: 0,20 en cada total se tolera");
+assert.equal(coherenceManyLines({total: 11900.22}, 21, "USD"), "revisar", "USD 21 líneas: 0,22 es 'revisar'");
+assert.equal(coherenceManyLines({total: 11901}, 21, "USD"), "revisar", "USD 21 líneas: 1 entera es una diferencia grande");
+console.log("OK verificación de totales: tolerancia según el número de líneas (1 línea igual que antes, 21 líneas, diferencia grande y moneda de 2 decimales)");
 
 console.log("Smoke del modelo de Compras completado.");

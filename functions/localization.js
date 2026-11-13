@@ -75,6 +75,12 @@ function documentLocalizationSnapshot(business = {}, tax = {}) {
   };
 }
 
+// Decimales que el catálogo define para una moneda (CLP 0, USD 2...). null si el código no está en el catálogo.
+function currencyDecimals(code) {
+  const decimals = currencies.get(text(code, 10).toUpperCase())?.decimals;
+  return Number.isInteger(decimals) && decimals >= 0 ? decimals : null;
+}
+
 function adaptDocumentLocalization(raw = {}) {
   const rate = Number(raw.tasaIva);
   return {
@@ -92,6 +98,7 @@ module.exports = {
   DEFAULT_LOCALE,
   adaptDocumentLocalization,
   canonicalLocale,
+  currencyDecimals,
   documentLocalizationSnapshot,
   normalizeBusinessLocalization,
   normalizeTaxSettings,
