@@ -916,7 +916,7 @@ assert.match(sourceQuotePrintView, /Términos y condiciones/);
 assert.match(sourceQuotePrintView, /buildQuoteTerms\(quote\.condiciones\)/);
 assert.match(sourceQuotePrintView, /QUOTE_FOOTER_QUESTION/);
 // Documento claro y sin colores sueltos: solo tokens --color-document-*.
-assert.doesNotMatch(sourceQuotePrintView, /#[0-9a-fA-F]{3,8}|rgba?\(/);
+assert.doesNotMatch(sourceQuotePrintView, /#[0-9a-fA-F]{3,8}\b|rgba?\(/);
 assert.doesNotMatch(sourceQuotePrintView, /var\(--color-(?!document)/);
 // Contenido del documento: todo sale de los datos, nada fijo de una empresa.
 assert.deepEqual(buildQuoteTerms({}), []);

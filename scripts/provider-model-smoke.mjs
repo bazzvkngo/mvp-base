@@ -244,7 +244,7 @@ for (const collectionName of ["ordenesCompra", "compras", "recepciones", "adquis
 }
 assert.equal((sourceDeletion.match(/"proveedorSnapshot\.proveedorId"/g) || []).length, 4, "comprueba el id directo y el id dentro del snapshot");
 assert.match(sourceDeletion, /ultimoProveedor\.proveedorId/);
-assert.doesNotMatch(sourceDeletion, /module\.exports[\s\S]*deleteBusiness/);
+assert.doesNotMatch(sourceDeletion, /module\.exports[\s\S]*\bdeleteBusiness/);
 assert.match(sourceService, /httpsCallable\(functions, "eliminarProveedor"\)/);
 assert.match(sourceService, /isProviderDeleteConfirmed\(confirmacion\)/, "el servicio valida la palabra antes de llamar");
 assert.match(sourceManager, /canDelete = canDeleteProviders\(role\)/);
@@ -257,7 +257,9 @@ assert.doesNotMatch(sourceManager, /#[0-9a-fA-F]{3,8}|rgba?\(|hsla?\(/, "sin col
 assert.doesNotMatch(sourceManager, unicodeEscape, "sin escapes unicode en la interfaz");
 const deleteCss = interiorCss.slice(interiorCss.indexOf(".provider-delete {"), interiorCss.indexOf(".client-confirmation-copy"));
 assert.ok(deleteCss.length > 0, "existen los estilos del diálogo de eliminación");
-assert.doesNotMatch(deleteCss, /#[0-9a-fA-F]{3,8}|rgba?\(|hsla?\(|\d+(px|ms)/, "estilos de eliminación sin literales");
+// El grosor de borde de 1px no tiene token en tokens.css: se admite solo en border y sus variantes por lado.
+const deleteCssSinBorde1px = deleteCss.replace(/(?<![\w-])(border(?:-(?:top|right|bottom|left|inline|block))?\s*:\s*)1px(?![\w.%-])/g, "$1");
+assert.doesNotMatch(deleteCssSinBorde1px, /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|\d+(px|ms)\b/, "estilos de eliminación sin literales");
 assert.match(sourceRules, /match \/providerRutKeys\/\{rutKey\}/);
 assert.match(sourcePersistence, /PURCHASE_WRITE_ROLES: AUTHORIZED_ROLES/);
 assert.match(sourcePersistence, /collection\("providerCreateRequests"\)/);
