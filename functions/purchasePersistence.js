@@ -332,6 +332,32 @@ function buildConfirmedPurchaseFromReception({
     confirmadoEn: timestamp,
   };
 }
+// Convención de comparación del número de documento del proveedor: sin espacios
+// sobrantes y en mayúsculas ("f-100" y "F-100" son el mismo documento). No quita
+// guiones ni ceros: "F-100" y "F100" se consideran distintos.
+function normalizeSupplierDocumentNumber(value) { return text(value, 120).toUpperCase(); }
+const DOCUMENT_TYPE_LABELS = {factura: "la factura", boleta: "la boleta", otro: "el documento"};
+// Dentro de la transacción de confirmación: rechaza si otra compra CONFIRMADA del
+// mismo negocio ya tiene el mismo proveedor, tipo y número de documento. Las
+// borradores, canceladas y revertidas no cuentan. Consulta solo con igualdades
+// (proveedorId, tipoDocumento, estado): Firestore la resuelve combinando índices de
+// un solo campo, sin índice compuesto. El número se compara normalizado en memoria
+// para cubrir también compras guardadas sin normalizar.
+async function assertSupplierDocumentIsNew(transaction, businessRef, purchase, purchaseId, HttpsError) {
+  const documentType = text(purchase.tipoDocumento, 40);
+  const documentNumber = normalizeSupplierDocumentNumber(purchase.numeroDocumentoProveedor);
+  const providerId = text(purchase.proveedorId, 160);
+  if (!DOCUMENT_TYPE_LABELS[documentType] || !documentNumber || !providerId) return;
+  const snapshot = await transaction.get(businessRef.collection("compras")
+    .where("proveedorId", "==", providerId)
+    .where("tipoDocumento", "==", documentType)
+    .where("estado", "==", "confirmada"));
+  const duplicate = snapshot.docs.find((document) => document.id !== purchaseId &&
+    normalizeSupplierDocumentNumber(document.data()?.numeroDocumentoProveedor) === documentNumber);
+  if (duplicate) {
+    fail(HttpsError, "failed-precondition", `Este proveedor ya tiene una compra confirmada con ${DOCUMENT_TYPE_LABELS[documentType]} N° ${text(purchase.numeroDocumentoProveedor, 120)} (${text(duplicate.data()?.numero, 60) || duplicate.id}). Revisa que la factura no se haya ingresado antes.`);
+  }
+}
 function retryable(error) { return Number(error?.code) === 10 || String(error?.message || "").toLowerCase().includes("transaction is invalid"); }
 async function transactionRetry(db, callback) {
   let last;
@@ -643,6 +669,7 @@ async function confirmarCompraHandler(request, dependencies) {
       return {compra: {id: purchaseId, ...purchase}, requestId: reqId, idempotent: true, productosActualizados: 0};
     }
     if (purchase.estado !== "borrador") fail(HttpsError, "failed-precondition", "La compra no puede confirmarse.");
+    await assertSupplierDocumentIsNew(transaction, businessRef, purchase, purchaseId, HttpsError);
     const modelVersion = Number(purchase.modeloCompraVersion || 1);
     const stockManagedBy = text(purchase.stockGestionadoPor, 40);
     const isV3DirectPurchase = modelVersion === 3 && stockManagedBy === "compra_directa";
@@ -1144,4 +1171,4 @@ async function cancelarCompraBorradorHandler(request, dependencies) {
   });
 }
 
-module.exports = {actualizarCompraBorradorHandler, buildConfirmedPurchaseFromReception, cancelarCompraBorradorHandler, confirmarCompraHandler, crearCompraDesdeOrdenHandler, crearCompraDesdeRecepcionHandler, crearCompraHandler, formatPurchaseNumber: formatNumber, normalizePurchaseInput: input, calculatePurchaseTotals: totals, providerSnapshotFromDocument: provider, revertirCompraHandler};
+module.exports = {actualizarCompraBorradorHandler, buildConfirmedPurchaseFromReception, cancelarCompraBorradorHandler, confirmarCompraHandler, crearCompraDesdeOrdenHandler, crearCompraDesdeRecepcionHandler, crearCompraHandler, formatPurchaseNumber: formatNumber, normalizePurchaseInput: input, normalizeSupplierDocumentNumber, calculatePurchaseTotals: totals, providerSnapshotFromDocument: provider, revertirCompraHandler};

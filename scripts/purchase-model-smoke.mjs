@@ -18,7 +18,7 @@ import {
 } from "../src/domain/purchaseModel.mjs";
 
 const require = createRequire(import.meta.url);
-const {calculatePurchaseTotals: calculateBackendPurchaseTotals, normalizePurchaseInput} = require("../functions/purchasePersistence.js");
+const {calculatePurchaseTotals: calculateBackendPurchaseTotals, normalizePurchaseInput, normalizeSupplierDocumentNumber} = require("../functions/purchasePersistence.js");
 const {resolvePurchaseVatTreatment: resolveBackendPurchaseVatTreatment} = require("../functions/inventoryAcquisition.js");
 class TestHttpsError extends Error {
   constructor(code, message) { super(message); this.code = code; }
@@ -274,5 +274,13 @@ assert.match(purchasePrint, /Orden de compra/);
 assert.match(purchasePrint, /Recepci[oó]n/);
 assert.match(purchaseSummary, /discounts > 0 \? `-\$\{money\(discounts\)\}` : money\(0\)/);
 console.log("OK compras presentaciÃ³n: trazabilidad humana, documento imprimible y descuento cero");
+
+// Factura duplicada: el número de documento se compara sin espacios sobrantes y en mayúsculas; guiones y ceros cuentan.
+assert.equal(normalizeSupplierDocumentNumber("  f-100 "), "F-100");
+assert.equal(normalizeSupplierDocumentNumber("F  -  100"), "F - 100");
+assert.notEqual(normalizeSupplierDocumentNumber("F-100"), normalizeSupplierDocumentNumber("F100"));
+assert.equal(normalizeSupplierDocumentNumber(null), "");
+assert.equal(normalizeSupplierDocumentNumber("   "), "");
+console.log("OK factura duplicada: normalización del número de documento");
 
 console.log("Smoke del modelo de Compras completado.");

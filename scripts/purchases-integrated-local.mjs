@@ -49,9 +49,12 @@ async function expectDenied(label, operation) {
 }
 const requestId = (prefix) => `${prefix}-${RUN_ID}-${Math.random().toString(36).slice(2, 10)}`;
 const line = (itemId, lineaId, overrides = {}) => ({lineaId, itemId, cantidad: 2, costoUnitario: 10000, descuentoPct: 10, stockAnterior: 500, stockPosterior: 9999, tipo: "entrada_compra", nombre: "Nombre falso", totalLinea: 1, ...overrides});
+// Cada compra de prueba lleva un número de documento propio, derivado de sus líneas (así los reintentos idempotentes
+// con el mismo payload conservan el mismo número): confirmar dos compras del mismo proveedor con el mismo número se
+// rechaza (factura duplicada). Los casos de duplicado lo fijan de forma explícita.
 const purchasePayload = (providerId, items, overrides = {}) => ({
   proveedorId: providerId, fechaCompra: "2026-08-07", fechaDocumento: "2026-08-06",
-  tipoDocumento: "factura", numeroDocumentoProveedor: "F-100", condicionesPago: "30 días",
+  tipoDocumento: "factura", numeroDocumentoProveedor: `F-${items.map((entry) => entry.lineaId).join("+")}`, condicionesPago: "30 días",
   observaciones: "Recepción en bodega", items, numero: "COM-FAKE", estado: "confirmada",
   proveedorSnapshot: {razonSocial: "Manipulado"}, stockAplicado: true, total: 1, ...overrides,
 });
@@ -405,6 +408,46 @@ try {
   assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock, productABefore + 2);
   assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productB}`).get()).data().stock, productBBefore + 5);
   console.log("OK confirmación con múltiples productos");
+
+  // Factura duplicada: mismo proveedor + tipo + número de documento (normalizado) entre compras confirmadas del negocio.
+  const duplicateDraft = (suffix, overrides = {}, owner_ = owner, provider = providerId) => call(owner_, "crearCompra")({businessId, requestId: requestId(`dup-create-${suffix}`), compra: purchasePayload(provider, [line(productA, `dup-${suffix}`, {cantidad: 1, costoUnitario: 10000, descuentoPct: 0})], {numeroDocumentoProveedor: "F-DUP-1", ...overrides})});
+  const duplicateConfirm = (draft, suffix, client = owner) => call(client, "confirmarCompra")({businessId, compraId: draft.data.compra.id, requestId: requestId(`dup-confirm-${suffix}`)});
+  const purchaseState = async (draft) => (await adminDb.doc(`negocios/${businessId}/compras/${draft.data.compra.id}`).get()).data().estado;
+  const dupFirst = await duplicateDraft("first");
+  await duplicateConfirm(dupFirst, "first");
+  assert.equal(await purchaseState(dupFirst), "confirmada");
+  const dupSecond = await duplicateDraft("second", {numeroDocumentoProveedor: "  f-dup-1 "});
+  const stockBeforeDuplicate = (await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock;
+  await assert.rejects(() => duplicateConfirm(dupSecond, "second"), (error) => /failed-precondition/.test(String(error?.code)) && /ya tiene una compra confirmada con la factura N° f-dup-1/.test(String(error?.message)) && error.message.includes(dupFirst.data.compra.numero));
+  console.log("OK rechazo: factura duplicada (mismo proveedor, tipo y número normalizado)");
+  assert.equal(await purchaseState(dupSecond), "borrador");
+  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock, stockBeforeDuplicate);
+  assert.equal((await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("compraId", "==", dupSecond.data.compra.id).get()).size, 0);
+  const dupThird = await duplicateDraft("third", {numeroDocumentoProveedor: "F-DUP-2"});
+  await duplicateConfirm(dupThird, "third");
+  assert.equal(await purchaseState(dupThird), "confirmada");
+  const dupOtherProvider = await duplicateDraft("other-provider", {}, owner, providerBId);
+  await duplicateConfirm(dupOtherProvider, "other-provider");
+  const dupOtherType = await duplicateDraft("other-type", {tipoDocumento: "boleta"});
+  await duplicateConfirm(dupOtherType, "other-type");
+  const dupNoDocumentA = await duplicateDraft("nodoc-a", {tipoDocumento: "sin_documento", numeroDocumentoProveedor: ""});
+  const dupNoDocumentB = await duplicateDraft("nodoc-b", {tipoDocumento: "sin_documento", numeroDocumentoProveedor: ""});
+  await duplicateConfirm(dupNoDocumentA, "nodoc-a"); await duplicateConfirm(dupNoDocumentB, "nodoc-b");
+  assert.deepEqual([await purchaseState(dupOtherProvider), await purchaseState(dupOtherType), await purchaseState(dupNoDocumentA), await purchaseState(dupNoDocumentB)], ["confirmada", "confirmada", "confirmada", "confirmada"]);
+  await call(owner, "revertirCompra")({businessId, compraId: dupFirst.data.compra.id, motivo: "Factura ingresada por error", requestId: requestId("dup-reverse")});
+  assert.equal(await purchaseState(dupFirst), "revertida");
+  await duplicateConfirm(dupSecond, "second-after-reversal");
+  assert.equal(await purchaseState(dupSecond), "confirmada");
+  const dupCanceled = await duplicateDraft("canceled", {numeroDocumentoProveedor: "F-DUP-3"});
+  await call(owner, "cancelarCompraBorrador")({businessId, compraId: dupCanceled.data.compra.id});
+  const dupAfterCancel = await duplicateDraft("after-cancel", {numeroDocumentoProveedor: "F-DUP-3"});
+  await duplicateConfirm(dupAfterCancel, "after-cancel");
+  assert.equal(await purchaseState(dupAfterCancel), "confirmada");
+  const [dupRaceA, dupRaceB] = await Promise.all([duplicateDraft("race-a", {numeroDocumentoProveedor: "F-DUP-RACE"}), duplicateDraft("race-b", {numeroDocumentoProveedor: "F-DUP-RACE"}, admin)]);
+  const raceResults = await Promise.allSettled([duplicateConfirm(dupRaceA, "race-a"), duplicateConfirm(dupRaceB, "race-b", admin)]);
+  assert.equal(raceResults.filter((result) => result.status === "fulfilled").length, 1, "con confirmaciones simultáneas solo una de dos compras con el mismo documento puede confirmarse");
+  assert.deepEqual([await purchaseState(dupRaceA), await purchaseState(dupRaceB)].sort(), ["borrador", "confirmada"]);
+  console.log("OK factura duplicada: otra numeración, otro proveedor, otro tipo, sin documento, tras revertir/cancelar y confirmaciones simultáneas");
 
   const unresolvedDocument = {
     origen: "importador_documental", nombreArchivo: "factura.pdf", tipoArchivo: "application/pdf",
