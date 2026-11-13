@@ -258,13 +258,25 @@ assert.deepEqual(visibleRoutesFor("FINANZAS"), [
   "/compras",
   "/cuenta",
 ]);
-// Módulos verticales: con el registro vacío del Core el menú no cambia y no hay
-// grupo "Módulos"; con un registro de prueba solo aparece el módulo habilitado.
-assert.equal(buildNavigationSections(), navigationSections);
+// Módulos verticales: el registro integrado agrega la sección, pero el filtro
+// solo la expone cuando el negocio tiene el vertical habilitado.
+const registeredVerticalSections = buildNavigationSections();
 assert.equal(navigationSections.some((section) => section.label === "Módulos"), false);
 assert.deepEqual(
-  filterNavigationSections(buildNavigationSections(), "OWNER").map((section) => section.label),
+  registeredVerticalSections.map((section) => section.label).slice(-2),
+  ["Módulos", "Cuenta"]
+);
+assert.deepEqual(
+  filterNavigationSections(registeredVerticalSections, "OWNER").map((section) => section.label),
   ["Inicio", "Comercial", "Operación", "Abastecimiento", "Gestión", "Cuenta"]
+);
+assert.deepEqual(
+  filterNavigationSections(
+    registeredVerticalSections,
+    {role: "OWNER"},
+    {enabledModules: ["taller"]}
+  ).map((section) => section.label),
+  ["Inicio", "Comercial", "Operación", "Abastecimiento", "Gestión", "Módulos", "Cuenta"]
 );
 const testVerticalRegistry = [{ id: "prueba", label: "Módulo de prueba", basePath: "/modulo-prueba" }];
 const verticalSections = buildNavigationSections(testVerticalRegistry);
