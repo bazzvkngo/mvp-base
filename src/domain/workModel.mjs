@@ -818,7 +818,7 @@ export function getWorkCostSummary({expenses = [], labor = [], materials = [], s
     ? saleMaterialTotal + materialMovements.reduce((sum, entry) => sum + (entry.tipo === "DEVOLUCION_PROYECTO" ? -1 : 1) * Number(entry.costoTotal || 0), 0)
     : activeExpenses.filter((entry) => entry.categoria === "MATERIAL").reduce((sum, entry) => sum + Number(entry.monto || 0), 0);
   const laborTotal = activeLabor.reduce((sum, entry) => sum + Number(entry.total || 0), 0);
-  const expenseTotal = activeExpenses.filter((entry) => !hasInventoryMaterials || entry.categoria !== "MATERIAL").reduce((sum, entry) => sum + Number(entry.monto || 0), 0);
+  const expenseTotal = activeExpenses.filter((entry) => entry.categoria !== "MATERIAL").reduce((sum, entry) => sum + Number(entry.monto || 0), 0);
   return {materials: Math.max(0, rounded(materialTotal)), labor: rounded(laborTotal), expenses: rounded(expenseTotal), total: Math.max(0, rounded(materialTotal + laborTotal + expenseTotal))};
 }
 

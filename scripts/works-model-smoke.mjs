@@ -647,6 +647,8 @@ const saleMaterials = getWorkSaleMaterials([{id: "sale-project", numero: "VTA-20
 assert.equal(saleMaterials.length, 1); assert.equal(saleMaterials[0].nombre, "Conector");
 assert.equal(getWorkCostSummary({...costInput, saleMaterials}).total, 18850);
 assert.equal(getWorkCostSummary({...costInput, saleMaterials, taskId: task.tareaId}).total, 15250);
+// Sin materiales de inventario (ni salidas ni Venta) un gasto Material cuenta una sola vez: horas 50.000 + Material 8.000 = 58.000.
+assert.deepEqual(getWorkCostSummary({expenses: [{categoria: "MATERIAL", monto: 8000, estado: "activo"}], labor: [{total: 50000, estado: "activo"}], materials: [], saleMaterials: []}), {materials: 8000, labor: 50000, expenses: 0, total: 58000});
 assert.deepEqual(buildWorkDailyCostSummary({...costInput, saleMaterials}).map(({date, total}) => [date, total]), [["2026-08-16", 250], ["2026-08-15", 6000], ["2026-08-14", 12000], ["2026-08-13", 600]]);
 assert.equal(getWorkSaleMaterials([{estado: "cancelada", efectosInventario: [{cantidad: 1, costoUnitario: 300, costoTotal: 300}]}]).length, 0);
 assert.equal(getInventoryCurrentCost({costoPromedio: 1200, costoBase: 1400}), 1200); assert.equal(getInventoryCurrentCost({costoBase: 250}), 250);
