@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import catalog from "../functions/businessCatalog.json" with { type: "json" };
 import { isSelectableBusinessCategory } from "../src/domain/businessCategorySearch.mjs";
+import { NEW_BUSINESS_COUNTRIES, isSelectableNewBusinessCountry } from "../src/domain/businessCatalog.js";
 
 assert.equal(catalog.schemaVersion, 4);
 assert.equal(catalog.businessCategoryCatalogVersion, 1);
@@ -26,17 +27,12 @@ assert.deepEqual(catalog.countries.find((country) => country.code === "PE")?.bas
 });
 assert.equal(catalog.countries.find((country) => country.code === "BR")?.baseTax.configured, false);
 assert.equal(catalog.countries.find((country) => country.code === "BR")?.baseTax.rate, null);
+// Protección temporal: el dinero del sistema es entero y pierde centavos con monedas de decimales, así que mientras
+// no exista el modelo de dinero decimal solo se pueden crear empresas en países cuya moneda no tiene decimales.
+// Reactivar un país es quitar su "selectableForNewBusiness": false (o ponerlo en true), sin tocar código.
 const expectedNewBusinessCountries = [
   ["CL", "CLP"],
-  ["BO", "BOB"],
-  ["BR", "BRL"],
-  ["PE", "PEN"],
-  ["AR", "ARS"],
-  ["CO", "COP"],
-  ["EC", "USD"],
   ["PY", "PYG"],
-  ["UY", "UYU"],
-  ["MX", "MXN"],
 ];
 assert.deepEqual(
   catalog.countries
@@ -44,6 +40,32 @@ assert.deepEqual(
     .map(({code, defaultCurrencyCode}) => [code, defaultCurrencyCode]),
   expectedNewBusinessCountries
 );
+const currencyDecimals = new Map(catalog.currencies.map((currency) => [currency.code, currency.decimals]));
+for (const country of catalog.countries.filter((item) => item.code !== "OTHER")) {
+  const decimals = currencyDecimals.get(country.defaultCurrencyCode);
+  assert.ok(Number.isInteger(decimals), `${country.code}: la moneda ${country.defaultCurrencyCode} debe existir en el catálogo`);
+  assert.equal(
+    country.selectableForNewBusiness !== false,
+    decimals === 0,
+    `${country.code}: seleccionable para empresas nuevas solo si su moneda no tiene decimales (${country.defaultCurrencyCode}: ${decimals})`
+  );
+  assert.equal(country.active, true, `${country.code} sigue activo: las empresas existentes siguen funcionando`);
+}
+for (const code of ["BO", "BR", "PE", "AR", "CO", "EC", "UY", "MX"]) {
+  assert.equal(catalog.countries.find((country) => country.code === code)?.selectableForNewBusiness, false, `${code} no seleccionable`);
+}
+for (const code of ["CL", "PY"]) {
+  assert.notEqual(catalog.countries.find((country) => country.code === code)?.selectableForNewBusiness, false, `${code} seleccionable`);
+}
+// Lo que ve el formulario (src/domain/businessCatalog.js) sale del mismo flag y del mismo archivo.
+assert.deepEqual(NEW_BUSINESS_COUNTRIES.map((country) => country.code), ["CL", "PY"]);
+const boliviaEntry = catalog.countries.find((country) => country.code === "BO");
+assert.equal(isSelectableNewBusinessCountry(boliviaEntry), false, "BO no se ofrece al crear una empresa");
+assert.equal(isSelectableNewBusinessCountry({ ...boliviaEntry, selectableForNewBusiness: true }), true, "reactivar un país es poner el flag en true");
+const { selectableForNewBusiness: ignoredFlag, ...boliviaWithoutFlag } = boliviaEntry;
+assert.equal(ignoredFlag, false);
+assert.equal(isSelectableNewBusinessCountry(boliviaWithoutFlag), true, "reactivar un país también es quitar el flag");
+assert.equal(isSelectableNewBusinessCountry({ ...boliviaEntry, selectableForNewBusiness: true, active: false }), false, "un país inactivo no se ofrece aunque el flag sea true");
 const legacyOtherCountry = catalog.countries.find((country) => country.code === "OTHER");
 assert.equal(legacyOtherCountry?.active, true);
 assert.equal(legacyOtherCountry?.selectableForNewBusiness, false);

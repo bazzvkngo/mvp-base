@@ -42,7 +42,8 @@ const brazilUsd = validateBusinessProfileInput(
     identificadorFiscalTipo: "CPF",
     identificadorFiscalValor: "12345678900",
   },
-  TestHttpsError
+  TestHttpsError,
+  {existingBusiness: {paisCodigo: "BR"}}
 );
 assert.equal(brazilUsd.paisCodigo, "BR");
 assert.equal(brazilUsd.monedaCodigo, "USD");

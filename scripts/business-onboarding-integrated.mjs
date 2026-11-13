@@ -208,6 +208,17 @@ async function main() {
         requestId: "business_legacy_country_rejected_001",
       })
     );
+    // Protección temporal (dinero entero): un país cuya moneda tiene decimales tampoco se acepta al crear.
+    for (const paisCodigo of ["BO", "BR", "PE", "AR", "CO", "EC", "UY", "MX"]) {
+      await expectCallableCode("invalid-argument", () =>
+        ownerCall("createFirstBusiness", {
+          nombreComercial: "Empresa con moneda decimal",
+          rubroCodigo: validPayload.rubroCodigo,
+          paisCodigo,
+          requestId: `business_decimal_country_rejected_${paisCodigo}`,
+        })
+      );
+    }
     assert.equal(
       (
         await adminDb
@@ -221,7 +232,7 @@ async function main() {
     const requestPayload = {
       nombreComercial: validPayload.nombreComercial,
       rubroCodigo: validPayload.rubroCodigo,
-      paisCodigo: "BO",
+      paisCodigo: "PY",
       monedaCodigo: "USD",
       locale: "en-US",
       identificadorFiscalTipo: "RFC",
@@ -248,17 +259,17 @@ async function main() {
     assert.equal(createdBusiness.regionCodigo, "");
     assert.equal(Object.hasOwn(createdBusiness, "comunaCodigo"), false);
     assert.equal(Object.hasOwn(createdBusiness, "comunaNombre"), false);
-    assert.equal(createdBusiness.paisCodigo, "BO");
-    assert.equal(createdBusiness.monedaCodigo, "BOB");
-    assert.equal(createdBusiness.locale, "es-BO");
-    assert.equal(createdBusiness.identificadorFiscalTipo, "NIT");
+    assert.equal(createdBusiness.paisCodigo, "PY");
+    assert.equal(createdBusiness.monedaCodigo, "PYG");
+    assert.equal(createdBusiness.locale, "es-PY");
+    assert.equal(createdBusiness.identificadorFiscalTipo, "RUC");
     assert.equal(createdBusiness.contratoJurisdiccionalVersion, 1);
     assert.equal(createdBusiness.estado, "activo");
     const taxSettings = (await adminDb
       .doc(`negocios/${businessId}/configuracion/impuestos`)
       .get()).data();
     assert.equal(taxSettings.impuestoPredeterminadoNombre, "IVA");
-    assert.equal(taxSettings.impuestoPredeterminadoTasa, 13);
+    assert.equal(taxSettings.impuestoPredeterminadoTasa, 10);
     assert.equal(taxSettings.configuracionTributariaBaseCompleta, true);
 
     const membershipId = `${businessId}__${ownerUid}`;
@@ -330,8 +341,8 @@ async function main() {
     assert.equal(quickProfile.data()?.nombreComercial, validPayload.nombreComercial);
     assert.equal(quickProfile.data()?.rubroCodigo, validPayload.rubroCodigo);
     assert.equal(quickProfile.data()?.regionCodigo, "");
-    assert.equal(quickProfile.data()?.paisCodigo, "BO");
-    assert.equal(quickProfile.data()?.monedaCodigo, "BOB");
+    assert.equal(quickProfile.data()?.paisCodigo, "PY");
+    assert.equal(quickProfile.data()?.monedaCodigo, "PYG");
     assert.equal(quickProfile.data()?.rut, undefined);
     assert.equal(quickProfile.data()?.comunaCodigo, undefined);
     assert.equal(
@@ -349,8 +360,8 @@ async function main() {
     assert.equal(activeSession.data.activeBusiness.id, businessId);
     assert.equal(activeSession.data.activeBusiness.role, "OWNER");
     assert.equal(activeSession.data.activeBusiness.ownerEmailVerified, false);
-    assert.equal(activeSession.data.activeBusiness.paisCodigo, "BO");
-    assert.equal(activeSession.data.activeBusiness.monedaCodigo, "BOB");
+    assert.equal(activeSession.data.activeBusiness.paisCodigo, "PY");
+    assert.equal(activeSession.data.activeBusiness.monedaCodigo, "PYG");
     // Campo ausente = lista vacia, en activeBusiness y en businesses[].
     assert.deepEqual(activeSession.data.activeBusiness.modulosHabilitados, []);
     assert.ok(activeSession.data.businesses.length > 0);
@@ -421,10 +432,10 @@ async function main() {
     const savedProfile = await adminDb
       .doc(`negocios/${businessId}/empresa/perfil`)
       .get();
-    assert.equal(savedProfile.data()?.paisCodigo, "BO");
-    assert.equal(savedProfile.data()?.monedaCodigo, "BOB");
-    assert.equal(savedProfile.data()?.locale, "es-BO");
-    assert.equal(savedProfile.data()?.identificadorFiscalTipo, "NIT");
+    assert.equal(savedProfile.data()?.paisCodigo, "PY");
+    assert.equal(savedProfile.data()?.monedaCodigo, "PYG");
+    assert.equal(savedProfile.data()?.locale, "es-PY");
+    assert.equal(savedProfile.data()?.identificadorFiscalTipo, "RUC");
     assert.equal(savedProfile.data()?.rut, undefined);
     assert.equal(savedProfile.data()?.negocioId, businessId);
     assert.equal(

@@ -429,6 +429,15 @@ assert.equal(
     .nombreComercial,
   "El nombre debe tener al menos 2 caracteres."
 );
+// Protección temporal (dinero entero): el formulario valida el país con el mismo flag que decide qué países se ofrecen.
+const countryError = (paisCodigo) =>
+  validateQuickBusiness({ ...INITIAL_ONBOARDING_BUSINESS_VALUES, paisCodigo }, { requireCountry: true, requireRegion: false }).paisCodigo;
+for (const paisCodigo of ["BO", "BR", "PE", "AR", "CO", "EC", "UY", "MX", "OTHER"]) {
+  assert.equal(countryError(paisCodigo), "Selecciona un país válido.", paisCodigo + " no es válido al crear una empresa");
+}
+for (const paisCodigo of ["CL", "PY"]) {
+  assert.equal(countryError(paisCodigo), undefined, paisCodigo + " sí es válido al crear una empresa");
+}
 // Escribir y borrar: el campo sigue editado aunque el valor vuelva a vacío, y entonces sí hay error.
 for (const [name, source, stateName] of [
   ["OnboardingPage", onboarding, "dirty"],

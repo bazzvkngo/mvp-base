@@ -48,33 +48,26 @@ const firstBusinessWithoutRegion = validateBusinessCreationInput(
 );
 assert.equal(firstBusinessWithoutRegion.regionCodigo, "");
 assert.equal(firstBusinessWithoutRegion.regionNombre, "");
-const bolivianFirstBusiness = validateBusinessCreationInput(
+const paraguayanFirstBusiness = validateBusinessCreationInput(
   {
-    nombreComercial: "Servicios Bolivia",
+    nombreComercial: "Servicios Paraguay",
     rubroCodigo: "INGENIERIA_CONSULTORIA",
-    paisCodigo: "BO",
+    paisCodigo: "PY",
   },
   TestHttpsError,
   {regionRequired: false}
 );
-assert.equal(bolivianFirstBusiness.paisCodigo, "BO");
-assert.equal(bolivianFirstBusiness.monedaCodigo, "BOB");
-assert.equal(bolivianFirstBusiness.regionEstado, "");
+assert.equal(paraguayanFirstBusiness.paisCodigo, "PY");
+assert.equal(paraguayanFirstBusiness.monedaCodigo, "PYG");
+assert.equal(paraguayanFirstBusiness.regionEstado, "");
+// Protección temporal (dinero entero): solo se crean empresas en países cuya moneda no tiene decimales.
 for (const [paisCodigo, monedaCodigo] of [
   ["CL", "CLP"],
-  ["BO", "BOB"],
-  ["BR", "BRL"],
-  ["PE", "PEN"],
-  ["AR", "ARS"],
-  ["CO", "COP"],
-  ["EC", "USD"],
   ["PY", "PYG"],
-  ["UY", "UYU"],
-  ["MX", "MXN"],
 ]) {
   const business = validateBusinessCreationInput(
     {
-      nombreComercial: `Negocio ${paisCodigo}`,
+      nombreComercial: "Negocio " + paisCodigo,
       rubroCodigo: "INGENIERIA_CONSULTORIA",
       paisCodigo,
       monedaCodigo: "USD",
@@ -85,6 +78,57 @@ for (const [paisCodigo, monedaCodigo] of [
   assert.equal(business.paisCodigo, paisCodigo);
   assert.equal(business.monedaCodigo, monedaCodigo);
 }
+const catalogJson = require("../functions/businessCatalog.json");
+const currencyDecimalsByCode = new Map(catalogJson.currencies.map((currency) => [currency.code, currency.decimals]));
+const decimalCountries = catalogJson.countries.filter((country) => country.code !== "OTHER" && currencyDecimalsByCode.get(country.defaultCurrencyCode) > 0);
+assert.deepEqual(decimalCountries.map((country) => country.code), ["BO", "BR", "PE", "AR", "CO", "EC", "UY", "MX"]);
+const creationAttempt = (paisCodigo) => () => validateBusinessCreationInput(
+  {nombreComercial: "Negocio " + paisCodigo, rubroCodigo: "INGENIERIA_CONSULTORIA", paisCodigo, monedaCodigo: "USD"},
+  TestHttpsError,
+  {regionRequired: false}
+);
+let legacyCountryMessage;
+try { creationAttempt("OTHER")(); } catch (error) { legacyCountryMessage = error.message; }
+assert.equal(legacyCountryMessage, "Selecciona un país válido.");
+for (const country of decimalCountries) {
+  assert.throws(
+    creationAttempt(country.code),
+    (error) => error?.code === "invalid-argument" && error.message === legacyCountryMessage,
+    country.code + " (" + country.defaultCurrencyCode + ", " + currencyDecimalsByCode.get(country.defaultCurrencyCode) + " decimales) se rechaza al crear con el mismo mensaje que OTHER"
+  );
+}
+// Reactivar un país es solo cambiar el flag del catálogo (se muta en memoria y se restaura): sin tocar código.
+const boliviaCatalogEntry = catalogJson.countries.find((country) => country.code === "BO");
+assert.equal(boliviaCatalogEntry.selectableForNewBusiness, false);
+try {
+  boliviaCatalogEntry.selectableForNewBusiness = true;
+  const reactivated = creationAttempt("BO")();
+  assert.equal(reactivated.paisCodigo, "BO");
+  assert.equal(reactivated.monedaCodigo, "BOB");
+  delete boliviaCatalogEntry.selectableForNewBusiness;
+  assert.equal(creationAttempt("BO")().paisCodigo, "BO");
+} finally {
+  boliviaCatalogEntry.selectableForNewBusiness = false;
+}
+assert.throws(creationAttempt("BO"), (error) => error?.code === "invalid-argument");
+// Las empresas ya creadas en esos países siguen funcionando: editar su perfil conserva el país y no pasa por la selección de países nuevos.
+for (const country of decimalCountries) {
+  const profile = validateBusinessProfileInput(
+    {nombreComercial: "Empresa existente " + country.code, rubroCodigo: "INGENIERIA_CONSULTORIA", paisCodigo: country.code, regionEstado: "Región", monedaCodigo: country.defaultCurrencyCode},
+    TestHttpsError,
+    {existingBusiness: {paisCodigo: country.code}}
+  );
+  assert.equal(profile.paisCodigo, country.code);
+  assert.equal(profile.monedaCodigo, country.defaultCurrencyCode);
+}
+rejectsWithCode(
+  () => validateBusinessProfileInput(
+    {nombreComercial: "Cambio de país", rubroCodigo: "INGENIERIA_CONSULTORIA", paisCodigo: "BO", regionEstado: "La Paz"},
+    TestHttpsError,
+    {existingBusiness: {paisCodigo: "CL"}}
+  ),
+  "invalid-argument"
+);
 rejectsWithCode(
   () => validateBusinessCreationInput(
     {
