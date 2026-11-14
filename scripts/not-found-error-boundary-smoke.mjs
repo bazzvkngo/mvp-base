@@ -12,6 +12,7 @@ import {parse} from "@babel/parser";
 import traverseModule from "@babel/traverse";
 import {isKnownAppPath} from "../src/domain/knownRoutes.mjs";
 import {isKnownBusinessPath} from "../src/domain/rbac.mjs";
+import {VERTICAL_MODULES} from "../src/domain/verticalModules.mjs";
 
 const traverse = traverseModule.default ?? traverseModule;
 const read = (file) => readFile(new URL(`../${file}`, import.meta.url), "utf8");
@@ -145,8 +146,32 @@ for (const unknown of ["/foo", "/ventas-x", "/clientesabc", "/no/existe", "/admi
 }
 assert.equal(isKnownBusinessPath("/finanzas/x"), true);
 assert.equal(isKnownBusinessPath("/foo"), false);
-assert.equal(isKnownBusinessPath("/taller/ordenes", {registry: [{id: "taller", basePath: "/taller"}]}), true, "las rutas de un vertical registrado existen");
-assert.equal(isKnownBusinessPath("/taller/ordenes"), false, "sin vertical registrado no existen");
+// El registro real cambia según la rama (vacío en el Core; con Taller y Veterinaria
+// en la integrada) y esos verticales además figuran en routePermissions, así que
+// "sin vertical" y "con vertical" se prueban con un registro propio y una ruta
+// ficticia que no es de ningún módulo real.
+const FICTITIOUS_BASE = "/modulo-ficticio";
+const testRegistry = [{id: "ficticio", label: "Módulo ficticio", basePath: FICTITIOUS_BASE}];
+// Con vertical: la ruta del módulo del registro de prueba existe.
+assert.equal(isKnownBusinessPath(FICTITIOUS_BASE, {registry: testRegistry}), true, "con vertical registrado, su ruta base existe");
+assert.equal(isKnownBusinessPath(`${FICTITIOUS_BASE}/ordenes`, {registry: testRegistry}), true, "con vertical registrado, sus subrutas existen");
+assert.equal(isKnownBusinessPath(`${FICTITIOUS_BASE}-x`, {registry: testRegistry}), false, "un prefijo parecido no es el módulo");
+assert.equal(isKnownBusinessPath("/xyz", {registry: testRegistry}), false, "con vertical registrado, lo ajeno sigue sin existir");
+// Sin vertical: registro vacío explícito.
+assert.equal(isKnownBusinessPath(`${FICTITIOUS_BASE}/ordenes`, {registry: []}), false, "sin vertical registrado no existen");
+assert.equal(isKnownBusinessPath(FICTITIOUS_BASE, {registry: []}), false, "sin vertical registrado su ruta base no existe");
+assert.equal(isKnownBusinessPath("/finanzas/x", {registry: []}), true, "las rutas del Core existen sin ningún vertical");
+// isKnownAppPath no recibe registro (usa el real): la ruta ficticia no es de ningún módulo real en ninguna rama.
+assert.equal(isKnownAppPath(`${FICTITIOUS_BASE}/ordenes`), false, "una ruta ficticia no existe en la aplicación");
+// Registro real (el que tenga la rama): cada módulo registrado existe y lo ajeno no.
+for (const {basePath} of VERTICAL_MODULES) {
+  for (const path of [basePath, `${basePath}/ordenes`]) {
+    assert.equal(isKnownBusinessPath(path), true, `${path} (módulo del registro real) existe`);
+    assert.equal(isKnownAppPath(path), true, `${path} (módulo del registro real) existe en la aplicación`);
+  }
+}
+assert.equal(isKnownBusinessPath("/xyz"), false, "con el registro real, /xyz no existe");
+assert.equal(isKnownAppPath("/xyz"), false, "con el registro real, /xyz no existe en la aplicación");
 
 // --- 7) Renderizado de prueba (Vite ssrLoadModule + renderToStaticMarkup) -----
 const vite = await createServer({appType: "custom", logLevel: "silent", server: {middlewareMode: true}});
