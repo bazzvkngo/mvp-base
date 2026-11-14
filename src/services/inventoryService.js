@@ -623,7 +623,7 @@ export async function importInventoryItems(uid, items) {
 
     if (total > 0 && verifiedCount < total) {
       throw new Error(
-        `Firestore confirmo ${verifiedCount} de ${total} items importados. No se mostrara exito.`
+        `Solo se pudieron confirmar ${verifiedCount} de ${total} ítems importados. Revisa el inventario antes de volver a importar.`
       );
     }
 

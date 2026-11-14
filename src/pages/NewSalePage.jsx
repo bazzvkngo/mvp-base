@@ -37,6 +37,7 @@ import {
   obtenerVenta,
 } from "../services/saleService";
 import "../features/sales/sales.css";
+import {userErrorMessage} from "../domain/userFacingError.mjs";
 
 const EMPTY_TOTALS = {subtotal: 0, descuentoItems: 0, descuento: 0, descuentoTotal: 0, neto: 0, afectaIva: true, tasaIva: 0.19, iva: 0, total: 0};
 const today = () => new Intl.DateTimeFormat("en-CA", {timeZone: "America/Santiago"}).format(new Date());
@@ -194,7 +195,7 @@ export default function NewSalePage({businessId, role}) {
           });
         }
       })
-      .catch((error) => { if (active) setMessage(error.message); })
+      .catch((error) => { if (active) setMessage(userErrorMessage(error)); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [businessId, ventaId]);
@@ -336,8 +337,8 @@ export default function NewSalePage({businessId, role}) {
         sileo.success({title: "Venta actualizada", description: `${stored.numero} continúa preparada para confirmar.`});
       }
     } catch (error) {
-      setMessage(error.message);
-      sileo.error({title: "No se pudo guardar la venta", description: error.message});
+      setMessage(userErrorMessage(error));
+      sileo.error({title: "No se pudo guardar la venta", description: userErrorMessage(error)});
     } finally {
       setProcessing(false);
     }
@@ -355,8 +356,8 @@ export default function NewSalePage({businessId, role}) {
         setSale(stored);
       }
     } catch (error) {
-      setMessage(error.message);
-      sileo.error({title: "No se pudo preparar la venta", description: error.message});
+      setMessage(userErrorMessage(error));
+      sileo.error({title: "No se pudo preparar la venta", description: userErrorMessage(error)});
       setProcessing(false);
       return;
     }
@@ -381,7 +382,7 @@ export default function NewSalePage({businessId, role}) {
     } catch (error) {
       if (!shouldReconcileSaleConfirmation(error)) {
         pendingConfirmationSaleId.current = "";
-        sileo.error({title: "No se pudo confirmar la venta", description: error.message});
+        sileo.error({title: "No se pudo confirmar la venta", description: userErrorMessage(error)});
         return;
       }
       try {
@@ -390,10 +391,10 @@ export default function NewSalePage({businessId, role}) {
           finishConfirmation(authoritative);
         } else {
           if (authoritative) setSale(authoritative);
-          sileo.error({title: "No se pudo confirmar la venta", description: error.message});
+          sileo.error({title: "No se pudo confirmar la venta", description: userErrorMessage(error)});
         }
       } catch {
-        sileo.error({title: "No se pudo confirmar la venta", description: error.message});
+        sileo.error({title: "No se pudo confirmar la venta", description: userErrorMessage(error)});
       }
     } finally {
       setProcessing(false);
@@ -420,8 +421,8 @@ export default function NewSalePage({businessId, role}) {
         state: {toastTitle: "Venta cancelada", toastDescription: `${sale.numero} quedó cancelada.`},
       });
     } catch (error) {
-      setMessage(error.message);
-      sileo.error({title: "No se pudo cancelar la venta", description: error.message});
+      setMessage(userErrorMessage(error));
+      sileo.error({title: "No se pudo cancelar la venta", description: userErrorMessage(error)});
     } finally {
       setProcessing(false);
     }

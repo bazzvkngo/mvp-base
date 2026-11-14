@@ -27,6 +27,7 @@ import {formatMoney} from "../utils/formatters";
 import ReceptionDetailView from "../features/receptions/ReceptionDetailView";
 import ReceptionDocumentImportDialog from "../features/receptions/ReceptionDocumentImportDialog";
 import "../features/receptions/receptions.css";
+import {userErrorMessage} from "../domain/userFacingError.mjs";
 
 const itemActionLabel = (type) => type === "producto"
   ? "Recibir ahora"
@@ -63,9 +64,9 @@ export default function NewReceptionPage({businessId, role}) {
       else setMessage("La recepción no existe.");
       if (stored?.compraId) {
         try { const purchase = await obtenerCompra(businessId, stored.compraId); if (active) setLinkedPurchase(purchase); }
-        catch (error) { if (active) setMessage(error.message); }
+        catch (error) { if (active) setMessage(userErrorMessage(error)); }
       }
-    }).catch((error) => active && setMessage(error.message)).finally(() => active && setLoading(false));
+    }).catch((error) => active && setMessage(userErrorMessage(error))).finally(() => active && setLoading(false));
     return () => { active = false; };
   }, [businessId, recepcionId]);
 
@@ -77,7 +78,7 @@ export default function NewReceptionPage({businessId, role}) {
       setReception(result.recepcion);
       setDraft({...draft, documentoOrigen: result.recepcion.documentoOrigen, items: result.recepcion.items});
       sileo.success({title: "Recepción preparada", description: "Aún no se modificó el stock."});
-    } catch (error) { setMessage(error.message); }
+    } catch (error) { setMessage(userErrorMessage(error)); }
     finally { setProcessing(false); }
   };
   const confirm = async () => {
@@ -100,7 +101,7 @@ export default function NewReceptionPage({businessId, role}) {
             sileo.success({title: "Recepción confirmada", description: "Se verificó el resultado autoritativo después de recuperar la conexión."});
           } else setMessage("La recepción continúa preparada. Puedes reintentar con seguridad.");
         } catch { setMessage("No se pudo verificar la confirmación. Recarga antes de reintentar."); }
-      } else setMessage(error.message);
+      } else setMessage(userErrorMessage(error));
     // El diálogo se mantiene abierto mientras dura la llamada y se cierra aquí, tanto en éxito como en error.
     } finally { confirmGuard.current = false; setProcessing(false); setDialog(""); }
   };
@@ -108,7 +109,7 @@ export default function NewReceptionPage({businessId, role}) {
     if (processing) return;
     setDialog(""); setProcessing(true); setMessage("");
     try { const result = await cancelarRecepcionBorrador(businessId, reception.id); setReception(result.recepcion); navigate(`/recepciones/${reception.id}`, {replace: true}); }
-    catch (error) { setMessage(error.message); }
+    catch (error) { setMessage(userErrorMessage(error)); }
     finally { setProcessing(false); }
   };
   const applyImport = ({items, documentoOrigen, aplicadas, omitidas}) => {

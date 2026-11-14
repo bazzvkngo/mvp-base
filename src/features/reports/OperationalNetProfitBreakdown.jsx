@@ -9,6 +9,7 @@ import {
 import {formatMoney} from "../../utils/formatters";
 import useBusinessFormat from "../../hooks/useBusinessFormat";
 import ReportsInfoTip from "./ReportsInfoTip";
+import {userErrorMessage} from "../../domain/userFacingError.mjs";
 
 // SPEC 022 §6.2: ganancia neta operacional, su desglose y la línea de ventas
 // sin costo registrado. La cifra sale de calculateOperationalNetProfit; este
@@ -38,7 +39,7 @@ export function useOperationalNetProfit(profitabilityV4, range) {
         }),
       };
     } catch (error) {
-      return {status: "error", result: null, error: error?.message || "No fue posible calcular la ganancia."};
+      return {status: "error", result: null, error: userErrorMessage(error, "No fue posible calcular la ganancia.")};
     }
   }, [commercial, projects, range.end, range.start]);
 }

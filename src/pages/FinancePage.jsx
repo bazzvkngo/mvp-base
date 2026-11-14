@@ -40,6 +40,7 @@ import {
 } from "../services/financialService";
 import { useBusinessMoney } from "../hooks/useBusinessFormat";
 import { formatDate } from "../utils/formatters";
+import {userErrorMessage} from "../domain/userFacingError.mjs";
 
 const TABS = [
   { id: "all", label: "Todos" },
@@ -174,7 +175,7 @@ function FinancePage({ businessId, role }) {
       setDeleteCandidate(null);
       setFeedback("Movimiento eliminado correctamente.");
     } catch (deleteError) {
-      setFeedback(deleteError?.message || "No pudimos eliminar el movimiento.");
+      setFeedback(userErrorMessage(deleteError, "No pudimos eliminar el movimiento."));
     } finally {
       setDeleting(false);
     }

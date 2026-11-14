@@ -98,7 +98,7 @@ export const DEFAULT_COMPANY_PROFILE = {
   textoAceptacionCotizacion:
     "Acepto los términos y condiciones de esta cotización.",
   notaPieCotizacion:
-    "Los valores pueden variar segun alcance final y disponibilidad de insumos.",
+    "Los valores pueden variar según alcance final y disponibilidad de insumos.",
   notaFinalCotizacion: "",
   impuestoPredeterminadoId: "IVA_GENERAL",
   impuestoPredeterminadoNombre: "IVA",
@@ -648,7 +648,7 @@ export async function uploadCompanyLogo(userId, file) {
     throw new Error("El logo debe ser PNG, JPG o WebP.");
   }
   if (file.size > MAX_COMPANY_LOGO_SIZE_BYTES) {
-    throw new Error("El logo no puede pesar mas de 2 MB.");
+    throw new Error("El logo no puede pesar más de 2 MB.");
   }
 
   const currentProfileSnapshot = await getDoc(

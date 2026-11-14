@@ -95,12 +95,12 @@ function PlatformAdminLayout({businessSession, onReturnToErp, usuario}) {
       <PlatformNavigation badges={badges} />
       <div className="platform-sidebar__footer">
         {hasErp && <Button variant="secondary" icon={RotateCcw} onClick={returnToErp}>Volver al ERP</Button>}
-        <Button variant="ghost-danger" icon={LogOut} onClick={() => logout()}>Cerrar sesion</Button>
+        <Button variant="ghost-danger" icon={LogOut} onClick={() => logout()}>Cerrar sesión</Button>
       </div>
     </aside>
     <div className="platform-workspace">
       <header className="platform-topbar">
-        <button className="platform-menu-button" type="button" aria-label="Abrir navegacion" onClick={() => setMobileOpen(true)}>
+        <button className="platform-menu-button" type="button" aria-label="Abrir navegación" onClick={() => setMobileOpen(true)}>
           <AppIcon icon={Menu} size={21} />
         </button>
         <div><span>Contexto global</span><strong>Administración de plataforma</strong></div>
@@ -112,13 +112,13 @@ function PlatformAdminLayout({businessSession, onReturnToErp, usuario}) {
       <main id="platform-main" className="platform-content"><Outlet context={{summary, reloadSummary: loadSummary, currentUid: usuario?.uid || ""}} /></main>
     </div>
     {mobileOpen && <div className="platform-mobile-layer">
-      <button className="platform-mobile-overlay" type="button" aria-label="Cerrar navegacion" onClick={() => setMobileOpen(false)} />
+      <button className="platform-mobile-overlay" type="button" aria-label="Cerrar navegación" onClick={() => setMobileOpen(false)} />
       <aside className="platform-sidebar platform-sidebar--mobile" role="dialog" aria-modal="true">
         <div className="platform-mobile-heading"><strong>Consola de Administración</strong><button type="button" aria-label="Cerrar" onClick={() => setMobileOpen(false)}><AppIcon icon={X} size={20} /></button></div>
         <PlatformNavigation badges={badges} onNavigate={() => setMobileOpen(false)} />
         <div className="platform-sidebar__footer">
           {hasErp && <Button variant="secondary" icon={RotateCcw} onClick={returnToErp}>Volver al ERP</Button>}
-          <Button variant="ghost-danger" icon={LogOut} onClick={() => logout()}>Cerrar sesion</Button>
+          <Button variant="ghost-danger" icon={LogOut} onClick={() => logout()}>Cerrar sesión</Button>
         </div>
       </aside>
     </div>}

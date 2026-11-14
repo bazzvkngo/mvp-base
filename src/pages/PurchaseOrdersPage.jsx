@@ -21,6 +21,7 @@ import {sendPurchaseOrderEmail} from "../services/purchaseOrderEmailService";
 import {crearRecepcionDesdeOrden, createReceptionRequestId, listarRecepciones} from "../services/receptionService";
 import {buildPurchaseOrderPdfAttachment, downloadPurchaseOrderPdf, getPurchaseOrderWhatsAppAvailability, sharePurchaseOrderWhatsApp} from "../utils/purchaseOrderPdf";
 import "../features/receptions/receptions.css";
+import {userErrorMessage} from "../domain/userFacingError.mjs";
 
 const labels = {borrador: "Pendiente de envío", emitida: "Emitida", cancelada: "Cancelada"};
 const MODULE = getRouteMeta("/ordenes-compra");
@@ -145,7 +146,7 @@ export default function PurchaseOrdersPage({businessId, role}) {
   const load = async () => {
     setLoading(true);
     try { const [orderList, receptionList, profile] = await Promise.all([listarOrdenesCompra(businessId), listarRecepciones(businessId), getCompanyProfile(businessId).catch(() => ({}))]); setOrders(orderList); setReceptions(receptionList); setCompany(profile); setLoadFailed(false); }
-    catch (error) { setMessage(error.message); setLoadFailed(true); } finally { setLoading(false); }
+    catch (error) { setMessage(userErrorMessage(error)); setLoadFailed(true); } finally { setLoading(false); }
   };
   useEffect(() => { load(); }, [businessId]);
   useEffect(() => {
@@ -191,22 +192,22 @@ export default function PurchaseOrdersPage({businessId, role}) {
     if (draftReception) { navigate(`/recepciones/${draftReception.id}/editar`); return; }
     const requestId = receptionIds.current.get(order.id) || createReceptionRequestId("reception-create"); receptionIds.current.set(order.id, requestId); setProcessingId(order.id);
     try { const result = await crearRecepcionDesdeOrden(businessId, order.id, {requestId}); receptionIds.current.delete(order.id); navigate(`/recepciones/${result.recepcion.id}/editar`); }
-    catch (error) { setMessage(error.message); } finally { setProcessingId(""); }
+    catch (error) { setMessage(userErrorMessage(error)); } finally { setProcessingId(""); }
   };
   const cancel = async () => {
     if (!pendingAction) return; setProcessingId(pendingAction.id);
     try { await cancelarOrdenCompra(businessId, pendingAction.id); setPendingAction(null); await load(); }
-    catch (error) { setMessage(error.message); } finally { setProcessingId(""); }
+    catch (error) { setMessage(userErrorMessage(error)); } finally { setProcessingId(""); }
   };
   const sendEmail = async ({emailProveedor, asunto, mensaje, enviarCopia}) => {
     const order = emailOrder; if (!order) return; setProcessingId(order.id);
     try { const pdfAttachment = await buildPurchaseOrderPdfAttachment({order, companyProfile: company}); const result = await sendPurchaseOrderEmail({businessId, ordenCompraId: order.id, emailProveedor, asunto, mensaje, pdfAttachment, enviarCopia}); if (!result.success) throw new Error(result.error || "No fue posible enviar la orden."); setEmailOrder(null); await load(); if (result.simulated) sileo.info({title: "Simulación de correo — QA local", description: "No se envió un correo real. La orden permanece pendiente de envío."}); else sileo.success({title: "Correo enviado", description: `${order.numero} fue enviada a ${emailProveedor}.`}); }
-    catch (error) { setMessage(error.message); } finally { setProcessingId(""); }
+    catch (error) { setMessage(userErrorMessage(error)); } finally { setProcessingId(""); }
   };
   const downloadPdf = async (order) => {
     if (!order) return; setProcessingId(order.id); setMessage("");
     try { await downloadPurchaseOrderPdf({order, companyProfile: company}); sileo.success({title: "PDF descargado", description: `${order.numero} quedó disponible en tus descargas.`}); }
-    catch (error) { setMessage(error.message); sileo.error({title: "No se pudo generar el PDF", description: error.message}); }
+    catch (error) { setMessage(userErrorMessage(error)); sileo.error({title: "No se pudo generar el PDF", description: userErrorMessage(error)}); }
     finally { setProcessingId(""); }
   };
   const shareWhatsApp = async (order) => {
@@ -215,7 +216,7 @@ export default function PurchaseOrdersPage({businessId, role}) {
       const result = await sharePurchaseOrderWhatsApp({order, companyProfile: company});
       if (result.externalFlowOpened) { setWhatsAppDestination(result.destination || ""); setWhatsAppOrder(order); }
     } catch (error) {
-      if (error?.name !== "AbortError") { setMessage(error.message); sileo.error({title: "No se pudo preparar WhatsApp", description: error.message}); }
+      if (error?.name !== "AbortError") { setMessage(userErrorMessage(error)); sileo.error({title: "No se pudo preparar WhatsApp", description: userErrorMessage(error)}); }
     } finally { setProcessingId(""); }
   };
   const confirmWhatsApp = async () => {
@@ -226,7 +227,7 @@ export default function PurchaseOrdersPage({businessId, role}) {
       setSelectedOrder((current) => current?.id === emitted.id ? emitted : current);
       setWhatsAppOrder(null); setWhatsAppDestination("");
       sileo.success({title: "Orden de compra emitida", description: `${emitted.numero} fue registrada como enviada por WhatsApp.`});
-    } catch (error) { setMessage(error.message); sileo.error({title: "No se pudo registrar el envío", description: error.message}); }
+    } catch (error) { setMessage(userErrorMessage(error)); sileo.error({title: "No se pudo registrar el envío", description: userErrorMessage(error)}); }
     finally { setProcessingId(""); }
   };
   const selectedWhatsAppAvailability = getPurchaseOrderWhatsAppAvailability(selectedOrder);

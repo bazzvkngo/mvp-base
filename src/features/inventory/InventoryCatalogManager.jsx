@@ -3,6 +3,7 @@ import Button from "../../components/ui/Button";
 import LoadingState from "../../components/ui/LoadingState";
 import {isDuplicateAreaName, isDuplicateCategoryName} from "../../domain/inventoryCatalog.mjs";
 import {saveInventoryArea, saveInventoryCategory} from "../../services/inventoryService";
+import {userErrorMessage} from "../../domain/userFacingError.mjs";
 
 function InventoryCatalogManager({areas, businessId, categories, loadErrors, loading, onRetry}) {
   const areaNameRef = useRef(null);
@@ -65,7 +66,7 @@ function InventoryCatalogManager({areas, businessId, categories, loadErrors, loa
       setAreaForm(null);
       setNotice(areaForm.id ? "Área actualizada." : "Área creada.");
     } catch (saveError) {
-      setError(saveError.message || "No se pudo guardar el área.");
+      setError(userErrorMessage(saveError, "No se pudo guardar el área."));
     } finally {
       setSavingArea(false);
     }
@@ -90,7 +91,7 @@ function InventoryCatalogManager({areas, businessId, categories, loadErrors, loa
       setCategoryForm(null);
       setNotice(categoryForm.id ? "Categoría actualizada." : "Categoría creada.");
     } catch (saveError) {
-      setError(saveError.message || "No se pudo guardar la categoría.");
+      setError(userErrorMessage(saveError, "No se pudo guardar la categoría."));
     } finally {
       setSavingCategory(false);
     }
@@ -102,7 +103,7 @@ function InventoryCatalogManager({areas, businessId, categories, loadErrors, loa
       await saveInventoryArea(businessId, {areaId: area.id, nombre: area.nombre, estado: area.estado === "inactivo" ? "activo" : "inactivo"});
       setNotice(area.estado === "inactivo" ? "Área reactivada." : "Área desactivada.");
     } catch (toggleError) {
-      setError(toggleError.message || "No se pudo cambiar el estado del área.");
+      setError(userErrorMessage(toggleError, "No se pudo cambiar el estado del área."));
     }
   };
 
@@ -112,7 +113,7 @@ function InventoryCatalogManager({areas, businessId, categories, loadErrors, loa
       await saveInventoryCategory(businessId, {categoriaId: category.id, areaId: category.areaId, nombre: category.nombre, estado: category.estado === "inactivo" ? "activo" : "inactivo"});
       setNotice(category.estado === "inactivo" ? "Categoría reactivada." : "Categoría desactivada.");
     } catch (toggleError) {
-      setError(toggleError.message || "No se pudo cambiar el estado de la categoría.");
+      setError(userErrorMessage(toggleError, "No se pudo cambiar el estado de la categoría."));
     }
   };
 

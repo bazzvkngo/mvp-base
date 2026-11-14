@@ -20,6 +20,7 @@ import {
 } from "../../services/inventoryAiImportService";
 import {formatMoney} from "../../utils/formatters";
 import useBusinessFormat from "../../hooks/useBusinessFormat";
+import {userErrorMessage} from "../../domain/userFacingError.mjs";
 
 const EMPTY_FIELDS = {
   tipoDocumento: "otro", numeroDocumento: "", fechaDocumento: "", fechaVencimiento: "",
@@ -80,7 +81,7 @@ export default function ReceptionDocumentImportDialog({businessId, onApply, onCl
     if (!file || loading || analyzing || applying) return;
     setLoading(true); setError(""); setAnalysis(null); setRows([]); setFields(EMPTY_FIELDS); setProviderReviewAccepted(false);
     try { setFileData(await readInventorySourceFile(file)); }
-    catch (loadError) { setFileData(null); setError(loadError.message || "No se pudo leer el archivo."); }
+    catch (loadError) { setFileData(null); setError(userErrorMessage(loadError, "No se pudo leer el archivo.")); }
     finally { setLoading(false); if (inputRef.current) inputRef.current.value = ""; }
   };
   const analyze = async () => {
@@ -103,7 +104,7 @@ export default function ReceptionDocumentImportDialog({businessId, onApply, onCl
       setFileData(stripInventoryDocumentPayload(fileData));
       if (!preview.length) setError("No se detectaron líneas comerciales para reconciliar.");
     } catch (analysisError) {
-      setError(`${analysisError.message || "No se pudo analizar el documento."} Puedes cerrar esta ventana y continuar la recepción manualmente.`);
+      setError(`${userErrorMessage(analysisError, "No se pudo analizar el documento.")} Puedes cerrar esta ventana y continuar la recepción manualmente.`);
     } finally { setAnalyzing(false); }
   };
   const apply = async () => {
@@ -115,7 +116,7 @@ export default function ReceptionDocumentImportDialog({businessId, onApply, onCl
       const documentoOrigen = buildReceptionDocumentSource(fileData, analysis, fields, rows);
       onApply({...result, documentoOrigen}); reset(); onClose();
     } catch (applyError) {
-      setError(applyError.message || "No se pudo aplicar la propuesta a la recepción.");
+      setError(userErrorMessage(applyError, "No se pudo aplicar la propuesta a la recepción."));
       setApplying(false); applyGuard.current = false;
     }
   };

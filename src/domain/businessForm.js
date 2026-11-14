@@ -10,6 +10,7 @@ import {
   normalizeQuickBusinessPayload,
 } from "./businessQuickPayload.mjs";
 import { isSelectableBusinessCategory } from "./businessCategorySearch.mjs";
+import { serverMessage } from "./userFacingError.mjs";
 
 export { normalizeBusinessText, normalizeQuickBusinessPayload };
 
@@ -110,13 +111,13 @@ export function getBusinessCreationErrorMessage(error) {
     return "No tienes permisos para realizar esta operación.";
   }
   if (code.includes("invalid-argument")) {
-    return error?.message || "Revisa los datos ingresados.";
+    return serverMessage(error) || "Revisa los datos ingresados.";
   }
   if (code.includes("failed-precondition")) {
-    return error?.message || "No fue posible crear el negocio.";
+    return serverMessage(error) || "No fue posible crear el negocio.";
   }
   if (code.includes("resource-exhausted")) {
-    return error?.message || "El servicio no pudo procesar la solicitud. Reintenta en unos segundos.";
+    return serverMessage(error) || "El servicio no pudo procesar la solicitud. Reintenta en unos segundos.";
   }
   if (code.includes("unavailable") || code.includes("deadline-exceeded")) {
     return "No pudimos conectar con el servicio. Reintenta en unos segundos.";

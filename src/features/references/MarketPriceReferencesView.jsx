@@ -11,6 +11,7 @@ import { searchInventoryMarketReferences } from "../../services/marketReferenceS
 import { formatMoney } from "../../utils/formatters";
 import useBusinessFormat from "../../hooks/useBusinessFormat";
 import "./market-references.css";
+import {userErrorMessage} from "../../domain/userFacingError.mjs";
 
 const MIN_MATCHES_FOR_SUMMARY = 3;
 
@@ -166,7 +167,7 @@ function useMarketReferences(businessId, itemId) {
       setData(response);
       setStatus("ready");
     } catch (error) {
-      setErrorMessage(error?.message || "No fue posible consultar el mercado en este momento.");
+      setErrorMessage(userErrorMessage(error, "No fue posible consultar el mercado en este momento."));
       setStatus(error?.code === "functions/permission-denied" ? "denied" : "error");
     } finally {
       setRefreshing(false);

@@ -90,7 +90,10 @@ assert.doesNotMatch(loginSource, /\bmás? 6|Mínimo 6|al menos 6|< 6/i, "sin ras
 assert.doesNotMatch(loginSource, /\\u[0-9a-fA-F]{4}/, "sin escapes unicode en el JSX");
 assert.equal(loginSource.match(/<h1\b/g).length, 1, "un solo h1");
 assert.equal(loginSource.match(/type="submit"/g).length, 1, "un solo botón de envío");
-assert.match(loginSource, /case "auth\/weak-password":\s*return PASSWORD_POLICY_MESSAGE;/);
+// El mensaje de contraseña débil vive en el helper de errores que usa Login.
+const userFacingErrorSource = await read("src/domain/userFacingError.mjs");
+assert.match(userFacingErrorSource, /"auth\/weak-password":\s*PASSWORD_POLICY_MESSAGE,/);
+assert.match(loginSource, /userErrorMessage\(error, AUTH_GENERIC_MESSAGE\)/);
 
 const submitStart = loginSource.indexOf("const handleSubmit");
 const submitEnd = loginSource.indexOf("const handleGoogle");

@@ -52,6 +52,7 @@ import InventoryImportDialog from "./InventoryImportDialog";
 import { MarketReferencesDialog } from "../references/MarketPriceReferencesView";
 import UnitSelector from "./UnitSelector";
 import "./inventory.css";
+import {userErrorMessage} from "../../domain/userFacingError.mjs";
 
 const EMPTY_DRAFT = Object.freeze({
   tipoItem: "producto",
@@ -441,7 +442,7 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
       setQuickCreate("");
       setQuickName("");
     } catch (error) {
-      setQuickError(error.message || `No se pudo crear ${quickCreate === "area" ? "el área" : "la categoría"}.`);
+      setQuickError(userErrorMessage(error, `No se pudo crear ${quickCreate === "area" ? "el área" : "la categoría"}.`));
     } finally {
       setQuickSaving(false);
     }
@@ -486,7 +487,7 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
       setEditingItem(null);
       setFieldErrors({});
     } catch (error) {
-      setFeedback({ type: "error", message: error.message || "No se pudo guardar el ítem." });
+      setFeedback({ type: "error", message: userErrorMessage(error, "No se pudo guardar el ítem.") });
     } finally {
       setSaving(false);
     }
@@ -500,7 +501,7 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
       setFeedback({ type: "success", message: nextStatus === "activo" ? "Ítem reactivado." : "Ítem archivado; sus referencias se conservan." });
       setDetailItem(null);
     } catch (error) {
-      setFeedback({ type: "error", message: error.message || "No se pudo cambiar el estado." });
+      setFeedback({ type: "error", message: userErrorMessage(error, "No se pudo cambiar el estado.") });
     }
   };
 

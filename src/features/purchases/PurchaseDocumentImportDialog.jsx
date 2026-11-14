@@ -19,6 +19,7 @@ import {
 import {formatMoney} from "../../utils/formatters";
 import "../receptions/receptions.css";
 import useBusinessFormat from "../../hooks/useBusinessFormat";
+import {userErrorMessage} from "../../domain/userFacingError.mjs";
 
 const EMPTY_FIELDS = {
   tipoDocumento: "factura",
@@ -129,7 +130,7 @@ export default function PurchaseDocumentImportDialog({
       }));
       setError("");
     } catch (acceptError) {
-      setError(acceptError.message || "No se pudieron aceptar las coincidencias exactas.");
+      setError(userErrorMessage(acceptError, "No se pudieron aceptar las coincidencias exactas."));
     }
     closeExactSummary();
   };
@@ -182,7 +183,7 @@ export default function PurchaseDocumentImportDialog({
       setFileData(await readInventorySourceFile(file));
     } catch (loadError) {
       setFileData(null);
-      setError(loadError.message || "No se pudo leer el archivo.");
+      setError(userErrorMessage(loadError, "No se pudo leer el archivo."));
     } finally {
       setLoading(false);
       if (inputRef.current) inputRef.current.value = "";
@@ -221,7 +222,7 @@ export default function PurchaseDocumentImportDialog({
         setError("No se detectaron líneas comerciales para vincular con Inventario.");
       }
     } catch (analysisError) {
-      setError(`${analysisError.message || "No se pudo analizar la factura."} La compra no fue creada ni confirmada.`);
+      setError(`${userErrorMessage(analysisError, "No se pudo analizar la factura.")} La compra no fue creada ni confirmada.`);
     } finally {
       setAnalyzing(false);
     }
@@ -250,7 +251,7 @@ export default function PurchaseDocumentImportDialog({
       reset();
       onClose();
     } catch (applyError) {
-      setError(applyError.message || "No se pudo aplicar la factura a la compra.");
+      setError(userErrorMessage(applyError, "No se pudo aplicar la factura a la compra."));
       setApplying(false);
       applyGuard.current = false;
     }

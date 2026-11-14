@@ -50,6 +50,7 @@ import {
 } from "../utils/purchaseOrderPdf";
 import "../features/purchaseOrders/purchase-orders.css";
 import "../features/purchaseOrders/purchase-order-delete.css";
+import {userErrorMessage} from "../domain/userFacingError.mjs";
 
 const EMPTY_TOTALS = {subtotal: 0, descuentoTotal: 0, neto: 0, iva: 0, total: 0};
 
@@ -165,7 +166,7 @@ export default function NewPurchaseOrderPage({businessId, role}) {
         });
       }
     }).catch((error) => {
-      if (active) setMessage(error.message || "No pudimos cargar la orden.");
+      if (active) setMessage(userErrorMessage(error, "No pudimos cargar la orden."));
     }).finally(() => {
       if (active) setLoading(false);
     });
@@ -288,7 +289,7 @@ export default function NewPurchaseOrderPage({businessId, role}) {
         sileo.success({title: "Orden de compra actualizada", description: `${saved.numero} continúa pendiente de emisión.`});
       }
     } catch (error) {
-      setMessage(error.message);
+      setMessage(userErrorMessage(error));
     } finally {
       setSaving(false);
     }
@@ -305,7 +306,7 @@ export default function NewPurchaseOrderPage({businessId, role}) {
       setOrder(emitted);
       sileo.success({title: "Orden de compra emitida", description: `${saved.numero} fue registrada como emitida manualmente.`});
     } catch (error) {
-      setMessage(error.message);
+      setMessage(userErrorMessage(error));
     } finally {
       setSaving(false);
     }
@@ -320,7 +321,7 @@ export default function NewPurchaseOrderPage({businessId, role}) {
       setOrder(cancelled);
       sileo.success({title: "Orden de compra cancelada", description: `${cancelled.numero} quedó cancelada.`});
     } catch (error) {
-      setMessage(error.message);
+      setMessage(userErrorMessage(error));
     } finally {
       setSaving(false);
     }
@@ -350,7 +351,7 @@ export default function NewPurchaseOrderPage({businessId, role}) {
         state: {message: "Copia creada como orden pendiente."},
       });
     } catch (error) {
-      setMessage(error.message);
+      setMessage(userErrorMessage(error));
     } finally {
       setDuplicating(false);
     }
@@ -378,7 +379,7 @@ export default function NewPurchaseOrderPage({businessId, role}) {
             title: "Recepción preparada",
             description: `${created.recepcion.numero} no modificará stock hasta confirmarla.`,
           }),
-          error: (error) => ({title: "No se pudo preparar la recepción", description: error.message}),
+          error: (error) => ({title: "No se pudo preparar la recepción", description: userErrorMessage(error)}),
         }
       );
       conversionRequestIdRef.current = "";
@@ -412,7 +413,7 @@ export default function NewPurchaseOrderPage({businessId, role}) {
         description: `Estado actualizado a ${getSupplierResponseLabel(result.ordenCompra)}.`,
       });
     } catch (error) {
-      setMessage(error.message);
+      setMessage(userErrorMessage(error));
     } finally {
       setSaving(false);
     }
@@ -436,7 +437,7 @@ export default function NewPurchaseOrderPage({businessId, role}) {
         sileo.success({title: result.resent ? "Orden de compra reenviada" : "Correo enviado", description: `${saved.numero} fue enviada a ${emailProveedor}.`});
       }
     } catch (error) {
-      sileo.error({title: "No se pudo enviar la orden", description: error.message});
+      sileo.error({title: "No se pudo enviar la orden", description: userErrorMessage(error)});
     } finally {
       setSaving(false);
     }
@@ -462,7 +463,7 @@ export default function NewPurchaseOrderPage({businessId, role}) {
     } catch (error) {
       targetWindow.close();
       if (error?.name !== "AbortError") {
-        sileo.error({title: "No se pudo preparar WhatsApp", description: error.message});
+        sileo.error({title: "No se pudo preparar WhatsApp", description: userErrorMessage(error)});
       }
     } finally {
       setSaving(false);
@@ -481,7 +482,7 @@ export default function NewPurchaseOrderPage({businessId, role}) {
       setActionDialog("");
       sileo.success({title: "Orden de compra emitida", description: `${emitted.numero} fue registrada como enviada por WhatsApp.`});
     } catch (error) {
-      sileo.error({title: "No se pudo registrar el envío", description: error.message});
+      sileo.error({title: "No se pudo registrar el envío", description: userErrorMessage(error)});
     } finally {
       setSaving(false);
     }
@@ -494,7 +495,7 @@ export default function NewPurchaseOrderPage({businessId, role}) {
       await downloadPurchaseOrderPdf({order: printableOrder, companyProfile: company});
       sileo.success({title: "PDF descargado", description: `${order.numero} quedó disponible en tus descargas.`});
     } catch (error) {
-      sileo.error({title: "No se pudo generar el PDF", description: error.message});
+      sileo.error({title: "No se pudo generar el PDF", description: userErrorMessage(error)});
     } finally {
       setSaving(false);
     }

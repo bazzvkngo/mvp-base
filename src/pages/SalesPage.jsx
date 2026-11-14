@@ -17,6 +17,7 @@ import {getRouteMeta} from "../app/navigation";
 import {listarVentas} from "../services/saleService";
 import {formatDate, formatMoney} from "../utils/formatters";
 import "../features/sales/sales.css";
+import {userErrorMessage} from "../domain/userFacingError.mjs";
 
 const money = (value, document) => formatMoney(value, document?.moneda, document?.locale);
 const MODULE = getRouteMeta("/ventas");
@@ -40,7 +41,7 @@ export default function SalesPage({businessId, role}) {
     setLoading(true);
     listarVentas(businessId)
       .then((values) => { if (active) setItems(values); })
-      .catch((error) => { if (active) setMessage(error.message); })
+      .catch((error) => { if (active) setMessage(userErrorMessage(error)); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [businessId]);

@@ -15,6 +15,7 @@ import {
 } from "../../domain/accessHint.mjs";
 import { detectInAppBrowser } from "../../domain/inAppBrowser.mjs";
 import { LEGAL_DOCUMENTS } from "../../domain/legalDocuments.mjs";
+import { AUTH_GENERIC_MESSAGE, userErrorMessage } from "../../domain/userFacingError.mjs";
 import {
   PASSWORD_POLICY_MESSAGE,
   PASSWORD_STRENGTH_LABELS,
@@ -51,40 +52,7 @@ const ACCESS_TABS = [
   { id: ACCESS_HINT.COLABORADOR, label: "Soy colaborador" },
 ];
 
-function getAuthErrorMessage(code) {
-  switch (code) {
-    case "auth/wrong-password":
-      return "Contraseña incorrecta.";
-    case "auth/user-not-found":
-      return "No se encontró un usuario con ese correo.";
-    case "auth/email-already-in-use":
-      return "El correo electrónico ya está en uso.";
-    case "auth/invalid-email":
-      return "Ingresa un correo electrónico válido.";
-    case "auth/weak-password":
-      return PASSWORD_POLICY_MESSAGE;
-    case "auth/invalid-credential":
-      return "Credenciales inválidas.";
-    case "auth/too-many-requests":
-      return "Demasiados intentos. Espera unos minutos e inténtalo nuevamente.";
-    case "auth/network-request-failed":
-      return "No se pudo conectar con Firebase. Revisa tu conexión.";
-    case "auth/popup-closed-by-user":
-      return "Cerraste la ventana de Google antes de terminar. Inténtalo nuevamente.";
-    case "auth/popup-blocked":
-      return "Tu navegador bloqueó la ventana de Google. Permite las ventanas emergentes e inténtalo nuevamente.";
-    case "auth/account-exists-with-different-credential":
-      return "Ya existe una cuenta con ese correo creada con otro método. Ingresa con tu correo y contraseña.";
-    case "auth/operation-not-allowed":
-      return "El ingreso con Google no está habilitado todavía.";
-    case "auth/unauthorized-domain":
-      return "Este sitio no está autorizado para ingresar con Google.";
-    case "auth/user-disabled":
-      return "Esta cuenta está deshabilitada.";
-    default:
-      return "Error al procesar la solicitud.";
-  }
-}
+const getAuthErrorMessage = (error) => userErrorMessage(error, AUTH_GENERIC_MESSAGE);
 
 function Login() {
   const location = useLocation();
@@ -136,7 +104,7 @@ function Login() {
     if (!GOOGLE_LOGIN_ENABLED) return;
     completeGoogleRedirect().catch((err) => {
       console.error("Error al volver de Google:", err?.code, err?.message);
-      setError(getAuthErrorMessage(err?.code));
+      setError(getAuthErrorMessage(err));
     });
   }, []);
 
@@ -224,7 +192,7 @@ function Login() {
       }
     } catch (err) {
       console.error("Error de autenticación:", err.code, err.message);
-      setError(getAuthErrorMessage(err.code));
+      setError(getAuthErrorMessage(err));
     } finally {
       setIsSubmitting(false);
     }
@@ -246,7 +214,7 @@ function Login() {
       // Otra solicitud de popup reemplazó a esta: no es un error para la persona.
       if (err?.code === "auth/cancelled-popup-request") return;
       console.error("Error con Google:", err?.code, err?.message);
-      setError(getAuthErrorMessage(err?.code));
+      setError(getAuthErrorMessage(err));
     } finally {
       setIsGoogleLoading(false);
     }

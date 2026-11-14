@@ -55,6 +55,7 @@ import {
   BUSINESS_PERMISSIONS,
   hasBusinessPermission,
 } from "../domain/rbac.mjs";
+import {userErrorMessage} from "../domain/userFacingError.mjs";
 
 const statusLabels = QUOTE_STATUS_LABELS;
 
@@ -380,7 +381,7 @@ function QuoteHistoryPage({ userId, role }) {
       return statusPatch;
     } catch (err) {
       console.error("Error al actualizar estado:", err);
-      const message = err.message || "No se pudo actualizar el estado.";
+      const message = userErrorMessage(err, "No se pudo actualizar el estado.");
       setError(message);
       sileo.error({
         title: "No se pudo actualizar la cotización",
@@ -450,7 +451,7 @@ function QuoteHistoryPage({ userId, role }) {
       sileo.success({title: "Cotización eliminada"});
     } catch (err) {
       console.error("Error al eliminar la cotización:", err);
-      setDeleteError(err.message || "No se pudo eliminar la cotización.");
+      setDeleteError(userErrorMessage(err, "No se pudo eliminar la cotización."));
     } finally {
       setDeleting(false);
     }
@@ -491,7 +492,7 @@ function QuoteHistoryPage({ userId, role }) {
     } catch (reopenError) {
       sileo.error({
         title: "No se pudo reabrir la cotización",
-        description: reopenError.message,
+        description: userErrorMessage(reopenError),
       });
     } finally {
       setSavingStatus(false);
@@ -521,7 +522,7 @@ function QuoteHistoryPage({ userId, role }) {
       });
     } catch (duplicateError) {
       const message =
-        duplicateError.message || "No se pudo duplicar la cotización.";
+        userErrorMessage(duplicateError, "No se pudo duplicar la cotización.");
       setError(message);
       sileo.error({
         title: "No se pudo duplicar la cotización",
@@ -1505,7 +1506,7 @@ function QuoteDocumentActions({
       }
     } catch (error) {
       if (error?.name !== "AbortError") {
-        const message = error?.message || "No fue posible preparar el PDF.";
+        const message = userErrorMessage(error, "No fue posible preparar el PDF.");
         setPdfError(message);
         sileo.error({
           title: action === "download"
@@ -1536,7 +1537,7 @@ function QuoteDocumentActions({
         description: `${getQuoteDisplayNumber(quote, quote.id)} conservó su estado ${getQuoteStatusLabel(statusPatch.estado)}.`,
       });
     } catch (error) {
-      const message = error?.message || "No fue posible registrar el envío.";
+      const message = userErrorMessage(error, "No fue posible registrar el envío.");
       setPdfError(message);
       sileo.error({
         title: "No se pudo registrar el envío",

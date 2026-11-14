@@ -38,6 +38,7 @@ import ReportsVentasView from "../features/reports/views/ReportsVentasView";
 import useBusinessFormat from "../hooks/useBusinessFormat";
 import {loadSimplifiedReportData} from "../services/reportService";
 import {formatDate} from "../utils/formatters";
+import {userErrorMessage} from "../domain/userFacingError.mjs";
 
 const VALID_PERIODS = new Set(REPORT_PERIOD_OPTIONS.map((option) => option.id));
 const EMPTY_DATA = Object.freeze({projectBalances: [], purchases: [], sales: []});
@@ -93,7 +94,7 @@ function StatisticsPage({businessId, currencyCode = "CLP", role = ""}) {
     let active = true;
     if (!businessId) { setData(EMPTY_DATA); setLoading(false); setError(""); return () => { active = false; }; }
     setLoading(true); setError("");
-    loadSimplifiedReportData(businessId, {role}).then((next) => { if (active) setData(next); }).catch((loadError) => { if (active) setError(loadError?.message || "No fue posible cargar los reportes."); }).finally(() => { if (active) setLoading(false); });
+    loadSimplifiedReportData(businessId, {role}).then((next) => { if (active) setData(next); }).catch((loadError) => { if (active) setError(userErrorMessage(loadError, "No fue posible cargar los reportes.")); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [businessId, reloadKey, role]);
 

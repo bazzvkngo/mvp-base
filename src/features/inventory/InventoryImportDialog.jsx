@@ -11,6 +11,7 @@ import {
   revalidateInventoryImportCodes,
   updateInventoryImportRow,
 } from "../../services/inventoryImportService";
+import {userErrorMessage} from "../../domain/userFacingError.mjs";
 
 const SPREADSHEET_EXTENSION = /\.(csv|xls|xlsx)$/i;
 const SPREADSHEET_ACCEPT = ".csv,.xls,.xlsx";
@@ -105,7 +106,7 @@ function InventoryImportDialog({
       setSourceKind("");
       setFileName("");
       requestIdBaseRef.current = "";
-      setError(loadError.message || "No se pudo leer el archivo.");
+      setError(userErrorMessage(loadError, "No se pudo leer el archivo."));
     } finally {
       setLoading(false);
       if (inputRef.current) inputRef.current.value = "";
@@ -180,12 +181,12 @@ function InventoryImportDialog({
           skipped: rows.length - saveError.partialCreated,
           remaining: saveError.remaining,
           partial: true,
-          error: saveError.message || "No se pudieron guardar todos los lotes.",
+          error: userErrorMessage(saveError, "No se pudieron guardar todos los lotes."),
         };
         setResult(partialResult);
         await onImported?.(partialResult);
       } else {
-        setError(saveError.message || "No se pudo confirmar la importación.");
+        setError(userErrorMessage(saveError, "No se pudo confirmar la importación."));
       }
     } finally {
       savingInFlightRef.current = false;

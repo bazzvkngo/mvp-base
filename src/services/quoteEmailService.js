@@ -103,7 +103,7 @@ export async function sendQuoteEmail({
     throw new Error("El asunto debe tener 180 caracteres o menos.");
   }
   if (/[\r\n]/.test(String(asunto))) {
-    throw new Error("El asunto no puede contener saltos de linea.");
+    throw new Error("El asunto no puede contener saltos de línea.");
   }
   if (!String(mensaje || "").trim()) {
     throw new Error("Ingresa el mensaje del correo.");

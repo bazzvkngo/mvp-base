@@ -14,6 +14,7 @@ import {formatMoney} from "../utils/formatters";
 import {canManagePurchases, getPurchaseDocumentTypeLabel, getPurchaseStockSemantics, getPurchaseStatusLabel, matchesPurchaseSearch} from "../domain/purchaseModel.mjs";
 import {cancelarCompraBorrador, confirmarCompra, createPurchaseRequestId, listarCompras, revertirCompra} from "../services/purchaseService";
 import "../features/purchases/purchases.css";
+import {userErrorMessage} from "../domain/userFacingError.mjs";
 
 const money = (value, document) => formatMoney(value, document?.moneda, document?.locale);
 const MODULE = getRouteMeta("/compras");
@@ -46,8 +47,8 @@ export default function PurchasesPage({businessId, role}) {
   // en el vacío y la cabecera no recibe acciones. Con datos, o con filtros sin resultados, se ve la lista.
   const showEmpty = !loading && !loadFailed && items.length === 0;
   const chips = !loadFailed && !(loading && items.length === 0) ? [`${items.length} ${items.length === 1 ? "compra" : "compras"}`] : [];
-  const load = async () => { setLoading(true); try { setItems(await listarCompras(businessId)); setLoadFailed(false); } catch (error) { setMessage(error.message); setLoadFailed(true); } finally { setLoading(false); } };
-  useEffect(() => { let active = true; setLoading(true); listarCompras(businessId).then((values) => { if (active) { setItems(values); setLoadFailed(false); } }).catch((error) => { if (active) { setMessage(error.message); setLoadFailed(true); } }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [businessId]);
+  const load = async () => { setLoading(true); try { setItems(await listarCompras(businessId)); setLoadFailed(false); } catch (error) { setMessage(userErrorMessage(error)); setLoadFailed(true); } finally { setLoading(false); } };
+  useEffect(() => { let active = true; setLoading(true); listarCompras(businessId).then((values) => { if (active) { setItems(values); setLoadFailed(false); } }).catch((error) => { if (active) { setMessage(userErrorMessage(error)); setLoadFailed(true); } }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [businessId]);
   const filtered = useMemo(() => items.filter((item) => (status === "todos" || item.estado === status) && (origin === "todos" || (origin === "oc" ? item.ordenCompraId : !item.ordenCompraId)) && matchesPurchaseSearch(item, search)), [items, origin, search, status]);
   const action = (purchase, type) => { setReversalReason(""); setPendingAction({purchase, type}); };
   const executeAction = async () => {
@@ -84,9 +85,9 @@ export default function PurchasesPage({businessId, role}) {
       }
       setPendingAction(null); setReversalReason(""); await load();
     } catch (error) {
-      setMessage(error.message);
+      setMessage(userErrorMessage(error));
       const title = type === "confirmar" ? "No se pudo confirmar la compra" : type === "revertir" ? "No se pudo revertir la compra" : "No se pudo cancelar la compra";
-      sileo.error({title, description: error.message});
+      sileo.error({title, description: userErrorMessage(error)});
     } finally { setProcessing(""); }
   };
   const open = (purchase) => navigate(purchase.estado === "borrador" && canManage ? `/compras/${purchase.id}/editar` : `/compras/${purchase.id}`);

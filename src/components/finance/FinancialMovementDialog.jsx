@@ -8,6 +8,7 @@ import {
   getFinancialCategories,
   getSantiagoDateKey,
 } from "../../domain/financialMovement.mjs";
+import {userErrorMessage} from "../../domain/userFacingError.mjs";
 
 const EMPTY_FORM = {
   type: "income",
@@ -78,7 +79,7 @@ function FinancialMovementDialog({
       await onSave({ ...form, amount: Number(form.amount) });
       onClose();
     } catch (saveError) {
-      setError(saveError?.message || "No pudimos guardar el movimiento.");
+      setError(userErrorMessage(saveError, "No pudimos guardar el movimiento."));
     } finally {
       setSaving(false);
     }

@@ -46,6 +46,7 @@ import {
 import { subscribeToValuations } from "../services/valuationService";
 import { useBusinessMoney } from "../hooks/useBusinessFormat";
 import { formatDate } from "../utils/formatters";
+import {userErrorMessage} from "../domain/userFacingError.mjs";
 
 const ASSISTANT_DESCRIPTION_MAX_LENGTH = 1200;
 const MANUAL_CATALOG_PAGE_SIZE = 10;
@@ -1342,7 +1343,7 @@ function NewQuotePage({ userId }) {
       aiAvailability.applyError(err);
       console.error("Error al sugerir ítems de cotización:", err);
       setAssistantError(
-        err.message || "No se pudieron generar sugerencias en este momento."
+        userErrorMessage(err, "No se pudieron generar sugerencias en este momento.")
       );
     } finally {
       assistantRequestInFlightRef.current = false;
@@ -1565,7 +1566,7 @@ function NewQuotePage({ userId }) {
     } catch (err) {
       console.error("Error creando ítem sugerido:", err);
       setSuggestedItemError(
-        err.message || "No se pudo crear el ítem sugerido."
+        userErrorMessage(err, "No se pudo crear el ítem sugerido.")
       );
     } finally {
       setSuggestedItemSaving(false);
@@ -1714,7 +1715,7 @@ function NewQuotePage({ userId }) {
     if (!quoteValidation.isValid) {
       return Object.values(quoteValidation.fieldErrors)[0];
     }
-    return totalsResult.error?.message || "";
+    return totalsResult.userErrorMessage(error, "");
   };
 
   const saveBlockedByClient = !isEditMode && (
@@ -1816,7 +1817,7 @@ function NewQuotePage({ userId }) {
       });
     } catch (err) {
       console.error("Error al guardar cotización:", err);
-      const message = err.message || "No se pudo guardar la cotización.";
+      const message = userErrorMessage(err, "No se pudo guardar la cotización.");
       setError(message);
       sileo.error({
         title: "No se pudo guardar la cotización",
@@ -2182,7 +2183,7 @@ function NewQuotePage({ userId }) {
           locale={quote.locale || companyProfile?.locale || "es-CL"}
           quote={quote}
           totals={totals}
-          totalsError={totalsResult.error?.message || ""}
+          totalsError={totalsResult.userErrorMessage(error, "")}
           taxName={quote.impuestoNombre || companyProfile?.impuestoPredeterminadoNombre || "IVA"}
           taxRate={Number(quote.tasaIva ?? Number(companyProfile?.impuestoPredeterminadoTasa ?? 19) / 100) * 100}
           saving={saving}

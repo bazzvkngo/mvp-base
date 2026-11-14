@@ -617,12 +617,12 @@ function InventoryAiImporter({ userId, onImported }) {
           setProcessingStatus(
             items.length
               ? "Documento procesado."
-              : "No se identificaron items suficientes."
+              : "No se identificaron ítems suficientes."
           );
 
           if (!items.length) {
             setError(
-              "No se detectaron items claros. Revisa el archivo e inténtalo nuevamente."
+              "No se detectaron ítems claros. Revisa el archivo e inténtalo nuevamente."
             );
           }
         } catch (err) {
@@ -763,7 +763,7 @@ function InventoryAiImporter({ userId, onImported }) {
       return;
     }
     if (!selectedItems.length) {
-      setError("Selecciona al menos un item para guardar.");
+      setError("Selecciona al menos un ítem para guardar.");
       return;
     }
 
@@ -838,7 +838,7 @@ function InventoryAiImporter({ userId, onImported }) {
     <section style={styles.card}>
       <div style={styles.header}>
         <div>
-          <span style={styles.eyebrow}>Importacion inteligente</span>
+          <span style={styles.eyebrow}>Importación inteligente</span>
           <h2 style={styles.title}>Importador inteligente de inventario</h2>
           <p style={styles.subtitle}>
             Carga facturas, cotizaciones, listas de precios o inventarios con
@@ -980,7 +980,7 @@ function InventoryAiImporter({ userId, onImported }) {
           {analysisMeta.documentType && (
             <span>Tipo de documento: {analysisMeta.documentType}</span>
           )}
-          <span>Items detectados: {previewItems.length}</span>
+          <span>Ítems detectados: {previewItems.length}</span>
           {analysisWarnings.map((warning) => (
             <span key={warning}>{warning}</span>
           ))}
@@ -1024,7 +1024,7 @@ function InventoryAiImporter({ userId, onImported }) {
             <div>
               <h3 style={styles.previewTitle}>Vista previa editable</h3>
               <p style={styles.previewSubtitle}>
-                Revisa los items detectados antes de guardarlos. Puedes editar
+                Revisa los ítems detectados antes de guardarlos. Puedes editar
                 los datos, desmarcar los que no quieras importar o quitarlos de
                 la vista previa.
               </p>
@@ -1051,7 +1051,7 @@ function InventoryAiImporter({ userId, onImported }) {
                 onClick={handleSave}
                 disabled={!canSave}
               >
-                {saving ? "Guardando..." : `Guardar items incluidos (${selectedItems.length})`}
+                {saving ? "Guardando..." : `Guardar ítems incluidos (${selectedItems.length})`}
               </button>
             </div>
           </div>
@@ -1087,7 +1087,7 @@ function InventoryAiImporter({ userId, onImported }) {
                     </label>
                     <div style={styles.itemTitleBlock}>
                       <strong style={styles.itemTitle}>
-                        {item.nombre || "Item sin nombre"}
+                        {item.nombre || "Ítem sin nombre"}
                       </strong>
                       <span style={styles.itemSku}>
                         Código interno: se asignará al confirmar
@@ -1427,7 +1427,7 @@ function InventoryAiImporter({ userId, onImported }) {
               onClick={handleSave}
               disabled={!canSave}
             >
-              {saving ? "Guardando..." : `Guardar items incluidos (${selectedItems.length})`}
+              {saving ? "Guardando..." : `Guardar ítems incluidos (${selectedItems.length})`}
             </button>
           </div>
         </div>

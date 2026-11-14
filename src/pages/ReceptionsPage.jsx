@@ -10,6 +10,7 @@ import {getRouteMeta} from "../app/navigation";
 import {canManageReceptions, getReceptionStatusLabel} from "../domain/receptionModel.mjs";
 import {listarRecepciones} from "../services/receptionService";
 import "../features/receptions/receptions.css";
+import {userErrorMessage} from "../domain/userFacingError.mjs";
 
 const MODULE = getRouteMeta("/recepciones");
 
@@ -55,7 +56,7 @@ export default function ReceptionsPage({businessId, role}) {
   useEffect(() => {
     let active = true;
     listarRecepciones(businessId).then((values) => active && setItems(values))
-      .catch((error) => active && setMessage(error.message))
+      .catch((error) => active && setMessage(userErrorMessage(error)))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
   }, [businessId]);
@@ -99,7 +100,7 @@ export default function ReceptionsPage({businessId, role}) {
           <table className="erp-table po-history__table"><thead><tr><th>Recepción</th><th>Proveedor</th><th>Orden de compra</th><th>Compra</th><th>Fecha</th><th>Recibido</th><th>Estado</th></tr></thead><tbody>
             {filtered.map((entry) => <tr key={entry.id}>
               <td><button type="button" className="po-inline-link" onClick={() => open(entry)}>{entry.numero}</button></td>
-              <td><strong>{entry.proveedorSnapshot?.razonSocial || "Proveedor historico"}</strong></td>
+              <td><strong>{entry.proveedorSnapshot?.razonSocial || "Proveedor histórico"}</strong></td>
               <td><button type="button" className="po-inline-link" onClick={() => navigate(`/ordenes-compra/${entry.ordenCompraId}`)}>{entry.ordenCompraNumero || "Orden de compra"}</button></td>
               <td>{entry.compraId ? <button type="button" className="po-inline-link" onClick={() => navigate(`/compras/${entry.compraId}`)}>{entry.compraNumero || "Compra registrada"}</button> : "—"}</td>
               <td>{entry.fechaRecepcion || "—"}</td>

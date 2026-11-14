@@ -40,6 +40,10 @@ const [
   read("src/assets/google-g.svg"),
 ]);
 
+// Los mensajes de autenticación viven en el helper compartido de errores.
+const userFacingErrorSource = await read("src/domain/userFacingError.mjs");
+assert.match(loginSource, /userErrorMessage\(error, AUTH_GENERIC_MESSAGE\)/);
+
 // --- Pista de acceso: regla pura ---------------------------------------
 assert.deepEqual(Object.values(ACCESS_HINT).sort(), ["colaborador", "empresa"]);
 assert.equal(ACCESS_HINT_QUERY_PARAM, "acceso");
@@ -172,7 +176,7 @@ for (const code of [
   "auth/popup-blocked",
   "auth/account-exists-with-different-credential",
 ]) {
-  assert.match(loginSource, new RegExp(`case "${code}":\\s*return "`), `mensaje en español para ${code}`);
+  assert.match(userFacingErrorSource, new RegExp(`"${code}":\\s*"`), `mensaje en español para ${code}`);
 }
 assert.match(loginSource, /auth\/cancelled-popup-request/);
 assert.match(loginSource, /if \(!GOOGLE_LOGIN_ENABLED\) return;\s*completeGoogleRedirect\(\)/, "sin el interruptor no se consulta el regreso de Google");
@@ -353,8 +357,8 @@ assert.equal(loginSource.match(/onClick=\{handleGoogle\}/g).length, 1);
 assert.ok(loginSource.includes("GOOGLE_LOGIN_ENABLED && inAppBrowser.isInAppBrowser"));
 assert.ok(loginSource.includes("Continuar con Google"));
 assert.match(loginSource, /loading=\{isGoogleLoading\}/);
-assert.match(loginSource, /case "auth\/popup-closed-by-user":/);
-assert.match(loginSource, /case "auth\/account-exists-with-different-credential":/);
+assert.match(userFacingErrorSource, /"auth\/popup-closed-by-user":/);
+assert.match(userFacingErrorSource, /"auth\/account-exists-with-different-credential":/);
 assert.match(authServiceSource, /export async function loginWithGoogle\(\)/);
 assert.match(authServiceSource, /export function completeGoogleRedirect\(\)/);
 console.log("OK Interruptor: Google apagado por defecto (botón deshabilitado con su nota) y rama encendida intacta");

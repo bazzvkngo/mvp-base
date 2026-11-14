@@ -34,6 +34,7 @@ import {
 } from "../services/purchaseService";
 import {formatDate, formatMoney} from "../utils/formatters";
 import "../features/purchases/purchases.css";
+import {userErrorMessage} from "../domain/userFacingError.mjs";
 
 const EMPTY_TOTALS = {subtotal: 0, descuentoTotal: 0, neto: 0, montoExento: 0, iva: 0, total: 0};
 const today = () => new Intl.DateTimeFormat("en-CA", {
@@ -154,7 +155,7 @@ export default function NewPurchasePage({businessId, role}) {
         });
       }
     }).catch((error) => {
-      if (active) setMessage(error.message);
+      if (active) setMessage(userErrorMessage(error));
     }).finally(() => {
       if (active) setLoading(false);
     });
@@ -249,7 +250,7 @@ export default function NewPurchasePage({businessId, role}) {
         sileo.success({title: "Compra actualizada", description: `${stored.numero} continúa preparada para confirmar.`});
       }
     } catch (error) {
-      sileo.error({title: "No se pudo guardar la compra", description: error.message});
+      sileo.error({title: "No se pudo guardar la compra", description: userErrorMessage(error)});
     } finally {
       setProcessing(false);
     }
@@ -266,7 +267,7 @@ export default function NewPurchasePage({businessId, role}) {
         setPurchase(stored);
       }
     } catch (error) {
-      sileo.error({title: "No se pudo preparar la compra", description: error.message});
+      sileo.error({title: "No se pudo preparar la compra", description: userErrorMessage(error)});
       setProcessing(false);
       return;
     }
@@ -294,7 +295,7 @@ export default function NewPurchasePage({businessId, role}) {
     } catch (error) {
       if (!shouldReconcilePurchaseConfirmation(error)) {
         pendingConfirmationPurchaseId.current = "";
-        sileo.error({title: "No se pudo confirmar la compra", description: error.message});
+        sileo.error({title: "No se pudo confirmar la compra", description: userErrorMessage(error)});
       } else {
         try {
           const authoritative = await obtenerCompra(businessId, stored.id);
@@ -302,11 +303,11 @@ export default function NewPurchasePage({businessId, role}) {
             finishConfirmation(authoritative);
           } else {
             if (authoritative) setPurchase(authoritative);
-            setMessage(error.message);
+            setMessage(userErrorMessage(error));
             sileo.error({title: "No se pudo confirmar la compra", description: "La compra continúa preparada. Puedes reintentar con seguridad."});
           }
         } catch {
-          setMessage(error.message);
+          setMessage(userErrorMessage(error));
           sileo.error({title: "No se pudo verificar la confirmación", description: "Recarga la compra antes de volver a intentarlo."});
         }
       }
@@ -328,7 +329,7 @@ export default function NewPurchasePage({businessId, role}) {
         state: {message: "Compra cancelada", description: `${purchase.numero} quedó cancelada sin modificar stock.`},
       });
     } catch (error) {
-      sileo.error({title: "No se pudo cancelar la compra", description: error.message});
+      sileo.error({title: "No se pudo cancelar la compra", description: userErrorMessage(error)});
     } finally {
       setProcessing(false);
     }
