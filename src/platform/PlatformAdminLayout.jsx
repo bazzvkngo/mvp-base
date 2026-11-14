@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import {NavLink, Outlet, useLocation, useNavigate} from "react-router-dom";
 import BrandMark from "../components/brand/BrandMark";
+import { RouteErrorBoundary } from "../components/AppErrorBoundary";
 import ThemeToggleButton from "../components/ThemeToggleButton";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
@@ -109,7 +110,7 @@ function PlatformAdminLayout({businessSession, onReturnToErp, usuario}) {
           <div className="platform-topbar__identity"><span>Administrador</span><strong>{usuario?.email}</strong></div>
         </div>
       </header>
-      <main id="platform-main" className="platform-content"><Outlet context={{summary, reloadSummary: loadSummary, currentUid: usuario?.uid || ""}} /></main>
+      <main id="platform-main" className="platform-content"><RouteErrorBoundary homePath="/admin/dashboard"><Outlet context={{summary, reloadSummary: loadSummary, currentUid: usuario?.uid || ""}} /></RouteErrorBoundary></main>
     </div>
     {mobileOpen && <div className="platform-mobile-layer">
       <button className="platform-mobile-overlay" type="button" aria-label="Cerrar navegación" onClick={() => setMobileOpen(false)} />

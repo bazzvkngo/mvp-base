@@ -237,6 +237,13 @@ export function getBusinessPathOptions(business) {
   return {enabledModules: getEnabledVerticalModules(business)};
 }
 
+// ¿La ruta existe en la aplicación (Core o módulo vertical)? Distingue una ruta
+// sin permiso (se redirige al inicio) de una ruta que no existe (página 404).
+export function isKnownBusinessPath(pathname, {registry = VERTICAL_MODULES} = {}) {
+  return Boolean(findVerticalModule(pathname, registry)) ||
+    routePermissions.some(([pattern]) => pattern.test(pathname));
+}
+
 export function canAccessBusinessPath(access, pathname, options = {}) {
   if (!isVerticalPathEnabled(access, pathname, options)) return false;
   const normalized = normalizeBusinessAccess(access);

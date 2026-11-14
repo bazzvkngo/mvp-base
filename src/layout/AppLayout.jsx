@@ -5,6 +5,7 @@ import { sileo } from "sileo";
 import AdditionalBusinessDrawer from "../components/AdditionalBusinessDrawer";
 import BrandLogo from "../components/BrandLogo";
 import BusinessSwitcher from "../components/BusinessSwitcher";
+import { RouteErrorBoundary } from "../components/AppErrorBoundary";
 import EnvironmentNotice from "../components/EnvironmentNotice";
 import NotificationBell from "../components/NotificationBell";
 import ThemeToggleButton from "../components/ThemeToggleButton";
@@ -95,6 +96,7 @@ function AppLayout({
   onBusinessChanged,
   onBusinessCreated,
   platformSuperadmin,
+  homePath = "/",
 }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -440,7 +442,9 @@ function AppLayout({
             />
           )}
           {!businessChanging && (
-            <Outlet context={{ businessCompletionError, businessCompletionStatus }} />
+            <RouteErrorBoundary homePath={homePath}>
+              <Outlet context={{ businessCompletionError, businessCompletionStatus }} />
+            </RouteErrorBoundary>
           )}
         </main>
       </div>

@@ -100,6 +100,7 @@
     "test:app-footer": "node scripts/app-footer-smoke.mjs",
     "test:login-access": "node scripts/login-access-smoke.mjs",
     "test:user-facing-error": "node scripts/user-facing-error-smoke.mjs",
+    "test:not-found": "node scripts/not-found-error-boundary-smoke.mjs",
     "test:visible-text-accents": "node scripts/visible-text-accents-smoke.mjs",
     "test:password-policy": "node scripts/password-policy-smoke.mjs",
     "test:business-members-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/business-members-integrated-local.mjs\"",

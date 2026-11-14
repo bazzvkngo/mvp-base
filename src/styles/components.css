@@ -1729,6 +1729,8 @@
 
 .onboarding-message-actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
   justify-content: center;
   margin-top: var(--space-6);
 }

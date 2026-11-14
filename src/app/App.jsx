@@ -10,6 +10,8 @@ import {
 import AppLayout from "../layout/AppLayout";
 import EnvironmentNotice from "../components/EnvironmentNotice";
 import LoadingScreen from "../components/LoadingScreen";
+import NotFoundPage from "../components/NotFoundPage";
+import { RouteErrorBoundary } from "../components/AppErrorBoundary";
 import ToastRouteSync from "../components/ToastRouteSync";
 import CompanyPage from "../pages/CompanyPage";
 import ClientsPage from "../pages/ClientsPage";
@@ -55,6 +57,7 @@ import {
   setActiveBusiness,
 } from "../services/businessService";
 import {isPlatformRoute} from "../domain/platformAccess.mjs";
+import {isKnownAppPath} from "../domain/knownRoutes.mjs";
 import {resolveInitialActivationRoute} from "../domain/initialActivationNavigation.mjs";
 import {
   LEGAL_ACCEPTANCE_GATE,
@@ -68,6 +71,7 @@ import {
   BUSINESS_PERMISSIONS,
   canAccessBusinessPath,
   getBusinessPathOptions,
+  isKnownBusinessPath,
   getDefaultBusinessPath,
   hasBusinessPermission,
 } from "../domain/rbac.mjs";
@@ -187,7 +191,15 @@ function AppRoutes({
     return (
       <Routes>
         <Route path="/login" element={<LoginPage />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        {/* Una dirección que existe pero es privada va al ingreso; una que no existe, a la página 404. */}
+        <Route
+          path="*"
+          element={
+            isKnownAppPath(location.pathname)
+              ? <Navigate to="/login" replace />
+              : <NotFoundPage variant="screen" homePath="/login" homeLabel="Ir a iniciar sesión" />
+          }
+        />
       </Routes>
     );
   }
@@ -210,8 +222,8 @@ function AppRoutes({
         <Route path="/admin/usuarios" element={<PlatformUsersPage />} />
         <Route path="/admin/usuarios/:uid" element={<PlatformUserDetailPage />} />
         <Route path="/admin/verificaciones" element={<PlatformBusinessesPage verificationOnly />} />
+        <Route path="*" element={<NotFoundPage homePath="/admin/dashboard" />} />
       </Route>
-      <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
     </Routes>;
   }
 
@@ -298,7 +310,10 @@ function AppRoutes({
   }
   const unverifiedSetupAccess = !canBusinessOperate(activeBusiness) &&
     isUnverifiedBusinessAllowedPath(location.pathname);
+  // Solo una ruta que existe y no se puede abrir se redirige; una que no existe
+  // llega al comodín del final y muestra la página 404 dentro del layout.
   if (!["/", "/login", "/onboarding"].includes(location.pathname) &&
+      isKnownBusinessPath(location.pathname, businessPathOptions) &&
       !canAccessBusinessPath(activeBusiness, location.pathname, businessPathOptions) &&
       !unverifiedSetupAccess) {
     return <Navigate to={safeLanding} replace />;
@@ -322,6 +337,7 @@ function AppRoutes({
             onBusinessChanged={onBusinessChanged}
             onBusinessCreated={onBusinessCreated}
             platformSuperadmin={platformAccess?.isSuperadmin}
+            homePath={safeLanding}
           />
         }
       >
@@ -630,8 +646,8 @@ function AppRoutes({
           }
         />
         </Route>
+        <Route path="*" element={<NotFoundPage homePath={safeLanding} />} />
       </Route>
-      <Route path="*" element={<Navigate to={safeLanding} replace />} />
     </Routes>
   );
 }
@@ -771,6 +787,7 @@ function App() {
         {/* Moneda y formato regional del negocio activo (el mismo
             businessSession.activeBusiness que usa AppRoutes). */}
         <BusinessFormatProvider business={businessState.data?.activeBusiness}>
+          <RouteErrorBoundary variant="screen" homePath="/">
           <AppRoutes
             usuario={usuario}
             loading={Boolean(cargando || platformState.loading)}
@@ -790,6 +807,7 @@ function App() {
             onRetry={() => refreshBusinessSession().catch(() => {})}
             platformAccess={platformState.data}
           />
+          </RouteErrorBoundary>
         </BusinessFormatProvider>
       </BrowserRouter>
     </ThemePreferenceProvider>
