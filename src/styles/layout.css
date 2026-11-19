@@ -436,6 +436,33 @@
   text-transform: uppercase;
 }
 
+.nav-module,
+.nav-module__items {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.nav-module__label {
+  align-items: center;
+  color: var(--color-text-muted);
+  display: flex;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  gap: var(--space-2);
+  line-height: var(--line-height-tight);
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  text-transform: uppercase;
+}
+
+.nav-module__items {
+  padding-left: var(--space-3);
+}
+
+.nav-link--nested {
+  min-height: 36px;
+}
+
 .nav-link {
   align-items: center;
   border-left: 3px solid transparent;

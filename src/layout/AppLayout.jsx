@@ -37,6 +37,34 @@ function PrimaryNavigation({
   pathname,
   sections,
 }) {
+  const renderLink = (item, nested = false) => {
+    const isActive = item.activeWhen
+      ? item.activeWhen(pathname)
+      : pathname === item.to;
+    const classes = ["nav-link", nested ? "nav-link--nested" : "", isActive ? "nav-link-active" : ""]
+      .filter(Boolean)
+      .join(" ");
+    return <NavLink
+      key={item.to}
+      to={item.to}
+      end={!item.activeWhen}
+      aria-current={isActive ? "page" : undefined}
+      className={classes}
+      onClick={onNavigate}
+    >
+      <AppIcon icon={item.icon} size={18} />
+      <span className="nav-link__label">{item.label}</span>
+      {item.to === "/empresa" && businessCompletionStatus && (
+        <span
+          className="nav-link__completion"
+          aria-label={`Empresa ${businessCompletionStatus.percent}% completa`}
+        >
+          {businessCompletionStatus.percent}%
+        </span>
+      )}
+    </NavLink>;
+  };
+
   return (
     <nav className="sidebar-nav" aria-label={ariaLabel}>
       {sections.map((section, sectionIndex) => {
@@ -53,31 +81,17 @@ function PrimaryNavigation({
               {section.label}
             </span>
             {section.items.map((item) => {
-              const isActive = item.activeWhen
-                ? item.activeWhen(pathname)
-                : pathname === item.to;
-
-              return (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end
-                  aria-current={isActive ? "page" : undefined}
-                  className={isActive ? "nav-link nav-link-active" : "nav-link"}
-                  onClick={onNavigate}
-                >
-                  <AppIcon icon={item.icon} size={18} />
+              if (!item.children?.length) return renderLink(item);
+              const moduleTitleId = `${idPrefix}-nav-module-${item.label.toLowerCase().replace(/\s+/g, "-")}`;
+              return <div className="nav-module" key={item.to} role="group" aria-labelledby={moduleTitleId}>
+                <div id={moduleTitleId} className="nav-module__label">
+                  <AppIcon icon={item.icon} size={16} />
                   <span className="nav-link__label">{item.label}</span>
-                  {item.to === "/empresa" && businessCompletionStatus && (
-                    <span
-                      className="nav-link__completion"
-                      aria-label={`Empresa ${businessCompletionStatus.percent}% completa`}
-                    >
-                      {businessCompletionStatus.percent}%
-                    </span>
-                  )}
-                </NavLink>
-              );
+                </div>
+                <div className="nav-module__items">
+                  {item.children.map((child) => renderLink(child, true))}
+                </div>
+              </div>;
             })}
           </div>
         );

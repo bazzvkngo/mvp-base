@@ -118,6 +118,69 @@ async function main() {
         estado: "activo",
       }),
     ]);
+
+    const workshopOrderId = "workshop-rules-smoke";
+    const workshopDocuments = [
+      {
+        path: `negocios/${businessId}/vehiculos/vehicle-rules-smoke`,
+        data: {negocioId: businessId, vehiculoId: "vehicle-rules-smoke"},
+      },
+      {
+        path: `negocios/${businessId}/plazasTaller/plaza-rules-smoke`,
+        data: {negocioId: businessId, plazaId: "plaza-rules-smoke"},
+      },
+      {
+        path: `negocios/${businessId}/ordenesTrabajo/${workshopOrderId}`,
+        data: {negocioId: businessId, otId: workshopOrderId},
+      },
+      {
+        path: `negocios/${businessId}/ordenesTrabajo/${workshopOrderId}/diagnosticos/diagnosis-rules-smoke`,
+        data: {negocioId: businessId, otId: workshopOrderId, diagnosticoId: "diagnosis-rules-smoke"},
+      },
+      {
+        path: `negocios/${businessId}/ordenesTrabajo/${workshopOrderId}/servicios/service-rules-smoke`,
+        data: {negocioId: businessId, otId: workshopOrderId, servicioOtId: "service-rules-smoke"},
+      },
+    ];
+    await Promise.all(workshopDocuments.map(({path, data}) => adminDb.doc(path).set(data)));
+    for (const {path} of workshopDocuments) {
+      await expectDenied(`Taller deshabilitado bloquea ${path}`, () =>
+        getDoc(doc(ownerClient.db, path))
+      );
+    }
+    await adminDb.doc(`negocios/${businessId}`).update({modulosHabilitados: ["taller"]});
+    for (const {path} of workshopDocuments) {
+      const snapshot = await getDoc(doc(ownerClient.db, path));
+      if (!snapshot.exists()) throw new Error(`Taller habilitado no pudo leer ${path}`);
+      await expectDenied(`Taller mantiene escritura cliente cerrada en ${path}`, () =>
+        updateDoc(doc(ownerClient.db, path), {forjadoDesdeCliente: true})
+      );
+    }
+    const workshopRolePaths = workshopDocuments.slice(0, 3).map(({path}) => path);
+    const workshopMembershipRef = adminDb.doc(`membresias/${businessId}__${otherUid}`);
+    await workshopMembershipRef.set({
+      negocioId: businessId,
+      uid: otherUid,
+      rol: "ADMIN",
+      estado: "activo",
+    });
+    for (const role of ["ADMIN", "TECNICO", "MEMBER"]) {
+      await workshopMembershipRef.update({rol: role});
+      for (const path of workshopRolePaths) {
+        const snapshot = await getDoc(doc(otherClient.db, path));
+        if (!snapshot.exists()) throw new Error(`${role} no pudo leer ${path}`);
+      }
+    }
+    for (const role of ["VENTAS", "COMPRAS", "FINANZAS"]) {
+      await workshopMembershipRef.update({rol: role});
+      for (const path of workshopRolePaths) {
+        await expectDenied(`${role} no lee ${path}`, () => getDoc(doc(otherClient.db, path)));
+      }
+    }
+    await workshopMembershipRef.delete();
+    console.log("OK reglas Taller: módulo apagado bloquea, habilitado permite lectura y escritura cliente sigue cerrada");
+    console.log("OK reglas Taller: Vehículos, OTs y Plazas respetan lectura por rol");
+
     const inventoryPath = `usuarios/${ownerUid}/inventario/item-smoke`;
     const areaPath = `usuarios/${ownerUid}/areas/area-smoke`;
     const categoryPath =

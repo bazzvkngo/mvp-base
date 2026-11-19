@@ -515,7 +515,8 @@ assert.match(
   sourceNewQuote,
   /if \(client\.clienteId === currentClienteIdRef\.current\) return;/
 );
-assert.match(sourceClientSelector, /listarClientes\(businessId\)/);
+assert.match(sourceClientSelector, /loadClients = listarClientes/);
+assert.match(sourceClientSelector, /loadClients\(businessId\)/);
 assert.match(sourceClientSelector, /if \(!businessId\)/);
 assert.doesNotMatch(sourceClientSelector, /clientRutKeys/);
 assert.match(sourceNewQuote, /areaId/);

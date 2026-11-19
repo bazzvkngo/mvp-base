@@ -22,10 +22,9 @@ Taller no debe duplicar Clientes, Inventario, Ventas, Compras, Proveedores, memb
 Esta SPEC aplica exclusivamente al módulo Taller y respeta, en este orden:
 
 1. `AGENTS.md`;
-2. `docs/MODULE_DEVELOPMENT_CONTRACT.md`;
-3. comportamiento actualmente implementado en el Core;
-4. esta SPEC para decisiones específicas de Taller;
-5. documentación funcional ampliada del Taller cuando no contradiga los puntos anteriores.
+2. comportamiento actualmente implementado en el Core;
+3. esta SPEC para decisiones específicas de Taller;
+4. documentación funcional ampliada del Taller cuando no contradiga los puntos anteriores.
 
 Los flujos económicos, Inventario, Ventas, Compras, RBAC, Firestore Rules, Storage Rules e idempotencia son contratos protegidos.
 
@@ -936,6 +935,7 @@ Taller incorpora capacidades propias.
 Reglas:
 
 - Functions valida la capacidad requerida;
+- el historial de gestión de una OT exige Administración y solo está disponible para `OWNER` y `ADMIN`;
 - toda operación valida membresía activa;
 - no se confía únicamente en roles globales;
 - no existe escritura directa de movimientos de Inventario desde SDK cliente;
@@ -1019,7 +1019,8 @@ No se recomienda un endpoint genérico capaz de modificar libremente toda la OT.
 
 Taller debe registrarse como módulo real:
 
-- entrada de navegación;
+- entrada de navegación con accesos a Órdenes de trabajo, Vehículos y Plazas;
+- Plazas se muestra únicamente a perfiles con Administración;
 - rutas protegidas;
 - metadatos;
 - validación de acceso;

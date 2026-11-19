@@ -3,7 +3,9 @@ import {
   Boxes,
   Building2,
   ClipboardCheck,
+  ClipboardList,
   BriefcaseBusiness,
+  Car,
   History,
   ReceiptText,
   PackageCheck,
@@ -12,8 +14,24 @@ import {
   Truck,
   ShoppingCart,
   Puzzle,
+  Warehouse,
 } from "lucide-react";
+import { BUSINESS_PERMISSIONS } from "../domain/rbac.mjs";
 import { VERTICAL_MODULES } from "../domain/verticalModules.mjs";
+
+const verticalNavigationItems = Object.freeze({
+  taller: Object.freeze([
+    {path: "ordenes", label: "Órdenes de trabajo", title: "Órdenes de trabajo", icon: ClipboardList},
+    {path: "vehiculos", label: "Vehículos", title: "Vehículos", icon: Car},
+    {
+      path: "plazas",
+      label: "Plazas",
+      title: "Plazas",
+      icon: Warehouse,
+      requiredPermission: BUSINESS_PERMISSIONS.TALLER_MANAGE,
+    },
+  ]),
+});
 
 export const navigationSections = [
   {
@@ -145,21 +163,34 @@ export function buildNavigationSections(registry = VERTICAL_MODULES) {
   if (!registry.length) return navigationSections;
   const modulesSection = {
     label: "Módulos",
-    items: registry.map(({ label, basePath }) => ({
-      to: basePath,
-      label,
-      title: label,
-      icon: Puzzle,
-      activeWhen: (pathname) =>
-        pathname === basePath || pathname.startsWith(`${basePath}/`),
-    })),
+    items: registry.map(({id, label, basePath}) => {
+      const children = (verticalNavigationItems[id] || []).map(({path, ...item}) => {
+        const to = `${basePath}/${path}`;
+        return {
+          ...item,
+          to,
+          activeWhen: (pathname) => pathname === to || pathname.startsWith(`${to}/`),
+        };
+      });
+      return {
+        to: basePath,
+        label,
+        title: label,
+        icon: Puzzle,
+        children,
+        activeWhen: (pathname) =>
+          pathname === basePath || pathname.startsWith(`${basePath}/`),
+      };
+    }),
   };
   return navigationSections.flatMap((section) =>
     section.label === "Cuenta" ? [modulesSection, section] : [section]
   );
 }
 
-const navigationItems = buildNavigationSections().flatMap((section) => section.items);
+const navigationItems = buildNavigationSections().flatMap((section) =>
+  section.items.flatMap((item) => [item, ...(item.children || [])])
+);
 const hiddenRouteMeta = Object.freeze({
   "/finanzas": { title: "Finanzas" },
   "/valorizacion": { title: "Valorización" },
