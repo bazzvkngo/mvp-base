@@ -433,9 +433,9 @@ for (const [name, source] of [["NewPurchasePage", purchasePage], ["NewPurchaseOr
   assert.match(source, /moneyStep=\{moneyStep\}/, `${name}: pasa moneyStep al editor`);
 }
 assert.match(receptionPage, /const moneyStep = documentDecimals > 0 \? String\(10 \*\* -documentDecimals\) : "any";/);
-assert.match(receptionPage, /className="reception-cost" type="number" min="0" step=\{moneyStep\}/);
-assert.match(receptionPage, /className="reception-qty" type="number" min="0" max=\{pending\} step="any"/, "la cantidad recibida no cambia");
-assert.match(receptionPage, /className="reception-discount" type="number" min="0" max="100" step="any"/);
+assert.match(receptionPage, /className="ui-doc-line__input" type="number" min="0" step=\{moneyStep\}/, "el costo de la recepción usa el campo compartido ui-doc-line__input");
+assert.match(receptionPage, /className="ui-doc-line__input" type="number" min="0" max=\{pending\} step="any"/, "la cantidad recibida no cambia");
+assert.match(receptionPage, /className="ui-doc-line__input" type="number" min="0" max="100" step="any"/, "el descuento no cambia");
 // Los editores de Compra y de Orden de compra son envoltorios del bloque compartido DocumentItemsEditor: el paso del importe
 // llega por `moneyStep` y el bloque dibuja los campos (el costo con su aria-label; la cantidad en QuantityStepper).
 const itemsBlock = await read("src/components/ui/DocumentItemsEditor.jsx");

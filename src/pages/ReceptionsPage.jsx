@@ -9,6 +9,8 @@ import {SkeletonRegion, SkeletonTable} from "../components/ui/Skeleton";
 import {getRouteMeta} from "../app/navigation";
 import {canManageReceptions, getReceptionStatusLabel} from "../domain/receptionModel.mjs";
 import {listarRecepciones} from "../services/receptionService";
+import useBusinessFormat from "../hooks/useBusinessFormat";
+import {formatDate} from "../utils/formatters";
 import "../features/receptions/receptions.css";
 import {userErrorMessage} from "../domain/userFacingError.mjs";
 
@@ -43,6 +45,7 @@ function receptionProgressLabel(entry) {
 
 export default function ReceptionsPage({businessId, role}) {
   const navigate = useNavigate();
+  const businessFormat = useBusinessFormat();
   const [items, setItems] = useState([]);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("todos");
@@ -103,7 +106,7 @@ export default function ReceptionsPage({businessId, role}) {
               <td><strong>{entry.proveedorSnapshot?.razonSocial || "Proveedor histórico"}</strong></td>
               <td><button type="button" className="po-inline-link" onClick={() => navigate(`/ordenes-compra/${entry.ordenCompraId}`)}>{entry.ordenCompraNumero || "Orden de compra"}</button></td>
               <td>{entry.compraId ? <button type="button" className="po-inline-link" onClick={() => navigate(`/compras/${entry.compraId}`)}>{entry.compraNumero || "Compra registrada"}</button> : "—"}</td>
-              <td>{entry.fechaRecepcion || "—"}</td>
+              <td>{entry.fechaRecepcion ? formatDate(entry.fechaRecepcion, entry.locale || businessFormat.locale) : "—"}</td>
               <td>{receptionProgressLabel(entry)}</td>
               <td><span className={`po-status po-status--${entry.estado}`}>{getReceptionStatusLabel(entry.estado)}</span></td>
             </tr>)}

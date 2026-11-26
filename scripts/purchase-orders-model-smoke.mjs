@@ -735,7 +735,7 @@ assert.match(detailViewSource, />Descargar PDF</);
 assert.match(detailViewSource, /label="Más"/);
 assert.match(detailViewSource, /Duplicar como nueva orden/);
 assert.match(detailViewSource, /canCancel = canManage && !cancelled && !receptionCompleted/);
-assert.match(detailViewSource, /cancelled \? "—" : getOrderReceptionStatusLabel/);
+assert.match(detailViewSource, /getOrderReceptionStatusLabel\(receptionStatus\)/, "el estado de recepción se sigue mostrando (ahora en el seguimiento de la orden emitida)");
 assert.doesNotMatch(detailViewSource, /Snapshot hist[oó]rico|"Nombre no informado"|Sin contacto|"Sin correo"|Sin teléfono|Sin dirección|<input|<textarea|<select/);
 assert.match(historySource, /po-history__danger/);
 assert.match(historySource, /PurchaseOrderPreviewBoundary/);

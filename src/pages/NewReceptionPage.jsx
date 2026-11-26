@@ -1,6 +1,8 @@
 import React, {useEffect, useRef, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
+import {FileUp} from "lucide-react";
 import {adaptDocumentAmountDecimals} from "../domain/localization.mjs";
+import useBusinessFormat from "../hooks/useBusinessFormat";
 import {sileo} from "sileo";
 import Button from "../components/ui/Button";
 import LoadingState from "../components/ui/LoadingState";
@@ -24,7 +26,7 @@ import {
 } from "../services/receptionService";
 import {obtenerCompra} from "../services/purchaseService";
 import {findActiveProductByBarcode} from "../services/inventoryService";
-import {formatMoney} from "../utils/formatters";
+import {formatDate, formatMoney, getCurrencySymbol} from "../utils/formatters";
 import ReceptionDetailView from "../features/receptions/ReceptionDetailView";
 import ReceptionDocumentImportDialog from "../features/receptions/ReceptionDocumentImportDialog";
 import "../features/receptions/receptions.css";
@@ -33,12 +35,14 @@ import {userErrorMessage} from "../domain/userFacingError.mjs";
 const itemActionLabel = (type) => type === "producto"
   ? "Recibir ahora"
   : type === "servicio" ? "Confirmar prestación" : "Confirmar ahora";
+const ITEM_TYPE_LABELS = {producto: "Producto", servicio: "Servicio", actividad: "Actividad"};
 const plural = (value, singular, pluralValue) => `${value} ${value === 1 ? singular : pluralValue}`;
 const hasDocumentValue = (value) => value !== "" && value !== null && value !== undefined;
 
 export default function NewReceptionPage({businessId, role}) {
   const {recepcionId} = useParams();
   const navigate = useNavigate();
+  const businessFormat = useBusinessFormat();
   const [reception, setReception] = useState(null);
   const [draft, setDraft] = useState({fechaRecepcion: "", observaciones: "", documentoOrigen: null, items: []});
   const [linkedPurchase, setLinkedPurchase] = useState(null);
@@ -140,25 +144,98 @@ export default function NewReceptionPage({businessId, role}) {
   if (loading) return <LoadingState variant="page" label="Cargando recepción..." />;
   if (!reception) return <p className="po-message po-message--error">{message}</p>;
   if (reception.estado !== "borrador") return <ReceptionDetailView linkedPurchase={linkedPurchase} message={message} reception={reception} />;
-  return <main className="po-workspace">
-    <header className="po-header"><div className="po-header__copy"><span className="po-kicker">Recepción</span><div className="po-header__title-row"><h1>{reception.numero}</h1><span className={`po-status po-status--${reception.estado}`}>{getReceptionStatusLabel(reception.estado)}</span></div><div className="po-header__meta"><strong>{reception.proveedorSnapshot?.razonSocial}</strong><span>{draft.fechaRecepcion}</span></div></div><div className="po-header__actions"><button type="button" className="po-button po-button--secondary" onClick={() => navigate("/recepciones")}>Volver al historial</button></div></header>
+
+  // Solo presentación: el formato regional del documento (o, si no lo trae, el del negocio) y el símbolo de su moneda.
+  const locale = reception.locale || businessFormat.locale;
+  const symbol = getCurrencySymbol(reception.moneda, locale);
+  const source = draft.documentoOrigen;
+  const updateLine = (lineaId, field, value) => setDraft({...draft, items: draft.items.map((item) => item.lineaId === lineaId ? {...item, [field]: Number(value)} : item)});
+
+  return <main className="po-workspace reception-workspace">
+    {/* Un solo h1 por pantalla: el de la barra superior (navigation.js). Por eso el título va en un <p>. */}
+    <header className="ui-doc-head no-print">
+      <div className="ui-doc-head__main">
+        <button type="button" className="ui-doc-back" onClick={() => navigate("/recepciones")}>← Recepciones</button>
+        <p className="ui-doc-head__title">{reception.numero}</p>
+        <span className={`po-status po-status--${reception.estado}`}>{getReceptionStatusLabel(reception.estado)}</span>
+      </div>
+      <div className="ui-doc-head__side">
+        <div className="ui-doc-head__meta">
+          <span>{draft.fechaRecepcion ? formatDate(draft.fechaRecepcion, locale) : "Sin fecha"}</span>
+          <span>{reception.ordenCompraNumero ? `Orden de compra ${reception.ordenCompraNumero}` : "Orden de compra"}</span>
+        </div>
+      </div>
+    </header>
     {message && <p className="po-message po-message--error">{message}</p>}
 
-    {reception.estado !== "confirmada" && <section className="reception-order-origin">
-      <div><span>Confirmación del proveedor</span><strong>{getSupplierResponseLabel(reception.respuestaProveedorEstado)}</strong></div>
-    </section>}
+    <section className="ui-step-card reception-order-origin" aria-label="Proveedor y confirmación">
+      <dl>
+        <div><dt>Proveedor</dt><dd>{reception.proveedorSnapshot?.razonSocial || "Proveedor histórico"}</dd></div>
+        <div><dt>Confirmación del proveedor</dt><dd>{getSupplierResponseLabel(reception.respuestaProveedorEstado)}</dd></div>
+      </dl>
+    </section>
     <SupplyTrace currentType="reception" order={{id: reception.ordenCompraId, numero: reception.ordenCompraNumero}} receptions={[reception]} />
 
-    <section className="po-panel"><h2>Datos de recepción</h2><div className="reception-grid"><label>Fecha de recepción<input type="date" disabled={readOnly} value={draft.fechaRecepcion} onChange={(event) => setDraft({...draft, fechaRecepcion: event.target.value})} /></label><label className="reception-grid__wide">Observaciones<textarea disabled={readOnly} value={draft.observaciones} onChange={(event) => setDraft({...draft, observaciones: event.target.value})} /></label></div></section>
-    <section className="po-panel">
-      <div className="reception-items-heading"><div><h2>Ítems de la recepción</h2><p>Registra productos recibidos y confirma servicios o actividades prestadas.</p></div>{!readOnly && <div className="po-header__actions"><BarcodeInput actionOnly continuous actionLabel="Escanear producto" disabled={processing} onSubmit={scanReceivedProduct} /><button type="button" className="po-button po-button--secondary" disabled={processing} onClick={() => setImportOpen(true)}>Importar factura o documento</button></div>}</div>
-      {draft.documentoOrigen && <div className="reception-document-source"><div><span>Documento conciliado</span><strong>{draft.documentoOrigen.nombreArchivo}</strong></div><div><span>Documento</span><strong>{draft.documentoOrigen.tipoDocumento === "factura" ? "Factura" : draft.documentoOrigen.tipoDocumento === "boleta" ? "Boleta" : "Documento"}{draft.documentoOrigen.numeroDocumento ? ` N° ${draft.documentoOrigen.numeroDocumento}` : ""}</strong></div>{hasDocumentValue(draft.documentoOrigen.neto) && <div><span>Neto</span><strong>{formatMoney(draft.documentoOrigen.neto, draft.documentoOrigen.moneda || reception.moneda, reception.locale)}</strong></div>}{hasDocumentValue(draft.documentoOrigen.impuestoMonto) && <div><span>{hasDocumentValue(draft.documentoOrigen.impuestoPorcentaje) ? `IVA (${draft.documentoOrigen.impuestoPorcentaje}%)` : "IVA"}</span><strong>{formatMoney(draft.documentoOrigen.impuestoMonto, draft.documentoOrigen.moneda || reception.moneda, reception.locale)}</strong></div>}{hasDocumentValue(draft.documentoOrigen.total) && <div><span>Total</span><strong>{formatMoney(draft.documentoOrigen.total, draft.documentoOrigen.moneda || reception.moneda, reception.locale)}</strong></div>}<div><span>Conciliación</span><strong>{draft.documentoOrigen.lineasAplicadas || 0} de {draft.documentoOrigen.lineasDetectadas || 0} líneas aplicadas</strong></div></div>}
-      <div className="erp-table-region"><table className="erp-table reception-items-table"><thead><tr><th>Ítem</th><th>Solicitado</th><th>Recibido / confirmado antes</th><th>Pendiente</th><th>Cantidad actual</th><th>Costo unitario</th><th>Desc. %</th></tr></thead><tbody>{draft.items.map((line) => {
-        const pending = Math.max(0, line.cantidadSolicitada - line.cantidadRecibidaAnterior);
-        return <tr key={line.lineaId}><td><strong>{line.nombre}</strong><small>{line.tipoItem} · {line.unidad}</small>{line.documentoLineas?.length > 0 && <small>Asociado desde documento</small>}</td><td>{line.cantidadSolicitada}</td><td>{line.cantidadRecibidaAnterior}</td><td>{pending}</td><td><span className="reception-line-action-label">{itemActionLabel(line.tipoItem)}</span>{readOnly ? line.cantidad : <input className="reception-qty" type="number" min="0" max={pending} step="any" value={line.cantidad} onChange={(event) => setDraft({...draft, items: draft.items.map((item) => item.lineaId === line.lineaId ? {...item, cantidad: Number(event.target.value)} : item)})} />}</td><td>{readOnly ? line.costoUnitario : <input className="reception-cost" type="number" min="0" step={moneyStep} value={line.costoUnitario} onChange={(event) => setDraft({...draft, items: draft.items.map((item) => item.lineaId === line.lineaId ? {...item, costoUnitario: Number(event.target.value)} : item)})} />}</td><td>{readOnly ? line.descuentoPct : <input className="reception-discount" type="number" min="0" max="100" step="any" value={line.descuentoPct} onChange={(event) => setDraft({...draft, items: draft.items.map((item) => item.lineaId === line.lineaId ? {...item, descuentoPct: Number(event.target.value)} : item)})} />}</td></tr>;
-      })}</tbody></table></div>
+    <section className="ui-step-card" aria-labelledby="reception-data-title">
+      <h2 id="reception-data-title" className="ui-step-title">Datos de recepción</h2>
+      <div className="reception-grid">
+        <label className="erp-field"><span className="erp-field__label">Fecha de recepción</span><input className="erp-control" type="date" disabled={readOnly} value={draft.fechaRecepcion} onChange={(event) => setDraft({...draft, fechaRecepcion: event.target.value})} /></label>
+        <label className="erp-field reception-grid__wide"><span className="erp-field__label">Observaciones</span><textarea className="erp-control" rows="3" disabled={readOnly} value={draft.observaciones} onChange={(event) => setDraft({...draft, observaciones: event.target.value})} /></label>
+      </div>
     </section>
-    <div className="po-header__actions">{reception.estado === "borrador" && canManage && <><button type="button" className="po-button po-button--secondary" disabled={processing} onClick={save}>Guardar</button><button type="button" className="po-button po-button--primary" disabled={processing} onClick={() => setDialog("confirm")}>Confirmar recepción</button><button type="button" className="po-button po-button--danger" disabled={processing} onClick={() => setDialog("cancel")}>Cancelar</button></>}</div>
+
+    <section className="ui-step-card ui-doc-items" aria-labelledby="reception-items-title">
+      <header className="ui-step-head">
+        <div className="ui-step-head__text">
+          <h2 id="reception-items-title" className="ui-step-title">Ítems de la recepción</h2>
+          <p className="ui-step-head__count">{draft.items.length === 1 ? "1 ítem" : `${draft.items.length} ítems`}</p>
+        </div>
+        {!readOnly && <div className="ui-step-head__actions"><BarcodeInput actionOnly continuous actionLabel="Escanear producto" disabled={processing} onSubmit={scanReceivedProduct} /><Button type="button" variant="secondary" icon={FileUp} disabled={processing} onClick={() => setImportOpen(true)}>Importar factura o documento</Button></div>}
+      </header>
+      <p className="reception-items__hint">Registra productos recibidos y confirma servicios o actividades prestadas.</p>
+      {source && <div className="reception-document-source"><div><span>Documento conciliado</span><strong>{source.nombreArchivo}</strong></div><div><span>Documento</span><strong>{source.tipoDocumento === "factura" ? "Factura" : source.tipoDocumento === "boleta" ? "Boleta" : "Documento"}{source.numeroDocumento ? ` N° ${source.numeroDocumento}` : ""}</strong></div>{hasDocumentValue(source.neto) && <div><span>Neto</span><strong>{formatMoney(source.neto, source.moneda || reception.moneda, reception.locale)}</strong></div>}{hasDocumentValue(source.impuestoMonto) && <div><span>{hasDocumentValue(source.impuestoPorcentaje) ? `IVA (${source.impuestoPorcentaje}%)` : "IVA"}</span><strong>{formatMoney(source.impuestoMonto, source.moneda || reception.moneda, reception.locale)}</strong></div>}{hasDocumentValue(source.total) && <div><span>Total</span><strong>{formatMoney(source.total, source.moneda || reception.moneda, reception.locale)}</strong></div>}<div><span>Conciliación</span><strong>{source.lineasAplicadas || 0} de {source.lineasDetectadas || 0} líneas aplicadas</strong></div></div>}
+      <div className="ui-doc-lines">{draft.items.map((line) => {
+        const pending = Math.max(0, line.cantidadSolicitada - line.cantidadRecibidaAnterior);
+        const meta = [line.codigo, ITEM_TYPE_LABELS[line.tipoItem] || "Ítem", line.unidad, line.documentoLineas?.length > 0 ? "Asociado desde documento" : ""].filter(Boolean).join(" · ");
+        return <article className="ui-doc-line" key={line.lineaId}>
+          <div className="reception-line__row">
+            <div className="ui-doc-line__identity">
+              <div className="ui-doc-line__title"><strong className="ui-doc-line__name" title={line.nombre}>{line.nombre}</strong></div>{" "}
+              <small className="ui-doc-line__meta">{meta}</small>
+            </div>
+            <span className="ui-doc-line__static reception-line__requested"><span className="ui-doc-line__caption">Solicitado</span><span className="ui-doc-line__amount">{line.cantidadSolicitada}</span></span>
+            <span className="ui-doc-line__static reception-line__previous"><span className="ui-doc-line__caption">Recibido antes</span><span className="ui-doc-line__amount">{line.cantidadRecibidaAnterior}</span></span>
+            <span className="ui-doc-line__static reception-line__pending"><span className="ui-doc-line__caption">Pendiente</span><span className="ui-doc-line__amount">{pending}</span></span>
+            {readOnly ? <>
+              <span className="ui-doc-line__static reception-line__current"><span className="ui-doc-line__caption">{itemActionLabel(line.tipoItem)}</span><span className="ui-doc-line__amount">{line.cantidad}</span></span>
+              <span className="ui-doc-line__static reception-line__cost"><span className="ui-doc-line__caption">Costo unitario</span><span className="ui-doc-line__amount">{line.costoUnitario}</span></span>
+              <span className="ui-doc-line__static reception-line__discount"><span className="ui-doc-line__caption">Desc. %</span><span className="ui-doc-line__amount">{line.descuentoPct}</span></span>
+            </> : <>
+              <label className="ui-doc-line__field reception-line__current">
+                <span className="ui-doc-line__caption" aria-hidden="true">{itemActionLabel(line.tipoItem)}</span>
+                <input className="ui-doc-line__input" type="number" min="0" max={pending} step="any" aria-label={`${itemActionLabel(line.tipoItem)}: cantidad de ${line.nombre}`} value={line.cantidad} onChange={(event) => updateLine(line.lineaId, "cantidad", event.target.value)} />
+              </label>
+              <label className="ui-doc-line__field reception-line__cost">
+                <span className="ui-doc-line__caption" aria-hidden="true">Costo unitario</span>
+                <span className="ui-doc-line__money">
+                  <span className="ui-doc-line__symbol" aria-hidden="true">{symbol}</span>
+                  <input className="ui-doc-line__input" type="number" min="0" step={moneyStep} aria-label={`Costo unitario de ${line.nombre}`} value={line.costoUnitario} onChange={(event) => updateLine(line.lineaId, "costoUnitario", event.target.value)} />
+                </span>
+              </label>
+              <label className="ui-doc-line__field reception-line__discount">
+                <span className="ui-doc-line__caption" aria-hidden="true">Desc. %</span>
+                <input className="ui-doc-line__input" type="number" min="0" max="100" step="any" aria-label={`Descuento % de ${line.nombre}`} value={line.descuentoPct} onChange={(event) => updateLine(line.lineaId, "descuentoPct", event.target.value)} />
+              </label>
+            </>}
+          </div>
+        </article>;
+      })}</div>
+    </section>
+    {canManage && <div className="ui-doc-head__actions">
+      <Button type="button" variant="secondary" disabled={processing} onClick={save}>Guardar</Button>
+      <Button type="button" disabled={processing} onClick={() => setDialog("confirm")}>Confirmar recepción</Button>
+      <Button type="button" variant="danger" disabled={processing} onClick={() => setDialog("cancel")}>Cancelar</Button>
+    </div>}
 
     <ResponsiveDialog open={dialog === "confirm"} onClose={() => !processing && setDialog("")} eyebrow="Lista para confirmar" title="Confirma el impacto de esta recepción" description="Al confirmar, ValoraCloud registrará esta recepción, actualizará el stock de los productos recibidos y generará automáticamente la compra correspondiente. Los servicios y actividades no modificarán existencias." size="small" footer={<><Button type="button" variant="secondary" disabled={processing} onClick={() => setDialog("")}>Volver</Button><Button type="button" loading={processing} onClick={confirm}>{processing ? "Confirmando recepción…" : "Confirmar recepción y registrar compra"}</Button></>}>
       <div className="reception-confirm-impact"><div><span>Productos que actualizan stock</span><strong>{plural(confirmationImpact.productos, "producto", "productos")}</strong></div><div><span>Servicios sin movimiento de stock</span><strong>{plural(confirmationImpact.servicios, "servicio", "servicios")}</strong></div><div><span>Actividades sin movimiento de stock</span><strong>{plural(confirmationImpact.actividades, "actividad", "actividades")}</strong></div><div><span>Total estimado de la compra</span><strong>{formatMoney(confirmationImpact.totalCompraEstimado, reception.moneda, reception.locale)}</strong></div></div>

@@ -108,6 +108,7 @@
     "test:purchase-new-page": "node scripts/purchase-new-page-structure-smoke.mjs",
     "test:document-items": "node scripts/document-items-editor-smoke.mjs",
     "test:purchase-order-new-page": "node scripts/purchase-order-new-page-structure-smoke.mjs",
+    "test:reception-detail-pages": "node scripts/reception-detail-pages-smoke.mjs",
     "test:inventory-catalog-dialog": "node scripts/inventory-catalog-dialog-smoke.mjs",
     "test:provider-form-sections": "node scripts/provider-form-sections-smoke.mjs",
     "test:purchase-decimals": "node scripts/purchase-decimals-smoke.mjs",
