@@ -40,7 +40,7 @@ export default function PurchasesPage({businessId, role}) {
   const navigate = useNavigate();
   // Identificador fiscal del proveedor según el país del negocio (Chile "RUT", Bolivia "NIT").
   const businessFormat = useBusinessFormat();
-  const fiscalLabel = getFiscalIdentifierLabel(businessFormat.countryCode);
+  const fiscalLabel = getFiscalIdentifierLabel(useBusinessFormat().countryCode);
   // Fecha en el formato regional del documento o, si no lo trae, del negocio (nunca ISO crudo).
   const dateOf = (purchase) => purchase.fechaCompra ? formatDate(purchase.fechaCompra, purchase.locale || businessFormat.locale) : "—";
   const confirmIds = useRef(new Map());
