@@ -1,10 +1,10 @@
 # Perfiles de acceso en Clínica Veterinaria
 
-En `baseline-v4`, la empresa con rubro **Clínica veterinaria** muestra **Resumen clínico**, **Pacientes** y **Agenda** dentro de **Operación** para los perfiles autorizados.
+En `baseline-v4`, la empresa con rubro **Clínica veterinaria** muestra **Resumen clínico** al comienzo de **Inicio**, y **Pacientes**, **Órdenes de atención** y **Agenda** dentro de **Operación**, para los perfiles autorizados.
 
 | Pantalla o flujo | Perfil que lo usa | Acceso actual |
 | --- | --- | --- |
-| Resumen clínico | Propietario y Administrador | Consultar el resumen y las cifras de servicios y farmacia. |
+| Resumen clínico | Propietario y Administrador | Consultar el resumen del día (citas, órdenes en espera y en atención, pacientes), lo que requiere atención, la actividad de hoy y las cifras de servicios y farmacia. |
 | Pacientes, ficha e historial clínico | Propietario y Administrador | Buscar, registrar y editar pacientes, y consultar su historial. |
 | Agenda, registro y detalle de cita | Propietario y Administrador | Consultar y agendar citas. El estado de la cita determina si se puede reprogramar o cancelar. |
 | Recepción y triage | Propietario y Administrador | Registrar la llegada desde Agenda o recibir directamente en Órdenes de atención, incluidas las emergencias. |

@@ -4,13 +4,7 @@ import React, {
   useState,
 } from "react";
 
-import { Activity, PawPrint, Plus, CalendarDays, ClipboardList } from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import Button from "../../components/ui/Button";
-import EmptyState from "../../components/ui/EmptyState";
-import LoadingState from "../../components/ui/LoadingState";
-import ModuleHeader from "../../components/ui/ModuleHeader";
-import VeterinaryDailyAppointments from "./agenda/VeterinaryDailyAppointments";
+import VeterinaryHomeView from "./VeterinaryHomeView";
 import useVeterinaryPatientDirectory from "./useVeterinaryPatientDirectory";
 import "./veterinary-lists.css";
 
@@ -33,7 +27,6 @@ import {
 function VeterinaryManager({
   businessId,
 }) {
-  const navigate = useNavigate();
   const [
     inventoryItems,
     setInventoryItems,
@@ -271,65 +264,31 @@ function VeterinaryManager({
 
 
   return (
-    <section className="erp-page">
-      <ModuleHeader
-        className="veterinary-module-header"
-        icon={Activity}
-        title="Resumen clínico"
-        description="Consulta los pacientes, las citas y las atenciones de tu clínica."
-        actions={
-          <>
-            <Button type="button" icon={PawPrint} onClick={() => navigate("/clinica-veterinaria/pacientes")}>Ver pacientes</Button>
-            <Button type="button" icon={CalendarDays} variant="secondary" onClick={() => navigate("/clinica-veterinaria/agenda")}>Ver agenda</Button>
-            <Button type="button" icon={ClipboardList} variant="secondary"
-              onClick={() => navigate("/clinica-veterinaria/ordenes")}>Ver órdenes de atención</Button>
-          </>
-        }
-      />
-
-
-      {loadingVeterinaryData || loadingInventory ? (
-        <LoadingState variant="section" label="Cargando Clínica Veterinaria..." />
+    <VeterinaryHomeView
+      appointments={appointments}
+      attentions={attentions}
+      patients={patients}
+      loading={loadingVeterinaryData || loadingInventory}
+      loadingLabel="Cargando Clínica Veterinaria..."
+      error={veterinaryDataError}
+    >
+      {inventoryError ? (
+        <div className="erp-empty-state" role="alert">
+          {inventoryError}
+        </div>
       ) : (
-        <>
-          {!veterinaryDataError && <VeterinaryDailyAppointments appointments={appointments} patients={patients} />}
-          {veterinaryDataError ? (
-            <div className="erp-empty-state" role="alert">
-              {veterinaryDataError}
-            </div>
-          ) : patients.length === 0 ? (
-            <EmptyState
-              action={{ label: "Registrar paciente", icon: Plus, onClick: () => navigate("/clinica-veterinaria/pacientes/nuevo") }}
-              description="Registra al primer paciente de la clínica para comenzar su atención."
-              icon={PawPrint}
-              title="Aún no hay pacientes"
-            />
-          ) : (
-            <VeterinaryCounts label="Actividad clínica" counts={[
-              ["Pacientes", patients.length],
-              ["Citas", appointments.length],
-              ["Atenciones", attentions.filter(({estado}) => estado === "en_atencion" || estado === "finalizada").length],
-            ]} />
-          )}
-
-          {inventoryError ? (
-            <div className="erp-empty-state" role="alert">
-              {inventoryError}
-            </div>
-          ) : (
-            <section className="erp-panel">
-              <h2 className="erp-panel-title">Servicios y farmacia</h2>
-              <VeterinaryCounts label="Disponibilidad en el inventario" counts={[
-                ["Servicios disponibles", veterinaryServices.length],
-                ["Productos de farmacia", pharmacyProducts.length],
-              ]} />
-            </section>
-          )}
-        </>
+        <section className="erp-panel">
+          <h2 className="erp-panel-title">Servicios y farmacia</h2>
+          <VeterinaryCounts label="Disponibilidad en el inventario" counts={[
+            ["Servicios disponibles", veterinaryServices.length],
+            ["Productos de farmacia", pharmacyProducts.length],
+          ]} />
+        </section>
       )}
-    </section>
+    </VeterinaryHomeView>
   );
 }
+
 
 function VeterinaryCounts({ label, counts }) {
   return (
@@ -344,34 +303,31 @@ function VeterinaryCounts({ label, counts }) {
   );
 }
 
+// Perfil de atenciones asignadas: las mismas consultas de la agenda y de las órdenes, que ya llegan filtradas a su
+// cuenta, y sus pacientes por la consulta de pacientes asignados.
 export function VeterinaryProfessionalHome({businessId, professionalUid}) {
-  const navigate = useNavigate();
   const [appointments, setAppointments] = useState(null);
-  const [appointmentsError, setAppointmentsError] = useState("");
-  const {patients, error: patientError} = useVeterinaryPatientDirectory(businessId, professionalUid, appointments);
+  const [attentions, setAttentions] = useState(null);
+  const [loadError, setLoadError] = useState("");
+  const assignments = appointments && attentions ? [...appointments, ...attentions] : null;
+  const {patients, error: patientError} = useVeterinaryPatientDirectory(businessId, professionalUid, assignments);
 
   useEffect(() => {
     if (!businessId) return undefined;
-    return subscribeToVeterinaryAppointments(businessId, setAppointments,
-      () => setAppointmentsError("No se pudieron consultar tus citas."), professionalUid);
+    const stopAppointments = subscribeToVeterinaryAppointments(businessId, setAppointments,
+      () => setLoadError("No se pudieron consultar tus citas."), professionalUid);
+    const stopAttentions = subscribeToVeterinaryAttentions(businessId, setAttentions,
+      () => setLoadError("No se pudieron consultar tus órdenes."), professionalUid);
+    return () => {
+      stopAppointments();
+      stopAttentions();
+    };
   }, [businessId, professionalUid]);
 
-  const error = appointmentsError || patientError;
+  const error = loadError || patientError;
   return (
-    <section className="erp-page">
-      <ModuleHeader className="veterinary-module-header" icon={Activity}
-        title="Resumen clínico" description="Consulta tus citas y órdenes de atención asignadas."
-        actions={
-          <>
-            <Button type="button" icon={CalendarDays} onClick={() => navigate("/clinica-veterinaria/agenda")}>Mis citas</Button>
-            <Button type="button" variant="secondary" icon={ClipboardList}
-              onClick={() => navigate("/clinica-veterinaria/ordenes")}>Mis órdenes</Button>
-          </>
-        } />
-      {error ? <p className="erp-empty-state" role="alert">{error}</p>
-        : appointments && patients ? <VeterinaryDailyAppointments appointments={appointments} patients={patients} />
-        : <LoadingState variant="section" label="Cargando tus citas..." />}
-    </section>
+    <VeterinaryHomeView professional appointments={appointments} attentions={attentions} patients={patients}
+      loading={!error && !(appointments && attentions && patients)} loadingLabel="Cargando tus citas..." error={error} />
   );
 }
 

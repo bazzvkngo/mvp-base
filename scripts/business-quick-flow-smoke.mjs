@@ -343,6 +343,12 @@ const veterinaryNavPaths = [
   "/clinica-veterinaria/agenda",
 ];
 const veterinaryNavLabels = ["Resumen clínico", "Pacientes", "Órdenes de atención", "Agenda"];
+// Con el módulo como el del rubro, el Resumen clínico (igual que el Panel del taller) va al comienzo de "Inicio"
+// y el resto de los ítems a "Operación".
+const veterinaryHomePath = veterinaryNavPaths[0];
+const veterinaryOperationPaths = veterinaryNavPaths.slice(1);
+const veterinaryOperationLabels = veterinaryNavLabels.slice(1);
+const tallerNavPaths = ["/taller/ordenes", "/taller/vehiculos", "/taller/plazas"];
 assert.deepEqual(
   veterinaryNavItem.children.map((item) => item.to),
   veterinaryNavPaths
@@ -423,8 +429,9 @@ assert.deepEqual(describeSections(buildNavigationSections(undefined, {primaryMod
 assert.deepEqual(defaultMenu.map((section) => section.label), CORE_LABELS_WITH_MODULES);
 const defaultModules = defaultMenu.find((section) => section.label === "Módulos");
 assert.deepEqual(defaultModules.items.map((item) => item.to), ["/taller", "/clinica-veterinaria"]);
-// Retirada la entrega B: Taller vuelve a tener solo Órdenes de trabajo, Vehículos y Plazas (sin "Inicio").
-assert.deepEqual(defaultModules.items[0].children.map((item) => item.to), ["/taller/ordenes", "/taller/vehiculos", "/taller/plazas"]);
+// Bajo "Módulos" (módulo activado a mano) los hijos son los de siempre, con la ruta base del módulo primero:
+// el Panel del taller y el Resumen clínico solo suben a "Inicio" cuando el módulo es el del rubro.
+assert.deepEqual(defaultModules.items[0].children.map((item) => item.to), ["/taller", ...tallerNavPaths]);
 assert.deepEqual(
   defaultModules.items[1].children.map((item) => item.to),
   veterinaryNavPaths
@@ -494,8 +501,14 @@ assert.equal(tallerOperation.items.some((item) => item.children), false, "los í
 assert.equal(tallerOperation.items[0].activeWhen("/taller/ordenes/nueva"), true);
 assert.equal(tallerOperation.items[0].activeWhen("/taller/vehiculos"), false);
 assert.equal(tallerOperation.items[1].activeWhen("/taller/vehiculos/abc"), true);
-assert.equal(tallerOperation.items.some((item) => item.activeWhen?.("/taller")), false, "/taller redirige a las órdenes: ningún ítem queda activo en la ruta base");
+assert.equal(tallerOperation.items.some((item) => item.activeWhen?.("/taller")), false, "el panel vive en Inicio: ningún ítem de Operación queda activo en la ruta base");
 assert.equal(tallerOperation.items[2].requiredPermission, "taller.manage", "Plazas conserva su permiso");
+// El Panel del taller va al comienzo de "Inicio", junto a Reportes, con coincidencia exacta.
+const tallerHome = sectionNamed(tallerOwner, "Inicio");
+assert.deepEqual(toList(tallerHome), ["/taller", "/reportes"]);
+assert.equal(tallerHome.items[0].label, "Panel del taller");
+assert.equal(tallerHome.items[0].activeWhen("/taller"), true);
+assert.equal(tallerHome.items[0].activeWhen("/taller/ordenes"), false);
 for (const section of tallerOwner) {
   assert.equal("accent" in section || "moduleId" in section, false, "ya no hay sección destacada del rubro");
 }
@@ -509,12 +522,13 @@ const tallerBaseline = withoutRoutes(
   ["/trabajos"]
 );
 const tallerModuleItems = tallerOperation.items.filter((item) => isModulePath(item.to)).map(describeItem);
+const tallerHomeItems = tallerHome.items.filter((item) => isModulePath(item.to)).map(describeItem);
 assert.deepEqual(
   describeSections(tallerOwner),
   describeSections(tallerBaseline).map((section) => section.label === "Operación"
     ? {...section, items: [...tallerModuleItems, ...section.items]}
-    : section),
-  "el resto del menú es el de siempre, con los ítems del rubro antes de Inventario"
+    : section.label === "Inicio" ? {...section, items: [...tallerHomeItems, ...section.items]} : section),
+  "el resto del menú es el de siempre, con el panel al comienzo de Inicio y los ítems del rubro antes de Inventario"
 );
 
 // 4. Veterinaria.
@@ -523,28 +537,48 @@ assert.deepEqual(getPrimaryVerticalModules(vetBusiness), ["veterinaria"]);
 const vetOwner = menuFor(vetBusiness, {role: "OWNER"});
 assert.deepEqual(labelsOf(vetOwner), CORE_LABELS);
 const vetOperation = sectionNamed(vetOwner, "Operación");
-assert.deepEqual(toList(vetOperation), [...veterinaryNavPaths, "/inventario"]);
-assert.deepEqual(vetOperation.items.map((item) => item.label), [...veterinaryNavLabels, "Inventario"]);
-assert.equal(vetOperation.items[0].activeWhen("/clinica-veterinaria"), true);
-assert.equal(vetOperation.items[0].activeWhen("/clinica-veterinaria/pacientes"), false, "el resumen no queda activo en las pantallas hijas (coincidencia exacta)");
-assert.equal(vetOperation.items[0].activeWhen("/clinica-veterinaria/"), true);
-assert.equal(vetOperation.items[1].activeWhen("/clinica-veterinaria/pacientes/abc"), true);
-assert.equal(vetOperation.items[2].activeWhen("/clinica-veterinaria/ordenes/abc/atencion"), true);
-assert.equal(vetOperation.items[3].activeWhen("/clinica-veterinaria/agenda/x"), true);
+// El Resumen clínico va al comienzo de "Inicio" (igual que el Panel del taller); Operación queda con Pacientes,
+// Órdenes de atención y Agenda antes de Inventario.
+assert.deepEqual(toList(vetOperation), [...veterinaryOperationPaths, "/inventario"]);
+assert.deepEqual(vetOperation.items.map((item) => item.label), [...veterinaryOperationLabels, "Inventario"]);
+assert.equal(vetOperation.items.some((item) => item.activeWhen?.(veterinaryHomePath)), false, "el resumen no se repite en Operación");
+assert.equal(vetOperation.items[0].activeWhen("/clinica-veterinaria/pacientes/abc"), true);
+assert.equal(vetOperation.items[1].activeWhen("/clinica-veterinaria/ordenes/abc/atencion"), true);
+assert.equal(vetOperation.items[2].activeWhen("/clinica-veterinaria/agenda/x"), true);
 assert.equal(vetOperation.items.some((item) => item.children), false);
+const vetHome = sectionNamed(vetOwner, "Inicio");
+assert.deepEqual(toList(vetHome), [veterinaryHomePath, "/reportes"]);
+assert.equal(vetHome.items[0].label, "Resumen clínico");
+assert.equal(vetHome.items[0].title, "Resumen clínico");
+assert.equal(vetHome.items[0].activeWhen("/clinica-veterinaria"), true);
+assert.equal(vetHome.items[0].activeWhen("/clinica-veterinaria/pacientes"), false, "el resumen no queda activo en las pantallas hijas (coincidencia exacta)");
+assert.equal(vetHome.items[0].activeWhen("/clinica-veterinaria/"), true);
+// El resto del menú de Veterinaria es el de siempre, con el resumen al comienzo de Inicio y el resto antes de Inventario.
+const vetBaseline = withoutRoutes(
+  menuFor(vetBusiness, {role: "OWNER"}, {primary: false}).filter((section) => section.label !== "Módulos"),
+  ["/trabajos"]
+);
+assert.deepEqual(
+  describeSections(vetOwner),
+  describeSections(vetBaseline).map((section) => section.label === "Operación"
+    ? {...section, items: [...vetOperation.items.filter((item) => isModulePath(item.to)).map(describeItem), ...section.items]}
+    : section.label === "Inicio" ? {...section, items: [...vetHome.items.filter((item) => isModulePath(item.to)).map(describeItem), ...section.items]} : section),
+  "Veterinaria: el resto del menú es el de siempre"
+);
 assert.equal(vetOwner.some((section) => section.label === "Clínica veterinaria"), false);
 
-// 5. Roles: los ítems del rubro en Operación son exactamente los que hoy muestra "Módulos" (mismos permisos).
+// 5. Roles: los ítems del rubro (el panel o resumen en "Inicio", el resto en "Operación") son exactamente los que
+//    hoy muestra "Módulos" (mismos permisos).
 const nestedModuleItemsToday = (business, access, basePath) => {
   const modulesSection = menuFor(business, access, {primary: false}).find((section) => section.label === "Módulos");
   const entry = modulesSection?.items.find((item) => item.to === basePath);
   return entry?.children.map((item) => item.to) ?? [];
 };
 const expectedTaller = {
-  OWNER: ["/taller/ordenes", "/taller/vehiculos", "/taller/plazas"],
-  ADMIN: ["/taller/ordenes", "/taller/vehiculos", "/taller/plazas"],
-  TECNICO: ["/taller/ordenes", "/taller/vehiculos"],
-  MEMBER: ["/taller/ordenes", "/taller/vehiculos"],
+  OWNER: ["/taller", ...tallerNavPaths],
+  ADMIN: ["/taller", ...tallerNavPaths],
+  TECNICO: ["/taller", "/taller/ordenes", "/taller/vehiculos"],
+  MEMBER: ["/taller", "/taller/ordenes", "/taller/vehiculos"],
   VENTAS: [],
   COMPRAS: [],
   FINANZAS: [],
@@ -561,7 +595,11 @@ for (const [business, basePath, expected] of [
   for (const [role, expectedItems] of Object.entries(expected)) {
     const sections = menuFor(business, {role});
     const operationRoutes = toList(sectionNamed(sections, "Operación"));
-    assert.deepEqual(operationRoutes.filter((to) => to.startsWith(basePath)), expectedItems, `${basePath}: los ítems de ${role} en Operación`);
+    const homeRoutes = toList(sectionNamed(sections, "Inicio"));
+    const expectedHome = expectedItems.filter((to) => to === basePath);
+    const expectedOperation = expectedItems.filter((to) => to !== basePath);
+    assert.deepEqual(homeRoutes.filter((to) => to.startsWith(basePath)), expectedHome, `${basePath}: el ítem de ${role} en Inicio`);
+    assert.deepEqual(operationRoutes.filter((to) => to.startsWith(basePath)), expectedOperation, `${basePath}: los ítems de ${role} en Operación`);
     assert.deepEqual(nestedModuleItemsToday(business, {role}, basePath), expectedItems, `${basePath}: ${role} ve lo mismo que hoy bajo Módulos`);
     assert.equal(sections.some((item) => item.label === "Módulos"), false, `${basePath}: ${role} no queda con un Módulos vacío`);
     assert.equal(sections.filter((item) => item.label === "Operación").length <= 1, true, `${basePath}: ${role} sin Operación duplicada`);
@@ -569,7 +607,9 @@ for (const [business, basePath, expected] of [
     assert.equal(operationRoutes.includes("/trabajos"), false, `${basePath}: ${role} sin Proyectos y trabajos`);
     // Los ítems del rubro van juntos y justo antes de lo que el rol ve de Operación (Inventario).
     const baseline = toList(sectionNamed(menuFor(business, {role}, {primary: false}), "Operación")).filter((to) => to !== "/trabajos");
-    assert.deepEqual(operationRoutes, [...expectedItems, ...baseline], `${basePath}: ${role} Operación = ítems del rubro + el resto de siempre`);
+    assert.deepEqual(operationRoutes, [...expectedOperation, ...baseline], `${basePath}: ${role} Operación = ítems del rubro + el resto de siempre`);
+    const baselineHome = toList(sectionNamed(menuFor(business, {role}, {primary: false}), "Inicio"));
+    assert.deepEqual(homeRoutes, [...expectedHome, ...baselineHome], `${basePath}: ${role} Inicio = ítem del rubro + el resto de siempre`);
     assert.equal(sections.at(-1).label, "Cuenta");
   }
 }
@@ -594,7 +634,7 @@ for (const rubroCodigo of ["TECNOLOGIA_INFORMATICA", "OTRO_SERVICIO_PROYECTOS", 
   assert.deepEqual(toList(sectionNamed(manualMenu, "Módulos")), ["/taller"]);
   assert.deepEqual(
     sectionNamed(manualMenu, "Módulos").items[0].children.map((item) => item.to),
-    ["/taller/ordenes", "/taller/vehiculos", "/taller/plazas"]
+    ["/taller", ...tallerNavPaths]
   );
 }
 // Veterinaria con Taller activado a mano: Veterinaria en Operación, Taller sigue bajo Módulos.
@@ -604,8 +644,9 @@ assert.deepEqual(labelsOf(vetPlusTallerMenu), CORE_LABELS_WITH_MODULES);
 assert.deepEqual(toList(sectionNamed(vetPlusTallerMenu, "Módulos")), ["/taller"]);
 assert.deepEqual(
   toList(sectionNamed(vetPlusTallerMenu, "Operación")),
-  [...veterinaryNavPaths, "/inventario"]
+  [...veterinaryOperationPaths, "/inventario"]
 );
+assert.deepEqual(toList(sectionNamed(vetPlusTallerMenu, "Inicio")), [veterinaryHomePath, "/reportes"], "el Resumen clínico va en Inicio");
 
 // 7. Un negocio sin verificar sigue viendo solo Empresa y Cuenta; los ítems del rubro no aparecen.
 const unverifiedTaller = {...tallerBusiness, role: "OWNER", verificacionEmpresa: {estado: "PENDIENTE"}};
@@ -693,7 +734,7 @@ assert.doesNotMatch(navigation, /accent: true|moduleId:/, "navigation.js ya no d
     }
   }
   assert.deepEqual(toList(menuFor(tallerBusiness, {role: "TECNICO"}).find((section) => section.label === "Operación")), ["/taller/ordenes", "/taller/vehiculos", "/inventario"]);
-  assert.deepEqual(toList(menuFor(vetBusiness, {role: "OWNER"}).find((section) => section.label === "Operación")), [...veterinaryNavPaths, "/inventario"]);
+  assert.deepEqual(toList(menuFor(vetBusiness, {role: "OWNER"}).find((section) => section.label === "Operación")), [...veterinaryOperationPaths, "/inventario"]);
 
   // Todo lo demás queda idéntico: otros rubros, módulos activados a mano y negocios sin el módulo del rubro.
   for (const business of [
@@ -761,22 +802,26 @@ assert.doesNotMatch(navigation, /accent: true|moduleId:/, "navigation.js ya no d
   assert.match(titleRule, /color: var\(--color-text-muted\)/, "el título de sección usa un token de texto del tema");
   assert.doesNotMatch(titleRule, /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|--color-(?:brand-[6-9]00|dark-)/);
 }
-// Retirado el panel de inicio del Taller (SPEC 041, retiro de la entrega B de la SPEC 037): /taller redirige a las órdenes,
-// los archivos del panel ya no existen y el aterrizaje del TECNICO (arriba) sigue siendo /taller.
+// Panel del taller: la entrega B de la SPEC 037 (TallerHomePage) sigue retirada, sin sus archivos ni estilos, pero la
+// ruta base /taller abre el Panel del taller (WorkshopHomePage) y el aterrizaje del TECNICO (arriba) es /taller.
 {
   const exists = (url) => access(new URL(url, import.meta.url)).then(() => true, () => false);
   for (const gone of ["../src/pages/TallerHomePage.jsx", "../src/features/taller/TallerHomeView.jsx", "../src/domain/workOrderSummary.mjs", "./work-order-summary-smoke.mjs"]) {
     assert.equal(await exists(gone), false, `${gone} fue retirado`);
   }
-  assert.match(app, /<Route path="\/taller" element=\{<Navigate to="\/taller\/ordenes" replace \/>\} \/>/, "/taller vuelve a redirigir a las órdenes");
+  assert.match(app, /path="\/taller"\s*element=\{\s*<WorkshopHomePage/, "/taller abre el Panel del taller");
+  assert.doesNotMatch(app, /<Route path="\/taller" element=\{<Navigate to="\/taller\/ordenes" replace \/>\} \/>/, "/taller ya no redirige a las órdenes");
   assert.doesNotMatch(app, /TallerHome/);
   for (const route of ["/taller/ordenes", "/taller/ordenes/nueva", "/taller/ordenes/:otId", "/taller/vehiculos", "/taller/vehiculos/nuevo", "/taller/plazas"]) {
     assert.ok(app.includes(`path="${route}"`), `${route} sigue registrada`);
   }
   assert.doesNotMatch(await readFile(new URL("../src/features/taller/taller.css", import.meta.url), "utf8"), /taller-home/, "sin los estilos del panel");
   assert.doesNotMatch(await readFile(new URL("../package.json", import.meta.url), "utf8"), /work-order-summary/, "sin el script del panel");
-  assert.doesNotMatch(navigation, /LayoutDashboard|label: "Inicio", title: "Inicio"/, "navigation.js sin el ítem Inicio del Taller");
-  // La barra superior de la ruta base del Taller es la de antes del panel: el nombre del módulo.
+  assert.doesNotMatch(navigation, /label: "Inicio", title: "Inicio"/, "navigation.js sin un ítem llamado Inicio");
+  // El panel del taller y el resumen clínico se declaran con `section: "Inicio"`, nada más.
+  assert.match(navigation, /label: "Panel del taller", title: "Panel del taller", icon: LayoutDashboard, section: "Inicio"/);
+  assert.match(navigation, /label: "Resumen clínico", title: "Resumen clínico", icon: HeartPulse, section: "Inicio"/);
+  // La barra superior de la ruta base del Taller muestra el nombre del módulo.
   assert.equal(getRouteMeta("/taller").title, "Taller automotriz");
   assert.equal(getRouteMeta("/taller/ordenes").title, "Órdenes de trabajo");
   assert.equal(getRouteMeta("/taller/vehiculos").title, "Vehículos");
