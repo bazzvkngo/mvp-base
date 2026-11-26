@@ -730,7 +730,8 @@ assert.match(pageSource, /SupplyTrace/);
 // OC emitida o cancelada: detalle de solo lectura en PurchaseOrderDetailView; el borrador conserva el formulario.
 const detailViewSource = fs.readFileSync("src/features/purchaseOrders/PurchaseOrderDetailView.jsx", "utf8");
 assert.match(pageSource, /showDetailView \? <PurchaseOrderDetailView/);
-assert.match(detailViewSource, />Reenviar correo</);
+assert.match(detailViewSource, />Reenviar</, "el detalle de una orden emitida ofrece un solo Reenviar (el selector de envío)");
+assert.doesNotMatch(detailViewSource, />Reenviar correo<|Reenviar por WhatsApp/, "ya no hay botones de canal sueltos en el detalle");
 assert.match(detailViewSource, />Descargar PDF</);
 assert.match(detailViewSource, /label="Más"/);
 assert.match(detailViewSource, /Duplicar como nueva orden/);
@@ -738,11 +739,11 @@ assert.match(detailViewSource, /canCancel = canManage && !cancelled && !receptio
 assert.match(detailViewSource, /getOrderReceptionStatusLabel\(receptionStatus\)/, "el estado de recepción se sigue mostrando (ahora en el seguimiento de la orden emitida)");
 assert.doesNotMatch(detailViewSource, /Snapshot hist[oó]rico|"Nombre no informado"|Sin contacto|"Sin correo"|Sin teléfono|Sin dirección|<input|<textarea|<select/);
 assert.match(historySource, /po-history__danger/);
-assert.match(historySource, /PurchaseOrderPreviewBoundary/);
-assert.match(historySource, /className="po-order-preview-dialog"/);
-assert.match(historySource, /PurchaseOrderPrintView company=\{company\} order=\{selectedOrder\}/);
-assert.match(historySource, /Correo<\/Button>[\s\S]*WhatsApp<\/Button>[\s\S]*Descargar PDF<\/Button>[\s\S]*Imprimir<\/Button>/);
-assert.match(historySource, /onClick=\{\(\) => setSelectedOrder\(null\)\}>Volver al listado/);
+// Tras guardar una orden nueva, el listado ya no abre la vista previa completa: abre el selector de envío.
+assert.match(historySource, /<SendMethodDialog/);
+assert.match(historySource, /"Guardada\. ¿La envías ahora\?"/);
+assert.match(historySource, /closeLabel=\{sendIsFresh \? "Más tarde" : "Cancelar"\}/);
+assert.doesNotMatch(historySource, /PurchaseOrderPreviewBoundary|po-order-preview-dialog|PurchaseOrderPrintView|selectedOrder/, "el listado ya no trae la vista previa");
 assert.match(historySource, /createdOrder\?\.negocioId === businessId/);
 assert.match(printViewSource, /Orden de compra/);
 assert.match(printViewSource, /proveedorSnapshot/);

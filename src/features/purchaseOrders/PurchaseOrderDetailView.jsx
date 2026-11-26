@@ -1,5 +1,5 @@
 import {useState} from "react";
-import {Download, Mail, PackageCheck} from "lucide-react";
+import {Download, PackageCheck, Send} from "lucide-react";
 import {useNavigate} from "react-router-dom";
 import Button from "../../components/ui/Button";
 import MoreActionsMenu from "../../components/ui/MoreActionsMenu";
@@ -41,9 +41,8 @@ export default function PurchaseOrderDetailView({
   onDelete,
   onDownloadPdf,
   onDuplicate,
-  onEmail,
+  onSend,
   onSupplierConfirmation,
-  onWhatsApp,
   order,
   printableOrder,
   receptionActionLabel,
@@ -51,7 +50,6 @@ export default function PurchaseOrderDetailView({
   receptions,
   saving,
   totals,
-  whatsAppAvailability,
 }) {
   const navigate = useNavigate();
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -72,7 +70,6 @@ export default function PurchaseOrderDetailView({
   const canCancel = canManage && !cancelled && !receptionCompleted;
   const menuActions = [
     canReceive && supplierState !== "rechazada" && {label: "Registrar confirmación", onSelect: onSupplierConfirmation, disabled: saving},
-    canManage && !cancelled && {label: issued ? "Reenviar por WhatsApp" : "WhatsApp", onSelect: onWhatsApp, disabled: saving || !whatsAppAvailability.enabled},
     {label: "Imprimir", onSelect: () => window.print()},
     canManage && {label: duplicating ? "Creando copia..." : "Duplicar como nueva orden", onSelect: onDuplicate, disabled: saving || duplicating},
     canCancel && {label: "Cancelar", onSelect: onCancel, disabled: saving},
@@ -127,13 +124,12 @@ export default function PurchaseOrderDetailView({
           <div className="ui-doc-head__actions" role="group" aria-label="Acciones de la orden">
             {canReceive && supplierState !== "rechazada" && <Button type="button" icon={PackageCheck} disabled={saving} onClick={onCreateReception}>{saving ? "Preparando..." : receptionActionLabel}</Button>}
             {canReceive && supplierState === "rechazada" && <Button type="button" icon={PackageCheck} disabled={saving} onClick={onSupplierConfirmation}>Actualizar confirmación</Button>}
-            {canManage && issued && <Button type="button" variant="secondary" icon={Mail} disabled={saving} onClick={onEmail}>Reenviar correo</Button>}
+            {canManage && issued && <Button type="button" variant="secondary" icon={Send} disabled={saving} onClick={onSend}>Reenviar</Button>}
             <Button type="button" variant="secondary" icon={Download} disabled={saving} onClick={onDownloadPdf}>Descargar PDF</Button>
             <MoreActionsMenu label="Más" menuLabel="Más acciones de la orden" actions={menuActions} />
           </div>
         </div>
       </header>
-      {canManage && !cancelled && !whatsAppAvailability.enabled && <small className="purchase-order-detail__help">{whatsAppAvailability.help}</small>}
 
       {message && <p className="po-message po-message--error">{message}</p>}
 
