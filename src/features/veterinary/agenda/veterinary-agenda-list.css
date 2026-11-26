@@ -1,0 +1,124 @@
+.veterinary-agenda-list-panel {
+  container-type: inline-size;
+}
+
+.veterinary-agenda-list__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding-block-end: var(--space-3);
+  border-block-end: thin solid var(--color-border-subtle);
+}
+
+.veterinary-agenda-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.veterinary-agenda-list__row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-areas: "schedule patient visit";
+  align-items: center;
+  gap: var(--space-4);
+  padding-block: var(--space-3);
+  overflow-wrap: anywhere;
+}
+
+.veterinary-agenda-list__row + .veterinary-agenda-list__row {
+  border-block-start: thin solid var(--color-border-subtle);
+}
+
+.veterinary-agenda-list__schedule {
+  grid-area: schedule;
+  display: grid;
+  align-content: start;
+  justify-self: start;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface-brand);
+  border: thin solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.veterinary-agenda-list__schedule time {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.veterinary-agenda-list__schedule .app-icon {
+  color: var(--color-text-brand-accent);
+  flex: none;
+}
+
+.veterinary-agenda-list__date {
+  padding-block-end: var(--space-1);
+  border-block-end: thin solid var(--color-border-subtle);
+  color: var(--color-text-default);
+  font-size: var(--font-size-xs);
+}
+
+.veterinary-agenda-list__hour {
+  color: var(--color-text-brand);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+}
+
+.veterinary-agenda-list__patient {
+  grid-area: patient;
+  display: grid;
+  justify-items: center;
+  gap: var(--space-1);
+  text-align: center;
+}
+
+.veterinary-agenda-list__patient strong {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-lg);
+}
+
+.veterinary-agenda-list__visit {
+  grid-area: visit;
+  display: grid;
+  justify-items: end;
+  gap: var(--space-2);
+  text-align: end;
+}
+
+.veterinary-agenda-list__reason {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.veterinary-agenda-list__reason p {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.veterinary-agenda-list__reason strong {
+  color: var(--color-text-default);
+  font-weight: var(--font-weight-semibold);
+}
+
+@container (max-width: 35rem) {
+  .veterinary-agenda-list__row {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas: "schedule patient" "visit visit";
+    gap: var(--space-3);
+  }
+
+  .veterinary-agenda-list__visit {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    text-align: start;
+  }
+
+  .veterinary-agenda-list__visit > button {
+    flex: none;
+  }
+}

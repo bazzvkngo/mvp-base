@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {createRequire} from "node:module";
 import {deleteApp, initializeApp} from "firebase/app";
 import {connectAuthEmulator, getAuth, signInAnonymously} from "firebase/auth";
-import {connectFirestoreEmulator, doc, getDoc, getFirestore, setDoc} from "firebase/firestore";
+import {connectFirestoreEmulator, doc, getDoc, getDocFromServer, getFirestore, setDoc} from "firebase/firestore";
 
 const {GCLOUD_PROJECT: projectId, FIREBASE_AUTH_EMULATOR_HOST: authHost, FIRESTORE_EMULATOR_HOST: firestoreHost} = process.env;
 if (!projectId?.startsWith("demo-") || !/^127\.0\.0\.1:\d+$/.test(authHost) || !/^127\.0\.0\.1:\d+$/.test(firestoreHost)) {
@@ -35,20 +35,28 @@ try {
   ]);
   const pacienteId = "paciente-demo";
   const paciente = {microchip: "00-ab 12", nombre: "Luna", especie: "Canina", tutorClienteId: "tutor-demo"};
+  const fotoPerfil = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAAMABADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD3+iiigD//2Q==";
   const save = (patch = {}) => guardarPacienteVeterinarioHandler({
     auth: {uid}, data: {businessId, pacienteId, paciente, requestId: "crear-demo", operacion: "crear", ...patch},
   }, {db, HttpsError, FieldValue: admin.firestore.FieldValue, requireBusinessAccess: requireOperationalBusinessAccess});
   const ref = doc(clientDb, "negocios", businessId, "pacientesVeterinarios", pacienteId);
+  const photoRef = doc(ref, "perfil", "foto");
   await assert.rejects(save({businessId: "otra-clinica"}), {code: "permission-denied"});
   await assert.rejects(save({paciente: {...paciente, tutorClienteId: "tutor-ajeno"}}), {code: "failed-precondition"});
   await assert.rejects(save({paciente: {...paciente, nombre: ""}}), {code: "invalid-argument"});
   await assert.rejects(setDoc(ref, {negocioId: businessId}), {code: "permission-denied"});
-  assert.deepEqual(await Promise.all([save(), save()]), [{pacienteId}, {pacienteId}]);
+  await assert.rejects(save({fotoPerfil: "data:image/png;base64,Zg=="}), {code: "invalid-argument"});
+  assert.equal((await business.collection("pacientesVeterinarios").doc(pacienteId).get()).exists, false);
+  assert.equal((await business.collection("microchipsVeterinarios").doc("00AB12").get()).exists, false);
+  assert.deepEqual(await Promise.all([save({fotoPerfil}), save({fotoPerfil})]), [{pacienteId}, {pacienteId}]);
   const original = (await getDoc(ref)).data();
   assert.equal(original.nombre, "Luna");
   assert.equal(original.negocioId, businessId);
   assert.equal(original.creadoPorUid, uid);
   assert.equal(original.microchip, "00AB12");
+  assert.equal(original.fotoPerfil, undefined);
+  assert.equal((await getDocFromServer(photoRef)).get("imagen"), fotoPerfil);
+  await assert.rejects(setDoc(photoRef, {imagen: fotoPerfil}), {code: "permission-denied"});
   await assert.rejects(save({requestId: "otro-paciente", pacienteId: "otro-paciente"}), {code: "already-exists"});
   await assert.rejects(save({paciente: {...paciente, nombre: "Otro"}}), {code: "already-exists"});
   const secondAdmin = await admin.auth().createUser({});
@@ -69,6 +77,7 @@ try {
   assert.equal(updated.nombre, "Luna Demo");
   assert.equal(updated.negocioId, businessId);
   assert.ok(updated.creadoEn.isEqual(original.creadoEn));
+  assert.equal((await getDocFromServer(photoRef)).get("imagen"), fotoPerfil);
   await assert.rejects(setDoc(ref, {nombre: "Cambio directo"}, {merge: true}), {code: "permission-denied"});
   await business.update({modulosHabilitados: []});
   await assert.rejects(save({operacion: "editar", version: 2, requestId: "edicion-denegada"}), {code: "failed-precondition"});
@@ -76,8 +85,11 @@ try {
   await assert.rejects(save({operacion: "editar", version: 2, requestId: "edicion-denegada"}), {code: "failed-precondition"});
   await business.update({"verificacionEmpresa.estado": "VERIFICADA"});
   await membership.update({rol: "TECNICO"});
+  await assert.rejects(getDocFromServer(photoRef), {code: "permission-denied"});
   await assert.rejects(save({operacion: "editar", version: 2, requestId: "edicion-denegada"}), {code: "permission-denied"});
   await membership.update({rol: "OWNER"});
+  await save({...edit, fotoPerfil: null, version: 2, requestId: "quitar-foto-perfil"});
+  assert.equal((await getDocFromServer(photoRef)).exists(), false);
   const concurrent = await Promise.allSettled([
     save({requestId: "paralelo-a", pacienteId: "paralelo-a", paciente: {...paciente, microchip: "00-x y"}}),
     save({requestId: "paralelo-b", pacienteId: "paralelo-b", paciente: {...paciente, microchip: "00XY"}}),

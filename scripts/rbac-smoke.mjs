@@ -282,6 +282,15 @@ const visibleVeterinaryTargets = (access, options) =>
 
 assert.equal(canAccessBusinessPath(veterinaryMember, "/clinica-veterinaria", veterinaryEnabled), false);
 assert.deepEqual(visibleVeterinaryTargets(veterinaryMember, veterinaryEnabled), ["/clientes"]);
+const assignedVeterinarian = {role: "MEMBER", profileId: "veterinario", modules: ["veterinaria_asignada"]};
+assert.equal(canAccessBusinessPath(assignedVeterinarian, "/clinica-veterinaria/agenda", veterinaryEnabled), true);
+assert.equal(canAccessBusinessPath(assignedVeterinarian, "/clinica-veterinaria", veterinaryDisabled), false);
+assert.equal(canAccessBusinessPath(assignedVeterinarian, "/empleados", veterinaryEnabled), false);
+assert.equal(canAccessBusinessPath(assignedVeterinarian, "/inventario", veterinaryEnabled), false);
+assert.equal(getDefaultBusinessPath(assignedVeterinarian, veterinaryEnabled), "/clinica-veterinaria");
+assert.deepEqual(visibleVeterinaryTargets(assignedVeterinarian, veterinaryEnabled), ["/clinica-veterinaria"]);
+assert.deepEqual(visibleVeterinaryTargets(assignedVeterinarian, veterinaryDisabled), []);
+assert.equal(canAccessBusinessPath({...assignedVeterinarian, role: "TECNICO"}, "/clinica-veterinaria", veterinaryEnabled), false);
 assert.deepEqual(visibleVeterinaryTargets({role: "ADMIN"}, veterinaryDisabled), ["/clientes"]);
 assert.deepEqual(visibleVeterinaryTargets({role: "ADMIN"}, veterinaryEnabled), ["/clientes", "/clinica-veterinaria"]);
 for (const role of ["VENTAS", "TECNICO"]) {

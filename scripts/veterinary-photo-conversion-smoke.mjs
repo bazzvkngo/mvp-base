@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import vm from "node:vm";
 const source = readFileSync(new URL("../src/features/veterinary/attention/VeterinaryPhotoMap.jsx", import.meta.url), "utf8");
-const convert = source.slice(source.indexOf("async function imageAsJpeg("), source.indexOf("function PhotoMapper("));
-async function run(blobs) {
+const encodingSource = readFileSync(new URL("../src/features/veterinary/domain/photoEncoding.mjs", import.meta.url), "utf8");
+const convert = encodingSource.replace("export async function", "async function");
+async function run(blobs, options) {
   let closed = false;
   const qualities = [];
   const context = vm.createContext({
@@ -11,7 +12,7 @@ async function run(blobs) {
     document: {createElement: () => ({getContext: () => ({fillRect() {}, drawImage() {}}), toBlob: (callback, type, quality) => { qualities.push(quality); callback(blobs.shift()); }})},
     FileReader: class { readAsDataURL() { this.result = "data:image/jpeg;base64,TEST"; this.onload(); } },
   });
-  try { return {value: await vm.runInContext(convert + "imageAsJpeg({})", context), qualities}; }
+  try { return {value: await vm.runInContext(convert + "imageAsJpeg({}, " + JSON.stringify(options) + ")", context), qualities}; }
   finally { assert.equal(closed, true); }
 }
 for (const blob of [null, {type: "image/png", size: 10}, {type: "image/jpeg", size: 0}]) {
@@ -20,6 +21,9 @@ for (const blob of [null, {type: "image/png", size: 10}, {type: "image/jpeg", si
 const large = {type: "image/jpeg", size: 2 * 1024 * 1024 + 1};
 await assert.rejects(run([large, large, large]), /supera los 2 MiB/);
 assert.deepEqual(await run([large, {type: "image/jpeg", size: 100}]), {value: "TEST", qualities: [0.82, 0.65]});
+const avatarOptions = {maxSide: 512, maxBytes: 192 * 1024, sizeLabel: "192 KiB"};
+await assert.rejects(run([large, large, large], avatarOptions), /supera los 192 KiB/);
+assert.deepEqual(await run([{type: "image/jpeg", size: 100}], avatarOptions), {value: "TEST", qualities: [0.82]});
 
 // Una sola lista de nombres de vista: pestañas y "Vistas que faltan" usan los mismos textos.
 assert.doesNotMatch(source, /viewButtons|"Frente"|"Atrás"|"Arriba"|"Abajo"/);

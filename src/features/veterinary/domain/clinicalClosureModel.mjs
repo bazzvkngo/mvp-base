@@ -197,9 +197,10 @@ export function getVeterinaryClinicalClosureFieldErrors(
     );
 
 
-  if (!citaId) {
+  const atencionId = normalizeText(data.atencionId, 120);
+  if (!citaId && !atencionId) {
     errors.citaId =
-      "El cierre debe estar asociado a una cita.";
+      "El cierre debe estar asociado a una orden o a una cita.";
   }
 
 
@@ -280,12 +281,11 @@ export function buildVeterinaryClinicalClosureMutationPayload(
   }
 
 
+  const atencionId = normalizeText(rawData.atencionId, 120);
+  const citaId = normalizeText(rawData.citaId, 120);
   return {
-    citaId:
-      normalizeText(
-        rawData.citaId,
-        120
-      ),
+    ...(atencionId ? {atencionId} : {}),
+    ...(citaId ? {citaId} : {}),
 
     pacienteId:
       normalizeText(

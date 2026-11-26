@@ -1,5 +1,5 @@
 import React from "react";
-import { Bell, RefreshCw, ShieldAlert, ShieldCheck } from "lucide-react";
+import { Bell, ChevronRight, ClipboardList, RefreshCw, ShieldAlert, ShieldCheck } from "lucide-react";
 import AppIcon from "./ui/AppIcon";
 import Button from "./ui/Button";
 import Notice from "./ui/Notice";
@@ -91,7 +91,9 @@ function NotificationBellView({
   notifications,
   onClose,
   onOpen,
+  onVeterinaryOrderOpen,
   open,
+  pendingVeterinaryOrders = [],
   retry,
   showNotifications = true,
   subscription,
@@ -102,18 +104,20 @@ function NotificationBellView({
   // leer siguen contando). Con datos ya cargados, un refresco no cambia el estado y el contador no parpadea.
   const pendingInvitations = countLoadedInvitations(invitations);
   const totalUnread = unreadCount + pendingInvitations;
-  const badgeLabel = formatBadgeCount(totalUnread);
+  const pendingOrderCount = pendingVeterinaryOrders.length;
+  const totalBadgeCount = totalUnread + pendingOrderCount;
+  const badgeLabel = formatBadgeCount(totalBadgeCount);
   // Si la suscripción de avisos falló, el contador no puede mostrar "0" como si
   // todo estuviera leído: se marca con "!" y se avisa en la etiqueta. Las
   // invitaciones (otra fuente) conservan su propio conteo en la etiqueta.
   const notificationsFailed =
     showNotifications && subscription.status === SUBSCRIPTION_STATUS.ERROR;
-  const unreadLabel = totalUnread > 0 ? `${totalUnread} sin leer` : "";
-  const bellLabel = notificationsFailed
-    ? `Notificaciones, no se pudieron cargar los avisos${unreadLabel ? `, ${unreadLabel}` : ""}`
-    : totalUnread > 0
-      ? `Notificaciones, ${unreadLabel}`
-      : "Notificaciones";
+  const bellLabel = [
+    "Notificaciones",
+    notificationsFailed && "no se pudieron cargar los avisos",
+    totalUnread > 0 && `${totalUnread} sin leer`,
+    pendingOrderCount > 0 && `${pendingOrderCount} ${pendingOrderCount === 1 ? "orden" : "órdenes"} por iniciar`,
+  ].filter(Boolean).join(", ");
   const showInvitations = shouldShowInvitations(invitations);
   // El correo sin verificar se explica con un aviso breve y su reenvío; mientras
   // carga o falla, la lista de invitaciones conserva sus propios estados.
@@ -124,6 +128,7 @@ function NotificationBellView({
 
   const panelId = React.useId();
   const titleId = React.useId();
+  const pendingOrdersTitleId = `${panelId}-veterinary-orders`;
   const rootRef = React.useRef(null);
   const triggerRef = React.useRef(null);
   const onCloseRef = React.useRef(onClose);
@@ -166,7 +171,7 @@ function NotificationBellView({
         onClick={open ? onClose : onOpen}
       >
         <AppIcon icon={Bell} size={20} />
-        {(totalUnread > 0 || notificationsFailed) && (
+        {(totalBadgeCount > 0 || notificationsFailed) && (
           <span
             className="ui-badge-count topbar-notifications-button__badge"
             aria-hidden="true"
@@ -225,9 +230,36 @@ function NotificationBellView({
             )}
           </section>
         )}
+        {pendingOrderCount > 0 && (
+          <section className="notification-section" aria-labelledby={pendingOrdersTitleId}>
+            <h3 id={pendingOrdersTitleId} className="notification-section__title">Órdenes asignadas</h3>
+            <ul className="notification-list">
+              {pendingVeterinaryOrders.map((order) => (
+                <li key={order.id}>
+                  <button type="button" className="notification-list__item" onClick={() => onVeterinaryOrderOpen(order.id)}>
+                    <span className="notification-list__icon">
+                      <AppIcon icon={ClipboardList} size={18} />
+                    </span>
+                    <span className="notification-list__content">
+                      <strong>Nueva atención asignada</strong>
+                      <span className="notification-list__text">{order.tipoAtencion} · {order.box}</span>
+                      {order.asignadoEn && (
+                        <small title={formatTimestamp(order.asignadoEn)}>{formatRelativeTimestamp(order.asignadoEn)}</small>
+                      )}
+                    </span>
+                    <span className="notification-list__icon">
+                      <AppIcon icon={ChevronRight} size={18} />
+                      <span className="sr-only">Ver orden</span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
         {showNotifications && (
           <section className="notification-section" aria-label="Avisos">
-            {showInvitations && <h3 className="notification-section__title">Avisos</h3>}
+            {(showInvitations || pendingOrderCount > 0) && <h3 className="notification-section__title">Avisos</h3>}
             {subscription.status === SUBSCRIPTION_STATUS.LOADING ? (
               <SkeletonRegion label="Cargando notificaciones...">
                 <SkeletonCards count={3} />
@@ -289,7 +321,7 @@ function NotificationBellView({
         )}
         {/* Rol sin permiso de avisos, sin invitaciones y con el correo verificado:
             ninguna sección se dibuja y el cuerpo quedaría vacío. */}
-        {!showInvitations && !showNotifications && (
+        {!showInvitations && !showNotifications && pendingOrderCount === 0 && (
           <p className="notification-empty">Sin notificaciones</p>
         )}
       </section>

@@ -1,0 +1,26 @@
+.veterinary-patient-photo-actions,
+.veterinary-patient-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.veterinary-patient-avatar {
+  display: block;
+  inline-size: calc(var(--space-10) * 2);
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+}
+
+.veterinary-patient-avatar--compact {
+  inline-size: calc(var(--space-6) * 2);
+}
+
+.veterinary-patient-avatar--placeholder {
+  display: grid;
+  place-items: center;
+  background: var(--color-surface-brand);
+  color: var(--color-text-brand-accent);
+}

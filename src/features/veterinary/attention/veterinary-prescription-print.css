@@ -1,0 +1,134 @@
+.veterinary-prescription-sheet {
+  color-scheme: light;
+  background: var(--color-document-paper);
+  color: var(--color-document-ink);
+  border: 1px solid var(--color-document-border);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-default);
+  overflow-wrap: anywhere;
+  padding: var(--space-5);
+}
+
+.veterinary-prescription-sheet h3,
+.veterinary-prescription-sheet h4,
+.veterinary-prescription-sheet h5,
+.veterinary-prescription-sheet p,
+.veterinary-prescription-sheet dl,
+.veterinary-prescription-sheet dd {
+  margin: 0;
+  color: inherit;
+}
+
+.veterinary-prescription-sheet h3 {
+  font-size: var(--font-size-2xl);
+  line-height: var(--line-height-tight);
+}
+
+.veterinary-prescription-sheet h4 {
+  font-size: var(--font-size-lg);
+}
+
+.veterinary-prescription-sheet h5,
+.veterinary-prescription-sheet__heading > div > p {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+}
+
+.veterinary-prescription-sheet__heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: var(--space-3);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--color-document-ink);
+}
+
+.veterinary-prescription-sheet__details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  padding-block: var(--space-3);
+}
+
+.veterinary-prescription-sheet__details dt {
+  color: var(--color-document-muted);
+  font-weight: var(--font-weight-semibold);
+}
+
+.veterinary-prescription-sheet__medications {
+  margin-block: var(--space-2) var(--space-4);
+  padding-inline-start: var(--space-5);
+}
+
+.veterinary-prescription-sheet__medications > li {
+  border-bottom: 1px solid var(--color-document-border);
+  padding-block: var(--space-3);
+}
+
+.veterinary-prescription-sheet__medications p,
+.veterinary-prescription-sheet__instructions p {
+  white-space: pre-wrap;
+}
+
+.veterinary-prescription-sheet__signature {
+  border-top: 1px solid var(--color-document-ink);
+  margin: var(--space-8) 0 0 auto;
+  padding-top: var(--space-2);
+  width: fit-content;
+}
+
+@page veterinary-prescription {
+  size: A4;
+  margin: 15mm;
+}
+
+@media print {
+  html:has(.veterinary-prescription-print-layer),
+  body:has(> .veterinary-prescription-print-layer) {
+    background: var(--color-document-paper);
+    color-scheme: light;
+    height: auto;
+    overflow: visible !important;
+  }
+
+  body:has(> .veterinary-prescription-print-layer) > :not(.veterinary-prescription-print-layer),
+  .veterinary-prescription-print-layer > .responsive-dialog-overlay,
+  .veterinary-prescription-print-dialog > :is(.responsive-dialog__header, .responsive-dialog__footer) {
+    display: none !important;
+  }
+
+  .veterinary-prescription-print-layer,
+  .veterinary-prescription-print-layer > .veterinary-prescription-print-dialog,
+  .veterinary-prescription-print-dialog > .responsive-dialog__body {
+    display: block !important;
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    max-width: none !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: 0 !important;
+    background: var(--color-document-paper);
+  }
+
+  .veterinary-prescription-sheet {
+    page: veterinary-prescription;
+    border: 0;
+    padding: 0;
+  }
+
+  .veterinary-prescription-sheet__heading,
+  .veterinary-prescription-sheet__details,
+  .veterinary-prescription-sheet__medications > li,
+  .veterinary-prescription-sheet__signature {
+    break-inside: avoid;
+  }
+
+  .veterinary-prescription-sheet h4 {
+    break-after: avoid;
+  }
+}

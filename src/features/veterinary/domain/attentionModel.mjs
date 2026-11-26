@@ -217,9 +217,10 @@ export function getVeterinaryAttentionFieldErrors(
     );
 
 
-  if (!citaId) {
+  const atencionId = normalizeText(data.atencionId, 120);
+  if (!citaId && !atencionId) {
     errors.citaId =
-      "La atención debe estar asociada a una cita.";
+      "La atención debe estar asociada a una orden o a una cita.";
   }
 
 
@@ -319,12 +320,11 @@ export function buildVeterinaryAttentionMutationPayload(
   }
 
 
+  const atencionId = normalizeText(rawData.atencionId, 120);
+  const citaId = normalizeText(rawData.citaId, 120);
   return {
-    citaId:
-      normalizeText(
-        rawData.citaId,
-        120
-      ),
+    ...(atencionId ? {atencionId} : {}),
+    ...(citaId ? {citaId} : {}),
 
     pacienteId:
       normalizeText(

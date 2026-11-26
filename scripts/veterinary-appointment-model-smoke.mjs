@@ -6,6 +6,10 @@ import {
   getVeterinaryAppointmentFieldErrors,
   hasVeterinaryAppointmentSlotConflict,
 } from "../src/features/veterinary/domain/appointmentModel.mjs";
+import {
+  getVeterinaryAppointmentsForDay,
+  getVeterinaryScheduleDay,
+} from "../src/features/veterinary/agenda/veterinaryAppointmentPresentation.mjs";
 
 
 function getFutureDate(
@@ -337,10 +341,21 @@ assert.equal(
 );
 
 
-console.log(
-  "OK veterinary-appointment-model-smoke"
-);
 const localDate = {pacienteId: "p", tutorClienteId: "t", fecha: "2026-11-15", hora: "23:30", motivo: "Demo"};
 const instant = new Date("2026-11-16T01:30:00Z");
 assert.equal(getVeterinaryAppointmentFieldErrors(localDate, {now: instant, timeZone: "America/Santiago"}).fecha, undefined);
 assert.ok(getVeterinaryAppointmentFieldErrors(localDate, {now: instant, timeZone: "UTC"}).fecha);
+
+const schedule = [
+  {id: "cancelada", fecha: "2026-11-15", hora: "09:00", estado: "cancelada"},
+  {id: "tarde", fecha: "2026-11-15", hora: "16:30", estado: "confirmada", zonaHoraria: "America/Santiago"},
+  {id: "mañana", fecha: "2026-11-16", hora: "08:00", estado: "agendada"},
+  {id: "temprano", fecha: "2026-11-15", hora: "08:30", estado: "finalizada"},
+];
+const scheduleDay = getVeterinaryScheduleDay(schedule, instant);
+assert.equal(scheduleDay, "2026-11-15");
+assert.deepEqual(getVeterinaryAppointmentsForDay(schedule, scheduleDay).map(({id}) => id), ["temprano", "tarde"]);
+assert.deepEqual(getVeterinaryAppointmentsForDay(schedule, "2026-11-17"), []);
+assert.equal(getVeterinaryScheduleDay(schedule, new Date("2026-11-16T04:01:00Z")), "2026-11-16");
+
+console.log("OK veterinary-appointment-model-smoke");

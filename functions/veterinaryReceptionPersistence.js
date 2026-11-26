@@ -23,6 +23,9 @@ async function guardarRecepcionVeterinariaHandler(request, {db, HttpsError, Fiel
     if (!appointment || appointment.negocioId !== businessId) {
       throw new HttpsError("not-found", "La cita ya no está disponible.");
     }
+    if (appointment.atencionId) {
+      throw new HttpsError("failed-precondition", "Esta recepción ya tiene una orden de atención vinculada.");
+    }
     if (!canStartVeterinaryReception(appointment) && appointment.estado !== "en_espera") {
       throw new HttpsError("failed-precondition", "La cita ya no admite cambios de recepción.");
     }

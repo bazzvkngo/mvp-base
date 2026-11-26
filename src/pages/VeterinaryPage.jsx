@@ -7,12 +7,14 @@ function VeterinaryPage({
   businessId,
   countryCode,
   role,
+  professionalUid,
 }) {
   return (
     <VeterinaryRoutes
       businessId={businessId}
       countryCode={countryCode}
       role={role}
+      professionalUid={professionalUid}
     />
   );
 }

@@ -31,25 +31,29 @@ try {
   await Promise.all([
     business.set({estado: "activo", paisCodigo: "CL", verificacionEmpresa: {estado: "VERIFICADA"}, modulosHabilitados: ["veterinaria"]}),
     membership.set({uid, negocioId: businessId, estado: "activo", rol: "OWNER"}),
-    business.collection("clientes").doc("tutor-demo").set({negocioId: businessId, estado: "activo"}),
+    business.collection("clientes").doc("tutor-demo").set({
+      negocioId: businessId, estado: "activo", clienteId: "tutor-demo", nombreRazonSocial: "Tutor ficticio",
+    }),
     db.doc("negocios/otra-clinica/clientes/tutor-ajeno").set({negocioId: "otra-clinica", estado: "activo"}),
   ]);
   const citaId = "cita-demo";
   const pacienteId = "paciente-demo";
   const appointment = business.collection("citasVeterinarias").doc(citaId);
+  const originalSlot = {fecha: "2099-11-20", hora: "11:00"};
   const product = business.collection("inventario").doc("producto-demo");
   const service = business.collection("inventario").doc("servicio-demo");
   await Promise.all([
-    appointment.set({negocioId: businessId, pacienteId, estado: "agendada", motivo: "Control"}),
+    appointment.set({negocioId: businessId, pacienteId, estado: "agendada", motivo: "Control", ...originalSlot}),
     business.collection("citasVeterinarias").doc("cancelada").set({negocioId: businessId, pacienteId, estado: "cancelada"}),
     business.collection("pacientesVeterinarios").doc(pacienteId).set({negocioId: businessId, estado: "activo", tutorClienteId: "tutor-demo"}),
-    product.set({negocioId: businessId, estado: "activo", nombre: "Producto ficticio", tipoItem: "producto", unidad: "ml", stock: 10}),
-    service.set({negocioId: businessId, estado: "activo", nombre: "Servicio ficticio", tipoItem: "servicio"}),
+    product.set({negocioId: businessId, estado: "activo", nombre: "Producto ficticio", tipoItem: "producto", unidad: "ml", stock: 10, precioInterno: 750}),
+    service.set({negocioId: businessId, estado: "activo", nombre: "Servicio ficticio", tipoItem: "servicio", precioInterno: 2000}),
     db.doc("negocios/otra-clinica/inventario/ajeno").set({negocioId: "otra-clinica", estado: "activo", tipoItem: "producto", stock: 50}),
   ]);
+  const control = {fecha: "2099-11-20", hora: "12:00"};
   const clinical = {
     motivoConsulta: "Control", diagnostico: "Diagnóstico ficticio", tratamiento: "Observación",
-    indicaciones: "Seguimiento", resultadoClinico: "control",
+    indicaciones: "Seguimiento", resultadoClinico: "control", control,
     items: [{itemId: "producto-demo", cantidad: 2.5, nombre: "Nombre manipulado"}, {itemId: "servicio-demo", cantidad: 1}],
   };
   const save = (operacion, patch = {}) => guardarAtencionVeterinariaHandler({
@@ -112,6 +116,8 @@ try {
   await membership.update({rol: "TECNICO"});
   await assert.rejects(save("cerrar"), {code: "permission-denied"});
   await membership.update({rol: "ADMIN"});
+  await assert.rejects(save("cerrar", {atencion: {...clinical, control: originalSlot}}), {code: "already-exists"});
+  assert.equal((await appointment.get()).get("estado"), "en_atencion");
   assert.deepEqual(await save("cerrar"), {atencionId: citaId});
   await save("cerrar", {atencion: {...clinical, diagnostico: "Cambio posterior"}});
   const closed = (await getDoc(ref)).data();
@@ -120,10 +126,17 @@ try {
   await assert.rejects(save("borrador"), {code: "failed-precondition"});
   assert.equal(closed.pacienteId, pacienteId);
   assert.equal(closed.diagnostico, clinical.diagnostico);
+  assert.equal(closed.ventaEstado, "generada");
   assert.equal(closed.productos[0].nombre, "Producto ficticio");
   assert.equal(closed.productos[0].cantidad, 2.5);
   assert.equal(closed.servicios[0].nombre, "Servicio ficticio");
   assert.equal((await appointment.get()).get("estado"), "finalizada");
+  assert.ok(closed.control?.citaId && closed.control.citaId !== citaId);
+  assert.deepEqual(closed.control, {citaId: closed.control.citaId, ...control});
+  const followUp = await appointment.parent.doc(closed.control.citaId).get();
+  assert.equal(followUp.get("estado"), "agendada");
+  assert.equal(followUp.get("pacienteId"), pacienteId);
+  assert.equal((await appointment.parent.get()).size, 3, "reintentar el cierre legacy no crea otro control");
   assert.equal((await product.get()).get("stock"), 10);
   await assert.rejects(setDoc(ref, {estado: "en_atencion"}, {merge: true}), {code: "permission-denied"});
   console.log("VETERINARY_ATTENTION_PERSISTENCE_SMOKE_OK");

@@ -3,6 +3,11 @@
 const {createHash} = require("node:crypto");
 
 const {isVeterinaryJpeg} = require("./veterinaryJpeg");
+const {
+  assertCurrentVeterinaryGrant,
+  getVeterinaryProfessionalGrantRefs,
+  requireVeterinaryProfessionalAccess,
+} = require("./veterinaryProfessionalAccess");
 
 const MAX_RETIRED = 24;
 const MAX_BYTES = 2 * 1024 * 1024;
@@ -27,9 +32,9 @@ function normalizeMarks(marks, HttpsError) {
 }
 
 async function fotosAtencionVeterinariaHandler(request, {db, bucket, HttpsError, FieldValue, requireBusinessAccess}) {
-  const {uid, businessId, businessRef} = await requireBusinessAccess(
-      request, {db, HttpsError}, {roles: ["OWNER", "ADMIN"], requiredVerticalModule: "veterinaria"},
-  );
+  const access = await requireVeterinaryProfessionalAccess(request, {db, HttpsError, requireBusinessAccess});
+  const {uid, businessId, businessRef, assignedOnly} = access;
+  const grants = getVeterinaryProfessionalGrantRefs(access);
   const {operacion, atencionId, fotoId, vista, imagen, marcas, giro, revision} = request.data;
   if (!["subir", "leer", "mapear", "quitar"].includes(operacion) || !validId(atencionId) || !validId(fotoId)) {
     throw new HttpsError("invalid-argument", "Selecciona una atención y una foto válidas.");
@@ -43,14 +48,33 @@ async function fotosAtencionVeterinariaHandler(request, {db, bucket, HttpsError,
     if (!attention || attention.negocioId !== businessId) {
       throw new HttpsError("not-found", "La atención no está disponible.");
     }
+    if (writable && ((assignedOnly && !attention.origen) ||
+        (attention.origen && attention.profesionalUid !== uid))) {
+      throw new HttpsError("permission-denied", "Solo el profesional asignado puede modificar las fotos de esta orden.");
+    }
     if (writable && attention.estado !== "en_atencion") {
       throw new HttpsError("failed-precondition", "Solo puedes agregar fotos o marcas durante una atención abierta.");
     }
     return attention;
   };
 
+  async function readWritableAttention(tx, ...relatedRefs) {
+    const [attentionSnapshot, ...snapshots] = await tx.getAll(attentionRef, ...grants, ...relatedRefs);
+    if (assignedOnly) {
+      assertCurrentVeterinaryGrant({...access, HttpsError}, snapshots[0].data(), snapshots[1].data());
+    }
+    return [requireAttention(attentionSnapshot, true), ...snapshots.slice(grants.length)];
+  }
+
   if (operacion === "leer") {
     const attention = requireAttention(await attentionRef.get(), false);
+    if (assignedOnly && attention.profesionalUid !== uid) {
+      const {canReadVeterinaryPatient} = require("./veterinaryAssignedPatients");
+      if (attention.estado !== "finalizada" ||
+          !(await canReadVeterinaryPatient(businessRef, businessId, attention.pacienteId, uid))) {
+        throw new HttpsError("permission-denied", "Solo puedes consultar fotos de tus pacientes asignados.");
+      }
+    }
     if (!photoFrom(attention)) throw new HttpsError("not-found", "La foto no está disponible.");
     const [bytes] = await file.download();
     return {imagen: bytes.toString("base64")};
@@ -58,9 +82,8 @@ async function fotosAtencionVeterinariaHandler(request, {db, bucket, HttpsError,
 
   if (operacion === "quitar") {
     await db.runTransaction(async (tx) => {
-      const attention = requireAttention(await tx.get(attentionRef), true);
+      const [attention, tombstone] = await readWritableAttention(tx, retiredRef);
       const retired = attention.fotosRetiradas ?? [];
-      const tombstone = await tx.get(retiredRef);
       if (tombstone.exists || retired.some((photo) => photo.fotoId === fotoId)) return;
       const photo = photoFrom(attention);
       if (!photo) throw new HttpsError("not-found", "La foto no está disponible.");
@@ -83,7 +106,7 @@ async function fotosAtencionVeterinariaHandler(request, {db, bucket, HttpsError,
     if (![0, 90, 180, 270].includes(giro) || !Number.isSafeInteger(revision) || revision < 0) throw new HttpsError("invalid-argument", "El giro de la foto no es válido.");
     const normalized = normalizeMarks(marcas, HttpsError);
     const nextRevision = await db.runTransaction(async (tx) => {
-      const attention = requireAttention(await tx.get(attentionRef), true);
+      const [attention] = await readWritableAttention(tx);
       const current = photoFrom(attention);
       if (!current) throw new HttpsError("not-found", "La foto no está disponible.");
       if ((current.revision ?? 0) !== revision) {
@@ -139,9 +162,9 @@ async function fotosAtencionVeterinariaHandler(request, {db, bucket, HttpsError,
     }
   }
   await db.runTransaction(async (tx) => {
-    const attention = requireAttention(await tx.get(attentionRef), true);
+    const [attention, tombstone] = await readWritableAttention(tx, retiredRef);
     if (photoFrom(attention)) return;
-    if ((await tx.get(retiredRef)).exists || attention.fotosRetiradas?.some((photo) => photo.fotoId === fotoId)) {
+    if (tombstone.exists || attention.fotosRetiradas?.some((photo) => photo.fotoId === fotoId)) {
       throw new HttpsError("failed-precondition", "Esta foto ya fue retirada.");
     }
     const photos = attention.fotosClinicas ?? [];
@@ -152,7 +175,7 @@ async function fotosAtencionVeterinariaHandler(request, {db, bucket, HttpsError,
       actualizadoPorUid: uid,
     });
   }).catch(async (error) => {
-    if (created && ["not-found", "failed-precondition"].includes(error.code)) {
+    if (created && ["not-found", "failed-precondition", "permission-denied"].includes(error.code)) {
       const current = (await attentionRef.get()).data();
       if (!(await retiredRef.get()).exists && (!current || (!photoFrom(current) && !current.fotosRetiradas?.some((photo) => photo.fotoId === fotoId)))) {
         const [metadata] = await file.getMetadata();

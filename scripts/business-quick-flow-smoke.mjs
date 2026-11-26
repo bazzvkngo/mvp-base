@@ -336,13 +336,20 @@ const verticalModulesFor = (access, enabledModules) =>
 const bothVerticalItems = verticalModulesFor({role: "OWNER"}, ["taller", "veterinaria"]);
 assert.deepEqual(bothVerticalItems.map((item) => item.to), ["/taller", "/clinica-veterinaria"]);
 const veterinaryNavItem = bothVerticalItems[1];
+const veterinaryNavPaths = [
+  "/clinica-veterinaria",
+  "/clinica-veterinaria/pacientes",
+  "/clinica-veterinaria/ordenes",
+  "/clinica-veterinaria/agenda",
+];
+const veterinaryNavLabels = ["Resumen clínico", "Pacientes", "Órdenes de atención", "Agenda"];
 assert.deepEqual(
   veterinaryNavItem.children.map((item) => item.to),
-  ["/clinica-veterinaria", "/clinica-veterinaria/pacientes", "/clinica-veterinaria/agenda"]
+  veterinaryNavPaths
 );
 assert.deepEqual(
   veterinaryNavItem.children.map((item) => item.label),
-  ["Resumen clínico", "Pacientes", "Agenda"]
+  veterinaryNavLabels
 );
 const veterinarySummary = veterinaryNavItem.children[0];
 assert.equal(veterinarySummary.activeWhen("/clinica-veterinaria"), true);
@@ -375,6 +382,7 @@ assert.equal(verticalMenuFor({ enabledModules: [] }).includes("/modulo-prueba"),
 const probePaths = [
   "/", "/reportes", "/taller", "/taller/ordenes", "/taller/ordenes/nueva", "/taller/vehiculos/abc",
   "/taller/plazas", "/clinica-veterinaria", "/clinica-veterinaria/pacientes", "/clinica-veterinaria/agenda/x",
+  "/clinica-veterinaria/ordenes/abc/atencion",
 ];
 const describeItem = (item) => ({
   to: item.to,
@@ -419,7 +427,7 @@ assert.deepEqual(defaultModules.items.map((item) => item.to), ["/taller", "/clin
 assert.deepEqual(defaultModules.items[0].children.map((item) => item.to), ["/taller/ordenes", "/taller/vehiculos", "/taller/plazas"]);
 assert.deepEqual(
   defaultModules.items[1].children.map((item) => item.to),
-  ["/clinica-veterinaria", "/clinica-veterinaria/pacientes", "/clinica-veterinaria/agenda"]
+  veterinaryNavPaths
 );
 assert.deepEqual(toList(defaultMenu.find((section) => section.label === "Operación")), ["/trabajos", "/inventario"], "Operación de siempre");
 assert.deepEqual(describeSections(buildNavigationSections([])), describeSections(navigationSections), "registro vacío: secciones del Core");
@@ -515,13 +523,14 @@ assert.deepEqual(getPrimaryVerticalModules(vetBusiness), ["veterinaria"]);
 const vetOwner = menuFor(vetBusiness, {role: "OWNER"});
 assert.deepEqual(labelsOf(vetOwner), CORE_LABELS);
 const vetOperation = sectionNamed(vetOwner, "Operación");
-assert.deepEqual(toList(vetOperation), ["/clinica-veterinaria", "/clinica-veterinaria/pacientes", "/clinica-veterinaria/agenda", "/inventario"]);
-assert.deepEqual(vetOperation.items.map((item) => item.label), ["Resumen clínico", "Pacientes", "Agenda", "Inventario"]);
+assert.deepEqual(toList(vetOperation), [...veterinaryNavPaths, "/inventario"]);
+assert.deepEqual(vetOperation.items.map((item) => item.label), [...veterinaryNavLabels, "Inventario"]);
 assert.equal(vetOperation.items[0].activeWhen("/clinica-veterinaria"), true);
 assert.equal(vetOperation.items[0].activeWhen("/clinica-veterinaria/pacientes"), false, "el resumen no queda activo en las pantallas hijas (coincidencia exacta)");
 assert.equal(vetOperation.items[0].activeWhen("/clinica-veterinaria/"), true);
 assert.equal(vetOperation.items[1].activeWhen("/clinica-veterinaria/pacientes/abc"), true);
-assert.equal(vetOperation.items[2].activeWhen("/clinica-veterinaria/agenda/x"), true);
+assert.equal(vetOperation.items[2].activeWhen("/clinica-veterinaria/ordenes/abc/atencion"), true);
+assert.equal(vetOperation.items[3].activeWhen("/clinica-veterinaria/agenda/x"), true);
 assert.equal(vetOperation.items.some((item) => item.children), false);
 assert.equal(vetOwner.some((section) => section.label === "Clínica veterinaria"), false);
 
@@ -541,8 +550,8 @@ const expectedTaller = {
   FINANZAS: [],
 };
 const expectedVet = {
-  OWNER: ["/clinica-veterinaria", "/clinica-veterinaria/pacientes", "/clinica-veterinaria/agenda"],
-  ADMIN: ["/clinica-veterinaria", "/clinica-veterinaria/pacientes", "/clinica-veterinaria/agenda"],
+  OWNER: veterinaryNavPaths,
+  ADMIN: veterinaryNavPaths,
   TECNICO: [], MEMBER: [], VENTAS: [], COMPRAS: [], FINANZAS: [],
 };
 for (const [business, basePath, expected] of [
@@ -595,7 +604,7 @@ assert.deepEqual(labelsOf(vetPlusTallerMenu), CORE_LABELS_WITH_MODULES);
 assert.deepEqual(toList(sectionNamed(vetPlusTallerMenu, "Módulos")), ["/taller"]);
 assert.deepEqual(
   toList(sectionNamed(vetPlusTallerMenu, "Operación")),
-  ["/clinica-veterinaria", "/clinica-veterinaria/pacientes", "/clinica-veterinaria/agenda", "/inventario"]
+  [...veterinaryNavPaths, "/inventario"]
 );
 
 // 7. Un negocio sin verificar sigue viendo solo Empresa y Cuenta; los ítems del rubro no aparecen.
@@ -684,7 +693,7 @@ assert.doesNotMatch(navigation, /accent: true|moduleId:/, "navigation.js ya no d
     }
   }
   assert.deepEqual(toList(menuFor(tallerBusiness, {role: "TECNICO"}).find((section) => section.label === "Operación")), ["/taller/ordenes", "/taller/vehiculos", "/inventario"]);
-  assert.deepEqual(toList(menuFor(vetBusiness, {role: "OWNER"}).find((section) => section.label === "Operación")), ["/clinica-veterinaria", "/clinica-veterinaria/pacientes", "/clinica-veterinaria/agenda", "/inventario"]);
+  assert.deepEqual(toList(menuFor(vetBusiness, {role: "OWNER"}).find((section) => section.label === "Operación")), [...veterinaryNavPaths, "/inventario"]);
 
   // Todo lo demás queda idéntico: otros rubros, módulos activados a mano y negocios sin el módulo del rubro.
   for (const business of [

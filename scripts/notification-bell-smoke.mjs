@@ -335,6 +335,34 @@ try {
   assert.match(adminEmpty, /class="notification-empty">Sin notificaciones</, "ADMIN sin invitaciones: texto discreto, no cuerpo vacío");
   assert.equal((adminEmpty.match(/Sin notificaciones/g) || []).length, 1);
   assert.doesNotMatch(adminEmpty, /erp-empty-state|notification-section|notification-invitations-title/, "sin caja punteada ni secciones");
+
+  const firstOrder = { id: "orden-1", tipoAtencion: "Control", box: "Box 1", asignadoEn: new Date() };
+  const secondOrder = { id: "orden-2", tipoAtencion: "Urgencia", box: "Box 2" };
+  const veterinaryProps = {
+    notifications: [], showNotifications: false, subscription: ready, unreadCount: 0,
+    onVeterinaryOrderOpen: () => {},
+  };
+  const oneOrder = html({ ...veterinaryProps, pendingVeterinaryOrders: [firstOrder] });
+  assertClean(oneOrder, "profesional con una orden por iniciar");
+  assert.match(oneOrder, /aria-label="Notificaciones, 1 orden por iniciar"/);
+  assert.match(oneOrder, /class="ui-badge-count topbar-notifications-button__badge"[^>]*>1</);
+  assert.match(oneOrder, /Órdenes asignadas/);
+  assert.match(oneOrder, /Nueva atención asignada/);
+  assert.match(oneOrder, /Control · Box 1/);
+  assert.match(oneOrder, /Ver orden/);
+  assert.doesNotMatch(oneOrder, /Sin notificaciones|No leída|aria-label="Avisos"/);
+
+  const ordersAndInvitation = html({
+    ...veterinaryProps,
+    pendingVeterinaryOrders: [firstOrder, secondOrder],
+    invitations: inv({ invitations: [{ id: "i1", negocioNombre: "Bagner", rolEtiqueta: "Técnico" }] }),
+  });
+  assert.match(ordersAndInvitation, /aria-label="Notificaciones, 1 sin leer, 2 órdenes por iniciar"/);
+  assert.match(ordersAndInvitation, /class="ui-badge-count topbar-notifications-button__badge"[^>]*>3</);
+  assert.match(ordersAndInvitation, /Urgencia · Box 2/);
+  assert.match(ordersAndInvitation, /Invitaciones/);
+  console.log("OK órdenes por iniciar: sección del profesional y contador compartido con invitaciones, de alcance diferenciado");
+
   // Con algo que mostrar, el texto no aparece: cargando, error, correo sin verificar o invitaciones.
   for (const [name, extra] of [
     ["cargando", { status: "loading" }],

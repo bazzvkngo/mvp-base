@@ -38,6 +38,7 @@ const verticalNavigationItems = Object.freeze({
   veterinaria: Object.freeze([
     {path: "", label: "Resumen clínico", title: "Resumen clínico", icon: HeartPulse},
     {path: "pacientes", label: "Pacientes", title: "Pacientes", icon: PawPrint},
+    {path: "ordenes", label: "Órdenes de atención", title: "Órdenes de atención", icon: ClipboardList},
     {path: "agenda", label: "Agenda", title: "Agenda", icon: CalendarDays},
   ]),
 });

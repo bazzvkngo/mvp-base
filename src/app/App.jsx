@@ -510,6 +510,8 @@ function AppRoutes({
               businessId={businessId}
               countryCode={activeBusiness?.paisCodigo}
               role={activeBusiness?.role}
+              professionalUid={activeBusiness?.role === "MEMBER" && activeBusiness?.profileId &&
+                hasBusinessPermission(activeBusiness, BUSINESS_PERMISSIONS.VETERINARIA_READ) ? usuario.uid : undefined}
             />
           }
         />

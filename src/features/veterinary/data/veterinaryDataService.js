@@ -24,8 +24,10 @@ import {
 
 
 
-function veterinaryBusinessQuery(collectionPath, businessId) {
-  return query(collection(db, ...collectionPath), where("negocioId", "==", businessId));
+function veterinaryBusinessQuery(collectionPath, businessId, professionalUid) {
+  const constraints = [where("negocioId", "==", businessId)];
+  if (professionalUid) constraints.push(where("profesionalUid", "==", professionalUid));
+  return query(collection(db, ...collectionPath), ...constraints);
 }
 
 
@@ -85,11 +87,27 @@ export async function getVeterinaryPatient(
   };
 }
 
+export async function getVeterinaryBusinessName(businessId) {
+  const business = await getDoc(doc(db, "negocios", requireBusinessId(businessId)));
+  const {nombreComercial, razonSocial} = business.data() ?? {};
+  return nombreComercial?.trim() || razonSocial?.trim() || "";
+}
+
+export async function getVeterinaryPatientProfilePhoto(businessId, pacienteId, {assignedOnly = false} = {}) {
+  if (assignedOnly) {
+    const {fotoPerfil} = await consultarPacientesVeterinariosAsignados(businessId, pacienteId, {soloFoto: true});
+    return fotoPerfil ?? null;
+  }
+  const photo = await getDoc(doc(db, ...veterinaryPatientDocPath(businessId, pacienteId), "perfil", "foto"));
+  return photo.data() ?? null;
+}
+
 
 export function subscribeToVeterinaryAppointments(
   businessId,
   onItems,
-  onError
+  onError,
+  professionalUid
 ) {
   const normalizedBusinessId =
     requireBusinessId(businessId);
@@ -97,7 +115,8 @@ export function subscribeToVeterinaryAppointments(
   return onSnapshot(
     veterinaryBusinessQuery(
       veterinaryAppointmentsCollectionPath(normalizedBusinessId),
-      normalizedBusinessId
+      normalizedBusinessId,
+      professionalUid
     ),
     (snapshot) => {
       onItems(
@@ -138,7 +157,8 @@ export async function getVeterinaryAppointment(
 export function subscribeToVeterinaryAttentions(
   businessId,
   onItems,
-  onError
+  onError,
+  professionalUid
 ) {
   const normalizedBusinessId =
     requireBusinessId(businessId);
@@ -146,7 +166,8 @@ export function subscribeToVeterinaryAttentions(
   return onSnapshot(
     veterinaryBusinessQuery(
       veterinaryAttentionsCollectionPath(normalizedBusinessId),
-      normalizedBusinessId
+      normalizedBusinessId,
+      professionalUid
     ),
     (snapshot) => {
       onItems(
@@ -155,6 +176,26 @@ export function subscribeToVeterinaryAttentions(
     },
     onError
   );
+}
+
+
+export function subscribeToPendingVeterinaryOrders(businessId, professionalUid, onOrders, onError) {
+  const normalizedBusinessId = requireBusinessId(businessId);
+  const path = veterinaryAttentionsCollectionPath(normalizedBusinessId);
+  const assignedOrders = query(
+    veterinaryBusinessQuery(path, normalizedBusinessId),
+    where("profesionalUid", "==", professionalUid),
+    where("estado", "==", "en_espera")
+  );
+
+  return onSnapshot(assignedOrders, {includeMetadataChanges: true}, (snapshot) => {
+    // Una orden de caché puede haber sido reasignada o iniciada desde otra sesión.
+    const orders = snapshot.metadata.fromCache ? [] : mapSnapshot(snapshot)
+      .filter(({box, tipoAtencion}) => box && tipoAtencion)
+      .map(({id, box, tipoAtencion, asignadoEn}) => ({id, box, tipoAtencion, asignadoEn}))
+      .sort((left, right) => (right.asignadoEn?.toMillis?.() ?? 0) - (left.asignadoEn?.toMillis?.() ?? 0));
+    onOrders(orders);
+  }, onError);
 }
 
 
@@ -182,7 +223,30 @@ export async function getVeterinaryAttention(
     ...snapshot.data(),
   };
 }
-export async function guardarPacienteVeterinario(businessId, pacienteId, paciente, operacion, requestId, version) {
+
+export async function consultarPacientesVeterinariosAsignados(businessId, pacienteId, {soloFoto = false} = {}) {
+  const callable = httpsCallable(getFirebaseFunctions(), "consultarPacientesVeterinariosAsignados");
+  const result = await callable({
+    businessId: requireBusinessId(businessId),
+    ...(pacienteId === undefined ? {} : {pacienteId}),
+    ...(soloFoto ? {soloFoto} : {}),
+  });
+  return result.data;
+}
+
+export async function listarCatalogoVeterinarioParaAtencion(businessId, atencionId) {
+  const callable = httpsCallable(getFirebaseFunctions(), "listarCatalogoVeterinarioParaAtencion");
+  const result = await callable({businessId: requireBusinessId(businessId), atencionId});
+  return result.data.items;
+}
+
+export async function listarProfesionalesDerivacionVeterinaria(businessId, atencionId) {
+  const callable = httpsCallable(getFirebaseFunctions(), "listarProfesionalesDerivacionVeterinaria");
+  const result = await callable({businessId: requireBusinessId(businessId), atencionId});
+  return result.data.profesionales;
+}
+
+export async function guardarPacienteVeterinario(businessId, pacienteId, paciente, operacion, requestId, version, fotoPerfil) {
   assertClientWriteAllowed("guardar pacientes veterinarios");
   const callable = httpsCallable(getFirebaseFunctions(), "guardarPacienteVeterinario");
   const result = await callable({
@@ -192,6 +256,7 @@ export async function guardarPacienteVeterinario(businessId, pacienteId, pacient
     operacion,
     requestId,
     ...(version === undefined ? {} : {version}),
+    ...(fotoPerfil === undefined ? {} : {fotoPerfil}),
   });
   return result.data.pacienteId;
 }
@@ -207,6 +272,19 @@ export async function guardarAtencionVeterinaria(businessId, citaId, operacion, 
   assertClientWriteAllowed("guardar atenciones veterinarias");
   const callable = httpsCallable(getFirebaseFunctions(), "guardarAtencionVeterinaria");
   const result = await callable({businessId: requireBusinessId(businessId), citaId, operacion, atencion});
+  return result.data.atencionId;
+}
+
+export async function operarOrdenVeterinaria(businessId, atencionId, operacion, atencion = {}, citaId) {
+  assertClientWriteAllowed("guardar órdenes de atención veterinaria");
+  const callable = httpsCallable(getFirebaseFunctions(), "guardarAtencionVeterinaria");
+  const result = await callable({
+    businessId: requireBusinessId(businessId),
+    atencionId,
+    operacion,
+    atencion,
+    ...(citaId ? {citaId} : {}),
+  });
   return result.data.atencionId;
 }
 

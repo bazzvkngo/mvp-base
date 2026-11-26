@@ -19,7 +19,7 @@ const VERIFICATION_MESSAGES = {
   sendFailed: "No pudimos enviar el correo. Inténtalo nuevamente en unos minutos.",
 };
 
-function NotificationBell({ businessId, role, onInvitationAccepted }) {
+function NotificationBell({ businessId, role, onInvitationAccepted, pendingVeterinaryOrders, onVeterinaryOrderOpen }) {
   const canSeeNotifications = canViewBusinessNotifications(role);
   const [open, setOpen] = React.useState(false);
   const [resending, setResending] = React.useState(false);
@@ -86,6 +86,11 @@ function NotificationBell({ businessId, role, onInvitationAccepted }) {
     <NotificationBellView
       {...notificationsState}
       showNotifications={canSeeNotifications}
+      pendingVeterinaryOrders={pendingVeterinaryOrders}
+      onVeterinaryOrderOpen={(orderId) => {
+        setOpen(false);
+        onVeterinaryOrderOpen?.(orderId);
+      }}
       invitations={{
         busyId: invitationsState.busyId,
         feedback: invitationsState.feedback,

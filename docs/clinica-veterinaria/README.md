@@ -366,9 +366,13 @@ Por indicación del mantenedor, actualmente no se debe:
 - desplegar cambios a producción;
 - modificar secretos o configuración productiva.
 
-La activación de Veterinaria no depende del rubro del negocio. El acceso se
-controla mediante el registro de módulos verticales y los módulos habilitados
-para cada negocio.
+En `baseline-v4`, elegir el rubro **Clínica veterinaria** al crear la empresa
+habilita el módulo automáticamente. Los perfiles autorizados encuentran
+**Resumen clínico**, **Pacientes** y **Agenda** directamente en **Operación**.
+Al cambiar de rubro se oculta el módulo anterior y se conservan sus datos.
+Las empresas antiguas con módulos activados a mano pueden mostrar **Módulos**
+al final del menú. Para probar el comportamiento por rubro, usa empresas nuevas
+en el emulador. Consulta los [perfiles por pantalla](./PERFILES.md).
 
 ---
 

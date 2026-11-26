@@ -5,8 +5,15 @@ import {
   formatVeterinaryPatientAge,
   getVeterinaryPatientFieldErrors,
 } from "../src/features/veterinary/domain/patientModel.mjs";
+import {parseVeterinaryMicrochipScan} from "../src/features/veterinary/patients/microchipScan.mjs";
 
 const TODAY = new Date(2026, 8, 9);
+
+assert.equal(parseVeterinaryMicrochipScan("000123456789012"), "000123456789012");
+assert.equal(parseVeterinaryMicrochipScan(" 000-123456789012\r\n"), "000123456789012");
+for (const invalidReading of ["", "00012345678901", "0001234567890123", "FDX-B 000123456789012", "00-ab"]) {
+  assert.equal(parseVeterinaryMicrochipScan(invalidReading), "");
+}
 
 const validPatient = {
   tutorClienteId: "cliente-001",
@@ -51,6 +58,12 @@ assert.equal(
   payload.especie,
   "Canino"
 );
+
+assert.equal(payload.microchip, "CHIP001");
+assert.equal(buildVeterinaryPatientMutationPayload({
+  ...validPatient,
+  microchip: parseVeterinaryMicrochipScan("000123456789012"),
+}, {today: TODAY}).microchip, "000123456789012");
 
 assert.equal(
   payload.peso,

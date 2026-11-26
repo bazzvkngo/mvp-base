@@ -157,10 +157,10 @@ assert.ok(e3Css.length > 200, "se encontró el bloque de estilos nuevos");
 assert.doesNotMatch(e3Css, /#[0-9a-fA-F]{3,8}\b|rgb\(|hsl\(|(?<![\d.])(?!1px\b)\d+px|var\(--color-(brand|dark)-/, "los estilos nuevos usan solo tokens semánticos (solo se admite el borde de 1px)");
 console.log("OK Empleados E3: perfiles en tablas compactas, candado por fila, acciones con permiso, vacío y error sin falso vacío");
 
-// Empleados E4: diálogo de perfil con los 12 módulos agrupados como el menú, sin cambiar módulos ni guardado.
+// Empleados E4: diálogo de perfil con los módulos agrupados como el menú.
 const groupsSource = pageSource.slice(pageSource.indexOf("const MODULE_GROUPS"), pageSource.indexOf("const groupedModules"));
 const groupedIds = [...groupsSource.matchAll(/modules: \[([^\]]*)\]/g)].flatMap((match) => [...match[1].matchAll(/"([a-z_]+)"/g)].map((item) => item[1]));
-assert.deepEqual([...groupedIds].sort(), [...BUSINESS_MODULES].sort(), "los grupos cubren exactamente los 12 módulos, sin repetir ni omitir");
+assert.deepEqual([...groupedIds].sort(), [...BUSINESS_MODULES].sort(), "los grupos cubren los módulos disponibles, sin repetir ni omitir");
 for (const label of ["Inicio", "Comercial", "Operación", "Abastecimiento", "Gestión"]) {
   assert.match(groupsSource, new RegExp(`label: "${label}"`), `grupo ${label} como en el menú`);
 }
@@ -168,7 +168,7 @@ assert.match(pageSource, /rest\.length \? \[\{id: "otros"/, "un módulo nuevo si
 assert.match(pageSource, /role="group" aria-labelledby=\{`employees-modules-\$\{group\.id\}`\}/, "cada grupo es un role=group con título accesible");
 assert.match(pageSource, /className="ui-checkbox employees-module-option"><input className="ui-checkbox__input employees-module-option__input" type="checkbox"/, "casilla dentro de la etiqueta clicable, con la clase compartida ui-checkbox");
 assert.match(pageSource, /modulos: \[\.\.\.BUSINESS_MODULES\]/, "Seleccionar todos sigue incluyendo todos los módulos");
-assert.match(pageSource, /\{profileForm\.modulos\.length\}<\/strong> \/ \{BUSINESS_MODULES\.length\} seleccionados/, "contador N / 12 seleccionados");
+assert.match(pageSource, /\{profileForm\.modulos\.length\}<\/strong> \/ \{BUSINESS_MODULES\.length\} seleccionados/, "contador de módulos seleccionados y disponibles");
 assert.match(pageSource, />Limpiar<\/Button>/, "Limpiar se conserva");
 assert.match(pageSource, /description="Elige los módulos a los que tendrá acceso\."/, "descripción del diálogo más corta");
 const modulesCss = cssSource.slice(cssSource.indexOf(".employees-modules-grid {"), cssSource.indexOf(".employees-actions small"));

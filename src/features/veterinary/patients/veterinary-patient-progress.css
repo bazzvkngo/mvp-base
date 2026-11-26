@@ -1,0 +1,86 @@
+.veterinary-patient-progress {
+  display: grid;
+  gap: var(--space-2);
+  padding-block: var(--space-3);
+  padding-inline: var(--space-1);
+}
+
+.veterinary-patient-progress__steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.veterinary-patient-progress__step {
+  display: grid;
+  align-content: start;
+  justify-items: center;
+  position: relative;
+  gap: var(--space-2);
+  padding-inline: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-tight);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.veterinary-patient-progress__step:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  inset-inline-start: 50%;
+  inset-block-start: calc((var(--space-8) - var(--space-1)) / 2);
+  inline-size: 100%;
+  block-size: var(--space-1);
+  background: var(--color-border-default);
+}
+
+.veterinary-patient-progress__paw {
+  display: grid;
+  place-items: center;
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  inline-size: var(--space-8);
+  block-size: var(--space-8);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-panel);
+}
+
+.veterinary-patient-progress__step[data-status="complete"] {
+  color: var(--color-text-brand);
+}
+
+.veterinary-patient-progress__step[data-status="complete"]::after {
+  background: var(--color-text-brand);
+}
+
+.veterinary-patient-progress__step[data-status="complete"] .veterinary-patient-progress__paw {
+  background: var(--color-surface-brand);
+  border-color: var(--color-text-brand);
+}
+
+.veterinary-patient-progress__step[data-status="complete"] .app-icon {
+  fill: currentColor;
+}
+
+.veterinary-patient-progress__step[aria-current="step"] {
+  color: var(--color-text-strong);
+  font-weight: var(--font-weight-bold);
+}
+
+.veterinary-patient-progress__step[aria-current="step"] .veterinary-patient-progress__paw {
+  background: var(--color-brand-600);
+  border-color: var(--color-brand-600);
+  color: var(--color-text-inverse);
+}
+
+.veterinary-patient-progress__remaining {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  text-align: center;
+}

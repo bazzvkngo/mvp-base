@@ -2,6 +2,7 @@
 
 // Import de Firebase Functions v2 (callable)
 const {onCall: firebaseOnCall, HttpsError} = require("firebase-functions/v2/https");
+const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
 
@@ -4127,6 +4128,11 @@ exports.guardarPacienteVeterinario = onCall(
 );
 
 const {guardarCitaVeterinariaHandler} = require("./veterinaryAppointmentPersistence");
+const {extractSenderAddress} = require("./emailEnvelope");
+const {
+  processVeterinaryAppointmentNotices,
+  sendVeterinaryAppointmentWithResend,
+} = require("./veterinaryAppointmentNoticeDelivery");
 
 exports.guardarCitaVeterinaria = onCall(
   {maxInstances: 10, region: DEFAULT_FUNCTION_REGION},
@@ -4138,7 +4144,35 @@ exports.guardarCitaVeterinaria = onCall(
   })
 );
 
+exports.enviarAvisosCitasVeterinarias = onSchedule(
+  {
+    schedule: "* * * * *",
+    timeZone: "Etc/UTC",
+    region: DEFAULT_FUNCTION_REGION,
+    maxInstances: 1,
+    timeoutSeconds: 90,
+    secrets: [RESEND_API_KEY_SECRET, RESEND_FROM_EMAIL_SECRET],
+  },
+  async () => {
+    if (isEmulatorEnvironment() || process.env.VETERINARY_APPOINTMENT_EMAILS_ENABLED !== "true") return;
+    const apiKey = RESEND_API_KEY_SECRET.value().trim();
+    const sender = RESEND_FROM_EMAIL_SECRET.value().trim();
+    if (!apiKey || !extractSenderAddress(sender)) {
+      console.warn("Falta configurar el remitente o la clave de los avisos de Veterinaria.");
+      return;
+    }
+    const resend = new Resend(apiKey);
+    const result = await processVeterinaryAppointmentNotices({
+      db,
+      FieldValue,
+      sendEmail: (message, options) => sendVeterinaryAppointmentWithResend(resend, sender, message, options),
+    });
+    if (Object.values(result).some(Boolean)) console.log("Avisos de citas veterinarias procesados.", result);
+  }
+);
+
 const {guardarAtencionVeterinariaHandler} = require("./veterinaryAttentionPersistence");
+const {deliverVeterinarySale, VETERINARY_SALE_INTENTS} = require("./veterinaryAttentionSale");
 
 exports.guardarAtencionVeterinaria = onCall(
   {maxInstances: 10, region: DEFAULT_FUNCTION_REGION},
@@ -4149,6 +4183,13 @@ exports.guardarAtencionVeterinaria = onCall(
     requireBusinessAccess: requireOperationalBusinessAccess,
   })
 );
+
+exports.generarVentaAtencionVeterinaria = onDocumentCreated({
+  document: "negocios/{businessId}/" + VETERINARY_SALE_INTENTS + "/{atencionId}",
+  region: DEFAULT_FUNCTION_REGION,
+  maxInstances: 10,
+  retry: true,
+}, (event) => deliverVeterinarySale({db, FieldValue, HttpsError, ...event.params}));
 
 const {guardarRecepcionVeterinariaHandler} = require("./veterinaryReceptionPersistence");
 
@@ -4171,6 +4212,37 @@ exports.fotosAtencionVeterinaria = onCall(
     bucket: adminStorageBucket,
     HttpsError,
     FieldValue,
+    requireBusinessAccess: requireOperationalBusinessAccess,
+  })
+);
+
+const {consultarPacientesVeterinariosAsignadosHandler} = require("./veterinaryAssignedPatients");
+const {listarCatalogoVeterinarioParaAtencionHandler} = require("./veterinaryAssignedCatalog");
+const {listarProfesionalesDerivacionVeterinariaHandler} = require("./veterinaryReferralDirectory");
+
+exports.consultarPacientesVeterinariosAsignados = onCall(
+  {maxInstances: 10, region: DEFAULT_FUNCTION_REGION},
+  (request) => consultarPacientesVeterinariosAsignadosHandler(request, {
+    db,
+    HttpsError,
+    requireBusinessAccess: requireOperationalBusinessAccess,
+  })
+);
+
+exports.listarCatalogoVeterinarioParaAtencion = onCall(
+  {maxInstances: 10, region: DEFAULT_FUNCTION_REGION},
+  (request) => listarCatalogoVeterinarioParaAtencionHandler(request, {
+    db,
+    HttpsError,
+    requireBusinessAccess: requireOperationalBusinessAccess,
+  })
+);
+
+exports.listarProfesionalesDerivacionVeterinaria = onCall(
+  {maxInstances: 10, region: DEFAULT_FUNCTION_REGION},
+  (request) => listarProfesionalesDerivacionVeterinariaHandler(request, {
+    db,
+    HttpsError,
     requireBusinessAccess: requireOperationalBusinessAccess,
   })
 );

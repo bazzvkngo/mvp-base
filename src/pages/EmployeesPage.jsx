@@ -53,12 +53,12 @@ const PREDEFINED_PROFILE_DESCRIPTIONS = Object.freeze({
   FINANZAS: "Ventas, compras, inventario, reportes, rentabilidad y finanzas.",
   MEMBER: "Consulta transversal del negocio y operación técnica de proyectos y trabajos.",
 });
-// Los 12 módulos agrupados como el menú lateral. Solo cambia la presentación: los valores y
+// Los módulos agrupados como el menú lateral. Los valores y
 // BUSINESS_MODULES siguen siendo la única lista de módulos; uno que no figure aquí cae en "Otros".
 const MODULE_GROUPS = Object.freeze([
   {id: "inicio", label: "Inicio", modules: ["reportes"]},
   {id: "comercial", label: "Comercial", modules: ["clientes", "cotizaciones", "ventas"]},
-  {id: "operacion", label: "Operación", modules: ["trabajos", "inventario"]},
+  {id: "operacion", label: "Operación", modules: ["trabajos", "inventario", "veterinaria_asignada"]},
   {id: "abastecimiento", label: "Abastecimiento", modules: ["proveedores", "ordenes_compra", "recepciones", "compras"]},
   {id: "gestion", label: "Gestión", modules: ["empresa", "empleados"]},
 ]);

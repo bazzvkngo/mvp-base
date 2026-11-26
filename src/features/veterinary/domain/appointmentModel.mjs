@@ -73,7 +73,7 @@ function isValidTime(value) {
 }
 
 
-function getTodayIsoDate({now = new Date(), timeZone} = {}) {
+export function getTodayIsoDate({now = new Date(), timeZone} = {}) {
   if (timeZone) {
     const parts = Object.fromEntries(new Intl.DateTimeFormat("en", {
       timeZone, year: "numeric", month: "2-digit", day: "2-digit",

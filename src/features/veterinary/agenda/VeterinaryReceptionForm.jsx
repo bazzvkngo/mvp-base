@@ -78,10 +78,14 @@ export default function VeterinaryReceptionForm({appointment, businessId}) {
             </VeterinaryField>
           ))}
           <VeterinaryField label="Observaciones de recepción" error={fieldErrors.observacionesRecepcion}>
-            <textarea className="erp-control" name="observacionesRecepcion" maxLength={1000} value={form.observacionesRecepcion ?? ""} onChange={change} />
+            <textarea className="erp-control" name="observacionesRecepcion" maxLength={1000}
+              placeholder="Anota lo que informa el tutor al llegar"
+              value={form.observacionesRecepcion ?? ""} onChange={change} />
           </VeterinaryField>
           <VeterinaryField label="Observaciones de triage" error={fieldErrors.observacionesTriage}>
-            <textarea className="erp-control" name="observacionesTriage" maxLength={2000} value={form.observacionesTriage ?? ""} onChange={change} />
+            <textarea className="erp-control" name="observacionesTriage" maxLength={2000}
+              placeholder="Describe los signos observados en la evaluación inicial"
+              value={form.observacionesTriage ?? ""} onChange={change} />
           </VeterinaryField>
         </div>
         {error && <p role="alert">{error}</p>}

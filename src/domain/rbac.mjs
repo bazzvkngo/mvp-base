@@ -43,6 +43,7 @@ export const BUSINESS_MODULES = Object.freeze([
   "compras",
   "empresa",
   "empleados",
+  "veterinaria_asignada",
 ]);
 
 export const BUSINESS_MODULE_LABELS = Object.freeze({
@@ -58,6 +59,7 @@ export const BUSINESS_MODULE_LABELS = Object.freeze({
   compras: "Compras",
   empresa: "Empresa",
   empleados: "Empleados",
+  veterinaria_asignada: "Veterinaria · atenciones asignadas",
 });
 
 export const BUSINESS_PERMISSIONS = Object.freeze({
@@ -140,6 +142,7 @@ const permissionsByModule = Object.freeze({
   compras: [P.DASHBOARD_READ, P.PURCHASES_READ, P.INVENTORY_READ],
   empresa: [P.DASHBOARD_READ, P.COMPANY_READ],
   empleados: [P.DASHBOARD_READ, P.MEMBERS_READ],
+  veterinaria_asignada: [P.VETERINARIA_READ],
 });
 
 const modulePaths = Object.freeze({
@@ -155,6 +158,7 @@ const modulePaths = Object.freeze({
   compras: "/compras",
   empresa: "/empresa",
   empleados: "/empleados",
+  veterinaria_asignada: "/clinica-veterinaria",
 });
 
 const routePermissions = Object.freeze([
@@ -190,6 +194,7 @@ const routeModules = Object.freeze([
   [/^\/(reportes|estadisticas)(?:\/|$)/, "reportes"],
   [/^\/empresa(?:\/|$)/, "empresa"],
   [/^\/empleados(?:\/|$)/, "empleados"],
+  [/^\/clinica-veterinaria(?:\/|$)/, "veterinaria_asignada"],
 ]);
 
 export function normalizeBusinessRole(role) {
@@ -202,13 +207,14 @@ export function isBusinessRole(role) {
 
 function normalizeBusinessAccess(access) {
   if (typeof access === "string") return {role: normalizeBusinessRole(access), modules: null};
+  const role = normalizeBusinessRole(access?.role || access?.rol);
   const profileId = String(access?.profileId || access?.perfilId || "").trim();
   const modules = profileId
     ? [...new Set((access?.modules || access?.modulos || [])
       .map((moduleId) => String(moduleId || "").trim())
-      .filter((moduleId) => BUSINESS_MODULES.includes(moduleId)))]
+      .filter((moduleId) => BUSINESS_MODULES.includes(moduleId) && (moduleId !== "veterinaria_asignada" || role === "MEMBER")))]
     : null;
-  return {role: normalizeBusinessRole(access?.role || access?.rol), modules};
+  return {role, modules};
 }
 
 export function hasBusinessPermission(access, permission) {

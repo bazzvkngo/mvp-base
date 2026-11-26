@@ -42,8 +42,8 @@ try {
   const bucket = admin.storage().bucket();
   const imagen = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAAMABADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD3+iiigD//2Q==";
   const photoId = "foto-demo";
-  const run = (operacion, patch = {}) => fotosAtencionVeterinariaHandler({
-    auth: {uid}, data: {businessId, atencionId: "atencion-demo", fotoId: photoId, operacion, ...patch},
+  const run = (operacion, patch = {}, actorUid = uid) => fotosAtencionVeterinariaHandler({
+    auth: {uid: actorUid}, data: {businessId, atencionId: "atencion-demo", fotoId: photoId, operacion, ...patch},
   }, {db, bucket, HttpsError, FieldValue: admin.firestore.FieldValue, requireBusinessAccess: requireOperationalBusinessAccess});
 
   const upload = {vista: "trasera", imagen};
@@ -89,6 +89,42 @@ try {
   await assert.rejects(run("mapear", {giro: 180, revision: 1, marcas: []}), {code: "failed-precondition"});
   await assert.rejects(run("subir", {...upload, fotoId: "otra-foto"}), {code: "failed-precondition"});
   await assert.rejects(run("quitar"), {code: "failed-precondition"});
+
+  // Dos profesionales con el mismo perfil mantienen separadas las fotos de sus atenciones.
+  const [veterinarian, colleague] = await Promise.all([
+    admin.auth().createUser({displayName: "Veterinaria de prueba"}),
+    admin.auth().createUser({displayName: "Veterinario de prueba"}),
+  ]);
+  const veterinarianProfile = business.collection("perfilesEmpleados").doc("veterinario-asignado");
+  const assignedMembership = (member) => db.doc("membresias/" + businessId + "__" + member.uid).set({
+    uid: member.uid, negocioId: businessId, estado: "activo", rol: "MEMBER", profileId: veterinarianProfile.id,
+  });
+  const managedOrder = (profesionalUid, pacienteId) => ({
+    negocioId: businessId, origen: "directa", estado: "en_atencion", profesionalUid, pacienteId,
+  });
+  await Promise.all([
+    veterinarianProfile.set({negocioId: businessId, estado: "activo", nombre: "Veterinario", modulos: ["veterinaria_asignada"]}),
+    assignedMembership(veterinarian),
+    assignedMembership(colleague),
+    business.collection("pacientesVeterinarios").doc("paciente-demo").set({negocioId: businessId, nombre: "Paciente de prueba"}),
+    business.collection("pacientesVeterinarios").doc("otro-paciente").set({negocioId: businessId, nombre: "Otro paciente de prueba"}),
+    business.collection("atencionesVeterinarias").doc("orden-asignada").set(managedOrder(veterinarian.uid, "paciente-demo")),
+    business.collection("atencionesVeterinarias").doc("orden-de-colega").set(managedOrder(colleague.uid, "otro-paciente")),
+  ]);
+  const ownPhoto = {atencionId: "orden-asignada", fotoId: "foto-asignada"};
+  await run("subir", {...ownPhoto, ...upload}, veterinarian.uid);
+  assert.equal((await run("leer", ownPhoto, veterinarian.uid)).imagen, imagen);
+  assert.equal((await run("mapear", {...ownPhoto, giro: 90, revision: 0, marcas: [mark]}, veterinarian.uid)).revision, 1);
+  await assert.rejects(run("leer", ownPhoto, colleague.uid), {code: "permission-denied"});
+  await assert.rejects(run("subir", {...ownPhoto, ...upload}, colleague.uid), {code: "permission-denied"});
+  await assert.rejects(run("mapear", {...ownPhoto, giro: 90, revision: 1, marcas: []}, colleague.uid), {code: "permission-denied"});
+  await assert.rejects(run("quitar", ownPhoto, colleague.uid), {code: "permission-denied"});
+  // La ficha asignada incluye fotos de atenciones finalizadas del mismo paciente, solo para consulta.
+  assert.equal((await run("leer", {}, veterinarian.uid)).imagen, imagen);
+  await assert.rejects(run("leer", {}, colleague.uid), {code: "permission-denied"});
+  await assert.rejects(run("quitar", {}, veterinarian.uid), {code: "permission-denied"});
+  await veterinarianProfile.update({modulos: []});
+  await assert.rejects(run("leer", ownPhoto, veterinarian.uid), {code: "permission-denied"});
   console.log("VETERINARY_PHOTOS_SMOKE_OK");
 } finally {
   await deleteApp(app);

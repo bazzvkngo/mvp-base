@@ -1,5 +1,5 @@
 import React from "react";
-import { LogOut, Menu, ShieldCheck, UserRound, X } from "lucide-react";
+import { CircleAlert, LogOut, Menu, ShieldCheck, UserRound, X } from "lucide-react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { sileo } from "sileo";
 import AdditionalBusinessDrawer from "../components/AdditionalBusinessDrawer";
@@ -15,9 +15,11 @@ import LoadingState from "../components/ui/LoadingState";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import SkipLink from "../components/ui/SkipLink";
 import { buildNavigationSections } from "../app/navigation";
+import usePendingVeterinaryOrders from "../features/veterinary/orders/usePendingVeterinaryOrders";
 import TopbarHeading from "./TopbarHeading";
 import { getHiddenCorePaths, getPrimaryVerticalModules } from "../domain/categoryModules.mjs";
 import {
+  canAccessBusinessPath,
   filterNavigationSections,
   getBusinessPathOptions,
   getDefaultBusinessPath,
@@ -32,9 +34,12 @@ import {
 import { logout } from "../services/authService";
 import useBusinessCompletionStatus from "../hooks/useBusinessCompletionStatus";
 
+const VETERINARY_ORDERS_PATH = "/clinica-veterinaria/ordenes";
+
 function PrimaryNavigation({
   ariaLabel = "Navegación principal",
   businessCompletionStatus,
+  hasPendingVeterinaryOrders,
   idPrefix,
   onNavigate,
   pathname,
@@ -57,6 +62,12 @@ function PrimaryNavigation({
     >
       <AppIcon icon={item.icon} size={18} />
       <span className="nav-link__label">{item.label}</span>
+      {item.to === VETERINARY_ORDERS_PATH && hasPendingVeterinaryOrders && (
+        <span className="nav-link__order-alert">
+          <AppIcon icon={CircleAlert} size={16} />
+          <span className="sr-only">Hay órdenes asignadas por iniciar</span>
+        </span>
+      )}
       {item.to === "/empresa" && businessCompletionStatus && (
         <span
           className="nav-link__completion"
@@ -125,6 +136,13 @@ function AppLayout({
   const layoutMountedRef = React.useRef(true);
   const canManageBusiness = ["OWNER", "ADMIN"].includes(negocioActivo?.role);
   const businessVerified = canBusinessOperate(negocioActivo);
+  const canViewVeterinaryOrders = businessVerified && canAccessBusinessPath(
+    negocioActivo, VETERINARY_ORDERS_PATH, getBusinessPathOptions(negocioActivo),
+  );
+  const pendingVeterinaryOrders = usePendingVeterinaryOrders(
+    canViewVeterinaryOrders ? negocioActivo.id : "", usuario?.uid,
+  );
+  const hasPendingVeterinaryOrders = pendingVeterinaryOrders.length > 0;
   const ownerEmailVerified = negocioActivo?.ownerEmailVerified === true;
   const {
     error: businessCompletionError,
@@ -374,6 +392,7 @@ function AppLayout({
         <div className="sidebar__navigation">
           <PrimaryNavigation
             businessCompletionStatus={canManageBusiness ? businessCompletionStatus : null}
+            hasPendingVeterinaryOrders={hasPendingVeterinaryOrders}
             idPrefix="desktop"
             pathname={location.pathname}
             sections={mainNavigationSections}
@@ -416,6 +435,8 @@ function AppLayout({
               businessId={negocioActivo?.id}
               role={negocioActivo?.role}
               onInvitationAccepted={handleInvitationAccepted}
+              pendingVeterinaryOrders={pendingVeterinaryOrders}
+              onVeterinaryOrderOpen={(id) => navigate(`${VETERINARY_ORDERS_PATH}/${encodeURIComponent(id)}`)}
             />
             <ThemeToggleButton />
 
@@ -548,6 +569,7 @@ function AppLayout({
             <div className="sidebar__navigation">
               <PrimaryNavigation
                 businessCompletionStatus={canManageBusiness ? businessCompletionStatus : null}
+                hasPendingVeterinaryOrders={hasPendingVeterinaryOrders}
                 idPrefix="mobile"
                 pathname={location.pathname}
                 sections={mainNavigationSections}
