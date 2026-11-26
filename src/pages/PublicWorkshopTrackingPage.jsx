@@ -12,7 +12,9 @@ import {
   trackingLookupError,
   trackingProgressLabel,
 } from "../domain/workOrderTrackingModel.mjs";
-import {buscarSeguimientoTaller, consultarSeguimientoTaller} from "../services/workshopTrackingService";
+import {
+  buscarSeguimientoTaller, consultarSeguimientoTaller, isPublicLookupEnabled, LOOKUP_UNAVAILABLE,
+} from "../services/workshopTrackingService";
 import "../features/taller/workshop-tracking.css";
 
 // Seguimiento público del vehículo (prototipo «Panel del Taller»): por enlace único o con patente + RUT en
@@ -138,7 +140,7 @@ function ManualTracking() {
       <p>Ingresa la patente y el RUT del titular o de quien dejó el vehículo.</p>
     </header>
     <label className="erp-field"><span className="erp-field__label">Patente</span>
-      <input className="erp-control" value={form.patente} placeholder="PRGZ63" autoComplete="off" disabled={busy || blocked}
+      <input className="erp-control" value={form.patente} placeholder="Escribe la patente" autoComplete="off" disabled={busy || blocked}
         onChange={(event) => { setForm((current) => ({...current, patente: normalizeTrackingPlate(event.target.value)})); setError(""); }} /></label>
     <label className="erp-field"><span className="erp-field__label">RUT</span>
       <input className="erp-control" value={form.rut} placeholder="12.345.678-5" autoComplete="off" inputMode="text" disabled={busy || blocked}
@@ -155,7 +157,7 @@ export default function PublicWorkshopTrackingPage() {
   return <main className="workshop-tracking">
     <div className="workshop-tracking__card">
       {route?.mode === "link" && route.token && <LinkTracking token={route.token} />}
-      {route?.mode === "manual" && <ManualTracking />}
+      {route?.mode === "manual" && (isPublicLookupEnabled() ? <ManualTracking /> : <InactiveLink message={LOOKUP_UNAVAILABLE} />)}
       {(!route || (route.mode === "link" && !route.token)) && <InactiveLink message="Este enlace ya no está activo." />}
     </div>
     <p className="workshop-tracking__powered">Seguimiento ofrecido por ValoraCloud</p>

@@ -8,11 +8,22 @@ const FUNCTIONS_REGION = "us-central1";
 const INACTIVE_LINK = "Este enlace ya no está activo.";
 const NOT_FOUND = "No encontramos un vehículo en el taller con esos datos.";
 
+// La consulta con patente + RUT está apagada hasta contar con App Check o captcha. Se enciende con
+// VITE_SEGUIMIENTO_CONSULTA_PUBLICA=true (pantalla) y SEGUIMIENTO_CONSULTA_PUBLICA=true (Functions).
+export const LOOKUP_UNAVAILABLE = "La consulta con patente y RUT no está disponible por ahora. Usa el enlace que te envió el taller.";
+
+export function isPublicLookupEnabled() {
+  return import.meta.env?.VITE_SEGUIMIENTO_CONSULTA_PUBLICA === "true";
+}
+
 function trackingError(error, fallback) {
   const code = String(error?.code || "");
   const failure = new Error(fallback);
   if (code.includes("resource-exhausted")) {
     failure.message = "Demasiados intentos. Intenta nuevamente en unos minutos.";
+    failure.blocked = true;
+  } else if (code.includes("failed-precondition")) {
+    failure.message = LOOKUP_UNAVAILABLE;
     failure.blocked = true;
   } else if (code.includes("invalid-argument") && error?.message) {
     failure.message = error.message;

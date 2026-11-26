@@ -16,7 +16,7 @@ const require = createRequire(new URL("../functions/package.json", import.meta.u
 const admin = require("firebase-admin");
 const {HttpsError} = require("firebase-functions/v2/https");
 const {requireOperationalBusinessAccess} = require("../functions/businessOnboarding");
-const {hashToken, plateIndexId} = require("../functions/workOrderTrackingRules");
+const {MAX_FAILED_ATTEMPTS_PER_IP, attemptKey, hashToken, plateIndexId} = require("../functions/workOrderTrackingRules");
 const {
   buscarSeguimientoTallerHandler, consultarSeguimientoTallerHandler, seguimientoOTHandler,
 } = require("../functions/workOrderTracking");
@@ -71,6 +71,12 @@ try {
   const lookup = (rut, ip = "10.0.0.1", patente = plate) =>
     buscarSeguimientoTallerHandler({rawRequest: {ip}, data: {patente, rut}}, publicDeps);
 
+  // La consulta pública viene apagada: sin la variable de entorno no consulta nada ni toca contadores.
+  delete process.env.SEGUIMIENTO_CONSULTA_PUBLICA;
+  await assert.rejects(lookup("12.345.678-5", "10.0.0.1", plate), {code: "failed-precondition"}, "consulta apagada por defecto");
+  assert.equal((await db.collection("tallerSeguimientoIntentos").get()).size, 0, "apagada no registra intentos");
+  process.env.SEGUIMIENTO_CONSULTA_PUBLICA = "true";
+
   // El enlace solo existe con el ingreso aprobado; ajenos no lo obtienen.
   await assert.rejects(staff(ownerUid), {code: "failed-precondition"}, "sin aprobar no hay enlace");
   await assert.rejects(staff(users.outsider), (error) => ["permission-denied", "not-found"].includes(error.code));
@@ -122,17 +128,37 @@ try {
   // Otro negocio con la misma patente en el índice pero sin OT abierta no estorba: se revisa cada taller.
   await db.doc(`tallerSeguimientoPatentes/${plateIndexId(plate)}`).set({negocios: [otherBusinessId, businessId]}, {merge: true});
   assert.equal((await lookup("12.345.678-5", "10.0.0.6", plate)).seguimiento.taller.nombre, "Taller Bagner");
-  // Tres fallos desde una IP la bloquean, incluso con datos correctos después.
+  // Tres fallos de una IP con la misma patente bloquean esa IP con esa patente, incluso con datos correctos después.
   await assert.rejects(lookup("9.999.999-3", "10.0.0.4", plate), {code: "not-found"});
   await assert.rejects(lookup("9.999.999-3", "10.0.0.4", plate), {code: "not-found"});
   await assert.rejects(lookup("9.999.999-3", "10.0.0.4", plate), {code: "resource-exhausted"});
-  await assert.rejects(lookup("12.345.678-5", "10.0.0.4", plate), {code: "resource-exhausted"}, "IP bloqueada");
-  // La patente también queda bloqueada aunque los intentos vengan de otras IP.
-  await assert.rejects(lookup("12.345.678-5", "10.0.0.5", plate), {code: "resource-exhausted"}, "patente bloqueada");
+  await assert.rejects(lookup("12.345.678-5", "10.0.0.4", plate), {code: "resource-exhausted"}, "IP + patente bloqueada");
+  // La patente NO queda bloqueada para los demás: quien intenta con la patente ajena solo se bloquea a sí mismo.
+  assert.equal((await lookup("12.345.678-5", "10.0.0.5", plate)).seguimiento.vehiculo.patente, plate, "otra IP sigue consultando");
+  // La misma IP bloqueada con esa patente puede consultar otra patente (el bloqueo es de la combinación).
+  await assert.rejects(lookup("12.345.678-5", "10.0.0.4", "ZZZZ99"), {code: "not-found"}, "otra patente desde la misma IP no está bloqueada");
+  // Una consulta exitosa limpia solo el contador de IP + patente, no el de la IP.
+  await assert.rejects(lookup("9.999.999-3", "10.0.0.8", plate), {code: "not-found"});
+  await assert.rejects(lookup("9.999.999-3", "10.0.0.8", plate), {code: "not-found"});
+  assert.equal((await db.collection("tallerSeguimientoIntentos").doc(attemptKey("ip-patente", "10.0.0.8", plate)).get()).data().fallos, 2);
+  await lookup("12.345.678-5", "10.0.0.8", plate);
+  assert.equal((await db.collection("tallerSeguimientoIntentos").doc(attemptKey("ip-patente", "10.0.0.8", plate)).get()).exists, false,
+    "el acierto limpia el contador de IP + patente");
+  assert.equal((await db.collection("tallerSeguimientoIntentos").doc(attemptKey("ip", "10.0.0.8")).get()).data().fallos, 2,
+    "el acierto no limpia el contador de la IP");
+  // Diez fallos de una IP con distintas patentes la bloquean entera.
+  for (let index = 1; index < MAX_FAILED_ATTEMPTS_PER_IP; index += 1) {
+    await assert.rejects(lookup("9.999.999-3", "10.0.0.7", `ZZ${String(index).padStart(4, "0")}`), {code: "not-found"});
+  }
+  await assert.rejects(lookup("9.999.999-3", "10.0.0.7", "ZZ9999"), {code: "resource-exhausted"}, "décimo fallo de la IP");
+  await assert.rejects(lookup("12.345.678-5", "10.0.0.7", plate), {code: "resource-exhausted"}, "IP bloqueada con cualquier patente");
   const attempts = await db.collection("tallerSeguimientoIntentos").get();
-  assert.ok(attempts.docs.every((entry) => !JSON.stringify(entry.data()).includes(plate) && !entry.id.includes(plate)),
-    "los contadores no guardan la patente ni la IP en claro");
-  console.log("OK seguimiento: patente + RUT en toda la plataforma (titular o quien entregó) con límite por IP y por patente");
+  assert.ok(attempts.docs.every((entry) => !JSON.stringify(entry.data()).includes(plate) && !entry.id.includes(plate) &&
+    !entry.id.includes("10.0.0.")), "los contadores no guardan la patente ni la IP en claro");
+  // Todo contador trae su fecha de expiración (campo `expiraEn`, política TTL de Firestore) en el futuro.
+  assert.ok(attempts.docs.length > 0 && attempts.docs.every((entry) => typeof entry.data().expiraEn?.toMillis === "function" &&
+    entry.data().expiraEn.toMillis() > Date.now()), "los contadores expiran");
+  console.log("OK seguimiento: patente + RUT en toda la plataforma (titular o quien entregó) con límite por IP e IP + patente, expiración y apagada por defecto");
 
   // Las colecciones del seguimiento no se leen desde el SDK cliente.
   for (const path of [`tallerSeguimientoTokens/${hashToken(token)}`, `tallerSeguimientoIntentos/${attempts.docs[0]?.id || "x"}`,

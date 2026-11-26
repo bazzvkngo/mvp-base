@@ -5,7 +5,9 @@ import {useLocation, useNavigate} from "react-router-dom";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import LoadingState from "../components/ui/LoadingState";
+import {getCountryFormCopy} from "../domain/countryFormCopy.mjs";
 import {normalizeVehiclePlate} from "../domain/vehicleModel.mjs";
+import useBusinessFormat from "../hooks/useBusinessFormat";
 import {getVehicleErrorMessage, listarClientesSeleccionablesTaller, listarVehiculos} from "../services/vehicleService";
 import {
   crearOrdenTrabajo,
@@ -19,6 +21,8 @@ export default function NewWorkOrderPage({businessId, role}) {
   const location = useLocation();
   const navigate = useNavigate();
   const requestIdRef = useRef("");
+  const {countryCode} = useBusinessFormat();
+  const plateExample = getCountryFormCopy(countryCode).vehiclePlateExample;
   const [vehicles, setVehicles] = useState([]);
   const [clientsById, setClientsById] = useState(new Map());
   const [search, setSearch] = useState("");
@@ -103,7 +107,7 @@ export default function NewWorkOrderPage({businessId, role}) {
     {error && <div className="vehicle-message vehicle-message--error" role="alert"><span>{error}</span>{!saving && <Button type="button" variant="secondary" icon={RefreshCw} onClick={load}>Recargar vehículos</Button>}</div>}
     <section className="erp-panel" aria-labelledby="vehicle-search-title">
       <div className="erp-panel-header"><div><h2 id="vehicle-search-title" className="erp-panel-title">Buscar vehículo</h2><p className="erp-secondary-text">Filtra por patente o selecciona un vehículo desde el listado.</p></div></div>
-      <label className="erp-field vehicle-search-field"><span className="erp-field__label">Patente</span><span className="vehicle-search-control"><AppIcon icon={Search} size={18} /><input className="erp-control" autoFocus type="search" maxLength={20} value={search} onChange={(event) => {setSearch(event.target.value.toUpperCase()); setSelectedId(""); requestIdRef.current = "";}} placeholder="Ej.: ABCD12" /></span></label>
+      <label className="erp-field vehicle-search-field"><span className="erp-field__label">Patente</span><span className="vehicle-search-control"><AppIcon icon={Search} size={18} /><input className="erp-control" autoFocus type="search" maxLength={20} value={search} onChange={(event) => {setSearch(event.target.value.toUpperCase()); setSelectedId(""); requestIdRef.current = "";}} placeholder={plateExample} /></span></label>
     </section>
     <section className="erp-panel erp-history-panel" aria-labelledby="available-vehicles-title">
       <div className="erp-panel-header"><div><h2 id="available-vehicles-title" className="erp-panel-title">Vehículos disponibles</h2><p className="erp-secondary-text">{normalizedSearch ? `${matches.length} coincidencia${matches.length === 1 ? "" : "s"} para la patente buscada.` : `${vehicles.length} vehículo${vehicles.length === 1 ? "" : "s"} registrado${vehicles.length === 1 ? "" : "s"}.`}</p></div></div>

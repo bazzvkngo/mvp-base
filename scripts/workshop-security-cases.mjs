@@ -39,7 +39,7 @@ export async function testWorkshopSecurity({adminDb, businessId, otId, owner, me
   // El seguimiento público responde sin sesión, pero con un mensaje genérico ante datos inválidos.
   await expectCallableError("público: enlace inválido", () => callable(anonymous, "consultarSeguimientoTaller")({token: "x"}), ["not-found"]);
   await expectCallableError("público: patente sin vehículo en el taller", () => callable(anonymous, "buscarSeguimientoTaller")({
-    patente: "ZZZZ99", rut: "12.345.678-5"}), ["not-found"]);
+    patente: "ZZZZ99", rut: "12.345.678-5"}), ["not-found", "failed-precondition"]); // apagada por defecto o sin coincidencia
   // Revoke after the Core guard succeeds, before the vehicle transaction starts.
   const technicianRef = adminDb.doc(`membresias/${businessId}__${technician.uid}`);
   const originalTechnician = (await technicianRef.get()).data();

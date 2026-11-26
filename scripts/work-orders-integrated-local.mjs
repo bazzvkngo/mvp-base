@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {createHash} from "node:crypto";
 import {MAX_RECEPTION_MILEAGE_KM} from "../src/domain/workOrderReceptionModel.mjs";
-import {testWorkOrderApproval} from "./work-order-approval-cases.mjs";
+import {testWorkOrderApproval, testWorkOrderApprovalRace} from "./work-order-approval-cases.mjs";
 import {testServiceExecution} from "./work-order-service-execution-cases.mjs";
 import {testWorkOrderClosure} from "./work-order-closure-cases.mjs";
 import {testWorkOrderCancellation} from "./work-order-cancellation-cases.mjs";
@@ -951,6 +951,9 @@ try {
     expectCallableError, reception: workOrderReception(), runId: RUN_ID});
   await testWorkshopSecurity({adminDb, businessId, otId, owner, member, technician, outsider,
     anonymous, callable, expectCallableError, expectFirestoreDenied, runId: RUN_ID});
+  // Al final: crea su propia OT y puede ocupar una plaza.
+  await testWorkOrderApprovalRace({adminDb, businessId, owner, admin, technician, callable,
+    reception: workOrderReception(), runId: RUN_ID});
 } finally {
   await Promise.all(clients.map((client) => terminate(client.db)));
   await Promise.all(clients.map((client) => deleteApp(client.app)));

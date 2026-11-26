@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import {doc, setDoc} from "firebase/firestore";
+import {completeReceptionPhotos} from "./work-order-photo-fixtures.mjs";
 
 // La aprobación es una compuerta de ingreso: el Owner o el Administrador dicen sí o no,
 // sin servicios ni alcance. Los trabajos se registran después, en la ejecución, y los
 // precios se congelan al finalizar (envío a Ventas), no al aprobar.
 export async function testWorkOrderApproval({adminDb, businessId, otId, serviceId,
-  owner, admin, technician, member, outsider, callable, expectCallableError, runId}) {
+  owner, admin, technician, member, outsider, callable, expectCallableError, expectFirestoreDenied, runId}) {
   const base = `negocios/${businessId}`;
   const orderRef = adminDb.doc(`${base}/ordenesTrabajo/${otId}`);
   const serviceRef = orderRef.collection("servicios").doc(serviceId);
@@ -53,10 +55,12 @@ export async function testWorkOrderApproval({adminDb, businessId, otId, serviceI
   assert.ok(["en_cola", "en_diagnostico"].includes(rejection.estado), "rechazar no inicia la ejecución");
   assert.equal((await order()).estadoAprobacion, "rechazada");
   assert.equal((await order()).motivoRechazo, "Falta autorización del cliente", "la OT guarda el motivo de la espera");
+  assert.equal((await order()).estado, rejection.estado, "el estado guardado es el que devuelve el rechazo");
   // La OT puede traer rechazos anteriores de la suite: se busca el de esta decisión.
   const rejectedEvent = (await events()).find((event) =>
     event.tipo === "ot_rechazada" && event.detalle.motivo === "Falta autorización del cliente");
   assert.ok(rejectedEvent, "el rechazo registra su motivo en el historial");
+  assert.equal(rejectedEvent.detalle.estado, rejection.estado, "el historial registra en qué estado quedó la OT");
   await reject("trabajos tras rechazar", "crearServicioOT", planning(), technician);
 
   // Aprobar es idempotente, no exige servicios ni congela precios.
@@ -97,5 +101,41 @@ export async function testWorkOrderApproval({adminDb, businessId, otId, serviceI
   assert.equal(summary.puedeDecidir, false);
   assert.equal(summary.puedeAprobar, true);
   assert.doesNotMatch(JSON.stringify(summary), /costo|margen|precioInterno/);
+  // Seguridad e historial (se conservan del flujo anterior): el SDK cliente no escribe la aprobación y cada decisión
+  // de la compuerta queda con autor y fecha.
+  await expectFirestoreDenied("SDK no escribe aprobación", () =>
+    setDoc(doc(owner.db, orderRef.path), {estadoAprobacion: "aprobada"}, {merge: true}));
+  assert.ok((await events()).filter((event) => ["ot_aprobada", "ot_rechazada"].includes(event.tipo))
+    .every((event) => event.actorUid && event.actorSnapshot && event.fecha?.toDate()), "cada decisión registra autor y fecha");
   console.log("OK aprobación OT: compuerta de ingreso, rechazo con motivo, trabajos solo en ejecución");
+}
+
+// Concurrencia de la compuerta: aprobar y rechazar a la vez la misma revisión de una OT. Solo una decisión prospera y
+// el historial registra una sola. Usa una OT propia y se ejecuta al final de la suite, para no alterar la OT ni las
+// plazas que usan las demás pruebas.
+export async function testWorkOrderApprovalRace({adminDb, businessId, owner, admin, technician, callable, reception, runId}) {
+  const base = `negocios/${businessId}`;
+  let sequence = 0;
+  const requestId = () => `approval-race-${runId}-${++sequence}`;
+  const call = async (client, name, input) => (await callable(client, name)({businessId, ...input})).data;
+  const {otId} = (await call(owner, "crearOrdenTrabajo", {requestId: requestId(), ordenTrabajo: {vehiculoId: "vehiculo-a"}})).ordenTrabajo;
+  const orderRef = adminDb.doc(`${base}/ordenesTrabajo/${otId}`);
+  await completeReceptionPhotos(orderRef);
+  await call(owner, "registrarRecepcionOrdenTrabajo", {otId, recepcion: reception});
+  const pending = (await orderRef.get()).data();
+  assert.equal(pending.estadoAprobacion, "pendiente", "la OT de la carrera espera decisión");
+  const expectedActualizadoEn = pending.actualizadoEn.toMillis();
+  const decisions = await Promise.allSettled([
+    call(owner, "aprobarOT", {otId, requestId: requestId(), expectedActualizadoEn, responsableUid: technician.uid}),
+    call(admin, "rechazarOT", {otId, requestId: requestId(), expectedActualizadoEn, motivo: "Decisión concurrente"}),
+  ]);
+  assert.equal(decisions.filter((result) => result.status === "fulfilled").length, 1, "solo una decisión prospera");
+  assert.equal(decisions.filter((result) => result.status === "rejected").length, 1, "la otra se rechaza");
+  const winner = decisions[0].status === "fulfilled" ? "aprobada" : "rechazada";
+  assert.equal((await orderRef.get()).data().estadoAprobacion, winner, "la OT queda con la decisión que prosperó");
+  const decided = (await orderRef.collection("historial").get()).docs.map((entry) => entry.data())
+    .filter((event) => ["ot_aprobada", "ot_rechazada"].includes(event.tipo));
+  assert.equal(decided.length, 1, "el historial registra una sola decisión");
+  assert.equal(decided[0].tipo, winner === "aprobada" ? "ot_aprobada" : "ot_rechazada");
+  console.log(`OK aprobación OT: decisiones concurrentes, prosperó solo «${winner}»`);
 }

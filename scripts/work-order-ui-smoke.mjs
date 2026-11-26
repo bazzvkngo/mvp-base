@@ -422,6 +422,16 @@ assert.doesNotMatch(trackingCard, /Copiar página de consulta/, "la consulta con
 assert.ok(appSource.includes("/^\\/seguimiento(\\/(taller\\/)?[^/]+)?\\/?$/"), "ruta pública /seguimiento para toda la plataforma");
 assert.doesNotMatch(trackingCard, /Sin montos, técnico ni fotos|work-order-tracking__url/, "sin texto redundante ni el enlace escrito dos veces");
 assert.match(trackingCard, /rel="noopener noreferrer"/);
+// La consulta con patente + RUT queda apagada hasta contar con App Check o captcha: la pantalla y la tarjeta lo respetan.
+const trackingService = fs.readFileSync("src/services/workshopTrackingService.js", "utf8");
+assert.match(trackingService, /VITE_SEGUIMIENTO_CONSULTA_PUBLICA === "true"/);
+assert.match(trackingPage, /isPublicLookupEnabled\(\) \? <ManualTracking \/> : <InactiveLink message=\{LOOKUP_UNAVAILABLE\} \/>/);
+assert.match(trackingCard, /isPublicLookupEnabled\(\) && <p/);
+assert.doesNotMatch(trackingPage, /PRGZ63|ABCD12/, "la pantalla pública no muestra una patente de ejemplo de un solo país");
+// La patente de ejemplo sale del país del negocio (countryFormCopy), no de un texto fijo.
+const newOrderPage = fs.readFileSync("src/pages/NewWorkOrderPage.jsx", "utf8");
+assert.match(newOrderPage, /getCountryFormCopy\(countryCode\)\.vehiclePlateExample/);
+assert.doesNotMatch(newOrderPage, /ABCD12/, "Nueva OT: la patente de ejemplo depende del país");
 const trackingServer = fs.readFileSync("functions/workOrderTracking.js", "utf8");
 assert.match(trackingServer, /requireTallerAccess\(request, dependencies, "operate"\)/);
 assert.match(fs.readFileSync("functions/index.js", "utf8"), /exports\.consultarSeguimientoTaller = onCall\(/);

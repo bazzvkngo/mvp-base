@@ -2,6 +2,7 @@ import React, {useEffect, useState} from "react";
 import {Check, Copy, MessageCircle} from "lucide-react";
 import Button from "../../components/ui/Button";
 import {trackingWhatsappMessage} from "../../domain/workOrderTrackingModel.mjs";
+import {isPublicLookupEnabled} from "../../services/workshopTrackingService";
 import {getWorkOrderErrorMessage, obtenerContactoClienteOT, obtenerSeguimientoOT} from "../../services/workOrderService";
 
 // Seguimiento del cliente (prototipo «Panel del Taller»): con el ingreso aprobado, la OT tiene un enlace único
@@ -55,6 +56,6 @@ export default function TrackingLinkCard({businessId, order, otId, vehicleLabel}
           target="_blank" rel="noopener noreferrer"><MessageCircle size={16} aria-hidden="true" />Enviar por WhatsApp</a>
         : <span className="work-order-contact__link" aria-disabled="true"><MessageCircle size={16} aria-hidden="true" />Enviar por WhatsApp</span>}
     </div>
-    <p className="erp-secondary-text">El cliente también puede consultar con su patente y RUT en <strong>{urlConsulta.replace(/^https?:\/\//, "")}</strong>.</p>
+    {isPublicLookupEnabled() && <p className="erp-secondary-text">El cliente también puede consultar con su patente y RUT en <strong>{urlConsulta.replace(/^https?:\/\//, "")}</strong>.</p>}
   </section>;
 }

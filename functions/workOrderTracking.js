@@ -5,15 +5,16 @@
 //   ejecución iniciada) y la dirección pública de consulta con patente + RUT (/seguimiento).
 // - `consultarSeguimientoTaller` (público, sin sesión): abre la vista con el enlace.
 // - `buscarSeguimientoTaller` (público, sin sesión): patente + RUT en /seguimiento (toda la plataforma), con
-//   límite de intentos por IP y por patente. El RUT puede ser el del titular de la OT o el de quien entregó el vehículo.
+//   límite de intentos por IP y por IP + patente; apagada por defecto (SEGUIMIENTO_CONSULTA_PUBLICA). El RUT puede ser
+//   el del titular de la OT o el de quien entregó el vehículo.
 // Los tokens y contadores viven en colecciones que solo toca el servidor. La vista pública no incluye montos,
 // técnico, plaza, fotos ni datos personales; el enlace deja de funcionar al entregar o anular la OT.
 
 const {requireTallerAccess} = require("./tallerAccess");
 const {identifier} = require("./workOrderPersistence");
 const {
-  MAX_BUSINESSES_PER_PLATE, PLATE_INDEX_COLLECTION, attemptKey, buildPublicView, canShareTrackingLink, createTokenMaterial,
-  isBlocked, isVisibleOrder, normalizeDocument, normalizePlate, plateIndexId, registerFailure, validTokenHash,
+  MAX_BUSINESSES_PER_PLATE, MAX_FAILED_ATTEMPTS, MAX_FAILED_ATTEMPTS_PER_IP, PLATE_INDEX_COLLECTION, attemptKey, buildPublicView, canShareTrackingLink, createTokenMaterial,
+  isBlocked, isPublicLookupEnabled, isVisibleOrder, normalizeDocument, normalizePlate, plateIndexId, registerFailure, validTokenHash,
 } = require("./workOrderTrackingRules");
 
 const TOKENS = "tallerSeguimientoTokens";
@@ -21,6 +22,7 @@ const ATTEMPTS = "tallerSeguimientoIntentos";
 const INACTIVE_LINK = "Este enlace ya no está activo.";
 const NOT_FOUND = "No encontramos un vehículo en el taller con esos datos.";
 const TOO_MANY = "Demasiados intentos. Intenta nuevamente en unos minutos.";
+const LOOKUP_DISABLED = "La consulta con patente y RUT no está disponible por ahora. Usa el enlace que te envió el taller.";
 
 // Misma dirección pública que las propuestas de cotización (functions/quotePublicProposal.js); en emuladores,
 // localhost. Se replica aquí para no cargar el módulo de cotizaciones en el Taller.
@@ -161,9 +163,13 @@ function requestIp(request) {
 
 // Consulta pública de toda la plataforma: la patente lleva, por el índice, a los talleres donde el vehículo fue
 // recibido; en cada uno se busca la OT abierta del vehículo y el RUT debe ser el del titular de la OT o el de quien
-// entregó el vehículo. Límite: 3 fallos en 15 minutos bloquean la IP y la patente por 15 minutos.
+// entregó el vehículo. Límite por IP: 3 fallos en 15 minutos con la misma patente bloquean esa IP con esa patente, y
+// 10 fallos con cualquier patente bloquean la IP, ambos por 15 minutos. Nunca se bloquea una patente para todos:
+// quien intente con la patente de otra persona solo se bloquea a sí mismo. Una consulta exitosa limpia solo el
+// contador de IP + patente; el de la IP no se limpia, para que un acierto no reinicie un barrido de patentes.
 async function buscarSeguimientoTallerHandler(request, dependencies) {
   const {db, HttpsError} = dependencies;
+  if (!isPublicLookupEnabled()) fail(HttpsError, "failed-precondition", LOOKUP_DISABLED);
   const data = request?.data || {};
   if (Object.keys(data).some((key) => !["patente", "rut"].includes(key))) {
     fail(HttpsError, "invalid-argument", "La consulta no es válida.");
@@ -172,13 +178,14 @@ async function buscarSeguimientoTallerHandler(request, dependencies) {
   if (!plate || typeof data.rut !== "string" || !data.rut.trim()) fail(HttpsError, "invalid-argument", "Completa la patente y el RUT.");
 
   const now = Date.now();
-  const ipRef = db.collection(ATTEMPTS).doc(attemptKey("ip", requestIp(request)));
-  const plateRef = db.collection(ATTEMPTS).doc(attemptKey("patente", plate));
+  const ip = requestIp(request);
+  const ipRef = db.collection(ATTEMPTS).doc(attemptKey("ip", ip));
+  const pairRef = db.collection(ATTEMPTS).doc(attemptKey("ip-patente", ip, plate));
   const indexRef = db.collection(PLATE_INDEX_COLLECTION).doc(plateIndexId(plate));
 
   const outcome = await db.runTransaction(async (transaction) => {
-    const [ipSnapshot, plateSnapshot, indexSnapshot] = await transaction.getAll(ipRef, plateRef, indexRef);
-    if (isBlocked(ipSnapshot.data(), now) || isBlocked(plateSnapshot.data(), now)) return {status: "blocked"};
+    const [ipSnapshot, pairSnapshot, indexSnapshot] = await transaction.getAll(ipRef, pairRef, indexRef);
+    if (isBlocked(ipSnapshot.data(), now) || isBlocked(pairSnapshot.data(), now)) return {status: "blocked"};
     const businessIds = (Array.isArray(indexSnapshot.data()?.negocios) ? indexSnapshot.data().negocios : [])
       .filter((id) => typeof id === "string" && id).slice(0, MAX_BUSINESSES_PER_PLATE);
     let match = null;
@@ -208,14 +215,16 @@ async function buscarSeguimientoTallerHandler(request, dependencies) {
       if (match) break;
     }
     if (match) {
-      transaction.delete(ipRef);
-      transaction.delete(plateRef);
+      // Solo se limpia el contador de IP + patente; el de la IP sigue su ventana.
+      transaction.delete(pairRef);
       return {status: "found", ...match};
     }
     let blocked = false;
-    for (const [ref, snapshot] of [[ipRef, ipSnapshot], [plateRef, plateSnapshot]]) {
-      const {bloqueado, ...next} = registerFailure(snapshot.data(), now);
-      transaction.set(ref, next);
+    for (const [ref, snapshot, limit] of [
+      [ipRef, ipSnapshot, MAX_FAILED_ATTEMPTS_PER_IP], [pairRef, pairSnapshot, MAX_FAILED_ATTEMPTS]]) {
+      const {bloqueado, expiraEn, ...next} = registerFailure(snapshot.data(), now, limit);
+      // `expiraEn` como fecha: es el campo de la política TTL de Firestore que borra el contador vencido.
+      transaction.set(ref, {...next, expiraEn: new Date(expiraEn)});
       blocked = blocked || bloqueado;
     }
     return {status: blocked ? "blocked" : "missing"};

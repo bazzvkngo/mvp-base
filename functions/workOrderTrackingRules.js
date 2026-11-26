@@ -3,7 +3,7 @@
 // Reglas puras del seguimiento público del Taller (sin Firestore). El cliente ve en qué etapa está su
 // vehículo, el avance de los trabajos y los hallazgos informados. Nunca ve montos, técnico, plaza, fotos,
 // nombres de personas ni su RUT. Se entra con un enlace único o, en la página pública de la plataforma
-// (/seguimiento), con patente + RUT del titular o de quien entregó el vehículo, con un límite de intentos.
+// (/seguimiento), con patente + RUT del titular o de quien entregó el vehículo, con un límite de intentos por IP.
 
 const crypto = require("node:crypto");
 const {normalizeChileanRut, normalizeCountryCode} = require("./fiscalIdentifier");
@@ -13,8 +13,12 @@ const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const TOKEN_HASH_PATTERN = /^[a-f0-9]{64}$/;
 const PLATE_PATTERN = /^[A-Z0-9]{5,8}$/;
 
-// Límite de intentos fallidos de patente + RUT: 3 en 15 minutos bloquean 15 minutos (por IP y por patente).
+// Límite de intentos fallidos de patente + RUT, siempre por IP (nunca por patente sola: así nadie puede dejar sin
+// consulta a otra persona intentando con su patente):
+// - IP + patente: 3 fallos en 15 minutos bloquean esa combinación por 15 minutos.
+// - IP en total (varias patentes): 10 fallos en 15 minutos bloquean esa IP por 15 minutos.
 const MAX_FAILED_ATTEMPTS = 3;
+const MAX_FAILED_ATTEMPTS_PER_IP = 10;
 const ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
 const BLOCK_MS = 15 * 60 * 1000;
 
@@ -131,18 +135,25 @@ function isBlocked(state = {}, now = Date.now()) {
   return Number(state.bloqueadoHasta || 0) > now;
 }
 
-function registerFailure(state = {}, now = Date.now()) {
+function registerFailure(state = {}, now = Date.now(), limit = MAX_FAILED_ATTEMPTS) {
   const windowStart = Number(state.ventanaDesde || 0);
   const fresh = !windowStart || now - windowStart > ATTEMPT_WINDOW_MS;
   const fallos = fresh ? 1 : Number(state.fallos || 0) + 1;
-  const blocked = fallos >= MAX_FAILED_ATTEMPTS;
+  const blocked = fallos >= limit;
   return {
     fallos: blocked ? 0 : fallos,
     ventanaDesde: blocked ? 0 : fresh ? now : windowStart,
     bloqueadoHasta: blocked ? now + BLOCK_MS : 0,
+    // Fecha en que el contador ya no sirve (milisegundos). Se guarda como fecha para la política TTL de Firestore.
     expiraEn: now + ATTEMPT_WINDOW_MS + BLOCK_MS,
     bloqueado: blocked,
   };
+}
+
+// La consulta pública con patente + RUT queda apagada hasta contar con App Check o captcha; se enciende con
+// SEGUIMIENTO_CONSULTA_PUBLICA=true en las variables de entorno de las Functions.
+function isPublicLookupEnabled(env = process.env) {
+  return String(env.SEGUIMIENTO_CONSULTA_PUBLICA || "").trim().toLowerCase() === "true";
 }
 
 function attemptKey(kind, ...parts) {
@@ -150,8 +161,8 @@ function attemptKey(kind, ...parts) {
 }
 
 module.exports = {
-  ATTEMPT_WINDOW_MS, BLOCK_MS, MAX_FAILED_ATTEMPTS, PUBLIC_STEPS, STAGE_TEXT, TOKEN_HASH_PATTERN,
+  ATTEMPT_WINDOW_MS, BLOCK_MS, MAX_FAILED_ATTEMPTS, MAX_FAILED_ATTEMPTS_PER_IP, PUBLIC_STEPS, STAGE_TEXT, TOKEN_HASH_PATTERN,
   MAX_BUSINESSES_PER_PLATE, PLATE_INDEX_COLLECTION,
   attemptKey, buildPublicView, canShareTrackingLink, createTokenMaterial, hashToken,
-  isBlocked, isVisibleOrder, normalizeDocument, normalizePlate, plateIndexId, publicStage, registerFailure, validTokenHash,
+  isBlocked, isPublicLookupEnabled, isVisibleOrder, normalizeDocument, normalizePlate, plateIndexId, publicStage, registerFailure, validTokenHash,
 };

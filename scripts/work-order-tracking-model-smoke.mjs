@@ -87,7 +87,8 @@ assert.equal(rules.PLATE_INDEX_COLLECTION, "tallerSeguimientoPatentes");
 assert.equal(rules.createWorkshopCode, undefined, "ya no hay código por taller: la consulta es de toda la plataforma");
 console.log("OK seguimiento: token de 256 bits guardado como hash e índice de patentes");
 
-// Límite: 3 fallos en 15 minutos bloquean 15 minutos; fuera de la ventana se reinicia el conteo.
+// Límite por IP: 3 fallos en 15 minutos con la misma patente bloquean 15 minutos; 10 fallos con cualquier patente
+// bloquean la IP. Fuera de la ventana se reinicia el conteo. Nunca se bloquea una patente para todos.
 let attempts = {};
 for (let index = 0; index < 2; index += 1) attempts = rules.registerFailure(attempts, 1_000);
 assert.equal(attempts.bloqueado, false);
@@ -97,9 +98,26 @@ assert.equal(third.bloqueado, true);
 assert.equal(rules.isBlocked(third, 2_000 + rules.BLOCK_MS - 1), true);
 assert.equal(rules.isBlocked(third, 2_000 + rules.BLOCK_MS + 1), false);
 assert.equal(rules.registerFailure({fallos: 2, ventanaDesde: 1_000}, 1_000 + rules.ATTEMPT_WINDOW_MS + 1).fallos, 1);
+assert.equal(rules.MAX_FAILED_ATTEMPTS, 3);
+assert.equal(rules.MAX_FAILED_ATTEMPTS_PER_IP, 10);
+let ipAttempts = {};
+for (let index = 0; index < 9; index += 1) ipAttempts = rules.registerFailure(ipAttempts, 1_000, rules.MAX_FAILED_ATTEMPTS_PER_IP);
+assert.equal(ipAttempts.bloqueado, false, "9 fallos en la IP aún no la bloquean");
+assert.equal(rules.registerFailure(ipAttempts, 2_000, rules.MAX_FAILED_ATTEMPTS_PER_IP).bloqueado, true, "el décimo la bloquea");
+assert.equal(attempts.expiraEn, 1_000 + rules.ATTEMPT_WINDOW_MS + rules.BLOCK_MS, "el contador trae su fecha de expiración");
+assert.ok(third.expiraEn > 2_000 + rules.BLOCK_MS, "el contador bloqueado expira después del bloqueo");
+// Las claves son por IP y por IP + patente; no hay clave solo de patente y no guardan datos en claro.
 assert.notEqual(rules.attemptKey("ip", "1.2.3.4"), rules.attemptKey("ip", "1.2.3.5"));
-assert.ok(!rules.attemptKey("patente", "PRGZ63").includes("PRGZ63"), "la clave del contador no guarda la patente");
-console.log("OK seguimiento: límite de intentos por IP y por patente");
+assert.notEqual(rules.attemptKey("ip-patente", "1.2.3.4", "PRGZ63"), rules.attemptKey("ip-patente", "1.2.3.5", "PRGZ63"),
+  "la misma patente desde otra IP tiene su propio contador");
+assert.notEqual(rules.attemptKey("ip-patente", "1.2.3.4", "PRGZ63"), rules.attemptKey("ip-patente", "1.2.3.4", "PRGZ64"));
+assert.ok(!rules.attemptKey("ip-patente", "1.2.3.4", "PRGZ63").includes("PRGZ63"), "la clave del contador no guarda la patente");
+assert.ok(!rules.attemptKey("ip-patente", "1.2.3.4", "PRGZ63").includes("1.2.3.4"), "ni la IP");
+// La consulta pública está apagada salvo que se encienda explícitamente.
+assert.equal(rules.isPublicLookupEnabled({}), false);
+assert.equal(rules.isPublicLookupEnabled({SEGUIMIENTO_CONSULTA_PUBLICA: "false"}), false);
+assert.equal(rules.isPublicLookupEnabled({SEGUIMIENTO_CONSULTA_PUBLICA: "true"}), true);
+console.log("OK seguimiento: límite de intentos por IP e IP + patente, expiración y consulta apagada por defecto");
 
 // Documento y patente comparables; formulario del cliente.
 assert.equal(rules.normalizeDocument("12.345.678-5"), "123456785");
