@@ -1,5 +1,6 @@
 import React, {useCallback, useEffect, useRef, useState} from "react";
 import {Camera, RefreshCw, ScanLine} from "lucide-react";
+import Button from "../ui/Button";
 import ResponsiveDialog from "../ui/ResponsiveDialog";
 import {
   barcodeCameraErrorMessage,
@@ -28,9 +29,13 @@ const isPageVisible = () => typeof document === "undefined" || document.visibili
 // continuous: el cuadro queda abierto, cada lectura se entrega a onSubmit y se
 // acumula en la lista de la sesión; se cierra con "Terminar". onSubmit puede
 // devolver {key, label} para identificar la lectura en esa lista.
+// actionVariant: con actionOnly, dibuja el disparador con el Button común ("primary", "secondary"...) en vez del botón
+// propio de este archivo. actionClassName se suma a las clases de ese Button. ScanProductButton lo usa.
 export default function BarcodeInput({
+  actionClassName = "",
   actionLabel = "Escanear código",
   actionOnly = false,
+  actionVariant,
   continuous = false,
   disabled = false,
   inputClassName = "erp-control",
@@ -353,9 +358,13 @@ export default function BarcodeInput({
 
   return <>
     {actionOnly ? (
-      <button type="button" className="barcode-action-button" data-scan-mode={scanMode} disabled={disabled || checkingSupport} onClick={openScanner}>
-        <ScanLine size={17} />{actionLabel}
-      </button>
+      actionVariant ? (
+        <Button type="button" variant={actionVariant} icon={ScanLine} className={actionClassName} data-scan-mode={scanMode} disabled={disabled || checkingSupport} onClick={openScanner}>{actionLabel}</Button>
+      ) : (
+        <button type="button" className="barcode-action-button" data-scan-mode={scanMode} disabled={disabled || checkingSupport} onClick={openScanner}>
+          <ScanLine size={17} />{actionLabel}
+        </button>
+      )
     ) : (
       <span className="barcode-input-row">
         <input

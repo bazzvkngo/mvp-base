@@ -1,6 +1,6 @@
 import React from "react";
 import {ChevronDown, ChevronUp, X} from "lucide-react";
-import BarcodeInput from "../barcode/BarcodeInput";
+import ScanProductButton from "../barcode/ScanProductButton";
 import useBusinessFormat, {useBusinessMoney} from "../../hooks/useBusinessFormat";
 import {getCurrencySymbol} from "../../utils/formatters";
 import Button from "./Button";
@@ -12,8 +12,8 @@ import QuantityStepper from "./QuantityStepper";
 // - mode: "venta" edita `precioUnitario` ("Precio unitario") y "compra" edita `costoUnitario` ("Costo unitario"); sirve
 //   también para la orden de compra. Lo demás (cantidad, descuento, total, quitar) es igual en los dos.
 // - title / titleId: título de la tarjeta, con signos de interrogación ("¿Qué vendes?").
-// - canChange: se puede agregar y quitar (muestra "Escanear producto", si hay `onScanProduct`, y "Agregar desde
-//   inventario"). disabled: los campos están bloqueados. readOnly: valores estáticos, sin campos.
+// - canChange: se puede agregar y quitar (muestra "Escanear producto", la acción principal y primera de la fila, si hay
+//   `onScanProduct`, y "Agregar desde inventario", secundaria). disabled: los campos están bloqueados. readOnly: valores estáticos, sin campos.
 // - moneyStep: paso del importe según los decimales del documento ("any" con 0 decimales, "0.01" con 2).
 // - Ganchos opcionales por línea, para lo propio de cada documento: getMaxQuantity(item), getLineMeta(item) (texto que
 //   se suma a "código · tipo · unidad", p. ej. "Disponible 7"), renderTitleExtra(item) (marca junto al nombre),
@@ -78,7 +78,7 @@ export default function DocumentItemsEditor({
         </div>
         {canChange && (
           <div className="ui-step-head__actions">
-            {onScanProduct && <BarcodeInput actionOnly continuous actionLabel="Escanear producto" onSubmit={onScanProduct} />}
+            {onScanProduct && <ScanProductButton onSubmit={onScanProduct} />}
             <Button type="button" variant="secondary" onClick={onOpenCatalog}>Agregar desde inventario</Button>
           </div>
         )}

@@ -1,5 +1,6 @@
 import React from "react";
-import BarcodeInput from "../../components/barcode/BarcodeInput";
+import ScanProductButton from "../../components/barcode/ScanProductButton";
+import Button from "../../components/ui/Button";
 import DocumentItemsEditor from "../../components/ui/DocumentItemsEditor";
 import {getSaleItemTypeLabel} from "../../domain/saleModel.mjs";
 import {useBusinessMoney} from "../../hooks/useBusinessFormat";
@@ -73,8 +74,8 @@ export default function SaleItemsEditor({disabled, historical = false, inventory
           </div>
           {canChangeReferences && (
             <div className="po-header__actions">
-              <BarcodeInput actionOnly continuous actionLabel="Escanear producto" onSubmit={onScanProduct} />
-              <button type="button" className="po-button po-button--secondary" onClick={onOpenCatalog}>Agregar desde inventario</button>
+              <ScanProductButton onSubmit={onScanProduct} />
+              <Button type="button" variant="secondary" onClick={onOpenCatalog}>Agregar desde inventario</Button>
             </div>
           )}
         </header>

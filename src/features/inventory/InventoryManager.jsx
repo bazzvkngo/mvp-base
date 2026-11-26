@@ -8,6 +8,7 @@ import MoreActionsMenu from "../../components/ui/MoreActionsMenu";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import {SkeletonCards, SkeletonRegion, SkeletonTable} from "../../components/ui/Skeleton";
 import BarcodeInput from "../../components/barcode/BarcodeInput";
+import ScanProductButton from "../../components/barcode/ScanProductButton";
 import {
   INVENTORY_TYPES,
   INVENTORY_PRICE_FORMATION_VERSION,
@@ -571,8 +572,10 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
 
   return (
     <section className="erp-page inventory-page">
-      {(!cannotWrite || canStartPurchase) && <div className="erp-module-intro">
+      <div className="erp-module-intro">
         <div className="erp-module-actions inventory-header-actions">
+          {/* Escanear es la acción principal del inventario y la ven todos los roles: buscar no escribe datos. */}
+          <ScanProductButton continuous={false} disabled={loading} onSubmit={handleScanSearch} />
           {/* Con ambos permisos, un solo "Importar" con menú; con uno, su botón directo. */}
           {importOptions.length > 1 ? (
             <MoreActionsMenu label="Importar" icon={ChevronDown} menuLabel="Opciones de importación" triggerClassName="inventory-button inventory-button--secondary" actions={importOptions} />
@@ -583,7 +586,7 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
           ) : null}
           {!cannotWrite && <button type="button" className="inventory-button inventory-button--primary" onClick={openNewItem}><AppIcon icon={PackagePlus} size={18} />Nuevo ítem</button>}
         </div>
-      </div>}
+      </div>
 
       {cannotWrite && <p className="inventory-feedback inventory-feedback--notice">Puedes consultar el inventario. La creación y edición requieren rol Propietario o Administrador.</p>}
       {feedback.message && <p className={`inventory-feedback inventory-feedback--${feedback.type}`} role={feedback.type === "error" ? "alert" : "status"}>{feedback.message}</p>}
@@ -608,7 +611,7 @@ function InventoryManager({ businessId, readOnly = false, role = "OWNER" }) {
           <div><h2 id="inventory-list-title" className="erp-panel-title">Ítems del inventario</h2><p className="erp-secondary-text">{visibleItems.length} registro{visibleItems.length === 1 ? "" : "s"} según los filtros actuales.</p>{lowStockOnly && <button type="button" className="inventory-filter-chip" onClick={() => setLowStockOnly(false)} aria-label="Quitar filtro Stock bajo">Stock bajo<AppIcon icon={X} size={14} /></button>}</div>
         </div>
         <div className="erp-filters inventory-filters">
-          <div className="erp-field inventory-search"><label className="erp-field__label" htmlFor={searchInputId}>Buscar</label><div className="inventory-search-control"><input id={searchInputId} className="erp-control" value={filters.query} onChange={(event) => setFilter("query", event.target.value)} placeholder="Nombre, SKU o código" /><BarcodeInput actionOnly actionLabel="Escanear" disabled={loading} onSubmit={handleScanSearch} /></div></div>
+          <div className="erp-field inventory-search"><label className="erp-field__label" htmlFor={searchInputId}>Buscar</label><div className="inventory-search-control"><input id={searchInputId} className="erp-control" value={filters.query} onChange={(event) => setFilter("query", event.target.value)} placeholder="Nombre, SKU o código" /></div></div>
           <Filter label="Tipo" value={filters.type} onChange={(value) => setFilter("type", value)}><option value="todos">Todos</option>{INVENTORY_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</Filter>
           <Filter label="Área" value={filters.areaId} onChange={(value) => setFilter("areaId", value)}><option value="todas">Todas</option><option value="sin_area">Sin área</option>{areas.map((area) => <option key={area.id} value={area.id}>{area.nombre}</option>)}</Filter>
           <Filter label="Categoría" value={filters.categoryId} onChange={(value) => setFilter("categoryId", value)} disabled={!filters.areaId || filters.areaId === "todas" || filters.areaId === "sin_area"}><option value="todas">Todas</option><option value="sin_categoria">Sin categoría</option>{filterCategories.map((category) => <option key={category.id} value={category.id}>{category.nombre}</option>)}</Filter>

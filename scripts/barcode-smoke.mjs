@@ -616,8 +616,8 @@ assert.match(inventoryService, /where\("codigoBarras", "in", candidates\)/);
 assert.doesNotMatch(inventoryService, /findActiveProductByBarcode[\s\S]*?getInventoryItems/);
 assert.match(inventoryUi, /Código de barras/);
 assert.match(inventoryUi, /BarcodeInput/);
-// Etapa 3: buscar escaneando en /inventario (lectura única, junto al buscador).
-assert.match(inventoryUi, /<BarcodeInput actionOnly actionLabel="Escanear" disabled=\{loading\} onSubmit=\{handleScanSearch\} \/>/);
+// Etapa 3: buscar escaneando en /inventario (lectura única). El botón es el compartido, primero en las acciones del encabezado.
+assert.match(inventoryUi, /<ScanProductButton continuous=\{false\} disabled=\{loading\} onSubmit=\{handleScanSearch\} \/>/);
 assert.match(inventoryUi, /const result = resolveInventoryBarcodeScan\(items, barcode\);/);
 assert.match(inventoryUi, /window\.setTimeout\(\(\) => setDetailItem\(result\.item\), 0\)/);
 assert.match(inventoryUi, /setLowStockOnly\(false\);\s*setFilters\(\{ \.\.\.DEFAULT_INVENTORY_FILTERS, query: result\.query, status: result\.status \}\);/);
@@ -627,7 +627,7 @@ assert.match(quoteEditor, /<DocumentItemsEditor/);
 assert.match(quoteEditor, /onScanProduct=\{onScanProduct\}/, "la cotización entrega su escáner al bloque compartido");
 assert.match(poEditor, /Escanear producto/);
 // El editor de la orden usa el bloque compartido DocumentItemsEditor, que es quien dibuja el escáner continuo.
-assert.match(poEditor, /<BarcodeInput actionOnly continuous /);
+assert.match(poEditor, /<ScanProductButton onSubmit=\{onScanProduct\} \/>/);
 assert.match(await readFile(new URL("../src/features/purchaseOrders/PurchaseOrderItemsEditor.jsx", import.meta.url), "utf8"), /onScanProduct=\{onScanProduct\}/, "la orden entrega su escáner al bloque compartido");
 assert.match(quotePage, /return \{key: product\.id, label: product\.nombre\}/);
 assert.match(poPage, /return \{key: product\.id, label: product\.nombre\}/);

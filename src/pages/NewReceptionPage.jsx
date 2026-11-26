@@ -8,7 +8,7 @@ import Button from "../components/ui/Button";
 import LoadingState from "../components/ui/LoadingState";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import SupplyTrace from "../components/ui/SupplyTrace";
-import BarcodeInput from "../components/barcode/BarcodeInput";
+import ScanProductButton from "../components/barcode/ScanProductButton";
 import {
   canManageReceptions,
   getReceptionConfirmationImpact,
@@ -132,7 +132,7 @@ export default function NewReceptionPage({businessId, role}) {
     if (!product) throw new Error("Producto no encontrado para este código.");
     const current = draftRef.current;
     const result = resolveReceptionScan(current.items, product.id);
-    if (result.status === "not_in_reception") throw new Error("Este producto no está en la recepción.");
+    if (result.status === "not_in_reception") throw new Error(`${product.nombre || "Este producto"} no está en esta recepción: no figura en la orden de compra.`);
     if (result.status === "completed") throw new Error(`Ya se completó lo pendiente de ${result.line.nombre}.`);
     const {line, cantidad: next} = result;
     const items = current.items.map((item) => item.lineaId === line.lineaId ? {...item, cantidad: next} : item);
@@ -190,7 +190,7 @@ export default function NewReceptionPage({businessId, role}) {
           <h2 id="reception-items-title" className="ui-step-title">Ítems de la recepción</h2>
           <p className="ui-step-head__count">{draft.items.length === 1 ? "1 ítem" : `${draft.items.length} ítems`}</p>
         </div>
-        {!readOnly && <div className="ui-step-head__actions"><BarcodeInput actionOnly continuous actionLabel="Escanear producto" disabled={processing} onSubmit={scanReceivedProduct} /><Button type="button" variant="secondary" icon={FileUp} disabled={processing} onClick={() => setImportOpen(true)}>Importar factura o documento</Button></div>}
+        {!readOnly && <div className="ui-step-head__actions"><ScanProductButton disabled={processing} onSubmit={scanReceivedProduct} /><Button type="button" variant="secondary" icon={FileUp} disabled={processing} onClick={() => setImportOpen(true)}>Importar factura o documento</Button></div>}
       </header>
       <p className="reception-items__hint">Registra productos recibidos y confirma servicios o actividades prestadas.</p>
       {source && <div className="reception-document-source"><div><span>Documento conciliado</span><strong>{source.nombreArchivo}</strong></div><div><span>Documento</span><strong>{source.tipoDocumento === "factura" ? "Factura" : source.tipoDocumento === "boleta" ? "Boleta" : "Documento"}{source.numeroDocumento ? ` N° ${source.numeroDocumento}` : ""}</strong></div>{hasDocumentValue(source.neto) && <div><span>Neto</span><strong>{formatMoney(source.neto, source.moneda || reception.moneda, reception.locale)}</strong></div>}{hasDocumentValue(source.impuestoMonto) && <div><span>{hasDocumentValue(source.impuestoPorcentaje) ? `IVA (${source.impuestoPorcentaje}%)` : "IVA"}</span><strong>{formatMoney(source.impuestoMonto, source.moneda || reception.moneda, reception.locale)}</strong></div>}{hasDocumentValue(source.total) && <div><span>Total</span><strong>{formatMoney(source.total, source.moneda || reception.moneda, reception.locale)}</strong></div>}<div><span>Conciliación</span><strong>{source.lineasAplicadas || 0} de {source.lineasDetectadas || 0} líneas aplicadas</strong></div></div>}

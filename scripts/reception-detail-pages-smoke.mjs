@@ -47,7 +47,7 @@ for (const name of ["purchaseDetail", "orderDetail"]) {
 // Lógica de la recepción intacta: mismos servicios, escáner, importación y diálogos (con su texto).
 for (const needle of [
   "actualizarRecepcionBorrador(", "confirmarRecepcion(", "cancelarRecepcionBorrador(", "resolveReceptionScan(", "findActiveProductByBarcode(",
-  "getReceptionConfirmationImpact(", "<ReceptionDocumentImportDialog", "<BarcodeInput", "Confirma el impacto de esta recepción",
+  "getReceptionConfirmationImpact(", "<ReceptionDocumentImportDialog", "<ScanProductButton", "Confirma el impacto de esta recepción",
   "Importar factura o documento", "Confirmar recepción y registrar compra", "Cancelar recepción",
 ]) {
   assert.ok(files.reception.includes(needle), `se conserva ${needle}`);
