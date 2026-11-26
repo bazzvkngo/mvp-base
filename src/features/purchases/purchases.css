@@ -99,14 +99,7 @@
 /* Detalle de una compra confirmada, revertida o cancelada (PurchaseDetailView): solo lectura.
    Solo tokens; el modo oscuro sale de los propios tokens. */
 .purchase-detail__screen { display: grid; gap: var(--space-4); min-width: 0; }
-.purchase-detail__context { display: grid; gap: var(--space-3); }
-.purchase-detail__top { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-3); justify-content: space-between; }
-.purchase-detail__title { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-3); }
-.purchase-detail__title h1 { color: var(--color-text-strong); font-size: var(--font-size-xl); margin: 0; overflow-wrap: anywhere; }
-.purchase-detail__facts { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); margin: 0; }
-.purchase-detail__facts > div { background: var(--color-surface-subtle); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm); display: grid; gap: var(--space-1); min-width: 0; padding: var(--space-2) var(--space-3); }
-.purchase-detail__facts dt { color: var(--color-text-muted); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); text-transform: uppercase; }
-.purchase-detail__facts dd { color: var(--color-text-strong); display: grid; font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); gap: var(--space-1); margin: 0; overflow-wrap: anywhere; }
+.purchase-detail .purchase-document-summary { padding: 0; }
 .purchase-detail__heading { margin: 0 0 var(--space-3); }
 .purchase-detail__items { container-type: inline-size; }
 .purchase-detail__table { border-collapse: collapse; font-size: var(--font-size-sm); font-variant-numeric: tabular-nums; width: 100%; }

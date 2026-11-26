@@ -3,6 +3,7 @@ import { autoTable } from "jspdf-autotable";
 import { adaptStoredPurchaseOrder } from "./purchaseOrderModel.mjs";
 import { resolveDocumentCompany } from "./companySnapshot.mjs";
 import { getCountryFormCopy } from "./countryFormCopy.mjs";
+import { buildNetTotalsRows, getLegalNameBelowTitle } from "./documentPrintLayout.mjs";
 import { formatMoney } from "../utils/formatters.js";
 
 const NAVY = [18, 55, 101];
@@ -120,7 +121,7 @@ function drawHeader(doc, order, company, logoDataUrl = "", { compact = false } =
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.5);
     [
-      company.razonSocial !== brand ? company.razonSocial : "",
+      getLegalNameBelowTitle(company, brand),
       joinNonEmpty([
         fiscal ? `${company.identificadorFiscalTipo || "Identificación fiscal"} ${fiscal}` : "",
         // Etiqueta visible según el país de la orden (Bolivia: "Actividad económica"); el dato sigue siendo `giro`.
@@ -295,9 +296,8 @@ function ensureSpace(doc, y, required, onNewPage) {
 
 function drawTotals(doc, order, y, onNewPage) {
   const rows = [
-    ["Subtotal", money(order.subtotal, order)],
-    ...(Number(order.descuentoTotal) > 0 ? [["Descuentos", `-${money(order.descuentoTotal, order)}`]] : []),
-    ["Neto", money(order.neto, order)],
+    ...buildNetTotalsRows({ subtotal: order.subtotal, descuentoTotal: order.descuentoTotal, neto: order.neto })
+      .map((row) => [row.label, row.negative ? `-${money(row.amount, order)}` : money(row.amount, order)]),
     [taxLabel(order), money(order.iva, order)],
     ["TOTAL", money(order.total, order)],
   ];

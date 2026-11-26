@@ -1,6 +1,7 @@
 import React from "react";
 import { CubeIcon } from "../../components/BrandLogo";
 import { resolveDocumentCompany } from "../../domain/companySnapshot.mjs";
+import { buildDocumentFooterParts, buildNetTotalsRows, getLegalNameBelowTitle } from "../../domain/documentPrintLayout.mjs";
 import { getCountryFormCopy } from "../../domain/countryFormCopy.mjs";
 import { formatDate, formatMoney } from "../../utils/formatters";
 
@@ -48,6 +49,7 @@ export default function PurchaseOrderPrintView({ company: liveCompany = {}, orde
   const items = Array.isArray(order.items) ? order.items : [];
   const money = (value) => formatMoney(value, order.moneda, order.locale);
   const brand = company.nombreComercial || company.razonSocial || "Empresa compradora";
+  const footer = buildDocumentFooterParts(company, brand);
   const showCode = items.some((item) => hasText(item.codigo));
   const showUnit = items.some((item) => hasText(item.unidad));
   const showDiscount = items.some((item) => Number(item.descuentoPct) > 0);
@@ -81,7 +83,7 @@ export default function PurchaseOrderPrintView({ company: liveCompany = {}, orde
           </div>
           <div>
             <h2>{brand}</h2>
-            {company.razonSocial !== brand && <OptionalLine value={company.razonSocial} />}
+            <OptionalLine value={getLegalNameBelowTitle(company, brand)} />
             <OptionalLine
               label={company.identificadorFiscalTipo || "Identificación fiscal"}
               value={company.identificadorFiscalValor || company.rut}
@@ -198,18 +200,16 @@ export default function PurchaseOrderPrintView({ company: liveCompany = {}, orde
       )}
 
       <section className="po-document-preview__totals">
-        <TotalRow label="Subtotal" value={money(order.subtotal)} />
-        {Number(order.descuentoTotal) > 0 && (
-          <TotalRow label="Descuentos" value={`-${money(order.descuentoTotal)}`} />
-        )}
-        <TotalRow label="Neto" value={money(order.neto)} />
+        {buildNetTotalsRows({ subtotal: order.subtotal, descuentoTotal: order.descuentoTotal, neto: order.neto }).map((row) => (
+          <TotalRow key={row.key} label={row.label} value={row.negative ? `-${money(row.amount)}` : money(row.amount)} />
+        ))}
         <TotalRow label={taxLabel(order)} value={money(order.iva)} />
         <TotalRow label="Total" value={money(order.total)} strong />
       </section>
 
       <footer>
-        <span>{joinNonEmpty([company.responsable, company.telefono, company.email]) || brand}</span>
-        <span>{brand} · ValoraCloud</span>
+        <span>{footer.left}</span>
+        <span>{footer.right}</span>
       </footer>
     </article>
   );

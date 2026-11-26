@@ -1,4 +1,5 @@
-import {ArrowLeft, Printer} from "lucide-react";
+import {useState} from "react";
+import {Printer} from "lucide-react";
 import {useNavigate} from "react-router-dom";
 import Button from "../../components/ui/Button";
 import Notice from "../../components/ui/Notice";
@@ -30,6 +31,7 @@ const lineTotal = (line) => Number(line.cantidad || 0) * Number(line.costoUnitar
 // La compra en borrador (y la compra nueva) siguen usando el formulario de NewPurchasePage.
 export default function PurchaseDetailView({company, message, printable, purchase}) {
   const navigate = useNavigate();
+  const [previewOpen, setPreviewOpen] = useState(false);
   const stockSemantics = getPurchaseStockSemantics(purchase);
   const items = Array.isArray(purchase.items) ? purchase.items : [];
   const money = (value) => formatMoney(value, printable.moneda, printable.locale);
@@ -65,30 +67,28 @@ export default function PurchaseDetailView({company, message, printable, purchas
 
   return <main className="po-workspace purchase-detail">
     <div className="purchase-detail__screen no-print">
-      <section className="po-panel purchase-detail__context">
-        <div className="purchase-detail__top">
-          <Button type="button" variant="secondary" icon={ArrowLeft} onClick={() => navigate("/compras")}>Volver al historial</Button>
-          <Button type="button" variant="secondary" icon={Printer} onClick={() => window.print()}>Imprimir</Button>
-        </div>
-        <span className="po-kicker">Compra</span>
-        <div className="purchase-detail__title">
-          <h1>{purchase.numero}</h1>
+      {/* Un solo h1 por pantalla: el de la barra superior (navigation.js). Por eso el título va en un <p>. */}
+      <header className="ui-doc-head">
+        <div className="ui-doc-head__main">
+          <button type="button" className="ui-doc-back" onClick={() => navigate("/compras")}>← Compras</button>
+          <p className="ui-doc-head__title">{`Compra ${purchase.numero}`}</p>
           <span className={`po-status po-status--${purchase.estado}`}>{getPurchaseStatusLabel(purchase.estado)}</span>
         </div>
-        <dl className="purchase-detail__facts">
-          <div><dt>Proveedor</dt><dd>{provider.razonSocial || "Proveedor histórico"}</dd></div>
-          <div><dt>Fecha de compra</dt><dd>{formatDate(purchase.fechaCompra, printable.locale)}</dd></div>
-          <div><dt>Total</dt><dd>{money(purchase.total)}</dd></div>
-          <div className="purchase-detail__origin">
-            <dt>Origen</dt>
-            <dd>
+        <div className="ui-doc-head__side">
+          <div className="ui-doc-head__meta">
+            <span>{purchase.fechaCompra ? formatDate(purchase.fechaCompra, printable.locale) : "Sin fecha"}</span>
+            <span>
               {purchase.recepcionId && <button type="button" className="po-inline-link" onClick={() => navigate(`/recepciones/${purchase.recepcionId}`)}>Recepción {purchase.recepcionNumero}</button>}
+              {purchase.recepcionId && purchase.ordenCompraId && " · "}
               {purchase.ordenCompraId && <button type="button" className="po-inline-link" onClick={() => navigate(`/ordenes-compra/${purchase.ordenCompraId}`)}>Orden de compra {purchase.ordenCompraNumero}</button>}
               {!purchase.recepcionId && !purchase.ordenCompraId && "Compra directa"}
-            </dd>
+            </span>
           </div>
-        </dl>
-      </section>
+          <div className="ui-doc-head__actions">
+            <Button type="button" variant="secondary" icon={Printer} onClick={() => window.print()}>Imprimir</Button>
+          </div>
+        </div>
+      </header>
 
       {message && <p className="po-message po-message--error">{message}</p>}
 
@@ -140,36 +140,36 @@ export default function PurchaseDetailView({company, message, printable, purchas
         </dl>
       </section>
 
-      <details className="po-panel po-details" open>
-        <summary>
-          <span><strong>Documento tributario/comercial</strong><small>{hasDocument ? `${getPurchaseDocumentTypeLabel(purchase.tipoDocumento)}${purchase.numeroDocumentoProveedor ? ` N° ${purchase.numeroDocumentoProveedor}` : ""}` : "Sin documento asociado"}</small></span>
-          <span className="po-details__indicator" aria-hidden="true" />
-        </summary>
+      <section className="po-panel purchase-data-panel" aria-labelledby="purchase-document-title">
+        <header className="ui-section-head">
+          <div><span className="po-kicker">Datos de compra</span><h2 id="purchase-document-title" className="ui-section-head__title">Documento y fechas</h2></div>
+        </header>
         {hasDocument
           ? <dl className="purchase-document-summary">{documentValues.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
           : <p className="purchase-empty-copy">No hay un documento asociado a esta compra.</p>}
         {hasDocument && source.coherenciaEstado === "revisar" && <section className="purchase-detail__totals-notice">
           <Notice variant="warning" role={null}>Los totales del documento no coinciden con las líneas.</Notice>
         </section>}
-      </details>
-      <details className="po-panel po-details">
-        <summary>
-          <span><strong>Condiciones y observaciones</strong><small>{conditions || observation || "Sin información adicional"}</small></span>
-          <span className="po-details__indicator" aria-hidden="true" />
-        </summary>
-        <div className="purchase-notes-grid">
-          {conditions && <section><span>Condiciones de pago</span><p>{conditions}</p></section>}
-          {observation && <section><span>Observaciones</span><p>{observation}</p></section>}
-          {!conditions && !observation && <p className="purchase-empty-copy">No hay condiciones u observaciones adicionales.</p>}
+      </section>
+      <section className="po-panel purchase-conditions-panel" aria-labelledby="purchase-conditions-title">
+        <header className="ui-section-head">
+          <div><span className="po-kicker">Condiciones</span><h2 id="purchase-conditions-title" className="ui-section-head__title">Condiciones comerciales</h2></div>
+        </header>
+        <div className="purchase-conditions-summary">
+          <div><strong>Condiciones de pago</strong><p>{conditions || "Sin condiciones informadas."}</p></div>
+          {observation && <div><strong>Observaciones</strong><p>{observation}</p></div>}
         </div>
-      </details>
-      <details className="po-panel po-details">
-        <summary>
-          <span><strong>Vista previa imprimible</strong><small>Presentación formal de la compra</small></span>
-          <span className="po-details__indicator" aria-hidden="true" />
-        </summary>
-        <div className="purchase-preview-body"><PurchasePrintView company={company} purchase={printable} /></div>
-      </details>
+      </section>
+      <section className="po-panel purchase-preview-panel" aria-labelledby="purchase-preview-title">
+        <header className="ui-section-head">
+          <div><span className="po-kicker">Documento</span><h2 id="purchase-preview-title" className="ui-section-head__title">Vista previa imprimible</h2><p className="ui-section-head__hint">Revisa cómo se verá el documento.</p></div>
+          <div className="ui-section-head__actions">
+            {previewOpen && <Button type="button" variant="secondary" onClick={() => window.print()}>Imprimir</Button>}
+            <Button type="button" variant="secondary" aria-expanded={previewOpen} onClick={() => setPreviewOpen((current) => !current)}>{previewOpen ? "Ocultar vista previa" : "Ver vista previa"}</Button>
+          </div>
+        </header>
+        {previewOpen && <div className="purchase-preview-body"><PurchasePrintView company={company} purchase={printable} /></div>}
+      </section>
     </div>
     <div className="print-only"><PurchasePrintView company={company} purchase={printable} /></div>
   </main>;

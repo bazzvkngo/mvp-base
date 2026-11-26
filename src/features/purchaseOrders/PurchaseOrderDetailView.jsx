@@ -1,4 +1,5 @@
-import {ArrowLeft, Download, Mail, PackageCheck} from "lucide-react";
+import {useState} from "react";
+import {Download, Mail, PackageCheck} from "lucide-react";
 import {useNavigate} from "react-router-dom";
 import Button from "../../components/ui/Button";
 import MoreActionsMenu from "../../components/ui/MoreActionsMenu";
@@ -53,7 +54,8 @@ export default function PurchaseOrderDetailView({
   whatsAppAvailability,
 }) {
   const navigate = useNavigate();
-  const locale = printableOrder.locale || "es-CL";
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const locale =printableOrder.locale || "es-CL";
   const money = (value) => formatMoney(value, printableOrder.moneda, locale);
   const taxName = printableOrder.impuestoNombre || "IVA";
   const taxRate = Number(printableOrder.tasaIva || 0) * 100;
@@ -110,34 +112,36 @@ export default function PurchaseOrderDetailView({
 
   return <>
     <div className="purchase-order-detail__screen no-print">
-      <section className="po-panel purchase-order-detail__context">
-        <div className="purchase-order-detail__top">
-          <Button type="button" variant="secondary" icon={ArrowLeft} onClick={() => navigate("/ordenes-compra")}>Volver al historial</Button>
-        </div>
-        <span className="po-kicker">Orden de compra</span>
-        <div className="purchase-order-detail__title">
-          <h1>{order.numero}</h1>
+      {/* Un solo h1 por pantalla: el de la barra superior (navigation.js). Por eso el título va en un <p>. */}
+      <header className="ui-doc-head">
+        <div className="ui-doc-head__main">
+          <button type="button" className="ui-doc-back" onClick={() => navigate("/ordenes-compra")}>← Órdenes de compra</button>
+          <p className="ui-doc-head__title">{order.numero}</p>
           <span className={`po-status po-status--${order.estado}`}>{cancelled ? "Cancelada" : "Emitida"}</span>
         </div>
-        <dl className="purchase-order-detail__facts">
-          <div><dt>Proveedor</dt><dd>{provider.razonSocial || "Proveedor histórico"}</dd></div>
-          <div><dt>Fecha de la orden</dt><dd>{formatDate(order.fechaEmision || order.creadoEn, locale)}</dd></div>
-          <div><dt>Total</dt><dd>{money(totals.total)}</dd></div>
-          <div><dt>Recepción</dt><dd>{cancelled ? "—" : getOrderReceptionStatusLabel(receptionStatus)}</dd></div>
-        </dl>
-        <div className="purchase-order-detail__actions" role="group" aria-label="Acciones de la orden">
-          {canReceive && supplierState !== "rechazada" && <Button type="button" icon={PackageCheck} disabled={saving} onClick={onCreateReception}>{saving ? "Preparando..." : receptionActionLabel}</Button>}
-          {canReceive && supplierState === "rechazada" && <Button type="button" icon={PackageCheck} disabled={saving} onClick={onSupplierConfirmation}>Actualizar confirmación</Button>}
-          {canManage && issued && <Button type="button" variant="secondary" icon={Mail} disabled={saving} onClick={onEmail}>Reenviar correo</Button>}
-          <Button type="button" variant="secondary" icon={Download} disabled={saving} onClick={onDownloadPdf}>Descargar PDF</Button>
-          <MoreActionsMenu label="Más" menuLabel="Más acciones de la orden" actions={menuActions} />
+        <div className="ui-doc-head__side">
+          <div className="ui-doc-head__meta">
+            <span>{formatDate(order.fechaEmision || order.creadoEn, locale)}</span>
+            <span>{order.ordenCompraOrigenNumero ? `Copia de ${order.ordenCompraOrigenNumero}` : "Orden directa"}</span>
+          </div>
+          <div className="ui-doc-head__actions" role="group" aria-label="Acciones de la orden">
+            {canReceive && supplierState !== "rechazada" && <Button type="button" icon={PackageCheck} disabled={saving} onClick={onCreateReception}>{saving ? "Preparando..." : receptionActionLabel}</Button>}
+            {canReceive && supplierState === "rechazada" && <Button type="button" icon={PackageCheck} disabled={saving} onClick={onSupplierConfirmation}>Actualizar confirmación</Button>}
+            {canManage && issued && <Button type="button" variant="secondary" icon={Mail} disabled={saving} onClick={onEmail}>Reenviar correo</Button>}
+            <Button type="button" variant="secondary" icon={Download} disabled={saving} onClick={onDownloadPdf}>Descargar PDF</Button>
+            <MoreActionsMenu label="Más" menuLabel="Más acciones de la orden" actions={menuActions} />
+          </div>
         </div>
-        {canManage && !cancelled && !whatsAppAvailability.enabled && <small className="purchase-order-detail__help">{whatsAppAvailability.help}</small>}
-      </section>
+      </header>
+      {canManage && !cancelled && !whatsAppAvailability.enabled && <small className="purchase-order-detail__help">{whatsAppAvailability.help}</small>}
 
       {message && <p className="po-message po-message--error">{message}</p>}
 
       {(showResponse || showTrace) && <section className="purchase-order-detail__flow" aria-label="Seguimiento de la orden">
+        {issued && <div className="purchase-order-detail__response">
+          <span>Estado de recepción</span>
+          <strong>{getOrderReceptionStatusLabel(receptionStatus)}</strong>
+        </div>}
         {showResponse && <div className="purchase-order-detail__response">
           <span>Confirmación del proveedor</span>
           <strong>{getSupplierResponseLabel(order)}</strong>
@@ -207,13 +211,15 @@ export default function PurchaseOrderDetailView({
         </ol>
       </section>
 
-      <details className="po-panel po-details">
-        <summary>
-          <span><strong>Vista previa imprimible</strong><small>Documento para el proveedor</small></span>
-          <span className="po-details__indicator" aria-hidden="true" />
-        </summary>
-        <div className="po-preview-body"><PurchaseOrderPrintView company={company} order={printableOrder} /></div>
-      </details>
+      <section className="po-panel po-preview-panel" aria-labelledby="po-preview-title">
+        <header className="ui-section-head">
+          <div><span className="po-kicker">Documento</span><h2 id="po-preview-title" className="ui-section-head__title">Vista previa imprimible</h2><p className="ui-section-head__hint">Documento profesional para el proveedor.</p></div>
+          <div className="ui-section-head__actions">
+            <Button type="button" variant="secondary" aria-expanded={previewOpen} onClick={() => setPreviewOpen((current) => !current)}>{previewOpen ? "Ocultar vista previa" : "Ver vista previa"}</Button>
+          </div>
+        </header>
+        {previewOpen && <div className="po-preview-body"><PurchaseOrderPrintView company={company} order={printableOrder} /></div>}
+      </section>
     </div>
     <div className="print-only"><PurchaseOrderPrintView company={company} order={printableOrder} /></div>
   </>;

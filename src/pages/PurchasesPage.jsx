@@ -11,7 +11,7 @@ import Notice from "../components/ui/Notice";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import {SkeletonCards, SkeletonRegion, SkeletonTable} from "../components/ui/Skeleton";
 import {getRouteMeta} from "../app/navigation";
-import {formatMoney} from "../utils/formatters";
+import {formatDate, formatMoney} from "../utils/formatters";
 import {canManagePurchases, getPurchaseDocumentTypeLabel, getPurchaseStockSemantics, getPurchaseStatusLabel, matchesPurchaseSearch, shouldReconcilePurchaseConfirmation} from "../domain/purchaseModel.mjs";
 import {cancelarCompraBorrador, confirmarCompra, createPurchaseRequestId, listarCompras, revertirCompra} from "../services/purchaseService";
 import "../features/purchases/purchases.css";
@@ -39,7 +39,10 @@ function Actions({canManage, onAction, purchase, processing}) {
 export default function PurchasesPage({businessId, role}) {
   const navigate = useNavigate();
   // Identificador fiscal del proveedor según el país del negocio (Chile "RUT", Bolivia "NIT").
-  const fiscalLabel = getFiscalIdentifierLabel(useBusinessFormat().countryCode);
+  const businessFormat = useBusinessFormat();
+  const fiscalLabel = getFiscalIdentifierLabel(businessFormat.countryCode);
+  // Fecha en el formato regional del documento o, si no lo trae, del negocio (nunca ISO crudo).
+  const dateOf = (purchase) => purchase.fechaCompra ? formatDate(purchase.fechaCompra, purchase.locale || businessFormat.locale) : "—";
   const confirmIds = useRef(new Map());
   const reversalIds = useRef(new Map());
   const [items, setItems] = useState([]); const [search, setSearch] = useState(""); const [status, setStatus] = useState("todos"); const [origin, setOrigin] = useState("todos"); const [message, setMessage] = useState(""); const [loading, setLoading] = useState(true); const [processing, setProcessing] = useState("");
@@ -183,7 +186,7 @@ export default function PurchasesPage({businessId, role}) {
               <tbody>
                 {filtered.map((purchase) => (
                   <tr key={purchase.id}>
-                    <td><button type="button" className="po-inline-link" onClick={() => open(purchase)}>{purchase.numero}</button><small>{purchase.fechaCompra || "—"}</small></td>
+                    <td><button type="button" className="po-inline-link" onClick={() => open(purchase)}>{purchase.numero}</button><small>{dateOf(purchase)}</small></td>
                     <td><strong>{purchase.proveedorSnapshot.razonSocial}</strong><small>{purchase.proveedorSnapshot.rut}</small></td>
                     <td>{getPurchaseDocumentTypeLabel(purchase.tipoDocumento)}<small>{purchase.tipoDocumento === "sin_documento" ? "" : purchase.numeroDocumentoProveedor || "Sin número"}</small></td>
                     <td>{money(purchase.total, purchase)}</td>
@@ -200,7 +203,7 @@ export default function PurchasesPage({businessId, role}) {
               <article className="po-history-card" key={purchase.id}>
                 <header><div><span className="po-history-card__label">Compra</span><button type="button" className="po-inline-link" onClick={() => open(purchase)}>{purchase.numero}</button></div><span className={`po-status po-status--${purchase.estado}`}>{getPurchaseStatusLabel(purchase.estado)}</span></header>
                 <div className="po-history-card__provider"><strong>{purchase.proveedorSnapshot.razonSocial}</strong><span>{purchase.proveedorSnapshot.rut || `Sin ${fiscalLabel}`}</span></div>
-                <dl><div><dt>Fecha</dt><dd>{purchase.fechaCompra || "—"}</dd></div><div><dt>Total</dt><dd>{money(purchase.total)}</dd></div><div><dt>Documento</dt><dd>{purchase.tipoDocumento === "sin_documento" ? "Sin documento" : purchase.numeroDocumentoProveedor || getPurchaseDocumentTypeLabel(purchase.tipoDocumento)}</dd></div><div><dt>Origen</dt><dd>{purchase.recepcionId ? <button type="button" className="po-inline-link" onClick={() => navigate(`/recepciones/${purchase.recepcionId}`)}>{purchase.recepcionNumero || "Abrir recepción"}</button> : purchase.ordenCompraId ? <button type="button" className="po-inline-link" onClick={() => navigate(`/ordenes-compra/${purchase.ordenCompraId}`)}>{purchase.ordenCompraNumero || "Abrir OC"}</button> : "Directa"}</dd></div></dl>
+                <dl><div><dt>Fecha</dt><dd>{dateOf(purchase)}</dd></div><div><dt>Total</dt><dd>{money(purchase.total)}</dd></div><div><dt>Documento</dt><dd>{purchase.tipoDocumento === "sin_documento" ? "Sin documento" : purchase.numeroDocumentoProveedor || getPurchaseDocumentTypeLabel(purchase.tipoDocumento)}</dd></div><div><dt>Origen</dt><dd>{purchase.recepcionId ? <button type="button" className="po-inline-link" onClick={() => navigate(`/recepciones/${purchase.recepcionId}`)}>{purchase.recepcionNumero || "Abrir recepción"}</button> : purchase.ordenCompraId ? <button type="button" className="po-inline-link" onClick={() => navigate(`/ordenes-compra/${purchase.ordenCompraId}`)}>{purchase.ordenCompraNumero || "Abrir OC"}</button> : "Directa"}</dd></div></dl>
                 <Actions canManage={canManage} onAction={action} processing={processing === purchase.id} purchase={purchase} />
               </article>
             ))}

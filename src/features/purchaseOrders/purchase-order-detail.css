@@ -2,16 +2,11 @@
    Solo tokens; el modo oscuro sale de los propios tokens. Hoja propia para no tocar purchase-orders.css,
    que comparten Compras, Recepciones y Ventas. */
 .purchase-order-detail__screen { display: grid; gap: var(--space-4); min-width: 0; }
-.purchase-order-detail__context { display: grid; gap: var(--space-3); }
-.purchase-order-detail__top { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-3); justify-content: space-between; }
-.purchase-order-detail__title { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-3); }
-.purchase-order-detail__title h1 { color: var(--color-text-strong); font-size: var(--font-size-xl); margin: 0; overflow-wrap: anywhere; }
-.purchase-order-detail__facts, .purchase-order-detail__provider dl, .purchase-order-detail__notes dl { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); margin: 0; }
-.purchase-order-detail__facts > div, .purchase-order-detail__provider dl > div, .purchase-order-detail__notes dl > div, .purchase-order-detail__response { background: var(--color-surface-subtle); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm); display: grid; gap: var(--space-1); min-width: 0; padding: var(--space-2) var(--space-3); }
-.purchase-order-detail__facts dt, .purchase-order-detail__provider dt, .purchase-order-detail__notes dt, .purchase-order-detail__response > span { color: var(--color-text-muted); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); text-transform: uppercase; }
-.purchase-order-detail__facts dd, .purchase-order-detail__provider dd, .purchase-order-detail__notes dd, .purchase-order-detail__response > strong { color: var(--color-text-strong); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.purchase-order-detail__provider dl, .purchase-order-detail__notes dl { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); margin: 0; }
+.purchase-order-detail__provider dl > div, .purchase-order-detail__notes dl > div, .purchase-order-detail__response { background: var(--color-surface-subtle); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm); display: grid; gap: var(--space-1); min-width: 0; padding: var(--space-2) var(--space-3); }
+.purchase-order-detail__provider dt, .purchase-order-detail__notes dt, .purchase-order-detail__response > span { color: var(--color-text-muted); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); text-transform: uppercase; }
+.purchase-order-detail__provider dd, .purchase-order-detail__notes dd, .purchase-order-detail__response > strong { color: var(--color-text-strong); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .purchase-order-detail__response > small { color: var(--color-text-default); font-size: var(--font-size-sm); overflow-wrap: anywhere; }
-.purchase-order-detail__actions { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .purchase-order-detail__help { color: var(--color-text-muted); font-size: var(--font-size-xs); }
 .purchase-order-detail__flow { display: grid; gap: var(--space-3); min-width: 0; }
 .purchase-order-detail__provider { display: grid; gap: var(--space-3); }

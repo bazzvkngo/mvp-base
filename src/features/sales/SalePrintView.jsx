@@ -1,6 +1,7 @@
 import React from "react";
 import {CubeIcon} from "../../components/BrandLogo";
 import {resolveDocumentCompany} from "../../domain/companySnapshot.mjs";
+import {buildDocumentFooterParts, buildNetTotalsRows, getLegalNameBelowTitle} from "../../domain/documentPrintLayout.mjs";
 import {
   getSaleDocumentTypeLabel,
   getSaleItemTypeLabel,
@@ -34,6 +35,7 @@ export default function SalePrintView({company: rawCompany, sale = {}}) {
   const discountTotal = Number(sale.descuentoTotal ?? (Number(sale.descuentoItems || 0) + Number(sale.descuento || 0)));
   const companyLocation = [company.direccion, company.ciudad || company.comunaNombre, company.region || company.regionNombre].filter(hasText).join(" · ");
   const clientLocation = [client.direccion, client.comunaNombre, client.regionNombre].filter(hasText).join(" · ");
+  const footer = buildDocumentFooterParts(company, brand);
 
   return (
     <article className="sale-document-preview">
@@ -45,7 +47,7 @@ export default function SalePrintView({company: rawCompany, sale = {}}) {
           </div>
           <div>
             <h2>{brand}</h2>
-            {company.razonSocial !== brand && <OptionalLine value={company.razonSocial} />}
+            <OptionalLine value={getLegalNameBelowTitle(company, brand)} />
             <OptionalLine label={company.identificadorFiscalTipo || "Identificación fiscal"} value={company.identificadorFiscalValor || company.rut} />
             <OptionalLine value={companyLocation} />
             <OptionalLine value={[company.email, company.telefono].filter(hasText).join(" · ")} />
@@ -102,9 +104,9 @@ export default function SalePrintView({company: rawCompany, sale = {}}) {
       )}
 
       <div className="sale-document-preview__totals">
-        <TotalRow label="Subtotal" value={money(sale.subtotal)} />
-        {discountTotal > 0 && <TotalRow label="Descuentos" value={`-${money(discountTotal)}`} />}
-        <TotalRow label="Neto" value={money(sale.neto)} />
+        {buildNetTotalsRows({subtotal: sale.subtotal, descuentoTotal: discountTotal, neto: sale.neto}).map((row) => (
+          <TotalRow key={row.key} label={row.label} value={row.negative ? `-${money(row.amount)}` : money(row.amount)} />
+        ))}
         <TotalRow label={sale.afectaIva ? `${sale.impuestoNombre || "IVA"} ${Number(sale.tasaIva || 0) * 100}%` : `${sale.impuestoNombre || "Impuesto"} (exenta)`} value={money(sale.iva)} />
         <TotalRow label="Total" value={money(sale.total)} strong />
       </div>
@@ -113,8 +115,8 @@ export default function SalePrintView({company: rawCompany, sale = {}}) {
       {sale.observaciones && <section className="sale-document-preview__section"><h3>Observaciones</h3><p>{sale.observaciones}</p></section>}
 
       <footer>
-        <span>{[company.responsable, company.telefono, company.email].filter(hasText).join(" · ") || brand}</span>
-        <span>{brand} · ValoraCloud</span>
+        <span>{footer.left}</span>
+        <span>{footer.right}</span>
       </footer>
     </article>
   );

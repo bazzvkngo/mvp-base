@@ -1,6 +1,5 @@
-import {ArrowLeft} from "lucide-react";
 import {useNavigate} from "react-router-dom";
-import Button from "../../components/ui/Button";
+import useBusinessFormat from "../../hooks/useBusinessFormat";
 import StatusBadge from "../../components/ui/StatusBadge";
 import SupplyTrace from "../../components/ui/SupplyTrace";
 import {getReceptionStatusLabel} from "../../domain/receptionModel.mjs";
@@ -14,6 +13,9 @@ const hasDocumentValue = (value) => value !== "" && value !== null && value !== 
 // El borrador sigue usando el formulario de NewReceptionPage.
 export default function ReceptionDetailView({linkedPurchase, message, reception}) {
   const navigate = useNavigate();
+  // El formato regional es el del documento o, si no lo trae, el del negocio.
+  const businessFormat = useBusinessFormat();
+  const locale = reception.locale || businessFormat.locale;
   const confirmed = reception.estado === "confirmada";
   const items = Array.isArray(reception.items) ? reception.items : [];
   const receivedProducts = items.some((line) => line.tipoItem === "producto" && Number(line.cantidad) > 0);
@@ -23,18 +25,26 @@ export default function ReceptionDetailView({linkedPurchase, message, reception}
   const documentTypeLabel = source?.tipoDocumento === "factura" ? "Factura" : source?.tipoDocumento === "boleta" ? "Boleta" : "Documento";
 
   return <main className="po-workspace reception-detail">
-    <section className="po-panel reception-detail__context">
-      <div className="reception-detail__top">
-        <Button type="button" variant="secondary" icon={ArrowLeft} onClick={() => navigate("/recepciones")}>Volver al historial</Button>
-      </div>
-      <span className="po-kicker">Recepción</span>
-      <div className="reception-detail__title">
-        <h1>{reception.numero}</h1>
+    {/* Un solo h1 por pantalla: el de la barra superior (navigation.js). Por eso el título va en un <p>. */}
+    <header className="ui-doc-head no-print">
+      <div className="ui-doc-head__main">
+        <button type="button" className="ui-doc-back" onClick={() => navigate("/recepciones")}>← Recepciones</button>
+        <p className="ui-doc-head__title">{reception.numero}</p>
         <span className={`po-status po-status--${reception.estado}`}>{getReceptionStatusLabel(reception.estado)}</span>
       </div>
-      <dl className="reception-detail__facts">
-        <div><dt>Proveedor</dt><dd>{reception.proveedorSnapshot?.razonSocial || "—"}</dd></div>
-        <div><dt>Fecha de recepción</dt><dd>{formatDate(reception.fechaRecepcion, reception.locale)}</dd></div>
+      <div className="ui-doc-head__side">
+        <div className="ui-doc-head__meta">
+          <span>{reception.fechaRecepcion ? formatDate(reception.fechaRecepcion, locale) : "Sin fecha"}</span>
+          <span>{reception.ordenCompraId
+            ? <button type="button" className="po-inline-link" onClick={() => navigate(`/ordenes-compra/${reception.ordenCompraId}`)}>Orden de compra {reception.ordenCompraNumero}</button>
+            : "Orden de compra"}</span>
+        </div>
+      </div>
+    </header>
+
+    <section className="ui-step-card reception-order-origin" aria-label="Proveedor">
+      <dl>
+        <div><dt>Proveedor</dt><dd>{reception.proveedorSnapshot?.razonSocial || "Proveedor histórico"}</dd></div>
       </dl>
     </section>
 
