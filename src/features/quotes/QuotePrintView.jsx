@@ -7,6 +7,7 @@ import {
 import { getDefaultFiscalIdentifierLabel } from "../../domain/businessCatalog";
 import { getCountryFormCopy } from "../../domain/countryFormCopy.mjs";
 import { resolveDocumentCompany } from "../../domain/companySnapshot.mjs";
+import { buildNetTotalsRows, getLegalNameBelowTitle } from "../../domain/documentPrintLayout.mjs";
 import {
   QUOTE_FOOTER_QUESTION,
   QUOTE_FOOTER_THANKS,
@@ -78,7 +79,7 @@ function QuotePrintView({ quote: rawQuote, companyProfile }) {
               <h2>{brand}</h2>
             </div>
           )}
-          {company.razonSocial !== brand && <OptionalLine value={company.razonSocial} />}
+          <OptionalLine value={getLegalNameBelowTitle(company, brand)} />
           <OptionalLine label={getCountryFormCopy(quote.paisCodigo).businessActivityLabel} value={company.giro} />
         </div>
         <div className="quote-document-preview__identity">
@@ -174,11 +175,9 @@ function QuotePrintView({ quote: rawQuote, companyProfile }) {
           </section>
         )}
         <div className="quote-document-preview__totals">
-          <TotalRow label="Subtotal" value={money(quote.subtotal)} />
-          {quote.descuentoTotal > 0 && (
-            <TotalRow label="Descuento" value={`-${money(quote.descuentoTotal)}`} />
-          )}
-          <TotalRow label="Neto" value={money(quote.neto)} />
+          {buildNetTotalsRows({ subtotal: quote.subtotal, descuentoTotal: quote.descuentoTotal, neto: quote.neto, discountLabel: "Descuento" }).map((row) => (
+            <TotalRow key={row.key} label={row.label} value={row.negative ? `-${money(row.amount)}` : money(row.amount)} />
+          ))}
           <TotalRow label={taxLabel(quote)} value={money(quote.iva)} />
           <TotalRow label="Total" value={money(quote.total)} strong />
         </div>
