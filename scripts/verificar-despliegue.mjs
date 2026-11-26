@@ -37,6 +37,7 @@ const SMOKE_SCRIPTS = [
   "test:veterinary-inventory-pharmacy",
   "test:veterinary-photo-conversion",
   "test:veterinary-packaging",
+  "test:veterinary-sale-retry",
   "test:rbac",
   "test:market-relevance",
   "test:visible-text-accents",

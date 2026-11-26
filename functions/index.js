@@ -4219,7 +4219,7 @@ exports.enviarAvisosCitasVeterinarias = onSchedule(
 );
 
 const {guardarAtencionVeterinariaHandler} = require("./veterinaryAttentionPersistence");
-const {deliverVeterinarySale, VETERINARY_SALE_INTENTS} = require("./veterinaryAttentionSale");
+const {deliverVeterinarySaleFromEvent, VETERINARY_SALE_INTENTS} = require("./veterinaryAttentionSale");
 
 exports.guardarAtencionVeterinaria = onCall(
   {maxInstances: 10, region: DEFAULT_FUNCTION_REGION},
@@ -4235,8 +4235,10 @@ exports.generarVentaAtencionVeterinaria = onDocumentCreated({
   document: "negocios/{businessId}/" + VETERINARY_SALE_INTENTS + "/{atencionId}",
   region: DEFAULT_FUNCTION_REGION,
   maxInstances: 10,
+  memory: "256MiB",
+  timeoutSeconds: 60,
   retry: true,
-}, (event) => deliverVeterinarySale({db, FieldValue, HttpsError, ...event.params}));
+}, (event) => deliverVeterinarySaleFromEvent({db, FieldValue, HttpsError, eventTime: event.time, ...event.params}));
 
 const {guardarRecepcionVeterinariaHandler} = require("./veterinaryReceptionPersistence");
 

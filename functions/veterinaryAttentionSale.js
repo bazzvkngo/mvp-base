@@ -12,6 +12,11 @@ const {importVeterinaryModel} = require("./veterinaryModels");
 
 const VETERINARY_SALE_INTENTS = "ventasPendientesVeterinaria";
 const INTENT_ID = /^[a-zA-Z0-9_-]{1,120}$/;
+// El trigger reintenta (retry: true) solo dentro de esta ventana; después la
+// atención queda en "error" y se retoma con la operación manual "generarVenta".
+const SALE_RETRY_WINDOW_MS = 60 * 60 * 1000;
+const SALE_ERROR_MESSAGE =
+  "Revisa que el tutor y los ítems sigan disponibles en Clientes e Inventario y vuelve a intentar.";
 const TERMINAL_ERRORS = ["invalid-argument", "failed-precondition", "not-found", "permission-denied", "already-exists"];
 
 function requestIdForAttention(businessId, atencionId) {
@@ -111,9 +116,30 @@ async function deliverVeterinarySale({db, FieldValue, HttpsError, businessId, at
   } catch (error) {
     if (!TERMINAL_ERRORS.includes(error.code)) throw error;
     await updateSaleStatus(db, intentRef, attentionRef, FieldValue, "error", {
-      ventaError: "Revisa que el tutor y los ítems sigan disponibles en Clientes e Inventario y vuelve a intentar.",
+      ventaError: SALE_ERROR_MESSAGE,
     });
   }
 }
 
-module.exports = {deliverVeterinarySale, stageVeterinarySale, VETERINARY_SALE_INTENTS};
+async function deliverVeterinarySaleFromEvent({eventTime, now = Date.now(), ...args}) {
+  try {
+    await deliverVeterinarySale(args);
+  } catch (error) {
+    const age = now - Date.parse(eventTime);
+    // Sin hora válida o dentro de la ventana, el error se propaga y Functions reintenta.
+    if (!(age > SALE_RETRY_WINDOW_MS)) throw error;
+    console.warn("Venta veterinaria sin generar tras reintentos.", error.code || "internal");
+    const {db, FieldValue, businessId, atencionId} = args;
+    const businessRef = db.collection("negocios").doc(businessId);
+    await updateSaleStatus(
+        db,
+        businessRef.collection(VETERINARY_SALE_INTENTS).doc(atencionId),
+        businessRef.collection("atencionesVeterinarias").doc(atencionId),
+        FieldValue,
+        "error",
+        {ventaError: SALE_ERROR_MESSAGE},
+    );
+  }
+}
+
+module.exports = {deliverVeterinarySale, deliverVeterinarySaleFromEvent, SALE_RETRY_WINDOW_MS, stageVeterinarySale, VETERINARY_SALE_INTENTS};
