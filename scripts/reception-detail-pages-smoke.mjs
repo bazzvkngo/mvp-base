@@ -242,14 +242,14 @@ try {
       canDelete: false, canManage: true, company: {nombre: "Bagner"}, currentUser: null, duplicating: false, memberByUid: new Map(), message: "", order,
       printableOrder: {...order, moneda: BUSINESSES[key].monedaCodigo, locale: BUSINESSES[key].locale, paisCodigo: key, impuestoNombre: "IVA", tasaIva: 0.13},
       receptionActionLabel: "Registrar recepción", receptionStatus: "sin_recepcion", receptions: [], saving: false,
-      totals: {subtotal: 600, descuentoTotal: 0, neto: 600, iva: 78, total: 678}, whatsAppAvailability: {enabled: false, help: ""},
-      onCancel() {}, onCreateReception() {}, onDelete() {}, onDownloadPdf() {}, onDuplicate() {}, onEmail() {}, onSupplierConfirmation() {}, onWhatsApp() {},
+      totals: {subtotal: 600, descuentoTotal: 0, neto: 600, iva: 78, total: 678},
+      onCancel() {}, onCreateReception() {}, onDelete() {}, onDownloadPdf() {}, onDuplicate() {}, onSend() {}, onSupplierConfirmation() {},
     }), {business: BUSINESSES[key]});
     assert.ok(html.includes('class="ui-doc-back">← Órdenes de compra</button>') && html.includes('<p class="ui-doc-head__title">OC-2026-0007</p>'), `${key}: cabecera`);
     assert.ok(html.includes('po-status po-status--emitida">Emitida</span>'), `${key}: chip de estado`);
     assert.ok(html.includes(`<span>${expected}</span><span>Orden directa</span>`), `${key}: fecha ${expected} y origen`);
     assert.ok(!html.includes("<h1") && !html.includes("<details") && !html.includes("po-details") && !html.includes("Volver al historial"), `${key}: sin h1, acordeones ni Volver al historial`);
-    assert.ok(html.includes("Registrar recepción") && html.includes("Descargar PDF") && html.includes("Reenviar correo"), `${key}: acciones de la orden`);
+    assert.ok(html.includes("Registrar recepción") && html.includes("Descargar PDF") && html.includes(">Reenviar<"), `${key}: acciones de la orden`);
     assert.ok(html.includes("Confirmada con observaciones") && html.includes("Entrega parcial el viernes"), `${key}: la orden muestra el estado completo del proveedor y su observación`);
     assert.ok(html.includes("Recepción pendiente"), `${key}: estado de recepción`);
     assert.ok(html.includes('class="ui-section-head__title">Vista previa imprimible</h2>') && html.includes(">Ver vista previa</span>") && !html.includes("Ocultar vista previa"), `${key}: vista previa como tarjeta, cerrada`);

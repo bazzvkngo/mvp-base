@@ -266,12 +266,19 @@ const purchaseOrderCssSource = fs.readFileSync(new URL("../src/features/purchase
 const emailServiceSource = fs.readFileSync(new URL("../src/services/purchaseOrderEmailService.js", import.meta.url), "utf8");
 const backendSource = fs.readFileSync(new URL("../functions/purchaseOrderPersistence.js", import.meta.url), "utf8");
 const rulesSource = fs.readFileSync(new URL("../firestore.rules", import.meta.url), "utf8");
-assert.match(pageSource, /\u00bfEnviaste la orden de compra\?/);
-assert.match(pageSource, /Mantener pendiente/);
-assert.match(pageSource, /Sí, fue enviada/);
+// La pregunta posterior a abrir WhatsApp vive en el selector de envío compartido; la emisión sigue siendo la de siempre.
+const sendMethodSource = fs.readFileSync(new URL("../src/components/ui/SendMethodDialog.jsx", import.meta.url), "utf8");
+assert.match(sendMethodSource, /title="\u00bfLa enviaste\?"/);
+assert.match(sendMethodSource, /Todavía no/);
+assert.match(sendMethodSource, /Marcar como emitida/);
+assert.match(pageSource, /onWhatsAppSent=\{confirmWhatsApp\}/);
+assert.match(pageSource, /canalEmision: "whatsapp"/);
+assert.match(historySource, /canalEmision: "whatsapp"/);
+assert.match(historySource, /canalEmision: "manual"/);
 assert.match(historySource, /SendPurchaseOrderEmailDialog/);
 assert.match(historySource, /sendPurchaseOrderEmail/);
 assert.match(historySource, /onClick=\{\(\) => onSend\(order\)\}/);
+assert.match(historySource, /onSend=\{openSend\}/, "el Enviar del listado abre el selector, no el diálogo de correo directo");
 assert.doesNotMatch(historySource, /Esperando respuesta/);
 assert.match(dialogSource, /Enviar por correo/);
 assert.match(dialogSource, /import DocumentEmailDialog from/);

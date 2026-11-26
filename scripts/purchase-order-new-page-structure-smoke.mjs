@@ -54,15 +54,15 @@ assert.doesNotMatch(page, /PurchaseOrderCatalogDialog|Agregar desde catálogo/, 
 for (const needle of [
   "crearOrdenCompra(", "actualizarOrdenCompraBorrador(", "emitirOrdenCompra(", "cancelarOrdenCompra(", "duplicarOrdenCompraComoBorrador(",
   "crearRecepcionDesdeOrden(", "registrarRespuestaProveedor(", "calculatePurchaseOrderTotals(", "persistDraft", "findActiveProductByBarcode(",
-  "Enviar por correo", "Registrar envío manual", "Descargar PDF", "Imprimir", "Cancelar", "Eliminar", "Duplicar como nueva orden",
-  "<PurchaseOrderDeleteDialog", "<SendPurchaseOrderEmailDialog", "<PurchaseOrderDetailView",
+  ">Enviar</button>", ">Reenviar</button>", "Registrar envío manual", "Descargar PDF", "Imprimir", "Cancelar", "Eliminar", "Duplicar como nueva orden",
+  "<PurchaseOrderDeleteDialog", "<SendPurchaseOrderEmailDialog", "<SendMethodDialog", "<PurchaseOrderDetailView",
 ]) {
   assert.ok(page.includes(needle), `se conserva ${needle}`);
 }
 assert.match(page, /const moneyStep = documentDecimals > 0 \? String\(10 \*\* -documentDecimals\) : "any";/, "mismo paso de importes");
 assert.match(page, /const readOnly = !canManage \|\| \(order && order\.estado !== "borrador"\);/, "misma regla de solo lectura");
 assert.match(page, /const showDetailView = Boolean\(order && order\.estado !== "borrador"\);/, "emitida y cancelada siguen en la vista de detalle");
-assert.equal(count(page, /<ResponsiveDialog/g), 5, "diálogos: condiciones, confirmación del proveedor, WhatsApp, envío manual y cancelar");
+assert.equal(count(page, /<ResponsiveDialog/g), 4, "diálogos: condiciones, confirmación del proveedor, envío manual y cancelar (WhatsApp vive en el selector de envío)");
 
 // --- 2. Agregar ítems: escaneo igual que antes; catálogo igual que en Compra ---------------------------------------------
 assert.match(page, /items: incrementScannedItem\(current\.items, item\.id, \(\) => newLine\(item\)\)/, "el escaneo sigue sumando 1 a la línea existente");

@@ -4490,3 +4490,101 @@
   .ui-doc-line__row--movable { grid-template-areas: "identity identity move remove" "qty qty total total" "price discount discount discount"; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto; }
 }
 /* Fin del bloque de ítems del documento. */
+
+/* Selector de envío (SendMethodDialog): dos tarjetas grandes, Correo y WhatsApp. En móvil se apilan a ancho completo. */
+.ui-send-method {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ui-send-method__card {
+  align-items: flex-start;
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-lg);
+  color: var(--color-text-default);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  font: inherit;
+  gap: var(--space-2);
+  min-height: 9rem;
+  padding: var(--space-4);
+  text-align: left;
+  width: 100%;
+}
+
+.ui-send-method__card:hover:not(:disabled) {
+  background: var(--color-surface-brand);
+  border-color: var(--color-text-brand-accent);
+  box-shadow: var(--shadow-sm);
+}
+
+.ui-send-method__card:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 2px;
+}
+
+.ui-send-method__card:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.ui-send-method__icon {
+  color: var(--color-text-brand-accent);
+  display: inline-flex;
+}
+
+.ui-send-method__title {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+}
+
+.ui-send-method__help {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.ui-send-method__link {
+  background: none;
+  border: 0;
+  color: var(--color-text-brand);
+  cursor: pointer;
+  display: block;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  margin: var(--space-4) auto 0;
+  padding: var(--space-1) var(--space-2);
+  text-decoration: underline;
+}
+
+.ui-send-method__link:hover:not(:disabled) {
+  color: var(--color-text-brand-hover);
+}
+
+.ui-send-method__link:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 2px;
+}
+
+.ui-send-method__link:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.ui-send-method__note {
+  color: var(--color-text-default);
+  margin: 0;
+}
+
+@media (max-width: 620px) {
+  .ui-send-method {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ui-send-method__card {
+    min-height: 0;
+  }
+}

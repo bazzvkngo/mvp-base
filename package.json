@@ -86,6 +86,7 @@
     "test:purchase-orders-model": "node scripts/purchase-orders-model-smoke.mjs",
     "test:purchase-order-email": "node scripts/purchase-order-email-smoke.mjs",
     "test:document-email-dialog": "node scripts/document-email-dialog-smoke.mjs",
+    "test:send-method-dialog": "node scripts/send-method-dialog-smoke.mjs",
     "test:document-print-sheets": "node scripts/document-print-sheets-smoke.mjs",
     "test:purchase-order-delete": "firebase emulators:exec --only auth,firestore,functions \"node scripts/purchase-order-delete-integrated-local.mjs\"",
     "test:purchase-orders-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/purchase-orders-integrated-local.mjs\"",
