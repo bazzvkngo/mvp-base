@@ -13,6 +13,11 @@ const {
   identifier,
   requestIdentifier,
 } = require("./workOrderPersistence");
+const {
+  readPromotionCandidate,
+  readWaitingOrders,
+  writePromotion,
+} = require("./workOrderPlazaAssignment");
 
 const PLAZA_STATES = new Set(["activa", "inactiva"]);
 const TERMINAL_ORDER_STATES = new Set(["cerrada", "cancelada"]);
@@ -123,6 +128,7 @@ async function crearPlazaTallerHandler(request, dependencies) {
   const plazaId = requestIdentifier(request.data.requestId, HttpsError);
   const nombre = normalizedName(request.data.plaza.nombre, HttpsError);
   const plazaRef = context.businessRef.collection("plazasTaller").doc(plazaId);
+  const actorSnapshot = await diagnosisActor(dependencies, context.uid);
   return db.runTransaction(async (transaction) => {
     await assertFreshAccess(transaction, context, dependencies, TALLER_MANAGEMENT_ROLES);
     const existing = await transaction.get(plazaRef);
@@ -133,6 +139,8 @@ async function crearPlazaTallerHandler(request, dependencies) {
       }
       return {plaza: {...plaza, plazaId}, sinCambios: true};
     }
+    // Lectura antes de escribir: la Plaza nueva se entrega a la OT aprobada más antigua que espera.
+    const waiting = await readWaitingOrders(transaction, context.businessRef, context.businessId);
     const timestamp = FieldValue.serverTimestamp();
     const plaza = {
       plazaId,
@@ -145,7 +153,12 @@ async function crearPlazaTallerHandler(request, dependencies) {
       actualizadoEn: timestamp,
     };
     transaction.create(plazaRef, plaza);
-    return {plaza: {...plaza, creadoEn: null, actualizadoEn: null}, sinCambios: false};
+    const promoted = waiting.length ? writePromotion(transaction, {
+      plazaId, lockRef: context.businessRef.collection("plazaOccupancyKeys").doc(plazaId), ...waiting[0],
+    }, {appendPlanningEvent, businessId: context.businessId, actorUid: context.uid, actorSnapshot, timestamp,
+      origen: "plaza_creada"}) : null;
+    return {plaza: {...plaza, creadoEn: null, actualizadoEn: null}, sinCambios: false,
+      ...(promoted ? {otPromovidaId: promoted.otId} : {})};
   });
 }
 
@@ -179,17 +192,39 @@ async function cambiarEstadoPlazaTaller(request, dependencies, estado) {
   const plazaId = identifier(request.data.plazaId, "La Plaza", HttpsError);
   const expected = expectedRevision(request.data.expectedActualizadoEn, HttpsError, "las Plazas");
   const plazaRef = context.businessRef.collection("plazasTaller").doc(plazaId);
+  const lockRef = context.businessRef.collection("plazaOccupancyKeys").doc(plazaId);
+  const actorSnapshot = estado === "activa" ? await diagnosisActor(dependencies, context.uid) : null;
   return db.runTransaction(async (transaction) => {
     await assertFreshAccess(transaction, context, dependencies, TALLER_MANAGEMENT_ROLES);
     const plaza = assertPlaza(await transaction.get(plazaRef), context.businessId, HttpsError);
     if (plaza.estado === estado) return {plazaId, estado, sinCambios: true};
     assertRevision(plaza, expected, HttpsError, "La Plaza");
+    // El negocio siempre conserva al menos una Plaza activa.
+    if (estado === "inactiva") {
+      const activePlazas = await transaction.get(
+        context.businessRef.collection("plazasTaller").where("estado", "==", "activa")
+      );
+      const others = activePlazas.docs.filter((document) => document.id !== plazaId &&
+        (document.data() || {}).negocioId === context.businessId);
+      if (!others.length) {
+        fail(HttpsError, "failed-precondition", "El negocio debe tener al menos una Plaza activa. Crea o activa otra antes de inactivar esta.");
+      }
+    }
+    // Al activar, si la Plaza no tiene candado, pasa a la OT aprobada más antigua que espera.
+    const lockSnapshot = estado === "activa" ? await transaction.get(lockRef) : null;
+    const waiting = estado === "activa" && !lockSnapshot.data()?.otId
+      ? await readWaitingOrders(transaction, context.businessRef, context.businessId)
+      : [];
+    const timestamp = FieldValue.serverTimestamp();
     transaction.update(plazaRef, {
       estado,
       actualizadoPorUid: context.uid,
-      actualizadoEn: FieldValue.serverTimestamp(),
+      actualizadoEn: timestamp,
     });
-    return {plazaId, estado, sinCambios: false};
+    const promoted = waiting.length ? writePromotion(transaction, {plazaId, lockRef, ...waiting[0]}, {
+      appendPlanningEvent, businessId: context.businessId, actorUid: context.uid, actorSnapshot, timestamp,
+      origen: "plaza_activada"}) : null;
+    return {plazaId, estado, sinCambios: false, ...(promoted ? {otPromovidaId: promoted.otId} : {})};
   });
 }
 
@@ -270,9 +305,16 @@ async function asignarPlazaOTHandler(request, dependencies) {
     if (previousPlazaId === plazaId && targetLock?.otId === otId) {
       return {otId, plazaId, estado: order.estado, sinCambios: true};
     }
+    // La Plaza anterior queda libre: pasa a la OT aprobada más antigua que espera.
+    const promotion = previousPlazaId && previousPlazaId !== plazaId
+      ? await readPromotionCandidate(transaction, context.businessRef, context.businessId, previousPlazaId, otId)
+      : null;
     const timestamp = FieldValue.serverTimestamp();
-    const estado = order.estado === "en_cola" ? "en_diagnostico" : order.estado;
-    if (previousLockSnapshot?.exists) transaction.delete(previousLockRef);
+    // Una OT aprobada que esperaba Plaza inicia la reparación; una pendiente pasa a diagnóstico.
+    const estado = order.estado === "en_cola"
+      ? (order.estadoAprobacion === "aprobada" ? "en_reparacion" : "en_diagnostico")
+      : order.estado;
+    if (previousLockSnapshot?.exists && !promotion) transaction.delete(previousLockRef);
     transaction.set(targetLockRef, {negocioId: context.businessId, plazaId, otId});
     transaction.update(orderRef, {
       plazaId,
@@ -291,7 +333,9 @@ async function asignarPlazaOTHandler(request, dependencies) {
       type: "plaza_asignada", timestamp,
       detail: {plazaId, plazaAnteriorId: previousPlazaId, estadoAnterior: order.estado, estado},
     });
-    return {otId, plazaId, estado, sinCambios: false};
+    const promoted = writePromotion(transaction, promotion, {appendPlanningEvent, businessId: context.businessId,
+      actorUid: context.uid, actorSnapshot, timestamp, origen: "cambio_plaza"});
+    return {otId, plazaId, estado, sinCambios: false, ...(promoted ? {otPromovidaId: promoted.otId} : {})};
   });
 }
 
@@ -319,8 +363,10 @@ async function liberarPlazaOTHandler(request, dependencies) {
         (lock.negocioId !== context.businessId || lock.plazaId !== plazaId || lock.otId !== otId)) {
       fail(HttpsError, "failed-precondition", "La asignación actual de la OT requiere revisión antes de liberarla.");
     }
+    // La Plaza liberada pasa a la OT aprobada más antigua que espera (lectura antes de escribir).
+    const promotion = await readPromotionCandidate(transaction, context.businessRef, context.businessId, plazaId, otId);
     const timestamp = FieldValue.serverTimestamp();
-    if (lockSnapshot.exists) transaction.delete(lockRef);
+    if (lockSnapshot.exists && !promotion) transaction.delete(lockRef);
     transaction.update(orderRef, {
       plazaId: null,
       actualizadoPorUid: context.uid,
@@ -330,7 +376,10 @@ async function liberarPlazaOTHandler(request, dependencies) {
       businessId: context.businessId, actorUid: context.uid, actorSnapshot,
       type: "plaza_liberada", timestamp, detail: {plazaId},
     });
-    return {otId, plazaId: null, estado: order.estado, sinCambios: false};
+    const promoted = writePromotion(transaction, promotion, {appendPlanningEvent, businessId: context.businessId,
+      actorUid: context.uid, actorSnapshot, timestamp, origen: "liberacion"});
+    return {otId, plazaId: null, estado: order.estado, sinCambios: false,
+      ...(promoted ? {otPromovidaId: promoted.otId} : {})};
   });
 }
 

@@ -4,6 +4,8 @@ import {Plus, Save} from "lucide-react";
 import Button from "../../components/ui/Button";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import StatusBadge from "../../components/ui/StatusBadge";
+import useBusinessFormat from "../../hooks/useBusinessFormat";
+import {formatTimestamp} from "../../utils/formatters";
 import {
   actualizarDiagnostico, completarDiagnostico, createWorkOrderRequestId,
   getWorkOrderErrorMessage, listarPersonasAsignablesTaller, registrarDiagnostico,
@@ -12,14 +14,9 @@ import {
 
 const emptyDraft = {responsableUid: "", descripcion: "", observaciones: ""};
 
-function dateLabel(value) {
-  const date = value?.toDate?.() || (value ? new Date(value) : null);
-  return date && !Number.isNaN(date.getTime())
-    ? date.toLocaleString("es-CL", {dateStyle: "medium", timeStyle: "short"})
-    : "Pendiente";
-}
-
 export default function DiagnosisPanel({businessId, diagnoses, onChanged, order, otId, role}) {
+  const {locale} = useBusinessFormat();
+  const dateLabel = (value) => value ? formatTimestamp(value, locale) : "Pendiente";
   const canAccess = hasBusinessPermission(role, BUSINESS_PERMISSIONS.TALLER_READ);
   const canOperate = hasBusinessPermission(role, BUSINESS_PERMISSIONS.TALLER_OPERATE) &&
     Boolean(order.recepcion) && !["ingresada", "pendiente_entrega", "cerrada", "cancelada"].includes(order.estado);

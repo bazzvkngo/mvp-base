@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
-import {doc, getDoc, setDoc} from "firebase/firestore";
 
-export async function testWorkOrderApproval({adminDb, businessId, otId, serviceId, diagnosisPath,
-  owner, admin, technician, member, outsider, callable, expectCallableError, expectFirestoreDenied, runId}) {
+// La aprobación es una compuerta de ingreso: el Owner o el Administrador dicen sí o no,
+// sin servicios ni alcance. Los trabajos se registran después, en la ejecución, y los
+// precios se congelan al finalizar (envío a Ventas), no al aprobar.
+export async function testWorkOrderApproval({adminDb, businessId, otId, serviceId,
+  owner, admin, technician, member, outsider, callable, expectCallableError, runId}) {
   const base = `negocios/${businessId}`;
   const orderRef = adminDb.doc(`${base}/ordenesTrabajo/${otId}`);
   const serviceRef = orderRef.collection("servicios").doc(serviceId);
-  const productRef = adminDb.doc(`${base}/inventario/producto-core`);
-  const coreServiceRef = adminDb.doc(`${base}/inventario/servicio-core`);
   let sequence = 0;
   const requestId = () => `approval-${runId}-${++sequence}`;
   const order = async () => (await orderRef.get()).data();
@@ -17,173 +17,85 @@ export async function testWorkOrderApproval({adminDb, businessId, otId, serviceI
   const action = async (name, client = owner, extra = {}) => (await callable(client, name)(await payload(extra))).data;
   const reject = (label, name, data, client = owner, codes = ["failed-precondition"]) =>
     expectCallableError(label, () => callable(client, name)(data), codes);
-  const addProduct = async (targetService = serviceId, quantity = 2) => {
-    const id = requestId();
-    await callable(technician, "agregarProductoOT")({businessId, otId, servicioOtId: targetService,
-      itemId: "producto-core", cantidad: quantity, requestId: id});
-    return id;
-  };
-  const updateQuantity = async (id, quantity) => callable(technician, "actualizarProductoOT")({
-    businessId, otId, servicioOtId: serviceId, productoOtId: id, cantidad: quantity,
-    expectedActualizadoEn: (await service()).actualizadoEn.toMillis(),
-  });
   const events = async () => (await orderRef.collection("historial").get()).docs.map((snapshot) => snapshot.data());
+  const planning = (extra = {}) => ({businessId, otId, requestId: requestId(),
+    servicio: {itemId: "servicio-core"}, ...extra});
 
-  // Preconditions and authority are checked by the callable, not the client.
+  // La compuerta se prueba sobre una OT recibida y pendiente de decisión, sin importar el estado previo.
+  await orderRef.update({estado: "en_diagnostico", estadoAprobacion: "pendiente"});
+
+  // Antes de aprobar el ingreso no se registran trabajos ni repuestos.
+  await reject("trabajos antes de aprobar", "crearServicioOT", planning(), technician);
+  await reject("repuestos antes de aprobar", "agregarProductoOT", {businessId, otId, servicioOtId: serviceId,
+    itemId: "producto-core", cantidad: 1, requestId: requestId()}, technician);
+
+  // El envío a aprobación y la revalidación de disponibilidad dejaron de usarse.
+  await reject("enviar a aprobación ya no existe", "enviarOTAprobacion", await payload());
+  await reject("revalidar disponibilidad ya no existe", "revalidarDisponibilidadOT", await payload());
+
+  // Precondiciones y autoridad se validan en el servidor.
   const reception = (await order()).recepcion;
   await orderRef.update({recepcion: null});
-  await reject("envío sin recepción", "enviarOTAprobacion", await payload());
+  await reject("aprobar sin recepción", "aprobarOT", await payload({responsableUid: technician.uid}));
   await orderRef.update({recepcion: reception});
-  await adminDb.doc(diagnosisPath).update({estado: "borrador"});
-  await reject("envío sin diagnóstico completado", "enviarOTAprobacion", await payload());
-  await reject("aprobar sin diagnóstico completado", "aprobarOT", await payload());
-  await adminDb.doc(diagnosisPath).update({estado: "completado"});
-  await reject("snapshot aportado por frontend", "enviarOTAprobacion", await payload({snapshot: {precioUnitario: 1}}), owner, ["invalid-argument"]);
-  await reject("precio manual", "enviarOTAprobacion", await payload({precioUnitario: 1}), owner, ["invalid-argument"]);
-  await reject("negocio ajeno", "enviarOTAprobacion", await payload(), outsider, ["permission-denied"]);
+  await reject("precio manual", "aprobarOT", await payload({precioUnitario: 1}), owner, ["invalid-argument"]);
+  await reject("snapshot aportado por frontend", "aprobarOT", await payload({snapshot: {precioUnitario: 1}}), owner, ["invalid-argument"]);
+  await reject("negocio ajeno", "aprobarOT", await payload(), outsider, ["permission-denied"]);
   await reject("membresía operativa no concede aprobación", "aprobarOT", await payload(), technician, ["permission-denied"]);
   await reject("perfil Taller no concede aprobación", "aprobarOT", await payload(), member, ["permission-denied"]);
-  const memberRef = adminDb.doc(`membresias/${businessId}__${member.uid}`);
-  await memberRef.update({estado: "inactivo"});
-  await reject("membresía inactiva", "enviarOTAprobacion", await payload(), member, ["permission-denied"]);
-  await memberRef.update({estado: "activo"});
-  const productId = await addProduct();
-  await coreServiceRef.update({tipoItem: "producto"});
-  await reject("referencia servicio de tipo incorrecto", "enviarOTAprobacion", await payload());
-  await coreServiceRef.update({tipoItem: "servicio", precioInterno: null});
-  await reject("precio Core ausente", "enviarOTAprobacion", await payload());
-  await coreServiceRef.update({precioInterno: 25000, negocioId: "otro-negocio"});
-  await reject("referencia Core de otro negocio", "enviarOTAprobacion", await payload());
-  await coreServiceRef.update({negocioId: businessId});
-  await productRef.update({tipoItem: "servicio"});
-  await reject("referencia producto de tipo incorrecto", "enviarOTAprobacion", await payload());
-  await productRef.update({tipoItem: "producto", stock: null});
-  await reject("stock inválido", "enviarOTAprobacion", await payload());
-  await productRef.update({stock: 12});
+  await reject("revisión obsoleta", "aprobarOT", await payload({expectedActualizadoEn: 1, responsableUid: technician.uid}), owner, ["aborted"]);
 
-  const sendRequest = await payload();
-  const sent = (await callable(technician, "enviarOTAprobacion")(sendRequest)).data;
-  assert.equal(sent.estado, "esperando_aprobacion");
-  assert.equal(sent.estadoAprobacion, "pendiente");
-  assert.equal((await service()).precioUnitario, 25000);
-  assert.equal((await service()).productos[0].precioUnitario, 8000);
-  assert.equal((await productRef.get()).data().stock, 12);
-  assert.equal((await callable(technician, "enviarOTAprobacion")(sendRequest)).data.sinCambios, true);
-  assert.equal((await events()).filter((event) => event.tipo === "ot_enviada_aprobacion").length, 1);
-  await reject("requestId reutilizado", "enviarOTAprobacion", {...sendRequest, motivo: "otro"}, technician, ["already-exists"]);
-  await reject("revisión de alcance obsoleta", "aprobarOT", await payload({expectedActualizadoEn: 1}), owner, ["aborted"]);
+  // Rechazar exige motivo y deja la OT esperando una nueva decisión; no habilita trabajos.
+  await reject("rechazar sin motivo", "rechazarOT", await payload(), admin, ["invalid-argument"]);
+  await reject("rechazar con motivo en blanco", "rechazarOT", await payload({motivo: "   "}), admin, ["invalid-argument"]);
+  const rejection = await action("rechazarOT", admin, {motivo: "Falta autorización del cliente"});
+  assert.equal(rejection.estadoAprobacion, "rechazada");
+  assert.ok(["en_cola", "en_diagnostico"].includes(rejection.estado), "rechazar no inicia la ejecución");
+  assert.equal((await order()).estadoAprobacion, "rechazada");
+  assert.equal((await order()).motivoRechazo, "Falta autorización del cliente", "la OT guarda el motivo de la espera");
+  // La OT puede traer rechazos anteriores de la suite: se busca el de esta decisión.
+  const rejectedEvent = (await events()).find((event) =>
+    event.tipo === "ot_rechazada" && event.detalle.motivo === "Falta autorización del cliente");
+  assert.ok(rejectedEvent, "el rechazo registra su motivo en el historial");
+  await reject("trabajos tras rechazar", "crearServicioOT", planning(), technician);
 
-  const firstFrozen = (await service()).servicioSnapshot;
-  await coreServiceRef.update({nombre: "Nombre nuevo", precioInterno: 40000});
-  await productRef.update({nombre: "Filtro nuevo", precioInterno: 9000});
-  const approveRequest = await payload();
+  // Aprobar es idempotente, no exige servicios ni congela precios.
+  const approvedEventsBefore = (await events()).filter((event) => event.tipo === "ot_aprobada").length;
+  // Aprobar exige elegir el responsable de la OT, que debe ser un miembro asignable y activo del negocio.
+  await reject("aprobar sin responsable", "aprobarOT", await payload(), admin, ["invalid-argument"]);
+  await reject("responsable de otro negocio", "aprobarOT", await payload({responsableUid: outsider.uid}), admin);
+  await reject("rechazar no asigna responsable", "rechazarOT", await payload({motivo: "No", responsableUid: technician.uid}), admin, ["invalid-argument"]);
+  const approveRequest = await payload({responsableUid: technician.uid});
   const approved = (await callable(admin, "aprobarOT")(approveRequest)).data;
   assert.equal(approved.estado, "en_reparacion");
   assert.equal(approved.estadoAprobacion, "aprobada");
-  assert.equal((await service()).precioUnitario, 25000);
-  assert.deepEqual((await service()).servicioSnapshot, firstFrozen);
   assert.equal((await callable(admin, "aprobarOT")(approveRequest)).data.sinCambios, true);
-  await coreServiceRef.update({estado: "inactivo"});
-  const summary = (await callable(member, "obtenerResumenAprobacionOT")({businessId, otId})).data;
-  assert.equal(summary.alcance[0].precioUnitario, 25000);
-  assert.equal(summary.puedeAprobar, false);
-  assert.ok(summary.congelado);
-  assert.doesNotMatch(JSON.stringify(summary), /costo|margen|precioInterno/);
-  await coreServiceRef.update({estado: "activo"});
-  await reject("reenviar un alcance aprobado sin modificación", "enviarOTAprobacion", await payload());
-  // Responsible and identical quantity changes do not invalidate approved scope.
-  await callable(owner, "actualizarServicioOT")({businessId, otId, servicioOtId: serviceId,
-    servicio: {itemId: "servicio-core", responsableUid: admin.uid},
-    expectedActualizadoEn: (await service()).actualizadoEn.toMillis()});
-  await updateQuantity(productId, 2);
+  assert.equal((await events()).filter((event) => event.tipo === "ot_aprobada").length, approvedEventsBefore + 1);
+  await reject("requestId reutilizado con otros datos", "aprobarOT", {...approveRequest, motivo: "otro"}, admin, ["already-exists"]);
+  assert.equal((await order()).responsableUid, technician.uid, "Aprobar guarda el responsable de la OT");
+  assert.ok((await order()).responsableNombre, "Aprobar guarda el nombre visible del responsable");
+  const approvalEvent = (await events()).filter((event) => event.tipo === "ot_aprobada").at(-1);
+  assert.ok(approvalEvent.detalle.responsableNombre, "El historial indica quién quedó como responsable");
+  await reject("aprobar de nuevo", "aprobarOT", await payload({responsableUid: technician.uid}));
+  await reject("rechazar una OT ya aprobada", "rechazarOT", await payload({motivo: "Tarde"}), admin);
+  assert.equal((await service()).precioUnitario, null, "Aprobar no congela precios");
+
+  // Con el ingreso aprobado se registran trabajos y repuestos sin invalidar la aprobación.
+  const addId = requestId();
+  await callable(technician, "agregarProductoOT")({businessId, otId, servicioOtId: serviceId,
+    itemId: "producto-core", cantidad: 1, requestId: addId});
   assert.equal((await order()).estadoAprobacion, "aprobada");
-  await updateQuantity(productId, 3);
-  assert.equal((await order()).estadoAprobacion, "pendiente");
-  assert.ok(["en_cola", "en_diagnostico"].includes((await order()).estado));
-  await reject("alcance editado requiere nuevo envío", "aprobarOT", await payload());
-  const historical = (await events()).find((event) => event.tipo === "ot_aprobada");
-  assert.equal(historical.detalle.alcance[0].precioUnitario, 25000);
-  assert.deepEqual(historical.detalle.alcance[0].servicioSnapshot, firstFrozen);
-  assert.equal((await action("enviarOTAprobacion")).estado, "esperando_aprobacion");
-  assert.equal((await service()).precioUnitario, 40000);
-  assert.equal((await service()).productos[0].precioUnitario, 9000);
-  await reject("enviar de nuevo con la OT esperando aprobación", "enviarOTAprobacion", await payload());
-  const waitingEvents = (await events()).filter((event) => event.tipo === "ot_enviada_aprobacion").length;
-  await reject("rechazar sin motivo", "rechazarOT", await payload(), admin, ["invalid-argument"]);
-  await reject("rechazar con motivo en blanco", "rechazarOT", await payload({motivo: "   "}), admin, ["invalid-argument"]);
-  assert.equal((await order()).estado, "esperando_aprobacion");
-  const rejection = await action("rechazarOT", admin, {motivo: "Revisar el alcance"});
-  assert.equal(rejection.estadoAprobacion, "rechazada");
-  assert.ok(["en_cola", "en_diagnostico"].includes(rejection.estado), "rechazar devuelve la OT a planificación");
-  assert.equal((await order()).estado, rejection.estado);
-  assert.equal((await order()).estadoAprobacion, "rechazada");
-  const rejectedEvent = (await events()).find((event) => event.tipo === "ot_rechazada");
-  assert.equal(rejectedEvent.detalle.motivo, "Revisar el alcance");
-  assert.equal(rejectedEvent.detalle.estado, rejection.estado);
-  await reject("rechazada no se aprueba sin reenvío", "aprobarOT", await payload());
-  // Un alcance rechazado se puede reenviar a aprobación.
-  const resent = await action("enviarOTAprobacion");
-  assert.equal(resent.estado, "esperando_aprobacion");
-  assert.equal(resent.estadoAprobacion, "pendiente");
-  assert.equal((await events()).filter((event) => event.tipo === "ot_enviada_aprobacion").length, waitingEvents + 1);
+  assert.equal((await order()).estado, "en_reparacion");
+  const added = (await service()).productos.find((product) => product.itemId === "producto-core");
+  await callable(owner, "eliminarProductoOT")({businessId, otId, servicioOtId: serviceId,
+    productoOtId: added.productoOtId, expectedActualizadoEn: (await service()).actualizadoEn.toMillis()});
+  assert.equal((await order()).estadoAprobacion, "aprobada");
 
-  // Stock may change between send and approve. Approval remains independent.
-  await productRef.update({stock: 1});
-  const waitingApproved = await action("aprobarOT");
-  assert.equal(waitingApproved.estado, "esperando_repuestos");
-  assert.equal(waitingApproved.estadoAprobacion, "aprobada");
-  assert.equal(waitingApproved.faltantes[0].cantidad, 3);
-  assert.equal((await action("revalidarDisponibilidadOT", technician)).estado, "esperando_repuestos");
-  await productRef.update({stock: 12});
-  const resumed = await action("revalidarDisponibilidadOT", technician);
-  assert.equal(resumed.estado, "en_reparacion");
-  assert.equal(resumed.estadoAprobacion, "aprobada");
-  assert.equal((await productRef.get()).data().stock, 12);
-
-  // Product addition/removal and service addition/replacement invalidate too.
-  const addedId = await addProduct(serviceId, 1);
-  assert.equal((await order()).estadoAprobacion, "pendiente");
-  await action("enviarOTAprobacion"); await action("aprobarOT");
-  await callable(owner, "eliminarProductoOT")({businessId, otId, servicioOtId: serviceId, productoOtId: addedId,
-    expectedActualizadoEn: (await service()).actualizadoEn.toMillis()});
-  assert.equal((await order()).estadoAprobacion, "pendiente");
-  await action("enviarOTAprobacion"); await action("aprobarOT");
-  const secondServiceId = requestId();
-  await callable(owner, "crearServicioOT")({businessId, otId, requestId: secondServiceId,
-    servicio: {itemId: "servicio-core", responsableUid: admin.uid}});
-  assert.equal((await order()).estadoAprobacion, "pendiente");
-  await addProduct(secondServiceId, 10);
-  const waitingPending = await action("enviarOTAprobacion");
-  assert.equal(waitingPending.estado, "esperando_repuestos");
-  assert.equal(waitingPending.estadoAprobacion, "pendiente");
-  assert.equal(waitingPending.faltantes[0].cantidad, 13); // Aggregate same product across services.
-  await reject("no aprueba antes de disponibilidad suficiente", "aprobarOT", await payload());
-  await productRef.update({stock: 13});
-  assert.equal((await action("revalidarDisponibilidadOT")).estado, "esperando_aprobacion");
-  await action("aprobarOT");
-  await adminDb.doc(`${base}/inventario/servicio-nuevo`).set({
-    negocioId: businessId, tipoItem: "servicio", estado: "activo", nombre: "Servicio alternativo", precioInterno: 5000,
-  });
-  await callable(owner, "actualizarServicioOT")({businessId, otId, servicioOtId: serviceId,
-    servicio: {itemId: "servicio-nuevo", responsableUid: admin.uid},
-    expectedActualizadoEn: (await service()).actualizadoEn.toMillis()});
-  assert.equal((await order()).estadoAprobacion, "pendiente");
-  await action("enviarOTAprobacion");
-
-  const concurrentPayload = await payload();
-  const decisions = await Promise.allSettled([
-    callable(owner, "aprobarOT")(concurrentPayload),
-    callable(admin, "rechazarOT")({...concurrentPayload, requestId: requestId(), motivo: "Decisión concurrente"}),
-  ]);
-  assert.equal(decisions.filter((result) => result.status === "fulfilled").length, 1);
-  assert.equal(decisions.filter((result) => result.status === "rejected").length, 1);
-  for (const internal of ["otApprovalState", "otApprovalRequests"]) {
-    await expectFirestoreDenied(`SDK no lee ${internal}`, () => getDoc(doc(owner.db, `${base}/${internal}/${internal === "otApprovalState" ? otId : sendRequest.requestId}`)));
-    await expectFirestoreDenied(`SDK no escribe ${internal}`, () => setDoc(doc(owner.db, `${base}/${internal}/directo`), {negocioId: businessId}));
-  }
-  await expectFirestoreDenied("SDK no escribe aprobación", () => setDoc(doc(owner.db, orderRef.path), {estadoAprobacion: "aprobada"}, {merge: true}));
-  assert.ok((await events()).filter((event) => ["ot_enviada_aprobacion", "ot_aprobada", "ot_rechazada", "aprobacion_invalidada"].includes(event.tipo))
-    .every((event) => event.actorUid && event.actorSnapshot && event.fecha?.toDate()));
-  assert.equal((await productRef.get()).data().stock, 13);
-  console.log("WORK_ORDER_APPROVAL_INTEGRATED_OK: snapshots, historial, idempotencia, stock, transiciones, invalidación, concurrencia y RBAC");
+  // El resumen no expone costos ni márgenes y nunca devuelve precios del alcance antes de finalizar.
+  const summary = (await callable(owner, "obtenerResumenAprobacionOT")({businessId, otId})).data;
+  assert.equal(summary.puedeEnviar, false);
+  assert.equal(summary.puedeDecidir, false);
+  assert.equal(summary.puedeAprobar, true);
+  assert.doesNotMatch(JSON.stringify(summary), /costo|margen|precioInterno/);
+  console.log("OK aprobación OT: compuerta de ingreso, rechazo con motivo, trabajos solo en ejecución");
 }

@@ -29,6 +29,7 @@ import InitialBusinessActivationPage from "../pages/InitialBusinessActivationPag
 import PricingPage from "../pages/PricingPage";
 import QuoteHistoryPage from "../pages/QuoteHistoryPage";
 import PublicQuoteProposalPage from "../pages/PublicQuoteProposalPage";
+import PublicWorkshopTrackingPage from "../pages/PublicWorkshopTrackingPage";
 import LegalDocumentPage from "../features/legal/LegalDocumentPage";
 import LegalAcceptancePage from "../features/legal/LegalAcceptancePage";
 import BusinessWaitingPage from "../features/auth/BusinessWaitingPage";
@@ -53,6 +54,7 @@ import WorkOrdersPage from "../pages/WorkOrdersPage";
 import NewWorkOrderPage from "../pages/NewWorkOrderPage";
 import WorkOrderDetailPage from "../pages/WorkOrderDetailPage";
 import WorkshopPlazasPage from "../pages/WorkshopPlazasPage";
+import WorkshopHomePage from "../pages/WorkshopHomePage";
 import VeterinaryPage from "../pages/VeterinaryPage";
 import Button from "../components/ui/Button";
 import { BusinessFormatProvider } from "../hooks/useBusinessFormat";
@@ -182,6 +184,15 @@ function AppRoutes({
       <Routes>
         <Route path="/propuesta/:token" element={<PublicQuoteProposalPage />} />
         <Route path="*" element={<PublicQuoteProposalPage />} />
+      </Routes>
+    );
+  }
+
+  // Seguimiento público del Taller: el cliente entra sin sesión por enlace único o con patente + RUT en /seguimiento.
+  if (/^\/seguimiento(\/(taller\/)?[^/]+)?\/?$/.test(location.pathname)) {
+    return (
+      <Routes>
+        <Route path="*" element={<PublicWorkshopTrackingPage />} />
       </Routes>
     );
   }
@@ -431,7 +442,16 @@ function AppRoutes({
             />
           }
         />
-        <Route path="/taller" element={<Navigate to="/taller/ordenes" replace />} />
+        <Route
+          path="/taller"
+          element={
+            <WorkshopHomePage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness}
+            />
+          }
+        />
         <Route
           path="/taller/ordenes"
           element={

@@ -14,6 +14,15 @@ const {
 const {ASSIGNABLE_BUSINESS_ROLES} = require("./rbac");
 const {adaptDocumentAmountDecimals, currencyAmountDecimals} = require("./localization");
 const {isMoneyAmount, roundMoney} = require("./money");
+const {
+  automaticAssignmentDetail,
+  readFreePlaza,
+  readPromotionCandidate,
+  writePromotion,
+} = require("./workOrderPlazaAssignment");
+const {missingReceptionPhotoZones, receptionPhotoDamages} = require("./workOrderReceptionPhotoZones");
+const {missingDeliveryZones, normalizeDeliveryInput, normalizePersonDocument} = require("./workOrderDeliveryRules");
+const {PLATE_INDEX_COLLECTION, normalizePlate, plateIndexId} = require("./workOrderTrackingRules");
 
 function canReadCorePricing(membership) {
   if (!PRICING_READ_ROLES.includes(membership?.rol)) return false;
@@ -23,43 +32,28 @@ function canReadCorePricing(membership) {
 
 const WORK_ORDER_INPUT_FIELDS = new Set(["vehiculoId"]);
 const RECEPTION_INPUT_FIELDS = new Set([
+  "motivoCliente",
   "kilometraje",
   "nivelCombustible",
-  "checklist",
-  "accesorios",
-  "danosObservados",
-  "observaciones",
+  "testigosEncendidos",
+  "testigos",
+  "ingresaNombre",
+  "ingresaDocumento",
 ]);
-const RECEPTION_CHECKLIST_VALUES = Object.freeze({
-  carroceriaPintura: new Set(["SIN_DANOS_VISIBLES", "CON_OBSERVACIONES", "NO_REVISADO"]),
-  vidriosEspejos: new Set(["SIN_DANOS_VISIBLES", "CON_OBSERVACIONES", "NO_REVISADO"]),
-  lucesOpticos: new Set(["SIN_DANOS_VISIBLES", "CON_OBSERVACIONES", "NO_REVISADO"]),
-  neumaticosLlantas: new Set(["SIN_DANOS_VISIBLES", "CON_OBSERVACIONES", "NO_REVISADO"]),
-  interior: new Set(["SIN_DANOS_VISIBLES", "CON_OBSERVACIONES", "NO_REVISADO"]),
-  tableroIndicadores: new Set(["SIN_ALERTAS_VISIBLES", "CON_ALERTAS", "NO_REVISADO"]),
-  encendido: new Set(["NORMAL", "CON_DIFICULTAD", "NO_ENCIENDE", "NO_PROBADO"]),
-  fugasVisibles: new Set(["NO_SE_OBSERVAN", "SE_OBSERVAN", "NO_REVISADO"]),
-  nivelesVisibles: new Set(["SIN_OBSERVACIONES", "CON_OBSERVACIONES", "NO_REVISADO"]),
-  estadoGeneral: new Set(["SIN_OBSERVACIONES", "CON_OBSERVACIONES"]),
-});
-const RECEPTION_ANOMALY_VALUES = new Set([
-  "CON_OBSERVACIONES",
-  "CON_ALERTAS",
-  "CON_DIFICULTAD",
-  "NO_ENCIENDE",
-  "SE_OBSERVAN",
+// Quién deja el vehículo en el taller (puede no ser el titular): nombre y RUT. El RUT se guarda aparte, solo para el servidor.
+// Sensores del tablero (prototipo «Panel del Taller»); coinciden con RECEPTION_WARNING_LIGHTS de la UI.
+const RECEPTION_WARNING_LIGHTS = Object.freeze([
+  "check-engine", "abs", "airbag", "bateria", "aceite", "temperatura", "frenos",
 ]);
-const RECEPTION_FUEL_LEVELS = new Set([
-  "Vacío",
-  "1/4",
-  "1/2",
-  "3/4",
-  "Lleno",
-]);
+const MAX_RECEPTION_REASON_LENGTH = 1000;
+// Campos de la recepción anterior (checklist, daños, accesorios, observaciones): ya no se piden, pero se
+// conservan en las OT que los tenían registrados.
+const LEGACY_RECEPTION_FIELDS = Object.freeze(["checklist", "danosObservados", "accesorios", "observaciones"]);
+const RECEPTION_FUEL_LEVELS = new Set(["Reserva", "1/4", "1/2", "3/4", "Lleno"]);
 const MAX_RECEPTION_MILEAGE_KM = 2_000_000;
 const DIAGNOSIS_INPUT_FIELDS = new Set(["responsableUid", "descripcion", "observaciones"]);
-const SERVICE_INPUT_FIELDS = new Set(["itemId", "responsableUid"]);
-const PLANNING_STATES = new Set(["en_cola", "en_diagnostico", "esperando_aprobacion", "esperando_repuestos", "en_reparacion"]);
+const SERVICE_INPUT_FIELDS = new Set(["itemId"]);
+const REPLACEMENT_PARTS_MODES = new Set(["cliente", "ninguno"]);
 const CANCELLABLE_ORDER_STATES = new Set([
   "ingresada",
   "en_cola",
@@ -163,40 +157,22 @@ function receptionMileage(value, HttpsError) {
   return mileage;
 }
 
-function normalizeChecklist(raw, HttpsError) {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    fail(HttpsError, "invalid-argument", "La checklist de recepción debe enviarse como un objeto.");
+// Sensores del tablero: «no hay sensores encendidos» (lista vacía) o al menos uno de los conocidos.
+function normalizeWarningLights(encendidos, lista, HttpsError) {
+  if (typeof encendidos !== "boolean") {
+    fail(HttpsError, "invalid-argument", "Indica si hay sensores encendidos en el tablero.");
   }
-  const allowedFields = Object.keys(RECEPTION_CHECKLIST_VALUES);
-  const unknownField = Object.keys(raw).find((field) => !allowedFields.includes(field));
-  if (unknownField) {
-    fail(HttpsError, "invalid-argument", `El campo de checklist ${unknownField} no está admitido.`);
+  if (!Array.isArray(lista) || lista.length > RECEPTION_WARNING_LIGHTS.length ||
+      lista.some((light) => !RECEPTION_WARNING_LIGHTS.includes(light)) || new Set(lista).size !== lista.length) {
+    fail(HttpsError, "invalid-argument", "Los sensores encendidos no son válidos.");
   }
-  return allowedFields.reduce((checklist, field) => {
-    const value = text(raw[field], `El control ${field}`, 40, HttpsError, {required: true});
-    if (!RECEPTION_CHECKLIST_VALUES[field].has(value)) {
-      fail(HttpsError, "invalid-argument", `El control ${field} tiene un valor no permitido.`);
-    }
-    checklist[field] = value;
-    return checklist;
-  }, {});
+  if (encendidos && !lista.length) fail(HttpsError, "invalid-argument", "Elige cuáles sensores están encendidos.");
+  if (!encendidos && lista.length) fail(HttpsError, "invalid-argument", "Sin sensores encendidos, la lista debe estar vacía.");
+  return RECEPTION_WARNING_LIGHTS.filter((light) => lista.includes(light));
 }
 
-function hasReceptionAnomaly(checklist) {
-  return Object.values(checklist).some((value) => RECEPTION_ANOMALY_VALUES.has(value));
-}
-
-function normalizeAccessories(value, HttpsError) {
-  if (!Array.isArray(value)) {
-    fail(HttpsError, "invalid-argument", "Los accesorios deben enviarse como una lista.");
-  }
-  if (value.length > 50) {
-    fail(HttpsError, "invalid-argument", "La recepción no puede incluir más de 50 accesorios.");
-  }
-  return value.map((item) => text(item, "Cada accesorio", 120, HttpsError, {required: true}));
-}
-
-function normalizeReceptionInput(raw, HttpsError) {
+// `options.countryCode` valida el documento; `options.hasStoredDocument` permite dejarlo en blanco al actualizar.
+function normalizeReceptionInput(raw, HttpsError, options = {}) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     fail(HttpsError, "invalid-argument", "Los datos de recepción deben enviarse como un objeto.");
   }
@@ -204,26 +180,24 @@ function normalizeReceptionInput(raw, HttpsError) {
   if (unknownField) {
     fail(HttpsError, "invalid-argument", `El campo de recepción ${unknownField} no está admitido.`);
   }
-  const checklist = normalizeChecklist(raw.checklist, HttpsError);
-  const danosObservados = text(raw.danosObservados, "Los daños observados", 2000, HttpsError);
-  if (hasReceptionAnomaly(checklist)) {
-    if (!danosObservados || danosObservados.toLocaleLowerCase("es-CL") === "ninguno" || danosObservados.length < 3) {
-      fail(HttpsError, "invalid-argument", "Describe los daños u observaciones detectados en la recepción.");
-    }
-  } else if (danosObservados !== "Ninguno") {
-    fail(HttpsError, "invalid-argument", "Sin anomalías visibles, los daños observados deben indicar exactamente Ninguno.");
-  }
+  const motivoCliente = text(raw.motivoCliente, "El motivo del cliente", MAX_RECEPTION_REASON_LENGTH, HttpsError, {required: true});
   const nivelCombustible = text(raw.nivelCombustible, "El nivel de combustible", 80, HttpsError, {required: true});
   if (!RECEPTION_FUEL_LEVELS.has(nivelCombustible)) {
     fail(HttpsError, "invalid-argument", "Selecciona un nivel de combustible válido.");
   }
+  const ingresaNombre = text(raw.ingresaNombre, "El nombre de quien entrega el vehículo", 120, HttpsError, {required: true});
+  const blankDocument = typeof raw.ingresaDocumento !== "string" || !raw.ingresaDocumento.trim();
+  if (blankDocument && !options.hasStoredDocument) {
+    fail(HttpsError, "invalid-argument", "El documento de identidad de quien entrega el vehículo es obligatorio.");
+  }
   return {
+    motivoCliente,
     kilometraje: receptionMileage(raw.kilometraje, HttpsError),
     nivelCombustible,
-    checklist,
-    accesorios: normalizeAccessories(raw.accesorios, HttpsError),
-    danosObservados,
-    observaciones: text(raw.observaciones, "Las observaciones", 2000, HttpsError),
+    testigosEncendidos: raw.testigosEncendidos,
+    testigos: normalizeWarningLights(raw.testigosEncendidos, raw.testigos, HttpsError),
+    ingresaNombre,
+    ingresaDocumento: blankDocument ? "" : normalizePersonDocument(raw.ingresaDocumento, options.countryCode || "CL", HttpsError),
   };
 }
 
@@ -349,7 +323,6 @@ function normalizeServiceInput(raw, HttpsError) {
   if (unknown) fail(HttpsError, "invalid-argument", `El campo ${unknown} no está admitido en el servicio.`);
   return {
     itemId: identifier(raw.itemId, "El servicio de Inventario", HttpsError),
-    responsableUid: identifier(raw.responsableUid, "El responsable", HttpsError),
   };
 }
 
@@ -361,26 +334,46 @@ function plannedQuantity(value, HttpsError) {
   return value;
 }
 
+// Stock de repuestos: Inventario solo se lee (ni se descuenta ni se reserva).
+// El taller valida que el total de un repuesto en la OT no supere el stock actual. No considera otras OT:
+// la validación y el descuento definitivos quedan en Ventas, cuando se integre con las OT.
+// TODO(validar): definir cómo actúa Ventas si al confirmar la venta ya no hay stock suficiente.
+
+// Las cantidades admiten hasta tres decimales: se suman en milésimas para evitar errores de redondeo.
+function quantityUnits(value) {
+  return Math.round(Number(value) * 1000);
+}
+
+function formatQuantityUnits(units) {
+  return (units / 1000).toLocaleString("es-CL", {maximumFractionDigits: 3});
+}
+
+function orderProductUnits(services, businessId, otId, itemId) {
+  return services.reduce((total, service) => {
+    if (service.negocioId !== businessId || service.otId !== otId) return total;
+    return (Array.isArray(service.productos) ? service.productos : []).reduce((sum, product) =>
+      product?.itemId === itemId && typeof product.cantidad === "number" && Number.isFinite(product.cantidad)
+        ? sum + quantityUnits(product.cantidad) : sum, total);
+  }, 0);
+}
+
+function productStockUnits(item, HttpsError) {
+  if (typeof item.stock !== "number" || !Number.isFinite(item.stock) || item.stock < 0) {
+    fail(HttpsError, "failed-precondition", "El producto no tiene stock válido en Inventario. Revisa el catálogo.");
+  }
+  return quantityUnits(item.stock);
+}
+
 function assertPlanningOrder(order, HttpsError) {
-  if (!order.recepcion || !PLANNING_STATES.has(order.estado)) {
-    fail(HttpsError, "failed-precondition", "El estado actual de la OT no permite modificar el alcance.");
+  // Flujo vigente: la aprobación es solo una compuerta y los trabajos se registran en la ejecución.
+  if (!order.recepcion || order.estado !== "en_reparacion" || order.estadoAprobacion !== "aprobada") {
+    fail(HttpsError, "failed-precondition", "Los trabajos y repuestos se registran durante la ejecución, una vez aprobado el ingreso.");
   }
 }
 
 function invalidateWorkOrderScope(transaction, orderRef, order, context, actorSnapshot, timestamp) {
-  const invalidated = order.estadoAprobacion === "aprobada" || ["esperando_aprobacion", "esperando_repuestos"].includes(order.estado);
-  transaction.update(orderRef, {
-    estado: invalidated ? (order.plazaId ? "en_diagnostico" : "en_cola") : order.estado,
-    estadoAprobacion: "pendiente",
-    actualizadoPorUid: context.uid, actualizadoEn: timestamp,
-  });
-  if (invalidated) {
-    appendPlanningEvent(transaction, orderRef, {
-      businessId: context.businessId, actorUid: context.uid, actorSnapshot, timestamp,
-      type: "aprobacion_invalidada", detail: {estadoAnterior: order.estado, aprobacionAnterior: order.estadoAprobacion,
-        estado: order.plazaId ? "en_diagnostico" : "en_cola", estadoAprobacion: "pendiente"},
-    });
-  }
+  // La aprobación es una compuerta de ingreso: agregar o cambiar trabajos no la invalida.
+  transaction.update(orderRef, {actualizadoPorUid: context.uid, actualizadoEn: timestamp});
 }
 
 function assertPlanningItem(snapshot, businessId, itemId, type, HttpsError) {
@@ -428,6 +421,9 @@ async function listarCatalogoTallerHandler(request, dependencies) {
       codigoInterno: String(item.codigoInterno || item.sku || "").trim(),
       stock: item.tipoItem === "producto" && Number.isFinite(Number(item.stock))
         ? Number(item.stock) : null,
+      // Stock mínimo definido en Inventario: el panel del taller avisa cuando un repuesto llega a él (solo lectura).
+      stockMinimo: item.tipoItem === "producto" && item.stockMinimo !== null && item.stockMinimo !== "" &&
+        Number.isFinite(Number(item.stockMinimo)) && Number(item.stockMinimo) > 0 ? Number(item.stockMinimo) : null,
       precioEfectivo: canReadPrices && price !== null && Number.isFinite(price) && price >= 0
         ? (decimals === 0 ? Math.round(price) : roundMoney(price, decimals)) : null,
     }];
@@ -465,6 +461,23 @@ function assertAssignableMember(snapshot, businessId, uid, HttpsError) {
       member.uid !== uid || member.estado !== "activo" || !ASSIGNABLE_BUSINESS_ROLES.includes(member.rol)) {
     fail(HttpsError, "failed-precondition", "Selecciona un responsable asignable y activo del negocio.");
   }
+}
+
+// Quién opera los trabajos de una OT: el responsable elegido al aprobar, el Administrador o el Owner.
+// Las OT anteriores a esta regla no tienen responsable y las puede operar cualquier operador de Taller.
+function canOperateWorks(membership, order, uid) {
+  return hasTallerCapability(membership, "manage") || !order.responsableUid || order.responsableUid === uid;
+}
+
+function assertWorkOperator(membership, order, uid, HttpsError) {
+  if (!canOperateWorks(membership, order, uid)) {
+    fail(HttpsError, "permission-denied", "Solo el responsable de la OT, el Administrador o el Owner operan los trabajos.");
+  }
+}
+
+function worksPartsDefined(service) {
+  return (Array.isArray(service.productos) && service.productos.length > 0) ||
+    REPLACEMENT_PARTS_MODES.has(service.repuestosModo);
 }
 
 function profileIdentityName(profile, user) {
@@ -695,27 +708,30 @@ function receptionNextStatus(order) {
 
 function receptionChanges(previous, current) {
   const changes = {};
-  for (const field of ["kilometraje", "nivelCombustible", "accesorios", "danosObservados", "observaciones"]) {
+  for (const field of ["motivoCliente", "kilometraje", "nivelCombustible", "testigosEncendidos", "testigos",
+    "ingresaNombre"]) {
     const before = previous?.[field] ?? null;
     if (JSON.stringify(before) !== JSON.stringify(current[field])) {
       changes[field] = {anterior: before, nuevo: current[field]};
     }
   }
-  for (const field of Object.keys(RECEPTION_CHECKLIST_VALUES)) {
-    const before = previous?.checklist?.[field] ?? null;
-    if (before !== current.checklist[field]) {
-      changes[`checklist.${field}`] = {anterior: before, nuevo: current.checklist[field]};
-    }
-  }
   return changes;
+}
+
+// Conserva los campos de la recepción anterior que la OT ya tenía registrados.
+function legacyReceptionFields(existingReception) {
+  return Object.fromEntries(LEGACY_RECEPTION_FIELDS
+    .filter((field) => existingReception?.[field] !== undefined)
+    .map((field) => [field, existingReception[field]]));
 }
 
 async function registrarRecepcionOrdenTrabajoHandler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
   const context = await requireReceptionAccess(request, dependencies);
   const otId = identifier(request?.data?.otId, "La orden de trabajo", HttpsError);
-  const input = normalizeReceptionInput(request?.data?.recepcion, HttpsError);
   const orderRef = context.businessRef.collection("ordenesTrabajo").doc(otId);
+  const personRef = orderRef.collection("recepcionActa").doc("persona");
+  const countryCode = context.businessSnapshot?.data()?.paisCodigo || "CL";
   const actorSnapshot = await diagnosisActor(dependencies, context.uid);
   let result;
 
@@ -727,6 +743,13 @@ async function registrarRecepcionOrdenTrabajoHandler(request, dependencies) {
       HttpsError
     );
     const existingReception = stored.recepcion;
+    const personSnapshot = await transaction.get(personRef);
+    // Patente del vehículo para el índice de la consulta pública (/seguimiento con patente + RUT).
+    const trackingVehicle = stored.vehiculoId
+      ? await transaction.get(context.businessRef.collection("vehiculos").doc(stored.vehiculoId)) : null;
+    const storedPerson = personSnapshot.exists ? personSnapshot.data() : null;
+    const {ingresaDocumento, ...input} = normalizeReceptionInput(request?.data?.recepcion, HttpsError,
+      {countryCode, hasStoredDocument: Boolean(storedPerson?.documento)});
     if (existingReception != null && (typeof existingReception !== "object" || Array.isArray(existingReception))) {
       fail(HttpsError, "failed-precondition", "La recepción existente requiere revisión antes de actualizarse.");
     }
@@ -736,15 +759,39 @@ async function registrarRecepcionOrdenTrabajoHandler(request, dependencies) {
     if (["pendiente_entrega", "cerrada", "cancelada"].includes(stored.estado)) {
       fail(HttpsError, "failed-precondition", "Esta OT ya no permite modificar la recepción.");
     }
+    // Las seis zonas exteriores y el tablero se fotografían antes de registrar la recepción.
+    const missingPhotos = existingReception ? [] : missingReceptionPhotoZones(stored);
+    if (missingPhotos.length) {
+      fail(HttpsError, "failed-precondition",
+        `Faltan fotos de recepción: ${missingPhotos.join(", ")}. Complétalas antes de registrar la recepción.`);
+    }
     const changes = receptionChanges(existingReception, input);
+    // El documento no viaja a la OT ni al historial; solo se deja constancia de que cambió.
+    if (ingresaDocumento && ingresaDocumento !== storedPerson?.documento) changes.ingresaDocumento = {modificado: true};
     const timestamp = FieldValue.serverTimestamp();
     const reception = {
+      ...legacyReceptionFields(existingReception),
       ...input,
+      ingresaTieneDocumento: true,
       recibidoPorUid: existingReception?.recibidoPorUid || context.uid,
       recibidoEn: existingReception?.recibidoEn || timestamp,
     };
     const estado = receptionNextStatus(stored);
     if (Object.keys(changes).length) {
+      const trackingPlate = normalizePlate(trackingVehicle?.data()?.patente);
+      if (trackingPlate) {
+        transaction.set(db.collection(PLATE_INDEX_COLLECTION).doc(plateIndexId(trackingPlate)),
+          {negocios: FieldValue.arrayUnion(context.businessId), actualizadoEn: timestamp}, {merge: true});
+      }
+      if (ingresaDocumento) {
+        transaction.set(personRef, {
+          negocioId: context.businessId, otId, nombre: input.ingresaNombre,
+          documento: ingresaDocumento, registradoPorUid: context.uid, actualizadoEn: timestamp,
+        }, {merge: true});
+      } else if (storedPerson) {
+        transaction.set(personRef, {nombre: input.ingresaNombre,
+          registradoPorUid: context.uid, actualizadoEn: timestamp}, {merge: true});
+      }
       transaction.update(orderRef, {
         recepcion: reception,
         estado,
@@ -769,6 +816,7 @@ async function registrarRecepcionOrdenTrabajoHandler(request, dependencies) {
       moneda: stored.moneda,
       recepcion: {
         ...input,
+        ingresaTieneDocumento: true,
         recibidoPorUid: existingReception?.recibidoPorUid || context.uid,
         recibidoEn: existingReception?.recibidoEn || null,
       },
@@ -906,31 +954,28 @@ async function crearServicioOTHandler(request, dependencies) {
   const orderRef = context.businessRef.collection("ordenesTrabajo").doc(otId);
   const serviceRef = orderRef.collection("servicios").doc(serviceId);
   const itemRef = context.businessRef.collection("inventario").doc(input.itemId);
-  const memberRef = db.collection("membresias").doc(`${context.businessId}__${input.responsableUid}`);
   const actorSnapshot = await diagnosisActor(dependencies, context.uid);
-  const assignedUser = await dependencies.auth.getUser(input.responsableUid);
-  if (assignedUser.disabled) fail(HttpsError, "failed-precondition", "El responsable seleccionado está deshabilitado.");
   return db.runTransaction(async (transaction) => {
-    await assertFreshTallerAccess(transaction, context, dependencies, "operate");
-    const [existing, orderSnapshot, itemSnapshot, memberSnapshot] = await Promise.all([
-      transaction.get(serviceRef), transaction.get(orderRef), transaction.get(itemRef), transaction.get(memberRef),
+    const membership = await assertFreshTallerAccess(transaction, context, dependencies, "operate");
+    const [existing, orderSnapshot, itemSnapshot] = await Promise.all([
+      transaction.get(serviceRef), transaction.get(orderRef), transaction.get(itemRef),
     ]);
     const order = assertStoredWorkOrder(orderSnapshot, context.businessId, HttpsError);
+    assertWorkOperator(membership, order, context.uid, HttpsError);
     if (existing.exists) {
       const stored = assertService(existing, context.businessId, otId, HttpsError);
-      if (stored.creadoPorUid !== context.uid || stored.itemId !== input.itemId ||
-          stored.responsableUid !== input.responsableUid) {
+      if (stored.creadoPorUid !== context.uid || stored.itemId !== input.itemId) {
         fail(HttpsError, "already-exists", "Esta solicitud de servicio ya fue utilizada.");
       }
       return {servicioOtId: serviceId, sinCambios: true};
     }
     assertPlanningOrder(order, HttpsError);
     assertPlanningItem(itemSnapshot, context.businessId, input.itemId, "servicio", HttpsError);
-    assertAssignableMember(memberSnapshot, context.businessId, input.responsableUid, HttpsError);
     const timestamp = FieldValue.serverTimestamp();
     transaction.create(serviceRef, {
       servicioOtId: serviceId, negocioId: context.businessId, otId,
       ...input, estado: "pendiente", precioUnitario: null, servicioSnapshot: null, productos: [],
+      repuestosModo: null, fotos: {},
       creadoPorUid: context.uid, creadoEn: timestamp,
       actualizadoPorUid: context.uid, actualizadoEn: timestamp,
     });
@@ -953,22 +998,19 @@ async function actualizarServicioOTHandler(request, dependencies) {
   const orderRef = context.businessRef.collection("ordenesTrabajo").doc(otId);
   const serviceRef = orderRef.collection("servicios").doc(serviceId);
   const itemRef = context.businessRef.collection("inventario").doc(input.itemId);
-  const memberRef = db.collection("membresias").doc(`${context.businessId}__${input.responsableUid}`);
   const actorSnapshot = await diagnosisActor(dependencies, context.uid);
-  const assignedUser = await dependencies.auth.getUser(input.responsableUid);
-  if (assignedUser.disabled) fail(HttpsError, "failed-precondition", "El responsable seleccionado está deshabilitado.");
   return db.runTransaction(async (transaction) => {
-    await assertFreshTallerAccess(transaction, context, dependencies, "operate");
-    const [orderSnapshot, serviceSnapshot, itemSnapshot, memberSnapshot] = await Promise.all([
-      transaction.get(orderRef), transaction.get(serviceRef), transaction.get(itemRef), transaction.get(memberRef),
+    const membership = await assertFreshTallerAccess(transaction, context, dependencies, "operate");
+    const [orderSnapshot, serviceSnapshot, itemSnapshot] = await Promise.all([
+      transaction.get(orderRef), transaction.get(serviceRef), transaction.get(itemRef),
     ]);
     const order = assertStoredWorkOrder(orderSnapshot, context.businessId, HttpsError);
+    assertWorkOperator(membership, order, context.uid, HttpsError);
     assertPlanningOrder(order, HttpsError);
     const stored = assertService(serviceSnapshot, context.businessId, otId, HttpsError);
     if (stored.estado !== "pendiente") fail(HttpsError, "failed-precondition", "Este servicio ya inició su ejecución.");
     assertDiagnosisRevision(stored, expected, HttpsError, "servicio");
     assertPlanningItem(itemSnapshot, context.businessId, input.itemId, "servicio", HttpsError);
-    assertAssignableMember(memberSnapshot, context.businessId, input.responsableUid, HttpsError);
     const timestamp = FieldValue.serverTimestamp();
     transaction.update(serviceRef, {...input, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
     if (stored.itemId !== input.itemId) {
@@ -994,11 +1036,12 @@ async function eliminarServicioOTHandler(request, dependencies) {
   const serviceRef = orderRef.collection("servicios").doc(serviceId);
   const actorSnapshot = await diagnosisActor(dependencies, context.uid);
   return db.runTransaction(async (transaction) => {
-    await assertFreshTallerAccess(transaction, context, dependencies, "operate");
+    const membership = await assertFreshTallerAccess(transaction, context, dependencies, "operate");
     const [orderSnapshot, serviceSnapshot] = await Promise.all([
       transaction.get(orderRef), transaction.get(serviceRef),
     ]);
     const order = assertStoredWorkOrder(orderSnapshot, context.businessId, HttpsError);
+    assertWorkOperator(membership, order, context.uid, HttpsError);
     assertPlanningOrder(order, HttpsError);
     const stored = assertService(serviceSnapshot, context.businessId, otId, HttpsError);
     if (stored.estado !== "pendiente") {
@@ -1037,12 +1080,13 @@ async function changeProductoOTHandler(request, dependencies, action) {
   const itemRef = itemId ? context.businessRef.collection("inventario").doc(itemId) : null;
   const actorSnapshot = await diagnosisActor(dependencies, context.uid);
   return db.runTransaction(async (transaction) => {
-    await assertFreshTallerAccess(transaction, context, dependencies, "operate");
+    const membership = await assertFreshTallerAccess(transaction, context, dependencies, "operate");
     const [orderSnapshot, serviceSnapshot, itemSnapshot] = await Promise.all([
       transaction.get(orderRef), transaction.get(serviceRef),
       itemRef ? transaction.get(itemRef) : Promise.resolve(null),
     ]);
     const order = assertStoredWorkOrder(orderSnapshot, context.businessId, HttpsError);
+    assertWorkOperator(membership, order, context.uid, HttpsError);
     const stored = assertService(serviceSnapshot, context.businessId, otId, HttpsError);
     const products = Array.isArray(stored.productos) ? stored.productos : [];
     const existing = products.find((product) => product.productoOtId === productId);
@@ -1053,13 +1097,18 @@ async function changeProductoOTHandler(request, dependencies, action) {
       return {servicioOtId: serviceId, productoOtId: productId, sinCambios: true};
     }
     assertPlanningOrder(order, HttpsError);
-    if (stored.estado !== "pendiente") fail(HttpsError, "failed-precondition", "Este servicio ya inició su ejecución.");
+    // Los repuestos se pueden ajustar mientras el trabajo está pendiente o en ejecución; uno terminado se reabre primero.
+    if (stored.estado === "completado") {
+      fail(HttpsError, "failed-precondition", "Este trabajo está terminado. Un Owner o Administrador debe reabrirlo para cambiar sus repuestos.");
+    }
     if (action !== "agregar") assertDiagnosisRevision(stored, expected, HttpsError, "servicio");
     if (action === "agregar") assertPlanningItem(itemSnapshot, context.businessId, itemId, "producto", HttpsError);
     if (action !== "agregar" && !existing) fail(HttpsError, "not-found", "No se encontró el producto planificado.");
+    let stockSnapshot = itemSnapshot;
     if (action === "actualizar") {
       const existingItemRef = context.businessRef.collection("inventario").doc(existing.itemId);
-      assertPlanningItem(await transaction.get(existingItemRef), context.businessId, existing.itemId, "producto", HttpsError);
+      stockSnapshot = await transaction.get(existingItemRef);
+      assertPlanningItem(stockSnapshot, context.businessId, existing.itemId, "producto", HttpsError);
     }
     const next = action === "agregar"
       ? [...products, {productoOtId: productId, itemId, cantidad: quantity,
@@ -1067,8 +1116,30 @@ async function changeProductoOTHandler(request, dependencies, action) {
       : action === "eliminar"
         ? products.filter((product) => product.productoOtId !== productId)
         : products.map((product) => product.productoOtId === productId ? {...product, cantidad: quantity} : product);
+    // Agregar o aumentar exige que el total del repuesto en esta OT no supere el stock actual;
+    // disminuir siempre se permite. Solo se leen el ítem y los servicios de esta OT.
+    const increases = action === "agregar" || (action === "actualizar" && quantity > existing.cantidad);
+    if (increases) {
+      const stockItemId = existing?.itemId || itemId;
+      const stockItem = stockSnapshot.data() || {};
+      const stockUnits = productStockUnits(stockItem, HttpsError);
+      const orderServices = await transaction.get(orderRef.collection("servicios"));
+      const ownServices = orderServices.docs.map((document) => document.data() || {})
+        .filter((service) => service.servicioOtId !== serviceId)
+        .concat([{...stored, productos: next}]);
+      const requiredUnits = orderProductUnits(ownServices, context.businessId, otId, stockItemId);
+      if (requiredUnits > stockUnits) {
+        const nombre = String(stockItem.nombre || stockItem.descripcionItem || "el producto").trim();
+        fail(HttpsError, "failed-precondition", stockUnits === 0
+          ? `No hay stock de «${nombre}» en Inventario.`
+          : `Stock insuficiente de «${nombre}»: stock actual ${formatQuantityUnits(stockUnits)} y esta OT ` +
+            `necesita ${formatQuantityUnits(requiredUnits)}. Ajusta la cantidad.`);
+      }
+    }
     const timestamp = FieldValue.serverTimestamp();
-    transaction.update(serviceRef, {productos: next, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
+    // Elegir repuestos del inventario reemplaza «repuestos del cliente» y «no requiere repuestos».
+    transaction.update(serviceRef, {productos: next, ...(action === "agregar" ? {repuestosModo: null} : {}),
+      actualizadoPorUid: context.uid, actualizadoEn: timestamp});
     if (action !== "actualizar" || existing.cantidad !== quantity) {
       invalidateWorkOrderScope(transaction, orderRef, order, context, actorSnapshot, timestamp);
     } else {
@@ -1086,6 +1157,48 @@ async function changeProductoOTHandler(request, dependencies, action) {
 const agregarProductoOTHandler = (request, dependencies) => changeProductoOTHandler(request, dependencies, "agregar");
 const actualizarProductoOTHandler = (request, dependencies) => changeProductoOTHandler(request, dependencies, "actualizar");
 const eliminarProductoOTHandler = (request, dependencies) => changeProductoOTHandler(request, dependencies, "eliminar");
+
+// «Repuestos del cliente» o «No requiere repuestos»: respuesta explícita para poder terminar un trabajo
+// que no usa repuestos del inventario.
+async function definirRepuestosServicioOTHandler(request, dependencies) {
+  const {db, FieldValue, HttpsError} = dependencies;
+  const context = await requireReceptionAccess(request, dependencies);
+  const allowed = new Set(["businessId", "otId", "servicioOtId", "modo", "expectedActualizadoEn"]);
+  if (Object.keys(request?.data || {}).some((field) => !allowed.has(field))) {
+    fail(HttpsError, "invalid-argument", "La solicitud contiene campos no permitidos para definir los repuestos.");
+  }
+  const otId = identifier(request?.data?.otId, "La orden de trabajo", HttpsError);
+  const serviceId = identifier(request?.data?.servicioOtId, "El servicio de la OT", HttpsError);
+  const mode = request?.data?.modo;
+  if (!REPLACEMENT_PARTS_MODES.has(mode)) {
+    fail(HttpsError, "invalid-argument", "Indica si los repuestos los trae el cliente o si el trabajo no los requiere.");
+  }
+  const expected = request?.data?.expectedActualizadoEn;
+  const orderRef = context.businessRef.collection("ordenesTrabajo").doc(otId);
+  const serviceRef = orderRef.collection("servicios").doc(serviceId);
+  const actorSnapshot = await diagnosisActor(dependencies, context.uid);
+  return db.runTransaction(async (transaction) => {
+    const membership = await assertFreshTallerAccess(transaction, context, dependencies, "operate");
+    const [orderSnapshot, serviceSnapshot] = await Promise.all([transaction.get(orderRef), transaction.get(serviceRef)]);
+    const order = assertStoredWorkOrder(orderSnapshot, context.businessId, HttpsError);
+    assertWorkOperator(membership, order, context.uid, HttpsError);
+    assertPlanningOrder(order, HttpsError);
+    const stored = assertService(serviceSnapshot, context.businessId, otId, HttpsError);
+    if (stored.estado === "completado") {
+      fail(HttpsError, "failed-precondition", "Este trabajo está terminado. Un Owner o Administrador debe reabrirlo para cambiar sus repuestos.");
+    }
+    assertDiagnosisRevision(stored, expected, HttpsError, "servicio");
+    if (Array.isArray(stored.productos) && stored.productos.length) {
+      fail(HttpsError, "failed-precondition", "Quita los repuestos del inventario antes de marcar este trabajo como sin repuestos o con repuestos del cliente.");
+    }
+    const timestamp = FieldValue.serverTimestamp();
+    transaction.update(serviceRef, {repuestosModo: mode, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
+    transaction.update(orderRef, {actualizadoPorUid: context.uid, actualizadoEn: timestamp});
+    appendPlanningEvent(transaction, orderRef, {businessId: context.businessId, actorUid: context.uid, actorSnapshot,
+      timestamp, type: "servicio_ot_repuestos_definidos", detail: {servicioOtId: serviceId, modo: mode}});
+    return {servicioOtId: serviceId, modo: mode};
+  });
+}
 
 function scopeFingerprint(services) {
   const scope = services.map((service) => ({
@@ -1148,31 +1261,33 @@ async function transitionServiceOT(request, dependencies, action) {
     const order = assertStoredWorkOrder(orderSnapshot, context.businessId, HttpsError);
     const service = assertService(serviceSnapshot, context.businessId, otId, HttpsError);
     assertDiagnosisRevision(service, expected, HttpsError, "servicio");
-    if (order.estado !== "en_reparacion" || order.estadoAprobacion !== "aprobada" ||
-        !approvalSnapshot.exists || approvalSnapshot.data().negocioId !== context.businessId ||
-        approvalSnapshot.data().otId !== otId ||
-        approvalSnapshot.data().scopeHash !== scopeFingerprint(servicesSnapshot.docs.map((snapshot) =>
-          assertService(snapshot, context.businessId, otId, HttpsError)))) {
-      fail(HttpsError, "failed-precondition", "La OT debe estar en reparación con el alcance vigente aprobado.");
+    if (order.estado !== "en_reparacion" || order.estadoAprobacion !== "aprobada") {
+      fail(HttpsError, "failed-precondition", "La OT debe estar en ejecución con el ingreso aprobado.");
     }
-    const previous = action === "iniciar" ? "pendiente" : "en_progreso";
-    const next = action === "iniciar" ? "en_progreso" : "completado";
-    if (service.estado !== previous) {
-      fail(HttpsError, "failed-precondition", `Solo puedes ${action} un servicio ${previous.replace("_", " ")}.`);
+    const transition = {
+      iniciar: {previous: "pendiente", next: "en_progreso", message: "Solo puedes iniciar un trabajo pendiente."},
+      completar: {previous: "en_progreso", next: "completado", message: "Solo puedes terminar un trabajo en ejecución."},
+      reabrir: {previous: "completado", next: "en_progreso", message: "Solo se puede reabrir un trabajo terminado."},
+    }[action];
+    const {previous, next} = transition;
+    if (action === "reabrir") {
+      if (!hasTallerCapability(membership, "manage")) {
+        fail(HttpsError, "permission-denied", "Solo el Owner o el Administrador pueden reabrir un trabajo terminado.");
+      }
+    } else {
+      assertWorkOperator(membership, order, context.uid, HttpsError);
     }
-    const responsibleUid = identifier(service.responsableUid, "El responsable", HttpsError);
-    const responsibleRef = db.collection("membresias").doc(`${context.businessId}__${responsibleUid}`);
-    assertAssignableMember(await transaction.get(responsibleRef), context.businessId, responsibleUid, HttpsError);
-    const responsible = await dependencies.auth.getUser(responsibleUid);
-    if (responsible.disabled) fail(HttpsError, "failed-precondition", "El responsable del servicio está deshabilitado.");
+    if (service.estado !== previous) fail(HttpsError, "failed-precondition", transition.message);
+    if (action === "completar" && !worksPartsDefined(service)) {
+      fail(HttpsError, "failed-precondition", "Define los repuestos de este trabajo antes de terminarlo: del inventario, del cliente o sin repuestos.");
+    }
     const timestamp = FieldValue.serverTimestamp();
     transaction.update(serviceRef, {estado: next, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
     transaction.update(orderRef, {actualizadoPorUid: context.uid, actualizadoEn: timestamp});
     appendPlanningEvent(transaction, orderRef, {
       businessId: context.businessId, actorUid: context.uid, actorSnapshot, timestamp,
-      type: action === "iniciar" ? "servicio_ot_iniciado" : "servicio_ot_completado",
-      detail: {servicioOtId: serviceId, itemId: service.itemId, responsableUid: service.responsableUid,
-        estadoAnterior: previous, estado: next},
+      type: {iniciar: "servicio_ot_iniciado", completar: "servicio_ot_completado", reabrir: "servicio_ot_reabierto"}[action],
+      detail: {servicioOtId: serviceId, itemId: service.itemId, estadoAnterior: previous, estado: next},
     });
     const resultado = {servicioOtId: serviceId, estado: next, sinCambios: false};
     transaction.create(requestRef, {negocioId: context.businessId, otId, servicioOtId: serviceId,
@@ -1183,14 +1298,26 @@ async function transitionServiceOT(request, dependencies, action) {
 
 const iniciarServicioOTHandler = (request, deps) => transitionServiceOT(request, deps, "iniciar");
 const completarServicioOTHandler = (request, deps) => transitionServiceOT(request, deps, "completar");
+const reabrirServicioOTHandler = (request, deps) => transitionServiceOT(request, deps, "reabrir");
 
 async function transitionWorkOrderClosure(request, dependencies, action) {
   const {db, FieldValue, HttpsError} = dependencies;
   const context = await requireReceptionAccess(request, dependencies);
-  const allowed = new Set(["businessId", "otId", "requestId", "expectedActualizadoEn"]);
+  const allowed = new Set(["businessId", "otId", "requestId", "expectedActualizadoEn", "motivo", "entrega"]);
   if (Object.keys(request?.data || {}).some((field) => !allowed.has(field))) {
     fail(HttpsError, "invalid-argument", "La solicitud de cierre contiene campos no permitidos.");
   }
+  // Solo anular una OT lleva motivo (opcional aquí; la pantalla de aprobación lo exige).
+  if (action !== "cancelar" && request?.data?.motivo !== undefined) {
+    fail(HttpsError, "invalid-argument", "Solo anular una OT admite un motivo.");
+  }
+  const motivo = action === "cancelar" ? text(request?.data?.motivo, "El motivo", 2000, HttpsError) : "";
+  // La entrega exige los datos de quien retira el vehículo y la conformidad; ninguna otra acción los admite.
+  if (action !== "entregar" && request?.data?.entrega !== undefined) {
+    fail(HttpsError, "invalid-argument", "Solo registrar la entrega admite los datos de entrega.");
+  }
+  const delivery = action === "entregar"
+    ? normalizeDeliveryInput(request?.data?.entrega, context.businessSnapshot?.data()?.paisCodigo || "CL", HttpsError) : null;
   const otId = identifier(request?.data?.otId, "La orden de trabajo", HttpsError);
   const requestId = requestIdentifier(request?.data?.requestId, HttpsError);
   const expected = request?.data?.expectedActualizadoEn;
@@ -1200,10 +1327,10 @@ async function transitionWorkOrderClosure(request, dependencies, action) {
   const orderRef = context.businessRef.collection("ordenesTrabajo").doc(otId);
   const requestRef = context.businessRef.collection("otClosureRequests").doc(requestId);
   const actorSnapshot = await diagnosisActor(dependencies, context.uid);
-  const fingerprint = createHash("sha256").update(JSON.stringify({otId, action, expected, actor: context.uid})).digest("hex");
+  const fingerprint = createHash("sha256").update(JSON.stringify({otId, action, expected, actor: context.uid, ...(motivo ? {motivo} : {}), ...(delivery ? {delivery} : {})})).digest("hex");
   return db.runTransaction(async (transaction) => {
     const [previous, data] = await Promise.all([
-      transaction.get(requestRef), readApprovalContext(transaction, context, orderRef, dependencies, "skip"),
+      transaction.get(requestRef), readApprovalContext(transaction, context, orderRef, dependencies, action === "finalizar" ? "required" : "skip"),
     ]);
     if (previous.exists) {
       if (previous.data().negocioId !== context.businessId || previous.data().fingerprint !== fingerprint) {
@@ -1213,7 +1340,13 @@ async function transitionWorkOrderClosure(request, dependencies, action) {
     }
     const {order, services} = data;
     assertDiagnosisRevision(order, expected, HttpsError, "orden de trabajo");
+    if (action === "finalizar" && !hasTallerCapability(data.membership, "manage")) {
+      fail(HttpsError, "permission-denied", "Solo el Owner o el Administrador pueden finalizar la ejecución.");
+    }
     const previousStatus = order.estado;
+    let frozenAtFinish = null;
+    let closureCurrency = null;
+    let closureDecimals = 0;
     if (action === "cancelar" ? !CANCELLABLE_ORDER_STATES.has(order.estado) :
       order.estado !== (action === "finalizar" ? "en_reparacion" : "pendiente_entrega")) {
       const message = action === "finalizar"
@@ -1223,17 +1356,36 @@ async function transitionWorkOrderClosure(request, dependencies, action) {
           : "Solo se puede cancelar una OT antes de iniciar la reparación.";
       fail(HttpsError, "failed-precondition", message);
     }
+    const actaRef = orderRef.collection("entrega").doc("acta");
+    const actaSnapshot = action === "entregar" ? await transaction.get(actaRef) : null;
+    // Seguimiento público: al confirmar la entrega (o anular) el enlace del cliente se inactiva en la misma transacción.
+    const trackingLinkSnapshot = action === "finalizar" ? null
+      : await transaction.get(orderRef.collection("seguimiento").doc("enlace"));
+    if (action === "entregar") {
+      const missing = missingDeliveryZones(actaSnapshot.exists ? actaSnapshot.data() : {});
+      if (missing.length) {
+        fail(HttpsError, "failed-precondition", `Faltan fotos de entrega: ${missing.join(", ")}.`);
+      }
+    }
     if (action === "finalizar") {
       if (!services.length || services.some((service) => service.estado !== "completado")) {
-        fail(HttpsError, "failed-precondition", "Completa todos los servicios antes de finalizar la reparación.");
+        fail(HttpsError, "failed-precondition", "Termina todos los trabajos antes de finalizar la ejecución.");
       }
-      const approval = await transaction.get(context.businessRef.collection("otApprovalState").doc(otId));
-      const approvalData = approval.data() || {};
-      if (order.estadoAprobacion !== "aprobada" || !approval.exists ||
-          approvalData.negocioId !== context.businessId || approvalData.otId !== otId ||
-          approvalData.scopeHash !== scopeFingerprint(services)) {
-        fail(HttpsError, "failed-precondition", "La OT no tiene un alcance vigente aprobado.");
+      if (order.estadoAprobacion !== "aprobada") {
+        fail(HttpsError, "failed-precondition", "El ingreso de la OT no está aprobado.");
       }
+      // Los precios se congelan aquí, al enviar a Ventas; el taller nunca los muestra.
+      closureCurrency = order.moneda || businessCurrency({businessSnapshot: {data: () => data.businessData}});
+      if (!closureCurrency) fail(HttpsError, "failed-precondition", "Configura una moneda válida en el negocio antes de finalizar.");
+      closureDecimals = workOrderAmountDecimals(order, closureCurrency);
+      frozenAtFinish = services.map((service) => {
+        const core = freezeCoreItem(data.items.get(service.itemId), context.businessId, service.itemId, "servicio", HttpsError, closureDecimals);
+        return {...frozenScope([service])[0], precioUnitario: core.precioUnitario, servicioSnapshot: core.snapshot,
+          productos: service.productos.map((product) => {
+            const coreProduct = freezeCoreItem(data.items.get(product.itemId), context.businessId, product.itemId, "producto", HttpsError, closureDecimals);
+            return {...product, precioUnitario: coreProduct.precioUnitario, productoSnapshot: coreProduct.snapshot};
+          })};
+      });
     }
     const estado = action === "finalizar" ? "pendiente_entrega" : action === "entregar" ? "cerrada" : "cancelada";
     const releasesPlaza = ["entregar", "cancelar"].includes(action);
@@ -1243,24 +1395,53 @@ async function transitionWorkOrderClosure(request, dependencies, action) {
       : null;
     const plazaLockSnapshot = plazaLockRef ? await transaction.get(plazaLockRef) : null;
     const plazaLock = plazaLockSnapshot?.data() || null;
+    const ownsPlazaLock = Boolean(plazaLockSnapshot?.exists && plazaLock?.negocioId === context.businessId &&
+      plazaLock.plazaId === plazaIdLiberada && plazaLock.otId === otId);
+    // La Plaza liberada pasa a la OT aprobada más antigua que espera (lectura antes de escribir).
+    const promotion = plazaIdLiberada && (ownsPlazaLock || !plazaLockSnapshot?.exists)
+      ? await readPromotionCandidate(transaction, context.businessRef, context.businessId, plazaIdLiberada, otId)
+      : null;
     const timestamp = FieldValue.serverTimestamp();
-    if (plazaLockSnapshot?.exists && plazaLock?.negocioId === context.businessId &&
-        plazaLock.plazaId === plazaIdLiberada && plazaLock.otId === otId) {
-      transaction.delete(plazaLockRef);
+    if (ownsPlazaLock && !promotion) transaction.delete(plazaLockRef);
+    if (frozenAtFinish) {
+      frozenAtFinish.forEach((service) => transaction.update(orderRef.collection("servicios").doc(service.servicioOtId), {
+        precioUnitario: service.precioUnitario, servicioSnapshot: service.servicioSnapshot, productos: service.productos,
+        actualizadoEn: timestamp, actualizadoPorUid: context.uid,
+      }));
     }
     transaction.update(orderRef, {
       estado,
+      ...(closureCurrency ? {moneda: closureCurrency} : {}),
+      ...(closureCurrency && !order.moneda && closureDecimals > 0 ? {montoDecimales: closureDecimals} : {}),
       ...(releasesPlaza ? {plazaId: null} : {}),
+      ...(action === "cancelar" && motivo ? {motivoCancelacion: motivo} : {}),
       actualizadoPorUid: context.uid,
       actualizadoEn: timestamp,
     });
+    const trackingTokenHash = trackingLinkSnapshot?.exists ? trackingLinkSnapshot.data()?.tokenHash : "";
+    if (typeof trackingTokenHash === "string" && /^[a-f0-9]{64}$/.test(trackingTokenHash)) {
+      transaction.set(db.collection("tallerSeguimientoTokens").doc(trackingTokenHash), {
+        estado: "inactivo", inactivadoEn: timestamp, motivoInactivacion: action === "entregar" ? "entregada" : "anulada",
+      }, {merge: true});
+    }
+    if (delivery) {
+      // El acta guarda las fotos selladas y quién retira el vehículo (con su documento): solo la lee el Owner/Administrador.
+      transaction.set(actaRef, {
+        negocioId: context.businessId, otId, ...delivery,
+        entregadaPorUid: context.uid, entregadaPorNombre: actorSnapshot.nombre, entregadaEn: timestamp,
+      }, {merge: true});
+    }
     appendPlanningEvent(transaction, orderRef, {
       businessId: context.businessId, actorUid: context.uid, actorSnapshot, timestamp,
       type: action === "finalizar" ? "reparacion_finalizada" : action === "entregar" ? "vehiculo_entregado" : "ot_cancelada",
-      detail: {estadoAnterior: previousStatus, estado, plazaIdLiberada},
+      detail: {estadoAnterior: previousStatus, estado, plazaIdLiberada, ...(motivo ? {motivo} : {}),
+        ...(delivery ? {receptorNombre: delivery.receptorNombre, conObservaciones: Boolean(delivery.observaciones)} : {})},
     });
+    const promoted = writePromotion(transaction, promotion, {appendPlanningEvent, businessId: context.businessId,
+      actorUid: context.uid, actorSnapshot, timestamp, origen: action === "entregar" ? "entrega" : "cancelacion"});
     const resultado = {otId, estado, estadoAprobacion: order.estadoAprobacion,
-      plazaId: releasesPlaza ? null : order.plazaId || null};
+      plazaId: releasesPlaza ? null : order.plazaId || null,
+      ...(promoted ? {otPromovidaId: promoted.otId} : {})};
     transaction.create(requestRef, {negocioId: context.businessId, otId, fingerprint, resultado, creadoEn: timestamp});
     return resultado;
   });
@@ -1295,6 +1476,20 @@ function historyEventDetail(type, detail = {}) {
     ...(typeof detail.aprobacionAnterior === "string" ? {aprobacionAnterior: detail.aprobacionAnterior} : {}),
     ...(typeof detail.estadoAprobacion === "string" ? {estadoAprobacion: detail.estadoAprobacion} : {}),
     ...(typeof detail.motivo === "string" && detail.motivo.trim() ? {motivo: detail.motivo.trim()} : {}),
+    // Plaza automática y fotos de recepción: solo marcas y la zona, sin identificadores internos.
+    ...(typeof detail.enEsperaDePlaza === "boolean" ? {enEsperaDePlaza: detail.enEsperaDePlaza} : {}),
+    ...(typeof detail.responsableNombre === "string" && detail.responsableNombre.trim()
+      ? {responsableNombre: detail.responsableNombre.trim().slice(0, 120)} : {}),
+    ...(["cliente", "ninguno"].includes(detail.modo) ? {modo: detail.modo} : {}),
+    ...(["antes", "despues"].includes(detail.momento) ? {momento: detail.momento} : {}),
+    ...(detail.automatica === true ? {automatica: true} : {}),
+    ...(typeof detail.urgente === "boolean" ? {urgente: detail.urgente} : {}),
+    ...(typeof detail.receptorNombre === "string" && detail.receptorNombre.trim()
+      ? {receptorNombre: detail.receptorNombre.trim().slice(0, 120)} : {}),
+    ...(typeof detail.conObservaciones === "boolean" ? {conObservaciones: detail.conObservaciones} : {}),
+    ...(typeof detail.zona === "string" && /^[a-z-]{1,40}$/.test(detail.zona) ? {zona: detail.zona} : {}),
+    ...(typeof detail.conDanos === "boolean" ? {conDanos: detail.conDanos} : {}),
+    ...(Number.isSafeInteger(detail.cantidadDanos) && detail.cantidadDanos >= 0 ? {cantidadDanos: detail.cantidadDanos} : {}),
   };
 }
 
@@ -1409,8 +1604,8 @@ async function readApprovalContext(transaction, context, orderRef, dependencies,
 }
 
 function frozenScope(services) {
-  return services.map(({servicioOtId, itemId, responsableUid, precioUnitario, servicioSnapshot, productos}) => ({
-    servicioOtId, itemId, responsableUid, precioUnitario: precioUnitario ?? null,
+  return services.map(({servicioOtId, itemId, precioUnitario, servicioSnapshot, productos}) => ({
+    servicioOtId, itemId, precioUnitario: precioUnitario ?? null,
     servicioSnapshot: servicioSnapshot || null, productos: productos || [],
   }));
 }
@@ -1440,9 +1635,11 @@ async function obtenerResumenAprobacionOTHandler(request, dependencies) {
     return {alcance: scope, moneda: summaryCurrency,
       ...(decimals > 0 ? {montoDecimales: decimals} : {}),
       congelado: submitted, faltantes, puedeAprobar: canApproveWorkOrder(membership),
-      puedeEnviar: Boolean(order.recepcion && services.length && data.hasDiagnosis &&
-        PLANNING_STATES.has(order.estado) && order.estado !== "esperando_aprobacion" &&
+      puedeEnviar: false,
+      puedeDecidir: Boolean(order.recepcion && ["en_cola", "en_diagnostico"].includes(order.estado) &&
         order.estadoAprobacion !== "aprobada"),
+      fotosFaltantes: missingReceptionPhotoZones(order),
+      danosPrevios: receptionPhotoDamages(order),
       estado: order.estado, estadoAprobacion: order.estadoAprobacion,
       revision: order.actualizadoEn?.toMillis?.()};
   });
@@ -1451,7 +1648,7 @@ async function obtenerResumenAprobacionOTHandler(request, dependencies) {
 async function approvalOperation(request, dependencies, action) {
   const {db, FieldValue, HttpsError} = dependencies;
   const context = await requireReceptionAccess(request, dependencies);
-  const allowed = new Set(["businessId", "otId", "requestId", "expectedActualizadoEn", "motivo"]);
+  const allowed = new Set(["businessId", "otId", "requestId", "expectedActualizadoEn", "motivo", "responsableUid"]);
   if (Object.keys(request?.data || {}).some((key) => !allowed.has(key))) {
     fail(HttpsError, "invalid-argument", "La solicitud contiene campos no permitidos. El alcance y los precios se resuelven en backend.");
   }
@@ -1461,94 +1658,89 @@ async function approvalOperation(request, dependencies, action) {
   const motivo = action === "rechazar"
     ? text(request?.data?.motivo, "El motivo del rechazo", 2000, HttpsError, {required: true})
     : text(request?.data?.motivo, "El motivo", 2000, HttpsError);
+  // Solo Owner y Administrador deciden el ingreso; se comprueba antes de validar el resto de los datos.
+  if (!canApproveWorkOrder(context.membership)) {
+    fail(HttpsError, "permission-denied", "No tienes la capacidad de aprobación de Taller.");
+  }
+  // Al aprobar se elige quién responde por los trabajos de la OT; al rechazar no se asigna a nadie.
+  if (action === "rechazar" && request?.data?.responsableUid !== undefined) {
+    fail(HttpsError, "invalid-argument", "Rechazar el ingreso no asigna un responsable.");
+  }
+  const responsableUid = action === "aprobar"
+    ? identifier(request?.data?.responsableUid, "El responsable de la OT", HttpsError) : null;
   const orderRef = context.businessRef.collection("ordenesTrabajo").doc(otId);
-  const stateRef = context.businessRef.collection("otApprovalState").doc(otId);
   const requestRef = context.businessRef.collection("otApprovalRequests").doc(requestId);
   const actorSnapshot = await diagnosisActor(dependencies, context.uid);
   const fingerprint = createHash("sha256").update(JSON.stringify({otId, action, motivo, actor: context.uid,
-    revision: request?.data?.expectedActualizadoEn})).digest("hex");
+    revision: request?.data?.expectedActualizadoEn, ...(responsableUid ? {responsableUid} : {})})).digest("hex");
+  if (action === "enviar" || action === "revalidar") {
+    fail(HttpsError, "failed-precondition", "El ingreso se aprueba o rechaza directamente; los trabajos se registran en la ejecución.");
+  }
+  const responsibleUser = responsableUid ? await dependencies.auth.getUser(responsableUid) : null;
+  if (responsibleUser?.disabled) fail(HttpsError, "failed-precondition", "El responsable seleccionado está deshabilitado.");
+  const responsibleIdentity = responsableUid ? await diagnosisActor(dependencies, responsableUid) : null;
+  const responsibleRef = responsableUid ? db.collection("membresias").doc(`${context.businessId}__${responsableUid}`) : null;
   return db.runTransaction(async (transaction) => {
-    const [previous, approvalState] = await Promise.all([transaction.get(requestRef), transaction.get(stateRef)]);
-    const data = await readApprovalContext(transaction, context, orderRef, dependencies, previous.exists ? "skip" : "required");
-    const {order, services, items, faltantes, membership} = data;
-    if (["aprobar", "rechazar"].includes(action) && !canApproveWorkOrder(membership)) {
+    const previousDecision = await transaction.get(requestRef);
+    const gate = await readApprovalContext(transaction, context, orderRef, dependencies, "skip");
+    const responsibleSnapshot = responsibleRef ? await transaction.get(responsibleRef) : null;
+    if (!canApproveWorkOrder(gate.membership)) {
       fail(HttpsError, "permission-denied", "No tienes la capacidad de aprobación de Taller.");
     }
-    if (previous.exists) {
-      if (previous.data().fingerprint !== fingerprint) fail(HttpsError, "already-exists", "La solicitud ya fue utilizada con otros datos.");
-      return {...previous.data().resultado, sinCambios: true};
+    if (previousDecision.exists) {
+      if (previousDecision.data().fingerprint !== fingerprint) fail(HttpsError, "already-exists", "La solicitud ya fue utilizada con otros datos.");
+      return {...previousDecision.data().resultado, sinCambios: true};
     }
-    assertDiagnosisRevision(order, request?.data?.expectedActualizadoEn, HttpsError, "alcance de la OT");
-    if (!order.recepcion || !data.hasDiagnosis || !services.length || !PLANNING_STATES.has(order.estado)) {
-      fail(HttpsError, "failed-precondition", "La OT requiere recepción, al menos un diagnóstico completado, servicios definidos y un estado compatible.");
+    const gateOrder = gate.order;
+    assertDiagnosisRevision(gateOrder, request?.data?.expectedActualizadoEn, HttpsError, "orden de trabajo");
+    if (!gateOrder.recepcion || !["en_cola", "en_diagnostico"].includes(gateOrder.estado) ||
+        gateOrder.estadoAprobacion === "aprobada") {
+      fail(HttpsError, "failed-precondition", "La OT debe tener la recepción registrada y estar pendiente de aprobación.");
     }
-    let estado = order.estado;
-    let estadoAprobacion = order.estadoAprobacion;
-    let moneda = order.moneda;
-    let decimals = adaptDocumentAmountDecimals(order, order.moneda);
-    let scope = frozenScope(services);
-    const scopeHash = scopeFingerprint(services);
-    let envioId = approvalState.data()?.envioId || null;
-    if (action === "enviar") {
-      if (order.estadoAprobacion === "aprobada") fail(HttpsError, "failed-precondition", "El alcance ya está aprobado.");
-      if (order.estado === "esperando_aprobacion") {
-        fail(HttpsError, "failed-precondition", "El alcance ya fue enviado y espera una decisión de aprobación.");
-      }
-      moneda = businessCurrency({businessSnapshot: {data: () => data.businessData}});
-      if (!moneda) fail(HttpsError, "failed-precondition", "Configura una moneda válida en el negocio antes de enviar.");
-      // Los decimales son los del documento guardado; solo si la moneda cambió salen del catálogo.
-      decimals = workOrderAmountDecimals(order, moneda);
-      scope = services.map((service) => {
-        const core = freezeCoreItem(items.get(service.itemId), context.businessId, service.itemId, "servicio", HttpsError, decimals);
-        return {...frozenScope([service])[0], precioUnitario: core.precioUnitario, servicioSnapshot: core.snapshot,
-          productos: service.productos.map((product) => {
-            const coreProduct = freezeCoreItem(items.get(product.itemId), context.businessId, product.itemId, "producto", HttpsError, decimals);
-            return {...product, precioUnitario: coreProduct.precioUnitario, productoSnapshot: coreProduct.snapshot};
-          })};
-      });
-      estado = faltantes.length ? "esperando_repuestos" : "esperando_aprobacion";
-      estadoAprobacion = "pendiente";
-      envioId = requestId;
-    } else {
-      if (!approvalState.exists || approvalState.data().scopeHash !== scopeHash || !approvalIsSubmitted(order)) {
-        fail(HttpsError, "failed-precondition", "El alcance cambió. Debes enviarlo nuevamente a aprobación.");
-      }
-      if (action === "aprobar" || action === "rechazar") {
-        if (order.estado !== "esperando_aprobacion" || order.estadoAprobacion !== "pendiente") {
-          fail(HttpsError, "failed-precondition", "La OT no está esperando una decisión de aprobación.");
-        }
-        estadoAprobacion = action === "aprobar" ? "aprobada" : "rechazada";
-        if (action === "aprobar") estado = faltantes.length ? "esperando_repuestos" : "en_reparacion";
-        // Un alcance rechazado vuelve a planificación (mismo estado que al invalidar la aprobación) para poder reenviarse.
-        else estado = order.plazaId ? "en_diagnostico" : "en_cola";
-      } else {
-        if (order.estado !== "esperando_repuestos" || order.estadoAprobacion === "rechazada") {
-          fail(HttpsError, "failed-precondition", "Esta OT no requiere revalidación de disponibilidad.");
-        }
-        estado = faltantes.length ? "esperando_repuestos" :
-          order.estadoAprobacion === "aprobada" ? "en_reparacion" : "esperando_aprobacion";
-      }
+    if (responsibleSnapshot) assertAssignableMember(responsibleSnapshot, context.businessId, responsableUid, HttpsError);
+    // Las fotos se exigen al registrar la recepción; aquí se revalidan (OT anteriores). Rechazar no las exige.
+    const missingPhotos = action === "aprobar" ? missingReceptionPhotoZones(gateOrder) : [];
+    if (missingPhotos.length) {
+      fail(HttpsError, "failed-precondition",
+        `Faltan fotos de recepción: ${missingPhotos.join(", ")}. Complétalas antes de aprobar el ingreso.`);
     }
-    const timestamp = FieldValue.serverTimestamp();
-    if (action === "enviar") {
-      scope.forEach((service) => transaction.update(orderRef.collection("servicios").doc(service.servicioOtId), {
-        precioUnitario: service.precioUnitario, servicioSnapshot: service.servicioSnapshot, productos: service.productos,
-        actualizadoEn: timestamp, actualizadoPorUid: context.uid,
-      }));
-      transaction.set(stateRef, {negocioId: context.businessId, otId, scopeHash, envioId, actualizadoEn: timestamp});
+    // Al aprobar sin Plaza se busca la primera libre; si todas están ocupadas, la OT queda en espera.
+    // El negocio debe tener al menos una Plaza activa para aprobar ingresos.
+    const freePlaza = action === "aprobar" && !gateOrder.plazaId
+      ? await readFreePlaza(transaction, context.businessRef, context.businessId)
+      : null;
+    if (freePlaza && !freePlaza.hasActivePlazas) {
+      fail(HttpsError, "failed-precondition", "Crea al menos una Plaza activa en Taller > Plazas antes de aprobar el ingreso.");
     }
-    // `montoDecimales` solo se toca al enviar y solo si cambia: con 0 decimales una OT queda como hoy (sin el campo).
-    const storedDecimals = adaptDocumentAmountDecimals(order, order.moneda);
-    const decimalsChange = action === "enviar" && decimals !== storedDecimals
-      ? {montoDecimales: decimals > 0 ? decimals : FieldValue.delete()} : {};
-    transaction.update(orderRef, {estado, estadoAprobacion, moneda, ...decimalsChange, actualizadoEn: timestamp, actualizadoPorUid: context.uid});
-    const type = {enviar: "ot_enviada_aprobacion", aprobar: "ot_aprobada", rechazar: "ot_rechazada", revalidar: "disponibilidad_revalidada"}[action];
-    appendPlanningEvent(transaction, orderRef, {businessId: context.businessId, actorUid: context.uid, actorSnapshot, timestamp,
-      type, detail: {envioId, moneda, alcance: scope, motivo, faltantes,
-        estadoAnterior: order.estado, estado, aprobacionAnterior: order.estadoAprobacion, estadoAprobacion}});
-    const resultado = {otId, estado, estadoAprobacion, faltantes, envioId};
-    transaction.create(requestRef, {negocioId: context.businessId, otId, fingerprint, resultado, creadoEn: timestamp});
-    return resultado;
+    const assignedPlazaId = freePlaza?.plazaId || null;
+    const waitsForPlaza = Boolean(freePlaza && !assignedPlazaId);
+    const decidedEstado = action === "aprobar" ? (waitsForPlaza ? "en_cola" : "en_reparacion") : gateOrder.estado;
+    const decidedAprobacion = action === "aprobar" ? "aprobada" : "rechazada";
+    const decidedAt = FieldValue.serverTimestamp();
+    transaction.update(orderRef, {estado: decidedEstado, estadoAprobacion: decidedAprobacion,
+      ...(action === "aprobar" ? {aprobadaEn: decidedAt, responsableUid, responsableNombre: responsibleIdentity.nombre,
+        motivoRechazo: null} : {motivoRechazo: motivo}),
+      ...(assignedPlazaId ? {plazaId: assignedPlazaId} : {}),
+      actualizadoEn: decidedAt, actualizadoPorUid: context.uid});
+    if (assignedPlazaId) {
+      transaction.set(freePlaza.lockRef, {negocioId: context.businessId, plazaId: assignedPlazaId, otId});
+    }
+    appendPlanningEvent(transaction, orderRef, {businessId: context.businessId, actorUid: context.uid, actorSnapshot,
+      timestamp: decidedAt, type: action === "aprobar" ? "ot_aprobada" : "ot_rechazada",
+      detail: {motivo, estadoAnterior: gateOrder.estado, estado: decidedEstado,
+        aprobacionAnterior: gateOrder.estadoAprobacion, estadoAprobacion: decidedAprobacion,
+        ...(action === "aprobar" ? {enEsperaDePlaza: waitsForPlaza, responsableNombre: responsibleIdentity.nombre} : {})}});
+    if (assignedPlazaId) {
+      appendPlanningEvent(transaction, orderRef, {businessId: context.businessId, actorUid: context.uid, actorSnapshot,
+        timestamp: decidedAt, type: "plaza_asignada",
+        detail: automaticAssignmentDetail(assignedPlazaId, gateOrder.estado, "aprobacion")});
+    }
+    const decision = {otId, estado: decidedEstado, estadoAprobacion: decidedAprobacion,
+      ...(responsableUid ? {responsableUid} : {}),
+      plazaId: assignedPlazaId || gateOrder.plazaId || null, enEsperaDePlaza: waitsForPlaza,
+      faltantes: [], envioId: null};
+    transaction.create(requestRef, {negocioId: context.businessId, otId, fingerprint, resultado: decision, creadoEn: decidedAt});
+    return decision;
   });
 }
 
@@ -1566,7 +1758,9 @@ module.exports = {
   readApprovalContext,
   requestIdentifier,
   requireReceptionAccess,
-  iniciarServicioOTHandler, completarServicioOTHandler,
+  iniciarServicioOTHandler, completarServicioOTHandler, reabrirServicioOTHandler, definirRepuestosServicioOTHandler,
+  assertWorkOperator, canOperateWorks,
+  assertPlanningOrder, assertPlanningItem, invalidateWorkOrderScope, assertStoredWorkOrder, text,
   finalizarReparacionOTHandler, registrarEntregaOTHandler, cancelarOTHandler,
   obtenerEventosCierreOTHandler, obtenerHistorialOTHandler,
   enviarOTAprobacionHandler, aprobarOTHandler, rechazarOTHandler, revalidarDisponibilidadOTHandler,
@@ -1582,7 +1776,6 @@ module.exports = {
   eliminarProductoOTHandler,
   listarCatalogoTallerHandler,
   formatWorkOrderNumber,
-  hasReceptionAnomaly,
   listarPersonasAsignablesTallerHandler,
   normalizeDiagnosisInput,
   normalizeWorkOrderInput,

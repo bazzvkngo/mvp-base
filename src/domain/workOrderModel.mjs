@@ -15,7 +15,7 @@ export const WORK_ORDER_STATUSES = Object.freeze([
 export const WORK_ORDER_APPROVAL_STATUSES = Object.freeze([
   {value: "pendiente", label: "Pendiente"},
   {value: "aprobada", label: "Aprobada"},
-  {value: "rechazada", label: "Rechazada"},
+  {value: "rechazada", label: "En espera"},
 ]);
 
 const STATUS_LABELS = new Map(
@@ -49,6 +49,20 @@ export function getWorkOrderStatusLabel(value) {
 
 export function getWorkOrderApprovalLabel(value) {
   return APPROVAL_LABELS.get(normalizedText(value)) || "Sin estado";
+}
+
+// OT aprobada que espera una Plaza libre: el servidor la deja en cola hasta asignarla.
+export function isWorkOrderWaitingForPlaza(order) {
+  return Boolean(order?.recepcion) && order.estado === "en_cola" &&
+    order.estadoAprobacion === "aprobada" && !normalizedText(order.plazaId);
+}
+
+export function getWorkOrderDisplayStatusLabel(order) {
+  return isWorkOrderWaitingForPlaza(order) ? "En espera de plaza" : getWorkOrderStatusLabel(order?.estado);
+}
+
+export function getWorkOrderDisplayStatusVariant(order) {
+  return isWorkOrderWaitingForPlaza(order) ? "warning" : getWorkOrderStatusVariant(order?.estado);
 }
 
 export function getWorkOrderStatusVariant(value) {

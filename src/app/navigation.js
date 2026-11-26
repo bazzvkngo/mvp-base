@@ -8,6 +8,7 @@ import {
   BriefcaseBusiness,
   Car,
   HeartPulse,
+  LayoutDashboard,
   History,
   PawPrint,
   ReceiptText,
@@ -24,6 +25,9 @@ import { VERTICAL_MODULES } from "../domain/verticalModules.mjs";
 
 const verticalNavigationItems = Object.freeze({
   taller: Object.freeze([
+    // path "" = la ruta base del módulo (panel del taller), con coincidencia exacta. `section` lo ubica al
+    // comienzo de esa sección del Core (junto a Reportes) cuando Taller es el módulo del rubro.
+    {path: "", label: "Panel del taller", title: "Panel del taller", icon: LayoutDashboard, section: "Inicio"},
     {path: "ordenes", label: "Órdenes de trabajo", title: "Órdenes de trabajo", icon: ClipboardList},
     {path: "vehiculos", label: "Vehículos", title: "Vehículos", icon: Car},
     {
@@ -222,13 +226,20 @@ const INVENTORY_PATH = "/inventario";
 
 // SPEC 041: inserta los ítems del módulo del rubro en "Operación", antes de Inventario (al final
 // si Inventario no está). El Core declara "Operación" siempre; no se crea otra sección ni se duplica.
+// Un ítem con `section` va al comienzo de esa sección del Core (p. ej. el panel del taller en «Inicio»).
 function withPrimaryModuleItems(sections, primaryItems) {
   if (!primaryItems.length) return sections;
+  const sectionLabels = new Set(sections.map((section) => section.label));
+  const placed = primaryItems.filter((item) => item.section && sectionLabels.has(item.section));
+  const operation = primaryItems.filter((item) => !placed.includes(item));
   return sections.map((section) => {
-    if (section.label !== OPERATION_SECTION_LABEL) return section;
+    const leading = placed.filter((item) => item.section === section.label);
+    if (section.label !== OPERATION_SECTION_LABEL) {
+      return leading.length ? {...section, items: [...leading, ...section.items]} : section;
+    }
     const inventoryIndex = section.items.findIndex((item) => item.to === INVENTORY_PATH);
     const at = inventoryIndex === -1 ? section.items.length : inventoryIndex;
-    return {...section, items: [...section.items.slice(0, at), ...primaryItems, ...section.items.slice(at)]};
+    return {...section, items: [...leading, ...section.items.slice(0, at), ...operation, ...section.items.slice(at)]};
   });
 }
 

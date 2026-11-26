@@ -53,11 +53,11 @@ assert.equal(isValidVehiclePlate("ABCD123", "PY"), true);
 assert.equal(isValidVehiclePlate("ABC123", "CL"), false);
 assert.equal(isValidVehiclePlate("ABCD12", "PY"), false);
 assert.equal(isValidVehiclePlate("1234ABC", "BO"), true);
-assert.equal(isValidVehiclePlate("AB12C", "BO"), true);
-for (const plate of ["ABCD", "12345", "ABCDEFGHI", "123456789"]) {
+assert.equal(isValidVehiclePlate("AB12C", "BO"), false);
+for (const plate of ["ABCD", "12345", "ABCDEFGHI", "123456789", "ABCD12"]) {
   assert.equal(isValidVehiclePlate(plate, "BO"), false);
 }
-assert.match(getVehicleFieldErrors({patente: "ABCD"}, {countryCode: "BO"}).patente, /5 a 8 caracteres con letras y números/);
+assert.match(getVehicleFieldErrors({patente: "ABCD"}, {countryCode: "BO"}).patente, /patente válida para BO/);
 assert.equal(normalizeVehiclePlate("abc-123"), "ABC123");
 for (const plate of ["12ABC", "12345ABC", "1234AB", "ABC1234", "1234AB1"]) {
   assert.equal(isValidVehiclePlate(plate), false);
@@ -104,13 +104,18 @@ assert.match(form, /<select/);
 assert.doesNotMatch(form, /<input[^>]+tipo/);
 assert.match(form, /normalizeVehiclePlate/);
 assert.match(form, /maxLength: 8/);
-assert.match(form, /ABC123 o ABCD123/);
+assert.match(form, /getCountryFormCopy/);
+assert.match(form, /copy\.vehiclePlateExample/);
+assert.match(form, /copy\.vehicleVinExample/);
+assert.match(form, /copy\.vehicleBrandExample/);
+assert.match(form, /copy\.vehicleModelExample/);
+assert.match(form, /copy\.vehicleColorExample/);
 assert.match(form, /keepTextOnlyInput/);
 assert.match(form, /keepVehicleYearInput/);
 assert.match(form, /inputMode="numeric"/);
 assert.match(form, /pattern="\[0-9\]\{4\}"/);
 assert.match(form, /maxLength=\{4\}/);
-assert.match(form, /field\("color", "Color", \{required: true, maxLength: 80\}\)/);
+assert.match(form, /field\("color", "Color", \{required: true, maxLength: 80, placeholder: copy\.vehicleColorExample\}\)/);
 const newVehiclePage = fs.readFileSync("src/pages/NewVehiclePage.jsx", "utf8");
 assert.match(newVehiclePage, /useCallback/);
 assert.match(newVehiclePage, /onChange=\{handleOwnerChange\}/);
@@ -147,5 +152,8 @@ assert.match(newVehiclePage, /requestIdRef\.current = "";/);
 const vehicleService = fs.readFileSync("src/services/vehicleService.js", "utf8");
 assert.match(vehicleService, /requestId: requireIdentifier\(requestId,/);
 assert.doesNotMatch(vehicleService, /requestId: createVehicleRequestId\(\)/);
+const workOrdersPage = fs.readFileSync("src/pages/WorkOrdersPage.jsx", "utf8");
+assert.match(workOrdersPage, /getCountryFormCopy/);
+assert.match(workOrdersPage, /placeholder=\{countryCopy\.workOrderSearchExample\}/);
 console.log("OK rutas UI: listado, alta, ficha, selector controlado e historial sin datos inventados");
 console.log("VEHICLE_UI_SMOKE_OK");

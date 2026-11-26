@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {doc, getDoc, setDoc} from "firebase/firestore";
+import {completeReceptionPhotos} from "./work-order-photo-fixtures.mjs";
 
 export async function testWorkOrderCancellation({adminDb, businessId, owner, technician, outsider,
   callable, expectCallableError, expectFirestoreDenied, reception, runId}) {
@@ -27,6 +28,17 @@ export async function testWorkOrderCancellation({adminDb, businessId, owner, tec
   const cancelledStored = await read(entered.otId);
   assert.equal(cancelledStored.estado, "cancelada");
   assert.equal(cancelledStored.numeroOT, entered.numeroOT);
+  assert.equal(cancelledStored.motivoCancelacion, undefined, "sin motivo no se guarda campo");
+  // Anulada desde la aprobación guarda el motivo en la OT y en el historial.
+  const withReason = await createOrder();
+  const reasonInput = {...(await cancelInput(withReason.otId)), motivo: "Cliente retira el vehículo"};
+  await call(owner, "cancelarOT", reasonInput);
+  assert.equal((await read(withReason.otId)).motivoCancelacion, "Cliente retira el vehículo");
+  const reasonEvents = await refFor(withReason.otId).collection("historial").where("tipo", "==", "ot_cancelada").get();
+  assert.equal(reasonEvents.docs[0].data().detalle.motivo, "Cliente retira el vehículo");
+  const wrongMotive = {...(await cancelInput(withReason.otId)), motivo: "x"};
+  await expectCallableError("motivo solo al anular", () => call(owner, "finalizarReparacionOT", wrongMotive),
+    ["invalid-argument"]);
   const events = (await refFor(entered.otId).collection("historial").get()).docs.map((entry) => entry.data());
   const cancellation = events.find((event) => event.tipo === "ot_cancelada");
   assert.equal(cancellation.detalle.estadoAnterior, "ingresada");
@@ -44,6 +56,7 @@ export async function testWorkOrderCancellation({adminDb, businessId, owner, tec
   const nextNumber = Number(nextOrder.numeroOT.replace("OT-", ""));
   assert.ok(nextNumber > firstNumber, "El número cancelado no se reutiliza");
 
+  await completeReceptionPhotos(refFor(nextOrder.otId));
   await call(technician, "registrarRecepcionOrdenTrabajo", {otId: nextOrder.otId, recepcion: reception});
   const plaza = (await call(owner, "crearPlazaTaller", {
     requestId: id(), plaza: {nombre: `Plaza cancelación ${runId}`},
@@ -58,6 +71,7 @@ export async function testWorkOrderCancellation({adminDb, businessId, owner, tec
   assert.equal((await adminDb.doc(`${base}/plazaOccupancyKeys/${plaza.plazaId}`).get()).exists, false);
 
   const raceOrder = await createOrder();
+  await completeReceptionPhotos(refFor(raceOrder.otId));
   await call(owner, "registrarRecepcionOrdenTrabajo", {otId: raceOrder.otId, recepcion: reception});
   const raceRevision = await revision(raceOrder.otId);
   const race = await Promise.allSettled([

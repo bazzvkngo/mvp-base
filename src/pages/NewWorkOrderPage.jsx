@@ -84,9 +84,10 @@ export default function NewWorkOrderPage({businessId, role}) {
         requestIdRef.current
       );
       requestIdRef.current = "";
-      navigate("/taller/ordenes", {
+      // Al crear la OT se abre directamente su ficha, sin volver al listado a buscarla.
+      navigate(`/taller/ordenes/${order.otId}`, {
         replace: true,
-        state: {feedback: `${order.numeroOT} creada correctamente.`},
+        state: {feedback: `${order.numeroOT} creada correctamente. Registra la recepción para continuar.`},
       });
     } catch (createError) {
       setError(getWorkOrderErrorMessage(createError));

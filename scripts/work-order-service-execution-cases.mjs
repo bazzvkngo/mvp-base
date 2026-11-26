@@ -23,7 +23,7 @@ export async function testServiceExecution({adminDb, businessId, otId, serviceId
     await call(owner, "enviarOTAprobacion", {businessId, otId, requestId: requestId(),
       expectedActualizadoEn: order.actualizadoEn.toMillis()});
     const pending = await readOrder();
-    await call(admin, "aprobarOT", {businessId, otId, requestId: requestId(),
+    await call(admin, "aprobarOT", {businessId, otId, requestId: requestId(), responsableUid: technician.uid,
       expectedActualizadoEn: pending.actualizadoEn.toMillis()});
   }
   assert.equal((await readOrder()).estado, "en_reparacion");
@@ -41,11 +41,9 @@ export async function testServiceExecution({adminDb, businessId, otId, serviceId
   await memberRef.update({rol: "VENTAS"});
   await reject("rol sin operación de Taller", member, "iniciarServicioOT", await payload(), ["permission-denied"]);
   await memberRef.update({rol: "MEMBER"});
-  const assigned = (await readService()).responsableUid;
-  const assignedRef = adminDb.doc(`membresias/${businessId}__${assigned}`);
-  await assignedRef.update({estado: "inactivo"});
-  await reject("responsable inactivo", owner, "iniciarServicioOT", await payload());
-  await assignedRef.update({estado: "activo"});
+  // Solo el responsable de la OT (elegido al aprobar), el Administrador o el Owner operan los trabajos.
+  assert.equal((await readOrder()).responsableUid, technician.uid);
+  await reject("quien no es el responsable no opera", member, "iniciarServicioOT", await payload(), ["permission-denied"]);
   const firstOrder = await readOrder();
   await orderRef.update({estado: "esperando_repuestos"});
   await reject("OT fuera de reparación", owner, "iniciarServicioOT", await payload());
@@ -70,21 +68,35 @@ export async function testServiceExecution({adminDb, businessId, otId, serviceId
   await reject("servicio iniciado no se inicia otra vez", owner, "iniciarServicioOT", await payload());
   await reject("servicio iniciado no se edita ordinariamente", owner, "actualizarServicioOT", {
     businessId, otId, servicioOtId: serviceId,
-    servicio: {itemId: (await readService()).itemId, responsableUid: assigned},
+    servicio: {itemId: (await readService()).itemId},
     expectedActualizadoEn: (await readService()).actualizadoEn.toMillis(),
   });
   assert.equal((await readOrder()).estado, "en_reparacion");
   assert.equal((await readOrder()).estadoAprobacion, "aprobada");
 
+  // Un trabajo solo se termina con sus repuestos definidos (del inventario, del cliente o ninguno).
+  await reject("terminar sin repuestos definidos", technician, "completarServicioOT", await payload());
+  await reject("repuestos: solo cliente o ninguno", technician, "definirRepuestosServicioOT",
+    {businessId, otId, servicioOtId: serviceId, modo: "otro", expectedActualizadoEn: (await readService()).actualizadoEn.toMillis()},
+    ["invalid-argument"]);
+  await reject("repuestos: quien no es el responsable no los define", member, "definirRepuestosServicioOT",
+    {businessId, otId, servicioOtId: serviceId, modo: "cliente", expectedActualizadoEn: (await readService()).actualizadoEn.toMillis()},
+    ["permission-denied"]);
+  await call(technician, "definirRepuestosServicioOT", {businessId, otId, servicioOtId: serviceId, modo: "cliente",
+    expectedActualizadoEn: (await readService()).actualizadoEn.toMillis()});
+  assert.equal((await readService()).repuestosModo, "cliente");
+  await call(technician, "definirRepuestosServicioOT", {businessId, otId, servicioOtId: serviceId, modo: "ninguno",
+    expectedActualizadoEn: (await readService()).actualizadoEn.toMillis()});
+  assert.equal((await readService()).repuestosModo, "ninguno");
   const completeInput = await payload();
-  const complete = await call(member, "completarServicioOT", completeInput);
+  const complete = await call(technician, "completarServicioOT", completeInput);
   assert.equal(complete.data.estado, "completado");
-  assert.equal((await call(member, "completarServicioOT", completeInput)).data.sinCambios, true);
+  assert.equal((await call(technician, "completarServicioOT", completeInput)).data.sinCambios, true);
   await reject("servicio completado no vuelve a completarse", owner, "completarServicioOT", await payload());
   await reject("servicio completado no vuelve a iniciarse", owner, "iniciarServicioOT", await payload());
   const stored = await readService();
   assert.equal(stored.estado, "completado");
-  assert.equal(stored.actualizadoPorUid, member.uid);
+  assert.equal(stored.actualizadoPorUid, technician.uid);
   assert.ok(stored.actualizadoEn?.toDate());
   const executionEvents = (await readEvents()).filter((event) =>
     ["servicio_ot_iniciado", "servicio_ot_completado"].includes(event.tipo) &&
@@ -92,8 +104,21 @@ export async function testServiceExecution({adminDb, businessId, otId, serviceId
   assert.deepEqual(executionEvents.map((event) => event.tipo).sort(),
     ["servicio_ot_iniciado", "servicio_ot_completado"].sort());
   assert.ok(executionEvents.every((event) => event.fecha?.toDate() && event.actorUid &&
-    event.actorSnapshot?.correo && event.detalle?.itemId && event.detalle?.responsableUid));
+    event.actorSnapshot?.correo && event.detalle?.itemId));
   assert.equal((await adminDb.doc(`${base}/inventario/producto-core`).get()).data().stock, stockBefore);
+  // Un trabajo terminado se cierra: solo el Owner o el Administrador lo reabren; luego se termina de nuevo.
+  await reject("el técnico no reabre un trabajo", technician, "reabrirServicioOT", await payload(), ["permission-denied"]);
+  await reject("no se cambian repuestos de un trabajo terminado", technician, "definirRepuestosServicioOT",
+    {businessId, otId, servicioOtId: serviceId, modo: "cliente", expectedActualizadoEn: (await readService()).actualizadoEn.toMillis()});
+  await reject("no se agregan repuestos a un trabajo terminado", technician, "agregarProductoOT",
+    {businessId, otId, servicioOtId: serviceId, itemId: "producto-core", cantidad: 1, requestId: requestId()});
+  const reopenInput = await payload();
+  assert.equal((await call(admin, "reabrirServicioOT", reopenInput)).data.estado, "en_progreso");
+  assert.equal((await call(admin, "reabrirServicioOT", reopenInput)).data.sinCambios, true);
+  await reject("solo se reabre un trabajo terminado", admin, "reabrirServicioOT", await payload());
+  assert.equal((await call(technician, "completarServicioOT", await payload())).data.estado, "completado");
+  const reopenEvents = (await readEvents()).filter((event) => event.tipo === "servicio_ot_reabierto");
+  assert.equal(reopenEvents.length, 1);
   await expectFirestoreDenied("SDK no lee requests de ejecución", () =>
     getDoc(doc(owner.db, `${requestCollection.path}/${winningStart.input.requestId}`)));
   await expectFirestoreDenied("SDK no escribe requests de ejecución", () =>

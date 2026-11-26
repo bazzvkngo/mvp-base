@@ -132,11 +132,13 @@ export function obtenerResumenAprobacionOT(businessId, otId) {
   return diagnosisCall("obtenerResumenAprobacionOT", "consultar el alcance de la OT", businessId, otId, {});
 }
 
-export function ejecutarAccionAprobacionOT(businessId, otId, action, requestId, expectedActualizadoEn, motivo = "") {
+// Al aprobar se elige el responsable de la OT: solo él, el Administrador o el Owner operan los trabajos.
+export function ejecutarAccionAprobacionOT(businessId, otId, action, requestId, expectedActualizadoEn, motivo = "", responsableUid = "") {
   const calls = {enviar: "enviarOTAprobacion", aprobar: "aprobarOT", rechazar: "rechazarOT", revalidar: "revalidarDisponibilidadOT"};
   if (!calls[action]) throw new Error("Acción de aprobación no válida.");
   return diagnosisCall(calls[action], "gestionar la aprobación de la OT", businessId, otId, {
     requestId: requireIdentifier(requestId, "La solicitud"), expectedActualizadoEn, motivo,
+    ...(action === "aprobar" ? {responsableUid: requireIdentifier(responsableUid, "El responsable de la OT")} : {}),
   });
 }
 
@@ -208,11 +210,27 @@ export function completarServicioOT(businessId, otId, servicioOtId, expectedActu
   });
 }
 
-export function ejecutarCierreOT(businessId, otId, action, expectedActualizadoEn, requestId) {
+export function reabrirServicioOT(businessId, otId, servicioOtId, expectedActualizadoEn, requestId) {
+  return diagnosisCall("reabrirServicioOT", "reabrir un trabajo de la OT", businessId, otId, {
+    servicioOtId: requireIdentifier(servicioOtId, "El servicio de la OT"), expectedActualizadoEn,
+    requestId: requireIdentifier(requestId, "La solicitud"),
+  });
+}
+
+// modo: «cliente» (los repuestos los trae el cliente) o «ninguno» (el trabajo no requiere repuestos).
+export function definirRepuestosServicioOT(businessId, otId, servicioOtId, modo, expectedActualizadoEn) {
+  return diagnosisCall("definirRepuestosServicioOT", "definir los repuestos de un trabajo", businessId, otId, {
+    servicioOtId: requireIdentifier(servicioOtId, "El servicio de la OT"), modo, expectedActualizadoEn,
+  });
+}
+
+export function ejecutarCierreOT(businessId, otId, action, expectedActualizadoEn, requestId, motivo = "", entrega = null) {
   const calls = {finalizar: "finalizarReparacionOT", entregar: "registrarEntregaOT", cancelar: "cancelarOT"};
   if (!calls[action]) throw new Error("Acción de cierre no válida.");
   return diagnosisCall(calls[action], "actualizar el cierre de la OT", businessId, otId, {
     expectedActualizadoEn, requestId: requireIdentifier(requestId, "La solicitud"),
+    ...(action === "cancelar" && String(motivo || "").trim() ? {motivo: String(motivo).trim()} : {}),
+    ...(action === "entregar" && entrega ? {entrega} : {}),
   });
 }
 
@@ -246,4 +264,101 @@ export function eliminarProductoOT(businessId, otId, servicioOtId, productoOtId,
     servicioOtId: requireIdentifier(servicioOtId, "El servicio de la OT"),
     productoOtId: requireIdentifier(productoOtId, "El producto planificado"), expectedActualizadoEn,
   });
+}
+
+// Fotos de recepción: la imagen se envía como JPEG en base64 y solo se lee a través de la Function.
+// Cada zona se fotografía una vez y queda sellada; las zonas exteriores llevan sus daños.
+export function subirFotoRecepcionOT(businessId, otId, zona, imagen, danos) {
+  return diagnosisCall("fotosRecepcionOT", "registrar una foto de recepción", businessId, otId, {
+    operacion: "subir", zona, imagen, ...(danos ? {danos} : {}),
+  });
+}
+
+export async function leerFotoRecepcionOT(businessId, otId, zona) {
+  const response = await diagnosisCall("fotosRecepcionOT", "ver una foto de recepción", businessId, otId, {
+    operacion: "leer", zona,
+  });
+  return response.imagen || "";
+}
+
+// Fotos «antes» y «después» de un trabajo (opcionales). Misma regla que las de recepción: sellada, sin editar.
+export function subirFotoServicioOT(businessId, otId, servicioOtId, momento, imagen) {
+  return diagnosisCall("fotosServicioOT", "registrar una foto del trabajo", businessId, otId, {
+    operacion: "subir", servicioOtId: requireIdentifier(servicioOtId, "El servicio de la OT"), momento, imagen,
+  });
+}
+
+// Entrega con trazabilidad: siete fotos selladas, acta de quien retira (solo Owner/Administrador) y contacto con el cliente.
+export function subirFotoEntregaOT(businessId, otId, zona, imagen) {
+  return diagnosisCall("entregaOT", "registrar la foto de entrega", businessId, otId, {operacion: "subir", zona, imagen});
+}
+
+export function leerFotoEntregaOT(businessId, otId, zona) {
+  return diagnosisCall("entregaOT", "ver la foto de entrega", businessId, otId, {operacion: "leer", zona});
+}
+
+export function obtenerEstadoEntregaOT(businessId, otId) {
+  return diagnosisCall("entregaOT", "consultar la entrega", businessId, otId, {operacion: "estado"});
+}
+
+export function obtenerActaEntregaOT(businessId, otId) {
+  return diagnosisCall("entregaOT", "consultar el acta de entrega", businessId, otId, {operacion: "acta"});
+}
+
+// Enlace único de seguimiento para el cliente y dirección de consulta con patente + RUT (se crea con el ingreso aprobado).
+export function obtenerSeguimientoOT(businessId, otId) {
+  return diagnosisCall("seguimientoOT", "preparar el seguimiento del cliente", businessId, otId, {operacion: "enlace"});
+}
+
+export function obtenerIngresoRecepcionOT(businessId, otId) {
+  return diagnosisCall("entregaOT", "consultar quién entregó el vehículo", businessId, otId, {operacion: "ingreso"});
+}
+
+export function obtenerContactoClienteOT(businessId, otId) {
+  return diagnosisCall("entregaOT", "consultar el contacto del cliente", businessId, otId, {operacion: "contacto"});
+}
+
+// Hallazgos: observaciones de la ejecución con foto obligatoria. Solo Owner/Administrador las convierten en trabajo.
+export function reportarHallazgoOT(businessId, otId, {descripcion, urgente, imagen}, requestId) {
+  return diagnosisCall("hallazgosOT", "reportar el hallazgo", businessId, otId, {
+    operacion: "reportar", requestId: requireIdentifier(requestId, "La solicitud"), descripcion, urgente, imagen,
+  });
+}
+
+export async function listarHallazgosOT(businessId, otId) {
+  const response = await diagnosisCall("hallazgosOT", "consultar los hallazgos", businessId, otId, {operacion: "listar"});
+  return response.hallazgos || [];
+}
+
+export async function leerFotoHallazgoOT(businessId, otId, hallazgoId) {
+  const response = await diagnosisCall("hallazgosOT", "ver la foto del hallazgo", businessId, otId, {
+    operacion: "foto", hallazgoId: requireIdentifier(hallazgoId, "El hallazgo"),
+  });
+  return response;
+}
+
+export function convertirHallazgoOT(businessId, otId, hallazgoId, itemId, requestId) {
+  return diagnosisCall("hallazgosOT", "convertir el hallazgo en trabajo", businessId, otId, {
+    operacion: "convertir", hallazgoId: requireIdentifier(hallazgoId, "El hallazgo"),
+    itemId: requireIdentifier(itemId, "El servicio"), requestId: requireIdentifier(requestId, "La solicitud"),
+  });
+}
+
+export async function leerFotoServicioOT(businessId, otId, servicioOtId, momento) {
+  const response = await diagnosisCall("fotosServicioOT", "ver una foto del trabajo", businessId, otId, {
+    operacion: "leer", servicioOtId: requireIdentifier(servicioOtId, "El servicio de la OT"), momento,
+  });
+  return response.imagen || "";
+}
+
+// Nombre y apellido de la persona que inició sesión (su propio perfil). Si no se puede leer, devuelve null.
+export async function obtenerPerfilPropio(uid) {
+  const id = requireIdentifier(uid, "El usuario");
+  try {
+    const snapshot = await getDoc(doc(db, "usuarios", id, "cuenta", "perfil"));
+    const data = snapshot.exists() ? snapshot.data() : {};
+    return {nombres: data.nombres || "", apellidos: data.apellidos || ""};
+  } catch (_error) {
+    return null;
+  }
 }

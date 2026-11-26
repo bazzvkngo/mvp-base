@@ -28,6 +28,8 @@ assert.equal(cl.companyPostalCodeExample, "Ej.: 1100000");
 assert.equal(cl.clientPhoneExample, GENERIC_FIELD_HINTS.phone);
 assert.equal(cl.clientCompanyEmailExample, GENERIC_FIELD_HINTS.email);
 assert.equal(cl.clientPersonEmailExample, GENERIC_FIELD_HINTS.email);
+assert.equal(cl.vehiclePlateExample, "Ej.: ABCD12");
+assert.equal(cl.workOrderSearchExample, "Ej.: OT-000001 o ABCD12");
 for (const key of ["declaredFiscalIdExample", "requesterEmailExample", "requesterPhoneExample", "personFiscalLabel", "personFiscalExample"]) {
   assert.equal(cl[key], null, `Chile sin ${key}`);
 }
@@ -56,11 +58,22 @@ assert.equal(bo.clientCompanyEmailExample, GENERIC_FIELD_HINTS.email);
 assert.equal(bo.clientPersonEmailExample, GENERIC_FIELD_HINTS.email);
 assert.equal(bo.requesterPhoneExample, "+591 7xxxxxxx");
 assert.equal(bo.requesterEmailExample, "nombre@empresa.com.bo");
+assert.equal(bo.vehiclePlateExample, "Ej.: 1234ABC");
+assert.equal(bo.workOrderSearchExample, "Ej.: OT-000001 o 1234ABC");
 assert.ok(bo.declaredFiscalIdExample);
 for (const [key, value] of Object.entries(bo)) {
   if (typeof value === "string") assert.doesNotMatch(value, /\.cl\b|\+56|1100000/, `Bolivia sin ejemplos chilenos: ${key}`);
 }
 assert.ok(Object.isFrozen(bo));
+const py = getCountryFormCopy("PY");
+assert.equal(py.vehiclePlateExample, "Ej.: ABC123 o ABCD123");
+assert.equal(py.workOrderSearchExample, "Ej.: OT-000001 o ABC123");
+for (const copy of [cl, bo, py]) {
+  assert.equal(copy.vehicleBrandExample, "Ej.: Toyota");
+  assert.equal(copy.vehicleModelExample, "Ej.: Hilux");
+  assert.equal(copy.vehicleColorExample, "Ej.: Blanco");
+  assert.equal(copy.vehicleVinExample, "Ej.: 1HGCM82633A004352");
+}
 // Cliente: Persona = "CI o NIT"; Empresa = NIT.
 assert.deepEqual(getClientFiscalCopy("BO", "persona"), { label: "CI o NIT", placeholder: "Ej.: 1234567" });
 assert.deepEqual(getClientFiscalCopy("BO", "empresa"), { label: "NIT", placeholder: "Ej.: 1234567" });

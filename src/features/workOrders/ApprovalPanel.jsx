@@ -1,34 +1,36 @@
-import React, {useCallback, useEffect, useState} from "react";
+import React, {useCallback, useEffect, useMemo, useState} from "react";
 import Button from "../../components/ui/Button";
 import LoadingState from "../../components/ui/LoadingState";
-import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
-import {adaptDocumentAmountDecimals} from "../../domain/localization.mjs";
-import {calculateWorkOrderProductLineTotal, calculateWorkOrderScopeTotal} from "../../domain/workOrderModel.mjs";
-import useBusinessFormat from "../../hooks/useBusinessFormat";
-import {formatBusinessMoney} from "../../utils/formatters";
 import {
-  createWorkOrderRequestId, ejecutarAccionAprobacionOT, getWorkOrderErrorMessage,
-  obtenerResumenAprobacionOT,
+  createWorkOrderRequestId, ejecutarAccionAprobacionOT, ejecutarCierreOT, getWorkOrderErrorMessage,
+  listarOrdenesTrabajo, listarPersonasAsignablesTaller, obtenerResumenAprobacionOT,
 } from "../../services/workOrderService";
+import {listarPlazasTaller} from "../../services/workshopPlazaService";
+import {deriveWorkshopPlazaOccupancy} from "../../domain/workshopPlazaModel.mjs";
+import {isWorkOrderWaitingForPlaza} from "../../domain/workOrderModel.mjs";
 
-const ACTIONS = {
-  enviar: "Enviar a aprobación", aprobar: "Aprobar", rechazar: "Rechazar",
-  revalidar: "Revalidar disponibilidad",
-};
-
-function amount(value, currency, locale) {
-  return Number.isFinite(value) && currency
-    ? formatBusinessMoney(value, currency, locale)
-    : "No disponible";
+function Card({children, hint, title, titleId}) {
+  return <section className="erp-panel work-order-reception-card" aria-labelledby={titleId}>
+    <div className="work-order-reception-card__header">
+      <h2 id={titleId} className="erp-panel-title">{title}</h2>
+      {hint && <span className="erp-secondary-text">{hint}</span>}
+    </div>
+    {children}
+  </section>;
 }
 
+// La aprobación es una compuerta (prototipo «Panel del Taller»): el Owner o el Administrador eligen
+// responsable y dicen Aprobar, En espera o Anulada. La plaza se asigna sola.
 export default function ApprovalPanel({businessId, otId, order, onChanged}) {
-  const {locale} = useBusinessFormat();
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [confirmation, setConfirmation] = useState(null);
+  const [people, setPeople] = useState([]);
+  const [peopleError, setPeopleError] = useState("");
+  const [responsableUid, setResponsableUid] = useState("");
+  const [freePlaza, setFreePlaza] = useState(undefined);
+  const [pending, setPending] = useState(null); // "rechazar" | "cancelar" mientras se pide el motivo
   const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -42,90 +44,142 @@ export default function ApprovalPanel({businessId, otId, order, onChanged}) {
       .then(async (data) => {
         if (!active) return;
         setSummary(data);
-        // A concurrent operation may have changed the OT after the parent loaded it.
-        // Refresh its header and badges from the same authoritative revision.
-        if (Number.isSafeInteger(data.revision) && data.revision !== revision) {
-          await onChanged();
-        }
+        // Otra operación pudo cambiar la OT después de cargar la ficha.
+        if (Number.isSafeInteger(data.revision) && data.revision !== revision) await onChanged();
       })
       .catch((failure) => { if (active) setError(getWorkOrderErrorMessage(failure)); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [businessId, otId, revision, reload]);
 
-  const begin = (action) => {
-    setConfirmation({action, requestId: createWorkOrderRequestId(), revision: summary.revision});
-    setReason(""); setReasonError(""); setError(""); setNotice("");
-  };
-  const confirm = useCallback(async () => {
-    if (!confirmation || busy) return;
-    // Rechazar exige el motivo (la Function también lo valida).
-    if (confirmation.action === "rechazar" && !reason.trim()) {
-      setReasonError("Indica el motivo del rechazo.");
-      return;
-    }
-    setBusy(true); setError("");
+  const canDecide = Boolean(summary?.puedeDecidir && summary?.puedeAprobar);
+  useEffect(() => {
+    if (!canDecide) return undefined;
+    let active = true;
+    listarPersonasAsignablesTaller(businessId)
+      .then((roster) => { if (active) { setPeople(roster.personas || []); setPeopleError(""); } })
+      .catch((failure) => { if (active) setPeopleError(getWorkOrderErrorMessage(failure)); });
+    // Vista previa de la plaza que se asignará (la asignación real la hace el servidor, por orden de llegada).
+    Promise.all([listarPlazasTaller(businessId), listarOrdenesTrabajo(businessId)])
+      .then(([plazas, orders]) => {
+        if (!active) return;
+        const occupied = deriveWorkshopPlazaOccupancy(plazas, orders);
+        const free = plazas.filter((plaza) => plaza.estado === "activa" && !occupied.has(plaza.plazaId))
+          .sort((left, right) => String(left.nombre).localeCompare(String(right.nombre), "es", {numeric: true}))[0];
+        setFreePlaza(free ? free.nombre : null);
+      })
+      .catch(() => { if (active) setFreePlaza(undefined); });
+    return () => { active = false; };
+  }, [businessId, canDecide, revision]);
+
+  const approved = summary?.estadoAprobacion === "aprobada";
+  const waitingForPlaza = approved && isWorkOrderWaitingForPlaza(order);
+  const onHold = summary?.estadoAprobacion === "rechazada";
+  const cancelled = order.estado === "cancelada";
+  const missingPhotos = Array.isArray(summary?.fotosFaltantes) ? summary.fotosFaltantes : [];
+  const previousDamages = Array.isArray(summary?.danosPrevios) ? summary.danosPrevios : [];
+  const checklist = useMemo(() => {
+    if (!order.recepcion) return [];
+    const reception = order.recepcion;
+    return [
+      {label: "Motivo del cliente registrado", done: Boolean(reception.motivoCliente)},
+      {label: previousDamages.length
+        ? `Fotos de las 6 zonas y del tablero · daños previos en ${previousDamages.length} zona(s)`
+        : "Fotos de las 6 zonas y del tablero", done: missingPhotos.length === 0},
+      {label: "Kilometraje, combustible y sensores", done: Boolean(reception.nivelCombustible)},
+    ];
+  }, [order.recepcion, missingPhotos.length, previousDamages.length]);
+
+  const run = useCallback(async (task, success) => {
+    if (busy) return;
+    setBusy(true); setError(""); setNotice("");
     try {
-      const result = await ejecutarAccionAprobacionOT(businessId, otId, confirmation.action,
-        confirmation.requestId, confirmation.revision, reason);
-      setConfirmation(null);
-      setNotice(result.faltantes.length
-        ? "Operación registrada. La OT espera repuestos; no se reservó ni descontó stock."
-        : "Operación registrada correctamente. El stock no se modificó.");
+      const result = await task();
+      setPending(null); setReason(""); setReasonError("");
+      setNotice(typeof success === "function" ? success(result) : success);
       await onChanged();
       setReload((value) => value + 1);
     } catch (failure) {
       setError(getWorkOrderErrorMessage(failure));
-      if (String(failure.code).includes("aborted")) {
-        setConfirmation(null);
-        // Keep the conflict visible until the user explicitly refreshes the summary.
-        setSummary(null);
-      }
+      if (String(failure?.code).includes("aborted")) { setPending(null); setSummary(null); setReload((value) => value + 1); }
     } finally { setBusy(false); }
-  }, [businessId, otId, confirmation, busy, reason, onChanged]);
+  }, [busy, onChanged]);
 
-  const awaitingDecision = summary?.estado === "esperando_aprobacion" && summary?.estadoAprobacion === "pendiente";
-  // Decimales de cálculo de la OT (SPEC 036): los resuelve el servidor y vienen en el resumen; ausente = 0.
-  const decimals = summary ? adaptDocumentAmountDecimals(summary, summary.moneda) : 0;
-  return <section className="erp-panel" aria-labelledby="work-order-approval-title">
-    <div className="erp-panel-header"><div>
-      <h2 id="work-order-approval-title" className="erp-panel-title">Alcance y aprobación</h2>
-      <p className="erp-secondary-text">{summary?.congelado
-        ? "Alcance congelado al enviar. Los cambios posteriores del catálogo no modifican estos valores."
-        : "Vista previa de valores vigentes. Se confirmarán desde Inventario al enviar a aprobación."}</p>
-    </div><Button type="button" variant="secondary" disabled={loading || busy} onClick={() => setReload((value) => value + 1)}>Actualizar</Button></div>
-    {loading && <LoadingState variant="section" label="Cargando alcance..." />}
-    {error && <div className="vehicle-message vehicle-message--error" role="alert">{error}</div>}
-    {notice && <div className="vehicle-message" role="status">{notice}</div>}
-    {summary && !loading && <>
-      {!summary.alcance.length ? <div className="erp-empty-state">Aún no hay servicios definidos.</div> :
-        <div className="erp-table-region work-order-approval-table"><table className="erp-table">
-          <thead><tr><th>Servicio / producto</th><th>Cantidad</th><th>Precio</th><th>Subtotal</th></tr></thead>
-          <tbody>{summary.alcance.map((service) => <React.Fragment key={service.servicioOtId}>
-            <tr><td><strong>{service.servicioSnapshot?.nombre || "Servicio no disponible"}</strong></td><td>1</td><td>{amount(service.precioUnitario, summary.moneda, locale)}</td><td>{amount(service.precioUnitario, summary.moneda, locale)}</td></tr>
-            {service.productos.map((product) => <tr key={product.productoOtId}><td>{product.productoSnapshot?.nombre || "Producto no disponible"}</td><td>{product.cantidad}</td><td>{amount(product.precioUnitario, summary.moneda, locale)}</td><td>{amount(calculateWorkOrderProductLineTotal(product, decimals), summary.moneda, locale)}</td></tr>)}
-          </React.Fragment>)}</tbody>
-          <tfoot><tr className="work-order-approval-total"><th scope="row" colSpan={3}>Total</th><td>{amount(calculateWorkOrderScopeTotal(summary.alcance, decimals), summary.moneda, locale)}</td></tr></tfoot>
-        </table></div>}
-      {summary.alcance.length > 0 && <p className="erp-secondary-text">El total suma los valores del alcance. No se calcula IVA en esta vista.</p>}
-      {summary.estado === "esperando_repuestos" && <div className="vehicle-message vehicle-message--warning" role="status">{summary.estadoAprobacion === "aprobada"
-        ? "El alcance está aprobado. Revalida la disponibilidad para continuar cuando existan repuestos."
-        : "Faltan repuestos. Revalida la disponibilidad antes de solicitar la decisión de aprobación."}</div>}
-      {summary.estadoAprobacion === "rechazada" && <div className="vehicle-message vehicle-message--warning" role="status">Alcance rechazado. Revisa los servicios y repuestos antes de reenviarlo.</div>}
-      {summary.estado === "esperando_aprobacion" && <p className="erp-secondary-text">El alcance ya fue enviado y espera una decisión de aprobación.</p>}
-      {!summary.puedeEnviar && !summary.congelado && <p className="erp-secondary-text">Para enviar se requiere Recepción, al menos un Diagnóstico completado y servicios definidos.</p>}
-      {awaitingDecision && !summary.puedeAprobar && <p className="erp-secondary-text">Tu membresía permite consultar el alcance, pero no aprobarlo ni rechazarlo.</p>}
-      <div className="vehicle-form-actions work-order-approval-actions">
-        {(summary.puedeEnviar || summary.estado === "esperando_aprobacion") && <Button type="button" disabled={busy || !summary.puedeEnviar} onClick={() => begin("enviar")}>Enviar a aprobación</Button>}
-        {awaitingDecision && summary.puedeAprobar && <><Button type="button" variant="secondary" disabled={busy} onClick={() => begin("rechazar")}>Rechazar</Button><Button type="button" disabled={busy} onClick={() => begin("aprobar")}>Aprobar</Button></>}
-        {summary.estado === "esperando_repuestos" && summary.estadoAprobacion !== "rechazada" && <Button type="button" disabled={busy} onClick={() => begin("revalidar")}>Revalidar disponibilidad</Button>}
-      </div>
-    </>}
-    <ResponsiveDialog open={Boolean(confirmation)} onClose={() => !busy && setConfirmation(null)} size="small" eyebrow="Taller" title={ACTIONS[confirmation?.action] || "Confirmar acción"}
-      description={confirmation?.action === "enviar" ? "Se consultarán nuevamente los precios de Inventario y se congelará el alcance vigente." : "La operación se validará en el servidor sobre esta versión del alcance."}
-      footer={<><Button type="button" variant="secondary" disabled={busy} onClick={() => setConfirmation(null)}>Cancelar</Button><Button type="button" disabled={busy} onClick={confirm}>{busy ? "Procesando..." : "Confirmar"}</Button></>}>
-      {confirmation?.action === "rechazar" && <label className="erp-field"><span className="erp-field__label">Motivo *</span><textarea className="erp-control" value={reason} maxLength={2000} disabled={busy} aria-required="true" aria-invalid={Boolean(reasonError)} onChange={(event) => { setReason(event.target.value); setReasonError(""); }} />{reasonError && <span className="work-order-field-error" role="alert">{reasonError}</span>}</label>}
+  const approve = () => {
+    if (!responsableUid) return;
+    return run(() => ejecutarAccionAprobacionOT(businessId, otId, "aprobar", createWorkOrderRequestId(),
+      summary.revision, "", responsableUid), (result) => result?.enEsperaDePlaza
+      ? "Ingreso aprobado. No hay plazas libres: la OT queda en cola y se le asignará una plaza automáticamente."
+      : "Ingreso aprobado. Ya se pueden registrar los trabajos en la ejecución.");
+  };
+  const confirmReason = () => {
+    if (!reason.trim()) { setReasonError("Indica el motivo."); return; }
+    if (pending === "rechazar") {
+      return run(() => ejecutarAccionAprobacionOT(businessId, otId, "rechazar", createWorkOrderRequestId(),
+        summary.revision, reason), "OT en espera. Queda registrado el motivo.");
+    }
+    return run(() => ejecutarCierreOT(businessId, otId, "cancelar", summary.revision,
+      createWorkOrderRequestId(), reason), "OT anulada. El vehículo se retira.");
+  };
+
+  const plazaLine = freePlaza === undefined ? null
+    : freePlaza ? `${freePlaza} · se asigna automáticamente`
+      : "Sin plazas libres: la OT queda en cola hasta que se libere una";
+
+  return <>
+    <Card title="Aprobación de ingreso" titleId="work-order-approval-title"
+      hint={canDecide ? "Decide si el vehículo avanza a Ejecución." : undefined}>
+      {loading && <LoadingState variant="section" label="Cargando aprobación..." />}
       {error && <div className="vehicle-message vehicle-message--error" role="alert">{error}</div>}
-    </ResponsiveDialog>
-  </section>;
+      {notice && <div className="vehicle-message" role="status">{notice}</div>}
+      {summary && !loading && <>
+        {checklist.length > 0 && <ul className="work-order-requirements" aria-label="Recepción">
+          {checklist.map((item) => <li key={item.label} data-done={item.done ? "true" : undefined}>{item.label}</li>)}
+          {previousDamages.map((damage) => <li key={damage.zona} className="work-order-requirements__damage">
+            Daño previo · {damage.zona}: {damage.notas.join("; ")}
+          </li>)}
+        </ul>}
+        {!order.recepcion && <p className="erp-secondary-text">Registra la recepción para poder decidir el ingreso.</p>}
+        {cancelled && <div className="vehicle-message vehicle-message--warning" role="status">
+          <strong>OT anulada.</strong>{order.motivoCancelacion ? ` Motivo: ${order.motivoCancelacion}` : ""}</div>}
+        {!cancelled && approved && !waitingForPlaza && <div className="vehicle-message" role="status">Ingreso aprobado{order.responsableNombre ? ` · Responsable: ${order.responsableNombre}` : ""}.</div>}
+        {!cancelled && waitingForPlaza && <div className="vehicle-message vehicle-message--warning" role="status"><strong>En cola de plaza.</strong> El ingreso está aprobado. Se asignará la primera plaza que se libere, por orden de aprobación.</div>}
+        {!cancelled && onHold && <div className="vehicle-message vehicle-message--warning" role="status">
+          <strong>OT en espera.</strong>{order.motivoRechazo ? ` Motivo: ${order.motivoRechazo}` : ""} Puedes aprobarla cuando se resuelva.</div>}
+        {summary.puedeDecidir && !summary.puedeAprobar && <p className="erp-secondary-text">
+          Recepción registrada. Esperando la aprobación de Administración u Owner.</p>}
+        {canDecide && !cancelled && !approved && <>
+          {missingPhotos.length > 0 && <div className="vehicle-message vehicle-message--warning" role="status">
+            <strong>Faltan fotos de recepción:</strong> {missingPhotos.join(", ")}. Complétalas en el paso Recepción para poder aprobar.
+          </div>}
+          <label className="erp-field"><span className="erp-field__label">Responsable de la ejecución</span>
+            <select className="erp-control" value={responsableUid} disabled={busy} onChange={(event) => setResponsableUid(event.target.value)}>
+              <option value="">Elegir técnico</option>
+              {people.map((person) => <option key={person.uid} value={person.uid}>{person.nombre}</option>)}
+            </select>
+            <span className="erp-secondary-text">Solo el responsable, el Administrador o el Owner operan los trabajos de la OT.</span>
+            {peopleError && <span className="work-order-field-error" role="alert">{peopleError}</span>}</label>
+          {plazaLine && <p className="erp-secondary-text work-order-approval-plaza">Plaza {plazaLine}</p>}
+          {pending && <label className="erp-field"><span className="erp-field__label">
+            {pending === "rechazar" ? "Motivo obligatorio (falta algo para continuar)" : "Motivo de la anulación (el vehículo se retira)"}</span>
+            <textarea className="erp-control" value={reason} maxLength={2000} disabled={busy} autoFocus
+              onChange={(event) => { setReason(event.target.value); setReasonError(""); }} />
+            {reasonError && <span className="work-order-field-error" role="alert">{reasonError}</span>}</label>}
+          <div className="vehicle-form-actions work-order-approval-actions">
+            {!pending && <>
+              <Button type="button" disabled={busy || !responsableUid || missingPhotos.length > 0} onClick={approve}>
+                {responsableUid ? "Aprobar ingreso" : "Elige responsable"}</Button>
+              <Button type="button" variant="secondary" disabled={busy} onClick={() => { setPending("rechazar"); setReason(""); setReasonError(""); }}>En espera</Button>
+              <Button type="button" variant="ghost-danger" disabled={busy} onClick={() => { setPending("cancelar"); setReason(""); setReasonError(""); }}>Anulada</Button>
+            </>}
+            {pending && <>
+              <Button type="button" variant="secondary" disabled={busy} onClick={() => { setPending(null); setReasonError(""); }}>Volver</Button>
+              <Button type="button" variant={pending === "cancelar" ? "danger" : "primary"} disabled={busy} onClick={confirmReason}>
+                {busy ? "Procesando..." : pending === "cancelar" ? "Confirmar anulación" : "Confirmar espera"}</Button>
+            </>}
+          </div>
+        </>}
+      </>}
+    </Card>
+  </>;
 }

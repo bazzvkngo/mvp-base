@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {completeDeliveryPhotos, deliveryInput} from "./work-order-delivery-fixtures.mjs";
 import {doc, getDoc, setDoc} from "firebase/firestore";
 
 export async function testWorkOrderClosure({adminDb, businessId, otId, serviceId, owner, admin, technician,
@@ -34,10 +35,12 @@ export async function testWorkOrderClosure({adminDb, businessId, otId, serviceId
   assert.equal((await readOrder()).plazaId, activePlaza.id);
   assert.equal((await plazaLockRef.get()).data().otId, otId);
   const pendingRef = orderRef.collection("servicios").doc(`pending-${runId}`);
-  await pendingRef.set({...((await serviceRef.get()).data()), servicioOtId: pendingRef.id, estado: "pendiente"});
+  await pendingRef.set({...((await serviceRef.get()).data()), servicioOtId: pendingRef.id, estado: "pendiente", repuestosModo: "ninguno"});
   await reject("servicio pendiente impide finalizar", owner, "finalizarReparacionOT", await payload());
   await pendingRef.update({estado: "en_progreso"});
-  await reject("servicio en progreso impide finalizar", technician, "finalizarReparacionOT", await payload());
+  await reject("servicio en progreso impide finalizar", admin, "finalizarReparacionOT", await payload());
+  // Finalizar la ejecución es del Owner o del Administrador.
+  await reject("el técnico no finaliza la ejecución", technician, "finalizarReparacionOT", await payload(), ["permission-denied"]);
   await pendingRef.delete();
   for (const entry of (await orderRef.collection("servicios").get()).docs) {
     let service = entry.data();
@@ -52,7 +55,7 @@ export async function testWorkOrderClosure({adminDb, businessId, otId, serviceId
     }
   }
   assert.ok((await orderRef.collection("servicios").get()).docs.every((entry) => entry.data().estado === "completado"));
-  await reject("no se entrega desde reparación", owner, "registrarEntregaOT", await payload());
+  await reject("no se entrega desde reparación", owner, "registrarEntregaOT", await payload(deliveryInput()));
   await reject("identidad requerida", anonymous, "finalizarReparacionOT", await payload(), ["unauthenticated"]);
   await reject("otro negocio no finaliza", outsider, "finalizarReparacionOT", await payload(), ["permission-denied"]);
   await reject("OT inexistente", owner, "finalizarReparacionOT", await payload({otId: "inexistente"}), ["not-found"]);
@@ -69,12 +72,12 @@ export async function testWorkOrderClosure({adminDb, businessId, otId, serviceId
   const start = await payload();
   const competing = {...start, requestId: id()};
   const finals = await Promise.allSettled([
-    call(owner, "finalizarReparacionOT", start), call(technician, "finalizarReparacionOT", competing),
+    call(owner, "finalizarReparacionOT", start), call(admin, "finalizarReparacionOT", competing),
   ]);
   assert.equal(finals.filter((entry) => entry.status === "fulfilled").length, 1,
     finals.map((entry) => entry.status === "rejected"
       ? `${entry.reason?.code}: ${entry.reason?.message}` : "fulfilled").join(" | "));
-  const winner = finals[0].status === "fulfilled" ? {client: owner, input: start} : {client: technician, input: competing};
+  const winner = finals[0].status === "fulfilled" ? {client: owner, input: start} : {client: admin, input: competing};
   assert.equal((await call(winner.client, "finalizarReparacionOT", winner.input)).data.sinCambios, true);
   assert.equal((await readOrder()).estado, "pendiente_entrega");
   assert.equal((await readOrder()).estadoAprobacion, "aprobada");
@@ -92,7 +95,13 @@ export async function testWorkOrderClosure({adminDb, businessId, otId, serviceId
   assert.equal(pendingEvents[0].detalle.estadoAnterior, "en_reparacion");
   assert.ok(pendingEvents[0].actorUid && pendingEvents[0].actorSnapshot?.nombre && pendingEvents[0].fecha?.toDate());
 
-  const delivery = await payload();
+  // Sin las siete fotos y sin los datos de quien retira no se registra la entrega.
+  await reject("entrega sin datos de quien retira", owner, "registrarEntregaOT", await payload(), ["invalid-argument"]);
+  await reject("entrega sin conformidad", owner, "registrarEntregaOT", await payload(deliveryInput({conforme: false})), ["invalid-argument"]);
+  await reject("entrega con RUT inválido", owner, "registrarEntregaOT", await payload(deliveryInput({receptorDocumento: "11.111.111-2"})), ["invalid-argument"]);
+  await reject("entrega sin fotos de entrega", owner, "registrarEntregaOT", await payload(deliveryInput()), ["failed-precondition"]);
+  await completeDeliveryPhotos(orderRef);
+  const delivery = await payload(deliveryInput());
   const competingDelivery = {...delivery, requestId: id()};
   const deliveryRace = await Promise.allSettled([
     call(member, "registrarEntregaOT", delivery),
@@ -106,7 +115,7 @@ export async function testWorkOrderClosure({adminDb, businessId, otId, serviceId
   assert.equal((await readOrder()).estado, "cerrada");
   assert.equal((await readOrder()).plazaId, null);
   assert.equal((await plazaLockRef.get()).exists, false);
-  await reject("entrega terminal", owner, "registrarEntregaOT", await payload());
+  await reject("entrega terminal", owner, "registrarEntregaOT", await payload(deliveryInput()));
   await reject("no reabrir OT cerrada", owner, "finalizarReparacionOT", await payload());
   await reject("recepción cerrada es de solo lectura", owner, "registrarRecepcionOrdenTrabajo",
     {businessId, otId, recepcion: reception});

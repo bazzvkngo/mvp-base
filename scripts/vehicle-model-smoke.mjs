@@ -46,7 +46,7 @@ assert.equal(
   normalizeVehicleKey(" aa-bb 11 ", "La patente", 30, TestHttpsError, false),
   "AABB11"
 );
-assert.deepEqual(Object.keys(VEHICLE_PLATE_PATTERNS_BY_COUNTRY), ["CL", "PY"]);
+assert.deepEqual(Object.keys(VEHICLE_PLATE_PATTERNS_BY_COUNTRY), ["CL", "PY", "BO"]);
 for (const plate of [
   "ABCD12",
   "ABC12",
@@ -69,10 +69,10 @@ for (const plate of ["ASDDD", "12ABC", "12345ABC", "1234AB", "ABC1234", "1234AB1
 }
 assert.throws(() => normalizeVehiclePlate("ABC123", TestHttpsError, "CL"), /patente/i);
 assert.throws(() => normalizeVehiclePlate("ABCD12", TestHttpsError, "PY"), /patente/i);
-for (const plate of ["ABCD", "12345", "ABCDEFGHI", "123456789"]) {
+for (const plate of ["AB12C", "ABCD12", "1234AB", "12345ABC"]) {
   assert.throws(
     () => normalizeVehiclePlate(plate, TestHttpsError, "BO"),
-    (error) => error.code === "invalid-argument" && /5 a 8 caracteres con letras y números/.test(error.message)
+    (error) => error.code === "invalid-argument" && /formato válido para BO/.test(error.message)
   );
 }
 assert.equal(

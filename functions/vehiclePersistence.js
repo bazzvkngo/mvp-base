@@ -30,6 +30,9 @@ const VEHICLE_PLATE_PATTERNS_BY_COUNTRY = Object.freeze({
     /^[A-Z]{3}\d{3}$/,
     /^[A-Z]{4}\d{3}$/,
   ]),
+  BO: Object.freeze([
+    /^\d{4}[A-Z]{3}$/,
+  ]),
 });
 const GENERIC_VEHICLE_PLATE_PATTERN = /^(?=.*[A-Z])(?=.*\d)[A-Z0-9]{5,8}$/;
 const TEXT_ONLY_PATTERN = /^\p{L}(?:[\p{L}\s.'-]*\p{L})?$/u;

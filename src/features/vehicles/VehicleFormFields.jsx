@@ -7,6 +7,7 @@ import {
   normalizeVehiclePlate,
   VEHICLE_TYPES,
 } from "../../domain/vehicleModel.mjs";
+import {getCountryFormCopy} from "../../domain/countryFormCopy.mjs";
 
 function VehicleField({children, error, field, label, optional = false, required = false}) {
   const errorId = `vehicle-${field}-error`;
@@ -24,6 +25,7 @@ function VehicleField({children, error, field, label, optional = false, required
 }
 
 function VehicleFormFields({countryCode = "CL", errors = {}, onChange, values}) {
+  const copy = getCountryFormCopy(countryCode);
   const field = (name, label, options = {}) => (
     <VehicleField key={name} field={name} label={label} error={errors[name]} {...options}>
       <input className="erp-control" value={values[name]} maxLength={options.maxLength || 120} placeholder={options.placeholder}
@@ -40,16 +42,16 @@ function VehicleFormFields({countryCode = "CL", errors = {}, onChange, values}) 
 
   return (
     <div className="vehicle-form-grid">
-      {field("patente", "Patente", {required: true, maxLength: 8, placeholder: countryCode === "PY" ? "Ej.: ABC123 o ABCD123" : countryCode === "CL" ? "Ej.: ABCD12" : "Ej.: ABC123"})}
-      {field("vin", "VIN", {optional: true, maxLength: 80})}
-      {field("marca", "Marca", {required: true})}
-      {field("modelo", "Modelo", {required: true})}
+      {field("patente", "Patente", {required: true, maxLength: 8, placeholder: copy.vehiclePlateExample})}
+      {field("vin", "VIN", {optional: true, maxLength: 80, placeholder: copy.vehicleVinExample})}
+      {field("marca", "Marca", {required: true, placeholder: copy.vehicleBrandExample})}
+      {field("modelo", "Modelo", {required: true, placeholder: copy.vehicleModelExample})}
       <VehicleField field="anio" label="Año" error={errors.anio} required>
         <input className="erp-control" type="text" inputMode="numeric" pattern="[0-9]{4}" maxLength={4}
           value={values.anio} placeholder={`${MIN_VEHICLE_YEAR}–${MAX_VEHICLE_YEAR}`}
           onChange={(event) => onChange("anio", keepVehicleYearInput(event.target.value))} />
       </VehicleField>
-      {field("color", "Color", {required: true, maxLength: 80})}
+      {field("color", "Color", {required: true, maxLength: 80, placeholder: copy.vehicleColorExample})}
       <VehicleField field="tipo" label="Tipo" error={errors.tipo} required>
         <select className="erp-control" value={values.tipo} onChange={(event) => onChange("tipo", event.target.value)}>
           <option value="">Selecciona un tipo</option>

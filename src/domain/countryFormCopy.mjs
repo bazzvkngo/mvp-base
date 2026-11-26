@@ -33,6 +33,12 @@ const BASE = Object.freeze({
   // Identificador de un cliente tipo Persona cuando difiere del de la empresa (null = el mismo).
   personFiscalLabel: null,
   personFiscalExample: null,
+  vehiclePlateExample: "Ej.: ABCD12",
+  vehicleBrandExample: "Ej.: Toyota",
+  vehicleModelExample: "Ej.: Hilux",
+  vehicleColorExample: "Ej.: Blanco",
+  vehicleVinExample: "Ej.: 1HGCM82633A004352",
+  workOrderSearchExample: "Ej.: OT-000001 o ABCD12",
 });
 
 // Un solo lugar para los textos de instrucción de cliente y proveedor.
@@ -101,6 +107,12 @@ const COUNTRY_COPY = Object.freeze({
     // En Bolivia la persona natural se identifica habitualmente con su CI, no con un NIT.
     personFiscalLabel: "CI o NIT",
     personFiscalExample: "Ej.: 1234567",
+    vehiclePlateExample: "Ej.: 1234ABC",
+    workOrderSearchExample: "Ej.: OT-000001 o 1234ABC",
+  }),
+  PY: Object.freeze({
+    vehiclePlateExample: "Ej.: ABC123 o ABCD123",
+    workOrderSearchExample: "Ej.: OT-000001 o ABC123",
   }),
 });
 

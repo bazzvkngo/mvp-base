@@ -413,6 +413,31 @@ try {
     );
   }
   console.log("OK patentes: la empresa chilena rechaza formatos de otros países");
+  await adminDb.doc(`negocios/${businessId}`).update({paisCodigo: "BO"});
+  const bolivianPlate = await callable(owner, "crearVehiculo")({
+    businessId,
+    requestId: `vehicle-bolivia-valid-${RUN_ID}`,
+    vehiculo: vehiclePayload({
+      patente: "12-34 ABC",
+      vin: `VIN-BO-VALID-${RUN_ID}`,
+    }),
+  });
+  assert.equal(bolivianPlate.data.vehiculo.patente, "1234ABC");
+  await expectCallableError(
+    "empresa boliviana rechaza patente fuera de su formato",
+    () => callable(owner, "crearVehiculo")({
+      businessId,
+      requestId: `vehicle-bolivia-invalid-${RUN_ID}`,
+      vehiculo: vehiclePayload({
+        patente: "AB12C",
+        vin: `VIN-BO-INVALID-${RUN_ID}`,
+      }),
+    }),
+    ["invalid-argument"],
+    /patente/i
+  );
+  await adminDb.doc(`negocios/${businessId}`).update({paisCodigo: "CL"});
+  console.log("OK patentes Bolivia: acepta 1234ABC y rechaza formatos no admitidos");
   await expectCallableError(
     "cliente con negocioId inconsistente",
     () => callable(owner, "crearVehiculo")({
