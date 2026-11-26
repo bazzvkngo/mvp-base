@@ -4490,3 +4490,9 @@
   .ui-doc-line__row--movable { grid-template-areas: "identity identity move remove" "qty qty total total" "price discount discount discount"; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto; }
 }
 /* Fin del bloque de ítems del documento. */
+
+/* Botón principal "Escanear producto" (ScanProductButton). Es un Button primario: aquí solo su ancho en móvil, para que
+   ocupe toda la fila de acciones y quede primero y a mano con el pulgar. */
+@media (max-width: 767px) {
+  .ui-scan-product { width: 100%; }
+}

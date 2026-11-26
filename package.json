@@ -58,6 +58,7 @@
     "test:inventory-form-layout": "node scripts/inventory-form-layout-smoke.mjs",
     "test:inventory-mvp": "node scripts/inventory-mvp-smoke.mjs",
     "test:barcode": "node scripts/barcode-smoke.mjs",
+    "test:scan-product-button": "node scripts/scan-product-button-smoke.mjs",
     "test:inventory-service": "node scripts/inventory-service-smoke.mjs",
     "test:inventory-import-v2": "node scripts/inventory-import-v2-smoke.mjs",
     "test:reference-pricing": "node scripts/reference-pricing-smoke.mjs",
