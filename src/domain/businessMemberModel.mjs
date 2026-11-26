@@ -1,5 +1,6 @@
 import {
   ASSIGNABLE_BUSINESS_ROLES,
+  BUSINESS_MODULES,
   BUSINESS_ROLES,
   BUSINESS_ROLE_LABELS,
 } from "./rbac.mjs";
@@ -25,6 +26,12 @@ export function canReadBusinessMembers(role) {
 
 export function canManageBusinessMembers(role) {
   return ["OWNER", "ADMIN"].includes(safeText(role).toUpperCase());
+}
+
+export function getEmployeeProfileModules(enabledModules = []) {
+  return enabledModules.includes("veterinaria")
+    ? BUSINESS_MODULES
+    : BUSINESS_MODULES.filter((moduleId) => moduleId !== "veterinaria_asignada");
 }
 
 export function adaptBusinessMember(raw = {}) {

@@ -5,6 +5,7 @@ import {
   businessMemberProfileLabel,
   canManageBusinessMembers,
   canReadBusinessMembers,
+  getEmployeeProfileModules,
   MANAGEABLE_BUSINESS_MEMBER_ROLES,
   isValidBusinessMemberEmail,
   normalizeBusinessMemberEmail,
@@ -86,7 +87,6 @@ assert.match(pageSource, /Perfil protegido/);
 assert.match(pageSource, /Acceso a módulos/);
 assert.match(pageSource, /Seleccionar todos/);
 assert.match(pageSource, /Limpiar/);
-assert.match(pageSource, /profileForm\.modulos\.length/);
 assert.match(rbacSource, /trabajos: "Proyectos y trabajos"/);
 assert.doesNotMatch(pageSource, /Perfil estándar de ValoraCloud/);
 assert.doesNotMatch(pageSource, /legacy/i);
@@ -167,8 +167,16 @@ for (const label of ["Inicio", "Comercial", "Operación", "Abastecimiento", "Ges
 assert.match(pageSource, /rest\.length \? \[\{id: "otros"/, "un módulo nuevo sin grupo cae en Otros y no queda oculto");
 assert.match(pageSource, /role="group" aria-labelledby=\{`employees-modules-\$\{group\.id\}`\}/, "cada grupo es un role=group con título accesible");
 assert.match(pageSource, /className="ui-checkbox employees-module-option"><input className="ui-checkbox__input employees-module-option__input" type="checkbox"/, "casilla dentro de la etiqueta clicable, con la clase compartida ui-checkbox");
-assert.match(pageSource, /modulos: \[\.\.\.BUSINESS_MODULES\]/, "Seleccionar todos sigue incluyendo todos los módulos");
-assert.match(pageSource, /\{profileForm\.modulos\.length\}<\/strong> \/ \{BUSINESS_MODULES\.length\} seleccionados/, "contador de módulos seleccionados y disponibles");
+const modulesWithoutVeterinary = BUSINESS_MODULES.filter((id) => id !== "veterinaria_asignada");
+assert.deepEqual(getEmployeeProfileModules(), modulesWithoutVeterinary);
+assert.deepEqual(getEmployeeProfileModules(["taller"]), modulesWithoutVeterinary);
+assert.deepEqual(getEmployeeProfileModules(["veterinaria"]), BUSINESS_MODULES);
+const appSource = fs.readFileSync("src/app/App.jsx", "utf8");
+assert.match(appSource, /<EmployeesPage[^>]+enabledModules=\{businessPathOptions\.enabledModules\}/, "Empleados usa los módulos del negocio activo");
+assert.match(pageSource, /groupedModules\(availableModules\)/, "se dibujan los módulos disponibles para el negocio");
+assert.match(pageSource, /modulos: \[\.\.\.availableModules\]/, "Seleccionar todos incluye los módulos visibles");
+assert.match(pageSource, /\{selectedModules\.length\}<\/strong> \/ \{availableModules\.length\} seleccionados/, "contador de módulos seleccionados y disponibles");
+assert.match(pageSource, /const modulos = \[\.\.\.selectedModules, \.\.\.hiddenModules\]/, "editar conserva permisos anteriores aunque estén ocultos");
 assert.match(pageSource, />Limpiar<\/Button>/, "Limpiar se conserva");
 assert.match(pageSource, /description="Elige los módulos a los que tendrá acceso\."/, "descripción del diálogo más corta");
 const modulesCss = cssSource.slice(cssSource.indexOf(".employees-modules-grid {"), cssSource.indexOf(".employees-actions small"));

@@ -681,6 +681,76 @@ async function main() {
       );
     }
 
+    // Dos clínicas verificadas y un profesional con acceso limitado a la primera.
+    const foreignVeterinaryId = `rules-veterinary-${guestUid}`;
+    const foreignVeterinaryPaths = veterinaryPaths.map((path) =>
+      path.replace(`negocios/${businessId}/`, `negocios/${foreignVeterinaryId}/`)
+    );
+    const photoPath = `${veterinaryPaths[0]}/perfil/foto`;
+    const foreignPhotoPath = `${foreignVeterinaryPaths[0]}/perfil/foto`;
+    const assignedMembership = adminDb.doc(`membresias/${businessId}__${otherUid}`);
+    const assignment = {profesionalUid: otherUid, pacienteId: "patient-rules-smoke"};
+    await Promise.all([
+      adminDb.doc(`negocios/${foreignVeterinaryId}`).set({
+        estado: "activo", verificacionEmpresa: {estado: "VERIFICADA"}, modulosHabilitados: ["veterinaria"],
+      }),
+      adminDb.doc(`membresias/${foreignVeterinaryId}__${guestUid}`).set({
+        negocioId: foreignVeterinaryId, uid: guestUid, rol: "OWNER", estado: "activo",
+      }),
+      assignedMembership.set({negocioId: businessId, uid: otherUid, rol: "MEMBER", estado: "activo", profileId: "vet-rules"}),
+      adminDb.doc(`negocios/${businessId}/perfilesEmpleados/vet-rules`).set({
+        negocioId: businessId, estado: "activo", modulos: ["veterinaria_asignada"],
+      }),
+      ...veterinaryPaths.slice(1).map((path) => adminDb.doc(path).update(assignment)),
+      ...foreignVeterinaryPaths.map((path, index) => adminDb.doc(path).set({
+        negocioId: foreignVeterinaryId, ...(index > 0 ? assignment : {}),
+      })),
+      adminDb.doc(photoPath).set({imagen: "foto-ficticia"}),
+      adminDb.doc(foreignPhotoPath).set({imagen: "foto-ficticia-externa"}),
+    ]);
+
+    for (const path of veterinaryPaths.slice(1)) {
+      if (!(await getDoc(doc(otherClient.db, path))).exists()) {
+        throw new Error("veterinaria_asignada no pudo leer una asignación de su negocio.");
+      }
+    }
+    for (const path of foreignVeterinaryPaths) {
+      const collectionName = path.split("/")[2];
+      if (!(await getDoc(doc(guestClient.db, path))).exists()) {
+        throw new Error(`OWNER de la segunda clínica no pudo leer ${collectionName}.`);
+      }
+      await expectDenied(`veterinaria_asignada lee ${collectionName} de otra clínica`, () =>
+        getDoc(doc(otherClient.db, path))
+      );
+      await expectDenied(`ADMIN lee ${collectionName} de otra clínica`, () =>
+        getDoc(doc(ownerClient.db, path))
+      );
+      if (collectionName === "pacientesVeterinarios") continue;
+      await expectDenied(`veterinaria_asignada consulta ${collectionName} de otra clínica por su UID`, () =>
+        getDocs(query(
+          collection(otherClient.db, `negocios/${foreignVeterinaryId}/${collectionName}`),
+          where("negocioId", "==", foreignVeterinaryId), where("profesionalUid", "==", otherUid)
+        ))
+      );
+    }
+    if (!(await getDoc(doc(ownerClient.db, photoPath))).exists() ||
+        !(await getDoc(doc(guestClient.db, foreignPhotoPath))).exists()) {
+      throw new Error("OWNER o ADMIN no pudo leer perfil/foto en su propia clínica.");
+    }
+    await expectDenied("veterinaria_asignada lee perfil/foto de su paciente asignado por SDK", () =>
+      getDoc(doc(otherClient.db, photoPath))
+    );
+    await expectDenied("veterinaria_asignada lista perfil del paciente asignado por SDK", () =>
+      getDocs(collection(otherClient.db, `${veterinaryPaths[0]}/perfil`))
+    );
+    await expectDenied("veterinaria_asignada lee perfil/foto de otra clínica", () =>
+      getDoc(doc(otherClient.db, foreignPhotoPath))
+    );
+    await expectDenied("ADMIN lee perfil/foto de otra clínica", () =>
+      getDoc(doc(ownerClient.db, foreignPhotoPath))
+    );
+    await assignedMembership.delete();
+
     for (const rol of ["VENTAS", "TECNICO"]) {
       await veterinaryMembership.update({rol});
       await denyVeterinaryReads(rol);
