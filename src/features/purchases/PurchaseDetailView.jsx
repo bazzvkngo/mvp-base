@@ -79,6 +79,7 @@ export default function PurchaseDetailView({company, message, printable, purchas
             <span>{purchase.fechaCompra ? formatDate(purchase.fechaCompra, printable.locale) : "Sin fecha"}</span>
             <span>
               {purchase.recepcionId && <button type="button" className="po-inline-link" onClick={() => navigate(`/recepciones/${purchase.recepcionId}`)}>Recepción {purchase.recepcionNumero}</button>}
+              {purchase.recepcionId && purchase.ordenCompraId && " · "}
               {purchase.ordenCompraId && <button type="button" className="po-inline-link" onClick={() => navigate(`/ordenes-compra/${purchase.ordenCompraId}`)}>Orden de compra {purchase.ordenCompraNumero}</button>}
               {!purchase.recepcionId && !purchase.ordenCompraId && "Compra directa"}
             </span>
