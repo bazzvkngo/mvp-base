@@ -38,9 +38,10 @@ const verticalNavigationItems = Object.freeze({
       requiredPermission: BUSINESS_PERMISSIONS.TALLER_MANAGE,
     },
   ]),
-  // path "" = la ruta base del módulo (Resumen clínico), con coincidencia exacta.
+  // path "" = la ruta base del módulo (Resumen clínico), con coincidencia exacta. Igual que el panel del taller,
+  // `section` lo ubica al comienzo de «Inicio» cuando Veterinaria es el módulo del rubro.
   veterinaria: Object.freeze([
-    {path: "", label: "Resumen clínico", title: "Resumen clínico", icon: HeartPulse},
+    {path: "", label: "Resumen clínico", title: "Resumen clínico", icon: HeartPulse, section: "Inicio"},
     {path: "pacientes", label: "Pacientes", title: "Pacientes", icon: PawPrint},
     {path: "ordenes", label: "Órdenes de atención", title: "Órdenes de atención", icon: ClipboardList},
     {path: "agenda", label: "Agenda", title: "Agenda", icon: CalendarDays},

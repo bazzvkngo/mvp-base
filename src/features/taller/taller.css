@@ -1141,80 +1141,8 @@ button.work-order-finalize-button:hover:not(:disabled) {
   justify-content: center;
 }
 
-/* Inicio del Taller (prototipo «Panel del Taller»): saludo, indicadores, flujo, atención, plazas y actividad. */
-.workshop-home { display: grid; gap: var(--space-4); }
-.workshop-home__hero {
-  background: var(--color-surface-brand);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-xl);
-  display: grid;
-  gap: var(--space-2);
-  padding: var(--space-5);
-}
-.workshop-home__hero h2 { font-size: var(--font-size-2xl); font-weight: var(--font-weight-semibold); margin: 0; text-wrap: balance; }
-.workshop-home__hero p { margin: 0; max-inline-size: 60ch; }
-.workshop-home__kicker { color: var(--color-text-muted); font-size: var(--font-size-sm); }
-.workshop-home__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
-.workshop-home__tiles { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); }
-.workshop-home__tile {
-  align-items: center;
-  background: var(--color-surface-panel);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-lg);
-  color: var(--color-text-default);
-  display: flex;
-  gap: var(--space-4);
-  padding: var(--space-5);
-  text-decoration: none;
-}
-a.workshop-home__tile:hover { background: var(--color-surface-hover); border-color: var(--color-border-default); }
-a.workshop-home__tile:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
-.workshop-home__tile > span:last-child { display: grid; }
-.workshop-home__tile-icon {
-  align-items: center;
-  background: var(--color-surface-subtle);
-  border-radius: var(--radius-md);
-  color: var(--color-text-default);
-  display: inline-flex;
-  flex: none;
-  block-size: 3.5rem;
-  inline-size: 3.5rem;
-  justify-content: center;
-}
-.workshop-home__tile-icon svg { block-size: 1.75rem; inline-size: 1.75rem; }
-.workshop-home__tile[data-tone="info"] .workshop-home__tile-icon { background: var(--color-info-50); color: var(--color-info-700); }
-.workshop-home__tile[data-tone="warning"] .workshop-home__tile-icon { background: var(--color-warning-50); color: var(--color-warning-800); }
-.workshop-home__tile[data-tone="success"] .workshop-home__tile-icon { background: var(--color-success-50); color: var(--color-success-700); }
-.workshop-home__tile strong { display: block; font-size: calc(var(--font-size-2xl) * 1.4); font-weight: var(--font-weight-bold); line-height: 1.05; }
-.workshop-home__tile > span:last-child > span { color: var(--color-text-muted); font-size: var(--font-size-md); }
-.workshop-home__panel { align-content: start; display: grid; gap: var(--space-3); }
-.workshop-home__panel p { margin: 0; }
-.workshop-home__two { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
-.workshop-home__alerts { display: grid; gap: var(--space-2); list-style: none; margin: 0; padding: 0; }
-.workshop-home__alerts a {
-  align-items: flex-start;
-  background: var(--color-surface-subtle);
-  border-inline-start: 3px solid var(--color-border-default);
-  border-radius: 0 var(--radius-md) var(--radius-md) 0;
-  color: var(--color-text-default);
-  display: flex;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  text-decoration: none;
-}
-.workshop-home__alerts a:hover { background: var(--color-surface-hover); }
-.workshop-home__alerts a:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
-.workshop-home__alerts a > span { display: grid; flex: 1; gap: var(--space-1); min-width: 0; }
-.workshop-home__age { color: var(--color-text-muted); flex: none; font-size: var(--font-size-xs); white-space: nowrap; }
-.workshop-home__alerts a > span > span { color: var(--color-text-muted); font-size: var(--font-size-sm); }
-.workshop-home__alerts li[data-tone="danger"] a { border-inline-start-color: var(--color-danger-700); }
-.workshop-home__alerts li[data-tone="danger"] svg { color: var(--color-danger-700); }
-.workshop-home__alerts li[data-tone="success"] a { border-inline-start-color: var(--color-success-700); }
-.workshop-home__alerts li[data-tone="success"] svg { color: var(--color-success-700); }
-.workshop-home__alerts li[data-tone="warning"] a { border-inline-start-color: var(--color-warning-800); }
-.workshop-home__alerts li[data-tone="warning"] svg { color: var(--color-warning-800); }
-.workshop-home__alerts li[data-tone="info"] a { border-inline-start-color: var(--color-info-700); }
-.workshop-home__alerts li[data-tone="info"] svg { color: var(--color-info-700); }
+/* Inicio del Taller: plazas de un vistazo y «Mis trabajos». Lo que comparte con el resumen de otros rubros
+   (saludo, indicadores, atención y actividad) vive en components.css con el prefijo ui-home. */
 .workshop-home__mini { display: grid; gap: var(--space-2); grid-template-columns: repeat(auto-fill, minmax(4.75rem, 1fr)); list-style: none; margin: 0; padding: 0; }
 .workshop-home__mini a,
 .workshop-home__mini-cell {
@@ -1244,9 +1172,6 @@ a.workshop-home__tile:focus-visible { outline: 2px solid var(--color-focus); out
   inline-size: 1.75rem;
   justify-content: center;
 }
-.workshop-home__timeline { display: grid; list-style: none; margin: 0; padding: 0; }
-.workshop-home__timeline li { border-top: 1px solid var(--color-border-subtle); display: flex; gap: var(--space-3); padding: var(--space-2) 0; }
-.workshop-home__timeline time { color: var(--color-text-muted); flex: none; font-size: var(--font-size-sm); inline-size: 5.5rem; white-space: nowrap; }
 .workshop-home__mine { display: grid; list-style: none; margin: 0; padding: 0; }
 .workshop-home__mine li { border-top: 1px solid var(--color-border-subtle); }
 .workshop-home__mine-link { align-items: center; color: var(--color-text-default); display: flex; gap: var(--space-3); padding: var(--space-3) 0; text-decoration: none; }
@@ -1256,9 +1181,6 @@ a.workshop-home__tile:focus-visible { outline: 2px solid var(--color-focus); out
 .workshop-home__mine .workshop-home__works li { align-items: center; border-top: 0; display: flex; gap: var(--space-2); justify-content: space-between; }
 .workshop-home__works li > span:first-child { color: var(--color-text-default); font-size: var(--font-size-sm); min-width: 0; overflow-wrap: anywhere; }
 .workshop-home__mine-badges { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-@media (max-width: 520px) {
-  .workshop-home__hero h2 { font-size: var(--font-size-xl); }
-}
 .work-orders-view-chip {
   align-items: center;
   background: var(--color-surface-subtle);

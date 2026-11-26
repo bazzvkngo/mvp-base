@@ -469,8 +469,17 @@ assert.match(homePage, /if \(canManage\) \{\s*Promise\.all\(executing/, "solo Ad
 assert.match(homePage, /className="workshop-home__works"/, "Mis trabajos lista los trabajos de cada OT");
 assert.match(homePage, /WORK_STATUS_LABELS\[service\.estado\]/, "cada trabajo muestra su estado");
 assert.doesNotMatch(homePage, /<span>Pendientes<\/span>/, "la tarjeta se llama Trabajos pendientes");
-assert.match(homePage, /greetingPersonName\(profile\)/, "el saludo usa nombre y apellido del perfil");
-assert.match(homePage, /profileName \|\| fallbackUserName\(\)/, "sin nombre y apellido se conserva el saludo actual");
+// El saludo vive en un hook compartido con el Resumen clínico (mismo comportamiento que antes).
+const greetingHook = fs.readFileSync("src/hooks/useHomeGreeting.js", "utf8");
+assert.match(homePage, /useHomeGreeting\(now\)/, "el panel usa el saludo compartido");
+assert.match(greetingHook, /greetingPersonName\(profile\)/, "el saludo usa nombre y apellido del perfil");
+assert.match(greetingHook, /profileName \|\| fallbackUserName\(\)/, "sin nombre y apellido se conserva el saludo actual");
+// Saludo, indicadores, atención y actividad son los componentes compartidos (estilos ui-home en components.css).
+for (const piece of ["<HomeHero", "<HomeTiles", "<HomeTile ", "<HomeAttentionPanel", "<HomeTimelinePanel", "<HomeSplit>"]) {
+  assert.ok(homePage.includes(piece), `el panel del taller usa ${piece.trim()}`);
+}
+assert.doesNotMatch(homePage, /workshop-home__(hero|tile|tiles|alerts|timeline|two|kicker|actions|age)/, "sin clases propias de lo compartido");
+assert.doesNotMatch(fs.readFileSync("src/features/taller/taller.css", "utf8"), /workshop-home__(hero|tile|alerts|timeline|two)/, "taller.css solo conserva plazas y Mis trabajos");
 assert.doesNotMatch(homePage, /Flujo del taller/, "sin flujo por etapa: repetía los indicadores");
 assert.match(homePage, /icon=\{Warehouse\} onClick=\{\(\) => navigate\("\/taller\/plazas"\)\}>Plazas</, "mismo ícono de Plazas que el menú");
 assert.match(fs.readFileSync("src/app/navigation.js", "utf8"), /label: "Plazas",\s*title: "Plazas",\s*icon: Warehouse/);
