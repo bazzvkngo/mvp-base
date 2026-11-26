@@ -52,7 +52,7 @@ function effectiveLastRoute(routes) {
 
 // --- 1) La ruta comodín existe, es la última y muestra la página 404 ----------
 const allRoutes = findElements(appSource, "Routes");
-assert.equal(allRoutes.length, 7, "App.jsx monta 7 bloques <Routes>");
+assert.equal(allRoutes.length, 8, "App.jsx monta 8 bloques <Routes>");
 const byMarker = (marker) => allRoutes.filter((routes) => sourceOf(appSource, routes).includes(marker));
 const [businessRoutes] = byMarker('"/ventas/:ventaId"');
 const [platformRoutes] = byMarker('"/admin/dashboard"');
