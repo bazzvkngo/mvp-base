@@ -21,6 +21,7 @@ const require = createRequire(import.meta.url);
 const {
   GENERIC_QUERY_WARNING,
   MARKET_REFERENCE_CACHE_TTL_MS,
+  STALE_QUERY_WARNING,
   buildInventoryMarketQuery,
   normalizeSerperShoppingResults,
   summarizeMarketResults,
@@ -30,13 +31,13 @@ const {
 
 assert.deepEqual(
   buildInventoryMarketQuery({nombre: "Taladro", marca: "Marca Demo", modelo: "X20"}),
-  {query: "Marca Demo X20", confidence: "HIGH", warnings: []}
+  {query: "Taladro Marca Demo X20", warnings: []}
 );
 assert.deepEqual(
   buildInventoryMarketQuery({nombre: "Taladro inalámbrico"}),
-  {query: "Taladro inalámbrico", confidence: "LOW", warnings: [GENERIC_QUERY_WARNING]}
+  {query: "Taladro inalámbrico", warnings: [GENERIC_QUERY_WARNING]}
 );
-console.log("OK referencias de mercado: consulta determinista y advertencia para producto genérico");
+console.log("OK referencias de mercado: consulta determinista que siempre incluye el nombre");
 
 const fixture = {
   shopping: [
@@ -210,10 +211,37 @@ async function main() {
     );
     console.log("OK referencias de mercado: rechazo para ítems que no son producto");
 
+    // cacheOnly: no busca nunca. Sin caché responde NO_CACHE y no escribe nada
+    // (el proveedor simulado siempre escribe caché, así que el doc ausente
+    // prueba que no hubo búsqueda).
+    const preCacheDocPath = `negocios/${businessId}/referenciasPrecios/${itemId}`;
+    await expectCallableCode("permission-denied", () =>
+      callable(outsider, "searchInventoryMarketReferences", { businessId, itemId, cacheOnly: true })
+    );
+    const noCache = await callable(owner, "searchInventoryMarketReferences", { businessId, itemId, cacheOnly: true });
+    assert.equal(noCache.data.status, "NO_CACHE");
+    assert.equal(noCache.data.cached, false);
+    assert.deepEqual(noCache.data.results, []);
+    assert.equal(noCache.data.summary, null);
+    assert.equal(noCache.data.actualizadoEn, null);
+    assert.equal(noCache.data.query, "Taladro inalámbrico Marca Demo X20");
+    assert.equal((await adminDb.doc(preCacheDocPath).get()).exists, false, "cacheOnly sin caché no debe buscar ni guardar");
+    const noCacheForced = await callable(owner, "searchInventoryMarketReferences", {
+      businessId,
+      itemId,
+      cacheOnly: true,
+      forceRefresh: true,
+    });
+    assert.equal(noCacheForced.data.status, "NO_CACHE", "cacheOnly gana sobre forceRefresh");
+    assert.equal((await adminDb.doc(preCacheDocPath).get()).exists, false, "cacheOnly + forceRefresh tampoco busca");
+    console.log("OK referencias de mercado: cacheOnly sin caché responde NO_CACHE sin buscar (también con forceRefresh)");
+
     const firstSearch = await callable(owner, "searchInventoryMarketReferences", { businessId, itemId });
     assert.equal(firstSearch.data.cached, false);
     assert.ok(firstSearch.data.results.length > 0);
     assert.ok(firstSearch.data.summary);
+    assert.equal(firstSearch.data.status, "OK");
+    assert.equal(firstSearch.data.query, "Taladro inalámbrico Marca Demo X20");
     assert.equal(firstSearch.data.item.internalPrice, 95000);
     const cacheDocPath = `negocios/${businessId}/referenciasPrecios/${itemId}`;
     const cacheAfterFirstSearch = await adminDb.doc(cacheDocPath).get();
@@ -224,6 +252,12 @@ async function main() {
     assert.equal(secondSearch.data.cached, true);
     assert.deepEqual(secondSearch.data.results, firstSearch.data.results);
     console.log("OK referencias de mercado: usa cache vigente sin volver a consultar Serper");
+
+    const cacheOnlyHit = await callable(owner, "searchInventoryMarketReferences", { businessId, itemId, cacheOnly: true });
+    assert.equal(cacheOnlyHit.data.cached, true);
+    assert.equal(cacheOnlyHit.data.status, "OK");
+    assert.deepEqual(cacheOnlyHit.data.results, firstSearch.data.results);
+    console.log("OK referencias de mercado: cacheOnly con caché vigente devuelve los precios guardados");
 
     const forcedSearch = await callable(owner, "searchInventoryMarketReferences", {
       businessId,
@@ -243,6 +277,28 @@ async function main() {
     assert.ok(cacheAfterExpiry.data().actualizadoEn.toMillis() > expiredMillis);
     console.log("OK referencias de mercado: refresca automáticamente cuando el cache expiró (TTL 24h)");
 
+    // Caché vencida + cacheOnly: NO_CACHE y la caché no se toca.
+    const staleMillis = Date.now() - (MARKET_REFERENCE_CACHE_TTL_MS + 60 * 1000);
+    await adminDb.doc(cacheDocPath).update({ actualizadoEn: Timestamp.fromMillis(staleMillis) });
+    for (const extra of [{}, { forceRefresh: true }]) {
+      const expiredCacheOnly = await callable(owner, "searchInventoryMarketReferences", {
+        businessId,
+        itemId,
+        cacheOnly: true,
+        ...extra,
+      });
+      assert.equal(expiredCacheOnly.data.status, "NO_CACHE", "una caché de más de 24 h cuenta como NO_CACHE");
+      assert.equal(expiredCacheOnly.data.cached, false);
+    }
+    assert.equal(
+      (await adminDb.doc(cacheDocPath).get()).data().actualizadoEn.toMillis(),
+      staleMillis,
+      "cacheOnly no debe refrescar una caché vencida"
+    );
+    console.log("OK referencias de mercado: cacheOnly con caché vencida responde NO_CACHE y no la toca");
+    // Se deja la caché vigente de nuevo para la prueba de rol que sigue.
+    await adminDb.doc(cacheDocPath).update({ actualizadoEn: Timestamp.fromMillis(Date.now()) });
+
     await adminDb.doc(`membresias/${businessId}__${outsiderUid}`).set({
       negocioId: businessId,
       uid: outsiderUid,
@@ -252,6 +308,101 @@ async function main() {
     const technicianSearch = await callable(outsider, "searchInventoryMarketReferences", { businessId, itemId });
     assert.equal(technicianSearch.data.cached, true);
     console.log("OK referencias de mercado: sin restricción de rol, cualquier miembro activo puede consultar");
+
+    // Caché vieja con datos malos (consulta = sólo el código de barras y
+    // resultados de otros rubros): se re-filtra al leer, sin llamar a Serper.
+    const steelItemId = "item-market-ref-perfil";
+    await adminDb.doc(`negocios/${businessId}/inventario/${steelItemId}`).set({
+      negocioId: businessId,
+      nombre: "PERFIL CUADRADO 40 X 40 DE 2,0 MM",
+      codigoBarras: "7802900003401",
+      tipoItem: "producto",
+      estado: "activo",
+      precioInterno: 18371,
+    });
+    const staleResults = [
+      ["Picadora Vitromix", 54990],
+      ["Pluscal comprimidos", 2990],
+      ["Detergente Omo líquido", 9990],
+      ["Crema Nivea", 4590],
+      ["Limpiavidrios 500 ml", 1390],
+    ].map(([title, price], index) => ({
+      provider: "SERPER",
+      externalId: `stale-${index}`,
+      title,
+      merchant: "Tienda",
+      priceRaw: String(price),
+      price,
+      currency: "CLP",
+      url: `https://tienda.example/${index}`,
+      position: index + 1,
+    }));
+    await adminDb.doc(`negocios/${businessId}/referenciasPrecios/${steelItemId}`).set({
+      itemId: steelItemId,
+      query: "7802900003401",
+      confidence: "HIGH",
+      results: staleResults,
+      summary: {count: 5, currency: "CLP", min: 1390, median: 4590, max: 54990},
+      warnings: [],
+      actualizadoEn: Timestamp.fromMillis(Date.now()),
+    });
+    const staleSearch = await callable(owner, "searchInventoryMarketReferences", {
+      businessId,
+      itemId: steelItemId,
+    });
+    assert.equal(staleSearch.data.cached, true);
+    assert.equal(staleSearch.data.status, "NONE");
+    assert.equal(staleSearch.data.confidence, "NONE");
+    assert.equal(staleSearch.data.summary, null);
+    assert.deepEqual(staleSearch.data.results, []);
+    assert.equal(staleSearch.data.totalFound, 5);
+    assert.ok(staleSearch.data.warnings.includes(STALE_QUERY_WARNING));
+    console.log("OK referencias de mercado: caché vieja con datos malos se re-filtra al leer (Sin coincidencias confiables)");
+
+    // Vacío guardado: cacheOnly lo devuelve como caché (no como NO_CACHE).
+    const emptyItemId = "item-market-ref-vacio";
+    await adminDb.doc(`negocios/${businessId}/inventario/${emptyItemId}`).set({
+      negocioId: businessId,
+      nombre: "Cinta aislante Temflex 18 mm x 10 m",
+      tipoItem: "producto",
+      estado: "activo",
+    });
+    await adminDb.doc(`negocios/${businessId}/referenciasPrecios/${emptyItemId}`).set({
+      itemId: emptyItemId,
+      query: "Cinta aislante Temflex 18 mm x 10 m",
+      confidence: "NONE",
+      results: [],
+      summary: null,
+      warnings: [],
+      actualizadoEn: Timestamp.fromMillis(Date.now()),
+    });
+    const savedEmpty = await callable(owner, "searchInventoryMarketReferences", {
+      businessId,
+      itemId: emptyItemId,
+      cacheOnly: true,
+    });
+    assert.equal(savedEmpty.data.cached, true);
+    assert.equal(savedEmpty.data.status, "NONE");
+    assert.deepEqual(savedEmpty.data.results, []);
+    assert.equal(savedEmpty.data.totalFound, 0);
+    console.log("OK referencias de mercado: cacheOnly devuelve un vacío guardado como caché");
+
+    // cacheOnly solo cuenta si es el booleano true (igual que forceRefresh).
+    const stringFlagItemId = "item-market-ref-flag-texto";
+    await adminDb.doc(`negocios/${businessId}/inventario/${stringFlagItemId}`).set({
+      negocioId: businessId,
+      nombre: "Taladro percutor",
+      tipoItem: "producto",
+      estado: "activo",
+    });
+    const stringFlag = await callable(owner, "searchInventoryMarketReferences", {
+      businessId,
+      itemId: stringFlagItemId,
+      cacheOnly: "true",
+    });
+    assert.equal(stringFlag.data.cached, false);
+    assert.notEqual(stringFlag.data.status, "NO_CACHE", "cacheOnly como texto no activa el modo solo caché");
+    console.log("OK referencias de mercado: cacheOnly solo se respeta como booleano true");
 
     console.log("MARKET_REFERENCES_SMOKE_OK");
   } finally {

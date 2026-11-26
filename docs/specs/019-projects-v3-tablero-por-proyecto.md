@@ -1,5 +1,7 @@
 # SPEC 019 — Projects V3: tablero por Proyecto
 
+> **Actualización (SPEC 028 §4.2, 2026-10-27):** la eliminación de tareas ya no distingue versión. Los puntos de esta SPEC sobre «v1 eliminables / v2 append-only» están marcados (sustituido por SPEC 028 §4.2) y ya no rigen; el resto sigue vigente.
+
 ## 1. Propósito y estado
 
 Cerrar el único alcance aprobado como `PROJECTS_V3` en esta iteración:
@@ -36,8 +38,9 @@ código.
 5. El tablero de Proyectos actual (`WorkBoard`, tarjetas por Proyecto) no se
    elimina ni se reemplaza: el tablero de tareas es una vista adicional
    dentro de la ficha de un Proyecto ya abierto.
-6. El comportamiento existente de tareas legacy (v1, eliminables) y tareas
-   v2 (append-only, sin eliminación) se conserva sin cambios en el tablero.
+6. Las tareas legacy (v1) y v2 conviven en el tablero. ~~Las v1 son eliminables y las v2
+   append-only sin eliminación~~ (sustituido por SPEC 028 §4.2): cualquier tarea no completada, sin costos
+   ni documentación, puede eliminarse.
 7. No se introduce ninguna librería nueva de UI/drag-and-drop/búsqueda: el
    selector de cotización reutiliza el patrón ya existente
    (`ResponsiveDialog` + filtro en memoria, como `SaleClientSelector.jsx` /
@@ -164,7 +167,7 @@ Cada tarjeta de tarea muestra:
 - Si está en `en_espera`: motivo (`motivoEspera`) visible en la tarjeta,
   igual que hoy lo muestra `TaskSection`.
 - Badge de versión legacy cuando `modeloTareaVersion < WORK_TASK_MODEL_VERSION`
-  (para que quede claro que esa tarjeta admite eliminación, ver 5.5).
+  (etiqueta informativa; la eliminación ya no depende de la versión (sustituido por SPEC 028 §4.2), ver 5.5).
 
 No se agrega ningún campo a la tarjeta que no exista ya en `adaptWorkTask`
 (sin inventar metadata nueva).
@@ -201,11 +204,11 @@ No se agrega ningún campo a la tarjeta que no exista ya en `adaptWorkTask`
   movimiento entre estados (el cambio de estado ya es el mismo Callable para
   ambas versiones — `cambiarEstadoTareaTrabajoV2Handler` acepta el booleano
   legacy `completada` como alias, sin cambios).
-- La única diferencia visible es la disponibilidad de "Eliminar": sólo las
-  tarjetas con `modeloTareaVersion < WORK_TASK_MODEL_VERSION` (v1) muestran
-  una acción de eliminación (idéntica a la que ya existe en `TaskSection`,
-  gateada a `canManage` y a que la tarea no esté completada). Las tarjetas
-  v2 nunca muestran esa acción, igual que hoy.
+- ~~La única diferencia visible es la disponibilidad de "Eliminar": sólo las
+  tarjetas v1 muestran una acción de eliminación; las v2 nunca.~~ (sustituido por SPEC 028 §4.2):
+  la eliminación no depende de la versión. Se ofrece a `canManage` con el proyecto
+  abierto (basurero en la tarjeta y botón en el panel) y queda deshabilitada, con
+  el motivo a la vista, si la tarea está completada o tiene costos o documentación.
 - El tablero no migra tareas v1 a v2 ni cambia su versión.
 
 ### 5.6 Loading, vacío, error
@@ -234,14 +237,15 @@ Sin cambios de RBAC. El tablero hereda exactamente las mismas reglas que
   restringida a tareas propias para roles no-`canManage`, igual que hoy
   — `visibleTasks`).
 - Cambio de estado / operar una tarjeta: `canOperate(task)` ya existente.
-- Eliminar (sólo v1): `canManage` ya existente.
+- Eliminar: `canManage` ya existente, con el proyecto abierto; cualquier versión (sustituido por SPEC 028 §4.2).
 - No se introduce ningún permiso nuevo ni se amplía ninguno existente.
 
 ## 6. Contratos reutilizados (sin cambios)
 
 - `cambiarEstadoTareaTrabajo` (Callable, `functions/workPersistence.js`
   `cambiarEstadoTareaTrabajoV2Handler`).
-- `eliminarTareaTrabajo` (sólo para tareas v1, ya usado por `TaskSection`).
+- `eliminarTareaTrabajo` (antes sólo para tareas v1; ahora cualquier versión, con las
+  condiciones de la SPEC 028 §4.2).
 - `getEligibleWorkQuoteOptions`, `adaptWorkTask`, `getTaskProgress`,
   `getWorkCostSummary`, `getWorkMemberOptionLabel`, `canViewWorkProfitability`,
   `canManageWorks`, `WORK_TASK_STATUSES`, `WORK_TASK_MODEL_VERSION`
@@ -261,7 +265,7 @@ Ningún contrato nuevo se define en esta SPEC.
 - Fix del gate de `WorkBalanceSection` para incluir FINANZAS.
 - `WorkTaskBoard.jsx`: tablero de tareas del Proyecto abierto, columnas por
   `WORK_TASK_STATUSES`, operando `cambiarEstadoTareaTrabajo` (y
-  `eliminarTareaTrabajo` sólo para v1) ya existentes.
+  `eliminarTareaTrabajo`, ver SPEC 028 §4.2) ya existentes.
 - Selector de vista Lista/Tablero dentro de la sección de tareas de la
   ficha.
 - Smokes de dominio/UI para ambas etapas.
@@ -349,8 +353,10 @@ ETAPA 2:
     contexto.
 12. Cambiar el estado de una tarea desde el tablero produce el mismo efecto
     que cambiarlo desde `TaskSection` (mismo Callable, mismo resultado).
-13. Una tarea v1 (`modeloTareaVersion < 2`) muestra la acción "Eliminar";
-    una tarea v2 no la muestra.
+13. ~~Una tarea v1 muestra la acción "Eliminar"; una tarea v2 no la muestra.~~
+    (sustituido por SPEC 028 §4.2): una tarea v1 o v2 no completada y sin costos ni documentación
+    muestra "Eliminar" habilitado; con costos, documentación o completada,
+    deshabilitado con el motivo.
 14. Un rol TECNICO sólo puede operar tarjetas de tareas donde es
     `responsableUid`; tarjetas de otras tareas se muestran de sólo lectura
     o no se muestran, según la misma regla que ya aplica `visibleTasks`.
@@ -370,10 +376,11 @@ ETAPA 2:
   autoriza; ningún otro rol gana acceso nuevo.
 - El tablero de tareas nunca muestra ni opera tareas de un Proyecto distinto
   al abierto.
-- Las tareas v1 conservan su eliminación legacy; las tareas v2 permanecen
-  append-only en el tablero, igual que en la lista.
+- ~~Las tareas v1 conservan su eliminación legacy; las tareas v2 permanecen
+  append-only en el tablero.~~ (sustituido por SPEC 028 §4.2): la eliminación se rige por la SPEC 028 §4.2
+  para ambas versiones.
 - Ninguna mutación nueva se introduce: todo cambio de estado pasa por
-  `cambiarEstadoTareaTrabajo` (o `eliminarTareaTrabajo` para v1) ya
+  `cambiarEstadoTareaTrabajo` (o `eliminarTareaTrabajo`) ya
   existentes.
 - El tablero de Proyectos (`WorkBoard`) permanece sin cambios de
   comportamiento.

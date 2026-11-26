@@ -1,0 +1,57 @@
+.veterinary-photo-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-block: var(--space-2);
+}
+
+.veterinary-photo-view {
+  display: block;
+  inline-size: 100%;
+  block-size: min(55vh, 38rem);
+  background: var(--color-surface-subtle);
+  margin-block: var(--space-2);
+}
+
+.veterinary-photo-mark {
+  fill: var(--color-text-brand-accent);
+  stroke: var(--color-surface);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .veterinary-photo-view {
+    --veterinary-photo-tilt-x: 0deg;
+    --veterinary-photo-tilt-y: 0deg;
+    animation: veterinary-photo-change calc(var(--motion-reveal-duration) * 2) ease-out both;
+  }
+
+  .veterinary-photo-view[data-body-view="lateral-izquierda"] {
+    --veterinary-photo-tilt-y: -25deg;
+  }
+
+  .veterinary-photo-view[data-body-view="lateral-derecha"],
+  .veterinary-photo-view[data-body-view="trasera"] {
+    --veterinary-photo-tilt-y: 25deg;
+  }
+
+  .veterinary-photo-view[data-body-view="superior"] {
+    --veterinary-photo-tilt-x: 22deg;
+  }
+
+  .veterinary-photo-view[data-body-view="inferior"] {
+    --veterinary-photo-tilt-x: -22deg;
+  }
+
+  @keyframes veterinary-photo-change {
+    from {
+      opacity: 0;
+      transform: perspective(55rem) rotateX(var(--veterinary-photo-tilt-x)) rotateY(var(--veterinary-photo-tilt-y)) scale(0.96);
+    }
+
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}

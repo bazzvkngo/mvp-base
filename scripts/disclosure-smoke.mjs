@@ -1,0 +1,169 @@
+import assert from "node:assert/strict";
+import {readFile} from "node:fs/promises";
+import React from "react";
+import {renderToStaticMarkup} from "react-dom/server";
+import {createServer} from "vite";
+import {scanCss, scanJs} from "./design-smoke.mjs";
+
+// <Disclosure> (src/components/ui/Disclosure.jsx) y su uso en Empresa (A2): los campos opcionales van
+// plegados, los obligatorios no, y nada con contenido o con error queda oculto. Mismo patrón que
+// module-header-smoke: Vite ssrLoadModule + renderToStaticMarkup, sin Firebase.
+
+const count = (markup, pattern) => (markup.match(pattern) || []).length;
+
+const vite = await createServer({appType: "custom", logLevel: "silent", server: {middlewareMode: true}});
+
+try {
+  const {default: Disclosure} = await vite.ssrLoadModule("/src/components/ui/Disclosure.jsx");
+  const render = (props, children = "Contenido") => renderToStaticMarkup(React.createElement(Disclosure, props, children));
+
+  // --- Cerrado: botón con aria-expanded=false y sin cuerpo ---
+  const closed = render({description: "Giro y código postal.", id: "datos", open: false, title: "Más datos"});
+  assert.doesNotMatch(closed, /undefined|NaN|<!--|\[object/);
+  assert.match(closed, /^<div class="ui-disclosure">/);
+  assert.match(closed, /<button type="button" class="ui-disclosure__toggle" aria-expanded="false">/);
+  assert.equal(count(closed, /aria-controls/g), 0, "cerrado no apunta a un cuerpo que no existe");
+  assert.equal(count(closed, /ui-disclosure__body/g), 0, "cerrado no dibuja el cuerpo (sus campos no se tabulan)");
+  assert.doesNotMatch(closed, /Contenido/);
+  assert.match(closed, /<strong class="ui-disclosure__title">Más datos<\/strong>/);
+  assert.match(closed, /<small class="ui-disclosure__description">Giro y código postal\.<\/small>/);
+  assert.match(closed, /aria-hidden="true"/, "el chevron es decorativo");
+  assert.equal(count(closed, /<button\b/g), 1);
+  assert.equal(count(closed, /role=|aria-live/g), 0, "no es una región de carga ni de aviso");
+
+  // --- Abierto: cuerpo enlazado por aria-controls ---
+  const opened = render({id: "datos", open: true, title: "Más datos"});
+  assert.match(opened, /^<div class="ui-disclosure is-open">/);
+  assert.match(opened, /aria-controls="datos-body" aria-expanded="true"/);
+  assert.match(opened, /<div class="ui-disclosure__body" id="datos-body">Contenido<\/div>/);
+  assert.equal(count(opened, /ui-disclosure__description/g), 0, "sin descripción no hay <small> vacío");
+
+  // --- Sin id propio usa useId; con className extra al final; disabled se respeta ---
+  assert.match(render({open: true, title: "T"}), /aria-controls="[^"]+-body"/);
+  assert.match(render({className: "extra", open: false, title: "T"}), /^<div class="ui-disclosure extra">/);
+  assert.match(render({disabled: true, open: true, title: "T"}), /<button[^>]*disabled/);
+  assert.equal(count(render({open: undefined, title: "T"}), /aria-expanded="false"/g), 1, "open ausente = cerrado");
+  console.log("OK: Disclosure — cerrado sin cuerpo, abierto con aria-controls, descripción opcional, disabled");
+
+  // --- Estilos: 0 literales, solo tokens que existen, todas las clases con regla ---
+  const css = await readFile(new URL("../src/styles/components.css", import.meta.url), "utf8");
+  const tokens = await readFile(new URL("../src/styles/tokens.css", import.meta.url), "utf8");
+  const rules = [...css.matchAll(/(\.ui-disclosure[^{]*)\{([^}]*)\}/g)];
+  assert.ok(rules.length >= 9, `existen las reglas del plegable (${rules.length})`);
+  const block = rules.map((m) => m[0]).join("\n");
+  assert.deepEqual(scanCss(block), [], "0 literales de color/radio/sombra/duración según test:design");
+  assert.doesNotMatch(block, /color:\s*var\(--color-(brand-\d+|dark-[a-z0-9-]+)\)/, "ningún color de marca fija ni dark-* como texto (modo oscuro)");
+  for (const name of new Set([...block.matchAll(/var\((--[\w-]+)\)/g)].map((m) => m[1]))) {
+    assert.match(tokens, new RegExp(String.raw`${name}\s*:`), `${name} existe en tokens.css`);
+  }
+  for (const className of new Set([...(closed + opened).matchAll(/class="([^"]+)"/g)].flatMap((m) => m[1].split(/\s+/)).filter((c) => c.startsWith("ui-disclosure")))) {
+    assert.match(css, new RegExp(String.raw`\.${className}\b[^{]*\{`), `${className} tiene regla en components.css`);
+  }
+  assert.match(css, /\.ui-disclosure__toggle:focus-visible \{\s*outline: var\(--focus-outline\);/, "foco visible con el token");
+  const componentSource = await readFile(new URL("../src/components/ui/Disclosure.jsx", import.meta.url), "utf8");
+  assert.deepEqual(scanJs(componentSource, "Disclosure.jsx"), [], "Disclosure.jsx: 0 literales según test:design");
+  assert.doesNotMatch(componentSource, /style=|#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/);
+  console.log("OK: estilos del plegable — 0 literales, tokens existentes, clases con regla, foco visible");
+
+  // --- Uso en Empresa (EM1): sin plegable; todo visible y agrupado en "Datos comerciales" y "Contacto" ---
+  const company = await readFile(new URL("../src/features/company/CompanyConfig.jsx", import.meta.url), "utf8");
+  assert.doesNotMatch(company, /<Disclosure\b|ui\/Disclosure|optionalOpen|setOptionalOpen|OPTIONAL_INFORMATION_FIELDS|OPTIONAL_FOCUS_TARGETS|Más datos de la empresa/, "Empresa ya no usa el plegable ni deja su estado");
+  const providerForm = await readFile(new URL("../src/features/providers/ProviderFormDialog.jsx", import.meta.url), "utf8");
+  assert.doesNotMatch(providerForm, /<Disclosure\b|ui\/Disclosure|optionalOpen/, "el formulario de proveedores ya no usa el plegable (secciones visibles como Nuevo cliente); el componente se conserva");
+  assert.equal(count(company, /<h3>Datos comerciales<\/h3>/g), 1, "un solo título 'Datos comerciales'");
+  assert.equal(count(company, /<h3>Contacto<\/h3>/g), 1, "un solo título 'Contacto'");
+  const commercial = company.slice(company.indexOf("<h3>Datos comerciales</h3>"), company.indexOf("<h3>Contacto</h3>"));
+  const contact = company.slice(company.indexOf("<h3>Contacto</h3>"), company.indexOf("</fieldset>", company.indexOf("<h3>Contacto</h3>")));
+  for (const field of ["nombreComercial", "giro", "regionCodigo", "comunaCodigo", "direccion", "codigoPostal"]) {
+    assert.match(commercial, new RegExp(`name="${field}"`), `${field} está visible en Datos comerciales`);
+  }
+  assert.match(commercial, /<BusinessCategoryPicker/, "el rubro está visible en Datos comerciales");
+  for (const field of ["telefono", "email", "sitioWeb"]) {
+    assert.match(contact, new RegExp(`name="${field}"`), `${field} está visible en Contacto`);
+  }
+  assert.match(contact, /label="Teléfono comercial" optional targetId="empresa-contacto"/, "el objetivo de foco 'contacto' sigue en el teléfono");
+  // Obligatorios con "*" y opcionales con "Opcional" (la prop que SettingsField ya soporta).
+  assert.match(commercial, /<SettingsField label="Nombre comercial" required /);
+  assert.match(commercial, /Rubro principal<span aria-hidden="true"> \*<\/span>/, "el rubro lleva el mismo '*' que los demás");
+  assert.match(commercial, /<SettingsField label="Región" required /);
+  assert.match(commercial, /<SettingsField label="Región \/ Estado" required /);
+  assert.match(commercial, /Los campos con \* son obligatorios\./, "leyenda de obligatorios");
+  // "Giro" es la etiqueta de Chile: sale del helper por país (Bolivia: "Actividad económica") y sigue siendo opcional.
+assert.match(company, /<SettingsField label=\{countryCopy\.businessActivityLabel\} optional/, "Giro lleva 'Opcional'");
+for (const label of ["Comuna / ciudad", "Ciudad", "Dirección comercial", "Código postal", "Teléfono comercial", "Correo comercial", "Sitio web"]) {
+    assert.match(company, new RegExp(`<SettingsField label="${label.replace("/", "\\/")}" optional`), `${label} lleva 'Opcional'`);
+  }
+  assert.doesNotMatch(company, /<SettingsField label="(Nombre comercial|Región|Región \/ Estado)"[^>]*optional/, "los obligatorios no llevan 'Opcional'");
+  // Placeholders concretos: los fijos (nombre, giro, dirección) siguen en el componente y los que dependen del
+  // país (código postal, teléfono, correo, sitio web) salen de countryFormCopy (Chile conserva los de siempre).
+  for (const [field, placeholder] of [
+    ["nombreComercial", "Ej\\.: Servicios Eléctricos Pérez"],
+    ["giro", "Ej\\.: Servicios de ingeniería"],
+    ["direccion", "Calle y número"],
+  ]) {
+    assert.match(company, new RegExp(`<input name="${field}"[^\\n]*placeholder="${placeholder}"`), `${field} trae su placeholder`);
+  }
+  for (const [field, copyKey] of [
+    ["codigoPostal", "companyPostalCodeExample"],
+    ["telefono", "companyPhoneExample"],
+    ["email", "companyEmailExample"],
+    ["sitioWeb", "companyWebsiteExample"],
+  ]) {
+    assert.match(company, new RegExp(`<input name="${field}"[^\\n]*placeholder=\\{countryCopy\\.${copyKey}`), `${field} trae su placeholder del país`);
+  }
+  const chileCopy = (await import("../src/domain/countryFormCopy.mjs")).getCountryFormCopy("CL");
+  assert.equal(chileCopy.companyPostalCodeExample, "Ej.: 1100000");
+  assert.equal(chileCopy.companyPhoneExample, "+56 9 1234 5678");
+  assert.equal(chileCopy.companyEmailExample, "contacto@empresa.cl");
+  assert.equal(chileCopy.companyWebsiteExample, "https://www.empresa.cl");
+  // SettingsField no reserva una línea de ayuda vacía y solo usa aria-describedby cuando hay texto.
+  const settingsField = company.slice(company.indexOf("function SettingsField("), company.indexOf("function LockedSetting("));
+  assert.doesNotMatch(settingsField, /&nbsp;|\u00a0/, "sin línea de ayuda vacía");
+  assert.match(settingsField, /\{support && \(\s*<span id=\{supportId\} className="settings-field__support"/, "la ayuda solo existe si hay texto");
+  assert.match(settingsField, /if \(canDescribe\) controlProps\["aria-describedby"\] = supportId;/, "el control apunta a la ayuda con aria-describedby solo si hay texto");
+  assert.match(settingsField, /React\.cloneElement\(children, controlProps\)/, "las propiedades de accesibilidad se agregan al control");
+  assert.match(settingsField, /const canDescribe = Boolean\(support\) && React\.isValidElement\(children\);/, "aria-describedby solo con texto");
+  // Sin cambios de validación ni de textos de error.
+  for (const message of ["Ingresa el nombre comercial.", "Selecciona un rubro.", "Selecciona una región.", "Ingresa un correo comercial válido.", "Incluye http:// o https:// en la dirección web."]) {
+    assert.ok(company.includes(message), `se conserva el texto de error: ${message}`);
+  }
+  console.log("OK: Empresa — sin plegable, Datos comerciales y Contacto visibles, obligatorios con *, opcionales marcados, placeholders y sin ayuda vacía");
+
+  // --- Accesibilidad de obligatorios, opcionales, errores y leyenda (EM4) ---
+  const a11yField = company.slice(company.indexOf("function SettingsField("), company.indexOf("function LockedSetting("));
+  // 1. Obligatorios: aria-required en el control; el "*" visual queda aria-hidden. Sin required nativo (el formulario usa noValidate).
+  assert.match(a11yField, /if \(required && React\.isValidElement\(children\)\) controlProps\["aria-required"\] = true;/, "el control obligatorio se anuncia con aria-required");
+  assert.match(a11yField, /\{required && <span aria-hidden="true"> \*<\/span>\}/, "el '*' es solo visual");
+  assert.doesNotMatch(a11yField, /controlProps\.required|"required"\s*:/, "no se usa required nativo");
+  assert.equal(count(company, /<form onSubmit=\{save\} noValidate>/g), 1, "el formulario sigue con noValidate (el comportamiento no cambia)");
+  for (const label of ["Nombre comercial", "Región", "Región \\/ Estado"]) {
+    assert.match(company, new RegExp(`<SettingsField label="${label}" required `), `${label} es obligatorio`);
+  }
+  // 2. Opcionales: nunca aria-required; "Opcional" forma parte del nombre accesible, una sola vez (con separador oculto).
+  assert.match(a11yField, /\{optional && \(\s*<>\s*<span className="sr-only">, <\/span>\s*<span className="settings-field__optional">Opcional<\/span>/, "'Opcional' va en el nombre, separado de la etiqueta");
+  assert.equal(count(a11yField, /Opcional/g), 1, "'Opcional' aparece una sola vez (no se repite como descripción)");
+  assert.equal(count(company, /controlProps\["aria-required"\]/g), 1, "aria-required solo se asigna a los obligatorios, en un único lugar");
+  assert.doesNotMatch(company, /<SettingsField label="[^"]+" optional[^>]*required/, "ningún campo es obligatorio y opcional a la vez");
+  // 3. Errores: aria-invalid y aria-describedby al mensaje; el mensaje no se duplica (aria-hidden dentro de la etiqueta).
+  assert.match(a11yField, /if \(error && React\.isValidElement\(children\)\) controlProps\["aria-invalid"\] = true;/, "aria-invalid con error en cualquier campo");
+  assert.match(a11yField, /aria-hidden=\{canDescribe \? "true" : undefined\}/, "el mensaje se lee como descripción, no también como nombre");
+  for (const label of ["Región", "Región \\/ Estado", "Comuna \\/ ciudad", "Nombre comercial", "Correo comercial", "Sitio web"]) {
+    assert.match(company, new RegExp(`<SettingsField label="${label}"[^\\n]*error=\\{`), `${label} pasa su error al campo (aria-invalid y aria-describedby)`);
+  }
+  // 4. Selector de rubro: obligatorio y error accesibles, sin cambiar su comportamiento.
+  assert.match(company, /<BusinessCategoryPicker\s+id="company-category"\s+required\b/, "el selector de rubro se declara obligatorio");
+  assert.match(company, /errorId="company-category-support"/);
+  assert.match(company, /<span id="company-category-support" className="settings-field__support">/, "el mensaje (ayuda o error) existe siempre y el botón lo apunta");
+  assert.doesNotMatch(company, /company-category-error/, "ya no hay un id que solo existe con error");
+  // 5. Leyenda asociada al formulario.
+  const fieldsetAt = company.indexOf('<fieldset className="settings-fieldset" disabled={!canEdit || saving} aria-describedby="empresa-leyenda-obligatorios">');
+  const legendAt = company.indexOf('<p id="empresa-leyenda-obligatorios">Los campos con * son obligatorios.</p>');
+  assert.ok(fieldsetAt > 0 && legendAt > fieldsetAt, "la leyenda está dentro del fieldset que la describe");
+  assert.ok(legendAt < company.indexOf("</fieldset>", fieldsetAt), "la leyenda y el fieldset son del mismo formulario");
+  assert.equal(count(company, /id="empresa-leyenda-obligatorios"/g), 1, "el id es único");
+  console.log("OK: Empresa — accesibilidad: aria-required, Opcional en el nombre, aria-invalid/aria-describedby, rubro y leyenda");
+
+  console.log("DISCLOSURE_SMOKE_OK");
+} finally {
+  await vite.close();
+}

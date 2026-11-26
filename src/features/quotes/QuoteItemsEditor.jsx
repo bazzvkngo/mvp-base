@@ -1,115 +1,89 @@
-import React from "react";
-import BarcodeInput from "../../components/barcode/BarcodeInput";
-import { useBusinessMoney } from "../../hooks/useBusinessFormat";
+import React, {useMemo} from "react";
+import DocumentItemsEditor from "../../components/ui/DocumentItemsEditor";
+import Notice from "../../components/ui/Notice";
 
-const TYPE_LABELS = {
-  producto: "Producto",
-  servicio: "Servicio",
-  actividad: "Actividad",
-};
+// Ítems de la cotización: el bloque compartido en modo "venta" (precio unitario), el mismo de Ventas, Compras y Órdenes
+// de compra, con "Escanear producto" y "Agregar desde inventario". Aquí solo se conecta lo propio de la cotización:
+// las flechas para reordenar, la descripción comercial de cada línea (visible bajo la fila) y el total de línea que ya
+// calcula la página con calculateQuoteLineAmounts.
+// Los campos de una línea de cotización se llaman distinto (`precioUnitarioEditable`, `descuentoPorcentaje`); el
+// adaptador los entrega al bloque con los nombres del documento y traduce de vuelta cada cambio a los mismos manejadores
+// de siempre (onUpdate / onRemove / onMove), así la lógica de la página no cambia.
+const FIELD_TO_QUOTE = Object.freeze({
+  cantidad: "cantidad",
+  precioUnitario: "precioUnitarioEditable",
+  descuentoPct: "descuentoPorcentaje",
+});
+const lineKey = (item) => item.lineaId || item.itemId;
 
 function QuoteItemsEditor({
   feedback,
   highlightedItemId,
   items,
+  moneyStep = "any",
   onMove,
   onOpenCatalog,
   onScanProduct,
   onRemove,
   onUpdate,
-  subtotal,
   validationError,
 }) {
-  const formatBusinessAmount = useBusinessMoney();
+  const lines = useMemo(() => items.map((item) => ({
+    ...item,
+    codigo: item.codigo || item.inventarioSnapshot?.codigoInterno || "",
+    descuentoPct: item.descuentoPorcentaje ?? 0,
+    lineaId: lineKey(item),
+    precioUnitario: item.precioUnitarioEditable,
+  })), [items]);
+
+  const handleChange = (next) => {
+    if (next.length < lines.length) {
+      const removed = lines.find((line) => !next.some((entry) => entry.lineaId === line.lineaId));
+      if (removed) onRemove(removed.lineaId);
+      return;
+    }
+    next.forEach((entry, index) => {
+      Object.entries(FIELD_TO_QUOTE).forEach(([field, quoteField]) => {
+        if (entry[field] !== lines[index][field]) onUpdate(entry.lineaId, quoteField, entry[field]);
+      });
+    });
+  };
+
+  const notice = (feedback || validationError || items.length > 0) && (
+    <>
+      {feedback && <Notice variant="info">{feedback}</Notice>}
+      {validationError && <Notice variant="error">{validationError}</Notice>}
+      {items.length > 0 && <p className="ui-step-head__count">La descripción y el descuento de cada línea solo cambian esta cotización; el inventario no se modifica.</p>}
+    </>
+  );
+
   return (
-    <section className="quote-workspace__panel quote-items no-print">
-      <header className="quote-workspace__panel-header">
-        <div>
-          <span className="quote-workspace__kicker">Detalle comercial</span>
-          <h2>Ítems de la cotización</h2>
-          <p>
-            {items.length === 0
-              ? "Sin ítems agregados"
-              : `${items.length} ítem${items.length === 1 ? "" : "s"} · Subtotal ${formatBusinessAmount(subtotal)}`}
-          </p>
-        </div>
-        <div className="quote-workspace__inline-actions">
-          <BarcodeInput actionOnly continuous actionLabel="Escanear producto" onSubmit={onScanProduct} />
-          <button type="button" className="quote-workspace__button quote-workspace__button--primary" onClick={onOpenCatalog}>
-            Agregar desde catálogo
-          </button>
-        </div>
-      </header>
-
-      {feedback && <p className="quote-workspace__feedback" aria-live="polite">{feedback}</p>}
-
-      {items.length === 0 ? (
-        <div className="quote-workspace__empty quote-workspace__empty--items">
-          <strong>Agrega el detalle de la cotización</strong>
-          <span>Agrega productos, servicios o actividades para construir la cotización.</span>
-        </div>
-      ) : (
-        <div className="quote-items__list">
-          <div className="quote-items__head" aria-hidden="true">
-            <span>Ítem</span><span>Cantidad</span><span>Precio</span><span>Desc.</span><span>Total</span><span>Acciones</span>
-          </div>
-          {items.map((item, index) => {
-            const lineId = item.lineaId || item.itemId;
-            const code = item.codigo || item.inventarioSnapshot?.codigoInterno || `Ítem ${index + 1}`;
-            return (
-              <article
-                key={lineId}
-                className={`quote-item${highlightedItemId === item.itemId ? " quote-item--highlighted" : ""}`}
-              >
-                <div className="quote-item__identity">
-                  <strong>{item.nombre}</strong>
-                  <span>{code} · {TYPE_LABELS[item.tipoItem] || item.tipoItem || "Ítem"} · {item.unidad || "Sin unidad"}</span>
-                </div>
-                <label className="quote-item__field">
-                  <span>Cantidad</span>
-                  <input type="number" min="0" step="0.01" value={item.cantidad} onChange={(event) => onUpdate(lineId, "cantidad", event.target.value)} />
-                </label>
-                <label className="quote-item__field">
-                  <span>Precio</span>
-                  <input type="number" min="0" value={item.precioUnitarioEditable} onChange={(event) => onUpdate(lineId, "precioUnitarioEditable", event.target.value)} />
-                </label>
-                <label className="quote-item__field">
-                  <span>Descuento %</span>
-                  <input type="number" min="0" max="100" step="0.01" value={item.descuentoPorcentaje ?? 0} onChange={(event) => onUpdate(lineId, "descuentoPorcentaje", event.target.value)} />
-                </label>
-                <div className="quote-item__total">
-                  <span>Total</span>
-                  <strong>{formatBusinessAmount(item.totalLinea)}</strong>
-                </div>
-                <div className="quote-item__actions">
-                  <button type="button" aria-label={`Subir ${item.nombre}`} disabled={index === 0} onClick={() => onMove(index, -1)}>↑</button>
-                  <button type="button" aria-label={`Bajar ${item.nombre}`} disabled={index === items.length - 1} onClick={() => onMove(index, 1)}>↓</button>
-                  <button type="button" className="quote-item__remove" onClick={() => onRemove(lineId)}>Quitar</button>
-                </div>
-                <details className="quote-item__details">
-                  <summary>Personalizar ítem</summary>
-                  <div>
-                    <label>
-                      <span>Descripción para esta cotización</span>
-                      <textarea rows="2" value={item.descripcionComercial ?? item.descripcion ?? ""} onChange={(event) => onUpdate(lineId, "descripcionComercial", event.target.value)} />
-                    </label>
-                    <p className="quote-item__details-help">
-                      Personaliza cómo aparecerá este ítem en la propuesta. No modifica el producto del catálogo.
-                    </p>
-                    <label>
-                      <span>Unidad de cobro</span>
-                      <input value={item.unidad || ""} onChange={(event) => onUpdate(lineId, "unidad", event.target.value)} />
-                    </label>
-                  </div>
-                </details>
-              </article>
-            );
-          })}
-        </div>
+    <DocumentItemsEditor
+      emptyText="Agrega productos, servicios o actividades para construir la cotización."
+      getLineClassName={(line) => (highlightedItemId && highlightedItemId === line.itemId ? "ui-doc-line--highlighted" : "")}
+      getLineTotal={(line) => line.totalLinea}
+      items={lines}
+      mode="venta"
+      moneyStep={moneyStep}
+      notice={notice}
+      onChange={handleChange}
+      onMoveLine={onMove}
+      onOpenCatalog={onOpenCatalog}
+      onScanProduct={onScanProduct}
+      renderLineDescription={(line) => (
+        <label className="quote-line-note">
+          <span className="ui-doc-line__caption">Descripción para esta cotización</span>
+          <textarea
+            className="ui-doc-line__input quote-line-note__input"
+            rows="2"
+            value={line.descripcionComercial ?? line.descripcion ?? ""}
+            onChange={(event) => onUpdate(line.lineaId, "descripcionComercial", event.target.value)}
+          />
+        </label>
       )}
-
-      {validationError && <p className="quote-workspace__message quote-workspace__message--error" role="alert">{validationError}</p>}
-    </section>
+      title="¿Qué cotizas?"
+      titleId="quote-items-title"
+    />
   );
 }
 

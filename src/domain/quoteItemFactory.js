@@ -23,7 +23,8 @@ function optionalFiniteNumber(value) {
   return Number.isFinite(numberValue) ? numberValue : null;
 }
 
-export function createQuoteItemFromValuation(valuation) {
+// `montoDecimales`: decimales de cálculo del documento (0 = entero, como siempre).
+export function createQuoteItemFromValuation(valuation, { montoDecimales = 0 } = {}) {
   const inventoryItem = valuation?.item || {};
   const commercialPrice =
     optionalFiniteNumber(inventoryItem.precioInterno) ??
@@ -76,7 +77,7 @@ export function createQuoteItemFromValuation(valuation) {
       },
     },
     0,
-    { strict: true }
+    { strict: true, montoDecimales }
   );
 }
 

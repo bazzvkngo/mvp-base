@@ -201,6 +201,8 @@ assert.deepEqual(documentLocalizationSnapshot({
   locale: "es-CL",
   impuestoNombre: "IVA",
   tasaIva: 0.19,
+  // SPEC 036: decimales de cálculo congelados (amountDecimals de CLP: 0).
+  montoDecimales: 0,
 });
 assert.equal(documentLocalizationSnapshot({
   contratoJurisdiccionalVersion: 1,
@@ -263,7 +265,9 @@ const ownerVerificationUi = companyUi.slice(
 );
 assert.doesNotMatch(ownerVerificationUi, /razonSocial/);
 assert.doesNotMatch(companyUi, /Acción reservada al OWNER/i);
-assert.match(companyUi, /https:\/\/www\.empresa\.com/);
+// El ejemplo de sitio web sale del helper por país (Chile conserva https://www.empresa.cl).
+assert.match(companyUi, /placeholder=\{countryCopy\.companyWebsiteExample\}/);
+assert.equal((await import("../src/domain/countryFormCopy.mjs")).getCountryFormCopy("CL").companyWebsiteExample, "https://www.empresa.cl");
 assert.match(ownerVerificationUi, /label="País"/);
 assert.match(ownerVerificationUi, /label="Tipo de identificación fiscal"/);
 assert.match(ownerVerificationUi, /Documento de respaldo/);
@@ -297,11 +301,21 @@ assert.match(companyUi, /Empresa no verificada/);
 assert.doesNotMatch(companyUi, /Empresa pendiente de verificación/);
 assert.doesNotMatch(companyUi, /Pendiente de verificación/);
 assert.match(businessCompletion, /Correo del propietario verificado/);
-assert.match(companyUi, /<h1>Empresa<\/h1>/);
+// A2: el h1 de Empresa lo dibuja ModuleHeader (ícono y título de navigation.js); la barra superior
+// solo muestra el negocio porque /empresa está en PAGE_HEADING_ROUTES. Un único h1 por pantalla.
+assert.doesNotMatch(companyUi, /<h1\b/);
+assert.match(companyUi, /const MODULE = getRouteMeta\("\/empresa"\);/);
+assert.match(companyUi, /<ModuleHeader description=\{MODULE_DESCRIPTION\} icon=\{MODULE\.icon\} title=\{MODULE\.title\} \/>/);
+assert.equal((companyUi.match(/<ModuleHeader\b/g) || []).length, 2, "ModuleHeader con y sin negocio activo");
 assert.doesNotMatch(companyUi, /OWNER · Puede editar/);
+// EM1 (cambio de decisión): antes (commit ecf5e6d) estos campos no llevaban "Opcional" porque la
+// completitud los trataba como "recomendados por completar". Hoy el backend no exige ninguno de ellos
+// (functions/businessOnboarding.js validateBusinessProfileInput), así que se marcan "Opcional" para
+// que los obligatorios (Nombre comercial, Rubro principal, Región con "*") se distingan a simple vista.
+assert.doesNotMatch(companyUi, /label="Razón social"/, "la razón social sigue bloqueada: no hay campo editable");
+// "Giro" es la etiqueta de Chile: sale del helper por país (Bolivia: "Actividad económica") y sigue siendo opcional.
+assert.match(companyUi, /<SettingsField label=\{countryCopy\.businessActivityLabel\} optional/);
 for (const label of [
-  "Razón social",
-  "Giro",
   "Comuna \/ ciudad",
   "Código postal",
   "Dirección comercial",
@@ -309,7 +323,11 @@ for (const label of [
   "Correo comercial",
   "Sitio web",
 ]) {
-  assert.doesNotMatch(companyUi, new RegExp(`label="${label}"[^>]*optional`));
+  assert.match(companyUi, new RegExp(`<SettingsField label="${label}" optional`));
+}
+for (const label of ["Nombre comercial", "Región"]) {
+  assert.match(companyUi, new RegExp(`<SettingsField label="${label}" required`));
+  assert.doesNotMatch(companyUi, new RegExp(`<SettingsField label="${label}"[^>]*optional`));
 }
 assert.doesNotMatch(initialActivation, /Hacerlo después/);
 assert.match(initialActivation, /\/empresa\?seccion=verificacion/);

@@ -85,33 +85,49 @@ for (const documentKey of Object.keys(LEGAL_DOCUMENTS)) {
 console.log("OK Legal: cada documento tiene 12 secciones con contenido");
 
 assert.deepEqual(LEGAL_PROVIDER, {
-  razonSocial: "[RAZON_SOCIAL_BAGNER]",
-  rut: "[RUT_BAGNER]",
-  domicilio: "[DOMICILIO_BAGNER]",
-  correoPrivacidad: "[CORREO_PRIVACIDAD]",
+  razonSocial: "Servicios Integrales Bagner SpA",
+  rut: "77.091.679-8",
+  domicilio: "Tamarugal 2985, Iquique, Chile",
+  correoPrivacidad: "bruno.pairumani@bagner.cl",
   sitio: "https://valoracloud.bagner.cl",
 });
 const privacyText = documentText("privacidad");
 const termsText = documentText("terminos");
-for (const marker of [
+for (const value of [
   LEGAL_PROVIDER.razonSocial,
   LEGAL_PROVIDER.rut,
   LEGAL_PROVIDER.domicilio,
   LEGAL_PROVIDER.correoPrivacidad,
 ]) {
-  assert.ok(privacyText.includes(marker), `privacidad usa ${marker}`);
+  assert.ok(privacyText.includes(value), `privacidad incluye ${value}`);
 }
-for (const marker of [
+for (const value of [
   LEGAL_PROVIDER.razonSocial,
   LEGAL_PROVIDER.rut,
   LEGAL_PROVIDER.correoPrivacidad,
 ]) {
-  assert.ok(termsText.includes(marker), `términos usa ${marker}`);
+  assert.ok(termsText.includes(value), `términos incluye ${value}`);
+}
+assert.doesNotMatch(Object.values(LEGAL_PROVIDER).join("\n"), /[[\]]/, "LEGAL_PROVIDER sin marcadores");
+// Ningún marcador de proveedor sin completar: los únicos corchetes que quedan
+// en los textos son [CONFIRMAR ...] y [A DEFINIR ...].
+for (const [name, text] of [["privacidad", privacyText], ["términos", termsText]]) {
+  assert.doesNotMatch(text, /_BAGNER\]|\[CORREO_PRIVACIDAD\]|\[RAZON_SOCIAL|\[RUT|\[DOMICILIO/, `${name}: sin marcadores de proveedor`);
+  for (const marker of text.match(/\[[^\]]*\]/g) || []) {
+    assert.match(marker, /^\[(?:CONFIRMAR|A DEFINIR)\b/, `${name}: marcador inesperado ${marker}`);
+  }
+  // Solo el correo de privacidad de Bagner: ningún otro correo ni teléfono.
+  const emails = new Set(text.match(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g) || []);
+  assert.deepEqual([...emails], [LEGAL_PROVIDER.correoPrivacidad], `${name}: un solo correo`);
+  assert.doesNotMatch(text, /\+56|\b\d{9}\b/, `${name}: sin teléfono`);
 }
 assert.equal(privacyText.match(/\[CONFIRMAR/g).length, 4);
+assert.equal(privacyText.match(/\[A DEFINIR/g).length, 1);
 assert.equal(termsText.match(/\[A DEFINIR/g).length, 4);
 assert.equal(termsText.includes("[CONFIRMAR"), false);
-console.log("OK Legal: marcadores del proveedor, [CONFIRMAR] y [A DEFINIR] conservados");
+assert.match(privacyText, /correo de las personas invitadas a un equipo, incluso si todavía no tienen cuenta/);
+assert.match(privacyText, /vigencia de 7 días[\s\S]*?\[A DEFINIR plazo de eliminación de invitaciones\]/);
+console.log("OK Legal: datos reales del proveedor, sin marcadores de proveedor; solo [CONFIRMAR] y [A DEFINIR] de plazos o decisiones");
 
 const publicBlockStart = appSource.indexOf("/^\\/propuesta\\/");
 const legalRoutesBlock = appSource.indexOf("(privacidad|terminos)");

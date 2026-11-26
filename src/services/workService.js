@@ -1,11 +1,12 @@
 import {collection, doc, getDoc, getDocs, query, where} from "firebase/firestore";
 import {httpsCallable} from "firebase/functions";
-import {getDownloadURL, ref as storageRef, uploadBytes} from "firebase/storage";
+import {getDownloadURL, getMetadata, ref as storageRef, uploadBytes} from "firebase/storage";
 import {assertCloudFunctionAllowed} from "../config/firebaseEnvironment.mjs";
 import {adaptStoredQuote} from "../domain/quoteModel.mjs";
 import {adaptStoredSale} from "../domain/saleModel.mjs";
 import {adaptStoredWork, adaptWorkAdditional, adaptWorkBalance, adaptWorkEvent, adaptWorkExpense, adaptWorkLabor, adaptWorkLink, adaptWorkMaterialMovement, adaptWorkNote, adaptWorkTask, adaptWorkTaskDocumentation, buildWorkExpenseEvidenceFileName, buildWorkMutationPayload, validateWorkExpenseEvidenceSelection} from "../domain/workModel.mjs";
 import {db, getFirebaseFunctions, storage} from "../firebase/firebaseConfig";
+import {uploadEvidenceObject} from "./workEvidenceUpload.mjs";
 import {inventoryMovementsCollectionPath, quoteDocPath, saleDocPath, workAdditionalsCollectionPath, workExpensesCollectionPath, workHistoryCollectionPath, workLaborCollectionPath, workLinksCollectionPath, workNotesCollectionPath, worksCollectionPath, workTaskDocumentationCollectionPath, workTasksCollectionPath} from "../firebase/firestorePaths";
 
 const functions = getFirebaseFunctions("us-central1");
@@ -187,6 +188,10 @@ export async function documentarTareaTrabajo(rawBusinessId, rawWorkId, tareaId, 
   return (await call("documentarTareaTrabajo", {businessId: businessId(rawBusinessId), trabajoId: workId(rawWorkId), tareaId, texto, requestId}, "documentar tareas")).data;
 }
 
+export async function anularDocumentacionTareaTrabajo(rawBusinessId, rawWorkId, tareaId, documentacionId, motivo, requestId) {
+  return (await call("anularDocumentacionTareaTrabajo", {businessId: businessId(rawBusinessId), trabajoId: workId(rawWorkId), tareaId, documentacionId, motivo, requestId}, "anular comentarios de tareas")).data;
+}
+
 export async function eliminarTareaTrabajo(rawBusinessId, rawWorkId, tareaId, requestId) {
   return (await call("eliminarTareaTrabajo", {businessId: businessId(rawBusinessId), trabajoId: workId(rawWorkId), tareaId, requestId}, "eliminar tareas")).data;
 }
@@ -217,20 +222,23 @@ export async function adjuntarEvidenciaGastoTrabajo(rawBusinessId, rawWorkId, ga
 // declara contentType/size al backend, sólo el nombre de archivo ya sano.
 // La validación/saneo son los mismos helpers puros de workModel.mjs que ya
 // usa WorkExpenseEvidence.jsx para la UX, para no duplicar la regla.
-export async function subirEvidenciaGastoTrabajo(rawBusinessId, rawWorkId, gastoId, file, requestId) {
+//
+// `fileName` (opcional) permite reintentar el mismo adjunto con el mismo nombre y el mismo requestId: la compra al
+// paso lo fija una vez por archivo elegido. Si en el primer intento el archivo ya se había subido y solo falló el
+// registro (Storage es create-only: subirlo de nuevo se rechazaría), el reintento detecta el objeto existente y
+// solo registra la metadata, sin volver a subir ni duplicar nada.
+export async function subirEvidenciaGastoTrabajo(rawBusinessId, rawWorkId, gastoId, file, requestId, {fileName: stableFileName} = {}) {
   const id = businessId(rawBusinessId);
   const wId = workId(rawWorkId);
   const validation = validateWorkExpenseEvidenceSelection(file, 0);
   if (!validation.ok) throw new Error(validation.reason);
-  const fileName = buildWorkExpenseEvidenceFileName(file.name, file.type);
+  const fileName = stableFileName || buildWorkExpenseEvidenceFileName(file.name, file.type);
   const path = `negocios/${id}/trabajos/${wId}/gastos/${gastoId}/${fileName}`;
-  try {
-    await uploadBytes(storageRef(storage, path), file, {contentType: file.type});
-  } catch (uploadFailure) {
-    const error = new Error("No pudimos subir el documento. Intenta nuevamente.");
-    error.cause = uploadFailure;
-    throw error;
-  }
+  await uploadEvidenceObject({
+    upload: () => uploadBytes(storageRef(storage, path), file, {contentType: file.type}),
+    objectExists: () => getMetadata(storageRef(storage, path)),
+    stableFileName,
+  });
   return adjuntarEvidenciaGastoTrabajo(id, wId, gastoId, fileName, requestId);
 }
 

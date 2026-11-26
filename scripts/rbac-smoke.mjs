@@ -15,6 +15,7 @@ import {
 
 const require = createRequire(import.meta.url);
 const backendRbac = require("../functions/rbac.js");
+const tallerRbac = require("../functions/tallerAccess.js");
 const {crearVentaHandler} = require("../functions/salePersistence.js");
 const {crearCompraHandler} = require("../functions/purchasePersistence.js");
 const {obtenerBalanceTrabajoHandler} = require("../functions/workBalance.js");
@@ -24,9 +25,35 @@ assert.ok(BUSINESS_ROLES.includes("MEMBER"));
 assert.ok(ASSIGNABLE_BUSINESS_ROLES.includes("MEMBER"));
 assert.ok(!BUSINESS_ROLES.includes("PLATFORM_SUPERADMIN"));
 assert.deepEqual(backendRbac.BUSINESS_ROLES, BUSINESS_ROLES);
+assert.equal(Object.hasOwn(backendRbac, "TALLER_MANAGEMENT_ROLES"), false);
+assert.equal(Object.hasOwn(backendRbac, "TALLER_CREATION_ROLES"), false);
+assert.deepEqual(tallerRbac.TALLER_MANAGEMENT_ROLES, ["OWNER", "ADMIN"]);
+assert.deepEqual(tallerRbac.TALLER_CREATION_ROLES, ["OWNER", "ADMIN", "TECNICO"]);
 console.log("OK RBAC: perfiles predefinidos compatibles y Colaborador asignable");
 
 const P = BUSINESS_PERMISSIONS;
+assert.deepEqual(
+  tallerRbac.INVENTORY_COSTS_READ_ROLES,
+  BUSINESS_ROLES.filter((role) => hasBusinessPermission(role, P.INVENTORY_COSTS_READ))
+);
+assert.deepEqual(
+  tallerRbac.PRICING_READ_ROLES,
+  BUSINESS_ROLES.filter((role) => hasBusinessPermission(role, P.PRICING_READ))
+);
+const {hasTallerCapability, requireTallerAccess} = tallerRbac;
+const workshopCapabilities = {read: P.TALLER_READ, operate: P.TALLER_OPERATE,
+  create: P.TALLER_CREATE, approve: P.TALLER_MANAGE, manage: P.TALLER_MANAGE};
+for (const role of BUSINESS_ROLES) {
+  for (const [capability, permission] of Object.entries(workshopCapabilities)) {
+    assert.equal(hasTallerCapability({rol: role}, capability), hasBusinessPermission(role, permission),
+      `${role}: ${capability} debe coincidir entre UI y backend`);
+  }
+  assert.equal(
+    hasTallerCapability({rol: role}, "costs"),
+    hasBusinessPermission(role, P.TALLER_READ) && hasBusinessPermission(role, P.INVENTORY_COSTS_READ),
+    `${role}: costs debe derivar de INVENTORY_COSTS_READ para roles con acceso a Taller`
+  );
+}
 assert.equal(hasBusinessPermission("VENTAS", P.SALES_WRITE), true);
 assert.equal(hasBusinessPermission("VENTAS", P.PURCHASES_READ), false);
 assert.equal(hasBusinessPermission("COMPRAS", P.PURCHASES_WRITE), true);
@@ -66,6 +93,25 @@ assert.equal(hasBusinessPermission("FINANZAS", P.PROFITABILITY_READ), true);
 assert.equal(hasBusinessPermission("FINANZAS", P.COMPANY_WRITE), false);
 assert.equal(hasBusinessPermission("MEMBER", P.CLIENTS_READ), true);
 assert.equal(hasBusinessPermission("MEMBER", P.CLIENTS_WRITE), false);
+
+let tallerAccessOptions;
+const tallerContext = {membership: {rol: "OWNER"}};
+const resolvedTallerContext = await requireTallerAccess(
+  {auth: {uid: "owner"}, data: {businessId: "business"}},
+  {
+    db: {},
+    HttpsError: class HttpsError extends Error {},
+    requireBusinessAccess: async (_request, _dependencies, options) => {
+      tallerAccessOptions = options;
+      return tallerContext;
+    },
+  },
+  "read"
+);
+assert.equal(resolvedTallerContext, tallerContext);
+assert.equal(tallerAccessOptions.requiredVerticalModule, "taller");
+assert.equal(tallerAccessOptions.requiresVerifiedBusiness, true);
+assert.equal(Object.hasOwn(tallerAccessOptions, "moduleId"), false);
 console.log("OK RBAC: matriz mínima por dominio y compatibilidad MEMBER");
 
 assert.equal(canAccessBusinessPath("VENTAS", "/ventas/nueva"), true);
@@ -73,6 +119,10 @@ assert.equal(canAccessBusinessPath("VENTAS", "/compras"), false);
 assert.equal(canAccessBusinessPath("COMPRAS", "/ordenes-compra/nueva"), true);
 assert.equal(canAccessBusinessPath("COMPRAS", "/ventas"), false);
 assert.equal(canAccessBusinessPath("TECNICO", "/trabajos"), true);
+const tallerEnabled = {enabledModules: ["taller"]};
+assert.equal(canAccessBusinessPath({role: "TECNICO"}, "/taller/ordenes"), false);
+assert.equal(canAccessBusinessPath({role: "TECNICO"}, "/taller/ordenes", tallerEnabled), true);
+assert.equal(canAccessBusinessPath({role: "VENTAS"}, "/taller/ordenes", tallerEnabled), false);
 assert.equal(canAccessBusinessPath("TECNICO", "/reportes"), false);
 assert.equal(canAccessBusinessPath("FINANZAS", "/reportes"), true);
 assert.equal(canAccessBusinessPath("FINANZAS", "/empresa"), false);
@@ -131,18 +181,113 @@ assert.equal(getDefaultBusinessPath("OWNER", {enabledModules: ["aterrizaje"], re
 assert.equal(getDefaultBusinessPath({role: "OWNER"}, {enabledModules: ["aterrizaje"], registry: landingRegistry}), "/reportes");
 assert.equal(getDefaultBusinessPath({role: "VENTAS"}, {registry: landingRegistry}), "/cotizaciones");
 // Menú: el ítem vertical solo aparece habilitado.
-const verticalMenu = [{label: "Modulos", items: [{to: "/clientes"}, {to: "/ventas"}]}];
+const verticalMenu = [{label: "Modulos", items: [{
+  to: "/clientes",
+  children: [
+    {to: "/clientes/listado"},
+    {to: "/clientes/administracion", requiredPermission: P.CLIENTS_WRITE},
+  ],
+}, {to: "/ventas"}]}];
 const menuTargets = (options) => filterNavigationSections(verticalMenu, {role: "OWNER"}, options).flatMap((section) => section.items.map((item) => item.to));
 assert.deepEqual(menuTargets(withoutModule), ["/ventas"]);
 assert.deepEqual(menuTargets(withModule), ["/clientes", "/ventas"]);
-// Con el registro real (vacio) nada cambia y las opciones salen de la sesion.
-assert.deepEqual(getBusinessPathOptions({modulosHabilitados: ["taller"]}), {enabledModules: []}, "el registro real vacio descarta todo");
+const ownerNestedTargets = filterNavigationSections(verticalMenu, {role: "OWNER"}, withModule)[0].items[0].children.map((item) => item.to);
+const technicianNestedTargets = filterNavigationSections(verticalMenu, {role: "TECNICO"}, withModule);
+assert.deepEqual(ownerNestedTargets, ["/clientes/listado", "/clientes/administracion"]);
+assert.deepEqual(technicianNestedTargets, [], "sin acceso al padre no se filtran hijos aislados");
+const readOnlyNestedTargets = filterNavigationSections(verticalMenu, {role: "VENTAS"}, withModule)[0].items[0].children.map((item) => item.to);
+assert.deepEqual(readOnlyNestedTargets, ["/clientes/listado", "/clientes/administracion"], "VENTAS conserva clients.write");
+const memberNestedTargets = filterNavigationSections(verticalMenu, {role: "MEMBER"}, withModule)[0].items[0].children.map((item) => item.to);
+assert.deepEqual(memberNestedTargets, ["/clientes/listado"], "requiredPermission oculta acciones de administración");
+const tallerMenu = [{label: "Módulos", items: [{
+  to: "/taller",
+  children: [
+    {to: "/taller/ordenes"},
+    {to: "/taller/vehiculos"},
+    {to: "/taller/plazas", requiredPermission: P.TALLER_MANAGE},
+  ],
+}]}];
+const tallerMenuOptions = getBusinessPathOptions({modulosHabilitados: ["taller"]});
+const tallerTargetsFor = (role) => filterNavigationSections(tallerMenu, {role}, tallerMenuOptions)[0]
+  .items[0].children.map((item) => item.to);
+assert.deepEqual(tallerTargetsFor("OWNER"), ["/taller/ordenes", "/taller/vehiculos", "/taller/plazas"]);
+assert.deepEqual(tallerTargetsFor("ADMIN"), ["/taller/ordenes", "/taller/vehiculos", "/taller/plazas"]);
+assert.deepEqual(tallerTargetsFor("TECNICO"), ["/taller/ordenes", "/taller/vehiculos"]);
+assert.deepEqual(tallerTargetsFor("MEMBER"), ["/taller/ordenes", "/taller/vehiculos"]);
+// Con el registro real, las opciones conservan solo los verticales conocidos
+// que vienen habilitados en la sesion.
+assert.deepEqual(getBusinessPathOptions({modulosHabilitados: ["taller"]}), {enabledModules: ["taller"]});
 assert.deepEqual(getBusinessPathOptions(undefined), {enabledModules: []});
 assert.equal(canAccessBusinessPath({role: "OWNER"}, "/clientes", getBusinessPathOptions({role: "OWNER"})), true);
 // Ningun vertical entra en BUSINESS_MODULES.
 for (const entry of testRegistry) assert.equal(BUSINESS_MODULES.includes(entry.id), false);
 assert.equal(BUSINESS_MODULES.includes("taller"), false);
 assert.equal(BUSINESS_MODULES.includes("veterinaria"), false);
+// Veterinaria: la ruta exige modulo habilitado y permiso clinico.
+const veterinaryDisabled = getBusinessPathOptions({
+  role: "OWNER",
+  modulosHabilitados: [],
+});
+const veterinaryEnabled = getBusinessPathOptions({
+  role: "OWNER",
+  modulosHabilitados: ["veterinaria"],
+});
+
+assert.equal(
+  canAccessBusinessPath({role: "OWNER"}, "/clinica-veterinaria", veterinaryDisabled),
+  false,
+  "OWNER no accede con veterinaria deshabilitada"
+);
+assert.equal(
+  canAccessBusinessPath({role: "ADMIN"}, "/clinica-veterinaria", veterinaryDisabled),
+  false,
+  "ADMIN no accede con veterinaria deshabilitada"
+);
+assert.equal(
+  canAccessBusinessPath({role: "OWNER"}, "/clinica-veterinaria", veterinaryEnabled),
+  true,
+  "OWNER accede con veterinaria habilitada"
+);
+assert.equal(
+  canAccessBusinessPath({role: "ADMIN"}, "/clinica-veterinaria/pacientes", veterinaryEnabled),
+  true,
+  "ADMIN accede a rutas internas con veterinaria habilitada"
+);
+assert.equal(
+  canAccessBusinessPath({role: "TECNICO"}, "/clinica-veterinaria", veterinaryEnabled),
+  false,
+  "TECNICO no tiene permiso clinico"
+);
+assert.equal(
+  canAccessBusinessPath({role: "MEMBER"}, "/clinica-veterinaria", veterinaryEnabled),
+  false,
+  "MEMBER no tiene permiso clinico"
+);
+
+for (const role of ["VENTAS", "COMPRAS", "FINANZAS"]) {
+  assert.equal(
+    canAccessBusinessPath({role}, "/clinica-veterinaria", veterinaryEnabled),
+    false,
+    `${role} no tiene permiso clinico`
+  );
+}
+const veterinaryMember = {role: "MEMBER", profileId: "p", modules: ["clientes", "ventas"]};
+const veterinaryMenu = [{label: "Módulos", items: [
+  {to: "/clientes"},
+  {to: "/clinica-veterinaria"},
+]}];
+const visibleVeterinaryTargets = (access, options) =>
+  filterNavigationSections(veterinaryMenu, access, options)
+    .flatMap((section) => section.items.map((item) => item.to));
+
+assert.equal(canAccessBusinessPath(veterinaryMember, "/clinica-veterinaria", veterinaryEnabled), false);
+assert.deepEqual(visibleVeterinaryTargets(veterinaryMember, veterinaryEnabled), ["/clientes"]);
+assert.deepEqual(visibleVeterinaryTargets({role: "ADMIN"}, veterinaryDisabled), ["/clientes"]);
+assert.deepEqual(visibleVeterinaryTargets({role: "ADMIN"}, veterinaryEnabled), ["/clientes", "/clinica-veterinaria"]);
+for (const role of ["VENTAS", "TECNICO"]) {
+  assert.ok(!visibleVeterinaryTargets({role}, veterinaryEnabled).includes("/clinica-veterinaria"));
+}
+console.log("OK RBAC: Veterinaria exige módulo habilitado y permiso clínico en ruta y menú");
 console.log("OK RBAC: rutas verticales exigen modulo habilitado ademas del permiso");
 
 function rejectingDependencies(role) {

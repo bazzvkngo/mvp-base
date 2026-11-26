@@ -674,6 +674,8 @@ module.exports = {
   PROVIDER_MODEL_VERSION,
   actualizarProveedorHandler,
   archivarProveedorHandler,
+  assertReservationOwner,
+  assertStoredProvider,
   crearProveedorHandler,
   formatChileanRut,
   getProviderRutKey,
@@ -681,4 +683,5 @@ module.exports = {
   normalizeChileanRut,
   normalizeProviderInput,
   reactivarProveedorHandler,
+  validateProviderId,
 };

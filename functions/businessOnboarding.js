@@ -23,6 +23,7 @@ const { legalAcceptanceState } = require("./legalAcceptance");
 const {BUSINESS_ROLES} = require("./rbac");
 const {assertBusinessModuleEnabled} = require("./moduleAccess");
 const {normalizeEnabledModules} = require("./verticalModules");
+const {categoryModulesPatch, modulesForCategory} = require("./categoryModules");
 const ACTIVE_STATUS = "activo";
 const DELETED_STATUS = "eliminada";
 const PILOT_OWNER_BUSINESS_LIMIT = null;
@@ -42,6 +43,69 @@ const regionsByCode = new Map(
 
 function safeText(value, maxLength = 180) {
   return String(value || "").trim().replace(/\s+/g, " ").slice(0, maxLength);
+}
+
+// Países con catálogo de región distinto de Chile (Chile sigue en catalog.regions,
+// con sus comunas). Hoy solo Bolivia (departamentos). Sin lista de municipios.
+const territoriesByCountry = catalog.territoriesByCountry || {};
+
+function foldText(value) {
+  return safeText(value, 120)
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase();
+}
+
+function hasTerritoryCatalog(countryCode) {
+  return Object.prototype.hasOwnProperty.call(territoriesByCountry, countryCode);
+}
+
+function regionLabelForCountry(countryCode) {
+  return hasTerritoryCatalog(countryCode)
+    ? territoriesByCountry[countryCode].regionLabel || "Región"
+    : "Región";
+}
+
+// Resuelve la región de un país con catálogo (no Chile). Devuelve la región del
+// catálogo, `{code: "", name: ""}` si falta y la región es opcional, o `null`
+// si lo enviado no pertenece al catálogo del país. Compatibilidad: un negocio
+// existente con una región en texto libre puede conservarla sin cambios.
+function resolveCatalogRegion(
+  countryCode,
+  data,
+  { regionRequired, existingBusiness }
+) {
+  const regions = territoriesByCountry[countryCode].regions;
+  const regionCode = safeText(data.regionCodigo, 10).toUpperCase();
+  if (regionCode) {
+    return regions.find((item) => item.code === regionCode) || null;
+  }
+  const submittedName = safeText(data.regionEstado || data.regionNombre, 120);
+  if (submittedName) {
+    const byName = regions.find(
+      (item) => foldText(item.name) === foldText(submittedName)
+    );
+    if (byName) return byName;
+    const existingName = safeText(
+      existingBusiness?.regionEstado || existingBusiness?.regionNombre,
+      120
+    );
+    const existingCountry = safeText(existingBusiness?.paisCodigo, 10)
+      .toUpperCase();
+    if (
+      existingBusiness &&
+      existingCountry === countryCode &&
+      existingName &&
+      foldText(existingName) === foldText(submittedName)
+    ) {
+      return {
+        code: safeText(existingBusiness.regionCodigo, 10),
+        name: existingName,
+      };
+    }
+    return null;
+  }
+  return regionRequired ? null : { code: "", name: "" };
 }
 
 function normalizeRut(value) {
@@ -202,17 +266,31 @@ function validateRequiredBusinessFields(
     existingBusiness,
   });
   const regionCode = safeText(data.regionCodigo, 2);
-  const region = country.code === "CL"
-    ? regionsByCode.get(regionCode) ||
+  let region;
+  if (country.code === "CL") {
+    region = regionsByCode.get(regionCode) ||
       (!regionRequired && !regionCode
         ? {code: "", name: "", communes: []}
-        : null)
-    : { code: "", name: safeText(data.regionEstado, 120), communes: [] };
+        : null);
+  } else if (hasTerritoryCatalog(country.code)) {
+    const catalogRegion = resolveCatalogRegion(country.code, data, {
+      regionRequired,
+      existingBusiness,
+    });
+    region = catalogRegion ? {...catalogRegion, communes: []} : null;
+  } else {
+    region = { code: "", name: safeText(data.regionEstado, 120), communes: [] };
+  }
   if (
     !region ||
     (country.code !== "CL" && regionRequired && !region.name)
   ) {
-    throw new HttpsError("invalid-argument", "Selecciona una región válida.");
+    throw new HttpsError(
+      "invalid-argument",
+      country.code === "CL" || !hasTerritoryCatalog(country.code)
+        ? "Selecciona una región válida."
+        : `Selecciona un ${regionLabelForCountry(country.code).toLowerCase()} válido.`
+    );
   }
   const communeCode = safeText(data.comunaCodigo, 5);
   const commune = communeCode
@@ -683,6 +761,8 @@ async function createFirstBusinessHandler(
     regionRequired: false,
   });
   const fingerprint = fingerprintBusinessInput(input);
+  // Después del fingerprint: no altera los reintentos idempotentes (SPEC 033).
+  const modulosHabilitados = modulesForCategory(input.rubroCodigo);
   const userRef = db.collection("usuarios").doc(uid);
   const lockRef = userRef.collection("sistema").doc("primerNegocio");
   const ownerPlanRef = userRef.collection("sistema").doc("negociosPropios");
@@ -813,6 +893,7 @@ async function createFirstBusinessHandler(
 
     transaction.create(businessRef, {
       ...input,
+      modulosHabilitados,
       estado: ACTIVE_STATUS,
       verificacionEmpresa: {estado: VERIFICATION_STATES.NOT_VERIFIED},
       modeloNegocioVersion: 2,
@@ -886,6 +967,7 @@ async function createFirstBusinessHandler(
       business: {
         id: businessRef.id,
         ...input,
+        modulosHabilitados,
         estado: ACTIVE_STATUS,
         verificacionEmpresa: {estado: VERIFICATION_STATES.NOT_VERIFIED},
         role: "OWNER",
@@ -903,6 +985,8 @@ async function createAdditionalBusinessHandler(
   const requestId = validateRequestId(request?.data?.requestId, HttpsError);
   const input = validateBusinessCreationInput(request?.data, HttpsError);
   const fingerprint = fingerprintBusinessInput(input);
+  // Después del fingerprint: no altera los reintentos idempotentes (SPEC 033).
+  const modulosHabilitados = modulesForCategory(input.rubroCodigo);
   const userRef = db.collection("usuarios").doc(uid);
   const requestRef = userRef
     .collection("businessCreateRequests")
@@ -976,6 +1060,7 @@ async function createAdditionalBusinessHandler(
 
     transaction.create(businessRef, {
       ...input,
+      modulosHabilitados,
       estado: ACTIVE_STATUS,
       verificacionEmpresa: {estado: VERIFICATION_STATES.NOT_VERIFIED},
       modeloNegocioVersion: 2,
@@ -1038,6 +1123,7 @@ async function createAdditionalBusinessHandler(
       business: {
         id: businessRef.id,
         ...input,
+        modulosHabilitados,
         estado: ACTIVE_STATUS,
         verificacionEmpresa: {estado: VERIFICATION_STATES.NOT_VERIFIED},
         role: "OWNER",
@@ -1121,7 +1207,7 @@ async function deleteBusinessHandler(
     ) {
       throw new HttpsError(
         "permission-denied",
-        "Sólo el propietario puede eliminar esta empresa."
+        "Solo el propietario puede eliminar esta empresa."
       );
     }
 
@@ -1325,6 +1411,8 @@ async function updateBusinessProfileHandler(
     transaction.update(context.businessRef, {
       nombreComercial: profileInput.nombreComercial,
       ...categoryStoragePatch,
+      // SPEC 039: solo si el rubro cambia, los módulos pasan a ser los del rubro nuevo.
+      ...categoryModulesPatch(currentBusiness.data() || {}, profileInput.rubroCodigo),
       regionCodigo: profileInput.regionCodigo,
       regionNombre: profileInput.regionNombre,
       regionEstado: profileInput.regionEstado,

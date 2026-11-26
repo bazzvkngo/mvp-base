@@ -4,6 +4,7 @@ import {useNavigate, useSearchParams} from "react-router-dom";
 import FinancialPeriodSelector from "../components/finance/FinancialPeriodSelector";
 import Button from "../components/ui/Button";
 import LoadingState from "../components/ui/LoadingState";
+import {getHiddenCorePaths} from "../domain/categoryModules.mjs";
 import {getFinancialPeriodRange, getSantiagoDateKey} from "../domain/financialMovement.mjs";
 import {
   REPORT_PERIOD_OPTIONS,
@@ -30,12 +31,15 @@ import {
 } from "../domain/reportMonthlySummary.mjs";
 import {useOperationalNetProfit} from "../features/reports/OperationalNetProfitBreakdown";
 import {useReportProfitabilityV4} from "../features/reports/ReportProfitabilityV4Section";
-import ReportsNav, {DEFAULT_REPORT_VIEW_ID, normalizeReportView} from "../features/reports/ReportsNav";
+import ReportsNav, {DEFAULT_REPORT_VIEW_ID, REPORT_VIEWS, normalizeReportView} from "../features/reports/ReportsNav";
 import ReportsComprasView from "../features/reports/views/ReportsComprasView";
 import ReportsGananciasView from "../features/reports/views/ReportsGananciasView";
 import ReportsMonthlySummary from "../features/reports/views/ReportsMonthlySummary";
 import ReportsVentasView from "../features/reports/views/ReportsVentasView";
+import useBusinessFormat from "../hooks/useBusinessFormat";
 import {loadSimplifiedReportData} from "../services/reportService";
+import {formatDate} from "../utils/formatters";
+import {userErrorMessage} from "../domain/userFacingError.mjs";
 
 const VALID_PERIODS = new Set(REPORT_PERIOD_OPTIONS.map((option) => option.id));
 const EMPTY_DATA = Object.freeze({projectBalances: [], purchases: [], sales: []});
@@ -52,6 +56,7 @@ function updateSearchParams(searchParams, setSearchParams, changes) {
 
 function StatisticsPage({businessId, currencyCode = "CLP", role = ""}) {
   const navigate = useNavigate();
+  const {locale: formatLocale} = useBusinessFormat();
   const [searchParams, setSearchParams] = useSearchParams();
   const canViewProfitability = hasBusinessPermission(role, BUSINESS_PERMISSIONS.PROFITABILITY_READ);
   const viewPermissions = {
@@ -90,7 +95,7 @@ function StatisticsPage({businessId, currencyCode = "CLP", role = ""}) {
     let active = true;
     if (!businessId) { setData(EMPTY_DATA); setLoading(false); setError(""); return () => { active = false; }; }
     setLoading(true); setError("");
-    loadSimplifiedReportData(businessId, {role}).then((next) => { if (active) setData(next); }).catch((loadError) => { if (active) setError(loadError?.message || "No fue posible cargar los reportes."); }).finally(() => { if (active) setLoading(false); });
+    loadSimplifiedReportData(businessId, {role}).then((next) => { if (active) setData(next); }).catch((loadError) => { if (active) setError(userErrorMessage(loadError, "No fue posible cargar los reportes.")); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [businessId, reloadKey, role]);
 
@@ -123,7 +128,10 @@ function StatisticsPage({businessId, currencyCode = "CLP", role = ""}) {
   const topSalesProducts = useMemo(() => getTopSalesProducts(summary.sales.confirmed, {fallbackCurrency: currencyCode}), [currencyCode, summary.sales.confirmed]);
   const topPurchaseSuppliers = useMemo(() => getTopPurchaseSuppliers(summary.purchases.confirmed, {fallbackCurrency: currencyCode}), [currencyCode, summary.purchases.confirmed]);
   const topPurchaseProducts = useMemo(() => getTopPurchaseProducts(summary.purchases.confirmed, {fallbackCurrency: currencyCode}), [currencyCode, summary.purchases.confirmed]);
-  const links = {purchases: canAccessBusinessPath(role, "/compras"), sales: canAccessBusinessPath(role, "/ventas"), works: canAccessBusinessPath(role, "/trabajos")};
+  // Taller y Veterinaria no usan Proyectos (SPEC 038): sin "Proyectos del mes", sin tabla de proyectos y sin
+  // enlaces a /trabajos. La fórmula de la ganancia no cambia; el resto de rubros queda como siempre.
+  const showProjects = !getHiddenCorePaths(role).includes("/trabajos");
+  const links = {purchases: canAccessBusinessPath(role, "/compras"), sales: canAccessBusinessPath(role, "/ventas"), works: showProjects && canAccessBusinessPath(role, "/trabajos")};
   const profitabilityV4 = useReportProfitabilityV4({businessId, range: profitFetchRange, role});
   const operationalProfit = useOperationalNetProfit(profitabilityV4, range);
   const previousOperationalProfit = useOperationalNetProfit(profitabilityV4, previousMonthRange);
@@ -146,22 +154,29 @@ function StatisticsPage({businessId, currencyCode = "CLP", role = ""}) {
     <header className="erp-page-header reports-simple-header">
       <div className="erp-page-intro"><span className="reports-simple-eyebrow">Reportes</span><h1>Centro de reportes</h1><p>{REPORTS_SUBTITLE}</p></div>
       <div className="reports-simple-toolbar">
-        {!isSummary && <FinancialPeriodSelector customEnd={customEnd} customStart={customStart} idPrefix="reports-period" onCustomEndChange={(value) => updateSearchParams(searchParams, setSearchParams, {to: value})} onCustomStartChange={(value) => updateSearchParams(searchParams, setSearchParams, {from: value})} onPeriodChange={(value) => updateSearchParams(searchParams, setSearchParams, {period: value})} options={REPORT_PERIOD_OPTIONS} period={period} />}
         {showCurrencyControls && <label className="erp-field reports-simple-currency"><span className="erp-field__label">Moneda</span><select className="erp-control" value={selectedCurrency} onChange={(event) => updateSearchParams(searchParams, setSearchParams, {currency: event.target.value})}><option value="todos">Todas, separadas</option>{availableCurrencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}</select></label>}
       </div>
     </header>
 
     <ReportsNav active={vista} onSelect={goToView} permissions={viewPermissions} />
+    {/* El selector de período vive junto al título de la pestaña (antes, arriba a la derecha de la página). El Resumen navega por mes y no lo usa. */}
+    {!isSummary && <div className="reports-period-bar">
+      <div className="reports-period-bar__title">
+        <h2>{REPORT_VIEWS.find((view) => view.id === vista)?.label}</h2>
+        <p>{formatDate(periodRange.start, formatLocale)} al {formatDate(periodRange.end, formatLocale)}</p>
+      </div>
+      <FinancialPeriodSelector customEnd={customEnd} customStart={customStart} idPrefix="reports-period" onCustomEndChange={(value) => updateSearchParams(searchParams, setSearchParams, {to: value})} onCustomStartChange={(value) => updateSearchParams(searchParams, setSearchParams, {from: value})} onPeriodChange={(value) => updateSearchParams(searchParams, setSearchParams, {period: value})} options={REPORT_PERIOD_OPTIONS} period={period} />
+    </div>}
     {showCurrencyControls && <p className="reports-simple-help">Las monedas se muestran por separado y no se convierten.</p>}
 
     {error && <div className="erp-card reports-simple-state reports-simple-state--error" role="alert"><span>{error}</span><Button variant="secondary" onClick={() => setReloadKey((value) => value + 1)}><RefreshCw size={16} /> Reintentar</Button></div>}
     {loading && !error && <LoadingState variant="section" label="Cargando reportes..." />}
 
     {!loading && !error && <>
-      {isSummary && <ReportsMonthlySummary canRegisterPurchase={canRegisterPurchase} canRegisterSale={canRegisterSale} canViewProfitability={canViewProfitability} canViewPurchases={viewPermissions.canViewPurchases} canViewSales={viewPermissions.canViewSales} currency={selectedCurrency} links={links} month={monthKey} onMonthChange={changeMonth} onNavigate={navigate} onOpenDetail={openDetail} onRetryProfit={profitabilityV4.reload} previousProfit={previousOperationalProfit} previousSummary={previousSummary} profit={operationalProfit} projects={profitabilityV4.projects} summary={summary} todayKey={today} />}
-      {vista === "ventas" && <ReportsVentasView canOpenSales={links.sales} navigate={navigate} salesTimeline={salesTimeline} summary={summary} topSalesClients={topSalesClients} topSalesProducts={topSalesProducts} />}
-      {vista === "compras" && <ReportsComprasView canOpenPurchases={links.purchases} chartGroups={chartGroups} navigate={navigate} purchaseTimeline={purchaseTimeline} summary={summary} topPurchaseProducts={topPurchaseProducts} topPurchaseSuppliers={topPurchaseSuppliers} />}
-      {vista === "ganancias" && <ReportsGananciasView currency={selectedCurrency} links={links} navigate={navigate} operationalProfit={operationalProfit} profitabilityV4={profitabilityV4} range={range} />}
+      {isSummary && <ReportsMonthlySummary canRegisterPurchase={canRegisterPurchase} canRegisterSale={canRegisterSale} canViewProfitability={canViewProfitability} canViewPurchases={viewPermissions.canViewPurchases} canViewSales={viewPermissions.canViewSales} currency={selectedCurrency} links={links} month={monthKey} onMonthChange={changeMonth} onNavigate={navigate} onOpenDetail={openDetail} onRetryProfit={profitabilityV4.reload} operationalTimeline={operationalTimeline} previousProfit={previousOperationalProfit} previousSummary={previousSummary} profit={operationalProfit} projects={profitabilityV4.projects} purchaseTimeline={purchaseTimeline} salesTimeline={salesTimeline} showProjects={showProjects} summary={summary} todayKey={today} />}
+      {vista === "ventas" && <ReportsVentasView canOpenSales={links.sales} fallbackCurrency={currencyCode} navigate={navigate} salesTimeline={salesTimeline} summary={summary} topSalesClients={topSalesClients} topSalesProducts={topSalesProducts} />}
+      {vista === "compras" && <ReportsComprasView canOpenPurchases={links.purchases} chartGroups={chartGroups} fallbackCurrency={currencyCode} navigate={navigate} purchaseTimeline={purchaseTimeline} summary={summary} topPurchaseProducts={topPurchaseProducts} topPurchaseSuppliers={topPurchaseSuppliers} />}
+      {vista === "ganancias" && <ReportsGananciasView currency={selectedCurrency} currentMonthKey={currentMonthKey(today)} links={links} navigate={navigate} operationalProfit={operationalProfit} profitabilityV4={profitabilityV4} range={range} showProjects={showProjects} />}
     </>}
   </section>;
 }

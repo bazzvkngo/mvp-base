@@ -1,5 +1,6 @@
 const {createHash} = require("node:crypto");
 const {adaptDocumentLocalization, documentLocalizationSnapshot} = require("./localization");
+const {hasMaxDecimals, isMoneyAmount, mulRound, sanitizeDecimals, sumMoney} = require("./money");
 const {buildAuthoritativeCompanySnapshot} = require("./companySnapshot");
 const {fiscalSnapshotFields} = require("./fiscalIdentifier");
 
@@ -53,10 +54,23 @@ function requireNumber(value, label, HttpsError, options = {}) {
   return number;
 }
 
-function assertSafeMoney(values, HttpsError) {
-  if (values.some((value) => !Number.isFinite(value) || !Number.isSafeInteger(value))) {
+// SPEC 036: `decimals` son los decimales de cálculo del documento (su `montoDecimales`; 0 = entero, como siempre). Con 0 la
+// validación es la de antes (un entero seguro); con decimales admite hasta esa cantidad de decimales.
+function assertSafeMoney(values, HttpsError, decimals = 0) {
+  if (values.some((value) => !isMoneyAmount(value, decimals))) {
     fail(HttpsError, "invalid-argument", MAXIMUM_AMOUNT_MESSAGE);
   }
+}
+
+// Con decimales, el costo unitario de cada línea admite hasta esa cantidad de decimales. Con 0 no se agrega
+// ningún límite nuevo (Chile). La cantidad y el porcentaje no se limitan.
+function assertAmountDecimals(input, decimals, HttpsError) {
+  if (decimals <= 0) return;
+  input.items.forEach((item, index) => {
+    if (!hasMaxDecimals(item.costoUnitario, decimals)) {
+      fail(HttpsError, "invalid-argument", `Ítem ${index + 1}: costo unitario admite hasta ${decimals} decimales.`);
+    }
+  });
 }
 
 function getChileDateParts(date) {
@@ -209,11 +223,11 @@ function inventorySnapshotFromDocument(snapshot, context, HttpsError) {
   };
 }
 
-function buildStoredLine(input, inventorySnapshot, HttpsError) {
-  const subtotalLinea = Math.round(input.cantidad * input.costoUnitario);
-  const descuentoLinea = Math.round((subtotalLinea * input.descuentoPct) / 100);
-  const totalLinea = subtotalLinea - descuentoLinea;
-  assertSafeMoney([subtotalLinea, descuentoLinea, totalLinea], HttpsError);
+function buildStoredLine(input, inventorySnapshot, HttpsError, decimals = 0) {
+  const subtotalLinea = mulRound(input.cantidad, input.costoUnitario, decimals);
+  const descuentoLinea = mulRound(subtotalLinea, input.descuentoPct, decimals, 100);
+  const totalLinea = sumMoney([subtotalLinea, -descuentoLinea], decimals);
+  assertSafeMoney([subtotalLinea, descuentoLinea, totalLinea], HttpsError, decimals);
   return {
     lineaId: input.lineaId,
     itemId: input.itemId,
@@ -232,15 +246,16 @@ function buildStoredLine(input, inventorySnapshot, HttpsError) {
   };
 }
 
-function calculateTotals(items, HttpsError, taxRate = VAT_RATE) {
-  const subtotal = items.reduce((sum, item) => sum + item.subtotalLinea, 0);
-  const descuentoTotal = items.reduce((sum, item) => sum + item.descuentoLinea, 0);
-  const neto = subtotal - descuentoTotal;
-  const iva = Math.round(neto * taxRate);
-  const total = neto + iva;
+function calculateTotals(items, HttpsError, taxRate = VAT_RATE, decimals = 0) {
+  const subtotal = sumMoney(items.map((item) => item.subtotalLinea), decimals);
+  const descuentoTotal = sumMoney(items.map((item) => item.descuentoLinea), decimals);
+  const neto = sumMoney([subtotal, -descuentoTotal], decimals);
+  const iva = mulRound(neto, taxRate, decimals);
+  const total = sumMoney([neto, iva], decimals);
   assertSafeMoney(
     [subtotal, descuentoTotal, neto, iva, total],
-    HttpsError
+    HttpsError,
+    decimals
   );
   return {subtotal, descuentoTotal, neto, iva, total};
 }
@@ -324,6 +339,13 @@ async function crearOrdenCompraHandler(request, dependencies, now = new Date()) 
       {businessId, proveedorId: input.proveedorId},
       HttpsError
     );
+    // Los decimales salen del servidor: el snapshot de la moneda del negocio al crear (el cliente no los impone).
+    const localization = documentLocalizationSnapshot(
+      snapshots[2].data() || {},
+      snapshots[3].data() || {}
+    );
+    const decimals = sanitizeDecimals(localization.montoDecimales);
+    assertAmountDecimals(input, decimals, HttpsError);
     const items = input.items.map((item, index) => buildStoredLine(
       item,
       inventorySnapshotFromDocument(
@@ -331,16 +353,13 @@ async function crearOrdenCompraHandler(request, dependencies, now = new Date()) 
         {businessId, itemId: item.itemId},
         HttpsError
       ),
-      HttpsError
+      HttpsError,
+      decimals
     ));
     const current = Number(snapshots[1].data()?.lastNumber || 0);
     const next = Number.isSafeInteger(current) && current >= 0 ? current + 1 : 1;
     const numero = formatPurchaseOrderNumber(dateParts.year, next);
     const timestamp = FieldValue.serverTimestamp();
-    const localization = documentLocalizationSnapshot(
-      snapshots[2].data() || {},
-      snapshots[3].data() || {}
-    );
     const stored = {
       modeloOrdenCompraVersion: PURCHASE_ORDER_MODEL_VERSION,
       ordenCompraId: orderRef.id,
@@ -354,6 +373,8 @@ async function crearOrdenCompraHandler(request, dependencies, now = new Date()) 
       locale: localization.locale,
       impuestoNombre: localization.impuestoNombre,
       tasaIva: localization.tasaIva,
+      // Solo se guarda con decimales: un documento sin el campo (todo el de Chile) queda como antes.
+      ...(decimals > 0 ? {montoDecimales: decimals} : {}),
       empresaSnapshot: buildAuthoritativeCompanySnapshot({
         businessId,
         business: snapshots[2].data() || {},
@@ -367,7 +388,7 @@ async function crearOrdenCompraHandler(request, dependencies, now = new Date()) 
       proveedorId: input.proveedorId,
       proveedorSnapshot,
       items,
-      ...calculateTotals(items, HttpsError, localization.tasaIva),
+      ...calculateTotals(items, HttpsError, localization.tasaIva, decimals),
       creadoPorUid: uid,
       actualizadoPorUid: uid,
       creadoEn: timestamp,
@@ -501,6 +522,10 @@ async function duplicarOrdenCompraComoBorradorHandler(
       {businessId, proveedorId: input.proveedorId},
       HttpsError
     );
+    // Los decimales son los de la orden de origen (su `montoDecimales`), no los del catálogo de hoy.
+    const localization = adaptDocumentLocalization(source);
+    const decimals = sanitizeDecimals(localization.montoDecimales);
+    assertAmountDecimals(input, decimals, HttpsError);
     const items = input.items.map((item, index) => buildStoredLine(
       item,
       inventorySnapshotFromDocument(
@@ -508,14 +533,14 @@ async function duplicarOrdenCompraComoBorradorHandler(
         {businessId, itemId: item.itemId},
         HttpsError
       ),
-      HttpsError
+      HttpsError,
+      decimals
     ));
     const current = Number(snapshots[1].data()?.lastNumber || 0);
     const next = Number.isSafeInteger(current) && current >= 0 ? current + 1 : 1;
     const numero = formatPurchaseOrderNumber(dateParts.year, next);
     const timestamp = FieldValue.serverTimestamp();
     const originNumber = safeText(source.numero || source.numeroOrdenCompra, 120);
-    const localization = adaptDocumentLocalization(source);
     const stored = {
       modeloOrdenCompraVersion: PURCHASE_ORDER_MODEL_VERSION,
       ordenCompraId: orderRef.id,
@@ -529,6 +554,7 @@ async function duplicarOrdenCompraComoBorradorHandler(
       locale: localization.locale,
       impuestoNombre: localization.impuestoNombre,
       tasaIva: localization.tasaIva,
+      ...(decimals > 0 ? {montoDecimales: decimals} : {}),
       empresaSnapshot: buildAuthoritativeCompanySnapshot({
         businessId,
         business: snapshots[2].data() || {},
@@ -542,7 +568,7 @@ async function duplicarOrdenCompraComoBorradorHandler(
       proveedorId: input.proveedorId,
       proveedorSnapshot,
       items,
-      ...calculateTotals(items, HttpsError, localization.tasaIva),
+      ...calculateTotals(items, HttpsError, localization.tasaIva, decimals),
       ordenCompraOrigenId: sourceId,
       ordenCompraOrigenNumero: originNumber,
       creadoPorUid: uid,
@@ -666,6 +692,9 @@ async function actualizarOrdenCompraBorradorHandler(request, dependencies) {
         HttpsError
       )
       : preservedProviderSnapshot(existing);
+    // Los decimales son los del documento guardado (su `montoDecimales`); el cliente no puede cambiarlos.
+    const decimals = sanitizeDecimals(adaptDocumentLocalization(existing).montoDecimales);
+    assertAmountDecimals(input, decimals, HttpsError);
     const items = input.items.map((item, index) => {
       const previous = existingByLine.get(item.lineaId);
       const inventorySnapshot = itemNeedsRead[index]
@@ -675,7 +704,7 @@ async function actualizarOrdenCompraBorradorHandler(request, dependencies) {
           HttpsError
         )
         : preservedInventorySnapshot(previous);
-      return buildStoredLine(item, inventorySnapshot, HttpsError);
+      return buildStoredLine(item, inventorySnapshot, HttpsError, decimals);
     });
     const timestamp = FieldValue.serverTimestamp();
     const updated = {
@@ -686,7 +715,7 @@ async function actualizarOrdenCompraBorradorHandler(request, dependencies) {
       proveedorId: input.proveedorId,
       proveedorSnapshot,
       items,
-      ...calculateTotals(items, HttpsError, adaptDocumentLocalization(existing).tasaIva),
+      ...calculateTotals(items, HttpsError, adaptDocumentLocalization(existing).tasaIva, decimals),
       actualizadoPorUid: uid,
       actualizadoEn: timestamp,
     };
@@ -833,6 +862,8 @@ module.exports = {
   PURCHASE_ORDER_MODEL_VERSION,
   actualizarOrdenCompraBorradorHandler,
   cancelarOrdenCompraHandler,
+  assertPurchaseOrderAmountDecimals: assertAmountDecimals,
+  buildStoredPurchaseOrderLine: buildStoredLine,
   calculateTotals,
   crearOrdenCompraHandler,
   duplicarOrdenCompraComoBorradorHandler,

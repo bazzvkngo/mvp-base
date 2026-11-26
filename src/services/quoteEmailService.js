@@ -1,9 +1,12 @@
 import { httpsCallable } from "firebase/functions";
 import { assertCloudFunctionAllowed } from "../config/firebaseEnvironment.mjs";
 import { getFirebaseFunctions } from "../firebase/firebaseConfig";
-import { formatDate, formatMoney } from "../utils/formatters";
-import { buildQuoteValidityEmailLine } from "../domain/quoteEmailCopy.mjs";
-import {resolveDocumentCompany} from "../domain/companySnapshot.mjs";
+import { formatBusinessMoney as formatMoney, formatDate } from "../utils/formatters";
+import {
+  buildQuoteEmailFromTemplate,
+  buildQuoteEmailPreview,
+  getQuoteEmailClientAddress,
+} from "../domain/quoteEmailTemplate.mjs";
 import { DRAFT_QUOTE_NUMBER_LABEL, getQuoteDisplayNumber } from "./quoteService";
 
 const FUNCTIONS_REGION = "us-central1";
@@ -23,51 +26,44 @@ export function isValidEmail(value) {
   );
 }
 
-export function buildDefaultQuoteEmail({ quote, companyProfile }) {
-  const quoteNumber = getQuoteDisplayNumber(quote, "");
-  const company = resolveDocumentCompany(quote, companyProfile);
-  const companyName = company.nombreComercial || company.razonSocial || "";
-  const contactName =
-    quote?.clienteNombre ||
-    quote?.cliente?.nombreRazonSocial ||
-    quote?.clienteSnapshot?.nombreRazonSocial ||
-    quote?.clienteContacto ||
-    quote?.cliente?.personaContacto ||
-    quote?.clienteSnapshot?.personaContacto ||
-    "";
-  const projectName = String(quote?.proyectoNombre || "").trim();
-  const hasTotal = quote?.total !== null && quote?.total !== undefined;
-  const total = Number(quote?.total);
-  const quoteLabel = quoteNumber ? ` ${quoteNumber}` : "";
-  const projectLine = projectName
-    ? `, correspondiente a ${projectName}`
-    : "";
-  const totalLine = hasTotal && Number.isFinite(total)
-    ? `, por un total de ${formatMoney(total, quote?.moneda, quote?.locale)}`
-    : "";
-  const paragraphs = [
-    contactName ? `Hola ${contactName}:` : "Hola:",
-    `Te enviamos la cotización${quoteLabel}${projectLine}${totalLine}.`,
-    buildQuoteValidityEmailLine(quote, formatDate),
-    "Adjuntamos el documento PDF con el detalle completo.",
-    "Puedes revisar y responder la propuesta desde el enlace incluido en este correo.",
-    "Si tienes consultas o necesitas ajustes, responde a este correo.",
-    companyName ? `Saludos,\n${companyName}` : "Saludos,",
-  ].filter(Boolean);
-  const subjectParts = [
-    `Cotización${quoteLabel}`,
-    companyName,
-  ].filter(Boolean);
+export function buildDefaultQuoteEmail({ quote, companyProfile, accountEmail = "" }) {
+  const { asunto, mensaje } = buildQuoteEmailFromTemplate({
+    quote,
+    companyProfile,
+    accountEmail,
+    quoteNumber: getQuoteDisplayNumber(quote, ""),
+    formatMoney,
+    formatDate,
+  });
 
   return {
-    emailCliente:
-      quote?.cliente?.email ||
-      quote?.clienteSnapshot?.email ||
-      quote?.clienteEmail ||
-      "",
-    asunto: subjectParts.join(" | "),
-    mensaje: paragraphs.join("\n\n"),
+    emailCliente: getQuoteEmailClientAddress(quote),
+    asunto,
+    mensaje,
   };
+}
+
+export function buildQuoteEmailPanelPreview({
+  quote,
+  companyProfile,
+  accountEmail = "",
+  emailCliente,
+  asunto,
+  mensaje,
+  enviarCopia,
+}) {
+  return buildQuoteEmailPreview({
+    quote,
+    companyProfile,
+    accountEmail,
+    quoteNumber: getQuoteDisplayNumber(quote, ""),
+    emailCliente,
+    asunto,
+    mensaje,
+    enviarCopia,
+    formatMoney,
+    formatDate,
+  });
 }
 
 export function isQuoteEmailSendable(quote, quoteId = quote?.id) {
@@ -91,6 +87,7 @@ export async function sendQuoteEmail({
   mensaje,
   pdfAttachment,
   requestId,
+  enviarCopia = false,
 }) {
   assertCloudFunctionAllowed("el envío de cotizaciones por correo");
   if (!quoteId) {
@@ -106,7 +103,7 @@ export async function sendQuoteEmail({
     throw new Error("El asunto debe tener 180 caracteres o menos.");
   }
   if (/[\r\n]/.test(String(asunto))) {
-    throw new Error("El asunto no puede contener saltos de linea.");
+    throw new Error("El asunto no puede contener saltos de línea.");
   }
   if (!String(mensaje || "").trim()) {
     throw new Error("Ingresa el mensaje del correo.");
@@ -131,6 +128,7 @@ export async function sendQuoteEmail({
     pdfFilename: pdfAttachment?.fileName || "",
     pdfMimeType: pdfAttachment?.contentType || "application/pdf",
     requestId: requestId || createQuoteEmailRequestId(),
+    ...(enviarCopia === true ? { enviarCopia: true } : {}),
   });
 
   return {

@@ -6,17 +6,25 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  Trash2,
   Truck,
 } from "lucide-react";
 import ContactLinks from "../../components/contacts/ContactLinks";
 import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
+import EmptyState from "../../components/ui/EmptyState";
+import ModuleHeader from "../../components/ui/ModuleHeader";
+import Notice from "../../components/ui/Notice";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import {SkeletonCards, SkeletonRegion, SkeletonTable} from "../../components/ui/Skeleton";
 import StatusBadge from "../../components/ui/StatusBadge";
+import {getRouteMeta} from "../../app/navigation";
 import {
+  PROVIDER_DELETE_CONFIRMATION_WORD,
+  canDeleteProviders,
   canManageProviders,
   canReadProviders,
+  isProviderDeleteConfirmed,
   matchesProviderSearch,
 } from "../../domain/providerModel.mjs";
 import {getFiscalIdentifierLabel} from "../../domain/fiscalIdentifier.mjs";
@@ -24,11 +32,15 @@ import {
   actualizarProveedor,
   archivarProveedor,
   crearProveedor,
+  eliminarProveedor,
   getProviderErrorMessage,
   listarProveedores,
   reactivarProveedor,
 } from "../../services/providerService";
 import ProviderFormDialog from "./ProviderFormDialog";
+
+const MODULE = getRouteMeta("/proveedores");
+const MODULE_DESCRIPTION = "Las empresas y personas a las que les compras.";
 
 const PAYMENT_LABELS = {
   contado: "Contado",
@@ -62,7 +74,7 @@ function paymentSummary(provider) {
     : label;
 }
 
-function ProviderActions({canManage, onArchive, onEdit, onReactivate, provider}) {
+function ProviderActions({canDelete, canManage, onArchive, onDelete, onEdit, onReactivate, provider}) {
   if (!canManage) return <span className="client-readonly-label">Solo lectura</span>;
   return (
     <div className="client-row-actions">
@@ -80,6 +92,11 @@ function ProviderActions({canManage, onArchive, onEdit, onReactivate, provider})
           <AppIcon icon={RotateCcw} size={17} />
         </button>
       )}
+      {canDelete && (
+        <button type="button" onClick={() => onDelete(provider)} aria-label={`Eliminar permanentemente a ${provider.razonSocial}`} title="Eliminar permanentemente">
+          <AppIcon icon={Trash2} size={17} />
+        </button>
+      )}
     </div>
   );
 }
@@ -91,13 +108,18 @@ function ProvidersManager({businessId, countryCode = "CL", role}) {
   const [feedback, setFeedback] = useState("");
   const [feedbackIsError, setFeedbackIsError] = useState(false);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("activo");
   const [formState, setFormState] = useState({open: false, provider: null});
   const [confirmation, setConfirmation] = useState(null);
   const [changingStatus, setChangingStatus] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deleteError, setDeleteError] = useState("");
+  const [deleting, setDeleting] = useState(false);
   const loadSequenceRef = useRef(0);
   const canRead = canReadProviders(role);
   const canManage = canManageProviders(role);
+  const canDelete = canDeleteProviders(role);
   const fiscalLabel = getFiscalIdentifierLabel(countryCode);
 
   const loadProviders = useCallback(async () => {
@@ -189,9 +211,43 @@ function ProvidersManager({businessId, countryCode = "CL", role}) {
     }
   };
 
+  const openDelete = (provider) => {
+    setFeedback("");
+    setFeedbackIsError(false);
+    setDeleteConfirmation("");
+    setDeleteError("");
+    setDeleteTarget(provider);
+  };
+
+  const closeDelete = () => {
+    if (deleting) return;
+    setDeleteTarget(null);
+    setDeleteConfirmation("");
+    setDeleteError("");
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget || deleting || !isProviderDeleteConfirmed(deleteConfirmation)) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await eliminarProveedor(businessId, deleteTarget.proveedorId, deleteConfirmation);
+      setFeedback(`Proveedor eliminado permanentemente. Su ${fiscalLabel} quedó libre.`);
+      setFeedbackIsError(false);
+      setDeleteTarget(null);
+      setDeleteConfirmation("");
+      await loadProviders();
+    } catch (error) {
+      setDeleteError(getProviderErrorMessage(error));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   if (!businessId || !canRead) {
     return (
       <section className="erp-page clients-page">
+        <ModuleHeader description={MODULE_DESCRIPTION} icon={MODULE.icon} title={MODULE.title} />
         <div className="erp-empty-state" role="alert">
           No tienes permisos para consultar proveedores en el negocio activo.
         </div>
@@ -201,19 +257,28 @@ function ProvidersManager({businessId, countryCode = "CL", role}) {
 
   const hasFilters = Boolean(search.trim() || statusFilter);
   const confirmationIsArchive = confirmation?.action === "archive";
+  // Lista realmente vacía (cargada, sin error y sin proveedores): el único botón principal vive en el
+  // vacío y la cabecera no recibe acciones. Con datos, o con filtros sin resultados, se ve la lista.
+  const showEmpty = !loading && !loadError && providers.length === 0;
+  const chips = !loadError && (!loading || providers.length > 0)
+    ? [`${providers.length} ${providers.length === 1 ? "proveedor" : "proveedores"}`]
+    : [];
 
   return (
     <section className="erp-page clients-page providers-page">
-      {canManage && (
-        <div className="erp-module-intro">
-          <Button icon={Plus} onClick={openCreate}>Nuevo proveedor</Button>
-        </div>
-      )}
+      <ModuleHeader
+        actions={canManage ? <Button icon={Plus} onClick={openCreate}>Nuevo proveedor</Button> : null}
+        chips={chips}
+        description={MODULE_DESCRIPTION}
+        hasData={!showEmpty}
+        icon={MODULE.icon}
+        title={MODULE.title}
+      />
 
       {!canManage && (
-        <div className="client-message client-message--warning" role="status">
+        <Notice variant="warning" className="client-message--warning">
           Tu perfil tiene acceso de lectura. Los perfiles autorizados deben crear y modificar proveedores.
-        </div>
+        </Notice>
       )}
       {feedback && (
         <div className={`client-message${feedbackIsError ? " client-message--error" : ""}`} role={feedbackIsError ? "alert" : "status"} aria-live="polite">
@@ -227,7 +292,16 @@ function ProvidersManager({businessId, countryCode = "CL", role}) {
         </div>
       )}
 
-      <section className="erp-panel" aria-labelledby="providers-list-title">
+      {showEmpty ? (
+        <EmptyState
+          action={canManage ? {label: "Crear primer proveedor", icon: Plus, onClick: openCreate} : undefined}
+          description={canManage
+            ? "Crea el primer proveedor para comenzar tu registro comercial."
+            : "Propietario o Administrador pueden registrar el primer proveedor."}
+          icon={MODULE.icon}
+          title="No hay proveedores registrados"
+        />
+      ) : <section className="erp-panel" aria-labelledby="providers-list-title">
         <div className="erp-panel-header clients-panel-header">
           <div>
             <h2 id="providers-list-title" className="erp-panel-title">Proveedores registrados</h2>
@@ -265,15 +339,8 @@ function ProvidersManager({businessId, countryCode = "CL", role}) {
         ) : !loadError && visibleProviders.length === 0 ? (
           <div className="erp-empty-state clients-empty-state">
             <AppIcon icon={Truck} size={28} />
-            <h3>{hasFilters ? "No hay coincidencias" : "No hay proveedores registrados"}</h3>
-            <p>
-              {hasFilters
-                ? `Prueba con otro nombre, ${fiscalLabel} o estado.`
-                : canManage
-                  ? "Crea el primer proveedor para comenzar tu registro comercial."
-                  : "OWNER o ADMIN pueden registrar el primer proveedor."}
-            </p>
-            {!hasFilters && canManage && <Button type="button" icon={Plus} onClick={openCreate}>Crear primer proveedor</Button>}
+            <h3>No hay coincidencias</h3>
+            <p>{`Prueba con otro nombre, ${fiscalLabel} o estado.`}</p>
           </div>
         ) : !loadError ? (
           <>
@@ -292,7 +359,7 @@ function ProvidersManager({businessId, countryCode = "CL", role}) {
                       <td>{paymentSummary(provider)}</td>
                       <td><StatusBadge variant={provider.estado === "activo" ? "success" : "neutral"}>{provider.estado === "activo" ? "Activo" : "Archivado"}</StatusBadge></td>
                       <td className="clients-actions-column">
-                        <ProviderActions canManage={canManage} provider={provider} onArchive={(item) => setConfirmation({provider: item, action: "archive"})} onEdit={openEdit} onReactivate={(item) => setConfirmation({provider: item, action: "reactivate"})} />
+                        <ProviderActions canDelete={canDelete} canManage={canManage} provider={provider} onArchive={(item) => setConfirmation({provider: item, action: "archive"})} onDelete={openDelete} onEdit={openEdit} onReactivate={(item) => setConfirmation({provider: item, action: "reactivate"})} />
                       </td>
                     </tr>
                   ))}
@@ -312,13 +379,13 @@ function ProvidersManager({businessId, countryCode = "CL", role}) {
                     <div><dt>Ubicación</dt><dd>{locationSummary(provider)}</dd></div>
                     <div><dt>Condiciones</dt><dd>{paymentSummary(provider)}</dd></div>
                   </dl>
-                  <ProviderActions canManage={canManage} provider={provider} onArchive={(item) => setConfirmation({provider: item, action: "archive"})} onEdit={openEdit} onReactivate={(item) => setConfirmation({provider: item, action: "reactivate"})} />
+                  <ProviderActions canDelete={canDelete} canManage={canManage} provider={provider} onArchive={(item) => setConfirmation({provider: item, action: "archive"})} onDelete={openDelete} onEdit={openEdit} onReactivate={(item) => setConfirmation({provider: item, action: "reactivate"})} />
                 </article>
               ))}
             </div>
           </>
         ) : null}
-      </section>
+      </section>}
 
       <ProviderFormDialog countryCode={countryCode} provider={formState.provider} onClose={() => setFormState({open: false, provider: null})} onSubmit={saveProvider} open={formState.open} />
 
@@ -340,6 +407,57 @@ function ProvidersManager({businessId, countryCode = "CL", role}) {
         title={confirmationIsArchive ? "Archivar proveedor" : "Reactivar proveedor"}
       >
         <p className="client-confirmation-copy">{confirmation?.provider.razonSocial}</p>
+      </ResponsiveDialog>
+
+      <ResponsiveDialog
+        description={deleteTarget ? `Vas a eliminar a ${deleteTarget.razonSocial}.` : ""}
+        eyebrow="Proveedores"
+        footer={(
+          <>
+            <Button type="button" variant="secondary" disabled={deleting} onClick={closeDelete}>Cancelar</Button>
+            <Button type="button" variant="danger" loading={deleting} disabled={!isProviderDeleteConfirmed(deleteConfirmation)} onClick={confirmDelete}>
+              {deleting ? "Eliminando..." : "Eliminar permanentemente"}
+            </Button>
+          </>
+        )}
+        onClose={closeDelete}
+        open={Boolean(deleteTarget)}
+        size="small"
+        title="Eliminar proveedor"
+      >
+        <div className="provider-delete">
+          <p className="provider-delete__warning">Esta acción es permanente y no se puede deshacer. Se perderán:</p>
+          <ul className="provider-delete__list">
+            <li>el registro del proveedor,</li>
+            <li>{`su ${fiscalLabel}, que quedará libre para registrarse de nuevo.`}</li>
+          </ul>
+          <p className="provider-delete__note">
+            Solo se puede eliminar un proveedor sin movimientos (órdenes de compra, compras, recepciones ni inventario).
+            Si los tiene, archívalo en su lugar.
+          </p>
+          <label className="erp-field provider-delete__field">
+            <span>Para confirmar, escribe <strong>{PROVIDER_DELETE_CONFIRMATION_WORD}</strong></span>
+            <input
+              className="erp-control"
+              type="text"
+              autoComplete="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              value={deleteConfirmation}
+              disabled={deleting}
+              onChange={(event) => setDeleteConfirmation(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  confirmDelete();
+                }
+              }}
+            />
+          </label>
+          {deleteError && (
+            <div className="client-message client-message--error" role="alert">{deleteError}</div>
+          )}
+        </div>
       </ResponsiveDialog>
     </section>
   );

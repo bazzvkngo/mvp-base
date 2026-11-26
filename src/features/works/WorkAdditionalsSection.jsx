@@ -2,6 +2,10 @@ import React, {useState} from "react";
 import Button from "../../components/ui/Button";
 import LoadingState from "../../components/ui/LoadingState";
 import StatusBadge from "../../components/ui/StatusBadge";
+import {CostField, WorkFormError} from "./WorkCostParts.jsx";
+import WorkAnnulForm from "./WorkAnnulForm.jsx";
+import useWorkFormSubmit from "./useWorkFormSubmit.js";
+import {getWorkAdditionalCatalogPrice} from "../../domain/workModel.mjs";
 import {formatMoney} from "../../utils/formatters.js";
 import useBusinessFormat from "../../hooks/useBusinessFormat";
 
@@ -50,12 +54,32 @@ export function isAdditionalRealizedIncome() {
   return false;
 }
 
-export function canSubmitAdditionalDraft(draft = {}) {
+// Mismos máximos que exige crearAdicionalTrabajo en el backend (normalizeAdditionalInput, functions/workPersistence.js).
+export const WORK_ADDITIONAL_MAX_QUANTITY = 999999999.99;
+export const WORK_ADDITIONAL_MAX_PRICE = 999999999999.99;
+const formatLimit = (value) => value.toLocaleString("es-CL", {maximumFractionDigits: 2, minimumFractionDigits: 2});
+
+// Mensajes bajo cada campo cuando el valor pasa del máximo; vacío si no hay nada que avisar.
+export function getAdditionalDraftErrors(draft = {}) {
+  const errors = {};
+  if (Number(draft.cantidad) > WORK_ADDITIONAL_MAX_QUANTITY) errors.cantidad = `La cantidad no puede superar ${formatLimit(WORK_ADDITIONAL_MAX_QUANTITY)}.`;
+  if (Number(draft.precioUnitario) > WORK_ADDITIONAL_MAX_PRICE) errors.precioUnitario = `El precio unitario no puede superar ${formatLimit(WORK_ADDITIONAL_MAX_PRICE)}.`;
+  return errors;
+}
+
+export const ADDITIONAL_NO_SALE_PRICE_MESSAGE = "Este ítem no tiene precio de venta. Pide a un administrador que lo defina.";
+
+// Sin gestión (TECNICO/MEMBER) el precio no se negocia: `requireCatalogPrice` exige que el ítem tenga precio de
+// venta (`catalogPrice`, de getWorkAdditionalCatalogPrice) y que el borrador lo lleve tal cual. El backend
+// (crearAdicionalTrabajo) vuelve a validarlo; esto solo evita enviar algo que se sabe rechazado.
+export function canSubmitAdditionalDraft(draft = {}, {catalogPrice = null, requireCatalogPrice = false} = {}) {
   const cantidad = Number(draft.cantidad);
   const precioUnitario = draft.precioUnitario === "" || draft.precioUnitario == null ? NaN : Number(draft.precioUnitario);
   return Boolean(String(draft.itemId || "").trim())
     && Number.isFinite(cantidad) && cantidad > 0
-    && Number.isFinite(precioUnitario) && precioUnitario >= 0;
+    && Number.isFinite(precioUnitario) && precioUnitario >= 0
+    && (!requireCatalogPrice || (catalogPrice != null && precioUnitario === catalogPrice))
+    && Object.keys(getAdditionalDraftErrors(draft)).length === 0;
 }
 
 export function canAnnulAdditional(additional, {canManage = false} = {}) {
@@ -63,7 +87,7 @@ export function canAnnulAdditional(additional, {canManage = false} = {}) {
 }
 
 function additionalTaskLabel(tasks, tareaId) {
-  if (!tareaId) return "Proyecto completo";
+  if (!tareaId) return "Trabajo completo";
   return (tasks || []).find((task) => task.id === tareaId)?.titulo || "Tarea no disponible";
 }
 
@@ -85,23 +109,27 @@ export default function WorkAdditionalsSection({
 }) {
   const { locale: businessLocale } = useBusinessFormat();
   const [draft, setDraft] = useState({...EMPTY_DRAFT});
-  const [annulReasons, setAnnulReasons] = useState({});
+  const createForm = useWorkFormSubmit({prefix: "additional-create"});
+  const draftErrors = getAdditionalDraftErrors(draft);
   const canOperate = canManage || ["TECNICO", "MEMBER"].includes(role);
+  // Propietario y administrador ajustan el precio; el resto trabaja con el precio de venta del ítem, solo lectura.
+  const priceLocked = !canManage;
+  const catalogPrice = getWorkAdditionalCatalogPrice(catalogItems.find((item) => item.id === draft.itemId));
+  const draftOptions = {catalogPrice, requireCatalogPrice: priceLocked};
+  const missingSalePrice = priceLocked && Boolean(draft.itemId) && catalogPrice == null;
+
+  const selectItem = (itemId) => setDraft((current) => {
+    const price = getWorkAdditionalCatalogPrice(catalogItems.find((item) => item.id === itemId));
+    return {...current, itemId, precioUnitario: price != null ? String(price) : priceLocked ? "" : current.precioUnitario};
+  });
 
   const submitCreate = (event) => {
     event.preventDefault();
-    if (!canSubmitAdditionalDraft(draft)) return;
-    Promise.resolve(onCreate({itemId: draft.itemId, cantidad: draft.cantidad, precioUnitario: draft.precioUnitario})).then((success) => {
+    if (!canSubmitAdditionalDraft(draft, draftOptions)) return;
+    const payload = {itemId: draft.itemId, cantidad: draft.cantidad, precioUnitario: draft.precioUnitario};
+    // requestId estable en los reintentos y error del backend dentro del formulario (useWorkFormSubmit).
+    createForm.submit(payload, (requestId, onError) => onCreate(payload, {requestId, onError})).then((success) => {
       if (success) setDraft({...EMPTY_DRAFT});
-    });
-  };
-
-  const submitAnnul = (event, additionalId) => {
-    event.preventDefault();
-    const reason = String(annulReasons[additionalId] || "").trim();
-    if (!reason) return;
-    Promise.resolve(onAnnul(additionalId, reason)).then((success) => {
-      if (success) setAnnulReasons((current) => ({...current, [additionalId]: ""}));
     });
   };
 
@@ -116,48 +144,61 @@ export default function WorkAdditionalsSection({
         )}
       </div>
       <p className="works-financial-note">
-        Un adicional pendiente de cobro no es ingreso del proyecto: sólo se refleja en el balance cuando se incorpore a una Venta confirmada.
+        Un adicional pendiente de cobro no es ingreso del trabajo: solo se refleja en el balance cuando se incorpore a una Venta confirmada.
       </p>
 
       {canOperate && !readOnly && (
-        <form className="works-cost-form" onSubmit={submitCreate}>
-          <select
-            aria-label="Ítem del catálogo"
-            className="erp-control"
-            required
-            value={draft.itemId}
-            onChange={(event) => setDraft((current) => ({...current, itemId: event.target.value}))}
-          >
-            <option value="">Selecciona un ítem del catálogo</option>
-            {catalogItems.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.nombre} · {getAdditionalItemTypeLabel(item.tipoItem)}{item.codigoInterno ? ` · ${item.codigoInterno}` : ""}
-              </option>
-            ))}
-          </select>
-          <input
-            aria-label="Cantidad"
-            className="erp-control"
-            type="number"
-            min="0.01"
-            step="0.01"
-            required
-            value={draft.cantidad}
-            onChange={(event) => setDraft((current) => ({...current, cantidad: event.target.value}))}
-            placeholder="Cantidad"
-          />
-          <input
-            aria-label="Precio unitario"
-            className="erp-control"
-            type="number"
-            min="0"
-            step="0.01"
-            required
-            value={draft.precioUnitario}
-            onChange={(event) => setDraft((current) => ({...current, precioUnitario: event.target.value}))}
-            placeholder={`Precio unitario (${currency})`}
-          />
-          <Button type="submit" disabled={Boolean(processing) || !canSubmitAdditionalDraft(draft)}>
+        <form className="works-cost-form" onChange={createForm.clearError} onSubmit={submitCreate}>
+          <CostField className="works-cost-field--wide" label="Ítem">
+            <select
+              className="erp-control"
+              required
+              value={draft.itemId}
+              onChange={(event) => selectItem(event.target.value)}
+            >
+              <option value="">Selecciona un ítem del catálogo</option>
+              {catalogItems.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.nombre} · {getAdditionalItemTypeLabel(item.tipoItem)}{item.codigoInterno ? ` · ${item.codigoInterno}` : ""}
+                </option>
+              ))}
+            </select>
+          </CostField>
+          <CostField label="Cantidad">
+            <input
+              className="erp-control"
+              type="number"
+              min="0.01"
+              max={WORK_ADDITIONAL_MAX_QUANTITY}
+              step="0.01"
+              required
+              aria-invalid={draftErrors.cantidad ? "true" : undefined}
+              value={draft.cantidad}
+              onChange={(event) => setDraft((current) => ({...current, cantidad: event.target.value}))}
+              placeholder="0"
+            />
+            {draftErrors.cantidad && <small className="works-field-error">{draftErrors.cantidad}</small>}
+          </CostField>
+          <CostField label="Precio unitario">
+            <input
+              className="erp-control"
+              type="number"
+              min="0"
+              max={WORK_ADDITIONAL_MAX_PRICE}
+              step="0.01"
+              required
+              readOnly={priceLocked}
+              aria-invalid={draftErrors.precioUnitario || missingSalePrice ? "true" : undefined}
+              value={draft.precioUnitario}
+              onChange={(event) => setDraft((current) => ({...current, precioUnitario: event.target.value}))}
+              placeholder="0"
+            />
+            {draftErrors.precioUnitario && <small className="works-field-error">{draftErrors.precioUnitario}</small>}
+            {missingSalePrice && <small className="works-field-error">{ADDITIONAL_NO_SALE_PRICE_MESSAGE}</small>}
+            {priceLocked && !missingSalePrice && <small className="works-cost-hint">Precio de venta del ítem en {currency}. Solo un administrador puede cambiarlo.</small>}
+          </CostField>
+          <WorkFormError error={createForm.error} noticeRef={createForm.noticeRef} title="No se pudo registrar el adicional" />
+          <Button type="submit" loading={processing === "additional-new"} disabled={(Boolean(processing) && processing !== "additional-new") || !canSubmitAdditionalDraft(draft, draftOptions)}>
             Registrar adicional
           </Button>
           {!catalogItems.length && (
@@ -185,18 +226,16 @@ export default function WorkAdditionalsSection({
                   {entry.estado === "ANULADO" && entry.motivoAnulacion && <small>Anulado: {entry.motivoAnulacion}</small>}
                 </div>
                 {annullable && !readOnly && (
-                  <form className="works-annul-form" onSubmit={(event) => submitAnnul(event, entry.id)}>
-                    <input
-                      aria-label="Motivo de anulación"
-                      className="erp-control"
-                      maxLength="1000"
-                      required
-                      value={annulReasons[entry.id] || ""}
-                      onChange={(event) => setAnnulReasons((current) => ({...current, [entry.id]: event.target.value}))}
-                      placeholder="Motivo de anulación"
-                    />
-                    <Button type="submit" variant="ghost-danger" disabled={Boolean(processing)}>Anular</Button>
-                  </form>
+                  <WorkAnnulForm
+                    label="Motivo de anulación"
+                    onAnnul={(motivo, requestId, onError) => onAnnul(entry.id, motivo, {requestId, onError})}
+                    prefix="additional-annul"
+                    processing={processing}
+                    processingKey={`additional-annul-${entry.id}`}
+                    submitLabel="Anular"
+                    submitVariant="ghost-danger"
+                    visibleLabel={false}
+                  />
                 )}
               </article>
             );

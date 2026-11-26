@@ -647,8 +647,9 @@ service cloud.firestore {
         && request.resource.data.businessId == businessId
         && request.resource.data.type in ["income", "expense"]
         && request.resource.data.status in ["paid", "pending"]
-        && request.resource.data.amount is int
+        && request.resource.data.amount is number
         && request.resource.data.amount > 0
+        && request.resource.data.amount <= 9007199254740991
         && request.resource.data.date is string
         && request.resource.data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
         && request.resource.data.concept is string
@@ -1000,6 +1001,71 @@ service cloud.firestore {
         allow create, update, delete: if false;
       }
 
+      match /vehiculos/{vehiculoId} {
+        allow read: if isBusinessModuleEnabled(businessId, "taller")
+          && hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "TECNICO", "MEMBER"], ["taller"])
+          && resource.data.negocioId == businessId;
+        allow create, update, delete: if false;
+      }
+
+      match /vehiclePlateKeys/{plateKey} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /vehicleVinKeys/{vinKey} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /vehicleCreateRequests/{requestId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /plazasTaller/{plazaId} {
+        allow read: if isBusinessModuleEnabled(businessId, "taller")
+          && hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "TECNICO", "MEMBER"], ["taller"])
+          && resource.data.negocioId == businessId;
+        allow create, update, delete: if false;
+      }
+
+      match /plazaOccupancyKeys/{plazaId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /ordenesTrabajo/{otId} {
+        allow read: if isBusinessModuleEnabled(businessId, "taller")
+          && hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "TECNICO", "MEMBER"], ["taller"])
+          && resource.data.negocioId == businessId;
+        allow create, update, delete: if false;
+
+        match /diagnosticos/{diagnosticoId} {
+          allow read: if isBusinessModuleEnabled(businessId, "taller")
+            && hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "TECNICO", "MEMBER"], ["taller"])
+            && resource.data.negocioId == businessId
+            && resource.data.otId == otId;
+          allow create, update, delete: if false;
+        }
+
+        match /servicios/{servicioOtId} {
+          allow read: if isBusinessModuleEnabled(businessId, "taller")
+            && hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "TECNICO", "MEMBER"], ["taller"])
+            && resource.data.negocioId == businessId
+            && resource.data.otId == otId;
+          allow create, update, delete: if false;
+        }
+
+        match /historial/{eventoId} {
+          allow read, create, update, delete: if false;
+        }
+      }
+
+      match /otCounters/{counterId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /otCreateRequests/{requestId} {
+        allow read, create, update, delete: if false;
+      }
+
       match /trabajos/{trabajoId} {
         allow read: if resource.data.negocioId == businessId
           && (
@@ -1315,6 +1381,28 @@ service cloud.firestore {
         allow create, delete: if false;
       }
 
+      // Clínica Veterinaria: lectura SDK solo para OWNER/ADMIN cuando el
+      // módulo vertical está habilitado. Las escrituras pasan por backend.
+      match /pacientesVeterinarios/{pacienteId} {
+        allow read: if isBusinessModuleEnabled(businessId, "veterinaria")
+          && resource.data.negocioId == businessId
+          && hasBusinessRole(businessId, ["OWNER", "ADMIN"]);
+        allow write: if false;
+      }
+
+      match /citasVeterinarias/{citaId} {
+        allow read: if isBusinessModuleEnabled(businessId, "veterinaria")
+          && resource.data.negocioId == businessId
+          && hasBusinessRole(businessId, ["OWNER", "ADMIN"]);
+        allow write: if false;
+      }
+
+      match /atencionesVeterinarias/{atencionId} {
+        allow read: if isBusinessModuleEnabled(businessId, "veterinaria")
+          && resource.data.negocioId == businessId
+          && hasBusinessRole(businessId, ["OWNER", "ADMIN"]);
+        allow write: if false;
+      }
       match /{document=**} {
         allow read, create, update, delete: if false;
       }

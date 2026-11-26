@@ -5,16 +5,18 @@ import { sileo } from "sileo";
 import AdditionalBusinessDrawer from "../components/AdditionalBusinessDrawer";
 import BrandLogo from "../components/BrandLogo";
 import BusinessSwitcher from "../components/BusinessSwitcher";
+import { RouteErrorBoundary } from "../components/AppErrorBoundary";
 import EnvironmentNotice from "../components/EnvironmentNotice";
 import NotificationBell from "../components/NotificationBell";
 import ThemeToggleButton from "../components/ThemeToggleButton";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import LoadingState from "../components/ui/LoadingState";
-import PageHeader from "../components/ui/PageHeader";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import SkipLink from "../components/ui/SkipLink";
-import { buildNavigationSections, getRouteMeta } from "../app/navigation";
+import { buildNavigationSections } from "../app/navigation";
+import TopbarHeading from "./TopbarHeading";
+import { getHiddenCorePaths, getPrimaryVerticalModules } from "../domain/categoryModules.mjs";
 import {
   filterNavigationSections,
   getBusinessPathOptions,
@@ -23,6 +25,7 @@ import {
 import {
   canBusinessOperate,
   filterNavigationForBusinessVerification,
+  isObservedProfileOfBusiness,
   normalizeBusinessVerificationState,
   shouldRefreshBusinessSessionForVerification,
 } from "../domain/businessOperations.mjs";
@@ -37,6 +40,34 @@ function PrimaryNavigation({
   pathname,
   sections,
 }) {
+  const renderLink = (item, nested = false) => {
+    const isActive = item.activeWhen
+      ? item.activeWhen(pathname)
+      : pathname === item.to;
+    const classes = ["nav-link", nested ? "nav-link--nested" : "", isActive ? "nav-link-active" : ""]
+      .filter(Boolean)
+      .join(" ");
+    return <NavLink
+      key={item.to}
+      to={item.to}
+      end={!item.activeWhen}
+      aria-current={isActive ? "page" : undefined}
+      className={classes}
+      onClick={onNavigate}
+    >
+      <AppIcon icon={item.icon} size={18} />
+      <span className="nav-link__label">{item.label}</span>
+      {item.to === "/empresa" && businessCompletionStatus && (
+        <span
+          className="nav-link__completion"
+          aria-label={`Empresa ${businessCompletionStatus.percent}% completa`}
+        >
+          {businessCompletionStatus.percent}%
+        </span>
+      )}
+    </NavLink>;
+  };
+
   return (
     <nav className="sidebar-nav" aria-label={ariaLabel}>
       {sections.map((section, sectionIndex) => {
@@ -53,31 +84,17 @@ function PrimaryNavigation({
               {section.label}
             </span>
             {section.items.map((item) => {
-              const isActive = item.activeWhen
-                ? item.activeWhen(pathname)
-                : pathname === item.to;
-
-              return (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end
-                  aria-current={isActive ? "page" : undefined}
-                  className={isActive ? "nav-link nav-link-active" : "nav-link"}
-                  onClick={onNavigate}
-                >
-                  <AppIcon icon={item.icon} size={18} />
+              if (!item.children?.length) return renderLink(item);
+              const moduleTitleId = `${idPrefix}-nav-module-${item.label.toLowerCase().replace(/\s+/g, "-")}`;
+              return <div className="nav-module" key={item.to} role="group" aria-labelledby={moduleTitleId}>
+                <div id={moduleTitleId} className="nav-module__label">
+                  <AppIcon icon={item.icon} size={16} />
                   <span className="nav-link__label">{item.label}</span>
-                  {item.to === "/empresa" && businessCompletionStatus && (
-                    <span
-                      className="nav-link__completion"
-                      aria-label={`Empresa ${businessCompletionStatus.percent}% completa`}
-                    >
-                      {businessCompletionStatus.percent}%
-                    </span>
-                  )}
-                </NavLink>
-              );
+                </div>
+                <div className="nav-module__items">
+                  {item.children.map((child) => renderLink(child, true))}
+                </div>
+              </div>;
             })}
           </div>
         );
@@ -94,6 +111,7 @@ function AppLayout({
   onBusinessChanged,
   onBusinessCreated,
   platformSuperadmin,
+  homePath = "/",
 }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -119,7 +137,10 @@ function AppLayout({
   });
   const allowedNavigationSections = React.useMemo(
     () => {
-      const navigationSections = buildNavigationSections();
+      const navigationSections = buildNavigationSections(undefined, {
+        primaryModules: getPrimaryVerticalModules(negocioActivo),
+        hiddenCorePaths: getHiddenCorePaths(negocioActivo),
+      });
       return businessVerified
         ? filterNavigationSections(
           navigationSections,
@@ -238,9 +259,7 @@ function AppLayout({
 
   React.useEffect(() => {
     const businessId = negocioActivo?.id || "";
-    const observedBusinessId =
-      observedBusinessProfile?.negocioId || observedBusinessProfile?.id || "";
-    if (!businessId || observedBusinessId !== businessId) return undefined;
+    if (!isObservedProfileOfBusiness(observedBusinessProfile, businessId)) return undefined;
 
     const sessionState = normalizeBusinessVerificationState(
       negocioActivo?.verificacionEmpresa?.estado
@@ -292,9 +311,6 @@ function AppLayout({
         closeAccountOnExpandedTopbar
       );
   }, []);
-
-  const routeMeta = getRouteMeta(location.pathname);
-  const pageProvidesHeading = location.pathname === "/reportes";
 
   const handleOpenBusinessDrawer = () => {
     if (mobileNavigationOpen) {
@@ -388,16 +404,10 @@ function AppLayout({
           </button>
 
           <div className="topbar-heading">
-            {pageProvidesHeading ? (
-              <div className="topbar-context" aria-label="Negocio activo">
-                <span>{negocioActivo?.nombreComercial || "Módulo activo"}</span>
-              </div>
-            ) : (
-              <PageHeader
-                eyebrow={negocioActivo?.nombreComercial || "Módulo activo"}
-                title={routeMeta.title}
-              />
-            )}
+            <TopbarHeading
+              businessName={negocioActivo?.nombreComercial}
+              pathname={location.pathname}
+            />
             <EnvironmentNotice inline />
           </div>
 
@@ -450,7 +460,9 @@ function AppLayout({
             />
           )}
           {!businessChanging && (
-            <Outlet context={{ businessCompletionError, businessCompletionStatus }} />
+            <RouteErrorBoundary homePath={homePath}>
+              <Outlet context={{ businessCompletionError, businessCompletionStatus }} />
+            </RouteErrorBoundary>
           )}
         </main>
       </div>

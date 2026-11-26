@@ -8,8 +8,17 @@ import React from "react";
 // hace aparecer el visto, en bucle suave. Las reglas están en layout.css
 // (.brand-mark--animated); con prefers-reduced-motion la marca queda quieta y
 // completa. pathLength="1" normaliza el largo para animar stroke-dasharray.
-function BrandMark({ size = 40, className = "", animated = false }) {
-  const classes = ["brand-mark", animated && "brand-mark--animated", className]
+//
+// `onDark` (opcional): variante para fondos oscuros fijos (p. ej. el menú de la
+// consola de plataforma). Fija el trazo de la C y el visto desde los tokens
+// --color-dark-* en lugar de seguir el tema (.brand-mark--on-dark en layout.css).
+function BrandMark({ size = 40, className = "", animated = false, onDark = false }) {
+  const classes = [
+    "brand-mark",
+    animated && "brand-mark--animated",
+    onDark && "brand-mark--on-dark",
+    className,
+  ]
     .filter(Boolean)
     .join(" ");
   const drawProps = animated ? { pathLength: 1 } : {};

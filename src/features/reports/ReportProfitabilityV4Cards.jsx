@@ -27,7 +27,7 @@ function coverageLabel(estado) {
     case COVERAGE.COMPLETE: return "Completa";
     case COVERAGE.PARTIAL: return "Parcial";
     case COVERAGE.UNAVAILABLE: return "No disponible";
-    case COVERAGE.NOT_APPLICABLE: return "No aplica (sólo servicios)";
+    case COVERAGE.NOT_APPLICABLE: return "No aplica (solo servicios)";
     default: return "Sin datos";
   }
 }
@@ -77,9 +77,9 @@ function SalesCurrencyGroup({group}) {
         {group.conteos.ventasParciales > 0 && `, ${group.conteos.ventasParciales} parcial(es)`}
         {group.conteos.ventasNoDisponibles > 0 && `, ${group.conteos.ventasNoDisponibles} sin información`}
         {group.conteos.ventasMonedaInconsistente > 0 && `, ${group.conteos.ventasMonedaInconsistente} con moneda inconsistente`}
-        {group.conteos.ventasSoloServicios > 0 && `. ${group.conteos.ventasSoloServicios} venta(s) sólo de servicios/actividades (sin costo ni margen).`}
+        {group.conteos.ventasSoloServicios > 0 && `. ${group.conteos.ventasSoloServicios} venta(s) solo de servicios/actividades (sin costo ni margen).`}
         {!m.margenCubiertoEsTotal && c.estado !== COVERAGE.NOT_APPLICABLE && (
-          <strong> El margen mostrado corresponde sólo a las ventas cubiertas; no es un total definitivo.</strong>
+          <strong> El margen mostrado corresponde solo a las ventas cubiertas; no es un total definitivo.</strong>
         )}
       </p>
 

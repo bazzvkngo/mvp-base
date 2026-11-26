@@ -1,5 +1,6 @@
 const {createHash} = require("node:crypto");
 const {adaptDocumentLocalization, documentLocalizationSnapshot} = require("./localization");
+const {hasMaxDecimals, isMoneyAmount, mulRound, sanitizeDecimals, sumMoney} = require("./money");
 const {buildAuthoritativeCompanySnapshot, resolveCompanySnapshot} = require("./companySnapshot");
 const {fiscalSnapshotFields} = require("./fiscalIdentifier");
 const {inventoryCostSnapshot, linkedWorkFields, writeCommercialLink, writeEvent, writeSaleConfirmationEvent} = require("./workPersistence");
@@ -39,8 +40,19 @@ function number(value, label, HttpsError, {minimum = 0, maximum = Infinity} = {}
   if (result < minimum || result > maximum) fail(HttpsError, "invalid-argument", `${label} está fuera del rango permitido.`);
   return result;
 }
-function safeMoney(values, HttpsError) {
-  if (values.some((value) => !Number.isFinite(value) || !Number.isSafeInteger(value))) fail(HttpsError, "invalid-argument", MAXIMUM_AMOUNT_MESSAGE);
+// SPEC 036: `decimals` son los decimales de cálculo del documento (su `montoDecimales`; 0 = entero, como siempre). Con 0 la
+// validación es la de antes (un entero seguro); con decimales admite hasta esa cantidad de decimales.
+function safeMoney(values, HttpsError, decimals = 0) {
+  if (values.some((value) => !isMoneyAmount(value, decimals))) fail(HttpsError, "invalid-argument", MAXIMUM_AMOUNT_MESSAGE);
+}
+// Con decimales, el precio de cada línea y el descuento general admiten hasta esa cantidad de decimales. Con 0 no se
+// agrega ningún límite nuevo (Chile).
+function assertAmountDecimals(normalized, decimals, HttpsError) {
+  if (decimals <= 0) return;
+  normalized.items.forEach((item, index) => {
+    if (!hasMaxDecimals(item.precioUnitario, decimals)) fail(HttpsError, "invalid-argument", `Ítem ${index + 1}: precio unitario admite hasta ${decimals} decimales.`);
+  });
+  if (!hasMaxDecimals(normalized.descuento, decimals)) fail(HttpsError, "invalid-argument", `El descuento general admite hasta ${decimals} decimales.`);
 }
 function roundCost(value) { return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100; }
 function costCurrency(item = {}, fallback = "CLP") {
@@ -119,25 +131,25 @@ function inventory(snapshot, businessId, itemId, HttpsError, active = true) {
   if (!nombre) fail(HttpsError, "failed-precondition", "El ítem no tiene nombre.");
   return {inventarioId: itemId, codigoInterno: text(raw.codigoInterno || raw.sku, 100), nombre, descripcion: text(raw.descripcion, 3000), tipoItem, unidad: text(raw.unidad, 80) || "unidad", modeloInventarioVersion: Number(raw.modeloInventarioVersion || 1)};
 }
-function storedLine(value, snapshot, HttpsError, extra = {}) {
+function storedLine(value, snapshot, HttpsError, extra = {}, decimals = 0) {
   const cantidad = snapshot.tipoItem === "producto"
     ? assertCanonicalInventoryQuantity(value.cantidad, HttpsError)
     : value.cantidad;
-  const subtotalLinea = Math.round(cantidad * value.precioUnitario);
-  const descuentoLinea = Math.round((subtotalLinea * value.descuentoPct) / 100);
-  const totalLinea = subtotalLinea - descuentoLinea;
-  safeMoney([subtotalLinea, descuentoLinea, totalLinea], HttpsError);
+  const subtotalLinea = mulRound(cantidad, value.precioUnitario, decimals);
+  const descuentoLinea = mulRound(subtotalLinea, value.descuentoPct, decimals, 100);
+  const totalLinea = sumMoney([subtotalLinea, -descuentoLinea], decimals);
+  safeMoney([subtotalLinea, descuentoLinea, totalLinea], HttpsError, decimals);
   return {lineaId: value.lineaId, itemId: value.itemId, codigo: snapshot.codigoInterno, nombre: snapshot.nombre, descripcion: snapshot.descripcion, tipoItem: snapshot.tipoItem, unidad: snapshot.unidad, cantidad, precioUnitario: value.precioUnitario, descuentoPct: value.descuentoPct, subtotalLinea, descuentoLinea, totalLinea, inventarioSnapshot: snapshot, origenAdicionalId: value.origenAdicionalId || "", ...extra};
 }
-function totals(items, HttpsError, {descuentoGeneral = 0, afectaIva = true, tasaIva = VAT_RATE} = {}) {
-  const subtotal = items.reduce((sum, item) => sum + item.subtotalLinea, 0);
-  const descuentoItems = items.reduce((sum, item) => sum + item.descuentoLinea, 0);
+function totals(items, HttpsError, {descuentoGeneral = 0, afectaIva = true, tasaIva = VAT_RATE, decimals = 0} = {}) {
+  const subtotal = sumMoney(items.map((item) => item.subtotalLinea), decimals);
+  const descuentoItems = sumMoney(items.map((item) => item.descuentoLinea), decimals);
   const descuento = number(descuentoGeneral ?? 0, "El descuento general", HttpsError);
-  if (descuento > subtotal - descuentoItems) fail(HttpsError, "invalid-argument", "El descuento general no puede superar el monto disponible.");
-  const descuentoTotal = descuentoItems + descuento;
-  const neto = subtotal - descuentoTotal; const effectiveTaxRate = afectaIva ? tasaIva : 0;
-  const iva = afectaIva ? Math.round(neto * effectiveTaxRate) : 0; const total = neto + iva;
-  safeMoney([subtotal, descuentoItems, descuento, descuentoTotal, neto, iva, total], HttpsError);
+  if (descuento > sumMoney([subtotal, -descuentoItems], decimals)) fail(HttpsError, "invalid-argument", "El descuento general no puede superar el monto disponible.");
+  const descuentoTotal = sumMoney([descuentoItems, descuento], decimals);
+  const neto = sumMoney([subtotal, -descuentoTotal], decimals); const effectiveTaxRate = afectaIva ? tasaIva : 0;
+  const iva = afectaIva ? mulRound(neto, effectiveTaxRate, decimals) : 0; const total = sumMoney([neto, iva], decimals);
+  safeMoney([subtotal, descuentoItems, descuento, descuentoTotal, neto, iva, total], HttpsError, decimals);
   return {subtotal, descuentoItems, descuento, descuentoTotal, neto, afectaIva, tasaIva: effectiveTaxRate, iva, total};
 }
 function hash(value) { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
@@ -145,7 +157,7 @@ async function access(request, dependencies) { return dependencies.requireBusine
 function formatNumber(year, sequence) { return `VTA-${year}-${String(sequence).padStart(4, "0")}`; }
 function baseStored({businessId, uid, ventaId, numero, sequence, now, normalized, clienteSnapshot, items, localization, empresaSnapshot, origin = {}, timestamp, HttpsError}) {
   const location = localization || adaptDocumentLocalization({});
-  return {modeloVentaVersion: MODEL_VERSION, ventaId, negocioId: businessId, numero, anio: now.year, correlativo: sequence, estado: "borrador", paisCodigo: location.paisCodigo, moneda: location.moneda, locale: location.locale, impuestoNombre: location.impuestoNombre, empresaSnapshot, clienteId: normalized.clienteId, clienteSnapshot, ...origin, items, ...totals(items, HttpsError, {descuentoGeneral: normalized.descuento, afectaIva: normalized.afectaIva, tasaIva: location.tasaIva}), fechaVenta: normalized.fechaVenta, fechaDocumento: normalized.fechaDocumento, tipoDocumento: normalized.tipoDocumento, numeroDocumento: normalized.numeroDocumento, condicionesPago: normalized.condicionesPago, observaciones: normalized.observaciones, stockAplicado: false, stockAplicadoAt: null, creadoPorUid: uid, actualizadoPorUid: uid, createdAt: timestamp, updatedAt: timestamp};
+  return {modeloVentaVersion: MODEL_VERSION, ventaId, negocioId: businessId, numero, anio: now.year, correlativo: sequence, estado: "borrador", paisCodigo: location.paisCodigo, moneda: location.moneda, locale: location.locale, impuestoNombre: location.impuestoNombre, ...(sanitizeDecimals(location.montoDecimales) > 0 ? {montoDecimales: sanitizeDecimals(location.montoDecimales)} : {}), empresaSnapshot, clienteId: normalized.clienteId, clienteSnapshot, ...origin, items, ...totals(items, HttpsError, {descuentoGeneral: normalized.descuento, afectaIva: normalized.afectaIva, tasaIva: location.tasaIva, decimals: sanitizeDecimals(location.montoDecimales)}), fechaVenta: normalized.fechaVenta, fechaDocumento: normalized.fechaDocumento, tipoDocumento: normalized.tipoDocumento, numeroDocumento: normalized.numeroDocumento, condicionesPago: normalized.condicionesPago, observaciones: normalized.observaciones, stockAplicado: false, stockAplicadoAt: null, creadoPorUid: uid, actualizadoPorUid: uid, createdAt: timestamp, updatedAt: timestamp};
 }
 function retryable(error) { return Number(error?.code) === 10 || String(error?.message || "").toLowerCase().includes("transaction is invalid"); }
 async function transactionRetry(db, callback) { let last; for (let attempt = 0; attempt < 5; attempt += 1) { try { return await db.runTransaction(callback); } catch (error) { last = error; if (!retryable(error) || attempt === 4) throw error; await new Promise((resolve) => setTimeout(resolve, 30 * (2 ** attempt))); } } throw last; }
@@ -162,14 +174,17 @@ async function crearVentaHandler(request, dependencies, clock = new Date()) {
     if (previous.exists) { const data = previous.data() || {}; if (data.uidUsuario !== uid || data.fingerprint !== fingerprint) fail(HttpsError, "already-exists", "La solicitud ya fue usada con otros datos."); const existing = await transaction.get(businessRef.collection("ventas").doc(data.ventaId)); return {venta: {id: existing.id, ...existing.data()}, requestId: reqId, idempotent: true}; }
     const refs = [businessRef.collection("clientes").doc(normalized.clienteId), counterRef, businessRef, businessRef.collection("configuracion").doc("impuestos"), businessRef.collection("empresa").doc("perfil"), ...normalized.items.map((item) => businessRef.collection("inventario").doc(item.itemId)), ...(workRef ? [workRef] : [])];
     const snapshots = await transaction.getAll(...refs); const clienteSnapshot = client(snapshots[0], businessId, normalized.clienteId, HttpsError);
-    const items = normalized.items.map((item, index) => storedLine(item, inventory(snapshots[index + 5], businessId, item.itemId, HttpsError), HttpsError));
+    const localization = documentLocalizationSnapshot(snapshots[2].data() || {}, snapshots[3].data() || {});
+    const decimals = sanitizeDecimals(localization.montoDecimales);
+    assertAmountDecimals(normalized, decimals, HttpsError);
+    const items = normalized.items.map((item, index) => storedLine(item, inventory(snapshots[index + 5], businessId, item.itemId, HttpsError), HttpsError, {}, decimals));
     // SPEC 020 §16: una Venta directa admite un trabajoId opcional (ninguna
     // Cotización involucrada), validado igual que en el camino ya existente
     // de Venta-desde-Cotización (linkedWorkFields sobre assertWork).
     const workFields = workRef ? linkedWorkFields(snapshots[snapshots.length - 1], businessId, HttpsError) : {};
     const current = Number(snapshots[1].data()?.lastNumber || 0); const sequence = Number.isSafeInteger(current) && current >= 0 ? current + 1 : 1;
     const numero = formatNumber(now.year, sequence); const timestamp = FieldValue.serverTimestamp();
-    const stored = baseStored({businessId, uid, ventaId: saleRef.id, numero, sequence, now, normalized, clienteSnapshot, items, localization: documentLocalizationSnapshot(snapshots[2].data() || {}, snapshots[3].data() || {}), empresaSnapshot: buildAuthoritativeCompanySnapshot({businessId, business: snapshots[2].data() || {}, profile: snapshots[4].data() || {}}), origin: workFields, timestamp, HttpsError});
+    const stored = baseStored({businessId, uid, ventaId: saleRef.id, numero, sequence, now, normalized, clienteSnapshot, items, localization, empresaSnapshot: buildAuthoritativeCompanySnapshot({businessId, business: snapshots[2].data() || {}, profile: snapshots[4].data() || {}}), origin: workFields, timestamp, HttpsError});
     transaction.set(counterRef, {negocioId: businessId, year: now.year, lastNumber: sequence, actualizadoEn: timestamp}); transaction.set(saleRef, stored);
     transaction.set(requestRef, {ventaId: saleRef.id, numero, negocioId: businessId, uidUsuario: uid, fingerprint, creadoEn: timestamp});
     return {venta: {id: saleRef.id, ...stored, createdAt: null, updatedAt: null}, requestId: reqId, idempotent: false};
@@ -183,13 +198,13 @@ function quoteClientSnapshot(quote, HttpsError) {
   if (!nombreRazonSocial) fail(HttpsError, "failed-precondition", "La cotización no contiene un snapshot de cliente válido.");
   return {clienteId, tipoCliente: text(source.tipoCliente, 20), ...fiscalSnapshotFields({...source, rut: source.rut || quote.clienteRut}), nombreRazonSocial, giro: text(source.giro, 240), email: text(source.email || quote.clienteEmail, 240), telefono: text(source.telefono || quote.clienteTelefono, 100), direccion: text(source.direccion || quote.clienteDireccion, 300), personaContacto: text(source.personaContacto || source.contacto || quote.clienteContacto, 200), regionCodigo: text(source.regionCodigo, 20), regionNombre: text(source.regionNombre, 160), comunaCodigo: text(source.comunaCodigo, 20), comunaNombre: text(source.comunaNombre || source.ciudad || quote.clienteCiudad, 160)};
 }
-function quoteLine(raw, index, HttpsError) {
+function quoteLine(raw, index, HttpsError, decimals = 0) {
   const snap = raw?.inventarioSnapshot || {}; const tipoItem = TYPES.has(raw?.tipoItem || snap.tipoItem) ? raw.tipoItem || snap.tipoItem : "producto";
   const itemId = id(raw?.itemId || snap.inventarioId, `Ítem ${index + 1}`, HttpsError, {optional: tipoItem !== "producto"});
   if (tipoItem === "producto" && !itemId) fail(HttpsError, "failed-precondition", `El producto ${text(raw?.nombre, 240) || index + 1} no está vinculado al inventario.`);
   const snapshot = {inventarioId: itemId, codigoInterno: text(snap.codigoInterno || raw.codigo, 100), nombre: text(snap.nombre || raw.nombre, 240), descripcion: text(raw.descripcionComercial || snap.descripcion || raw.descripcion, 3000), tipoItem, unidad: text(snap.unidad || raw.unidad, 80) || "unidad", modeloInventarioVersion: Number(snap.modeloInventarioVersion || 1)};
   const values = lineInput({lineaId: raw?.lineaId, itemId, cantidad: raw?.cantidad, precioUnitario: raw?.precioUnitarioEditable ?? raw?.precioUnitario ?? raw?.precio, descuentoPct: raw?.descuentoPorcentaje ?? raw?.descuentoPct}, index, HttpsError);
-  return storedLine(values, snapshot, HttpsError, {cantidadCotizada: values.cantidad});
+  return storedLine(values, snapshot, HttpsError, {cantidadCotizada: values.cantidad}, decimals);
 }
 
 function quoteSaleId(quoteId) {
@@ -246,7 +261,11 @@ async function createConfirmedSaleFromQuoteInTransaction({
     : "";
   const workRef = trabajoId ? businessRef.collection("trabajos").doc(trabajoId) : null;
   const clienteSnapshot = quoteClientSnapshot(quote, HttpsError);
-  const items = quote.items.map((item, index) => quoteLine(item, index, HttpsError));
+  // La venta hereda los decimales de cálculo de la cotización de origen (su `montoDecimales`), no los del catálogo
+  // de hoy: si el catálogo volvió a 0, una cotización con 2 sigue convirtiéndose con 2.
+  const localization = adaptDocumentLocalization(quote);
+  const decimals = sanitizeDecimals(localization.montoDecimales);
+  const items = quote.items.map((item, index) => quoteLine(item, index, HttpsError, decimals));
   const productGroups = groupProductLines(items);
   const inventoryRefs = productGroups.map((group) =>
     businessRef.collection("inventario").doc(group.itemId)
@@ -277,6 +296,7 @@ async function createConfirmedSaleFromQuoteInTransaction({
     observaciones: quote.observaciones || quote.condiciones?.observaciones,
     items,
   }, HttpsError);
+  assertAmountDecimals(normalized, decimals, HttpsError);
   const currentCompanySnapshot = buildAuthoritativeCompanySnapshot({
     businessId,
     business: businessSnapshot.data() || {},
@@ -292,7 +312,7 @@ async function createConfirmedSaleFromQuoteInTransaction({
     normalized,
     clienteSnapshot,
     items,
-    localization: adaptDocumentLocalization(quote),
+    localization,
     empresaSnapshot: resolveCompanySnapshot(quote, currentCompanySnapshot),
     origin: {
       cotizacionId: quoteId,
@@ -486,7 +506,7 @@ async function crearVentaDesdeCotizacionHandler(request, dependencies, clock = n
     const quoteSnapshot = await transaction.get(quoteRef);
     if (!quoteSnapshot.exists) fail(HttpsError, "not-found", "No se encontró la cotización."); const quote = quoteSnapshot.data() || {};
     if (quote.negocioId && quote.negocioId !== businessId) fail(HttpsError, "permission-denied", "No puedes registrar esta cotización.");
-    if (quote.estado !== "aceptada") fail(HttpsError, "failed-precondition", "Sólo una cotización aceptada puede registrarse como venta.");
+    if (quote.estado !== "aceptada") fail(HttpsError, "failed-precondition", "Solo una cotización aceptada puede registrarse como venta.");
     const created = await createConfirmedSaleFromQuoteInTransaction({
       actor: {uid, origen: "registro_compatibilidad"},
       businessId,
@@ -533,20 +553,22 @@ async function actualizarVentaBorradorHandler(request, dependencies) {
   const ventaId = id(request?.data?.ventaId, "La venta", HttpsError); const normalized = input(request?.data?.venta, HttpsError); const saleRef = businessRef.collection("ventas").doc(ventaId);
   return transactionRetry(db, async (transaction) => {
     const snapshot = await transaction.get(saleRef); if (!snapshot.exists) fail(HttpsError, "not-found", "No se encontró la venta."); const existing = snapshot.data() || {};
-    if (existing.negocioId !== businessId) fail(HttpsError, "permission-denied", "No puedes editar esta venta."); if (existing.estado !== "borrador") fail(HttpsError, "failed-precondition", "Sólo puedes editar ventas en borrador.");
+    if (existing.negocioId !== businessId) fail(HttpsError, "permission-denied", "No puedes editar esta venta."); if (existing.estado !== "borrador") fail(HttpsError, "failed-precondition", "Solo puedes editar ventas en borrador.");
     if (existing.cotizacionId) assertQuoteReferences(existing, normalized, HttpsError);
+    const decimals = sanitizeDecimals(adaptDocumentLocalization(existing).montoDecimales);
+    assertAmountDecimals(normalized, decimals, HttpsError);
     const previousLines = new Map((existing.items || []).map((line) => [text(line.lineaId, 160), line])); const clientChanged = normalized.clienteId !== existing.clienteId;
     const itemChanged = normalized.items.map((item) => { const previous = previousLines.get(item.lineaId); return !previous || previous.itemId !== item.itemId; }); const refs = [];
     if (clientChanged) refs.push(businessRef.collection("clientes").doc(normalized.clienteId));
     normalized.items.forEach((item, index) => { if (itemChanged[index]) { if (!item.itemId) fail(HttpsError, "invalid-argument", "Selecciona un ítem de inventario válido."); refs.push(businessRef.collection("inventario").doc(item.itemId)); } });
     const snapshots = refs.length ? await transaction.getAll(...refs) : []; let cursor = 0;
     const clienteSnapshot = clientChanged ? client(snapshots[cursor++], businessId, normalized.clienteId, HttpsError) : preservedClient(existing);
-    const items = normalized.items.map((item, index) => storedLine(item, itemChanged[index] ? inventory(snapshots[cursor++], businessId, item.itemId, HttpsError) : preservedItem(previousLines.get(item.lineaId)), HttpsError, existing.cotizacionId ? {cantidadCotizada: previousLines.get(item.lineaId).cantidadCotizada} : {}));
+    const items = normalized.items.map((item, index) => storedLine(item, itemChanged[index] ? inventory(snapshots[cursor++], businessId, item.itemId, HttpsError) : preservedItem(previousLines.get(item.lineaId)), HttpsError, existing.cotizacionId ? {cantidadCotizada: previousLines.get(item.lineaId).cantidadCotizada} : {}, decimals));
     // trabajoId es inmutable una vez creada la venta (sólo crearVenta lo fija,
     // SPEC 020 §16): se descarta cualquier valor que el cliente reenvíe aquí
     // para no permitir re-vincular el borrador a otro Proyecto por esta vía.
     const {trabajoId: _ignoredTrabajoId, ...normalizedWithoutWork} = normalized;
-    const timestamp = FieldValue.serverTimestamp(); const update = {...normalizedWithoutWork, clienteSnapshot, items, ...totals(items, HttpsError, {descuentoGeneral: normalized.descuento, afectaIva: normalized.afectaIva, tasaIva: adaptDocumentLocalization(existing).tasaIva}), actualizadoPorUid: uid, updatedAt: timestamp}; transaction.update(saleRef, update);
+    const timestamp = FieldValue.serverTimestamp(); const update = {...normalizedWithoutWork, clienteSnapshot, items, ...totals(items, HttpsError, {descuentoGeneral: normalized.descuento, afectaIva: normalized.afectaIva, tasaIva: adaptDocumentLocalization(existing).tasaIva, decimals}), actualizadoPorUid: uid, updatedAt: timestamp}; transaction.update(saleRef, update);
     return {venta: {id: ventaId, ...existing, ...update, updatedAt: null}};
   });
 }
@@ -574,7 +596,7 @@ async function confirmarVentaHandler(request, dependencies) {
     // adicional nunca existe sin trabajoId, así que sin workRef ninguna línea
     // puede referenciarlo válidamente.
     const additionalLineEntries = lines.filter((line) => line.origenAdicionalId);
-    if (additionalLineEntries.length && !workRef) fail(HttpsError, "failed-precondition", "Un adicional sólo puede incorporarse en una venta vinculada a un proyecto.");
+    if (additionalLineEntries.length && !workRef) fail(HttpsError, "failed-precondition", "Un adicional solo puede incorporarse en una venta vinculada a un proyecto.");
     const referencedAdditionalIds = additionalLineEntries.map((line) => line.origenAdicionalId);
     if (new Set(referencedAdditionalIds).size !== referencedAdditionalIds.length) fail(HttpsError, "invalid-argument", "Un mismo adicional no puede incorporarse en más de una línea de la venta.");
     const additionalRefs = additionalLineEntries.map((line) => workRef.collection("adicionales").doc(line.origenAdicionalId));
@@ -853,4 +875,4 @@ async function cancelarVentaBorradorHandler(request, dependencies) {
   });
 }
 
-module.exports = {actualizarVentaBorradorHandler, cancelarVentaBorradorHandler, confirmarVentaHandler, crearVentaDesdeCotizacionHandler, crearVentaHandler, createConfirmedSaleFromQuoteInTransaction, formatSaleNumber: formatNumber, normalizeSaleInput: input, calculateSaleTotals: totals, clientSnapshotFromDocument: client, quoteClientSnapshot};
+module.exports = {actualizarVentaBorradorHandler, cancelarVentaBorradorHandler, confirmarVentaHandler, crearVentaDesdeCotizacionHandler, crearVentaHandler, createConfirmedSaleFromQuoteInTransaction, formatSaleNumber: formatNumber, normalizeSaleInput: input, calculateSaleTotals: totals, storedSaleLine: storedLine, assertSaleAmountDecimals: assertAmountDecimals, clientSnapshotFromDocument: client, quoteClientSnapshot};

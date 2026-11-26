@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getFinancialSummary } from "../domain/financialMovement.mjs";
 import { subscribeToFinancialMovements } from "../services/financialService";
+import useBusinessFormat from "./useBusinessFormat";
 
 export default function useFinancialMovements(
   businessId,
@@ -42,6 +43,11 @@ export default function useFinancialMovements(
     );
   }, [businessId, end, start, status, type]);
 
-  const summary = useMemo(() => getFinancialSummary(state.items), [state.items]);
+  // Las sumas usan los decimales de cálculo de la moneda del negocio (SPEC 036): con 0, la suma de siempre.
+  const { amountDecimals } = useBusinessFormat();
+  const summary = useMemo(
+    () => getFinancialSummary(state.items, amountDecimals),
+    [amountDecimals, state.items]
+  );
   return { ...state, summary };
 }

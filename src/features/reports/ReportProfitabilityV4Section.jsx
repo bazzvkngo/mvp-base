@@ -8,6 +8,7 @@ import {
   loadProjectBalancesBoundedV4,
   loadSalesForReportV4,
 } from "../../services/reportProfitabilityV4Service";
+import {userErrorMessage} from "../../domain/userFacingError.mjs";
 
 export {ProjectProfitabilityV4Summary, SalesCommercialMarginV4Card} from "./ReportProfitabilityV4Cards";
 
@@ -51,7 +52,7 @@ export function useReportProfitabilityV4({businessId, range, role}) {
           meta: null,
           error: error?.name === "ReportRangeError"
             ? error.message
-            : (error?.message || "No fue posible calcular el margen comercial de Ventas."),
+            : (userErrorMessage(error, "No fue posible calcular el margen comercial de Ventas.")),
         });
       });
     return () => { active = false; };
@@ -77,7 +78,7 @@ export function useReportProfitabilityV4({businessId, range, role}) {
           status: "error",
           bloque: null,
           meta: null,
-          error: error?.message || "No fue posible cargar la rentabilidad de Proyectos.",
+          error: userErrorMessage(error, "No fue posible cargar la rentabilidad de Proyectos."),
         });
       });
     return () => { active = false; };

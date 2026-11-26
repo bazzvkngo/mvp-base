@@ -95,6 +95,15 @@ function BusinessSwitcher({
     availableItems[nextIndex]?.focus();
   };
 
+  // El menú se desmonta al cerrarse: el foco vuelve primero al trigger, que sí
+  // persiste, para que el drawer lo capture como elemento de retorno y lo
+  // restaure al cerrarse (ResponsiveDialog guarda document.activeElement).
+  const handleAddBusiness = () => {
+    setOpen(false);
+    triggerRef.current?.focus();
+    onAddBusiness();
+  };
+
   const handleSelect = async (business) => {
     if (!business?.id || business.id === activeBusiness?.id || switchingId) {
       setOpen(false);
@@ -194,6 +203,25 @@ function BusinessSwitcher({
                 })
               )}
             </div>
+            {onAddBusiness && (
+              <div className="business-menu__footer">
+                <button
+                  ref={(node) => {
+                    itemRefs.current[businesses.length] = node;
+                  }}
+                  type="button"
+                  className="business-menu__action"
+                  role="menuitem"
+                  disabled={Boolean(switchingId)}
+                  onClick={handleAddBusiness}
+                >
+                  <span className="business-menu__action-icon" aria-hidden="true">
+                    <AppIcon icon={Plus} size={16} />
+                  </span>
+                  <span>Agregar otro negocio</span>
+                </button>
+              </div>
+            )}
             {error && (
               <p className="business-menu__error" role="alert">
                 {error}
@@ -202,24 +230,6 @@ function BusinessSwitcher({
           </div>
         )}
       </div>
-
-      {onAddBusiness && (
-        <button
-          type="button"
-          className="business-switcher__add"
-          aria-label="Agregar otro negocio"
-          title="Agregar otro negocio"
-          onClick={() => {
-            setOpen(false);
-            onAddBusiness();
-          }}
-        >
-          <span className="business-switcher__add-icon" aria-hidden="true">
-            <AppIcon icon={Plus} size={16} />
-          </span>
-          <span>Agregar otro negocio</span>
-        </button>
-      )}
     </section>
   );
 }

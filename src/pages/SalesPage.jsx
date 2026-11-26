@@ -3,7 +3,9 @@ import {Plus, Search} from "lucide-react";
 import {useNavigate} from "react-router-dom";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
+import EmptyState from "../components/ui/EmptyState";
 import EmptyStateIllustration from "../components/ui/EmptyStateIllustration";
+import ModuleHeader from "../components/ui/ModuleHeader";
 import {SkeletonCards, SkeletonRegion, SkeletonTable} from "../components/ui/Skeleton";
 import {
   canManageSales,
@@ -11,14 +13,21 @@ import {
   getSaleStockStatusLabel,
   matchesSaleSearch,
 } from "../domain/saleModel.mjs";
+import {getRouteMeta} from "../app/navigation";
 import {listarVentas} from "../services/saleService";
 import {formatDate, formatMoney} from "../utils/formatters";
 import "../features/sales/sales.css";
+import {userErrorMessage} from "../domain/userFacingError.mjs";
+import {getClientFiscalListLabel} from "../domain/countryFormCopy.mjs";
+import useBusinessFormat from "../hooks/useBusinessFormat";
 
 const money = (value, document) => formatMoney(value, document?.moneda, document?.locale);
+const MODULE = getRouteMeta("/ventas");
 
 export default function SalesPage({businessId, role}) {
   const navigate = useNavigate();
+  // Identificador fiscal del cliente según el país del negocio (Chile "RUT", Bolivia "CI o NIT").
+  const fiscalLabel = getClientFiscalListLabel(useBusinessFormat().countryCode);
   const [items, setItems] = useState([]);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("todos");
@@ -26,13 +35,17 @@ export default function SalesPage({businessId, role}) {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const canManage = canManageSales(role);
+  // Lista realmente vacía (cargada, sin error y sin ventas): el único botón principal vive en el
+  // vacío y la cabecera no recibe acciones. Con datos, o con filtros sin resultados, se ve la lista.
+  const showEmpty = !loading && !message && items.length === 0;
+  const chips = !loading && !message ? [`${items.length} ${items.length === 1 ? "venta" : "ventas"}`] : [];
 
   useEffect(() => {
     let active = true;
     setLoading(true);
     listarVentas(businessId)
       .then((values) => { if (active) setItems(values); })
-      .catch((error) => { if (active) setMessage(error.message); })
+      .catch((error) => { if (active) setMessage(userErrorMessage(error)); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [businessId]);
@@ -48,15 +61,27 @@ export default function SalesPage({businessId, role}) {
 
   return (
     <main className="erp-page po-history sale-history">
-      {canManage && (
-        <div className="erp-module-intro">
-          <Button type="button" icon={Plus} onClick={() => navigate("/ventas/nueva")}>Nueva venta</Button>
-        </div>
-      )}
+      <ModuleHeader
+        actions={canManage ? <Button type="button" icon={Plus} onClick={() => navigate("/ventas/nueva")}>Nueva venta</Button> : null}
+        chips={chips}
+        description="Lo que le vendes a tus clientes, directo o desde una cotización."
+        hasData={!showEmpty}
+        icon={MODULE.icon}
+        title={MODULE.title}
+      />
 
       {message && <p className="po-message po-message--error" role="alert">{message}</p>}
 
-      <section className="erp-panel erp-history-panel sale-history-panel" aria-labelledby="sales-history-title">
+      {showEmpty ? (
+        <EmptyState
+          action={canManage ? {label: "Nueva venta", icon: Plus, onClick: () => navigate("/ventas/nueva")} : undefined}
+          description={canManage
+            ? "Registra tu primera venta directa o créala desde una cotización."
+            : "Tu perfil es de solo lectura; los perfiles autorizados registran las ventas."}
+          icon={MODULE.icon}
+          title="Aún no hay ventas"
+        />
+      ) : <section className="erp-panel erp-history-panel sale-history-panel" aria-labelledby="sales-history-title">
         <div className="erp-panel-header">
           <div>
             <h2 id="sales-history-title" className="erp-panel-title">Ventas registradas</h2>
@@ -66,7 +91,7 @@ export default function SalesPage({businessId, role}) {
 
         <div className="erp-filters erp-history-filters erp-history-filters--three po-history__toolbar sale-history-filters no-print">
           <label className="erp-field erp-history-search-field sale-history-search-field">
-            <span className="erp-field__label">Buscar por número, cliente, RUT o documento</span>
+            <span className="erp-field__label">Buscar por número, cliente, {fiscalLabel} o documento</span>
             <span className="clients-search-control">
               <AppIcon icon={Search} size={18} />
               <input className="erp-control" placeholder="Ej.: VTA-2026-0001 o cliente" value={search} onChange={(event) => setSearch(event.target.value)} />
@@ -89,20 +114,9 @@ export default function SalesPage({businessId, role}) {
           </SkeletonRegion>
         ) : message && items.length === 0 ? null : filtered.length === 0 ? (
           <div className="erp-empty-state ui-empty-state">
-            <EmptyStateIllustration variant={items.length ? "no-results" : "empty-list"} />
-            <h3>{items.length ? "No hay ventas coincidentes" : "Aún no hay ventas"}</h3>
-            <p>
-              {items.length
-                ? "Prueba con otra búsqueda, estado u origen."
-                : canManage
-                  ? "Registra tu primera venta directa o créala desde una cotización."
-                  : "Tu perfil es de solo lectura; los perfiles autorizados registran las ventas."}
-            </p>
-            {!items.length && canManage && (
-              <div className="ui-empty-state__actions">
-                <Button type="button" icon={Plus} onClick={() => navigate("/ventas/nueva")}>Nueva venta</Button>
-              </div>
-            )}
+            <EmptyStateIllustration variant="no-results" />
+            <h3>No hay ventas coincidentes</h3>
+            <p>Prueba con otra búsqueda, estado u origen.</p>
           </div>
         ) : (
           <>
@@ -132,14 +146,14 @@ export default function SalesPage({businessId, role}) {
                   <div><span className="po-history-card__label">Venta</span><button type="button" className="sale-history-link" onClick={() => open(sale)}>{sale.numero}</button><span className="sale-history-card__date">{formatDate(sale.fechaVenta)}</span></div>
                   <span className={`po-status po-status--${sale.estado}`}>{getSaleStatusLabel(sale.estado)}</span>
                 </header>
-                <div className="po-history-card__provider"><strong>{sale.clienteSnapshot.nombreRazonSocial}</strong><span>{sale.clienteSnapshot.rut || "Sin RUT"}</span></div>
+                <div className="po-history-card__provider"><strong>{sale.clienteSnapshot.nombreRazonSocial}</strong><span>{sale.clienteSnapshot.rut || `Sin ${fiscalLabel}`}</span></div>
                 <dl><div><dt>Total</dt><dd>{money(sale.total, sale)}</dd></div><div><dt>Origen</dt><dd>{sale.cotizacionId ? <button type="button" className="sale-history-link sale-origin-link" onClick={() => openOriginQuote(sale)}>{sale.cotizacionNumero || "Ver cotización"}</button> : "Directa"}</dd></div><div><dt>Stock</dt><dd>{getSaleStockStatusLabel(sale.estadoStock, sale)}</dd></div><div><dt>Fecha</dt><dd>{formatDate(sale.fechaVenta)}</dd></div></dl>
               </article>
             ))}
           </section>
           </>
         )}
-      </section>
+      </section>}
     </main>
   );
 }

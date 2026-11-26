@@ -8,6 +8,8 @@ import {
 } from "../../domain/operationalNetProfit.mjs";
 import {formatMoney} from "../../utils/formatters";
 import useBusinessFormat from "../../hooks/useBusinessFormat";
+import ReportsInfoTip from "./ReportsInfoTip";
+import {userErrorMessage} from "../../domain/userFacingError.mjs";
 
 // SPEC 022 §6.2: ganancia neta operacional, su desglose y la línea de ventas
 // sin costo registrado. La cifra sale de calculateOperationalNetProfit; este
@@ -37,7 +39,7 @@ export function useOperationalNetProfit(profitabilityV4, range) {
         }),
       };
     } catch (error) {
-      return {status: "error", result: null, error: error?.message || "No fue posible calcular la ganancia."};
+      return {status: "error", result: null, error: userErrorMessage(error, "No fue posible calcular la ganancia.")};
     }
   }, [commercial, projects, range.end, range.start]);
 }
@@ -67,7 +69,27 @@ function BreakdownTable({caption, rows, currency}) {
   </table></div>;
 }
 
-function CurrencyBreakdown({group}) {
+// Nota fija de la ganancia (SPEC 022 §6.2 punto 1): sigue fuera del cálculo plegado, ahora en un
+// ícono "i" junto al título "Me quedó" (R6): el texto no cambia, solo se abre a pedido.
+export function ProfitNote() {
+  return <ReportsInfoTip label="Qué incluye la ganancia">
+    Ventas sin IVA menos sus costos, en productos y proyectos.
+    {" "}No incluye gastos generales del negocio.
+  </ReportsInfoTip>;
+}
+
+// Línea "Ventas sin costo registrado" (SPEC 022 §4.4): servicios vendidos sin
+// proyecto, fuera de la ganancia. También visible bajo "Me quedó".
+export function ServicesWithoutCostNote({group}) {
+  const { locale: businessLocale } = useBusinessFormat();
+  if (!(group?.ventasSinCostoRegistrado?.ventas > 0)) return null;
+  return <p className="reports-v4-note">
+    Ventas sin costo registrado: {money(group.ventasSinCostoRegistrado.monto, group.moneda, businessLocale)}, servicios vendidos sin
+    proyecto. No entran en la ganancia.
+  </p>;
+}
+
+function CurrencyBreakdown({group, showProjects = true}) {
   const { locale: businessLocale } = useBusinessFormat();
   const partial = group.cobertura === COVERAGE.PARTIAL;
   const sales = group.componentes.ventasSinProyecto;
@@ -90,18 +112,13 @@ function CurrencyBreakdown({group}) {
         <small>{money(group.ingresoNetoConsiderado, currency, businessLocale)} de ingreso neto</small>
       </div>
     </dl>
-    <p className="reports-v4-note">
-      Ganancia: ventas sin IVA menos costos registrados de productos y proyectos.
-      {" "}No incluye gastos generales del negocio.
-    </p>
-
     <div className="reports-detail-grid">
       <BreakdownTable caption="Ventas sin proyecto" currency={currency} rows={[
         ["Ventas de productos (sin IVA)", sales.ingresoNetoProductos],
         ["Costo de lo vendido", sales.costoHistoricoProductos],
         ["Ganancia por productos", sales.margenBrutoProductos, true],
       ]} />
-      <BreakdownTable caption="Proyectos" currency={currency} rows={[
+      {showProjects && <BreakdownTable caption="Proyectos" currency={currency} rows={[
         ["Ingreso neto", projects.ingresoNeto],
         ["Materiales de venta", projects.materialesVenta],
         ["Materiales adicionales", projects.materialesAdicionales],
@@ -109,23 +126,19 @@ function CurrencyBreakdown({group}) {
         ["Gastos directos", projects.gastosDirectos],
         ["Gastos indirectos", projects.gastosIndirectos],
         ["Resultado de proyectos", projects.resultado, true],
-      ]} />
+      ]} />}
       <BreakdownTable caption="Total" currency={currency} rows={[
         ["Ganancia por productos", sales.margenBrutoProductos],
-        ["Resultado de proyectos", projects.resultado],
+        ...(showProjects ? [["Resultado de proyectos", projects.resultado]] : []),
         [partial ? "Ganancia (parcial)" : "Ganancia", group.gananciaNetaOperacional, true],
       ]} />
     </div>
-
-    {group.ventasSinCostoRegistrado.ventas > 0 && <p className="reports-v4-note">
-      Ventas sin costo registrado: {money(group.ventasSinCostoRegistrado.monto, currency, businessLocale)} — servicios vendidos sin
-      proyecto. No se incluyen en la ganancia porque no tienen costos asociados.
-    </p>}
   </article>;
 }
 
 // Puntos 1 a 3 de §6.2. Lo reutilizan Rentabilidad y estado y Ganancias.
-export function OperationalNetProfitBreakdown({canView, currency, onRetry, state}) {
+// `showProjects` en false (Taller y Veterinaria, SPEC 038) oculta la tabla "Proyectos" y la fila "Resultado de proyectos" de "Total" (SPEC 040); los números no cambian.
+export function OperationalNetProfitBreakdown({canView, currency, onRetry, showProjects = true, state}) {
   if (!canView) return null;
   if (state.status === "loading") return <LoadingState variant="section" label="Calculando ganancia..." />;
   if (state.status === "error") {
@@ -142,7 +155,7 @@ export function OperationalNetProfitBreakdown({canView, currency, onRetry, state
     {state.result.periodo.proyectosPorMesCompleto && <p className="reports-v4-note">
       El período corta un mes: los proyectos aportan ese mes completo, porque su balance se registra por mes.
     </p>}
-    {groups.map((group) => <CurrencyBreakdown group={group} key={group.moneda || "sin-moneda"} />)}
+    {groups.map((group) => <CurrencyBreakdown group={group} key={group.moneda || "sin-moneda"} showProjects={showProjects} />)}
   </div>;
 }
 

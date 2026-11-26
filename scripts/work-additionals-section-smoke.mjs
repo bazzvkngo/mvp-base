@@ -46,8 +46,10 @@ function additional(overrides = {}) {
 const vite = await createServer({appType: "custom", logLevel: "silent", server: {middlewareMode: true}});
 
 try {
+  const {getWorkAdditionalCatalogPrice} = await vite.ssrLoadModule("/src/domain/workModel.mjs");
   const {
     default: WorkAdditionalsSection,
+    ADDITIONAL_NO_SALE_PRICE_MESSAGE,
     canAnnulAdditional,
     canSubmitAdditionalDraft,
     getAdditionalItemTypeLabel,
@@ -87,6 +89,9 @@ try {
   const editableMarkup = renderToStaticMarkup(React.createElement(WorkAdditionalsSection, {...baseProps, additionals: [], canManage: true, role: "OWNER"}));
   assert.match(editableMarkup, /Registrar adicional/);
   assert.match(editableMarkup, /Selecciona un ítem del catálogo/);
+  // Cada campo con su etiqueta visible (no solo placeholder).
+  for (const label of ["Ítem", "Cantidad", "Precio unitario"]) assert.match(editableMarkup, new RegExp(`<span class="erp-field__label">${label}</span>`), `etiqueta visible «${label}»`);
+  assert.doesNotMatch(editableMarkup, /placeholder="Cantidad"|placeholder="Precio unitario/, "las etiquetas no dependen del placeholder");
   console.log("OK caso 5: OWNER/ADMIN (y por extensión TECNICO/MEMBER vía canOperate) ven el formulario de alta");
 
   // --- Caso 6: readonly no puede crear ---
@@ -133,6 +138,44 @@ try {
   assert.match(corruptMarkup, /Ítem sin nombre/, "sin itemSnapshot debe mostrar un texto de respaldo, nunca lanzar ni mostrar undefined");
   assert.doesNotMatch(corruptMarkup, /\bundefined\b|\bNaN\b/);
   console.log("OK caso 10: datos incompletos/corruptos no rompen el render (defensivo, sin estado de error propio)");
+
+  // --- Caso 11: precio del adicional = precio de venta del ítem; solo lectura sin gestión ---
+  {
+    const catalogItems = [{id: "item-1", nombre: "Cable UTP", tipoItem: "producto", codigoInterno: "CAB-1", precioInterno: 1500}];
+    const technicianMarkup = renderToStaticMarkup(React.createElement(WorkAdditionalsSection, {...baseProps, additionals: [], catalogItems, canManage: false, role: "TECNICO"}));
+    const memberMarkup = renderToStaticMarkup(React.createElement(WorkAdditionalsSection, {...baseProps, additionals: [], catalogItems, canManage: false, role: "MEMBER"}));
+    const ownerPriceMarkup = renderToStaticMarkup(React.createElement(WorkAdditionalsSection, {...baseProps, additionals: [], catalogItems, canManage: true, role: "OWNER"}));
+    const priceInput = (markup) => markup.match(/<input[^>]*max="999999999999\.99"[^>]*>/)?.[0] || "";
+    assert.match(priceInput(technicianMarkup), /readOnly=""/, "TECNICO: el precio es de solo lectura");
+    assert.match(priceInput(memberMarkup), /readOnly=""/, "MEMBER: el precio es de solo lectura");
+    assert.doesNotMatch(priceInput(ownerPriceMarkup), /readOnly/, "propietario y administrador editan el precio");
+    assert.match(technicianMarkup, /Precio de venta del ítem en CLP\. Solo un administrador puede cambiarlo\./, "el solo lectura se explica y muestra la moneda");
+    assert.doesNotMatch(ownerPriceMarkup, /Solo un administrador puede cambiarlo/);
+    // Qué campo es el precio de venta: `precioInterno` (nunca el costo ni el costo promedio).
+    assert.equal(getWorkAdditionalCatalogPrice({precioInterno: 1500}), 1500);
+    assert.equal(getWorkAdditionalCatalogPrice({precioInterno: "2500.5"}), 2500.5);
+    assert.equal(getWorkAdditionalCatalogPrice({precioInterno: 1999.999}), 2000, "dos decimales, igual que el backend");
+    for (const [label, item] of [["sin campo", {}], ["solo costo", {costoBase: 4000, costoPromedio: 3500, precioCompra: 3000}], ["vacío", {precioInterno: ""}], ["nulo", {precioInterno: null}], ["cero", {precioInterno: 0}], ["negativo", {precioInterno: -5}], ["no numérico", {precioInterno: "abc"}], ["sin ítem", undefined]]) {
+      assert.equal(getWorkAdditionalCatalogPrice(item), null, `${label}: sin precio de venta (nunca cae al costo)`);
+    }
+    // Sin gestión: el borrador debe llevar exactamente el precio del ítem y el ítem debe tenerlo.
+    const draft = {itemId: "item-1", cantidad: "2", precioUnitario: "1500"};
+    assert.equal(canSubmitAdditionalDraft(draft, {catalogPrice: 1500, requireCatalogPrice: true}), true, "precio correcto: se puede enviar");
+    assert.equal(canSubmitAdditionalDraft({...draft, precioUnitario: "1400"}, {catalogPrice: 1500, requireCatalogPrice: true}), false, "precio distinto: no se envía");
+    assert.equal(canSubmitAdditionalDraft(draft, {catalogPrice: null, requireCatalogPrice: true}), false, "ítem sin precio de venta: botón deshabilitado");
+    assert.equal(canSubmitAdditionalDraft({...draft, precioUnitario: "1400"}), true, "propietario y administrador: sin restricción (comportamiento actual)");
+    assert.equal(canSubmitAdditionalDraft({...draft, precioUnitario: "0"}, {catalogPrice: null, requireCatalogPrice: false}), true, "propietario y administrador: precio 0 sigue permitido");
+    assert.equal(ADDITIONAL_NO_SALE_PRICE_MESSAGE, "Este ítem no tiene precio de venta. Pide a un administrador que lo defina.");
+    const source11 = await readFile(new URL("../src/features/works/WorkAdditionalsSection.jsx", import.meta.url), "utf8");
+    assert.match(source11, /const priceLocked = !canManage;/, "solo gestión (propietario/administrador) edita el precio");
+    assert.match(source11, /readOnly=\{priceLocked\}/);
+    assert.match(source11, /return \{\.\.\.current, itemId, precioUnitario: price != null \? String\(price\) : priceLocked \? "" : current\.precioUnitario\};/, "al elegir el ítem se rellena el precio de venta; sin precio, sin gestión se vacía y con gestión se conserva lo escrito");
+    assert.match(source11, /onChange=\{\(event\) => selectItem\(event\.target\.value\)\}/);
+    assert.match(source11, /\{missingSalePrice && <small className="works-field-error">\{ADDITIONAL_NO_SALE_PRICE_MESSAGE\}<\/small>\}/, "el aviso de ítem sin precio sale bajo el campo");
+    assert.match(source11, /const missingSalePrice = priceLocked && Boolean\(draft\.itemId\) && catalogPrice == null;/);
+    assert.match(source11, /!canSubmitAdditionalDraft\(draft, draftOptions\)\}/, "el botón Registrar queda deshabilitado con precio ausente o distinto");
+    console.log("OK caso 11: el precio sale de precioInterno, es solo lectura sin gestión, un ítem sin precio avisa y bloquea, y gestión conserva el comportamiento actual");
+  }
 
   // --- Helpers puros adicionales ---
   assert.equal(getAdditionalItemTypeLabel("producto"), "Producto");

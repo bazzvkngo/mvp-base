@@ -1,4 +1,6 @@
 import {adaptStoredFiscalIdentifier} from "./fiscalIdentifier.mjs";
+import {hasMaxDecimals, mulRound, sanitizeDecimals, sumMoney} from "./money.mjs";
+import {userErrorMessage} from "./userFacingError.mjs";
 
 export const QUOTE_MODEL_VERSION = 2;
 export const CLP_CURRENCY = "CLP";
@@ -53,6 +55,48 @@ export function canDuplicateQuotes(role) {
   return ["OWNER", "ADMIN", "VENTAS"].includes(String(role || "").toUpperCase());
 }
 
+// Eliminar una cotización en borrador es definitivo: solo OWNER y ADMIN, y se
+// confirma escribiendo la palabra (la Function lo vuelve a validar).
+export const QUOTE_DELETE_CONFIRMATION_WORD = "permanente";
+
+export function canDeleteQuotes(role) {
+  return ["OWNER", "ADMIN"].includes(String(role || "").toUpperCase());
+}
+
+export function isQuoteDeleteConfirmed(value) {
+  return String(value ?? "").trim().toLowerCase() === QUOTE_DELETE_CONFIRMATION_WORD;
+}
+
+// Cortesía de interfaz: replica en el cliente findDeletionBlocker
+// (functions/quoteDeletion.js) con los campos que la cotización ya trae, para
+// no ofrecer "Eliminar cotización" en un borrador que la Function va a rechazar.
+// La Function sigue siendo la autoridad. El cliente NO puede ver estos bloqueos
+// (las reglas niegan esas rutas), así que la opción puede aparecer y ser
+// rechazada igualmente:
+//   - negocios/{id}/enviosCotizaciones/{quoteId} (registro de envío);
+//   - quotePublicTokens (token público emitido);
+//   - negocios/{id}/ventas/cotizacion__{quoteId} (se cubre con ventaId);
+//   - quoteDuplicateRequests (otra cotización creada a partir de esta).
+const hasStoredValue = (value) =>
+  value !== undefined && value !== null && value !== "" && value !== false;
+
+export function canOfferQuoteDeletion(quote = {}) {
+  if ((quote.estado || "borrador") !== "borrador") return false;
+  return ![
+    "fechaEmision",
+    "canalEmision",
+    "ventaId",
+    "respuestaCliente",
+    "respuestaClienteEn",
+    "fechaEnvioCorreo",
+    "estadoEnvioCorreo",
+    "tokenPublicoHash",
+    "tokenWhatsappHash",
+    "propuestaPublicaCreadaEn",
+    "whatsappPreparadoEn",
+  ].some((field) => hasStoredValue(quote[field]));
+}
+
 function normalizeIdentifier(value, fallback = "") {
   return safeQuoteText(value, 160).replace(/[^a-zA-Z0-9_.:-]/g, "-") || fallback;
 }
@@ -93,7 +137,16 @@ export function getQuoteDisplayNumber(quote, fallback = DRAFT_QUOTE_NUMBER_LABEL
   );
 }
 
-export function calculateQuoteLineAmounts(item, index = 0) {
+// SPEC 036: `montoDecimales` son los decimales de cálculo del documento (0 = entero, como siempre; en BOB, 2 cuando el
+// catálogo los activa). Con 0 el resultado es exactamente el de antes: mulRound y sumMoney ejecutan la fórmula anterior.
+function assertAmountDecimals(value, decimals, field) {
+  if (decimals > 0 && !hasMaxDecimals(value, decimals)) {
+    throw numericError(field, `admite hasta ${decimals} decimales.`);
+  }
+}
+
+export function calculateQuoteLineAmounts(item, index = 0, montoDecimales = 0) {
+  const decimals = sanitizeDecimals(montoDecimales);
   const rowLabel = `Ítem ${index + 1}`;
   const cantidad = readNonNegativeQuoteNumber(item?.cantidad, `${rowLabel}: cantidad`, {
     allowZero: false,
@@ -105,6 +158,7 @@ export function calculateQuoteLineAmounts(item, index = 0) {
       item?.precioSugerido,
     `${rowLabel}: precio unitario`
   );
+  assertAmountDecimals(precioUnitario, decimals, `${rowLabel}: precio unitario`);
   const descuentoPorcentaje = readOptionalNonNegativeNumber(
     item?.descuentoPorcentaje,
     `${rowLabel}: descuento`,
@@ -114,9 +168,9 @@ export function calculateQuoteLineAmounts(item, index = 0) {
     throw numericError(`${rowLabel}: descuento`, "no puede superar 100%.");
   }
 
-  const bruto = Math.round(cantidad * precioUnitario);
-  const descuentoLinea = Math.round((bruto * descuentoPorcentaje) / 100);
-  const totalLinea = Math.max(bruto - descuentoLinea, 0);
+  const bruto = mulRound(cantidad, precioUnitario, decimals);
+  const descuentoLinea = mulRound(bruto, descuentoPorcentaje, decimals, 100);
+  const totalLinea = Math.max(sumMoney([bruto, -descuentoLinea], decimals), 0);
 
   return {
     cantidad,
@@ -128,32 +182,31 @@ export function calculateQuoteLineAmounts(item, index = 0) {
   };
 }
 
-export function calculateQuoteLineTotal(item, index = 0) {
-  return calculateQuoteLineAmounts(item, index).totalLinea;
+export function calculateQuoteLineTotal(item, index = 0, montoDecimales = 0) {
+  return calculateQuoteLineAmounts(item, index, montoDecimales).totalLinea;
 }
 
 export function calculateQuoteTotals(
   items,
   descuentoGeneral = 0,
-  { afectaIva = true, tasaIva = CHILE_VAT_RATE } = {}
+  { afectaIva = true, tasaIva = CHILE_VAT_RATE, montoDecimales = 0 } = {}
 ) {
   if (!Array.isArray(items)) {
     throw new Error("Los ítems de la cotización deben ser una lista.");
   }
+  const decimals = sanitizeDecimals(montoDecimales);
   const lineAmounts = items.map((item, index) =>
-    calculateQuoteLineAmounts(item, index)
+    calculateQuoteLineAmounts(item, index, decimals)
   );
-  const subtotal = lineAmounts.reduce((sum, line) => sum + line.bruto, 0);
-  const descuentoItems = lineAmounts.reduce(
-    (sum, line) => sum + line.descuentoLinea,
-    0
-  );
+  const subtotal = sumMoney(lineAmounts.map((line) => line.bruto), decimals);
+  const descuentoItems = sumMoney(lineAmounts.map((line) => line.descuentoLinea), decimals);
   const discount = readOptionalNonNegativeNumber(
     descuentoGeneral,
     "El descuento general",
     0
   );
-  const maxGeneralDiscount = Math.max(subtotal - descuentoItems, 0);
+  assertAmountDecimals(discount, decimals, "El descuento general");
+  const maxGeneralDiscount = Math.max(sumMoney([subtotal, -descuentoItems], decimals), 0);
   if (discount > maxGeneralDiscount) {
     throw numericError(
       "El descuento general",
@@ -165,9 +218,9 @@ export function calculateQuoteTotals(
     throw numericError("La tasa de IVA", "es inválida.");
   }
 
-  const descuentoTotal = descuentoItems + discount;
-  const neto = Math.max(subtotal - descuentoTotal, 0);
-  const iva = afectaIva ? Math.round(neto * safeVatRate) : 0;
+  const descuentoTotal = sumMoney([descuentoItems, discount], decimals);
+  const neto = Math.max(sumMoney([subtotal, -descuentoTotal], decimals), 0);
+  const iva = afectaIva ? mulRound(neto, safeVatRate, decimals) : 0;
 
   return {
     subtotal,
@@ -179,7 +232,7 @@ export function calculateQuoteTotals(
     tasaIva: afectaIva ? safeVatRate : 0,
     afectaIva: Boolean(afectaIva),
     iva,
-    total: neto + iva,
+    total: sumMoney([neto, iva], decimals),
     lineAmounts,
   };
 }
@@ -207,6 +260,13 @@ export function tryCalculateQuoteTotals(items, descuentoGeneral, options) {
   }
 }
 
+// Texto para mostrar del error de `tryCalculateQuoteTotals` ({totals, error}). Sin error devuelve "":
+// userErrorMessage(null) devolvería el mensaje genérico y lo mostraría siempre.
+export function quoteTotalsErrorMessage(totalsResult) {
+  if (!totalsResult?.error) return "";
+  return userErrorMessage(totalsResult.error, "No se pudieron calcular los totales de la cotización.");
+}
+
 export function normalizeInventorySnapshot(item = {}) {
   const source = item?.inventarioSnapshot || item?.item || item;
   return {
@@ -232,14 +292,15 @@ export function normalizeInventorySnapshot(item = {}) {
   };
 }
 
-export function normalizeQuoteItem(item = {}, index = 0, { strict = false } = {}) {
+export function normalizeQuoteItem(item = {}, index = 0, { strict = false, montoDecimales = 0 } = {}) {
+  const decimals = sanitizeDecimals(montoDecimales);
   const inventorySnapshot = normalizeInventorySnapshot(item);
   let amounts;
   if (strict) {
-    amounts = calculateQuoteLineAmounts(item, index);
+    amounts = calculateQuoteLineAmounts(item, index, decimals);
   } else {
     try {
-      amounts = calculateQuoteLineAmounts(item, index);
+      amounts = calculateQuoteLineAmounts(item, index, decimals);
     } catch {
       const cantidad = Math.max(Number(item?.cantidad) || 1, 0);
       const precioUnitario = Math.max(
@@ -255,15 +316,15 @@ export function normalizeQuoteItem(item = {}, index = 0, { strict = false } = {}
         Math.max(Number(item?.descuentoPorcentaje) || 0, 0),
         100
       );
-      const bruto = Math.round(cantidad * precioUnitario);
-      const descuentoLinea = Math.round((bruto * descuentoPorcentaje) / 100);
+      const bruto = mulRound(cantidad, precioUnitario, decimals);
+      const descuentoLinea = mulRound(bruto, descuentoPorcentaje, decimals, 100);
       amounts = {
         cantidad,
         precioUnitario,
         descuentoPorcentaje,
         bruto,
         descuentoLinea,
-        totalLinea: bruto - descuentoLinea,
+        totalLinea: sumMoney([bruto, -descuentoLinea], decimals),
       };
     }
   }
@@ -563,6 +624,7 @@ export function validateQuoteDraft(raw = {}) {
   try {
     calculateQuoteTotals(raw.items || [], raw.descuento ?? raw.descuentoGeneral, {
       afectaIva: raw.afectaIva !== false,
+      montoDecimales: raw.montoDecimales,
     });
   } catch (error) {
     fieldErrors.numericos = error.message;
@@ -582,10 +644,14 @@ export function buildQuotePayload(uid, raw = {}, { issueDate } = {}) {
   if (!safeQuoteText(uid, 160)) throw new Error("Usuario no autenticado.");
   const company = normalizeCompanySnapshot(raw.empresa || {});
   const client = normalizeClientSnapshot(raw);
-  const items = normalizeQuoteItems(raw.items, { strict: true });
+  // Decimales de cálculo del documento (los pone quien arma el borrador; el servidor decide los suyos con el
+  // snapshot del documento y no lee este valor).
+  const montoDecimales = sanitizeDecimals(raw.montoDecimales);
+  const items = normalizeQuoteItems(raw.items, { strict: true, montoDecimales });
   const afectaIva = raw.afectaIva !== false;
   const totals = calculateQuoteTotals(items, raw.descuento ?? raw.descuentoGeneral, {
     afectaIva,
+    montoDecimales,
   });
   const fecha = safeQuoteText(raw.fecha || issueDate, 40);
   const validezDias = normalizeValidityDays(
@@ -664,13 +730,17 @@ export function adaptStoredQuote(raw = {}) {
     ...raw,
     clienteId: raw.clienteId || legacyClientId,
   });
-  const items = normalizeQuoteItems(raw.items, { strict: false });
+  const localization = adaptDocumentLocalization(raw);
+  const items = normalizeQuoteItems(raw.items, {
+    strict: false,
+    montoDecimales: localization.montoDecimales,
+  });
   const legacyTaxUndefined = !isCurrent && !hasOwn(raw, "afectaIva");
   const afectaIva = legacyTaxUndefined ? false : raw.afectaIva !== false;
-  const localization = adaptDocumentLocalization(raw);
   const fallbackTotals = tryCalculateQuoteTotals(items, raw.descuento, {
     afectaIva,
     tasaIva: localization.tasaIva,
+    montoDecimales: localization.montoDecimales,
   }).totals;
   const conditions = normalizeQuoteConditions(raw, company);
   const validezDias = normalizeValidityDays(

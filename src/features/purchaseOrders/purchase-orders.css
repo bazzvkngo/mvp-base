@@ -1285,79 +1285,6 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
   padding: 0;
 }
 
-.po-email-form {
-  display: grid;
-  gap: 10px;
-}
-
-.po-email-form label {
-  display: grid;
-  font-size: 13px;
-  font-weight: 750;
-  gap: 6px;
-}
-
-.po-email-form input,
-.po-email-form textarea {
-  border: 1px solid var(--color-border-control);
-  border-radius: 7px;
-  font: inherit;
-  min-height: 44px;
-  padding: 9px 11px;
-}
-
-.po-email-form textarea {
-  line-height: 1.45;
-  min-height: 128px;
-  resize: vertical;
-}
-
-.po-email-form p {
-  color: var(--color-text-muted);
-  font-size: 12px;
-  margin: 0;
-}
-
-.po-email-form .po-email-form__error {
-  color: var(--color-danger-700);
-}
-
-.po-email-summary {
-  background: var(--color-surface-subtle);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 7px;
-  display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  padding: 11px 12px;
-}
-
-.po-email-summary div {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.po-email-summary span {
-  color: var(--color-text-muted);
-  font-size: 11px;
-}
-
-.po-email-summary strong {
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-
-.po-email-form .po-email-attachment-note {
-  color: var(--color-text-strong);
-}
-
-@media (max-width: 560px) {
-  .po-email-summary {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
 .po-history__actions--purchase-orders {
   flex-wrap: nowrap;
   white-space: nowrap;
@@ -1674,3 +1601,63 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 /* Registro de tokens faltantes encontrados en esta pasada (etapa 5,
    barrido acumulado, NO resueltos aquí — ver entrega del paso 5):
    ninguno nuevo en purchase-orders.css. */
+
+/* Editor de la compra (borrador): mismo patrón visual que el editor de Venta (cabecera corta, selector de proveedor en línea,
+   tarjetas visibles, filas con selector de cantidad y resumen con el total destacado). Lo común vive en components.css
+   (.ui-doc-*, .ui-step-*, .ui-section-*, .ui-party*, .ui-qty*); aquí solo lo propio de Compras. Solo tokens; el modo oscuro
+   sale de los propios tokens. */
+.purchase-workspace .po-layout { margin-top: 0; }
+
+/* Ítems del documento: ver .ui-doc-items en src/styles/components.css (bloque compartido DocumentItemsEditor). */
+
+/* Documento y fechas: mismos campos de siempre, dentro de una tarjeta abierta (sin acordeón). */
+.purchase-data-grid { padding-top: var(--space-3); }
+.purchase-data-grid label { color: var(--color-text-muted); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); gap: var(--space-1); }
+.purchase-data-grid input, .purchase-data-grid select { background: var(--color-surface-panel); color: var(--color-text-strong); font-size: var(--font-size-sm); font-weight: var(--font-weight-regular); }
+.purchase-data-grid input:focus-visible, .purchase-data-grid select:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-offset); }
+.purchase-data-panel .purchase-document-summary { padding: var(--space-3) 0 0; }
+
+/* Condiciones comerciales: resumen visible y edición en un diálogo, como en Venta. */
+.purchase-conditions-summary { display: grid; gap: var(--space-3); grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: var(--space-3); }
+.purchase-conditions-summary > div { background: var(--color-surface-subtle); border-left: 3px solid var(--color-text-brand-accent); border-radius: var(--radius-xs); min-width: 0; padding: var(--space-2) var(--space-3); }
+.purchase-conditions-summary > div:only-child { grid-column: 1 / -1; }
+.purchase-conditions-summary strong { color: var(--color-text-strong); font-size: var(--font-size-xs); }
+.purchase-conditions-summary p { color: var(--color-text-muted); font-size: var(--font-size-sm); line-height: var(--line-height-default); margin: var(--space-1) 0 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.purchase-conditions-form { display: grid; gap: var(--space-4); }
+.purchase-conditions-form label { color: var(--color-text-strong); display: grid; font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); gap: var(--space-2); }
+.purchase-conditions-form textarea { background: var(--color-surface-panel); border: 1px solid var(--color-border-control); border-radius: var(--radius-sm); color: var(--color-text-default); font: inherit; font-weight: var(--font-weight-regular); min-height: 6rem; padding: var(--space-2) var(--space-3); resize: vertical; }
+.purchase-conditions-form textarea:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-offset); }
+
+/* Vista previa imprimible: tarjeta con botón Ver/Ocultar (antes un acordeón). */
+.purchase-preview-panel .purchase-preview-body { border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); margin: var(--space-3) 0 0; }
+
+/* Resumen: total destacado, botón principal alto y "Guardar cambios" como enlace. */
+.purchase-summary .po-summary__header h2 { color: var(--color-text-strong); font-size: var(--font-size-lg); margin: 0; }
+.purchase-summary .po-summary__amounts > div { padding: var(--space-3) 0; }
+.purchase-summary .po-summary__amounts .po-summary__total { align-items: baseline; border-top: 1px solid var(--color-border-default); color: var(--color-text-strong); font-size: var(--font-size-md); font-weight: var(--font-weight-semibold); margin-top: var(--space-1); padding: var(--space-4) 0 var(--space-2); }
+.purchase-summary .po-summary__total strong { color: var(--color-text-brand); font-size: var(--font-size-2xl); line-height: var(--line-height-tight); }
+.purchase-summary .po-summary__actions { margin-top: var(--space-4); }
+.purchase-summary__primary { min-height: 3rem; }
+.purchase-summary .purchase-summary__save { color: var(--color-text-brand); min-height: 2.75rem; text-decoration: underline; text-underline-offset: var(--space-1); }
+
+@media (max-width: 620px) {
+  .purchase-conditions-summary { grid-template-columns: 1fr; }
+}
+/* Fin del editor de la compra (borrador). */
+
+/* Nueva y Editar orden de compra (borrador): usa el patrón de arriba (cabecera, tarjetas, líneas, condiciones, resumen).
+   Aquí solo lo propio de la orden. Solo tokens; el modo oscuro sale de los propios tokens. */
+/* Acciones de una orden ya creada: debajo de la cabecera corta, alineadas a la izquierda y con el ancho completo. */
+.purchase-workspace header > .po-header__action-stack { flex-basis: 100%; justify-items: start; max-width: none; }
+.purchase-workspace header > .po-header__action-stack .po-header__actions,
+.purchase-workspace header > .po-header__action-stack .po-header__utility-actions { justify-content: flex-start; }
+
+/* Entrega: los mismos campos de siempre, dentro de una tarjeta abierta (sin acordeón). */
+.po-delivery-panel .po-fields { padding: var(--space-3) 0 0; }
+.po-delivery-panel .po-fields label { gap: var(--space-1); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); }
+.po-delivery-panel .po-fields input { color: var(--color-text-strong); font-size: var(--font-size-sm); font-weight: var(--font-weight-regular); min-height: 2.75rem; }
+.po-delivery-panel .po-fields input:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-offset); }
+
+/* Vista previa imprimible: tarjeta con botón Ver/Ocultar (antes el cuerpo iba pegado a los bordes de la tarjeta). */
+.po-preview-panel .po-preview-body { border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); margin: var(--space-3) 0 0; }
+/* Fin de Nueva y Editar orden de compra. */

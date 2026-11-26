@@ -1,9 +1,13 @@
 import React from "react";
-import { getQuoteStatusLabel } from "../../domain/quoteModel.mjs";
+import Button from "../../components/ui/Button";
+import Notice from "../../components/ui/Notice";
 import { formatMoney } from "../../utils/formatters";
 
+// Resumen de la cotización (borrador). Mismo aspecto que el resumen de Compras y Ventas: título "Resumen", total
+// destacado y botón principal alto. Lo propio de la cotización se conserva: el descuento global, los descuentos por línea,
+// el subtotal neto y el motivo cuando el botón está deshabilitado ("Falta: cliente"). Los cálculos vienen de la página.
 function SummaryRow({ label, strong, value }) {
-  return <div className={strong ? "quote-summary__row quote-summary__row--total" : "quote-summary__row"}><span>{label}</span><strong>{value}</strong></div>;
+  return <div className={strong ? "po-summary__total" : undefined}><span>{label}</span><strong>{value}</strong></div>;
 }
 
 function QuoteSummaryPanel({
@@ -13,8 +17,6 @@ function QuoteSummaryPanel({
   onDiscountChange,
   onSave,
   quote,
-  quoteDate,
-  quoteNumber,
   saveBlocked,
   saveBlockedReason,
   saving,
@@ -25,36 +27,29 @@ function QuoteSummaryPanel({
   taxRate,
 }) {
   const money = (value) => formatMoney(value, currency, locale);
+  const creating = savingEstado === "borrador";
   return (
-    <aside className="quote-workspace__aside no-print" aria-label="Resumen y acciones de la cotización">
-      <section className="quote-workspace__panel quote-summary">
-        <header className="quote-summary__header">
-          <div>
-            <span className="quote-workspace__kicker">Resumen</span>
-            <h2>Totales</h2>
-            {isEditMode && quoteNumber && (
-              <small className="quote-summary__meta">{[quoteNumber, quoteDate].filter(Boolean).join(" · ")}</small>
-            )}
-          </div>
-          {isEditMode && (
-            <span className={`quote-workspace__status quote-workspace__status--${quote.estado}`}>{getQuoteStatusLabel(quote.estado)}</span>
-          )}
-        </header>
-        <div className="quote-summary__amounts">
-          <SummaryRow label="Subtotal" value={money(totals.subtotal)} />
-          <label className="quote-summary__discount"><span>Descuento ({currency || "CLP"})</span><input type="number" min="0" placeholder="0" value={quote.descuento} onChange={onDiscountChange} /></label>
-          {totals.descuentoItems > 0 && <SummaryRow label="Descuentos por línea" value={`-${money(totals.descuentoItems)}`} />}
-          <SummaryRow label="Subtotal neto" value={money(totals.neto)} />
-          <SummaryRow label={quote.afectaIva === false ? `${taxName || "Impuesto"} (exenta)` : `${taxName || "IVA"} ${taxRate}%`} value={money(totals.iva)} />
-          <SummaryRow label="Total" value={money(totals.total)} strong />
+    <aside className="po-panel po-summary purchase-summary quote-summary no-print" aria-label="Resumen y acciones de la cotización">
+      <header className="po-summary__header"><h2>Resumen</h2></header>
+      <div className="po-summary__amounts">
+        <SummaryRow label="Subtotal" value={money(totals.subtotal)} />
+        <div className="quote-summary__discount">
+          <label htmlFor="quote-global-discount">Descuento ({currency || "CLP"})</label>
+          <input id="quote-global-discount" className="ui-doc-line__input" type="number" min="0" placeholder="0" value={quote.descuento} onChange={onDiscountChange} />
         </div>
-        {totalsError && <p className="quote-workspace__message quote-workspace__message--error">{totalsError}</p>}
-        <div className="quote-summary__actions">
-          <button type="button" className="quote-workspace__button quote-workspace__button--primary" onClick={onSave} disabled={saving || saveBlocked} aria-describedby={saveBlockedReason ? "quote-save-blocked-reason" : undefined}>{savingEstado === "borrador" ? (isEditMode ? "Guardando..." : "Creando...") : (isEditMode ? "Guardar cambios" : "Crear cotización")}</button>
-          {saveBlockedReason && <small id="quote-save-blocked-reason" className="quote-summary__hint quote-summary__hint--blocked">{saveBlockedReason}</small>}
-          {!isEditMode && <small className="quote-summary__hint">El número se asignará al crear la cotización.</small>}
-        </div>
-      </section>
+        {totals.descuentoItems > 0 && <SummaryRow label="Descuentos por línea" value={`-${money(totals.descuentoItems)}`} />}
+        <SummaryRow label="Subtotal neto" value={money(totals.neto)} />
+        <SummaryRow label={quote.afectaIva === false ? `${taxName || "Impuesto"} (exenta)` : `${taxName || "IVA"} ${taxRate}%`} value={money(totals.iva)} />
+        <SummaryRow label="Total" value={money(totals.total)} strong />
+      </div>
+      {totalsError && <Notice variant="error">{totalsError}</Notice>}
+      <div className="po-summary__actions">
+        <Button type="button" className="purchase-summary__primary" loading={creating} disabled={saving || saveBlocked} onClick={onSave} aria-describedby={saveBlockedReason ? "quote-save-blocked-reason" : undefined}>
+          {creating ? (isEditMode ? "Guardando..." : "Creando...") : (isEditMode ? "Guardar cambios" : "Crear cotización")}
+        </Button>
+        {saveBlockedReason && <p id="quote-save-blocked-reason" className="quote-summary__hint quote-summary__hint--blocked">{saveBlockedReason}</p>}
+        {!isEditMode && <p className="quote-summary__hint">El número se asignará al crear la cotización.</p>}
+      </div>
     </aside>
   );
 }

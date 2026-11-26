@@ -6,7 +6,7 @@ Para Matías (Taller) y Marcelo (Clínica Veterinaria). Léelo junto con `docs/g
 
 | Área | Cambio | Dónde mirar |
 |---|---|---|
-| **Interruptor de módulos** | Los módulos verticales (Taller, Veterinaria) ya **no** se agregan a `BUSINESS_MODULES`. Tienen un registro propio, vacío por defecto, y un negocio solo los ve si el superadmin se los habilita desde la consola de plataforma | SPEC 031, guía sección 4, `functions/verticalModules.js`, `src/domain/verticalModules.mjs` |
+| **Interruptor de módulos** | Los módulos verticales (Taller, Veterinaria) ya **no** se agregan a `BUSINESS_MODULES`. Tienen un registro propio, vacío por defecto, y un negocio solo los ve si su rubro los habilita (al crearlo o al cambiar el rubro; SPEC 033 y 039). La consola de plataforma ya no tiene pantalla para habilitarlos | SPEC 031, 033, 039, guía sección 4, `functions/verticalModules.js`, `src/domain/verticalModules.mjs` |
 | **Acceso en Functions** | `requireBusinessAccess` acepta la opción `requiredVerticalModule: "taller"` (o `"veterinaria"`). Si el negocio no tiene el módulo habilitado, la Function falla con "Este módulo no está habilitado para tu empresa." | `functions/moduleAccess.js` |
 | **Reglas** | Existe `isBusinessModuleEnabled(businessId, moduleId)`, sin uso todavía. Tus colecciones deben usarla | `firestore.rules` |
 | **Invitaciones de equipo** | `asociarUsuarioExistente` **ya no existe**. Los miembros entran por invitación: el dueño invita, la persona acepta o rechaza | SPEC 032, `functions/teamInvitations.js`, `createMembershipForUser` en `businessMemberships.js` |
@@ -92,7 +92,7 @@ Más los smokes de tu propio módulo. Las que usan emuladores arrancan solas. En
 ## 6. Qué no tocas
 
 - Functions centrales existentes: `requireBusinessAccess`, `getBusinessSession`, las de plataforma.
-- La consola de plataforma y el interruptor de módulos (los gestiona el mantenedor).
+- La consola de plataforma y la Function de módulos de plataforma (los gestiona el mantenedor; el rubro define los módulos, SPEC 039).
 - El stock y los costos de inventario.
 - `BUSINESS_MODULES` y las reglas de las colecciones del Core.
 - Si ante un conflicto al integrar un archivo del Core dudas, **se conserva la versión del Core**.

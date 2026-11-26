@@ -142,13 +142,43 @@ async function main() {
         requestId: "multi_owner_other_rejected_001",
       })
     );
+    // Países cerrados para empresas nuevas: Paraguay (cerrado al abrir Bolivia, acta 7.6.1) y el resto.
+    for (const paisCodigo of ["PY", "BR", "PE", "AR", "CO", "EC", "UY", "MX"]) {
+      await expectCallableCode("invalid-argument", () =>
+        callable(owner, "createAdditionalBusiness", {
+          nombreComercial: "Empresa con moneda decimal",
+          rubroCodigo: "INGENIERIA_CONSULTORIA",
+          paisCodigo,
+          regionEstado: "Región",
+          requestId: `multi_owner_decimal_rejected_${paisCodigo}`,
+        })
+      );
+    }
 
+    // Bolivia exige un departamento del catálogo también en el negocio adicional.
+    await expectCallableCode("invalid-argument", () =>
+      callable(owner, "createAdditionalBusiness", {
+        nombreComercial: "Empresa sin departamento",
+        rubroCodigo: "OTRO_SERVICIO_PROYECTOS",
+        paisCodigo: "BO",
+        requestId: "multi_owner_bo_without_region_001",
+      })
+    );
+    await expectCallableCode("invalid-argument", () =>
+      callable(owner, "createAdditionalBusiness", {
+        nombreComercial: "Empresa departamento inválido",
+        rubroCodigo: "OTRO_SERVICIO_PROYECTOS",
+        paisCodigo: "BO",
+        regionCodigo: "13",
+        requestId: "multi_owner_bo_bad_region_001",
+      })
+    );
     const additionalPayload = {
       nombreComercial: "Mauricio SPA",
       rubroCodigo: "TECNOLOGIA_INFORMATICA",
       paisCodigo: "BO",
       monedaCodigo: "USD",
-      regionEstado: "La Paz",
+      regionCodigo: "SC",
       requestId: "multi_owner_additional_001",
     };
     const second = await callable(
@@ -169,6 +199,8 @@ async function main() {
     assert.equal(second.data.business.role, "OWNER");
     assert.equal(second.data.business.paisCodigo, "BO");
     assert.equal(second.data.business.monedaCodigo, "BOB");
+    assert.equal(second.data.business.regionCodigo, "SC");
+    assert.equal(second.data.business.regionNombre, "Santa Cruz");
     assert.equal(second.data.business.comunaCodigo, undefined);
 
     const retry = await callable(
@@ -195,7 +227,8 @@ async function main() {
     assert.equal(secondProfile.data()?.rubroCodigo, "TECNOLOGIA_INFORMATICA");
     assert.equal(secondProfile.data()?.paisCodigo, "BO");
     assert.equal(secondProfile.data()?.monedaCodigo, "BOB");
-    assert.equal(secondProfile.data()?.regionEstado, "La Paz");
+    assert.equal(secondProfile.data()?.regionCodigo, "SC");
+    assert.equal(secondProfile.data()?.regionEstado, "Santa Cruz");
     assert.equal(secondProfile.data()?.rut, undefined);
     assert.equal(secondProfile.data()?.comunaCodigo, undefined);
     assert.equal(ownerUser.data()?.negocioActivoId, secondBusinessId);

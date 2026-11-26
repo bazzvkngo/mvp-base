@@ -341,12 +341,12 @@
 
 .auth-card .auth-tabpanel {
   display: block;
-  padding-top: var(--space-6);
+  padding-top: var(--space-3);
 }
 
 .auth-card .auth-body {
   display: grid;
-  gap: var(--space-4);
+  gap: var(--space-3);
 }
 
 .auth-card .auth-body > .auth-actions,
@@ -355,7 +355,7 @@
 }
 
 .auth-card .auth-body__title .auth-card__title {
-  margin: 0 0 var(--space-2);
+  margin: 0 0 var(--space-1);
 }
 
 /* El subtítulo existe en las dos pestañas aunque vaya vacío: su altura mínima
@@ -477,27 +477,11 @@
 
 /* ---- Aviso de correo sin verificar (BusinessWaitingPage) ---- */
 
-.auth-wait__notice {
-  background: var(--color-warning-50);
-  border: 1px solid var(--color-warning-300);
-  border-radius: var(--radius-md);
-  color: var(--color-warning-800);
-  display: grid;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-}
-
+/* El aspecto del aviso (fondo, borde, padding, icono) es de <Notice>/ui-notice.
+   .auth-wait__notice queda como gancho sin reglas; aquí solo tipografía y botones. */
 .auth-wait__notice-text {
-  font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
-  line-height: var(--line-height-default);
   margin: 0;
-}
-
-.auth-wait__notice-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
 }
 
 .auth-card .auth-wait__notice-button {
@@ -505,10 +489,13 @@
   flex: 1 1 auto;
 }
 
+/* Existe solo cuando hay texto (sin altura reservada). Ocupa su propia fila bajo
+   los botones dentro de .ui-notice__actions. */
 .auth-wait__notice-feedback {
+  flex: 0 0 100%;
   font-size: var(--font-size-xs);
   line-height: var(--line-height-default);
-  min-height: 1.25rem;
+  margin: 0;
 }
 
 /* ---- Navegador integrado: sin botón de Google ---- */
@@ -545,9 +532,10 @@
 
 /* ---- Ingreso con Google apagado (GOOGLE_LOGIN_ENABLED) ---- */
 
+/* La nota va pegada bajo el botón, en una línea y sin separación extra. */
 .auth-google-group {
   display: grid;
-  gap: var(--space-2);
+  gap: 0;
 }
 
 .auth-google--disabled .auth-google__logo {
@@ -561,4 +549,30 @@
   line-height: var(--line-height-default);
   margin: 0;
   text-align: center;
+}
+
+/* ---- Ventanas bajas en dos columnas: espaciado más compacto ----
+   Solo se reducen separaciones; los tamaños de letra, campos y botones no
+   cambian. Los selectores .auth-screen ... pesan más que los de components.css,
+   que se empaqueta después. */
+@media (min-width: 901px) and (max-height: 800px) {
+  .auth-screen .auth-panel {
+    padding-block: var(--space-3);
+  }
+
+  .auth-screen .auth-card__header {
+    margin-bottom: var(--space-3);
+  }
+
+  .auth-card .auth-tabpanel {
+    padding-top: var(--space-2);
+  }
+
+  .auth-card .auth-body {
+    gap: var(--space-2);
+  }
+
+  .auth-card .auth-form {
+    gap: var(--space-2);
+  }
 }

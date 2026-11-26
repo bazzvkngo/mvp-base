@@ -1,3 +1,5 @@
+import {mulRound, sanitizeDecimals, sumMoney} from "./money.mjs";
+
 export const RECEPTION_MODEL_VERSION = 1;
 export const RECEPTION_STATUSES = Object.freeze(["borrador", "confirmada", "cancelada"]);
 
@@ -79,16 +81,18 @@ export function getSupplierResponseLabel(value) {
   })[value] || "Pendiente";
 }
 
-export function getReceptionConfirmationImpact(items = [], taxRate = 0) {
+// `montoDecimales`: decimales de cálculo de la recepción (SPEC 036; 0 = entero, como siempre).
+export function getReceptionConfirmationImpact(items = [], taxRate = 0, montoDecimales = 0) {
+  const decimals = sanitizeDecimals(montoDecimales);
   const selected = (Array.isArray(items) ? items : []).filter((line) =>
     Number.isFinite(Number(line?.cantidad)) && Number(line.cantidad) > 0
   );
   const count = (type) => selected.filter((line) => line?.tipoItem === type).length;
-  const neto = selected.reduce((sum, line) => {
-    const subtotal = Math.round(Number(line.cantidad) * Number(line.costoUnitario || 0));
-    const descuento = Math.round(subtotal * Number(line.descuentoPct || 0) / 100);
-    return sum + subtotal - descuento;
-  }, 0);
+  const neto = sumMoney(selected.map((line) => {
+    const subtotal = mulRound(Number(line.cantidad), Number(line.costoUnitario || 0), decimals);
+    const descuento = mulRound(subtotal, Number(line.descuentoPct || 0), decimals, 100);
+    return sumMoney([subtotal, -descuento], decimals);
+  }), decimals);
   const safeTaxRate = Number.isFinite(Number(taxRate)) && Number(taxRate) >= 0
     ? Number(taxRate)
     : 0;
@@ -97,7 +101,7 @@ export function getReceptionConfirmationImpact(items = [], taxRate = 0) {
     servicios: count("servicio"),
     actividades: count("actividad"),
     totalItems: selected.length,
-    totalCompraEstimado: neto + Math.round(neto * safeTaxRate),
+    totalCompraEstimado: sumMoney([neto, mulRound(neto, safeTaxRate, decimals)], decimals),
   };
 }
 
@@ -128,7 +132,7 @@ export function adaptStoredReception(raw = {}) {
       lineaId: text(line.lineaId || line.ordenLineaId, 160) || `linea-${index + 1}`,
       ordenLineaId: text(line.ordenLineaId || line.lineaId, 160),
       itemId: text(line.itemId, 160),
-      nombre: text(line.nombre, 240) || "Item historico",
+      nombre: text(line.nombre, 240) || "Ítem histórico",
       codigo: text(line.codigo, 100),
       unidad: text(line.unidad, 80) || "unidad",
       tipoItem: ["producto", "servicio", "actividad"].includes(line.tipoItem)
@@ -147,7 +151,7 @@ export function adaptStoredReception(raw = {}) {
 export function buildReceptionMutationPayload(raw = {}) {
   const fechaRecepcion = text(raw.fechaRecepcion, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaRecepcion)) {
-    throw new Error("Selecciona una fecha de recepcion valida.");
+    throw new Error("Selecciona una fecha de recepción válida.");
   }
   const items = (Array.isArray(raw.items) ? raw.items : []).map((line) => ({
     lineaId: text(line.lineaId || line.ordenLineaId, 160),
@@ -160,11 +164,11 @@ export function buildReceptionMutationPayload(raw = {}) {
     throw new Error("Registra al menos una cantidad recibida.");
   }
   if (items.some((line) => !line.lineaId || !Number.isFinite(line.cantidad) || line.cantidad < 0)) {
-    throw new Error("Las cantidades de la recepcion no son validas.");
+    throw new Error("Las cantidades de la recepción no son válidas.");
   }
   if (items.some((line) => !Number.isFinite(line.costoUnitario) || line.costoUnitario < 0 ||
     !Number.isFinite(line.descuentoPct) || line.descuentoPct < 0 || line.descuentoPct > 100)) {
-    throw new Error("Los costos o descuentos de la recepcion no son validos.");
+    throw new Error("Los costos o descuentos de la recepción no son válidos.");
   }
   return {
     fechaRecepcion,

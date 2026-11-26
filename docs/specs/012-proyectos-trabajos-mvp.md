@@ -63,9 +63,9 @@ Las tareas nuevas usan `modeloTareaVersion: 2`, título, descripción, `responsa
 
 Cada tarea puede contener hasta 100 subtareas simples embebidas (`id`, `titulo`, `completada`, `completadaEn`, `completadaPorUid`), sin anidamiento. Las altas, cambios de título, check/uncheck y eliminaciones seguras son autoritativas e idempotentes. Una subtarea completada no se elimina ni renombra para no romper historia. El progreso de una tarea con subtareas es `completadas / total`; sin subtareas es 0% o 100% según la tarea. El proyecto agrega los porcentajes de sus tareas existentes y nunca acepta un porcentaje manual.
 
-La documentación es append-only en `tareas/{tareaId}/documentacion/{documentacionId}`. Cada alta, asignación/reasignación, documentación, completado y reapertura agrega además un evento al historial del TRB. `workTaskRequests/{requestId}` es interno y hace idempotentes las operaciones que producen eventos. Las tareas V2 no se eliminan físicamente; sólo el checklist legacy incompleto conserva la eliminación compatible.
+La documentación es append-only en `tareas/{tareaId}/documentacion/{documentacionId}`. Cada alta, asignación/reasignación, documentación, completado y reapertura agrega además un evento al historial del TRB. `workTaskRequests/{requestId}` es interno y hace idempotentes las operaciones que producen eventos. Una tarea (de cualquier versión) se elimina físicamente sólo si no está completada y no tiene costos —los anulados cuentan— ni documentación; con registros se conserva. Al eliminarla se eliminan con ella sus subtareas y queda el evento `tarea_eliminada` en el historial (SPEC 028 §4.2, que sustituye aquí la regla anterior «las tareas V2 no se eliminan físicamente»).
 
-OWNER/ADMIN crea, asigna, reasigna, completa y reabre. Mientras no exista RBAC técnico granular, `MEMBER` representa al técnico operativo: Functions sólo le permite documentar o completar una tarea cuyo `responsableUid` coincide con su UID y cuya membresía sigue activa. La ficha compartida conserva la lectura empresarial actual para no romper legacy; una política futura podrá restringir visibilidad por asignación sin cambiar este contrato persistido.
+OWNER/ADMIN crea, asigna, reasigna, completa, reabre y elimina (cuando SPEC 028 §4.2 lo permite). Mientras no exista RBAC técnico granular, `MEMBER` representa al técnico operativo: Functions sólo le permite documentar o completar una tarea cuyo `responsableUid` coincide con su UID y cuya membresía sigue activa. La ficha compartida conserva la lectura empresarial actual para no romper legacy; una política futura podrá restringir visibilidad por asignación sin cambiar este contrato persistido.
 
 ## Costos reales / fase 3
 
@@ -118,7 +118,7 @@ Los clientes se resuelven dentro del negocio y Functions construye el snapshot h
 
 - Crear y editar un trabajo.
 - Cambiar estado explícitamente, completando o limpiando `fechaCompletado` según corresponda.
-- Agregar y operar tareas/subtareas mientras el trabajo no sea terminal; las tareas V2 y subtareas completadas conservan trazabilidad.
+- Agregar y operar tareas/subtareas mientras el trabajo no sea terminal; las subtareas completadas conservan trazabilidad mientras exista su tarea, y una tarea con costos o documentación se conserva (una tarea limpia y no completada puede eliminarse, SPEC 028 §4.2).
 - Poner proyecto o tarea en espera con motivo obligatorio y reanudar conservando el evento.
 - Agregar notas sin editar ni eliminar las existentes.
 - Cancelar conservando documento y trazabilidad.

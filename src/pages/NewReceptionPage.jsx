@@ -1,5 +1,6 @@
 import React, {useEffect, useRef, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
+import {adaptDocumentAmountDecimals} from "../domain/localization.mjs";
 import {sileo} from "sileo";
 import Button from "../components/ui/Button";
 import LoadingState from "../components/ui/LoadingState";
@@ -24,8 +25,10 @@ import {
 import {obtenerCompra} from "../services/purchaseService";
 import {findActiveProductByBarcode} from "../services/inventoryService";
 import {formatMoney} from "../utils/formatters";
+import ReceptionDetailView from "../features/receptions/ReceptionDetailView";
 import ReceptionDocumentImportDialog from "../features/receptions/ReceptionDocumentImportDialog";
 import "../features/receptions/receptions.css";
+import {userErrorMessage} from "../domain/userFacingError.mjs";
 
 const itemActionLabel = (type) => type === "producto"
   ? "Recibir ahora"
@@ -50,9 +53,11 @@ export default function NewReceptionPage({businessId, role}) {
   draftRef.current = draft;
   const canManage = canManageReceptions(role);
   const readOnly = !canManage || reception?.estado !== "borrador";
-  const receivedProducts = reception?.items?.some((line) => line.tipoItem === "producto" && Number(line.cantidad) > 0);
-  const receivedServices = reception?.items?.some((line) => line.tipoItem !== "producto" && Number(line.cantidad) > 0);
-  const confirmationImpact = getReceptionConfirmationImpact(draft.items, reception?.tasaIva);
+  // Decimales de cálculo (SPEC 036): los del documento de la recepción (heredados de la orden; ausente = 0).
+  const documentDecimals = adaptDocumentAmountDecimals(reception || {}, reception?.moneda);
+  // Paso del costo: "any" con 0 decimales (como siempre) y "0.01" con 2. La cantidad no cambia.
+  const moneyStep = documentDecimals > 0 ? String(10 ** -documentDecimals) : "any";
+  const confirmationImpact = getReceptionConfirmationImpact(draft.items, reception?.tasaIva, documentDecimals);
 
   useEffect(() => {
     let active = true;
@@ -64,9 +69,9 @@ export default function NewReceptionPage({businessId, role}) {
       else setMessage("La recepción no existe.");
       if (stored?.compraId) {
         try { const purchase = await obtenerCompra(businessId, stored.compraId); if (active) setLinkedPurchase(purchase); }
-        catch (error) { if (active) setMessage(error.message); }
+        catch (error) { if (active) setMessage(userErrorMessage(error)); }
       }
-    }).catch((error) => active && setMessage(error.message)).finally(() => active && setLoading(false));
+    }).catch((error) => active && setMessage(userErrorMessage(error))).finally(() => active && setLoading(false));
     return () => { active = false; };
   }, [businessId, recepcionId]);
 
@@ -78,12 +83,12 @@ export default function NewReceptionPage({businessId, role}) {
       setReception(result.recepcion);
       setDraft({...draft, documentoOrigen: result.recepcion.documentoOrigen, items: result.recepcion.items});
       sileo.success({title: "Recepción preparada", description: "Aún no se modificó el stock."});
-    } catch (error) { setMessage(error.message); }
+    } catch (error) { setMessage(userErrorMessage(error)); }
     finally { setProcessing(false); }
   };
   const confirm = async () => {
     if (confirmGuard.current || processing) return;
-    confirmGuard.current = true; setDialog(""); setProcessing(true); setMessage("");
+    confirmGuard.current = true; setProcessing(true); setMessage("");
     try {
       await actualizarRecepcionBorrador(businessId, reception.id, draft);
       const result = await confirmarRecepcion(businessId, reception.id, {requestId: confirmId.current});
@@ -101,14 +106,15 @@ export default function NewReceptionPage({businessId, role}) {
             sileo.success({title: "Recepción confirmada", description: "Se verificó el resultado autoritativo después de recuperar la conexión."});
           } else setMessage("La recepción continúa preparada. Puedes reintentar con seguridad.");
         } catch { setMessage("No se pudo verificar la confirmación. Recarga antes de reintentar."); }
-      } else setMessage(error.message);
-    } finally { confirmGuard.current = false; setProcessing(false); }
+      } else setMessage(userErrorMessage(error));
+    // El diálogo se mantiene abierto mientras dura la llamada y se cierra aquí, tanto en éxito como en error.
+    } finally { confirmGuard.current = false; setProcessing(false); setDialog(""); }
   };
   const cancel = async () => {
     if (processing) return;
     setDialog(""); setProcessing(true); setMessage("");
     try { const result = await cancelarRecepcionBorrador(businessId, reception.id); setReception(result.recepcion); navigate(`/recepciones/${reception.id}`, {replace: true}); }
-    catch (error) { setMessage(error.message); }
+    catch (error) { setMessage(userErrorMessage(error)); }
     finally { setProcessing(false); }
   };
   const applyImport = ({items, documentoOrigen, aplicadas, omitidas}) => {
@@ -133,18 +139,15 @@ export default function NewReceptionPage({businessId, role}) {
 
   if (loading) return <LoadingState variant="page" label="Cargando recepción..." />;
   if (!reception) return <p className="po-message po-message--error">{message}</p>;
+  if (reception.estado !== "borrador") return <ReceptionDetailView linkedPurchase={linkedPurchase} message={message} reception={reception} />;
   return <main className="po-workspace">
     <header className="po-header"><div className="po-header__copy"><span className="po-kicker">Recepción</span><div className="po-header__title-row"><h1>{reception.numero}</h1><span className={`po-status po-status--${reception.estado}`}>{getReceptionStatusLabel(reception.estado)}</span></div><div className="po-header__meta"><strong>{reception.proveedorSnapshot?.razonSocial}</strong><span>{draft.fechaRecepcion}</span></div></div><div className="po-header__actions"><button type="button" className="po-button po-button--secondary" onClick={() => navigate("/recepciones")}>Volver al historial</button></div></header>
     {message && <p className="po-message po-message--error">{message}</p>}
 
-    {reception.estado === "confirmada" && <section className="reception-success" role="status" aria-live="polite">
-      <div className="reception-success__copy"><span className="reception-success__eyebrow">Recepción confirmada</span><h2>Recepción completada correctamente.</h2><p>{receivedProducts ? "Los productos recibidos actualizaron existencias." : "Esta recepción no incluía productos; no hubo cambios de existencias."}</p>{receivedServices && <p>Los servicios y actividades recibidos quedaron confirmados.</p>}<p className="reception-success__next">{reception.compraId ? reception.compraEstado === "revertida" ? `La compra asociada fue revertida${reception.compraReversionMotivo ? `: ${reception.compraReversionMotivo}` : "."}` : `La compra ${reception.compraNumero || linkedPurchase?.numero || "asociada"} se registró automáticamente.` : "Esta recepción histórica conserva el vínculo económico previo de su orden."}</p></div>
-    </section>}
-
     {reception.estado !== "confirmada" && <section className="reception-order-origin">
       <div><span>Confirmación del proveedor</span><strong>{getSupplierResponseLabel(reception.respuestaProveedorEstado)}</strong></div>
     </section>}
-    <SupplyTrace currentType="reception" order={{id: reception.ordenCompraId, numero: reception.ordenCompraNumero}} receptions={[reception]} purchase={linkedPurchase} />
+    <SupplyTrace currentType="reception" order={{id: reception.ordenCompraId, numero: reception.ordenCompraNumero}} receptions={[reception]} />
 
     <section className="po-panel"><h2>Datos de recepción</h2><div className="reception-grid"><label>Fecha de recepción<input type="date" disabled={readOnly} value={draft.fechaRecepcion} onChange={(event) => setDraft({...draft, fechaRecepcion: event.target.value})} /></label><label className="reception-grid__wide">Observaciones<textarea disabled={readOnly} value={draft.observaciones} onChange={(event) => setDraft({...draft, observaciones: event.target.value})} /></label></div></section>
     <section className="po-panel">
@@ -152,13 +155,14 @@ export default function NewReceptionPage({businessId, role}) {
       {draft.documentoOrigen && <div className="reception-document-source"><div><span>Documento conciliado</span><strong>{draft.documentoOrigen.nombreArchivo}</strong></div><div><span>Documento</span><strong>{draft.documentoOrigen.tipoDocumento === "factura" ? "Factura" : draft.documentoOrigen.tipoDocumento === "boleta" ? "Boleta" : "Documento"}{draft.documentoOrigen.numeroDocumento ? ` N° ${draft.documentoOrigen.numeroDocumento}` : ""}</strong></div>{hasDocumentValue(draft.documentoOrigen.neto) && <div><span>Neto</span><strong>{formatMoney(draft.documentoOrigen.neto, draft.documentoOrigen.moneda || reception.moneda, reception.locale)}</strong></div>}{hasDocumentValue(draft.documentoOrigen.impuestoMonto) && <div><span>{hasDocumentValue(draft.documentoOrigen.impuestoPorcentaje) ? `IVA (${draft.documentoOrigen.impuestoPorcentaje}%)` : "IVA"}</span><strong>{formatMoney(draft.documentoOrigen.impuestoMonto, draft.documentoOrigen.moneda || reception.moneda, reception.locale)}</strong></div>}{hasDocumentValue(draft.documentoOrigen.total) && <div><span>Total</span><strong>{formatMoney(draft.documentoOrigen.total, draft.documentoOrigen.moneda || reception.moneda, reception.locale)}</strong></div>}<div><span>Conciliación</span><strong>{draft.documentoOrigen.lineasAplicadas || 0} de {draft.documentoOrigen.lineasDetectadas || 0} líneas aplicadas</strong></div></div>}
       <div className="erp-table-region"><table className="erp-table reception-items-table"><thead><tr><th>Ítem</th><th>Solicitado</th><th>Recibido / confirmado antes</th><th>Pendiente</th><th>Cantidad actual</th><th>Costo unitario</th><th>Desc. %</th></tr></thead><tbody>{draft.items.map((line) => {
         const pending = Math.max(0, line.cantidadSolicitada - line.cantidadRecibidaAnterior);
-        return <tr key={line.lineaId}><td><strong>{line.nombre}</strong><small>{line.tipoItem} · {line.unidad}</small>{line.documentoLineas?.length > 0 && <small>Asociado desde documento</small>}</td><td>{line.cantidadSolicitada}</td><td>{line.cantidadRecibidaAnterior}</td><td>{pending}</td><td><span className="reception-line-action-label">{itemActionLabel(line.tipoItem)}</span>{readOnly ? line.cantidad : <input className="reception-qty" type="number" min="0" max={pending} step="any" value={line.cantidad} onChange={(event) => setDraft({...draft, items: draft.items.map((item) => item.lineaId === line.lineaId ? {...item, cantidad: Number(event.target.value)} : item)})} />}</td><td>{readOnly ? line.costoUnitario : <input className="reception-cost" type="number" min="0" step="any" value={line.costoUnitario} onChange={(event) => setDraft({...draft, items: draft.items.map((item) => item.lineaId === line.lineaId ? {...item, costoUnitario: Number(event.target.value)} : item)})} />}</td><td>{readOnly ? line.descuentoPct : <input className="reception-discount" type="number" min="0" max="100" step="any" value={line.descuentoPct} onChange={(event) => setDraft({...draft, items: draft.items.map((item) => item.lineaId === line.lineaId ? {...item, descuentoPct: Number(event.target.value)} : item)})} />}</td></tr>;
+        return <tr key={line.lineaId}><td><strong>{line.nombre}</strong><small>{line.tipoItem} · {line.unidad}</small>{line.documentoLineas?.length > 0 && <small>Asociado desde documento</small>}</td><td>{line.cantidadSolicitada}</td><td>{line.cantidadRecibidaAnterior}</td><td>{pending}</td><td><span className="reception-line-action-label">{itemActionLabel(line.tipoItem)}</span>{readOnly ? line.cantidad : <input className="reception-qty" type="number" min="0" max={pending} step="any" value={line.cantidad} onChange={(event) => setDraft({...draft, items: draft.items.map((item) => item.lineaId === line.lineaId ? {...item, cantidad: Number(event.target.value)} : item)})} />}</td><td>{readOnly ? line.costoUnitario : <input className="reception-cost" type="number" min="0" step={moneyStep} value={line.costoUnitario} onChange={(event) => setDraft({...draft, items: draft.items.map((item) => item.lineaId === line.lineaId ? {...item, costoUnitario: Number(event.target.value)} : item)})} />}</td><td>{readOnly ? line.descuentoPct : <input className="reception-discount" type="number" min="0" max="100" step="any" value={line.descuentoPct} onChange={(event) => setDraft({...draft, items: draft.items.map((item) => item.lineaId === line.lineaId ? {...item, descuentoPct: Number(event.target.value)} : item)})} />}</td></tr>;
       })}</tbody></table></div>
     </section>
     <div className="po-header__actions">{reception.estado === "borrador" && canManage && <><button type="button" className="po-button po-button--secondary" disabled={processing} onClick={save}>Guardar</button><button type="button" className="po-button po-button--primary" disabled={processing} onClick={() => setDialog("confirm")}>Confirmar recepción</button><button type="button" className="po-button po-button--danger" disabled={processing} onClick={() => setDialog("cancel")}>Cancelar</button></>}</div>
 
     <ResponsiveDialog open={dialog === "confirm"} onClose={() => !processing && setDialog("")} eyebrow="Lista para confirmar" title="Confirma el impacto de esta recepción" description="Al confirmar, ValoraCloud registrará esta recepción, actualizará el stock de los productos recibidos y generará automáticamente la compra correspondiente. Los servicios y actividades no modificarán existencias." size="small" footer={<><Button type="button" variant="secondary" disabled={processing} onClick={() => setDialog("")}>Volver</Button><Button type="button" loading={processing} onClick={confirm}>{processing ? "Confirmando recepción…" : "Confirmar recepción y registrar compra"}</Button></>}>
       <div className="reception-confirm-impact"><div><span>Productos que actualizan stock</span><strong>{plural(confirmationImpact.productos, "producto", "productos")}</strong></div><div><span>Servicios sin movimiento de stock</span><strong>{plural(confirmationImpact.servicios, "servicio", "servicios")}</strong></div><div><span>Actividades sin movimiento de stock</span><strong>{plural(confirmationImpact.actividades, "actividad", "actividades")}</strong></div><div><span>Total estimado de la compra</span><strong>{formatMoney(confirmationImpact.totalCompraEstimado, reception.moneda, reception.locale)}</strong></div></div>
+      {processing && <p className="erp-secondary-text" role="status">Esto puede tardar unos segundos. No cierres ni recargues esta página.</p>}
     </ResponsiveDialog>
     <ResponsiveDialog open={dialog === "cancel"} onClose={() => !processing && setDialog("")} eyebrow="Cancelar recepción" title="Cancelar recepción" description="La recepción quedará cancelada sin modificar stock." size="small" footer={<><Button type="button" variant="secondary" disabled={processing} onClick={() => setDialog("")}>Volver</Button><Button type="button" variant="danger" loading={processing} onClick={cancel}>{processing ? "Cancelando..." : "Cancelar recepción"}</Button></>}><p>Esta acción no se puede deshacer.</p></ResponsiveDialog>
     <ReceptionDocumentImportDialog open={importOpen} onClose={() => setImportOpen(false)} onApply={applyImport} businessId={businessId} providerSnapshot={reception.proveedorSnapshot} receptionItems={draft.items} />

@@ -198,6 +198,84 @@ export function updatePurchaseDocumentRow(rows, rowId, field, value, inventory =
   });
 }
 
+// Vínculos que nacen de una coincidencia exacta: código de barras, código
+// interno o nombre idéntico (normalizado). Nunca "descripcion" (nombre
+// contenido) ni "seleccion_manual".
+const EXACT_MATCH_KINDS = new Set(["barcode", "codigo_interno", "nombre"]);
+
+function hasValidRowValues(row) {
+  const cantidad = finite(row.cantidad, NaN);
+  const costoUnitario = finite(row.costoUnitario, NaN);
+  const descuentoPct = finite(row.descuentoPct, NaN);
+  return Number.isFinite(cantidad) && cantidad > 0 &&
+    Number.isFinite(costoUnitario) && costoUnitario >= 0 &&
+    Number.isFinite(descuentoPct) && descuentoPct >= 0 && descuentoPct <= 100;
+}
+
+// Líneas que "Aceptar coincidencias exactas" podría aceptar. Función pura: no
+// cambia filas ni estados; el resumen y la aceptación usan este mismo cálculo.
+// Una línea entra solo si cumple TODO:
+//  - sigue en estado "revisar" (las ya vinculadas y las sin ítem no se tocan);
+//  - su vínculo es por código de barras, código interno o nombre idéntico;
+//  - tiene un único candidato (en nombre se revalida contra el inventario);
+//  - ítem activo y cantidad, costo y descuento válidos;
+//  - la IA no pidió revisión y la línea no tiene advertencias;
+//  - ningún otro renglón de la factura apunta al mismo ítem.
+export function selectExactPurchaseDocumentMatches(rows = [], inventory = []) {
+  const values = Array.isArray(rows) ? rows : [];
+  const stock = Array.isArray(inventory) ? inventory : [];
+  const active = stock.filter((item) => (item.estado || "activo") === "activo" && itemId(item));
+  const rowsPerItem = new Map();
+  values.forEach((row) => {
+    const id = text(row.selectedItemId, 160);
+    if (id) rowsPerItem.set(id, (rowsPerItem.get(id) || 0) + 1);
+  });
+  const matches = [];
+  values.forEach((row) => {
+    if (row.estado !== "revisar" || !EXACT_MATCH_KINDS.has(row.matchKind)) return;
+    const selectedId = text(row.selectedItemId, 160);
+    const selected = active.find((item) => itemId(item) === selectedId);
+    if (!selected || rowsPerItem.get(selectedId) !== 1) return;
+    if (!hasValidRowValues(row)) return;
+    if (row.sourceReviewRequired === true) return;
+    if (Array.isArray(row.advertencias) && row.advertencias.length) return;
+    if (row.matchKind === "nombre") {
+      const source = comparable(row.nombreOrigen);
+      const sameName = (item) => source.length >= 4 &&
+        [item.nombre, item.descripcion].map(comparable).includes(source);
+      if (!sameName(selected) || active.filter(sameName).length !== 1) return;
+    }
+    matches.push({
+      rowId: row.rowId,
+      nombreOrigen: row.nombreOrigen,
+      itemId: selectedId,
+      itemNombre: text(selected.nombre, 240),
+      matchKind: row.matchKind,
+    });
+  });
+  const pendientes = values.filter((row) => row.estado !== "vinculada").length - matches.length;
+  return {matches, pendientes};
+}
+
+// Acepta (revisionAceptada = true) solo las líneas exactas. Exige la
+// confirmación explícita del segundo clic: sin `confirmed === true` no cambia
+// nada. Recalcula la elegibilidad con las filas actuales; si se pasa `rowIds`
+// (las del resumen que vio la persona) acepta solo la intersección.
+export function acceptExactPurchaseDocumentMatches(rows = [], inventory = [], {confirmed = false, rowIds} = {}) {
+  if (confirmed !== true) {
+    throw new Error("Confirma el resumen antes de aceptar las coincidencias exactas.");
+  }
+  const reviewed = Array.isArray(rowIds) ? new Set(rowIds) : null;
+  const accepted = new Set(selectExactPurchaseDocumentMatches(rows, inventory).matches
+    .map((match) => match.rowId)
+    .filter((rowId) => !reviewed || reviewed.has(rowId)));
+  return rows.map((row) => {
+    if (!accepted.has(row.rowId)) return row;
+    const updated = {...row, revisionAceptada: true};
+    return {...updated, estado: deriveRowState(updated, inventory)};
+  });
+}
+
 export function getPurchaseDocumentImportSummary(rows = []) {
   const values = Array.isArray(rows) ? rows : [];
   return {

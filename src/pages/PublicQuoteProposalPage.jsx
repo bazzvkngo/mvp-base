@@ -16,6 +16,7 @@ import {
 } from "../services/publicQuoteService";
 import { formatDate, formatMoney } from "../utils/formatters";
 import { downloadQuotePdf } from "../utils/quotePdf";
+import {userErrorMessage} from "../domain/userFacingError.mjs";
 
 const LEGAL_LINKS = [LEGAL_DOCUMENTS.privacidad, LEGAL_DOCUMENTS.terminos];
 
@@ -66,7 +67,7 @@ function PublicQuoteProposalPage() {
           setState({
             loading: false,
             proposal: null,
-            error: error.message || "No pudimos abrir esta propuesta.",
+            error: userErrorMessage(error, "No pudimos abrir esta propuesta."),
           });
         }
       });
@@ -108,7 +109,7 @@ function PublicQuoteProposalPage() {
     } catch (error) {
       sileo.error({
         title: "No se pudo registrar tu respuesta",
-        description: error.message || "Recarga la página e inténtalo nuevamente.",
+        description: userErrorMessage(error, "Recarga la página e inténtalo nuevamente."),
       });
     } finally {
       setResponding(false);
@@ -123,7 +124,7 @@ function PublicQuoteProposalPage() {
     } catch (error) {
       sileo.error({
         title: "No se pudo descargar el PDF",
-        description: error.message || "Inténtalo nuevamente.",
+        description: userErrorMessage(error, "Inténtalo nuevamente."),
       });
     } finally {
       setDownloading(false);

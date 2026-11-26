@@ -32,12 +32,18 @@
 .purchase-document-grid label { display: grid; font-size: 13px; font-weight: 700; gap: 6px; }
 .purchase-document-grid input, .purchase-document-grid select, .purchase-document-grid textarea { border: 1px solid var(--color-border-control); border-radius: 6px; font: inherit; min-height: 44px; padding: 9px 11px; }
 .purchase-document-grid .purchase-field-wide { grid-column: 1 / -1; }
-.purchase-document-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); padding-top: 14px; }
-.purchase-notes-grid { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); padding-top: 14px; }
+/* Formulario de edición de Compras: el cuerpo del panel (.po-details tiene padding 0) lleva el mismo aire que el resumen
+   (.purchase-document-summary) y las notas (.purchase-notes-grid), y los valores escritos van en peso normal; solo las
+   etiquetas quedan en negrita. Acotado a .po-details para no cambiar Ventas, que reutiliza .purchase-document-grid. */
+.po-details > .purchase-document-grid { padding: 14px; }
+.po-details > .purchase-document-grid input, .po-details > .purchase-document-grid select, .po-details > .purchase-document-grid textarea { font-weight: var(--font-weight-regular); }
+.purchase-document-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 14px; }
+.purchase-detail__totals-notice { padding: 0 var(--space-4) var(--space-4); }
+.purchase-notes-grid { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 14px; }
 .purchase-notes-grid section { background: var(--color-surface-subtle); border-radius: 8px; display: grid; gap: 5px; padding: 11px 12px; }
 .purchase-notes-grid section > span { color: var(--color-text-muted); font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
 .purchase-notes-grid p { line-height: 1.5; margin: 0; white-space: pre-wrap; }
-.purchase-preview-body { background: var(--color-surface-subtle); border-top: 1px solid var(--color-border-subtle); margin: 12px -15px -15px; padding: 18px; }
+.purchase-preview-body { background: var(--color-surface-subtle); border-top: 1px solid var(--color-border-subtle); margin: 0; padding: 18px; }
 
 .purchase-document-preview__context { align-items: start; }
 .purchase-document-preview__context .po-document-preview__section { width: 100%; }
@@ -86,3 +92,85 @@
 }
 
 /* Tokens faltantes nuevos encontrados en esta pasada: ninguno. */
+
+/* El patrón visual del editor de documentos (Compra y Orden de compra: cabecera, tarjetas, líneas, condiciones y resumen) vive en
+   ../purchaseOrders/purchase-orders.css, que este archivo importa arriba. */
+
+/* Detalle de una compra confirmada, revertida o cancelada (PurchaseDetailView): solo lectura.
+   Solo tokens; el modo oscuro sale de los propios tokens. */
+.purchase-detail__screen { display: grid; gap: var(--space-4); min-width: 0; }
+.purchase-detail__context { display: grid; gap: var(--space-3); }
+.purchase-detail__top { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-3); justify-content: space-between; }
+.purchase-detail__title { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.purchase-detail__title h1 { color: var(--color-text-strong); font-size: var(--font-size-xl); margin: 0; overflow-wrap: anywhere; }
+.purchase-detail__facts { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); margin: 0; }
+.purchase-detail__facts > div { background: var(--color-surface-subtle); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm); display: grid; gap: var(--space-1); min-width: 0; padding: var(--space-2) var(--space-3); }
+.purchase-detail__facts dt { color: var(--color-text-muted); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); text-transform: uppercase; }
+.purchase-detail__facts dd { color: var(--color-text-strong); display: grid; font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); gap: var(--space-1); margin: 0; overflow-wrap: anywhere; }
+.purchase-detail__heading { margin: 0 0 var(--space-3); }
+.purchase-detail__items { container-type: inline-size; }
+.purchase-detail__table { border-collapse: collapse; font-size: var(--font-size-sm); font-variant-numeric: tabular-nums; width: 100%; }
+.purchase-detail__table th { border-bottom: 1px solid var(--color-border-default); color: var(--color-text-muted); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); padding: var(--space-2) var(--space-3); text-align: right; }
+.purchase-detail__table td { border-bottom: 1px solid var(--color-border-subtle); color: var(--color-text-default); padding: var(--space-2) var(--space-3); text-align: right; vertical-align: middle; }
+.purchase-detail__table th:first-child, .purchase-detail__table td:first-child { text-align: left; }
+.purchase-detail__table tbody tr:last-child td { border-bottom: 0; }
+.purchase-detail__total { color: var(--color-text-strong); font-weight: var(--font-weight-semibold); }
+.purchase-detail__item { min-width: 12rem; }
+.purchase-detail__item small { color: var(--color-text-muted); display: block; font-size: var(--font-size-xs); margin-top: var(--space-1); }
+.purchase-detail__item-title { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.purchase-detail__item-title strong { color: var(--color-text-strong); overflow-wrap: anywhere; }
+.purchase-detail__totals { display: grid; gap: var(--space-2); justify-items: end; margin: var(--space-4) 0 0; }
+.purchase-detail__totals > div { display: flex; font-size: var(--font-size-sm); gap: var(--space-6); justify-content: space-between; min-width: 14rem; }
+.purchase-detail__totals dt { color: var(--color-text-muted); }
+.purchase-detail__totals dd { color: var(--color-text-default); font-variant-numeric: tabular-nums; margin: 0; }
+.purchase-detail__totals .purchase-detail__grand-total { border-top: 1px solid var(--color-border-default); font-weight: var(--font-weight-bold); padding-top: var(--space-2); }
+.purchase-detail__totals .purchase-detail__grand-total dt, .purchase-detail__totals .purchase-detail__grand-total dd { color: var(--color-text-strong); }
+
+/* Contenedor angosto (móvil): cada ítem es una tarjeta con su etiqueta. */
+@container (max-width: 35rem) {
+  .purchase-detail__table, .purchase-detail__table tbody, .purchase-detail__table tr, .purchase-detail__table td { display: block; }
+  .purchase-detail__table thead { clip: rect(0 0 0 0); clip-path: inset(50%); height: 1px; overflow: hidden; position: absolute; white-space: nowrap; width: 1px; }
+  .purchase-detail__table tbody tr { background: var(--color-surface-subtle); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); margin-bottom: var(--space-3); padding: var(--space-3); }
+  .purchase-detail__table td, .purchase-detail__table tbody tr:last-child td { align-items: baseline; border: 0; display: flex; gap: var(--space-3); justify-content: space-between; padding: var(--space-1) 0; text-align: right; }
+  .purchase-detail__table td::before { color: var(--color-text-muted); content: attr(data-label); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); text-align: left; text-transform: uppercase; }
+  .purchase-detail__table td.purchase-detail__item { display: block; padding-bottom: var(--space-2); text-align: left; }
+  .purchase-detail__table td.purchase-detail__item::before { content: none; }
+}
+
+@media (max-width: 640px) {
+  .purchase-detail__totals { justify-items: stretch; }
+  .purchase-detail__totals > div { min-width: 0; }
+}
+
+/* Bloque "Factura importada y pendiente de confirmación" dentro del panel del documento: el cuerpo del panel (.po-details) no tiene
+   padding, así que el bloque llevaba solo margin-top y quedaba de borde a borde. Mismo aire de 14px que el cuerpo del panel. */
+.po-details > .purchase-imported-document-summary { margin: 14px; }
+/* Acciones de cada fila de la lista de Compras (tabla y tarjetas móviles): los tres botones son <Button> del sistema, en tamaño chico.
+   No usa .po-history__actions porque su regla `.po-history__actions button` (purchase-orders.css) pisa fondo, borde, color y relleno
+   de cualquier variante de Button; esa clase queda intacta para Órdenes de compra. Se apunta al elemento (`> button`) y no a
+   la clase del Button, que solo se define en components.css. */
+.purchase-row-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.purchase-row-actions > button { font-size: var(--font-size-xs); min-height: 2rem; padding: var(--space-1) var(--space-3); }
+.purchase-row-actions > .purchase-row-actions__confirm { border-color: var(--color-text-brand-accent); color: var(--color-text-brand); }
+@media (pointer: coarse) { .purchase-row-actions > button { min-height: 2.75rem; } }
+@media (max-width: 767px) {
+  .po-history-card .purchase-row-actions { display: grid; grid-template-columns: 1fr; }
+  .po-history-card .purchase-row-actions > button { width: 100%; }
+}
+
+/* Importar factura: "Aceptar coincidencias exactas" y su resumen de confirmación.
+   Solo tokens; el modo oscuro sale de los propios tokens. */
+.purchase-exact-accept { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.purchase-exact-accept > span { color: var(--color-text-muted); font-size: var(--font-size-xs); min-width: 0; }
+.purchase-exact-accept__panel { background: var(--color-surface-brand); border: 1px solid var(--color-border-default); border-radius: var(--radius-md); display: grid; gap: var(--space-3); padding: var(--space-4); }
+.purchase-exact-accept__panel:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-offset); }
+.purchase-exact-accept__panel h3 { color: var(--color-text-strong); font-size: var(--font-size-md); margin: 0; }
+.purchase-exact-accept__panel p { color: var(--color-text-default); font-size: var(--font-size-sm); margin: 0; }
+.purchase-exact-accept__list { display: grid; gap: var(--space-2); list-style: none; margin: 0; max-height: calc(var(--space-10) * 5); overflow-y: auto; padding: 0; }
+.purchase-exact-accept__list li { align-items: baseline; background: var(--color-surface-panel); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm); display: flex; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2) var(--space-3); }
+.purchase-exact-accept__list span { color: var(--color-text-default); font-size: var(--font-size-sm); overflow-wrap: anywhere; }
+.purchase-exact-accept__list strong { color: var(--color-text-strong); font-size: var(--font-size-sm); overflow-wrap: anywhere; }
+.purchase-exact-accept__actions { display: flex; flex-wrap: wrap; gap: var(--space-3); justify-content: flex-end; }
+/* Rechazo del servidor dentro de los diálogos "Confirmar compra" / "Revertir compra" / "Cancelar compra": el aviso es un <Notice>
+   y solo necesita separarse del texto del diálogo (el cuerpo del diálogo no define separación entre hijos). */
+.po-dialog-error { margin-top: var(--space-3); }

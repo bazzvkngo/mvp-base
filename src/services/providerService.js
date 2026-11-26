@@ -2,8 +2,10 @@ import {collection, getDocs, query, where} from "firebase/firestore";
 import {httpsCallable} from "firebase/functions";
 import {assertCloudFunctionAllowed} from "../config/firebaseEnvironment.mjs";
 import {
+  PROVIDER_DELETE_CONFIRMATION_WORD,
   adaptStoredProvider,
   buildProviderMutationPayload,
+  isProviderDeleteConfirmed,
 } from "../domain/providerModel.mjs";
 import {db, getFirebaseFunctions} from "../firebase/firebaseConfig";
 import {providersCollectionPath} from "../firebase/firestorePaths";
@@ -109,6 +111,22 @@ export async function archivarProveedor(businessId, proveedorId) {
   const response = await callable({
     businessId: requireBusinessId(businessId),
     proveedorId: requireProviderId(proveedorId),
+  });
+  return response.data;
+}
+
+// Eliminación permanente: la palabra de confirmación se valida aquí y otra vez
+// en la Function, que además rechaza si el proveedor tiene movimientos.
+export async function eliminarProveedor(businessId, proveedorId, confirmacion) {
+  assertCloudFunctionAllowed("eliminar proveedores");
+  if (!isProviderDeleteConfirmed(confirmacion)) {
+    throw new Error(`Escribe «${PROVIDER_DELETE_CONFIRMATION_WORD}» para confirmar la eliminación.`);
+  }
+  const callable = httpsCallable(functions, "eliminarProveedor");
+  const response = await callable({
+    businessId: requireBusinessId(businessId),
+    proveedorId: requireProviderId(proveedorId),
+    confirmacion,
   });
   return response.data;
 }

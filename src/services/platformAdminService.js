@@ -87,9 +87,6 @@ export const getPlatformUser = (uid) =>
 export const setPlatformBusinessStatus = ({businessId, estado, motivo, requestId}) =>
   call("cambiarEstadoEmpresaPlataforma", {businessId, estado, motivo, requestId});
 
-export const setPlatformBusinessModules = ({businessId, modulos, motivo, requestId}) =>
-  call("cambiarModulosEmpresaPlataforma", {businessId, modulos, motivo, requestId});
-
 export const setPlatformUserStatus = ({uid, estado, motivo, requestId}) =>
   call("cambiarEstadoUsuarioPlataforma", {uid, estado, motivo, requestId});
 

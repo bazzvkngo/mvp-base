@@ -4,6 +4,7 @@ const DOCUMENT_TYPES = new Set(["factura", "boleta", "otro", "sin_documento"]);
 const EPSILON = 0.000001;
 const MAX_DOCUMENT_SIZE_BYTES = 5 * 1024 * 1024;
 const {adaptDocumentLocalization} = require("./localization");
+const {hasMaxDecimals, sanitizeDecimals} = require("./money");
 const {buildAuthoritativeCompanySnapshot, resolveCompanySnapshot} = require("./companySnapshot");
 const {buildConfirmedPurchaseFromReception, formatPurchaseNumber} = require("./purchasePersistence");
 const {
@@ -248,6 +249,17 @@ function buildLine(orderLine, received, amount) {
   };
 }
 
+// SPEC 036: con decimales (`montoDecimales` de la recepción), el costo unitario de cada línea admite hasta esa cantidad
+// de decimales. Con 0 no se agrega ningún límite nuevo (Chile). La cantidad y el porcentaje no se limitan.
+function assertAmountDecimals(items, decimals, HttpsError) {
+  if (decimals <= 0) return;
+  items.forEach((line, index) => {
+    if (!hasMaxDecimals(line.costoUnitario, decimals)) {
+      fail(HttpsError, "invalid-argument", `Costo ${index + 1} admite hasta ${decimals} decimales.`);
+    }
+  });
+}
+
 function normalizeDraft(raw, reception, HttpsError) {
   const date = text(raw?.fechaRecepcion, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -377,6 +389,9 @@ async function crearRecepcionDesdeOrdenHandler(request, dependencies, now = new 
       locale: localization.locale,
       impuestoNombre: localization.impuestoNombre,
       tasaIva: localization.tasaIva,
+      // Hereda los decimales de la orden de origen (su `montoDecimales`), no los del catálogo de hoy. Solo se guarda
+      // con decimales: un documento sin el campo (todo el de Chile) queda como antes.
+      ...(sanitizeDecimals(localization.montoDecimales) > 0 ? {montoDecimales: sanitizeDecimals(localization.montoDecimales)} : {}),
       empresaSnapshot: resolveCompanySnapshot(
         order,
         buildAuthoritativeCompanySnapshot({
@@ -446,6 +461,8 @@ async function actualizarRecepcionBorradorHandler(request, dependencies) {
     const order = orderSnapshot.data();
     assertReceivableOrder(order, businessId, HttpsError);
     const normalized = normalizeDraft(request?.data?.recepcion, reception, HttpsError);
+    // Los decimales son los de la recepción guardada (su `montoDecimales`); el cliente no puede cambiarlos.
+    assertAmountDecimals(normalized.items, sanitizeDecimals(adaptDocumentLocalization(reception).montoDecimales), HttpsError);
     assertNoOverreceipt(order, normalized.items, confirmedTotals(receptions, receptionId), HttpsError);
     const timestamp = FieldValue.serverTimestamp();
     const documentoOrigen = normalized.documentoOrigen ? {
@@ -825,6 +842,7 @@ async function cancelarRecepcionBorradorHandler(request, dependencies) {
 }
 
 module.exports = {
+  assertReceptionAmountDecimals: assertAmountDecimals,
   actualizarRecepcionBorradorHandler,
   cancelarRecepcionBorradorHandler,
   confirmarRecepcionHandler,

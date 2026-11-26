@@ -2,7 +2,9 @@ import {
   BUSINESS_CATEGORY_CATALOG_VERSION,
   getBusinessCategoryByCode,
   getCountryByCode,
-  getRegionByCode,
+  getRegionForCountry,
+  getRegionLabel,
+  hasRegionCatalog,
   isSelectableNewBusinessCountry,
 } from "./businessCatalog";
 import {
@@ -10,6 +12,7 @@ import {
   normalizeQuickBusinessPayload,
 } from "./businessQuickPayload.mjs";
 import { isSelectableBusinessCategory } from "./businessCategorySearch.mjs";
+import { serverMessage } from "./userFacingError.mjs";
 
 export { normalizeBusinessText, normalizeQuickBusinessPayload };
 
@@ -35,7 +38,26 @@ export const ONBOARDING_BUSINESS_FIELD_ORDER = Object.freeze([
   "nombreComercial",
   "rubroCodigo",
   "paisCodigo",
+  "regionCodigo",
 ]);
+
+// Sin país en los valores (alta de negocio adicional) cuenta como Chile.
+export function resolveFormCountryCode(values) {
+  return values?.paisCodigo ?? "CL";
+}
+
+// Cambiar el país limpia la región: las listas son distintas por país.
+export function applyQuickBusinessChange(values, patch) {
+  const next = { ...patch };
+  if (
+    Object.prototype.hasOwnProperty.call(next, "paisCodigo") &&
+    next.paisCodigo !== values.paisCodigo &&
+    next.regionCodigo === undefined
+  ) {
+    next.regionCodigo = "";
+  }
+  return next;
+}
 
 export function normalizeChileanRut(value) {
   return normalizeBusinessText(value)
@@ -65,6 +87,13 @@ export function isValidBusinessEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
 }
 
+// Salir de un campo (blur) valida solo si ya se intentó enviar, si el usuario editó ese campo
+// o si el cierre trae un valor elegido (parche del selector de rubro). Salir de un campo que
+// nunca se editó, o cerrar el selector de rubro sin elegir, no es un error todavía.
+export function shouldValidateOnBlur({ submitted = false, dirty = false, hasPatch = false } = {}) {
+  return Boolean(submitted || dirty || hasPatch);
+}
+
 export function validateQuickBusiness(
   values,
   { requireCountry = false, requireRegion = true } = {}
@@ -82,14 +111,16 @@ export function validateQuickBusiness(
   const category = getBusinessCategoryByCode(values.rubroCodigo);
   if (!isSelectableBusinessCategory(category, BUSINESS_CATEGORY_CATALOG_VERSION)) {
     errors.rubroCodigo = "Selecciona el rubro principal.";
-  } else if (
-    category.code === "OTRO" &&
-    normalizeBusinessText(values.rubroOtro).length < 2
-  ) {
-    errors.rubroCodigo = "Describe el rubro de tu negocio.";
   }
-  if (requireRegion && !getRegionByCode(values.regionCodigo)) {
-    errors.regionCodigo = "Selecciona una región.";
+  const regionCountryCode = resolveFormCountryCode(values);
+  if (
+    requireRegion &&
+    hasRegionCatalog(regionCountryCode) &&
+    !getRegionForCountry(regionCountryCode, values.regionCodigo)
+  ) {
+    errors.regionCodigo = regionCountryCode === "CL"
+      ? "Selecciona una región."
+      : `Selecciona un ${getRegionLabel(regionCountryCode).toLowerCase()}.`;
   }
   const country = getCountryByCode(values.paisCodigo);
   if (requireCountry && !isSelectableNewBusinessCountry(country)) {
@@ -108,13 +139,13 @@ export function getBusinessCreationErrorMessage(error) {
     return "No tienes permisos para realizar esta operación.";
   }
   if (code.includes("invalid-argument")) {
-    return error?.message || "Revisa los datos ingresados.";
+    return serverMessage(error) || "Revisa los datos ingresados.";
   }
   if (code.includes("failed-precondition")) {
-    return error?.message || "No fue posible crear el negocio.";
+    return serverMessage(error) || "No fue posible crear el negocio.";
   }
   if (code.includes("resource-exhausted")) {
-    return error?.message || "El servicio no pudo procesar la solicitud. Reintenta en unos segundos.";
+    return serverMessage(error) || "El servicio no pudo procesar la solicitud. Reintenta en unos segundos.";
   }
   if (code.includes("unavailable") || code.includes("deadline-exceeded")) {
     return "No pudimos conectar con el servicio. Reintenta en unos segundos.";

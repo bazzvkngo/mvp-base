@@ -122,6 +122,9 @@ const PAIRS = [
   {fg: "--color-text-default", bg: "--color-surface-panel", kind: "text", note: "texto por defecto / panel"},
   {fg: "--color-text-default", bg: "--color-surface-canvas", kind: "text", note: "texto por defecto / canvas"},
   {fg: "--color-text-muted", bg: "--color-surface-subtle", kind: "text", note: "texto muted / subtle"},
+  // AppFooter: texto tenue del pie del login (panel) y texto del pie de Mi cuenta (canvas).
+  {fg: "--color-text-muted", bg: "--color-surface-panel", kind: "text", note: "texto muted / panel (pie del login)"},
+  {fg: "--color-text-muted", bg: "--color-surface-canvas", kind: "text", note: "texto muted / canvas (pie)"},
   {fg: "--color-text-strong", bg: "--color-surface-panel", kind: "text", note: "texto fuerte / panel"},
 
   // Familias semánticas — shade de texto (-700/-800) contra su -50 y contra panel.
@@ -179,6 +182,20 @@ const PAIRS = [
   {fg: "--color-data-cost-labor", bg: "--color-surface-panel", kind: "nontext", note: "data-cost-labor / panel (paso 7)"},
   {fg: "--color-data-cost-direct", bg: "--color-surface-panel", kind: "nontext", note: "data-cost-direct / panel (paso 7)"},
   {fg: "--color-data-cost-indirect", bg: "--color-surface-panel", kind: "nontext", note: "data-cost-indirect / panel (paso 7)"},
+  // Ganancia visual (SPEC 025): barra costo | ganancia de productos. El costo va rayado
+  // (border-default y border-control) con contorno text-muted, y la ganancia lisa
+  // (success-700); aparte del color los distinguen la posición, el rayado y la leyenda.
+  {fg: "--color-success-700", bg: "--color-surface-panel", kind: "nontext", note: "success-700 / panel (tramo de ganancia de la barra)"},
+  {fg: "--color-success-700", bg: "--color-border-default", kind: "nontext", note: "success-700 / border-default (tramo de ganancia junto al costo)"},
+  {fg: "--color-border-control", bg: "--color-border-default", kind: "nontext", threshold: 1.2, note: "border-control / border-default (rayas del costo entre sí; solo textura, la forma la da el contorno)"},
+  {fg: "--color-text-muted", bg: "--color-surface-panel", kind: "nontext", note: "text-muted / panel (contorno del tramo de costo)"},
+  {fg: "--color-danger-700", bg: "--color-surface-panel", kind: "nontext", note: "danger-700 / panel (remate de pérdida de la barra)"},
+  // <EmptyState> (ui-empty-state--panel): enlace de texto sobre el fondo subtle del vacío.
+  {fg: "--color-text-brand", bg: "--color-surface-subtle", kind: "text", note: "text-brand / subtle (enlace del estado vacío)"},
+  {fg: "--color-text-brand-hover", bg: "--color-surface-subtle", kind: "text", note: "text-brand-hover / subtle (enlace del estado vacío, hover)"},
+  // Barras de Ventas y Compras (SPEC 025): relleno sobre su pista (surface-subtle) y sobre el panel.
+  {fg: "--color-text-brand-accent", bg: "--color-surface-subtle", kind: "nontext", note: "text-brand-accent / subtle (barra de ventas sobre su pista)"},
+  {fg: "--color-data-expense", bg: "--color-surface-subtle", kind: "nontext", note: "data-expense / subtle (barra de compras sobre su pista)"},
   {fg: "--color-quote-status-draft", bg: "--color-surface-panel", kind: "nontext", note: "quote-status-draft / panel (paso 7)"},
   {fg: "--color-quote-status-issued", bg: "--color-surface-panel", kind: "nontext", note: "quote-status-issued / panel (paso 7)"},
   {fg: "--color-quote-status-accepted", bg: "--color-surface-panel", kind: "nontext", note: "quote-status-accepted / panel (paso 7)"},
@@ -187,7 +204,7 @@ const PAIRS = [
 
   // Corrección de contraste, parte 1 — pares de uso real.
   // Texto de marca, fuerte, normal y tenue contra las superficies donde viven.
-  ...["--color-text-brand", "--color-text-brand-accent", "--color-text-brand-hover", "--color-text-strong", "--color-text-default", "--color-text-muted", "--color-text-expense"]
+  ...["--color-text-brand", "--color-text-brand-accent", "--color-text-brand-hover", "--color-text-strong", "--color-text-default", "--color-text-muted", "--color-text-faint", "--color-text-expense"]
     .flatMap((fg) => SURFACES_OF_USE.map((bg) => ({
       fg, bg, kind: "text", note: `${fg.replace("--color-", "")} / ${bg.replace("--color-surface-", "")}`,
     }))),

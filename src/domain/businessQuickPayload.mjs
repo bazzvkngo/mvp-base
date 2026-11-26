@@ -14,8 +14,5 @@ export function normalizeQuickBusinessPayload(values) {
   if (values.paisCodigo) {
     payload.paisCodigo = String(values.paisCodigo).toUpperCase();
   }
-  if (rubroCodigo === "OTRO") {
-    payload.rubroOtro = normalizeBusinessText(values.rubroOtro).slice(0, 120);
-  }
   return payload;
 }

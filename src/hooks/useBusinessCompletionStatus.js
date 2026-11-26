@@ -1,5 +1,6 @@
 import React from "react";
 import { getBusinessCompletionStatus } from "../domain/businessCompletion.mjs";
+import { withObservedBusinessId } from "../domain/businessOperations.mjs";
 import { subscribeToCompanyProfile } from "../services/companyService";
 
 export default function useBusinessCompletionStatus({
@@ -23,7 +24,7 @@ export default function useBusinessCompletionStatus({
     return subscribeToCompanyProfile(
       businessId,
       (nextProfile) => {
-        setProfile(nextProfile);
+        setProfile(withObservedBusinessId(nextProfile, businessId));
         setLoading(false);
       },
       () => {

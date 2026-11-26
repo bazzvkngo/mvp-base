@@ -3,7 +3,7 @@
 // Copia de src/domain/legalDocuments.mjs (functions/ no puede importar de
 // src/). Mantener sincronizada: `npm run test:legal-documents` verifica la
 // paridad.
-const LEGAL_DOCUMENTS_VERSION = "2026-10-15";
+const LEGAL_DOCUMENTS_VERSION = "2026-10-19";
 
 const LEGAL_DOCUMENT_KEYS = Object.freeze({
   PRIVACY: "privacidad",

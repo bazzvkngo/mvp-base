@@ -1,15 +1,22 @@
-import React, {useEffect, useRef, useState} from "react";
-import Button from "../../components/ui/Button";
-import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
+import React, {useEffect, useMemo, useState} from "react";
+import DocumentEmailDialog from "../../components/ui/DocumentEmailDialog";
+import DocumentEmailPreview from "../../components/ui/DocumentEmailPreview";
 import {resolveDocumentCompany} from "../../domain/companySnapshot.mjs";
-import {formatMoney} from "../../utils/formatters";
+import {resolveReplyToHint} from "../../domain/emailReplyTo.mjs";
+import {getPurchaseOrderPdfFileName} from "../../domain/purchaseOrderDocument.mjs";
+import {
+  buildPurchaseOrderEmailPreview,
+  describePurchaseOrderReplyTo,
+} from "../../domain/purchaseOrderEmailPreview.mjs";
+import {getVerifiedAccountEmail} from "../../services/senderAccount";
+import {formatDate, formatMoney} from "../../utils/formatters";
 import {isValidPurchaseOrderEmail, isValidPurchaseOrderEmailMessage, isValidPurchaseOrderEmailSubject} from "../../services/purchaseOrderEmailService";
 
-function buildInitialEmail({companyProfile = {}, order = {}}) {
+function buildInitialEmail({accountEmail = "", companyProfile = {}, order = {}}) {
   const company = resolveDocumentCompany(order, companyProfile);
   const companyName = company.nombreComercial || company.razonSocial || "Empresa compradora";
   const providerName = order.proveedorSnapshot?.razonSocial || "Proveedor";
-  const responseInstruction = isValidPurchaseOrderEmail(company.email)
+  const responseInstruction = resolveReplyToHint({companyEmail: companyProfile?.email, accountEmail})
     ? "Por favor, responde este correo para confirmar la recepción de la orden o indicar cualquier observación."
     : "Por favor, confirma la recepción de la orden por el canal habitual o indica cualquier observación.";
   return {
@@ -18,72 +25,116 @@ function buildInitialEmail({companyProfile = {}, order = {}}) {
   };
 }
 
+// Motivo visible cuando el botón principal está deshabilitado.
+function getDisabledReason({email, validEmail, validSubject, validMessage}) {
+  if (!email.trim()) return "Escribe un correo para enviar";
+  if (!validEmail) return "Corrige el correo del destinatario para enviar";
+  if (!validSubject) return "Escribe el asunto para enviar";
+  if (!validMessage) return "Escribe el mensaje para enviar";
+  return "";
+}
+
+// A la orden de compra no se responde desde un enlace: el proveedor recibe el correo
+// con el PDF adjunto y responde por correo. La estructura es la del diálogo compartido.
 export default function SendPurchaseOrderEmailDialog({companyProfile, onClose, onSend, open, order, processing}) {
-  const [email, setEmail] = useState("");
-  const [asunto, setAsunto] = useState("");
-  const [mensaje, setMensaje] = useState("");
-  const inputRef = useRef(null);
+  const accountEmail = getVerifiedAccountEmail();
+  // Valores iniciales ya al abrir (el efecto de abajo los repone cada vez que se abre) para no
+  // mostrar un instante el formulario vacío y con el botón deshabilitado.
+  const initialEmail = () => (open && order ? buildInitialEmail({accountEmail, companyProfile, order}) : {asunto: "", mensaje: ""});
+  const [email, setEmail] = useState(() => (open && order ? order.proveedorSnapshot?.email || "" : ""));
+  const [asunto, setAsunto] = useState(() => initialEmail().asunto);
+  const [mensaje, setMensaje] = useState(() => initialEmail().mensaje);
+  const [enviarCopia, setEnviarCopia] = useState(false);
+  const savedEmail = order?.proveedorSnapshot?.email || "";
   useEffect(() => {
     if (!open) return;
-    const initial = buildInitialEmail({companyProfile, order});
+    const initial = buildInitialEmail({accountEmail, companyProfile, order});
     setEmail(order?.proveedorSnapshot?.email || "");
     setAsunto(initial.asunto);
     setMensaje(initial.mensaje);
-  }, [companyProfile, open, order]);
+    setEnviarCopia(false);
+  }, [accountEmail, companyProfile, open, order]);
   const validEmail = isValidPurchaseOrderEmail(email);
   const validSubject = isValidPurchaseOrderEmailSubject(asunto);
   const validMessage = isValidPurchaseOrderEmailMessage(mensaje);
   const valid = validEmail && validSubject && validMessage;
-  const submit = (event) => {
-    event.preventDefault();
-    if (!processing && valid) onSend({emailProveedor: email.trim(), asunto: asunto.trim(), mensaje: mensaje.trim()});
+  const preview = useMemo(() => buildPurchaseOrderEmailPreview({
+    accountEmail,
+    asunto,
+    companyProfile,
+    emailProveedor: email,
+    enviarCopia,
+    formatDate,
+    formatMoney,
+    mensaje,
+    order: order || {},
+  }), [accountEmail, asunto, companyProfile, email, enviarCopia, mensaje, order]);
+  const submit = () => {
+    if (!processing && valid) onSend({emailProveedor: email.trim(), asunto: asunto.trim(), mensaje: mensaje.trim(), enviarCopia: Boolean(accountEmail) && enviarCopia});
   };
-  const footer = (
-    <>
-      <Button
-        type="button"
-        variant="secondary"
-        onClick={onClose}
-        disabled={processing}
-      >
-        Cancelar
-      </Button>
-      <Button
-        type="submit"
-        form="send-purchase-order-email-form"
-        loading={processing} disabled={!valid}
-      >
-        {processing ? "Enviando..." : "Enviar por correo"}
-      </Button>
-    </>
-  );
+  const providerName = order?.proveedorSnapshot?.razonSocial || "Proveedor";
+  const orderNumber = order?.numero || "Orden de compra";
   return (
-    <ResponsiveDialog
-      className="quote-email-dialog"
-      open={open}
-      onClose={() => !processing && onClose()}
-      initialFocusRef={inputRef}
+    <DocumentEmailDialog
+      accountEmail={accountEmail}
+      asunto={asunto}
+      asuntoError={validSubject ? "" : "Ingresa un asunto de hasta 180 caracteres y sin saltos de línea."}
+      attachmentName={getPurchaseOrderPdfFileName(order)}
+      copyTo={preview.copyTo}
+      description="Se adjuntará el PDF de la orden. Quedará emitida solo si el correo se envía correctamente."
+      disabled={!valid}
+      disabledReason={getDisabledReason({email, validEmail, validSubject, validMessage})}
+      documentName={order?.numero || "orden de compra"}
       eyebrow="Emisión al proveedor"
-      title={`Enviar ${order?.numero || "orden de compra"} por correo`}
-      description="Se adjuntará el PDF profesional. La orden solo quedará emitida si el proveedor de correo confirma el envío."
-      size="medium"
-      footer={footer}
-    >
-      <form id="send-purchase-order-email-form" className="po-email-form" onSubmit={submit}>
-        <label>Destinatario<input ref={inputRef} type="email" value={email} maxLength={180} autoComplete="email" disabled={processing} onChange={(event) => setEmail(event.target.value)} placeholder="proveedor@empresa.cl" /></label>
-        <p>Por defecto se usa el correo guardado en el snapshot del proveedor. Un correo alternativo se utiliza solo para este envío y no modifica su ficha.</p>
-        {email && !validEmail && <p className="po-email-form__error">Ingresa exactamente un correo válido, sin CC ni BCC.</p>}
-        <label>Asunto<input type="text" value={asunto} maxLength={180} disabled={processing} onChange={(event) => setAsunto(event.target.value)} /></label>
-        {!validSubject && <p className="po-email-form__error">Ingresa un asunto de hasta 180 caracteres y sin saltos de línea.</p>}
-        <label>Mensaje<textarea value={mensaje} maxLength={2000} rows="6" disabled={processing} onChange={(event) => setMensaje(event.target.value)} /></label>
-        {!validMessage && <p className="po-email-form__error">Ingresa un mensaje de hasta 2000 caracteres.</p>}
-        <section className="po-email-summary" aria-label="Resumen de la orden">
-          <div><span>Documento</span><strong>{order?.numero || "Orden de compra"}</strong></div>
-          <div><span>Proveedor</span><strong>{order?.proveedorSnapshot?.razonSocial || "Proveedor"}</strong></div>
-          <div><span>Total</span><strong>{formatMoney(order?.total || 0, order?.moneda || "CLP", order?.locale || "es-CL")}</strong></div>
-        </section>
-        <p className="po-email-attachment-note"><strong>Adjunto:</strong> se incluirá el PDF de la orden de compra.</p>
-      </form>
-    </ResponsiveDialog>
+      from={preview.from}
+      mensaje={mensaje}
+      mensajeError={validMessage ? "" : "Ingresa un mensaje de hasta 2000 caracteres."}
+      note={{
+        title: preview.replyTo
+          ? "El proveedor responderá por correo a la dirección de arriba."
+          : "El proveedor responderá por correo.",
+      }}
+      onAsuntoChange={setAsunto}
+      onClose={onClose}
+      onMensajeChange={setMensaje}
+      onSendCopyChange={setEnviarCopia}
+      onSubmit={submit}
+      open={open}
+      previewContent={(
+        <DocumentEmailPreview
+          address={preview.address}
+          brand={preview.brand}
+          contact={preview.contact}
+          documentTitle="Orden de compra"
+          from={preview.from}
+          message={preview.message}
+          note="El detalle completo se encuentra en el PDF adjunto."
+          replyTo={describePurchaseOrderReplyTo(preview)}
+          subject={preview.subject}
+          summaryRows={preview.summaryRows}
+          to={preview.to}
+        />
+      )}
+      processing={processing}
+      recipient={{
+        defaultValue: savedEmail,
+        error: email && !validEmail ? "Ingresa un solo correo válido." : "",
+        onChange: setEmail,
+        value: email,
+      }}
+      replyTo={describePurchaseOrderReplyTo(preview)}
+      replyToWarning="Tu empresa no tiene un correo configurado: el proveedor no podrá responder a tu correo."
+      resetKey={order?.id}
+      savedEmailLabel="Volver al correo del proveedor"
+      sendCopy={enviarCopia}
+      simulationText="No se enviará un correo real. La orden quedará pendiente de envío."
+      submitLabel="Enviar por correo"
+      submittingLabel="Enviando..."
+      summaryRows={[
+        {label: "Orden de compra", value: orderNumber},
+        {label: "Proveedor", value: providerName},
+        {label: "Total", value: formatMoney(order?.total || 0, order?.moneda || "CLP", order?.locale || "es-CL")},
+      ]}
+    />
   );
 }

@@ -282,6 +282,14 @@ async function main() {
   const baselinePath = path.join(ROOT, "scripts/design-baseline.json");
   const baseline = JSON.parse(await readFile(baselinePath, "utf8"));
 
+  // sileo capitaliza el título del toast por CSS; el puente de tema lo anula.
+  const toastTheme = await readFile(path.join(ROOT, "src/styles/toast-theme.css"), "utf8");
+  assert.match(
+    toastTheme,
+    /\[data-sileo-title\]\s*\{[^}]*text-transform:\s*none;/,
+    "toast-theme.css debe anular text-transform: capitalize del título de sileo"
+  );
+
   const current = await scanRepo();
   const failures = [];
   const warnings = [];

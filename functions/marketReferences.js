@@ -4,6 +4,8 @@ const SERPER_SHOPPING_URL = "https://google.serper.dev/shopping";
 const MAX_RESULTS = 10;
 const DEFAULT_TIMEOUT_MS = 10000;
 const MARKET_REFERENCE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const STALE_QUERY_WARNING =
+  "Estos resultados se buscaron con una consulta anterior; usa Forzar refresco para repetir la búsqueda con el nombre del producto.";
 const GENERIC_QUERY_WARNING =
   "Este producto tiene pocos datos identificadores; revisa los resultados antes de guardar una referencia.";
 
@@ -21,36 +23,307 @@ function uniqueParts(parts) {
   });
 }
 
+// La consulta siempre parte del nombre del producto; marca, modelo y código
+// de barras sólo lo afinan. Un código solo (o marca+modelo sin nombre) traía
+// productos sin relación. La confianza ya no depende de qué campos existen:
+// sale de cuántos resultados coinciden de verdad (assessMarketResults).
 function buildInventoryMarketQuery(item = {}) {
   const nombre = safeText(item.nombre, 120);
   const marca = safeText(item.marca, 80);
   const modelo = safeText(item.modelo, 100);
   const codigoBarras = safeText(item.codigoBarras || item.barcode, 80);
-  let parts = [];
-  let confidence = "LOW";
   const warnings = [];
-
-  if (marca && modelo) {
-    parts = [marca, modelo];
-    confidence = "HIGH";
-  } else if (modelo && nombre) {
-    parts = [modelo, nombre];
-    confidence = "HIGH";
-  } else if (codigoBarras) {
-    parts = [codigoBarras];
-    confidence = "HIGH";
-  } else if (nombre && marca) {
-    parts = [nombre, marca];
-    confidence = "MEDIUM";
-  } else {
-    parts = [nombre];
-    warnings.push(GENERIC_QUERY_WARNING);
-  }
+  if (!marca && !modelo && !codigoBarras) warnings.push(GENERIC_QUERY_WARNING);
 
   return {
-    query: uniqueParts(parts).join(" ").slice(0, 160),
-    confidence,
+    query: uniqueParts([nombre, marca, modelo, codigoBarras]).join(" ").slice(0, 160),
     warnings,
+  };
+}
+
+// --- Relevancia de resultados respecto del artículo -------------------------
+// Puro y determinista (sin red). Se aplica tanto a resultados recién
+// consultados como a los guardados en caché, siempre con los datos actuales
+// del artículo.
+
+const MIN_RELEVANT_FOR_SUMMARY = 3;
+const MIN_NAME_COVERAGE = 0.75;
+const MIN_MEASURE_SCORE = 0.6;
+const HIGH_RELEVANCE_SCORE = 0.85;
+const MIN_RESULTS_FOR_OUTLIER_CHECK = 4;
+const NAME_STOPWORDS = new Set([
+  "de", "del", "la", "el", "los", "las", "y", "e", "o", "u", "con", "sin",
+  "para", "por", "en", "a", "al", "un", "una", "x", "mm", "cm", "mt", "mts",
+]);
+const UNIT_ALIASES = {
+  mt: "m", mts: "m", metro: "m", metros: "m",
+  kgs: "kg", gr: "g", grs: "g", lt: "l", lts: "l", litro: "l", litros: "l",
+  pulg: "in",
+};
+const NUMBER_PATTERN = "\\d+(?:\\.\\d+)?";
+const UNIT_PATTERN = "mm|cm|mts?|metros?|m|kgs?|grs?|g|lts?|litros?|l|ml|w|v|pulg|in";
+// Dimensiones tipo "40x40" o "40 x 40 x 2" (las unidades intermedias son
+// opcionales: "40mm x 40mm").
+const DIMENSION_REGEX = new RegExp(
+  `(${NUMBER_PATTERN})(?:\\s*(?:${UNIT_PATTERN}))?(?:\\s*[x*]\\s*(${NUMBER_PATTERN})(?:\\s*(?:${UNIT_PATTERN}))?){1,2}`,
+  "g"
+);
+const UNIT_VALUE_REGEX = new RegExp(`(${NUMBER_PATTERN})\\s*(${UNIT_PATTERN})\\b`, "g");
+
+function foldText(value) {
+  return safeText(value, 400)
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/(\d),(\d)/g, "$1.$2")
+    .replace(/×/g, "x");
+}
+
+function canonicalNumber(raw) {
+  return String(Number(raw));
+}
+
+function canonicalUnit(raw) {
+  return UNIT_ALIASES[raw] || raw;
+}
+
+// Devuelve las medidas de un texto: `dimensions` (los números de cada grupo
+// "AxB[xC]") y `values` (número + unidad, ej. 2 mm). El texto restante, sin
+// medidas, sirve para extraer las palabras del nombre.
+const DIMENSION_TERM_REGEX = new RegExp(`(${NUMBER_PATTERN})(?:\\s*(${UNIT_PATTERN}))?`, "g");
+// "3M" (mayúscula, sin espacio) es la marca, no 3 metros. "3 m" y "3m" siguen siendo medidas.
+const BRAND_3M_REGEX = /(?<![\d.,x×*]\s*)\b3M\b(?!\s*[xX×*]\s*\d)/g;
+function extractMeasures(text) {
+  const folded = foldText(safeText(text, 400).replace(BRAND_3M_REGEX, " "));
+  const dimensions = [];
+  const dimensionTerms = [];
+  const values = [];
+  const remainder = folded
+    .replace(DIMENSION_REGEX, (match) => {
+      const terms = [...match.matchAll(DIMENSION_TERM_REGEX)].map((term) => ({
+        number: canonicalNumber(term[1]),
+        unit: term[2] ? canonicalUnit(term[2]) : null,
+      }));
+      dimensions.push(terms.map((term) => term.number));
+      dimensionTerms.push(terms);
+      return " ";
+    })
+    .replace(UNIT_VALUE_REGEX, (match, number, unit) => {
+      values.push({number: canonicalNumber(number), unit: canonicalUnit(unit)});
+      return " ";
+    });
+  return {dimensions, dimensionTerms, values, remainder};
+}
+
+function stemWord(word) {
+  let stem = word;
+  if (stem.length > 4 && stem.endsWith("es")) stem = stem.slice(0, -2);
+  else if (stem.length > 3 && stem.endsWith("s")) stem = stem.slice(0, -1);
+  if (stem.length > 5 && /[ao]$/.test(stem)) stem = stem.slice(0, -1);
+  return stem;
+}
+
+function significantWords(text) {
+  return foldText(text)
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length >= 2 && !NAME_STOPWORDS.has(word) && !/^\d+$/.test(word))
+    .map(stemWord);
+}
+
+// "kit" y "set" no se usan: pueden ser el producto real. Solo cuentan packs evidentes.
+const PACK_WORD_REGEX = /\b(pack|packs|combo|combos|lote|lotes|docena|docenas|bulto|bultos)\b/;
+const PACK_COUNT_REGEX = /(?:^|[^\d.])(\d+)\s*(?:un|und|unds|unid|unids|unidad|unidades|uds|pzs|pzas|pza|piezas|pcs|rollos|rolls)\b/g;
+function packInfo(text) {
+  const folded = foldText(text);
+  const counts = [...folded.matchAll(PACK_COUNT_REGEX)].map((m) => Number(m[1])).filter((n) => n >= 2);
+  return {word: PACK_WORD_REGEX.test(folded), count: counts.length > 0};
+}
+// Solo tokens con dígito y 3+ caracteres del modelo (1700, x20). Se usan para
+// descartar por conflicto evidente, nunca para exigir que aparezcan.
+function modelTokens(modelo) {
+  return foldText(modelo).split(/[^a-z0-9]+/).filter((t) => t.length >= 3 && /\d/.test(t));
+}
+const UNIT_SUFFIX_REGEX = new RegExp(`^(?:${UNIT_PATTERN})$`);
+function hasModelVariant(tokens, foldedTitle) {
+  if (!tokens.length) return false;
+  const titleTokens = foldedTitle.split(/[^a-z0-9]+/).filter(Boolean);
+  return tokens.some((t) => titleTokens.some((x) => {
+    if (x.length <= t.length) return false;
+    const extra = x.startsWith(t) ? x.slice(t.length) : x.endsWith(t) ? x.slice(0, x.length - t.length) : null;
+    return extra !== null && !UNIT_SUFFIX_REGEX.test(extra);
+  })) || tokens.some((t) => {
+    // "1700-C": sufijo de 1-2 letras unido por guion.
+    const match = foldedTitle.match(new RegExp(`(?<![a-z0-9])${t}-([a-z]{1,2})(?![a-z0-9])`));
+    return Boolean(match) && !UNIT_SUFFIX_REGEX.test(match[1]);
+  });
+}
+function buildItemProfile(item = {}) {
+  const measures = extractMeasures(item.nombre);
+  return {
+    pack: packInfo(item.nombre),
+    modelTokens: modelTokens(item.modelo),
+    nameWords: [...new Set(significantWords(measures.remainder))],
+    measures,
+    categoryWords: [...new Set(significantWords(item.categoria))].filter((word) => word.length >= 4),
+    unitWords: [...new Set(significantWords(item.unidad))].filter((word) => word.length >= 3 && word !== "unidad"),
+  };
+}
+
+const unitsCompatible = (left, right) => !left || !right || left === right;
+// Mismos números en otro orden ("18x10" frente a "10x18") es otro producto,
+// salvo que ambos lados traigan unidad en cada término ("10 m x 18 mm").
+function hasDimensionOrderConflict(itemGroups, titleGroups) {
+  return itemGroups.some((group) => {
+    if (group.length < 2) return false;
+    const sameSequence = titleGroups.some((other) => other.length >= group.length
+      && group.every((term, i) => term.number === other[i].number && unitsCompatible(term.unit, other[i].unit)));
+    if (sameSequence) return false;
+    const numbersKey = (g) => g.map((t) => t.number).sort().join("|");
+    const reordered = titleGroups.filter((other) => other.length === group.length && numbersKey(other) === numbersKey(group));
+    if (!reordered.length) return false;
+    const labelled = (g) => g.every((t) => t.unit);
+    const pairsKey = (g) => g.map((t) => t.number + t.unit).sort().join("|");
+    return !reordered.some((other) => labelled(group) && labelled(other) && pairsKey(other) === pairsKey(group));
+  });
+}
+
+function scoreMarketResult(profile, result) {
+  const titleMeasures = extractMeasures(result?.title);
+  const titleWords = new Set(significantWords(result?.title));
+
+  const matchedWords = profile.nameWords.filter((word) => titleWords.has(word)).length;
+  const coverage = profile.nameWords.length ? matchedWords / profile.nameWords.length : 0;
+
+  // Pool de números que declara el resultado: dimensiones (sin unidad) y valores con unidad.
+  const pool = [
+    ...titleMeasures.dimensionTerms.flat().map(({number, unit}) => ({number, unit})),
+    ...titleMeasures.values,
+  ];
+  const consume = (number, unit) => {
+    const index = pool.findIndex((entry) =>
+      entry.number === number && (!unit || !entry.unit || entry.unit === unit)
+    );
+    if (index < 0) return false;
+    pool.splice(index, 1);
+    return true;
+  };
+  let dimensionTotal = 0;
+  let dimensionMatched = 0;
+  profile.measures.dimensionTerms.flat().forEach(({number, unit}) => {
+    dimensionTotal += 1;
+    if (consume(number, unit)) dimensionMatched += 1;
+  });
+  let valueMatched = 0;
+  profile.measures.values.forEach(({number, unit}) => {
+    if (consume(number, unit)) valueMatched += 1;
+  });
+  const measureTotal = dimensionTotal + profile.measures.values.length;
+  const measureScore = measureTotal ? (dimensionMatched + valueMatched) / measureTotal : 1;
+  // El resultado declara otra medida del mismo tipo (ej. 30x30 frente a 40x40): otro producto.
+  const dimensionConflict = dimensionTotal > 0
+    && titleMeasures.dimensions.length > 0
+    && (dimensionMatched < dimensionTotal
+      || hasDimensionOrderConflict(profile.measures.dimensionTerms, titleMeasures.dimensionTerms));
+  const titlePack = packInfo(result?.title);
+  const multipack = (titlePack.word && !profile.pack.word) || (titlePack.count && !profile.pack.count);
+  const modelVariant = hasModelVariant(profile.modelTokens, foldText(result?.title));
+
+  const core = measureTotal ? (coverage + measureScore) / 2 : coverage;
+  const folded = foldText(result?.title);
+  const bonus = Math.min(
+    0.05,
+    (profile.categoryWords.some((word) => titleWords.has(word)) ? 0.03 : 0)
+      + (profile.unitWords.some((word) => folded.includes(word)) ? 0.02 : 0)
+  );
+  const relevant = coverage >= MIN_NAME_COVERAGE
+    && !dimensionConflict
+    && !multipack
+    && !modelVariant
+    && measureScore >= MIN_MEASURE_SCORE;
+  return {
+    relevant,
+    core,
+    // Sin tope: desempata el orden cuando varias coincidencias llegan a 1.
+    sortScore: core + bonus,
+    score: Math.round(Math.min(1, core + bonus) * 100) / 100,
+    level: core >= HIGH_RELEVANCE_SCORE ? "ALTA" : "MEDIA",
+  };
+}
+
+// Quita precios atípicos con las vallas de Tukey (1.5 × IQR). Sólo actúa con
+// 4+ precios y nunca deja menos de MIN_RELEVANT_FOR_SUMMARY.
+function findPriceOutliers(prices) {
+  if (prices.length < MIN_RESULTS_FOR_OUTLIER_CHECK) return {lower: -Infinity, upper: Infinity};
+  const sorted = [...prices].sort((left, right) => left - right);
+  const quantile = (fraction) => {
+    const position = (sorted.length - 1) * fraction;
+    const base = Math.floor(position);
+    const rest = position - base;
+    return sorted[base] + (sorted[Math.min(base + 1, sorted.length - 1)] - sorted[base]) * rest;
+  };
+  const q1 = quantile(0.25);
+  const q3 = quantile(0.75);
+  const spread = (q3 - q1) * 1.5;
+  const lower = q1 - spread;
+  const upper = q3 + spread;
+  const kept = sorted.filter((price) => price >= lower && price <= upper).length;
+  return kept >= MIN_RELEVANT_FOR_SUMMARY ? {lower, upper} : {lower: -Infinity, upper: Infinity};
+}
+
+// Evalúa los resultados crudos contra el artículo. `status`:
+//  - OK:   3+ coincidencias relevantes → hay resumen de precios.
+//  - FEW:  1 o 2 coincidencias → se listan, sin resumen.
+//  - NONE: ninguna coincidencia confiable → ni precios ni resumen.
+function assessMarketResults(item, rawResults, currency = "CLP") {
+  const preferredCurrency = safeText(currency, 8).toUpperCase() || "CLP";
+  const all = Array.isArray(rawResults) ? rawResults : [];
+  const profile = buildItemProfile(item);
+  const relevant = all
+    .map((result) => ({result, assessment: scoreMarketResult(profile, result)}))
+    .filter(({result, assessment}) =>
+      assessment.relevant && result.currency === preferredCurrency && Number.isFinite(Number(result.price))
+    )
+    .sort((left, right) =>
+      right.assessment.sortScore - left.assessment.sortScore
+      || (left.result.position || 0) - (right.result.position || 0)
+    );
+
+  const fences = relevant.length >= MIN_RELEVANT_FOR_SUMMARY
+    ? findPriceOutliers(relevant.map(({result}) => Number(result.price)))
+    : {lower: -Infinity, upper: Infinity};
+  const results = relevant.map(({result, assessment}) => {
+    const price = Number(result.price);
+    return {
+      provider: result.provider,
+      externalId: result.externalId,
+      title: result.title,
+      merchant: result.merchant,
+      priceRaw: result.priceRaw,
+      price,
+      currency: result.currency,
+      url: result.url,
+      imageUrl: result.imageUrl || null,
+      position: result.position,
+      relevance: {level: assessment.level, score: assessment.score},
+      outlier: price < fences.lower || price > fences.upper,
+    };
+  });
+
+  const base = {totalFound: all.length, discardedCount: all.length - results.length, results};
+  if (!results.length) {
+    return {...base, status: "NONE", confidence: "NONE", summary: null};
+  }
+  if (results.length < MIN_RELEVANT_FOR_SUMMARY) {
+    return {...base, status: "FEW", confidence: "LOW", summary: null};
+  }
+  const kept = results.filter((result) => !result.outlier);
+  const summary = summarizeMarketResults(kept, preferredCurrency);
+  const highCount = results.filter((result) => result.relevance.level === "ALTA").length;
+  return {
+    ...base,
+    status: "OK",
+    confidence: highCount >= MIN_RELEVANT_FOR_SUMMARY ? "HIGH" : "MEDIUM",
+    summary: summary && {...summary, outliersExcluded: results.length - kept.length},
   };
 }
 
@@ -197,6 +470,31 @@ function buildSimulatedShoppingPayload(query) {
   };
 }
 
+function buildMarketResponse({
+  item,
+  itemInfo,
+  query,
+  rawResults,
+  warnings,
+  cached,
+  actualizadoEn,
+}) {
+  const assessment = assessMarketResults(item, rawResults, itemInfo.currency);
+  return {
+    item: itemInfo,
+    query,
+    status: assessment.status,
+    confidence: assessment.confidence,
+    results: assessment.results,
+    summary: assessment.summary,
+    totalFound: assessment.totalFound,
+    discardedCount: assessment.discardedCount,
+    warnings,
+    cached,
+    actualizadoEn,
+  };
+}
+
 async function searchInventoryMarketReferencesHandler(request, dependencies) {
   const {
     FieldValue,
@@ -219,7 +517,9 @@ async function searchInventoryMarketReferencesHandler(request, dependencies) {
   if (!/^[a-zA-Z0-9_-]{1,160}$/.test(itemId)) {
     throw new HttpsError("invalid-argument", "Selecciona un producto válido.");
   }
-  const forceRefresh = request?.data?.forceRefresh === true;
+  // cacheOnly gana sobre forceRefresh: solo lee la caché y nunca consulta al proveedor.
+  const cacheOnly = request?.data?.cacheOnly === true;
+  const forceRefresh = request?.data?.forceRefresh === true && !cacheOnly;
 
   const itemSnapshot = await access.businessRef.collection("inventario")
     .doc(itemId).get();
@@ -231,7 +531,7 @@ async function searchInventoryMarketReferencesHandler(request, dependencies) {
     throw new HttpsError("failed-precondition", "El producto debe estar activo para buscar referencias.");
   }
   if ((item.tipoItem || "producto") !== "producto") {
-    throw new HttpsError("failed-precondition", "La búsqueda de mercado está disponible sólo para productos.");
+    throw new HttpsError("failed-precondition", "La búsqueda de mercado está disponible solo para productos.");
   }
 
   const business = access.businessSnapshot.data() || {};
@@ -242,8 +542,10 @@ async function searchInventoryMarketReferencesHandler(request, dependencies) {
     internalPrice: Number.isFinite(Number(item.precioInterno))
       ? Number(item.precioInterno)
       : null,
+    unit: safeText(item.unidad, 40),
     currency,
   };
+  const queryInfo = buildInventoryMarketQuery(item);
 
   const cacheRef = access.businessRef.collection("referenciasPrecios").doc(itemId);
   if (!forceRefresh) {
@@ -253,21 +555,43 @@ async function searchInventoryMarketReferencesHandler(request, dependencies) {
       const cachedAtMillis = cached.actualizadoEn?.toMillis?.() || 0;
       const ageMs = Date.now() - cachedAtMillis;
       if (cachedAtMillis && ageMs >= 0 && ageMs < MARKET_REFERENCE_CACHE_TTL_MS) {
-        return {
-          item: itemInfo,
+        // Se re-evalúa desde los resultados guardados con los datos actuales
+        // del artículo: no cuesta créditos de Serper y corrige cachés viejas.
+        const cachedWarnings = Array.isArray(cached.warnings) ? [...cached.warnings] : [];
+        if (queryInfo.query && cached.query !== queryInfo.query) {
+          cachedWarnings.push(STALE_QUERY_WARNING);
+        }
+        return buildMarketResponse({
+          item,
+          itemInfo,
           query: cached.query || "",
-          confidence: cached.confidence || "LOW",
-          results: Array.isArray(cached.results) ? cached.results : [],
-          summary: cached.summary || null,
-          warnings: Array.isArray(cached.warnings) ? cached.warnings : [],
+          rawResults: cached.results,
+          warnings: cachedWarnings,
           cached: true,
           actualizadoEn: new Date(cachedAtMillis).toISOString(),
-        };
+        });
       }
     }
   }
 
-  const queryInfo = buildInventoryMarketQuery(item);
+  if (cacheOnly) {
+    // Sin caché vigente (inexistente o de más de 24 h) no se busca: la vista
+    // ofrece «Buscar precios». Esta rama va antes de la llave y del proveedor.
+    return {
+      item: itemInfo,
+      query: queryInfo.query,
+      status: "NO_CACHE",
+      confidence: "NONE",
+      results: [],
+      summary: null,
+      totalFound: 0,
+      discardedCount: 0,
+      warnings: [...queryInfo.warnings],
+      cached: false,
+      actualizadoEn: null,
+    };
+  }
+
   if (!queryInfo.query) {
     throw new HttpsError(
       "failed-precondition",
@@ -341,40 +665,40 @@ async function searchInventoryMarketReferencesHandler(request, dependencies) {
     defaultCurrency: currency,
     query: queryInfo.query,
   });
-  const warnings = [...queryInfo.warnings];
-  if (!results.length) {
-    warnings.push("No encontramos resultados para este producto.");
-  }
-  const summary = summarizeMarketResults(results, currency);
+  const response = buildMarketResponse({
+    item,
+    itemInfo,
+    query: queryInfo.query,
+    rawResults: results,
+    warnings: [...queryInfo.warnings],
+    cached: false,
+    actualizadoEn: checkedAt,
+  });
 
+  // Se guardan los resultados crudos: la relevancia se recalcula al leer.
   await cacheRef.set({
     itemId,
     itemNombre: itemInfo.name,
     query: queryInfo.query,
-    confidence: queryInfo.confidence,
+    confidence: response.confidence,
     results,
-    summary,
-    warnings,
+    summary: response.summary,
+    warnings: response.warnings,
     monedaCodigo: currency,
     actualizadoEn: FieldValue.serverTimestamp(),
   });
 
-  return {
-    item: itemInfo,
-    query: queryInfo.query,
-    confidence: queryInfo.confidence,
-    results,
-    summary,
-    warnings,
-    cached: false,
-    actualizadoEn: checkedAt,
-  };
+  return response;
 }
 
 module.exports = {
   GENERIC_QUERY_WARNING,
   MARKET_REFERENCE_CACHE_TTL_MS,
+  MIN_RELEVANT_FOR_SUMMARY,
+  STALE_QUERY_WARNING,
+  assessMarketResults,
   buildInventoryMarketQuery,
+  extractMeasures,
   normalizeSerperShoppingResults,
   searchInventoryMarketReferencesHandler,
   summarizeMarketResults,

@@ -28,24 +28,53 @@ export function formatMoney(value, currency = DEFAULT_CURRENCY, locale = DEFAULT
   }).format(Number(value || 0));
 }
 
+// Monto abreviado para los ejes de los gráficos ("$15 K", "-$1,5 M"). El sufijo
+// compacto sale de Intl, que según el ICU del navegador puede dar "k" o "K" en
+// el mismo eje; aquí se fuerza a mayúscula para que todas las marcas coincidan.
+// Palabras como "mil" no se tocan: solo los sufijos de una o dos letras.
+export function formatCompactMoney(value, currency = DEFAULT_CURRENCY, locale = DEFAULT_LOCALE) {
+  const amount = Number(value);
+  return new Intl.NumberFormat(safeLocale(locale), {
+    style: "currency",
+    currency: safeCurrency(currency),
+    notation: "compact",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+    signDisplay: "negative",
+  })
+    .formatToParts(Number.isFinite(amount) ? amount : 0)
+    .map((part) => (part.type === "compact" && part.value.trim().length <= 2 ? part.value.toUpperCase() : part.value))
+    .join("");
+}
+
 export function formatNumber(value, locale = DEFAULT_LOCALE, options = {}) {
   return new Intl.NumberFormat(safeLocale(locale), options).format(Number(value || 0));
 }
 
-// Reemplaza al antiguo formatCLP: moneda y locale del negocio activo. Como
-// máximo muestra los decimales que el catálogo define para la moneda, y como
-// mínimo ninguno: no agrega ",00" a montos que el sistema guarda enteros
-// (los centavos quedan para la SPEC de decimales). Con CLP es idéntico a
-// formatCLP.
+// Reemplaza al antiguo formatCLP: moneda y locale del negocio activo. Muestra
+// siempre los decimales que el catálogo define para la moneda (`decimals`: BOB
+// "Bs 10,50" y "Bs 11,00"; CLP sin decimales, idéntico a formatCLP). Es solo
+// formato: con cuántos decimales se calculan los montos lo decide
+// `amountDecimals` (SPEC 036), no esto.
 export function formatBusinessMoney(value, currency = DEFAULT_CURRENCY, locale = DEFAULT_LOCALE) {
   const code = safeCurrency(currency);
   const catalogDecimals = getCurrencyByCode(code)?.decimals;
   const options = { style: "currency", currency: code };
   if (Number.isInteger(catalogDecimals)) {
-    options.minimumFractionDigits = 0;
+    options.minimumFractionDigits = catalogDecimals;
     options.maximumFractionDigits = catalogDecimals;
   }
   return new Intl.NumberFormat(safeLocale(locale), options).format(Number(value || 0));
+}
+
+// Símbolo de la moneda del negocio tal como lo escribe formatBusinessMoney ("Bs" en BOB, "$" en CLP), para los campos de
+// importe que lo muestran aparte del número. Solo presentación.
+export function getCurrencySymbol(currency = DEFAULT_CURRENCY, locale = DEFAULT_LOCALE) {
+  const code = safeCurrency(currency);
+  const part = new Intl.NumberFormat(safeLocale(locale), { style: "currency", currency: code })
+    .formatToParts(0)
+    .find((entry) => entry.type === "currency");
+  return part?.value || code;
 }
 
 export function formatPercent(value, decimals = 1) {
@@ -101,4 +130,37 @@ export function formatTimestamp(value, locale = DEFAULT_LOCALE) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+// Fecha corta y legible para listas de avisos: "ahora", "hace 5 minutos",
+// "hace 2 horas", "ayer", "anteayer", "hace 4 días" y, pasados 7 días, la fecha
+// completa (formatDate). `now` (ms o Date) se inyecta para poder probarla sin
+// depender del reloj. Si no hay fecha válida devuelve "-", como formatTimestamp.
+const RELATIVE_MAX_DAYS = 7;
+
+export function formatRelativeTimestamp(value, now = Date.now(), locale = DEFAULT_LOCALE) {
+  if (!value) return "-";
+
+  const date =
+    typeof value?.toDate === "function"
+      ? value.toDate()
+      : value instanceof Date
+      ? value
+      : new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "-";
+
+  const nowMs = now instanceof Date ? now.getTime() : Number(now);
+  if (!Number.isFinite(nowMs)) return formatDate(date, locale);
+
+  const formatter = new Intl.RelativeTimeFormat(safeLocale(locale), { numeric: "auto" });
+  const minutes = Math.floor((nowMs - date.getTime()) / 60000);
+  // Un reloj atrasado (fecha futura) cuenta como "ahora", no como "dentro de".
+  if (minutes < 1) return formatter.format(0, "second");
+  if (minutes < 60) return formatter.format(-minutes, "minute");
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return formatter.format(-hours, "hour");
+  const days = Math.floor(hours / 24);
+  if (days <= RELATIVE_MAX_DAYS) return formatter.format(-days, "day");
+  return formatDate(date, locale);
 }

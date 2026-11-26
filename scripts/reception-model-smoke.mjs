@@ -119,7 +119,21 @@ assert.throws(() => buildReceptionMutationPayload({
 assert.throws(() => buildReceptionMutationPayload({
   fechaRecepcion: "2026-08-14",
   items: [{lineaId: "l1", cantidad: -1}],
-}), /al menos una cantidad|no son validas/i);
+}), /al menos una cantidad|no son válidas/i);
+// Mensajes de validación con tilde: cada rama se alcanza con una línea válida al lado.
+assert.throws(() => buildReceptionMutationPayload({
+  fechaRecepcion: "14-08-2026",
+  items: [{lineaId: "l1", cantidad: 1}],
+}), /Selecciona una fecha de recepción válida./);
+assert.throws(() => buildReceptionMutationPayload({
+  fechaRecepcion: "2026-08-14",
+  items: [{lineaId: "l1", cantidad: 2}, {lineaId: "l2", cantidad: -1}],
+}), /Las cantidades de la recepción no son válidas./);
+assert.throws(() => buildReceptionMutationPayload({
+  fechaRecepcion: "2026-08-14",
+  items: [{lineaId: "l1", cantidad: 2, costoUnitario: -5}],
+}), /Los costos o descuentos de la recepción no son válidos./);
+assert.equal(adaptStoredReception({id: "r9", items: [{lineaId: "l1", cantidad: 1}]}).items[0].nombre, "Ítem histórico");
 assert.equal(shouldReconcileReceptionConfirmation({code: "functions/unavailable"}), true);
 assert.equal(shouldReconcileReceptionConfirmation({code: "functions/failed-precondition"}), false);
 
@@ -141,8 +155,20 @@ assert.match(receptionDetailSource, /Confirmar recepción y registrar compra/);
 assert.match(receptionDetailSource, /Recibir ahora/);
 assert.match(receptionDetailSource, /Confirmar prestación/);
 assert.match(receptionDetailSource, /SupplyTrace/);
-assert.match(receptionDetailSource, /Recepción completada correctamente/);
-assert.doesNotMatch(receptionDetailSource, /Inventario y compra registrados|Ver compra/);
+// Recepción confirmada: aviso corto, sin el título repetido, y el número de la compra una sola vez, como enlace.
+assert.doesNotMatch(receptionDetailSource, /Recepción completada correctamente/);
+// El detalle confirmado o cancelado vive en ReceptionDetailView (solo lectura); el borrador conserva el formulario.
+const receptionReadOnlyViewSource = fs.readFileSync("src/features/receptions/ReceptionDetailView.jsx", "utf8");
+assert.match(receptionDetailSource, /reception\.estado !== "borrador"\) return <ReceptionDetailView/);
+assert.match(receptionReadOnlyViewSource, />Ver compra \{reception\.compraNumero/);
+assert.match(receptionReadOnlyViewSource, /SupplyTrace/);
+assert.match(receptionReadOnlyViewSource, /formatDate\(reception\.fechaRecepcion/);
+assert.doesNotMatch(receptionReadOnlyViewSource, /disabled=|<input|<textarea|Recibir ahora|Cantidad actual|Registra productos recibidos/);
+// El diálogo de confirmación sigue abierto mientras dura la llamada y se cierra solo en el finally.
+assert.doesNotMatch(receptionDetailSource, /confirmGuard\.current = true;\s*setDialog\(""\)/);
+assert.match(receptionDetailSource, /finally \{ confirmGuard\.current = false; setProcessing\(false\); setDialog\(""\); \}/);
+assert.match(receptionDetailSource, /\{processing && <p className="erp-secondary-text" role="status">/);
+assert.doesNotMatch(receptionDetailSource, /Inventario y compra registrados/);
 
 const scanItems = [
   {lineaId: "l1", itemId: "p1", tipoItem: "producto", nombre: "Cable", cantidadSolicitada: 5, cantidadRecibidaAnterior: 3, cantidad: 0},

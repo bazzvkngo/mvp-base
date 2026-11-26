@@ -64,7 +64,7 @@ export default function WorkQuoteSelector({currencyCode, disabled, loading = fal
         onClose={() => setOpen(false)}
         size="medium"
         title="Seleccionar cotización"
-        description="Sólo se muestran cotizaciones aceptadas con venta confirmada, elegibles para este proyecto."
+        description="Solo se muestran cotizaciones aceptadas con venta confirmada, elegibles para este trabajo."
       >
         <div className="works-quote-selector__picker">
           <label className="works-search-control">

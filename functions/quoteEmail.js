@@ -1,4 +1,8 @@
 const {SALES_WRITE_ROLES} = require("./rbac");
+const {
+  buildDeliveryEnvelope,
+  resolveAccountEmail,
+} = require("./emailEnvelope");
 const SENDABLE_QUOTE_STATUSES = new Set([
   "borrador",
   "emitida",
@@ -369,6 +373,7 @@ async function sendQuoteEmailHandler(request, dependencies) {
     });
   let publicToken;
   let quote;
+  let liveCompany;
   try {
     quote = {
       ...reservation.quote,
@@ -377,6 +382,9 @@ async function sendQuoteEmailHandler(request, dependencies) {
         reservation.quote
       ),
     };
+    liveCompany = dependencies.getLiveCompanyProfile
+      ? await dependencies.getLiveCompanyProfile(businessRef)
+      : quote.empresa;
     publicToken = await createPublicQuoteToken({
       businessId,
       channel: "correo",
@@ -416,7 +424,19 @@ async function sendQuoteEmailHandler(request, dependencies) {
     proposalUrl: publicToken.publicUrl,
   });
   const apiKey = getResendApiKey();
-  const from = getQuoteEmailSender();
+  const envelope = buildDeliveryEnvelope({
+    accountEmail: resolveAccountEmail(request.auth.token),
+    businessName:
+      liveCompany?.nombreComercial ||
+      liveCompany?.razonSocial ||
+      quote.empresa?.nombreComercial ||
+      quote.empresa?.razonSocial,
+    companyEmail: liveCompany?.email,
+    configuredFrom: getQuoteEmailSender(),
+    sendCopy: data.enviarCopia === true,
+    to: emailCliente,
+  });
+  const from = envelope.from;
   const baseEmailPatch = {
     correoOriginalCliente: recipient.correoOriginalCliente,
     destinatarioAlternativo: recipient.destinatarioAlternativo,
@@ -532,6 +552,8 @@ async function sendQuoteEmailHandler(request, dependencies) {
       html,
       text,
       attachments: [pdfAttachment],
+      ...(envelope.replyTo ? {replyTo: envelope.replyTo} : {}),
+      ...(envelope.bcc ? {bcc: envelope.bcc} : {}),
     });
     const providerId = safeText(providerResponse.id, 120);
     const patch = {

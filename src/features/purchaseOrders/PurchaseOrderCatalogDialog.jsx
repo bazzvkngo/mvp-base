@@ -1,5 +1,6 @@
 import React, {useMemo, useState} from "react";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
+import {useBusinessMoney} from "../../hooks/useBusinessFormat";
 
 function searchable(value) {
   return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
@@ -7,6 +8,7 @@ function searchable(value) {
 }
 
 export default function PurchaseOrderCatalogDialog({items, onAdd, onClose, open}) {
+  const money = useBusinessMoney();
   const [search, setSearch] = useState("");
   const [type, setType] = useState("todos");
   const filtered = useMemo(() => items.filter((item) => {
@@ -46,7 +48,7 @@ export default function PurchaseOrderCatalogDialog({items, onAdd, onClose, open}
                 <strong>{item.nombre}</strong>
                 <small>{item.codigoInterno || item.sku || "Sin código"} · {({producto: "Producto", servicio: "Servicio", actividad: "Actividad"})[item.tipoItem] || "Producto"}{item.tipoItem === "producto" ? ` · Stock actual: ${Number(item.stock || 0)}` : ""}</small>
               </div>
-              <span>${Number(item.costoBase || 0).toLocaleString("es-CL")}</span>
+              <span>{money(item.costoBase)}</span>
               <button type="button" className="po-button po-button--secondary" onClick={() => onAdd(item)}>
                 Agregar
               </button>

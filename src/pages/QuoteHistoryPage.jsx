@@ -20,16 +20,21 @@ import {SkeletonCards, SkeletonRegion, SkeletonTable} from "../components/ui/Ske
 import UiStatusBadge from "../components/ui/StatusBadge";
 import { getCompanyProfile } from "../services/companyService";
 import {
+  canDeleteQuotes,
+  canOfferQuoteDeletion,
   canDuplicateQuotes,
   DEFAULT_QUOTE_VALIDITY_DAYS,
   getQuoteExpiryAlert,
   getQuoteStatusLabel,
+  isQuoteDeleteConfirmed,
   matchesQuoteQuickFilter,
+  QUOTE_DELETE_CONFIRMATION_WORD,
   QUOTE_STATUS_LABELS,
 } from "../domain/quoteModel.mjs";
 import {
   createQuoteDuplicateRequestId,
   createQuoteLifecycleRequestId,
+  deleteQuoteDraft,
   duplicateQuoteAsDraft,
   getChileDateInputValue,
   getQuoteEvents,
@@ -50,23 +55,13 @@ import {
   BUSINESS_PERMISSIONS,
   hasBusinessPermission,
 } from "../domain/rbac.mjs";
-
-const STATUS_OPTIONS = [
-  "borrador",
-  "emitida",
-  "por_vencer",
-  "aceptada",
-  "rechazada",
-  "vencida",
-  "archivada",
-];
+import {userErrorMessage} from "../domain/userFacingError.mjs";
 
 const statusLabels = QUOTE_STATUS_LABELS;
 
-// "Por vencer" no es un estado: emitidas que vencen en los próximos días o
-// que ya pasaron su fecha sin marcarse (ver getQuoteExpiryAlert).
-const filterLabels = {...QUOTE_STATUS_LABELS, por_vencer: "Por vencer"};
-
+// Pestañas del historial: el único filtro de estado. "Por vencer" no es un
+// estado: emitidas que vencen en los próximos días o que ya pasaron su fecha
+// sin marcarse (ver getQuoteExpiryAlert). "Todas" excluye las archivadas.
 const QUICK_FILTERS = [
   ["todos", "Todas"],
   ["borrador", "Pendientes"],
@@ -75,6 +70,7 @@ const QUICK_FILTERS = [
   ["aceptada", "Aceptadas"],
   ["rechazada", "Rechazadas"],
   ["vencida", "Vencidas"],
+  ["archivada", "Archivadas"],
 ];
 
 const statusFeedbackTitles = {
@@ -121,6 +117,17 @@ const statusStyles = {
     color: "var(--color-text-default)",
   },
 };
+
+// Tono de la etiqueta del bloque "Estado comercial" del detalle (clases
+// .ui-status-badge--* de components.css; info es local de quote-commercial).
+const QUOTE_STATUS_BADGE_CLASS = Object.freeze({
+  borrador: "ui-status-badge--warning",
+  emitida: "quote-commercial__badge--info",
+  aceptada: "ui-status-badge--success",
+  rechazada: "ui-status-badge--danger",
+  vencida: "ui-status-badge--warning",
+  archivada: "ui-status-badge--neutral",
+});
 
 function getQuoteClientFiscalId(quote) {
   return quote?.cliente?.identificadorFiscalValor || quote?.clienteRut || "";
@@ -173,6 +180,11 @@ function QuoteHistoryPage({ userId, role }) {
   const [quoteEventsById, setQuoteEventsById] = useState({});
   const reopenRequestIdsRef = useRef(new Map());
   const canDuplicate = canDuplicateQuotes(role);
+  const canDelete = canDeleteQuotes(role);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   const canCreateClients = hasBusinessPermission(
     role,
     BUSINESS_PERMISSIONS.CLIENTS_WRITE
@@ -369,7 +381,7 @@ function QuoteHistoryPage({ userId, role }) {
       return statusPatch;
     } catch (err) {
       console.error("Error al actualizar estado:", err);
-      const message = err.message || "No se pudo actualizar el estado.";
+      const message = userErrorMessage(err, "No se pudo actualizar el estado.");
       setError(message);
       sileo.error({
         title: "No se pudo actualizar la cotización",
@@ -408,6 +420,43 @@ function QuoteHistoryPage({ userId, role }) {
     });
   };
 
+  const handleRequestDelete = (quote) => {
+    setDeleteConfirmation("");
+    setDeleteError("");
+    setDeleteTarget(quote);
+  };
+
+  const handleCloseDelete = () => {
+    if (deleting) return;
+    setDeleteTarget(null);
+    setDeleteConfirmation("");
+    setDeleteError("");
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget || deleting || !isQuoteDeleteConfirmed(deleteConfirmation)) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await deleteQuoteDraft(userId, deleteTarget.id, deleteConfirmation);
+      const deletedId = deleteTarget.id;
+      setQuotes((current) => current.filter((quote) => quote.id !== deletedId));
+      setQuoteEventsById((current) => {
+        const {[deletedId]: removed, ...rest} = current;
+        return rest;
+      });
+      if (selectedQuoteId === deletedId) setSelectedQuoteId("");
+      setDeleteTarget(null);
+      setDeleteConfirmation("");
+      sileo.success({title: "Cotización eliminada"});
+    } catch (err) {
+      console.error("Error al eliminar la cotización:", err);
+      setDeleteError(userErrorMessage(err, "No se pudo eliminar la cotización."));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const handleEditDraft = (quoteId) => {
     navigate(`/cotizaciones/${quoteId}/editar`);
   };
@@ -443,7 +492,7 @@ function QuoteHistoryPage({ userId, role }) {
     } catch (reopenError) {
       sileo.error({
         title: "No se pudo reabrir la cotización",
-        description: reopenError.message,
+        description: userErrorMessage(reopenError),
       });
     } finally {
       setSavingStatus(false);
@@ -473,7 +522,7 @@ function QuoteHistoryPage({ userId, role }) {
       });
     } catch (duplicateError) {
       const message =
-        duplicateError.message || "No se pudo duplicar la cotización.";
+        userErrorMessage(duplicateError, "No se pudo duplicar la cotización.");
       setError(message);
       sileo.error({
         title: "No se pudo duplicar la cotización",
@@ -578,7 +627,7 @@ function QuoteHistoryPage({ userId, role }) {
         </div>
 
         {quotes.length > 0 && (
-          <div className="erp-filters erp-history-filters erp-history-filters--two clients-filters quote-history-filters">
+          <div className="erp-filters erp-history-filters quote-history-filters">
             <label className="erp-field erp-history-search-field">
             <span className="erp-field__label">Buscar por número o cliente</span>
             <span className="clients-search-control">
@@ -590,21 +639,6 @@ function QuoteHistoryPage({ userId, role }) {
                 placeholder="Ej.: COT-2026-0001 o cliente"
               />
             </span>
-            </label>
-            <label className="erp-field">
-            <span className="erp-field__label">Estado</span>
-            <select
-              className="erp-control"
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
-            >
-              <option value="todos">Todas excepto archivadas</option>
-              {STATUS_OPTIONS.map((status) => (
-                <option key={status} value={status}>
-                  {filterLabels[status]}
-                </option>
-              ))}
-            </select>
             </label>
           </div>
         )}
@@ -735,6 +769,7 @@ function QuoteHistoryPage({ userId, role }) {
                           onArchive={handleArchiveQuote}
                           onRestore={handleRestoreQuote}
                           onEditDraft={handleEditDraft}
+                          onDelete={canDelete ? handleRequestDelete : undefined}
                           canDuplicate={canDuplicate}
                           duplicating={duplicatingQuoteId === quote.id}
                           onDuplicate={handleDuplicateQuote}
@@ -765,6 +800,7 @@ function QuoteHistoryPage({ userId, role }) {
             onChangeStatus={handleChangeStatus}
             onDuplicate={handleDuplicateQuote}
             onEditDraft={handleEditDraft}
+            onDelete={canDelete ? handleRequestDelete : undefined}
             onReopen={handleReopenQuote}
             onRestore={handleRestoreQuote}
             onSend={handleOpenDetail}
@@ -810,6 +846,7 @@ function QuoteHistoryPage({ userId, role }) {
                 onArchive={handleArchiveQuote}
                 onRestore={handleRestoreQuote}
                 onEditDraft={handleEditDraft}
+                onDelete={canDelete ? handleRequestDelete : undefined}
                 canDuplicate={canDuplicate}
                 duplicating={duplicatingQuoteId === selectedQuote.id}
                 onDuplicate={handleDuplicateQuote}
@@ -877,6 +914,84 @@ function QuoteHistoryPage({ userId, role }) {
         </p>
       </ResponsiveDialog>
 
+      <ResponsiveDialog
+        open={Boolean(deleteTarget)}
+        onClose={handleCloseDelete}
+        size="small"
+        eyebrow="Cotizaciones"
+        title="Eliminar cotización"
+        description={
+          deleteTarget
+            ? `Vas a eliminar la cotización ${getQuoteDisplayNumber(
+                deleteTarget,
+                deleteTarget.id || "-"
+              )}, que nunca se emitió.`
+            : ""
+        }
+        footer={
+          <div className="erp-actions" style={styles.prepareSaleActions}>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={deleting}
+              onClick={handleCloseDelete}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              loading={deleting}
+              disabled={!isQuoteDeleteConfirmed(deleteConfirmation)}
+              onClick={handleConfirmDelete}
+            >
+              {deleting ? "Eliminando..." : "Eliminar definitivamente"}
+            </Button>
+          </div>
+        }
+      >
+        <div className="quote-delete">
+          <p className="quote-delete__warning">
+            Esta acción es permanente y no se puede deshacer. Se perderán:
+          </p>
+          <ul className="quote-delete__list">
+            <li>la cotización y su contenido,</li>
+            <li>su historial de eventos,</li>
+            <li>su vínculo con el proyecto, si lo tiene.</li>
+          </ul>
+          <p className="quote-delete__note">
+            Los costos del proyecto (gastos, horas, adicionales y materiales) NO se borran.
+            El número de la cotización quedará sin usar.
+          </p>
+          <label className="erp-field quote-delete__field">
+            <span>
+              Para confirmar, escribe <strong>{QUOTE_DELETE_CONFIRMATION_WORD}</strong>
+            </span>
+            <input
+              className="erp-control"
+              type="text"
+              autoComplete="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              value={deleteConfirmation}
+              disabled={deleting}
+              onChange={(event) => setDeleteConfirmation(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  handleConfirmDelete();
+                }
+              }}
+            />
+          </label>
+          {deleteError && (
+            <div className="client-message client-message--error" role="alert">
+              {deleteError}
+            </div>
+          )}
+        </div>
+      </ResponsiveDialog>
+
       {emailModalQuote && (
         <SendQuoteEmailModal
           businessId={userId}
@@ -916,13 +1031,11 @@ function QuoteValidity({ quote, today }) {
     : `Creada ${formatDate(quote.fecha)}`;
 
   if (estado === "borrador") {
+    const validityDays = quote.validezDias || DEFAULT_QUOTE_VALIDITY_DAYS;
     return (
-      <>
-        <span>{quote.validezDias || DEFAULT_QUOTE_VALIDITY_DAYS} días al emitir</span>
-        <small className="clients-table__secondary">
-          Sin emitir · Creada {formatDate(quote.fecha)}
-        </small>
-      </>
+      <span>
+        Sin emitir · creada {formatDate(quote.fecha)} · {validityDays} {Number(validityDays) === 1 ? "día" : "días"} de vigencia
+      </span>
     );
   }
 
@@ -1002,6 +1115,7 @@ function QuoteCards({
   onChangeStatus,
   onDuplicate,
   onEditDraft,
+  onDelete,
   onReopen,
   onRestore,
   onSend,
@@ -1078,6 +1192,7 @@ function QuoteCards({
                 onArchive={onArchive}
                 onRestore={onRestore}
                 onEditDraft={onEditDraft}
+                onDelete={onDelete}
                 canDuplicate={canDuplicate}
                 duplicating={duplicatingQuoteId === quote.id}
                 onDuplicate={onDuplicate}
@@ -1102,6 +1217,7 @@ function QuoteActions({
   onArchive,
   onRestore,
   onEditDraft,
+  onDelete,
   canDuplicate,
   duplicating,
   onDuplicate,
@@ -1170,17 +1286,23 @@ function QuoteActions({
   }
 
   if (estado === "borrador") {
-    const editMenuAction = {
-      label: "Editar cotización",
-      disabled,
-      onSelect: () => onEditDraft(quote.id),
-    };
     // Indica que la cotización fue enviada al cliente; no registra una venta.
     const emitMenuAction = {
       label: "Marcar como emitida",
       disabled,
       onSelect: () => onChangeStatus(quote.id, "emitida"),
     };
+
+    // Eliminar es definitivo y solo OWNER/ADMIN reciben onDelete. Se oculta en
+    // borradores que la Function rechazaría según los campos que el cliente
+    // ya tiene (canOfferQuoteDeletion); lo que no ve, lo rechaza la Function.
+    const deleteMenuAction = onDelete && canOfferQuoteDeletion(quote)
+      ? {
+          label: "Eliminar cotización",
+          disabled,
+          onSelect: () => onDelete(quote),
+        }
+      : null;
 
     // En el diálogo de detalle el envío ya está visible arriba (sin onSend):
     // la acción principal ahí es editar.
@@ -1198,7 +1320,7 @@ function QuoteActions({
           <MoreActionsMenu
             iconOnly={inRow}
             menuLabel="Más acciones de cotización"
-            actions={[emitMenuAction, archiveMenuAction]}
+            actions={[emitMenuAction, archiveMenuAction, deleteMenuAction]}
             disabled={disabled}
           />
         </>
@@ -1216,10 +1338,18 @@ function QuoteActions({
         >
           Enviar
         </button>
+        <button
+          type="button"
+          onClick={() => onEditDraft(quote.id)}
+          disabled={disabled}
+          style={styles.secondaryButton}
+        >
+          Editar
+        </button>
         <MoreActionsMenu
           iconOnly={inRow}
           menuLabel="Más acciones de cotización"
-          actions={[editMenuAction, emitMenuAction, archiveMenuAction]}
+          actions={[emitMenuAction, archiveMenuAction, deleteMenuAction]}
           disabled={disabled}
         />
       </>
@@ -1376,7 +1506,7 @@ function QuoteDocumentActions({
       }
     } catch (error) {
       if (error?.name !== "AbortError") {
-        const message = error?.message || "No fue posible preparar el PDF.";
+        const message = userErrorMessage(error, "No fue posible preparar el PDF.");
         setPdfError(message);
         sileo.error({
           title: action === "download"
@@ -1407,7 +1537,7 @@ function QuoteDocumentActions({
         description: `${getQuoteDisplayNumber(quote, quote.id)} conservó su estado ${getQuoteStatusLabel(statusPatch.estado)}.`,
       });
     } catch (error) {
-      const message = error?.message || "No fue posible registrar el envío.";
+      const message = userErrorMessage(error, "No fue posible registrar el envío.");
       setPdfError(message);
       sileo.error({
         title: "No se pudo registrar el envío",
@@ -1549,7 +1679,7 @@ function CommercialStatusTimeline({ quote }) {
         return {
           label: rejected ? "Rechazada por cliente" : "Aceptada por cliente",
           value: formatTimestamp(details.fechaRespuesta || event.creadoEn),
-          note: `Oportunidad ${details.oportunidadVersion || 1}`,
+          note: `Oportunidad: ${details.oportunidadVersion || 1}`,
           details: rejected ? [
             {
               label: "Motivo",
@@ -1567,7 +1697,9 @@ function CommercialStatusTimeline({ quote }) {
         return {
           label: "Cotización reabierta",
           value: formatTimestamp(event.creadoEn),
-          note: `Nueva oportunidad ${details.oportunidadVersion || ""}`.trim(),
+          note: details.oportunidadVersion
+            ? `Nueva oportunidad: ${details.oportunidadVersion}`
+            : "Nueva oportunidad",
         };
       }
       if (["cotizacion_enviada", "cotizacion_reenviada"].includes(event.tipo)) {
@@ -1705,102 +1837,68 @@ function CommercialStatusTimeline({ quote }) {
     primary: true,
   });
 
+  const [current, ...timeline] = events;
+  const tone = QUOTE_STATUS_BADGE_CLASS[quote.estado || "borrador"] || "ui-status-badge--neutral";
+
   return (
-    <section style={styles.commercialStatus} aria-label="Estado comercial">
-      <strong style={styles.commercialStatusTitle}>Estado comercial</strong>
-      <div style={styles.commercialStatusGrid}>
-        {events.map((event) => (
-          <div key={`${event.label}-${event.value}`} style={{...styles.commercialStatusEvent, ...(event.primary ? styles.commercialStatusCurrent : {})}}>
-            <span style={styles.commercialStatusLabel}>{event.label}</span>
-            <span style={styles.commercialStatusValue}>{event.value}</span>
-            {event.note && <small style={styles.commercialStatusNote}>{event.note}</small>}
-            {event.details?.length > 0 && (
-              <div style={styles.commercialStatusDetails}>
-                {event.details.map((detail) => (
-                  <div key={detail.label} style={styles.commercialStatusDetail}>
-                    <strong style={styles.commercialStatusDetailLabel}>
-                      {detail.label}:
-                    </strong>
-                    <span style={styles.commercialStatusDetailValue}>
-                      {detail.quoted ? `“${detail.value}”` : detail.value}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
+    <section className="quote-commercial" aria-label="Estado comercial">
+      <div className="quote-commercial__header">
+        <strong className="quote-commercial__title">Estado comercial</strong>
+        <span className={`ui-status-badge quote-commercial__badge ${tone}`}>
+          {current.value}
+        </span>
+        {current.note && (
+          <span className="quote-commercial__issued">{current.note}</span>
+        )}
       </div>
+      {timeline.length > 0 && (
+        <ol className="quote-commercial__timeline">
+          {timeline.map((event, index) => (
+            <li key={`${event.label}-${event.value}-${index}`} className="quote-commercial__event">
+              <span className="quote-commercial__event-label">{event.label}</span>
+              <span className="quote-commercial__event-date">{event.value}</span>
+              {splitNoteParts(event.note).map((part, partIndex) => (
+                <span key={partIndex} className="quote-commercial__event-note">
+                  {part.label && (
+                    <span className="quote-commercial__event-note-label">{part.label}</span>
+                  )}
+                  <span className="quote-commercial__event-note-value">{part.value}</span>
+                </span>
+              ))}
+              {event.details?.length > 0 && (
+                <div className="quote-commercial__details">
+                  {event.details.map((detail) => (
+                    <div key={detail.label} className="quote-commercial__detail">
+                      <span className="quote-commercial__event-note-label">{detail.label}</span>
+                      <span className="quote-commercial__detail-value">
+                        {detail.quoted ? `“${detail.value}”` : detail.value}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
     </section>
   );
 }
 
+// "Destinatario: x · Proveedor: y" -> partes {label, value}; sin ": " solo valor.
+function splitNoteParts(note) {
+  return String(note || "")
+    .split(" · ")
+    .filter(Boolean)
+    .map((part) => {
+      const separator = part.indexOf(": ");
+      return separator > 0
+        ? { label: part.slice(0, separator), value: part.slice(separator + 2) }
+        : { value: part };
+    });
+}
+
 const styles = {
-  commercialStatus: {
-    background: "var(--color-surface-subtle)",
-    border: "1px solid var(--color-border-default)",
-    borderRadius: "6px",
-    display: "grid",
-    gap: "8px",
-    marginTop: "12px",
-    padding: "11px 12px",
-  },
-  commercialStatusTitle: {
-    color: "var(--color-text-strong)",
-    fontSize: "13px",
-  },
-  commercialStatusGrid: {
-    display: "grid",
-    gap: "8px",
-    gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-  },
-  commercialStatusEvent: {
-    borderLeft: "2px solid var(--color-text-brand-accent)",
-    display: "grid",
-    gap: "2px",
-    paddingLeft: "8px",
-  },
-  commercialStatusCurrent: {
-    background: "var(--color-surface-panel)",
-    border: "1px solid var(--color-border-control)",
-    borderLeft: "4px solid var(--color-text-brand-accent)",
-    borderRadius: "5px",
-    gridColumn: "1 / -1",
-    padding: "9px 10px",
-  },
-  commercialStatusLabel: {
-    color: "var(--color-text-default)",
-    fontSize: "12px",
-    fontWeight: 700,
-  },
-  commercialStatusValue: {
-    color: "var(--color-text-muted)",
-    fontSize: "12px",
-  },
-  commercialStatusNote: {
-    color: "var(--color-text-brand-accent)",
-    fontSize: "11px",
-    fontWeight: 700,
-  },
-  commercialStatusDetails: {
-    display: "grid",
-    gap: "6px",
-    marginTop: "4px",
-  },
-  commercialStatusDetail: {
-    display: "grid",
-    gap: "1px",
-  },
-  commercialStatusDetailLabel: {
-    color: "var(--color-text-default)",
-    fontSize: "11px",
-  },
-  commercialStatusDetailValue: {
-    color: "var(--color-text-default)",
-    fontSize: "12px",
-    overflowWrap: "anywhere",
-    whiteSpace: "pre-wrap",
-  },
   panelTitle: {
     margin: "0 0 6px",
     fontSize: "17px",

@@ -1,3 +1,4 @@
+import {getHiddenCorePaths, getPrimaryVerticalModules} from "./categoryModules.mjs";
 import {VERTICAL_MODULES, getEnabledVerticalModules} from "./verticalModules.mjs";
 
 export const BUSINESS_ROLES = Object.freeze([
@@ -77,6 +78,10 @@ export const BUSINESS_PERMISSIONS = Object.freeze({
   WORKS_READ: "works.read",
   WORKS_MANAGE: "works.manage",
   WORKS_OPERATE: "works.operate",
+  TALLER_READ: "taller.read",
+  TALLER_OPERATE: "taller.operate",
+  TALLER_CREATE: "taller.create",
+  TALLER_MANAGE: "taller.manage",
   REPORTS_READ: "reports.read",
   PROFITABILITY_READ: "profitability.read",
   FINANCE_READ: "finance.read",
@@ -88,6 +93,7 @@ export const BUSINESS_PERMISSIONS = Object.freeze({
   COMPANY_WRITE: "company.write",
   MEMBERS_READ: "members.read",
   MEMBERS_MANAGE: "members.manage",
+  VETERINARIA_READ: "veterinaria.read",
   ACCOUNT_READ: "account.read",
 });
 
@@ -103,14 +109,16 @@ const permissionsByRole = Object.freeze({
     P.PURCHASES_READ, P.PURCHASES_WRITE, P.INVENTORY_READ, P.INVENTORY_WRITE,
     P.INVENTORY_COSTS_READ, P.REFERENCES_READ, P.ACCOUNT_READ],
   TECNICO: [P.DASHBOARD_READ, P.INVENTORY_READ, P.INVENTORY_COSTS_READ,
-    P.WORKS_READ, P.WORKS_OPERATE, P.ACCOUNT_READ],
+    P.WORKS_READ, P.WORKS_OPERATE, P.TALLER_READ, P.TALLER_OPERATE,
+    P.TALLER_CREATE, P.ACCOUNT_READ],
   FINANZAS: [P.DASHBOARD_READ, P.SALES_READ, P.PURCHASES_READ, P.INVENTORY_READ,
     P.INVENTORY_COSTS_READ, P.REPORTS_READ, P.PROFITABILITY_READ,
     P.FINANCE_READ, P.FINANCE_WRITE, P.ACCOUNT_READ],
-  // MEMBER conserva lectura histórica y operación técnica propia, sin permisos nuevos.
+  // MEMBER conserva permisos legacy y suma lectura/operación de Taller, sin administración.
   MEMBER: [P.DASHBOARD_READ, P.CLIENTS_READ, P.QUOTES_READ, P.SALES_READ,
     P.PROVIDERS_READ, P.PURCHASES_READ, P.INVENTORY_READ, P.INVENTORY_COSTS_READ,
-    P.WORKS_READ, P.WORKS_OPERATE, P.REPORTS_READ, P.FINANCE_READ,
+    P.WORKS_READ, P.WORKS_OPERATE, P.TALLER_READ, P.TALLER_OPERATE,
+    P.REPORTS_READ, P.FINANCE_READ,
     P.REFERENCES_READ, P.PRICING_READ, P.COMPANY_READ, P.MEMBERS_READ,
     P.ACCOUNT_READ],
 });
@@ -158,11 +166,13 @@ const routePermissions = Object.freeze([
   [/^\/(ordenes-compra|recepciones|compras)(?:\/|$)/, P.PURCHASES_READ],
   [/^\/inventario(?:\/|$)/, P.INVENTORY_READ],
   [/^\/trabajos(?:\/|$)/, P.WORKS_READ],
+  [/^\/taller(?:\/|$)/, P.TALLER_READ],
   [/^\/(reportes|estadisticas)(?:\/|$)/, P.REPORTS_READ],
   [/^\/finanzas(?:\/|$)/, P.FINANCE_READ],
   [/^\/valorizacion(?:\/|$)/, P.PRICING_READ],
   [/^\/empresa(?:\/|$)/, P.COMPANY_READ],
   [/^\/empleados(?:\/|$)/, P.MEMBERS_READ],
+  [/^\/clinica-veterinaria(?:\/|$)/, P.VETERINARIA_READ],
   [/^\/cuenta(?:\/|$)/, P.ACCOUNT_READ],
 ]);
 
@@ -237,6 +247,13 @@ export function getBusinessPathOptions(business) {
   return {enabledModules: getEnabledVerticalModules(business)};
 }
 
+// ¿La ruta existe en la aplicación (Core o módulo vertical)? Distingue una ruta
+// sin permiso (se redirige al inicio) de una ruta que no existe (página 404).
+export function isKnownBusinessPath(pathname, {registry = VERTICAL_MODULES} = {}) {
+  return Boolean(findVerticalModule(pathname, registry)) ||
+    routePermissions.some(([pattern]) => pattern.test(pathname));
+}
+
 export function canAccessBusinessPath(access, pathname, options = {}) {
   if (!isVerticalPathEnabled(access, pathname, options)) return false;
   const normalized = normalizeBusinessAccess(access);
@@ -263,16 +280,42 @@ function resolveDefaultBusinessPath(access) {
   return "/cotizaciones";
 }
 
+// Aterrizaje cuando el inicio del rol es una ruta que el rubro oculta del menú (SPEC 038: hoy,
+// el TECNICO de Taller y Veterinaria aterrizaría en /trabajos). Primero el módulo del rubro
+// (Taller: /taller), luego Inventario; solo se elige una ruta que el rol puede abrir según
+// canAccessBusinessPath. Si ninguna, /cuenta. `access` es el negocio activo (trae rubroCodigo
+// y modulosHabilitados); con un rol en string no hay rubro y no se llega aquí.
+function resolveVisibleLanding(access, hiddenPaths, options) {
+  const enabledModules = options.enabledModules ?? getEnabledVerticalModules(access);
+  const pathOptions = {...options, enabledModules};
+  const moduleBasePaths = getPrimaryVerticalModules(access)
+    .map((id) => VERTICAL_MODULES.find((module) => module.id === id)?.basePath)
+    .filter(Boolean);
+  const candidate = [...moduleBasePaths, "/inventario"].find((path) =>
+    !hiddenPaths.includes(path) && canAccessBusinessPath(access, path, pathOptions)
+  );
+  return candidate || "/cuenta";
+}
+
 export function getDefaultBusinessPath(access, options = {}) {
   const landing = resolveDefaultBusinessPath(access);
+  const hiddenPaths = getHiddenCorePaths(access);
+  if (hiddenPaths.includes(landing)) return resolveVisibleLanding(access, hiddenPaths, options);
   return isVerticalPathEnabled(access, landing, options) ? landing : "/cuenta";
 }
 
 export function filterNavigationSections(sections, access, options = {}) {
+  const filterItem = (item) => {
+    if (!canAccessBusinessPath(access, item.to, options)) return null;
+    if (item.requiredPermission && !hasBusinessPermission(access, item.requiredPermission)) return null;
+    if (!Array.isArray(item.children)) return item;
+    const children = item.children.map(filterItem).filter(Boolean);
+    return children.length ? {...item, children} : null;
+  };
   return sections
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => canAccessBusinessPath(access, item.to, options)),
+      items: section.items.map(filterItem).filter(Boolean),
     }))
     .filter((section) => section.items.length > 0);
 }

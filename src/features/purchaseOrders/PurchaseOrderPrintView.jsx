@@ -1,6 +1,7 @@
 import React from "react";
 import { CubeIcon } from "../../components/BrandLogo";
 import { resolveDocumentCompany } from "../../domain/companySnapshot.mjs";
+import { getCountryFormCopy } from "../../domain/countryFormCopy.mjs";
 import { formatDate, formatMoney } from "../../utils/formatters";
 
 const statusLabel = (value) => ({
@@ -85,7 +86,7 @@ export default function PurchaseOrderPrintView({ company: liveCompany = {}, orde
               label={company.identificadorFiscalTipo || "Identificación fiscal"}
               value={company.identificadorFiscalValor || company.rut}
             />
-            <OptionalLine label="Giro" value={company.giro} />
+            <OptionalLine label={getCountryFormCopy(order.paisCodigo || liveCompany?.paisCodigo).businessActivityLabel} value={company.giro} />
             <OptionalLine
               value={joinNonEmpty([
                 company.direccion,

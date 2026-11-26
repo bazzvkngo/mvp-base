@@ -36,6 +36,7 @@
         "*.local"
       ],
       "predeploy": [
+        "node scripts/package-veterinary-models.cjs",
         "npm --prefix \"$RESOURCE_DIR\" run lint"
       ]
     }

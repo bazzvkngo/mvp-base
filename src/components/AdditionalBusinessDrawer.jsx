@@ -1,10 +1,16 @@
 import React from "react";
 import { Building2 } from "lucide-react";
 import {
+  getCountryByCode,
+  getCurrencyByCode,
+} from "../domain/businessCatalog";
+import {
+  applyQuickBusinessChange,
   getBusinessCreationErrorMessage,
-  INITIAL_QUICK_BUSINESS_VALUES,
+  INITIAL_ONBOARDING_BUSINESS_VALUES,
   normalizeQuickBusinessPayload,
-  QUICK_BUSINESS_FIELD_ORDER,
+  ONBOARDING_BUSINESS_FIELD_ORDER,
+  shouldValidateOnBlur,
   validateQuickBusiness,
 } from "../domain/businessForm";
 import {
@@ -16,15 +22,19 @@ import QuickBusinessFields from "./QuickBusinessFields";
 import Button from "./ui/Button";
 import ResponsiveDialog from "./ui/ResponsiveDialog";
 
+// Mismas reglas que el alta del primer negocio: país elegible (Chile por defecto) y región o departamento del país.
+const VALIDATION_OPTIONS = { requireCountry: true, requireRegion: true };
+
 function AdditionalBusinessDrawer({
   onClose,
   onCreated,
   open,
   usuario,
 }) {
-  const [values, setValues] = React.useState(INITIAL_QUICK_BUSINESS_VALUES);
+  const [values, setValues] = React.useState(INITIAL_ONBOARDING_BUSINESS_VALUES);
   const [errors, setErrors] = React.useState({});
   const [touched, setTouched] = React.useState({});
+  const [editedFields, setEditedFields] = React.useState({});
   const [submitted, setSubmitted] = React.useState(false);
   const [submitError, setSubmitError] = React.useState("");
   const [isSubmitting, setIsSubmitting] = React.useState(false);
@@ -35,9 +45,10 @@ function AdditionalBusinessDrawer({
 
   React.useEffect(() => {
     if (!open) return;
-    setValues(INITIAL_QUICK_BUSINESS_VALUES);
+    setValues(INITIAL_ONBOARDING_BUSINESS_VALUES);
     setErrors({});
     setTouched({});
+    setEditedFields({});
     setSubmitted(false);
     setSubmitError("");
     setIsSubmitting(false);
@@ -82,19 +93,37 @@ function AdditionalBusinessDrawer({
       document.removeEventListener("keydown", handleConfirmKeyDown, true);
   }, [confirmDiscard]);
 
-  const isDirty = QUICK_BUSINESS_FIELD_ORDER.some(
-    (field) => values[field] !== INITIAL_QUICK_BUSINESS_VALUES[field]
+  const isDirty = ONBOARDING_BUSINESS_FIELD_ORDER.some(
+    (field) => values[field] !== INITIAL_ONBOARDING_BUSINESS_VALUES[field]
   );
+  const selectedCountry = getCountryByCode(values.paisCodigo);
+  const selectedCurrency = getCurrencyByCode(selectedCountry?.defaultCurrencyCode);
 
   const updateValue = (field, value) => {
-    const patch =
-      field && typeof field === "object" ? field : { [field]: value };
+    const patch = applyQuickBusinessChange(
+      values,
+      field && typeof field === "object" ? field : { [field]: value }
+    );
     const nextValues = { ...values, ...patch };
-    const nextErrors = validateQuickBusiness(nextValues);
+    const nextErrors = validateQuickBusiness(nextValues, VALIDATION_OPTIONS);
+    // Cambiar el país limpia la región: empieza de cero, sin "editada", sin "tocada" y sin error.
+    const regionReset =
+      Object.hasOwn(patch, "paisCodigo") && patch.paisCodigo !== values.paisCodigo;
+    if (regionReset) delete nextErrors.regionCodigo;
     setValues(nextValues);
+    setEditedFields((current) => {
+      const next = { ...current };
+      for (const changedField of Object.keys(patch)) next[changedField] = true;
+      if (regionReset) next.regionCodigo = false;
+      return next;
+    });
+    if (regionReset) {
+      setTouched((current) => ({ ...current, regionCodigo: false }));
+    }
     setErrors((current) => {
       if (submitted) return nextErrors;
       const next = { ...current };
+      if (regionReset) next.regionCodigo = undefined;
       for (const changedField of Object.keys(patch)) {
         if (touched[changedField]) next[changedField] = nextErrors[changedField];
       }
@@ -107,10 +136,26 @@ function AdditionalBusinessDrawer({
   };
 
   const validateField = (field, patch = {}) => {
-    const nextErrors = validateQuickBusiness({ ...values, ...patch });
+    if (
+      !shouldValidateOnBlur({
+        submitted,
+        dirty: Boolean(editedFields[field]),
+        hasPatch: Object.keys(patch).length > 0,
+      })
+    ) {
+      return;
+    }
+    const nextErrors = validateQuickBusiness({ ...values, ...patch }, VALIDATION_OPTIONS);
     setTouched((current) => ({ ...current, [field]: true }));
     setErrors((current) => ({ ...current, [field]: nextErrors[field] }));
   };
+
+  // Salir de la región sin elegir equivale a tocarla y dejarla vacía: se valida aunque no se haya editado.
+  const handleBlur = (field, patch = {}) =>
+    validateField(
+      field,
+      field === "regionCodigo" ? { regionCodigo: values.regionCodigo, ...patch } : patch
+    );
 
   const requestClose = () => {
     if (isSubmitting) return;
@@ -136,17 +181,17 @@ function AdditionalBusinessDrawer({
     event.preventDefault();
     if (isSubmitting) return;
 
-    const nextErrors = validateQuickBusiness(values);
+    const nextErrors = validateQuickBusiness(values, VALIDATION_OPTIONS);
     setSubmitted(true);
     setTouched(
-      QUICK_BUSINESS_FIELD_ORDER.reduce(
+      ONBOARDING_BUSINESS_FIELD_ORDER.reduce(
         (result, field) => ({ ...result, [field]: true }),
         {}
       )
     );
     setErrors(nextErrors);
     setSubmitError("");
-    const firstInvalidField = QUICK_BUSINESS_FIELD_ORDER.find(
+    const firstInvalidField = ONBOARDING_BUSINESS_FIELD_ORDER.find(
       (field) => nextErrors[field]
     );
     if (firstInvalidField) {
@@ -195,15 +240,25 @@ function AdditionalBusinessDrawer({
       className="business-create-drawer business-create-drawer--quick"
       layerClassName="business-create-drawer-layer"
       footer={
-        <Button
-          type="submit"
-          form="additional-business-form"
-          className="business-create-drawer__submit"
-          icon={Building2}
-          loading={isSubmitting}
-        >
-          {isSubmitting ? "Creando negocio..." : "Crear negocio"}
-        </Button>
+        <>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={requestClose}
+            disabled={isSubmitting}
+          >
+            Cancelar
+          </Button>
+          <Button
+            type="submit"
+            form="additional-business-form"
+            className="business-create-drawer__submit"
+            icon={Building2}
+            loading={isSubmitting}
+          >
+            {isSubmitting ? "Creando negocio..." : "Crear negocio"}
+          </Button>
+        </>
       }
     >
       <p className="business-create-drawer__required-note">
@@ -230,14 +285,22 @@ function AdditionalBusinessDrawer({
           errors={errors}
           disabled={isSubmitting}
           onChange={updateValue}
-          onBlur={validateField}
+          onBlur={handleBlur}
+          showCountry
+          showRegion
+          grouped
+          countryHint={
+            selectedCountry && selectedCurrency
+              ? `${selectedCountry.name} · ${selectedCurrency.code}`
+              : ""
+          }
           setFieldRef={(field, node) => {
             fieldRefs.current[field] = node;
           }}
         />
 
         <p className="business-drawer-form__defaults">
-          Se asignarán automáticamente Chile y CLP. El resto de los datos se
+          La moneda se asigna según el país elegido. El resto de los datos se
           completa desde Empresa.
         </p>
       </form>

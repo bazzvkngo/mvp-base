@@ -31,11 +31,11 @@ export default function AdditionalSelector({additionals = [], currency, loading 
   return (
     <section className="sale-additional-selector">
       <header>
-        <h4>Adicionales pendientes del proyecto</h4>
+        <h4>Adicionales pendientes del trabajo</h4>
         <span>Selecciona los que quieras incorporar a esta venta</span>
       </header>
       {loading && <LoadingState variant="inline" label="Cargando adicionales..." />}
-      {!loading && !additionals.length && <p className="po-empty">Este proyecto no tiene adicionales pendientes de cobro.</p>}
+      {!loading && !additionals.length && <p className="po-empty">Este trabajo no tiene adicionales pendientes de cobro.</p>}
       {!loading && additionals.length > 0 && (
         <ul className="sale-additional-selector__list">
           {additionals.map((additional) => (

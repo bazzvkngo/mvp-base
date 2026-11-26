@@ -13,12 +13,15 @@ import {
 import ContactLinks from "../../components/contacts/ContactLinks";
 import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
-import EmptyStateIllustration from "../../components/ui/EmptyStateIllustration";
+import EmptyState from "../../components/ui/EmptyState";
+import ModuleHeader from "../../components/ui/ModuleHeader";
+import Notice from "../../components/ui/Notice";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import {SkeletonCards, SkeletonRegion, SkeletonTable} from "../../components/ui/Skeleton";
 import StatusBadge from "../../components/ui/StatusBadge";
+import {getRouteMeta} from "../../app/navigation";
 import { matchesClientSearch } from "../../domain/clientModel.mjs";
-import {getFiscalIdentifierLabel} from "../../domain/fiscalIdentifier.mjs";
+import {getClientFiscalListLabel} from "../../domain/countryFormCopy.mjs";
 import {
   actualizarCliente,
   archivarCliente,
@@ -28,6 +31,9 @@ import {
   reactivarCliente,
 } from "../../services/clientService";
 import ClientFormDialog from "./ClientFormDialog";
+
+const MODULE = getRouteMeta("/clientes");
+const MODULE_DESCRIPTION = "Las personas y empresas a las que les cotizas y vendes.";
 
 const READ_ROLES = new Set(["OWNER", "ADMIN", "VENTAS", "MEMBER"]);
 const WRITE_ROLES = new Set(["OWNER", "ADMIN", "VENTAS"]);
@@ -104,7 +110,8 @@ function ClientsManager({businessId, canCreateQuotes = false, countryCode = "CL"
   const [changingStatus, setChangingStatus] = useState(false);
   const canRead = READ_ROLES.has(role);
   const canManage = WRITE_ROLES.has(role);
-  const fiscalLabel = getFiscalIdentifierLabel(countryCode);
+  // Clientes Persona y Empresa conviven en la lista: Bolivia dice "CI o NIT", Chile y el resto como siempre.
+  const fiscalLabel = getClientFiscalListLabel(countryCode);
 
   const loadClients = useCallback(async () => {
     if (!businessId || !canRead) {
@@ -205,6 +212,7 @@ function ClientsManager({businessId, canCreateQuotes = false, countryCode = "CL"
   if (!businessId || !canRead) {
     return (
       <section className="erp-page clients-page">
+        <ModuleHeader description={MODULE_DESCRIPTION} icon={MODULE.icon} title={MODULE.title} />
         <div className="erp-empty-state" role="alert">
           No tienes permisos para consultar clientes en el negocio activo.
         </div>
@@ -214,22 +222,29 @@ function ClientsManager({businessId, canCreateQuotes = false, countryCode = "CL"
 
   const hasFilters = Boolean(search.trim() || statusFilter);
   const confirmationIsArchive = confirmation?.action === "archive";
+  // Lista realmente vacía (cargada, sin error y sin clientes): el único botón principal vive en el
+  // vacío y la cabecera no recibe acciones. Con datos, o con filtros sin resultados, se ve la lista.
+  const showEmpty = !loading && !loadError && clients.length === 0;
+  const chips = !loadError && (!loading || clients.length > 0)
+    ? [`${clients.length} ${clients.length === 1 ? "cliente" : "clientes"}`]
+    : [];
 
   return (
     <section className="erp-page clients-page">
-      {canManage && (
-        <div className="erp-module-intro">
-          <Button icon={Plus} onClick={openCreate}>
-            Nuevo cliente
-          </Button>
-        </div>
-      )}
+      <ModuleHeader
+        actions={canManage ? <Button icon={Plus} onClick={openCreate}>Nuevo cliente</Button> : null}
+        chips={chips}
+        description={MODULE_DESCRIPTION}
+        hasData={!showEmpty}
+        icon={MODULE.icon}
+        title={MODULE.title}
+      />
 
       {!canManage && (
-        <div className="client-message client-message--warning" role="status">
+        <Notice variant="warning" className="client-message--warning">
           Tu perfil tiene acceso de lectura. Los perfiles autorizados deben crear y
           modificar clientes.
-        </div>
+        </Notice>
       )}
       {feedback && (
         <div
@@ -254,7 +269,16 @@ function ClientsManager({businessId, canCreateQuotes = false, countryCode = "CL"
         </div>
       )}
 
-      <section className="erp-panel" aria-labelledby="clients-list-title">
+      {showEmpty ? (
+        <EmptyState
+          action={canManage ? {label: "Crear primer cliente", icon: Plus, onClick: openCreate} : undefined}
+          description={canManage
+            ? "Crea el primer cliente para comenzar tu registro comercial."
+            : "Propietario o Administrador pueden registrar el primer cliente."}
+          icon={MODULE.icon}
+          title="Aún no hay clientes"
+        />
+      ) : <section className="erp-panel" aria-labelledby="clients-list-title">
         <div className="erp-panel-header clients-panel-header">
           <div>
             <h2 id="clients-list-title" className="erp-panel-title">
@@ -303,24 +327,9 @@ function ClientsManager({businessId, canCreateQuotes = false, countryCode = "CL"
           </SkeletonRegion>
         ) : !loadError && visibleClients.length === 0 ? (
           <div className="erp-empty-state clients-empty-state">
-            {hasFilters ? (
-              <AppIcon icon={UsersRound} size={28} />
-            ) : (
-              <EmptyStateIllustration variant="empty-list" />
-            )}
-            <h3>{hasFilters ? "No hay coincidencias" : "Aún no hay clientes"}</h3>
-            <p>
-              {hasFilters
-                ? `Prueba con otro nombre, ${fiscalLabel} o estado.`
-                : canManage
-                  ? "Crea el primer cliente para comenzar tu registro comercial."
-                  : "OWNER o ADMIN pueden registrar el primer cliente."}
-            </p>
-            {!hasFilters && canManage && (
-              <Button type="button" icon={Plus} onClick={openCreate}>
-                Crear primer cliente
-              </Button>
-            )}
+            <AppIcon icon={UsersRound} size={28} />
+            <h3>No hay coincidencias</h3>
+            <p>{`Prueba con otro nombre, ${fiscalLabel} o estado.`}</p>
           </div>
         ) : !loadError ? (
           <>
@@ -425,7 +434,7 @@ function ClientsManager({businessId, canCreateQuotes = false, countryCode = "CL"
             </div>
           </>
         ) : null}
-      </section>
+      </section>}
 
       <ClientFormDialog
         client={formState.client}

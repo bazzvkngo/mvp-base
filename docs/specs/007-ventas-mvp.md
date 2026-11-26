@@ -72,6 +72,10 @@ Rutas:
 
 Cotizaciones emitidas ofrecen `Aceptar cotización` y un diálogo `Registrar aceptación`; al terminar muestran el estado aceptado y el vínculo `Ver venta`, sin paso intermedio. El historial de Ventas muestra número, cliente, total, origen, estado, stock y fecha. El detalle de una venta desde cotización es de lectura, muestra aceptación, ítems, condiciones, totales y abastecimiento, y permite cancelar con motivo a quien tenga permiso.
 
+En `/ventas/nueva`, "Agregar desde inventario" (con cantidad por ítem) y "Escanear producto" suman a la línea existente del mismo ítem si no tiene descuento ni un precio distinto al del inventario (si lo tiene, crean otra línea), y en productos con stock conocido no superan el stock disponible (23-nov-2026; `sale-add-items-smoke.mjs`). El resumen vacío usa la tasa del país del negocio.
+
+"Agregar desde inventario" es un solo diálogo compartido (`InventoryCatalogDialog`) por Venta, Cotización y Compra, con los mismos textos, cantidad por ítem y contador "Agregado: N"; las tres reagrupan líneas con la misma regla (`inventoryLineAdd.mjs`) y solo Venta limita por stock (23-nov-2026; `inventory-catalog-dialog-smoke.mjs`).
+
 Si se pierde la respuesta de aceptación, el mismo request idempotente o una nueva lectura de la cotización reutilizan la venta ya vinculada. Reintentar la cancelación reutiliza su request o detecta el estado cancelado sin crear otra devolución.
 
 ## Fuera de alcance
@@ -86,3 +90,7 @@ Un PDF o documento comercial generado por ValoraCloud no debe denominarse
 `sale-model-smoke.mjs` cubre cálculos, adaptación, estados históricos, historial, stock y defensas declaradas. `sales-integrated-local.mjs` cubre venta directa existente y, para cotizaciones, aceptación manual automática, venta confirmada única, snapshots, reintentos, producto suficiente, servicio sin stock, faltantes sin rollback comercial, cancelación con motivo, reversa única, historial, RBAC, verificación y Rules. `quote-public-proposal-smoke.mjs` cubre la misma consecuencia autoritativa desde aceptación pública.
 
 La aceptación exige los smokes e integrados específicos de Cotizaciones y Ventas, BRUNO-01, build, lint y `git diff --check`.
+
+## Cambios posteriores
+
+- Nueva venta (borrador) usa el bloque de ítems compartido (23-nov-2026): el precio es un campo editable y visible "Precio unitario" (no hay regla por rol ni aviso de margen sobre su edición; antes se mostraba con "$" fijo y un lápiz decorativo), el descuento es un campo visible "Desc. %" en lugar del desplegable y la descripción de la línea queda siempre visible. Se conservan "Disponible N", el aviso "Stock insuficiente", el tope de la cantidad cotizada, la marca "Adicional" y la tabla histórica de ventas confirmadas o canceladas. La fecha del encabezado usa el locale del documento (dd/mm/aaaa en Bolivia), igual que Compras y Reportes, y los campos de tipo y fecha de documento van en peso normal. El bloque de ítems es el componente compartido `DocumentItemsEditor` (`src/components/ui/`), con modo "venta" (Precio unitario) y modo "compra" (Costo unitario), también usado por la orden de compra: títulos "¿Qué vendes?", "¿Qué compras?" y "¿Qué pides?", botones "Escanear producto" y "Agregar desde inventario", filas con selector de cantidad − y +, precio o costo con el símbolo y los decimales de la moneda del negocio, "Desc. %" visible, total y quitar. Solo presentación: los cálculos, el agregado de líneas y las validaciones siguen en cada pantalla y en su modelo (`document-items-editor-smoke.mjs`).

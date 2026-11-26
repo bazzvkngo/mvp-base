@@ -1,4 +1,6 @@
+import {getCurrencyAmountDecimals} from "./businessCatalog.js";
 import {isLowStockByRule} from "./inventoryLowStock.mjs";
+import {roundMoney} from "./money.mjs";
 
 export const REPORT_TABS = Object.freeze([
   "overview",
@@ -98,6 +100,14 @@ export function resolveReportCurrency(record = {}, fallback = "CLP") {
   );
 }
 
+// SPEC 036 (entrega D): las sumas de importes se acumulan con +=, y con decimales (BOB) eso arrastra ruido de punto
+// flotante (0,1 + 0,2 = 0,30000000000000004). Al cerrar cada total se redondea a los decimales de cálculo de su moneda.
+// Con 0 decimales (CLP y el resto) devuelve el mismo valor, sin tocarlo.
+function tidyMoney(value, currency) {
+  const places = getCurrencyAmountDecimals(currency);
+  return places > 0 && Number.isFinite(value) ? roundMoney(value, places) : value;
+}
+
 export function groupAmountsByCurrency(
   records,
   {amountField = "total", fallbackCurrency = "CLP"} = {}
@@ -111,10 +121,14 @@ export function groupAmountsByCurrency(
     buckets.set(currency, current);
   });
   return [...buckets.values()]
-    .map((bucket) => ({
-      ...bucket,
-      average: bucket.count ? bucket.total / bucket.count : 0,
-    }))
+    .map((bucket) => {
+      const total = tidyMoney(bucket.total, bucket.currency);
+      return {
+        ...bucket,
+        total,
+        average: bucket.count ? total / bucket.count : 0,
+      };
+    })
     .sort((left, right) => left.currency.localeCompare(right.currency));
 }
 
@@ -367,6 +381,7 @@ function rankTopByCurrency(records, {counterpartyIdField, counterpartyNameField,
     .map(([currency, bucket]) => ({
       currency,
       entries: [...bucket.values()]
+        .map((entry) => ({...entry, total: tidyMoney(entry.total, currency)}))
         .sort((left, right) => right.total - left.total)
         .slice(0, limit),
     }))
@@ -392,6 +407,7 @@ function rankTopLinesByCurrency(records, {fallbackCurrency, limit}) {
     .map(([currency, bucket]) => ({
       currency,
       entries: [...bucket.values()]
+        .map((entry) => ({...entry, total: tidyMoney(entry.total, currency)}))
         .sort((left, right) => right.total - left.total)
         .slice(0, limit),
     }))
@@ -697,9 +713,11 @@ export function aggregateOperationalTimeline(
     current.value += amountOf(document, amountField);
     byKey.set(bucketKey, current);
   });
-  return [...byKey.values()].sort((left, right) =>
-    left.currency.localeCompare(right.currency) || left.key.localeCompare(right.key)
-  );
+  return [...byKey.values()]
+    .map((entry) => ({...entry, value: tidyMoney(entry.value, entry.currency)}))
+    .sort((left, right) =>
+      left.currency.localeCompare(right.currency) || left.key.localeCompare(right.key)
+    );
 }
 
 export function combineOperationalTimelines(salesTimeline, purchasesTimeline) {

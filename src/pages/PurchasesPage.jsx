@@ -4,32 +4,42 @@ import {useNavigate} from "react-router-dom";
 import {sileo} from "sileo";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
+import EmptyState from "../components/ui/EmptyState";
 import EmptyStateIllustration from "../components/ui/EmptyStateIllustration";
+import ModuleHeader from "../components/ui/ModuleHeader";
+import Notice from "../components/ui/Notice";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import {SkeletonCards, SkeletonRegion, SkeletonTable} from "../components/ui/Skeleton";
+import {getRouteMeta} from "../app/navigation";
 import {formatMoney} from "../utils/formatters";
-import {canManagePurchases, getPurchaseDocumentTypeLabel, getPurchaseStockSemantics, getPurchaseStatusLabel, matchesPurchaseSearch} from "../domain/purchaseModel.mjs";
+import {canManagePurchases, getPurchaseDocumentTypeLabel, getPurchaseStockSemantics, getPurchaseStatusLabel, matchesPurchaseSearch, shouldReconcilePurchaseConfirmation} from "../domain/purchaseModel.mjs";
 import {cancelarCompraBorrador, confirmarCompra, createPurchaseRequestId, listarCompras, revertirCompra} from "../services/purchaseService";
 import "../features/purchases/purchases.css";
+import {userErrorMessage} from "../domain/userFacingError.mjs";
+import {getFiscalIdentifierLabel} from "../domain/fiscalIdentifier.mjs";
+import useBusinessFormat from "../hooks/useBusinessFormat";
 
 const money = (value, document) => formatMoney(value, document?.moneda, document?.locale);
+const MODULE = getRouteMeta("/compras");
 function Actions({canManage, onAction, purchase, processing}) {
   return (
-    <div className="po-history__actions">
+    <div className="purchase-row-actions">
       {canManage && purchase.estado === "borrador" && (
         <>
-          <button type="button" disabled={processing} onClick={() => onAction(purchase, "confirmar")}>Confirmar</button>
-          <details className="po-more-actions"><summary>Más acciones ···</summary><div><button type="button" disabled={processing} onClick={() => onAction(purchase, "cancelar")}>Cancelar compra</button></div></details>
+          <Button type="button" variant="ghost" className="purchase-row-actions__confirm" disabled={processing} onClick={() => onAction(purchase, "confirmar")}>Confirmar</Button>
+          <Button type="button" variant="ghost-danger" disabled={processing} onClick={() => onAction(purchase, "cancelar")}>Cancelar compra</Button>
         </>
       )}
       {canManage && purchase.estado === "confirmada" && (
-        <button type="button" disabled={processing} onClick={() => onAction(purchase, "revertir")}>Revertir compra</button>
+        <Button type="button" variant="secondary" disabled={processing} onClick={() => onAction(purchase, "revertir")}>Revertir compra</Button>
       )}
     </div>
   );
 }
 export default function PurchasesPage({businessId, role}) {
   const navigate = useNavigate();
+  // Identificador fiscal del proveedor según el país del negocio (Chile "RUT", Bolivia "NIT").
+  const fiscalLabel = getFiscalIdentifierLabel(useBusinessFormat().countryCode);
   const confirmIds = useRef(new Map());
   const reversalIds = useRef(new Map());
   const [items, setItems] = useState([]); const [search, setSearch] = useState(""); const [status, setStatus] = useState("todos"); const [origin, setOrigin] = useState("todos"); const [message, setMessage] = useState(""); const [loading, setLoading] = useState(true); const [processing, setProcessing] = useState("");
@@ -38,10 +48,22 @@ export default function PurchasesPage({businessId, role}) {
   const [loadFailed, setLoadFailed] = useState(false);
   const [reversalReason, setReversalReason] = useState("");
   const canManage = canManagePurchases(role);
-  const load = async () => { setLoading(true); try { setItems(await listarCompras(businessId)); setLoadFailed(false); } catch (error) { setMessage(error.message); setLoadFailed(true); } finally { setLoading(false); } };
-  useEffect(() => { let active = true; setLoading(true); listarCompras(businessId).then((values) => { if (active) { setItems(values); setLoadFailed(false); } }).catch((error) => { if (active) { setMessage(error.message); setLoadFailed(true); } }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [businessId]);
+  // Lista realmente vacía (cargada, sin error de carga y sin compras): el único botón principal vive
+  // en el vacío y la cabecera no recibe acciones. Con datos, o con filtros sin resultados, se ve la lista.
+  const showEmpty = !loading && !loadFailed && items.length === 0;
+  const chips = !loadFailed && !(loading && items.length === 0) ? [`${items.length} ${items.length === 1 ? "compra" : "compras"}`] : [];
+  const load = async () => { setLoading(true); try { setItems(await listarCompras(businessId)); setLoadFailed(false); } catch (error) { setMessage(userErrorMessage(error)); setLoadFailed(true); } finally { setLoading(false); } };
+  useEffect(() => { let active = true; setLoading(true); listarCompras(businessId).then((values) => { if (active) { setItems(values); setLoadFailed(false); } }).catch((error) => { if (active) { setMessage(userErrorMessage(error)); setLoadFailed(true); } }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [businessId]);
   const filtered = useMemo(() => items.filter((item) => (status === "todos" || item.estado === status) && (origin === "todos" || (origin === "oc" ? item.ordenCompraId : !item.ordenCompraId)) && matchesPurchaseSearch(item, search)), [items, origin, search, status]);
   const action = (purchase, type) => { setReversalReason(""); setPendingAction({purchase, type}); };
+  // El rechazo del servidor queda dentro de `pendingAction.error`: abrir o cerrar el diálogo crea/descarta el objeto,
+  // así un error de un intento anterior nunca aparece en un diálogo nuevo. Mientras exista, la acción no se repite.
+  const actionError = pendingAction?.error || null;
+  const backButtonRef = useRef(null);
+  // Un fallo reintentable (corte de red) deja el botón principal habilitado y con el foco; uno definitivo lo deshabilita y el foco pasa a Volver.
+  const actionBlocked = Boolean(actionError) && !actionError.retryable;
+  useEffect(() => { if (actionBlocked) backButtonRef.current?.focus(); }, [actionBlocked]);
+  const changeReversalReason = (value) => { setReversalReason(value); setPendingAction((current) => (current?.error ? {...current, error: null} : current)); };
   const executeAction = async () => {
     const {purchase, type} = pendingAction || {};
     if (!purchase) return;
@@ -50,6 +72,7 @@ export default function PurchasesPage({businessId, role}) {
       return;
     }
     setProcessing(purchase.id); setMessage("");
+    setPendingAction((current) => (current?.error ? {...current, error: null} : current));
     try {
       if (type === "confirmar") {
         const requestId = confirmIds.current.get(purchase.id) || createPurchaseRequestId("purchase-confirm");
@@ -76,23 +99,36 @@ export default function PurchasesPage({businessId, role}) {
       }
       setPendingAction(null); setReversalReason(""); await load();
     } catch (error) {
-      setMessage(error.message);
       const title = type === "confirmar" ? "No se pudo confirmar la compra" : type === "revertir" ? "No se pudo revertir la compra" : "No se pudo cancelar la compra";
-      sileo.error({title, description: error.message});
+      // Solo "Confirmar" se reintenta: reutiliza el mismo requestId y la Function es idempotente.
+      const retryable = type === "confirmar" && shouldReconcilePurchaseConfirmation(error);
+      setPendingAction((current) => (current ? {...current, error: {title, message: userErrorMessage(error), retryable}} : current));
     } finally { setProcessing(""); }
   };
   const open = (purchase) => navigate(purchase.estado === "borrador" && canManage ? `/compras/${purchase.id}/editar` : `/compras/${purchase.id}`);
   return (
     <main className="erp-page po-history">
-      {canManage && (
-        <div className="erp-module-intro">
-          <Button type="button" icon={Plus} onClick={() => navigate("/compras/nueva")}>Nueva compra</Button>
-        </div>
-      )}
+      <ModuleHeader
+        actions={canManage ? <Button type="button" icon={Plus} onClick={() => navigate("/compras/nueva")}>Nueva compra</Button> : null}
+        chips={chips}
+        description="Lo que le compras a tus proveedores, directo o desde una recepción."
+        hasData={!showEmpty}
+        icon={MODULE.icon}
+        title={MODULE.title}
+      />
 
       {message && <p className="po-message" role={loadFailed ? "alert" : undefined}>{message}</p>}
 
-      <section className="erp-panel erp-history-panel" aria-labelledby="purchases-list-title">
+      {showEmpty ? (
+        <EmptyState
+          action={canManage ? {label: "Nueva compra", icon: Plus, onClick: () => navigate("/compras/nueva")} : undefined}
+          description={canManage
+            ? "Registra tu primera compra directa. Las compras derivadas de Recepciones también aparecerán aquí."
+            : "Tu perfil es de solo lectura; los perfiles autorizados registran las compras."}
+          icon={MODULE.icon}
+          title="Aún no hay compras"
+        />
+      ) : <section className="erp-panel erp-history-panel" aria-labelledby="purchases-list-title">
         <div className="erp-panel-header">
           <div>
             <h2 id="purchases-list-title" className="erp-panel-title">Compras registradas</h2>
@@ -102,7 +138,7 @@ export default function PurchasesPage({businessId, role}) {
 
         <div className="erp-filters erp-history-filters erp-history-filters--three po-history__toolbar no-print">
           <label className="erp-field erp-history-search-field">
-            <span className="erp-field__label">Buscar por número, proveedor, RUT o documento</span>
+            <span className="erp-field__label">Buscar por número, proveedor, {fiscalLabel} o documento</span>
             <span className="clients-search-control">
               <AppIcon icon={Search} size={18} />
               <input className="erp-control" placeholder="Ej.: COM-2026-0001 o proveedor" value={search} onChange={(event) => setSearch(event.target.value)} />
@@ -135,20 +171,9 @@ export default function PurchasesPage({businessId, role}) {
           </SkeletonRegion>
         ) : loadFailed && items.length === 0 ? null : filtered.length === 0 ? (
           <div className="erp-empty-state ui-empty-state">
-            <EmptyStateIllustration variant={items.length ? "no-results" : "empty-list"} />
-            <h3>{items.length ? "No hay compras coincidentes" : "Aún no hay compras"}</h3>
-            <p>
-              {items.length
-                ? "Prueba con otra búsqueda, estado u origen."
-                : canManage
-                  ? "Registra tu primera compra directa. Las compras derivadas de Recepciones también aparecerán aquí."
-                  : "Tu perfil es de solo lectura; los perfiles autorizados registran las compras."}
-            </p>
-            {!items.length && canManage && (
-              <div className="ui-empty-state__actions">
-                <Button type="button" icon={Plus} onClick={() => navigate("/compras/nueva")}>Nueva compra</Button>
-              </div>
-            )}
+            <EmptyStateIllustration variant="no-results" />
+            <h3>No hay compras coincidentes</h3>
+            <p>Prueba con otra búsqueda, estado u origen.</p>
           </div>
         ) : (
           <>
@@ -174,7 +199,7 @@ export default function PurchasesPage({businessId, role}) {
             {filtered.map((purchase) => (
               <article className="po-history-card" key={purchase.id}>
                 <header><div><span className="po-history-card__label">Compra</span><button type="button" className="po-inline-link" onClick={() => open(purchase)}>{purchase.numero}</button></div><span className={`po-status po-status--${purchase.estado}`}>{getPurchaseStatusLabel(purchase.estado)}</span></header>
-                <div className="po-history-card__provider"><strong>{purchase.proveedorSnapshot.razonSocial}</strong><span>{purchase.proveedorSnapshot.rut || "Sin RUT"}</span></div>
+                <div className="po-history-card__provider"><strong>{purchase.proveedorSnapshot.razonSocial}</strong><span>{purchase.proveedorSnapshot.rut || `Sin ${fiscalLabel}`}</span></div>
                 <dl><div><dt>Fecha</dt><dd>{purchase.fechaCompra || "—"}</dd></div><div><dt>Total</dt><dd>{money(purchase.total)}</dd></div><div><dt>Documento</dt><dd>{purchase.tipoDocumento === "sin_documento" ? "Sin documento" : purchase.numeroDocumentoProveedor || getPurchaseDocumentTypeLabel(purchase.tipoDocumento)}</dd></div><div><dt>Origen</dt><dd>{purchase.recepcionId ? <button type="button" className="po-inline-link" onClick={() => navigate(`/recepciones/${purchase.recepcionId}`)}>{purchase.recepcionNumero || "Abrir recepción"}</button> : purchase.ordenCompraId ? <button type="button" className="po-inline-link" onClick={() => navigate(`/ordenes-compra/${purchase.ordenCompraId}`)}>{purchase.ordenCompraNumero || "Abrir OC"}</button> : "Directa"}</dd></div></dl>
                 <Actions canManage={canManage} onAction={action} processing={processing === purchase.id} purchase={purchase} />
               </article>
@@ -182,8 +207,8 @@ export default function PurchasesPage({businessId, role}) {
           </section>
           </>
         )}
-      </section>
-      <ResponsiveDialog open={Boolean(pendingAction)} onClose={() => !processing && setPendingAction(null)} eyebrow={pendingAction?.type === "confirmar" ? "Compra preparada" : "Más acciones"} title={pendingAction?.type === "confirmar" ? "Confirmar compra" : pendingAction?.type === "revertir" ? "Revertir compra" : "Cancelar compra"} description={pendingAction?.type === "confirmar" ? "Revisa el efecto físico de este documento antes de confirmar." : pendingAction?.type === "revertir" ? "Esta acción revertirá los movimientos de inventario asociados y conservará el registro histórico." : "La compra preparada quedará cancelada sin modificar stock."} size="small" footer={<><Button type="button" variant="secondary" disabled={Boolean(processing)} onClick={() => setPendingAction(null)}>Volver</Button><Button type="button" variant={pendingAction?.type === "confirmar" ? "primary" : "danger"} loading={Boolean(processing)} disabled={pendingAction?.type === "revertir" && !reversalReason.trim()} onClick={executeAction}>{processing ? "Procesando..." : pendingAction?.type === "confirmar" ? "Confirmar compra" : pendingAction?.type === "revertir" ? "Revertir compra" : "Cancelar compra"}</Button></>}>{pendingAction?.type === "revertir" ? <label className="purchase-field-wide">Motivo de reversión *<textarea value={reversalReason} onChange={(event) => setReversalReason(event.target.value)} /></label> : <p>{pendingAction?.type === "confirmar" ? getPurchaseStockSemantics(pendingAction.purchase).confirmationMessage : "Esta acción no se puede deshacer."}</p>}</ResponsiveDialog>
+      </section>}
+      <ResponsiveDialog open={Boolean(pendingAction)} onClose={() => !processing && setPendingAction(null)} eyebrow={pendingAction?.type === "revertir" ? "Compra confirmada" : "Compra preparada"} title={pendingAction?.type === "confirmar" ? "Confirmar compra" : pendingAction?.type === "revertir" ? "Revertir compra" : "Cancelar compra"} description={pendingAction?.type === "confirmar" ? "Revisa el efecto físico de este documento antes de confirmar." : pendingAction?.type === "revertir" ? "Esta acción revertirá los movimientos de inventario asociados y conservará el registro histórico." : "La compra preparada quedará cancelada sin modificar stock."} size="small" footer={<><Button ref={backButtonRef} type="button" variant="secondary" disabled={Boolean(processing)} onClick={() => setPendingAction(null)}>Volver</Button><Button type="button" variant={pendingAction?.type === "confirmar" ? "primary" : "danger"} loading={Boolean(processing)} disabled={(pendingAction?.type === "revertir" && !reversalReason.trim()) || actionBlocked} onClick={executeAction}>{processing ? "Procesando..." : pendingAction?.type === "confirmar" ? "Confirmar compra" : pendingAction?.type === "revertir" ? "Revertir compra" : "Cancelar compra"}</Button></>}>{pendingAction?.type === "revertir" ? <label className="purchase-field-wide">Motivo de reversión *<textarea value={reversalReason} onChange={(event) => changeReversalReason(event.target.value)} /></label> : <p>{pendingAction?.type === "confirmar" ? getPurchaseStockSemantics(pendingAction.purchase).confirmationMessage : "Esta acción no se puede deshacer."}</p>}{actionError && <Notice variant="error" className="po-dialog-error" title={actionError.title}>{actionError.message}</Notice>}</ResponsiveDialog>
     </main>
   );
 }

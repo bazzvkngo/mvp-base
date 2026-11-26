@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import {createRequire} from "node:module";
 import path from "node:path";
+import {assertNoWidthQueriesInPrint, assertSkipLinkHiddenInPrint} from "./lib/printCss.mjs";
 import {
   adaptStoredQuote,
   buildQuoteMutationPayload,
@@ -9,12 +10,15 @@ import {
   calculateQuoteExpiryDate,
   calculateQuoteLineTotal,
   calculateQuoteTotals,
+  canDeleteQuotes,
   canDuplicateQuotes,
+  canOfferQuoteDeletion,
   DRAFT_QUOTE_NUMBER_LABEL,
   getQuoteExpiryAlert,
   getQuoteStatusLabel,
   getQuotePdfFileName,
   isAdvancedQuoteScope,
+  isQuoteDeleteConfirmed,
   isValidQuoteDateRange,
   matchesQuoteQuickFilter,
   normalizeQuoteItem,
@@ -23,7 +27,16 @@ import {
   resolveQuoteClientSelectionSnapshot,
 } from "../src/domain/quoteModel.mjs";
 import {filterSelectableClients} from "../src/domain/clientModel.mjs";
-import { buildQuotePdfDocument } from "../src/domain/quoteDocument.mjs";
+import {stepQuoteQuantity} from "../src/features/quotes/quoteLineStepper.mjs";
+import {createQuoteItemFromValuation} from "../src/domain/quoteItemFactory.js";
+import { jsPDF } from "jspdf";
+import { buildQuotePdfDocument, drawRightLabeledLine } from "../src/domain/quoteDocument.mjs";
+import {
+  buildQuoteAcceptanceLine,
+  buildQuoteClientRows,
+  buildQuoteFooterContact,
+  buildQuoteTerms,
+} from "../src/domain/quoteDocumentLayout.mjs";
 
 const require = createRequire(import.meta.url);
 const {historicalQuoteCopyInput} = require("../functions/quotePersistence.js");
@@ -447,11 +460,15 @@ const sourceClientSelector = fs.readFileSync(
   "utf8"
 );
 const sourceQuoteCatalog = fs.readFileSync(
-  "src/features/quotes/QuoteCatalogDialog.jsx",
+  "src/components/ui/InventoryCatalogDialog.jsx",
   "utf8"
 );
 const sourceQuoteItems = fs.readFileSync(
   "src/features/quotes/QuoteItemsEditor.jsx",
+  "utf8"
+);
+const sourceQuoteConditions = fs.readFileSync(
+  "src/features/quotes/QuoteConditionsPanel.jsx",
   "utf8"
 );
 const sourceQuoteSummary = fs.readFileSync(
@@ -466,6 +483,10 @@ const sourceQuoteCollapsible = fs.readFileSync(
   "src/features/quotes/QuoteCollapsibleSection.jsx",
   "utf8"
 );
+const sourceQuoteClientSelector = fs.readFileSync("src/features/quotes/QuoteClientSelector.jsx", "utf8");
+const sourceDocumentItems = fs.readFileSync("src/components/ui/DocumentItemsEditor.jsx", "utf8");
+const sourceComponentsCss = fs.readFileSync("src/styles/components.css", "utf8");
+const sourcePurchaseOrdersCss = fs.readFileSync("src/features/purchaseOrders/purchase-orders.css", "utf8");
 const sourceQuoteWorkspaceCss = fs.readFileSync(
   "src/features/quotes/quote-workspace.css",
   "utf8"
@@ -477,6 +498,7 @@ const sourceInteriorCss = fs.readFileSync("src/styles/interior.css", "utf8");
 const sourceQuoteService = fs.readFileSync("src/services/quoteService.js", "utf8");
 const sourceQuotePersistence = fs.readFileSync("functions/quotePersistence.js", "utf8");
 const sourceQuoteDocument = fs.readFileSync("src/domain/quoteDocument.mjs", "utf8");
+const sourceQuoteDocumentLayout = fs.readFileSync("src/domain/quoteDocumentLayout.mjs", "utf8");
 const sourceQuotePrintView = fs.readFileSync(
   "src/features/quotes/QuotePrintView.jsx",
   "utf8"
@@ -509,13 +531,14 @@ const commercialStatusSource = sourceHistory.slice(
 );
 assert.match(sourceNewQuote, /createManagedInventoryItem/);
 assert.doesNotMatch(sourceNewQuote, /\bcreateInventoryItem\b/);
-assert.match(sourceNewQuote, /<ClientSelector/);
+assert.match(sourceNewQuote, /<QuoteClientSelector/);
 assert.doesNotMatch(sourceNewQuote, /quote-client-suggestions/);
 assert.match(
   sourceNewQuote,
   /if \(client\.clienteId === currentClienteIdRef\.current\) return;/
 );
-assert.match(sourceClientSelector, /listarClientes\(businessId\)/);
+assert.match(sourceClientSelector, /loadClients = listarClientes/);
+assert.match(sourceClientSelector, /loadClients\(businessId\)/);
 assert.match(sourceClientSelector, /if \(!businessId\)/);
 assert.doesNotMatch(sourceClientSelector, /clientRutKeys/);
 assert.match(sourceNewQuote, /areaId/);
@@ -524,10 +547,12 @@ assert.match(sourceNewQuote, /<QuoteSummaryPanel/);
 assert.match(sourceNewQuote, /savingRef\.current/);
 assert.match(sourceNewQuote, /estado:\s*"borrador"/);
 assert.match(sourceNewQuote, /openQuoteId/);
-assert.match(sourceNewQuote, /Más condiciones/);
+assert.match(sourceNewQuote, /<QuoteConditionsPanel/);
+assert.doesNotMatch(sourceNewQuote, /Más condiciones|CompactConditionField/, "las condiciones opcionales son botones + dentro del paso 3");
 assert.match(sourceNewQuote, /isAdvancedQuoteScope\(quote\.seccionesAlcance\)/);
 assert.match(sourceNewQuote, /isValidQuoteDateRange\(plazoRangeDraft\.desde, plazoRangeDraft\.hasta\)/);
-assert.match(sourceNewQuote, /Restaurar valores de Empresa/);
+assert.match(sourceQuoteConditions, /Restaurar valores de Empresa/);
+assert.match(sourceNewQuote, /onRestore=\{restoreDefaultConditions\}/, "Restaurar conserva su manejador de siempre");
 assert.match(sourceNewQuote, /if \(isEditMode\) return;/);
 assert.match(sourceNewQuote, /profile\.plazoEntregaCotizacion/);
 assert.match(sourceNewQuote, /profile\.garantiaCotizacion/);
@@ -542,29 +567,38 @@ assert.doesNotMatch(sourceQuoteSummary, /Vista previa|Enviar por correo|Descarga
 // del número va bajo el botón y, en edición, número y fecha en el resumen.
 assert.doesNotMatch(sourceNewQuote, /quote-workspace__header|quote-workspace__eyebrow/);
 assert.doesNotMatch(sourceQuoteWorkspaceCss, /quote-workspace__header|quote-workspace__eyebrow/);
-assert.match(sourceQuoteSummary, /\{!isEditMode && <small className="quote-summary__hint">El número se asignará al crear la cotización\.<\/small>\}/);
-assert.match(sourceQuoteSummary, /quoteNumber, quoteDate/);
+assert.match(sourceQuoteSummary, /\{!isEditMode && <p className="quote-summary__hint">El número se asignará al crear la cotización\.<\/p>\}/);
+assert.match(sourceNewQuote, /const headerDate = isEditMode && quote\.fecha \? formatDate\(quote\.fecha\) : "";/, "número y fecha del borrador van en la cabecera");
 // "Crear cotización" también se deshabilita sin ítems y explica qué falta.
 assert.match(sourceNewQuote, /const saveBlocked = saveBlockedByClient \|\| saveBlockedByItems;/);
 assert.match(sourceNewQuote, /missingRequirements\.push\("cliente"\)/);
 assert.match(sourceNewQuote, /missingRequirements\.push\("al menos un ítem"\)/);
 assert.match(sourceNewQuote, /`Falta: \$\{missingRequirements\.join\(" · "\)\}`/);
-assert.match(sourceQuoteSummary, /disabled=\{saving \|\| saveBlocked\} aria-describedby=/);
+assert.match(sourceQuoteSummary, /disabled=\{saving \|\| saveBlocked\}/);
+assert.match(sourceQuoteSummary, /aria-describedby=\{saveBlockedReason \? "quote-save-blocked-reason" : undefined\}/);
 assert.match(sourceQuoteSummary, /id="quote-save-blocked-reason"/);
 // Ítems: un solo botón relleno (el del encabezado); el vacío es solo texto.
-assert.equal((sourceQuoteItems.match(/quote-workspace__button--primary/g) || []).length, 1);
+assert.doesNotMatch(sourceQuoteItems, /quote-workspace__button/, "sin otra familia de botón: el bloque compartido trae los suyos");
+assert.match(sourceQuoteItems, /<DocumentItemsEditor/, "los ítems usan el bloque compartido");
 assert.doesNotMatch(sourceQuoteItems, /Abrir catálogo/);
 // "Asunto" sólo en el formulario: sigue guardándose como proyectoNombre y el
-// PDF y la vista de impresión conservan "Proyecto".
-assert.match(sourceNewQuote, /<span className="quote-workspace__kicker">Asunto<\/span>/);
-assert.match(sourceNewQuote, /Aparece como 'Proyecto' en el PDF\./);
+// PDF, vista de impresión y correo rotulan el mismo dato como "Asunto".
+assert.match(sourceNewQuote, /<span>Asunto<\/span>/);
+assert.match(sourceNewQuote, /placeholder="Escribe el asunto de la cotización"/, "texto guía genérico, sin ejemplos de rubro");
+assert.doesNotMatch(sourceNewQuote, /Escalera zona de estanque/);
+assert.match(sourceNewQuote, /Resume en pocas palabras qué se cotiza\. Aparece como 'Asunto' en el PDF\./);
+assert.doesNotMatch(sourceNewQuote, /Aparece como 'Proyecto'/);
 assert.doesNotMatch(sourceNewQuote, /Proyecto o trabajo/);
-assert.match(sourceQuoteDocument, /drawSectionHeading\(doc, "Proyecto"/);
-assert.match(sourceQuotePrintView, /<h3>Proyecto<\/h3>/);
+assert.match(sourceQuoteDocument, /buildQuoteClientRows\(client, client\.proyecto \|\| quote\.trabajoTitulo\)/);
+assert.match(sourceQuotePrintView, /buildQuoteClientRows\(client, project\)/);
+assert.deepEqual(
+  buildQuoteClientRows({ empresa: "Cliente SA", contacto: "", email: "a@b.cl" }, "Escalera").map(([label]) => label),
+  ["Empresa", "Correo", "Asunto"]
+);
 // Condiciones: campos alineados arriba, placeholder corto y "Qué incluye"
 // cerrado salvo que tenga contenido.
 assert.match(sourceQuoteWorkspaceCss, /\.quote-conditions-primary__grid > \* \{\s*align-self: start;/);
-assert.match(sourceNewQuote, /placeholder="Ej: 10 días hábiles"/);
+assert.match(sourceQuoteConditions, /placeholder="Ej: 10 días hábiles"/);
 assert.match(sourceNewQuote, /const \[scopeOpen, setScopeOpen\] = useState\(false\);/);
 assert.match(sourceNewQuote, /setScopeOpen\(hasScopeContent\(editableQuote\.seccionesAlcance\)\);/);
 assert.match(sourceCompanyConfig, /Valores predeterminados para nuevas cotizaciones/);
@@ -573,9 +607,11 @@ assert.match(sourceQuoteCatalog, /<ResponsiveDialog/);
 assert.match(sourceQuoteCatalog, /initialFocusRef=\{searchRef\}/);
 assert.match(sourceQuoteCatalog, /Agregar otra vez/);
 assert.doesNotMatch(sourceQuoteItems, /<table/);
-assert.match(sourceQuoteItems, /Personalizar ítem/);
-assert.match(sourceQuoteItems, /Subtotal \$\{formatBusinessAmount\(subtotal\)\}/);
-assert.match(sourceQuoteItems, /items\.length === 1 \? "" : "s"/);
+assert.match(sourceQuoteItems, /Descripción para esta cotización/, "la descripción de la línea queda visible bajo la fila");
+assert.doesNotMatch(sourceQuoteItems, /<details|Descripción y descuento/, "sin desplegable");
+assert.doesNotMatch(sourceQuoteItems, /Descripción, unidad y descuento/);
+assert.doesNotMatch(sourceQuoteItems, /Personalizar ítem/);
+assert.doesNotMatch(sourceQuoteItems, /Subtotal/, "el encabezado de ítems muestra solo el conteo; el subtotal vive en el resumen");
 assert.match(sourceQuoteItems, /Agrega productos, servicios o actividades para construir la cotización\./);
 assert.match(sourceNewQuote, /saveAttempted \|\| itemsInteracted/);
 assert.match(sourceNewQuote, /setSaveAttempted\(true\)/);
@@ -584,12 +620,165 @@ assert.match(sourceHistory, />\s*Nueva cotización/);
 assert.match(sourceHistory, />\s*Crear cliente/);
 assert.match(sourceHistory, />\s*Ir al inventario/);
 assert.doesNotMatch(sourceHistory, /Ya puedes comenzar a trabajar con ValoraCloud/);
-assert.match(sourceQuoteItems, /Sin ítems agregados/);
 assert.match(sourceNewQuote, /subtotal=\{totals\.subtotal\}/);
+// Filas de ítems compactas: mismos manejadores y mismos campos que antes; solo cambia la presentación.
+assert.match(sourceQuoteItems, /title="¿Qué cotizas\?"/);
+assert.match(sourceQuoteItems, /titleId="quote-items-title"/);
+assert.match(sourceQuoteItems, /mode="venta"/);
+// El adaptador traduce cada cambio del bloque compartido a los mismos manejadores de siempre (onUpdate / onRemove / onMove).
+assert.match(sourceQuoteItems, /cantidad: "cantidad",\s*precioUnitario: "precioUnitarioEditable",\s*descuentoPct: "descuentoPorcentaje"/, "cantidad, precio y descuento llegan a los mismos campos de la línea");
+assert.match(sourceQuoteItems, /onUpdate\(entry\.lineaId, quoteField, entry\[field\]\)/);
+assert.match(sourceQuoteItems, /onRemove\(removed\.lineaId\)/);
+assert.match(sourceQuoteItems, /onMoveLine=\{onMove\}/);
+assert.match(sourceQuoteItems, /getLineTotal=\{\(line\) => line\.totalLinea\}/, "el total de línea sigue siendo el que calcula la página");
+assert.match(sourceQuoteItems, /onUpdate\(line\.lineaId, "descripcionComercial", event\.target\.value\)/);
+assert.match(sourceQuoteItems, /line\.descripcionComercial \?\? line\.descripcion \?\? ""/);
+assert.doesNotMatch(sourceQuoteItems, /onUpdate\([^)]*"unidad"/, "la unidad ya no se edita en la cotización");
+assert.doesNotMatch(sourceQuoteItems, /Unidad de cobro/);
+assert.match(sourceQuoteItems, /solo cambian esta cotización; el inventario no se modifica\./);
+assert.match(sourceDocumentItems, /aria-label=\{`Subir \$\{item\.nombre\}`\}/);
+assert.match(sourceDocumentItems, /aria-label=\{`Bajar \$\{item\.nombre\}`\}/);
+assert.match(sourceDocumentItems, /onMoveLine\(index, -1\)/);
+assert.match(sourceDocumentItems, /onMoveLine\(index, 1\)/);
+assert.match(sourceDocumentItems, /aria-label=\{`Quitar \$\{item\.nombre\}`\}/);
+assert.match(sourceDocumentItems, /variant="ghost-danger"/, "Quitar usa el Button compartido, sin otra familia de botón");
+// La unidad la leen el PDF, la vista formal y la propuesta pública de la línea guardada (item.unidad), no de un campo del formulario.
+assert.match(sourceQuoteDocument, /unit: item\.unidad \|\| "-"/);
+assert.match(sourceQuotePrintView, /\{item\.unidad \|\| "-"\}/);
+assert.equal(normalizeQuoteItem({nombre: "Pintura", cantidad: 1, precioUnitarioEditable: 100, unidad: "m2"}).unidad, "m2", "una línea guardada conserva su unidad");
+assert.equal(normalizeQuoteItem({nombre: "Pintura", cantidad: 1, precioUnitarioEditable: 100}).unidad, "unidad");
+assert.equal(createQuoteItemFromValuation({itemId: "i1", nombre: "Cable", unidad: "metro", item: {id: "i1", unidad: "rollo", precioInterno: 10}}).unidad, "metro", "una línea nueva toma la unidad del inventario");
+assert.equal(createQuoteItemFromValuation({itemId: "i2", nombre: "Cable", item: {id: "i2", unidad: "rollo", precioInterno: 10}}).unidad, "rollo");
+assert.equal(buildQuotePayload("uid-1", {items: [{nombre: "Pintura", cantidad: 1, precioUnitarioEditable: 100, unidad: "m2"}], clienteId: "c1", cliente: {nombreRazonSocial: "X"}}).items[0].unidad, "m2", "el payload conserva la unidad guardada");
+assert.match(sourceQuoteItems, /lineaId: lineKey\(item\)/, "la fila conserva su clave estable al reordenar");
+assert.match(sourceDocumentItems, /key=\{item\.lineaId\}/);
+assert.doesNotMatch(sourceQuoteItems, /features\/sales|\.\.\/sales\//, "Cotización no importa nada de Venta");
+assert.doesNotMatch(sourceQuoteWorkspaceCss, /\.quote-item\b|\.quote-item__|\.quote-items__head/, "sin reglas de la fila anterior");
+assert.match(sourceComponentsCss, /\.ui-doc-line__move \.ui-button \{[^}]*min-height: 2\.75rem;[^}]*min-width: 2\.75rem;/, "íconos de 44 px");
+assert.match(sourceComponentsCss, /\.ui-doc-line__row--movable \{/);
+// Stepper propio de Cotización: devuelve la cantidad siguiente o null; la validación real sigue en calculateQuoteLineAmounts.
+assert.equal(stepQuoteQuantity(1, 1), 2);
+assert.equal(stepQuoteQuantity("2", 1), 3);
+assert.equal(stepQuoteQuantity(2.5, -1), 1.5);
+assert.equal(stepQuoteQuantity(2.3, 1), 3.3, "sin deriva de punto flotante");
+assert.equal(stepQuoteQuantity(1, -1), null, "1 − 1 sería 0");
+assert.equal(stepQuoteQuantity(0.5, -1), null, "0,5 − 1 sería negativo");
+assert.equal(stepQuoteQuantity(0.000001, -1), null);
+assert.equal(stepQuoteQuantity("", 1), 1, "campo vacío: + parte de 0");
+assert.equal(stepQuoteQuantity("", -1), null);
+assert.equal(stepQuoteQuantity(7, 1), 8, "sin tope");
+assert.equal(calculateQuoteLineTotal({cantidad: stepQuoteQuantity(2, 1), precioUnitarioEditable: 1000, descuentoPorcentaje: 10}), 2700, "el valor del stepper pasa por la fórmula de siempre");
+// Ningún .jsx de Cotización escribe tildes ni símbolos como secuencias de escape: en texto JSX y en atributos
+// entre comillas se mostrarían literales ("identificaci" + barra + "u00f3n"). Solo se tolera el rango de
+// diacríticos de un regex (normalize("NFD")). Las secuencias se arman con código para no escribirlas aquí.
+{
+  const BS = String.fromCharCode(92);
+  const escapeSequence = new RegExp(`${BS}${BS}u[0-9a-fA-F]{4}`);
+  const diacriticsRange = `${BS}u0300-${BS}u036f`;
+  const quotesDir = new URL("../src/features/quotes/", import.meta.url);
+  const jsxFiles = [...fs.readdirSync(quotesDir).filter((name) => name.endsWith(".jsx")).map((name) => new URL(name, quotesDir)), new URL("../src/pages/NewQuotePage.jsx", import.meta.url)];
+  const checkedNames = jsxFiles.map((file) => file.pathname.split("/").pop());
+  for (const required of ["QuoteItemsEditor.jsx", "QuoteSummaryPanel.jsx", "NewQuotePage.jsx"]) assert.ok(checkedNames.includes(required), `se revisa ${required}`);
+  for (const file of jsxFiles) {
+    const lines = fs.readFileSync(file, "utf8").split(diacriticsRange).join("").split(/\r?\n/);
+    const bad = lines.findIndex((line) => escapeSequence.test(line));
+    assert.equal(bad, -1, `${file.pathname.split("/").pop()}:${bad + 1} contiene una secuencia de escape unicode fuera de un regex; escribe el carácter real en UTF-8`);
+  }
+  assert.ok(escapeSequence.test(`x${BS}u00f3y`), "la aserción detecta una secuencia de escape");
+  assert.equal(escapeSequence.test("identificación · línea"), false, "los caracteres reales no se marcan");
+}
+console.log("OK editor de ítems de cotización: bloque compartido, flechas de orden, descripción visible y sin escapes unicode");
+// Paso 3: condiciones. Botones "+" de borde punteado; con contenido el apartado queda activo y visible; sin "Quitar" nuevo.
+assert.match(sourceQuoteConditions, /<h2 id="quote-conditions-title" className="ui-section-head__title">Condiciones<\/h2>/);
+assert.match(sourceQuoteConditions, /isEditMode \? "" : "Vienen de los valores de Empresa\. "/, "la primera frase solo vale al crear");
+assert.match(sourceQuoteConditions, /Cambiarlas solo afecta a esta cotización\./);
+assert.doesNotMatch(sourceNewQuote, /se copiaron a este documento/);
+assert.match(sourceQuoteConditions, /aria-pressed=\{active\}/);
+assert.match(sourceQuoteConditions, /Boolean\(opened\[key\]\) \|\| hasText\(conditions\[key\]\)/, "con contenido el botón aparece activo");
+assert.match(sourceQuoteConditions, /if \(!opened\[key\] && !hasText\(conditions\[key\]\)\) return null;/, "con contenido el campo siempre es visible");
+assert.doesNotMatch(sourceQuoteConditions, /Quitar/, "sin botón Quitar nuevo");
+for (const label of ["Qué incluye", "Garantía", "Alcance geográfico", "Observaciones", "Exclusiones", "Otras condiciones"]) assert.match(sourceQuoteConditions, new RegExp(label), label);
+assert.match(sourceQuoteConditions, /placeholder: "Ej: 12 meses por defectos de fabricación"/);
+assert.match(sourceQuoteConditions, /placeholder: "Ej: Región de Tarapacá"/);
+assert.match(sourceQuoteConditions, /key: "observaciones"[^\n]*placeholder: "Ej: /);
+assert.match(sourceQuoteConditions, /key: "exclusiones"[^\n]*placeholder: "Ej: /);
+assert.match(sourceQuoteConditions, /hint: "Una condición por línea; cada una sale numerada en el PDF\."/);
+assert.match(sourceQuoteConditions, /placeholder="Ej: 50% al iniciar y 50% contra entrega"/);
+// El formato de "Otras condiciones" y "Qué incluye" es uno por renglón: así lo imprimen el documento y el modelo.
+assert.deepEqual(buildQuoteTerms({terminosAdicionales: "Los materiales se facturan al confirmar\nLa instalación se agenda según disponibilidad"}), ["Los materiales se facturan al confirmar", "La instalación se agenda según disponibilidad"]);
+assert.deepEqual(normalizeScopeSections([{titulo: "Qué incluye", lineas: ["Instalación completa", "Materiales incluidos"]}])[0].lineas, ["Instalación completa", "Materiales incluidos"]);
+// El ✓ solo significa "tiene contenido": un campo abierto y vacío se ve abierto (flecha, borde de marca), sin ✓.
+assert.match(sourceQuoteConditions, /filled \? "✓" : active \? <AppIcon icon=\{ChevronDown\} size=\{14\} \/> : "\+"/);
+assert.match(sourceQuoteConditions, /filled=\{scopeHasContent\}/);
+assert.match(sourceQuoteConditions, /title=\{locked \? "Tiene contenido; sale en el PDF" : undefined\}/);
+assert.doesNotMatch(sourceQuoteConditions, /vacía el campo/, "el aviso no promete que vaciar el campo lo oculte (en edición no persiste)");
+assert.match(sourceQuoteConditions, /filled=\{hasText\(conditions\[key\]\)\}/);
+assert.match(sourceQuoteWorkspaceCss, /\.quote-chip--filled \{\s*background: var\(--color-surface-brand\);/);
+// "Dividir en apartados con título": enlace pequeño, solo con texto en el primer bloque y con el mismo manejador de siempre.
+assert.match(sourceQuoteConditions, /hasText\(primaryScopeText\) && \(/);
+assert.match(sourceQuoteConditions, /onClick=\{onAddScopeSection\} className="quote-conditions__link">Dividir en apartados con título</);
+// "Qué incluye" conserva agregar apartado, orden y eliminar por apartado.
+assert.match(sourceQuoteConditions, /\+ Agregar apartado/);
+assert.match(sourceQuoteConditions, /aria-label="Subir apartado"/);
+assert.match(sourceQuoteConditions, /aria-label="Bajar apartado"/);
+assert.match(sourceQuoteConditions, />Eliminar<\/Button>/);
+assert.match(sourceQuoteWorkspaceCss, /\.quote-chip \{[^}]*border: 1px dashed var\(--color-border-control\);/, "botones + de borde punteado");
+// Selección de cliente en línea: solo los primeros 6 resultados, aviso del total y mensaje claro sin clientes. Mismo filtro y mismo onChange.
+assert.match(sourceClientSelector, /const INLINE_RESULTS_LIMIT = 6;/);
+assert.match(sourceClientSelector, /visibleClients\.slice\(0, INLINE_RESULTS_LIMIT\)\.map/);
+assert.match(sourceClientSelector, /visibleClients\.length > INLINE_RESULTS_LIMIT/);
+assert.match(sourceClientSelector, /Mostrando \{INLINE_RESULTS_LIMIT\} de \{visibleClients\.length\} · sigue escribiendo para afinar/);
+assert.match(sourceClientSelector, /const searching = search\.trim\(\)\.length > 0;/, "sin escribir no se dibuja ninguna lista");
+assert.match(sourceClientSelector, /\{searching && \(visibleClients\.length > 0 \? \(/, "la lista solo existe al escribir");
+assert.match(sourceClientSelector, /Tienes \{activeClients\.length === 1 \? "1 cliente activo" : `\$\{activeClients\.length\} clientes activos`\} · escribe un nombre\{nameOnly \? "" : ` o \$\{fiscalLabel\}`\} para buscar/);
+// Entrega E: el texto fijo "RUT" pasó a la etiqueta del país (Chile "RUT", Bolivia "CI o NIT"); el texto de Chile se verifica en country-form-copy-smoke.
+assert.match(sourceClientSelector, /const fiscalLabel = getClientFiscalListLabel\(useBusinessFormat\(\)\.countryCode\);/);
+assert.match(sourceClientSelector, /<p className="sr-only" aria-live="polite">/, "aviso para lectores de pantalla con la cantidad de resultados");
+assert.match(sourceClientSelector, /<strong>Aún no tienes clientes<\/strong>/);
+assert.match(sourceClientSelector, /<Link className="client-selector__link" to="\/clientes">Ir a Clientes<\/Link>/);
+assert.match(sourceClientSelector, /\{noClients && !picking && \(/, "el aviso general solo se ve cuando no hay selector en línea");
+assert.equal((sourceClientSelector.match(/dialogClients\.map\(/g) || []).length, 1, "la ventana conserva su lista completa");
+assert.equal((sourceClientSelector.match(/visibleClients\.map\(/g) || []).length, 0, "el selector en línea nunca dibuja la lista completa");
+assert.match(sourceClientSelector, /filterSelectableClients\(clients, businessId, dialogSearch\)/, "la ventana usa el mismo filtro, con su propio buscador");
+assert.match(sourceClientSelector, /initialFocusRef=\{dialogSearchRef\}/);
+// "Ver todos los clientes": enlace junto a "Tienes N…" que abre la ventana de clientes que ya existe.
+assert.match(sourceClientSelector, /<button type="button" className="client-selector__all" aria-haspopup="dialog" aria-expanded=\{open\} onClick=\{\(\) => setOpen\(true\)\}>Ver todos los clientes<\/button>/);
+assert.match(sourceClientSelector, /<div className="client-selector__count">\s*<p className="client-selector__status">\s*Tienes /, "el enlace va junto a la línea Tienes N clientes activos (solo con clientes y sin escribir)");
+assert.match(sourceClientSelector, /onClose=\{\(\) => \{ setOpen\(false\); setDialogSearch\(""\); \}\}/, "Escape y la X cierran sin cambiar nada");
+assert.match(sourceClientSelector + fs.readFileSync("src/styles/interior.css", "utf8"), /\.client-selector__all \{[^}]*min-height: 2\.75rem;/, "área táctil de 44 px");
+assert.match(sourceQuoteWorkspaceCss + fs.readFileSync("src/styles/interior.css", "utf8"), /\.client-selector--inline \.client-selector__results \{[^}]*max-height: 14rem;/, "alto máximo con scroll");
+// Cabecera corta, paso 1 (cliente y asunto en línea) y resumen: solo presentación.
+assert.match(sourceNewQuote, /<header className="ui-doc-head no-print">/);
+assert.match(sourceNewQuote, /<Link to="\/cotizaciones" className="ui-doc-back">← Cotizaciones<\/Link>/);
+assert.match(sourceNewQuote, /<p className="ui-doc-head__title">\{isEditMode \? getQuoteDisplayNumber\(quote, "Editar cotización"\) : "Nueva cotización"\}<\/p>/);
+assert.match(sourceNewQuote, /<UiStatusBadge variant=\{quote\.estado === "borrador" \? "warning" : "neutral"\}>\{getQuoteStatusLabel\(quote\.estado\)\}<\/UiStatusBadge>/, "chip con el estado que ya tiene la cotización");
+assert.doesNotMatch(sourceNewQuote, /<h1/, "el único h1 de la pantalla es el de la barra superior");
+assert.match(sourceNewQuote, /<h2 id="quote-client-title" className="ui-step-title">¿A quién le cotizas\?<\/h2>/);
+assert.doesNotMatch(sourceNewQuote + sourceQuoteItems + sourceQuoteConditions, /[123] · /, "títulos de sección sin numeración");
+assert.match(sourceNewQuote, /onAvailabilityChange=\{setClientAvailability\}/, "misma disponibilidad que antes");
+assert.match(sourceNewQuote, /onChange=\{handleClientChange\}/, "mismo onChange que antes");
+assert.match(sourceQuoteClientSelector, /<InlinePartySelector/, "el cliente se elige con el selector en línea compartido");
+assert.match(sourceQuoteClientSelector, /listarClientes\(businessId\)/);
+assert.match(sourceQuoteClientSelector, /filterSelectableClients\(clients, businessId\)/);
+assert.match(sourceQuoteClientSelector, /matches=\{matchesClientSearch\}/);
+assert.match(sourceQuoteClientSelector, /onChange\?\.\(client\)/, "un solo punto de elección: onChange(client) con el objeto");
+assert.equal((sourceNewQuote.match(/La cotización guarda una copia histórica de los datos del cliente\./g) || []).length, 1, "el texto de guía no se repite");
+assert.match(sourceClientSelector, /inline = false/, "la prop inline es opcional: sin ella el selector es el de siempre");
+assert.doesNotMatch(sourceClientSelector, /\{!inline && <ResponsiveDialog/, "con inline la ventana también se dibuja (cerrada) y se abre con el enlace");
+assert.match(sourceClientSelector, /<ResponsiveDialog\s+open=\{open\}/);
+assert.match(sourceClientSelector, /filterSelectableClients\(clients, businessId, search\)/, "mismo filtro");
+assert.equal((sourceClientSelector.match(/onChange\?\.\(client\)/g) || []).length, 1, "un solo punto de elección: onChange(client) con el objeto");
+assert.match(sourceClientSelector, /placeholder=\{nameOnly \? "Buscar cliente por nombre" : `Buscar cliente por nombre o \$\{fiscalLabel\}`\}/);
+assert.match(sourceQuoteSummary, /<h2>Resumen<\/h2>/);
+assert.doesNotMatch(sourceQuoteSummary, /Totales|quote-workspace__kicker/, "el resumen ya no repite el rótulo");
+assert.match(sourceQuoteSummary, /className=\{strong \? "po-summary__total" : undefined\}/, "Total destacado con la clase del resumen de Compras y Ventas");
+assert.match(sourcePurchaseOrdersCss, /\.purchase-summary \.po-summary__total strong \{[^}]*color: var\(--color-text-brand\);[^}]*font-size: var\(--font-size-2xl\);/, "Total en color de marca, como en Venta");
+assert.match(sourceQuoteWorkspaceCss, /\.quote-summary__discount input \{\s*flex: 0 0 auto;\s*width: 8rem;/, "campo de descuento con ancho razonable");
+assert.doesNotMatch(sourceQuoteWorkspaceCss, /quote-workspace__client-project/);
 assert.match(sourceQuoteCollapsible, /aria-expanded=\{open\}/);
-assert.match(sourceQuoteWorkspaceCss, /position:\s*sticky/);
-assert.match(sourceQuoteWorkspaceCss, /@media \(max-width: 620px\)/);
-assert.match(sourceQuoteWorkspaceCss, /position:\s*static/);
+assert.match(sourcePurchaseOrdersCss, /\.po-summary \{\s*position: sticky;/);
+assert.match(sourcePurchaseOrdersCss, /@media \(max-width: 620px\)/);
+assert.match(sourcePurchaseOrdersCss, /position: static;/);
 assert.match(sourcePdf, /buildQuotePdfBase64/);
 assert.match(sourceEmail, /buildQuotePdfAttachment/);
 assert.match(sourceHistory, /downloadQuotePdf/);
@@ -606,11 +795,28 @@ assert.equal((quotePrimaryActionsSource.match(/: "WhatsApp"/g) || []).length, 1)
 assert.equal((quotePrimaryActionsSource.match(/: "Descargar PDF"/g) || []).length, 1);
 assert.equal((quotePrimaryActionsSource.match(/>\s*Imprimir\s*<\/button>/g) || []).length, 1);
 assert.doesNotMatch(quoteActionsSource, /Correo|WhatsApp|Descargar PDF|Imprimir|runPdfAction/);
-// Una acción principal por estado: Enviar en pendiente (Editar y Marcar como
-// emitida pasan a "Más acciones"), Reenviar en el menú de emitidas y Ver
-// venta cuando hay venta vinculada.
-assert.match(quoteActionsSource, /onClick=\{\(\) => onSend\(quote\)\}[\s\S]*?>\s*Enviar\s*<\/button>/);
-assert.match(quoteActionsSource, /actions=\{\[editMenuAction, emitMenuAction, archiveMenuAction\]\}/);
+// Pendiente: Enviar y Editar visibles (en la lista el texto es "Editar"; en el
+// detalle, "Editar cotización"); Marcar como emitida, Archivar y Eliminar en
+// "Más acciones". Reenviar va en el menú de emitidas y Ver venta cuando hay
+// venta vinculada.
+assert.match(quoteActionsSource, /onClick=\{\(\) => onSend\(quote\)\}[\s\S]*?>\s*Enviar\s*<\/button>\s*<button[^>]*onClick=\{\(\) => onEditDraft\(quote\.id\)\}[\s\S]*?>\s*Editar\s*<\/button>/);
+assert.match(quoteActionsSource, /onClick=\{\(\) => onEditDraft\(quote\.id\)\}[\s\S]*?>\s*Editar cotización\s*<\/button>/);
+assert.match(quoteActionsSource, /actions=\{\[emitMenuAction, archiveMenuAction, deleteMenuAction\]\}/);
+assert.doesNotMatch(quoteActionsSource, /editMenuAction/);
+// Todo el bloque de acciones (incluido Editar) sigue limitado a quienes pueden escribir.
+assert.match(sourceHistory, /\{canDuplicate && \(\s*<div className="erp-actions" style=\{styles\.mobileCardActions\}>/);
+// Un solo filtro de estado: las pestañas, con "Archivadas" al final y su conteo.
+// Ya no hay desplegable "Estado" ni la opción "Todas excepto archivadas".
+assert.match(sourceHistory, /\["vencida", "Vencidas"\],\s*\["archivada", "Archivadas"\],\s*\];/);
+assert.doesNotMatch(sourceHistory, /Todas excepto archivadas|STATUS_OPTIONS|filterLabels/);
+assert.doesNotMatch(sourceHistory, /<span className="erp-field__label">Estado<\/span>/);
+assert.doesNotMatch(sourceHistory, /<select/);
+assert.match(sourceHistory, /className="erp-filters erp-history-filters quote-history-filters"/);
+assert.match(sourceInteriorCss, /\.quote-history-filters \{\s*grid-template-columns: minmax\(0, 1fr\);\s*\}/);
+assert.match(sourceHistory, /label: `\$\{label\} \(\$\{searchedQuotes\.filter/);
+// La celda de vigencia del pendiente es una sola línea; emitidas, aceptadas y vencidas no cambian.
+assert.match(sourceHistory, /Sin emitir · creada \{formatDate\(quote\.fecha\)\} · \{validityDays\} \{Number\(validityDays\) === 1 \? "día" : "días"\} de vigencia/);
+assert.doesNotMatch(sourceHistory, /días al emitir|Sin emitir · Creada/);
 assert.match(quoteActionsSource, /label: "Reenviar"/);
 // Filas: acciones en estilo secundario y "Más acciones" solo con ícono
 // (aria-label y title); el diálogo de detalle conserva el rótulo con texto.
@@ -710,20 +916,227 @@ assert.match(sourceQuotePersistence, /quoteDuplicateRequests/);
 assert.match(sourceQuotePersistence, /cotizacionOrigenId/);
 assert.match(sourceQuotePersistence, /storedQuote[\s\S]*estado:\s*"borrador"/);
 assert.doesNotMatch(sourceQuoteDocument, /borrador:\s*"Borrador"/);
-assert.match(sourceQuoteDocument, /getQuoteStatusLabel\(quote\.estado\)/);
+// El documento formal ya no muestra el estado comercial (queda en el modal).
+assert.doesNotMatch(sourceQuoteDocument, /getQuoteStatusLabel|Estado comercial/);
 assert.match(sourceQuoteDocument, /showCode/);
 assert.match(sourceQuoteDocument, /showUnit/);
 assert.match(sourceQuoteDocument, /showDiscount/);
-assert.match(sourceQuoteDocument, /Condiciones de pago/);
+assert.match(sourceQuoteDocument, /buildQuoteTerms\(quote\.condiciones\)/);
+assert.match(sourceQuoteDocumentLayout, /Condiciones de pago/);
 assert.doesNotMatch(sourceQuoteDocument, /19%/);
-assert.match(sourceQuotePrintView, /@page\{size:A4/);
+// Impresión (Imprimir en el historial y en el enlace público): lo impreso se ve como la vista previa. Se comprueba sobre
+// el CSS del documento (previewCss), no sobre los comentarios del archivo.
+{
+  const css = sourceQuotePrintView.slice(sourceQuotePrintView.indexOf("const previewCss = `") + "const previewCss = `".length, sourceQuotePrintView.lastIndexOf("`;"));
+  const printBlock = css.slice(css.indexOf("@media print{"));
+  // Una sola regla @page para la cotización: con nombre (no compite con las globales de globals.css y purchase-orders.css,
+  // que siguen gobernando Ventas, Compras y Órdenes de compra), A4 y 14 mm, y el documento la usa con `page: quote`.
+  assert.equal((css.match(/@page/g) || []).length, 1, "una sola regla @page en el documento de cotización");
+  assert.match(css, /@page quote\{size:A4;margin:14mm\}/);
+  assert.match(printBlock, /html:root:has\(\.quote-document-preview\)\{[^}]*page:quote[^}]*\}/, "solo hay hoja nombrada mientras haya un documento de cotización");
+  assert.match(printBlock, /html:root:has\(\.quote-document-preview\)\{[^}]*color-scheme:light[^}]*\}/, "en tema oscuro la hoja sigue siendo papel claro");
+  assert.doesNotMatch(css.slice(0, css.indexOf("@media print{")), /@page\{/, "ninguna regla @page sin nombre");
+  // print-color-adjust: exact en el documento y en todo lo que contiene (bandas, encabezado de tabla y realce del TOTAL).
+  assert.match(css, /\.quote-document-preview\{[^}]*-webkit-print-color-adjust:exact;print-color-adjust:exact\}/);
+  assert.match(printBlock, /\.quote-document-preview,\.quote-document-preview \*\{-webkit-print-color-adjust:exact;print-color-adjust:exact\}/);
+  // Mismo diseño que la vista previa: se maqueta con el ancho del contenido de la vista (920 px menos el relleno de 42 px por
+  // lado) y se reduce con zoom al ancho útil de A4 con 14 mm de margen (182 mm).
+  const previewMaxWidth = Number(css.match(/\.quote-document-preview\{[^}]*max-width:(\d+)px/)[1]);
+  const previewSidePadding = Number(css.match(/\.quote-document-preview\{[^}]*padding:\d+px (\d+)px/)[1]);
+  const printWidth = Number(printBlock.match(/\.quote-document-preview\{[^}]*width:(\d+)px/)[1]);
+  const printZoom = Number(printBlock.match(/\.quote-document-preview\{[^}]*zoom:([\d.]+)/)[1]);
+  assert.equal(printWidth, previewMaxWidth - 2 * previewSidePadding, "se maqueta con el ancho del contenido de la vista previa");
+  assert.ok(printWidth * printZoom <= (210 - 2 * 14) / 25.4 * 96, "cabe en el ancho útil de A4 con 14 mm de margen");
+  assert.ok(printWidth * printZoom >= 0.98 * (210 - 2 * 14) / 25.4 * 96, "y lo aprovecha casi completo");
+  assert.match(printBlock, /\.quote-document-preview\{[^}]*max-width:none;padding:0;width:836px/);
+  // Fuente, color y fondo del documento, que no dependen de lo que globals.css fija en html y body al imprimir.
+  assert.match(printBlock, /\.quote-document-preview\{[^}]*color:var\(--quote-ink\);font:13px\/1\.5 Arial,Helvetica,sans-serif/);
+  assert.match(printBlock, /\.quote-document-preview\{[^}]*background:var\(--color-document-paper\)/);
+  // Cortes de página limpios: encabezado de tabla repetido; filas, términos, totales y pie sin partirse.
+  assert.match(printBlock, /\.quote-document-preview thead\{display:table-header-group\}/);
+  assert.match(printBlock, /\.quote-document-preview tr,[^{]*\.quote-document-preview__summary,[^{]*\.quote-document-preview__totals,[^{]*\.quote-document-preview__terms,[^{]*\.quote-document-preview footer\{break-inside:avoid\}/);
+  assert.match(printBlock, /\.quote-document-preview__band,\.quote-document-preview__scope h3\{break-after:avoid\}/);
+  // Ninguna regla responsiva del documento aplica al imprimir. En impresión el navegador evalúa los @media (max-width) con
+  // el ancho útil de la hoja (A4 con 14 mm de margen = 688 px), no con el de la ventana, y `zoom` no lo cambia: un
+  // @media(max-width:720px) sin restringir al medio apilaba el encabezado, el cliente y los totales y mandaba el pie a una
+  // segunda hoja. Todo @media del documento es `print` o va como `screen and (...)`, y no hay @container.
+  const {screenBlocks} = assertNoWidthQueriesInPrint(css, "cotización");
+  const screenCss = screenBlocks.map((block) => block.body).join("");
+  assert.match(screenCss, /\.quote-document-preview__header\{grid-template-columns:1fr\}/, "el apilado del encabezado solo existe en pantalla");
+  assert.match(screenCss, /\.quote-document-preview__client-grid,\.quote-document-preview__summary\{grid-template-columns:1fr\}/, "el apilado del cliente y los totales solo existe en pantalla");
+  // El diseño de escritorio es el de base, y es el que queda al imprimir: número a la derecha y cliente en dos columnas.
+  const baseCss = css.replace(/@media[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, "");
+  assert.match(baseCss, /\.quote-document-preview__header\{[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(250px,\.5fr\)/, "base: logo a la izquierda y número a la derecha");
+  assert.match(baseCss, /\.quote-document-preview__identity\{text-align:right\}/, "base: identidad alineada a la derecha");
+  assert.match(baseCss, /\.quote-document-preview__client-grid\{[^}]*grid-template-columns:1fr 1fr/, "base: cliente en dos columnas");
+  assert.doesNotMatch(printBlock, /grid-template-columns/, "al imprimir no se redefinen las columnas: queda el diseño de base");
+  // El enlace "Saltar al contenido principal" no se imprime: lo oculta la regla global de globals.css (@media print), la misma
+  // para todos los documentos, y el CSS del documento de cotización ya no lleva una regla propia.
+  assertSkipLinkHiddenInPrint(fs.readFileSync("src/styles/globals.css", "utf8"), fs.readFileSync("src/components/ui/SkipLink.jsx", "utf8"));
+  assert.doesNotMatch(css, /skip-link/, "la regla del enlace vive en globals.css, no en el documento");
+  // Lo compartido no cambió para los demás documentos: globals.css conserva su único @page (8 mm) y no habla del documento
+  // de cotización; solo se le agregó el contenedor exclusivo del detalle de cotización.
+  const globals = fs.readFileSync("src/styles/globals.css", "utf8");
+  assert.equal((globals.match(/@page/g) || []).length, 1); assert.match(globals, /@page \{\s+size: A4;\s+margin: 8mm;\s+\}/);
+  assert.doesNotMatch(globals, /quote-document-preview/);
+  assert.match(globals, /\.history-print-area \{\s+background: transparent !important;\s+\}/);
+  assert.equal(fs.readFileSync("src/pages/QuoteHistoryPage.jsx", "utf8").split("history-print-area").length - 1, 1, "history-print-area solo lo usa el detalle de cotización");
+  // Los textos de impresión (encabezado y pie) siguen siendo los de siempre.
+  assert.match(sourceQuotePrintView, /<span>Cotización<\/span>/); assert.match(sourceQuotePrintView, /QUOTE_FOOTER_QUESTION/); assert.match(sourceQuotePrintView, /QUOTE_FOOTER_THANKS/);
+}
 assert.match(sourceQuotePrintView, /showCode/);
 assert.match(sourceQuotePrintView, /showUnit/);
 assert.match(sourceQuotePrintView, /showDiscount/);
-assert.match(sourceQuotePrintView, /Estado comercial/);
+assert.doesNotMatch(sourceQuotePrintView, /Estado comercial|getQuoteStatusLabel/);
+// El estado de envío vive solo en el modal, no en la cabecera del documento.
+assert.doesNotMatch(sourceQuotePrintView + sourceQuoteDocument, /Aún no ha sido enviada/);
+// El número de cotización no se parte en dos líneas.
+assert.match(sourceQuotePrintView, /__title strong\{[^}]*white-space:nowrap/);
+assert.match(sourceQuotePrintView, /Términos y condiciones/);
+assert.match(sourceQuotePrintView, /buildQuoteTerms\(quote\.condiciones\)/);
+assert.match(sourceQuotePrintView, /QUOTE_FOOTER_QUESTION/);
+// Documento claro y sin colores sueltos: solo tokens --color-document-*.
+assert.doesNotMatch(sourceQuotePrintView, /#[0-9a-fA-F]{3,8}\b|rgba?\(/);
+assert.doesNotMatch(sourceQuotePrintView, /var\(--color-(?!document)/);
+// Contenido del documento: todo sale de los datos, nada fijo de una empresa.
+assert.deepEqual(buildQuoteTerms({}), []);
+assert.deepEqual(
+  buildQuoteTerms({
+    formaPago: " 50% al inicio ",
+    garantia: "",
+    terminosAdicionales: "1. Valores por unidad\n\n2) Mantenimiento sujeto a evaluación",
+  }),
+  [
+    "Condiciones de pago: 50% al inicio",
+    "Valores por unidad",
+    "Mantenimiento sujeto a evaluación",
+  ]
+);
+assert.equal(buildQuoteFooterContact({}), "");
+assert.equal(
+  buildQuoteFooterContact({ responsable: "Ana Pérez", telefono: "", email: "ana@empresa.cl" }),
+  "Ana Pérez, ana@empresa.cl"
+);
+assert.equal(
+  buildQuoteAcceptanceLine({ texto: "Acepto los términos y condiciones de esta cotización." }),
+  "Acepto los términos y condiciones de esta cotización. (firmar a continuación)"
+);
+assert.doesNotMatch(sourceQuotePrintView + sourceQuoteDocument + sourceQuoteDocumentLayout, /Bagner|Pairumani/i);
 assert.doesNotMatch(sourceQuotePrintView, /19%/);
 assert.doesNotMatch(sourceQuotePrintView, /getDoc|getDocs|onSnapshot|listarClientes/);
 assert.match(sourceDashboard, /getQuoteStatusLabel\("borrador"\)/);
+// Eliminar borradores: solo OWNER/ADMIN, confirmación por palabra y vía Function.
+assert.deepEqual(
+  ["OWNER", "ADMIN", "VENTAS", "FINANZAS", "MEMBER", "", undefined].map((role) => canDeleteQuotes(role)),
+  [true, true, false, false, false, false, false]
+);
+assert.equal(canDeleteQuotes("admin"), true);
+assert.deepEqual(
+  ["permanente", "  PERMANENTE ", "Permanente", "perman", "", "permanentemente", null].map(isQuoteDeleteConfirmed),
+  [true, true, true, false, false, false, false]
+);
+assert.match(sourceQuoteService, /"deleteQuoteDraft"/);
+assert.doesNotMatch(sourceQuoteService, /deleteDoc|deleteField/);
+assert.match(sourceHistory, /label: "Eliminar cotización"/);
+assert.match(sourceHistory, /onDelete=\{canDelete \? handleRequestDelete : undefined\}/);
+assert.match(sourceHistory, /disabled=\{!isQuoteDeleteConfirmed\(deleteConfirmation\)\}/);
+assert.match(sourceHistory, /NO se borran/);
+// Solo los borradores ofrecen la opción (el menú de otros estados no la incluye).
+const draftMenuSource = quoteActionsSource.slice(
+  quoteActionsSource.indexOf('if (estado === "borrador")'),
+  quoteActionsSource.indexOf('if (estado === "emitida")')
+);
+assert.match(draftMenuSource, /deleteMenuAction/);
+assert.doesNotMatch(
+  quoteActionsSource.slice(quoteActionsSource.indexOf('if (estado === "emitida")')),
+  /deleteMenuAction/
+);
+// La interfaz oculta "Eliminar cotización" donde la Function la rechazaría, con
+// los mismos campos de findDeletionBlocker que el cliente sí tiene.
+assert.match(sourceHistory, /onDelete && canOfferQuoteDeletion\(quote\)/);
+{
+  const {findDeletionBlocker} = require("../functions/quoteDeletion.js");
+  const noExternal = {envioExists: false, saleExists: false, tokenExists: false};
+  const cleanDraft = {estado: "borrador", fechaEmision: "", canalEmision: null, respuestaCliente: "", estadoEnvioCorreo: undefined};
+  assert.equal(canOfferQuoteDeletion(cleanDraft), true);
+  assert.equal(canOfferQuoteDeletion({}), true, "sin estado se trata como borrador");
+  const blockingFields = {
+    estado: "emitida",
+    fechaEmision: "2026-05-01",
+    canalEmision: "whatsapp",
+    ventaId: "v1",
+    respuestaCliente: "aceptada",
+    respuestaClienteEn: {seconds: 1},
+    fechaEnvioCorreo: {seconds: 1},
+    estadoEnvioCorreo: "enviado",
+    tokenPublicoHash: "abc",
+    tokenWhatsappHash: "abc",
+    propuestaPublicaCreadaEn: {seconds: 1},
+    whatsappPreparadoEn: {seconds: 1},
+  };
+  for (const [field, value] of Object.entries(blockingFields)) {
+    const quote = {...cleanDraft, [field]: value};
+    assert.equal(canOfferQuoteDeletion(quote), false, `${field} oculta la opción`);
+    assert.equal(canOfferQuoteDeletion(quote), findDeletionBlocker(quote, noExternal) === "", `${field}: igual que la Function`);
+  }
+  assert.equal(canOfferQuoteDeletion(cleanDraft), findDeletionBlocker(cleanDraft, noExternal) === "");
+}
+// Las reglas siguen denegando cualquier escritura de cotizaciones desde el cliente.
+const sourceFirestoreRules = fs.readFileSync("firestore.rules", "utf8");
+assert.match(
+  sourceFirestoreRules,
+  /match \/cotizaciones\/\{quoteId\} \{\s*allow read: if hasBusinessModuleAccess\([^\n]*\);\s*allow create: if false;\s*allow update: if false;\s*allow delete: if false;/
+);
+// Cabecera del PDF: etiqueta en negrita y valor normal (como el <strong> del
+// HTML), y una dirección larga se parte sin desalinear la columna derecha.
+assert.match(sourceQuotePrintView, /<strong>\{label\}: <\/strong>/);
+assert.match(sourceQuoteDocument, /drawRightLabeledLine\(doc, label, value, right, rightEnd, 82\)/);
+{
+  const probe = new jsPDF({ unit: "mm", format: "a4" });
+  const drawn = [];
+  const originalText = probe.text.bind(probe);
+  probe.text = (text, x, y, options) => {
+    drawn.push({ text, x, y, align: options?.align, style: probe.getFont().fontStyle });
+    return originalText(text, x, y, options);
+  };
+  probe.setFontSize(8);
+  const right = 194;
+  const maxWidth = 82;
+  const longAddress = "Avenida Libertador General Bernardo O'Higgins 1234, Oficina 567, Torre Norte, Edificio Comercial Centro";
+  const end = drawRightLabeledLine(probe, "Dirección", longAddress, right, 30, maxWidth);
+  const valueCalls = drawn.filter((call) => call.style === "normal");
+  const labelCalls = drawn.filter((call) => call.style === "bold");
+  assert.ok(valueCalls.length >= 2, "la dirección larga se parte en varias líneas");
+  assert.equal(labelCalls.length, 1, "la etiqueta se dibuja una sola vez");
+  assert.equal(labelCalls[0].text, "Dirección: ");
+  assert.equal(labelCalls[0].y, valueCalls[0].y, "etiqueta en la primera línea del valor");
+  assert.deepEqual(valueCalls.map((call) => call.x), valueCalls.map(() => right), "todas las líneas terminan en el margen derecho");
+  valueCalls.forEach((call, index) => {
+    assert.ok(Math.abs(call.y - (30 + index * 4.2)) < 1e-9, "líneas consecutivas sin saltos");
+  });
+  assert.ok(Math.abs(end - (30 + valueCalls.length * 4.2)) < 1e-9);
+  probe.setFont("helvetica", "bold");
+  const labelWidth = probe.getTextWidth("Dirección: ");
+  probe.setFont("helvetica", "normal");
+  const firstWidth = probe.getTextWidth(valueCalls[0].text);
+  assert.ok(Math.abs(labelCalls[0].x - (right - firstWidth)) < 1e-6, "la etiqueta termina donde empieza el valor");
+  assert.ok(labelWidth + firstWidth <= maxWidth + 1e-6, "etiqueta y valor caben en el ancho máximo");
+  for (const call of valueCalls) assert.ok(probe.getTextWidth(call.text) <= maxWidth - labelWidth + 1e-6, "ninguna línea excede el ancho");
+  assert.equal(probe.getFont().fontStyle, "normal", "la fuente queda en normal para lo que sigue");
+  // Un valor corto queda en una línea con la etiqueta pegada.
+  drawn.length = 0;
+  drawRightLabeledLine(probe, "RUT", "77.091.679-8", right, 20, maxWidth);
+  assert.equal(drawn.length, 2);
+  assert.equal(drawn.find((call) => call.style === "bold").text, "RUT: ");
+  // El documento completo se construye con una dirección larga.
+  const longAddressPdf = buildQuotePdfDocument({
+    quote: {
+      ...quoteFixture(),
+      empresaSnapshot: { ...company, direccion: longAddress },
+    },
+  });
+  assert.ok(longAddressPdf.doc.getNumberOfPages() >= 1);
+}
 console.log("OK documento: jerarquía común, columnas condicionales, impuesto dinámico y snapshots históricos");
 
 const outputDir = path.resolve("output/pdf/quote-validation");

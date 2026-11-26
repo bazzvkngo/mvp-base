@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { sileo } from "sileo";
 import AiAvailabilityStatus from "../components/ai/AiAvailabilityStatus";
+import InventoryCatalogDialog from "../components/ui/InventoryCatalogDialog";
 import Spinner from "../components/ui/Spinner";
+import UiStatusBadge from "../components/ui/StatusBadge";
 import { AI_MODELS } from "../config/aiModels";
 import {
   createQuoteItemFromValuation,
@@ -11,21 +13,27 @@ import {
 import {
   calculateQuoteLineAmounts,
   DEFAULT_QUOTE_CONDITIONS,
+  getQuoteStatusLabel,
   isAdvancedQuoteScope,
   isValidQuoteDateRange,
   QUOTE_SIMPLE_SCOPE_TITLE,
+  quoteTotalsErrorMessage,
   resolveQuoteClientSelectionSnapshot,
   tryCalculateQuoteTotals,
   validateQuoteDraft,
 } from "../domain/quoteModel.mjs";
 import { getCategoriesForArea } from "../domain/inventoryCatalog.mjs";
+import { addInventoryItemToLines, catalogEntryFromValuation, sumQuantitiesByItem } from "../domain/inventoryLineAdd.mjs";
+import { adaptDocumentAmountDecimals, resolveDocumentTaxRate } from "../domain/localization.mjs";
+import { roundMoney, sanitizeDecimals } from "../domain/money.mjs";
 import { buildValuationForItem, PRICING_STATUS } from "../domain/pricing";
 import useAiRateLimit from "../hooks/useAiRateLimit";
-import ClientSelector from "../features/clients/ClientSelector";
-import QuoteCatalogDialog from "../features/quotes/QuoteCatalogDialog";
+import QuoteClientSelector from "../features/quotes/QuoteClientSelector";
 import QuoteCollapsibleSection from "../features/quotes/QuoteCollapsibleSection";
+import QuoteConditionsPanel from "../features/quotes/QuoteConditionsPanel";
 import QuoteItemsEditor from "../features/quotes/QuoteItemsEditor";
 import QuoteSummaryPanel from "../features/quotes/QuoteSummaryPanel";
+import "../features/purchases/purchases.css";
 import "../features/quotes/quote-workspace.css";
 import { suggestQuoteItems } from "../services/aiQuoteService";
 import { getCompanyProfile } from "../services/companyService";
@@ -45,9 +53,9 @@ import {
 import { subscribeToValuations } from "../services/valuationService";
 import { useBusinessMoney } from "../hooks/useBusinessFormat";
 import { formatDate } from "../utils/formatters";
+import {userErrorMessage} from "../domain/userFacingError.mjs";
 
 const ASSISTANT_DESCRIPTION_MAX_LENGTH = 1200;
-const MANUAL_CATALOG_PAGE_SIZE = 10;
 const ITEM_FEEDBACK_HIDE_DELAY = 3500;
 
 const tipoLabels = {
@@ -163,7 +171,8 @@ function parseDraftNumber(value) {
   return Number.isFinite(numberValue) ? numberValue : null;
 }
 
-function calculateSuggestedInternalPrice(costoBase, margenDeseado) {
+// `montoDecimales`: decimales de cálculo del documento (SPEC 036). Con 0 es el redondeo entero de siempre.
+function calculateSuggestedInternalPrice(costoBase, margenDeseado, montoDecimales = 0) {
   const costo = parseDraftNumber(costoBase);
   const margen = parseDraftNumber(margenDeseado);
 
@@ -176,7 +185,7 @@ function calculateSuggestedInternalPrice(costoBase, margenDeseado) {
     return "";
   }
 
-  return Math.round(costo + (costo * margen) / 100);
+  return roundMoney(costo + (costo * margen) / 100, sanitizeDecimals(montoDecimales));
 }
 
 function buildManualPriceJustification(margenDeseado) {
@@ -312,7 +321,7 @@ function buildInitialQuote(projectContext = null) {
   };
 }
 
-function normalizeStoredQuoteItems(items) {
+function normalizeStoredQuoteItems(items, montoDecimales = 0) {
   return normalizeQuoteItems(
     Array.isArray(items)
       ? items.map((item) => {
@@ -338,7 +347,8 @@ function normalizeStoredQuoteItems(items) {
             precioUnitarioEditable: storedUnitPrice,
           };
         })
-      : []
+      : [],
+    { montoDecimales }
   );
 }
 
@@ -379,7 +389,10 @@ function buildQuoteFromSavedQuote(savedQuote = {}) {
     },
     validezDias: Number(savedQuote.validezDias || 15),
     afectaIva: savedQuote.afectaIva !== false,
-    items: normalizeStoredQuoteItems(savedQuote.items),
+    items: normalizeStoredQuoteItems(
+      savedQuote.items,
+      adaptDocumentAmountDecimals(savedQuote, savedQuote.moneda)
+    ),
     descuento: Number(savedQuote.descuento || 0),
     observaciones: savedQuote.observaciones || "",
     seccionesAlcance: Array.isArray(savedQuote.seccionesAlcance)
@@ -431,12 +444,18 @@ function NewQuotePage({ userId }) {
   const [loadedDraftQuote, setLoadedDraftQuote] = useState(null);
   const [saving, setSaving] = useState(false);
   const [savingEstado, setSavingEstado] = useState("");
-  const [search, setSearch] = useState("");
-  const [catalogTypeFilter, setCatalogTypeFilter] = useState("todos");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(() => location.state?.message || "");
   const [itemFeedback, setItemFeedback] = useState("");
   const [savedQuoteId, setSavedQuoteId] = useState(null);
+  // Decimales de cálculo (SPEC 036): una cotización guardada usa el `montoDecimales` de su documento (ausente = 0);
+  // un borrador que todavía no existe usa los de la moneda del negocio. Con 0 todo se calcula entero, como siempre.
+  const documentDecimals = savedQuoteId
+    ? adaptDocumentAmountDecimals(quote, quote.moneda)
+    : formatBusinessAmount.amountDecimals;
+  const moneyStep = documentDecimals > 0 ? String(10 ** -documentDecimals) : "1";
+  // Paso del precio de cada línea: el mismo criterio que Ventas y Compras ("any" con 0 decimales).
+  const lineMoneyStep = documentDecimals > 0 ? String(10 ** -documentDecimals) : "any";
   const [assistantDescription, setAssistantDescription] = useState("");
   const [assistantSuggestions, setAssistantSuggestions] = useState([]);
   const [assistantLoading, setAssistantLoading] = useState(false);
@@ -456,9 +475,6 @@ function NewQuotePage({ userId }) {
   const [suggestedItemError, setSuggestedItemError] = useState("");
   const [highlightedItemId, setHighlightedItemId] = useState("");
   const [manualCatalogOpen, setManualCatalogOpen] = useState(false);
-  const [manualCatalogVisibleCount, setManualCatalogVisibleCount] = useState(
-    MANUAL_CATALOG_PAGE_SIZE
-  );
   const [clientAvailability, setClientAvailability] = useState({
     error: "",
     hasActiveClients: false,
@@ -685,7 +701,7 @@ function NewQuotePage({ userId }) {
     () =>
       (Array.isArray(quote.items) ? quote.items : []).map((item, index) => {
         try {
-          const amounts = calculateQuoteLineAmounts(item, index);
+          const amounts = calculateQuoteLineAmounts(item, index, documentDecimals);
           return {
             ...item,
             precioUnitarioEditable: item.precioUnitarioEditable,
@@ -699,21 +715,23 @@ function NewQuotePage({ userId }) {
           return { ...item, totalLinea: 0 };
         }
       }),
-    [quote.items]
+    [documentDecimals, quote.items]
   );
 
   const totalsResult = useMemo(
     () =>
       tryCalculateQuoteTotals(quote.items, quote.descuento, {
         afectaIva: quote.afectaIva !== false,
-        tasaIva:
-          quote.tasaIva ??
-          Number(companyProfile?.impuestoPredeterminadoTasa ?? 19) / 100,
+        tasaIva: resolveDocumentTaxRate(quote, companyProfile),
+        montoDecimales: documentDecimals,
       }),
-    [companyProfile?.impuestoPredeterminadoTasa, quote.afectaIva, quote.descuento, quote.items, quote.tasaIva]
+    [companyProfile?.impuestoPredeterminadoTasa, companyProfile?.paisCodigo, documentDecimals, quote.afectaIva, quote.descuento, quote.items, quote.tasaIva]
   );
   const totals = totalsResult.totals;
-  const quoteValidation = useMemo(() => validateQuoteDraft(quote), [quote]);
+  const quoteValidation = useMemo(
+    () => validateQuoteDraft({ ...quote, montoDecimales: documentDecimals }),
+    [documentDecimals, quote]
+  );
 
   const itemQuantityById = useMemo(() => {
     const quantities = {};
@@ -741,39 +759,8 @@ function NewQuotePage({ userId }) {
     warning: assistantWarning,
   });
 
-  const filteredValuations = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return valuations.filter((valuation) => {
-      if (catalogTypeFilter !== "todos" && valuation.tipoItem !== catalogTypeFilter) {
-        return false;
-      }
-      if (!query) return true;
-      const inventoryItem = valuation.item || {};
-      const text = [
-        valuation.nombre,
-        valuation.categoria,
-        valuation.codigoInterno,
-        valuation.codigo,
-        valuation.sku,
-        inventoryItem.codigoInterno,
-        inventoryItem.codigo,
-        inventoryItem.sku,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return text.includes(query);
-    });
-  }, [catalogTypeFilter, search, valuations]);
-
-  const visibleCatalogValuations = filteredValuations.slice(
-    0,
-    manualCatalogVisibleCount
-  );
-  const catalogHasMoreItems = manualCatalogVisibleCount < filteredValuations.length;
-  const catalogShowingAllItems =
-    filteredValuations.length > MANUAL_CATALOG_PAGE_SIZE &&
-    manualCatalogVisibleCount >= filteredValuations.length;
+  const catalogEntries = useMemo(() => valuations.map(catalogEntryFromValuation), [valuations]);
+  const catalogAddedQuantities = useMemo(() => sumQuantitiesByItem(quote.items), [quote.items]);
 
   const matchedAssistantSuggestions = useMemo(() => {
     const groupsByItemId = new Map();
@@ -1034,40 +1021,27 @@ function NewQuotePage({ userId }) {
     });
   };
 
+  // Reagrupa con la regla compartida de inventoryLineAdd.mjs: suma a una línea limpia (mismo ítem, sin descuento, mismo
+  // precio actual) o crea otra. Cotizar no consume stock: sin tope. La cantidad mínima de la cotización sigue siendo 1.
   const addItem = (valuation, quantity = 1) => {
     setItemsInteracted(true);
     setDirty(true);
     setSuccess("");
     setError("");
-    const wasExisting = quote.items.some((item) => item.itemId === valuation.itemId);
     const quantityToAdd = Math.max(Number(quantity) || 1, 1);
-
-    setQuote((prev) => {
-      const existing = prev.items.find((item) => item.itemId === valuation.itemId);
-      if (existing) {
-        return {
-          ...prev,
-          items: normalizeQuoteItems(
-            prev.items.map((item) =>
-              item.itemId === valuation.itemId
-                ? { ...item, cantidad: Number(item.cantidad || 0) + quantityToAdd }
-                : item
-            )
-          ),
-        };
-      }
-
-      return {
-        ...prev,
-        items: normalizeQuoteItems([
-          ...prev.items,
-          {
-            ...createQuoteItemFromValuation(valuation),
-            cantidad: quantityToAdd,
-          },
-        ]),
-      };
+    const addToItems = (items) => addInventoryItemToLines(items, valuation, {
+      itemId: valuation.itemId,
+      quantity: quantityToAdd,
+      priceKey: "precioUnitarioEditable",
+      discountKey: "descuentoPorcentaje",
+      createLine: () => createQuoteItemFromValuation(valuation, { montoDecimales: documentDecimals }),
     });
+    const wasExisting = addToItems(quote.items).action === "incremented";
+
+    setQuote((prev) => ({
+      ...prev,
+      items: normalizeQuoteItems(addToItems(prev.items).items, { montoDecimales: documentDecimals }),
+    }));
     showAddFeedback(valuation.itemId, wasExisting);
   };
 
@@ -1080,22 +1054,6 @@ function NewQuotePage({ userId }) {
       buildValuationForItem(product, []);
     addItem(valuation, 1);
     return {key: product.id, label: product.nombre};
-  };
-
-  const handleCatalogSearchChange = (event) => {
-    const nextSearch = event.target.value;
-    setSearch(nextSearch);
-    setManualCatalogVisibleCount(MANUAL_CATALOG_PAGE_SIZE);
-  };
-
-  const showMoreCatalogItems = () => {
-    setManualCatalogVisibleCount((current) =>
-      Math.min(current + MANUAL_CATALOG_PAGE_SIZE, filteredValuations.length)
-    );
-  };
-
-  const showLessCatalogItems = () => {
-    setManualCatalogVisibleCount(MANUAL_CATALOG_PAGE_SIZE);
   };
 
   const getMatchedValuation = (suggestion) =>
@@ -1341,7 +1299,7 @@ function NewQuotePage({ userId }) {
       aiAvailability.applyError(err);
       console.error("Error al sugerir ítems de cotización:", err);
       setAssistantError(
-        err.message || "No se pudieron generar sugerencias en este momento."
+        userErrorMessage(err, "No se pudieron generar sugerencias en este momento.")
       );
     } finally {
       assistantRequestInFlightRef.current = false;
@@ -1426,7 +1384,8 @@ function NewQuotePage({ userId }) {
       if (field === "costoBase" || field === "margenDeseado") {
         const calculatedPrice = calculateSuggestedInternalPrice(
           next.costoBase,
-          next.margenDeseado
+          next.margenDeseado,
+          documentDecimals
         );
         next.precioInterno = calculatedPrice;
         next.confianzaPrecio = calculatedPrice
@@ -1458,7 +1417,8 @@ function NewQuotePage({ userId }) {
     const margenDeseado = parseDraftNumber(suggestedItemDraft.margenDeseado);
     const precioInterno = calculateSuggestedInternalPrice(
       suggestedItemDraft.costoBase,
-      suggestedItemDraft.margenDeseado
+      suggestedItemDraft.margenDeseado,
+      documentDecimals
     );
     const cantidadSugerida = parseDraftNumber(suggestedItemDraft.cantidadSugerida);
     const validation = getSuggestedItemValidation(suggestedItemDraft);
@@ -1564,7 +1524,7 @@ function NewQuotePage({ userId }) {
     } catch (err) {
       console.error("Error creando ítem sugerido:", err);
       setSuggestedItemError(
-        err.message || "No se pudo crear el ítem sugerido."
+        userErrorMessage(err, "No se pudo crear el ítem sugerido.")
       );
     } finally {
       setSuggestedItemSaving(false);
@@ -1603,14 +1563,14 @@ function NewQuotePage({ userId }) {
 
       const newItems = Array.from(pendingByItemId.values()).map(
         ({ valuation, quantity }) => ({
-          ...createQuoteItemFromValuation(valuation),
+          ...createQuoteItemFromValuation(valuation, { montoDecimales: documentDecimals }),
           cantidad: quantity,
         })
       );
 
       return {
         ...prev,
-        items: normalizeQuoteItems([...updatedItems, ...newItems]),
+        items: normalizeQuoteItems([...updatedItems, ...newItems], { montoDecimales: documentDecimals }),
       };
     });
 
@@ -1661,11 +1621,6 @@ function NewQuotePage({ userId }) {
     showItemFeedback("Ítem eliminado de la cotización.");
   };
 
-  const handleCatalogTypeChange = (event) => {
-    setCatalogTypeFilter(event.target.value);
-    setManualCatalogVisibleCount(MANUAL_CATALOG_PAGE_SIZE);
-  };
-
   const moveItem = (index, direction) => {
     setDirty(true);
     setQuote((prev) => {
@@ -1713,7 +1668,7 @@ function NewQuotePage({ userId }) {
     if (!quoteValidation.isValid) {
       return Object.values(quoteValidation.fieldErrors)[0];
     }
-    return totalsResult.error?.message || "";
+    return quoteTotalsErrorMessage(totalsResult);
   };
 
   const saveBlockedByClient = !isEditMode && (
@@ -1765,6 +1720,7 @@ function NewQuotePage({ userId }) {
     try {
       const payload = {
         ...quote,
+        montoDecimales: documentDecimals,
         estado: "borrador",
         empresa: quote.empresa || companyProfile || {},
         items: quote.items,
@@ -1815,7 +1771,7 @@ function NewQuotePage({ userId }) {
       });
     } catch (err) {
       console.error("Error al guardar cotización:", err);
-      const message = err.message || "No se pudo guardar la cotización.";
+      const message = userErrorMessage(err, "No se pudo guardar la cotización.");
       setError(message);
       sileo.error({
         title: "No se pudo guardar la cotización",
@@ -1827,6 +1783,8 @@ function NewQuotePage({ userId }) {
       setSavingEstado("");
     }
   };
+
+  const headerDate = isEditMode && quote.fecha ? formatDate(quote.fecha) : "";
 
   if (!userId) {
     return (
@@ -1863,31 +1821,53 @@ function NewQuotePage({ userId }) {
   }
 
   return (
-    <section className="quote-page quote-workspace">
-      <section className="quote-workspace__panel quote-workspace__client-project no-print">
-        <div>
-          <span className="quote-workspace__kicker">Cliente</span>
-          <ClientSelector businessId={userId} value={quote.clienteId} snapshot={quote.cliente} onChange={handleClientChange} onAvailabilityChange={setClientAvailability} />
+    <section className="po-workspace quote-page quote-workspace">
+      {/* Un solo h1 por pantalla: el de la barra superior (navigation.js). Por eso el título va en un <p>. */}
+      <header className="ui-doc-head no-print">
+        <div className="ui-doc-head__main">
+          <Link to="/cotizaciones" className="ui-doc-back">← Cotizaciones</Link>
+          <p className="ui-doc-head__title">{isEditMode ? getQuoteDisplayNumber(quote, "Editar cotización") : "Nueva cotización"}</p>
+          <UiStatusBadge variant={quote.estado === "borrador" ? "warning" : "neutral"}>{getQuoteStatusLabel(quote.estado)}</UiStatusBadge>
         </div>
-        <div className="quote-workspace__project">
-          <label className="quote-workspace__project-field">
-            <span className="quote-workspace__kicker">Asunto</span>
-            <input type="text" value={quote.proyectoNombre} onChange={(event) => updateField("proyectoNombre", event.target.value)} placeholder="Ej. Escalera zona de estanque" />
-            <small>Resume en pocas palabras qué se cotiza. Aparece como 'Proyecto' en el PDF.</small>
+        {(headerDate || quote.trabajoId) && (
+          <div className="ui-doc-head__side">
+            <div className="ui-doc-head__meta">
+              {headerDate && <span>{headerDate}</span>}
+              {quote.trabajoId && (
+                <span>
+                  Proyecto <Link to="/trabajos" state={{openWorkId: quote.trabajoId}} className="quote-head__link">{quote.trabajoNumero || quote.trabajoTitulo || quote.trabajoId}</Link>
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+      </header>
+
+      <section className="ui-step-card no-print" aria-labelledby="quote-client-title">
+        <h2 id="quote-client-title" className="ui-step-title">¿A quién le cotizas?</h2>
+        <QuoteClientSelector
+          businessId={userId}
+          onAvailabilityChange={setClientAvailability}
+          onChange={handleClientChange}
+          originalSnapshot={originalLinkedClientRef.current.snapshot && {...originalLinkedClientRef.current.snapshot, clienteId: originalLinkedClientRef.current.clienteId}}
+          snapshot={quote.cliente}
+          value={quote.clienteId}
+        />
+        <div className="purchase-document-grid purchase-data-grid">
+          <label className="purchase-field-wide">
+            <span>Asunto</span>
+            <input type="text" value={quote.proyectoNombre} onChange={(event) => updateField("proyectoNombre", event.target.value)} placeholder="Escribe el asunto de la cotización" />
+            <small className="quote-conditions__hint">Resume en pocas palabras qué se cotiza. Aparece como 'Asunto' en el PDF.</small>
           </label>
-          {quote.trabajoId && (
-            <Link to="/trabajos" state={{openWorkId: quote.trabajoId}} className="quote-workspace__project-link">
-              Proyecto {quote.trabajoNumero || quote.trabajoTitulo || quote.trabajoId}
-            </Link>
-          )}
         </div>
+        <p className="quote-client-note">La cotización guarda una copia histórica de los datos del cliente.</p>
       </section>
 
       {error && <p className="no-print" style={styles.errorText}>{error}</p>}
       {success && <p className="no-print" style={styles.successText}>{success}</p>}
 
-      <div className="quote-workspace__layout">
-        <main className="quote-workspace__main">
+      <div className="po-layout no-print">
+        <div className="po-main">
       {false && assistantOpen && (
       <QuoteCollapsibleSection
         title="Usar asistente para sugerir ítems"
@@ -2096,23 +2076,15 @@ function NewQuotePage({ userId }) {
       </QuoteCollapsibleSection>
       )}
 
-      <QuoteCatalogDialog
+      <InventoryCatalogDialog
         open={manualCatalogOpen}
         onClose={() => setManualCatalogOpen(false)}
         loading={loading}
-        totalCount={valuations.length}
-        filteredCount={filteredValuations.length}
-        valuations={visibleCatalogValuations}
-        itemQuantityById={itemQuantityById}
-        search={search}
-        onSearchChange={handleCatalogSearchChange}
-        typeFilter={catalogTypeFilter}
-        onTypeChange={handleCatalogTypeChange}
+        entries={catalogEntries}
+        addedQuantities={catalogAddedQuantities}
         onAdd={addItem}
-        catalogHasMoreItems={catalogHasMoreItems}
-        catalogShowingAllItems={catalogShowingAllItems}
-        onShowMore={showMoreCatalogItems}
-        onShowLess={showLessCatalogItems}
+        minQuantity={1}
+        priceLabel="Precio"
       />
 
       <div ref={addedItemsRef}>
@@ -2121,6 +2093,7 @@ function NewQuotePage({ userId }) {
           subtotal={totals.subtotal}
           feedback={itemFeedback}
           highlightedItemId={highlightedItemId}
+          moneyStep={lineMoneyStep}
           onOpenCatalog={() => setManualCatalogOpen(true)}
           onScanProduct={addScannedProduct}
           onUpdate={updateItem}
@@ -2132,107 +2105,38 @@ function NewQuotePage({ userId }) {
         />
       </div>
 
-      <QuoteCollapsibleSection
-        title="Qué incluye esta propuesta"
-        summary={quote.seccionesAlcance.length > 1
-          ? `${quote.seccionesAlcance.length} apartados`
-          : hasScopeContent(quote.seccionesAlcance)
-            ? "Con descripción"
-            : "Opcional"}
-        open={scopeOpen}
-        onToggle={() => setScopeOpen((current) => !current)}
-      >
-        <div className="quote-workspace__secondary-body">
-          <div className="quote-workspace__secondary-header">
-            <p style={styles.helpText}>Describe brevemente los trabajos, servicios o entregables incluidos en la cotización. Las secciones vacías no aparecerán en el PDF.</p>
-            <button type="button" onClick={addScopeSection} className="quote-workspace__button quote-workspace__button--secondary">+ Agregar apartado</button>
-          </div>
-          {isAdvancedScope ? (
-            <div style={styles.scopeList}>
-              {quote.seccionesAlcance.map((section, index) => (
-                <article key={section.id} style={styles.scopeCard}>
-                  <div style={styles.scopeHeader}>
-                    <input value={section.titulo} onChange={(event) => updateScopeSection(section.id, { titulo: event.target.value })} placeholder="Título del apartado" style={styles.input} />
-                    <div style={styles.scopeActions}>
-                      <button type="button" aria-label="Subir apartado" disabled={index === 0} onClick={() => moveScopeSection(index, -1)} style={styles.orderButton}>↑</button>
-                      <button type="button" aria-label="Bajar apartado" disabled={index === quote.seccionesAlcance.length - 1} onClick={() => moveScopeSection(index, 1)} style={styles.orderButton}>↓</button>
-                      <button type="button" onClick={() => removeScopeSection(section.id)} style={styles.removeButton}>Eliminar</button>
-                    </div>
-                  </div>
-                  <textarea rows={4} value={(section.lineas || []).join("\n")} onChange={(event) => updateScopeSection(section.id, { lineas: event.target.value.split(/\r?\n/) })} placeholder="Una línea descriptiva por renglón" style={styles.textarea} />
-                  {(quoteValidation.fieldErrors[`alcance.${index}.titulo`] || quoteValidation.fieldErrors[`alcance.${index}.lineas`]) && (
-                    <span style={styles.fieldErrorText}>{quoteValidation.fieldErrors[`alcance.${index}.titulo`] || quoteValidation.fieldErrors[`alcance.${index}.lineas`]}</span>
-                  )}
-                </article>
-              ))}
-            </div>
-          ) : (
-            <textarea
-              rows={4}
-              value={primaryScopeText}
-              onChange={(event) => updatePrimaryScopeText(event.target.value)}
-              placeholder="Ej: instalación completa, materiales incluidos, pruebas de funcionamiento..."
-              style={styles.textarea}
-            />
-          )}
+      <QuoteConditionsPanel
+        afectaIva={quote.afectaIva}
+        conditions={quote.condiciones}
+        fieldErrors={quoteValidation.fieldErrors}
+        isAdvancedScope={isAdvancedScope}
+        isEditMode={isEditMode}
+        onAddScopeSection={addScopeSection}
+        onCondition={updateCondition}
+        onField={updateField}
+        onMoveScopeSection={moveScopeSection}
+        onPlazoApply={applyPlazoRange}
+        onPrimaryScopeText={updatePrimaryScopeText}
+        onRemoveScopeSection={removeScopeSection}
+        onRestore={restoreDefaultConditions}
+        onUpdateScopeSection={updateScopeSection}
+        plazoRangeDraft={plazoRangeDraft}
+        plazoRangeOpen={plazoRangeOpen}
+        plazoRangeShowError={plazoRangeShowError}
+        plazoRangeValid={plazoRangeValid}
+        primaryScopeText={primaryScopeText}
+        restoreDisabled={!companyProfile}
+        scopeHasContent={hasScopeContent(quote.seccionesAlcance) || isAdvancedScope}
+        scopeOpen={scopeOpen}
+        scopeSections={quote.seccionesAlcance}
+        setPlazoRangeDraft={setPlazoRangeDraft}
+        setPlazoRangeOpen={setPlazoRangeOpen}
+        setScopeOpen={setScopeOpen}
+        taxName={quote.impuestoNombre || companyProfile?.impuestoPredeterminadoNombre || "IVA"}
+        taxRate={Number(resolveDocumentTaxRate(quote, companyProfile)) * 100}
+        validezDias={quote.validezDias}
+      />
         </div>
-      </QuoteCollapsibleSection>
-
-      <section className="quote-workspace__panel quote-conditions-primary no-print">
-        <header className="quote-workspace__panel-header">
-          <div>
-            <span className="quote-workspace__kicker">Condiciones comerciales</span>
-            <h2>Condiciones principales</h2>
-            <p>Los valores de Empresa se copiaron a este documento y puedes ajustarlos sólo para esta cotización.</p>
-          </div>
-        </header>
-        <div className="quote-conditions-primary__grid">
-          <Field label="Vigencia (días)"><input type="number" min="1" max="3650" value={quote.validezDias} onChange={(event) => updateField("validezDias", event.target.value)} style={styles.input} /></Field>
-          <Field label="Tratamiento tributario"><select value={quote.afectaIva === false ? "exenta" : "afecta"} onChange={(event) => updateField("afectaIva", event.target.value === "afecta")} style={styles.input}><option value="afecta">Afecta IVA 19%</option><option value="exenta">Exenta de IVA</option></select></Field>
-          <Field label="Forma de pago"><input value={quote.condiciones.formaPago} onChange={(event) => updateCondition("formaPago", event.target.value)} style={styles.input} /></Field>
-          <Field label="Plazo de ejecución o entrega">
-            <input value={quote.condiciones.plazoEntrega} onChange={(event) => updateCondition("plazoEntrega", event.target.value)} placeholder="Ej: 10 días hábiles" style={styles.input} />
-            {plazoRangeOpen ? (
-              <div>
-                <div style={styles.plazoRangeRow}>
-                  <input type="date" value={plazoRangeDraft.desde} onChange={(event) => setPlazoRangeDraft((current) => ({ ...current, desde: event.target.value }))} style={{ ...styles.input, width: "auto" }} />
-                  <span aria-hidden="true">→</span>
-                  <input type="date" min={plazoRangeDraft.desde || undefined} value={plazoRangeDraft.hasta} onChange={(event) => setPlazoRangeDraft((current) => ({ ...current, hasta: event.target.value }))} style={{ ...styles.input, width: "auto" }} />
-                  <button type="button" disabled={!plazoRangeValid} onClick={applyPlazoRange} className="quote-workspace__button quote-workspace__button--primary">Aceptar</button>
-                  <button type="button" onClick={() => setPlazoRangeOpen(false)} className="quote-workspace__button quote-workspace__button--secondary">Cancelar</button>
-                </div>
-                {plazoRangeShowError && (
-                  <span style={styles.fieldErrorText}>La fecha "hasta" no puede ser anterior a "desde".</span>
-                )}
-              </div>
-            ) : (
-              <button type="button" onClick={() => setPlazoRangeOpen(true)} className="quote-workspace__link-button">Definir con fecha desde/hasta</button>
-            )}
-          </Field>
-        </div>
-      </section>
-
-      <QuoteCollapsibleSection
-        title="Más condiciones"
-        summary={[quote.condiciones.garantia, quote.condiciones.alcanceGeografico, quote.condiciones.observaciones].filter(Boolean).length ? "Hay condiciones adicionales configuradas" : "Garantía, alcance, observaciones, exclusiones y términos"}
-        open={conditionsOpen}
-        onToggle={() => setConditionsOpen((current) => !current)}
-      >
-        <div className="quote-workspace__secondary-body">
-          <div className="quote-workspace__secondary-header">
-            <p style={styles.helpText}>Estos cambios afectan sólo a este documento.</p>
-            <button type="button" onClick={restoreDefaultConditions} className="quote-summary__clear">Restaurar valores de Empresa</button>
-          </div>
-          <div style={styles.conditionsGrid}>
-            <Field label="Garantía"><input value={quote.condiciones.garantia} onChange={(event) => updateCondition("garantia", event.target.value)} style={styles.input} /></Field>
-            <Field label="Alcance geográfico"><input value={quote.condiciones.alcanceGeografico} onChange={(event) => updateCondition("alcanceGeografico", event.target.value)} style={styles.input} /></Field>
-            <CompactConditionField label="Observaciones" value={quote.condiciones.observaciones} onChange={(value) => updateCondition("observaciones", value)} />
-            <CompactConditionField label="Exclusiones" value={quote.condiciones.exclusiones} onChange={(value) => updateCondition("exclusiones", value)} />
-            <CompactConditionField label="Otras condiciones" value={quote.condiciones.terminosAdicionales} onChange={(value) => updateCondition("terminosAdicionales", value)} />
-          </div>
-        </div>
-      </QuoteCollapsibleSection>
-        </main>
 
         <QuoteSummaryPanel
           currency={quote.moneda || companyProfile?.monedaCodigo || "CLP"}
@@ -2240,13 +2144,11 @@ function NewQuotePage({ userId }) {
           locale={quote.locale || companyProfile?.locale || "es-CL"}
           quote={quote}
           totals={totals}
-          totalsError={totalsResult.error?.message || ""}
+          totalsError={quoteTotalsErrorMessage(totalsResult)}
           taxName={quote.impuestoNombre || companyProfile?.impuestoPredeterminadoNombre || "IVA"}
-          taxRate={Number(quote.tasaIva ?? Number(companyProfile?.impuestoPredeterminadoTasa ?? 19) / 100) * 100}
+          taxRate={Number(resolveDocumentTaxRate(quote, companyProfile)) * 100}
           saving={saving}
           savingEstado={savingEstado}
-          quoteDate={isEditMode && quote.fecha ? formatDate(quote.fecha) : ""}
-          quoteNumber={isEditMode ? getQuoteDisplayNumber(quote) : ""}
           saveBlocked={saveBlocked}
           saveBlockedReason={saveBlocked ? saveBlockedReason : ""}
           onDiscountChange={(event) => updateField("descuento", event.target.value)}
@@ -2433,7 +2335,7 @@ function NewQuotePage({ userId }) {
                     <input
                       type="number"
                       min="0"
-                      step="1"
+                      step={moneyStep}
                       value={suggestedItemDraft.costoBase}
                       onBlur={() => markSuggestedItemFieldTouched("costoBase")}
                       onChange={(event) =>
@@ -2457,7 +2359,7 @@ function NewQuotePage({ userId }) {
                     <input
                       type="number"
                       min="0"
-                      step="1"
+                      step={moneyStep}
                       value={suggestedItemDraft.margenDeseado}
                       onBlur={() =>
                         markSuggestedItemFieldTouched("margenDeseado")
@@ -2586,37 +2488,6 @@ function Field({ label, helpText, helpTone = "default", wide = false, children }
       )}
       {children}
     </label>
-  );
-}
-
-function CompactConditionField({ label, onChange, value }) {
-  const hasContent = Boolean((value || "").trim());
-  const [expanded, setExpanded] = React.useState(hasContent);
-  const showTextarea = expanded || hasContent;
-  const rows = Math.min(8, Math.max(3, (value || "").split(/\r?\n/).length + 1));
-  return (
-    <Field label={label} wide>
-      {showTextarea ? (
-        <textarea
-          autoFocus={expanded && !hasContent}
-          onBlur={() => {
-            if (!(value || "").trim()) setExpanded(false);
-          }}
-          onChange={(event) => onChange(event.target.value)}
-          rows={rows}
-          style={styles.compactTextarea}
-          value={value || ""}
-        />
-      ) : (
-        <button
-          className="quote-workspace__button quote-workspace__button--secondary"
-          onClick={() => setExpanded(true)}
-          type="button"
-        >
-          + Agregar {label.toLowerCase()}
-        </button>
-      )}
-    </Field>
   );
 }
 

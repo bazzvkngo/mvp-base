@@ -44,11 +44,56 @@ const {
   reactivarClienteHandler,
 } = require("./clientPersistence");
 const {
+  actualizarVehiculoHandler,
+  cambiarPropietarioVehiculoHandler,
+  crearVehiculoHandler,
+  listarClientesSeleccionablesTallerHandler,
+} = require("./vehiclePersistence");
+const {
+  iniciarServicioOTHandler,
+  completarServicioOTHandler,
+  reabrirServicioOTHandler,
+  definirRepuestosServicioOTHandler,
+  finalizarReparacionOTHandler,
+  registrarEntregaOTHandler,
+  cancelarOTHandler,
+  obtenerEventosCierreOTHandler,
+  obtenerHistorialOTHandler,
+  enviarOTAprobacionHandler,
+  aprobarOTHandler,
+  rechazarOTHandler,
+  revalidarDisponibilidadOTHandler,
+  obtenerResumenAprobacionOTHandler,
+  actualizarDiagnosticoHandler,
+  actualizarProductoOTHandler,
+  actualizarServicioOTHandler,
+  agregarProductoOTHandler,
+  completarDiagnosticoHandler,
+  crearOrdenTrabajoHandler,
+  crearServicioOTHandler,
+  eliminarServicioOTHandler,
+  eliminarProductoOTHandler,
+  listarCatalogoTallerHandler,
+  listarPersonasAsignablesTallerHandler,
+  registrarDiagnosticoHandler,
+  registrarRecepcionOrdenTrabajoHandler,
+} = require("./workOrderPersistence");
+const {
+  activarPlazaTallerHandler,
+  actualizarPlazaTallerHandler,
+  asignarPlazaOTHandler,
+  crearPlazaTallerHandler,
+  inactivarPlazaTallerHandler,
+  liberarPlazaOTHandler,
+} = require("./workOrderPlazas");
+const {
   actualizarProveedorHandler,
   archivarProveedorHandler,
   crearProveedorHandler,
   reactivarProveedorHandler,
 } = require("./providerPersistence");
+const {eliminarProveedorHandler} = require("./providerDeletion");
+const {eliminarOrdenCompraHandler} = require("./purchaseOrderDeletion");
 const {
   actualizarOrdenCompraBorradorHandler,
   cancelarOrdenCompraHandler,
@@ -99,7 +144,9 @@ const {
   respondPublicQuoteProposalHandler,
 } = require("./quotePublicProposal");
 const {transitionQuoteStatusHandler} = require("./quoteLifecycle");
+const {deleteQuoteDraftHandler} = require("./quoteDeletion");
 const {normalizeBusinessVerificationState} = require("./businessOperations");
+const {formatDateText, formatMoneyText} = require("./localization");
 const {
   createAdditionalBusinessHandler,
   createFirstBusinessHandler,
@@ -158,6 +205,7 @@ const {
   agregarNotaTrabajoHandler,
   agregarSubtareaTrabajoHandler,
   anularAdicionalTrabajoHandler,
+  anularDocumentacionTareaTrabajoHandler,
   anularGastoTrabajoHandler,
   anularHorasHombreTrabajoHandler,
   asignarTareaTrabajoHandler,
@@ -2091,6 +2139,23 @@ exports.duplicateQuoteAsDraft = onCall(
     })
 );
 
+exports.deleteQuoteDraft = onCall(
+  {
+    maxInstances: 20,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    deleteQuoteDraftHandler({
+      request,
+      db,
+      FieldValue,
+      HttpsError,
+      requireBusinessAccess: requireOperationalBusinessAccess,
+    })
+);
+
 const purchaseOrderPersistenceDependencies = {
   db,
   FieldValue,
@@ -2157,6 +2222,18 @@ exports.cancelarOrdenCompra = onCall(
   },
   async (request) =>
     cancelarOrdenCompraHandler(request, purchaseOrderPersistenceDependencies)
+);
+
+// Eliminación permanente de una orden nunca enviada (SPEC 005, enmienda 2026-11-06).
+exports.eliminarOrdenCompra = onCall(
+  {
+    maxInstances: 20,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    eliminarOrdenCompraHandler(request, purchaseOrderPersistenceDependencies)
 );
 
 exports.registrarRespuestaProveedorOrdenCompra = onCall(
@@ -2317,6 +2394,168 @@ exports.reactivarCliente = onCall(
     reactivarClienteHandler(request, clientPersistenceDependencies)
 );
 
+const vehiclePersistenceDependencies = {
+  db,
+  HttpsError,
+  FieldValue,
+  requireBusinessAccess: requireOperationalBusinessAccess,
+};
+const workOrderPersistenceDependencies = {...vehiclePersistenceDependencies, auth: adminAuth};
+const vehicleCallableOptions = {
+  maxInstances: 20,
+  memory: "256MiB",
+  region: DEFAULT_FUNCTION_REGION,
+  timeoutSeconds: 30,
+};
+exports.enviarOTAprobacion = onCall(vehicleCallableOptions, (request) =>
+  enviarOTAprobacionHandler(request, workOrderPersistenceDependencies));
+exports.aprobarOT = onCall(vehicleCallableOptions, (request) =>
+  aprobarOTHandler(request, workOrderPersistenceDependencies));
+exports.rechazarOT = onCall(vehicleCallableOptions, (request) =>
+  rechazarOTHandler(request, workOrderPersistenceDependencies));
+exports.revalidarDisponibilidadOT = onCall(vehicleCallableOptions, (request) =>
+  revalidarDisponibilidadOTHandler(request, workOrderPersistenceDependencies));
+exports.obtenerResumenAprobacionOT = onCall(vehicleCallableOptions, (request) =>
+  obtenerResumenAprobacionOTHandler(request, workOrderPersistenceDependencies));
+
+exports.crearVehiculo = onCall(vehicleCallableOptions, async (request) =>
+  crearVehiculoHandler(request, vehiclePersistenceDependencies)
+);
+exports.listarClientesSeleccionablesTaller = onCall(vehicleCallableOptions, async (request) =>
+  listarClientesSeleccionablesTallerHandler(request, vehiclePersistenceDependencies)
+);
+
+exports.actualizarVehiculo = onCall(vehicleCallableOptions, async (request) =>
+  actualizarVehiculoHandler(request, vehiclePersistenceDependencies)
+);
+
+exports.cambiarPropietarioVehiculo = onCall(
+  vehicleCallableOptions,
+  async (request) =>
+    cambiarPropietarioVehiculoHandler(request, vehiclePersistenceDependencies)
+);
+
+exports.crearOrdenTrabajo = onCall(vehicleCallableOptions, async (request) =>
+  crearOrdenTrabajoHandler(request, workOrderPersistenceDependencies)
+);
+
+exports.registrarRecepcionOrdenTrabajo = onCall(
+  vehicleCallableOptions,
+  async (request) =>
+    registrarRecepcionOrdenTrabajoHandler(request, workOrderPersistenceDependencies)
+);
+
+exports.listarPersonasAsignablesTaller = onCall(vehicleCallableOptions, async (request) =>
+  listarPersonasAsignablesTallerHandler(request, workOrderPersistenceDependencies)
+);
+exports.listarCatalogoTaller = onCall(vehicleCallableOptions, async (request) =>
+  listarCatalogoTallerHandler(request, workOrderPersistenceDependencies)
+);
+
+exports.registrarDiagnostico = onCall(vehicleCallableOptions, async (request) =>
+  registrarDiagnosticoHandler(request, workOrderPersistenceDependencies)
+);
+
+exports.actualizarDiagnostico = onCall(vehicleCallableOptions, async (request) =>
+  actualizarDiagnosticoHandler(request, workOrderPersistenceDependencies)
+);
+
+exports.completarDiagnostico = onCall(vehicleCallableOptions, async (request) =>
+  completarDiagnosticoHandler(request, workOrderPersistenceDependencies)
+);
+
+exports.crearServicioOT = onCall(vehicleCallableOptions, async (request) =>
+  crearServicioOTHandler(request, workOrderPersistenceDependencies)
+);
+exports.actualizarServicioOT = onCall(vehicleCallableOptions, async (request) =>
+  actualizarServicioOTHandler(request, workOrderPersistenceDependencies)
+);
+exports.eliminarServicioOT = onCall(vehicleCallableOptions, async (request) =>
+  eliminarServicioOTHandler(request, workOrderPersistenceDependencies)
+);
+exports.iniciarServicioOT = onCall(vehicleCallableOptions, async (request) =>
+  iniciarServicioOTHandler(request, workOrderPersistenceDependencies)
+);
+exports.completarServicioOT = onCall(vehicleCallableOptions, async (request) =>
+  completarServicioOTHandler(request, workOrderPersistenceDependencies)
+);
+exports.reabrirServicioOT = onCall(vehicleCallableOptions, async (request) =>
+  reabrirServicioOTHandler(request, workOrderPersistenceDependencies)
+);
+exports.definirRepuestosServicioOT = onCall(vehicleCallableOptions, async (request) =>
+  definirRepuestosServicioOTHandler(request, workOrderPersistenceDependencies)
+);
+exports.finalizarReparacionOT = onCall(vehicleCallableOptions, (request) =>
+  finalizarReparacionOTHandler(request, workOrderPersistenceDependencies));
+exports.registrarEntregaOT = onCall(vehicleCallableOptions, (request) =>
+  registrarEntregaOTHandler(request, workOrderPersistenceDependencies));
+exports.cancelarOT = onCall(vehicleCallableOptions, (request) =>
+  cancelarOTHandler(request, workOrderPersistenceDependencies));
+exports.obtenerEventosCierreOT = onCall(vehicleCallableOptions, (request) =>
+  obtenerEventosCierreOTHandler(request, workOrderPersistenceDependencies));
+exports.obtenerHistorialOT = onCall(vehicleCallableOptions, (request) =>
+  obtenerHistorialOTHandler(request, workOrderPersistenceDependencies));
+
+// Fotos de recepción del Taller: el archivo se valida y se guarda solo desde el servidor.
+const {fotosRecepcionOTHandler} = require("./workOrderReceptionPhotos");
+exports.fotosRecepcionOT = onCall(
+  {maxInstances: 10, concurrency: 4, memory: "256MiB", timeoutSeconds: 60, region: DEFAULT_FUNCTION_REGION},
+  (request) => fotosRecepcionOTHandler(request, {...workOrderPersistenceDependencies, bucket: adminStorageBucket})
+);
+// Fotos «antes» y «después» de un trabajo (opcionales), con el mismo tratamiento que las de recepción.
+const {fotosServicioOTHandler} = require("./workOrderServicePhotos");
+exports.fotosServicioOT = onCall(
+  {maxInstances: 10, concurrency: 4, memory: "256MiB", timeoutSeconds: 60, region: DEFAULT_FUNCTION_REGION},
+  (request) => fotosServicioOTHandler(request, {...workOrderPersistenceDependencies, bucket: adminStorageBucket})
+);
+// Entrega con trazabilidad: fotos selladas, acta de quien retira y contacto rápido con el cliente.
+const {entregaOTHandler} = require("./workOrderDelivery");
+exports.entregaOT = onCall(
+  {maxInstances: 10, concurrency: 4, memory: "256MiB", timeoutSeconds: 60, region: DEFAULT_FUNCTION_REGION},
+  (request) => entregaOTHandler(request, {...workOrderPersistenceDependencies, bucket: adminStorageBucket})
+);
+// Hallazgos de la ejecución: observaciones con foto obligatoria; solo Owner/Administrador las convierten en trabajo.
+const {hallazgosOTHandler} = require("./workOrderFindings");
+exports.hallazgosOT = onCall(
+  {maxInstances: 10, concurrency: 4, memory: "256MiB", timeoutSeconds: 60, region: DEFAULT_FUNCTION_REGION},
+  (request) => hallazgosOTHandler(request, {...workOrderPersistenceDependencies, bucket: adminStorageBucket})
+);
+// Seguimiento público: enlace de la OT para el personal y consultas públicas (sin sesión) por enlace o patente + RUT.
+const {
+  buscarSeguimientoTallerHandler, consultarSeguimientoTallerHandler, seguimientoOTHandler,
+} = require("./workOrderTracking");
+exports.seguimientoOT = onCall(vehicleCallableOptions, (request) =>
+  seguimientoOTHandler(request, workOrderPersistenceDependencies));
+exports.consultarSeguimientoTaller = onCall(
+  {maxInstances: 10, concurrency: 20, memory: "256MiB", timeoutSeconds: 30, region: DEFAULT_FUNCTION_REGION},
+  (request) => consultarSeguimientoTallerHandler(request, {db, FieldValue, HttpsError})
+);
+exports.buscarSeguimientoTaller = onCall(
+  {maxInstances: 5, concurrency: 20, memory: "256MiB", timeoutSeconds: 30, region: DEFAULT_FUNCTION_REGION},
+  (request) => buscarSeguimientoTallerHandler(request, {db, FieldValue, HttpsError})
+);
+exports.agregarProductoOT = onCall(vehicleCallableOptions, async (request) =>
+  agregarProductoOTHandler(request, workOrderPersistenceDependencies)
+);
+exports.actualizarProductoOT = onCall(vehicleCallableOptions, async (request) =>
+  actualizarProductoOTHandler(request, workOrderPersistenceDependencies)
+);
+exports.eliminarProductoOT = onCall(vehicleCallableOptions, async (request) =>
+  eliminarProductoOTHandler(request, workOrderPersistenceDependencies)
+);
+exports.crearPlazaTaller = onCall(vehicleCallableOptions, (request) =>
+  crearPlazaTallerHandler(request, workOrderPersistenceDependencies));
+exports.actualizarPlazaTaller = onCall(vehicleCallableOptions, (request) =>
+  actualizarPlazaTallerHandler(request, workOrderPersistenceDependencies));
+exports.activarPlazaTaller = onCall(vehicleCallableOptions, (request) =>
+  activarPlazaTallerHandler(request, workOrderPersistenceDependencies));
+exports.inactivarPlazaTaller = onCall(vehicleCallableOptions, (request) =>
+  inactivarPlazaTallerHandler(request, workOrderPersistenceDependencies));
+exports.asignarPlazaOT = onCall(vehicleCallableOptions, (request) =>
+  asignarPlazaOTHandler(request, workOrderPersistenceDependencies));
+exports.liberarPlazaOT = onCall(vehicleCallableOptions, (request) =>
+  liberarPlazaOTHandler(request, workOrderPersistenceDependencies));
+
 const workPersistenceDependencies = {
   bucket: adminStorageBucket,
   db,
@@ -2375,6 +2614,10 @@ exports.asignarTareaTrabajo = onCall(workCallableOptions, async (request) =>
 
 exports.documentarTareaTrabajo = onCall(workCallableOptions, async (request) =>
   documentarTareaTrabajoHandler(request, workPersistenceDependencies)
+);
+
+exports.anularDocumentacionTareaTrabajo = onCall(workCallableOptions, async (request) =>
+  anularDocumentacionTareaTrabajoHandler(request, workPersistenceDependencies)
 );
 
 exports.registrarGastoTrabajo = onCall(workCallableOptions, async (request) =>
@@ -2472,12 +2715,38 @@ exports.reactivarProveedor = onCall(
     reactivarProveedorHandler(request, providerPersistenceDependencies)
 );
 
+exports.eliminarProveedor = onCall(
+  {
+    maxInstances: 20,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    eliminarProveedorHandler(request, providerPersistenceDependencies)
+);
+
 async function getCompanyProfileForQuote(businessRef, quote) {
   const historical = getHistoricalCompanySnapshot(quote);
   if (hasCompanyEmailData(historical)) {
     return historical;
   }
 
+  const [businessSnapshot, profileSnapshot] = await Promise.all([
+    businessRef.get(),
+    businessRef.collection("empresa").doc("perfil").get(),
+  ]);
+
+  return buildAuthoritativeCompanySnapshot({
+    businessId: businessRef.id,
+    business: businessSnapshot.data() || {},
+    profile: profileSnapshot.data() || {},
+  });
+}
+
+// Perfil vigente de la empresa (no el snapshot del documento): de aquí salen
+// el correo de contacto para Reply-To y el nombre del remitente.
+async function getLiveCompanyProfile(businessRef) {
   const [businessSnapshot, profileSnapshot] = await Promise.all([
     businessRef.get(),
     businessRef.collection("empresa").doc("perfil").get(),
@@ -2509,12 +2778,10 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
-function formatCurrencyClp(value) {
-  return Number(value || 0).toLocaleString("es-CL", {
-    style: "currency",
-    currency: "CLP",
-    minimumFractionDigits: 0,
-  });
+// Total de la cotización en la moneda y el formato que la propia cotización guardó
+// (los de la empresa al crearla). Sin ellos o en CLP da el texto de siempre.
+function formatQuoteTotal(quote = {}) {
+  return formatMoneyText(quote.total, quote.moneda, quote.locale);
 }
 
 function sanitizeAttachmentFileName(value) {
@@ -2576,7 +2843,8 @@ function normalizePdfAttachment(value) {
   };
 }
 
-function formatQuoteDate(value) {
+// `locale` es el del documento o, si no lo trae, el de la empresa (formatQuoteLocale); sin ninguno, es-CL.
+function formatQuoteDate(value, locale) {
   if (!value) return "-";
 
   const date =
@@ -2588,11 +2856,11 @@ function formatQuoteDate(value) {
 
   if (Number.isNaN(date.getTime())) return String(value);
 
-  return date.toLocaleDateString("es-CL", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
+  return formatDateText(date, locale);
+}
+
+function formatQuoteLocale(quote) {
+  return quote?.locale || quote?.empresa?.locale;
 }
 
 function joinNonEmpty(parts, separator = " / ") {
@@ -2616,8 +2884,8 @@ function buildPlainQuoteEmail({ quote, mensaje, proposalUrl }) {
     mensaje,
     "",
     `Cotizacion: ${quote.numero || quote.id || "-"}`,
-    `Fecha: ${formatQuoteDate(quote.fecha)}`,
-    `Total: ${formatCurrencyClp(quote.total)}`,
+    `Fecha: ${formatQuoteDate(quote.fecha, formatQuoteLocale(quote))}`,
+    `Total: ${formatQuoteTotal(quote)}`,
     `Validez: ${validityDays} dias`,
     "",
     "El detalle de los productos, servicios, condiciones comerciales y observaciones se encuentra en el documento PDF adjunto.",
@@ -2658,9 +2926,9 @@ function buildQuoteEmailHtml({ quote, mensaje, proposalUrl }) {
             <p style="margin:0 0 8px;font-size:16px;"><strong>Cotizaci&oacute;n ${escapeHtml(
               quote.numero || quote.id || "-"
             )}</strong></p>
-            <p style="margin:0 0 6px;color:#475569;">Fecha: ${escapeHtml(formatQuoteDate(quote.fecha))}</p>
+            <p style="margin:0 0 6px;color:#475569;">Fecha: ${escapeHtml(formatQuoteDate(quote.fecha, formatQuoteLocale(quote)))}</p>
             <p style="margin:0 0 6px;color:#475569;">Total: <strong style="color:#111827;">${escapeHtml(
-              formatCurrencyClp(quote.total)
+              formatQuoteTotal(quote)
             )}</strong></p>
             <p style="margin:0;color:#475569;">Validez: ${escapeHtml(validityDays)} d&iacute;as</p>
           </div>
@@ -2699,6 +2967,7 @@ async function sendEmailWithResend({
   text,
   attachments = [],
   replyTo = "",
+  bcc = [],
 }) {
   const resend = new Resend(apiKey);
   const { data, error } = await resend.emails.send({
@@ -2709,6 +2978,7 @@ async function sendEmailWithResend({
     text,
     attachments,
     ...(replyTo ? {replyTo} : {}),
+    ...(bcc.length ? {bcc} : {}),
   });
 
   if (error) {
@@ -2738,6 +3008,7 @@ exports.sendQuoteEmail = onCall(
       buildQuoteEmissionPatch,
       createPublicQuoteToken,
       getCompanyProfileForQuote,
+      getLiveCompanyProfile,
       getPublicBaseUrl,
       getQuoteEmailSender,
       getResendApiKey,
@@ -2769,6 +3040,7 @@ exports.sendPurchaseOrderEmail = onCall(
       escapeHtml,
       getCompanyProfile: getCompanyProfileForQuote,
       getEmailSender: getQuoteEmailSender,
+      getLiveCompanyProfile,
       getResendApiKey,
       isEmulatorEnvironment,
       normalizePdfAttachment,
@@ -3889,6 +4161,67 @@ const marketReferenceDependencies = {
   isEmulatorEnvironment,
   requireBusinessAccess: requireOperationalBusinessAccess,
 };
+const {guardarPacienteVeterinarioHandler} = require("./veterinaryPatientPersistence");
+
+exports.guardarPacienteVeterinario = onCall(
+  {maxInstances: 10, region: DEFAULT_FUNCTION_REGION},
+  (request) => guardarPacienteVeterinarioHandler(request, {
+    db,
+    HttpsError,
+    FieldValue,
+    requireBusinessAccess: requireOperationalBusinessAccess,
+  })
+);
+
+const {guardarCitaVeterinariaHandler} = require("./veterinaryAppointmentPersistence");
+
+exports.guardarCitaVeterinaria = onCall(
+  {maxInstances: 10, region: DEFAULT_FUNCTION_REGION},
+  (request) => guardarCitaVeterinariaHandler(request, {
+    db,
+    HttpsError,
+    FieldValue,
+    requireBusinessAccess: requireOperationalBusinessAccess,
+  })
+);
+
+const {guardarAtencionVeterinariaHandler} = require("./veterinaryAttentionPersistence");
+
+exports.guardarAtencionVeterinaria = onCall(
+  {maxInstances: 10, region: DEFAULT_FUNCTION_REGION},
+  (request) => guardarAtencionVeterinariaHandler(request, {
+    db,
+    HttpsError,
+    FieldValue,
+    requireBusinessAccess: requireOperationalBusinessAccess,
+  })
+);
+
+const {guardarRecepcionVeterinariaHandler} = require("./veterinaryReceptionPersistence");
+
+exports.guardarRecepcionVeterinaria = onCall(
+  {maxInstances: 10, region: DEFAULT_FUNCTION_REGION},
+  (request) => guardarRecepcionVeterinariaHandler(request, {
+    db,
+    HttpsError,
+    FieldValue,
+    requireBusinessAccess: requireOperationalBusinessAccess,
+  })
+);
+
+const {fotosAtencionVeterinariaHandler} = require("./veterinaryAttentionPhotos");
+
+exports.fotosAtencionVeterinaria = onCall(
+  {maxInstances: 10, concurrency: 4, memory: "256MiB", timeoutSeconds: 60, region: DEFAULT_FUNCTION_REGION},
+  (request) => fotosAtencionVeterinariaHandler(request, {
+    db,
+    bucket: adminStorageBucket,
+    HttpsError,
+    FieldValue,
+    requireBusinessAccess: requireOperationalBusinessAccess,
+  })
+);
+
 const businessOnboardingDependencies = {
   auth: adminAuth,
   db,

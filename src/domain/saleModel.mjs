@@ -1,5 +1,7 @@
 import {incrementScannedItem} from "./barcode.mjs";
 import {adaptStoredFiscalIdentifier} from "./fiscalIdentifier.mjs";
+import {addInventoryItemToLines} from "./inventoryLineAdd.mjs";
+import {hasMaxDecimals, isMoneyAmount, mulRound, sanitizeDecimals, sumMoney} from "./money.mjs";
 
 export const SALE_MODEL_VERSION = 1;
 export const SALE_VAT_RATE = 0.19;
@@ -72,42 +74,72 @@ function number(value, label, {minimum = 0, maximum = Infinity} = {}) {
   return result;
 }
 
-function safeMoney(...values) {
-  if (values.some((value) => !Number.isFinite(value) || !Number.isSafeInteger(value))) {
+// SPEC 036: `decimals` son los decimales de cálculo del documento (`montoDecimales`; 0 = entero, como siempre). Con 0
+// la validación es la de antes (un entero seguro); con decimales admite hasta esa cantidad de decimales.
+function safeMoney(decimals, ...values) {
+  if (values.some((value) => !isMoneyAmount(value, decimals))) {
     throw new Error(MAXIMUM_AMOUNT_MESSAGE);
   }
 }
 
-export function calculateSaleLine(raw = {}, index = 0) {
+function assertAmountDecimals(value, decimals, label) {
+  if (decimals > 0 && !hasMaxDecimals(value, decimals)) {
+    throw new Error(`${label} admite hasta ${decimals} decimales.`);
+  }
+}
+
+export function calculateSaleLine(raw = {}, index = 0, montoDecimales = 0) {
+  const decimals = sanitizeDecimals(montoDecimales);
   const cantidad = number(raw.cantidad, `Ítem ${index + 1}: cantidad`, {minimum: Number.MIN_VALUE});
   const precioUnitario = number(raw.precioUnitario, `Ítem ${index + 1}: precio unitario`);
+  assertAmountDecimals(precioUnitario, decimals, `Ítem ${index + 1}: precio unitario`);
   const descuentoPct = number(raw.descuentoPct ?? 0, `Ítem ${index + 1}: descuento`, {maximum: 100});
-  const subtotalLinea = Math.round(cantidad * precioUnitario);
-  const descuentoLinea = Math.round((subtotalLinea * descuentoPct) / 100);
-  const totalLinea = subtotalLinea - descuentoLinea;
-  safeMoney(subtotalLinea, descuentoLinea, totalLinea);
+  const subtotalLinea = mulRound(cantidad, precioUnitario, decimals);
+  const descuentoLinea = mulRound(subtotalLinea, descuentoPct, decimals, 100);
+  const totalLinea = sumMoney([subtotalLinea, -descuentoLinea], decimals);
+  safeMoney(decimals, subtotalLinea, descuentoLinea, totalLinea);
   return {cantidad, precioUnitario, descuentoPct, subtotalLinea, descuentoLinea, totalLinea};
+}
+
+const EMPTY_SALE_TOTALS = {subtotal: 0, descuentoItems: 0, descuento: 0, descuentoTotal: 0, neto: 0, afectaIva: true, tasaIva: SALE_VAT_RATE, iva: 0, total: 0};
+
+// Totales del borrador para el resumen. Sin ítems (o con un cálculo inválido) devuelve ceros, pero con la misma tasa que
+// tendría con ítems (`taxRate`: la del documento o la del país del negocio); así la etiqueta del impuesto no cambia
+// al agregar la primera línea. Con la venta exenta la tasa es 0.
+export function calculateSaleDraftTotals(draft, {taxRate = SALE_VAT_RATE, montoDecimales = 0} = {}) {
+  const afectaIva = draft?.afectaIva !== false;
+  const tasaIva = afectaIva ? taxRate : 0;
+  const items = Array.isArray(draft?.items) ? draft.items : [];
+  try {
+    return items.length
+      ? calculateSaleTotals(items, draft.descuento, {afectaIva: draft.afectaIva, tasaIva: taxRate, montoDecimales})
+      : {...EMPTY_SALE_TOTALS, descuento: Number(draft?.descuento || 0), afectaIva, tasaIva};
+  } catch {
+    return {...EMPTY_SALE_TOTALS, afectaIva, tasaIva};
+  }
 }
 
 export function calculateSaleTotals(
   items = [],
   descuentoGeneral = 0,
-  {afectaIva = true, tasaIva = SALE_VAT_RATE} = {}
+  {afectaIva = true, tasaIva = SALE_VAT_RATE, montoDecimales = 0} = {}
 ) {
   if (!Array.isArray(items) || !items.length) throw new Error("Agrega al menos un ítem a la venta.");
-  const lines = items.map(calculateSaleLine);
-  const subtotal = lines.reduce((sum, line) => sum + line.subtotalLinea, 0);
-  const descuentoItems = lines.reduce((sum, line) => sum + line.descuentoLinea, 0);
+  const decimals = sanitizeDecimals(montoDecimales);
+  const lines = items.map((item, index) => calculateSaleLine(item, index, decimals));
+  const subtotal = sumMoney(lines.map((line) => line.subtotalLinea), decimals);
+  const descuentoItems = sumMoney(lines.map((line) => line.descuentoLinea), decimals);
   const descuento = number(descuentoGeneral ?? 0, "El descuento general");
-  if (descuento > subtotal - descuentoItems) {
+  assertAmountDecimals(descuento, decimals, "El descuento general");
+  if (descuento > sumMoney([subtotal, -descuentoItems], decimals)) {
     throw new Error("El descuento general no puede superar el monto disponible.");
   }
   const effectiveRate = afectaIva ? number(tasaIva, "La tasa de IVA", {maximum: 1}) : 0;
-  const descuentoTotal = descuentoItems + descuento;
-  const neto = subtotal - descuentoTotal;
-  const iva = afectaIva ? Math.round(neto * effectiveRate) : 0;
-  const total = neto + iva;
-  safeMoney(subtotal, descuentoItems, descuento, descuentoTotal, neto, iva, total);
+  const descuentoTotal = sumMoney([descuentoItems, descuento], decimals);
+  const neto = sumMoney([subtotal, -descuentoTotal], decimals);
+  const iva = afectaIva ? mulRound(neto, effectiveRate, decimals) : 0;
+  const total = sumMoney([neto, iva], decimals);
+  safeMoney(decimals, subtotal, descuentoItems, descuento, descuentoTotal, neto, iva, total);
   return {
     subtotal,
     descuentoItems,
@@ -126,7 +158,10 @@ export function buildSaleMutationPayload(raw = {}) {
   if (raw.items.length > 200) throw new Error("La venta admite hasta 200 ítems.");
   const descuento = number(raw.descuento ?? 0, "El descuento general");
   const afectaIva = raw.afectaIva !== false;
-  calculateSaleTotals(raw.items, descuento, {afectaIva});
+  // Decimales de cálculo del documento (los pone quien arma el borrador; el servidor decide los suyos con el
+  // snapshot del documento y no lee este valor).
+  const montoDecimales = sanitizeDecimals(raw.montoDecimales);
+  calculateSaleTotals(raw.items, descuento, {afectaIva, montoDecimales});
   return {
     clienteId: id(raw.clienteId, "El cliente"),
     // SPEC 020 §16: sólo se acepta cuando ya viene fijado (p. ej. desde
@@ -144,7 +179,7 @@ export function buildSaleMutationPayload(raw = {}) {
     condicionesPago: text(raw.condicionesPago, 2000),
     observaciones: text(raw.observaciones, 4000),
     items: raw.items.map((item, index) => {
-      const values = calculateSaleLine(item, index);
+      const values = calculateSaleLine(item, index, montoDecimales);
       return {
         lineaId: id(item.lineaId || `linea-${index + 1}`, "La línea"),
         itemId: id(item.itemId, `Ítem ${index + 1}`, {optional: Boolean(raw.cotizacionId) && item.tipoItem !== "producto"}),
@@ -176,7 +211,7 @@ const clientSnapshot = (raw = {}) => ({
   comunaNombre: text(raw.comunaNombre, 160),
 });
 
-function storedLine(raw = {}, index = 0) {
+function storedLine(raw = {}, index = 0, montoDecimales = 0) {
   const snapshot = raw.inventarioSnapshot || {};
   const tipo = text(raw.tipoItem || snapshot.tipoItem, 20);
   return {
@@ -189,16 +224,21 @@ function storedLine(raw = {}, index = 0) {
     unidad: text(raw.unidad || snapshot.unidad, 80) || "unidad",
     cantidadCotizada: raw.cantidadCotizada == null ? null : Number(raw.cantidadCotizada),
     origenAdicionalId: text(raw.origenAdicionalId, 160),
-    ...calculateSaleLine(raw, index),
+    ...calculateSaleLine(raw, index, montoDecimales),
   };
 }
 
 export function adaptStoredSale(raw = {}) {
-  const items = (Array.isArray(raw.items) ? raw.items : []).map(storedLine);
   const localization = adaptDocumentLocalization(raw);
+  const items = (Array.isArray(raw.items) ? raw.items : [])
+    .map((line, index) => storedLine(line, index, localization.montoDecimales));
   const afectaIva = raw.afectaIva !== false;
   const totals = items.length
-    ? calculateSaleTotals(items, raw.descuento ?? 0, {afectaIva, tasaIva: localization.tasaIva})
+    ? calculateSaleTotals(items, raw.descuento ?? 0, {
+        afectaIva,
+        tasaIva: localization.tasaIva,
+        montoDecimales: localization.montoDecimales,
+      })
     : {
         subtotal: 0,
         descuentoItems: 0,
@@ -256,6 +296,20 @@ export function resolveSaleScan(items, itemId, createItem) {
     return {action: "added", items: [...merged, result[result.length - 1]]};
   }
   return {action: "incremented", items: merged};
+}
+
+// Agrega un ítem del inventario a la venta (selector "Agregar desde inventario" y "Escanear producto"). La regla de
+// reagrupado y el tope por stock (solo Venta lo activa) viven en inventoryLineAdd.mjs, compartidos con Cotización y Compra.
+// Devuelve {action: "added" | "incremented" | "stock_limit" | "invalid", items, available, limited}.
+export function addInventoryItemToSale(items, inventoryItem, {quantity = 1, createLine} = {}) {
+  return addInventoryItemToLines(items, inventoryItem, {
+    itemId: inventoryItem?.id,
+    quantity,
+    createLine,
+    priceKey: "precioUnitario",
+    discountKey: "descuentoPct",
+    stockLimit: true,
+  });
 }
 
 export function canManageSales(role) {

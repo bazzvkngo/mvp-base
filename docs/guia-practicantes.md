@@ -49,7 +49,7 @@ Lo marcado `[CONFIRMAR]` se verifica al cortar la rama. Si algo de esta guía no
 
 ### Cómo registrar un módulo vertical
 
-El interruptor de módulos por negocio ya existe (SPEC 031). Un módulo vertical vive en su propio registro, separado de los módulos del Core, y el superadmin lo habilita negocio por negocio. Para registrar el tuyo:
+El interruptor de módulos por negocio ya existe (SPEC 031). Un módulo vertical vive en su propio registro, separado de los módulos del Core, y se habilita solo según el rubro del negocio, al crearlo y cuando el rubro cambia (punto 8, SPEC 039); ya no hay pantalla para habilitarlo a mano. Para registrar el tuyo:
 
 1. **Entrada en el registro, con paridad.** Agrega `{id, label, basePath}` (por ejemplo `{id: "taller", label: "Taller", basePath: "/taller"}`) en `VERTICAL_MODULES` de **`functions/verticalModules.js`** y de **`src/domain/verticalModules.mjs`**. Las dos copias deben quedar idénticas: `npm run test:rbac` compara el bloque del registro texto a texto.
 2. **No lo agregues a `BUSINESS_MODULES`** (`rbac`) ni a los perfiles por módulos. Un módulo vertical no aparece en los perfiles personalizados; lo ven los roles con permiso, solo si el negocio lo tiene habilitado.
@@ -58,6 +58,7 @@ El interruptor de módulos por negocio ya existe (SPEC 031). Un módulo vertical
 5. **Functions.** En cada Function de tu módulo, pasa `requiredVerticalModule: "<id>"` a `requireBusinessAccess`. Si el negocio no lo tiene habilitado, responde `failed-precondition` ("Este módulo no está habilitado para tu empresa.").
 6. **Reglas Firestore.** En las colecciones de tu módulo combina `hasBusinessModuleAccess` con `isBusinessModuleEnabled(businessId, "<id>")` para la lectura; la escritura sigue `if false`.
 7. **Habilitación.** El superadmin lo activa por negocio desde la consola de plataforma (detalle de la empresa, sección "Módulos"), con un motivo que queda en el historial. El cambio se ve al recargar la sesión.
+8. **Habilitación automática por rubro (SPEC 033).** Si tu módulo corresponde a un rubro del catálogo, el negocio que se **crea** con ese rubro, o que cambia a él, lo recibe sin pasar por el superadmin. El mapa está en **`functions/categoryModules.js`** (`CATEGORY_MODULES`: `rubroCodigo` a lista de ids; hoy `TALLER_AUTOMOTRIZ` a `["taller"]` y `CLINICA_VETERINARIA` a `["veterinaria"]`). Es un archivo aparte de `verticalModules.js` a propósito, para no romper la paridad textual. Reglas: el id debe existir en el registro (si no, se descarta); el rubro debe ser seleccionable en `businessCatalog.json`; **cambiar el rubro después sí recalcula los módulos** (SPEC 039: `categoryModulesPatch`, solo si el rubro cambia, sin borrar datos del módulo anterior); agrega un caso en `scripts/category-modules-smoke.mjs` (`npm run test:category-modules`). Es decisión de producto que el dueño se autohabilite el módulo al elegir el rubro; si se venden planes habrá que poner un tope. Detalle en `docs/specs/033-modulos-por-rubro.md` y `docs/como-agregar-un-rubro.md`.
 
 ## 5. Verificación antes de pedir revisión
 

@@ -12,12 +12,12 @@
 .works-search-control { align-items: center; display: flex; position: relative; }
 .works-search-control .app-icon { color: var(--color-text-muted); left: var(--space-3); pointer-events: none; position: absolute; }
 .works-search-control input { padding-left: 40px; }
-.works-table { min-width: 980px; }
 .works-link { background: transparent; border: 0; color: var(--color-text-default); cursor: pointer; display: grid; gap: 2px; padding: 0; text-align: left; }
 .works-link strong, .works-number { color: var(--color-brand-800); font-size: var(--font-size-xs); font-weight: var(--font-weight-bold); }
 .works-link span { color: var(--color-text-strong); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); }
 .works-row-actions, .works-card-actions, .works-detail-actions { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.works-row-actions button { background: var(--color-surface-panel); border: 1px solid var(--color-border-control); border-radius: var(--radius-sm); color: var(--color-text-default); cursor: pointer; font-size: var(--font-size-xs); padding: .35rem .55rem; }
+.works-row-actions { flex-wrap: nowrap; gap: var(--space-1); }
+.works-row-actions__view { background: var(--color-surface-panel); border: 1px solid var(--color-border-control); border-radius: var(--radius-sm); color: var(--color-text-default); cursor: pointer; font-size: var(--font-size-xs); min-height: 38px; padding: .35rem .6rem; }
 .works-priority { border-radius: var(--radius-pill); display: inline-flex; font-size: 11px; font-weight: var(--font-weight-bold); padding: 3px 8px; white-space: nowrap; }
 .works-priority--baja { background: #f1f5f9; color: #475569; }
 .works-priority--normal { background: var(--color-info-50); color: var(--color-info-700); }
@@ -48,9 +48,15 @@
 .works-field--wide { grid-column: 1 / -1; }
 .works-form textarea { resize: vertical; }
 .works-form option[value="cancelado"]:not(:checked) { display: none; }
+.works-form-help { color: var(--color-text-muted); font-size: var(--font-size-xs); line-height: var(--line-height-default); margin: 0; }
 .works-field-optional { color: var(--color-text-muted); font-size: 11px; font-weight: var(--font-weight-medium); margin-left: var(--space-2); }
 .works-field-error { color: var(--color-danger-700); font-size: var(--font-size-xs); }
-.works-form-automatic-note { border-top: 1px solid var(--color-border-subtle); color: var(--color-text-muted); font-size: var(--font-size-xs); line-height: var(--line-height-default); margin: 0; padding-top: var(--space-3); }
+/* Error del backend dentro de un formulario o diálogo (Notice) y mensajes de campo en rejillas de formulario. */
+.works-form-notice { grid-column: 1 / -1; justify-self: stretch; }
+.works-form-notice:focus-visible { border-radius: var(--radius-md); outline: var(--focus-outline); outline-offset: var(--space-1); }
+.works-annul-form > .works-field-error, .works-task-document-form > .works-field-error, .works-note-form > .works-field-error, .works-subtask-create > .works-field-error { grid-column: 1 / -1; justify-self: start; }
+/* Nota fija en el pie del diálogo, sobre los botones (el pie se parte en dos líneas). */
+.works-form-automatic-note { color: var(--color-text-muted); flex: 1 0 100%; font-size: var(--font-size-xs); line-height: var(--line-height-default); margin: 0; text-align: left; }
 .works-participants { border: 0; margin: 0; padding: 0; }
 .works-participants legend { color: var(--color-text-muted); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); margin-bottom: var(--space-2); }
 .works-participants > div { display: flex; flex-wrap: wrap; gap: var(--space-2); }
@@ -157,9 +163,10 @@
 .works-subtask-list > div { align-items: center; display: grid; gap: var(--space-2); grid-template-columns: auto minmax(0, 1fr) auto; }
 .works-subtask-list > div.is-complete input[type="text"] { background: var(--color-surface-panel); color: var(--color-text-muted); text-decoration: line-through; }
 .works-subtask-list > div > div { align-items: center; display: flex; gap: var(--space-1); }
+.works-subtask-list > div > .works-field-error { grid-column: 2 / -1; }
 .works-subtask-list button:not(.ui-button) { background: transparent; border: 0; color: var(--color-danger-700); cursor: pointer; padding: var(--space-1); }
 .works-subtask-create { display: grid; gap: var(--space-2); grid-template-columns: minmax(0, 1fr) auto; }
-.works-wait-reason { background: #fff7ed; border-radius: var(--radius-sm); color: #9a3412 !important; display: block; font-size: var(--font-size-xs); margin: 0; overflow-wrap: anywhere; padding: var(--space-2); }
+.works-wait-reason { background: var(--color-warning-50); border-radius: var(--radius-sm); color: var(--color-warning-800) !important; display: block; font-size: var(--font-size-xs); margin: 0; overflow-wrap: anywhere; padding: var(--space-2); }
 .works-alert-chip { background: var(--color-danger-50); border-radius: var(--radius-pill); color: var(--color-danger-700); font-size: 11px; font-weight: var(--font-weight-bold); justify-self: start; padding: 4px 8px; }
 .works-task-documentation > summary { color: var(--color-text-muted); cursor: pointer; font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); }
 .works-task-board { align-items: start; display: grid; gap: var(--space-3); grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -222,7 +229,7 @@
 .works-expense-evidence { display: grid; gap: var(--space-2); margin-top: var(--space-2); }
 .works-expense-evidence__list { display: flex; flex-wrap: wrap; gap: var(--space-2); list-style: none; margin: 0; padding: 0; }
 .works-expense-evidence__list li { align-items: center; background: var(--color-surface-subtle); border-radius: var(--radius-sm); display: inline-flex; gap: var(--space-1); padding: 3px 8px; }
-.works-expense-evidence__list button { background: transparent; border: 0; color: var(--color-brand-700); cursor: pointer; font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); padding: 0; }
+.works-expense-evidence__list button { background: transparent; border: 0; color: var(--color-text-brand); cursor: pointer; font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); padding: 0; }
 .works-expense-evidence__list small { color: var(--color-text-muted); font-size: 10px; }
 .works-expense-evidence__upload { align-items: center; display: inline-flex; gap: var(--space-2); }
 .works-note-form { display: grid; gap: var(--space-2); justify-items: end; }
@@ -295,8 +302,8 @@
     color: #a9b6f0;
   }
 
-  /* .works-priority--alta, .works-task-state--en_espera y
-     .works-wait-reason coinciden EXACTO en claro con
+  /* .works-priority--alta y .works-task-state--en_espera
+     coinciden EXACTO en claro con
      --color-stock-alert-50/-800 (#fff7ed/#9a3412), pero son prioridad de
      tarea y "en espera" de un proyecto, no alertas de inventario —
      cruzar ese token específico de un feature a otro violaría el mismo
@@ -311,11 +318,8 @@
     background: var(--color-warning-50);
     color: var(--color-warning-800);
   }
-
-  .works-wait-reason {
-    background: var(--color-warning-50);
-    color: var(--color-warning-800) !important;
-  }
+  /* .works-wait-reason ya usa estos mismos tokens en su regla base, que cambian con el tema: no necesita
+     un bloque propio para oscuro. */
 }
 
 /* Tokens faltantes nuevos encontrados en esta pasada: ninguno. */
@@ -333,7 +337,11 @@
 .works-more-details[open] > summary::before { content: "−"; }
 .works-more-details > summary:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-offset); }
 .works-more-details[open] > summary { margin-bottom: var(--space-2); }
-.works-detail-tabs { margin-top: var(--space-1); }
+/* Pestañas de la ficha fijas bajo el título del diálogo al hacer scroll. Viven con sus paneles dentro de
+   .works-detail-body (un bloque, no la grilla de .works-detail): el sticky de un hijo de grilla no pasa del alto de su fila. */
+.works-detail-body { min-width: 0; }
+.works-detail-tabs { background: var(--color-surface-panel); margin-top: 0; position: sticky; top: 0; z-index: 2; }
+.works-detail-body > [role="tabpanel"] { padding-top: var(--space-3); }
 
 /* Error de carga de lista y ficha: mensaje + Reintentar (nunca el vacío). */
 .works-load-error { align-items: center; display: flex; gap: var(--space-3); justify-content: space-between; }
@@ -359,7 +367,7 @@
 .works-task-board__card .works-subtask-create, .works-task-board__card .works-task-document-form { grid-template-columns: minmax(0, 1fr); }
 .works-project-board__costs { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
 .works-project-board__cost-card { align-content: start; }
-.works-project-board__cost-card > strong { color: var(--color-text-strong); }
+.works-project-board__cost-text > strong { color: var(--color-text-strong); }
 @media(max-width:767px) {
   .works-project-board__header { align-items: stretch; flex-direction: column; }
   .works-project-board__picker { max-width: none; }
@@ -372,7 +380,7 @@ button.works-task-board__card:hover { border-color: var(--color-brand-500); box-
 button.works-task-board__card:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-offset); }
 .works-task-card__title { color: var(--color-text-strong); font-size: var(--font-size-sm); font-weight: var(--font-weight-bold); overflow-wrap: anywhere; }
 .works-task-card__person { align-items: center; display: flex; gap: var(--space-2); min-width: 0; }
-.works-task-card__avatar { align-items: center; background: var(--color-surface-selected); border-radius: var(--radius-pill); color: var(--color-text-strong); display: inline-flex; flex: 0 0 auto; font-size: 10px; font-weight: var(--font-weight-bold); height: 22px; justify-content: center; width: 22px; }
+.works-task-card__avatar, .works-person-cell__avatar { align-items: center; background: var(--color-surface-selected); border-radius: var(--radius-pill); color: var(--color-text-strong); display: inline-flex; flex: 0 0 auto; font-size: 10px; font-weight: var(--font-weight-bold); height: 22px; justify-content: center; width: 22px; }
 .works-task-card__name, .works-task-card__none { color: var(--color-text-default); font-size: var(--font-size-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .works-task-card__none { color: var(--color-text-muted); }
 .works-task-card__progress { color: var(--color-text-muted); display: grid; font-size: var(--font-size-xs); gap: var(--space-1); }
@@ -381,18 +389,26 @@ button.works-task-board__card:focus-visible { outline: var(--focus-outline); out
 .works-task-card__cost > span:last-child { color: var(--color-text-default); font-weight: var(--font-weight-semibold); }
 .works-task-card__wait { align-items: flex-start; display: grid; gap: var(--space-1); justify-items: start; }
 .works-task-card__wait-reason { color: var(--color-text-default); font-size: var(--font-size-xs); overflow-wrap: anywhere; }
+/* Menú "⋯" de la tarjeta: hermano del botón que abre el panel, anclado a la esquina superior derecha. */
+.works-task-card { position: relative; }
+.works-task-card--deletable .works-task-card__title { padding-right: var(--space-8); }
+.works-task-card__menu { position: absolute; right: var(--space-1); top: var(--space-1); }
+.works-task-card__menu-trigger { align-items: center; background: transparent; border: 0; border-radius: var(--radius-sm); color: var(--color-text-muted); cursor: pointer; display: inline-flex; height: var(--space-8); justify-content: center; padding: 0; width: var(--space-8); }
+.works-task-card__menu-trigger:hover { background: var(--color-surface-hover); color: var(--color-text-strong); }
+.works-task-card__menu-trigger:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-offset); }
+.works-task-delete { display: grid; gap: var(--space-3); }
+.works-task-delete__text { color: var(--color-text-default); margin: 0; overflow-wrap: anywhere; }
+.works-task-delete__text strong { color: var(--color-text-strong); }
 
 /* Panel de la tarea: lateral en escritorio, pantalla completa en móvil. */
-.works-task-panel-layer { align-items: stretch; justify-content: flex-end; padding: 0; }
-.works-task-panel.responsive-dialog { border-bottom: 0; border-radius: var(--radius-md) 0 0 var(--radius-md); border-top: 0; height: 100vh; height: 100dvh; max-height: none; max-width: 480px; }
 .works-task-panel__content { display: grid; gap: var(--space-4); min-width: 0; }
 .works-task-panel__row { display: grid; gap: var(--space-3); grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.works-task-panel__section { border-top: 1px solid var(--color-border-subtle); display: grid; gap: var(--space-2); padding-top: var(--space-3); }
-.works-task-panel__section > h3 { color: var(--color-text-strong); font-size: var(--font-size-sm); margin: 0; }
+.works-task-panel__section { border-top: 1px solid var(--color-border-subtle); display: grid; gap: var(--space-3); padding-top: var(--space-4); }
 .works-task-panel__cost { align-items: baseline; color: var(--color-text-muted); display: flex; font-size: var(--font-size-sm); justify-content: space-between; }
 .works-task-panel__cost > strong { color: var(--color-text-strong); }
-.works-task-panel__danger { border-top: 1px solid var(--color-border-subtle); display: flex; justify-content: flex-end; padding-top: var(--space-3); }
-.works-task-panel__danger button { align-items: center; background: transparent; border: 0; color: var(--color-danger-700); cursor: pointer; display: inline-flex; font-size: var(--font-size-xs); gap: var(--space-1); padding: var(--space-2); }
+/* Zona de Eliminar: separada del resto, al final del panel. */
+.works-task-panel__danger { border-top: 1px solid var(--color-border-subtle); display: grid; gap: var(--space-2); justify-items: start; margin-top: var(--space-2); padding-top: var(--space-4); }
+.works-task-panel__danger .works-task-panel__hint { margin: 0; }
 
 /* Diálogo de costos con pestañas (Gastos, Horas hombre, Materiales). */
 .works-cost-tabs { margin-bottom: var(--space-1); }
@@ -414,8 +430,220 @@ button.works-task-board__card:focus-visible { outline: var(--focus-outline); out
 .works-closed__financials dd { color: var(--color-text-strong); display: grid; font-size: var(--font-size-xs); gap: 2px; justify-items: start; margin: 0; }
 .works-closed__financials dd .ui-status-badge { align-items: center; display: inline-flex; gap: var(--space-1); }
 @media(max-width:767px) {
-  .works-task-panel.responsive-dialog { border-radius: 0; max-width: none; }
-  .works-task-panel__row { grid-template-columns: minmax(0, 1fr); }
+  .works-task-card__menu-trigger { height: var(--space-10); width: var(--space-10); }
+  .works-task-card--deletable .works-task-card__title { padding-right: var(--space-10); }
   .works-closed__filters { align-items: stretch; flex-direction: column; }
   .works-closed__filters .works-search { max-width: none; }
 }
+
+/* Diálogo de costos (Gastos, Horas hombre, Materiales). Todo acotado a
+   .works-cost-dialog para no alterar la sección Adicionales, que comparte
+   algunas clases de formulario y lista. Solo tokens. */
+.works-cost-dialog .works-financial-columns > section { border: 0; padding: 0; }
+.works-cost-dialog .works-cost-breakdown { background: var(--color-surface-subtle); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); display: grid; gap: var(--space-2); padding: var(--space-3); }
+.works-cost-breakdown__summary { display: grid; gap: var(--space-3); grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; }
+.works-cost-breakdown__summary > div { display: grid; gap: 2px; }
+.works-cost-breakdown__summary dt { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+.works-cost-breakdown__summary dd { color: var(--color-text-strong); font-size: var(--font-size-md); font-weight: var(--font-weight-semibold); margin: 0; }
+.works-cost-breakdown__detail summary { color: var(--color-text-brand); cursor: pointer; font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); }
+.works-cost-breakdown__detail ul { display: grid; gap: var(--space-1); list-style: none; margin: var(--space-2) 0 0; padding: 0; }
+.works-cost-breakdown__detail li { color: var(--color-text-default); display: flex; font-size: var(--font-size-xs); justify-content: space-between; }
+.works-cost-breakdown__detail li strong { color: var(--color-text-strong); font-weight: var(--font-weight-semibold); }
+
+.works-cost-dialog .works-cost-form { align-content: start; background: var(--color-surface-subtle); border: 1px solid var(--color-border-default); border-radius: var(--radius-md); gap: var(--space-3); padding: var(--space-4); }
+.works-cost-form__title { color: var(--color-text-strong); font-size: var(--font-size-sm); grid-column: 1 / -1; margin: 0; }
+.works-cost-field { min-width: 0; }
+/* Compra al paso (pestaña Materiales): opción plegada bajo la salida de material, y formulario corto con el adjunto obligatorio. */
+.works-quick-purchase__toggle { display: flex; }
+.works-quick-purchase__attach { display: grid; gap: var(--space-2); }
+.works-quick-purchase__attach-actions, .works-quick-purchase__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.works-quick-purchase__file { align-items: center; color: var(--color-text-default); display: flex; flex-wrap: wrap; font-size: var(--font-size-sm); gap: var(--space-2); margin: 0; overflow-wrap: anywhere; }
+.works-cost-field--wide { grid-column: 1 / -1; }
+.works-money-input { display: flex; }
+.works-money-input__symbol { align-items: center; background: var(--color-surface-panel); border: 1px solid var(--color-border-control); border-bottom-left-radius: var(--radius-sm); border-right: 0; border-top-left-radius: var(--radius-sm); color: var(--color-text-muted); display: inline-flex; padding: 0 var(--space-3); }
+.works-money-input .erp-control { border-bottom-left-radius: 0; border-top-left-radius: 0; flex: 1 1 auto; min-width: 0; width: auto; }
+.works-cost-dialog .works-material-product { align-items: flex-end; }
+.works-cost-dialog .works-material-product > .works-cost-field { flex: 1 1 auto; }
+
+.works-cost-list__title { color: var(--color-text-strong); font-size: var(--font-size-sm); margin: var(--space-2) 0 0; }
+.works-cost-dialog .works-cost-list > .works-cost-entry { background: var(--color-surface-panel); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); gap: var(--space-2); padding: var(--space-3); }
+.works-cost-entry__head { align-items: baseline; display: flex; gap: var(--space-3); justify-content: space-between; }
+.works-cost-entry__title { font-weight: var(--font-weight-semibold); min-width: 0; overflow-wrap: anywhere; }
+.works-cost-list .works-cost-entry__amount { color: var(--color-text-expense); font-size: var(--font-size-md); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.works-cost-entry__tags { display: flex; flex-wrap: wrap; gap: var(--space-1); list-style: none; margin: 0; padding: 0; }
+.works-cost-tag { background: var(--color-surface-subtle); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-pill); color: var(--color-text-default); font-size: var(--font-size-xs); padding: 1px var(--space-2); }
+.works-cost-tag--danger { background: var(--color-danger-50); border-color: var(--color-danger-200); color: var(--color-danger-700); font-weight: var(--font-weight-semibold); }
+.works-cost-list .works-cost-entry__meta { color: var(--color-text-muted); }
+.works-cost-list .works-cost-entry__annulled { color: var(--color-danger-700); }
+.works-cost-entry__footer { align-items: flex-start; border-top: 1px solid var(--color-border-subtle); display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-3); justify-content: space-between; padding-top: var(--space-2); }
+.works-cost-dialog .works-expense-evidence { align-items: center; display: flex; flex-wrap: wrap; margin-top: 0; }
+.works-evidence-status { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+.works-evidence-status--missing { background: var(--color-warning-50); border: 1px solid var(--color-warning-200); border-radius: var(--radius-pill); color: var(--color-warning-800); font-weight: var(--font-weight-semibold); padding: 2px var(--space-3); }
+
+.works-cost-disclosure { margin-left: auto; }
+.works-cost-disclosure > summary { border: 1px solid; border-radius: var(--radius-sm); cursor: pointer; font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); list-style: none; padding: var(--space-1) var(--space-3); }
+.works-cost-disclosure > summary::-webkit-details-marker { display: none; }
+.works-cost-disclosure > summary:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.works-cost-disclosure--danger > summary { border-color: var(--color-danger-200); color: var(--color-danger-700); }
+.works-cost-disclosure--danger > summary:hover { background: var(--color-danger-50); }
+.works-cost-disclosure--neutral > summary { border-color: var(--color-border-control); color: var(--color-text-default); }
+.works-cost-disclosure--neutral > summary:hover { background: var(--color-surface-hover); }
+.works-cost-disclosure[open] { flex: 1 1 100%; margin-left: 0; }
+.works-cost-disclosure > form { margin-top: var(--space-2); }
+.works-cost-dialog .works-annul-form { align-items: end; }
+.works-cost-dialog .works-return-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.works-cost-dialog .works-return-form > .ui-button { grid-column: 1 / -1; justify-self: start; }
+.works-cost-dialog .works-financial-note { align-items: center; border-top: 1px solid var(--color-border-subtle); display: flex; gap: var(--space-1); margin: 0; padding-top: var(--space-2); }
+@media(max-width:767px) {
+  .works-cost-dialog .works-cost-form, .works-cost-dialog .works-annul-form, .works-cost-dialog .works-return-form { grid-template-columns: minmax(0, 1fr); }
+  .works-cost-dialog .works-material-product { flex-wrap: wrap; }
+  .works-cost-entry__footer { align-items: stretch; flex-direction: column; }
+  .works-cost-disclosure { margin-left: 0; }
+}
+.works-cost-dialog .works-cost-list > .works-cost-empty { align-items: center; color: var(--color-text-muted); display: flex; font-size: var(--font-size-sm); gap: var(--space-2); margin: 0; padding: var(--space-2) 0; }
+.works-cost-hint { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+.works-cost-live-total { align-items: baseline; color: var(--color-text-default); display: flex; flex-wrap: wrap; font-size: var(--font-size-sm); gap: var(--space-1); margin: 0; }
+.works-cost-live-total strong { color: var(--color-text-expense); font-size: var(--font-size-md); font-variant-numeric: tabular-nums; }
+.works-cost-live-total span { background: var(--color-surface-panel); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-pill); color: var(--color-text-muted); font-size: var(--font-size-xs); margin-left: var(--space-1); padding: 1px var(--space-2); }
+.works-cost-dialog .works-material-estimate { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+/* Entrega 2: cabecera del tablero con cifras destacadas (avance y costo acumulado; mismo patrón visual que
+   el panel de ganancia de Ventas, con clases propias), acceso a costos General arriba, "Agregar tarea" en
+   Por hacer, tarjeta con fecha de cierre y panel de la tarea con jerarquía. Solo tokens. */
+.works-project-board__actions { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.works-project-board__overview { align-items: center; background: var(--color-surface-subtle); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); display: grid; gap: var(--space-3) var(--space-6); grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); padding: var(--space-4); }
+.works-project-board__identity { color: var(--color-text-default); display: grid; font-size: var(--font-size-sm); gap: var(--space-2); justify-items: start; min-width: 0; overflow-wrap: anywhere; }
+.works-project-board__metrics { display: grid; gap: var(--space-5); grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; }
+.works-project-board__metric { align-content: start; display: grid; gap: var(--space-1); min-width: 0; }
+.works-project-board__metric dt { color: var(--color-text-muted); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); }
+.works-project-board__metric dd { display: grid; gap: var(--space-1); margin: 0; }
+.works-project-board__metric dd strong { color: var(--color-text-strong); font-size: var(--font-size-xl); font-variant-numeric: tabular-nums; line-height: 1.15; }
+.works-project-board__metric--primary dd strong { color: var(--color-text-expense); }
+.works-project-board__metric dd > span { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+.works-project-board__costs { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+.works-project-board__cost-card { align-items: center; gap: var(--space-3); grid-template-columns: minmax(0, 1fr) auto auto; padding: var(--space-3) var(--space-4); }
+.works-project-board__cost-text { display: grid; gap: 2px; min-width: 0; }
+.works-project-board__cost-card dl > div { display: grid; gap: 2px; justify-items: end; }
+.works-project-board__cost-card dt { font-size: var(--font-size-xs); text-transform: none; }
+.works-project-board__cost-card dd { color: var(--color-text-strong); font-size: var(--font-size-lg); font-variant-numeric: tabular-nums; font-weight: var(--font-weight-semibold); overflow: visible; text-align: right; white-space: normal; }
+.works-task-board__add { justify-self: stretch; }
+.works-task-board__empty { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.works-task-board__empty .works-empty-copy { margin: 0 !important; }
+.works-task-card__done { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+
+.works-task-panel__section > h3 { align-items: center; color: var(--color-text-strong); display: flex; font-size: var(--font-size-sm); gap: var(--space-2); margin: 0; }
+.works-task-panel__count { background: var(--color-surface-selected); border-radius: var(--radius-pill); color: var(--color-text-strong); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); padding: 1px var(--space-2); }
+.works-task-panel__cost { align-items: center; background: var(--color-surface-subtle); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); gap: var(--space-3); justify-content: space-between; padding: var(--space-3); }
+.works-task-panel__cost > div { display: grid; gap: 2px; }
+.works-task-panel__cost > div > span { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+.works-task-panel__cost > div > strong { color: var(--color-text-expense); font-size: var(--font-size-xl); font-variant-numeric: tabular-nums; }
+.works-task-panel__hint { color: var(--color-text-muted); font-size: var(--font-size-xs); font-weight: var(--font-weight-regular); }
+/* Panel de la tarea: título con chip de estado, Responsable y Estado en columnas iguales, secciones con el mismo estilo. */
+.works-task-panel__title { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.works-task-panel__row { align-items: start; }
+.works-task-panel__field { align-content: start; }
+.works-task-panel__value { align-items: center; color: var(--color-text-strong); display: flex; font-size: var(--font-size-sm); min-height: var(--space-10); overflow-wrap: anywhere; }
+.works-task-panel__tags { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.works-task-panel__entries { display: grid; gap: var(--space-2); }
+.works-task-panel__entries > div { border-top: 1px solid var(--color-border-subtle); display: grid; gap: var(--space-1); padding-top: var(--space-2); }
+.works-task-panel__entries > div:first-child { border-top: 0; padding-top: 0; }
+.works-task-panel__entries p { color: var(--color-text-default); font-size: var(--font-size-sm); margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.works-task-panel__entries small { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+/* Comentario anulado: el texto tachado y atenuado; "Anulado por…" queda legible debajo. Los botones Anular y Ver todos no se estiran. */
+.works-task-panel__entries .is-annulled > p { color: var(--color-text-muted); text-decoration: line-through; }
+.works-task-panel__entries .works-task-panel__annulled { color: var(--color-text-default); overflow-wrap: anywhere; }
+.works-task-panel__entries > div > .ui-button, .works-task-panel__more { justify-self: start; }
+/* Anular de cada comentario: chico y sin borde, para que no pese más que el texto; el borde y el fondo aparecen solo al pasar el cursor. */
+.works-task-panel__entries .works-task-panel__annul { background: transparent; border-color: transparent; font-size: var(--font-size-xs); min-height: 0; padding: var(--space-1) var(--space-2); }
+.works-task-panel__entries .works-task-panel__annul:hover:not(:disabled) { background: var(--color-danger-50); border-color: transparent; }
+/* Diálogo Anular comentario: aviso, cita del comentario y motivo en una columna. */
+.works-task-annul { display: grid; gap: var(--space-3); }
+.works-task-annul__text { color: var(--color-text-default); font-size: var(--font-size-sm); margin: 0; }
+.works-task-annul__quote { border-left: 3px solid var(--color-border-subtle); color: var(--color-text-muted); font-size: var(--font-size-sm); margin: 0; max-height: 8rem; overflow: auto; overflow-wrap: anywhere; padding: var(--space-1) var(--space-3); white-space: pre-wrap; }
+.works-task-panel__cost > div > .works-task-panel__breakdown { color: var(--color-text-muted); font-size: var(--font-size-xs); font-variant-numeric: tabular-nums; }
+.works-task-panel .works-subtask-create, .works-task-panel .works-task-document-form { align-items: end; }
+@media(max-width:480px) {
+  .works-task-panel__row { grid-template-columns: minmax(0, 1fr); }
+  .works-task-panel__danger { justify-items: stretch; }
+}
+@media(max-width:767px) {
+  .works-project-board__overview { grid-template-columns: minmax(0, 1fr); }
+  .works-project-board__costs { grid-template-columns: minmax(0, 1fr); }
+  .works-project-board__cost-card { grid-template-columns: minmax(0, 1fr) auto; }
+  .works-project-board__cost-card > .ui-button { grid-column: 1 / -1; }
+  .works-task-panel__cost { align-items: stretch; flex-direction: column; }
+}
+
+/* Entrega A: lista con progreso y costo, responsable con correo secundario, tarjeta de resumen de la ficha
+   (cifras destacadas, mismo patrón visual que el panel de ganancia de Ventas, con clases propias), alerta de
+   inactividad compacta y aviso de tareas hechas. Solo tokens. */
+.works-person { display: grid; gap: 2px; min-width: 0; }
+.works-person > strong { color: var(--color-text-strong); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); overflow-wrap: anywhere; }
+.works-person > small { color: var(--color-text-muted); font-size: var(--font-size-xs); overflow-wrap: anywhere; }
+.works-progress-cell { display: grid; gap: var(--space-1); min-width: 120px; }
+.works-progress-cell > span { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+.works-cost-cell { color: var(--color-text-expense); font-variant-numeric: tabular-nums; font-weight: var(--font-weight-semibold); white-space: nowrap; }
+/* Lista a 1280 px sin scroll horizontal: la columna Trabajo tiene ancho mínimo (el título no se parte en 4 o 5 líneas),
+   el número TRB no se parte, los encabezados largos pasan a varias líneas y el responsable ya no lleva correo. */
+.erp-table.works-table th, .erp-table.works-table td { padding-inline: var(--space-2); }
+.works-table th { vertical-align: bottom; white-space: normal; }
+.works-table th:first-child, .works-table td:first-child { min-width: 12rem; }
+.works-table .works-empty-line { white-space: normal; }
+.works-table .works-progress-cell { min-width: 88px; }
+.works-link strong, .works-number { white-space: nowrap; }
+.works-work-cell .works-priority { margin-top: var(--space-1); }
+.works-person-cell { align-items: center; display: inline-flex; gap: var(--space-2); min-width: 0; }
+.works-person-cell__name { color: var(--color-text-strong); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); overflow-wrap: anywhere; }
+/* Aclaración del costo bajo el rótulo, visible sin depender del hover (Lista, tarjeta móvil y Tablero). */
+.works-cost-label { display: grid; gap: 2px; }
+.works-cost-label__note { color: var(--color-text-muted); font-size: 11px; font-weight: var(--font-weight-regular); letter-spacing: normal; text-transform: none; white-space: normal; }
+
+.works-summary-card { background: var(--color-surface-subtle); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); display: grid; gap: var(--space-4); padding: var(--space-4); }
+.works-summary-card__key { display: grid; gap: var(--space-5); grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; }
+.works-summary-card__metric { align-content: start; display: grid; gap: var(--space-1); min-width: 0; }
+.works-summary-card__metric dt { color: var(--color-text-muted); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); }
+.works-summary-card__metric dd { display: grid; gap: var(--space-1); margin: 0; }
+.works-summary-card__metric dd strong { color: var(--color-text-strong); font-size: var(--font-size-2xl); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.works-summary-card__metric--primary dd strong { color: var(--color-text-expense); }
+.works-summary-card__metric dd > span { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+.works-summary-card__meta { border-top: 1px solid var(--color-border-subtle); display: grid; gap: var(--space-2) var(--space-4); grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; padding-top: var(--space-3); }
+.works-summary-card__meta > div { display: grid; gap: 2px; min-width: 0; }
+.works-summary-card__meta dt { color: var(--color-text-muted); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); }
+.works-summary-card__meta dd { color: var(--color-text-strong); font-size: var(--font-size-sm); margin: 0; overflow-wrap: anywhere; }
+
+.works-detail-alert { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-3); justify-content: space-between; padding: var(--space-2) var(--space-3); }
+.works-detail-notice { align-items: center; background: var(--color-info-50); border: 1px solid var(--color-info-200); border-radius: var(--radius-md); color: var(--color-info-700); display: flex; flex-wrap: wrap; font-size: var(--font-size-sm); gap: var(--space-2) var(--space-3); justify-content: space-between; padding: var(--space-2) var(--space-3); }
+@media(max-width:900px) {
+  .works-summary-card__meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media(max-width:767px) {
+  .works-summary-card__key { grid-template-columns: minmax(0, 1fr); }
+  .works-summary-card__meta { grid-template-columns: minmax(0, 1fr); }
+  .works-detail-alert, .works-detail-notice { align-items: stretch; flex-direction: column; }
+}
+
+/* Balance: ícono "i" con la explicación de cada cifra (WorkInfoTip, mismo patrón que Reportes) y resultado con color. */
+.works-balance-primary dt { align-items: center; display: flex; gap: var(--space-1); }
+.works-info { display: inline-flex; flex: 0 0 auto; position: relative; }
+.works-info .works-info__button { align-items: center; background: transparent; border: 0; border-radius: var(--radius-pill); color: var(--color-text-muted); cursor: pointer; display: inline-flex; height: var(--space-6); justify-content: center; padding: 0; width: var(--space-6); }
+.works-info .works-info__button:hover, .works-info .works-info__button[aria-expanded="true"] { background: var(--color-surface-hover); color: var(--color-text-brand); }
+.works-info .works-info__button:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-offset); }
+@media (pointer: coarse) { .works-info .works-info__button { height: calc(var(--space-10) + var(--space-1)); width: calc(var(--space-10) + var(--space-1)); } }
+/* Panel fixed (lo coloca WorkInfoTip junto al botón): no lo recorta el cuerpo con scroll del diálogo. 20rem = PANEL_WIDTH. */
+.works-info__panel { background: var(--color-surface-panel); border: 1px solid var(--color-border-control); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); color: var(--color-text-default); display: block; font-size: var(--font-size-sm); font-weight: var(--font-weight-regular); line-height: var(--line-height-default); padding: var(--space-3); position: fixed; text-align: left; width: min(20rem, calc(100vw - 1rem)); z-index: var(--z-dialog); }
+.works-info__panel[hidden] { display: none; }
+.works-balance-result { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2); }
+.works-balance-result--gano .works-balance-result__amount { color: var(--color-success-700); }
+.works-balance-result--perdio .works-balance-result__amount { color: var(--color-danger-700); }
+
+/* Resumen comercial vacío: caja a todo el ancho y baja, con el botón a la derecha. */
+.works-commercial-empty { align-items: center; background: var(--color-surface-subtle); border: 1px dashed var(--color-border-default); border-radius: var(--radius-md); display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-3); grid-column: 1 / -1; justify-content: space-between; padding: var(--space-3); }
+.works-commercial-empty .works-empty-copy { margin: 0 !important; }
+/* Ficha: línea de desglose bajo el costo y enlace al balance. */
+.works-summary-card__metric dd > .works-summary-card__breakdown { font-variant-numeric: tabular-nums; }
+.works-summary-card__link { background: transparent; border: 0; color: var(--color-text-brand); cursor: pointer; font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); justify-self: start; padding: 0; text-decoration: underline; }
+.works-summary-card__link:hover { color: var(--color-text-brand-hover); }
+.works-summary-card__link:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-offset); }
+/* Balance: cifra sin dato = guion y, debajo, el motivo en letra chica. */
+.works-balance-empty { color: var(--color-text-muted); }
+.works-balance-reason { color: var(--color-text-muted); display: block; font-size: var(--font-size-xs); font-weight: var(--font-weight-regular); line-height: var(--line-height-default); margin-top: 2px; }

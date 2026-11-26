@@ -1,6 +1,7 @@
 import React from "react";
 import {CubeIcon} from "../../components/BrandLogo";
 import {resolveDocumentCompany} from "../../domain/companySnapshot.mjs";
+import {getCountryFormCopy} from "../../domain/countryFormCopy.mjs";
 import {getPurchaseDocumentTypeLabel, getPurchaseStatusLabel} from "../../domain/purchaseModel.mjs";
 import {formatDate, formatMoney} from "../../utils/formatters";
 
@@ -54,7 +55,7 @@ export default function PurchasePrintView({company: liveCompany = {}, purchase})
     <header className="po-document-preview__header">
       <div className="po-document-preview__company">
         <div className="po-document-preview__logo">{company.logoUrl ? <img src={company.logoUrl} alt={`Logo ${brand}`} /> : <CubeIcon size={38} strokeWidth={1.6} />}</div>
-        <div><h2>{brand}</h2>{company.razonSocial !== brand && <OptionalLine value={company.razonSocial} />}<OptionalLine label={company.identificadorFiscalTipo || "Identificación fiscal"} value={company.identificadorFiscalValor || company.rut} /><OptionalLine label="Giro" value={company.giro} /><OptionalLine value={joinNonEmpty([company.direccion, company.comunaNombre || company.ciudad, company.regionEstado || company.regionNombre])} /><OptionalLine value={joinNonEmpty([company.email, company.telefono])} /></div>
+        <div><h2>{brand}</h2>{company.razonSocial !== brand && <OptionalLine value={company.razonSocial} />}<OptionalLine label={company.identificadorFiscalTipo || "Identificación fiscal"} value={company.identificadorFiscalValor || company.rut} /><OptionalLine label={getCountryFormCopy(purchase.paisCodigo || liveCompany?.paisCodigo).businessActivityLabel} value={company.giro} /><OptionalLine value={joinNonEmpty([company.direccion, company.comunaNombre || company.ciudad, company.regionEstado || company.regionNombre])} /><OptionalLine value={joinNonEmpty([company.email, company.telefono])} /></div>
       </div>
       <div className="po-document-preview__identity"><span>Compra</span><strong>{purchase.numero || "Compra por asignar"}</strong><dl><div><dt>Fecha</dt><dd>{purchase.fechaCompra ? formatDate(purchase.fechaCompra, purchase.locale) : "-"}</dd></div><div><dt>Estado</dt><dd>{getPurchaseStatusLabel(purchase.estado || "borrador")}</dd></div><div><dt>Moneda</dt><dd>{purchase.moneda || "CLP"}</dd></div></dl></div>
     </header>

@@ -13,6 +13,7 @@ const {
   authoritativeBusinessFields,
   buildProfileInputWithAuthoritativeFields,
 } = require("./businessJurisdiction");
+const { categoryModulesPatch } = require("./categoryModules");
 
 function safeText(value, maxLength = 180) {
   return String(value || "").trim().replace(/\s+/g, " ").slice(0, maxLength);
@@ -205,6 +206,8 @@ async function updateBusinessInformationHandler(
     transaction.update(context.businessRef, {
       nombreComercial: input.nombreComercial,
       ...categoryPatch,
+      // SPEC 039: solo si el rubro cambia, los módulos pasan a ser los del rubro nuevo.
+      ...categoryModulesPatch(currentBusiness.data() || {}, input.rubroCodigo),
       regionCodigo: input.regionCodigo,
       regionNombre: input.regionNombre,
       ...communePatch,

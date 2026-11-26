@@ -27,6 +27,8 @@ const PROVIDER_STATUS_SET = new Set(PROVIDER_STATUSES);
 const PROVIDER_PAYMENT_TERM_SET = new Set(PROVIDER_PAYMENT_TERMS);
 const READ_ROLES = new Set(["OWNER", "ADMIN", "COMPRAS", "MEMBER"]);
 const WRITE_ROLES = new Set(["OWNER", "ADMIN", "COMPRAS"]);
+const DELETE_ROLES = new Set(["OWNER", "ADMIN"]);
+export const PROVIDER_DELETE_CONFIRMATION_WORD = "permanente";
 const PROVIDER_TEXT_FIELDS = Object.freeze({
   rut: {maxLength: 20, label: "RUT"},
   razonSocial: {maxLength: 240, label: "razón social"},
@@ -311,4 +313,13 @@ export function canReadProviders(role) {
 
 export function canManageProviders(role) {
   return WRITE_ROLES.has(String(role || "").toUpperCase());
+}
+
+// Solo orienta la interfaz: la autoridad real es la Function eliminarProveedor.
+export function canDeleteProviders(role) {
+  return DELETE_ROLES.has(String(role || "").toUpperCase());
+}
+
+export function isProviderDeleteConfirmed(value) {
+  return String(value ?? "").trim().toLowerCase() === PROVIDER_DELETE_CONFIRMATION_WORD;
 }

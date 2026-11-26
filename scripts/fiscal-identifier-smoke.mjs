@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
 import {createRequire} from "node:module";
 import {adaptStoredFiscalIdentifier, buildFiscalIdentifier, isValidFiscalIdentifier} from "../src/domain/fiscalIdentifier.mjs";
 
@@ -14,6 +15,10 @@ const cases = [
   ["BO", "1234567", true], ["BR", "529.982.247-25", true],
   ["BR", "11.222.333/0001-81", true], ["PE", "20100070970", true],
   ["OTHER", "TAX-12345", true],
+  // Largo: el RUT chileno admite 7 u 8 dígitos de cuerpo; los demás identificadores, un máximo acotado.
+  ["CL", "12345678-5", true], ["CL", "1.000.005-K", true],
+  ["CL", `${"1".repeat(40)}-1`, false], ["CL", "123456-5", false], ["CL", "123456789-5", false],
+  ["BO", "1".repeat(16), false], ["OTHER", "A".repeat(41), false], ["OTHER", "AB", false],
 ];
 for (const [country, value, expected] of cases) {
   assert.equal(isValidFiscalIdentifier(country, value), expected);
@@ -40,4 +45,7 @@ assert.equal(providerSnapshotFromDocument(snapshot("provider-1", provider), {bus
 assert.equal(purchaseProviderSnapshot(snapshot("provider-1", provider), "business-bo", "provider-1", HttpsError).identificadorFiscalNormalizado, "7654321");
 const legacyCustomer = {...customer, paisCodigo: undefined, identificadorFiscalTipo: undefined, identificadorFiscalValor: undefined, identificadorFiscalNormalizado: undefined, rut: "12.345.678-5"};
 assert.equal(clientSnapshotFromDocument(snapshot("client-1", legacyCustomer), "business-bo", "client-1", HttpsError).identificadorFiscalTipo, "RUT");
+// El campo de la solicitud de verificación de empresa limita el largo en el cliente (como clientes y proveedores).
+const companyConfigSource = readFileSync(new URL("../src/features/company/CompanyConfig.jsx", import.meta.url), "utf8");
+assert.match(companyConfigSource, /value=\{form\.identificadorFiscalValor\}\s+maxLength=\{form\.paisCodigo === "CL" \? 12 : 20\}/);
 console.log("Fiscal identifier smoke OK");

@@ -11,11 +11,31 @@ import {connectFunctionsEmulator, getFunctions, httpsCallable} from "firebase/fu
 // scripts/sales-integrated-local.mjs: firebase-admin para sembrar datos
 // (bypassa Rules), SDK cliente real conectado a los emuladores para ejercer
 // tanto las Functions autoritativas como las Firestore Rules.
+// Puertos: NO hay puertos por defecto, para que una configuración incompleta nunca llegue a otro emulador que
+// esté abierto en los puertos de siempre. Firestore y Auth salen de las variables que fija `firebase
+// emulators:exec` (FIRESTORE_EMULATOR_HOST y FIREBASE_AUTH_EMULATOR_HOST); `emulators:exec` no exporta la de
+// Functions, así que su host y puerto se piden al hub de ese mismo emulador (FIREBASE_EMULATOR_HUB). Si falta
+// cualquiera de las tres cosas, el script se detiene antes de crear ningún cliente o hacer ninguna llamada.
 
 const PROJECT_ID = "tesis-inventario-ia";
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-process.env.FIRESTORE_EMULATOR_HOST ||= "127.0.0.1:8080";
+const requiredEnv = (name) => {
+  const value = String(process.env[name] || "").trim();
+  if (!value) throw new Error(`Falta ${name}: ejecuta este script con "firebase emulators:exec" (no usa puertos por defecto).`);
+  return value;
+};
+const splitHost = (value, label) => {
+  const [host, port] = String(value).replace(/^https?:\/\//, "").split(":");
+  if (!host || !Number.isInteger(Number(port)) || Number(port) <= 0) throw new Error(`${label} inválido: «${value}».`);
+  return {host, port: Number(port)};
+};
 process.env.GCLOUD_PROJECT ||= PROJECT_ID;
+const FIRESTORE = splitHost(requiredEnv("FIRESTORE_EMULATOR_HOST"), "FIRESTORE_EMULATOR_HOST");
+const AUTH = splitHost(requiredEnv("FIREBASE_AUTH_EMULATOR_HOST"), "FIREBASE_AUTH_EMULATOR_HOST");
+const hubInfo = await (await fetch(`http://${requiredEnv("FIREBASE_EMULATOR_HUB")}/emulators`)).json();
+if (!hubInfo?.functions?.port) throw new Error("El hub del emulador no informa un emulador de Functions: usa --only auth,firestore,functions.");
+const FUNCTIONS = splitHost(`${hubInfo.functions.host}:${hubInfo.functions.port}`, "Functions del hub");
+console.log(`Emuladores de esta corrida: firestore ${FIRESTORE.host}:${FIRESTORE.port}, auth ${AUTH.host}:${AUTH.port}, functions ${FUNCTIONS.host}:${FUNCTIONS.port}`);
 const requireFromFunctions = createRequire(new URL("../functions/package.json", import.meta.url));
 const {deleteApp: deleteAdminApp, initializeApp: initializeAdminApp} = requireFromFunctions("firebase-admin/app");
 const {getFirestore: getAdminFirestore} = requireFromFunctions("firebase-admin/firestore");
@@ -23,8 +43,8 @@ const {getFirestore: getAdminFirestore} = requireFromFunctions("firebase-admin/f
 function createClientApp(name) {
   const app = initializeApp({apiKey: "demo-key", authDomain: `${PROJECT_ID}.firebaseapp.com`, projectId: PROJECT_ID, appId: `wkadd-${name}-${RUN_ID}`}, `wkadd-${name}-${RUN_ID}`);
   const auth = getAuth(app); const db = getFirestore(app); const functions = getFunctions(app, "us-central1");
-  connectAuthEmulator(auth, "http://127.0.0.1:9099", {disableWarnings: true});
-  connectFirestoreEmulator(db, "127.0.0.1", 8080); connectFunctionsEmulator(functions, "127.0.0.1", 5001);
+  connectAuthEmulator(auth, `http://${AUTH.host}:${AUTH.port}`, {disableWarnings: true});
+  connectFirestoreEmulator(db, FIRESTORE.host, FIRESTORE.port); connectFunctionsEmulator(functions, FUNCTIONS.host, FUNCTIONS.port);
   return {app, auth, db, functions};
 }
 async function authenticate(client, label) {
@@ -34,12 +54,13 @@ async function authenticate(client, label) {
 }
 const callable = (client, name) => httpsCallable(client.functions, name);
 const requestId = (label) => `wkadd-${RUN_ID}-${label}`.replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 120);
-async function expectCallableError(label, operation, expectedCodes) {
+async function expectCallableError(label, operation, expectedCodes, expectedMessage = "") {
   try {
     await operation();
   } catch (error) {
     const code = String(error?.code || "");
     assert.ok(expectedCodes.some((expected) => code.includes(expected)), `${label}: código inesperado ${code} (${error?.message})`);
+    if (expectedMessage) assert.ok(String(error?.message || "").includes(expectedMessage), `${label}: mensaje inesperado «${error?.message}»`);
     console.log(`OK rechazo: ${label}`);
     return;
   }
@@ -62,8 +83,11 @@ const technician = await authenticate(createClientApp("technician"), "technician
 const strangerTechnician = await authenticate(createClientApp("stranger-technician"), "stranger-technician");
 const finance = await authenticate(createClientApp("finance"), "finance");
 const outsider = await authenticate(createClientApp("outsider"), "outsider");
+const member = await authenticate(createClientApp("member"), "member");
+const memberNoModule = await authenticate(createClientApp("member-no-module"), "member-no-module");
+const memberWithModule = await authenticate(createClientApp("member-with-module"), "member-with-module");
 const unauthenticated = createClientApp("unauthenticated");
-const clients = [owner, admin, technician, strangerTechnician, finance, outsider];
+const clients = [owner, admin, technician, strangerTechnician, finance, outsider, member, memberNoModule, memberWithModule];
 
 const adminApp = initializeAdminApp({projectId: PROJECT_ID}, `wkadd-admin-${RUN_ID}`);
 const adminDb = getAdminFirestore(adminApp);
@@ -86,6 +110,12 @@ try {
     adminDb.doc(`membresias/${businessId}__${technician.uid}`).set({negocioId: businessId, uid: technician.uid, rol: "TECNICO", estado: "activo"}),
     adminDb.doc(`membresias/${businessId}__${strangerTechnician.uid}`).set({negocioId: businessId, uid: strangerTechnician.uid, rol: "TECNICO", estado: "activo"}),
     adminDb.doc(`membresias/${businessId}__${finance.uid}`).set({negocioId: businessId, uid: finance.uid, rol: "FINANZAS", estado: "activo"}),
+    // MEMBER sin perfil (opera cualquier proyecto) y dos MEMBER con perfil: uno sin el módulo "trabajos" y otro con él.
+    adminDb.doc(`membresias/${businessId}__${member.uid}`).set({negocioId: businessId, uid: member.uid, rol: "MEMBER", estado: "activo"}),
+    adminDb.doc(`negocios/${businessId}/perfilesEmpleados/perfil-sin-trabajos`).set({negocioId: businessId, estado: "activo", nombre: "Solo clientes", modulos: ["clientes"]}),
+    adminDb.doc(`negocios/${businessId}/perfilesEmpleados/perfil-con-trabajos`).set({negocioId: businessId, estado: "activo", nombre: "Trabajos", modulos: ["trabajos"]}),
+    adminDb.doc(`membresias/${businessId}__${memberNoModule.uid}`).set({negocioId: businessId, uid: memberNoModule.uid, rol: "MEMBER", estado: "activo", profileId: "perfil-sin-trabajos"}),
+    adminDb.doc(`membresias/${businessId}__${memberWithModule.uid}`).set({negocioId: businessId, uid: memberWithModule.uid, rol: "MEMBER", estado: "activo", profileId: "perfil-con-trabajos"}),
   ]);
 
   const project = await callable(owner, "crearTrabajo")({
@@ -102,9 +132,14 @@ try {
   const product = `product-${RUN_ID}`;
   const service = `service-${RUN_ID}`;
   const inactiveItem = `inactive-${RUN_ID}`;
+  const noPriceItem = `noprice-${RUN_ID}`;
+  const zeroPriceItem = `zeroprice-${RUN_ID}`;
+  // El precio de venta del ítem es `precioInterno` (el costo, costoBase/costoPromedio, nunca cuenta como precio).
   await Promise.all([
-    adminDb.doc(`negocios/${businessId}/inventario/${product}`).set({itemId: product, negocioId: businessId, estado: "activo", tipoItem: "producto", nombre: "Extensión de cableado", codigoInterno: "ADD-PROD", unidad: "unidad", stock: 50, costoBase: 4000, costoPromedio: 3500, costoPromedioMoneda: "CLP"}),
-    adminDb.doc(`negocios/${businessId}/inventario/${service}`).set({itemId: service, negocioId: businessId, estado: "activo", tipoItem: "servicio", nombre: "Configuración adicional", codigoInterno: "ADD-SERV", unidad: "servicio"}),
+    adminDb.doc(`negocios/${businessId}/inventario/${product}`).set({itemId: product, negocioId: businessId, estado: "activo", tipoItem: "producto", nombre: "Extensión de cableado", codigoInterno: "ADD-PROD", unidad: "unidad", stock: 50, costoBase: 4000, costoPromedio: 3500, costoPromedioMoneda: "CLP", precioInterno: 15000}),
+    adminDb.doc(`negocios/${businessId}/inventario/${service}`).set({itemId: service, negocioId: businessId, estado: "activo", tipoItem: "servicio", nombre: "Configuración adicional", codigoInterno: "ADD-SERV", unidad: "servicio", precioInterno: 2000}),
+    adminDb.doc(`negocios/${businessId}/inventario/${noPriceItem}`).set({itemId: noPriceItem, negocioId: businessId, estado: "activo", tipoItem: "servicio", nombre: "Servicio sin precio", codigoInterno: "ADD-NOPRICE", unidad: "servicio", costoBase: 500, costoPromedio: 500}),
+    adminDb.doc(`negocios/${businessId}/inventario/${zeroPriceItem}`).set({itemId: zeroPriceItem, negocioId: businessId, estado: "activo", tipoItem: "servicio", nombre: "Servicio con precio cero", codigoInterno: "ADD-ZERO", unidad: "servicio", precioInterno: 0}),
     adminDb.doc(`negocios/${businessId}/inventario/${inactiveItem}`).set({itemId: inactiveItem, negocioId: businessId, estado: "archivado", tipoItem: "servicio", nombre: "Servicio archivado", codigoInterno: "ADD-ARCH", unidad: "servicio"}),
   ]);
 
@@ -257,6 +292,69 @@ try {
   assert.equal(retryOnceMore.data.adicionalId, firstCall.data.adicionalId);
   assert.equal((await adminDb.collection(`negocios/${businessId}/trabajos/${workId}/adicionales`).get()).size, countAfterRetry, "un doble-click con el mismo requestId nunca crea un segundo adicional");
   console.log("OK idempotencia: mismo requestId nunca crea un segundo adicional (protección de doble-click reutilizada de gastos)");
+
+  // --- Precio del adicional (decisión del dueño del producto) ---
+  // TECNICO/MEMBER: el precio enviado debe ser el precio de venta vigente del ítem (`precioInterno`); propietario y
+  // administrador conservan el precio libre. Nunca se acepta el costo como precio ni un ítem sin precio de venta.
+  const additionalsPath = `negocios/${businessId}/trabajos/${workId}/adicionales`;
+  const additionalCount = async () => (await adminDb.collection(additionalsPath).get()).size;
+  const asTechnician = (itemId, precioUnitario, label, extra = {}) => callable(technician, "crearAdicionalTrabajo")({businessId, trabajoId: workId, requestId: requestId(label), adicional: {itemId, cantidad: 1, precioUnitario, ...extra}});
+  const asMember = (client, itemId, precioUnitario, label) => callable(client, "crearAdicionalTrabajo")({businessId, trabajoId: workId, requestId: requestId(label), adicional: {itemId, cantidad: 1, precioUnitario}});
+  const NO_PRICE_MESSAGE = "Este ítem no tiene precio de venta. Pide a un administrador que lo defina.";
+  const MISMATCH_MESSAGE = "El precio no coincide con el precio de venta vigente del ítem.";
+  const countBeforePrice = await additionalCount();
+
+  // Técnico con precio distinto: rechazado, sin documento (menor, mayor, el costo base, el costo promedio y cero).
+  for (const [label, price] of [["menor", 14999], ["mayor", 15001], ["igual al costo base", 4000], ["igual al costo promedio", 3500], ["cero", 0]]) {
+    await expectCallableError(`TECNICO con precio ${label} al de venta`, () => asTechnician(product, price, `tech-price-${label}`), ["failed-precondition"], MISMATCH_MESSAGE);
+  }
+  assert.equal(await additionalCount(), countBeforePrice, "ningún rechazo creó un adicional");
+
+  // Técnico con el precio correcto: aceptado, con el precio y la moneda del trabajo.
+  const technicianCorrect = await asTechnician(product, 15000, "tech-price-ok");
+  const technicianCorrectStored = (await adminDb.doc(`${additionalsPath}/${technicianCorrect.data.adicionalId}`).get()).data();
+  assert.equal(technicianCorrectStored.precioUnitario, 15000); assert.equal(technicianCorrectStored.moneda, "CLP");
+  assert.equal(technicianCorrectStored.registradoPorUid, technician.uid); assert.equal(technicianCorrectStored.estado, "PENDIENTE_COBRO");
+  const technicianAsString = await asTechnician(product, "15000.00", "tech-price-string");
+  assert.equal((await adminDb.doc(`${additionalsPath}/${technicianAsString.data.adicionalId}`).get()).data().precioUnitario, 15000, "el precio enviado como texto también se compara con el vigente");
+
+  // Ítem sin precio de venta (sin el campo, o en cero): rechazado para el técnico aunque exista costo o envíe 0.
+  for (const [label, itemId, price] of [["sin precio, con el costo", noPriceItem, 500], ["sin precio, con cero", noPriceItem, 0], ["sin precio, con otro valor", noPriceItem, 1000], ["precio cero en el ítem, con cero", zeroPriceItem, 0], ["precio cero en el ítem, con otro valor", zeroPriceItem, 1]]) {
+    await expectCallableError(`TECNICO: ítem ${label}`, () => asTechnician(itemId, price, `tech-noprice-${label}`), ["failed-precondition"], NO_PRICE_MESSAGE);
+  }
+  assert.equal(await additionalCount(), countBeforePrice + 2, "solo los dos adicionales con precio correcto se crearon");
+
+  // El precio vigente manda: si el administrador cambia el precio del ítem, el precio anterior deja de valer.
+  await adminDb.doc(`negocios/${businessId}/inventario/${product}`).update({precioInterno: 16000});
+  await expectCallableError("TECNICO con el precio anterior del ítem", () => asTechnician(product, 15000, "tech-price-stale"), ["failed-precondition"], MISMATCH_MESSAGE);
+  const technicianNewPrice = await asTechnician(product, 16000, "tech-price-new");
+  assert.equal((await adminDb.doc(`${additionalsPath}/${technicianNewPrice.data.adicionalId}`).get()).data().precioUnitario, 16000);
+  // Campos extra del cliente (moneda, estado) no cambian la validación del precio.
+  await expectCallableError("TECNICO con precio distinto y campos extra", () => asTechnician(product, 1, "tech-price-extra", {moneda: "USD", estado: "PENDIENTE_COBRO", descripcion: "Ajuste"}), ["failed-precondition"], MISMATCH_MESSAGE);
+
+  // MEMBER (sin perfil): mismas reglas que el técnico.
+  await expectCallableError("MEMBER con precio distinto", () => asMember(member, service, 1999, "member-price-bad"), ["failed-precondition"], MISMATCH_MESSAGE);
+  await expectCallableError("MEMBER: ítem sin precio de venta", () => asMember(member, noPriceItem, 500, "member-noprice"), ["failed-precondition"], NO_PRICE_MESSAGE);
+  const memberCorrect = await asMember(member, service, 2000, "member-price-ok");
+  assert.equal((await adminDb.doc(`${additionalsPath}/${memberCorrect.data.adicionalId}`).get()).data().precioUnitario, 2000);
+  // MEMBER con perfil: sin el módulo "trabajos" se rechaza antes de mirar el precio; con el módulo rige el precio de venta.
+  await expectCallableError("MEMBER con perfil sin el módulo trabajos (aun con el precio correcto)", () => asMember(memberNoModule, service, 2000, "member-no-module"), ["permission-denied"], "Tu perfil no tiene acceso a este módulo.");
+  await expectCallableError("MEMBER con perfil con el módulo trabajos y precio distinto", () => asMember(memberWithModule, service, 1, "member-module-bad"), ["failed-precondition"], MISMATCH_MESSAGE);
+  const memberModuleOk = await asMember(memberWithModule, service, 2000, "member-module-ok");
+  assert.equal((await adminDb.doc(`${additionalsPath}/${memberModuleOk.data.adicionalId}`).get()).data().registradoPorUid, memberWithModule.uid);
+
+  // Propietario y administrador pueden ajustar el precio (menor, decimal, cero) y usar ítems sin precio de venta.
+  const ownerAdjusted = await crearAdicional({businessId, trabajoId: workId, requestId: requestId("owner-price-adjust"), adicional: {itemId: product, cantidad: 1, precioUnitario: 12345.5}});
+  assert.equal((await adminDb.doc(`${additionalsPath}/${ownerAdjusted.data.adicionalId}`).get()).data().precioUnitario, 12345.5, "el propietario ajusta el precio");
+  const adminAdjusted = await callable(admin, "crearAdicionalTrabajo")({businessId, trabajoId: workId, requestId: requestId("admin-price-adjust"), adicional: {itemId: product, cantidad: 1, precioUnitario: 100}});
+  assert.equal((await adminDb.doc(`${additionalsPath}/${adminAdjusted.data.adicionalId}`).get()).data().precioUnitario, 100, "el administrador ajusta el precio");
+  const ownerNoPrice = await crearAdicional({businessId, trabajoId: workId, requestId: requestId("owner-noprice"), adicional: {itemId: noPriceItem, cantidad: 1, precioUnitario: 777}});
+  assert.equal((await adminDb.doc(`${additionalsPath}/${ownerNoPrice.data.adicionalId}`).get()).data().precioUnitario, 777, "el propietario puede fijar el precio de un ítem sin precio de venta");
+  const adminZero = await callable(admin, "crearAdicionalTrabajo")({businessId, trabajoId: workId, requestId: requestId("admin-zero"), adicional: {itemId: zeroPriceItem, cantidad: 1, precioUnitario: 0}});
+  assert.equal((await adminDb.doc(`${additionalsPath}/${adminZero.data.adicionalId}`).get()).data().precioUnitario, 0, "el administrador conserva el precio 0 (cortesía)");
+  // Nada de lo anterior modificó el precio del ítem.
+  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${product}`).get()).data().precioInterno, 16000);
+  console.log("OK precio: TECNICO/MEMBER solo con el precio de venta vigente (distinto, costo, cero y obsoleto rechazados; ítem sin precio rechazado; correcto aceptado); propietario y administrador ajustan el precio");
 
   console.log("WORK_ADDITIONAL_INTEGRATED_LOCAL_OK");
 } finally {

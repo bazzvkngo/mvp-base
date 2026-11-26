@@ -1,0 +1,53 @@
+/* Detalle de una orden de compra emitida o cancelada (PurchaseOrderDetailView): solo lectura.
+   Solo tokens; el modo oscuro sale de los propios tokens. Hoja propia para no tocar purchase-orders.css,
+   que comparten Compras, Recepciones y Ventas. */
+.purchase-order-detail__screen { display: grid; gap: var(--space-4); min-width: 0; }
+.purchase-order-detail__context { display: grid; gap: var(--space-3); }
+.purchase-order-detail__top { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-3); justify-content: space-between; }
+.purchase-order-detail__title { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.purchase-order-detail__title h1 { color: var(--color-text-strong); font-size: var(--font-size-xl); margin: 0; overflow-wrap: anywhere; }
+.purchase-order-detail__facts, .purchase-order-detail__provider dl, .purchase-order-detail__notes dl { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); margin: 0; }
+.purchase-order-detail__facts > div, .purchase-order-detail__provider dl > div, .purchase-order-detail__notes dl > div, .purchase-order-detail__response { background: var(--color-surface-subtle); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm); display: grid; gap: var(--space-1); min-width: 0; padding: var(--space-2) var(--space-3); }
+.purchase-order-detail__facts dt, .purchase-order-detail__provider dt, .purchase-order-detail__notes dt, .purchase-order-detail__response > span { color: var(--color-text-muted); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); text-transform: uppercase; }
+.purchase-order-detail__facts dd, .purchase-order-detail__provider dd, .purchase-order-detail__notes dd, .purchase-order-detail__response > strong { color: var(--color-text-strong); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.purchase-order-detail__response > small { color: var(--color-text-default); font-size: var(--font-size-sm); overflow-wrap: anywhere; }
+.purchase-order-detail__actions { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.purchase-order-detail__help { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+.purchase-order-detail__flow { display: grid; gap: var(--space-3); min-width: 0; }
+.purchase-order-detail__provider { display: grid; gap: var(--space-3); }
+.purchase-order-detail__provider h2, .purchase-order-detail__notes h2, .purchase-order-detail__heading { margin: 0; }
+.purchase-order-detail__notes { display: grid; gap: var(--space-3); }
+.purchase-order-detail__empty { color: var(--color-text-muted); font-size: var(--font-size-sm); margin: 0; }
+.purchase-order-detail__items { container-type: inline-size; margin-top: var(--space-3); }
+.purchase-order-detail__table { border-collapse: collapse; font-size: var(--font-size-sm); font-variant-numeric: tabular-nums; width: 100%; }
+.purchase-order-detail__table th { border-bottom: 1px solid var(--color-border-default); color: var(--color-text-muted); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); padding: var(--space-2) var(--space-3); text-align: right; }
+.purchase-order-detail__table td { border-bottom: 1px solid var(--color-border-subtle); color: var(--color-text-default); padding: var(--space-2) var(--space-3); text-align: right; vertical-align: middle; }
+.purchase-order-detail__table th:first-child, .purchase-order-detail__table td:first-child { text-align: left; }
+.purchase-order-detail__table tbody tr:last-child td { border-bottom: 0; }
+.purchase-order-detail__total { color: var(--color-text-strong); font-weight: var(--font-weight-semibold); }
+.purchase-order-detail__item { min-width: 12rem; }
+.purchase-order-detail__item small, .purchase-order-detail__item p { color: var(--color-text-muted); display: block; font-size: var(--font-size-xs); margin: var(--space-1) 0 0; }
+.purchase-order-detail__item-title { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.purchase-order-detail__item-title strong { color: var(--color-text-strong); overflow-wrap: anywhere; }
+.purchase-order-detail__totals { display: grid; gap: var(--space-2); justify-items: end; margin: var(--space-4) 0 0; }
+.purchase-order-detail__totals > div { display: flex; font-size: var(--font-size-sm); gap: var(--space-6); justify-content: space-between; min-width: 14rem; }
+.purchase-order-detail__totals dt { color: var(--color-text-muted); }
+.purchase-order-detail__totals dd { color: var(--color-text-default); font-variant-numeric: tabular-nums; margin: 0; }
+.purchase-order-detail__totals .purchase-order-detail__grand-total { border-top: 1px solid var(--color-border-default); font-weight: var(--font-weight-bold); padding-top: var(--space-2); }
+.purchase-order-detail__totals .purchase-order-detail__grand-total dt, .purchase-order-detail__totals .purchase-order-detail__grand-total dd { color: var(--color-text-strong); }
+
+/* Contenedor angosto (móvil): cada ítem es una tarjeta con su etiqueta. */
+@container (max-width: 35rem) {
+  .purchase-order-detail__table, .purchase-order-detail__table tbody, .purchase-order-detail__table tr, .purchase-order-detail__table td { display: block; }
+  .purchase-order-detail__table thead { clip: rect(0 0 0 0); clip-path: inset(50%); height: 1px; overflow: hidden; position: absolute; white-space: nowrap; width: 1px; }
+  .purchase-order-detail__table tbody tr { background: var(--color-surface-subtle); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); margin-bottom: var(--space-3); padding: var(--space-3); }
+  .purchase-order-detail__table td, .purchase-order-detail__table tbody tr:last-child td { align-items: baseline; border: 0; display: flex; gap: var(--space-3); justify-content: space-between; padding: var(--space-1) 0; text-align: right; }
+  .purchase-order-detail__table td::before { color: var(--color-text-muted); content: attr(data-label); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); text-align: left; text-transform: uppercase; }
+  .purchase-order-detail__table td.purchase-order-detail__item { display: block; padding-bottom: var(--space-2); text-align: left; }
+  .purchase-order-detail__table td.purchase-order-detail__item::before { content: none; }
+}
+
+@media (max-width: 640px) {
+  .purchase-order-detail__totals { justify-items: stretch; }
+  .purchase-order-detail__totals > div { min-width: 0; }
+}

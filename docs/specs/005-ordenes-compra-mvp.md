@@ -4,6 +4,108 @@ En una OC nueva o pendiente, “Escanear producto” resuelve por consulta exact
 
 > Actualización: la OC representa lo solicitado y no modifica stock. La respuesta del proveedor es una dimensión separada y una OC emitida origina Recepciones, no Compras directas. Ver `011-recepciones-mvp.md`.
 
+## Enmienda 2026-11-06: eliminación permanente de órdenes de compra
+
+> **Estado: implementada, pendiente de desplegar.** Hasta que la Function
+> `eliminarOrdenCompra` y el frontend se desplieguen (primero la Function), la
+> eliminación física de órdenes sigue sin estar disponible en el producto.
+
+Motivo: poder quitar órdenes de compra creadas por error o canceladas que
+nunca se enviaron al proveedor, sin dejar basura en el historial. Cancelar sigue
+disponible y es la vía para órdenes con historia. Esta enmienda reemplaza
+únicamente los puntos que se indican; el resto de la SPEC y sus invariantes
+siguen vigentes (AGENTS.md y SPEC 016: no se eliminan físicamente registros
+referenciados ni se reescribe historia).
+
+- **Reemplaza** tres frases que prohibían la eliminación física: «No existe
+  eliminación física ni escritura directa desde el SDK cliente» (sección Estados
+  y permisos), «eliminación física» en la lista de límites explícitos y «No existe
+  eliminación física ni acceso cliente a contadores o solicitudes» en los
+  criterios de aceptación. Ahora existe una única vía de eliminación física, la
+  Function `eliminarOrdenCompra` (nombre propuesto), y solo en el alcance de
+  esta enmienda. La escritura directa desde el SDK cliente sigue prohibida.
+- **Alcance (B)**: se puede eliminar una orden en `borrador`, o en `cancelada`
+  que **nunca se emitió**. Una orden emitida alguna vez no se elimina, aunque
+  después se haya cancelado.
+- **Cómo se prueba que nunca se emitió.** Una orden cancelada no guarda su
+  estado anterior (solo `canceladaEn` y `canceladaPorUid`), así que la Function
+  comprueba la ausencia de todo rastro de emisión: `estado` distinto de
+  `emitida`; sin `emitidaEn`, `emitidaPorUid`, `canalEmision` ni
+  `destinatarioEmision`; `cantidadEnvios` en cero y sin `ultimoEnvioEn` ni
+  `reenviadaEn`; sin respuesta del proveedor registrada; y sin
+  `enviadoPorCorreo` verdadero ni `estadoEnvioCorreo` en `enviado` o `enviando`.
+  Un envío fallido o simulado (`estadoEnvioCorreo` en `error` o `simulado`) no
+  entregó nada y no bloquea.
+- **Roles**: eliminan permanentemente solo `OWNER` y `ADMIN`
+  (`BUSINESS_MANAGEMENT_ROLES`), como en proveedores y cotizaciones. Crean,
+  editan, emiten y cancelan `OWNER`, `ADMIN` y `COMPRAS`
+  (`PURCHASE_WRITE_ROLES`); esto corrige la redacción original de la sección
+  Estados y permisos, que mencionaba solo `OWNER` y `ADMIN` y estaba
+  desactualizada. El rol se valida en el servidor; la interfaz solo oculta el
+  botón.
+- **`eliminarOrdenCompra`**: exige negocio verificado, membresía activa de
+  `OWNER`/`ADMIN` y que el usuario escriba la palabra «permanente» (validada
+  también en el backend). Una sola transacción lee la orden, su intento de
+  correo y las dependencias, y si ninguna bloquea borra la orden y sus registros
+  internos.
+- **Dependencias que bloquean** (cualquier estado cuenta): `recepciones` con
+  `ordenCompraId` (también en borrador o canceladas), `compras` con
+  `ordenCompraId`, el campo `compraId` de la orden (y `comprasDesdeRecepciones`,
+  `estadoRecepcion` y `recepcionResumen`, que delatan recepciones), y un intento
+  de correo en `purchaseOrderEmailAttempts/{ordenCompraId}` con estado
+  `enviando` o `enviado`. Como red de seguridad también bloquean
+  `adquisicionesInventario` y `movimientosInventario` con `ordenCompraId`,
+  `receptionCreateRequests` y `purchaseOrderConversionRequests` de esa orden, y
+  otra orden creada a partir de esta (`purchaseOrderDuplicateRequests` con
+  `ordenCompraOrigenId`). Si hay alguna, la Function responde
+  `failed-precondition` con un mensaje claro y no borra nada.
+- **Se borran junto con la orden**: sus solicitudes idempotentes
+  (`purchaseOrderCreateRequests` y `purchaseOrderDuplicateRequests` cuyo
+  `ordenCompraId` es la orden) y su intento de correo
+  (`purchaseOrderEmailAttempts/{ordenCompraId}`). Sin esto, un reintento con el
+  mismo `requestId` fallaría con «La solicitud idempotente está incompleta».
+- **Numeración**: el contador `purchaseOrderCounters/{year}` no retrocede y el
+  número eliminado no se reutiliza. Queda un hueco en la secuencia (por ejemplo
+  `OC-2026-0002` y `OC-2026-0004`), igual que en cotizaciones. El diálogo de
+  confirmación avisa de este hueco.
+- **Carrera y envíos**: las Functions que crean recepciones, emiten o cancelan
+  leen la orden dentro de su propia transacción, así que Firestore las serializa
+  con el borrado y no puede quedar una recepción apuntando a una orden
+  inexistente. El envío por correo ocurre fuera de la transacción: por eso un
+  intento en `enviando` bloquea el borrado. Límite conocido: WhatsApp solo deja
+  rastro cuando la persona confirma el envío; el sistema prueba que la orden
+  «nunca se registró como enviada», no que «nunca salió del equipo».
+- **Proveedores**: una orden eliminada deja de contar como dependencia en
+  `eliminarProveedor` (SPEC 004, enmienda 2026-11-05); no hay cambios de código
+  en esa Function.
+- **Interfaz**: opción «Eliminar» en el borrador (junto a «Cancelar», con
+  distinción clara: cancelar conserva la orden, eliminar la quita para siempre),
+  en el menú «Más» del detalle de una orden cancelada elegible y como acción en
+  la lista; visible solo para `OWNER` y `ADMIN`. Diálogo que pide escribir
+  «permanente» y advierte que la acción no se puede deshacer, que el número no se
+  vuelve a usar (queda un hueco en la numeración) y que solo se eliminan órdenes
+  nunca enviadas y sin recepciones ni compras. Un ayudante del cliente solo
+  oculta el botón; decide la Function.
+- **Pruebas previstas**: aserciones estáticas en `purchase-orders-model-smoke.mjs`
+  (export de la Function, roles, palabra de confirmación, dependencias, Rules sin
+  cambios) y una prueba integrada con emulador (borrado y hueco en la
+  numeración, roles y negocio ajeno rechazados, cada bloqueo, envío fallido o
+  simulado que no bloquea, idempotencia, carrera con crear recepción y
+  multiempresa).
+- **Verificación previa a producción**: antes de ofrecer el borrado de órdenes
+  canceladas, confirmar con una consulta de solo lectura que no existan órdenes
+  canceladas que sí se emitieron pero carezcan de `emitidaEn` (datos anteriores
+  al modelo vigente). Si no se puede verificar, se habilita primero solo el
+  borrador.
+- **Decisión sobre el rol `COMPRAS`**: Decidido por el desarrollador el
+  2026-11-06: `COMPRAS` crea, edita, emite y cancela, pero no elimina; eliminar
+  queda solo para `OWNER` y `ADMIN`. Revisable por Bruno: si decide incluir
+  `COMPRAS`, se enmienda este punto y se ajusta la lista de roles en
+  `functions/purchaseOrderDeletion.js` y en `purchaseOrderModel.mjs`.
+- No cambian las Rules (`delete` directo sigue denegado en `ordenesCompra` y en
+  sus colecciones internas) ni los índices (consultas de igualdad sobre un
+  campo). Se despliega primero la Function y después el frontend.
+
 ## Objetivo
 
 Registrar órdenes de compra vinculadas a proveedores e inventario del negocio, con numeración transaccional, snapshots históricos autoritativos, cálculo de IVA y estados de ciclo de vida. Este módulo no recibe mercadería, no mueve stock y no genera cuentas por pagar.
@@ -110,7 +212,7 @@ Los miembros activos `OWNER`, `ADMIN` y `MEMBER` pueden leer órdenes del negoci
 - `emitirOrdenCompra`;
 - `cancelarOrdenCompra`.
 
-Solo `borrador` se edita. Una orden puede pasar de `borrador` a `emitida`, y de `borrador` o `emitida` a `cancelada`. Emitir o cancelar nuevamente el mismo estado es idempotente. No existe eliminación física ni escritura directa desde el SDK cliente.
+Solo `borrador` se edita. Una orden puede pasar de `borrador` a `emitida`, y de `borrador` o `emitida` a `cancelada`. Emitir o cancelar nuevamente el mismo estado es idempotente. La eliminación física solo existe como `eliminarOrdenCompra`, para órdenes nunca emitidas y sin recepciones ni compras (enmienda 2026-11-06); no existe escritura directa desde el SDK cliente.
 
 ## Interfaz
 
@@ -150,7 +252,7 @@ Este MVP no implementa:
 - movimientos o ajustes de inventario;
 - cambios de stock o `costoBase`;
 - vínculo automático con finanzas;
-- eliminación física;
+- eliminación física, salvo la vía única `eliminarOrdenCompra` (enmienda 2026-11-06);
 - ingestión automática de respuestas del proveedor; su respuesta se registra
   manualmente por el flujo autoritativo vigente;
 - inteligencia artificial.
@@ -173,6 +275,11 @@ La aceptación requiere además los smokes de Proveedores, Inventario, Cotizacio
 - Proveedor e ítems se validan dentro del negocio y sus snapshots no se refrescan solos.
 - Los totales persistidos son los recalculados por backend.
 - No se modifica inventario, stock ni costo base.
-- No existe eliminación física ni acceso cliente a contadores o solicitudes.
+- No existe escritura ni eliminación directa desde el cliente ni acceso cliente a contadores o solicitudes; la única eliminación física es `eliminarOrdenCompra` (enmienda 2026-11-06).
 - Historial, filtros, estado vacío, workspace y vista imprimible están disponibles.
 - Los smokes relacionados, Rules, build y lint terminan sin regresiones.
+
+## Cambios posteriores
+
+- Nueva y Editar orden de compra (borrador) adoptan el patrón visual de Nueva compra y Nueva venta (23-nov-2026): cabecera "← Órdenes de compra" con título, chip, fecha y origen (el aviso de que el número se asigna al crear se conserva, discreto); proveedor con buscador por nombre o identificación fiscal y "Ver todos los proveedores" (`InlinePartySelector` mediante `PurchaseProviderSelector`); secciones "¿A quién le pides?" y "¿Qué pides?"; "Agregar desde inventario" con el diálogo compartido `InventoryCatalogDialog` (cantidad y reagrupado como en Compras; "Escanear producto" sigue igual); líneas con selector de cantidad − y + además de costo unitario y descuento; Entrega y Condiciones comerciales como tarjetas visibles, sin acordeones ("Editar condiciones" abre un diálogo); resumen con el total destacado. Sin cambios de cálculos, validaciones, modelo, estados, stock ni costos, ni de los textos de los botones (Crear orden de compra, Guardar cambios, Enviar por correo, Cancelar, etc.). Emitida y cancelada siguen en la vista de detalle. Solo cliente (`purchase-order-new-page-structure-smoke.mjs`).
+- El diálogo «Enviar OC-… por correo» usa el diálogo compartido `DocumentEmailDialog` (el mismo de Cotizaciones; 23-nov-2026): destinatario prefijado con el correo del proveedor y «Usar otro correo», bloque De / Responder a / Copia oculta, pestañas Redactar y Vista previa, resumen y PDF adjunto en una columna lateral, aviso de simulación solo en QA local y el motivo visible cuando «Enviar por correo» está deshabilitado. A la orden de compra no se responde desde un enlace: el proveedor recibe el correo con el PDF adjunto y responde por correo, y «Responder a» muestra la dirección real (correo de la empresa; sin él, el de la cuenta verificada, igual que el servidor) o avisa que la empresa no tiene un correo configurado. Sin registro de respuestas ni seguimiento automático (mejora futura). Sin cambios de Functions, estados, validaciones ni modelo (`document-email-dialog-smoke.mjs`, `purchase-order-email-smoke.mjs`).

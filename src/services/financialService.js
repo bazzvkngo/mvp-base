@@ -77,11 +77,12 @@ export function subscribeToFinancialMovements(
   );
 }
 
-export async function createFinancialMovement(businessId, input) {
+// `amountDecimals`: decimales de cálculo de la moneda del negocio (SPEC 036); sin él, 0 (monto entero, como siempre).
+export async function createFinancialMovement(businessId, input, { amountDecimals = 0 } = {}) {
   assertClientWriteAllowed("registrar movimientos financieros");
   requireBusinessId(businessId);
   const userId = requireCurrentUserId();
-  const payload = normalizeFinancialMovementInput(input, { businessId, userId });
+  const payload = normalizeFinancialMovementInput(input, { businessId, userId, amountDecimals });
   const timestamp = serverTimestamp();
   const reference = await addDoc(financialCollectionRef(businessId), {
     ...payload,
@@ -91,7 +92,7 @@ export async function createFinancialMovement(businessId, input) {
   return reference.id;
 }
 
-export async function updateFinancialMovement(businessId, movementId, input) {
+export async function updateFinancialMovement(businessId, movementId, input, { amountDecimals = 0 } = {}) {
   assertClientWriteAllowed("editar movimientos financieros");
   requireBusinessId(businessId);
   if (!movementId) throw new Error("Selecciona un movimiento para editar.");
@@ -109,7 +110,7 @@ export async function updateFinancialMovement(businessId, movementId, input) {
 
   const normalized = normalizeFinancialMovementInput(
     { ...input, sourceType: "manual", sourceId: "" },
-    { businessId, userId }
+    { businessId, userId, amountDecimals }
   );
   await updateDoc(reference, {
     type: normalized.type,

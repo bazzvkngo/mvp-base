@@ -1,18 +1,18 @@
 // Textos iniciales de /privacidad y /terminos (SPEC 024, etapa 3). Fuente:
 // docs/specs/024-textos-iniciales-legal.md. Son datos puros, sin lógica de UI.
 // Los marcadores [CONFIRMAR ...] y [A DEFINIR ...] son parte del texto y se
-// conservan hasta la revisión legal. Los datos del proveedor se completan una
-// sola vez en LEGAL_PROVIDER.
+// conservan hasta la revisión legal. Los datos del proveedor viven una sola
+// vez en LEGAL_PROVIDER.
 import {LEGAL_DOCUMENT_KEYS} from "./legalDocuments.mjs";
 
 export const LEGAL_NOTICE =
   "Versión inicial. Este texto está pendiente de revisión legal por parte de Bagner.";
 
 export const LEGAL_PROVIDER = Object.freeze({
-  razonSocial: "[RAZON_SOCIAL_BAGNER]",
-  rut: "[RUT_BAGNER]",
-  domicilio: "[DOMICILIO_BAGNER]",
-  correoPrivacidad: "[CORREO_PRIVACIDAD]",
+  razonSocial: "Servicios Integrales Bagner SpA",
+  rut: "77.091.679-8",
+  domicilio: "Tamarugal 2985, Iquique, Chile",
+  correoPrivacidad: "bruno.pairumani@bagner.cl",
   sitio: "https://valoracloud.bagner.cl",
 });
 
@@ -58,6 +58,10 @@ const PRIVACY_SECTIONS = [
       {
         label: "Negocio y equipo:",
         text: "razón social, identificador fiscal o RUT, giro, correo, teléfono, dirección, responsable, e identidad y rol de los miembros del equipo.",
+      },
+      {
+        label: "Invitaciones de equipo:",
+        text: "el correo de las personas invitadas a un equipo, incluso si todavía no tienen cuenta, para gestionar la invitación. Cada invitación tiene una vigencia de 7 días. Las invitaciones respondidas o vencidas se conservan hasta que se defina su plazo de eliminación. [A DEFINIR plazo de eliminación de invitaciones]",
       },
       {
         label: "Clientes y proveedores del negocio:",

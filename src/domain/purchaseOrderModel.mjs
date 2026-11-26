@@ -1,4 +1,5 @@
 import {adaptStoredFiscalIdentifier} from "./fiscalIdentifier.mjs";
+import {hasMaxDecimals, isMoneyAmount, mulRound, sanitizeDecimals, sumMoney} from "./money.mjs";
 
 export const PURCHASE_ORDER_MODEL_VERSION = 1;
 export const PURCHASE_ORDER_VAT_RATE = 0.19;
@@ -36,13 +37,22 @@ function finiteNumber(value, label, {minimum = 0, maximum = Infinity} = {}) {
   return result;
 }
 
-function assertSafeMoney(...values) {
-  if (values.some((value) => !Number.isFinite(value) || !Number.isSafeInteger(value))) {
+// SPEC 036: `decimals` son los decimales de cálculo del documento (su `montoDecimales`; 0 = entero, como siempre). Con 0
+// la validación es la de antes (un entero seguro); con decimales admite hasta esa cantidad de decimales.
+function assertSafeMoney(decimals, ...values) {
+  if (values.some((value) => !isMoneyAmount(value, decimals))) {
     throw new Error(MAXIMUM_AMOUNT_MESSAGE);
   }
 }
 
-export function calculatePurchaseOrderLine(raw = {}, index = 0) {
+function assertAmountDecimals(value, decimals, label) {
+  if (decimals > 0 && !hasMaxDecimals(value, decimals)) {
+    throw new Error(`${label} admite hasta ${decimals} decimales.`);
+  }
+}
+
+export function calculatePurchaseOrderLine(raw = {}, index = 0, montoDecimales = 0) {
+  const decimals = sanitizeDecimals(montoDecimales);
   const cantidad = finiteNumber(raw.cantidad, `Ítem ${index + 1}: cantidad`, {
     minimum: Number.MIN_VALUE,
   });
@@ -50,15 +60,16 @@ export function calculatePurchaseOrderLine(raw = {}, index = 0) {
     raw.costoUnitario,
     `Ítem ${index + 1}: costo unitario`
   );
+  assertAmountDecimals(costoUnitario, decimals, `Ítem ${index + 1}: costo unitario`);
   const descuentoPct = finiteNumber(
     raw.descuentoPct ?? 0,
     `Ítem ${index + 1}: descuento`,
     {maximum: 100}
   );
-  const subtotalLinea = Math.round(cantidad * costoUnitario);
-  const descuentoLinea = Math.round((subtotalLinea * descuentoPct) / 100);
-  const totalLinea = subtotalLinea - descuentoLinea;
-  assertSafeMoney(subtotalLinea, descuentoLinea, totalLinea);
+  const subtotalLinea = mulRound(cantidad, costoUnitario, decimals);
+  const descuentoLinea = mulRound(subtotalLinea, descuentoPct, decimals, 100);
+  const totalLinea = sumMoney([subtotalLinea, -descuentoLinea], decimals);
+  assertSafeMoney(decimals, subtotalLinea, descuentoLinea, totalLinea);
   return {
     cantidad,
     costoUnitario,
@@ -69,15 +80,16 @@ export function calculatePurchaseOrderLine(raw = {}, index = 0) {
   };
 }
 
-export function calculatePurchaseOrderTotals(items = [], {tasaIva = PURCHASE_ORDER_VAT_RATE} = {}) {
+export function calculatePurchaseOrderTotals(items = [], {tasaIva = PURCHASE_ORDER_VAT_RATE, montoDecimales = 0} = {}) {
   if (!Array.isArray(items)) throw new Error("Los ítems de la orden no son válidos.");
-  const lines = items.map(calculatePurchaseOrderLine);
-  const subtotal = lines.reduce((sum, line) => sum + line.subtotalLinea, 0);
-  const descuentoTotal = lines.reduce((sum, line) => sum + line.descuentoLinea, 0);
-  const neto = subtotal - descuentoTotal;
-  const iva = Math.round(neto * tasaIva);
-  const total = neto + iva;
-  assertSafeMoney(subtotal, descuentoTotal, neto, iva, total);
+  const decimals = sanitizeDecimals(montoDecimales);
+  const lines = items.map((item, index) => calculatePurchaseOrderLine(item, index, decimals));
+  const subtotal = sumMoney(lines.map((line) => line.subtotalLinea), decimals);
+  const descuentoTotal = sumMoney(lines.map((line) => line.descuentoLinea), decimals);
+  const neto = sumMoney([subtotal, -descuentoTotal], decimals);
+  const iva = mulRound(neto, tasaIva, decimals);
+  const total = sumMoney([neto, iva], decimals);
+  assertSafeMoney(decimals, subtotal, descuentoTotal, neto, iva, total);
   return {subtotal, descuentoTotal, neto, iva, total};
 }
 
@@ -110,6 +122,9 @@ export function buildPurchaseOrderMutationPayload(raw = {}) {
     throw new Error("Agrega al menos un ítem a la orden de compra.");
   }
   if (raw.items.length > 250) throw new Error("La orden admite hasta 250 ítems.");
+  // Decimales de cálculo del documento (los pone quien arma el borrador; el servidor decide los suyos con el
+  // snapshot del documento y no lee este valor).
+  const montoDecimales = sanitizeDecimals(raw.montoDecimales);
 
   return {
     proveedorId,
@@ -118,7 +133,7 @@ export function buildPurchaseOrderMutationPayload(raw = {}) {
     condicionesPago: paymentLabel(text(raw.condicionesPago, 2000)),
     observaciones: text(raw.observaciones, 4000),
     items: raw.items.map((item, index) => {
-      const calculated = calculatePurchaseOrderLine(item, index);
+      const calculated = calculatePurchaseOrderLine(item, index, montoDecimales);
       return {
         lineaId: validId(item.lineaId || `linea-${index + 1}`, "La línea"),
         itemId: validId(item.itemId, `Ítem ${index + 1}`),
@@ -152,13 +167,13 @@ function adaptProviderSnapshot(raw = {}) {
   };
 }
 
-function adaptStoredLine(raw = {}, index = 0) {
+function adaptStoredLine(raw = {}, index = 0, montoDecimales = 0) {
   const snapshot = raw.inventarioSnapshot || raw.itemSnapshot || {};
   const calculations = calculatePurchaseOrderLine({
     cantidad: raw.cantidad ?? 1,
     costoUnitario: raw.costoUnitario ?? raw.costo ?? raw.precioUnitario ?? 0,
     descuentoPct: raw.descuentoPct ?? raw.descuentoPorcentaje ?? 0,
-  }, index);
+  }, index, montoDecimales);
   const tipoItem = text(raw.tipoItem || raw.tipo || snapshot.tipoItem, 20);
   return {
     lineaId: text(raw.lineaId, 160) || `linea-${index + 1}`,
@@ -173,9 +188,13 @@ function adaptStoredLine(raw = {}, index = 0) {
 }
 
 export function adaptStoredPurchaseOrder(raw = {}) {
-  const items = (Array.isArray(raw.items) ? raw.items : []).map(adaptStoredLine);
   const localization = adaptDocumentLocalization(raw);
-  const calculated = calculatePurchaseOrderTotals(items, {tasaIva: localization.tasaIva});
+  const items = (Array.isArray(raw.items) ? raw.items : [])
+    .map((line, index) => adaptStoredLine(line, index, localization.montoDecimales));
+  const calculated = calculatePurchaseOrderTotals(items, {
+    tasaIva: localization.tasaIva,
+    montoDecimales: localization.montoDecimales,
+  });
   const estado = text(raw.estado, 20).toLowerCase();
   const proveedorSnapshot = adaptProviderSnapshot(
     raw.proveedorSnapshot || raw.proveedor || {
@@ -219,6 +238,85 @@ export function matchesPurchaseOrderSearch(order, search) {
 
 export function canManagePurchaseOrders(role) {
   return ["OWNER", "ADMIN", "COMPRAS"].includes(String(role || "").toUpperCase());
+}
+
+// Eliminación permanente (SPEC 005, enmienda 2026-11-06). Estas funciones solo
+// orientan la interfaz (ocultan el botón); la autoridad real es la Function
+// eliminarOrdenCompra, que vuelve a validar rol, palabra, estado y dependencias.
+// Espejo de functions/purchaseOrderDeletion.js: si cambia allí, cambia aquí.
+export const DELETE_CONFIRMATION_WORD = "permanente";
+const DELETE_ROLES = new Set(["OWNER", "ADMIN"]);
+
+export function canDeletePurchaseOrder(role) {
+  return DELETE_ROLES.has(String(role || "").toUpperCase());
+}
+
+export function isDeleteConfirmed(value) {
+  return String(value ?? "").trim().slice(0, 100).toLowerCase() === DELETE_CONFIRMATION_WORD;
+}
+
+const hasStoredValue = (value) =>
+  value !== undefined && value !== null && value !== "" && value !== false;
+
+// Rastro de que la orden se emitió o se envió alguna vez (misma lista que
+// findEmissionTrace en el backend). Un envío fallido o simulado no cuenta.
+export function hasPurchaseOrderEmissionTrace(order) {
+  const safe = order || {};
+  if (safe.estado === "emitida") return true;
+  if (
+    hasStoredValue(safe.emitidaEn) ||
+    hasStoredValue(safe.emitidaPorUid) ||
+    hasStoredValue(safe.canalEmision) ||
+    hasStoredValue(safe.destinatarioEmision)
+  ) {
+    return true;
+  }
+  if (
+    Number(safe.cantidadEnvios || 0) > 0 ||
+    hasStoredValue(safe.ultimoEnvioEn) ||
+    hasStoredValue(safe.reenviadaEn)
+  ) {
+    return true;
+  }
+  const response = safe.respuestaProveedor || {};
+  if (
+    hasStoredValue(response.fecha) ||
+    (hasStoredValue(response.estado) && response.estado !== "pendiente")
+  ) {
+    return true;
+  }
+  return safe.enviadoPorCorreo === true || safe.estadoEnvioCorreo === "enviado";
+}
+
+// ¿Se ofrece "Eliminar" para esta orden? Solo si el rol puede y la orden es un
+// borrador, o una cancelada sin ningún rastro de emisión. Además se oculta con
+// un envío por correo en curso o con vínculos a recepciones o compras, que la
+// Function también rechaza.
+export function canOfferPurchaseOrderDeletion(order, role) {
+  if (!order || !canDeletePurchaseOrder(role)) return false;
+  if (!["borrador", "cancelada"].includes(order.estado)) return false;
+  if (hasPurchaseOrderEmissionTrace(order)) return false;
+  if (order.estadoEnvioCorreo === "enviando") return false;
+  return !(
+    hasStoredValue(order.compraId) ||
+    (Array.isArray(order.comprasDesdeRecepciones) && order.comprasDesdeRecepciones.length > 0) ||
+    hasStoredValue(order.estadoRecepcion) ||
+    hasStoredValue(order.recepcionResumen)
+  );
+}
+
+// Mensaje de un intento de eliminar fallido. Los mensajes reales de la Function (en español, de
+// varias palabras: failed-precondition, permission-denied, not-found de una orden...) se muestran
+// tal cual. Si el error no trae un texto legible (vacío, una sola palabra técnica como "internal"
+// o "NOT_FOUND", o un fallo de red del navegador), se muestra un mensaje genérico.
+export const DELETE_FALLBACK_MESSAGE = "No pudimos eliminar la orden de compra. Inténtalo de nuevo.";
+const NETWORK_MESSAGE = /failed to fetch|network ?(request )?(error|failed)|load failed|networkerror/i;
+
+export function getPurchaseOrderDeleteErrorMessage(error) {
+  const message = String(error?.message ?? "").trim();
+  // Una sola palabra ("internal", "unavailable", "NOT_FOUND"...) es el estado técnico del SDK, no un mensaje.
+  if (!message || !/\s/.test(message) || NETWORK_MESSAGE.test(message)) return DELETE_FALLBACK_MESSAGE;
+  return message;
 }
 
 export function getSupplierResponseState(order) {

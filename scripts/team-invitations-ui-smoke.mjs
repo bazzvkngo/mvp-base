@@ -81,6 +81,24 @@ assert.match(hookSource, /result\?\.mensaje/, "si la respuesta trae mensaje, se 
 assert.match(layout, /handleInvitationAccepted/, "el centro entra a la empresa tras aceptar");
 console.log("OK Centro, espera y onboarding: aceptar y rechazar, aviso y recarga de sesión");
 
+// --- Carga de invitaciones: tope de espera, una sola consulta y contador (la lógica de tiempos se prueba en
+// invitations-loader-smoke.mjs; aquí, que el hook, el servicio y la campana la usan) ---
+const hookCode = stripComments(hookSource);
+const serviceCode = stripComments(invitationService);
+const bellCode = stripComments(bellSource);
+assert.match(hookCode, /createInvitationsLoader\(\{[\s\S]*?fetchInvitations: listarMisInvitaciones/, "el hook carga con el cargador de tiempos propios");
+assert.match(hookCode, /useSyncExternalStore\(loader\.subscribe, loader\.getState/, "el estado sale del cargador");
+assert.match(hookCode, /return \(\) => loader\.cancel\(\)/, "al desmontar se cancela la consulta y sus temporizadores");
+assert.match(hookCode, /force: options\?\.force \?\? !silent/, "sin opciones, reload es una acción explícita (Reintentar) y abandona la pendiente");
+assert.match(hookCode, /loader\.removeInvitation\(invitation\.id\)/, "responder quita la invitación también de una consulta en vuelo");
+assert.doesNotMatch(hookCode, /sequenceRef/, "ya no hay secuencia que descarte la respuesta anterior");
+assert.match(bellCode, /reloadInvitations\(\{ force: false, maxAgeMs: INVITATIONS_LOAD_LIMITS\.FRESH_MS \}\)/, "abrir la campana reutiliza la consulta en curso y no consulta con datos de menos de 30 s");
+assert.match(serviceCode, /listarMisInvitaciones\(\{signal, timeoutMs = INVITATIONS_LOAD_LIMITS\.TIMEOUT_MS\} = \{\}\)/, "el servicio recibe la señal y el tope");
+assert.equal((serviceCode.match(/options\(\)\)/g) || []).length, 2, "las dos llamadas llevan el tiempo que queda como timeout del SDK");
+assert.match(serviceCode, /signal\?\.aborted/, "tras el corte no se encadena otro intento");
+assert.ok(serviceCode.indexOf("refreshTokenIfEmailVerified()") < serviceCode.lastIndexOf("stopIfCut();"), "se revisa el corte tras renovar el token y antes de la segunda llamada");
+console.log("OK carga: hook con cargador, apertura sin consultas repetidas y servicio con tope encadenado");
+
 const vite = await createServer({appType: "custom", logLevel: "silent", server: {middlewareMode: true}});
 try {
   const model = await vite.ssrLoadModule("/src/domain/teamInvitationModel.mjs");
@@ -117,6 +135,20 @@ try {
   assert.match(failed, /role="alert"/);
   assert.match(failed, /Reintentar/);
   assert.doesNotMatch(failed, /ui-skeleton/, "error: sin skeleton colgado");
+  // Lenta (más de 8 s): aviso de advertencia con Reintentar, sin esqueleto ni error.
+  const slowList = html({status: "slow"});
+  assert.match(slowList, /ui-notice--warning/, "lenta: aviso de advertencia");
+  assert.match(slowList, /La consulta de invitaciones está tardando\. Sigue intentando\.\.\./);
+  assert.match(slowList, /<button class="ui-button ui-button--secondary" type="button">[\s\S]*?<span class="ui-button__label">Reintentar<\/span><\/button>/, "lenta: Reintentar");
+  assert.equal(status(slowList), 1, "lenta: un solo role=status");
+  assert.match(slowList, /role="status"/);
+  assert.doesNotMatch(slowList, /role="alert"|ui-skeleton|Aceptar|No tienes invitaciones pendientes/, "lenta: ni error, ni esqueleto colgado, ni falso vacío");
+  clean(slowList, "lenta");
+  assert.equal((failed.match(/role="alert"/g) || []).length, 1, "error: un solo role=alert");
+  assert.match(failed, /No se pudieron cargar las invitaciones\./);
+  assert.doesNotMatch(failed, /ui-notice--warning|No tienes invitaciones pendientes/, "error: ni aviso de lentitud ni falso vacío");
+  const inboxSource = await read("src/components/InvitationsInbox.jsx");
+  assert.equal((inboxSource.match(/onClick=\{\(\) => onRetry\?\.\(\)\}/g) || []).length, 2, "Reintentar de lenta y de error llama a onRetry sin pasar el evento");
   const verify = html({requiresVerification: true});
   assert.match(verify, /Verifica tu correo para ver y responder tus invitaciones\./);
   assert.doesNotMatch(verify, /Aceptar/);
@@ -147,9 +179,52 @@ try {
   assert.match(asAdmin, />Rechazar</);
   assert.match(asAdmin, /aria-label="Notificaciones, 1 sin leer"/, "las invitaciones cuentan en el badge");
   assert.doesNotMatch(asAdmin, /Sin notificaciones/, "sin permiso para avisos, no se dibuja esa sección");
+  // Sin invitaciones, verificado y terminó de cargar: la sección no se dibuja en el centro
+  // (el texto "No tienes invitaciones pendientes." sigue en la lista de espera y onboarding).
   const asOwner = bell({invitations: {...base, invitations: []}});
-  assert.match(asOwner, /No tienes invitaciones pendientes\./);
-  assert.match(asOwner, /Sin notificaciones/, "invitaciones y avisos tienen vacío propio");
+  assert.doesNotMatch(asOwner, /No tienes invitaciones pendientes\./, "el centro no dibuja la sección vacía");
+  assert.doesNotMatch(asOwner, /notification-invitations-title/);
+  assert.match(asOwner, /No tienes avisos nuevos/, "los avisos conservan su vacío propio, ahora sin avisos nuevos");
+  assert.doesNotMatch(asOwner, /Sin notificaciones/, "el OWNER ya no ve Sin notificaciones: ese texto es solo del rol sin permiso ni invitaciones");
+  // Las invitaciones viven dentro del panel desplegable: sus botones siguen ahí y el diálogo de rechazo es un
+  // ResponsiveDialog aparte (portal), que el panel no cierra con un clic fuera.
+  assert.match(asAdmin, /class="notification-popover no-print"/, "las invitaciones se muestran dentro del desplegable");
+  assert.doesNotMatch(asAdmin, /aria-modal|responsive-dialog/, "el centro ya no es un modal");
+  // ADMIN sin invitaciones, correo verificado y no cargando: sin avisos ni invitaciones que dibujar,
+  // el cuerpo muestra el texto discreto (no queda vacío ni vuelve el texto de invitaciones).
+  const adminEmpty = bell({showNotifications: false, invitations: {...base, invitations: []}});
+  assert.match(adminEmpty, /class="notification-empty">Sin notificaciones</, "ADMIN sin invitaciones: texto discreto");
+  assert.doesNotMatch(adminEmpty, /No tienes invitaciones pendientes\.|notification-section|erp-empty-state/);
+  assert.doesNotMatch(bell({showNotifications: false, invitations: {...base, status: "loading"}}), /Sin notificaciones/, "ADMIN cargando: se ve el skeleton de invitaciones, no el vacío");
+  assert.doesNotMatch(bell({showNotifications: false, invitations: {...base, invitations: [mine]}}), /Sin notificaciones/, "ADMIN con invitaciones: se ven las invitaciones");
+  const unverified = bell({invitations: {...base, requiresVerification: true}, verification: {cooldownLeft: 0, feedback: "", onResend() {}, resending: false}});
+  assert.match(unverified, /ui-notice--info/, "correo sin verificar: aviso informativo");
+  assert.match(unverified, /Verifica tu correo para ver y responder tus invitaciones\./);
+  assert.match(unverified, />Reenviar correo</);
+  assert.doesNotMatch(unverified, /erp-empty-state[^>]*>Verifica/, "ya no es una caja punteada");
+  assert.doesNotMatch(unverified, />Aceptar</);
+  const loadingSection = bell({invitations: {...base, status: "loading"}});
+  assert.match(loadingSection, /Invitaciones/, "cargando: la sección sigue visible");
+  const failedSection = bell({invitations: {...base, status: "error"}});
+  assert.match(failedSection, /No se pudieron cargar las invitaciones\./, "error: la sección sigue visible");
+  // Lenta o con error: la sección sigue visible, con Reintentar, y nunca suma al contador aunque el estado
+  // arrastre invitaciones viejas; los avisos sin leer siguen contando.
+  const slowBell = bell({invitations: {...base, status: "slow"}});
+  assert.match(slowBell, /Invitaciones/, "lenta: la sección sigue visible");
+  assert.match(slowBell, /La consulta de invitaciones está tardando/);
+  assert.match(slowBell, /Reintentar/);
+  assert.doesNotMatch(bell({showNotifications: false, invitations: {...base, status: "slow"}}), /Sin notificaciones/, "ADMIN con la consulta lenta: se ve el aviso, no el vacío");
+  assert.doesNotMatch(slowBell, /ui-badge-count/, "lenta: sin contador");
+  for (const stateName of ["loading", "slow", "error"]) {
+    const stale = bell({invitations: {...base, status: stateName, invitations: [mine]}});
+    assert.doesNotMatch(stale, /ui-badge-count/, `${stateName}: las invitaciones no cargadas no suman`);
+    assert.match(stale, /aria-label="Notificaciones"/, `${stateName}: etiqueta sin conteo`);
+    const withUnread = bell({unreadCount: 2, invitations: {...base, status: stateName, invitations: [mine]}});
+    assert.match(withUnread, /topbar-notifications-button__badge"[^>]*>2</, `${stateName}: los avisos sin leer siguen contando`);
+    assert.match(withUnread, /aria-label="Notificaciones, 2 sin leer"/);
+  }
+  const readyBell = bell({unreadCount: 2, invitations: {...base, invitations: [mine]}});
+  assert.match(readyBell, /topbar-notifications-button__badge"[^>]*>3</, "listas: avisos más invitaciones");
   const bothLoading = bell({subscription: {status: SUBSCRIPTION_STATUS.ERROR, synced: false}, invitations: {...base, status: "loading"}});
   assert.match(bothLoading, /ui-skeleton-cards/, "la carga de invitaciones es independiente del error de avisos");
   assert.match(bothLoading, /No se pudieron cargar las notificaciones\./);
@@ -171,6 +246,42 @@ try {
   assert.match(renderToStaticMarkup(React.createElement(TeamInvitationsPanel, {...panelProps, status: "error", groups: model.groupBusinessInvitations([])})), /role="alert"/);
   assert.match(renderToStaticMarkup(React.createElement(TeamInvitationsPanel, {...panelProps, status: "loading", groups: model.groupBusinessInvitations([])})), /role="status"/);
   console.log("OK Empleados: pendientes con Revocar, rechazadas con motivo y vencidas con Volver a invitar");
+
+  // Empleados E5: tabla compacta de invitaciones (sin tarjetas), estado con su color y perfil neutro.
+  const render = (props) => renderToStaticMarkup(React.createElement(TeamInvitationsPanel, {...panelProps, ...props}));
+  const tablePanel = render({groups: model.groupBusinessInvitations([invite("vencida"), invite("pendiente"), invite("rechazada", {motivoRechazo: "No me interesa"})])});
+  assert.equal((tablePanel.match(/<table\b/g) || []).length, 1, "una sola tabla de invitaciones");
+  assert.match(tablePanel, /<th>Correo<\/th><th>Perfil<\/th><th>Estado<\/th><th>Vence \/ Fecha<\/th><th class="clients-actions-column">Acciones<\/th>/, "columnas Correo, Perfil, Estado, Vence / Fecha y Acciones");
+  assert.equal((tablePanel.match(/<tr>(?:<td)/g) || []).length, 3, "una fila por invitación");
+  assert.doesNotMatch(tablePanel, /<ul\b|<li\b|<article|class="employees-invitation"|employees-invitations__/, "sin lista ni tarjetas");
+  assert.doesNotMatch(tablePanel, /<h3\b/, "sin subtítulos por grupo");
+  assert.equal((tablePanel.match(/<h2\b/g) || []).length, 1, "un solo encabezado de sección");
+  assert.ok(tablePanel.indexOf("Pendiente</span>") < tablePanel.indexOf("Rechazada</span>") && tablePanel.indexOf("Rechazada</span>") < tablePanel.indexOf("Vencida</span>"), "orden: pendientes, rechazadas y vencidas");
+  assert.match(tablePanel, /ui-status-badge--warning">Pendiente</, "pendiente en advertencia");
+  assert.match(tablePanel, /ui-status-badge--danger">Rechazada</, "rechazada en peligro");
+  assert.match(tablePanel, /ui-status-badge--neutral">Vencida</, "vencida en neutro");
+  assert.match(tablePanel, /ui-status-badge--neutral">Ventas</, "el perfil va en insignia neutra, sin el color del estado");
+  assert.doesNotMatch(tablePanel, /ui-status-badge--(warning|danger)">Ventas</, "el perfil nunca toma el color del estado");
+  assert.match(tablePanel, /class="client-row-actions__labeled"[^>]*aria-label="Revocar pendiente@x\.cl"[^>]*><svg[\s\S]*?<\/svg>Revocar<\/button>/, "Revocar con ícono, texto visible y nombre accesible");
+  assert.match(tablePanel, /aria-label="Volver a invitar vencida@x\.cl"[^>]*><svg[\s\S]*?<\/svg>Volver a invitar<\/button>/, "Volver a invitar con ícono y texto visible");
+  assert.equal((tablePanel.match(/client-row-actions__labeled/g) || []).length, 2, "acciones solo en pendientes (Revocar) y vencidas (Volver a invitar)");
+  const busyPanel = render({busyId: "n__pendiente", groups: model.groupBusinessInvitations([invite("pendiente"), invite("vencida")])});
+  assert.equal((busyPanel.match(/ aria-busy="true"/g) || []).length, 1, "solo la fila en proceso se marca ocupada");
+  assert.equal((busyPanel.match(/disabled=""/g) || []).length, 2, "mientras una acción corre, las demás se desactivan (igual que antes)");
+  const emptyPanel = render({groups: model.groupBusinessInvitations([])});
+  assert.match(emptyPanel, /<p class="employees-profile-empty">Aún no hay invitaciones enviadas\.<\/p>/, "vacío en una sola línea");
+  assert.doesNotMatch(emptyPanel, /<table|ui-skeleton|role="alert"/, "vacío real: sin tabla, esqueleto ni error");
+  const errorPanel = render({status: "error", groups: model.groupBusinessInvitations([invite("pendiente")])});
+  assert.match(errorPanel, /No pudimos cargar las invitaciones\.[\s\S]*Reintentar/, "error con Reintentar");
+  assert.doesNotMatch(errorPanel, /Aún no hay invitaciones|<table|ui-skeleton/, "error: ni falso vacío ni tabla ni esqueleto");
+  const loadingPanel = render({status: "loading", groups: model.groupBusinessInvitations([])});
+  assert.equal((loadingPanel.match(/role="status"/g) || []).length, 1, "carga: un solo role=status");
+  assert.match(loadingPanel, /ui-skeleton-table/, "carga: esqueleto con forma de tabla");
+  assert.doesNotMatch(loadingPanel, /Aún no hay invitaciones/, "carga: sin falso vacío");
+  const panelSource = await read("src/features/employees/TeamInvitationsPanel.jsx");
+  assert.doesNotMatch(panelSource, /title: "(Pendientes|Rechazadas|Vencidas)"/, "los títulos de grupo ya no existen");
+  assert.equal((panelSource.match(/badgeLabel/g) || []).length >= 4, true, "badgeLabel se usa en la insignia de Estado");
+  console.log("OK Empleados E5: tabla compacta, estado con color, perfil neutro, acciones con texto, vacío/error/carga sin falso vacío");
 
   // Diálogo de rechazo (usa un portal: se verifica la fuente)
   const reject = await read("src/components/RejectInvitationDialog.jsx");

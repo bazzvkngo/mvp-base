@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useState } from "react";
 import { Copy, Eye, EyeOff } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import googleLogo from "../../assets/google-g.svg";
+import AppFooter from "../../components/AppFooter";
 import BrandLogo from "../../components/BrandLogo";
 import Button from "../../components/ui/Button";
 import SkipLink from "../../components/ui/SkipLink";
@@ -14,6 +15,14 @@ import {
 } from "../../domain/accessHint.mjs";
 import { detectInAppBrowser } from "../../domain/inAppBrowser.mjs";
 import { LEGAL_DOCUMENTS } from "../../domain/legalDocuments.mjs";
+import { AUTH_GENERIC_MESSAGE, userErrorMessage } from "../../domain/userFacingError.mjs";
+import {
+  PASSWORD_POLICY_MESSAGE,
+  PASSWORD_STRENGTH_LABELS,
+  describePasswordHelp,
+  evaluatePassword,
+  getPasswordStrength,
+} from "../../domain/passwordPolicy.mjs";
 import {
   readAccessHint,
   setAccessHint,
@@ -43,40 +52,7 @@ const ACCESS_TABS = [
   { id: ACCESS_HINT.COLABORADOR, label: "Soy colaborador" },
 ];
 
-function getAuthErrorMessage(code) {
-  switch (code) {
-    case "auth/wrong-password":
-      return "Contraseña incorrecta.";
-    case "auth/user-not-found":
-      return "No se encontró un usuario con ese correo.";
-    case "auth/email-already-in-use":
-      return "El correo electrónico ya está en uso.";
-    case "auth/invalid-email":
-      return "Ingresa un correo electrónico válido.";
-    case "auth/weak-password":
-      return "La contraseña debe tener al menos 6 caracteres.";
-    case "auth/invalid-credential":
-      return "Credenciales inválidas.";
-    case "auth/too-many-requests":
-      return "Demasiados intentos. Espera unos minutos e inténtalo nuevamente.";
-    case "auth/network-request-failed":
-      return "No se pudo conectar con Firebase. Revisa tu conexión.";
-    case "auth/popup-closed-by-user":
-      return "Cerraste la ventana de Google antes de terminar. Inténtalo nuevamente.";
-    case "auth/popup-blocked":
-      return "Tu navegador bloqueó la ventana de Google. Permite las ventanas emergentes e inténtalo nuevamente.";
-    case "auth/account-exists-with-different-credential":
-      return "Ya existe una cuenta con ese correo creada con otro método. Ingresa con tu correo y contraseña.";
-    case "auth/operation-not-allowed":
-      return "El ingreso con Google no está habilitado todavía.";
-    case "auth/unauthorized-domain":
-      return "Este sitio no está autorizado para ingresar con Google.";
-    case "auth/user-disabled":
-      return "Esta cuenta está deshabilitada.";
-    default:
-      return "Error al procesar la solicitud.";
-  }
-}
+const getAuthErrorMessage = (error) => userErrorMessage(error, AUTH_GENERIC_MESSAGE);
 
 function Login() {
   const location = useLocation();
@@ -128,7 +104,7 @@ function Login() {
     if (!GOOGLE_LOGIN_ENABLED) return;
     completeGoogleRedirect().catch((err) => {
       console.error("Error al volver de Google:", err?.code, err?.message);
-      setError(getAuthErrorMessage(err?.code));
+      setError(getAuthErrorMessage(err));
     });
   }, []);
 
@@ -178,12 +154,12 @@ function Login() {
       return;
     }
 
-    if (password.length < 6) {
-      setError("La contraseña debe tener al menos 6 caracteres.");
-      return;
-    }
-
     if (!isLoginView) {
+      if (!evaluatePassword(password).ok) {
+        setError(PASSWORD_POLICY_MESSAGE);
+        return;
+      }
+
       if (!confirmPassword) {
         setError("Repite la contraseña.");
         return;
@@ -216,7 +192,7 @@ function Login() {
       }
     } catch (err) {
       console.error("Error de autenticación:", err.code, err.message);
-      setError(getAuthErrorMessage(err.code));
+      setError(getAuthErrorMessage(err));
     } finally {
       setIsSubmitting(false);
     }
@@ -238,7 +214,7 @@ function Login() {
       // Otra solicitud de popup reemplazó a esta: no es un error para la persona.
       if (err?.code === "auth/cancelled-popup-request") return;
       console.error("Error con Google:", err?.code, err?.message);
-      setError(getAuthErrorMessage(err?.code));
+      setError(getAuthErrorMessage(err));
     } finally {
       setIsGoogleLoading(false);
     }
@@ -302,6 +278,7 @@ function Login() {
     setSuccess("");
   };
 
+  const passwordStrength = getPasswordStrength(password);
   const showPasswordField = !isResetView;
   const showConfirmPasswordField = !isResetView && !isLoginView;
   const primaryDisabled = isResetView ? isResetting : isSubmitting;
@@ -448,7 +425,6 @@ function Login() {
                     .filter(Boolean)
                     .join(" ") || undefined
                 }
-                minLength="6"
                 required
               />
               <button
@@ -468,9 +444,28 @@ function Login() {
               </button>
             </div>
             {!isLoginView && (
-              <p id="auth-password-hint" className="auth-field__hint">
-                Mínimo 6 caracteres.
-              </p>
+              <div
+                id="auth-password-hint"
+                className={
+                  password
+                    ? `ui-password-meter ui-password-meter--${passwordStrength}`
+                    : "ui-password-meter"
+                }
+              >
+                {password && (
+                  <div className="ui-password-meter__row">
+                    <span className="ui-password-meter__bar" aria-hidden="true">
+                      <span className="ui-password-meter__fill" />
+                    </span>
+                    <span className="ui-password-meter__label">
+                      {PASSWORD_STRENGTH_LABELS[passwordStrength]}
+                    </span>
+                  </div>
+                )}
+                <p className="ui-password-meter__hint" aria-live="polite">
+                  {describePasswordHelp(password)}
+                </p>
+              </div>
             )}
           </div>
         )}
@@ -494,7 +489,6 @@ function Login() {
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 aria-invalid={Boolean(error)}
                 aria-describedby={feedbackId}
-                minLength="6"
                 required
               />
               <button
@@ -686,6 +680,8 @@ function Login() {
                 </TabPanel>
               </>
             )}
+
+            <AppFooter variant="ingreso" />
           </div>
         </section>
       </main>

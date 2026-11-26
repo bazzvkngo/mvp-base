@@ -5,6 +5,7 @@ import {
 import {formatChileanRut} from "./fiscalIdentifier.mjs";
 import {isLowStockByRule} from "./inventoryLowStock.mjs";
 import {getBarcodeLookupCandidates} from "./barcode.mjs";
+import {hasMaxDecimals, isMoneyAmount, mulRound, roundMoney, sanitizeDecimals, sumMoney} from "./money.mjs";
 
 export const INVENTORY_TYPES = Object.freeze([
   { value: "producto", label: "Producto", description: "Ítem físico con control de stock." },
@@ -125,6 +126,30 @@ export function getDefaultUnitForType(type) {
   return "unidad";
 }
 
+// La unidad de stock (unidadStock) sigue a la unidad del ítem mientras ambas
+// coincidan o la de stock esté vacía. Si ya difieren (dato legado), se conserva
+// tal cual: el formulario ya no ofrece un selector aparte para corregirla.
+export function followInventoryStockUnit(currentUnit, currentStockUnit, nextUnit) {
+  const stockUnit = String(currentStockUnit ?? "").trim();
+  if (!stockUnit || stockUnit === String(currentUnit ?? "").trim()) return nextUnit;
+  return currentStockUnit;
+}
+
+// Precio con IVA que se muestra junto al precio de venta neto. Mismo redondeo que
+// Ventas y Cotizaciones (iva = round(neto × tasa)). Sin tasa configurada devuelve
+// null: no se inventa un IVA.
+// `decimals`: decimales de cálculo de la moneda del negocio (SPEC 036). Con 0, la fórmula de siempre.
+export function calculateInventoryPriceWithTax(netPrice, taxRate, decimals = 0) {
+  if (taxRate === null || taxRate === undefined || taxRate === "") return null;
+  const net = Number(netPrice);
+  const rate = Number(taxRate);
+  if (!Number.isFinite(net) || !Number.isFinite(rate)) return null;
+  const clampedRate = Math.min(Math.max(rate, 0), 100);
+  const places = sanitizeDecimals(decimals);
+  if (places === 0) return net + Math.round((net * clampedRate) / 100);
+  return sumMoney([net, mulRound(net, clampedRate, places, 100)], places);
+}
+
 export function getInventoryTypeLabel(type) {
   return INVENTORY_TYPES.find(({ value }) => value === type)?.label || "Ítem";
 }
@@ -136,7 +161,10 @@ export function hasPurchaseTaxPriceFormation(item = {}) {
   ].includes(Number(item.formacionPrecioVersion));
 }
 
-export function calculateInventoryPriceFormation(item = {}) {
+// `decimals`: decimales de cálculo de la moneda del negocio (SPEC 036). Con 0 se ejecutan literalmente las fórmulas de
+// siempre (Math.round); con decimales el redondeo es decimal exacto (money.mjs). Espejo de functions/inventoryModel.js.
+export function calculateInventoryPriceFormation(item = {}, decimals = 0) {
+  const places = sanitizeDecimals(decimals);
   const costoBase = Number(item.costoBase);
   const tasaImpuestoCompra = Number(item.tasaImpuestoCompra);
   const margenDeseado = Number(item.margenDeseado);
@@ -147,13 +175,27 @@ export function calculateInventoryPriceFormation(item = {}) {
   const safeMarkup = Number.isFinite(margenDeseado) ? Math.max(margenDeseado, 0) : 0;
   const isLegacyV2 = Number(item.formacionPrecioVersion) ===
     LEGACY_PURCHASE_TAX_PRICE_FORMATION_VERSION;
-  const montoImpuestoCompra = Math.round(safeCost * safeTaxRate / 100);
-  const costoPagado = isLegacyV2
-    ? Math.round(safeCost * (1 + safeTaxRate / 100))
-    : safeCost + montoImpuestoCompra;
-  const precioVentaSugerido = isLegacyV2
-    ? Math.round(safeCost * (1 + safeTaxRate / 100) * (1 + safeMarkup / 100))
-    : Math.round(safeCost * (1 + safeMarkup / 100));
+  const montoImpuestoCompra = places === 0
+    ? Math.round(safeCost * safeTaxRate / 100)
+    : mulRound(safeCost, safeTaxRate, places, 100);
+  let costoPagado;
+  let precioVentaSugerido;
+  if (places === 0) {
+    costoPagado = isLegacyV2
+      ? Math.round(safeCost * (1 + safeTaxRate / 100))
+      : safeCost + montoImpuestoCompra;
+    precioVentaSugerido = isLegacyV2
+      ? Math.round(safeCost * (1 + safeTaxRate / 100) * (1 + safeMarkup / 100))
+      : Math.round(safeCost * (1 + safeMarkup / 100));
+  } else {
+    costoPagado = isLegacyV2
+      ? mulRound(safeCost, 100 + safeTaxRate, places, 100)
+      : sumMoney([safeCost, montoImpuestoCompra], places);
+    // v2 (legado) aplica el recargo sobre el costo con IVA; v3, sobre el costo neto.
+    precioVentaSugerido = isLegacyV2
+      ? mulRound(costoPagado, 100 + safeMarkup, places, 100)
+      : mulRound(safeCost, 100 + safeMarkup, places, 100);
+  }
   const manualPrice = Number(item.precioInterno);
   const hasManualPrice = item.precioManual === true &&
     Number.isFinite(manualPrice) && manualPrice > 0;
@@ -167,7 +209,11 @@ export function calculateInventoryPriceFormation(item = {}) {
   };
 }
 
-export function adaptInventoryItem(item = {}) {
+// `options.decimals`: decimales de cálculo de la moneda del negocio (SPEC 036); sin ellos, 0 (como siempre). Solo se
+// lee si `options` es un objeto: así sigue siendo seguro usar la función como `.map(adaptInventoryItem)`, que le pasa
+// el índice como segundo argumento.
+export function adaptInventoryItem(item = {}, options = undefined) {
+  const places = sanitizeDecimals(options !== null && typeof options === "object" ? options.decimals : 0);
   const type = TYPE_VALUES.has(item.tipoItem) ? item.tipoItem : "producto";
   const barcode = type === "producto"
     ? String(item.barcode || item.codigoBarras || "").trim()
@@ -204,18 +250,19 @@ export function adaptInventoryItem(item = {}) {
         : 0,
     exentoIva: type === "producto" && isExemptInventoryTaxId(item.impuestoId),
   };
+  const roundPrice = (value) => (places === 0 ? Math.round(value) : roundMoney(value, places));
   if (hasPurchaseTaxPriceFormation(adapted)) {
-    const formation = calculateInventoryPriceFormation(adapted);
+    const formation = calculateInventoryPriceFormation(adapted, places);
     Object.assign(adapted, formation);
     adapted.precioCalculado = formation.precioVentaSugerido;
-    adapted.precioEfectivo = Math.round(formation.precioVentaFinal);
+    adapted.precioEfectivo = roundPrice(formation.precioVentaFinal);
   } else {
     adapted.tasaImpuestoCompra = 0;
     adapted.montoImpuestoCompra = 0;
     adapted.costoPagado = adapted.costoBase;
-    adapted.precioVentaSugerido = Math.round(calculateBasePrice(adapted));
+    adapted.precioVentaSugerido = roundPrice(calculateBasePrice(adapted));
     adapted.precioCalculado = adapted.precioVentaSugerido;
-    adapted.precioEfectivo = Math.round(calculateEffectiveInternalPrice(adapted));
+    adapted.precioEfectivo = roundPrice(calculateEffectiveInternalPrice(adapted));
   }
   const averageCost = item.costoPromedio === "" || item.costoPromedio == null
     ? null
@@ -249,6 +296,26 @@ export function isInventoryLowStock(item, lowStockSettings) {
   );
 }
 
+// Valor del stock de un producto (ítem ya adaptado) para el recuadro "Costo del inventario": el valor vigente
+// (`valorInventario`, saldo con el costo promedio, el mismo que muestra la ficha) y, si el ítem no lo tiene (datos
+// antiguos o sin compras), el respaldo de siempre: stock por costo neto base. Sin stock no aporta nada. Solo lee
+// campos guardados: no recalcula el promedio ni el valor vigente.
+export function getInventoryStockValue(item) {
+  const stock = Number(item?.stock);
+  if (!Number.isFinite(stock) || stock <= 0) return 0;
+  const currentValue = item.valorInventario;
+  if (currentValue !== null && currentValue !== undefined && Number.isFinite(Number(currentValue))) {
+    return Number(currentValue);
+  }
+  return Number(item.costoBase) * stock;
+}
+
+// ¿La adquisición incluyó impuesto? Solo si guardó el impuesto unitario (los movimientos antiguos no lo traen).
+export function acquisitionIncludesTax(entry) {
+  const tax = Number(entry?.impuestoCompraUnitario);
+  return Number.isFinite(tax) && tax > 0;
+}
+
 export function summarizeInventory(items, { lowStockSettings } = {}) {
   const active = (Array.isArray(items) ? items : [])
     .map(adaptInventoryItem)
@@ -259,10 +326,7 @@ export function summarizeInventory(items, { lowStockSettings } = {}) {
     products: products.length,
     servicesAndActivities: active.length - products.length,
     lowStock: products.filter((item) => isLowStockByRule(item, lowStockSettings)).length,
-    inventoryCost: products.reduce(
-      (total, item) => total + item.costoBase * Math.max(item.stock, 0),
-      0
-    ),
+    inventoryCost: products.reduce((total, item) => total + getInventoryStockValue(item), 0),
   };
 }
 
@@ -287,9 +351,11 @@ export function resolveInventoryBarcodeScan(items, rawBarcode) {
   };
 }
 
+// `filters.decimals`: decimales de cálculo de la moneda del negocio (SPEC 036); solo afectan a los precios adaptados.
 export function filterInventoryItems(items, filters = {}) {
   const query = normalizeInventoryText(filters.query);
-  return (Array.isArray(items) ? items : []).map(adaptInventoryItem).filter((item) => {
+  const decimals = filters.decimals;
+  return (Array.isArray(items) ? items : []).map((entry) => adaptInventoryItem(entry, {decimals})).filter((item) => {
     if (filters.type && filters.type !== "todos" && item.tipoItem !== filters.type) return false;
     if (filters.status && filters.status !== "todos" && item.estado !== filters.status) return false;
     if (filters.areaId === "sin_area" && item.areaId) return false;
@@ -312,7 +378,10 @@ export function filterInventoryItems(items, filters = {}) {
   });
 }
 
-export function validateInventoryDraft(draft = {}) {
+// `options.decimals`: decimales de cálculo de la moneda del negocio (SPEC 036). Con 0 no se agrega ninguna validación
+// (Chile conserva lo que aceptaba); con decimales, el costo y el precio de venta admiten hasta esa cantidad.
+export function validateInventoryDraft(draft = {}, options = undefined) {
+  const places = sanitizeDecimals(options !== null && typeof options === "object" ? options.decimals : 0);
   const errors = {};
   if (!TYPE_VALUES.has(draft.tipoItem)) errors.tipoItem = "Selecciona un tipo de ítem.";
   if (!String(draft.nombre || "").trim()) errors.nombre = "El nombre es obligatorio.";
@@ -359,6 +428,14 @@ export function validateInventoryDraft(draft = {}) {
   });
   const margin = parseInventoryNumber(draft.margenDeseado);
   if (margin !== null && margin > 1000) errors.margenDeseado = "El recargo no puede superar 1000%.";
+  if (places > 0) {
+    [["costoBase", "El costo base"], ["precioManual", "El precio de venta"]].forEach(([field, label]) => {
+      const number = parseInventoryNumber(draft[field]);
+      if (number === null || number < 0 || errors[field]) return;
+      if (!hasMaxDecimals(number, places)) errors[field] = `${label} admite hasta ${places} decimales.`;
+      else if (!isMoneyAmount(number, places)) errors[field] = `${label} está fuera del rango permitido.`;
+    });
+  }
   if (
     draft.tipoItem === "producto" &&
     ![true, false, "", null, undefined].includes(draft.exentoIva)
@@ -371,12 +448,13 @@ export function validateInventoryDraft(draft = {}) {
 export function buildInventoryPayload(
   draft,
   categories = [],
-  { authorizedStatus = "activo", allowRequestedCode = true } = {}
+  { authorizedStatus = "activo", allowRequestedCode = true, decimals = 0 } = {}
 ) {
+  const places = sanitizeDecimals(decimals);
   const validatedDraft = allowRequestedCode
     ? draft
     : {...draft, codigoSolicitado: ""};
-  const errors = validateInventoryDraft(validatedDraft);
+  const errors = validateInventoryDraft(validatedDraft, {decimals: places});
   if (Object.keys(errors).length) {
     const error = new Error(Object.values(errors)[0]);
     error.fields = errors;
@@ -394,7 +472,7 @@ export function buildInventoryPayload(
     costoBase: cost,
     margenDeseado: margin,
     precioInterno: manual === null || manual <= 0
-      ? Math.round(cost + (cost * margin) / 100)
+      ? (places === 0 ? Math.round(cost + (cost * margin) / 100) : mulRound(cost, 100 + margin, places, 100))
       : manual,
     precioManual: manual !== null && manual > 0,
     estado: authorizedStatus,

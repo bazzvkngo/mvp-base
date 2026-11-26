@@ -8,6 +8,9 @@ import {
   getFinancialCategories,
   getSantiagoDateKey,
 } from "../../domain/financialMovement.mjs";
+import {getCurrencyPluralName} from "../../domain/businessCatalog.js";
+import {userErrorMessage} from "../../domain/userFacingError.mjs";
+import useBusinessFormat from "../../hooks/useBusinessFormat";
 
 const EMPTY_FORM = {
   type: "income",
@@ -44,6 +47,9 @@ function FinancialMovementDialog({
   open,
   preferredType = "income",
 }) {
+  const { currency, amountDecimals } = useBusinessFormat();
+  // Paso del monto (SPEC 036): "1" con 0 decimales (como siempre), "0.01" con 2. Es el paso y el mínimo del campo.
+  const moneyStep = amountDecimals > 0 ? String(10 ** -amountDecimals) : "1";
   const [form, setForm] = React.useState(() =>
     toFormValue(movement, preferredType)
   );
@@ -78,7 +84,7 @@ function FinancialMovementDialog({
       await onSave({ ...form, amount: Number(form.amount) });
       onClose();
     } catch (saveError) {
-      setError(saveError?.message || "No pudimos guardar el movimiento.");
+      setError(userErrorMessage(saveError, "No pudimos guardar el movimiento."));
     } finally {
       setSaving(false);
     }
@@ -93,7 +99,7 @@ function FinancialMovementDialog({
       onClose={saving ? undefined : onClose}
       initialFocusRef={conceptRef}
       title={movement ? "Editar movimiento" : "Registrar movimiento"}
-      description="Los montos se registran en pesos chilenos y los pendientes no afectan el resultado neto."
+      description={`Los montos se registran en ${getCurrencyPluralName(currency)} y los pendientes no afectan el resultado neto.`}
       eyebrow="Finanzas"
       size="large"
       footer={
@@ -143,12 +149,12 @@ function FinancialMovementDialog({
           </label>
 
           <label className="erp-field">
-            <span className="erp-field__label">Monto CLP</span>
+            <span className="erp-field__label">Monto {currency}</span>
             <input
               className="erp-control"
-              inputMode="numeric"
-              min="1"
-              step="1"
+              inputMode={amountDecimals > 0 ? "decimal" : "numeric"}
+              min={moneyStep}
+              step={moneyStep}
               type="number"
               required
               value={form.amount}

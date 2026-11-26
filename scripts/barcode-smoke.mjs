@@ -545,7 +545,7 @@ const [scanner, decoder, inventoryService, inventoryUi, quotePage, quoteEditor, 
     readFile(new URL("../src/pages/NewQuotePage.jsx", import.meta.url), "utf8"),
     readFile(new URL("../src/features/quotes/QuoteItemsEditor.jsx", import.meta.url), "utf8"),
     readFile(new URL("../src/pages/NewPurchaseOrderPage.jsx", import.meta.url), "utf8"),
-    readFile(new URL("../src/features/purchaseOrders/PurchaseOrderItemsEditor.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/components/ui/DocumentItemsEditor.jsx", import.meta.url), "utf8"),
     readFile(new URL("../src/domain/barcode.mjs", import.meta.url), "utf8"),
   ]);
 
@@ -622,14 +622,19 @@ assert.match(inventoryUi, /const result = resolveInventoryBarcodeScan\(items, ba
 assert.match(inventoryUi, /window\.setTimeout\(\(\) => setDetailItem\(result\.item\), 0\)/);
 assert.match(inventoryUi, /setLowStockOnly\(false\);\s*setFilters\(\{ \.\.\.DEFAULT_INVENTORY_FILTERS, query: result\.query, status: result\.status \}\);/);
 assert.doesNotMatch(inventoryUi, /<label className="erp-field inventory-search">/, "El botón Escanear no va dentro del label del buscador.");
-assert.match(quoteEditor, /Escanear producto/);
-assert.match(quoteEditor, /<BarcodeInput actionOnly continuous /);
+// El editor de la cotización usa el bloque compartido DocumentItemsEditor, que es quien dibuja el escáner continuo.
+assert.match(quoteEditor, /<DocumentItemsEditor/);
+assert.match(quoteEditor, /onScanProduct=\{onScanProduct\}/, "la cotización entrega su escáner al bloque compartido");
+assert.match(poEditor, /Escanear producto/);
+// El editor de la orden usa el bloque compartido DocumentItemsEditor, que es quien dibuja el escáner continuo.
 assert.match(poEditor, /<BarcodeInput actionOnly continuous /);
+assert.match(await readFile(new URL("../src/features/purchaseOrders/PurchaseOrderItemsEditor.jsx", import.meta.url), "utf8"), /onScanProduct=\{onScanProduct\}/, "la orden entrega su escáner al bloque compartido");
 assert.match(quotePage, /return \{key: product\.id, label: product\.nombre\}/);
 assert.match(poPage, /return \{key: product\.id, label: product\.nombre\}/);
 assert.doesNotMatch(poPage, /title: "Producto agregado"/);
 assert.match(quotePage, /Producto no encontrado para este código\./);
-assert.match(quotePage, /Number\(item\.cantidad \|\| 0\) \+ quantityToAdd/);
+// El escaneo repetido suma cantidad con la regla compartida de reagrupado (inventoryLineAdd.mjs), no con una suma propia.
+assert.match(quotePage, /addInventoryItemToLines\(items, valuation, \{[\s\S]*quantity: quantityToAdd,/);
 assert.match(poEditor, /Escanear producto/);
 assert.match(poPage, /incrementScannedItem/);
 assert.match(poPage, /Producto no encontrado para este código\./);

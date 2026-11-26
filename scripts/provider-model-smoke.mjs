@@ -3,7 +3,10 @@ import fs from "node:fs";
 import {
   adaptStoredProvider,
   buildProviderMutationPayload,
+  PROVIDER_DELETE_CONFIRMATION_WORD,
+  canDeleteProviders,
   canManageProviders,
+  isProviderDeleteConfirmed,
   canReadProviders,
   formatProviderRut,
   getProviderFieldErrors,
@@ -151,6 +154,17 @@ assert.equal(canManageProviders("COMPRAS"), true);
 assert.equal(canReadProviders("VENTAS"), false);
 console.log("OK roles UI: COMPRAS administra y VENTAS queda fuera");
 
+// Eliminación permanente (SPEC 004, enmienda 2026-11-05): solo OWNER y ADMIN, con palabra de confirmación.
+for (const role of ["OWNER", "ADMIN", "owner"]) assert.equal(canDeleteProviders(role), true, `${role} elimina`);
+for (const role of ["COMPRAS", "MEMBER", "VENTAS", "FINANZAS", "TECNICO", "", undefined]) assert.equal(canDeleteProviders(role), false, `${role} no elimina`);
+assert.equal(PROVIDER_DELETE_CONFIRMATION_WORD, "permanente");
+assert.equal(isProviderDeleteConfirmed("permanente"), true);
+assert.equal(isProviderDeleteConfirmed("  Permanente "), true);
+assert.equal(isProviderDeleteConfirmed("perm"), false);
+assert.equal(isProviderDeleteConfirmed(""), false);
+assert.equal(isProviderDeleteConfirmed(undefined), false);
+console.log("OK eliminación: solo OWNER/ADMIN y palabra «permanente»");
+
 const sourceService = fs.readFileSync("src/services/providerService.js", "utf8");
 const sourceManager = fs.readFileSync(
   "src/features/providers/ProvidersManager.jsx",
@@ -171,15 +185,87 @@ assert.match(sourceManager, /loadSequenceRef/);
 assert.match(sourceManager, /setProviders\(\[\]\)/);
 assert.match(sourceManager, /No hay proveedores registrados/);
 assert.match(sourceManager, /canManage &&/);
+assert.match(sourceManager, /const \[statusFilter, setStatusFilter\] = useState\("activo"\);/, "el filtro Estado parte en Activos");
+assert.match(sourceManager, /\$\{visibleProviders\.length\} de \$\{providers\.length\} proveedores/, "subtítulo N de M proveedores con filtro");
 assert.match(sourceForm, /initialFocusRef=\{firstInputRef\}/);
 assert.match(sourceForm, /getCommuneByCode/);
 assert.match(sourceForm, /onChange=\{handleRutChange\}/);
 assert.match(sourceForm, /onChange=\{handlePhoneChange\}/);
 assert.doesNotMatch(sourceForm, /client-form-field__optional/);
+
+// Formulario con secciones visibles (mismo patrón que Nuevo cliente): sin plegable, todos los campos a la vista.
+assert.doesNotMatch(sourceForm, /Disclosure|optionalOpen|setOptionalOpen|OPTIONAL_FIELDS|hasOptionalContent|pendingFocus|Más datos del proveedor/, "el formulario ya no tiene plegable");
+const sectionTitles = [...sourceForm.matchAll(/<legend>([^<]+)(?: <span>\(opcional\)<\/span>)?<\/legend>/g)].map((m) => m[1].trim());
+assert.deepEqual(sectionTitles, ["Datos del proveedor", "Contacto", "Ubicación", "Condiciones comerciales", "Notas"], "secciones en orden");
+assert.equal((sourceForm.match(/<legend>[^<]+ <span>\(opcional\)<\/span><\/legend>/g) || []).length, 4, "todas menos la primera dicen (opcional)");
+assert.doesNotMatch(sourceForm, /provider-form-subsection/);
+const sectionOf = (title) => {
+  const start = sourceForm.indexOf(`<legend>${title}`);
+  return sourceForm.slice(start, sourceForm.indexOf("</fieldset>", start));
+};
+const sectionFields = {
+  "Datos del proveedor": ["rut", "razonSocial", "nombreFantasia", "giro"],
+  Contacto: ["email", "telefono", "personaContacto"],
+  Ubicación: ["direccion"],
+  "Condiciones comerciales": ["condicionesPago", "diasCredito"],
+  Notas: ["notas"],
+};
+for (const [title, fields] of Object.entries(sectionFields)) {
+  for (const field of fields) assert.match(sectionOf(title), new RegExp(`field="${field}"`), `${field} va en ${title}`);
+}
+assert.match(sectionOf("Ubicación"), /<ContactTerritoryFields/, "región y comuna van en Ubicación");
+assert.equal((sourceForm.match(/<fieldset className="client-form-section"/g) || []).length, 5, "cinco secciones con el estilo del formulario de cliente");
+assert.doesNotMatch(sourceForm, /<h[1-6]\b/, "sin encabezados dentro del formulario (el título es el del diálogo)");
+assert.equal((sourceForm.match(/<Button\b[^>]*type="submit"/g) || []).length, 1, "un solo botón principal");
+assert.match(sourceForm, /diasCredito: "",\s+notas: "",/, "días de crédito vacío por defecto");
+assert.doesNotMatch(sourceForm, /diasCredito: "0"/);
+assert.match(sourceForm, /values\.condicionesPago === "credito" && \(/, "días de crédito solo con condición Crédito");
+assert.match(sourceForm, /FIELD_ORDER\.find\(\(field\) => nextErrors\[field\]\)/, "el primer error se elige en orden visual");
+assert.match(sourceForm, /fieldRefs\.current\[firstField\]\?\.focus\(\)/, "el primer error recibe el foco (todo está visible)");
+const interiorCss = fs.readFileSync("src/styles/interior.css", "utf8");
+assert.doesNotMatch(interiorCss, /provider-form-subsection/, "se retiró el estilo del sub-grupo del plegable");
+// Días de crédito vacío sigue guardándose como 0 (el modelo no cambia).
+assert.equal(normalizeProviderInput(providerFixture({condicionesPago: "credito", diasCredito: ""})).diasCredito, 0);
+assert.equal(buildProviderMutationPayload(providerFixture({condicionesPago: "", diasCredito: ""})).diasCredito, 0);
 assert.match(sourceRules, /match \/proveedores\/\{proveedorId\}/);
+assert.match(sourceRules, /match \/proveedores\/\{proveedorId\}\s*\{[^}]*allow create, update, delete: if false;/, "las Rules siguen sin permitir borrar desde el cliente");
+
+// Eliminación permanente: Function, servicio y UI.
+const sourceDeletion = fs.readFileSync("functions/providerDeletion.js", "utf8");
+const sourceIndex = fs.readFileSync("functions/index.js", "utf8");
+assert.match(sourceIndex, /exports\.eliminarProveedor = onCall\([\s\S]{0,260}eliminarProveedorHandler\(request, providerPersistenceDependencies\)/);
+assert.match(sourceDeletion, /roles: BUSINESS_MANAGEMENT_ROLES/, "roles comprobados en el servidor");
+assert.match(sourceDeletion, /isDeleteConfirmed\(request\?\.data\?\.confirmacion\)/, "la palabra se exige también en el backend");
+assert.match(sourceDeletion, /db\.runTransaction/);
+assert.match(sourceDeletion, /transaction\.delete\(proveedorRef\);\s+transaction\.delete\(reservationRef\);/, "borra el proveedor y libera la reserva en la misma transacción");
+for (const collectionName of ["ordenesCompra", "compras", "recepciones", "adquisicionesInventario", "inventario"]) {
+  assert.match(sourceDeletion, new RegExp(`collection: "${collectionName}"`), `comprueba dependencias en ${collectionName}`);
+}
+assert.equal((sourceDeletion.match(/"proveedorSnapshot\.proveedorId"/g) || []).length, 4, "comprueba el id directo y el id dentro del snapshot");
+assert.match(sourceDeletion, /ultimoProveedor\.proveedorId/);
+assert.doesNotMatch(sourceDeletion, /module\.exports[\s\S]*\bdeleteBusiness/);
+assert.match(sourceService, /httpsCallable\(functions, "eliminarProveedor"\)/);
+assert.match(sourceService, /isProviderDeleteConfirmed\(confirmacion\)/, "el servicio valida la palabra antes de llamar");
+assert.match(sourceManager, /canDelete = canDeleteProviders\(role\)/);
+assert.match(sourceManager, /\{canDelete && \(/, "el botón solo se muestra con permiso");
+assert.match(sourceManager, /Eliminar permanentemente a \$\{provider\.razonSocial\}/);
+assert.match(sourceManager, /disabled=\{!isProviderDeleteConfirmed\(deleteConfirmation\)\}/, "el botón rojo exige escribir la palabra");
+assert.equal((sourceManager.match(/variant="danger"/g) || []).length, 1, "el diálogo de eliminación tiene un solo botón principal");
+const unicodeEscape = new RegExp("\\\\" + "u[0-9a-fA-F]{4}");
+assert.doesNotMatch(sourceManager, /#[0-9a-fA-F]{3,8}|rgba?\(|hsla?\(/, "sin colores literales en la interfaz");
+assert.doesNotMatch(sourceManager, unicodeEscape, "sin escapes unicode en la interfaz");
+const deleteCss = interiorCss.slice(interiorCss.indexOf(".provider-delete {"), interiorCss.indexOf(".client-confirmation-copy"));
+assert.ok(deleteCss.length > 0, "existen los estilos del diálogo de eliminación");
+// El grosor de borde de 1px no tiene token en tokens.css: se admite solo en border y sus variantes por lado.
+const deleteCssSinBorde1px = deleteCss.replace(/(?<![\w-])(border(?:-(?:top|right|bottom|left|inline|block))?\s*:\s*)1px(?![\w.%-])/g, "$1");
+assert.doesNotMatch(deleteCssSinBorde1px, /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|\d+(px|ms)\b/, "estilos de eliminación sin literales");
 assert.match(sourceRules, /match \/providerRutKeys\/\{rutKey\}/);
 assert.match(sourcePersistence, /PURCHASE_WRITE_ROLES: AUTHORIZED_ROLES/);
 assert.match(sourcePersistence, /collection\("providerCreateRequests"\)/);
 console.log("OK contrato: servicio, cambio de negocio, UI, Rules y backend autoritativo");
 
+// Texto visible del vacío sin permiso: rol en español, nunca el código interno.
+const providersManagerSource = fs.readFileSync("src/features/providers/ProvidersManager.jsx", "utf8");
+assert.match(providersManagerSource, /Propietario o Administrador pueden registrar el primer proveedor/);
+assert.doesNotMatch(providersManagerSource, /OWNER o ADMIN/, "no debe reaparecer «OWNER o ADMIN» en textos visibles");
 console.log("PROVIDER_MODEL_SMOKE_OK");

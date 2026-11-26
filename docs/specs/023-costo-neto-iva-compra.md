@@ -468,6 +468,7 @@ costoInventario = Σ productos activos con stock > 0 de:
   dos indicadores pasan a coincidir. Esta SPEC no cambia Reportes.
 - Un producto con baseline anterior al cambio (con IVA) aporta su saldo tal
   como está guardado (D5).
+- Implementado en el cliente (23-nov-2026): `summarizeInventory` suma `getInventoryStockValue` (`valorInventario` si el ítem lo tiene, como la ficha; si no, `costoBase × stock`; stock 0 o negativo aporta 0), y el historial de adquisiciones de la ficha aclara "c/u con IVA" solo cuando la adquisición guardó impuesto (`impuestoCompraUnitario` > 0). No cambia el cálculo del promedio ni del valor vigente, ni datos guardados (`inventory-mvp-smoke.mjs`).
 
 **Ejemplo.**
 

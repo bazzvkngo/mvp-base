@@ -3,7 +3,6 @@ import {
   BriefcaseBusiness,
   Check,
   ChevronDown,
-  Clock,
   Shapes,
 } from "lucide-react";
 import {
@@ -31,15 +30,16 @@ const CATEGORY_DISPLAY_NAMES = Object.freeze({
   OTRO_SERVICIO_PROYECTOS: "Otro servicio técnico o profesional",
 });
 
-// Rubros en construcción: solo presentación. No tienen código, no entran al
-// catálogo ni al payload y el buscador no los devuelve.
-const COMING_SOON_CATEGORIES = Object.freeze([
-  { label: "Taller automotriz (en construcción)" },
-  { label: "Clínica veterinaria (en construcción)" },
-  { label: "Construcción y obras", tag: "Próximamente" },
-  { label: "Software y soluciones digitales", tag: "Próximamente" },
-  { label: "Servicios digitales y creativos", tag: "Próximamente" },
-]);
+// Rubros en construcción: solo texto informativo. No tienen código, no entran
+// al catálogo ni al payload y el buscador no los devuelve.
+const COMING_SOON_TEXT =
+  "Próximamente: Construcción y obras, Software y soluciones digitales y Servicios digitales y creativos.";
+
+// Nombre visible de un rubro en cualquier pantalla (el selector y el resumen de Empresa)
+// usan el mismo texto. El nombre canónico del catálogo (y el que se guarda) no cambia.
+export function getBusinessCategoryVisibleName(code, customName = "", historicalName = "") {
+  return CATEGORY_DISPLAY_NAMES[code] || getBusinessCategoryDisplayName(code, customName, historicalName);
+}
 
 function getPickerCategoryName(category) {
   return CATEGORY_DISPLAY_NAMES[category?.code] || category?.name || "";
@@ -62,6 +62,8 @@ const BusinessCategoryPicker = React.forwardRef(
       name = "rubroCodigo",
       onChange,
       onTouched,
+      placeholder = "Selecciona el rubro de tu negocio",
+      required = false,
       value = "",
     },
     ref
@@ -204,7 +206,8 @@ const BusinessCategoryPicker = React.forwardRef(
           name={name}
           type="button"
           className="business-category-picker"
-          aria-label={ariaLabel}
+          title={selectedName || undefined}
+          aria-label={`${ariaLabel}${required ? " (obligatorio)" : ""}: ${selectedName || "sin seleccionar"}${isHistoricalSelection ? ", rubro histórico" : ""}`}
           aria-describedby={errorId}
           aria-expanded={open}
           aria-haspopup="dialog"
@@ -219,7 +222,7 @@ const BusinessCategoryPicker = React.forwardRef(
                 : "business-category-picker__placeholder"
             }
           >
-            {selectedName || "Selecciona el rubro de tu negocio"}
+            {selectedName || placeholder}
           </span>
           {isHistoricalSelection && (
             <span className="business-category-picker__legacy">Histórica</span>
@@ -298,14 +301,7 @@ const BusinessCategoryPicker = React.forwardRef(
                                 ? 0
                                 : -1
                             }
-                            className={[
-                              "business-category-option",
-                              category.code === "OTRO_SERVICIO_PROYECTOS"
-                                ? "business-category-option--wide"
-                                : "",
-                            ]
-                              .filter(Boolean)
-                              .join(" ")}
+                            className="business-category-option"
                             key={category.code}
                             onClick={() => chooseOption(category)}
                             onKeyDown={(event) =>
@@ -329,36 +325,6 @@ const BusinessCategoryPicker = React.forwardRef(
                 );
               })}
             </div>
-
-            <section
-              className="business-category-soon"
-              aria-labelledby={`${id}-soon`}
-            >
-              <h3 id={`${id}-soon`}>
-                <AppIcon icon={Clock} size={18} />
-                Próximamente
-              </h3>
-              <ul className="business-category-soon__list">
-                {COMING_SOON_CATEGORIES.map(({ label, tag }) => (
-                  <li key={label}>
-                    <button
-                      type="button"
-                      className="business-category-option business-category-option--soon"
-                      aria-disabled="true"
-                      disabled
-                    >
-                      <span>{label}</span>
-                      {tag && (
-                        <span className="business-category-soon__tag">{tag}</span>
-                      )}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              <p className="business-category-soon__more">
-                Más rubros próximamente
-              </p>
-            </section>
 
             {draftCode === "OTRO" && (
               <div className="business-category-other">
@@ -387,6 +353,8 @@ const BusinessCategoryPicker = React.forwardRef(
                 </span>
               </div>
             )}
+
+            <p className="business-category-soon">{COMING_SOON_TEXT}</p>
           </div>
         </ResponsiveDialog>
       </>

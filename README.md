@@ -249,10 +249,12 @@ del correo y PDF.
 
 Los textos publicados en `/privacidad` y `/terminos` son una versión
 inicial (borrador técnico) y contienen marcadores `[CONFIRMAR]` y
-`[A DEFINIR]` pendientes. Bagner, como propietario del sistema, debe
-revisarlos con su asesoría legal y completar los datos del proveedor: con
-prioridad desde que se usen datos reales y, en todo caso, antes de
-comercializar el sistema a otros negocios. También deben definirse y
+`[A DEFINIR]` pendientes (plazos y decisiones). Los datos del proveedor
+(razón social, RUT, domicilio y correo de privacidad de Bagner) ya están
+completos en `LEGAL_PROVIDER`. Bagner, como propietario del sistema, debe
+revisar los textos con su asesoría legal: con prioridad desde que se usen
+datos reales y, en todo caso, antes de comercializar el sistema a otros
+negocios. También deben definirse y
 revisarse profesionalmente aviso de tratamiento, retención, respaldo,
 eliminación, rectificación, exportación y responsabilidades entre las
 partes.
@@ -283,3 +285,12 @@ No se ha definido una licencia open source para ValoraCloud en este
 repositorio. La titularidad y las condiciones de entrega a Bagner y a la
 universidad deben ser confirmadas por el propietario antes de publicar o
 redistribuir el código.
+
+## Clínica Veterinaria
+
+- **Pacientes.** El microchip es opcional. El modelo compartido elimina espacios y guiones, convierte a mayúsculas y conserva ceros iniciales. La reserva por empresa y chip y la escritura del paciente son atómicas. Las reservas son la única fuente de unicidad, sin consultas por chip dentro de la transacción. Antes de habilitar escrituras sobre pacientes antiguos, pausa las escrituras y ejecuta la migración `scripts/migrate-veterinary-microchips.mjs` (simulación por defecto, `--apply` explícito, solo emulador local demo). Resuelve manualmente los duplicados y conflictos; instrucciones en `docs/clinica-veterinaria/README.md`.
+- **Edición.** Un reintento idéntico con el mismo `requestId` recupera el resultado previo. Una edición nueva con versión desactualizada muestra un conflicto y conserva el formulario. Revisa la ficha actual antes de volver a aplicar los cambios.
+- **Citas.** Fecha y hora son locales a la zona de referencia del país de la empresa. Se requiere un país con zona definida para agendar o reprogramar. Un país ausente o `OTHER` no aplica una zona por defecto.
+- **Fotos.** El navegador convierte JPEG, PNG y WebP a JPEG. Intenta bajar la calidad si supera 2 MiB y muestra un aviso si sigue excediendo el límite. El documento de la atención conserva hasta 24 entradas en `fotosRetiradas`. Este tope no define la retención del archivo.
+- **Pruebas.** `npm run test:veterinary` incluye las pruebas de modelos, el empaquetado sin `src` y los cinco smokes en una sesión de emuladores (migración, pacientes, citas, atención/recepción y fotos). Por separado están disponibles `test:veterinary-patient-persistence`, `test:veterinary-appointment-persistence`, `test:veterinary-attention-persistence` y `test:veterinary-photos`.
+- **Empaquetado.** El predeploy de `firebase.json` ejecuta `node scripts/package-veterinary-models.cjs` antes del lint. El script limpia y vuelve a generar `functions/veterinary-models` desde los modelos de `src`.

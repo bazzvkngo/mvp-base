@@ -1,4 +1,8 @@
 const {PURCHASE_WRITE_ROLES} = require("./rbac");
+const {
+  buildDeliveryEnvelope,
+  resolveAccountEmail,
+} = require("./emailEnvelope");
 const SENDABLE_STATUSES = new Set(["borrador", "emitida"]);
 const PURCHASE_ORDER_EMAIL_COOLDOWN_MS = 30 * 1000;
 const PURCHASE_ORDER_EMAIL_LEASE_MS = 2 * 60 * 1000;
@@ -251,10 +255,9 @@ function buildCommercialMessage({company, mensaje = "", order}) {
   return `Estimado/a ${providerName}:\n\nAdjuntamos la orden de compra ${order.numero} para su revisión.\n\nSaludos,\n${companyName}`;
 }
 
-function buildPlainEmail({company, mensaje = "", order}) {
+function buildPlainEmail({company, mensaje = "", order, replyTo = resolveCompanyReplyTo(company)}) {
   const companyName = company.nombreComercial || company.razonSocial || "Empresa compradora";
   const locale = resolveEmailLocale(order);
-  const replyTo = resolveCompanyReplyTo(company);
   const commercialMessage = buildCommercialMessage({company, mensaje, order});
   const responseInstruction = replyTo
     ? "Por favor, responde a este correo para confirmar la orden, informar observaciones o indicar cualquier diferencia en cantidades, precios o fecha de entrega."
@@ -283,10 +286,9 @@ function humanPayment(value) {
   })[value] || value;
 }
 
-function buildHtmlEmail({company, mensaje = "", order, escapeHtml}) {
+function buildHtmlEmail({company, mensaje = "", order, escapeHtml, replyTo = resolveCompanyReplyTo(company)}) {
   const companyName = company.nombreComercial || company.razonSocial || "Empresa compradora";
   const locale = resolveEmailLocale(order);
-  const replyTo = resolveCompanyReplyTo(company);
   const commercialMessage = buildCommercialMessage({company, mensaje, order});
   const responseInstruction = replyTo
     ? "Por favor, responde a este correo para confirmar la orden, informar observaciones o indicar cualquier diferencia en cantidades, precios o fecha de entrega."
@@ -347,10 +349,22 @@ async function sendPurchaseOrderEmailHandler(request, dependencies) {
     uid,
   });
   const company = await getCompanyProfile(businessRef, reservation.order);
-  const replyTo = resolveCompanyReplyTo(company);
+  const liveCompany = dependencies.getLiveCompanyProfile
+    ? await dependencies.getLiveCompanyProfile(businessRef)
+    : company;
+  const envelope = buildDeliveryEnvelope({
+    accountEmail: resolveAccountEmail(request.auth.token),
+    businessName: liveCompany?.nombreComercial || liveCompany?.razonSocial ||
+      company.nombreComercial || company.razonSocial,
+    companyEmail: liveCompany?.email,
+    configuredFrom: getEmailSender(),
+    sendCopy: request.data?.enviarCopia === true,
+    to: emailProveedor,
+  });
+  const {replyTo} = envelope;
   const subject = buildEmailSubject({asunto: requestedSubject, company, order: reservation.order});
-  const html = buildHtmlEmail({company, mensaje: requestedMessage, order: reservation.order, escapeHtml});
-  const text = buildPlainEmail({company, mensaje: requestedMessage, order: reservation.order});
+  const html = buildHtmlEmail({company, mensaje: requestedMessage, order: reservation.order, escapeHtml, replyTo});
+  const text = buildPlainEmail({company, mensaje: requestedMessage, order: reservation.order, replyTo});
   const basePatch = {
     ...reservation.recipient,
     fechaEnvioCorreo: FieldValue.serverTimestamp(),
@@ -370,7 +384,7 @@ async function sendPurchaseOrderEmailHandler(request, dependencies) {
     return {success: true, simulated: true, provider: "emulator"};
   }
   const apiKey = getResendApiKey();
-  const from = getEmailSender();
+  const from = envelope.from;
   const safeError = "No fue posible enviar la orden de compra. Intenta nuevamente más tarde.";
   if (!apiKey || !from) {
     await reservation.orderRef.update({...basePatch, enviadoPorCorreo: false, estadoEnvioCorreo: "error", proveedorCorreo: "resend", ultimoErrorEnvio: safeError});
@@ -387,6 +401,7 @@ async function sendPurchaseOrderEmailHandler(request, dependencies) {
       text,
       attachments: [pdfAttachment],
       ...(replyTo ? {replyTo} : {}),
+      ...(envelope.bcc ? {bcc: envelope.bcc} : {}),
     });
     const providerId = safeText(providerResponse.id, 120);
     const finalization = await (

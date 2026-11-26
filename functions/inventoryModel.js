@@ -1,7 +1,8 @@
 const { createHash } = require("node:crypto");
 const {BUSINESS_MANAGEMENT_ROLES, INVENTORY_WRITE_ROLES} = require("./rbac");
 const {formatChileanRut} = require("./fiscalIdentifier");
-const {normalizeBusinessLocalization, normalizeTaxSettings} = require("./localization");
+const {currencyAmountDecimals, normalizeBusinessLocalization, normalizeTaxSettings} = require("./localization");
+const {hasMaxDecimals, isMoneyAmount, mulRound, sumMoney} = require("./money");
 const {
   INVENTORY_ECONOMIC_MODEL_VERSION,
   applyInventoryAverageStockAdjustment,
@@ -204,6 +205,8 @@ function isExemptInventoryTaxId(impuestoId) {
 
 // SPEC 023 §6.2 y §6.4 (P1): `costoPagado` es solo referencia ("Costo con
 // IVA"); el precio sugerido se forma sobre el costo neto.
+// SPEC 036: `decimals` son los decimales de cálculo de la moneda del negocio (`amountDecimals`). Con 0 se ejecutan
+// literalmente las fórmulas de siempre (Math.round); con decimales, el redondeo es decimal exacto (money.js).
 function calculateInventoryPriceFormation({
   costoBase,
   impuestoId,
@@ -211,15 +214,22 @@ function calculateInventoryPriceFormation({
   margenDeseado,
   precioInterno,
   precioManual,
+  decimals = 0,
 }) {
   const businessRate = Number(tasaNegocio);
   const tasaImpuestoCompra = isExemptInventoryTaxId(impuestoId) ||
     !Number.isFinite(businessRate)
     ? 0
     : Math.min(Math.max(businessRate, 0), 100);
-  const montoImpuestoCompra = Math.round(costoBase * tasaImpuestoCompra / 100);
-  const costoPagado = costoBase + montoImpuestoCompra;
-  const precioVentaSugerido = Math.round(costoBase * (1 + margenDeseado / 100));
+  const montoImpuestoCompra = decimals === 0
+    ? Math.round(costoBase * tasaImpuestoCompra / 100)
+    : mulRound(costoBase, tasaImpuestoCompra, decimals, 100);
+  const costoPagado = decimals === 0
+    ? costoBase + montoImpuestoCompra
+    : sumMoney([costoBase, montoImpuestoCompra], decimals);
+  const precioVentaSugerido = decimals === 0
+    ? Math.round(costoBase * (1 + margenDeseado / 100))
+    : mulRound(costoBase, 100 + margenDeseado, decimals, 100);
   return {
     formacionPrecioVersion: INVENTORY_PRICE_FORMATION_VERSION,
     tasaImpuestoCompra,
@@ -248,7 +258,7 @@ function resolveInventoryTaxId(requestedId, currentId) {
   return requestedId;
 }
 
-function inventoryTaxPersistenceFields(item, impuestoId, tasaNegocio) {
+function inventoryTaxPersistenceFields(item, impuestoId, tasaNegocio, decimals = 0) {
   if (item.tipoItem !== "producto") return {};
   const formation = calculateInventoryPriceFormation({
     costoBase: item.costoBase,
@@ -257,6 +267,7 @@ function inventoryTaxPersistenceFields(item, impuestoId, tasaNegocio) {
     margenDeseado: item.margenDeseado,
     precioInterno: item.precioInterno,
     precioManual: item.precioManual,
+    decimals,
   });
   return {
     impuestoId,
@@ -352,18 +363,40 @@ function getDefaultInventoryTaxId(rawSettings = {}) {
     : "IVA_GENERAL";
 }
 
-function getInventoryTaxFields(item, rawSettings = {}, tasaNegocio = 0) {
+function getInventoryTaxFields(item, rawSettings = {}, tasaNegocio = 0, decimals = 0) {
   return inventoryTaxPersistenceFields(
     item,
     resolveInventoryTaxId(item.impuestoIdSolicitado, getDefaultInventoryTaxId(rawSettings)),
-    tasaNegocio
+    tasaNegocio,
+    decimals
   );
+}
+
+// SPEC 036: el costo y el precio de venta de Inventario no son documentos y no guardan snapshot: se validan con los
+// decimales de la moneda del negocio, que el servidor lee del catálogo (nunca del cliente). Con 0 no se agrega ningún
+// límite nuevo (Chile conserva exactamente lo que aceptaba).
+function businessAmountDecimals(context = {}) {
+  const business = context.businessSnapshot?.data?.() || null;
+  return business ? currencyAmountDecimals(normalizeBusinessLocalization(business).monedaCodigo) : 0;
+}
+
+function assertInventoryAmountDecimals(value, label, decimals, HttpsError) {
+  if (decimals <= 0) return;
+  if (!hasMaxDecimals(value, decimals)) {
+    throw new HttpsError(
+      "invalid-argument",
+      `${label} admite hasta ${decimals} decimales.`
+    );
+  }
+  if (!isMoneyAmount(value, decimals)) {
+    throw new HttpsError("invalid-argument", `${label} está fuera del rango permitido.`);
+  }
 }
 
 function validateInventoryItemInput(
   data,
   HttpsError,
-  { allowNegativeStock = false, allowRequestedCode = true } = {}
+  { allowNegativeStock = false, allowRequestedCode = true, decimals = 0 } = {}
 ) {
   const source = data && typeof data === "object" ? data : {};
   const tipoItem = safeText(source.tipoItem, 20).toLowerCase();
@@ -396,13 +429,17 @@ function validateInventoryItemInput(
       "El recargo no puede superar 1000%."
     );
   }
-  const calculatedPrice = Math.round(
-    costoBase + (costoBase * margenDeseado) / 100
-  );
+  assertInventoryAmountDecimals(costoBase, "El costo base", decimals, HttpsError);
+  const calculatedPrice = decimals === 0
+    ? Math.round(costoBase + (costoBase * margenDeseado) / 100)
+    : mulRound(costoBase, 100 + margenDeseado, decimals, 100);
   const precioManual = source.precioManual === true;
   const precioInterno = precioManual
     ? toFiniteNumber(source.precioInterno, "El precio interno", HttpsError)
     : calculatedPrice;
+  if (precioManual) {
+    assertInventoryAmountDecimals(precioInterno, "El precio de venta", decimals, HttpsError);
+  }
 
   const result = {
     areaId,
@@ -610,7 +647,7 @@ function inventoryEditableUpdate(item, categoryName, FieldValue, taxFields = {})
 function normalizeInventoryImportRows(
   rawRows,
   HttpsError,
-  { allowNegativeStock = false } = {}
+  { allowNegativeStock = false, decimals = 0 } = {}
 ) {
   if (!Array.isArray(rawRows) || rawRows.length === 0) {
     throw new HttpsError(
@@ -669,6 +706,7 @@ function normalizeInventoryImportRows(
         rowId,
         item: validateInventoryItemInput(rawItem, HttpsError, {
           allowNegativeStock,
+          decimals,
         }),
       };
     } catch (error) {
@@ -988,10 +1026,12 @@ async function createInventoryItemWithCodeHandler(
       userRef.collection("configuracion").doc("impuestos")
     ),
   ]);
+  const decimals = businessAmountDecimals(businessContext);
   const item = validateInventoryItemInput(request.data?.item, HttpsError, {
     allowNegativeStock:
       inventorySettingsSnapshot.data()?.permitirStockNegativo === true,
     allowRequestedCode: false,
+    decimals,
   });
   const requestRef = userRef.collection("inventoryCreateRequests").doc(requestId);
   const previousRequest = await readDocumentSnapshot(db, requestRef);
@@ -1078,7 +1118,8 @@ async function createInventoryItemWithCodeHandler(
       ...getInventoryTaxFields(
         item,
         taxSettingsSnapshot.data() || {},
-        resolveBusinessTaxRate(businessContext, taxSettingsSnapshot.data() || {})
+        resolveBusinessTaxRate(businessContext, taxSettingsSnapshot.data() || {}),
+        decimals
       ),
       categoria: categorySnapshot?.data()?.nombre || "",
       codigoInterno,
@@ -1135,9 +1176,11 @@ async function updateInventoryItemHandler(
     ),
   ]);
   const rawTaxSettings = taxSettingsSnapshot.data() || {};
+  const decimals = businessAmountDecimals(businessContext);
   const item = validateInventoryItemInput(request.data?.item, HttpsError, {
     allowNegativeStock:
       inventorySettingsSnapshot.data()?.permitirStockNegativo === true,
+    decimals,
   });
   if (Math.abs(Number(item.stock || 0)) > Number.MAX_SAFE_INTEGER) {
     throw new HttpsError(
@@ -1226,7 +1269,8 @@ async function updateInventoryItemHandler(
       ? inventoryTaxPersistenceFields(
         item,
         nextTaxId,
-        resolveBusinessTaxRate(businessContext, rawTaxSettings, businessSnapshot?.data() || {})
+        resolveBusinessTaxRate(businessContext, rawTaxSettings, businessSnapshot?.data() || {}),
+        decimals
       )
       : {};
     if (
@@ -1513,9 +1557,11 @@ async function confirmInventoryImportV2Handler(
     businessContext,
     taxSettingsSnapshot.data() || {}
   );
+  const decimals = businessAmountDecimals(businessContext);
   const rows = normalizeInventoryImportRows(request.data?.rows, HttpsError, {
     allowNegativeStock:
       inventorySettingsSnapshot.data()?.permitirStockNegativo === true,
+    decimals,
   });
   const requestedCodes = rows
     .map((row) => row.item.codigoSolicitado)
@@ -1713,7 +1759,7 @@ async function confirmInventoryImportV2Handler(
 
       transaction.set(itemRef, {
         ...inventoryPersistenceData(row.item),
-        ...getInventoryTaxFields(row.item, taxSettingsSnapshot.data() || {}, businessTaxRate),
+        ...getInventoryTaxFields(row.item, taxSettingsSnapshot.data() || {}, businessTaxRate, decimals),
         categoria: categorySnapshot?.data()?.nombre || "",
         codigoInterno,
         modeloInventarioVersion: INVENTORY_MODEL_VERSION,
@@ -1792,4 +1838,5 @@ module.exports = {
   updateInventoryItemHandler,
   calculateInventoryPriceFormation,
   validateInventoryItemInput,
+  businessAmountDecimals,
 };

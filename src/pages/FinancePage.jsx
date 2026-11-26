@@ -38,8 +38,9 @@ import {
   deleteFinancialMovement,
   updateFinancialMovement,
 } from "../services/financialService";
-import { useBusinessMoney } from "../hooks/useBusinessFormat";
+import useBusinessFormat, { useBusinessMoney } from "../hooks/useBusinessFormat";
 import { formatDate } from "../utils/formatters";
+import {userErrorMessage} from "../domain/userFacingError.mjs";
 
 const TABS = [
   { id: "all", label: "Todos" },
@@ -74,6 +75,7 @@ function downloadCsv(csv, filename) {
 
 function FinancePage({ businessId, role }) {
   const formatBusinessAmount = useBusinessMoney();
+  const { currency: businessCurrency, amountDecimals } = useBusinessFormat();
   const [searchParams, setSearchParams] = useSearchParams();
   const today = getSantiagoDateKey();
   const selectedPeriod = VALID_PERIODS.has(searchParams.get("period"))
@@ -158,10 +160,10 @@ function FinancePage({ businessId, role }) {
 
   const saveMovement = async (payload) => {
     if (dialogState.movement) {
-      await updateFinancialMovement(businessId, dialogState.movement.id, payload);
+      await updateFinancialMovement(businessId, dialogState.movement.id, payload, { amountDecimals });
       setFeedback("Movimiento actualizado correctamente.");
     } else {
-      await createFinancialMovement(businessId, payload);
+      await createFinancialMovement(businessId, payload, { amountDecimals });
       setFeedback("Movimiento registrado correctamente.");
     }
   };
@@ -174,7 +176,7 @@ function FinancePage({ businessId, role }) {
       setDeleteCandidate(null);
       setFeedback("Movimiento eliminado correctamente.");
     } catch (deleteError) {
-      setFeedback(deleteError?.message || "No pudimos eliminar el movimiento.");
+      setFeedback(userErrorMessage(deleteError, "No pudimos eliminar el movimiento."));
     } finally {
       setDeleting(false);
     }
@@ -182,7 +184,7 @@ function FinancePage({ businessId, role }) {
 
   const exportFiltered = () => {
     downloadCsv(
-      buildFinancialCsv(filteredItems),
+      buildFinancialCsv(filteredItems, businessCurrency, { amountDecimals }),
       `valoracloud-movimientos-${businessId}-${range.start}-${range.end}.csv`
     );
     setFeedback(`Se exportaron ${filteredItems.length} movimientos del negocio activo.`);

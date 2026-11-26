@@ -22,10 +22,16 @@ VENTAS abre Cotizaciones; COMPRAS abre Órdenes de compra; TECNICO abre Trabajos
 MEMBER conserva Cotizaciones como fallback legacy compatible.
 
 El request de la primera creación contiene únicamente `nombreComercial`,
-`rubroCodigo`, `paisCodigo` y, cuando corresponde, `rubroOtro`. No se envía un
+`rubroCodigo`, `paisCodigo`, `regionCodigo` y, cuando corresponde, `rubroOtro`. No se envía un
 selector de moneda: el backend usa la moneda inicial canónica del país.
-Las altas nuevas admiten Chile, Bolivia, Brasil, Perú, Argentina, Colombia,
-Ecuador, Paraguay, Uruguay y México. `OTHER` permanece en el catálogo únicamente
+Las altas nuevas admiten Chile y Bolivia (Bolivia es el piloto con montos enteros
+redondeados, SPEC 035). Paraguay, Brasil, Perú, Argentina, Colombia, Ecuador,
+Uruguay y México siguen en el catálogo: las empresas que ya los usan no cambian,
+pero no se ofrecen ni se aceptan en altas nuevas. La región del formulario de
+onboarding es obligatoria y sale del catálogo del país (regiones de Chile;
+departamentos de Bolivia en `territoriesByCountry.BO`); al cambiar de país se
+limpia. `createFirstBusiness` sigue tolerando que falte la región, pero si llega
+se valida contra el catálogo del país. `OTHER` permanece en el catálogo únicamente
 para leer y guardar sin migración empresas históricas que ya lo utilizan; no se
 ofrece ni se acepta en la creación de una empresa nueva.
 La creación adicional conserva `regionCodigo` como dato obligatorio.

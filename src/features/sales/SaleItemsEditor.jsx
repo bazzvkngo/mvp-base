@@ -1,84 +1,125 @@
 import React from "react";
 import BarcodeInput from "../../components/barcode/BarcodeInput";
+import DocumentItemsEditor from "../../components/ui/DocumentItemsEditor";
 import {getSaleItemTypeLabel} from "../../domain/saleModel.mjs";
+import {useBusinessMoney} from "../../hooks/useBusinessFormat";
+import {lineDescriptionToShow} from "./saleLineText.mjs";
 
-const money = (value) => `$${Math.round(Number(value || 0)).toLocaleString("es-CL")}`;
+const sameText = (a, b) => String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
 
-export default function SaleItemsEditor({disabled, inventory, items, onChange, onOpenCatalog, onScanProduct, readOnly, referencesLocked = false}) {
-  const update = (index, field, value) => onChange(items.map((item, current) => current === index ? {...item, [field]: value} : item));
-  const inventoryById = new Map(inventory.map((item) => [item.id, item]));
-  const canChangeReferences = !disabled && !referencesLocked;
-
+// Vista histórica (venta confirmada o cancelada): una fila por ítem con
+// encabezados únicos. Sin stock actual: no es un dato de la venta.
+function SoldItemsTable({items}) {
+  const money = useBusinessMoney();
   return (
-    <section className="po-panel">
-      <header className="po-panel__header">
-        <div>
-          <span className="po-kicker">Detalle de venta</span>
-          <h2>Ítems vendidos</h2>
-          <p>{items.length === 1 ? "1 ítem" : `${items.length} ítems`}</p>
-        </div>
-        {canChangeReferences && (
-          <div className="po-header__actions">
-            <BarcodeInput actionOnly continuous actionLabel="Escanear producto" onSubmit={onScanProduct} />
-            <button type="button" className="po-button po-button--secondary" onClick={onOpenCatalog}>Agregar desde inventario</button>
-          </div>
-        )}
-      </header>
-      {!items.length ? (
-        <div className="po-empty">Agrega productos, servicios o actividades.</div>
-      ) : (
-        <div className="po-lines">
-          <div className="po-lines__head"><span>Ítem</span><span>Cantidad</span><span>Precio unitario</span><span>Desc. %</span><span>Total</span><span /></div>
-          {items.map((item, index) => {
-            const total = Number(item.cantidad || 0) * Number(item.precioUnitario || 0) * (1 - Number(item.descuentoPct || 0) / 100);
-            const inventoryItem = inventoryById.get(item.itemId);
-            const stock = inventoryItem ? Number(inventoryItem.stock) : Number.NaN;
-            const requested = Number(item.cantidad || 0);
-            const hasKnownStock = item.tipoItem === "producto" && Number.isFinite(stock);
-            const exceedsStock = hasKnownStock && requested > stock;
-
+    <div className="sale-sold">
+      <table className="sale-sold__table">
+        <thead>
+          <tr>
+            <th scope="col">Ítem</th>
+            <th scope="col">Código</th>
+            <th scope="col">Cantidad</th>
+            <th scope="col">Precio unitario</th>
+            <th scope="col">Desc. %</th>
+            <th scope="col">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item) => {
+            const discount = Number(item.descuentoPct || 0);
+            const total = item.totalLinea ?? Number(item.cantidad || 0) * Number(item.precioUnitario || 0) * (1 - discount / 100);
+            const showUnit = item.unidad && !sameText(item.unidad, "unidad");
             return (
-              <article className={`po-line${readOnly ? " po-line--readonly" : ""}`} key={item.lineaId}>
-                <div className="po-line__identity">
+              <tr key={item.lineaId}>
+                <td className="sale-sold__item" data-label="Ítem">
                   <div className="sale-line-title">
-                    <strong>{item.nombre}</strong>
+                    <strong title={item.nombre}>{item.nombre}</strong>
                     <span className={`sale-item-type sale-item-type--${item.tipoItem}`}>{getSaleItemTypeLabel(item.tipoItem)}</span>
                     {item.origenAdicionalId && <span className="sale-item-type sale-item-type--adicional">Adicional</span>}
                   </div>
-                  <small>{item.codigo || "Sin código"} · {item.unidad}</small>
-                  {item.descripcion && <p className="sale-line-description">{item.descripcion}</p>}
-                  {hasKnownStock && (
-                    exceedsStock ? (
-                      <div className="sale-stock-warning" role="alert">
-                        <strong>Stock insuficiente</strong>
-                        <span>Disponible: {stock} · Solicitado: {requested}</span>
-                      </div>
-                    ) : (
-                      <small className="sale-stock">Disponible: {stock}</small>
-                    )
-                  )}
-                </div>
-                {readOnly ? (
-                  <dl className="po-line__readonly">
-                    <div><dt>Cantidad</dt><dd>{item.cantidad}</dd></div>
-                    <div><dt>Precio unitario</dt><dd>{money(item.precioUnitario)}</dd></div>
-                    <div><dt>Descuento</dt><dd>{item.descuentoPct}%</dd></div>
-                    <div className="po-line__readonly-total"><dt>Total</dt><dd>{money(total)}</dd></div>
-                  </dl>
-                ) : (
-                  <>
-                    <label><span>Cantidad</span><input disabled={disabled} type="number" min="0.000001" max={referencesLocked && item.cantidadCotizada != null ? item.cantidadCotizada : undefined} step="any" value={item.cantidad} onChange={(event) => update(index, "cantidad", event.target.value)} /></label>
-                    <label><span>Precio unitario</span><input disabled={disabled} type="number" min="0" step="any" value={item.precioUnitario} onChange={(event) => update(index, "precioUnitario", event.target.value)} /></label>
-                    <label><span>Desc. %</span><input disabled={disabled} type="number" min="0" max="100" step="any" value={item.descuentoPct} onChange={(event) => update(index, "descuentoPct", event.target.value)} /></label>
-                    <strong className="po-line__total">{money(total)}</strong>
-                    {canChangeReferences && <button type="button" className="po-line__remove" onClick={() => onChange(items.filter((_, current) => current !== index))}>Quitar</button>}
-                  </>
-                )}
-              </article>
+                  {item.descripcion && !sameText(item.descripcion, item.nombre) && <p className="sale-sold__description" title={item.descripcion}>{item.descripcion}</p>}
+                </td>
+                <td className="sale-sold__code" data-label="Código" title={item.codigo || undefined}>{item.codigo || "—"}</td>
+                <td data-label="Cantidad" title={showUnit ? `${item.cantidad} ${item.unidad}` : undefined}>{item.cantidad}{showUnit ? ` ${item.unidad}` : ""}</td>
+                <td data-label="Precio unitario">{money(item.precioUnitario)}</td>
+                <td data-label="Desc. %">{discount > 0 ? `${discount}%` : "—"}</td>
+                <td className="sale-sold__total" data-label="Total">{money(total)}</td>
+              </tr>
             );
           })}
-        </div>
-      )}
-    </section>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// Ítems de la venta. Borrador: el bloque compartido en modo "venta" (precio unitario), con "Escanear producto" y "Agregar
+// desde inventario". Aquí solo se conecta lo propio de Venta: "Disponible N" y el aviso de stock insuficiente (la regla
+// del stock es la de siempre), la marca "Adicional" y el máximo de la cantidad cotizada. Venta confirmada o cancelada:
+// tabla histórica (SoldItemsTable).
+export default function SaleItemsEditor({disabled, historical = false, inventory, items, moneyStep = "any", onChange, onOpenCatalog, onScanProduct, readOnly, referencesLocked = false}) {
+  const inventoryById = new Map(inventory.map((item) => [item.id, item]));
+  const canChangeReferences = !disabled && !referencesLocked;
+  const countLabel = items.length === 1 ? "1 ítem" : `${items.length} ítems`;
+
+  if (historical) {
+    return (
+      <section className="po-panel">
+        <header className="po-panel__header">
+          <div>
+            <span className="po-kicker">Detalle de venta</span>
+            <h2>Ítems vendidos</h2>
+            <p>{countLabel}</p>
+          </div>
+          {canChangeReferences && (
+            <div className="po-header__actions">
+              <BarcodeInput actionOnly continuous actionLabel="Escanear producto" onSubmit={onScanProduct} />
+              <button type="button" className="po-button po-button--secondary" onClick={onOpenCatalog}>Agregar desde inventario</button>
+            </div>
+          )}
+        </header>
+        {!items.length ? <div className="po-empty">Agrega productos, servicios o actividades.</div> : <SoldItemsTable items={items} />}
+      </section>
+    );
+  }
+
+  // Stock conocido de un producto: solo entonces hay "Disponible N" o aviso de stock insuficiente.
+  const stockOf = (item) => {
+    const inventoryItem = inventoryById.get(item.itemId);
+    const stock = inventoryItem ? Number(inventoryItem.stock) : Number.NaN;
+    const known = item.tipoItem === "producto" && Number.isFinite(stock);
+    return {known, stock, exceeds: known && Number(item.cantidad || 0) > stock};
+  };
+
+  return (
+    <DocumentItemsEditor
+      canChange={canChangeReferences}
+      disabled={disabled}
+      getDescription={lineDescriptionToShow}
+      getLineMeta={(item) => {
+        const {known, exceeds, stock} = stockOf(item);
+        return known && !exceeds ? `Disponible ${stock}` : "";
+      }}
+      getMaxQuantity={(item) => (referencesLocked && item.cantidadCotizada != null ? item.cantidadCotizada : undefined)}
+      items={items}
+      mode="venta"
+      moneyStep={moneyStep}
+      onChange={onChange}
+      onOpenCatalog={onOpenCatalog}
+      onScanProduct={onScanProduct}
+      readOnly={readOnly}
+      renderLineAlert={(item) => {
+        const {exceeds, stock} = stockOf(item);
+        return exceeds ? (
+          <div className="sale-stock-warning" role="alert">
+            <strong>Stock insuficiente</strong>
+            <span>Disponible: {stock} · Solicitado: {Number(item.cantidad || 0)}</span>
+          </div>
+        ) : null;
+      }}
+      renderTitleExtra={(item) => (item.origenAdicionalId ? <span className="sale-item-type sale-item-type--adicional">Adicional</span> : null)}
+      title="¿Qué vendes?"
+      titleId="sale-items-title"
+    />
   );
 }

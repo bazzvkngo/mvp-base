@@ -226,9 +226,12 @@ td[align="right"] {
     line-height: 1.25;
   }
 
+  /* .skip-link es el enlace de accesibilidad de pantalla ("Saltar al contenido principal"): es position: fixed y, en un
+     documento de varias hojas, se imprimía en todas menos la última. No pertenece a ningún documento. */
   .sidebar,
   .topbar,
-  .no-print {
+  .no-print,
+  .skip-link {
     display: none !important;
   }
 
@@ -250,6 +253,12 @@ td[align="right"] {
   .quote-page > :last-child {
     border: 0 !important;
     padding: 0 !important;
+  }
+
+  /* Detalle de la cotización en el historial: su contenedor tiene el fondo de panel del tema (oscuro en modo oscuro);
+     al imprimir, el papel es el del documento. Clase exclusiva de QuoteHistoryPage. */
+  .history-print-area {
+    background: transparent !important;
   }
 
   .quote-print {

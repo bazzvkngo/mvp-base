@@ -1,7 +1,19 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { createRequire } from "node:module";
-import { buildQuoteValidityEmailLine } from "../src/domain/quoteEmailCopy.mjs";
+import {
+  buildQuoteValidityEmailLine,
+  buildQuoteValidityPhrase,
+} from "../src/domain/quoteEmailCopy.mjs";
+import {
+  DEFAULT_QUOTE_EMAIL_TEMPLATE,
+  QUOTE_EMAIL_VARIABLES,
+  buildQuoteEmailFromTemplate,
+  buildQuoteEmailPreview,
+  findUnknownQuoteEmailVariables,
+  renderQuoteEmailTemplate,
+  resolveQuoteEmailVariables,
+} from "../src/domain/quoteEmailTemplate.mjs";
 
 const require = createRequire(import.meta.url);
 const {
@@ -69,6 +81,214 @@ assert.equal(
   ),
   "La propuesta está vigente hasta el 2026-08-23."
 );
+
+// Texto por defecto: contacto, proyecto, total y vigencia; sin duplicados ni huecos.
+{
+  const money = (value) => `$${Number(value).toLocaleString("es-CL")}`;
+  const date = (value) => `fecha(${value})`;
+  const fullQuote = {
+    estado: "emitida",
+    clienteNombre: "Comercial Andina SpA",
+    clienteContacto: "Carolina Soto",
+    proyectoNombre: "Red eléctrica bodega",
+    total: 1190000,
+    validezDias: 15,
+    fechaEmision: "2026-08-01T12:00:00.000Z",
+    fechaVencimiento: "2026-08-16",
+  };
+  const profile = {
+    nombreComercial: "Bagner",
+    email: "contacto@bagner.cl",
+    telefono: "+56 9 1234 5678",
+  };
+  const context = {
+    quote: fullQuote,
+    companyProfile: profile,
+    accountEmail: "",
+    quoteNumber: "COT-2026-0001",
+    formatMoney: money,
+    formatDate: date,
+  };
+  const full = buildQuoteEmailFromTemplate(context);
+  assert.equal(full.asunto, "Cotización COT-2026-0001 – Red eléctrica bodega | Bagner");
+  assert.equal(
+    full.mensaje,
+    [
+      "Hola Carolina Soto:",
+      "",
+      "Te enviamos la cotización COT-2026-0001, por un total de $1.190.000.",
+      "",
+      "Asunto: Red eléctrica bodega",
+      "Propuesta vigente hasta el fecha(2026-08-16).",
+      "",
+      "Puedes revisar y responder la propuesta desde el enlace de este correo.",
+      "Si tienes consultas o necesitas ajustes, responde a este correo.",
+      "",
+      "Saludos,",
+      "Bagner",
+      "Tel. +56 9 1234 5678 · contacto@bagner.cl",
+    ].join("\n")
+  );
+  // El enlace se nombra una sola vez; nunca se inserta una URL en el mensaje.
+  assert.equal((full.mensaje.match(/enlace/g) || []).length, 1);
+  assert.doesNotMatch(full.mensaje, /https?:\/\//);
+  assert.ok(full.mensaje.length <= 2000 && full.asunto.length <= 180);
+
+  // Sin Reply-To (empresa sin correo y sin cuenta): no hay segunda frase del enlace.
+  const noReply = buildQuoteEmailFromTemplate({
+    ...context,
+    companyProfile: { nombreComercial: "Bagner" },
+  });
+  assert.equal((noReply.mensaje.match(/enlace/g) || []).length, 1);
+  assert.doesNotMatch(noReply.mensaje, /responde a este correo/);
+  assert.doesNotMatch(noReply.mensaje, /\n\n\n/);
+  assert.doesNotMatch(noReply.mensaje, /Tel\.|@/);
+
+  // Respaldo del Reply-To: correo verificado de la cuenta.
+  const withAccount = buildQuoteEmailFromTemplate({
+    ...context,
+    companyProfile: { nombreComercial: "Bagner" },
+    accountEmail: "yo@bagner.cl",
+  });
+  assert.match(withAccount.mensaje, /responde a este correo/);
+
+  // Sin persona de contacto se saluda a la razón social; sin ambos, "Hola:".
+  const noContact = buildQuoteEmailFromTemplate({
+    ...context,
+    quote: { ...fullQuote, clienteContacto: "" },
+  });
+  assert.match(noContact.mensaje, /^Hola Comercial Andina SpA:/);
+  const nobody = buildQuoteEmailFromTemplate({
+    ...context,
+    quote: { ...fullQuote, clienteContacto: "", clienteNombre: "" },
+  });
+  assert.match(nobody.mensaje, /^Hola:/);
+  // El contacto del snapshot del cliente tiene prioridad sobre la razón social.
+  const snapshotContact = buildQuoteEmailFromTemplate({
+    ...context,
+    quote: {
+      ...fullQuote,
+      clienteContacto: "",
+      cliente: { personaContacto: "Pedro Rojas" },
+    },
+  });
+  assert.match(snapshotContact.mensaje, /^Hola Pedro Rojas:/);
+
+  // Cada dato ausente se omite sin dejar huecos ni inventar texto.
+  const sparse = buildQuoteEmailFromTemplate({
+    ...context,
+    quote: { estado: "emitida", clienteNombre: "Cliente Uno" },
+    companyProfile: {},
+  });
+  assert.equal(
+    sparse.mensaje,
+    [
+      "Hola Cliente Uno:",
+      "",
+      "Te enviamos la cotización COT-2026-0001.",
+      "",
+      "Puedes revisar y responder la propuesta desde el enlace de este correo.",
+      "",
+      "Saludos,",
+    ].join("\n")
+  );
+  assert.equal(sparse.asunto, "Cotización COT-2026-0001");
+  assert.doesNotMatch(sparse.mensaje, /undefined|null|NaN|\{|\}|\[|\]/);
+  const noProject = buildQuoteEmailFromTemplate({
+    ...context,
+    quote: { ...fullQuote, proyectoNombre: "" },
+  });
+  assert.doesNotMatch(noProject.mensaje, /Asunto:/);
+  assert.equal(noProject.asunto, "Cotización COT-2026-0001 | Bagner");
+
+  // Vigencia: borrador sin emitir = días desde la emisión; emitida = fecha.
+  assert.equal(
+    buildQuoteValidityPhrase(
+      { estado: "borrador", validezDias: 10, fechaVencimiento: "2020-01-01" },
+      date
+    ),
+    "con vigencia de 10 días desde su emisión"
+  );
+  assert.equal(
+    buildQuoteValidityPhrase(fullQuote, date),
+    "vigente hasta el fecha(2026-08-16)"
+  );
+  assert.equal(buildQuoteValidityPhrase({}, date), "");
+
+  // Variables: funciones puras; las desconocidas se detectan y no se filtran al texto.
+  assert.deepEqual(QUOTE_EMAIL_VARIABLES, [
+    "contacto",
+    "cliente",
+    "numero",
+    "proyecto",
+    "total",
+    "vigencia",
+    "empresa",
+  ]);
+  assert.deepEqual(
+    findUnknownQuoteEmailVariables("{contacto} {nope} {nope} {otra} {total}"),
+    ["nope", "otra"]
+  );
+  assert.deepEqual(
+    findUnknownQuoteEmailVariables(DEFAULT_QUOTE_EMAIL_TEMPLATE.asunto),
+    []
+  );
+  const variables = resolveQuoteEmailVariables(context);
+  assert.equal(variables.cliente, "Comercial Andina SpA");
+  assert.equal(variables.contacto, "Carolina Soto");
+  assert.equal(
+    renderQuoteEmailTemplate("A {cliente} / {inexistente} / B", variables),
+    ""
+  );
+  assert.equal(
+    renderQuoteEmailTemplate("A {cliente}[ y {inexistente}]\nB {total}", variables),
+    "A Comercial Andina SpA\nB $1.190.000"
+  );
+  // Un valor con llaves no se vuelve a expandir.
+  assert.equal(
+    renderQuoteEmailTemplate("{proyecto}", { proyecto: "{total}", total: "X" }),
+    "{total}"
+  );
+
+  // Vista previa: remitente y Reply-To tal como saldrán; copia solo con casilla.
+  const previewBase = {
+    quote: fullQuote,
+    companyProfile: profile,
+    accountEmail: "yo@bagner.cl",
+    quoteNumber: "COT-2026-0001",
+    emailCliente: "cliente@example.com",
+    asunto: "Asunto",
+    mensaje: "Mensaje",
+    formatMoney: money,
+    formatDate: date,
+  };
+  const preview = buildQuoteEmailPreview(previewBase);
+  assert.equal(preview.from, "Bagner (vía ValoraCloud)");
+  assert.equal(preview.replyTo, "contacto@bagner.cl");
+  assert.equal(preview.replyToSource, "empresa");
+  assert.equal(preview.copyTo, "");
+  assert.equal(preview.summary.validezDias, 15);
+  assert.equal(
+    buildQuoteEmailPreview({ ...previewBase, enviarCopia: true }).copyTo,
+    "yo@bagner.cl"
+  );
+  assert.equal(
+    buildQuoteEmailPreview({
+      ...previewBase,
+      enviarCopia: true,
+      emailCliente: "YO@bagner.cl",
+    }).copyTo,
+    ""
+  );
+  const noProfile = buildQuoteEmailPreview({
+    ...previewBase,
+    companyProfile: null,
+    accountEmail: "",
+    quote: { ...fullQuote, empresa: { razonSocial: "Andes Ltda", email: "x@andes.cl" } },
+  });
+  assert.equal(noProfile.from, "Andes Ltda (vía ValoraCloud)");
+  assert.equal(noProfile.replyTo, "");
+}
 
 function baseDependencies(overrides = {}, storedQuote = validQuote) {
   const quoteUpdates = [];
@@ -307,7 +527,10 @@ function baseDependencies(overrides = {}, storedQuote = validQuote) {
   assert.equal("cc" in calls.provider[0], false);
   assert.equal("bcc" in calls.provider[0], false);
   assert.equal("replyTo" in calls.provider[0], false);
-  assert.equal(calls.provider[0].from, "Demo <ventas@example.com>");
+  assert.equal(
+    calls.provider[0].from,
+    '"Demo (vía ValoraCloud)" <ventas@example.com>'
+  );
   assert.equal(result.quoteEmailStatus.emailClienteDestino, "administracion@example.com");
   assert.equal(result.quoteEmailStatus.correoOriginalCliente, "cliente@example.com");
   assert.equal(result.quoteEmailStatus.destinatarioAlternativo, true);
@@ -318,6 +541,110 @@ function baseDependencies(overrides = {}, storedQuote = validQuote) {
   assert.equal("clienteEmail" in quoteUpdates.at(-1), false);
   assert.equal("clienteSnapshot" in quoteUpdates.at(-1), false);
   assert.deepEqual(validQuote, originalQuote);
+}
+
+{
+  // Reply-To: perfil vigente de la empresa; nunca el cuerpo de la solicitud.
+  const { dependencies, calls } = baseDependencies({
+    getLiveCompanyProfile: async () => ({
+      nombreComercial: "Bagner",
+      email: "Contacto@Bagner.cl",
+    }),
+  });
+  const result = await sendQuoteEmailHandler(
+    {
+      ...request,
+      auth: {
+        uid: "owner-1",
+        token: { email: "vendedor@bagner.cl", email_verified: true },
+      },
+      data: {
+        ...request.data,
+        bcc: "atacante@example.com",
+        replyTo: "atacante@example.com",
+        reply_to: "atacante@example.com",
+        from: "Atacante <atacante@example.com>",
+      },
+    },
+    dependencies
+  );
+  assert.equal(result.success, true);
+  assert.equal(calls.provider[0].replyTo, "contacto@bagner.cl");
+  assert.equal(
+    calls.provider[0].from,
+    '"Bagner (vía ValoraCloud)" <ventas@example.com>'
+  );
+  assert.equal("bcc" in calls.provider[0], false);
+}
+
+{
+  // Sin correo de contacto válido: respaldo al correo verificado de la cuenta.
+  for (const companyEmail of ["", "no-es-un-correo", "a@b.cl,c@d.cl"]) {
+    const { dependencies, calls } = baseDependencies({
+      getLiveCompanyProfile: async () => ({ nombreComercial: "Bagner", email: companyEmail }),
+    });
+    await sendQuoteEmailHandler(
+      {
+        ...request,
+        auth: {
+          uid: "owner-1",
+          token: { email: "Vendedor@Bagner.cl", email_verified: true },
+        },
+      },
+      dependencies
+    );
+    assert.equal(calls.provider[0].replyTo, "vendedor@bagner.cl");
+  }
+}
+
+{
+  // Sin contacto y sin cuenta verificada: no hay Reply-To (ni se inventa uno).
+  const { dependencies, calls } = baseDependencies({
+    getLiveCompanyProfile: async () => ({ nombreComercial: "Bagner", email: "mal" }),
+  });
+  await sendQuoteEmailHandler(
+    {
+      ...request,
+      auth: {
+        uid: "owner-1",
+        token: { email: "vendedor@bagner.cl", email_verified: false },
+      },
+    },
+    dependencies
+  );
+  assert.equal("replyTo" in calls.provider[0], false);
+}
+
+{
+  // Copia oculta: solo con la casilla, solo a la cuenta verificada de quien envía.
+  const auth = {
+    uid: "owner-1",
+    token: { email: "vendedor@bagner.cl", email_verified: true },
+  };
+  const withCopy = baseDependencies();
+  await sendQuoteEmailHandler(
+    { ...request, auth, data: { ...request.data, enviarCopia: true, bcc: "x@y.cl" } },
+    withCopy.dependencies
+  );
+  assert.deepEqual(withCopy.calls.provider[0].bcc, ["vendedor@bagner.cl"]);
+
+  const unverified = baseDependencies();
+  await sendQuoteEmailHandler(
+    {
+      ...request,
+      auth: { uid: "owner-1", token: { email: "vendedor@bagner.cl" } },
+      data: { ...request.data, enviarCopia: true },
+    },
+    unverified.dependencies
+  );
+  assert.equal("bcc" in unverified.calls.provider[0], false);
+
+  const notBoolean = baseDependencies();
+  await sendQuoteEmailHandler(
+    { ...request, auth, data: { ...request.data, enviarCopia: "true" } },
+    notBoolean.dependencies
+  );
+  assert.equal("bcc" in notBoolean.calls.provider[0], false);
 }
 
 for (const invalidRecipient of [
@@ -456,6 +783,11 @@ const modalSource = fs.readFileSync(
   "src/features/quotes/SendQuoteEmailModal.jsx",
   "utf8"
 );
+// La estructura del diálogo (destinatario, copia, pestañas, botón) vive en el diálogo compartido.
+const sharedDialogSource = fs.readFileSync(
+  "src/components/ui/DocumentEmailDialog.jsx",
+  "utf8"
+);
 const historySource = fs.readFileSync("src/pages/QuoteHistoryPage.jsx", "utf8");
 const toastRouteSyncSource = fs.readFileSync(
   "src/components/ToastRouteSync.jsx",
@@ -466,10 +798,29 @@ const mainSource = fs.readFileSync("src/main.jsx", "utf8");
 const emailServiceSource = fs.readFileSync("src/services/quoteEmailService.js", "utf8");
 assert.doesNotMatch(functionSource, /AUTOMATIC_QUOTE_EMAIL_ENABLED/);
 assert.match(functionSource, /sendQuoteEmailHandler/);
-assert.match(emailServiceSource, /resolveDocumentCompany\(quote, companyProfile\)/);
-assert.match(modalSource, /<ResponsiveDialog/);
-assert.match(modalSource, /Usar otro correo/);
+const templateSource = fs.readFileSync("src/domain/quoteEmailTemplate.mjs", "utf8");
+assert.match(templateSource, /resolveDocumentCompany\(quote, companyProfile\)/);
+assert.match(emailServiceSource, /buildQuoteEmailFromTemplate/);
+assert.match(modalSource, /<DocumentEmailDialog/);
+assert.match(sharedDialogSource, /<ResponsiveDialog/);
+assert.match(sharedDialogSource, /Usar otro correo/);
 assert.match(modalSource, /Volver al correo del cliente/);
+assert.match(sharedDialogSource, /Enviarme una copia a \{accountEmail\}/);
+assert.match(modalSource, /enviarCopia: Boolean\(accountEmail\) && enviarCopia/);
+assert.match(templateSource, /buildQuoteReplyLine\(Boolean\(replyTo\)\)/);
+assert.doesNotMatch(templateSource, /Puedes responder la propuesta desde el enlace\./);
+assert.doesNotMatch(emailServiceSource, /"Si tienes consultas o necesitas ajustes, responde a este correo\."/);
+// El panel muestra remitente, Reply-To, copia y vista previa; el servidor sigue decidiendo.
+assert.match(modalSource, /preview\.from/);
+assert.match(modalSource, /preview\.replyTo/);
+assert.match(modalSource, /preview\.copyTo/);
+assert.match(modalSource, /<QuoteEmailPreview preview=\{preview\} \/>/);
+assert.match(modalSource, /El cliente podrá aceptar o rechazar/);
+assert.doesNotMatch(modalSource, /Envío puntual a un correo alternativo/);
+assert.match(sharedDialogSource, /quote-email-dialog__send/);
+const previewSource = fs.readFileSync("src/features/quotes/QuoteEmailPreview.jsx", "utf8");
+assert.doesNotMatch(previewSource, /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|style=/);
+assert.match(functionSource, /getLiveCompanyProfile/);
 assert.match(modalSource, /Simulación preparada/);
 assert.match(modalSource, /En QA local no se envió un correo real/);
 assert.match(modalSource, /setQaPublicUrl\(resultQaPublicUrl\)/);

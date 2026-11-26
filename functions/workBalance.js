@@ -1,6 +1,8 @@
 const WORK_BALANCE_MODEL_VERSION = 3;
 const {BALANCE_READ_ROLES: BALANCE_ROLES} = require("./rbac");
 const PROJECT_MOVEMENT_TYPES = new Set(["SALIDA_PROYECTO", "DEVOLUCION_PROYECTO"]);
+// Documentos que respaldan un gasto de trabajo (mismo conjunto que functions/workPersistence.js).
+const EXPENSE_DOCUMENT_TYPES = new Set(["factura", "boleta"]);
 const MONTHLY_AMOUNT_FIELDS = ["ingresoNeto", "materialesVenta", "materialesAdicionales", "horasHombre", "gastosDirectos", "gastosIndirectos"];
 
 function fail(HttpsError, code, message) {
@@ -106,8 +108,11 @@ function calculateWorkBalance({business = {}, expenses = [], labor = [], materia
   const materialsFromSales = saleMaterialEffects(confirmedSales, baseCurrency);
   const availableSaleMaterials = materialsFromSales.filter((entry) => entry.costoHistoricoDisponible);
   const hasMaterialLedger = materialsFromSales.length > 0 || projectMaterials.some((movement) => movement.tipo === "SALIDA_PROYECTO");
-  const includedExpenses = activeExpenses.filter((expense) => !(hasMaterialLedger && String(expense.categoria || "").toUpperCase() === "MATERIAL"));
-  const excludedMaterialExpenses = activeExpenses.filter((expense) => hasMaterialLedger && String(expense.categoria || "").toUpperCase() === "MATERIAL");
+  // Con libro de materiales los gastos Material se dejan fuera para no contar dos veces el mismo material, salvo los
+  // que tienen documento (boleta o factura): son material comprado directo para la obra y siempre suman.
+  const isUndocumentedMaterialExpense = (expense) => String(expense.categoria || "").toUpperCase() === "MATERIAL" && !EXPENSE_DOCUMENT_TYPES.has(String(expense.tipoDocumento || "").toLowerCase());
+  const includedExpenses = activeExpenses.filter((expense) => !(hasMaterialLedger && isUndocumentedMaterialExpense(expense)));
+  const excludedMaterialExpenses = activeExpenses.filter((expense) => hasMaterialLedger && isUndocumentedMaterialExpense(expense));
   const buckets = new Map();
   const months = new Map();
   let undatedRecords = 0;

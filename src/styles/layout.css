@@ -20,7 +20,7 @@
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
-  padding: var(--space-4) var(--space-3) var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-2);
   position: sticky;
   top: 0;
 }
@@ -34,9 +34,8 @@
 
 .brand-logo--sidebar {
   border-bottom: 1px solid var(--color-border-subtle);
-  margin-bottom: var(--space-5);
-  min-height: 64px;
-  padding: var(--space-1) var(--space-2) var(--space-4);
+  margin-bottom: var(--space-3);
+  padding: 0 var(--space-2) var(--space-3);
 }
 
 .brand-logo--auth {
@@ -177,6 +176,11 @@
   color: var(--color-brand-400);
 }
 
+.brand-mark.brand-mark--on-dark {
+  --color-logo-accent: var(--color-logo-accent-on-dark);
+  color: var(--color-dark-accent);
+}
+
 :where(:root[data-theme="dark"]) .brand-logo__icon {
   background: var(--color-surface-subtle);
   border-color: var(--color-border-default);
@@ -208,7 +212,7 @@
   min-width: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: var(--space-1) 2px var(--space-3) 0;
+  padding: var(--space-1) 2px var(--space-2) 0;
   scrollbar-color: var(--color-border-default) transparent;
   scrollbar-width: thin;
 }
@@ -217,16 +221,16 @@
   background: var(--color-surface-panel);
   border-top: 1px solid var(--color-border-subtle);
   min-width: 0;
-  padding-top: var(--space-3);
+  padding-top: var(--space-2);
 }
 
+/* El borde inferior de la cabecera lo da el BrandLogo; el selector ya no cierra
+   con otra línea ni con el botón "Agregar otro negocio" (vive en el menú). */
 .business-switcher {
-  border-bottom: 1px solid var(--color-border-subtle);
   display: grid;
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
+  margin-bottom: var(--space-2);
   min-width: 0;
-  padding: 0 var(--space-1) var(--space-4);
+  padding: 0 var(--space-1) var(--space-2);
   position: relative;
 }
 
@@ -236,7 +240,6 @@
 }
 
 .business-switcher__trigger,
-.business-switcher__add,
 .business-menu__item {
   box-sizing: border-box;
   cursor: pointer;
@@ -254,7 +257,6 @@
   display: grid;
   gap: var(--space-2);
   grid-template-columns: auto minmax(0, 1fr) auto;
-  min-height: 58px;
   padding: var(--space-2);
   text-align: left;
 }
@@ -311,36 +313,6 @@
 
 .business-switcher__chevron.is-open {
   transform: rotate(180deg);
-}
-
-.business-switcher__add {
-  align-items: center;
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-sm);
-  color: var(--color-brand-800);
-  display: flex;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  gap: var(--space-2);
-  min-height: 40px;
-  padding: var(--space-2);
-  text-align: left;
-}
-
-.business-switcher__add:hover {
-  background: var(--color-surface-brand);
-}
-
-.business-switcher__add-icon {
-  align-items: center;
-  border: 1px solid var(--color-brand-300);
-  border-radius: 999px;
-  display: flex;
-  flex: 0 0 auto;
-  height: 28px;
-  justify-content: center;
-  width: 28px;
 }
 
 .business-menu {
@@ -404,6 +376,52 @@
   width: 32px;
 }
 
+.business-menu__footer {
+  border-top: 1px solid var(--color-border-subtle);
+  padding: var(--space-1);
+}
+
+.business-menu__action {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  box-sizing: border-box;
+  color: var(--color-text-brand);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  gap: var(--space-2);
+  min-height: 44px;
+  min-width: 0;
+  padding: var(--space-2);
+  text-align: left;
+  width: 100%;
+}
+
+.business-menu__action:hover,
+.business-menu__action:focus-visible {
+  background: var(--color-surface-brand);
+}
+
+.business-menu__action:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.business-menu__action-icon {
+  align-items: center;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-pill);
+  display: flex;
+  flex: 0 0 auto;
+  height: 28px;
+  justify-content: center;
+  width: 28px;
+}
+
 .business-menu__empty,
 .business-menu__error {
   font-size: var(--font-size-xs);
@@ -434,6 +452,33 @@
   line-height: var(--line-height-tight);
   padding: 0 var(--space-3) var(--space-1);
   text-transform: uppercase;
+}
+
+.nav-module,
+.nav-module__items {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.nav-module__label {
+  align-items: center;
+  color: var(--color-text-muted);
+  display: flex;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  gap: var(--space-2);
+  line-height: var(--line-height-tight);
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  text-transform: uppercase;
+}
+
+.nav-module__items {
+  padding-left: var(--space-3);
+}
+
+.nav-link--nested {
+  min-height: 36px;
 }
 
 .nav-link {
@@ -475,16 +520,92 @@
   border-radius: var(--radius-pill);
   color: var(--color-text-muted);
   flex: 0 0 auto;
-  font-size: 0.6875rem;
+  font-size: var(--font-size-xs);
   font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-tight);
   margin-left: auto;
-  padding: 2px 7px;
+  padding: 0 var(--space-2);
 }
 
 .nav-link-active .nav-link__completion {
   background: var(--color-surface-panel);
   border-color: var(--color-brand-200);
   color: var(--color-brand-700);
+}
+
+/* Sidebar de escritorio compacta (enmienda a la SPEC 010). Solo con puntero fino:
+   con pointer: coarse se conservan los 44 px de .nav-link de más abajo, y el cajón
+   móvil (.mobile-nav-drawer) no usa .sidebar--desktop, así que no se ve afectado.
+   36 px = --space-8 + --space-1; 32 px = --space-8.
+   Entre grupos hay aire (gap + línea fina + padding = 17 px; la mitad en pantallas
+   bajas) y los ítems de cada grupo quedan pegados a su título. */
+@media (pointer: fine) {
+  .sidebar--desktop .sidebar-nav {
+    gap: var(--space-2);
+  }
+
+  .sidebar--desktop .nav-section {
+    gap: 0;
+  }
+
+  .sidebar--desktop .nav-section + .nav-section {
+    border-top: 1px solid var(--color-border-subtle);
+    padding-top: var(--space-2);
+  }
+
+  .sidebar--desktop .nav-section__title {
+    color: var(--color-text-default);
+    font-weight: var(--font-weight-bold);
+    letter-spacing: 0.08em;
+    padding-bottom: var(--space-1);
+  }
+
+  .sidebar--desktop .nav-link {
+    line-height: var(--line-height-tight);
+    min-height: calc(var(--space-8) + var(--space-1));
+    padding-bottom: var(--space-2);
+    padding-top: var(--space-2);
+  }
+}
+
+/* Pantallas bajas (notebooks de 600-700 px): ítems de 32 px, títulos pegados a sus
+   ítems y la mitad del aire entre grupos (9 px). */
+@media (pointer: fine) and (max-height: 760px) {
+  .sidebar--desktop .brand-logo--sidebar {
+    margin-bottom: var(--space-2);
+    padding-bottom: var(--space-2);
+  }
+
+  .sidebar--desktop .business-switcher {
+    margin-bottom: var(--space-1);
+    padding-bottom: var(--space-1);
+  }
+
+  .sidebar--desktop .sidebar-nav {
+    gap: var(--space-1);
+  }
+
+  .sidebar--desktop .nav-section + .nav-section {
+    padding-top: var(--space-1);
+  }
+
+  .sidebar--desktop .nav-section__title {
+    padding-bottom: 0;
+  }
+
+  .sidebar--desktop .nav-link {
+    min-height: var(--space-8);
+    padding-bottom: var(--space-1);
+    padding-top: var(--space-1);
+  }
+
+  .sidebar--desktop .sidebar__navigation {
+    padding-bottom: 0;
+  }
+
+  .sidebar--desktop .sidebar__footer {
+    padding-top: var(--space-1);
+  }
 }
 
 .workspace {
@@ -606,6 +727,37 @@ body:has(.topbar .environment-notice--inline) .environment-notice--floating {
   position: absolute;
   right: 4px;
   top: 4px;
+}
+
+/* Centro de notificaciones: desplegable anclado a la campana (sin overlay ni
+   bloqueo de scroll). El wrapper es el ancla; el panel cuelga bajo el botón y
+   se alinea a su borde derecho. En pantallas chicas pasa a fixed (ver el
+   media query de 640px). */
+.notification-bell {
+  display: inline-flex;
+  position: relative;
+}
+
+.notification-popover {
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  max-height: calc(100vh - var(--shell-topbar-height) - var(--space-6));
+  max-height: calc(100dvh - var(--shell-topbar-height) - var(--space-6));
+  overflow-y: auto;
+  padding: var(--space-4);
+  position: absolute;
+  right: 0;
+  top: calc(100% + var(--space-2));
+  width: min(24rem, calc(100vw - var(--space-6)));
+  z-index: var(--z-sticky);
+}
+
+.notification-popover__title {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-md);
+  margin: 0 0 var(--space-3);
 }
 
 .topbar-user {
@@ -743,23 +895,47 @@ body:has(.topbar .environment-notice--inline) .environment-notice--floating {
   border-radius: var(--radius-md);
   cursor: pointer;
   display: grid;
-  gap: var(--space-1);
+  gap: var(--space-3);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   padding: var(--space-3);
   text-align: left;
   width: 100%;
 }
 
+.notification-list__item:hover {
+  background: var(--color-surface-hover);
+}
+
 .notification-list__item.is-unread {
-  background: var(--color-info-50);
-  border-color: var(--color-info-200);
+  border-color: var(--color-border-default);
+}
+
+/* Icono decorativo (aria-hidden) alineado con la primera línea del título. */
+.notification-list__icon {
+  color: var(--color-text-brand-accent);
+  display: flex;
+  height: calc(var(--font-size-sm) * var(--line-height-default));
+}
+
+.notification-list__content {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .notification-list__item strong {
-  color: var(--color-text-strong);
+  color: var(--color-text-default);
   font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
 }
 
-.notification-list__item span {
+.notification-list__item.is-unread strong {
+  color: var(--color-text-strong);
+  font-weight: var(--font-weight-bold);
+}
+
+.notification-list__text {
   color: var(--color-text-default);
   font-size: var(--font-size-sm);
 }
@@ -767,6 +943,33 @@ body:has(.topbar .environment-notice--inline) .environment-notice--floating {
 .notification-list__item small {
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
+}
+
+/* Punto de no leído: marcador de marca, decorativo. El estado también se dice en
+   texto (.sr-only "No leída") dentro del botón. */
+.notification-list__dot {
+  background: var(--color-text-brand-accent);
+  border-radius: var(--radius-pill);
+  height: var(--space-2);
+  margin-top: calc((var(--font-size-sm) * var(--line-height-default) - var(--space-2)) / 2);
+  width: var(--space-2);
+}
+
+/* Sin avisos: texto discreto, sin caja (no usa .erp-empty-state). */
+.notification-empty {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+/* Aviso de correo sin verificar: más compacto que un <Notice> de página. */
+.notification-section .notification-notice {
+  padding: var(--space-2) var(--space-3);
+}
+
+.notification-notice__feedback {
+  flex: 1 1 100%;
+  margin: 0;
 }
 
 .verification-notice,
@@ -918,8 +1121,31 @@ body:has(.topbar .environment-notice--inline) .environment-notice--floating {
 }
 
 .business-create-drawer--quick .quick-business-field input,
-.business-create-drawer--quick .quick-business-field select {
+.business-create-drawer--quick .quick-business-field select,
+.business-create-drawer--quick .business-category-picker {
   border-radius: var(--radius-md);
+}
+
+/* Ritmo vertical del cajón (SPEC 040): la línea de mensaje de un campo solo ocupa lugar si tiene
+   ayuda o error. Sin esto un campo sin mensaje (Nombre) dejaba un hueco mayor que los demás. */
+.business-create-drawer--quick .quick-business-field__message {
+  min-height: 0;
+}
+
+.business-create-drawer--quick .quick-business-field__message:empty {
+  display: none;
+}
+
+/* Bloques "Datos del negocio" y "Ubicación": mismo patrón .business-drawer-section, con la
+   separación simétrica del cajón (espacio-4 a cada lado de la línea). */
+.business-create-drawer--quick .business-drawer-section + .business-drawer-section {
+  padding-top: var(--space-4);
+}
+
+/* Ayuda del pie del formulario: discreta, separada por la misma línea sutil que los bloques. */
+.business-create-drawer--quick .business-drawer-form__defaults {
+  border-top: 1px solid var(--color-border-subtle);
+  padding-top: var(--space-4);
 }
 
 .business-drawer-section {
@@ -1159,6 +1385,7 @@ body:has(.topbar .environment-notice--inline) .environment-notice--floating {
   .mobile-nav-drawer__header .brand-logo--sidebar {
     border: 0;
     margin: 0;
+    min-height: 64px;
     padding: 0;
   }
 
@@ -1225,10 +1452,14 @@ body:has(.topbar .environment-notice--inline) .environment-notice--floating {
     grid-column: auto;
   }
 
+  /* Con "Cancelar" a su izquierda, los dos botones comparten la fila. */
+  .business-create-drawer .responsive-dialog__footer > * {
+    flex: 1 1 auto;
+  }
+
   .business-create-drawer__submit {
     max-width: 100%;
     min-width: 0;
-    width: 100%;
   }
 
   .business-discard-confirm {
@@ -1253,6 +1484,16 @@ body:has(.topbar .environment-notice--inline) .environment-notice--floating {
     gap: var(--space-3);
     grid-template-columns: auto minmax(0, 1fr) auto;
     padding: var(--space-1) var(--space-4);
+  }
+
+  /* Pantallas chicas: el panel ocupa el ancho disponible, con margen de
+     --space-3, justo bajo el encabezado (que es sticky en top: 0). */
+  .notification-popover {
+    left: var(--space-3);
+    position: fixed;
+    right: var(--space-3);
+    top: calc(var(--shell-topbar-height) + var(--space-2));
+    width: auto;
   }
 
   .topbar .ui-page-header__eyebrow {
@@ -1310,7 +1551,6 @@ body:has(.topbar .environment-notice--inline) .environment-notice--floating {
 
 @media (pointer: coarse) {
   .nav-link,
-  .business-switcher__add,
   .business-switcher__trigger,
   .business-menu__item,
   .topbar-menu-button,
@@ -1341,7 +1581,6 @@ body:has(.topbar .environment-notice--inline) .environment-notice--floating {
      corrige con --color-brand-400 (mínimo 4.92:1 contra las 6 superficies
      oscuras de la fundación) en cada selector que lo usa como texto sobre
      un fondo que sí reacciona al tema. */
-  .business-switcher__add,
   .nav-link:hover,
   .nav-link-active,
   .nav-link-active .nav-link__completion,

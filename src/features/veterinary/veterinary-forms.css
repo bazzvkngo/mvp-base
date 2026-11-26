@@ -1,0 +1,4 @@
+.veterinary-field-error {
+  color: var(--color-danger-700);
+  font-size: var(--font-size-xs);
+}

@@ -1,6 +1,7 @@
 const QUOTE_MODEL_VERSION = 2;
 const VAT_RATE = 0.19;
 const {documentLocalizationSnapshot, adaptDocumentLocalization} = require("./localization");
+const {hasMaxDecimals, mulRound, roundMoney, sanitizeDecimals, sumMoney} = require("./money");
 const {fiscalSnapshotFields} = require("./fiscalIdentifier");
 const {
   buildAuthoritativeCompanySnapshot,
@@ -272,7 +273,16 @@ function normalizeInventorySnapshot(source = {}) {
   return snapshot;
 }
 
-function normalizeItems(items, HttpsError) {
+// SPEC 036: `decimals` son los decimales de cálculo del documento (su `montoDecimales`; 0 = entero, como siempre). Con 0,
+// mulRound y sumMoney ejecutan la fórmula anterior; con decimales, el precio y el descuento general admiten hasta
+// esa cantidad de decimales.
+function assertAmountDecimals(value, decimals, label, HttpsError) {
+  if (decimals > 0 && !hasMaxDecimals(value, decimals)) {
+    fail(HttpsError, `${label} admite hasta ${decimals} decimales.`);
+  }
+}
+
+function normalizeItems(items, HttpsError, decimals = 0) {
   if (!Array.isArray(items) || items.length === 0) {
     fail(HttpsError, "Agrega al menos un ítem a la cotización.");
   }
@@ -288,13 +298,14 @@ function normalizeItems(items, HttpsError) {
       `${row}: precio unitario`,
       HttpsError
     );
+    assertAmountDecimals(precioUnitarioEditable, decimals, `${row}: precio unitario`, HttpsError);
     const descuentoPorcentaje =
       item.descuentoPorcentaje === "" || item.descuentoPorcentaje === undefined
         ? 0
         : requireNumber(item.descuentoPorcentaje, `${row}: descuento`, HttpsError);
     if (descuentoPorcentaje > 100) fail(HttpsError, `${row}: el descuento no puede superar 100%.`);
-    const subtotalLinea = Math.round(cantidad * precioUnitarioEditable);
-    const descuentoLinea = Math.round((subtotalLinea * descuentoPorcentaje) / 100);
+    const subtotalLinea = mulRound(cantidad, precioUnitarioEditable, decimals);
+    const descuentoLinea = mulRound(subtotalLinea, descuentoPorcentaje, decimals, 100);
     const inventorySnapshot = normalizeInventorySnapshot(item.inventarioSnapshot || {});
     const tipoItem = VALID_ITEM_TYPES.has(item.tipoItem)
       ? item.tipoItem
@@ -319,34 +330,44 @@ function normalizeItems(items, HttpsError) {
       categoria: safeText(item.categoria || inventorySnapshot.categoria, 160),
       unidad: safeText(item.unidad || inventorySnapshot.unidad, 80) || "unidad",
       cantidad,
-      precioSugerido: requireNumber(
-        item.precioSugerido ?? precioUnitarioEditable,
-        `${row}: precio sugerido`,
-        HttpsError
+      precioSugerido: roundSuggestedPrice(
+        requireNumber(
+          item.precioSugerido ?? precioUnitarioEditable,
+          `${row}: precio sugerido`,
+          HttpsError
+        ),
+        decimals
       ),
       precioUnitarioEditable,
       descuentoPorcentaje,
       descuentoLinea,
       subtotalLinea,
-      totalLinea: subtotalLinea - descuentoLinea,
+      totalLinea: sumMoney([subtotalLinea, -descuentoLinea], decimals),
       inventarioSnapshot: inventorySnapshot,
     };
   });
 }
 
-function calculateTotals(items, rawDiscount, affectsVat, HttpsError, taxRate = VAT_RATE) {
-  const subtotal = items.reduce((sum, item) => sum + item.subtotalLinea, 0);
-  const descuentoItems = items.reduce((sum, item) => sum + item.descuentoLinea, 0);
+// El precio sugerido es solo informativo (no entra en ningún cálculo): con decimales se redondea a los del
+// documento para que no guarde un importe con más decimales que el resto. Con 0 decimales queda como llega.
+function roundSuggestedPrice(value, decimals) {
+  return decimals > 0 ? roundMoney(value, decimals) : value;
+}
+
+function calculateTotals(items, rawDiscount, affectsVat, HttpsError, taxRate = VAT_RATE, decimals = 0) {
+  const subtotal = sumMoney(items.map((item) => item.subtotalLinea), decimals);
+  const descuentoItems = sumMoney(items.map((item) => item.descuentoLinea), decimals);
   const descuento =
     rawDiscount === "" || rawDiscount === undefined
       ? 0
       : requireNumber(rawDiscount, "El descuento general", HttpsError);
-  if (descuento > subtotal - descuentoItems) {
+  assertAmountDecimals(descuento, decimals, "El descuento general", HttpsError);
+  if (descuento > sumMoney([subtotal, -descuentoItems], decimals)) {
     fail(HttpsError, "El descuento general no puede superar el monto pendiente.");
   }
-  const descuentoTotal = descuentoItems + descuento;
-  const neto = subtotal - descuentoTotal;
-  const iva = affectsVat ? Math.round(neto * taxRate) : 0;
+  const descuentoTotal = sumMoney([descuentoItems, descuento], decimals);
+  const neto = sumMoney([subtotal, -descuentoTotal], decimals);
+  const iva = affectsVat ? mulRound(neto, taxRate, decimals) : 0;
   return {
     subtotal,
     descuento,
@@ -354,7 +375,7 @@ function calculateTotals(items, rawDiscount, affectsVat, HttpsError, taxRate = V
     descuentoTotal,
     neto,
     iva,
-    total: neto + iva,
+    total: sumMoney([neto, iva], decimals),
   };
 }
 
@@ -392,11 +413,14 @@ function normalizeQuoteInput(
   const company = companySnapshot || {};
   const resolvedClientFields =
     clientFields || legacyClientQuoteFields(raw, HttpsError);
-  const items = normalizeItems(raw.items, HttpsError);
-  const affectsVat = raw.afectaIva !== false;
+  // Los decimales salen del snapshot del documento: el de la moneda al crearlo, o el del documento de origen
+  // (duplicar, editar). Un documento sin snapshot vale 0 (entero).
   const location = localization || adaptDocumentLocalization(raw);
+  const decimals = sanitizeDecimals(location.montoDecimales);
+  const items = normalizeItems(raw.items, HttpsError, decimals);
+  const affectsVat = raw.afectaIva !== false;
   const taxRate = affectsVat ? location.tasaIva : 0;
-  const totals = calculateTotals(items, raw.descuento, affectsVat, HttpsError, taxRate);
+  const totals = calculateTotals(items, raw.descuento, affectsVat, HttpsError, taxRate, decimals);
   const validity = Number(raw.validezDias);
   const validezDias = Number.isInteger(validity) && validity > 0 && validity <= 3650
     ? validity
@@ -415,6 +439,8 @@ function normalizeQuoteInput(
     moneda: location.moneda,
     locale: location.locale,
     impuestoNombre: location.impuestoNombre,
+    // Solo se guarda con decimales: un documento sin el campo (todo el de Chile) queda como antes.
+    ...(decimals > 0 ? {montoDecimales: decimals} : {}),
     fecha: issueDate,
     validezDias,
     fechaVencimiento: calculateExpiryDate(issueDate, validezDias),

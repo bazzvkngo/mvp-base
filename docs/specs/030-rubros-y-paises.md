@@ -1,12 +1,12 @@
 # SPEC 030: Rubros seleccionables y aviso fiscal por país
 
-Estado: **implementada (2026-10-18)**. Solo catálogo y presentación. No toca reglas Firestore, cálculos, esquema del catálogo ni países, monedas o regiones. Complementa la SPEC 016 (visión post-demo) y la documentación de onboarding; no sustituye ninguno de sus puntos.
+Estado: **implementada (2026-10-18)**; las decisiones 1 y 2 y el punto "Nada del sistema decide menús o módulos según el rubro" de la sección 2 quedan sustituidos por la SPEC 033 (9 rubros seleccionables con Taller y Veterinaria, y módulos habilitados por rubro al crear el negocio). Solo catálogo y presentación. No toca reglas Firestore, cálculos, esquema del catálogo ni países, monedas o regiones. Complementa la SPEC 016 (visión post-demo) y la documentación de onboarding; no sustituye ninguno de sus puntos.
 
 ## 1. Decisión
 
 1. Quedan **7 rubros seleccionables**: `TECNOLOGIA_INFORMATICA`, `SEGURIDAD_TELECOMUNICACIONES`, `ELECTRICIDAD_ENERGIA_CLIMATIZACION`, `AUTOMATIZACION_CONTROL`, `MANTENIMIENTO_INSTALACIONES`, `INGENIERIA_CONSULTORIA` y `OTRO_SERVICIO_PROYECTOS`. Pasan a `selectable: false` (siguen `active`, versión 1, sector `SERVICIOS_PROYECTOS`): `AUTOMOTRIZ_MOVILIDAD`, `CONSTRUCCION_OBRAS`, `SOFTWARE_SOLUCIONES_DIGITALES` y `SERVICIOS_DIGITALES_CREATIVOS`. Se usa el campo ya existente; no se agregan campos al esquema. Esta lista reemplaza la primera versión de la SPEC (10 rubros).
 2. El picker de rubros muestra, bajo las opciones, un grupo **"Próximamente"** con filas deshabilitadas (`aria-disabled`): "Taller automotriz (en construcción)", "Clínica veterinaria (en construcción)", "Construcción y obras", "Software y soluciones digitales" y "Servicios digitales y creativos" (estas tres con la etiqueta "Próximamente"), más la línea "Más rubros próximamente". No tienen código persistible: no entran al buscador ni al payload.
-3. En el selector de país del onboarding, si el país no es Chile se muestra: "Moneda y formato disponibles. Las reglas fiscales (facturas, boletas, IVA) están pensadas para Chile y están en revisión." Es solo presentación. La empresa adicional no tiene selector de país (asigna Chile y CLP), por lo que no lleva la nota.
+3. En el selector de país del onboarding, si el país no es Chile se muestra (texto sustituido por la SPEC 035, sección 3, punto 7): "Moneda y formato disponibles. Las reglas fiscales (facturas, boletas, IVA) están pensadas para Chile y están en revisión." Es solo presentación. La empresa adicional no tiene selector de país (asigna Chile y CLP), por lo que no lleva la nota.
 
 ## 2. Por qué
 

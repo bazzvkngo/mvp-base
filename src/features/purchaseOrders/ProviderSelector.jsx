@@ -7,6 +7,7 @@ const paymentLabel = (value) => ({contado: "Contado", transferencia: "Transferen
 export default function ProviderSelector({
   disabled,
   emptyMessage = "Selecciona un proveedor.",
+  historicalNote = "Snapshot histórico conservado",
   onChange,
   originalSnapshot,
   providers,
@@ -36,7 +37,7 @@ export default function ProviderSelector({
               <span>{[display.direccion, display.comunaNombre, display.regionNombre].filter(Boolean).join(", ") || "Sin dirección"}</span>
               <span>{paymentLabel(display.condicionesPago) || "Sin condiciones de pago"}{display.condicionesPago === "credito" && display.diasCredito ? ` · ${display.diasCredito} días` : ""}</span>
             </div>
-            {isHistorical && <em className="po-provider__snapshot">Snapshot histórico conservado</em>}
+            {isHistorical && <em className="po-provider__snapshot">{historicalNote}</em>}
           </>
         ) : <p>{emptyMessage}</p>}
       </div>

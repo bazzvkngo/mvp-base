@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   adaptContactTerritoryForCountry,
   clearContactTerritory,
+  getContactRegionOptions,
   getContactTerritoryConfig,
 } from "../src/domain/contactTerritory.mjs";
 
@@ -47,6 +48,28 @@ assert.deepEqual(adaptContactTerritoryForCountry(territory, "PE", "CL"), {
   comunaCodigo: "",
   comunaNombre: "",
 });
+// Departamentos de Bolivia (del catálogo): la configuración no cambia, las opciones salen aparte.
+assert.deepEqual(getContactRegionOptions("BO").map(({ code }) => code), ["LP", "CB", "SC", "OR", "PO", "CH", "TJ", "BE", "PD"]);
+assert.deepEqual(getContactRegionOptions("CL"), [], "Chile tiene su propio catálogo con comunas");
+for (const code of ["MX", "PE", "PY", "OTHER", "ZZ", ""]) assert.deepEqual(getContactRegionOptions(code), [], code);
+const bolivianTerritory = { regionCodigo: "SC", regionNombre: "Santa Cruz", comunaCodigo: "", comunaNombre: "Montero", razonSocial: "Cliente" };
+assert.deepEqual(adaptContactTerritoryForCountry(bolivianTerritory, "BO", "BO"), bolivianTerritory, "se conserva el código del departamento y el municipio de texto libre");
+assert.deepEqual(
+  adaptContactTerritoryForCountry({ ...bolivianTerritory, regionCodigo: "", regionNombre: "potosi" }, "BO", "BO"),
+  { ...bolivianTerritory, regionCodigo: "PO", regionNombre: "Potosí" },
+  "un nombre guardado como texto libre se reconoce en el catálogo"
+);
+assert.deepEqual(
+  adaptContactTerritoryForCountry({ ...bolivianTerritory, regionCodigo: "", regionNombre: "Santa Cruz de la Sierra" }, "BO", "BO"),
+  { ...bolivianTerritory, regionCodigo: "", regionNombre: "Santa Cruz de la Sierra" },
+  "un texto que no está en el catálogo se conserva"
+);
+assert.deepEqual(
+  adaptContactTerritoryForCountry({ ...bolivianTerritory, regionCodigo: "13" }, "BO", "BO"),
+  { ...bolivianTerritory, regionCodigo: "SC" },
+  "un código de Chile no vale en Bolivia (se resuelve por el nombre)"
+);
+assert.equal(adaptContactTerritoryForCountry(bolivianTerritory, "BO", "CL").regionNombre, "", "cambiar de país limpia el territorio");
 assert.equal(clearContactTerritory(territory).razonSocial, "Proveedor de prueba");
 assert.equal(getContactTerritoryConfig("ZZ").primaryLabel, "Región, estado o provincia");
 

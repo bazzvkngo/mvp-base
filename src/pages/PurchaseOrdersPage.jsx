@@ -1,14 +1,18 @@
 import React, {useEffect, useMemo, useRef, useState} from "react";
-import {Plus, Search} from "lucide-react";
+import {Plus, Search, Trash2} from "lucide-react";
 import {useLocation, useNavigate} from "react-router-dom";
 import {sileo} from "sileo";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
+import EmptyState from "../components/ui/EmptyState";
 import EmptyStateIllustration from "../components/ui/EmptyStateIllustration";
+import ModuleHeader from "../components/ui/ModuleHeader";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import {SkeletonCards, SkeletonRegion, SkeletonTable} from "../components/ui/Skeleton";
-import {canManagePurchaseOrders, getSupplierResponseLabel, getSupplierResponseState, matchesPurchaseOrderSearch} from "../domain/purchaseOrderModel.mjs";
+import {getRouteMeta} from "../app/navigation";
+import {canManagePurchaseOrders, canOfferPurchaseOrderDeletion, getSupplierResponseLabel, getSupplierResponseState, matchesPurchaseOrderSearch} from "../domain/purchaseOrderModel.mjs";
 import {getOrderReceptionProgress, getOrderReceptionStatus, getOrderReceptionStatusLabel} from "../domain/receptionModel.mjs";
+import PurchaseOrderDeleteDialog from "../features/purchaseOrders/PurchaseOrderDeleteDialog";
 import PurchaseOrderPrintView from "../features/purchaseOrders/PurchaseOrderPrintView";
 import SendPurchaseOrderEmailDialog from "../features/purchaseOrders/SendPurchaseOrderEmailDialog";
 import {getCompanyProfile} from "../services/companyService";
@@ -17,9 +21,14 @@ import {sendPurchaseOrderEmail} from "../services/purchaseOrderEmailService";
 import {crearRecepcionDesdeOrden, createReceptionRequestId, listarRecepciones} from "../services/receptionService";
 import {buildPurchaseOrderPdfAttachment, downloadPurchaseOrderPdf, getPurchaseOrderWhatsAppAvailability, sharePurchaseOrderWhatsApp} from "../utils/purchaseOrderPdf";
 import "../features/receptions/receptions.css";
+import {userErrorMessage} from "../domain/userFacingError.mjs";
+import useBusinessFormat, {useBusinessMoney} from "../hooks/useBusinessFormat";
+import {getFiscalIdentifierLabel} from "../domain/fiscalIdentifier.mjs";
 
 const labels = {borrador: "Pendiente de envío", emitida: "Emitida", cancelada: "Cancelada"};
-const money = (value) => `$${Math.round(Number(value || 0)).toLocaleString("es-CL")}`;
+const MODULE = getRouteMeta("/ordenes-compra");
+// Filtro por defecto de la lista: las canceladas salen con la opción "Canceladas" (mismo patrón que "Activos" en Proveedores).
+const ACTIVE_ORDER_STATES = ["borrador", "emitida"];
 const responseLabel = (order) => getSupplierResponseLabel(order);
 
 class PurchaseOrderPreviewBoundary extends React.Component {
@@ -101,7 +110,24 @@ function OrderActions({canManage, hasDraftReception, onCancel, onContinue, onEdi
   </div>;
 }
 
+// Fila de acciones: las de siempre y, solo si se ofrece eliminar (OWNER/ADMIN, orden nunca enviada y sin
+// recepciones), la papelera. Va fuera de .po-history__actions para no heredar sus botones de texto.
+function OrderRowActions({canDelete, onDelete, ...actionProps}) {
+  if (!canDelete) return <OrderActions {...actionProps} />;
+  return <div className="purchase-order-delete__row">
+    <OrderActions {...actionProps} />
+    <div className="client-row-actions purchase-order-delete__row-icon">
+      <button type="button" aria-label={`Eliminar orden ${actionProps.order.numero}`} title="Eliminar" disabled={actionProps.processing} onClick={() => onDelete(actionProps.order)}>
+        <AppIcon icon={Trash2} size={17} />
+      </button>
+    </div>
+  </div>;
+}
+
 export default function PurchaseOrdersPage({businessId, role}) {
+  const money = useBusinessMoney();
+  // Identificador fiscal del proveedor según el país del negocio (Chile "RUT", Bolivia "NIT").
+  const fiscalLabel = getFiscalIdentifierLabel(useBusinessFormat().countryCode);
   const location = useLocation();
   const navigate = useNavigate();
   const initialCreatedOrder = location.state?.createdOrder?.negocioId === businessId ? location.state.createdOrder : null;
@@ -110,16 +136,21 @@ export default function PurchaseOrdersPage({businessId, role}) {
   const locationStateConsumedRef = useRef(false);
   const receptionIds = useRef(new Map());
   const [orders, setOrders] = useState([]); const [receptions, setReceptions] = useState([]); const [company, setCompany] = useState({});
-  const [search, setSearch] = useState(""); const [status, setStatus] = useState("todos"); const [message, setMessage] = useState("");
+  const [search, setSearch] = useState(""); const [status, setStatus] = useState("activas"); const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true); const [processingId, setProcessingId] = useState(""); const [pendingAction, setPendingAction] = useState(null); const [emailOrder, setEmailOrder] = useState(null);
+  const [deleteOrder, setDeleteOrder] = useState(null);
   const [selectedOrder, setSelectedOrder] = useState(initialCreatedOrder); const [recentOrderId, setRecentOrderId] = useState(initialCreatedOrder?.id || ""); const [whatsAppOrder, setWhatsAppOrder] = useState(null); const [whatsAppDestination, setWhatsAppDestination] = useState("");
   // Falló la CARGA del listado (`message` también lleva errores de acciones).
   const [loadFailed, setLoadFailed] = useState(false);
   const canManage = canManagePurchaseOrders(role);
+  // Lista realmente vacía (cargada, sin error de carga y sin órdenes): el único botón principal vive
+  // en el vacío y la cabecera no recibe acciones. Con datos, o con filtros sin resultados, se ve la lista.
+  const showEmpty = !loading && !loadFailed && orders.length === 0;
+  const chips = !loadFailed && !(loading && orders.length === 0) ? [`${orders.length} ${orders.length === 1 ? "orden" : "órdenes"}`] : [];
   const load = async () => {
     setLoading(true);
     try { const [orderList, receptionList, profile] = await Promise.all([listarOrdenesCompra(businessId), listarRecepciones(businessId), getCompanyProfile(businessId).catch(() => ({}))]); setOrders(orderList); setReceptions(receptionList); setCompany(profile); setLoadFailed(false); }
-    catch (error) { setMessage(error.message); setLoadFailed(true); } finally { setLoading(false); }
+    catch (error) { setMessage(userErrorMessage(error)); setLoadFailed(true); } finally { setLoading(false); }
   };
   useEffect(() => { load(); }, [businessId]);
   useEffect(() => {
@@ -148,8 +179,15 @@ export default function PurchaseOrdersPage({businessId, role}) {
       setMessage("La orden fue creada, pero no pudimos cargarla en el listado. Intenta recargar el panel.");
     }
   }, [loading, orders]);
-  const filtered = useMemo(() => orders.filter((order) => (status === "todos" || order.estado === status) && matchesPurchaseOrderSearch(order, search)), [orders, search, status]);
+  const filtered = useMemo(() => orders.filter((order) => (status === "todos" || (status === "activas" ? ACTIVE_ORDER_STATES.includes(order.estado) : order.estado === status)) && matchesPurchaseOrderSearch(order, search)), [orders, search, status]);
   const open = (order) => setSelectedOrder(order);
+  // La fila desaparece sin recargar; el aviso de éxito lo muestra el diálogo.
+  const handleDeleted = (deleted) => {
+    setOrders((current) => current.filter((order) => order.id !== deleted.id));
+    setSelectedOrder((current) => current?.id === deleted.id ? null : current);
+    setRecentOrderId((current) => current === deleted.id ? "" : current);
+    setDeleteOrder(null);
+  };
   const openWorkspace = (order) => navigate(order.estado === "borrador" && canManage ? `/ordenes-compra/${order.id}/editar` : `/ordenes-compra/${order.id}`);
   const continueOrder = async (order) => {
     if (getSupplierResponseState(order) === "rechazada") { openWorkspace(order); return; }
@@ -158,22 +196,22 @@ export default function PurchaseOrdersPage({businessId, role}) {
     if (draftReception) { navigate(`/recepciones/${draftReception.id}/editar`); return; }
     const requestId = receptionIds.current.get(order.id) || createReceptionRequestId("reception-create"); receptionIds.current.set(order.id, requestId); setProcessingId(order.id);
     try { const result = await crearRecepcionDesdeOrden(businessId, order.id, {requestId}); receptionIds.current.delete(order.id); navigate(`/recepciones/${result.recepcion.id}/editar`); }
-    catch (error) { setMessage(error.message); } finally { setProcessingId(""); }
+    catch (error) { setMessage(userErrorMessage(error)); } finally { setProcessingId(""); }
   };
   const cancel = async () => {
     if (!pendingAction) return; setProcessingId(pendingAction.id);
     try { await cancelarOrdenCompra(businessId, pendingAction.id); setPendingAction(null); await load(); }
-    catch (error) { setMessage(error.message); } finally { setProcessingId(""); }
+    catch (error) { setMessage(userErrorMessage(error)); } finally { setProcessingId(""); }
   };
-  const sendEmail = async ({emailProveedor, asunto, mensaje}) => {
+  const sendEmail = async ({emailProveedor, asunto, mensaje, enviarCopia}) => {
     const order = emailOrder; if (!order) return; setProcessingId(order.id);
-    try { const pdfAttachment = await buildPurchaseOrderPdfAttachment({order, companyProfile: company}); const result = await sendPurchaseOrderEmail({businessId, ordenCompraId: order.id, emailProveedor, asunto, mensaje, pdfAttachment}); if (!result.success) throw new Error(result.error || "No fue posible enviar la orden."); setEmailOrder(null); await load(); if (result.simulated) sileo.info({title: "Simulación de correo — QA local", description: "No se envió un correo real. La orden permanece pendiente de envío."}); else sileo.success({title: "Correo enviado", description: `${order.numero} fue enviada a ${emailProveedor}.`}); }
-    catch (error) { setMessage(error.message); } finally { setProcessingId(""); }
+    try { const pdfAttachment = await buildPurchaseOrderPdfAttachment({order, companyProfile: company}); const result = await sendPurchaseOrderEmail({businessId, ordenCompraId: order.id, emailProveedor, asunto, mensaje, pdfAttachment, enviarCopia}); if (!result.success) throw new Error(result.error || "No fue posible enviar la orden."); setEmailOrder(null); await load(); if (result.simulated) sileo.info({title: "Simulación de correo — QA local", description: "No se envió un correo real. La orden permanece pendiente de envío."}); else sileo.success({title: "Correo enviado", description: `${order.numero} fue enviada a ${emailProveedor}.`}); }
+    catch (error) { setMessage(userErrorMessage(error)); } finally { setProcessingId(""); }
   };
   const downloadPdf = async (order) => {
     if (!order) return; setProcessingId(order.id); setMessage("");
     try { await downloadPurchaseOrderPdf({order, companyProfile: company}); sileo.success({title: "PDF descargado", description: `${order.numero} quedó disponible en tus descargas.`}); }
-    catch (error) { setMessage(error.message); sileo.error({title: "No se pudo generar el PDF", description: error.message}); }
+    catch (error) { setMessage(userErrorMessage(error)); sileo.error({title: "No se pudo generar el PDF", description: userErrorMessage(error)}); }
     finally { setProcessingId(""); }
   };
   const shareWhatsApp = async (order) => {
@@ -182,7 +220,7 @@ export default function PurchaseOrdersPage({businessId, role}) {
       const result = await sharePurchaseOrderWhatsApp({order, companyProfile: company});
       if (result.externalFlowOpened) { setWhatsAppDestination(result.destination || ""); setWhatsAppOrder(order); }
     } catch (error) {
-      if (error?.name !== "AbortError") { setMessage(error.message); sileo.error({title: "No se pudo preparar WhatsApp", description: error.message}); }
+      if (error?.name !== "AbortError") { setMessage(userErrorMessage(error)); sileo.error({title: "No se pudo preparar WhatsApp", description: userErrorMessage(error)}); }
     } finally { setProcessingId(""); }
   };
   const confirmWhatsApp = async () => {
@@ -193,7 +231,7 @@ export default function PurchaseOrdersPage({businessId, role}) {
       setSelectedOrder((current) => current?.id === emitted.id ? emitted : current);
       setWhatsAppOrder(null); setWhatsAppDestination("");
       sileo.success({title: "Orden de compra emitida", description: `${emitted.numero} fue registrada como enviada por WhatsApp.`});
-    } catch (error) { setMessage(error.message); sileo.error({title: "No se pudo registrar el envío", description: error.message}); }
+    } catch (error) { setMessage(userErrorMessage(error)); sileo.error({title: "No se pudo registrar el envío", description: userErrorMessage(error)}); }
     finally { setProcessingId(""); }
   };
   const selectedWhatsAppAvailability = getPurchaseOrderWhatsAppAvailability(selectedOrder);
@@ -207,16 +245,29 @@ export default function PurchaseOrdersPage({businessId, role}) {
       : "Al cancelar, esta orden dejará de estar disponible para nuevas recepciones.";
 
   return <main className="erp-page po-history">
-    {canManage && <div className="erp-module-intro"><Button type="button" icon={Plus} onClick={() => navigate("/ordenes-compra/nueva")}>Crear orden de compra</Button></div>}
+    <ModuleHeader
+      actions={canManage ? <Button type="button" icon={Plus} onClick={() => navigate("/ordenes-compra/nueva")}>Crear orden de compra</Button> : null}
+      chips={chips}
+      description="Los pedidos que haces a tus proveedores y el avance de su recepción."
+      hasData={!showEmpty}
+      icon={MODULE.icon}
+      title={MODULE.title}
+    />
     {message && <p className="po-message po-message--error" role={loadFailed ? "alert" : undefined}>{message}</p>}
-    <section className="erp-panel erp-history-panel"><div className="erp-panel-header"><div><h2 className="erp-panel-title">Órdenes registradas</h2><p className="erp-secondary-text">{filtered.length} órdenes</p></div></div>
-      <div className="erp-filters erp-history-filters erp-history-filters--two po-history__toolbar"><label className="erp-field erp-history-search-field"><span className="erp-field__label">Buscar por número, proveedor o RUT</span><span className="clients-search-control"><AppIcon icon={Search} size={18} /><input className="erp-control" value={search} onChange={(event) => setSearch(event.target.value)} /></span></label><label className="erp-field"><span className="erp-field__label">Estado</span><select className="erp-control" value={status} onChange={(event) => setStatus(event.target.value)}><option value="todos">Todos</option><option value="borrador">Pendientes de envío</option><option value="emitida">Emitidas</option><option value="cancelada">Canceladas</option></select></label></div>
-      {loading && orders.length === 0 ? <SkeletonRegion label="Cargando órdenes..."><SkeletonTable className="po-history__desktop" columns={7} twoLine /><SkeletonCards className="po-history__cards" /></SkeletonRegion> : loadFailed && orders.length === 0 ? null : filtered.length === 0 ? <div className="erp-empty-state ui-empty-state"><EmptyStateIllustration variant={orders.length ? "no-results" : "empty-list"} /><h3>{orders.length ? "No hay órdenes coincidentes" : "Aún no hay órdenes de compra"}</h3><p>{orders.length ? "Prueba con otra búsqueda o estado." : canManage ? "Crea la primera orden para pedir productos a un proveedor y seguir su recepción." : "Tu perfil es de solo lectura; los perfiles autorizados crean las órdenes de compra."}</p>{!orders.length && canManage && <div className="ui-empty-state__actions"><Button type="button" icon={Plus} onClick={() => navigate("/ordenes-compra/nueva")}>Crear orden de compra</Button></div>}</div> : <><section className="erp-table-region po-history__desktop"><table className="erp-table po-history__table"><thead><tr><th>Orden</th><th>Proveedor</th><th>Total</th><th>Estado OC</th><th>Confirmación proveedor</th><th>Recepción</th><th>Acciones</th></tr></thead><tbody>{filtered.map((order) => { const receptionStatus = getOrderReceptionStatus(order, receptions); const progress = getOrderReceptionProgressDisplay(order, receptions); const relatedReceptions = receptions.filter((entry) => entry.ordenCompraId === order.id); const hasDraftReception = relatedReceptions.some((entry) => entry.estado === "borrador"); return <tr className={order.id === recentOrderId ? "po-history__recent" : ""} key={order.id}><td><button type="button" className="po-inline-link" onClick={() => openWorkspace(order)}>{order.numero}</button></td><td><strong>{order.proveedorSnapshot?.razonSocial}</strong><small>{order.proveedorSnapshot?.rut}</small></td><td>{money(order.total)}</td><td><span className={`po-status po-status--${order.estado}`}>{labels[order.estado]}</span></td><td className={receptionStatus === "recibida_total" ? "po-secondary-state" : ""}>{responseLabel(order)}</td><td><span className={`po-status po-status--${receptionStatus}`}>{getOrderReceptionStatusLabel(receptionStatus)}</span><small>{progress.received} / {progress.requested}</small>{relatedReceptions.length > 0 && <span className="po-related-documents">{relatedReceptions.map((entry) => <button type="button" className="po-inline-link" key={entry.id} onClick={() => navigate(entry.estado === "borrador" && canManage ? `/recepciones/${entry.id}/editar` : `/recepciones/${entry.id}`)}>{entry.numero}</button>)}</span>}</td><td><OrderActions canManage={canManage} hasDraftReception={hasDraftReception} onCancel={setPendingAction} onContinue={continueOrder} onEdit={openWorkspace} onSend={setEmailOrder} order={order} processing={processingId === order.id} receptionStatus={receptionStatus} /></td></tr>; })}</tbody></table></section><section className="po-history__cards" aria-label="Órdenes de compra">{filtered.map((order) => { const receptionStatus = getOrderReceptionStatus(order, receptions); const progress = getOrderReceptionProgressDisplay(order, receptions); const relatedReceptions = receptions.filter((entry) => entry.ordenCompraId === order.id); const hasDraftReception = relatedReceptions.some((entry) => entry.estado === "borrador"); return <article className={`po-history-card ${order.id === recentOrderId ? "po-history__recent" : ""}`} key={order.id}><header><button type="button" className="po-inline-link" onClick={() => openWorkspace(order)}>{order.numero}</button><span className={`po-status po-status--${order.estado}`}>{labels[order.estado]}</span></header><div className="po-history-card__provider"><strong>{order.proveedorSnapshot?.razonSocial}</strong><span>{money(order.total)}</span></div><dl><div><dt>Confirmación</dt><dd className={receptionStatus === "recibida_total" ? "po-secondary-state" : ""}>{responseLabel(order)}</dd></div><div><dt>Recepción</dt><dd>{getOrderReceptionStatusLabel(receptionStatus)} · {progress.received} / {progress.requested}</dd></div>{relatedReceptions.length > 0 && <div><dt>Documentos</dt><dd className="po-related-documents">{relatedReceptions.map((entry) => <button type="button" className="po-inline-link" key={entry.id} onClick={() => navigate(entry.estado === "borrador" && canManage ? `/recepciones/${entry.id}/editar` : `/recepciones/${entry.id}`)}>{entry.numero}</button>)}</dd></div>}</dl><OrderActions canManage={canManage} hasDraftReception={hasDraftReception} onCancel={setPendingAction} onContinue={continueOrder} onEdit={openWorkspace} onSend={setEmailOrder} order={order} processing={processingId === order.id} receptionStatus={receptionStatus} /></article>; })}</section></>}
-    </section>
+    {showEmpty ? <EmptyState
+      action={canManage ? {label: "Crear orden de compra", icon: Plus, onClick: () => navigate("/ordenes-compra/nueva")} : undefined}
+      description={canManage ? "Crea la primera orden para pedir productos a un proveedor y seguir su recepción." : "Tu perfil es de solo lectura; los perfiles autorizados crean las órdenes de compra."}
+      icon={MODULE.icon}
+      title="Aún no hay órdenes de compra"
+    /> : <section className="erp-panel erp-history-panel"><div className="erp-panel-header"><div><h2 className="erp-panel-title">Órdenes registradas</h2><p className="erp-secondary-text">{status !== "todos" || search.trim() ? `${filtered.length} de ${orders.length}` : orders.length} {orders.length === 1 ? "orden" : "órdenes"}</p></div></div>
+      <div className="erp-filters erp-history-filters erp-history-filters--two po-history__toolbar"><label className="erp-field erp-history-search-field"><span className="erp-field__label">Buscar por número, proveedor o {fiscalLabel}</span><span className="clients-search-control"><AppIcon icon={Search} size={18} /><input className="erp-control" value={search} onChange={(event) => setSearch(event.target.value)} /></span></label><label className="erp-field"><span className="erp-field__label">Estado</span><select className="erp-control" value={status} onChange={(event) => setStatus(event.target.value)}><option value="todos">Todos</option><option value="activas">Activas</option><option value="borrador">Pendientes de envío</option><option value="emitida">Emitidas</option><option value="cancelada">Canceladas</option></select></label></div>
+      {loading && orders.length === 0 ? <SkeletonRegion label="Cargando órdenes..."><SkeletonTable className="po-history__desktop" columns={7} twoLine /><SkeletonCards className="po-history__cards" /></SkeletonRegion> : loadFailed && orders.length === 0 ? null : filtered.length === 0 ? <div className="erp-empty-state ui-empty-state"><EmptyStateIllustration variant="no-results" /><h3>No hay órdenes coincidentes</h3><p>Prueba con otra búsqueda o estado.</p></div> : <><section className="erp-table-region po-history__desktop"><table className="erp-table po-history__table"><thead><tr><th>Orden</th><th>Proveedor</th><th>Total</th><th>Estado OC</th><th>Confirmación proveedor</th><th>Recepción</th><th>Acciones</th></tr></thead><tbody>{filtered.map((order) => { const receptionStatus = getOrderReceptionStatus(order, receptions); const progress = getOrderReceptionProgressDisplay(order, receptions); const relatedReceptions = receptions.filter((entry) => entry.ordenCompraId === order.id); const hasDraftReception = relatedReceptions.some((entry) => entry.estado === "borrador"); return <tr className={order.id === recentOrderId ? "po-history__recent" : ""} key={order.id}><td><button type="button" className="po-inline-link" onClick={() => openWorkspace(order)}>{order.numero}</button></td><td><strong>{order.proveedorSnapshot?.razonSocial}</strong><small>{order.proveedorSnapshot?.rut}</small></td><td>{money(order.total)}</td><td><span className={`po-status po-status--${order.estado}`}>{labels[order.estado]}</span></td><td className={receptionStatus === "recibida_total" ? "po-secondary-state" : ""}>{responseLabel(order)}</td><td>{order.estado === "cancelada" ? "—" : <><span className={`po-status po-status--${receptionStatus}`}>{getOrderReceptionStatusLabel(receptionStatus)}</span><small>{progress.received} / {progress.requested}</small></>}{relatedReceptions.length > 0 && <span className="po-related-documents">{relatedReceptions.map((entry) => <button type="button" className="po-inline-link" key={entry.id} onClick={() => navigate(entry.estado === "borrador" && canManage ? `/recepciones/${entry.id}/editar` : `/recepciones/${entry.id}`)}>{entry.numero}</button>)}</span>}</td><td><OrderRowActions canDelete={canOfferPurchaseOrderDeletion(order, role) && relatedReceptions.length === 0} canManage={canManage} hasDraftReception={hasDraftReception} onCancel={setPendingAction} onContinue={continueOrder} onDelete={setDeleteOrder} onEdit={openWorkspace} onSend={setEmailOrder} order={order} processing={processingId === order.id} receptionStatus={receptionStatus} /></td></tr>; })}</tbody></table></section><section className="po-history__cards" aria-label="Órdenes de compra">{filtered.map((order) => { const receptionStatus = getOrderReceptionStatus(order, receptions); const progress = getOrderReceptionProgressDisplay(order, receptions); const relatedReceptions = receptions.filter((entry) => entry.ordenCompraId === order.id); const hasDraftReception = relatedReceptions.some((entry) => entry.estado === "borrador"); return <article className={`po-history-card ${order.id === recentOrderId ? "po-history__recent" : ""}`} key={order.id}><header><button type="button" className="po-inline-link" onClick={() => openWorkspace(order)}>{order.numero}</button><span className={`po-status po-status--${order.estado}`}>{labels[order.estado]}</span></header><div className="po-history-card__provider"><strong>{order.proveedorSnapshot?.razonSocial}</strong><span>{money(order.total)}</span></div><dl><div><dt>Confirmación</dt><dd className={receptionStatus === "recibida_total" ? "po-secondary-state" : ""}>{responseLabel(order)}</dd></div><div><dt>Recepción</dt><dd>{order.estado === "cancelada" ? "—" : `${getOrderReceptionStatusLabel(receptionStatus)} · ${progress.received} / ${progress.requested}`}</dd></div>{relatedReceptions.length > 0 && <div><dt>Documentos</dt><dd className="po-related-documents">{relatedReceptions.map((entry) => <button type="button" className="po-inline-link" key={entry.id} onClick={() => navigate(entry.estado === "borrador" && canManage ? `/recepciones/${entry.id}/editar` : `/recepciones/${entry.id}`)}>{entry.numero}</button>)}</dd></div>}</dl><OrderRowActions canDelete={canOfferPurchaseOrderDeletion(order, role) && relatedReceptions.length === 0} canManage={canManage} hasDraftReception={hasDraftReception} onCancel={setPendingAction} onContinue={continueOrder} onDelete={setDeleteOrder} onEdit={openWorkspace} onSend={setEmailOrder} order={order} processing={processingId === order.id} receptionStatus={receptionStatus} /></article>; })}</section></>}
+    </section>}
     {selectedOrder && <div className="print-only"><PurchaseOrderPrintView company={company} order={selectedOrder} /></div>}
     <ResponsiveDialog className="po-order-preview-dialog" layerClassName="po-order-preview-layer no-print" open={Boolean(selectedOrder)} onClose={() => setSelectedOrder(null)} eyebrow="Órdenes de compra" title={selectedOrder ? `Orden de compra ${selectedOrder.numero}` : "Vista previa"} description="Revisa el documento guardado y compártelo con el proveedor." size="large" footer={selectedOrder ? <div className="erp-actions po-order-preview-actions">{canManage && selectedOrder.estado !== "cancelada" && !selectedWhatsAppAvailability.enabled && <small className="po-action-help">{selectedWhatsAppAvailability.help}</small>}{canManage && selectedOrder.estado !== "cancelada" && <Button type="button" disabled={processingId === selectedOrder.id} onClick={() => { setEmailOrder(selectedOrder); setSelectedOrder(null); }}>Correo</Button>}{canManage && selectedOrder.estado !== "cancelada" && <Button type="button" variant="secondary" disabled={processingId === selectedOrder.id || !selectedWhatsAppAvailability.enabled} title={selectedWhatsAppAvailability.help} onClick={() => shareWhatsApp(selectedOrder)}>WhatsApp</Button>}<Button type="button" variant="secondary" disabled={processingId === selectedOrder.id} onClick={() => downloadPdf(selectedOrder)}>Descargar PDF</Button><Button type="button" variant="secondary" onClick={() => window.print()}>Imprimir</Button>{canManage && selectedOrder.estado === "borrador" && <Button type="button" variant="secondary" onClick={() => openWorkspace(selectedOrder)}>Editar</Button>}<Button type="button" variant="secondary" onClick={() => setSelectedOrder(null)}>Volver al listado</Button></div> : null}>
       {selectedOrder && <PurchaseOrderPreviewBoundary key={selectedOrder.id}><div className="po-preview-body"><PurchaseOrderPrintView company={company} order={selectedOrder} /></div></PurchaseOrderPreviewBoundary>}
     </ResponsiveDialog>
+    <PurchaseOrderDeleteDialog businessId={businessId} open={Boolean(deleteOrder)} order={deleteOrder} onClose={() => setDeleteOrder(null)} onDeleted={handleDeleted} />
     <SendPurchaseOrderEmailDialog companyProfile={company} open={Boolean(emailOrder)} onClose={() => setEmailOrder(null)} onSend={sendEmail} order={emailOrder} processing={Boolean(processingId)} />
     <ResponsiveDialog open={Boolean(whatsAppOrder)} onClose={() => !processingId && setWhatsAppOrder(null)} eyebrow="WhatsApp" title="¿Enviaste la orden de compra?" description="Abrir WhatsApp no confirma que el proveedor haya recibido la orden." size="small" footer={<><Button type="button" variant="secondary" disabled={Boolean(processingId)} onClick={() => setWhatsAppOrder(null)}>Mantener pendiente</Button><Button type="button" loading={Boolean(processingId)} onClick={confirmWhatsApp}>{processingId ? "Registrando..." : "Sí, fue enviada"}</Button></>}><p>ValoraCloud registrará la emisión por WhatsApp, sin afirmar entrega ni lectura.</p></ResponsiveDialog>
     <ResponsiveDialog open={Boolean(pendingAction)} onClose={() => !processingId && setPendingAction(null)} eyebrow="Acción de orden" title="Cancelar orden de compra" description={cancellationDescription} size="small" footer={<><Button type="button" variant="secondary" disabled={Boolean(processingId)} onClick={() => setPendingAction(null)}>Volver</Button><Button type="button" variant="danger" loading={Boolean(processingId)} onClick={cancel}>{processingId ? "Cancelando..." : "Cancelar orden"}</Button></>}>{hasConfirmedReceptions ? <p>La cancelación no revierte inventario ni compras ya generadas.</p> : null}</ResponsiveDialog>

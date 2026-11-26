@@ -4,18 +4,22 @@ import {deleteApp, initializeApp} from "firebase/app";
 import {connectAuthEmulator, createUserWithEmailAndPassword, getAuth} from "firebase/auth";
 import {connectFirestoreEmulator, getFirestore, terminate} from "firebase/firestore";
 import {connectFunctionsEmulator, getFunctions, httpsCallable} from "firebase/functions";
-import {connectStorageEmulator, getStorage, ref, uploadBytes} from "firebase/storage";
+import {connectStorageEmulator, getMetadata, getStorage, ref, uploadBytes} from "firebase/storage";
+import {resolveEmulatorHosts} from "./lib/emulatorHosts.mjs";
+import {uploadEvidenceObject} from "../src/services/workEvidenceUpload.mjs";
+import {buildWorkExpenseEvidenceFileName, getWorkAccumulatedCost} from "../src/domain/workModel.mjs";
 
 // SPEC 020 ETAPA 3: registro autoritativo de evidencia documental de gastos.
 // Emulator Suite real (auth + firestore + functions + storage), nunca
 // Firebase real. Mismo arnés que work-additional-integrated-local.mjs
 // (ETAPA 2) y business-verification-integrated.mjs, extendido con Storage
 // para poder subir archivos reales antes de registrar su metadata.
+// Puertos: NO hay puertos por defecto (scripts/lib/emulatorHosts.mjs): los hosts salen de `firebase emulators:exec`
+// y, si falta alguno, el script se detiene antes de crear ningún cliente (así nunca llega al emulador de QA).
 
 const PROJECT_ID = "tesis-inventario-ia";
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-process.env.FIRESTORE_EMULATOR_HOST ||= "127.0.0.1:8080";
-process.env.GCLOUD_PROJECT ||= PROJECT_ID;
+const {AUTH, FIRESTORE, FUNCTIONS, STORAGE} = await resolveEmulatorHosts({projectId: PROJECT_ID, functions: true, storage: true});
 const requireFromFunctions = createRequire(new URL("../functions/package.json", import.meta.url));
 const {deleteApp: deleteAdminApp, initializeApp: initializeAdminApp} = requireFromFunctions("firebase-admin/app");
 const {getFirestore: getAdminFirestore} = requireFromFunctions("firebase-admin/firestore");
@@ -25,9 +29,9 @@ const workPersistenceExports = requireFromFunctions("../functions/workPersistenc
 function createClientApp(name) {
   const app = initializeApp({apiKey: "demo-key", authDomain: `${PROJECT_ID}.firebaseapp.com`, projectId: PROJECT_ID, storageBucket: `${PROJECT_ID}.firebasestorage.app`, appId: `wkevidence-${name}-${RUN_ID}`}, `wkevidence-${name}-${RUN_ID}`);
   const auth = getAuth(app); const db = getFirestore(app); const functions = getFunctions(app, "us-central1"); const storage = getStorage(app);
-  connectAuthEmulator(auth, "http://127.0.0.1:9099", {disableWarnings: true});
-  connectFirestoreEmulator(db, "127.0.0.1", 8080); connectFunctionsEmulator(functions, "127.0.0.1", 5001);
-  connectStorageEmulator(storage, "127.0.0.1", 9199);
+  connectAuthEmulator(auth, `http://${AUTH.host}:${AUTH.port}`, {disableWarnings: true});
+  connectFirestoreEmulator(db, FIRESTORE.host, FIRESTORE.port); connectFunctionsEmulator(functions, FUNCTIONS.host, FUNCTIONS.port);
+  connectStorageEmulator(storage, STORAGE.host, STORAGE.port);
   return {app, auth, db, functions, storage};
 }
 async function authenticate(client, label) {
@@ -219,6 +223,107 @@ try {
   assert.deepEqual(deleteLikeExports, [], "no debe existir ninguna Function que borre evidencia; sólo adjuntarEvidenciaGastoTrabajoHandler existe para esta feature");
   assert.ok(exportedHandlers.includes("adjuntarEvidenciaGastoTrabajoHandler"));
   console.log("OK caso 30: no existe ninguna Function de borrado de evidencia expuesta (complementa el delete directo de Storage, ya cubierto por work-expense-evidence-storage-rules-smoke.mjs)");
+
+  // ================= COMPRA AL PASO, de punta a punta (WorkQuickPurchase.jsx) =================
+  // Un gasto MATERIAL con tipoDocumento, su archivo subido con un nombre fijo (fileName) y su metadata registrada, sobre
+  // un trabajo que ya tiene salidas de inventario. Usa los mismos pasos que la pantalla: registrarGastoTrabajo,
+  // uploadEvidenceObject (el paso de subida de subirEvidenciaGastoTrabajo) y adjuntarEvidenciaGastoTrabajo.
+  {
+    const quickWorkId = (await callable(owner, "crearTrabajo")({businessId, requestId: requestId("work-quick"), trabajo: {titulo: "Compra al paso", descripcion: "", clienteId: "", responsableUid: technicianOwn.uid, participanteUids: [], estado: "pendiente", prioridad: "normal", fechaInicio: "", fechaPrevista: ""}})).data.trabajoId;
+    const quickWorkPath = `negocios/${businessId}/trabajos/${quickWorkId}`;
+    const product = `product-quick-${RUN_ID}`;
+    await adminDb.doc(`negocios/${businessId}/inventario/${product}`).set({itemId: product, negocioId: businessId, estado: "activo", tipoItem: "producto", nombre: "Material de bodega", codigoInterno: "QUICK-PROD", unidad: "unidad", stock: 50, costoBase: 4000, costoPromedio: 3500, costoPromedioMoneda: "CLP"});
+    const quickExpensePath = (expId, fileName) => `negocios/${businessId}/trabajos/${quickWorkId}/gastos/${expId}/${fileName}`;
+    const workDoc = async () => (await adminDb.doc(quickWorkPath).get()).data();
+    const expenseDoc = async (expId) => (await adminDb.doc(`${quickWorkPath}/gastos/${expId}`).get()).data();
+    const expenseCount = async () => (await adminDb.collection(`${quickWorkPath}/gastos`).get()).size;
+    const quickBytes = new TextEncoder().encode("boleta de la compra al paso");
+    const purchase = {concepto: "Tubo PVC y abrazaderas", monto: 8330, categoria: "MATERIAL", responsableDelGastoUid: technicianOwn.uid, fecha: "2026-09-03", observacion: "", tareaId: "", tipoDocumento: "boleta", numeroDocumento: "4521"};
+
+    // Trabajo con salidas de inventario: 1 unidad a 3.500.
+    await callable(owner, "registrarSalidaMaterialTrabajo")({businessId, trabajoId: quickWorkId, itemId: product, cantidad: 1, fecha: "2026-09-03", requestId: requestId("quick-exit")});
+    assert.equal((await workDoc()).materialesSalidasTotal, 1);
+
+    // 1) Crear el gasto Material con tipoDocumento (el técnico, sobre su propio gasto); el reintento con el mismo requestId no lo duplica.
+    const purchaseRequestId = requestId("quick-purchase");
+    const created = await callable(technicianOwn, "registrarGastoTrabajo")({businessId, trabajoId: quickWorkId, requestId: purchaseRequestId, gasto: purchase});
+    const retried = await callable(technicianOwn, "registrarGastoTrabajo")({businessId, trabajoId: quickWorkId, requestId: purchaseRequestId, gasto: purchase});
+    assert.equal(retried.data.gastoId, created.data.gastoId); assert.equal(retried.data.idempotent, true);
+    const documented = await expenseDoc(created.data.gastoId);
+    assert.deepEqual([documented.categoria, documented.tipoDocumento, documented.numeroDocumento, documented.monto, documented.estado], ["MATERIAL", "boleta", "4521", 8330, "vigente"]);
+    assert.equal(await expenseCount(), 1, "el reintento no duplica el gasto");
+    assert.equal((await workDoc()).gastosMaterialDocumentadoMontoTotal, 8330);
+    await expectCallableError("tipo de documento desconocido", () => callable(technicianOwn, "registrarGastoTrabajo")({businessId, trabajoId: quickWorkId, requestId: requestId("quick-bad-type"), gasto: {...purchase, tipoDocumento: "recibo"}}), ["invalid-argument"]);
+    await expectCallableError("número de documento sin tipo", () => callable(technicianOwn, "registrarGastoTrabajo")({businessId, trabajoId: quickWorkId, requestId: requestId("quick-number-only"), gasto: {...purchase, tipoDocumento: "", numeroDocumento: "99"}}), ["invalid-argument"]);
+
+    // 2) Subir el archivo con un nombre fijo (fileName) y 3) registrar su metadata.
+    const fileName = buildWorkExpenseEvidenceFileName("Boleta tubo.jpg", "image/jpeg");
+    assert.match(fileName, /^[a-zA-Z0-9._-]{1,200}$/, "el nombre fijo cumple el alfabeto que exige el servidor");
+    const uploadStep = (client, expId, name, stable = name) => uploadEvidenceObject({upload: () => uploadBytes(ref(client.storage, quickExpensePath(expId, name)), quickBytes, {contentType: "image/jpeg"}), objectExists: () => getMetadata(ref(client.storage, quickExpensePath(expId, name))), stableFileName: stable});
+    const attachRequestId = requestId("quick-attach");
+    assert.deepEqual(await uploadStep(technicianOwn, created.data.gastoId, fileName), {uploaded: true, alreadyUploaded: false});
+    const attached = await adjuntar({businessId, trabajoId: quickWorkId, gastoId: created.data.gastoId, nombreArchivo: fileName, requestId: attachRequestId});
+    assert.equal(attached.data.idempotent, false);
+    assert.deepEqual((await expenseDoc(created.data.gastoId)).evidencia.map((entry) => [entry.nombreArchivo, entry.storagePath, entry.tipoMime]), [[fileName, quickExpensePath(created.data.gastoId, fileName), "image/jpeg"]]);
+
+    // 4a) Reintento con el archivo YA subido y la metadata ya registrada: no se sube de nuevo, no se duplica el gasto ni la evidencia.
+    assert.deepEqual(await uploadStep(technicianOwn, created.data.gastoId, fileName), {uploaded: false, alreadyUploaded: true}, "la nueva subida a la misma ruta se rechaza (create-only) y se detecta el archivo existente");
+    const attachedAgain = await adjuntar({businessId, trabajoId: quickWorkId, gastoId: created.data.gastoId, nombreArchivo: fileName, requestId: attachRequestId});
+    assert.equal(attachedAgain.data.idempotent, true); assert.equal(attachedAgain.data.evidenciaId, attached.data.evidenciaId);
+    assert.equal((await expenseDoc(created.data.gastoId)).evidencia.length, 1); assert.equal(await expenseCount(), 1);
+    // 4b) Reintento cuando el archivo SÍ se subió pero la metadata NO llegó a registrarse (fallo entre ambos pasos): solo registra la metadata.
+    const interrupted = await callable(technicianOwn, "registrarGastoTrabajo")({businessId, trabajoId: quickWorkId, requestId: requestId("quick-purchase-interrupted"), gasto: {...purchase, concepto: "Compra con adjunto interrumpido", monto: 1500, tipoDocumento: "factura", numeroDocumento: ""}});
+    const interruptedName = buildWorkExpenseEvidenceFileName("factura.png", "image/png");
+    await uploadBytes(ref(technicianOwn.storage, quickExpensePath(interrupted.data.gastoId, interruptedName)), quickBytes, {contentType: "image/png"});
+    assert.deepEqual((await expenseDoc(interrupted.data.gastoId)).evidencia || [], [], "el fallo dejó el archivo subido y sin registrar");
+    const interruptedRequestId = requestId("quick-attach-interrupted");
+    assert.deepEqual(await uploadStep(technicianOwn, interrupted.data.gastoId, interruptedName), {uploaded: false, alreadyUploaded: true});
+    const completed = await adjuntar({businessId, trabajoId: quickWorkId, gastoId: interrupted.data.gastoId, nombreArchivo: interruptedName, requestId: interruptedRequestId});
+    assert.equal(completed.data.idempotent, false); assert.equal((await expenseDoc(interrupted.data.gastoId)).evidencia.length, 1);
+    assert.equal(await expenseCount(), 2, "solo existen los dos gastos creados: ningún reintento los duplicó");
+    // Sin nombre fijo no hay reintento sobre la misma ruta: el rechazo de Storage sí es un error.
+    await assert.rejects(() => uploadStep(technicianOwn, created.data.gastoId, fileName, ""), /No pudimos subir el documento/);
+    // Una ruta que nunca se subió y falla la subida sigue siendo un error aunque el nombre sea fijo (otro negocio: sin permiso, sin objeto).
+    await assert.rejects(() => uploadStep(outsider, created.data.gastoId, `otro-${fileName}`), /No pudimos subir el documento/);
+    console.log("OK compra al paso: gasto MATERIAL con tipoDocumento, archivo subido con fileName, metadata registrada y reintento con el archivo ya subido sin duplicar gasto ni evidencia");
+
+    // storage.rules: el nombre nuevo (con sufijo único) se acepta, la ruta es create-only y otro negocio no puede subir.
+    await assert.rejects(() => uploadBytes(ref(technicianOwn.storage, quickExpensePath(created.data.gastoId, fileName)), new TextEncoder().encode("reemplazo"), {contentType: "image/jpeg"}), (error) => /unauthorized|permission-denied/.test(String(error?.code)), "sobrescribir la misma ruta se rechaza (create-only)");
+    await assert.rejects(() => uploadBytes(ref(outsider.storage, quickExpensePath(created.data.gastoId, `ajeno-${fileName}`)), quickBytes, {contentType: "image/jpeg"}), (error) => /unauthorized|permission-denied/.test(String(error?.code)), "un usuario de otro negocio no puede subir");
+    await assert.rejects(() => uploadBytes(ref(technicianOther.storage, quickExpensePath(created.data.gastoId, `colega-${fileName}`)), quickBytes, {contentType: "image/jpeg"}), (error) => /unauthorized|permission-denied/.test(String(error?.code)), "un técnico que no es del gasto no puede subir");
+    assert.equal((await expenseDoc(created.data.gastoId)).evidencia.length, 1);
+    console.log("OK storage.rules: acepta el nombre con sufijo único, es create-only y rechaza a otro negocio y a un técnico ajeno");
+
+    // 5) Balance en un trabajo con salidas de inventario: cuenta el Material con documento y no cuenta el Material sin documento.
+    const undocumented = await callable(owner, "registrarGastoTrabajo")({businessId, trabajoId: quickWorkId, requestId: requestId("quick-undocumented"), gasto: {concepto: "Material sin documento", monto: 8000, categoria: "MATERIAL", responsableDelGastoUid: "", fecha: "2026-09-03", observacion: "", tareaId: ""}});
+    await callable(owner, "registrarGastoTrabajo")({businessId, trabajoId: quickWorkId, requestId: requestId("quick-operating"), gasto: {concepto: "Traslado", monto: 1000, categoria: "OPERATIVO", responsableDelGastoUid: "", fecha: "2026-09-03", observacion: "", tareaId: ""}});
+    assert.equal("tipoDocumento" in (await expenseDoc(undocumented.data.gastoId)), false);
+    const balanceOf = async () => (await callable(owner, "obtenerBalanceTrabajo")({businessId, trabajoId: quickWorkId})).data;
+    let balance = await balanceOf();
+    assert.equal(balance.reglaMateriales, "INVENTARIO_AUTORITATIVO");
+    assert.equal(balance.materiales, 3500);
+    // Cuenta: 8.330 (boleta) + 1.500 (factura) + 1.000 (operativo). No cuenta: 8.000 (Material sin documento).
+    assert.equal(balance.gastosDirectos, 10830, "el Material con documento suma");
+    assert.equal(balance.gastosMaterialExcluido, 8000, "el Material sin documento queda fuera");
+    assert.equal(balance.costoTotal, 3500 + 10830);
+    assert.equal(balance.fuentes.gastosMaterialExcluidos, 1);
+    // La Lista y el Tablero leen los totales guardados en el trabajo: mismo monto que el Balance.
+    const stored = await workDoc();
+    assert.equal(stored.gastosMaterialDocumentadoMontoTotal, 9830);
+    assert.equal(getWorkAccumulatedCost(stored), balance.costoTotal, "Lista y Tablero coinciden con el Balance");
+    // Anular el gasto documentado baja el total documentado y el costo, y la evidencia ya subida se conserva.
+    await callable(owner, "anularGastoTrabajo")({businessId, trabajoId: quickWorkId, gastoId: created.data.gastoId, motivo: "Boleta de otra obra", requestId: requestId("quick-annul")});
+    const afterAnnul = await workDoc();
+    assert.equal(afterAnnul.gastosMaterialDocumentadoMontoTotal, 1500, "baja solo la parte anulada (queda la factura de 1.500)");
+    assert.equal(afterAnnul.gastosMaterialMontoTotal, 8000 + 1500);
+    balance = await balanceOf();
+    assert.equal(balance.gastosDirectos, 2500); assert.equal(balance.gastosMaterialExcluido, 8000); assert.equal(balance.costoTotal, 3500 + 2500);
+    assert.equal(getWorkAccumulatedCost(afterAnnul), balance.costoTotal);
+    assert.equal((await expenseDoc(created.data.gastoId)).evidencia.length, 1, "anular el gasto conserva su documento");
+    await callable(owner, "anularGastoTrabajo")({businessId, trabajoId: quickWorkId, gastoId: interrupted.data.gastoId, motivo: "Factura duplicada", requestId: requestId("quick-annul-invoice")});
+    assert.equal((await workDoc()).gastosMaterialDocumentadoMontoTotal, 0);
+    console.log("OK balance: con salidas de inventario cuenta el Material con documento y no el Material sin documento; Lista y Tablero coinciden; anular baja gastosMaterialDocumentadoMontoTotal");
+  }
 
   console.log("WORK_EXPENSE_EVIDENCE_INTEGRATED_LOCAL_OK");
 } finally {

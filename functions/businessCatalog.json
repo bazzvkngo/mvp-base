@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 4,
+  "schemaVersion": 6,
   "businessCategoryCatalogVersion": 1,
   "source": {
     "organization": "Subsecretaría de Desarrollo Regional y Administrativo (SUBDERE)",
@@ -9,14 +9,14 @@
   "countries": [
     { "code": "CL", "name": "Chile", "defaultCurrencyCode": "CLP", "defaultLocale": "es-CL", "defaultFiscalIdentifierLabel": "RUT", "baseTax": { "id": "IVA_GENERAL", "name": "IVA", "rate": 19, "configured": true }, "active": true },
     { "code": "BO", "name": "Bolivia", "defaultCurrencyCode": "BOB", "defaultLocale": "es-BO", "defaultFiscalIdentifierLabel": "NIT", "baseTax": { "id": "IVA_GENERAL", "name": "IVA", "rate": 13, "configured": true }, "active": true },
-    { "code": "BR", "name": "Brasil", "defaultCurrencyCode": "BRL", "defaultLocale": "pt-BR", "defaultFiscalIdentifierLabel": "CNPJ", "fiscalIdentifierLabels": ["CNPJ", "CPF"], "baseTax": { "id": "CONFIGURACION_TRIBUTARIA_ESPECIFICA", "name": "Configuración tributaria específica", "rate": null, "configured": false }, "active": true },
-    { "code": "PE", "name": "Perú", "defaultCurrencyCode": "PEN", "defaultLocale": "es-PE", "defaultFiscalIdentifierLabel": "RUC", "baseTax": { "id": "IGV_GENERAL", "name": "IGV", "rate": 18, "configured": true }, "active": true },
-    { "code": "AR", "name": "Argentina", "defaultCurrencyCode": "ARS", "defaultLocale": "es-AR", "defaultFiscalIdentifierLabel": "CUIT", "baseTax": { "id": "IVA_GENERAL", "name": "IVA", "rate": 21, "configured": true }, "active": true },
-    { "code": "CO", "name": "Colombia", "defaultCurrencyCode": "COP", "defaultLocale": "es-CO", "defaultFiscalIdentifierLabel": "NIT", "baseTax": { "id": "IVA_GENERAL", "name": "IVA", "rate": 19, "configured": true }, "active": true },
-    { "code": "EC", "name": "Ecuador", "defaultCurrencyCode": "USD", "defaultLocale": "es-EC", "defaultFiscalIdentifierLabel": "RUC", "baseTax": { "id": "IVA_GENERAL", "name": "IVA", "rate": 15, "configured": true }, "active": true },
-    { "code": "PY", "name": "Paraguay", "defaultCurrencyCode": "PYG", "defaultLocale": "es-PY", "defaultFiscalIdentifierLabel": "RUC", "baseTax": { "id": "IVA_GENERAL", "name": "IVA", "rate": 10, "configured": true }, "active": true },
-    { "code": "UY", "name": "Uruguay", "defaultCurrencyCode": "UYU", "defaultLocale": "es-UY", "defaultFiscalIdentifierLabel": "RUT", "baseTax": { "id": "IVA_TASA_BASICA", "name": "IVA", "rate": 22, "configured": true }, "active": true },
-    { "code": "MX", "name": "México", "defaultCurrencyCode": "MXN", "defaultLocale": "es-MX", "defaultFiscalIdentifierLabel": "RFC", "baseTax": { "id": "IVA_GENERAL", "name": "IVA", "rate": 16, "configured": true }, "active": true },
+    { "code": "BR", "name": "Brasil", "defaultCurrencyCode": "BRL", "defaultLocale": "pt-BR", "defaultFiscalIdentifierLabel": "CNPJ", "fiscalIdentifierLabels": ["CNPJ", "CPF"], "baseTax": { "id": "CONFIGURACION_TRIBUTARIA_ESPECIFICA", "name": "Configuración tributaria específica", "rate": null, "configured": false }, "active": true, "selectableForNewBusiness": false },
+    { "code": "PE", "name": "Perú", "defaultCurrencyCode": "PEN", "defaultLocale": "es-PE", "defaultFiscalIdentifierLabel": "RUC", "baseTax": { "id": "IGV_GENERAL", "name": "IGV", "rate": 18, "configured": true }, "active": true, "selectableForNewBusiness": false },
+    { "code": "AR", "name": "Argentina", "defaultCurrencyCode": "ARS", "defaultLocale": "es-AR", "defaultFiscalIdentifierLabel": "CUIT", "baseTax": { "id": "IVA_GENERAL", "name": "IVA", "rate": 21, "configured": true }, "active": true, "selectableForNewBusiness": false },
+    { "code": "CO", "name": "Colombia", "defaultCurrencyCode": "COP", "defaultLocale": "es-CO", "defaultFiscalIdentifierLabel": "NIT", "baseTax": { "id": "IVA_GENERAL", "name": "IVA", "rate": 19, "configured": true }, "active": true, "selectableForNewBusiness": false },
+    { "code": "EC", "name": "Ecuador", "defaultCurrencyCode": "USD", "defaultLocale": "es-EC", "defaultFiscalIdentifierLabel": "RUC", "baseTax": { "id": "IVA_GENERAL", "name": "IVA", "rate": 15, "configured": true }, "active": true, "selectableForNewBusiness": false },
+    { "code": "PY", "name": "Paraguay", "defaultCurrencyCode": "PYG", "defaultLocale": "es-PY", "defaultFiscalIdentifierLabel": "RUC", "baseTax": { "id": "IVA_GENERAL", "name": "IVA", "rate": 10, "configured": true }, "active": true, "selectableForNewBusiness": false },
+    { "code": "UY", "name": "Uruguay", "defaultCurrencyCode": "UYU", "defaultLocale": "es-UY", "defaultFiscalIdentifierLabel": "RUT", "baseTax": { "id": "IVA_TASA_BASICA", "name": "IVA", "rate": 22, "configured": true }, "active": true, "selectableForNewBusiness": false },
+    { "code": "MX", "name": "México", "defaultCurrencyCode": "MXN", "defaultLocale": "es-MX", "defaultFiscalIdentifierLabel": "RFC", "baseTax": { "id": "IVA_GENERAL", "name": "IVA", "rate": 16, "configured": true }, "active": true, "selectableForNewBusiness": false },
     { "code": "OTHER", "name": "Otro país", "defaultCurrencyCode": "USD", "defaultLocale": "es", "defaultFiscalIdentifierLabel": "Identificación fiscal", "baseTax": { "id": "CONFIGURACION_TRIBUTARIA_LEGACY", "name": "Configuración tributaria legacy", "rate": null, "configured": false }, "active": true, "selectableForNewBusiness": false, "legacy": true }
   ],
   "currencies": [
@@ -25,18 +25,19 @@
       "name": "Peso chileno",
       "symbol": "$",
       "decimals": 0,
+      "amountDecimals": 0,
       "active": true
     },
-    { "code": "BOB", "name": "Boliviano", "symbol": "Bs", "decimals": 2, "active": true },
-    { "code": "BRL", "name": "Real brasileño", "symbol": "R$", "decimals": 2, "active": true },
-    { "code": "PEN", "name": "Sol peruano", "symbol": "S/", "decimals": 2, "active": true },
-    { "code": "ARS", "name": "Peso argentino", "symbol": "$", "decimals": 2, "active": true },
-    { "code": "COP", "name": "Peso colombiano", "symbol": "$", "decimals": 2, "active": true },
-    { "code": "PYG", "name": "Guaraní paraguayo", "symbol": "₲", "decimals": 0, "active": true },
-    { "code": "UYU", "name": "Peso uruguayo", "symbol": "$U", "decimals": 2, "active": true },
-    { "code": "MXN", "name": "Peso mexicano", "symbol": "$", "decimals": 2, "active": true },
-    { "code": "USD", "name": "Dólar estadounidense", "symbol": "US$", "decimals": 2, "active": true },
-    { "code": "EUR", "name": "Euro", "symbol": "€", "decimals": 2, "active": true }
+    { "code": "BOB", "name": "Boliviano", "symbol": "Bs", "decimals": 2, "amountDecimals": 2, "active": true },
+    { "code": "BRL", "name": "Real brasileño", "symbol": "R$", "decimals": 2, "amountDecimals": 0, "active": true },
+    { "code": "PEN", "name": "Sol peruano", "symbol": "S/", "decimals": 2, "amountDecimals": 0, "active": true },
+    { "code": "ARS", "name": "Peso argentino", "symbol": "$", "decimals": 2, "amountDecimals": 0, "active": true },
+    { "code": "COP", "name": "Peso colombiano", "symbol": "$", "decimals": 2, "amountDecimals": 0, "active": true },
+    { "code": "PYG", "name": "Guaraní paraguayo", "symbol": "₲", "decimals": 0, "amountDecimals": 0, "active": true },
+    { "code": "UYU", "name": "Peso uruguayo", "symbol": "$U", "decimals": 2, "amountDecimals": 0, "active": true },
+    { "code": "MXN", "name": "Peso mexicano", "symbol": "$", "decimals": 2, "amountDecimals": 0, "active": true },
+    { "code": "USD", "name": "Dólar estadounidense", "symbol": "US$", "decimals": 2, "amountDecimals": 0, "active": true },
+    { "code": "EUR", "name": "Euro", "symbol": "€", "decimals": 2, "amountDecimals": 0, "active": true }
   ],
   "businessCategorySectors": [
     { "code": "SERVICIOS_PROYECTOS", "name": "Servicios por proyectos", "order": 1 },
@@ -50,10 +51,12 @@
   "businessCategories": [
     { "code": "TECNOLOGIA_INFORMATICA", "name": "Tecnología e informática", "sectorCode": "SERVICIOS_PROYECTOS", "catalogVersion": 1, "active": true, "searchTerms": ["tecnologia", "informatica", "computacion", "soporte tecnico", "hardware"] },
     { "code": "SOFTWARE_SOLUCIONES_DIGITALES", "name": "Software y soluciones digitales", "sectorCode": "SERVICIOS_PROYECTOS", "catalogVersion": 1, "active": true, "selectable": false, "searchTerms": ["software", "programacion", "desarrollo", "sistemas", "soluciones digitales"] },
-    { "code": "SEGURIDAD_TELECOMUNICACIONES", "name": "Seguridad electrónica y telecomunicaciones", "sectorCode": "SERVICIOS_PROYECTOS", "catalogVersion": 1, "active": true, "searchTerms": ["seguridad", "cctv", "alarmas", "telecomunicaciones", "redes"] },
+    { "code": "SEGURIDAD_TELECOMUNICACIONES", "name": "Seguridad electrónica y telecomunicaciones", "sectorCode": "SERVICIOS_PROYECTOS", "catalogVersion": 1, "active": true, "selectable": false, "searchTerms": ["seguridad", "cctv", "alarmas", "telecomunicaciones", "redes"] },
     { "code": "ELECTRICIDAD_ENERGIA_CLIMATIZACION", "name": "Electricidad, energía y climatización", "sectorCode": "SERVICIOS_PROYECTOS", "catalogVersion": 1, "active": true, "searchTerms": ["electricidad", "energia", "climatizacion", "aire acondicionado", "calefaccion"] },
-    { "code": "AUTOMATIZACION_CONTROL", "name": "Automatización y control", "sectorCode": "SERVICIOS_PROYECTOS", "catalogVersion": 1, "active": true, "searchTerms": ["automatizacion", "control", "domotica", "industrial", "instrumentacion"] },
-    { "code": "MANTENIMIENTO_INSTALACIONES", "name": "Mantenimiento e instalaciones técnicas", "sectorCode": "SERVICIOS_PROYECTOS", "catalogVersion": 1, "active": true, "searchTerms": ["mantenimiento", "mantencion", "instalaciones", "reparacion", "servicio tecnico"] },
+    { "code": "AUTOMATIZACION_CONTROL", "name": "Automatización y control", "sectorCode": "SERVICIOS_PROYECTOS", "catalogVersion": 1, "active": true, "selectable": false, "searchTerms": ["automatizacion", "control", "domotica", "industrial", "instrumentacion"] },
+    { "code": "MANTENIMIENTO_INSTALACIONES", "name": "Mantenimiento e instalaciones técnicas", "sectorCode": "SERVICIOS_PROYECTOS", "catalogVersion": 1, "active": true, "selectable": false, "searchTerms": ["mantenimiento", "mantencion", "instalaciones", "reparacion", "servicio tecnico"] },
+    { "code": "TALLER_AUTOMOTRIZ", "name": "Taller automotriz", "sectorCode": "SERVICIOS_PROYECTOS", "catalogVersion": 1, "active": true, "searchTerms": ["taller", "mecanica", "automotriz", "vehiculos", "reparacion de autos", "mantencion de vehiculos"] },
+    { "code": "CLINICA_VETERINARIA", "name": "Clínica veterinaria", "sectorCode": "SERVICIOS_PROYECTOS", "catalogVersion": 1, "active": true, "searchTerms": ["veterinaria", "veterinario", "mascotas", "clinica veterinaria", "animales", "pacientes"] },
     { "code": "CONSTRUCCION_OBRAS", "name": "Construcción y obras especializadas", "sectorCode": "SERVICIOS_PROYECTOS", "catalogVersion": 1, "active": true, "selectable": false, "searchTerms": ["construccion", "obras", "edificacion", "remodelacion", "especialidades"] },
     { "code": "AUTOMOTRIZ_MOVILIDAD", "name": "Automotriz y movilidad", "sectorCode": "SERVICIOS_PROYECTOS", "catalogVersion": 1, "active": true, "selectable": false, "searchTerms": ["automotriz", "vehiculos", "movilidad", "mecanica", "taller"] },
     { "code": "INGENIERIA_CONSULTORIA", "name": "Ingeniería y consultoría técnica", "sectorCode": "SERVICIOS_PROYECTOS", "catalogVersion": 1, "active": true, "searchTerms": ["ingenieria", "consultoria", "asesoria tecnica", "proyectos", "profesionales"] },
@@ -142,6 +145,22 @@
     { "code": "EDUCACION", "name": "Educación", "sectorCode": "SERVICIOS", "active": true, "selectable": false, "legacy": true, "searchTerms": ["educacion", "enseñanza"] },
     { "code": "MANUFACTURA", "name": "Manufactura", "sectorCode": "PRODUCCION", "active": true, "selectable": false, "legacy": true, "searchTerms": ["manufactura", "fabrica"] }
   ],
+  "territoriesByCountry": {
+    "BO": {
+      "regionLabel": "Departamento",
+      "regions": [
+        { "code": "LP", "name": "La Paz" },
+        { "code": "CB", "name": "Cochabamba" },
+        { "code": "SC", "name": "Santa Cruz" },
+        { "code": "OR", "name": "Oruro" },
+        { "code": "PO", "name": "Potosí" },
+        { "code": "CH", "name": "Chuquisaca" },
+        { "code": "TJ", "name": "Tarija" },
+        { "code": "BE", "name": "Beni" },
+        { "code": "PD", "name": "Pando" }
+      ]
+    }
+  },
   "regions": [
     {
       "code": "01",

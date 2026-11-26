@@ -60,3 +60,5 @@ vite-codex*.log
 .patches/
 dist.zip
 valoracloud-*.zip
+firebase-export-*/
+/functions/veterinary-models/

@@ -1,4 +1,5 @@
 import {adaptStoredFiscalIdentifier} from "./fiscalIdentifier.mjs";
+import {hasMaxDecimals, isMoneyAmount, mulRound, sanitizeDecimals, sumMoney} from "./money.mjs";
 
 export const PURCHASE_MODEL_VERSION = 3;
 export const PURCHASE_VAT_RATE = 0.19;
@@ -44,7 +45,7 @@ export function getPurchaseStockSemantics(raw = {}) {
   if (hasReception) {
     return {
       kind: "reception",
-      confirmationMessage: "El stock ya fue gestionado mediante la recepción. Confirmar esta compra sólo registra el documento económico.",
+      confirmationMessage: "El stock ya fue gestionado mediante la recepción. Confirmar esta compra solo registra el documento económico.",
       confirmationResultMessage: "Documento económico confirmado. El stock fue gestionado por la recepción.",
     };
   }
@@ -133,50 +134,64 @@ function number(value, label, {minimum = 0, maximum = Infinity} = {}) {
   return result;
 }
 
-function safeMoney(...values) {
-  if (values.some((value) => !Number.isFinite(value) || !Number.isSafeInteger(value))) {
+// SPEC 036: `decimals` son los decimales de cálculo del documento (su `montoDecimales`; 0 = entero, como siempre). Con 0
+// la validación es la de antes (un entero seguro); con decimales admite hasta esa cantidad de decimales.
+function safeMoney(decimals, ...values) {
+  if (values.some((value) => !isMoneyAmount(value, decimals))) {
     throw new Error(MAXIMUM_AMOUNT_MESSAGE);
   }
 }
 
-export function calculatePurchaseLine(raw = {}, index = 0) {
+function assertAmountDecimals(value, decimals, label) {
+  if (decimals > 0 && !hasMaxDecimals(value, decimals)) {
+    throw new Error(`${label} admite hasta ${decimals} decimales.`);
+  }
+}
+
+export function calculatePurchaseLine(raw = {}, index = 0, montoDecimales = 0) {
+  const decimals = sanitizeDecimals(montoDecimales);
   const cantidad = number(raw.cantidad, `Ítem ${index + 1}: cantidad`, {minimum: Number.MIN_VALUE});
   const costoUnitario = number(raw.costoUnitario, `Ítem ${index + 1}: costo unitario`);
+  assertAmountDecimals(costoUnitario, decimals, `Ítem ${index + 1}: costo unitario`);
   const descuentoPct = number(raw.descuentoPct ?? 0, `Ítem ${index + 1}: descuento`, {maximum: 100});
-  const subtotalLinea = Math.round(cantidad * costoUnitario);
-  const descuentoLinea = Math.round((subtotalLinea * descuentoPct) / 100);
-  const totalLinea = subtotalLinea - descuentoLinea;
-  safeMoney(subtotalLinea, descuentoLinea, totalLinea);
+  const subtotalLinea = mulRound(cantidad, costoUnitario, decimals);
+  const descuentoLinea = mulRound(subtotalLinea, descuentoPct, decimals, 100);
+  const totalLinea = sumMoney([subtotalLinea, -descuentoLinea], decimals);
+  safeMoney(decimals, subtotalLinea, descuentoLinea, totalLinea);
   return {cantidad, costoUnitario, descuentoPct, subtotalLinea, descuentoLinea, totalLinea};
 }
 
 // Sin `tipoDocumento` conserva el cálculo legacy; con él aplica SPEC 023 §5.2,
 // igual que `totals()` en functions/purchasePersistence.js.
-export function calculatePurchaseTotals(items = [], {tasaIva = PURCHASE_VAT_RATE, tipoDocumento} = {}) {
+export function calculatePurchaseTotals(items = [], {tasaIva = PURCHASE_VAT_RATE, tipoDocumento, montoDecimales = 0} = {}) {
   if (!Array.isArray(items) || !items.length) throw new Error("Agrega al menos un ítem a la compra.");
-  const lines = items.map(calculatePurchaseLine);
-  const subtotal = lines.reduce((sum, line) => sum + line.subtotalLinea, 0);
-  const descuentoTotal = lines.reduce((sum, line) => sum + line.descuentoLinea, 0);
-  const neto = subtotal - descuentoTotal;
+  const decimals = sanitizeDecimals(montoDecimales);
+  const lines = items.map((item, index) => calculatePurchaseLine(item, index, decimals));
+  const subtotal = sumMoney(lines.map((line) => line.subtotalLinea), decimals);
+  const descuentoTotal = sumMoney(lines.map((line) => line.descuentoLinea), decimals);
+  const neto = sumMoney([subtotal, -descuentoTotal], decimals);
   if (tipoDocumento === undefined) {
-    const iva = Math.round(neto * tasaIva);
-    const total = neto + iva;
-    safeMoney(subtotal, descuentoTotal, neto, iva, total);
+    const iva = mulRound(neto, tasaIva, decimals);
+    const total = sumMoney([neto, iva], decimals);
+    safeMoney(decimals, subtotal, descuentoTotal, neto, iva, total);
     return {subtotal, descuentoTotal, neto, iva, total};
   }
-  const montoExento = lines
+  const montoExento = sumMoney(lines
     .filter((line, index) => resolvePurchaseVatTreatment({tipoDocumento, impuestoId: items[index]?.impuestoId}) === PURCHASE_VAT_TREATMENTS.EXENTO)
-    .reduce((sum, line) => sum + line.totalLinea, 0);
+    .map((line) => line.totalLinea), decimals);
   const isBoleta = resolvePurchaseVatTreatment({tipoDocumento}) === PURCHASE_VAT_TREATMENTS.BOLETA;
-  const iva = isBoleta ? 0 : Math.round((neto - montoExento) * tasaIva);
-  const total = neto + iva;
-  safeMoney(subtotal, descuentoTotal, neto, montoExento, iva, total);
+  const iva = isBoleta ? 0 : mulRound(sumMoney([neto, -montoExento], decimals), tasaIva, decimals);
+  const total = sumMoney([neto, iva], decimals);
+  safeMoney(decimals, subtotal, descuentoTotal, neto, montoExento, iva, total);
   return {subtotal, descuentoTotal, neto, montoExento, iva, total};
 }
 
 export function buildPurchaseMutationPayload(raw = {}) {
   if (!Array.isArray(raw.items) || !raw.items.length) throw new Error("Agrega al menos un ítem a la compra.");
   if (raw.items.length > 200) throw new Error("La compra admite hasta 200 ítems.");
+  // Decimales de cálculo del documento (los pone quien arma el borrador; el servidor decide los suyos con el
+  // snapshot del documento y no lee este valor).
+  const montoDecimales = sanitizeDecimals(raw.montoDecimales);
   const tipoDocumento = DOCUMENT_SET.has(raw.tipoDocumento) ? raw.tipoDocumento : "sin_documento";
   return {
     proveedorId: id(raw.proveedorId, "El proveedor"),
@@ -188,7 +203,7 @@ export function buildPurchaseMutationPayload(raw = {}) {
     observaciones: text(raw.observaciones, 4000),
     documentoOrigen: buildDocumentSourcePayload(raw.documentoOrigen),
     items: raw.items.map((item, index) => {
-      const values = calculatePurchaseLine(item, index);
+      const values = calculatePurchaseLine(item, index, montoDecimales);
       return {
         lineaId: id(item.lineaId || `linea-${index + 1}`, "La línea"),
         itemId: id(item.itemId, `Ítem ${index + 1}`),
@@ -207,7 +222,7 @@ const providerSnapshot = (raw = {}) => ({
   telefono: text(raw.telefono, 100), direccion: text(raw.direccion, 300), condicionesPago: text(raw.condicionesPago, 2000),
 });
 
-function storedLine(raw = {}, index = 0) {
+function storedLine(raw = {}, index = 0, montoDecimales = 0) {
   const snapshot = raw.inventarioSnapshot || {};
   const tipo = text(raw.tipoItem || snapshot.tipoItem, 20);
   return {
@@ -219,13 +234,14 @@ function storedLine(raw = {}, index = 0) {
     tipoItem: ITEM_TYPES.has(tipo) ? tipo : "producto",
     unidad: text(raw.unidad || snapshot.unidad, 80) || "unidad",
     ...(text(raw.impuestoId, 40) ? {impuestoId: text(raw.impuestoId, 40).toUpperCase()} : {}),
-    ...calculatePurchaseLine(raw, index),
+    ...calculatePurchaseLine(raw, index, montoDecimales),
   };
 }
 
 export function adaptStoredPurchase(raw = {}) {
-  const items = (Array.isArray(raw.items) ? raw.items : []).map(storedLine);
   const localization = adaptDocumentLocalization(raw);
+  const items = (Array.isArray(raw.items) ? raw.items : [])
+    .map((line, index) => storedLine(line, index, localization.montoDecimales));
   // SPEC 023 §5.2: sólo los documentos marcados con modeloIvaCompraVersion 1
   // se recalculan con boleta y exentos; los anteriores conservan el cálculo
   // con el que se guardaron.
@@ -233,6 +249,7 @@ export function adaptStoredPurchase(raw = {}) {
   const totals = items.length
     ? calculatePurchaseTotals(items, {
       tasaIva: localization.tasaIva,
+      montoDecimales: localization.montoDecimales,
       ...(usesPurchaseVatModel
         ? {tipoDocumento: DOCUMENT_SET.has(raw.tipoDocumento) ? raw.tipoDocumento : "sin_documento"}
         : {}),

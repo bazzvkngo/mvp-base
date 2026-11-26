@@ -1,7 +1,8 @@
 import React, {useCallback, useEffect, useRef, useState} from "react";
 import {Lock, Pencil, RefreshCw, ShieldCheck, Trash2, UserPlus} from "lucide-react";
+import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
-import LoadingState from "../components/ui/LoadingState";
+import ModuleHeader from "../components/ui/ModuleHeader";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import {SkeletonRegion, SkeletonTable} from "../components/ui/Skeleton";
 import StatusBadge from "../components/ui/StatusBadge";
@@ -37,7 +38,10 @@ import {
   listarInvitacionesNegocio,
   revocarInvitacionNegocio,
 } from "../services/teamInvitationService.js";
+import {getRouteMeta} from "../app/navigation";
 import "../features/employees/employees.css";
+
+const MODULE = getRouteMeta("/empleados");
 
 const PREDEFINED_PROFILES = ["OWNER", ...MANAGEABLE_BUSINESS_MEMBER_ROLES];
 const PREDEFINED_PROFILE_DESCRIPTIONS = Object.freeze({
@@ -49,11 +53,34 @@ const PREDEFINED_PROFILE_DESCRIPTIONS = Object.freeze({
   FINANZAS: "Ventas, compras, inventario, reportes, rentabilidad y finanzas.",
   MEMBER: "Consulta transversal del negocio y operación técnica de proyectos y trabajos.",
 });
+// Los 12 módulos agrupados como el menú lateral. Solo cambia la presentación: los valores y
+// BUSINESS_MODULES siguen siendo la única lista de módulos; uno que no figure aquí cae en "Otros".
+const MODULE_GROUPS = Object.freeze([
+  {id: "inicio", label: "Inicio", modules: ["reportes"]},
+  {id: "comercial", label: "Comercial", modules: ["clientes", "cotizaciones", "ventas"]},
+  {id: "operacion", label: "Operación", modules: ["trabajos", "inventario"]},
+  {id: "abastecimiento", label: "Abastecimiento", modules: ["proveedores", "ordenes_compra", "recepciones", "compras"]},
+  {id: "gestion", label: "Gestión", modules: ["empresa", "empleados"]},
+]);
+const groupedModules = () => {
+  const listed = new Set(MODULE_GROUPS.flatMap((group) => group.modules));
+  const rest = BUSINESS_MODULES.filter((moduleId) => !listed.has(moduleId));
+  return [
+    ...MODULE_GROUPS.map((group) => ({...group, modules: group.modules.filter((moduleId) => BUSINESS_MODULES.includes(moduleId))})).filter((group) => group.modules.length),
+    ...(rest.length ? [{id: "otros", label: "Otros", modules: rest}] : []),
+  ];
+};
 const cleanError = (error, fallback) =>
   String(error?.message || "").replace(/^Firebase:\s*/i, "").trim() || fallback;
 const profileLabel = (member) => businessMemberProfileLabel(member);
 // Sin nombre registrado la persona se identifica por su correo.
 const memberName = (member) => getWorkMemberIdentity(member);
+// El correo va bajo el nombre solo cuando hay un nombre real; si el nombre ya es el correo no se repite.
+const memberEmailLine = (member) => {
+  const email = String(member.correo || "").trim();
+  if (!email || email === "Sin correo disponible") return "";
+  return email.toLowerCase() === memberName(member).toLowerCase() ? "" : email;
+};
 const selectionFor = (member) => member.profileId ? `profile:${member.profileId}` : `role:${member.rol}`;
 const decodeSelection = (value) => value.startsWith("profile:")
   ? {rol: "MEMBER", profileId: value.slice(8)}
@@ -73,7 +100,7 @@ function ProfileOptions({profiles, actorRole}) {
 }
 
 function MemberActions({member, profiles, actorRole, currentUserUid, busy, onProfile, onStatus}) {
-  if (member.rol === "OWNER") return null;
+  if (member.rol === "OWNER") return <span className="employees-readonly-label">Solo lectura</span>;
   const self = member.uid === currentUserUid;
   return <div className="employees-actions">
     <select aria-label={`Perfil de ${memberName(member)}`} value={selectionFor(member)} disabled={busy || self} onChange={(event) => onProfile(member, event.target.value)}>
@@ -86,27 +113,31 @@ function MemberActions({member, profiles, actorRole, currentUserUid, busy, onPro
   </div>;
 }
 
-function ProfilesPanel({profiles, canManage, onCreate, onEdit, onDelete}) {
-  return <section className="erp-panel">
-    <header className="employees-panel-header"><div><h2 className="erp-panel-title">Perfiles y permisos</h2><p className="erp-secondary-text">Los perfiles personalizados habilitan acceso por módulos completos.</p></div>{canManage && <Button type="button" icon={ShieldCheck} onClick={onCreate}>Crear perfil</Button>}</header>
-    <section className="employees-profile-section" aria-labelledby="system-profiles-title">
-      <div className="employees-profile-section__header">
-        <div><h3 id="system-profiles-title">Perfiles del sistema</h3><p>Accesos predefinidos que se mantienen protegidos.</p></div>
-        <span>{PREDEFINED_PROFILES.length} perfiles</span>
-      </div>
-      <div className="employees-profile-grid">
-        {PREDEFINED_PROFILES.map((role) => <article className="employees-profile-card employees-profile-card--system" key={role}><StatusBadge variant={role === "OWNER" ? "warning" : "neutral"}><Lock size={13} aria-hidden="true" /> Perfil protegido</StatusBadge><h3>{BUSINESS_MEMBER_ROLE_LABELS[role]}</h3><p>{PREDEFINED_PROFILE_DESCRIPTIONS[role]}</p></article>)}
-      </div>
+function ProfileRowActions({profile, onEdit, onDelete}) {
+  return <div className="client-row-actions employees-row-icons">
+    <button type="button" onClick={() => onEdit(profile)} aria-label={`Editar perfil ${profile.nombre}`} title="Editar perfil"><AppIcon icon={Pencil} size={17} /></button>
+    <button type="button" onClick={() => onDelete(profile)} aria-label={`Eliminar perfil ${profile.nombre}`} title="Eliminar perfil"><AppIcon icon={Trash2} size={17} /></button>
+  </div>;
+}
+
+// Una tabla compacta por tipo de perfil. Si la carga falló y no hay perfiles propios, la sección
+// de personalizados no se dibuja: el aviso de error con Reintentar ya está arriba y no se muestra un falso vacío.
+function ProfilesPanel({profiles, canManage, loadFailed, onCreate, onEdit, onDelete}) {
+  const showCustom = !(loadFailed && profiles.length === 0);
+  return <section className="erp-panel employees-profiles">
+    <section className="employees-profiles__section" aria-labelledby="system-profiles-title">
+      <header className="employees-panel-header"><div><h2 id="system-profiles-title" className="erp-panel-title">Perfiles del sistema</h2><p className="erp-secondary-text">Son perfiles fijos y no se pueden modificar. Los asignas al invitar a alguien o desde la pestaña Empleados (Propietario no se asigna y Administrador solo lo asigna el propietario).</p></div></header>
+      <div className="erp-table-region"><table className="erp-table employees-table employees-profiles-table"><thead><tr><th>Perfil</th><th>Qué puede ver</th></tr></thead><tbody>{PREDEFINED_PROFILES.map((role) => <tr key={role}><td><span className="employees-profile-name"><span className="employees-profile-lock" role="img" aria-label="Perfil protegido" title="Perfil protegido"><AppIcon icon={Lock} size={14} /></span><strong>{BUSINESS_MEMBER_ROLE_LABELS[role]}</strong></span></td><td><p className="employees-profile-text" title={PREDEFINED_PROFILE_DESCRIPTIONS[role]}>{PREDEFINED_PROFILE_DESCRIPTIONS[role]}</p></td></tr>)}</tbody></table></div>
     </section>
-    <section className="employees-profile-section" aria-labelledby="custom-profiles-title">
-      <div className="employees-profile-section__header">
-        <div><h3 id="custom-profiles-title">Perfiles personalizados</h3><p>Combinaciones de módulos definidas para este negocio.</p></div>
-        <span>{profiles.length} {profiles.length === 1 ? "perfil" : "perfiles"}</span>
-      </div>
-      {profiles.length > 0 ? <div className="employees-profile-grid">
-        {profiles.map((profile) => <article className="employees-profile-card" key={profile.id}><StatusBadge variant="neutral">Personalizado</StatusBadge><h3>{profile.nombre}</h3><p>{profile.descripcion || "Sin descripción."}</p><div className="employees-module-list">{profile.modulos.map((moduleId) => <span key={moduleId}>{BUSINESS_MODULE_LABELS[moduleId]}</span>)}</div>{canManage && <div className="employees-profile-actions"><Button type="button" variant="secondary" icon={Pencil} onClick={() => onEdit(profile)}>Editar</Button><Button type="button" variant="ghost-danger" icon={Trash2} onClick={() => onDelete(profile)}>Eliminar</Button></div>}</article>)}
-      </div> : <div className="employees-profile-empty"><strong>Aún no hay perfiles personalizados.</strong><span>Crea uno cuando necesites combinar módulos de forma distinta a los perfiles del sistema.</span></div>}
-    </section>
+    {showCustom && <section className="employees-profiles__section" aria-labelledby="custom-profiles-title">
+      <header className="employees-panel-header"><div><h2 id="custom-profiles-title" className="erp-panel-title">Perfiles personalizados</h2><p className="erp-secondary-text">Crea perfiles propios y asígnalos igual que los del sistema.</p></div>{canManage && <Button type="button" icon={ShieldCheck} onClick={onCreate}>Crear perfil</Button>}</header>
+      {profiles.length > 0
+        ? <div className="erp-table-region"><table className="erp-table employees-table employees-profiles-table"><thead><tr><th>Perfil</th><th>Qué puede ver</th>{canManage && <th className="clients-actions-column">Acciones</th>}</tr></thead><tbody>{profiles.map((profile) => {
+          const modules = profile.modulos.map((moduleId) => BUSINESS_MODULE_LABELS[moduleId]).filter(Boolean).join(", ");
+          return <tr key={profile.id}><td><strong className="employees-person__name">{profile.nombre}</strong>{profile.descripcion && <span className="employees-person__email employees-profile-text" title={profile.descripcion}>{profile.descripcion}</span>}</td><td><p className="employees-profile-text" title={modules}>{modules}</p></td>{canManage && <td className="clients-actions-column"><ProfileRowActions profile={profile} onEdit={onEdit} onDelete={onDelete} /></td>}</tr>;
+        })}</tbody></table></div>
+        : <p className="employees-profile-empty">Aún no hay perfiles personalizados.{canManage ? " Usa «Crear perfil» para agregar el primero." : ""}</p>}
+    </section>}
   </section>;
 }
 
@@ -239,17 +270,22 @@ export default function EmployeesPage({businessId, role, currentUserUid = ""}) {
     catch (error) { setFeedback({text: cleanError(error, "No pudimos eliminar el perfil."), error: true}); }
   };
 
-  if (!businessId || !canRead) return <section className="erp-page employees-page"><div className="erp-empty-state" role="alert">No tienes permisos para consultar empleados.</div></section>;
+  if (!businessId || !canRead) return <section className="erp-page employees-page"><ModuleHeader description={MODULE.description} icon={MODULE.icon} title={MODULE.title} /><div className="erp-empty-state" role="alert">No tienes permisos para consultar empleados.</div></section>;
   return <section className="erp-page employees-page">
-    {canManage && tab === "employees" && <div className="erp-module-intro"><Button type="button" icon={UserPlus} onClick={() => {setEmail(""); setEmailError(""); setNewSelection("role:TECNICO"); setAddOpen(true);}}>Invitar usuario</Button></div>}
+    <ModuleHeader
+      actions={canManage && tab === "employees" ? <Button type="button" icon={UserPlus} onClick={() => {setEmail(""); setEmailError(""); setNewSelection("role:TECNICO"); setAddOpen(true);}}>Invitar usuario</Button> : null}
+      description={MODULE.description}
+      icon={MODULE.icon}
+      title={MODULE.title}
+    />
     <div className="employees-tabs" role="tablist"><button type="button" role="tab" aria-selected={tab === "employees"} onClick={() => setTab("employees")}>Empleados</button><button type="button" role="tab" aria-selected={tab === "profiles"} onClick={() => setTab("profiles")}>Perfiles y permisos</button></div>
     {!canManage && <div className="employees-notice">Puedes consultar esta sección; la administración corresponde a propietarios y administradores.</div>}
     {feedback.text && <div className={`employees-message${feedback.error ? " employees-message--error" : ""}`} role={feedback.error ? "alert" : "status"}>{feedback.text}</div>}
     {loadError && <div className="employees-message employees-message--error"><span>{loadError}</span><Button type="button" variant="secondary" icon={RefreshCw} onClick={loadData}>Reintentar</Button></div>}
-    {tab === "profiles" ? (loading ? <LoadingState variant="section" label="Cargando empleados y perfiles..." /> : <ProfilesPanel profiles={profiles} canManage={canManage} onCreate={() => openProfile()} onEdit={openProfile} onDelete={deleteProfile} />) : loading && members.length === 0 ? <section className="erp-panel"><SkeletonRegion label="Cargando empleados y perfiles..."><SkeletonTable columns={canManage ? 6 : 5} /></SkeletonRegion></section> : <section className="erp-panel"><header className="employees-panel-header"><div><h2 className="erp-panel-title">Usuarios con acceso</h2><p className="erp-secondary-text">Perfiles asignados en esta empresa.</p></div><span className="employees-count">{members.length} {members.length === 1 ? "persona" : "personas"}</span></header><div className="erp-table-region"><table className="erp-table employees-table"><thead><tr><th>Nombre</th><th>Correo</th><th>Perfil</th><th>Estado</th><th>Incorporación</th>{canManage && <th>Acciones</th>}</tr></thead><tbody>{members.map((member) => <tr key={member.uid}><td><strong>{memberName(member)}</strong></td><td>{member.correo}</td><td><StatusBadge variant={member.rol === "OWNER" ? "warning" : "neutral"}>{profileLabel(member)}</StatusBadge></td><td><StatusBadge variant={member.estado === "activo" ? "success" : "neutral"}>{BUSINESS_MEMBER_STATUS_LABELS[member.estado]}</StatusBadge></td><td>{member.fechaIncorporacion ? new Date(member.fechaIncorporacion).toLocaleDateString("es-CL") : "—"}</td>{canManage && <td><MemberActions member={member} profiles={profiles} actorRole={role} currentUserUid={currentUserUid} busy={processingUid === member.uid} onProfile={changeProfile} onStatus={changeStatus} /></td>}</tr>)}</tbody></table></div></section>}
+    {tab === "profiles" ? (loading ? <section className="erp-panel"><SkeletonRegion label="Cargando perfiles..."><SkeletonTable columns={2} rows={5} twoLine /></SkeletonRegion></section> : <ProfilesPanel profiles={profiles} canManage={canManage} loadFailed={Boolean(loadError)} onCreate={() => openProfile()} onEdit={openProfile} onDelete={deleteProfile} />) : loading && members.length === 0 ? <section className="erp-panel"><SkeletonRegion label="Cargando empleados y perfiles..."><SkeletonTable columns={canManage ? 5 : 4} /></SkeletonRegion></section> : loadError && members.length === 0 ? null : <section className="erp-panel"><header className="employees-panel-header"><div><h2 className="erp-panel-title">Usuarios con acceso</h2><p className="erp-secondary-text">Perfiles asignados en esta empresa.</p></div>{!loadError && <span className="employees-count">{members.length} {members.length === 1 ? "persona" : "personas"}</span>}</header><div className="erp-table-region"><table className="erp-table employees-table"><thead><tr><th>Nombre</th><th>Perfil</th><th>Estado</th><th>Incorporación</th>{canManage && <th>Acciones</th>}</tr></thead><tbody>{members.map((member) => <tr key={member.uid}><td><strong className="employees-person__name">{memberName(member)}</strong>{memberEmailLine(member) && <span className="employees-person__email">{memberEmailLine(member)}</span>}</td><td><StatusBadge variant={member.rol === "OWNER" ? "warning" : "neutral"}>{profileLabel(member)}</StatusBadge></td><td><StatusBadge variant={member.estado === "activo" ? "success" : "neutral"}>{BUSINESS_MEMBER_STATUS_LABELS[member.estado]}</StatusBadge></td><td>{member.fechaIncorporacion ? new Date(member.fechaIncorporacion).toLocaleDateString("es-CL") : "—"}</td>{canManage && <td><MemberActions member={member} profiles={profiles} actorRole={role} currentUserUid={currentUserUid} busy={processingUid === member.uid} onProfile={changeProfile} onStatus={changeStatus} /></td>}</tr>)}</tbody></table></div></section>}
     {canManage && tab === "employees" && <TeamInvitationsPanel status={invitationsStatus} groups={groupBusinessInvitations(invitations.map((item) => adaptBusinessInvitation(item, profiles)))} busyId={invitationBusyId} onRevoke={revokeInvitation} onReinvite={reinvite} onRetry={loadInvitations} />}
     <ResponsiveDialog open={addOpen} onClose={() => {if (!adding) setAddOpen(false);}} title="Invitar usuario" eyebrow="Empleados" description="La persona recibe la invitación y decide si la acepta." size="small" initialFocusRef={emailRef} footer={<><Button type="button" variant="secondary" disabled={adding} onClick={() => setAddOpen(false)}>Cancelar</Button><Button type="submit" form="employee-add-form" loading={adding}>{adding ? "Enviando..." : "Enviar invitación"}</Button></>}><form id="employee-add-form" className="employees-add-form" onSubmit={inviteMember}><label className="erp-field"><span className="erp-field__label">Correo de acceso</span><input ref={emailRef} className="erp-control" type="email" value={email} onChange={(event) => {setEmail(event.target.value); setEmailError("");}} placeholder="persona@empresa.cl" /></label><label className="erp-field"><span className="erp-field__label">Perfil</span><select className="erp-control" value={newSelection} onChange={(event) => setNewSelection(event.target.value)}><ProfileOptions profiles={profiles} actorRole={role} /></select></label>{emailError && <p className="employees-form-error" role="alert">{emailError}</p>}</form></ResponsiveDialog>
-    <ResponsiveDialog open={profileOpen} onClose={() => {if (!savingProfile) setProfileOpen(false);}} title={editingProfile ? "Editar perfil" : "Crear perfil"} eyebrow="Perfiles y permisos" description="Selecciona los módulos completos que estarán disponibles." size="medium" initialFocusRef={profileNameRef} footer={<><Button type="button" variant="secondary" disabled={savingProfile} onClick={() => setProfileOpen(false)}>Cancelar</Button><Button type="submit" form="employee-profile-form" loading={savingProfile}>{savingProfile ? "Guardando..." : "Guardar perfil"}</Button></>}>
+    <ResponsiveDialog open={profileOpen} onClose={() => {if (!savingProfile) setProfileOpen(false);}} title={editingProfile ? "Editar perfil" : "Crear perfil"} eyebrow="Perfiles y permisos" description="Elige los módulos a los que tendrá acceso." size="medium" initialFocusRef={profileNameRef} footer={<><Button type="button" variant="secondary" disabled={savingProfile} onClick={() => setProfileOpen(false)}>Cancelar</Button><Button type="submit" form="employee-profile-form" loading={savingProfile}>{savingProfile ? "Guardando..." : "Guardar perfil"}</Button></>}>
       <form id="employee-profile-form" className="employees-add-form" onSubmit={saveProfile}>
         <label className="erp-field"><span className="erp-field__label">Nombre</span><input ref={profileNameRef} className="erp-control" maxLength="80" placeholder="Ej. Coordinación comercial" value={profileForm.nombre} onChange={(event) => setProfileForm((current) => ({...current, nombre: event.target.value}))} /></label>
         <label className="erp-field"><span className="erp-field__label">Descripción</span><textarea className="erp-control" maxLength="300" rows="3" placeholder="Ej. Acceso para el equipo que prepara cotizaciones" value={profileForm.descripcion} onChange={(event) => setProfileForm((current) => ({...current, descripcion: event.target.value}))} /></label>
@@ -259,7 +295,10 @@ export default function EmployeesPage({businessId, role, currentUserUid = ""}) {
             <span><strong>{profileForm.modulos.length}</strong> / {BUSINESS_MODULES.length} seleccionados</span>
             <div><Button type="button" variant="secondary" disabled={profileForm.modulos.length === BUSINESS_MODULES.length} onClick={() => {setProfileForm((current) => ({...current, modulos: [...BUSINESS_MODULES]})); setProfileError("");}}>Seleccionar todos</Button><Button type="button" variant="secondary" disabled={profileForm.modulos.length === 0} onClick={() => setProfileForm((current) => ({...current, modulos: []}))}>Limpiar</Button></div>
           </div>
-          <div className="employees-modules-grid">{BUSINESS_MODULES.map((moduleId) => <label key={moduleId}><input type="checkbox" checked={profileForm.modulos.includes(moduleId)} onChange={(event) => {setProfileForm((current) => ({...current, modulos: event.target.checked ? [...current.modulos, moduleId] : current.modulos.filter((item) => item !== moduleId)})); setProfileError("");}} /><span>{BUSINESS_MODULE_LABELS[moduleId]}</span></label>)}</div>
+          <div className="employees-modules-grid">{groupedModules().map((group) => <div key={group.id} className="employees-modules-group" role="group" aria-labelledby={`employees-modules-${group.id}`}>
+            <p id={`employees-modules-${group.id}`} className="employees-modules-group__title">{group.label}</p>
+            {group.modules.map((moduleId) => <label key={moduleId} className="ui-checkbox employees-module-option"><input className="ui-checkbox__input employees-module-option__input" type="checkbox" checked={profileForm.modulos.includes(moduleId)} onChange={(event) => {setProfileForm((current) => ({...current, modulos: event.target.checked ? [...current.modulos, moduleId] : current.modulos.filter((item) => item !== moduleId)})); setProfileError("");}} /><span className="ui-checkbox__label">{BUSINESS_MODULE_LABELS[moduleId]}</span></label>)}
+          </div>)}</div>
         </fieldset>
         {profileError && <p className="employees-form-error" role="alert">{profileError}</p>}
       </form>

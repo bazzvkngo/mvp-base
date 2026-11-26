@@ -29,30 +29,33 @@ const [picker, quickFields, company, dialog, componentStyles] = await Promise.al
 assert.equal(normalizeCategorySearch("  TECNOLOGÍA  "), "tecnologia");
 assert.equal(normalizeCategorySearch("Cafetería"), "cafeteria");
 const visibleCategories = filterBusinessCategories(catalog.businessCategories, "");
-assert.equal(visibleCategories.length, 7);
+// Bolivia piloto (SPEC 035): seis rubros seleccionables; Seguridad electrónica, Automatización y
+// Mantenimiento quedan ocultos (siguen en el catálogo).
+assert.equal(visibleCategories.length, 6);
 assert.deepEqual(
   visibleCategories.map(({ code }) => code),
   [
     "TECNOLOGIA_INFORMATICA",
-    "SEGURIDAD_TELECOMUNICACIONES",
     "ELECTRICIDAD_ENERGIA_CLIMATIZACION",
-    "AUTOMATIZACION_CONTROL",
-    "MANTENIMIENTO_INSTALACIONES",
+    "TALLER_AUTOMOTRIZ",
+    "CLINICA_VETERINARIA",
     "INGENIERIA_CONSULTORIA",
     "OTRO_SERVICIO_PROYECTOS",
   ]
 );
+for (const hiddenCode of ["SEGURIDAD_TELECOMUNICACIONES", "AUTOMATIZACION_CONTROL", "MANTENIMIENTO_INSTALACIONES"]) {
+  assert.equal(visibleCategories.some(({ code }) => code === hiddenCode), false, hiddenCode);
+}
 assert.equal(visibleCategories.some(({ code }) => code === "RESTAURANTE"), false);
 assert.equal(
   visibleCategories.find(({ code }) => code === "OTRO_SERVICIO_PROYECTOS")?.name,
   "Otro servicio por proyectos"
 );
 
-const securityResults = filterBusinessCategories(
-  catalog.businessCategories,
-  "ALARMAS"
-);
-assert.ok(securityResults.some(({ code }) => code === "SEGURIDAD_TELECOMUNICACIONES"));
+// Los rubros ocultos siguen en el catálogo pero el buscador ya no los devuelve.
+assert.deepEqual(filterBusinessCategories(catalog.businessCategories, "ALARMAS"), []);
+assert.deepEqual(filterBusinessCategories(catalog.businessCategories, "domotica"), []);
+assert.deepEqual(filterBusinessCategories(catalog.businessCategories, "cctv"), []);
 // "programación" apuntaba a un rubro que ya no es elegible.
 assert.deepEqual(
   filterBusinessCategories(catalog.businessCategories, "PROGRAMACIÓN"),
@@ -70,48 +73,67 @@ assert.equal(
   false
 );
 
-// Grupo "Próximamente": filas deshabilitadas, sin código y fuera del buscador.
+// Taller automotriz y Clínica veterinaria dejaron de ser "Próximamente" (SPEC 033):
+// ahora son rubros seleccionables y el buscador los devuelve.
+for (const [query, code] of [
+  ["taller", "TALLER_AUTOMOTRIZ"],
+  ["automotriz", "TALLER_AUTOMOTRIZ"],
+  ["veterinaria", "CLINICA_VETERINARIA"],
+  ["clinica", "CLINICA_VETERINARIA"],
+]) {
+  assert.ok(
+    filterBusinessCategories(catalog.businessCategories, query).some((category) => category.code === code),
+    `${query} devuelve ${code}`
+  );
+}
+
+// "Próximamente": una sola línea de texto, sin filas, etiquetas ni botones,
+// sin código y fuera del buscador.
 for (const query of [
-  "taller",
-  "automotriz",
-  "veterinaria",
-  "clinica",
   "construccion",
   "software",
   "marketing",
 ]) {
   assert.deepEqual(filterBusinessCategories(catalog.businessCategories, query), []);
 }
-assert.match(picker, /Próximamente/);
-assert.match(picker, /Taller automotriz \(en construcción\)/);
-assert.match(picker, /Clínica veterinaria \(en construcción\)/);
-assert.match(picker, /label: "Construcción y obras", tag: "Próximamente"/);
-assert.match(picker, /label: "Software y soluciones digitales", tag: "Próximamente"/);
-assert.match(picker, /label: "Servicios digitales y creativos", tag: "Próximamente"/);
-assert.match(picker, /Más rubros próximamente/);
-assert.match(picker, /aria-disabled="true"/);
-const soonBlock = picker.slice(picker.indexOf('className="business-category-soon"'));
-assert.doesNotMatch(soonBlock, /onClick|chooseOption|role="radio"/);
+assert.match(
+  picker,
+  /Próximamente: Construcción y obras, Software y soluciones digitales y Servicios digitales y creativos\./
+);
+assert.match(picker, /<p className="business-category-soon">\{COMING_SOON_TEXT\}<\/p>/);
+assert.doesNotMatch(picker, /COMING_SOON_CATEGORIES|business-category-option--soon|business-category-soon__/);
+assert.doesNotMatch(picker, /Más rubros próximamente|en construcción\)|aria-disabled/);
+// Fuera del radiogroup: no es seleccionable ni puede llegar al payload.
 assert.ok(
   picker.indexOf('role="radiogroup"') < picker.indexOf('className="business-category-soon"')
 );
-assert.match(componentStyles, /\.business-category-option--soon/);
+// Un solo contenedor de scroll: ni las opciones ni el contenido scrollean solos.
+const optionsRule = componentStyles.match(/\.business-category-options\s*\{[^}]*\}/)?.[0] || "";
+assert.doesNotMatch(optionsRule, /overflow/);
+const contentRule = componentStyles.match(/\.business-category-dialog__content\s*\{[^}]*\}/)?.[0] || "";
+assert.doesNotMatch(contentRule, /overflow|max-height/);
+assert.doesNotMatch(componentStyles, /\.business-category-dialog \.responsive-dialog__body/);
 
-// Nota fiscal para países distintos de Chile (solo presentación).
-assert.match(
-  quickFields,
-  /Moneda y formato disponibles\. Las reglas fiscales \(facturas, boletas, IVA\) están pensadas para Chile y están en revisión\./
-);
-assert.match(quickFields, /values\.paisCodigo !== "CL"/);
+// Nota del país distinto de Chile (solo presentación): sale de getCountryFiscalNote (catálogo), sin texto
+// fijo en el componente; el texto exacto se prueba en business-catalog y en el render de business-quick-flow.
+assert.match(quickFields, /getCountryFiscalNote\(values\.paisCodigo\)/);
+assert.doesNotMatch(quickFields, /pensadas para Chile|están en revisión|NON_CHILE_FISCAL_NOTE/);
 
 assert.match(quickFields, /<BusinessCategoryPicker/);
 assert.match(company, /<BusinessCategoryPicker/);
 assert.match(quickFields, /Rubro principal/);
 assert.match(company, /Rubro principal/);
-assert.match(quickFields, /Elige la actividad que mejor representa tu servicio principal\./);
+assert.match(quickFields, /Elige la actividad que mejor representa tu servicio principal\. Define los módulos que verás en el menú\./);
 assert.match(company, /Selecciona la actividad que mejor representa los servicios de tu empresa\./);
 assert.doesNotMatch(quickFields, /BUSINESS_CATEGORIES\.filter/);
 assert.doesNotMatch(company, /BUSINESS_CATEGORIES\.filter/);
+// EM4: el selector expone su obligatoriedad y su error sin cambiar su comportamiento.
+assert.match(picker, /required = false,/, "required es opcional: los demás usos no cambian");
+assert.match(picker, /aria-label=\{`\$\{ariaLabel\}\$\{required \? " \(obligatorio\)" : ""\}: \$\{selectedName \|\| "sin seleccionar"\}/, "el nombre accesible incluye 'obligatorio' solo si se pide");
+assert.match(picker, /aria-describedby=\{errorId\}/);
+assert.match(picker, /aria-invalid=\{Boolean\(error\)\}/);
+assert.match(company, /<BusinessCategoryPicker\s+id="company-category"\s+required\b/, "Empresa lo declara obligatorio");
+assert.doesNotMatch(quickFields.slice(quickFields.indexOf("<BusinessCategoryPicker"), quickFields.indexOf("/>", quickFields.indexOf("<BusinessCategoryPicker"))), /\brequired\b/, "el alta rápida no cambia");
 assert.match(picker, /title="Selecciona un rubro"/);
 assert.match(picker, /description="Elige la actividad principal de tu negocio\."/);
 assert.match(picker, /Selecciona el rubro de tu negocio/);
@@ -121,6 +143,12 @@ assert.match(
   picker,
   /OTRO_SERVICIO_PROYECTOS: "Otro servicio técnico o profesional"/
 );
+// A2: el resumen de Empresa usa el mismo nombre visible que el selector (el nombre canónico del
+// catálogo, "Otro servicio por proyectos", sigue siendo el que se guarda).
+assert.match(picker, /export function getBusinessCategoryVisibleName\(code, customName = "", historicalName = ""\)/);
+assert.match(picker, /return CATEGORY_DISPLAY_NAMES\[code\] \|\| getBusinessCategoryDisplayName\(code, customName, historicalName\);/);
+assert.match(company, /getBusinessCategoryVisibleName\(form\.rubroCodigo, form\.rubroOtro, form\.rubroNombre\)/);
+assert.doesNotMatch(company, /<dd>\{form\.rubroNombre \|\|/, "el resumen ya no muestra el nombre canónico");
 assert.match(picker, /role="radiogroup"/);
 assert.match(picker, /role="radio"/);
 assert.match(picker, /draftCode/);
@@ -136,7 +164,10 @@ assert.match(
   componentStyles,
   /\.business-category-option\[aria-checked="true"\]\s*\{[\s\S]*?border-color:\s*var\(--color-brand-500\)/
 );
-assert.match(componentStyles, /\.business-category-option--wide\s*\{/);
+// Con 6 rubros todos van en la grilla de 2 columnas: ninguno ocupa la fila completa.
+assert.doesNotMatch(componentStyles, /business-category-option--wide/);
+assert.doesNotMatch(picker, /business-category-option--wide/);
+assert.match(picker, /className="business-category-option"/);
 assert.match(dialog, /event\.key === "Escape"/);
 assert.match(dialog, /openDialogStack\.at\(-1\)/);
 

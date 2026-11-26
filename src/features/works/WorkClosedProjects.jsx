@@ -29,7 +29,7 @@ function durationText({plannedDays, actualDays, deltaDays}) {
   return `Plan ${days(plannedDays)} · Real ${days(actualDays)}${delta}`;
 }
 
-function ResultBadge({balance, kind}) {
+export function ResultBadge({balance, kind}) {
   if (kind === "gano") return <StatusBadge variant="success"><AppIcon icon={TrendingUp} size={14} />Ganó</StatusBadge>;
   if (kind === "perdio") return <StatusBadge variant="danger"><AppIcon icon={TrendingDown} size={14} />Perdió</StatusBadge>;
   if (kind === "equilibrio") return <StatusBadge variant="neutral"><AppIcon icon={Scale} size={14} />Sin ganancia ni pérdida</StatusBadge>;
@@ -61,8 +61,8 @@ export default function WorkClosedProjects({balances, balancesError, balancesLoa
     return (
       <div className="erp-empty-state ui-empty-state">
         <EmptyStateIllustration variant="empty-list" />
-        <h3>Aún no hay proyectos cerrados</h3>
-        <p>Los proyectos completados y cancelados aparecerán aquí.</p>
+        <h3>Aún no hay trabajos cerrados</h3>
+        <p>Los trabajos completados y cancelados aparecerán aquí.</p>
       </div>
     );
   }
@@ -93,12 +93,12 @@ export default function WorkClosedProjects({balances, balancesError, balancesLoa
       {canViewProfitability && closed.length > WORK_CLOSED_BALANCE_LIMIT && <p className="works-closed__note">Ingresos, costos y resultado: solo los {WORK_CLOSED_BALANCE_LIMIT} cierres más recientes.</p>}
 
       {!visible.length ? (
-        <p className="works-empty-copy">Ningún proyecto cerrado coincide con la búsqueda.</p>
+        <p className="works-empty-copy">Ningún trabajo cerrado coincide con la búsqueda.</p>
       ) : (
         <>
           <div className="erp-table-region erp-desktop-only">
             <table className="erp-table works-table works-closed__table">
-              <thead><tr><th>Proyecto</th><th>Cliente</th><th>Cierre</th><th>Duración</th>{canViewProfitability && <th>Balance</th>}</tr></thead>
+              <thead><tr><th>Trabajo</th><th>Cliente</th><th>Cierre</th><th>Duración</th>{canViewProfitability && <th>Balance</th>}</tr></thead>
               <tbody>
                 {visible.map((work) => (
                   <tr key={work.id}>

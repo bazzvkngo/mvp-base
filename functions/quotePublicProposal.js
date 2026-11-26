@@ -423,7 +423,7 @@ async function createPublicQuoteToken({
     if (canRespond && !["borrador", "emitida"].includes(quote.estado)) {
       throw new HttpsError(
         "failed-precondition",
-        "Sólo las cotizaciones pendientes o emitidas pueden compartirse."
+        "Solo las cotizaciones pendientes o emitidas pueden compartirse."
       );
     }
     if (!canRespond && !["emitida", "aceptada", "rechazada", "vencida"].includes(
@@ -701,7 +701,7 @@ async function reopenQuoteHandler(request, dependencies) {
     if (!["aceptada", "rechazada", "vencida"].includes(quote.estado)) {
       throw new HttpsError(
         "failed-precondition",
-        "Sólo una cotización aceptada, rechazada o vencida puede reabrirse."
+        "Solo una cotización aceptada, rechazada o vencida puede reabrirse."
       );
     }
     if (safeText(quote.ventaId, 160)) {

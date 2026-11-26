@@ -368,6 +368,78 @@
   color: var(--color-text-default);
 }
 
+/* Aviso en bloque (<Notice>): cuatro variantes con icono. Fondo -50, borde -200 y
+   texto -700/-800, pares ya medidos por test:contrast en modo oscuro. Borde -200 en
+   todas: --color-danger-300 no tiene valor oscuro. El icono se alinea con la primera
+   línea de texto y el aviso no reserva altura para contenido que no existe. */
+.ui-notice {
+  align-items: flex-start;
+  border: 1px solid;
+  border-radius: var(--radius-md);
+  display: flex;
+  font-size: var(--font-size-sm);
+  gap: var(--space-3);
+  line-height: var(--line-height-default);
+  padding: var(--space-3) var(--space-4);
+}
+
+.ui-notice__icon {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  height: calc(var(--font-size-sm) * var(--line-height-default));
+}
+
+.ui-notice__content {
+  display: grid;
+  flex: 1 1 auto;
+  gap: var(--space-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ui-notice__title {
+  font-weight: var(--font-weight-semibold);
+}
+
+.ui-notice__body > :first-child {
+  margin-top: 0;
+}
+
+.ui-notice__body > :last-child {
+  margin-bottom: 0;
+}
+
+.ui-notice__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.ui-notice--info {
+  background: var(--color-info-50);
+  border-color: var(--color-info-200);
+  color: var(--color-info-700);
+}
+
+.ui-notice--warning {
+  background: var(--color-warning-50);
+  border-color: var(--color-warning-200);
+  color: var(--color-warning-800);
+}
+
+.ui-notice--error {
+  background: var(--color-danger-50);
+  border-color: var(--color-danger-200);
+  color: var(--color-danger-700);
+}
+
+.ui-notice--success {
+  background: var(--color-success-50);
+  border-color: var(--color-success-200);
+  color: var(--color-success-700);
+}
+
 /* Estado vacío: contenedor de <EmptyStateIllustration> + título +
    descripción + acciones. Se combina con .erp-empty-state (fondo, borde
    punteado, padding), que sigue siendo la "caja"; esto solo ordena el
@@ -399,6 +471,71 @@
   gap: var(--space-2);
   justify-content: center;
   margin-top: var(--space-2);
+}
+
+/* <EmptyState> (vacío de módulo): tarjeta punteada con círculo de ícono, título,
+   descripción, UN botón principal y enlaces de texto. No se combina con .erp-empty-state:
+   declara aquí su fondo, borde y relleno completos (.erp-card no trae relleno propio). */
+.ui-empty-state--panel {
+  background: var(--color-surface-subtle);
+  border: 1px dashed var(--color-border-control);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  gap: var(--space-3);
+  padding: var(--space-10) var(--space-6);
+  text-align: center;
+}
+
+.ui-empty-state__icon {
+  align-items: center;
+  background: var(--color-surface-brand);
+  border-radius: var(--radius-pill);
+  color: var(--color-text-brand-accent);
+  display: inline-flex;
+  height: calc(var(--space-10) + var(--space-4));
+  justify-content: center;
+  width: calc(var(--space-10) + var(--space-4));
+}
+
+.ui-empty-state--panel > .ui-empty-state__title {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+}
+
+.ui-empty-state--panel > .ui-empty-state__description {
+  line-height: var(--line-height-default);
+}
+
+.ui-empty-state__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  justify-content: center;
+}
+
+.ui-empty-state__link {
+  background: none;
+  border: 0;
+  border-radius: var(--radius-md);
+  color: var(--color-text-brand);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  padding: var(--space-1) var(--space-2);
+}
+
+.ui-empty-state__link:hover {
+  color: var(--color-text-brand-hover);
+  text-decoration: underline;
+}
+
+.ui-empty-state__link:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 2px;
 }
 
 /* Ilustración de estado vacío (<EmptyStateIllustration>). Todo el color
@@ -538,6 +675,149 @@
   white-space: nowrap;
 }
 
+/* <ModuleHeader>: ícono + título (h1) + descripción a la izquierda, acciones a la derecha. */
+.ui-module-header {
+  align-items: flex-start;
+  display: flex;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.ui-module-header__icon {
+  align-items: center;
+  background: var(--color-surface-brand);
+  border-radius: var(--radius-md);
+  color: var(--color-text-brand-accent);
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: calc(var(--space-10) + var(--space-1));
+  justify-content: center;
+  width: calc(var(--space-10) + var(--space-1));
+}
+
+.ui-module-header__text {
+  display: grid;
+  flex: 1 1 auto;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.ui-module-header__title {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.ui-module-header__description {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-default);
+  margin: 0;
+  max-width: 62ch;
+}
+
+.ui-module-header__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  list-style: none;
+  margin: var(--space-1) 0 0;
+  padding: 0;
+}
+
+.ui-module-header__actions {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+/* <Disclosure>: plegable de datos opcionales (botón con aria-expanded + cuerpo). */
+.ui-disclosure {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.ui-disclosure__toggle {
+  align-items: center;
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-md);
+  color: var(--color-text-strong);
+  cursor: pointer;
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
+  min-height: calc(var(--space-10) + var(--space-1));
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  width: 100%;
+}
+
+.ui-disclosure__toggle:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+}
+
+.ui-disclosure__toggle:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-offset);
+}
+
+.ui-disclosure__toggle:disabled {
+  cursor: default;
+}
+
+.ui-disclosure__text {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.ui-disclosure__title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.ui-disclosure__description {
+  color: var(--color-text-default);
+  font-size: var(--font-size-xs);
+}
+
+.ui-disclosure__toggle svg {
+  flex: 0 0 auto;
+}
+
+.ui-disclosure.is-open .ui-disclosure__toggle svg {
+  transform: rotate(180deg);
+}
+
+.ui-disclosure__body {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .ui-module-header {
+    flex-wrap: wrap;
+  }
+
+  .ui-module-header__actions {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
+
+  .ui-empty-state--panel {
+    padding: var(--space-8) var(--space-4);
+  }
+}
+
 .ai-availability {
   background: var(--color-surface-subtle);
   border: 1px solid var(--color-border-subtle);
@@ -574,6 +854,18 @@
   width: 100%;
 }
 
+/* Dos columnas: la pantalla mide exactamente el alto de la ventana. La
+   ilustración queda fija y, si el formulario no cabe, el que se desplaza es
+   .auth-panel (overflow-y: auto). En una columna (<= 900) manda el scroll de
+   la página. */
+@media (min-width: 901px) {
+  .auth-screen {
+    grid-template-rows: minmax(0, 1fr);
+    height: 100vh;
+    height: 100dvh;
+  }
+}
+
 .auth-panel {
   align-items: center;
   animation: auth-panel-enter 540ms cubic-bezier(0.22, 0.72, 0.28, 1) both;
@@ -585,7 +877,7 @@
   min-height: 0;
   min-width: 0;
   overflow-y: auto;
-  padding: clamp(1.75rem, 4vw, 4rem);
+  padding: clamp(1rem, 3vh, 2rem) clamp(1.75rem, 4vw, 4rem);
   position: relative;
 }
 
@@ -641,7 +933,7 @@
 }
 
 .auth-card__header {
-  margin-bottom: var(--space-6);
+  margin-bottom: var(--space-4);
 }
 
 .auth-card__title {
@@ -668,7 +960,7 @@
   animation: auth-content-enter 500ms 270ms
     cubic-bezier(0.22, 0.72, 0.28, 1) both;
   display: grid;
-  gap: 1.125rem;
+  gap: var(--space-3);
 }
 
 .auth-field {
@@ -687,6 +979,76 @@
   font-size: var(--font-size-xs);
   margin: 0;
 }
+
+/* Medidor de contraseña del registro: barra delgada de tres tramos, etiqueta de
+   nivel en texto (el color solo refuerza) y una frase con lo que falta, que es
+   el único aria-live. La barra es decorativa. Sin transiciones. */
+.ui-password-meter {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.ui-password-meter__row {
+  align-items: center;
+  display: flex;
+  gap: var(--space-3);
+}
+
+.ui-password-meter__bar {
+  background: var(--color-border-default);
+  border-radius: var(--radius-pill);
+  flex: 1;
+  height: var(--space-1);
+  overflow: hidden;
+}
+
+.ui-password-meter__fill {
+  display: block;
+  height: 100%;
+  width: 0;
+}
+
+.ui-password-meter__label {
+  color: var(--color-text-default);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+}
+
+.ui-password-meter__hint {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-tight);
+  margin: 0;
+}
+
+.ui-password-meter--weak .ui-password-meter__fill {
+  background: var(--color-danger-600);
+  width: calc(100% / 3);
+}
+
+.ui-password-meter--weak .ui-password-meter__label {
+  color: var(--color-danger-700);
+}
+
+.ui-password-meter--fair .ui-password-meter__fill {
+  background: var(--color-warning-700);
+  width: calc(100% * 2 / 3);
+}
+
+.ui-password-meter--fair .ui-password-meter__label {
+  color: var(--color-warning-700);
+}
+
+.ui-password-meter--strong .ui-password-meter__fill {
+  background: var(--color-success-700);
+  width: 100%;
+}
+
+.ui-password-meter--strong .ui-password-meter__label {
+  color: var(--color-success-700);
+}
+/* fin ui-password-meter */
 
 .auth-input {
   background: var(--color-surface-panel);
@@ -945,7 +1307,7 @@
   }
 
   .auth-card__header {
-    margin-bottom: var(--space-6);
+    margin-bottom: var(--space-4);
   }
 
   .auth-card__title {
@@ -1091,6 +1453,13 @@
     height: 44px;
     right: 0.125rem;
     width: 44px;
+  }
+
+  /* Estos botones de texto miden 36 px con puntero fino y 44 px al tacto:
+     su regla (.auth-actions .ui-button) pesa más que .ui-button. */
+  .auth-actions .ui-button,
+  .auth-form__utility .ui-button {
+    min-height: 2.75rem;
   }
 }
 
@@ -1360,8 +1729,25 @@
 
 .onboarding-message-actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
   justify-content: center;
   margin-top: var(--space-6);
+}
+
+/* Variante screen de AppStatusPage (404 y error de pantalla completa). La regla posterior de
+   .onboarding-card (max-width: 100%) pisa el ancho de --message y ".onboarding-card--message > p"
+   (margin: 0) deja el párrafo pegado a la izquierda: aquí se recupera, solo para esta variante, la tarjeta
+   angosta y centrada de la aceptación legal (legal-page.css, .onboarding-card.legal-acceptance). */
+.onboarding-card.app-status-card {
+  margin-inline: auto;
+  max-width: 560px;
+  text-align: center;
+}
+
+.onboarding-card.app-status-card > p {
+  margin-inline: auto;
+  text-align: center;
 }
 
 .onboarding-message-email {
@@ -1714,8 +2100,16 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* Alta de la primera empresa: 2 columnas (Nombre | Rubro, País | Región o Departamento) y una sola
+   en pantallas de hasta 640px. El cajón de negocio adicional no pasa por aquí: sigue en una columna. */
 .onboarding-card--quick .quick-business-fields {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* Nota fiscal del país en un aviso a todo el ancho, debajo de la grilla. */
+.quick-business-notes p {
+  margin: 0;
 }
 
 .activation-shell {
@@ -1729,10 +2123,6 @@
 .activation-card {
   margin-inline: auto;
   max-width: 680px;
-}
-
-.activation-card__intro {
-  max-width: 580px;
 }
 
 .business-completion-card {
@@ -1853,6 +2243,44 @@
   background: var(--color-surface-subtle);
 }
 
+/* Plegada: una fila (título, barra, porcentaje, estado y control). Declara su relleno completo. */
+.business-completion-card--collapsible {
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-4);
+}
+
+.business-completion-card__row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+
+.business-completion-card__row h2 {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-lg);
+  margin: 0;
+}
+
+.business-completion-card__row .business-completion-progress {
+  flex: 1 1 8rem;
+  min-width: 6rem;
+}
+
+.business-completion-card__row > strong {
+  color: var(--color-text-brand);
+  font-size: var(--font-size-xl);
+  line-height: 1;
+}
+
+.business-completion-card__row > .ui-button {
+  margin-left: auto;
+}
+
+.business-completion-card__body {
+  display: grid;
+  gap: var(--space-3);
+}
+
 .activation-checklist {
   background: var(--color-border-subtle);
   border: 1px solid var(--color-border-subtle);
@@ -1897,6 +2325,8 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+  justify-content: flex-end;
+  margin-top: var(--space-4);
 }
 
 .quick-business-field {
@@ -1917,8 +2347,13 @@
   border-radius: calc(var(--radius-md) * 2);
   color: var(--color-text-strong);
   font: inherit;
+  height: 44px;
   min-height: 44px;
   padding: 0.6875rem 0.75rem;
+}
+
+.quick-business-field .business-category-picker {
+  height: 44px;
 }
 
 .quick-business-field input:focus,
@@ -1926,6 +2361,52 @@
   border-color: var(--color-brand-500);
   box-shadow: var(--focus-ring);
   outline: none;
+}
+
+/* Los selects (País, Región o Departamento) se ven como el selector de rubro: sin la flecha
+   nativa, con el mismo chevron a la derecha, borde de marca al pasar el cursor y el texto guía
+   atenuado mientras no hay valor. Siguen siendo <select> nativos. */
+.quick-business-select {
+  display: block;
+  position: relative;
+}
+
+.quick-business-select select {
+  appearance: none;
+  cursor: pointer;
+  padding-right: var(--space-10);
+}
+
+.quick-business-select select:disabled {
+  cursor: default;
+}
+
+.quick-business-select__icon {
+  align-items: center;
+  bottom: 0;
+  color: var(--color-text-strong);
+  display: flex;
+  pointer-events: none;
+  position: absolute;
+  right: var(--space-3);
+  top: 0;
+}
+
+.quick-business-select--disabled .quick-business-select__icon {
+  color: var(--color-text-muted);
+}
+
+.quick-business-field select:hover:not(:disabled):not([aria-invalid="true"]) {
+  border-color: var(--color-brand-500);
+}
+
+.quick-business-field select[data-empty="true"] {
+  color: var(--color-text-muted);
+}
+
+.quick-business-field select option {
+  background-color: var(--color-surface-panel);
+  color: var(--color-text-strong);
 }
 
 .quick-business-field input[aria-invalid="true"],
@@ -1971,7 +2452,9 @@
 .business-category-picker__value,
 .business-category-picker__placeholder {
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .business-category-picker__placeholder {
@@ -1992,18 +2475,9 @@
   max-width: min(100%, 760px);
 }
 
-.business-category-dialog .responsive-dialog__body {
-  display: grid;
-  min-height: 0;
-  overflow: hidden;
-  padding: 0;
-}
-
 .business-category-dialog__content {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  max-height: min(68vh, 560px);
-  min-height: 0;
+  gap: var(--space-4);
   min-width: 0;
 }
 
@@ -2027,10 +2501,7 @@
 }
 
 .business-category-options {
-  min-height: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
-  padding: var(--space-4);
+  min-width: 0;
 }
 
 .business-category-group + .business-category-group {
@@ -2073,10 +2544,6 @@
   text-align: left;
 }
 
-.business-category-option--wide {
-  grid-column: 1 / -1;
-}
-
 .business-category-option:hover {
   background: var(--color-surface-brand);
   border-color: var(--color-brand-200);
@@ -2091,52 +2558,10 @@
 }
 
 .business-category-soon {
-  margin-top: var(--space-5);
-}
-
-.business-category-soon h3 {
-  align-items: center;
   color: var(--color-text-muted);
-  display: flex;
-  font-size: var(--font-size-sm);
-  gap: var(--space-2);
-  margin: 0 0 var(--space-2);
-}
-
-.business-category-soon__list {
-  display: grid;
-  gap: var(--space-3);
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  list-style: none;
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
   margin: 0;
-  padding: 0;
-}
-
-.business-category-soon__list li {
-  display: grid;
-  min-width: 0;
-}
-
-.business-category-option--soon,
-.business-category-option--soon:hover {
-  background: var(--color-surface-subtle);
-  border-color: var(--color-border-subtle);
-  color: var(--color-text-muted);
-  cursor: not-allowed;
-}
-
-.business-category-soon__tag {
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-pill);
-  font-size: var(--font-size-xs);
-  padding: 0 var(--space-2);
-  white-space: nowrap;
-}
-
-.business-category-soon__more {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
-  margin: var(--space-3) 0 0;
 }
 
 .business-category-option:focus-visible {
@@ -2162,10 +2587,11 @@
 
 .business-category-other {
   background: var(--color-surface-brand);
-  border-top: 1px solid var(--color-brand-200);
+  border: 1px solid var(--color-brand-200);
+  border-radius: var(--radius-md);
   display: grid;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-3);
 }
 
 .business-category-other label {
@@ -2185,7 +2611,7 @@
 }
 
 .quick-business-field__message {
-  min-height: 1.1rem;
+  min-height: calc(var(--space-4) * 2);
   overflow-wrap: anywhere;
 }
 
@@ -2203,6 +2629,63 @@
   margin: 0;
 }
 
+.quick-business-field__hint span {
+  display: block;
+}
+
+.onboarding-form__steps {
+  display: grid;
+  gap: var(--space-3);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.onboarding-form__step {
+  align-items: start;
+  color: var(--color-text-muted);
+  column-gap: var(--space-3);
+  display: grid;
+  font-size: var(--font-size-sm);
+  grid-template-columns: auto minmax(0, 1fr);
+  line-height: 1.45;
+  row-gap: 0;
+}
+
+.onboarding-form__step--current {
+  color: var(--color-text-strong);
+  font-weight: var(--font-weight-semibold);
+}
+
+.onboarding-form__step-number {
+  align-items: center;
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-pill);
+  color: var(--color-text-muted);
+  display: inline-flex;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  grid-row: span 2;
+  height: 1.5rem;
+  justify-content: center;
+  width: 1.5rem;
+}
+
+.onboarding-form__step--current .onboarding-form__step-number {
+  background: var(--color-text-strong);
+  border-color: var(--color-text-strong);
+  color: var(--color-text-on-strong);
+}
+
+.onboarding-form__step-state {
+  color: var(--color-text-brand-accent);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
 .onboarding-form__defaults,
 .business-drawer-form__defaults {
   color: var(--color-text-muted);
@@ -2211,17 +2694,14 @@
   margin: 0;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 640px) {
   .onboarding-card--quick .quick-business-fields {
     grid-template-columns: minmax(0, 1fr);
   }
+}
 
-  .business-category-dialog__content {
-    max-height: min(70dvh, 560px);
-  }
-
-  .business-category-group__grid,
-  .business-category-soon__list {
+@media (max-width: 760px) {
+  .business-category-group__grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -2249,13 +2729,6 @@
 
   .business-completion-checklist li {
     align-items: flex-start;
-  }
-}
-
-@media (max-width: 420px) {
-  .business-category-options,
-  .business-category-other {
-    padding-inline: var(--space-3);
   }
 }
 
@@ -2545,12 +3018,32 @@
   outline-offset: 2px;
 }
 
-.quote-email-dialog__field-heading {
+/* Destinatario: etiqueta y "Usar otro correo" en la misma fila, el campo debajo.
+   En el HTML el enlace va después del campo para que el orden de tabulación sea
+   campo, enlace, resto. */
+.quote-email-dialog__recipient {
   align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  justify-content: space-between;
+  column-gap: var(--space-2);
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.quote-email-dialog__recipient > label {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.quote-email-dialog__recipient > .quote-email-dialog__recipient-action {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.quote-email-dialog__recipient > input {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+.quote-email-dialog__recipient > p {
+  grid-column: 1 / -1;
 }
 
 .quote-email-dialog__recipient-action {
@@ -2629,31 +3122,241 @@
   cursor: default;
 }
 
-.quote-email-dialog__alternate-note {
-  background: var(--color-surface-subtle);
-  border-left: 3px solid var(--color-brand-500);
-  border-radius: var(--radius-sm);
-  color: var(--color-text-muted);
-  display: grid;
+.quote-email-dialog__help,
+.quote-email-dialog__field-error {
   font-size: var(--font-size-xs);
-  font-weight: 400;
-  gap: 2px;
+  font-weight: var(--font-weight-regular);
   line-height: var(--line-height-default);
-  margin-top: var(--space-1);
-  padding: var(--space-2) var(--space-3);
+  margin: 0;
 }
 
-.quote-email-dialog__alternate-note strong {
+.quote-email-dialog__help {
+  color: var(--color-text-muted);
+}
+
+.quote-email-dialog__field-error {
+  color: var(--color-danger-700);
+}
+
+.quote-email-dialog__envelope {
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3);
+}
+
+.quote-email-dialog__envelope > div {
+  display: grid;
+  gap: var(--space-1) var(--space-3);
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+}
+
+.quote-email-dialog__envelope dt {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.quote-email-dialog__envelope dd {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-sm);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.quote-email-dialog__views {
+  justify-self: start;
+}
+
+.quote-email-dialog__reply-notice {
+  align-items: flex-start;
+  background: var(--color-surface-brand);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  display: flex;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-3);
+}
+
+.quote-email-dialog__reply-notice .app-icon {
+  color: var(--color-text-brand-accent);
+  margin-top: 2px;
+}
+
+.quote-email-dialog__reply-notice span {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.quote-email-dialog__reply-notice strong {
   color: var(--color-text-strong);
   font-size: var(--font-size-sm);
 }
 
-.quote-email-dialog__recipient-help {
+.quote-email-dialog__reply-notice small {
+  color: var(--color-text-default);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-default);
+}
+
+/* Motivo por el que el botón principal está deshabilitado: a la izquierda del pie. */
+.quote-email-dialog__footer-hint {
+  color: var(--color-text-muted);
+  flex: 1 1 0;
+  font-size: var(--font-size-xs);
+  margin: 0;
+  min-width: 0;
+  text-align: left;
+}
+
+.quote-email-dialog__send {
+  box-shadow: var(--shadow-sm);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+  min-height: 48px;
+  padding-inline: var(--space-6);
+}
+
+.quote-email-preview {
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  display: grid;
+  overflow: hidden;
+}
+
+.quote-email-preview__headers {
+  background: var(--color-surface-subtle);
+  border-bottom: 1px solid var(--color-border-subtle);
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-3);
+}
+
+.quote-email-preview__headers > div {
+  display: grid;
+  gap: var(--space-1) var(--space-3);
+  grid-template-columns: 6rem minmax(0, 1fr);
+}
+
+.quote-email-preview__headers dt {
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
-  font-weight: 400;
+}
+
+.quote-email-preview__headers dd {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-sm);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.quote-email-preview__body {
+  color: var(--color-text-default);
+  display: grid;
+  font-size: var(--font-size-sm);
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.quote-email-preview__body p {
+  margin: 0;
+}
+
+.quote-email-preview__brand {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+}
+
+.quote-email-preview__title {
+  color: var(--color-text-strong);
+  font-weight: var(--font-weight-bold);
+}
+
+.quote-email-preview__message {
   line-height: var(--line-height-default);
-  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.quote-email-preview__message--empty {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.quote-email-preview__summary {
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-3);
+}
+
+.quote-email-preview__summary > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  justify-content: space-between;
+}
+
+.quote-email-preview__summary dt {
+  color: var(--color-text-muted);
+}
+
+.quote-email-preview__summary dd {
+  color: var(--color-text-strong);
+  font-weight: var(--font-weight-bold);
+  margin: 0;
+}
+
+.quote-email-preview__note {
+  background: var(--color-info-50);
+  border: 1px solid var(--color-info-200);
+  border-radius: var(--radius-md);
+  color: var(--color-info-700);
+  font-size: var(--font-size-xs);
+  padding: var(--space-3);
+}
+
+.quote-email-preview__cta {
+  text-align: center;
+}
+
+.quote-email-preview__cta span {
+  background: var(--color-brand-600);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-inverse);
+  display: inline-block;
+  font-weight: var(--font-weight-bold);
+  padding: var(--space-3) var(--space-4);
+}
+
+.quote-email-preview__contact {
+  border-top: 1px solid var(--color-border-subtle);
+  display: grid;
+  font-size: var(--font-size-xs);
+  gap: var(--space-1);
+  overflow-wrap: anywhere;
+  padding-top: var(--space-3);
+}
+
+.quote-email-preview__contact strong {
+  color: var(--color-text-strong);
+}
+
+.quote-email-preview__footer {
+  border-top: 1px solid var(--color-border-subtle);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  padding-top: var(--space-3);
 }
 
 .quote-email-dialog__summary {
@@ -2745,6 +3448,23 @@
 
   .quote-email-dialog__field textarea {
     min-height: 200px;
+  }
+
+  .quote-email-dialog__envelope > div,
+  .quote-email-preview__headers > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .quote-email-dialog__views {
+    justify-self: stretch;
+  }
+
+  .quote-email-dialog__send {
+    flex: 1 1 auto;
+  }
+
+  .quote-email-dialog__footer-hint {
+    flex-basis: 100%;
   }
 }
 
@@ -3116,3 +3836,657 @@
   font-size: var(--font-size-sm);
   margin: 0;
 }
+
+/* Diálogo compartido "Agregar desde inventario" (Venta, Cotización y Compra): src/components/ui/InventoryCatalogDialog.jsx */
+.ui-inventory-catalog-dialog .responsive-dialog__body {
+  padding-top: var(--space-3);
+}
+
+.ui-inventory-catalog {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.ui-inventory-catalog__toolbar {
+  align-items: end;
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: minmax(15rem, 1fr) minmax(9rem, 0.28fr) auto;
+}
+
+.ui-inventory-catalog__field {
+  color: var(--color-text-muted);
+  display: grid;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.ui-inventory-catalog input,
+.ui-inventory-catalog select {
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-strong);
+  font: inherit;
+  min-height: 40px;
+  min-width: 0;
+  padding: var(--space-2);
+  width: 100%;
+}
+
+.ui-inventory-catalog input:focus-visible,
+.ui-inventory-catalog select:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+.ui-inventory-catalog__count {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  margin: 0 0 var(--space-2);
+  white-space: nowrap;
+}
+
+.ui-inventory-catalog__list {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.ui-inventory-catalog__row {
+  align-items: center;
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: minmax(0, 1fr) minmax(6.5rem, 0.2fr) minmax(15rem, 0.36fr);
+  padding: var(--space-2) var(--space-3);
+}
+
+.ui-inventory-catalog__row + .ui-inventory-catalog__row {
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.ui-inventory-catalog__row:hover {
+  background: var(--color-surface-subtle);
+}
+
+.ui-inventory-catalog__identity {
+  min-width: 0;
+}
+
+.ui-inventory-catalog__identity strong,
+.ui-inventory-catalog__identity span,
+.ui-inventory-catalog__price small,
+.ui-inventory-catalog__price strong {
+  display: block;
+}
+
+.ui-inventory-catalog__identity strong,
+.ui-inventory-catalog__price strong {
+  color: var(--color-text-strong);
+}
+
+.ui-inventory-catalog__identity span,
+.ui-inventory-catalog__price small,
+.ui-inventory-catalog__added {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.ui-inventory-catalog__identity p {
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--color-text-muted);
+  display: -webkit-box;
+  font-size: var(--font-size-xs);
+  line-height: 1.35;
+  margin: var(--space-1) 0 0;
+  overflow: hidden;
+}
+
+.ui-inventory-catalog__add {
+  display: grid;
+  gap: var(--space-1);
+  justify-items: end;
+}
+
+.ui-inventory-catalog__add-controls {
+  align-items: center;
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: 5.5rem auto;
+}
+
+.ui-inventory-catalog__empty {
+  background: var(--color-surface-subtle);
+  border: 1px dashed var(--color-border-default);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  padding: var(--space-5);
+  text-align: center;
+}
+
+.ui-inventory-catalog__pagination {
+  display: flex;
+  justify-content: center;
+}
+
+@media (max-width: 820px) {
+  .ui-inventory-catalog__toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .ui-inventory-catalog__count {
+    margin: 0;
+  }
+
+  .ui-inventory-catalog__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .ui-inventory-catalog__add {
+    grid-column: 1 / -1;
+    justify-items: stretch;
+  }
+}
+
+@media (max-width: 620px) {
+  .ui-inventory-catalog__row {
+    grid-template-columns: 1fr;
+  }
+
+  .ui-inventory-catalog__add-controls {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Patrón de documento en edición compartido por Compra (y disponible para Venta): cabecera corta, tarjeta de paso con
+   título, cabecera de sección, selector de contraparte en línea y selector de cantidad con − y +.
+   Mismo aspecto que el editor de Venta. Solo tokens; el modo oscuro sale de los propios tokens. */
+.ui-doc-head {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.ui-doc-head__main {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+}
+
+.ui-doc-head__side {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  min-width: 0;
+}
+
+.ui-doc-head__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.ui-doc-head__title {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-tight);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.ui-doc-head__meta {
+  color: var(--color-text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--font-size-xs);
+  gap: var(--space-1) var(--space-2);
+}
+
+.ui-doc-head__meta > span + span::before {
+  content: "·";
+  margin-right: var(--space-2);
+}
+
+.ui-doc-back {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  min-height: 44px;
+  padding: 0;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: var(--space-1);
+}
+
+.ui-doc-back:hover {
+  text-decoration-color: currentColor;
+}
+
+.ui-doc-back:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-offset);
+}
+
+.ui-step-card {
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4) var(--space-5);
+}
+
+.ui-step-title {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+  margin: 0;
+}
+
+.ui-step-head {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+.ui-step-head__text {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+
+.ui-step-head__count {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  margin: 0;
+}
+
+.ui-step-head__actions,
+.ui-section-head__actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.ui-section-head {
+  align-items: center;
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+}
+
+.ui-section-head__title {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  margin: var(--space-1) 0 0;
+}
+
+.ui-section-head__hint {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  margin: var(--space-1) 0 0;
+}
+
+@media (max-width: 620px) {
+  .ui-step-card {
+    padding: var(--space-4);
+  }
+
+  .ui-section-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ui-section-head > .ui-button,
+  .ui-section-head__actions,
+  .ui-section-head__actions > .ui-button {
+    width: 100%;
+  }
+
+  .ui-section-head__actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Selector de contraparte en línea (InlinePartySelector): proveedor de Compra. */
+.ui-party {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.ui-party__selected {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+.ui-party__info {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.ui-party__name {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-md);
+  overflow-wrap: anywhere;
+}
+
+.ui-party__info > span,
+.ui-party__snapshot {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.ui-party__empty {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+}
+
+.ui-party__picker {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.ui-party__more {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  margin: 0;
+}
+
+.ui-party__count {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-3);
+}
+
+.ui-party__all {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--color-text-brand);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  min-height: 44px;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: var(--space-1);
+}
+
+.ui-party__none {
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: var(--space-1);
+  justify-items: start;
+  padding: var(--space-3);
+}
+
+.ui-party__none strong {
+  color: var(--color-text-strong);
+}
+
+.ui-party__none p {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.ui-party__link {
+  align-items: center;
+  color: var(--color-text-brand);
+  display: inline-flex;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  min-height: 44px;
+  text-decoration: underline;
+  text-underline-offset: var(--space-1);
+}
+
+.ui-party__search {
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-sm);
+  box-sizing: border-box;
+  color: var(--color-text-default);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  width: 100%;
+}
+
+.ui-party__search:focus-visible,
+.ui-party__option:focus-visible,
+.ui-party__cancel:focus-visible,
+.ui-party__all:focus-visible,
+.ui-party__link:focus-visible,
+.ui-party-dialog__option:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-offset);
+}
+
+.ui-party__list {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  display: grid;
+  max-height: 14rem;
+  overflow-y: auto;
+}
+
+.ui-party__option,
+.ui-party-dialog__option {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+  color: var(--color-text-default);
+  cursor: pointer;
+  display: grid;
+  font: inherit;
+  gap: var(--space-1);
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  width: 100%;
+}
+
+.ui-party__option:last-child,
+.ui-party-dialog__option:last-child {
+  border-bottom: 0;
+}
+
+.ui-party__option:hover,
+.ui-party-dialog__option:hover {
+  background: var(--color-surface-hover);
+}
+
+.ui-party__option strong,
+.ui-party-dialog__option strong {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.ui-party__option span,
+.ui-party-dialog__option span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.ui-party__cancel {
+  background: transparent;
+  border: 0;
+  color: var(--color-text-brand);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  justify-self: start;
+  min-height: 44px;
+  padding: 0 var(--space-2);
+  text-decoration: underline;
+  text-underline-offset: var(--space-1);
+}
+
+.ui-party-dialog {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.ui-party-dialog__list {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+@media (max-width: 620px) {
+  .ui-party__selected .ui-party__change {
+    width: 100%;
+  }
+}
+
+/* Selector de cantidad con − y + (QuantityStepper). */
+.ui-qty {
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  overflow: hidden;
+}
+
+.ui-qty__button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--color-text-default);
+  cursor: pointer;
+  display: inline-flex;
+  justify-content: center;
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+  padding: 0;
+}
+
+.ui-qty__button:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+}
+
+.ui-qty__button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.ui-qty__input {
+  -moz-appearance: textfield;
+  appearance: textfield;
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--color-border-subtle);
+  border-right: 1px solid var(--color-border-subtle);
+  color: var(--color-text-strong);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  min-height: 2.75rem;
+  padding: 0;
+  text-align: center;
+  width: 3.5rem;
+}
+
+.ui-qty__input::-webkit-inner-spin-button,
+.ui-qty__input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.ui-qty__button:focus-visible,
+.ui-qty__input:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: calc(var(--space-1) * -1);
+}
+
+/* Bloque de ítems de un documento en edición (DocumentItemsEditor: Venta, Compra y Orden de compra). Cada fila = ítem |
+   cantidad con − y + | precio o costo unitario | descuento | total | quitar, con etiquetas visibles pequeñas. Con poco ancho
+   (del contenedor, no de la ventana) baja a dos renglones y, más angosto, a tres. Áreas táctiles de 2.75rem (44 px).
+   Solo tokens; el modo oscuro sale de los propios tokens. */
+.ui-doc-items { container-type: inline-size; }
+.ui-doc-items__empty { background: var(--color-surface-subtle); border: 1px dashed var(--color-border-default); border-radius: var(--radius-md); color: var(--color-text-muted); padding: var(--space-6); text-align: center; }
+.ui-doc-lines { display: grid; }
+.ui-doc-line { border-top: 1px solid var(--color-border-subtle); display: grid; gap: var(--space-1); padding: var(--space-3) 0; }
+.ui-doc-line__row { align-items: end; display: grid; gap: var(--space-3); grid-template-areas: "identity qty price discount total remove"; grid-template-columns: minmax(0, 1fr) auto 8rem 5rem 6.5rem auto; }
+.ui-doc-line__identity { align-self: center; display: grid; gap: var(--space-1); grid-area: identity; min-width: 0; }
+.ui-doc-line__title { align-items: center; display: flex; gap: var(--space-2); min-width: 0; }
+.ui-doc-line__title > :not(.ui-doc-line__name) { flex: 0 0 auto; }
+.ui-doc-line__name { color: var(--color-text-strong); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-doc-line__meta { color: var(--color-text-muted); font-size: var(--font-size-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-doc-line__field, .ui-doc-line__static, .ui-doc-line__total { display: grid; gap: var(--space-1); min-width: 0; }
+.ui-doc-line__field--qty, .ui-doc-line__static--qty { grid-area: qty; justify-items: start; }
+.ui-doc-line__field--price, .ui-doc-line__static--price { grid-area: price; }
+.ui-doc-line__field--discount, .ui-doc-line__static--discount { grid-area: discount; }
+.ui-doc-line__caption { color: var(--color-text-muted); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); }
+.ui-doc-line__input { background: var(--color-surface-panel); border: 1px solid var(--color-border-control); border-radius: var(--radius-sm); box-sizing: border-box; color: var(--color-text-default); font: inherit; font-size: var(--font-size-sm); font-weight: var(--font-weight-regular); min-height: 2.75rem; min-width: 0; padding: 0 var(--space-3); text-align: right; width: 100%; }
+.ui-doc-line__input:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-offset); }
+.ui-doc-line__input:disabled { opacity: .6; }
+/* Importe con el símbolo de la moneda: el borde y el foco los lleva el contenedor y el campo va sin borde. */
+.ui-doc-line__money { align-items: center; background: var(--color-surface-panel); border: 1px solid var(--color-border-control); border-radius: var(--radius-sm); box-sizing: border-box; display: flex; gap: var(--space-2); min-height: 2.75rem; min-width: 0; padding: 0 var(--space-3); width: 100%; }
+.ui-doc-line__money:focus-within { outline: var(--focus-outline); outline-offset: var(--focus-offset); }
+.ui-doc-line__money:has(:disabled) { opacity: .6; }
+.ui-doc-line__money > .ui-doc-line__input { background: transparent; border: 0; flex: 1 1 auto; min-height: 0; outline: none; padding: 0; }
+.ui-doc-line__symbol { color: var(--color-text-muted); flex: 0 0 auto; font-size: var(--font-size-sm); }
+.ui-doc-line__amount { align-items: center; color: var(--color-text-default); display: flex; font-size: var(--font-size-sm); min-height: 2.75rem; }
+.ui-doc-line__total { grid-area: total; justify-items: end; }
+.ui-doc-line__total .ui-doc-line__amount { color: var(--color-text-strong); font-weight: var(--font-weight-bold); }
+.ui-doc-line .ui-doc-line__remove { border-color: transparent; grid-area: remove; min-height: 2.75rem; min-width: 2.75rem; padding: 0; }
+.ui-doc-line__description { color: var(--color-text-muted); font-size: var(--font-size-xs); margin: 0; overflow-wrap: anywhere; }
+@container (max-width: 46rem) {
+  .ui-doc-line__row { grid-template-areas: "identity identity identity remove" "qty price discount total"; grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) auto; }
+}
+@container (max-width: 30rem) {
+  .ui-doc-line__row { grid-template-areas: "identity identity remove" "qty qty total" "price discount discount"; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
+}
+/* Línea resaltada al agregarla y flechas de orden (opcionales: solo cuando el documento las pide, p. ej. Cotización). */
+.ui-doc-line--highlighted { background: var(--color-surface-hover); }
+.ui-doc-line__move { align-items: end; display: flex; grid-area: move; }
+.ui-doc-line__move .ui-button { min-height: 2.75rem; min-width: 2.75rem; padding: 0; }
+.ui-doc-line__row--movable { grid-template-areas: "identity qty price discount total move remove"; grid-template-columns: minmax(0, 1fr) auto 8rem 5rem 6.5rem auto auto; }
+@container (max-width: 46rem) {
+  .ui-doc-line__row--movable { grid-template-areas: "identity identity identity move remove" "qty price discount total total"; grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) auto auto; }
+}
+@container (max-width: 30rem) {
+  .ui-doc-line__row--movable { grid-template-areas: "identity identity move remove" "qty qty total total" "price discount discount discount"; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto; }
+}
+/* Fin del bloque de ítems del documento. */

@@ -2,6 +2,7 @@ import { jsPDF } from "jspdf";
 import { autoTable } from "jspdf-autotable";
 import { adaptStoredPurchaseOrder } from "./purchaseOrderModel.mjs";
 import { resolveDocumentCompany } from "./companySnapshot.mjs";
+import { getCountryFormCopy } from "./countryFormCopy.mjs";
 import { formatMoney } from "../utils/formatters.js";
 
 const NAVY = [18, 55, 101];
@@ -122,7 +123,8 @@ function drawHeader(doc, order, company, logoDataUrl = "", { compact = false } =
       company.razonSocial !== brand ? company.razonSocial : "",
       joinNonEmpty([
         fiscal ? `${company.identificadorFiscalTipo || "Identificación fiscal"} ${fiscal}` : "",
-        company.giro ? `Giro: ${company.giro}` : "",
+        // Etiqueta visible según el país de la orden (Bolivia: "Actividad económica"); el dato sigue siendo `giro`.
+        company.giro ? `${getCountryFormCopy(order.paisCodigo).businessActivityLabel}: ${company.giro}` : "",
       ]),
       joinNonEmpty([
         company.direccion,

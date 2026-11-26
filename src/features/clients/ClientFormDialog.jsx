@@ -10,7 +10,8 @@ import {
 import {
   formatContactPhoneInput,
 } from "../../domain/contactFormatting.mjs";
-import {getFiscalIdentifierLabel, getFiscalIdentifierPlaceholder, normalizeCountryCode} from "../../domain/fiscalIdentifier.mjs";
+import {getClientFiscalCopy, getCountryFormCopy} from "../../domain/countryFormCopy.mjs";
+import {normalizeCountryCode} from "../../domain/fiscalIdentifier.mjs";
 import {
   getCommuneByCode,
   getRegionByCode,
@@ -85,7 +86,9 @@ function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open})
   const country = normalizeCountryCode(countryCode);
   const isChile = country === "CL";
   const isCompany = values.tipoCliente === "empresa";
-  const fiscalLabel = getFiscalIdentifierLabel(country);
+  // Etiqueta y ejemplo del identificador según país y tipo (Bolivia: "CI o NIT" para Persona) y textos por país.
+  const {label: fiscalLabel, placeholder: fiscalPlaceholder} = getClientFiscalCopy(country, values.tipoCliente);
+  const countryCopy = getCountryFormCopy(country);
 
   useEffect(() => {
     if (!open) return;
@@ -285,7 +288,7 @@ function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open})
               onBlur={() => validateField("rut")}
               inputMode="text"
               maxLength={isChile ? 12 : 20}
-              placeholder={getFiscalIdentifierPlaceholder(country)}
+              placeholder={fiscalPlaceholder}
             />
           </ClientField>
 
@@ -301,16 +304,17 @@ function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open})
               value={values.nombreRazonSocial}
               onChange={(event) => updateField("nombreRazonSocial", event.target.value)}
               autoComplete={isCompany ? "organization" : "name"}
-              placeholder={isCompany ? "Ej. Servicios técnicos" : "Ej. Nombre Apellido"}
+              placeholder={isCompany ? countryCopy.clientCompanyNameExample : countryCopy.clientPersonNameExample}
             />
           </ClientField>
 
           {isCompany && (
-            <ClientField error={errors.giro} field="giro" label="Giro">
+            <ClientField error={errors.giro} field="giro" label={countryCopy.businessActivityLabel}>
               <input
                 ref={(node) => setFieldRef("giro", node)}
                 value={values.giro}
                 onChange={(event) => updateField("giro", event.target.value)}
+                placeholder={countryCopy.clientBusinessActivityExample}
               />
             </ClientField>
           )}
@@ -327,6 +331,7 @@ function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open})
                 value={values.personaContacto}
                 onChange={(event) => updateField("personaContacto", event.target.value)}
                 autoComplete="name"
+                placeholder={countryCopy.clientContactPersonExample}
               />
             </ClientField>
           )}
@@ -339,7 +344,7 @@ function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open})
               onChange={(event) => updateField("email", event.target.value)}
               onBlur={() => validateField("email")}
               autoComplete="email"
-              placeholder={isCompany ? "Ej. contacto@empresa.cl" : "Ej. nombre@correo.cl"}
+              placeholder={isCompany ? countryCopy.clientCompanyEmailExample : countryCopy.clientPersonEmailExample}
             />
           </ClientField>
 
@@ -353,7 +358,7 @@ function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open})
               autoComplete="tel"
               inputMode="tel"
               maxLength={30}
-              placeholder={isChile ? "Ej. +56 9 6123 4587" : "Ej. +1 202 555 0100"}
+              placeholder={countryCopy.clientPhoneExample}
             />
           </ClientField>
             </div>
@@ -368,6 +373,7 @@ function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open})
               value={values.direccion}
               onChange={(event) => updateField("direccion", event.target.value)}
               autoComplete="street-address"
+              placeholder={countryCopy.clientAddressExample}
             />
           </ClientField>
 
@@ -392,6 +398,7 @@ function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open})
               value={values.notas}
               onChange={(event) => updateField("notas", event.target.value)}
               rows="4"
+              placeholder={countryCopy.clientNotesExample}
             />
           </ClientField>
             </div>

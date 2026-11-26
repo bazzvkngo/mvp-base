@@ -1,3 +1,5 @@
+import { findRegionCodeByName, getRegionForCountry, getRegionsForCountry } from "./businessCatalog.js";
+
 const TERRITORY_CONFIGS = Object.freeze({
   CL: {primaryLabel: "Región", secondaryLabel: "Comuna", hasCatalog: true},
   BO: {primaryLabel: "Departamento", secondaryLabel: "Municipio"},
@@ -32,6 +34,13 @@ export function getContactTerritoryConfig(value) {
   };
 }
 
+// Lista de regiones (departamentos) del catálogo de un país distinto de Chile. Vacía si el país no tiene
+// catálogo: entonces la región se escribe como texto libre. Chile no pasa por aquí (tiene regiones y comunas).
+export function getContactRegionOptions(value) {
+  const code = countryCode(value);
+  return code === "CL" ? [] : getRegionsForCountry(code);
+}
+
 export function clearContactTerritory(values = {}) {
   return {
     ...values,
@@ -51,9 +60,16 @@ export function adaptContactTerritoryForCountry(
   const storedCountry = countryCode(storedCountryCode);
   if (selectedCountry !== storedCountry) return clearContactTerritory(values);
   if (selectedCountry === "CL") return {...values};
+  // País con catálogo de departamentos: se conserva el código válido, o se deduce del nombre guardado como
+  // texto libre. El municipio siempre es texto libre (sin código). Sin catálogo no cambia nada respecto a antes.
+  const catalogRegion = getRegionForCountry(selectedCountry, values.regionCodigo) || (() => {
+    const matchedCode = findRegionCodeByName(selectedCountry, values.regionNombre);
+    return matchedCode ? getRegionForCountry(selectedCountry, matchedCode) : null;
+  })();
   return {
     ...values,
-    regionCodigo: "",
+    regionCodigo: catalogRegion?.code || "",
+    ...(catalogRegion ? {regionNombre: catalogRegion.name} : {}),
     comunaCodigo: "",
   };
 }

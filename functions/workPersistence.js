@@ -22,6 +22,9 @@ const WRITE_ROLES = WORK_MANAGEMENT_ROLES;
 const WORK_STATUSES = new Set(["pendiente", "en_progreso", "en_espera", "completado", "cancelado"]);
 const WORK_PRIORITIES = new Set(["baja", "normal", "alta", "urgente"]);
 const WORK_EXPENSE_CATEGORIES = new Set(["MATERIAL", "MANO_DE_OBRA", "OPERATIVO", "SERVICIO_EXTERNO", "ADMINISTRATIVO", "OTRO"]);
+// Documento que respalda un gasto (SPEC 023 §9.2, mismo nombre canónico que Compras). Es opcional: un gasto sin
+// `tipoDocumento` (legacy o registrado desde el formulario de gasto de siempre) no tiene documento.
+const WORK_EXPENSE_DOCUMENT_TYPES = new Set(["factura", "boleta"]);
 // Mismo conjunto que ya usan Ventas/Cotizaciones (src/domain/saleModel.mjs): un
 // adicional es, conceptualmente, una línea de Venta en espera (SPEC 020 §5.2).
 const WORK_ADDITIONAL_ITEM_TYPES = new Set(["producto", "servicio", "actividad"]);
@@ -203,7 +206,7 @@ function progressWorkPatch(work, previousTask, nextTask, timestamp, uid) {
 function assertTaskOperator(task, context, HttpsError) {
   if (WRITE_ROLES.includes(context.membership?.rol)) return;
   if (!["TECNICO", "MEMBER"].includes(context.membership?.rol) || String(task.responsableUid || "") !== context.uid) {
-    fail(HttpsError, "permission-denied", "Sólo la persona asignada puede actualizar esta tarea.");
+    fail(HttpsError, "permission-denied", "Solo la persona asignada puede actualizar esta tarea.");
   }
 }
 
@@ -255,11 +258,25 @@ function requiredDate(value, label, HttpsError) {
   return normalized;
 }
 
+// Un gasto vigente de tipo Material con documento siempre suma al costo del trabajo, aunque ya tenga materiales de
+// inventario (decisión del dueño del producto, que reemplaza la exclusión de SPEC 012 para esos gastos). Sin
+// documento rige la regla de antes. Misma regla que `hasWorkExpenseDocument` de src/domain/workModel.mjs y que
+// functions/workBalance.js (cada lado la declara por separado: Functions no importa el dominio del cliente).
+function hasExpenseDocument(expense = {}) {
+  return WORK_EXPENSE_DOCUMENT_TYPES.has(String(expense.tipoDocumento || "").toLowerCase());
+}
+
 function normalizeExpenseInput(raw = {}, HttpsError) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) fail(HttpsError, "invalid-argument", "Los datos del gasto deben enviarse como objeto.");
   const categoria = text(raw.categoria, "La categoría", 40, HttpsError, {required: true}).toUpperCase();
   if (!WORK_EXPENSE_CATEGORIES.has(categoria)) fail(HttpsError, "invalid-argument", "Selecciona una categoría de gasto válida.");
+  const tipoDocumento = text(raw.tipoDocumento, "El tipo de documento", 20, HttpsError).toLowerCase();
+  if (tipoDocumento && !WORK_EXPENSE_DOCUMENT_TYPES.has(tipoDocumento)) fail(HttpsError, "invalid-argument", "Selecciona boleta o factura como tipo de documento.");
+  const numeroDocumento = text(raw.numeroDocumento, "El número de documento", 40, HttpsError);
+  if (numeroDocumento && !tipoDocumento) fail(HttpsError, "invalid-argument", "Selecciona el tipo de documento junto con su número.");
   return {
+    // Solo se persisten cuando hay documento: un gasto sin él conserva exactamente la forma de siempre.
+    ...(tipoDocumento ? {tipoDocumento, ...(numeroDocumento ? {numeroDocumento} : {})} : {}),
     concepto: text(raw.concepto, "El concepto", 240, HttpsError, {required: true}),
     monto: positiveDecimal(raw.monto, "El monto", 999999999999.99, HttpsError),
     categoria,
@@ -376,7 +393,7 @@ function assertInventoryProduct(snapshot, businessId, HttpsError, {requireActive
   if (!snapshot.exists) fail(HttpsError, "not-found", "No se encontr\u00f3 el producto de inventario.");
   const item = snapshot.data() || {};
   if (item.negocioId !== businessId) fail(HttpsError, "permission-denied", "El producto no pertenece al negocio.");
-  if (String(item.tipoItem || "").toLowerCase() !== "producto") fail(HttpsError, "failed-precondition", "S\u00f3lo los productos pueden mover stock.");
+  if (String(item.tipoItem || "").toLowerCase() !== "producto") fail(HttpsError, "failed-precondition", "Solo los productos pueden mover stock.");
   if (requireActive && item.estado !== "activo") fail(HttpsError, "failed-precondition", "Selecciona un producto activo.");
   const stock = Number(item.stock);
   if (!Number.isFinite(stock) || stock < 0) fail(HttpsError, "failed-precondition", "El producto no tiene stock v\u00e1lido.");
@@ -405,6 +422,24 @@ function catalogItemContext(snapshot, businessId, HttpsError) {
       unidad: String(item.unidad || item.unidadStock || "unidad").trim(),
     },
   };
+}
+
+// Precio de venta vigente de un ítem del catálogo: el campo persistido `precioInterno` (lo fija el backend de
+// inventario como costo + recargo, o el valor manual del dueño). Nunca se usa el costo como respaldo: un ítem sin
+// `precioInterno` válido (vacío, no numérico o menor o igual a cero) no tiene precio de venta (devuelve null).
+function catalogSalePrice(item = {}) {
+  const raw = item.precioInterno;
+  if (raw === "" || raw == null) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? roundMoney(value) : null;
+}
+
+// Para roles sin gestión (TECNICO/MEMBER) el precio de un adicional no se negocia: debe ser el precio de venta
+// vigente del ítem. OWNER/ADMIN no pasan por aquí y conservan el precio libre.
+function assertAdditionalSalePrice(item, submittedPrice, HttpsError) {
+  const salePrice = catalogSalePrice(item);
+  if (salePrice === null) fail(HttpsError, "failed-precondition", "Este ítem no tiene precio de venta. Pide a un administrador que lo defina.");
+  if (roundMoney(submittedPrice) !== salePrice) fail(HttpsError, "failed-precondition", "El precio no coincide con el precio de venta vigente del ítem. Recarga la pantalla para ver el precio actualizado.");
 }
 
 function productSnapshot(item, itemId) {
@@ -436,6 +471,13 @@ async function assertOptionalCostTask(transaction, workRef, taskId, context, Htt
   const task = assertTask(await transaction.get(workRef.collection("tareas").doc(taskId)), context.businessId, workRef.id, HttpsError);
   assertTaskOperator(task, context, HttpsError);
   return task;
+}
+
+// Mismo texto y orden que getWorkTaskDeletionBlockers/describeWorkTaskDeletionBlockers
+// del dominio del frontend (src/domain/workModel.mjs); works-model-smoke los compara.
+function taskDeletionBlockedMessage(blockers) {
+  const joined = blockers.length === 1 ? blockers[0] : `${blockers.slice(0, -1).join(", ")} y ${blockers.at(-1)}`;
+  return `No se puede eliminar la tarea porque tiene registros de ${joined}. Los registros anulados también cuentan.`;
 }
 
 function previousCostRequest(snapshot, {fingerprint: expectedFingerprint, operation, uid}, HttpsError) {
@@ -589,7 +631,7 @@ async function readCommercialSelection(transaction, businessRef, businessId, quo
   if (!quoteSnapshot.exists) fail(HttpsError, "not-found", "No se encontró la cotización seleccionada.");
   const quote = quoteSnapshot.data() || {};
   if (quote.negocioId && quote.negocioId !== businessId) fail(HttpsError, "permission-denied", "La cotización no pertenece al negocio.");
-  if (quote.estado !== "aceptada") fail(HttpsError, "failed-precondition", "Sólo puedes asociar una cotización aceptada.");
+  if (quote.estado !== "aceptada") fail(HttpsError, "failed-precondition", "Solo puedes asociar una cotización aceptada.");
   const saleId = identifier(quote.ventaId, "La venta asociada", HttpsError);
   const saleRef = businessRef.collection("ventas").doc(saleId);
   const saleSnapshot = await transaction.get(saleRef);
@@ -801,6 +843,7 @@ async function crearTrabajoHandler(request, dependencies, now = new Date()) {
       gastosMontoDirecto: 0,
       gastosMontoIndirecto: 0,
       gastosMaterialMontoTotal: 0,
+      gastosMaterialDocumentadoMontoTotal: 0,
       horasHombreVigentesTotal: 0,
       horasHombreCantidadTotal: 0,
       horasHombreCostoTotal: 0,
@@ -1001,7 +1044,7 @@ async function cambiarEstadoTareaTrabajoV2Handler(request, dependencies) {
     if (previous) { result = previous; return; }
     const work = assertWork(await transaction.get(workRef), context.businessId, HttpsError); assertWorkOperator(work, context, HttpsError); assertTaskMutable(work, HttpsError);
     const task = assertTask(await transaction.get(taskRef), context.businessId, workId, HttpsError); assertTaskOperator(task, context, HttpsError);
-    if (taskIsCompleted(task) && !completed && !WRITE_ROLES.includes(context.membership?.rol)) fail(HttpsError, "permission-denied", "Sólo OWNER o ADMIN puede reabrir tareas.");
+    if (taskIsCompleted(task) && !completed && !WRITE_ROLES.includes(context.membership?.rol)) fail(HttpsError, "permission-denied", "Solo Propietario o Administrador puede reabrir tareas.");
     const timestamp = FieldValue.serverTimestamp();
     const previousStatus = taskIsCompleted(task) ? "completada" : WORK_TASK_STATUSES.has(task.estado) ? task.estado : "pendiente";
     if (previousStatus === requestedStatus && (requestedStatus !== "en_espera" || String(task.motivoEspera || "") === motivoEspera)) {
@@ -1195,6 +1238,44 @@ async function documentarTareaTrabajoHandler(request, dependencies) {
   return result;
 }
 
+// Anula un comentario de la documentación de una tarea. Solo OWNER/ADMIN (mismos roles que anular un
+// gasto), con el módulo "trabajos" (igual que documentarTareaTrabajo: un administrador con un perfil sin ese
+// módulo queda fuera) y con el proyecto en un estado operativo (mismo criterio que documentar). No borra nada: el
+// comentario queda con estado "anulado", quién, cuándo y por qué. No toca costos ni `documentacionTotal`
+// (la tarea con documentación, también anulada, sigue sin poder eliminarse). A diferencia de anular un
+// gasto, anular de nuevo un comentario ya anulado se rechaza (failed-precondition); un reintento con el
+// mismo requestId devuelve el resultado guardado antes de llegar a esa validación.
+async function anularDocumentacionTareaTrabajoHandler(request, dependencies) {
+  const {db, FieldValue, HttpsError} = dependencies;
+  const context = await dependencies.requireBusinessAccess(request, {db, HttpsError}, {roles: WRITE_ROLES, requiresVerifiedBusiness: true, moduleId: "trabajos"});
+  const workId = identifier(request?.data?.trabajoId, "El trabajo", HttpsError); const taskId = identifier(request?.data?.tareaId, "La tarea", HttpsError);
+  const documentationId = identifier(request?.data?.documentacionId, "El comentario", HttpsError);
+  const reason = text(request?.data?.motivo, "El motivo de anulación", 1000, HttpsError, {required: true});
+  const requestId = requestIdentifier(request?.data?.requestId, HttpsError);
+  const requestFingerprint = fingerprint({workId, taskId, documentationId, reason});
+  const people = await userSnapshots(dependencies, [context.uid]); const actor = publicPerson(people, context.uid);
+  const workRef = context.businessRef.collection("trabajos").doc(workId); const taskRef = workRef.collection("tareas").doc(taskId); const documentationRef = taskRef.collection("documentacion").doc(documentationId);
+  const requestRef = context.businessRef.collection("workTaskRequests").doc(requestId);
+  let result;
+  await db.runTransaction(async (transaction) => {
+    const previous = previousTaskRequest(await transaction.get(requestRef), {fingerprint: requestFingerprint, operation: "anular_documentacion", uid: context.uid}, HttpsError);
+    if (previous) { result = previous; return; }
+    const work = assertWork(await transaction.get(workRef), context.businessId, HttpsError); assertTaskMutable(work, HttpsError);
+    const task = assertTask(await transaction.get(taskRef), context.businessId, workId, HttpsError);
+    const documentationSnapshot = await transaction.get(documentationRef); const entry = documentationSnapshot.data() || {};
+    if (!documentationSnapshot.exists || entry.negocioId !== context.businessId || entry.trabajoId !== workId || entry.tareaId !== taskId) fail(HttpsError, "not-found", "No se encontró el comentario.");
+    if (entry.estado === "anulado") fail(HttpsError, "failed-precondition", "El comentario ya está anulado.");
+    const timestamp = FieldValue.serverTimestamp();
+    transaction.update(documentationRef, {estado: "anulado", anuladoEn: timestamp, anuladoPorUid: context.uid, anuladoPorSnapshot: {nombre: actor.nombre, correo: actor.correo}, motivoAnulacion: reason});
+    transaction.update(taskRef, {actualizadoEn: timestamp});
+    transaction.update(workRef, {ultimaActividadEn: timestamp, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
+    writeEvent(transaction, workRef, {businessId: context.businessId, type: "tarea_documentacion_anulada", actorUid: context.uid, actor, detail: {tareaId: taskId, tareaTitulo: task.titulo, documentacionId: documentationId, motivo: reason}, timestamp});
+    result = {tareaId: taskId, documentacionId: documentationId, idempotent: false};
+    transaction.create(requestRef, taskRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "anular_documentacion", result, timestamp, uid: context.uid, workId, taskId}));
+  });
+  return result;
+}
+
 async function eliminarTareaTrabajoV2Handler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
   const context = await requireWriteAccess(request, dependencies);
@@ -1210,8 +1291,27 @@ async function eliminarTareaTrabajoV2Handler(request, dependencies) {
     if (previous) { result = previous; return; }
     const work = assertWork(await transaction.get(workRef), context.businessId, HttpsError); assertTaskMutable(work, HttpsError);
     const task = assertTask(await transaction.get(taskRef), context.businessId, workId, HttpsError);
-    if (Number(task.modeloTareaVersion || 1) >= WORK_TASK_MODEL_VERSION) fail(HttpsError, "failed-precondition", "Las tareas operativas se conservan para mantener su trazabilidad.");
     if (taskIsCompleted(task)) fail(HttpsError, "failed-precondition", "Reabre la tarea antes de eliminarla.");
+    // SPEC 028 §4.2: una tarea con costos (también anulados) o documentación se conserva.
+    // Los cuatro handlers de costos con tarea leen y actualizan este mismo trabajo, así que
+    // una transacción de costo concurrente y esta no pueden confirmar ambas: la que reintenta
+    // ve el resultado de la otra (aquí, el costo; allá, la tarea inexistente).
+    const linked = (query) => transaction.get(query.limit(1)).then((snapshot) => !snapshot.empty);
+    const [hasExpenses, hasLabor, hasAdditionals, hasMaterials, hasDocumentation] = await Promise.all([
+      linked(workRef.collection("gastos").where("tareaId", "==", taskId)),
+      linked(workRef.collection("horasHombre").where("tareaId", "==", taskId)),
+      linked(workRef.collection("adicionales").where("tareaId", "==", taskId)),
+      linked(context.businessRef.collection("movimientosInventario").where("trabajoId", "==", workId).where("tareaId", "==", taskId)),
+      linked(taskRef.collection("documentacion")),
+    ]);
+    const blockers = [
+      hasExpenses && "gastos",
+      hasLabor && "horas",
+      hasAdditionals && "adicionales",
+      hasMaterials && "materiales",
+      (hasDocumentation || Number(task.documentacionTotal || 0) > 0) && "documentación",
+    ].filter(Boolean);
+    if (blockers.length) fail(HttpsError, "failed-precondition", taskDeletionBlockedMessage(blockers));
     const timestamp = FieldValue.serverTimestamp(); transaction.delete(taskRef);
     const nextTotal = Math.max(0, Number(work.tareasTotal || 0) - 1); const points = Math.max(0, roundMoney(storedProgressPoints(work) - taskProgressPoints(task)));
     transaction.update(workRef, {tareasTotal: nextTotal, progresoAcumulado: points, progresoPct: nextTotal ? Math.round((points / nextTotal) * 100) / 100 : 0, ultimaActividadEn: timestamp, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
@@ -1279,6 +1379,8 @@ async function registrarGastoTrabajoHandler(request, dependencies) {
       gastosMontoDirecto: roundMoney(Number(work.gastosMontoDirecto || 0) + directAmount),
       gastosMontoIndirecto: roundMoney(Number(work.gastosMontoIndirecto || 0) + indirectAmount),
       gastosMaterialMontoTotal: roundMoney(Number(work.gastosMaterialMontoTotal || 0) + (input.categoria === "MATERIAL" ? input.monto : 0)),
+      // Parte del total anterior que tiene documento: la Lista y el Tablero la suman al costo aunque haya materiales de inventario.
+      gastosMaterialDocumentadoMontoTotal: roundMoney(Number(work.gastosMaterialDocumentadoMontoTotal || 0) + (input.categoria === "MATERIAL" && hasExpenseDocument(input) ? input.monto : 0)),
       modeloTrabajoVersion: WORK_MODEL_VERSION,
       ultimaActividadEn: timestamp,
       actualizadoPorUid: context.uid,
@@ -1318,6 +1420,7 @@ async function crearAdicionalTrabajoHandler(request, dependencies) {
     const business = businessSnapshot.data() || {};
     if (!businessSnapshot.exists) fail(HttpsError, "failed-precondition", "El negocio seleccionado no está disponible.");
     const {tipoItem, itemSnapshot: catalogSnapshot} = catalogItemContext(itemSnapshot, context.businessId, HttpsError);
+    if (!WRITE_ROLES.includes(context.membership?.rol)) assertAdditionalSalePrice(itemSnapshot.data() || {}, input.precioUnitario, HttpsError);
     const moneda = workCurrency(work, business, HttpsError);
     const timestamp = FieldValue.serverTimestamp();
     transaction.create(additionalRef, {
@@ -1389,7 +1492,7 @@ async function anularAdicionalTrabajoHandler(request, dependencies) {
       transaction.create(requestRef, costRequestPayload({businessId: context.businessId, fingerprint: requestFingerprint, operation: "anular_adicional", result, timestamp, uid: context.uid, workId, recordId: additionalId}));
       return;
     }
-    if (additional.estado !== "PENDIENTE_COBRO") fail(HttpsError, "failed-precondition", "Sólo un adicional pendiente de cobro puede anularse.");
+    if (additional.estado !== "PENDIENTE_COBRO") fail(HttpsError, "failed-precondition", "Solo un adicional pendiente de cobro puede anularse.");
     transaction.update(additionalRef, {estado: "ANULADO", anuladoEn: timestamp, anuladoPorUid: context.uid, anuladoPorSnapshot: {nombre: actor.nombre, correo: actor.correo}, motivoAnulacion: reason, actualizadoEn: timestamp});
     writeEvent(transaction, workRef, {businessId: context.businessId, type: "adicional_anulado", actorUid: context.uid, actor, detail: {adicionalId: additionalId, itemId: additional.itemId, cantidad: additional.cantidad, precioUnitario: additional.precioUnitario, moneda: additional.moneda, motivo: reason}, timestamp});
     result = {adicionalId: additionalId, idempotent: false};
@@ -1431,7 +1534,7 @@ async function adjuntarEvidenciaGastoTrabajoHandler(request, dependencies) {
       fail(HttpsError, "not-found", "No se encontró el gasto.");
     }
     assertExpenseEvidenceOperator(expense, context, HttpsError);
-    if (expense.estado !== "vigente") fail(HttpsError, "failed-precondition", "Sólo se puede adjuntar evidencia a un gasto vigente.");
+    if (expense.estado !== "vigente") fail(HttpsError, "failed-precondition", "Solo se puede adjuntar evidencia a un gasto vigente.");
     const existingEvidence = Array.isArray(expense.evidencia) ? expense.evidencia : [];
     const timestamp = FieldValue.serverTimestamp();
     const alreadyRegistered = existingEvidence.find((entry) => entry?.storagePath === storagePath);
@@ -1571,6 +1674,7 @@ async function anularGastoTrabajoHandler(request, dependencies) {
       gastosMontoDirecto: Math.max(0, roundMoney(Number(work.gastosMontoDirecto || 0) - directAmount)),
       gastosMontoIndirecto: Math.max(0, roundMoney(Number(work.gastosMontoIndirecto || 0) - indirectAmount)),
       gastosMaterialMontoTotal: Math.max(0, roundMoney(Number(work.gastosMaterialMontoTotal || 0) - (expense.categoria === "MATERIAL" ? amount : 0))),
+      gastosMaterialDocumentadoMontoTotal: Math.max(0, roundMoney(Number(work.gastosMaterialDocumentadoMontoTotal || 0) - (expense.categoria === "MATERIAL" && hasExpenseDocument(expense) ? amount : 0))),
       ultimaActividadEn: timestamp,
       actualizadoPorUid: context.uid,
       actualizadoEn: timestamp,
@@ -1823,6 +1927,7 @@ module.exports = {
   adjuntarEvidenciaGastoTrabajoHandler,
   agregarNotaTrabajoHandler,
   anularAdicionalTrabajoHandler,
+  anularDocumentacionTareaTrabajoHandler,
   anularGastoTrabajoHandler,
   anularHorasHombreTrabajoHandler,
   asignarTareaTrabajoHandler,

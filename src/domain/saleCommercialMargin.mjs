@@ -1,3 +1,6 @@
+import {adaptDocumentAmountDecimals} from "./localization.mjs";
+import {isMoneyAmount, mulRound, sumMoney} from "./money.mjs";
+
 export const SALE_COMMERCIAL_MARGIN_MODEL_VERSION = 1;
 
 export const SALE_COMMERCIAL_MARGIN_STATUS = Object.freeze({
@@ -26,8 +29,15 @@ function nonNegativeNumber(value) {
   return parsed !== null && parsed >= 0 ? parsed : null;
 }
 
-function roundMoney(value) {
-  return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+// Escala del costo y del margen: centavos (100) como siempre, y más fina solo si la venta tuviera más de 2 decimales
+// de cálculo (SPEC 036). Con 0 y con 2 decimales es exactamente 100. Los porcentajes usan siempre 2 decimales.
+function moneyScale(decimals = 0) {
+  return 10 ** Math.max(2, decimals);
+}
+
+function roundMoney(value, decimals = 0) {
+  const scale = moneyScale(decimals);
+  return Math.round((Number(value || 0) + Number.EPSILON) * scale) / scale;
 }
 
 function roundQuantity(value) {
@@ -39,7 +49,8 @@ function normalizeCurrency(value) {
   return /^[A-Z]{3}$/.test(normalized) ? normalized : "";
 }
 
-function normalizeLine(raw = {}, index = 0) {
+// `decimals`: decimales de cálculo de la venta (su `montoDecimales`; 0 = importes enteros, como siempre).
+function normalizeLine(raw = {}, index = 0, decimals = 0) {
   const snapshot = raw.inventarioSnapshot || {};
   const type = String(raw.tipoItem || snapshot.tipoItem || "").trim().toLowerCase();
   const quantity = finiteNumber(raw.cantidad);
@@ -51,10 +62,10 @@ function normalizeLine(raw = {}, index = 0) {
   ) {
     return null;
   }
-  const lineSubtotal = Math.round(quantity * unitPrice);
-  const lineDiscount = Math.round((lineSubtotal * discountRate) / 100);
-  const lineTotal = lineSubtotal - lineDiscount;
-  if (![lineSubtotal, lineDiscount, lineTotal].every(Number.isSafeInteger)) return null;
+  const lineSubtotal = mulRound(quantity, unitPrice, decimals);
+  const lineDiscount = mulRound(lineSubtotal, discountRate, decimals, 100);
+  const lineTotal = sumMoney([lineSubtotal, -lineDiscount], decimals);
+  if (![lineSubtotal, lineDiscount, lineTotal].every((value) => isMoneyAmount(value, decimals))) return null;
   return {
     index,
     lineaId: String(raw.lineaId || "").trim(),
@@ -69,7 +80,8 @@ function normalizeLine(raw = {}, index = 0) {
 
 function commercialAmounts(sale = {}) {
   const rawLines = Array.isArray(sale.items) ? sale.items : [];
-  const lines = rawLines.map(normalizeLine);
+  const decimals = adaptDocumentAmountDecimals(sale, sale?.moneda);
+  const lines = rawLines.map((line, index) => normalizeLine(line, index, decimals));
   const fallbackNetRevenue = nonNegativeNumber(sale.neto);
   if (!lines.length || lines.some((line) => !line)) {
     return {
@@ -83,14 +95,14 @@ function commercialAmounts(sale = {}) {
     };
   }
 
-  const subtotal = lines.reduce((sum, line) => sum + line.subtotalLinea, 0);
-  const itemDiscount = lines.reduce((sum, line) => sum + line.descuentoLinea, 0);
-  const saleBase = subtotal - itemDiscount;
+  const subtotal = sumMoney(lines.map((line) => line.subtotalLinea), decimals);
+  const itemDiscount = sumMoney(lines.map((line) => line.descuentoLinea), decimals);
+  const saleBase = sumMoney([subtotal, -itemDiscount], decimals);
   const generalDiscount = nonNegativeNumber(sale.descuento ?? 0);
   if (
-    !Number.isSafeInteger(subtotal) || !Number.isSafeInteger(itemDiscount) ||
-    !Number.isSafeInteger(saleBase) || generalDiscount === null ||
-    !Number.isSafeInteger(generalDiscount) || generalDiscount > saleBase
+    !isMoneyAmount(subtotal, decimals) || !isMoneyAmount(itemDiscount, decimals) ||
+    !isMoneyAmount(saleBase, decimals) || generalDiscount === null ||
+    !isMoneyAmount(generalDiscount, decimals) || generalDiscount > saleBase
   ) {
     return {
       valid: false,
@@ -104,20 +116,23 @@ function commercialAmounts(sale = {}) {
   }
 
   const productLines = lines.filter((line) => line.tipoItem === "producto");
-  const productSubtotal = productLines.reduce((sum, line) => sum + line.subtotalLinea, 0);
-  const productItemDiscount = productLines.reduce((sum, line) => sum + line.descuentoLinea, 0);
-  const productBase = productSubtotal - productItemDiscount;
+  const productSubtotal = sumMoney(productLines.map((line) => line.subtotalLinea), decimals);
+  const productItemDiscount = sumMoney(productLines.map((line) => line.descuentoLinea), decimals);
+  const productBase = sumMoney([productSubtotal, -productItemDiscount], decimals);
   const productGeneralDiscount = saleBase > 0
-    ? Math.round((generalDiscount * productBase) / saleBase)
+    ? mulRound(generalDiscount, productBase, decimals, saleBase)
     : 0;
-  const saleNetRevenue = saleBase - generalDiscount;
-  const productNetRevenue = productBase - productGeneralDiscount;
+  const saleNetRevenue = sumMoney([saleBase, -generalDiscount], decimals);
+  const productNetRevenue = sumMoney([productBase, -productGeneralDiscount], decimals);
   const persistedNetRevenue = nonNegativeNumber(sale.neto);
+  // Con 0 decimales la tolerancia es la de siempre (0,01); con decimales, media unidad menor (0,005 en BOB).
+  const tolerance = decimals === 0 ? 0.01 : 0.5 * 10 ** -decimals;
   const reconciles = persistedNetRevenue === null ||
-    Math.abs(persistedNetRevenue - saleNetRevenue) <= 0.01;
+    Math.abs(persistedNetRevenue - saleNetRevenue) <= tolerance;
 
   return {
     valid: reconciles,
+    decimals,
     lines,
     productLines,
     ingresoNetoVenta: saleNetRevenue,
@@ -160,6 +175,7 @@ function baseResult(sale, amounts, status, overrides = {}) {
 // ambos salen del mismo `amounts` y de la misma cobertura por línea.
 function evaluateSaleCommercialMargin(sale = {}) {
   const amounts = commercialAmounts(sale);
+  const decimals = amounts.decimals ?? 0;
   const state = String(sale.estado || "").trim().toLowerCase();
   const finish = (status, overrides = {}, coverageByLine = null) => ({
     result: baseResult(sale, amounts, status, overrides),
@@ -239,7 +255,7 @@ function evaluateSaleCommercialMargin(sale = {}) {
       }
 
       coverage.cantidad += quantity;
-      coverage.costo = roundMoney(coverage.costo + totalCost);
+      coverage.costo = roundMoney(coverage.costo + totalCost, decimals);
       if (coverage.cantidad - coverage.line.cantidad > QUANTITY_EPSILON) {
         coverage.invalid = true;
         hasAnomaly = true;
@@ -251,7 +267,7 @@ function evaluateSaleCommercialMargin(sale = {}) {
     !entry.invalid && Math.abs(entry.cantidad - entry.line.cantidad) <= QUANTITY_EPSILON
   );
   const coveredQuantity = coverage.reduce((sum, entry) => sum + entry.cantidad, 0);
-  const coveredCost = roundMoney(coverage.reduce((sum, entry) => sum + entry.costo, 0));
+  const coveredCost = roundMoney(coverage.reduce((sum, entry) => sum + entry.costo, 0), decimals);
   const coverageSummary = {
     lineas: productLines.length,
     lineasCubiertas: coveredLines.length,
@@ -278,7 +294,7 @@ function evaluateSaleCommercialMargin(sale = {}) {
   }
 
   const historicalCost = coveredCost;
-  const productMargin = roundMoney(amounts.ingresoNetoProductos - historicalCost);
+  const productMargin = roundMoney(amounts.ingresoNetoProductos - historicalCost, decimals);
   const marginPercentage = amounts.ingresoNetoProductos > 0
     ? roundMoney((productMargin / amounts.ingresoNetoProductos) * 100)
     : null;
@@ -295,8 +311,15 @@ export function calculateSaleCommercialMarginV1(sale = {}) {
   return evaluateSaleCommercialMargin(sale).result;
 }
 
-// Reparte un descuento entero entre bases enteras por resto mayor: la suma
-// asignada es exactamente `total`. Empates por orden de línea.
+// Reparte un descuento entre bases por resto mayor, en la unidad menor de la moneda (con 0 decimales, enteros
+// como siempre; con 2, centavos): la suma asignada es exactamente `total`. Empates por orden de línea.
+function allocateProportionally(total, bases, decimals) {
+  if (decimals === 0) return allocateIntegerProportionally(total, bases);
+  const scale = 10 ** decimals;
+  const toUnits = (value) => Math.round(value * scale);
+  return allocateIntegerProportionally(toUnits(total), bases.map(toUnits)).map((units) => units / scale);
+}
+
 function allocateIntegerProportionally(total, bases) {
   const baseSum = bases.reduce((sum, value) => sum + value, 0);
   if (!total || baseSum <= 0) return bases.map(() => 0);
@@ -337,16 +360,20 @@ export function calculateSaleProductLineMarginsV1(sale = {}) {
     return {...base, motivo: "LINEAS_DUPLICADAS"};
   }
 
-  const generalDiscounts = allocateIntegerProportionally(
+  const decimals = amounts.decimals ?? 0;
+  const generalDiscounts = allocateProportionally(
     amounts.descuentoGeneralProductos,
-    productLines.map((line) => line.totalLinea)
+    productLines.map((line) => line.totalLinea),
+    decimals
   );
-  const toCents = (value) => Math.round(Number(value || 0) * 100);
+  // Unidad menor del costo y del margen: la escala sale de los decimales de la venta (100 con 0 y con 2 decimales).
+  const scale = moneyScale(decimals);
+  const toMinorUnits = (value) => Math.round(Number(value || 0) * scale);
   return {
     ...base,
     lineas: productLines.map((line, position) => {
-      const netRevenue = line.totalLinea - generalDiscounts[position];
-      const costCents = toCents(coverageByLine.get(line.lineaId).costo);
+      const netRevenue = sumMoney([line.totalLinea, -generalDiscounts[position]], decimals);
+      const costUnits = toMinorUnits(coverageByLine.get(line.lineaId).costo);
       return {
         lineaId: line.lineaId,
         itemId: line.itemId,
@@ -354,8 +381,8 @@ export function calculateSaleProductLineMarginsV1(sale = {}) {
         totalLinea: line.totalLinea,
         descuentoGeneralAsignado: generalDiscounts[position],
         ingresoNeto: netRevenue,
-        costoHistorico: costCents / 100,
-        margenBruto: (netRevenue * 100 - costCents) / 100,
+        costoHistorico: costUnits / scale,
+        margenBruto: ((decimals === 0 ? netRevenue * scale : Math.round(netRevenue * scale)) - costUnits) / scale,
       };
     }),
   };

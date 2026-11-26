@@ -2,13 +2,22 @@ import React from "react";
 import BrandLogo from "../components/BrandLogo";
 import Button from "../components/ui/Button";
 import SkipLink from "../components/ui/SkipLink";
+import {canBusinessOperate} from "../domain/businessOperations.mjs";
 import BusinessCompletionCard from "../features/company/BusinessCompletionCard";
 import useBusinessCompletionStatus from "../hooks/useBusinessCompletionStatus";
+import useVisiblePolling from "../hooks/useVisiblePolling";
 
+// Pantalla de primeros pasos mientras la empresa espera su verificación. Si la plataforma la verifica con la pantalla
+// abierta, la persona pasa sola, sin recargar: cada 60 s y solo con la pestaña visible (useVisiblePolling, una
+// consulta a la vez) se vuelve a pedir la sesión con `onRefresh` (la misma recarga de getBusinessSession de la app, sin
+// Function nueva), y cuando la empresa ya puede operar se abre `verifiedDestination`. Un fallo del refresco no se
+// muestra: el ciclo sigue.
 function InitialBusinessActivationPage({
   business,
   ownerEmailVerified,
   onFinish,
+  onRefresh,
+  verifiedDestination = "",
 }) {
   const { loading, error, status } = useBusinessCompletionStatus({
     businessId: business?.id,
@@ -19,6 +28,12 @@ function InitialBusinessActivationPage({
   const finish = (path) => {
     onFinish?.(path);
   };
+
+  const operable = canBusinessOperate(business || {});
+  useVisiblePolling(() => onRefresh?.(), { enabled: !operable && typeof onRefresh === "function" });
+  React.useEffect(() => {
+    if (operable && verifiedDestination) onFinish?.(verifiedDestination);
+  }, [operable, verifiedDestination, onFinish]);
 
   return (
     <>
@@ -61,13 +76,7 @@ function InitialBusinessActivationPage({
   title="Estado inicial de tu empresa"
 />
 
-            <div
-              className="activation-actions"
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-              }}
-            >
+            <div className="activation-actions">
               <Button
                 type="button"
                 onClick={() => finish("/empresa?seccion=verificacion")}

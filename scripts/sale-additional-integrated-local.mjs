@@ -4,6 +4,7 @@ import {deleteApp, initializeApp} from "firebase/app";
 import {connectAuthEmulator, createUserWithEmailAndPassword, getAuth} from "firebase/auth";
 import {collection, connectFirestoreEmulator, doc, getDocs, getFirestore, query, terminate, updateDoc, where} from "firebase/firestore";
 import {connectFunctionsEmulator, getFunctions, httpsCallable} from "firebase/functions";
+import {resolveEmulatorHosts} from "./lib/emulatorHosts.mjs";
 
 // SPEC 020 ETAPA 5 (final): integración comercial autoritativa —
 // PENDIENTE_COBRO -> INCORPORADO_A_VENTA dentro de la MISMA transacción de
@@ -13,8 +14,8 @@ import {connectFunctionsEmulator, getFunctions, httpsCallable} from "firebase/fu
 
 const PROJECT_ID = "tesis-inventario-ia";
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-process.env.FIRESTORE_EMULATOR_HOST ||= "127.0.0.1:8080";
-process.env.GCLOUD_PROJECT ||= PROJECT_ID;
+// Sin puertos por defecto (scripts/lib/emulatorHosts.mjs): los hosts salen de `firebase emulators:exec`; si falta alguno, aborta.
+const {AUTH, FIRESTORE, FUNCTIONS} = await resolveEmulatorHosts({projectId: PROJECT_ID, functions: true});
 const requireFromFunctions = createRequire(new URL("../functions/package.json", import.meta.url));
 const {deleteApp: deleteAdminApp, initializeApp: initializeAdminApp} = requireFromFunctions("firebase-admin/app");
 const {getFirestore: getAdminFirestore} = requireFromFunctions("firebase-admin/firestore");
@@ -22,8 +23,8 @@ const {getFirestore: getAdminFirestore} = requireFromFunctions("firebase-admin/f
 function createClientApp(name) {
   const app = initializeApp({apiKey: "demo-key", authDomain: `${PROJECT_ID}.firebaseapp.com`, projectId: PROJECT_ID, appId: `saleadd-${name}-${RUN_ID}`}, `saleadd-${name}-${RUN_ID}`);
   const auth = getAuth(app); const db = getFirestore(app); const functions = getFunctions(app, "us-central1");
-  connectAuthEmulator(auth, "http://127.0.0.1:9099", {disableWarnings: true});
-  connectFirestoreEmulator(db, "127.0.0.1", 8080); connectFunctionsEmulator(functions, "127.0.0.1", 5001);
+  connectAuthEmulator(auth, `http://${AUTH.host}:${AUTH.port}`, {disableWarnings: true});
+  connectFirestoreEmulator(db, FIRESTORE.host, FIRESTORE.port); connectFunctionsEmulator(functions, FUNCTIONS.host, FUNCTIONS.port);
   return {app, auth, db, functions};
 }
 async function authenticate(client, label) {

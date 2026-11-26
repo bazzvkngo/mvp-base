@@ -1,3 +1,5 @@
+import { isMoneyAmount, sanitizeDecimals, sumMoney } from "./money.mjs";
+
 export const FINANCIAL_MODEL_VERSION = 1;
 export const FINANCIAL_TIME_ZONE = "America/Santiago";
 
@@ -177,9 +179,12 @@ export function getPreviousFinancialPeriod(range) {
   return { start, end, days, period: "previous" };
 }
 
+// `amountDecimals`: decimales de cálculo de la moneda del negocio (SPEC 036). Un movimiento no es un documento: no guarda
+// snapshot y las reglas de Firestore solo exigen un número positivo con tope, de modo que los decimales los valida este
+// modelo. Con 0 se conserva exactamente la validación de siempre (entero seguro) y su mensaje.
 export function normalizeFinancialMovementInput(
   input,
-  { businessId, userId, allowAutomatic = false } = {}
+  { businessId, userId, allowAutomatic = false, amountDecimals = 0 } = {}
 ) {
   const type = safeText(input?.type, 20);
   const status = safeText(input?.status, 20);
@@ -198,8 +203,13 @@ export function normalizeFinancialMovementInput(
   if (!userId) throw new Error("Debes iniciar sesión.");
   if (!TYPE_IDS.has(type)) throw new Error("Selecciona un tipo de movimiento válido.");
   if (!STATUS_IDS.has(status)) throw new Error("Selecciona un estado válido.");
-  if (!Number.isSafeInteger(amount) || amount <= 0) {
-    throw new Error("El monto debe ser un número entero mayor que cero.");
+  const places = sanitizeDecimals(amountDecimals);
+  if (places === 0) {
+    if (!Number.isSafeInteger(amount) || amount <= 0) {
+      throw new Error("El monto debe ser un número entero mayor que cero.");
+    }
+  } else if (!isMoneyAmount(amount, places) || amount <= 0) {
+    throw new Error(`El monto debe ser un número mayor que cero, con hasta ${places} decimales.`);
   }
   if (!isValidFinancialDate(date)) throw new Error("Ingresa una fecha válida.");
   if (!concept) throw new Error("Ingresa el concepto del movimiento.");
@@ -244,7 +254,10 @@ export function normalizeFinancialMovementInput(
 export function adaptFinancialMovement(raw = {}) {
   return {
     ...raw,
-    amount: Number.isSafeInteger(Number(raw.amount)) ? Number(raw.amount) : 0,
+    // Un entero seguro, como siempre; con decimales (SPEC 036) también un monto finito dentro del rango seguro.
+    amount: Number.isFinite(Number(raw.amount)) && Math.abs(Number(raw.amount)) <= Number.MAX_SAFE_INTEGER
+      ? Number(raw.amount)
+      : 0,
     sourceType: raw.sourceType || "manual",
     sourceId: raw.sourceId || "",
     searchText:
@@ -285,26 +298,33 @@ export function filterFinancialMovements(movements, filters = {}) {
   });
 }
 
-export function summarizeFinancialMovements(movements) {
-  return movements.reduce(
-    (summary, movement) => {
-      const amount = Number(movement.amount || 0);
-      if (!Number.isFinite(amount) || amount <= 0) return summary;
+// SPEC 036 (entrega D): \`amountDecimals\` son los decimales de cálculo de la moneda del negocio. Con 0 se ejecuta
+// literalmente la suma de siempre (+=, sobre montos enteros). Con decimales, cada total es la suma decimal exacta
+// (sumMoney) de sus montos: 0,1 + 0,2 da 0,3 y no 0,30000000000000004.
+const SUMMARY_KEYS = ["paidIncome", "paidExpense", "receivable", "payable"];
 
-      if (movement.type === "income" && movement.status === "paid") {
-        summary.paidIncome += amount;
+function summaryKeyOf(movement) {
+  if (movement.type === "income" && movement.status === "paid") return "paidIncome";
+  if (movement.type === "expense" && movement.status === "paid") return "paidExpense";
+  if (movement.type === "income" && movement.status === "pending") return "receivable";
+  if (movement.type === "expense" && movement.status === "pending") return "payable";
+  return "";
+}
+
+export function summarizeFinancialMovements(movements, amountDecimals = 0) {
+  const places = sanitizeDecimals(amountDecimals);
+  const lists = Object.fromEntries(SUMMARY_KEYS.map((key) => [key, []]));
+  const summary = movements.reduce(
+    (current, movement) => {
+      const amount = Number(movement.amount || 0);
+      if (!Number.isFinite(amount) || amount <= 0) return current;
+      const key = summaryKeyOf(movement);
+      if (key) {
+        if (places === 0) current[key] += amount;
+        else lists[key].push(amount);
       }
-      if (movement.type === "expense" && movement.status === "paid") {
-        summary.paidExpense += amount;
-      }
-      if (movement.type === "income" && movement.status === "pending") {
-        summary.receivable += amount;
-      }
-      if (movement.type === "expense" && movement.status === "pending") {
-        summary.payable += amount;
-      }
-      summary.count += 1;
-      return summary;
+      current.count += 1;
+      return current;
     },
     {
       paidIncome: 0,
@@ -315,26 +335,32 @@ export function summarizeFinancialMovements(movements) {
       count: 0,
     }
   );
+  if (places > 0) SUMMARY_KEYS.forEach((key) => { summary[key] = sumMoney(lists[key], places); });
+  return summary;
 }
 
-export function withFinancialNetResult(summary) {
+export function withFinancialNetResult(summary, amountDecimals = 0) {
+  const places = sanitizeDecimals(amountDecimals);
+  const income = Number(summary?.paidIncome || 0);
+  const expense = Number(summary?.paidExpense || 0);
   return {
     ...summary,
-    netResult: Number(summary?.paidIncome || 0) - Number(summary?.paidExpense || 0),
+    netResult: places === 0 ? income - expense : sumMoney([income, -expense], places),
   };
 }
 
-export function getFinancialSummary(movements) {
-  return withFinancialNetResult(summarizeFinancialMovements(movements));
+export function getFinancialSummary(movements, amountDecimals = 0) {
+  return withFinancialNetResult(summarizeFinancialMovements(movements, amountDecimals), amountDecimals);
 }
 
-export function compareFinancialSummaries(current, previous) {
+export function compareFinancialSummaries(current, previous, amountDecimals = 0) {
+  const places = sanitizeDecimals(amountDecimals);
   const keys = ["paidIncome", "paidExpense", "netResult", "receivable", "payable"];
   return Object.fromEntries(
     keys.map((key) => {
       const currentValue = Number(current?.[key] || 0);
       const previousValue = Number(previous?.[key] || 0);
-      const absolute = currentValue - previousValue;
+      const absolute = places === 0 ? currentValue - previousValue : sumMoney([currentValue, -previousValue], places);
       return [
         key,
         {
@@ -348,21 +374,26 @@ export function compareFinancialSummaries(current, previous) {
   );
 }
 
-export function aggregateFinancialByCategory(movements, type) {
+export function aggregateFinancialByCategory(movements, type, amountDecimals = 0) {
+  const places = sanitizeDecimals(amountDecimals);
   const totals = new Map();
   movements
     .filter((movement) => movement.type === type)
     .forEach((movement) => {
-      totals.set(
-        movement.categoryId,
-        Number(totals.get(movement.categoryId) || 0) + Number(movement.amount || 0)
-      );
+      if (places === 0) {
+        totals.set(
+          movement.categoryId,
+          Number(totals.get(movement.categoryId) || 0) + Number(movement.amount || 0)
+        );
+      } else {
+        totals.set(movement.categoryId, [...(totals.get(movement.categoryId) || []), Number(movement.amount || 0)]);
+      }
     });
   return [...totals.entries()]
     .map(([id, value]) => ({
       id,
       label: getFinancialCategoryLabel(type, id),
-      value,
+      value: places === 0 ? value : sumMoney(value, places),
     }))
     .sort((left, right) => right.value - left.value);
 }
@@ -371,22 +402,33 @@ function getMonthKey(dateKey) {
   return dateKey.slice(0, 7);
 }
 
-export function aggregateFinancialTimeline(movements, range) {
+export function aggregateFinancialTimeline(movements, range, amountDecimals = 0) {
+  const places = sanitizeDecimals(amountDecimals);
   const useMonths = Number(range?.days || 0) > 62;
   const buckets = new Map();
   movements.forEach((movement) => {
     const key = useMonths ? getMonthKey(movement.date) : movement.date;
-    const current = buckets.get(key) || { key, income: 0, expense: 0, net: 0 };
-    if (movement.status === "paid" && movement.type === "income") {
-      current.income += Number(movement.amount || 0);
+    const current = buckets.get(key) || { key, income: 0, expense: 0, net: 0, incomeList: [], expenseList: [] };
+    const paid = movement.status === "paid";
+    if (paid && movement.type === "income") {
+      if (places === 0) current.income += Number(movement.amount || 0);
+      else current.incomeList.push(Number(movement.amount || 0));
     }
-    if (movement.status === "paid" && movement.type === "expense") {
-      current.expense += Number(movement.amount || 0);
+    if (paid && movement.type === "expense") {
+      if (places === 0) current.expense += Number(movement.amount || 0);
+      else current.expenseList.push(Number(movement.amount || 0));
     }
-    current.net = current.income - current.expense;
+    if (places === 0) current.net = current.income - current.expense;
     buckets.set(key, current);
   });
-  return [...buckets.values()].sort((left, right) => left.key.localeCompare(right.key));
+  return [...buckets.values()]
+    .map(({ incomeList, expenseList, ...bucket }) => {
+      if (places === 0) return bucket;
+      const income = sumMoney(incomeList, places);
+      const expense = sumMoney(expenseList, places);
+      return { ...bucket, income, expense, net: sumMoney([income, -expense], places) };
+    })
+    .sort((left, right) => left.key.localeCompare(right.key));
 }
 
 function escapeCsvCell(value) {
@@ -394,7 +436,19 @@ function escapeCsvCell(value) {
   return /[";,\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
-export function buildFinancialCsv(movements) {
+// Monto del CSV. Con 0 decimales y un monto entero es el número de siempre. Con decimales (SPEC 036) se escribe con
+// coma decimal y siempre con los decimales de la moneda (10,50): el archivo separa columnas con ";", la convención de
+// las configuraciones regionales de coma decimal, y así Excel lo lee como número. Un monto con más decimales que los
+// de la moneda (p. ej. tras volver el interruptor a 0) se escribe completo, sin truncarlo.
+function formatCsvAmount(value, amountDecimals) {
+  const amount = Number(value || 0);
+  const places = sanitizeDecimals(amountDecimals);
+  if (places === 0 && Number.isInteger(amount)) return amount;
+  const own = (String(amount).split(".")[1] || "").length;
+  return amount.toFixed(Math.max(places, own)).replace(".", ",");
+}
+
+export function buildFinancialCsv(movements, currency = "CLP", { amountDecimals = 0 } = {}) {
   const header = [
     "Fecha",
     "Concepto",
@@ -404,7 +458,7 @@ export function buildFinancialCsv(movements) {
     "Método",
     "Contraparte",
     "Referencia",
-    "Monto CLP",
+    `Monto ${currency}`,
     "Origen",
   ];
   const rows = movements.map((movement) => [
@@ -416,7 +470,7 @@ export function buildFinancialCsv(movements) {
     getPaymentMethodLabel(movement.paymentMethodId),
     movement.counterpartyName,
     movement.reference,
-    Number(movement.amount || 0),
+    formatCsvAmount(movement.amount, amountDecimals),
     movement.sourceType,
   ]);
   return `\ufeff${[header, ...rows]

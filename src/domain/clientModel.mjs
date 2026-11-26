@@ -8,6 +8,7 @@ import {
   normalizeChileanRut,
   normalizeCountryCode,
 } from "./fiscalIdentifier.mjs";
+import {getClientFiscalCopy} from "./countryFormCopy.mjs";
 import {
   MAX_CONTACT_PHONE_LENGTH,
   getContactPhoneError,
@@ -98,9 +99,9 @@ export function getClientFieldErrors(raw = {}, countryCode = raw?.paisCodigo || 
     errors.tipoCliente = "Selecciona si el cliente es persona o empresa.";
   }
   if (!errors.rut && !fiscalValue) {
-    errors.rut = `Ingresa el ${getFiscalIdentifierLabel(country)} del cliente.`;
+    errors.rut = `Ingresa el ${getClientFiscalCopy(country, tipoCliente).label} del cliente.`;
   } else if (!errors.rut && !isValidFiscalIdentifier(country, fiscalValue)) {
-    errors.rut = `Ingresa un ${getFiscalIdentifierLabel(country)} válido.`;
+    errors.rut = `Ingresa un ${getClientFiscalCopy(country, tipoCliente).label} válido.`;
   }
   if (!errors.nombreRazonSocial && !nombreRazonSocial) {
     errors.nombreRazonSocial = tipoCliente === "persona"

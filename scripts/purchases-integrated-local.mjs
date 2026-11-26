@@ -49,9 +49,12 @@ async function expectDenied(label, operation) {
 }
 const requestId = (prefix) => `${prefix}-${RUN_ID}-${Math.random().toString(36).slice(2, 10)}`;
 const line = (itemId, lineaId, overrides = {}) => ({lineaId, itemId, cantidad: 2, costoUnitario: 10000, descuentoPct: 10, stockAnterior: 500, stockPosterior: 9999, tipo: "entrada_compra", nombre: "Nombre falso", totalLinea: 1, ...overrides});
+// Cada compra de prueba lleva un número de documento propio, derivado de sus líneas (así los reintentos idempotentes
+// con el mismo payload conservan el mismo número): confirmar dos compras del mismo proveedor con el mismo número se
+// rechaza (factura duplicada). Los casos de duplicado lo fijan de forma explícita.
 const purchasePayload = (providerId, items, overrides = {}) => ({
   proveedorId: providerId, fechaCompra: "2026-08-07", fechaDocumento: "2026-08-06",
-  tipoDocumento: "factura", numeroDocumentoProveedor: "F-100", condicionesPago: "30 días",
+  tipoDocumento: "factura", numeroDocumentoProveedor: `F-${items.map((entry) => entry.lineaId).join("+")}`, condicionesPago: "30 días",
   observaciones: "Recepción en bodega", items, numero: "COM-FAKE", estado: "confirmada",
   proveedorSnapshot: {razonSocial: "Manipulado"}, stockAplicado: true, total: 1, ...overrides,
 });
@@ -126,11 +129,11 @@ try {
   console.log("OK compra directa OWNER, autoridad e idempotencia de creación");
 
   const purchasesBeforeNonCanonical = (await adminDb.collection(`negocios/${businessId}/compras`).get()).size;
-  await expectCallableError("cantidad fÃ­sica no canÃ³nica en Compra", () => call(owner, "crearCompra")({businessId, requestId: requestId("noncanonical-create"), compra: purchasePayload(providerId, [line(productA, "noncanonical-line", {cantidad: 1.0000004, costoUnitario: 100000000})])}), ["failed-precondition"]);
+  await expectCallableError("cantidad física no canónica en Compra", () => call(owner, "crearCompra")({businessId, requestId: requestId("noncanonical-create"), compra: purchasePayload(providerId, [line(productA, "noncanonical-line", {cantidad: 1.0000004, costoUnitario: 100000000})])}), ["failed-precondition"]);
   assert.equal((await adminDb.collection(`negocios/${businessId}/compras`).get()).size, purchasesBeforeNonCanonical);
   assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock, 8);
   assert.equal((await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("itemId", "==", productA).get()).size, 0);
-  console.log("OK cantidad fÃ­sica de Compra falla cerrada sin documento ni efectos parciales");
+  console.log("OK cantidad física de Compra falla cerrada sin documento ni efectos parciales");
 
   const otherCreated = await call(outsider, "crearCompra")({businessId: otherBusinessId, requestId: requestId("other-create"), compra: purchasePayload(providerOtherId, [line(productA, "other-line")])});
   assert.equal(otherCreated.data.compra.numero, "COM-2026-0001");
@@ -406,6 +409,49 @@ try {
   assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productB}`).get()).data().stock, productBBefore + 5);
   console.log("OK confirmación con múltiples productos");
 
+  // Factura duplicada: mismo proveedor + tipo + número de documento (normalizado) entre compras confirmadas del negocio.
+  const duplicateDraft = (suffix, overrides = {}, owner_ = owner, provider = providerId) => call(owner_, "crearCompra")({businessId, requestId: requestId(`dup-create-${suffix}`), compra: purchasePayload(provider, [line(productA, `dup-${suffix}`, {cantidad: 1, costoUnitario: 10000, descuentoPct: 0})], {numeroDocumentoProveedor: "F-DUP-1", ...overrides})});
+  const duplicateConfirm = (draft, suffix, client = owner) => call(client, "confirmarCompra")({businessId, compraId: draft.data.compra.id, requestId: requestId(`dup-confirm-${suffix}`)});
+  const purchaseState = async (draft) => (await adminDb.doc(`negocios/${businessId}/compras/${draft.data.compra.id}`).get()).data().estado;
+  const dupFirst = await duplicateDraft("first");
+  await duplicateConfirm(dupFirst, "first");
+  assert.equal(await purchaseState(dupFirst), "confirmada");
+  const dupSecond = await duplicateDraft("second", {numeroDocumentoProveedor: "  f-dup-1 "});
+  const stockBeforeDuplicate = (await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock;
+  await assert.rejects(() => duplicateConfirm(dupSecond, "second"), (error) => /failed-precondition/.test(String(error?.code)) && /ya tiene una compra confirmada con la factura N° f-dup-1/.test(String(error?.message)) && error.message.includes(dupFirst.data.compra.numero));
+  console.log("OK rechazo: factura duplicada (mismo proveedor, tipo y número normalizado)");
+  assert.equal(await purchaseState(dupSecond), "borrador");
+  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock, stockBeforeDuplicate);
+  assert.equal((await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("compraId", "==", dupSecond.data.compra.id).get()).size, 0);
+  const dupThird = await duplicateDraft("third", {numeroDocumentoProveedor: "F-DUP-2"});
+  await duplicateConfirm(dupThird, "third");
+  assert.equal(await purchaseState(dupThird), "confirmada");
+  const dupOtherProvider = await duplicateDraft("other-provider", {}, owner, providerBId);
+  await duplicateConfirm(dupOtherProvider, "other-provider");
+  const dupOtherType = await duplicateDraft("other-type", {tipoDocumento: "boleta"});
+  await duplicateConfirm(dupOtherType, "other-type");
+  const dupBoletaSecond = await duplicateDraft("boleta-second", {tipoDocumento: "boleta"});
+  await assert.rejects(() => duplicateConfirm(dupBoletaSecond, "boleta-second"), (error) => /failed-precondition/.test(String(error?.code)) && /con la boleta N° F-DUP-1/.test(String(error?.message)) && /Revisa que la boleta no se haya ingresado antes\./.test(String(error?.message)));
+  await assert.rejects(() => duplicateConfirm(dupSecond, "second-label"), (error) => /Revisa que la factura no se haya ingresado antes\./.test(String(error?.message)));
+  const dupNoDocumentA = await duplicateDraft("nodoc-a", {tipoDocumento: "sin_documento", numeroDocumentoProveedor: ""});
+  const dupNoDocumentB = await duplicateDraft("nodoc-b", {tipoDocumento: "sin_documento", numeroDocumentoProveedor: ""});
+  await duplicateConfirm(dupNoDocumentA, "nodoc-a"); await duplicateConfirm(dupNoDocumentB, "nodoc-b");
+  assert.deepEqual([await purchaseState(dupOtherProvider), await purchaseState(dupOtherType), await purchaseState(dupNoDocumentA), await purchaseState(dupNoDocumentB)], ["confirmada", "confirmada", "confirmada", "confirmada"]);
+  await call(owner, "revertirCompra")({businessId, compraId: dupFirst.data.compra.id, motivo: "Factura ingresada por error", requestId: requestId("dup-reverse")});
+  assert.equal(await purchaseState(dupFirst), "revertida");
+  await duplicateConfirm(dupSecond, "second-after-reversal");
+  assert.equal(await purchaseState(dupSecond), "confirmada");
+  const dupCanceled = await duplicateDraft("canceled", {numeroDocumentoProveedor: "F-DUP-3"});
+  await call(owner, "cancelarCompraBorrador")({businessId, compraId: dupCanceled.data.compra.id});
+  const dupAfterCancel = await duplicateDraft("after-cancel", {numeroDocumentoProveedor: "F-DUP-3"});
+  await duplicateConfirm(dupAfterCancel, "after-cancel");
+  assert.equal(await purchaseState(dupAfterCancel), "confirmada");
+  const [dupRaceA, dupRaceB] = await Promise.all([duplicateDraft("race-a", {numeroDocumentoProveedor: "F-DUP-RACE"}), duplicateDraft("race-b", {numeroDocumentoProveedor: "F-DUP-RACE"}, admin)]);
+  const raceResults = await Promise.allSettled([duplicateConfirm(dupRaceA, "race-a"), duplicateConfirm(dupRaceB, "race-b", admin)]);
+  assert.equal(raceResults.filter((result) => result.status === "fulfilled").length, 1, "con confirmaciones simultáneas solo una de dos compras con el mismo documento puede confirmarse");
+  assert.deepEqual([await purchaseState(dupRaceA), await purchaseState(dupRaceB)].sort(), ["borrador", "confirmada"]);
+  console.log("OK factura duplicada: otra numeración, otro proveedor, otro tipo, sin documento, tras revertir/cancelar y confirmaciones simultáneas");
+
   const unresolvedDocument = {
     origen: "importador_documental", nombreArchivo: "factura.pdf", tipoArchivo: "application/pdf",
     extension: "pdf", tamanoBytes: 2048, tipoDocumento: "factura", numeroDocumento: "F-DOC-1",
@@ -423,6 +469,71 @@ try {
   assert.equal((await adminDb.doc(`negocios/${businessId}/compras/${importedDraft.data.compra.id}`).get()).data().estado, "borrador");
   assert.equal((await adminDb.collection(`negocios/${businessId}/movimientosInventario`).where("compraId", "==", importedDraft.data.compra.id).get()).size, 0);
   console.log("OK importador: factura prepara borrador, conserva tributos y bloquea líneas sin resolver sin stock");
+
+  // Verificación de totales en el servidor: coherenciaEstado sale de comparar los totales declarados con los calculados
+  // desde las líneas (tolerancia de 1 unidad por total), nunca de lo que manda el cliente. La línea vale neto 10000 + IVA 1900 = 11900.
+  const storedCoherence = async (draft) => (await adminDb.doc(`negocios/${businessId}/compras/${draft.data.compra.id}`).get()).data().documentoOrigen?.coherenciaEstado;
+  const coherenceDraft = (suffix, documentOverrides = {}, compraOverrides = {}) => call(owner, "crearCompra")({businessId, requestId: requestId(`coherence-${suffix}`), compra: purchasePayload(providerId, [line(productA, `coherence-${suffix}`, {cantidad: 1, costoUnitario: 10000, descuentoPct: 0})], {documentoOrigen: {...unresolvedDocument, lineasDetectadas: 1, lineasAplicadas: 1, ...documentOverrides}, ...compraOverrides})});
+  const coherentDraft = await coherenceDraft("ok", {coherenciaEstado: "revisar"});
+  assert.equal(coherentDraft.data.compra.documentoOrigen.coherenciaEstado, "coherente");
+  assert.equal(await storedCoherence(coherentDraft), "coherente", "totales que calzan: el servidor corrige un 'revisar' falso del cliente");
+  assert.equal(await storedCoherence(await coherenceDraft("tol-total", {total: 11901})), "coherente", "total con 1 de diferencia: dentro de la tolerancia");
+  assert.equal(await storedCoherence(await coherenceDraft("tol-all", {neto: 10001, impuestoMonto: 1899, total: 11899})), "coherente", "cada total se compara con su propia tolerancia");
+  assert.equal(await storedCoherence(await coherenceDraft("out-total", {total: 11902})), "revisar", "total con 2 de diferencia: fuera de la tolerancia");
+  assert.equal(await storedCoherence(await coherenceDraft("out-tax", {impuestoMonto: 1000})), "revisar", "impuesto distinto: revisar");
+  assert.equal(await storedCoherence(await coherenceDraft("fake", {total: 99999, coherenciaEstado: "coherente"})), "revisar", "el cliente declara 'coherente' con totales falsos: el servidor lo marca 'revisar'");
+  assert.equal(await storedCoherence(await coherenceDraft("empty", {neto: null, impuestoMonto: null, total: null, coherenciaEstado: "coherente"})), "sin_datos", "sin totales declarados no hay nada que comparar");
+  assert.equal(await storedCoherence(await coherenceDraft("currency", {moneda: "USD", total: 5, coherenciaEstado: "coherente"})), "sin_datos", "otra moneda: no comparable");
+  const boletaCoherent = await coherenceDraft("boleta", {tipoDocumento: "boleta", neto: 8403, impuestoMonto: 1597, total: 10000}, {tipoDocumento: "boleta"});
+  assert.equal(await storedCoherence(boletaCoherent), "coherente", "boleta: solo se compara el total (el IVA va incluido en las líneas)");
+  const manualDraft = await call(owner, "crearCompra")({businessId, requestId: requestId("coherence-manual"), compra: purchasePayload(providerId, [line(productA, "coherence-manual", {cantidad: 1, costoUnitario: 10000, descuentoPct: 0})], {tipoDocumento: "sin_documento", numeroDocumentoProveedor: ""})});
+  assert.equal(manualDraft.data.compra.documentoOrigen, null);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/compras/${manualDraft.data.compra.id}`).get()).data().documentoOrigen, null, "compra manual sin documento: no se inventa documentoOrigen");
+  const updatedFake = await call(owner, "actualizarCompraBorrador")({businessId, compraId: coherentDraft.data.compra.id, compra: purchasePayload(providerId, [line(productA, "coherence-ok", {cantidad: 2, costoUnitario: 10000, descuentoPct: 0})], {documentoOrigen: {...unresolvedDocument, lineasDetectadas: 1, lineasAplicadas: 1, coherenciaEstado: "coherente"}})});
+  assert.equal(updatedFake.data.compra.documentoOrigen.coherenciaEstado, "revisar");
+  assert.equal(await storedCoherence(coherentDraft), "revisar", "editar las líneas sin cambiar los totales declarados deja la compra en 'revisar'");
+  await call(owner, "actualizarCompraBorrador")({businessId, compraId: coherentDraft.data.compra.id, compra: purchasePayload(providerId, [line(productA, "coherence-ok", {cantidad: 1, costoUnitario: 10000, descuentoPct: 0})], {documentoOrigen: {...unresolvedDocument, lineasDetectadas: 1, lineasAplicadas: 1, coherenciaEstado: "revisar"}})});
+  assert.equal(await storedCoherence(coherentDraft), "coherente", "al volver a calzar, el servidor lo vuelve a marcar 'coherente'");
+  console.log("OK verificación de totales: coherente, dentro/fuera de tolerancia, cliente con totales falsos, boleta, moneda, sin datos y compra manual");
+
+  // Factura de 21 líneas con cantidades, precios y descuentos distintos (como una factura real de ferretería eléctrica e informática).
+  // El servidor redondea el subtotal y el descuento de cada línea. Emisor A: redondea una sola vez al final (neto exacto 317911,45).
+  // Emisor B: redondea el total de cada línea en una sola operación. Ambos documentos calzan con sus propias líneas.
+  const invoice21Lines = [
+    [3, 1290, 0], [7.5, 845, 5], [12, 2390, 10], [2.25, 15990, 0], [48, 359, 12.5],
+    [1.5, 7490, 7], [6, 3150, 0], [10, 1875, 15], [0.75, 22990, 5], [24, 649, 10],
+    [5, 4590, 3], [8.5, 1120, 0], [2, 18900, 8], [15, 735, 12], [4.5, 2680, 6],
+    [30, 249, 10], [1.25, 9990, 0], [9, 1590, 5], [18, 479, 7.5], [3.5, 5230, 10], [11, 990, 2.5],
+  ];
+  const invoice21Draft = (suffix, documentOverrides) => call(owner, "crearCompra")({businessId, requestId: requestId(`invoice21-${suffix}`), compra: purchasePayload(
+    providerId,
+    invoice21Lines.map(([cantidad, costoUnitario, descuentoPct], index) => line(productA, `inv21-${suffix}-${index}`, {cantidad, costoUnitario, descuentoPct})),
+    {numeroDocumentoProveedor: `F-21L-${suffix}`, documentoOrigen: {...unresolvedDocument, lineasDetectadas: 21, lineasAplicadas: 21, ...documentOverrides}},
+  )});
+  const invoice21A = await invoice21Draft("a", {neto: 317911, impuestoMonto: 60403, total: 378314});
+  assert.equal(invoice21A.data.compra.items.length, 21);
+  assert.deepEqual({neto: invoice21A.data.compra.neto, iva: invoice21A.data.compra.iva, total: invoice21A.data.compra.total}, {neto: 317911, iva: 60403, total: 378314});
+  assert.equal(await storedCoherence(invoice21A), "coherente", "21 líneas: el emisor que redondea una sola vez calza exacto");
+  const invoice21B = await invoice21Draft("b", {neto: 317914, impuestoMonto: 60404, total: 378318});
+  assert.deepEqual({neto: invoice21B.data.compra.neto, iva: invoice21B.data.compra.iva, total: invoice21B.data.compra.total}, {neto: 317911, iva: 60403, total: 378314});
+  // El emisor B difiere por el redondeo por línea (neto +3, IVA +1, total +4). La tolerancia es 1 × max(1, líneas) = 21: 'coherente'.
+  assert.equal(await storedCoherence(invoice21B), "coherente", "21 líneas: el emisor que redondea cada línea cae dentro de la tolerancia de 21");
+  const invoice21Big = await invoice21Draft("big", {neto: 317911, impuestoMonto: 60403, total: 378314 + 100});
+  assert.equal(await storedCoherence(invoice21Big), "revisar", "21 líneas: 100 pesos de diferencia en el total siguen en 'revisar'");
+  const invoice21Edge = await invoice21Draft("edge", {neto: 317911, impuestoMonto: 60403, total: 378314 + 21});
+  assert.equal(await storedCoherence(invoice21Edge), "coherente", "21 líneas: 21 de diferencia es el límite de la tolerancia");
+  const invoice21Over = await invoice21Draft("over", {neto: 317911, impuestoMonto: 60403, total: 378314 + 22});
+  assert.equal(await storedCoherence(invoice21Over), "revisar", "21 líneas: 22 de diferencia queda fuera");
+  // Al editar el borrador se usa el mismo número de líneas (actualizarCompraBorrador): el documento B sigue 'coherente' con las 21 líneas.
+  await call(owner, "actualizarCompraBorrador")({businessId, compraId: invoice21B.data.compra.id, compra: purchasePayload(
+    providerId,
+    invoice21Lines.map(([cantidad, costoUnitario, descuentoPct], index) => line(productA, `inv21-b-${index}`, {cantidad, costoUnitario, descuentoPct})),
+    {numeroDocumentoProveedor: "F-21L-b", documentoOrigen: {...unresolvedDocument, lineasDetectadas: 21, lineasAplicadas: 21, neto: 317914, impuestoMonto: 60404, total: 378318}},
+  )});
+  assert.equal(await storedCoherence(invoice21B), "coherente", "21 líneas al editar el borrador: sigue 'coherente'");
+  // Con 1 línea la tolerancia no cambia: +3 sobre un neto de 10000 es 'revisar' (ver los casos 'tol-total' y 'out-total' de arriba).
+  assert.equal(await storedCoherence(await coherenceDraft("one-line-3", {total: 11903})), "revisar", "1 línea: 3 de diferencia sigue en 'revisar'");
+  console.log("OK factura de 21 líneas: totales del servidor, emisores A y B coherentes, diferencia de 100 en 'revisar', límite 21/22 y 1 línea sin cambios");
 
   const rollbackDraft = await call(owner, "crearCompra")({businessId, requestId: requestId("rollback-create"), compra: purchasePayload(providerId, [line(productA, "rollback-a", {cantidad: 1}), line(productB, "rollback-b", {cantidad: 1})])});
   const stockBeforeRollback = (await adminDb.doc(`negocios/${businessId}/inventario/${productA}`).get()).data().stock;

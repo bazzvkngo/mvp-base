@@ -2,6 +2,7 @@ import React from "react";
 import {
   BellRing,
   Building2,
+  Check,
   FileUp,
   FileText,
   ImagePlus,
@@ -13,18 +14,30 @@ import {
   Trash2,
 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import BusinessCategoryPicker from "../../components/BusinessCategoryPicker";
+import { getRouteMeta } from "../../app/navigation";
+import { getCompanyDocumentSuggestions } from "../../domain/companyDocumentSuggestions.mjs";
+import { getCountryFormCopy } from "../../domain/countryFormCopy.mjs";
+import BusinessCategoryPicker, {
+  getBusinessCategoryVisibleName,
+} from "../../components/BusinessCategoryPicker";
 import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
 import LoadingState from "../../components/ui/LoadingState";
+import ModuleHeader from "../../components/ui/ModuleHeader";
+import Notice from "../../components/ui/Notice";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import {
   CHILE_REGIONS,
   getBusinessCategoryDisplayName,
   getCommuneByCode,
   getCommunesForRegion,
+  findRegionCodeByName,
   getCountryByCode,
   getRegionByCode,
+  getRegionForCountry,
+  getRegionLabel,
+  getRegionsForCountry,
+  hasRegionCatalog,
 } from "../../domain/businessCatalog";
 import {
   isValidBusinessEmail,
@@ -67,6 +80,8 @@ const SECTIONS = [
   { id: "eliminacion", label: "Eliminar empresa", icon: Trash2, ownerOnly: true },
 ];
 const ACTIVATION_SECTION_IDS = new Set(["informacion", "verificacion"]);
+const MODULE = getRouteMeta("/empresa");
+const MODULE_DESCRIPTION = "Datos de identificación, ubicación y verificación del negocio.";
 
 const COMPLETION_TARGETS = Object.freeze({
   identity: "identidad",
@@ -76,6 +91,16 @@ const COMPLETION_TARGETS = Object.freeze({
   address: "direccion",
   logo: "logo",
 });
+
+// Campos que decide la verificación (no el formulario). Cuando cambia el estado de
+// verificación se vuelven a leer sin tocar lo que la persona esté editando.
+const VERIFICATION_DRIVEN_FIELDS = Object.freeze([
+  "verificacionEmpresa",
+  "razonSocial",
+  "identificadorFiscalTipo",
+  "identificadorFiscalValor",
+  "rut",
+]);
 
 const EMPTY_INFORMATION = {
   nombreComercial: "",
@@ -183,6 +208,10 @@ function SectionStatus({ error, success }) {
   return null;
 }
 
+// Etiqueta con "*" (obligatorio, solo visual) u "Opcional" (parte del nombre accesible, una sola vez).
+// El control recibe aria-required si es obligatorio, y aria-invalid + aria-describedby si hay error o
+// ayuda. La línea de ayuda o de error solo existe si hay texto; dentro de la etiqueta se oculta a los
+// lectores de pantalla (aria-hidden) para que no se lea dos veces: una vez como nombre y otra como descripción.
 function SettingsField({
   children,
   error,
@@ -193,17 +222,34 @@ function SettingsField({
   targetId,
   wide = false,
 }) {
+  const supportId = React.useId();
+  const support = error || hint || null;
+  const canDescribe = Boolean(support) && React.isValidElement(children);
+  const controlProps = {};
+  if (canDescribe) controlProps["aria-describedby"] = supportId;
+  if (error && React.isValidElement(children)) controlProps["aria-invalid"] = true;
+  if (required && React.isValidElement(children)) controlProps["aria-required"] = true;
+  const control = Object.keys(controlProps).length > 0
+    ? React.cloneElement(children, controlProps)
+    : children;
   return (
     <label id={targetId} className={`settings-field${wide ? " settings-field--wide" : ""}`}>
       <span className="settings-field__label">
         {label}
         {required && <span aria-hidden="true"> *</span>}
-        {optional && <span className="settings-field__optional">Opcional</span>}
+        {optional && (
+          <>
+            <span className="sr-only">, </span>
+            <span className="settings-field__optional">Opcional</span>
+          </>
+        )}
       </span>
-      {children}
-      <span className="settings-field__support">
-        {error ? <span className="settings-field__error">{error}</span> : hint || "\u00a0"}
-      </span>
+      {control}
+      {support && (
+        <span id={supportId} className="settings-field__support" aria-hidden={canDescribe ? "true" : undefined}>
+          {error ? <span className="settings-field__error">{error}</span> : hint}
+        </span>
+      )}
     </label>
   );
 }
@@ -217,6 +263,43 @@ function LockedSetting({label, value, targetId, trailing}) {
         {trailing || <AppIcon icon={Lock} size={16} />}
       </div>
     </div>
+  );
+}
+
+// Dato de solo lectura de la franja fiscal: recuadro suave con la etiqueta pequeña arriba y el valor
+// en negrita abajo, sin candado propio. `wide` ocupa dos columnas; `accent` pinta el recuadro en verde
+// sobrio (solo el RUT verificado); `trailing` es un ícono al final del valor.
+function CompanyFact({ accent = false, children, label, targetId, trailing = null, value, wide = false }) {
+  const classes = [
+    "company-verification-strip__fact",
+    wide ? "company-verification-strip__fact--wide" : "",
+    accent ? "company-verification-strip__fact--verified" : "",
+  ].filter(Boolean).join(" ");
+  return (
+    <div id={targetId} className={classes}>
+      <dt>{label}</dt>
+      <dd>
+        <span className="company-verification-strip__value">{children || value || "—"}</span>
+        {trailing}
+      </dd>
+    </div>
+  );
+}
+
+// Nota discreta con los datos opcionales que faltan y para qué sirven. No es una alerta: texto pequeño,
+// sin ícono, sin role ni aria-live.
+function CompanySuggestions({ items }) {
+  if (!items.length) return null;
+  return (
+    <ul className="company-suggestions" aria-label="Sugerencias para tus documentos">
+      {items.map((item) => (
+        <li key={item.id}>
+          <strong>{item.label}</strong>
+          {": "}
+          {item.text}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -242,7 +325,7 @@ function focusCompanyTarget(target) {
   control?.focus({ preventScroll: true });
 }
 
-function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusinessUpdated }) {
+function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusinessUpdated, verificationKey }) {
   const navigate = useNavigate();
   const fileInputRef = React.useRef(null);
   const [form, setForm] = React.useState(EMPTY_INFORMATION);
@@ -268,7 +351,18 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
     getCompanyProfile(businessId)
       .then((profile) => {
         if (!active) return;
-        setForm({ ...EMPTY_INFORMATION, ...profile });
+        const loaded = { ...EMPTY_INFORMATION, ...profile };
+        if (
+          loaded.paisCodigo !== "CL" &&
+          hasRegionCatalog(loaded.paisCodigo) &&
+          !getRegionForCountry(loaded.paisCodigo, loaded.regionCodigo)
+        ) {
+          loaded.regionCodigo = findRegionCodeByName(
+            loaded.paisCodigo,
+            loaded.regionEstado || loaded.regionNombre
+          );
+        }
+        setForm(loaded);
       })
       .catch((loadError) => {
         if (active) {
@@ -281,11 +375,26 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
     };
   }, [businessId]);
 
+  const verificationKeyRef = React.useRef(verificationKey);
   React.useEffect(() => {
-    if (loading || !focusTarget) return undefined;
-    const frameId = window.requestAnimationFrame(() => focusCompanyTarget(focusTarget));
-    return () => window.cancelAnimationFrame(frameId);
-  }, [focusTarget, loading]);
+    if (verificationKeyRef.current === verificationKey) return undefined;
+    verificationKeyRef.current = verificationKey;
+    let active = true;
+    getCompanyProfile(businessId)
+      .then((profile) => {
+        if (!active) return;
+        setForm((current) => ({
+          ...current,
+          ...Object.fromEntries(
+            VERIFICATION_DRIVEN_FIELDS.map((field) => [field, profile[field]])
+          ),
+        }));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [businessId, verificationKey]);
 
   React.useEffect(() => {
     if (!logoFile) {
@@ -305,7 +414,13 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
       errors.rubroCodigo = "Describe el rubro del negocio.";
     }
     if (form.paisCodigo === "CL" && !getRegionByCode(form.regionCodigo)) errors.regionCodigo = "Selecciona una región.";
-    if (form.paisCodigo !== "CL" && !form.regionEstado.trim()) errors.regionEstado = "Ingresa la región o estado.";
+    if (form.paisCodigo !== "CL" && hasRegionCatalog(form.paisCodigo)) {
+      if (!getRegionForCountry(form.paisCodigo, form.regionCodigo)) {
+        errors.regionCodigo = `Selecciona un ${getRegionLabel(form.paisCodigo).toLowerCase()}.`;
+      }
+    } else if (form.paisCodigo !== "CL" && !form.regionEstado.trim()) {
+      errors.regionEstado = "Ingresa la región o estado.";
+    }
     if (form.paisCodigo === "CL" && form.comunaCodigo && !getCommuneByCode(form.regionCodigo, form.comunaCodigo)) {
       errors.comunaCodigo = "La comuna no corresponde a la región seleccionada.";
     }
@@ -317,13 +432,12 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
     }
     return errors;
   }, [form]);
-  const recommendedPending = React.useMemo(() => {
-    const fields = [];
-    if (form.paisCodigo === "CL" && !form.comunaCodigo) fields.push("comuna");
-    if (!form.direccion.trim()) fields.push("dirección");
-    if (!form.telefono.trim() && !form.email.trim()) fields.push("contacto comercial");
-    return fields;
-  }, [form]);
+  // Todos los campos están siempre visibles: el foco pedido desde fuera (objetivo=...) no necesita abrir nada.
+  React.useEffect(() => {
+    if (loading || !focusTarget) return undefined;
+    const frameId = window.requestAnimationFrame(() => focusCompanyTarget(focusTarget));
+    return () => window.cancelAnimationFrame(frameId);
+  }, [focusTarget, loading]);
 
   const change = (event) => {
     const { name, value } = event.target;
@@ -418,18 +532,19 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
   };
 
   if (loading) return <LoadingState variant="section" label="Cargando información..." />;
+  const isVerified = form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.VERIFIED;
+  // Etiquetas y ejemplos según el país de la empresa (Bolivia: "Actividad económica", teléfono +591, .com.bo).
+  const countryCopy = getCountryFormCopy(form.paisCodigo);
+  const documentSuggestions = getCompanyDocumentSuggestions(form, { canEdit, countryCode: form.paisCodigo });
+  const commercialSuggestions = documentSuggestions.filter((item) => item.section === "comerciales");
+  const contactSuggestions = documentSuggestions.filter((item) => item.section === "contacto");
 
   return (
     <SectionFrame
       title="Información de la empresa"
       description="Identidad, ubicación y datos necesarios para la activación."
     >
-      {form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.PENDING && (
-        <p className="settings-message settings-message--warning" role="status">
-          Cambiar la razón social invalidará la verificación actual y requerirá una nueva solicitud.
-        </p>
-      )}
-      <dl className="company-profile-summary" aria-label="Resumen de la empresa">
+      <dl className="company-profile-summary company-profile-summary--compact" aria-label="Resumen de la empresa">
         <div>
           <dt>Estado</dt>
           <dd className={form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.VERIFIED ? "is-verified" : ""}>
@@ -440,65 +555,47 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
           </dd>
         </div>
         <div>
-          <dt>País</dt>
-          <dd>{form.paisNombre || getCountryByCode(form.paisCodigo)?.name || form.paisCodigo || "—"}</dd>
-        </div>
-        <div>
-          <dt>{form.identificadorFiscalTipo || "Identificación fiscal"}</dt>
-          <dd>{form.identificadorFiscalValor || "No informado"}</dd>
-        </div>
-        <div>
-          <dt>Razón social</dt>
-          <dd>{form.razonSocial || "No informada"}</dd>
-        </div>
-        <div>
           <dt>Rubro</dt>
-          <dd>{form.rubroNombre || getBusinessCategoryDisplayName(form.rubroCodigo, form.rubroOtro) || "No informado"}</dd>
+          <dd>{getBusinessCategoryVisibleName(form.rubroCodigo, form.rubroOtro, form.rubroNombre) || "No informado"}</dd>
         </div>
       </dl>
       <form onSubmit={save} noValidate>
-        <fieldset className="settings-fieldset" disabled={!canEdit || saving}>
+        <fieldset className="settings-fieldset" disabled={!canEdit || saving} aria-describedby="empresa-leyenda-obligatorios">
           <legend className="sr-only">Información de la empresa</legend>
-          <div className={`settings-card company-information-card company-authoritative-card${form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.VERIFIED ? " is-verified" : ""}`}>
-            <div className="company-information-card__header">
-              <div>
-                <h3>{form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.VERIFIED ? "Empresa verificada" : "Datos fiscales y autoritativos"}</h3>
-                <p>Identidad fiscal protegida y datos definidos al crear la empresa.</p>
-              </div>
-              {form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.VERIFIED && (
-                <span className="company-verified-status">
-                  <AppIcon icon={ShieldCheck} size={17} />
-                  Verificación vigente
-                </span>
-              )}
+          <div className={`settings-card company-information-card company-verification-strip${isVerified ? " company-verification-strip--verified" : ""}`}>
+            <div className="company-information-card__header company-verification-strip__header">
+              <h3>Datos fiscales</h3>
+              <span className="company-verification-strip__lock" role="img" aria-label="Solo lectura" title="Solo lectura">
+                <AppIcon icon={Lock} size={16} />
+              </span>
             </div>
-            <div className="settings-form-grid">
-              <LockedSetting
+            <dl className="company-verification-strip__facts">
+              <CompanyFact
                 label="País"
                 targetId="empresa-configuracion"
                 value={form.paisNombre || getCountryByCode(form.paisCodigo)?.name || form.paisCodigo}
               />
-              <LockedSetting
+              <CompanyFact
                 label="Moneda nacional"
                 value={`${form.monedaNombre || form.monedaCodigo} (${form.monedaCodigo})`}
               />
-              <LockedSetting label="Formato regional" value={form.locale} />
-              <LockedSetting
-                label="Identificación fiscal"
-                value={form.identificadorFiscalTipo}
-              />
-              <div id="empresa-fiscal" className="settings-field settings-locked-field settings-field--wide">
-                <span className="settings-field__label">
-                  {form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.VERIFIED
-                    ? `${form.identificadorFiscalTipo || "Identificador fiscal"} verificado`
-                    : `Estado del ${form.identificadorFiscalTipo || "identificador fiscal"}`}
-                </span>
-                {form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.VERIFIED ? (
-                  <div className="settings-locked-field__value is-verified">
-                    <strong>{form.identificadorFiscalValor || "—"}</strong>
-                    <span>✓ Verificado</span>
-                  </div>
-                ) : (
+              <CompanyFact label="Formato regional" value={form.locale} />
+              <CompanyFact label="Identificación fiscal" value={form.identificadorFiscalTipo} />
+              <CompanyFact
+                label={form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.VERIFIED
+                  ? (form.identificadorFiscalTipo || "Identificador fiscal")
+                  : `Estado del ${form.identificadorFiscalTipo || "identificador fiscal"}`}
+                targetId="empresa-fiscal"
+                value={form.identificadorFiscalValor}
+                wide
+                accent={isVerified}
+                trailing={isVerified ? (
+                  <span className="company-verification-strip__check" role="img" aria-label="Verificado">
+                    <AppIcon icon={Check} size={15} />
+                  </span>
+                ) : null}
+              >
+                {form.verificacionEmpresa?.estado !== BUSINESS_VERIFICATION_STATES.VERIFIED && (
                   <div className="settings-fiscal-pending">
                     <span className={`settings-verification-pill is-${(form.verificacionEmpresa?.estado || BUSINESS_VERIFICATION_STATES.NOT_VERIFIED).toLowerCase()}`}>
                       {(form.verificacionEmpresa?.estado || BUSINESS_VERIFICATION_STATES.NOT_VERIFIED) === BUSINESS_VERIFICATION_STATES.NOT_VERIFIED
@@ -517,57 +614,95 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
                     </Button>
                   </div>
                 )}
-              </div>
-              <div className="settings-field settings-locked-field settings-field--wide company-official-name">
-                <span className="settings-field__label">Razón social oficial</span>
-                <div className="settings-locked-field__value">
-                  <span>{form.razonSocial || "Aún no registrada"}</span>
-                  <AppIcon icon={Lock} size={16} />
-                </div>
-                {form.verificacionEmpresa?.estado === BUSINESS_VERIFICATION_STATES.VERIFIED && (
-                  <span className="settings-field__support">
-                    Este dato forma parte de la verificación. Si cambia, ValoraCloud solicitará una nueva revisión.
-                  </span>
-                )}
-              </div>
-            </div>
+              </CompanyFact>
+              <CompanyFact label="Razón social oficial" value={form.razonSocial || "Aún no registrada"} wide />
+            </dl>
+            {[BUSINESS_VERIFICATION_STATES.PENDING, BUSINESS_VERIFICATION_STATES.VERIFIED].includes(form.verificacionEmpresa?.estado) && (
+              <p className="company-verification-strip__note">
+                Estos datos forman parte de la verificación. Si cambian, ValoraCloud solicitará una nueva revisión.
+              </p>
+            )}
           </div>
 
           <div className="settings-card company-information-card">
             <div className="company-information-card__header">
               <div>
-                <h3>Datos comerciales editables</h3>
-                <p>Información con la que la empresa se presenta a clientes y proveedores.</p>
+                <h3>Datos comerciales</h3>
+                <p id="empresa-leyenda-obligatorios">Los campos con * son obligatorios.</p>
               </div>
             </div>
             <div className="settings-form-grid">
               <SettingsField label="Nombre comercial" required error={touched.nombreComercial ? fieldErrors.nombreComercial : ""} targetId="empresa-identidad">
-                <input name="nombreComercial" value={form.nombreComercial} onChange={change} onBlur={() => touch("nombreComercial")} aria-invalid={Boolean(touched.nombreComercial && fieldErrors.nombreComercial)} />
+                <input name="nombreComercial" value={form.nombreComercial} onChange={change} onBlur={() => touch("nombreComercial")} aria-invalid={Boolean(touched.nombreComercial && fieldErrors.nombreComercial)} placeholder="Ej.: Servicios Eléctricos Pérez" />
               </SettingsField>
               <div className="settings-field">
-                <span className="settings-field__label">Rubro principal <span aria-hidden="true">*</span></span>
+                <span className="settings-field__label">Rubro principal<span aria-hidden="true"> *</span></span>
                 <BusinessCategoryPicker
                   id="company-category"
+                  required
                   value={form.rubroCodigo}
                   customValue={form.rubroOtro}
                   fallbackName={form.rubroNombre}
                   disabled={!canEdit || saving}
                   error={touched.rubroCodigo ? fieldErrors.rubroCodigo : ""}
-                  errorId="company-category-error"
+                  errorId="company-category-support"
                   onTouched={() => touch("rubroCodigo")}
                   onChange={({ code, customName }) => {
                     setForm((current) => ({ ...current, rubroCodigo: code, rubroOtro: customName, rubroNombre: getBusinessCategoryDisplayName(code, customName) }));
                     setTouched((current) => ({ ...current, rubroCodigo: true }));
                   }}
                 />
-                <span className="settings-field__support">
+                <span id="company-category-support" className="settings-field__support">
                   {touched.rubroCodigo && fieldErrors.rubroCodigo ? (
-                    <span id="company-category-error" className="settings-field__error">{fieldErrors.rubroCodigo}</span>
+                    <span className="settings-field__error">{fieldErrors.rubroCodigo}</span>
                   ) : "Selecciona la actividad que mejor representa los servicios de tu empresa."}
                 </span>
               </div>
-              <SettingsField label="Giro" wide>
-                <input name="giro" value={form.giro} onChange={change} />
+              <SettingsField label={countryCopy.businessActivityLabel} optional wide>
+                <input name="giro" value={form.giro} onChange={change} placeholder="Ej.: Servicios de ingeniería" />
+              </SettingsField>
+              {form.paisCodigo === "CL" ? (
+                <>
+                  <SettingsField label="Región" required error={touched.regionCodigo ? fieldErrors.regionCodigo : ""}>
+                    <select name="regionCodigo" autoComplete="off" value={form.regionCodigo} onChange={change} onBlur={() => touch("regionCodigo")}>
+                      <option value="">Selecciona una región</option>
+                      {CHILE_REGIONS.map((region) => <option key={region.code} value={region.code}>{region.name}</option>)}
+                    </select>
+                  </SettingsField>
+                  <SettingsField label="Comuna / ciudad" optional error={touched.comunaCodigo ? fieldErrors.comunaCodigo : ""}>
+                    <select name="comunaCodigo" autoComplete="off" value={form.comunaCodigo} onChange={change} onBlur={() => touch("comunaCodigo")} disabled={!form.regionCodigo || !canEdit || saving}>
+                      <option value="">Selecciona una comuna</option>
+                      {communes.map((commune) => <option key={commune.code} value={commune.code}>{commune.name}</option>)}
+                    </select>
+                  </SettingsField>
+                </>
+              ) : hasRegionCatalog(form.paisCodigo) ? (
+                <>
+                  <SettingsField label={getRegionLabel(form.paisCodigo)} required error={touched.regionCodigo ? fieldErrors.regionCodigo : ""}>
+                    <select name="regionCodigo" autoComplete="off" value={form.regionCodigo} onChange={change} onBlur={() => touch("regionCodigo")}>
+                      <option value="">{`Selecciona un ${getRegionLabel(form.paisCodigo).toLowerCase()}`}</option>
+                      {getRegionsForCountry(form.paisCodigo).map((region) => <option key={region.code} value={region.code}>{region.name}</option>)}
+                    </select>
+                  </SettingsField>
+                  <SettingsField label="Ciudad" optional>
+                    <input name="ciudad" value={form.ciudad} onChange={change} placeholder="Ej.: Santa Cruz de la Sierra" />
+                  </SettingsField>
+                </>
+              ) : (
+                <>
+                  <SettingsField label="Región / Estado" required error={fieldErrors.regionEstado}>
+                    <input name="regionEstado" value={form.regionEstado} onChange={change} placeholder="Ej.: Florida" />
+                  </SettingsField>
+                  <SettingsField label="Ciudad" optional>
+                    <input name="ciudad" value={form.ciudad} onChange={change} placeholder="Ej.: Miami" />
+                  </SettingsField>
+                </>
+              )}
+              <SettingsField label="Dirección comercial" optional targetId="empresa-direccion">
+                <input name="direccion" value={form.direccion} onChange={change} placeholder="Calle y número" />
+              </SettingsField>
+              <SettingsField label="Código postal" optional>
+                <input name="codigoPostal" value={form.codigoPostal} onChange={change} placeholder={countryCopy.companyPostalCodeExample || undefined} />
               </SettingsField>
             </div>
             <div id="empresa-logo" className="settings-logo-card settings-logo-card--embedded">
@@ -610,67 +745,29 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
               {logoFile && <p className="settings-logo-file">Seleccionado: {logoFile.name}</p>}
               {logoError && <p className="settings-field__error" role="alert">{logoError}</p>}
             </div>
+            <CompanySuggestions items={commercialSuggestions} />
           </div>
 
-          <div className="settings-card company-information-card company-information-card--secondary">
+          <div className="settings-card company-information-card">
             <div className="company-information-card__header">
               <div>
-                <h3>Ubicación y contacto</h3>
-                <p>Datos complementarios para documentos y comunicaciones comerciales.</p>
+                <h3>Contacto</h3>
               </div>
             </div>
             <div className="settings-form-grid">
-              {form.paisCodigo === "CL" ? (
-                <>
-                  <SettingsField label="Región" required error={touched.regionCodigo ? fieldErrors.regionCodigo : ""}>
-                    <select name="regionCodigo" value={form.regionCodigo} onChange={change} onBlur={() => touch("regionCodigo")}>
-                      <option value="">Selecciona una región</option>
-                      {CHILE_REGIONS.map((region) => <option key={region.code} value={region.code}>{region.name}</option>)}
-                    </select>
-                  </SettingsField>
-                  <SettingsField label="Comuna / ciudad" error={touched.comunaCodigo ? fieldErrors.comunaCodigo : ""}>
-                    <select name="comunaCodigo" value={form.comunaCodigo} onChange={change} onBlur={() => touch("comunaCodigo")} disabled={!form.regionCodigo || !canEdit || saving}>
-                      <option value="">Sin comuna</option>
-                      {communes.map((commune) => <option key={commune.code} value={commune.code}>{commune.name}</option>)}
-                    </select>
-                  </SettingsField>
-                </>
-              ) : (
-                <>
-                  <SettingsField label="Región / Estado" required error={fieldErrors.regionEstado}>
-                    <input name="regionEstado" value={form.regionEstado} onChange={change} />
-                  </SettingsField>
-                  <SettingsField label="Ciudad">
-                    <input name="ciudad" value={form.ciudad} onChange={change} />
-                  </SettingsField>
-                </>
-              )}
-              <SettingsField label="Código postal">
-                <input name="codigoPostal" value={form.codigoPostal} onChange={change} />
+              <SettingsField label="Teléfono comercial" optional targetId="empresa-contacto">
+                <input name="telefono" type="tel" value={form.telefono} onChange={change} placeholder={countryCopy.companyPhoneExample} />
               </SettingsField>
-              <SettingsField label="Dirección comercial" targetId="empresa-direccion" wide>
-                <input name="direccion" value={form.direccion} onChange={change} />
+              <SettingsField label="Correo comercial" optional error={touched.email ? fieldErrors.email : ""}>
+                <input name="email" type="email" value={form.email} onChange={change} onBlur={() => touch("email")} aria-invalid={Boolean(touched.email && fieldErrors.email)} placeholder={countryCopy.companyEmailExample} />
               </SettingsField>
-              <SettingsField label="Teléfono comercial" targetId="empresa-contacto">
-                <input name="telefono" type="tel" value={form.telefono} onChange={change} />
-              </SettingsField>
-              <SettingsField label="Correo comercial" error={touched.email ? fieldErrors.email : ""}>
-                <input name="email" type="email" value={form.email} onChange={change} onBlur={() => touch("email")} aria-invalid={Boolean(touched.email && fieldErrors.email)} />
-              </SettingsField>
-              <SettingsField label="Sitio web" wide error={touched.sitioWeb ? fieldErrors.sitioWeb : ""}>
-                <input name="sitioWeb" type="url" placeholder="https://www.empresa.com" value={form.sitioWeb} onChange={change} onBlur={() => touch("sitioWeb")} aria-invalid={Boolean(touched.sitioWeb && fieldErrors.sitioWeb)} />
+              <SettingsField label="Sitio web" optional wide error={touched.sitioWeb ? fieldErrors.sitioWeb : ""}>
+                <input name="sitioWeb" type="url" placeholder={countryCopy.companyWebsiteExample} value={form.sitioWeb} onChange={change} onBlur={() => touch("sitioWeb")} aria-invalid={Boolean(touched.sitioWeb && fieldErrors.sitioWeb)} />
               </SettingsField>
             </div>
+            <CompanySuggestions items={contactSuggestions} />
           </div>
         </fieldset>
-        {form.nombreComercial.trim() &&
-          (form.rubroCodigo || form.rubroNombre) &&
-          (form.regionCodigo || form.regionEstado) &&
-          recommendedPending.length > 0 && (
-          <p className="settings-message settings-message--warning" role="status">
-            Pendiente por completar: {recommendedPending.join(", ")}.
-          </p>
-        )}
         <SectionStatus error={error} success={success} />
         <div className="settings-save-row">
           {!canEdit && <p>Tu rol permite consultar estos datos, pero no editarlos.</p>}
@@ -687,6 +784,7 @@ function BusinessVerificationSection({
   currentUserPhone,
   currentUserUid,
   role,
+  verificationKey,
 }) {
   const [profile, setProfile] = React.useState(null);
   const [form, setForm] = React.useState({
@@ -725,6 +823,9 @@ function BusinessVerificationSection({
     });
   }, [businessId]);
 
+  // Ejemplos según el país de la empresa (Chile: sin ejemplos, como antes).
+  const countryCopy = getCountryFormCopy(form.paisCodigo);
+
   const load = React.useCallback(async () => {
     const [value, personalProfile] = await Promise.all([
       getCompanyProfile(businessId),
@@ -760,6 +861,15 @@ function BusinessVerificationSection({
       .finally(() => active && setLoading(false));
     return () => { active = false; };
   }, [load]);
+
+  // Un cambio de estado que llega desde fuera (aprobación, rechazo) vuelve a leer el
+  // perfil sin remontar la sección, para conservar el mensaje de la solicitud enviada.
+  const verificationKeyRef = React.useRef(verificationKey);
+  React.useEffect(() => {
+    if (verificationKeyRef.current === verificationKey) return;
+    verificationKeyRef.current = verificationKey;
+    load().catch(() => {});
+  }, [load, verificationKey]);
 
   const verification = profile?.verificacionEmpresa || {
     estado: BUSINESS_VERIFICATION_STATES.NOT_VERIFIED,
@@ -855,7 +965,7 @@ function BusinessVerificationSection({
       {verification.estado === BUSINESS_VERIFICATION_STATES.PENDING && <p>La solicitud está en revisión. Podrás comenzar a operar cuando sea aprobada.</p>}
       {verification.estado === BUSINESS_VERIFICATION_STATES.VERIFIED && <p><strong>{verification.identificadorFiscalTipo || form.identificadorFiscalTipo}: {verification.identificadorFiscalValor || form.identificadorFiscalValor}</strong> · ✓ Verificado</p>}
       {verification.estado === BUSINESS_VERIFICATION_STATES.REJECTED && <p><strong>Motivo:</strong> {verification.motivoRechazo || "La plataforma rechazó la solicitud."}</p>}
-      {!canRequest && <p className="settings-verification-help">Sólo el propietario puede solicitar verificación. Otros perfiles autorizados pueden consultar el estado.</p>}
+      {!canRequest && <p className="settings-verification-help">Solo el propietario puede solicitar verificación. Otros perfiles autorizados pueden consultar el estado.</p>}
       {canRequest && !requestBlocked && <Button type="button" icon={ShieldCheck} onClick={() => { setDialogOpen(true); setError(""); }}>Solicitar verificación</Button>}
     </div>
     <SectionStatus error={!dialogOpen ? error : ""} success={success} />
@@ -914,6 +1024,8 @@ function BusinessVerificationSection({
       >
         <input
           value={form.identificadorFiscalValor}
+          maxLength={form.paisCodigo === "CL" ? 12 : 20}
+          placeholder={countryCopy.declaredFiscalIdExample || undefined}
           onChange={(event) =>
             update("identificadorFiscalValor", event.target.value)
           }
@@ -940,6 +1052,7 @@ function BusinessVerificationSection({
       <SettingsField label="Correo del solicitante" required>
         <input
           type="email"
+          placeholder={countryCopy.requesterEmailExample || undefined}
           value={form.correoSolicitante}
           onChange={(event) =>
             update("correoSolicitante", event.target.value)
@@ -950,6 +1063,7 @@ function BusinessVerificationSection({
       <SettingsField label="Teléfono del solicitante" required>
         <input
           type="tel"
+          placeholder={countryCopy.requesterPhoneExample || undefined}
           value={form.telefonoSolicitante}
           onChange={(event) =>
             update("telefonoSolicitante", event.target.value)
@@ -1070,9 +1184,9 @@ function TaxSection({ businessId }) {
             Los documentos históricos conservan la configuración tributaria con la que fueron emitidos.
           </p>
           {profile?.configuracionTributariaBaseCompleta === false && (
-            <p className="settings-message settings-message--warning" role="status">
+            <Notice variant="warning" className="settings-message--warning">
               Este país requiere una configuración tributaria específica de plataforma antes de operar.
-            </p>
+            </Notice>
           )}
         </div>
       )}
@@ -1166,7 +1280,7 @@ function QuoteSection({ businessId, canEdit }) {
     finally { setSaving(false); }
   };
   return (
-    <SectionFrame title="Valores predeterminados para nuevas cotizaciones" description="Se aplican al crear una cotización. Los cambios realizados dentro de una cotización afectan sólo a ese documento y no modifican estos valores de Empresa.">
+    <SectionFrame title="Valores predeterminados para nuevas cotizaciones" description="Se aplican al crear una cotización. Los cambios realizados dentro de una cotización afectan solo a ese documento y no modifican estos valores de Empresa.">
       {loading ? <LoadingState variant="section" label="Cargando valores predeterminados..." /> : (
         <form onSubmit={submit}>
           <fieldset className="settings-fieldset" disabled={!canEdit || saving}>
@@ -1372,8 +1486,12 @@ function CompanyConfig({
       : "verificacion";
   const focusTarget = searchParams.get("objetivo") || "";
   const canEdit = role === "OWNER" || role === "ADMIN";
-  const activationStatus = businessCompletionStatus?.verificationStatus ||
-    BUSINESS_VERIFICATION_STATES.NOT_VERIFIED;
+  // Sin estado conocido (null en perfiles que no gestionan el negocio) el aviso no afirma
+  // "no verificada": la sección Verificación muestra el estado real.
+  const knownActivationStatus = businessCompletionStatus?.verificationStatus || null;
+  const activationStatus = knownActivationStatus || BUSINESS_VERIFICATION_STATES.NOT_VERIFIED;
+  // Cambia cuando la verificación cambia (en vivo o en la sesión): las secciones vuelven a leer el perfil.
+  const verificationKey = `${activationStatus}:${businessVerified ? "operativa" : "bloqueada"}`;
   const canActOnCompletionItem = (item) =>
     item.id !== "ownerEmail" || role === "OWNER";
   const focusActiveSection = React.useCallback(() => {
@@ -1417,27 +1535,32 @@ function CompanyConfig({
     }
   };
 
-  if (!businessId) return <p className="settings-message settings-message--error">No hay un negocio activo.</p>;
+  if (!businessId) {
+    return (
+      <section className="erp-page company-settings-page">
+        <ModuleHeader description={MODULE_DESCRIPTION} icon={MODULE.icon} title={MODULE.title} />
+        <p className="settings-message settings-message--error">No hay un negocio activo.</p>
+      </section>
+    );
+  }
 
   return (
     <section className="erp-page company-settings-page">
-      <div className="settings-page-intro">
-        <div>
-          <h1>Empresa</h1>
-          <p>Datos de identificación, ubicación y verificación del negocio.</p>
-        </div>
-      </div>
+      <ModuleHeader description={MODULE_DESCRIPTION} icon={MODULE.icon} title={MODULE.title} />
       {!businessVerified && activeSection !== "verificacion" && (
-        <p className="settings-activation-notice" role="status">
-          {activationStatus === BUSINESS_VERIFICATION_STATES.PENDING
+        <Notice variant="warning" className="settings-activation-notice">
+          {knownActivationStatus === BUSINESS_VERIFICATION_STATES.PENDING
             ? "La solicitud de verificación está en revisión."
-            : activationStatus === BUSINESS_VERIFICATION_STATES.REJECTED
+            : knownActivationStatus === BUSINESS_VERIFICATION_STATES.REJECTED
               ? "La verificación fue rechazada. Revisa el motivo y envía una nueva solicitud."
-              : "Empresa no verificada. Envía una solicitud para activar los módulos operativos."}
-        </p>
+              : knownActivationStatus
+                ? "Empresa no verificada. Envía una solicitud para activar los módulos operativos."
+                : "Los módulos operativos se activan cuando la empresa está verificada."}
+        </Notice>
       )}
       {canEdit && businessCompletionStatus && (
         <BusinessCompletionCard
+          collapsible
           error={businessCompletionError}
           status={businessCompletionStatus}
           canActOnItem={canActOnCompletionItem}
@@ -1461,7 +1584,7 @@ function CompanyConfig({
           ))}
         </nav>
         <div ref={settingsContentRef} className="settings-content">
-          {activeSection === "informacion" && <BusinessInformationSection businessId={businessId} canEdit={canEdit} focusTarget={focusTarget} onBusinessUpdated={onBusinessUpdated} />}
+          {activeSection === "informacion" && <BusinessInformationSection businessId={businessId} canEdit={canEdit} focusTarget={focusTarget} onBusinessUpdated={onBusinessUpdated} verificationKey={verificationKey} />}
           {activeSection === "verificacion" && (
             <BusinessVerificationSection
               businessId={businessId}
@@ -1469,6 +1592,7 @@ function CompanyConfig({
               currentUserPhone={currentUserPhone}
               currentUserUid={currentUserUid}
               role={role}
+              verificationKey={verificationKey}
             />
           )}
           {activeSection === "impuestos" && <TaxSection businessId={businessId} />}

@@ -2,8 +2,10 @@ import {collection, doc, getDoc, getDocs, query, where} from "firebase/firestore
 import {httpsCallable} from "firebase/functions";
 import {assertCloudFunctionAllowed} from "../config/firebaseEnvironment.mjs";
 import {
+  DELETE_CONFIRMATION_WORD,
   adaptStoredPurchaseOrder,
   buildPurchaseOrderMutationPayload,
+  isDeleteConfirmed,
 } from "../domain/purchaseOrderModel.mjs";
 import {db, getFirebaseFunctions} from "../firebase/firebaseConfig";
 import {
@@ -114,6 +116,24 @@ export function duplicarOrdenCompraComoBorrador(
     sourceId: requireOrderId(sourceId),
     requestId: options.requestId || createPurchaseOrderDuplicateRequestId(),
   }, "No pudimos duplicar la orden de compra.");
+}
+
+// Eliminación permanente (SPEC 005, enmienda 2026-11-06): la palabra de
+// confirmación se valida aquí y otra vez en la Function, que además rechaza las
+// órdenes enviadas o con recepciones y compras. Igual que eliminarProveedor, los
+// mensajes del backend se muestran tal cual (no pasa por errorMessage).
+export async function eliminarOrdenCompra(businessId, ordenCompraId, confirmacion) {
+  assertCloudFunctionAllowed("eliminar órdenes de compra");
+  if (!isDeleteConfirmed(confirmacion)) {
+    throw new Error(`Escribe «${DELETE_CONFIRMATION_WORD}» para confirmar la eliminación.`);
+  }
+  const callable = httpsCallable(functions, "eliminarOrdenCompra");
+  const response = await callable({
+    businessId: requireBusinessId(businessId),
+    ordenCompraId: requireOrderId(ordenCompraId),
+    confirmacion,
+  });
+  return response.data;
 }
 
 export function actualizarOrdenCompraBorrador(businessId, ordenCompraId, raw) {

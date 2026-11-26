@@ -19,10 +19,16 @@ function readableSearchError(error) {
   return "No fue posible consultar el mercado en este momento.";
 }
 
-export async function searchInventoryMarketReferences(businessId, itemId, { forceRefresh = false } = {}) {
+// cacheOnly: solo lee los precios guardados; sin caché vigente la Function
+// responde NO_CACHE y no consulta al proveedor.
+export async function searchInventoryMarketReferences(
+  businessId,
+  itemId,
+  { forceRefresh = false, cacheOnly = false } = {}
+) {
   assertCloudFunctionAllowed("buscar referencias de mercado");
   try {
-    const response = await searchCallable({ businessId, itemId, forceRefresh });
+    const response = await searchCallable({ businessId, itemId, forceRefresh, cacheOnly });
     return response.data;
   } catch (error) {
     const wrapped = new Error(readableSearchError(error));

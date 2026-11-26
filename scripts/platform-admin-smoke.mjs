@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {existsSync} from "node:fs";
 import {readFile} from "node:fs/promises";
-import {hasPlatformSuperadminClaim, isPlatformRoute} from "../src/domain/platformAccess.mjs";
+import {hasPlatformSuperadminClaim, isPlatformRoute, resolvePlatformOnlyRedirect, PLATFORM_HOME_PATH} from "../src/domain/platformAccess.mjs";
 import {formatFiscalIdentifierForDisplay} from "../src/domain/fiscalIdentifier.mjs";
 
 assert.equal(hasPlatformSuperadminClaim({platformRole: "PLATFORM_SUPERADMIN"}), true);
@@ -10,6 +10,29 @@ assert.equal(hasPlatformSuperadminClaim({}), false);
 assert.equal(isPlatformRoute("/admin"), true);
 assert.equal(isPlatformRoute("/admin/empresas/abc"), true);
 assert.equal(isPlatformRoute("/empresa"), false);
+// Superadmin sin negocio: raiz, /login, /onboarding y cualquier ruta de respaldo van a la consola.
+const superadmin = {isSuperadmin: true, role: "PLATFORM_SUPERADMIN"};
+const normalUser = {isSuperadmin: false, role: null};
+assert.equal(PLATFORM_HOME_PATH, "/admin/dashboard");
+for (const pathname of ["/", "/login", "/onboarding", "/cotizaciones", "/ruta-que-no-existe", "/empresa"]) {
+  assert.equal(resolvePlatformOnlyRedirect({platformAccess: superadmin, needsOnboarding: true, pathname}), "/admin/dashboard", `superadmin sin negocio en ${pathname}`);
+}
+// Ya dentro de /admin no redirige (el guard de plataforma lo atiende).
+for (const pathname of ["/admin", "/admin/dashboard", "/admin/empresas/abc"]) {
+  assert.equal(resolvePlatformOnlyRedirect({platformAccess: superadmin, needsOnboarding: true, pathname}), null);
+}
+// Superadmin con negocio y usuario normal no cambian.
+for (const pathname of ["/", "/login", "/onboarding", "/cotizaciones"]) {
+  assert.equal(resolvePlatformOnlyRedirect({platformAccess: superadmin, needsOnboarding: false, pathname}), null, `superadmin con negocio en ${pathname}`);
+  assert.equal(resolvePlatformOnlyRedirect({platformAccess: normalUser, needsOnboarding: true, pathname}), null, `usuario normal en ${pathname}`);
+  assert.equal(resolvePlatformOnlyRedirect({platformAccess: normalUser, needsOnboarding: false, pathname}), null);
+}
+// Sin resolver (cargando) o con datos invalidos: no redirige.
+for (const platformAccess of [null, undefined, {}, {isSuperadmin: "true"}, {isSuperadmin: 1}]) {
+  assert.equal(resolvePlatformOnlyRedirect({platformAccess, needsOnboarding: true, pathname: "/"}), null);
+}
+assert.equal(resolvePlatformOnlyRedirect({platformAccess: superadmin, pathname: "/"}), null, "needsOnboarding ausente no redirige");
+assert.equal(resolvePlatformOnlyRedirect(), null);
 assert.equal(formatFiscalIdentifierForDisplay("AR", "30712345678"), "30-71234567-8");
 
 const [layoutSource, appLayoutSource, pagesSource, serviceSource, functionsSource] = await Promise.all([
@@ -65,8 +88,9 @@ assert.match(pagesSource, /VERIFICACION_APROBADA: "Verificación aprobada"/);
 assert.match(pagesSource, /PENDIENTE: "En revisión"/);
 assert.match(pagesSource, /platformEventLabel\(event\.tipo\)/);
 assert.match(pagesSource, /platformStateLabel\(event\.estadoAnterior\)/);
-assert.match(pagesSource, /Confirmar aprobación/);
-assert.match(pagesSource, /Confirmar rechazo/);
+// Los textos del modal de confirmación viven en VerificationDecisionDialog.jsx (se prueban al final de este archivo).
+assert.match(await readFile(new URL("../src/platform/VerificationDecisionDialog.jsx", import.meta.url), "utf8"), /Confirmar aprobación[\s\S]*Confirmar rechazo/);
+assert.match(pagesSource, /<VerificationDecisionDialog/);
 assert.match(pagesSource, /disabled=\{working \|\| !officialLegalName\.trim\(\)\}/);
 assert.match(pagesSource, /disabled=\{working \|\| !rejectionReason\.trim\(\)\}/);
 assert.match(pagesSource, /Nombre no informado/);
@@ -76,6 +100,15 @@ assert.match(functionsSource, /db\.recursiveDelete\(businessRef\)/);
 assert.match(functionsSource, /customClaims\?\.platformRole === PLATFORM_SUPERADMIN/);
 assert.match(functionsSource, /const PLATFORM_SUPERADMIN = "PLATFORM_SUPERADMIN"/);
 assert.doesNotMatch(functionsSource, /Las cuentas PLATFORM_SUPERADMIN/);
+// Guardas de la Function: autosuspension y destino con claim de plataforma.
+assert.match(functionsSource, /if \(uid === actor\.uid\) fail\(HttpsError, "failed-precondition", "No puedes suspender tu propia cuenta\."\)/);
+assert.match(functionsSource, /Las cuentas Administrador no se suspenden desde este panel\./);
+// Ficha de usuario: la cuenta propia no muestra el formulario de suspension.
+assert.match(layoutSource, /currentUid: usuario\?\.uid \|\| ""/);
+assert.match(pagesSource, /const \{currentUid\} = useOutletContext\(\) \|\| \{\};/);
+assert.match(pagesSource, /const isOwnAccount = Boolean\(currentUid\) && usuario\.uid === currentUid;/);
+assert.match(pagesSource, /\{isOwnAccount \? <p className="platform-help platform-help--flush">Tu propia cuenta de plataforma no se suspende desde aquí\.<\/p> : <>/);
+assert.equal((pagesSource.match(/Suspender usuario/g) || []).length, 1);
 // El reset total de producción (borraba negocios, membresías y cuentas salvo
 // la superadmin) se retiró del repo; queda sólo en el historial de git.
 assert.equal(
@@ -105,18 +138,167 @@ assert.match(platformRulesSource, /match \/platformModulesRequests\/\{requestId\
 assert.match(platformRulesSource, /function isBusinessModuleEnabled\(businessId, moduleId\)[\s\S]*?get\("modulosHabilitados", \[\]\)\.hasAny\(\[moduleId\]\)/);
 console.log("OK platform-admin: cambiarModulosEmpresaPlataforma, registro por dependencias y reglas");
 
-// Interruptor de modulos: seccion "Modulos" de la consola y su servicio.
-const modulesPanelSource = await readFile(new URL("../src/platform/PlatformModulesPanel.jsx", import.meta.url), "utf8");
-assert.match(serviceSource, /export const setPlatformBusinessModules = \(\{businessId, modulos, motivo, requestId\}\) =>\s*call\("cambiarModulosEmpresaPlataforma", \{businessId, modulos, motivo, requestId\}\)/);
-assert.match(pagesSource, /<PlatformModulesPanel[\s\S]*?registry=\{modulosDisponibles\}[\s\S]*?enabled=\{enabledModules\}/);
-assert.match(pagesSource, /run\("update_modules", \(requestId\) => setPlatformBusinessModules\(\{businessId, modulos, motivo, requestId\}\)\)/);
+// SPEC 039: la consola ya no edita modulos (el rubro de la empresa los define). La Function de
+// plataforma se conserva sin cambios (asserts de arriba); lo que se retira es el panel y su servicio.
+const moduleEventsSource = await readFile(new URL("../src/platform/platformModuleEvents.mjs", import.meta.url), "utf8");
+assert.equal(existsSync(new URL("../src/platform/PlatformModulesPanel.jsx", import.meta.url)), false, "el panel Modulos se retiro");
+assert.doesNotMatch(pagesSource, /PlatformModulesPanel|setPlatformBusinessModules|update_modules|Guardar módulos/);
+assert.doesNotMatch(serviceSource, /setPlatformBusinessModules/);
+assert.doesNotMatch(layoutSource + pagesSource, /platform-modules/);
+const platformStylesSource = await readFile(new URL("../src/styles/platform.css", import.meta.url), "utf8");
+assert.doesNotMatch(platformStylesSource, /platform-modules/);
+// El historial sigue mostrando los eventos modulos_actualizados que ya existen.
+assert.match(moduleEventsSource, /export const MODULES_EVENT_TYPE = "modulos_actualizados"/);
+assert.match(moduleEventsSource, /export function moduleEventSummary\(event, registry = \[\]\)/);
+assert.match(pagesSource, /import \{MODULES_EVENT_TYPE, moduleEventSummary\} from "\.\/platformModuleEvents\.mjs"/);
 assert.match(pagesSource, /modulos_actualizados: "Módulos actualizados"/);
 assert.match(pagesSource, /event\.tipo === MODULES_EVENT_TYPE \? moduleEventSummary\(event, modulosDisponibles\)/);
-assert.match(modulesPanelSource, /<h2 id="platform-modules-title">Módulos<\/h2>/);
-assert.match(modulesPanelSource, /No hay módulos verticales disponibles todavía\./);
-assert.match(modulesPanelSource, /registry\.map\(\(item\) => \([\s\S]*?type="checkbox"/);
-assert.match(modulesPanelSource, /Motivo del cambio/);
-assert.match(modulesPanelSource, /Guardar módulos/);
-assert.match(modulesPanelSource, /disabled=\{deleted \|\| working \|\| !dirty \|\| !reason\.trim\(\)\}/);
-assert.doesNotMatch(modulesPanelSource, /taller|veterinaria/i, "el panel no conoce ningun modulo por nombre");
-console.log("OK platform-admin: seccion Modulos y servicio");
+const {MODULES_EVENT_TYPE, moduleEventSummary} = await import("../src/platform/platformModuleEvents.mjs");
+assert.equal(MODULES_EVENT_TYPE, "modulos_actualizados");
+const eventRegistry = [{id: "taller", label: "Taller automotriz"}, {id: "veterinaria", label: "Clínica veterinaria"}];
+assert.equal(
+  moduleEventSummary({modulosAnteriores: [], modulosResultantes: ["taller"], motivo: "Prueba"}, eventRegistry),
+  "Módulos: ninguno → Taller automotriz · Prueba"
+);
+assert.equal(
+  moduleEventSummary({modulosAnteriores: ["taller", "otro"], modulosResultantes: []}, eventRegistry),
+  "Módulos: Taller automotriz, otro → ninguno"
+);
+console.log("OK platform-admin: sin panel Modulos, historial de modulos conservado (SPEC 039)");
+
+// --- Modal "Confirmar aprobación / rechazo": el motivo del rechazo del servidor se ve dentro del modal ---
+{
+  const {
+    INITIAL_DECISION_STATE, PLATFORM_ACTION_GENERIC_ERROR, confirmDecision, decisionReducer, platformActionErrorMessage,
+  } = await import("../src/platform/verificationDecision.mjs");
+  const GENERIC = "No se pudo completar la acción. Intenta de nuevo.";
+  assert.equal(PLATFORM_ACTION_GENERIC_ERROR, GENERIC);
+
+  // Mensaje: el de negocio tal cual; lo demás, el genérico (sin códigos ni trazas).
+  const alreadyExists = {code: "functions/already-exists", message: "La identidad fiscal ya pertenece a otra empresa verificada."};
+  assert.equal(platformActionErrorMessage(alreadyExists), "La identidad fiscal ya pertenece a otra empresa verificada.");
+  assert.equal(platformActionErrorMessage({code: "already-exists", message: "  La decisión ya fue utilizada con otros datos.  "}), "La decisión ya fue utilizada con otros datos.");
+  for (const code of ["failed-precondition", "invalid-argument", "not-found"]) {
+    assert.equal(platformActionErrorMessage({code: `functions/${code}`, message: "La solicitud ya no esta pendiente."}), "La solicitud ya no esta pendiente.", code);
+  }
+  const notReadable = [
+    {code: "functions/unavailable", message: "Failed to fetch"},
+    {code: "functions/permission-denied", message: "Se requiere autoridad de plataforma."},
+    {code: "functions/unauthenticated", message: "Debes iniciar sesion."},
+    {code: "functions/internal", message: "internal"},
+    {code: "functions/deadline-exceeded", message: "deadline-exceeded"},
+    {code: "functions/already-exists", message: ""},
+    {code: "functions/already-exists", message: "already-exists"},
+    {code: "functions/already-exists", message: "functions/already-exists"},
+    {code: "functions/failed-precondition", message: "Error: algo salió mal\n    at run (platformAdminService.js:12:3)"},
+    {code: "functions/invalid-argument", message: "x ".repeat(200)},
+    {code: "functions/not-found"},
+    {message: "Algo con varias palabras sin código"},
+    new Error("boom con varias palabras"),
+    "texto suelto", null, undefined, 7, {},
+  ];
+  for (const error of notReadable) assert.equal(platformActionErrorMessage(error), GENERIC, JSON.stringify(error));
+  assert.doesNotMatch(platformActionErrorMessage({code: "functions/internal", message: "internal"}), /functions\/|internal|code/i);
+
+  // Estado: el error del servicio llega al modal, que sigue abierto; se limpia al reintentar, cerrar y reabrir.
+  let state = INITIAL_DECISION_STATE;
+  const dispatch = (action) => { state = decisionReducer(state, action); };
+  const failingService = (error) => async () => { throw error; };
+  // Mismo contrato que `run` de la página: captura el error, lo entrega a onError y devuelve false.
+  const runAction = (service) => async ({onError}) => {
+    try { await service(); return true; } catch (error) { onError(error); return false; }
+  };
+  dispatch({type: "open", decision: "APROBAR"});
+  assert.deepEqual(state, {decision: "APROBAR", error: ""});
+  assert.equal(await confirmDecision({dispatch, runAction: runAction(failingService(alreadyExists))}), false);
+  assert.deepEqual(state, {decision: "APROBAR", error: "La identidad fiscal ya pertenece a otra empresa verificada."}, "el modal sigue abierto y muestra el motivo del servidor");
+  // Reintento: el aviso anterior se limpia al empezar y el nuevo error genérico lo reemplaza.
+  let errorWhileRunning = null;
+  await confirmDecision({dispatch, runAction: async ({onError}) => {
+    errorWhileRunning = state.error;
+    onError({code: "functions/unavailable", message: "Failed to fetch"});
+    return false;
+  }});
+  assert.equal(errorWhileRunning, "", "al reintentar el aviso anterior ya no está");
+  assert.deepEqual(state, {decision: "APROBAR", error: GENERIC});
+  // Cerrar (Volver o la X) y volver a abrir: sin aviso. Cambiar de decisión también lo limpia.
+  dispatch({type: "close"});
+  assert.deepEqual(state, INITIAL_DECISION_STATE);
+  dispatch({type: "open", decision: "APROBAR"});
+  assert.equal(state.error, "");
+  await confirmDecision({dispatch, runAction: runAction(failingService(alreadyExists))});
+  assert.notEqual(state.error, "");
+  dispatch({type: "close"});
+  dispatch({type: "open", decision: "APROBAR"});
+  assert.deepEqual(state, {decision: "APROBAR", error: ""}, "al cerrar y reabrir el aviso anterior ya no aparece");
+  await confirmDecision({dispatch, runAction: runAction(failingService(alreadyExists))});
+  dispatch({type: "open", decision: "RECHAZAR"});
+  assert.deepEqual(state, {decision: "RECHAZAR", error: ""});
+  // Éxito: cierra sin aviso (el comportamiento de antes).
+  assert.equal(await confirmDecision({dispatch, runAction: runAction(async () => {})}), true);
+  assert.deepEqual(state, INITIAL_DECISION_STATE);
+  // Un error que llega con el modal ya cerrado no abre nada; acciones desconocidas no cambian el estado.
+  assert.deepEqual(decisionReducer(INITIAL_DECISION_STATE, {type: "fail", error: alreadyExists}), INITIAL_DECISION_STATE);
+  assert.equal(decisionReducer(state, {type: "otra"}), state);
+  assert.equal(decisionReducer(undefined, undefined), INITIAL_DECISION_STATE);
+
+  // Render real del modal (sin portal): aviso de error con role="alert", botones y estados.
+  const [{default: React}, {renderToStaticMarkup}, {createServer}] = await Promise.all([import("react"), import("react-dom/server"), import("vite")]);
+  const vite = await createServer({appType: "custom", logLevel: "silent", server: {middlewareMode: true}});
+  let Dialog;
+  try {
+    Dialog = (await vite.ssrLoadModule("/src/platform/VerificationDecisionDialog.jsx")).default;
+  } finally {
+    await vite.close();
+  }
+  const render = (props) => renderToStaticMarkup(React.createElement(Dialog, {portal: false, onClose() {}, onConfirm() {}, summary: "Bagner SpA", fiscalIdentifier: "76.123.456-7", ...props}));
+  const count = (markup, pattern) => (markup.match(pattern) || []).length;
+  const withError = render({decision: "APROBAR", error: "La identidad fiscal ya pertenece a otra empresa verificada."});
+  assert.match(withError, /Confirmar aprobación/);
+  assert.match(withError, /La identidad fiscal ya pertenece a otra empresa verificada\./, "el mensaje de negocio se muestra tal cual");
+  assert.match(withError, /ui-notice--error/, "aviso de error del sistema de diseño");
+  assert.equal(count(withError, /role="alert"/g), 1, "un solo role=alert");
+  assert.match(withError, /Aprobar empresa/);
+  assert.match(withError, /Bagner SpA/, "el modal conserva su contenido");
+  assert.doesNotMatch(withError, /functions\/|already-exists/);
+  assert.ok(withError.indexOf("ui-notice--error") < withError.indexOf("platform-verification-confirmation"), "el aviso va arriba del resumen");
+  const genericMarkup = render({decision: "APROBAR", error: GENERIC});
+  assert.match(genericMarkup, /No se pudo completar la acción\. Intenta de nuevo\./);
+  const rejecting = render({decision: "RECHAZAR", error: GENERIC, summary: "Falta el documento"});
+  assert.match(rejecting, /Confirmar rechazo/);
+  assert.match(rejecting, /Rechazar solicitud/);
+  assert.match(rejecting, /role="alert"/);
+  // Sin error: sin aviso. Cerrado: no dibuja nada.
+  const clean = render({decision: "APROBAR", error: ""});
+  assert.doesNotMatch(clean, /ui-notice|role="alert"/);
+  assert.equal(render({decision: "", error: "no debería verse"}), "");
+  // Mientras la acción corre, Volver y la acción quedan deshabilitados (sin doble envío); con el error vuelven a habilitarse.
+  const buttons = (markup) => [...markup.matchAll(/<button\b[^>]*>/g)].map(([tag]) => tag);
+  const dialogButtons = (markup) => buttons(markup).filter((tag) => /ui-button/.test(tag));
+  const working = render({decision: "APROBAR", error: "", working: true});
+  assert.equal(dialogButtons(working).length >= 2, true);
+  assert.equal(dialogButtons(working).every((tag) => /\bdisabled\b/.test(tag)), true, "botones del modal deshabilitados mientras corre");
+  assert.match(working, /Confirmando\.\.\./);
+  assert.equal(dialogButtons(withError).some((tag) => /\bdisabled\b/.test(tag)), false, "tras el error los botones se habilitan de nuevo");
+
+  // Cableado: la página usa el estado y el modal nuevos; el error del servicio ya no cae al aviso de página;
+  // las demás acciones conservan su aviso; el servicio y sus permisos no cambian.
+  assert.match(pagesSource, /import VerificationDecisionDialog from "\.\/VerificationDecisionDialog"/);
+  assert.match(pagesSource, /React\.useReducer\(decisionReducer, INITIAL_DECISION_STATE\)/);
+  assert.match(pagesSource, /error=\{decisionState\.error\}/);
+  assert.match(pagesSource, /onClose=\{\(\) => dispatchDecision\(\{type: "close"\}\)\}/);
+  assert.match(pagesSource, /onConfirm=\{\(\) => confirmDecision\(\{/);
+  assert.match(pagesSource, /\{onError\}\)/, "la decisión pasa onError a run");
+  assert.match(pagesSource, /if \(onError\) onError\(error\);\s*else setNotice\(message\(error, "No pudimos completar la acción\."\)\);/);
+  assert.equal(count(pagesSource, /dispatchDecision\(\{type: "open", decision: "(?:APROBAR|RECHAZAR)"\}\)/g), 2, "los dos botones abren el modal sin aviso");
+  assert.doesNotMatch(pagesSource, /setVerificationDecision/);
+  assert.doesNotMatch(pagesSource, /title=\{verificationDecision === "APROBAR" \? "Confirmar aprobación"/, "el modal ya no está en línea");
+  const dialogSource = await readFile(new URL("../src/platform/VerificationDecisionDialog.jsx", import.meta.url), "utf8");
+  assert.match(dialogSource, /<Notice variant="error"/);
+  assert.match(dialogSource, /onClose=\{\(\) => !working && onClose\(\)\}/, "la X sigue bloqueada mientras corre");
+  assert.match(serviceSource, /call\("resolverVerificacionEmpresa", \{\s*businessId,\s*solicitudId,\s*decision,\s*motivo,\s*razonSocialOficial,\s*requestId,\s*\}\)/);
+  const errorCss = (await readFile(new URL("../src/styles/platform.css", import.meta.url), "utf8")).match(/\.platform-verification-dialog__error \{[^}]*\}/)?.[0] || "";
+  assert.match(errorCss, /margin-bottom: var\(--space-3\)/);
+  assert.doesNotMatch(errorCss, /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/);
+  console.log("OK platform-admin: el error de aprobar/rechazar verificación se muestra dentro del modal (mensaje de negocio o genérico) y se limpia al cerrar");
+}
