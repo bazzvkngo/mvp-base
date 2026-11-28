@@ -81,6 +81,30 @@ export async function testWorkOrderClosure({adminDb, businessId, otId, serviceId
   assert.equal((await call(winner.client, "finalizarReparacionOT", winner.input)).data.sinCambios, true);
   assert.equal((await readOrder()).estado, "pendiente_entrega");
   assert.equal((await readOrder()).estadoAprobacion, "aprobada");
+  // Finalizar la ejecución libera la Plaza (el vehículo espera el retiro fuera de ella).
+  assert.equal((await readOrder()).plazaId, null, "finalizar libera la Plaza");
+  assert.equal((await plazaLockRef.get()).exists, false, "finalizar libera el candado de la Plaza");
+  // Finalizar genera una venta en borrador con los trabajos de la OT; no toca stock (lo descuenta Ventas al confirmar).
+  const finishedOrder = await readOrder();
+  const saleSnapshot = await adminDb.doc(`${base}/ventas/ordenTrabajo__${otId}`).get();
+  assert.ok(saleSnapshot.exists, "finalizar genera la venta");
+  const sale = saleSnapshot.data();
+  assert.equal(finishedOrder.ventaId, saleSnapshot.id);
+  assert.equal(finishedOrder.ventaNumero, sale.numero);
+  assert.match(sale.numero, /^VTA-\d{4}-\d{4}$/);
+  assert.equal(sale.estado, "borrador");
+  assert.equal(sale.negocioId, businessId);
+  assert.equal(sale.otId, otId);
+  assert.equal(sale.numeroOT, finishedOrder.numeroOT);
+  assert.equal(sale.clienteId, finishedOrder.clienteId);
+  assert.equal(sale.stockAplicado, false);
+  const finishedServices = (await orderRef.collection("servicios").get()).docs.map((entry) => entry.data());
+  assert.equal(sale.items.length, finishedServices.reduce((count, service) => count + 1 + (service.productos?.length || 0), 0),
+    "una línea por servicio y por repuesto");
+  assert.ok(sale.items.every((line) => line.itemId && Number.isFinite(line.precioUnitario)));
+  assert.equal((await adminDb.collection(`${base}/ventas`).get()).size, initialSales + 1, "una sola venta pese a la carrera");
+  assert.equal((await adminDb.collection(`${base}/movimientosInventario`).get()).size, initialMovements);
+  await expectFirestoreDenied("SDK no crea ventas de OT", () => setDoc(doc(owner.db, `${base}/ventas/ordenTrabajo__directo`), {}));
   await reject("finalizar dos veces", owner, "finalizarReparacionOT", await payload());
   await reject("requestId no se reutiliza", winner.client, "finalizarReparacionOT",
     {...winner.input, expectedActualizadoEn: 1}, ["already-exists"]);
@@ -93,6 +117,7 @@ export async function testWorkOrderClosure({adminDb, businessId, otId, serviceId
   const pendingEvents = await closureEvents();
   assert.deepEqual(pendingEvents.map((event) => event.tipo), ["reparacion_finalizada"]);
   assert.equal(pendingEvents[0].detalle.estadoAnterior, "en_reparacion");
+  assert.equal(pendingEvents[0].detalle.plazaIdLiberada, activePlaza.id);
   assert.ok(pendingEvents[0].actorUid && pendingEvents[0].actorSnapshot?.nombre && pendingEvents[0].fecha?.toDate());
 
   // Sin las siete fotos y sin los datos de quien retira no se registra la entrega.
@@ -123,7 +148,9 @@ export async function testWorkOrderClosure({adminDb, businessId, otId, serviceId
   assert.deepEqual(events.map((event) => event.tipo).sort(), ["reparacion_finalizada", "vehiculo_entregado"]);
   assert.ok(events.every((event) => event.actorUid && event.actorSnapshot?.nombre && event.fecha?.toDate() &&
     event.detalle.estadoAnterior && event.detalle.estado));
-  assert.equal(events.find((event) => event.tipo === "vehiculo_entregado").detalle.plazaIdLiberada, activePlaza.id);
+  assert.equal(events.find((event) => event.tipo === "reparacion_finalizada").detalle.plazaIdLiberada, activePlaza.id);
+  assert.equal(events.find((event) => event.tipo === "vehiculo_entregado").detalle.plazaIdLiberada, null,
+    "la Plaza ya se liberó al finalizar");
   const visible = (await call(admin, "obtenerEventosCierreOT", {businessId, otId})).data.eventos;
   assert.deepEqual(visible.map((event) => event.tipo), ["reparacion_finalizada", "vehiculo_entregado"]);
   assert.ok(visible.every((event) => Number.isSafeInteger(event.fecha) && event.actorNombre));
@@ -140,7 +167,7 @@ export async function testWorkOrderClosure({adminDb, businessId, otId, serviceId
   await reject("timeline cross-tenant", outsider, "obtenerHistorialOT", {businessId, otId}, ["permission-denied"]);
   await expectFirestoreDenied("SDK no lee requests de cierre", () => getDoc(doc(owner.db, `${requests.path}/${winner.input.requestId}`)));
   await expectFirestoreDenied("SDK no escribe requests de cierre", () => setDoc(doc(owner.db, `${requests.path}/directo`), {}));
-  assert.equal((await adminDb.collection(`${base}/ventas`).get()).size, initialSales);
+  assert.equal((await adminDb.collection(`${base}/ventas`).get()).size, initialSales + 1, "la entrega no genera otra venta");
   assert.equal((await adminDb.collection(`${base}/movimientosInventario`).get()).size, initialMovements);
   console.log("WORK_ORDER_CLOSURE_OK: estados, servicios, permisos, concurrencia, idempotencia, auditoría y terminalidad");
 }

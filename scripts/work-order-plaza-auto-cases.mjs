@@ -3,7 +3,7 @@ import {completeDeliveryPhotos, deliveryInput} from "./work-order-delivery-fixtu
 import {completeReceptionPhotos} from "./work-order-photo-fixtures.mjs";
 
 // Asignación automática de Plaza: al aprobar, la cola FIFO de OT en espera y la promoción
-// cuando una Plaza queda libre (entrega, cancelación, liberación, creación, activación y cambio).
+// cuando una Plaza queda libre (finalización, entrega, cancelación, liberación, creación, activación y cambio).
 // Corre al final de la suite: deja inactivas las Plazas previas para trabajar con Plazas propias.
 export async function testWorkshopPlazaAutoAssignment({adminDb, businessId, owner, admin, technician,
   callable, expectCallableError, reception, runId}) {
@@ -137,6 +137,32 @@ export async function testWorkshopPlazaAutoAssignment({adminDb, businessId, owne
   assert.equal((await read(first)).plazaId, null);
   await assertRepairing(third, plaza1, "entrega promueve");
   console.log("OK Plaza automática: entregar promueve la siguiente OT");
+
+  // 5b. Finalizar la ejecución libera la Plaza y la entrega a la siguiente OT en espera.
+  const finishWaiting = await receivedOrder();
+  await approve(finishWaiting);
+  await assertWaiting(finishWaiting, "en espera de una Plaza que se libera al finalizar");
+  const serviceRefFor = (otId, servicioOtId) => refFor(otId).collection("servicios").doc(servicioOtId);
+  const serviceRevision = async (otId, servicioOtId) => (await serviceRefFor(otId, servicioOtId).get()).data().actualizadoEn.toMillis();
+  const finishService = (await call(technician, "crearServicioOT", {
+    otId: third, requestId: id(), servicio: {itemId: "servicio-core"},
+  })).servicioOtId;
+  await call(technician, "definirRepuestosServicioOT", {otId: third, servicioOtId: finishService, modo: "ninguno",
+    expectedActualizadoEn: await serviceRevision(third, finishService)});
+  await call(technician, "iniciarServicioOT", {otId: third, servicioOtId: finishService, requestId: id(),
+    expectedActualizadoEn: await serviceRevision(third, finishService)});
+  await call(technician, "completarServicioOT", {otId: third, servicioOtId: finishService, requestId: id(),
+    expectedActualizadoEn: await serviceRevision(third, finishService)});
+  const finished = await call(owner, "finalizarReparacionOT", {
+    otId: third, requestId: id(), expectedActualizadoEn: await revision(third),
+  });
+  assert.equal(finished.estado, "pendiente_entrega");
+  assert.equal(finished.plazaId, null, "finalizar libera la Plaza");
+  assert.equal(finished.otPromovidaId, finishWaiting);
+  assert.equal((await read(third)).plazaId, null);
+  await assertRepairing(finishWaiting, plaza1, "finalizar promueve");
+  assert.equal((await events(finishWaiting, "plaza_asignada")).at(-1).detalle.origen, "finalizacion");
+  console.log("OK Plaza automática: finalizar la ejecución libera la Plaza y promueve la siguiente OT");
 
   // 6. Cancelar una OT con Plaza (antes de aprobar) la libera y promueve.
   const pending = await receivedOrder();

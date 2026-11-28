@@ -23,6 +23,7 @@ const {
 const {missingReceptionPhotoZones, receptionPhotoDamages} = require("./workOrderReceptionPhotoZones");
 const {missingDeliveryZones, normalizeDeliveryInput, normalizePersonDocument} = require("./workOrderDeliveryRules");
 const {PLATE_INDEX_COLLECTION, normalizePlate, plateIndexId} = require("./workOrderTrackingRules");
+const {buildWorkOrderDraftSale, readWorkOrderSaleContext} = require("./workOrderSale");
 
 function canReadCorePricing(membership) {
   if (!PRICING_READ_ROLES.includes(membership?.rol)) return false;
@@ -1374,7 +1375,7 @@ async function transitionWorkOrderClosure(request, dependencies, action) {
       if (order.estadoAprobacion !== "aprobada") {
         fail(HttpsError, "failed-precondition", "El ingreso de la OT no está aprobado.");
       }
-      // Los precios se congelan aquí, al enviar a Ventas; el taller nunca los muestra.
+      // Los precios se congelan aquí y pasan a la venta en borrador; el taller nunca los muestra.
       closureCurrency = order.moneda || businessCurrency({businessSnapshot: {data: () => data.businessData}});
       if (!closureCurrency) fail(HttpsError, "failed-precondition", "Configura una moneda válida en el negocio antes de finalizar.");
       closureDecimals = workOrderAmountDecimals(order, closureCurrency);
@@ -1387,8 +1388,15 @@ async function transitionWorkOrderClosure(request, dependencies, action) {
           })};
       });
     }
+    // Finalizar genera la venta en borrador con los precios congelados (todo o nada con la finalización).
+    const saleContext = action === "finalizar"
+      ? await readWorkOrderSaleContext(transaction, {businessRef: context.businessRef, businessId: context.businessId,
+        order, otId, HttpsError})
+      : null;
     const estado = action === "finalizar" ? "pendiente_entrega" : action === "entregar" ? "cerrada" : "cancelada";
-    const releasesPlaza = ["entregar", "cancelar"].includes(action);
+    // Al finalizar la ejecución la Plaza queda libre (el vehículo espera el retiro fuera de ella). Entregar y cancelar
+    // también liberan: cubren las OT antiguas que llegaron a «pendiente de entrega» con la Plaza aún asignada.
+    const releasesPlaza = ["finalizar", "entregar", "cancelar"].includes(action);
     const plazaIdLiberada = releasesPlaza ? order.plazaId || null : null;
     const plazaLockRef = plazaIdLiberada
       ? context.businessRef.collection("plazaOccupancyKeys").doc(plazaIdLiberada)
@@ -1402,7 +1410,14 @@ async function transitionWorkOrderClosure(request, dependencies, action) {
       ? await readPromotionCandidate(transaction, context.businessRef, context.businessId, plazaIdLiberada, otId)
       : null;
     const timestamp = FieldValue.serverTimestamp();
+    const draftSale = saleContext ? buildWorkOrderDraftSale({saleContext, businessId: context.businessId,
+      businessData: data.businessData, uid: context.uid, order, otId, frozenServices: frozenAtFinish, items: data.items,
+      closureCurrency, timestamp, HttpsError}) : null;
     if (ownsPlazaLock && !promotion) transaction.delete(plazaLockRef);
+    if (draftSale) {
+      transaction.set(draftSale.counterRef, draftSale.counter);
+      transaction.create(draftSale.saleRef, draftSale.stored);
+    }
     if (frozenAtFinish) {
       frozenAtFinish.forEach((service) => transaction.update(orderRef.collection("servicios").doc(service.servicioOtId), {
         precioUnitario: service.precioUnitario, servicioSnapshot: service.servicioSnapshot, productos: service.productos,
@@ -1414,6 +1429,7 @@ async function transitionWorkOrderClosure(request, dependencies, action) {
       ...(closureCurrency ? {moneda: closureCurrency} : {}),
       ...(closureCurrency && !order.moneda && closureDecimals > 0 ? {montoDecimales: closureDecimals} : {}),
       ...(releasesPlaza ? {plazaId: null} : {}),
+      ...(draftSale ? {ventaId: draftSale.saleRef.id, ventaNumero: draftSale.stored.numero} : {}),
       ...(action === "cancelar" && motivo ? {motivoCancelacion: motivo} : {}),
       actualizadoPorUid: context.uid,
       actualizadoEn: timestamp,
@@ -1435,12 +1451,15 @@ async function transitionWorkOrderClosure(request, dependencies, action) {
       businessId: context.businessId, actorUid: context.uid, actorSnapshot, timestamp,
       type: action === "finalizar" ? "reparacion_finalizada" : action === "entregar" ? "vehiculo_entregado" : "ot_cancelada",
       detail: {estadoAnterior: previousStatus, estado, plazaIdLiberada, ...(motivo ? {motivo} : {}),
+        ...(draftSale ? {ventaId: draftSale.saleRef.id, ventaNumero: draftSale.stored.numero} : {}),
         ...(delivery ? {receptorNombre: delivery.receptorNombre, conObservaciones: Boolean(delivery.observaciones)} : {})},
     });
     const promoted = writePromotion(transaction, promotion, {appendPlanningEvent, businessId: context.businessId,
-      actorUid: context.uid, actorSnapshot, timestamp, origen: action === "entregar" ? "entrega" : "cancelacion"});
+      actorUid: context.uid, actorSnapshot, timestamp,
+      origen: action === "finalizar" ? "finalizacion" : action === "entregar" ? "entrega" : "cancelacion"});
     const resultado = {otId, estado, estadoAprobacion: order.estadoAprobacion,
       plazaId: releasesPlaza ? null : order.plazaId || null,
+      ...(draftSale ? {ventaId: draftSale.saleRef.id, ventaNumero: draftSale.stored.numero} : {}),
       ...(promoted ? {otPromovidaId: promoted.otId} : {})};
     transaction.create(requestRef, {negocioId: context.businessId, otId, fingerprint, resultado, creadoEn: timestamp});
     return resultado;

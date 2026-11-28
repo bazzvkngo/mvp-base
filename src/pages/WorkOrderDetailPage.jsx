@@ -133,11 +133,11 @@ export default function WorkOrderDetailPage({businessId, role}) {
     setClosureBusy(true);
     setClosureActionError("");
     try {
-      await ejecutarCierreOT(businessId, otId, closureTarget.action,
+      const closure = await ejecutarCierreOT(businessId, otId, closureTarget.action,
         closureTarget.revision, closureTarget.requestId, closureMotivo);
       setClosureTarget(null);
       setClosureNotice(closureTarget.action === "finalizar"
-        ? "Ejecución finalizada. El vehículo está pendiente de entrega."
+        ? `Ejecución finalizada. La Plaza quedó libre y el vehículo está pendiente de entrega.${closure?.ventaNumero ? ` Se generó la venta ${closure.ventaNumero} en borrador para Ventas.` : ""}`
         : closureTarget.action === "entregar"
           ? "Entrega registrada. La OT quedó cerrada."
           : "Orden de trabajo cancelada.");
@@ -221,10 +221,10 @@ export default function WorkOrderDetailPage({businessId, role}) {
     {canManage && <AdminOverviewCards businessId={businessId} order={order} otId={otId} plazas={plazas} revision={order.actualizadoEn?.toMillis?.()} services={services} />}
     <ResponsiveDialog open={Boolean(closureTarget)} onClose={() => !closureBusy && setClosureTarget(null)} size="small" eyebrow="Taller"
       title={closureTarget?.action === "finalizar" ? "Finalizar ejecución" : closureTarget?.action === "entregar" ? "Registrar entrega" : "Cancelar orden de trabajo"}
-      description={closureTarget?.action === "finalizar" ? "Se comprobará que todos los trabajos estén terminados." : closureTarget?.action === "entregar" ? "Se registrará la entrega física y la OT quedará cerrada." : "La OT quedará cancelada de forma permanente y se liberará su Plaza, si corresponde."}
+      description={closureTarget?.action === "finalizar" ? "Se comprobará que todos los trabajos estén terminados, se liberará la Plaza y se generará la venta en borrador para Ventas." : closureTarget?.action === "entregar" ? "Se registrará la entrega física y la OT quedará cerrada." : "La OT quedará cancelada de forma permanente y se liberará su Plaza, si corresponde."}
       footer={<><Button type="button" variant="secondary" disabled={closureBusy} onClick={() => setClosureTarget(null)}>Volver</Button><Button type="button" variant={closureTarget?.action === "cancelar" ? "danger" : "primary"} disabled={closureBusy} onClick={confirmClosure}>{closureBusy ? "Procesando..." : closureTarget?.action === "cancelar" ? "Cancelar OT" : "Confirmar"}</Button></>}>
       <p>{closureTarget?.action === "finalizar"
-        ? `¿Confirmas que la ejecución de ${otLabel} está terminada? Todos los trabajos están terminados y el vehículo quedará pendiente de entrega.`
+        ? `¿Confirmas que la ejecución de ${otLabel} está terminada? Todos los trabajos están terminados, la Plaza quedará libre, se generará la venta en borrador y el vehículo quedará pendiente de entrega.`
         : closureTarget?.action === "entregar"
           ? `¿Confirmas que el vehículo de ${otLabel} fue entregado al cliente? La OT quedará cerrada.`
           : `¿Confirmas que quieres cancelar ${otLabel}? Esta acción no se puede deshacer.`}</p>

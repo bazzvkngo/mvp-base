@@ -21,7 +21,9 @@ export default function ExecutionWorkItem({
   const products = serviceProducts(service);
   const [picked, setPicked] = useState(null);
   const [draft, setDraft] = useState({itemId: "", cantidad: "1"});
-  const source = products.length ? "inventario" : service.repuestosModo || picked;
+  // Lo que el usuario elige ahora manda sobre el modo guardado: así puede pasar de «Repuestos del cliente» o
+  // «No requiere repuestos» a «Del inventario» (el servidor reemplaza el modo al agregar el primer repuesto).
+  const source = products.length ? "inventario" : picked || service.repuestosModo;
   const defined = worksPartsDefined(service);
   const closed = service.estado === "completado";
   const existing = products.find((product) => product.itemId === draft.itemId);
@@ -51,7 +53,7 @@ export default function ExecutionWorkItem({
               disabled={busy} onClick={() => setPicked("inventario")}>Del inventario</button>
             {Object.entries(REPLACEMENT_PARTS_MODES).map(([mode, label]) => <button key={mode} type="button"
               className="work-order-chip" aria-pressed={source === mode} disabled={busy || products.length > 0}
-              onClick={() => actions.setPartsMode(service, mode)}>{label}</button>)}
+              onClick={() => { setPicked(null); actions.setPartsMode(service, mode); }}>{label}</button>)}
           </div>
           {products.length > 0 && <p className="erp-secondary-text">Quita los repuestos del inventario para marcar este trabajo como sin repuestos o con repuestos del cliente.</p>}
         </> : <p className="erp-secondary-text">{defined ? getPartsSourceLabel(service) : "Sin repuestos definidos."}</p>}

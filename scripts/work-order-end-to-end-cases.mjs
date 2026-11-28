@@ -90,6 +90,12 @@ export async function testWorkOrderEndToEnd({adminDb, businessId, owner, technic
   assert.equal(frozen.precioUnitario, 5000);
   assert.equal(frozen.productos[0].precioUnitario, 1000);
   assert.ok((await order()).moneda, "La OT guarda la moneda al finalizar");
+  // Finalizar genera la venta en borrador con los precios congelados (servicio 5000 y 2 repuestos a 1000).
+  const draftSale = (await adminDb.doc(`${base}/ventas/${(await order()).ventaId}`).get()).data();
+  assert.equal(draftSale.estado, "borrador");
+  assert.deepEqual(draftSale.items.map((line) => [line.itemId, line.tipoItem, line.cantidad, line.precioUnitario]),
+    [[serviceItemId, "servicio", 1, 5000], [productItemId, "producto", 2, 1000]]);
+  assert.equal(draftSale.neto, 7000);
   // Un cambio posterior del catálogo Core no reescribe el historial congelado.
   await itemRef.update({precioInterno: 2000, nombre: "Filtro renombrado"});
   assert.deepEqual((await serviceRef.get()).data().productos, frozen.productos);
@@ -107,10 +113,10 @@ export async function testWorkOrderEndToEnd({adminDb, businessId, owner, technic
   await expectCallableError("E2E enlace inactivo tras la entrega", () => callable(anonymous, "consultarSeguimientoTaller")({token: trackingToken}), ["not-found"]);
   assert.equal((await order()).plazaId, null);
   assert.equal((await adminDb.doc(`${base}/plazaOccupancyKeys/${plazaId}`).get()).exists, false);
-  assert.equal((await stock()).stock, 10, "Planificar, ejecutar y entregar no modifican stock");
+  assert.equal((await stock()).stock, 10, "Planificar, ejecutar, finalizar (venta en borrador) y entregar no modifican stock");
   assert.equal((await adminDb.collection(`${base}/movimientosInventario`).where("otId", "==", otId).get()).size, 0,
     "Taller no genera movimientos físicos mientras espera el mecanismo único de Core");
-  assert.equal((await adminDb.collection(`${base}/ventas`).get()).size, salesBefore);
+  assert.equal((await adminDb.collection(`${base}/ventas`).get()).size, salesBefore + 1, "Solo finalizar genera la venta (en borrador)");
   const listed = await getDocs(query(collection(technician.db, `${base}/ordenesTrabajo`),
     where("negocioId", "==", businessId), where("vehiculoId", "==", vehicle.vehiculoId)));
   assert.equal(listed.size, 1);

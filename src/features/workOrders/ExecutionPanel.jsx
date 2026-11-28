@@ -1,4 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useState} from "react";
+import {Link} from "react-router-dom";
 import {Plus} from "lucide-react";
 import Button from "../../components/ui/Button";
 import LoadingState from "../../components/ui/LoadingState";
@@ -51,6 +52,7 @@ export default function ExecutionPanel({
 }) {
   const canOperatePermission = hasBusinessPermission(role, BUSINESS_PERMISSIONS.TALLER_OPERATE);
   const canManage = hasBusinessPermission(role, BUSINESS_PERMISSIONS.TALLER_MANAGE);
+  const canReadSales = hasBusinessPermission(role, BUSINESS_PERMISSIONS.SALES_READ);
   const running = order.estado === "en_reparacion" && order.estadoAprobacion === "aprobada";
   const canOperate = running && canOperateOrderWorks({canManage, canOperate: canOperatePermission, order, uid: currentUserUid});
   // Los nombres del catálogo se congelan al finalizar la ejecución; antes se lee el catálogo vigente.
@@ -164,7 +166,9 @@ export default function ExecutionPanel({
     </Card>
 
     <Card title={finished ? "Trabajos realizados" : "Trabajos"} hint={order.responsableNombre ? `Responsable: ${order.responsableNombre}` : ""}>
-      {finished && <div className="vehicle-message" role="status"><strong>Ejecución finalizada.</strong> Estos son los trabajos que se realizaron en la orden ({progress.done} de {progress.total} terminados).</div>}
+      {finished && <div className="vehicle-message" role="status"><strong>Ejecución finalizada.</strong> Estos son los trabajos que se realizaron en la orden ({progress.done} de {progress.total} terminados).
+        {order.ventaNumero && <> Se generó la venta {canReadSales && order.ventaId
+          ? <Link to={`/ventas/${order.ventaId}`}>{order.ventaNumero}</Link> : order.ventaNumero} para Ventas.</>}</div>}
       {error && <div className="vehicle-message vehicle-message--error" role="alert">{error}</div>}
       {notice && <div className="vehicle-message" role="status">{notice}</div>}
       {loading && <LoadingState variant="section" label="Cargando catálogo..." />}
