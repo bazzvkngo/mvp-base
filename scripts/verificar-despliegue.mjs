@@ -24,6 +24,7 @@ const SMOKE_SCRIPTS = [
   "test:quote-email",
   "test:quote-public",
   "test:sales-model",
+  "test:rut",
   "test:vehicles-model",
   "test:vehicles-ui",
   "test:work-orders-model",

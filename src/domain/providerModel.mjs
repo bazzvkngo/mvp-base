@@ -8,6 +8,7 @@ import {
   normalizeChileanRut,
   normalizeCountryCode,
 } from "./fiscalIdentifier.mjs";
+import {getRutCheckDigitMessage, matchesSearchOrRut} from "./rut.mjs";
 import {
   MAX_CONTACT_PHONE_LENGTH,
   getContactPhoneError,
@@ -189,7 +190,8 @@ function collectProviderValidation(raw = {}, territoryCatalog = {}, countryCode 
   if (!errors.rut && !fiscalValue) {
     errors.rut = `Ingresa el ${getFiscalIdentifierLabel(country)} del proveedor.`;
   } else if (!errors.rut && !isValidFiscalIdentifier(country, fiscalValue)) {
-    errors.rut = `Ingresa un ${getFiscalIdentifierLabel(country)} válido.`;
+    errors.rut = (country === "CL" && getRutCheckDigitMessage(fiscalValue)) ||
+      `Ingresa un ${getFiscalIdentifierLabel(country)} válido.`;
   }
   if (!errors.razonSocial && !normalized.razonSocial) {
     errors.razonSocial = "Ingresa la razón social.";
@@ -287,24 +289,18 @@ export function adaptStoredProvider(raw = {}) {
   };
 }
 
-function normalizeSearchText(value) {
-  return (typeof value === "string" ? value : "")
-    .slice(0, 500)
-    .trim()
-    .replace(/\s+/g, " ")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase("es-CL");
-}
-
 export function matchesProviderSearch(provider, search) {
-  const query = normalizeSearchText(search).replace(/[^a-z0-9k]/g, "");
-  if (!query) return true;
-  const searchable = normalizeSearchText(
-    `${provider?.razonSocial || ""} ${provider?.nombreFantasia || ""} ` +
-      `${provider?.identificadorFiscalValor || provider?.rut || ""} ${provider?.identificadorFiscalNormalizado || provider?.rutNormalizado || ""}`
-  ).replace(/[^a-z0-9k]/g, "");
-  return searchable.includes(query);
+  const fiscalValues = [
+    provider?.identificadorFiscalValor,
+    provider?.rut,
+    provider?.identificadorFiscalNormalizado,
+    provider?.rutNormalizado,
+  ];
+  return matchesSearchOrRut(
+    search,
+    [provider?.razonSocial, provider?.nombreFantasia, provider?.email, provider?.telefono, ...fiscalValues],
+    fiscalValues
+  );
 }
 
 export function canReadProviders(role) {

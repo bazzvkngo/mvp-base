@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Save } from "lucide-react";
 import ContactTerritoryFields from "../../components/contacts/ContactTerritoryFields";
+import FiscalIdInput from "../../components/contacts/FiscalIdInput";
 import Button from "../../components/ui/Button";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import {
@@ -156,10 +157,8 @@ function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open})
     setServerError("");
   };
 
-  const handleRutChange = (event) => {
-    const value = isChile ? formatChileanRut(event.target.value) : event.target.value;
-    updateField("rut", value);
-  };
+  // El formato en vivo y el cursor los cuida FiscalIdInput (solo en Chile); aquí llega el valor ya formateado.
+  const handleRutChange = (value) => updateField("rut", value);
 
   const handlePhoneChange = (event) => {
     updateField("telefono", formatContactPhoneInput(event.target.value, country));
@@ -281,13 +280,13 @@ function ClientFormDialog({client, countryCode = "CL", onClose, onSubmit, open})
           </ClientField>
 
           <ClientField error={errors.rut} field="rut" label={fiscalLabel} required>
-            <input
+            <FiscalIdInput
               ref={(node) => setFieldRef("rut", node)}
+              countryCode={country}
               value={values.rut}
               onChange={handleRutChange}
               onBlur={() => validateField("rut")}
-              inputMode="text"
-              maxLength={isChile ? 12 : 20}
+              maxLength={20}
               placeholder={fiscalPlaceholder}
             />
           </ClientField>

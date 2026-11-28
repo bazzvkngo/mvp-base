@@ -55,6 +55,7 @@ import {
   BUSINESS_PERMISSIONS,
   hasBusinessPermission,
 } from "../domain/rbac.mjs";
+import {matchesRutSearch} from "../domain/rut.mjs";
 import {userErrorMessage} from "../domain/userFacingError.mjs";
 
 const statusLabels = QUOTE_STATUS_LABELS;
@@ -263,7 +264,7 @@ function QuoteHistoryPage({ userId, role }) {
       const text = `${getQuoteDisplayNumber(quote, quote.id || "")} ${
         quote.clienteNombre || ""
       }`.toLowerCase();
-      return text.includes(query);
+      return text.includes(query) || matchesRutSearch(search, quote.clienteRut);
     });
   }, [quotes, search]);
 

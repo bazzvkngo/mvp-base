@@ -23,6 +23,7 @@ import StatusBadge from "../components/ui/StatusBadge";
 import usePrefersDarkMode from "../hooks/usePrefersDarkMode";
 import useThemePreference from "../hooks/useThemePreference";
 import { formatChileanRut, isValidChileanRut } from "../domain/fiscalIdentifier.mjs";
+import FiscalIdInput from "../components/contacts/FiscalIdInput";
 import {
   refreshCurrentUser,
   resetPassword,
@@ -157,9 +158,6 @@ function AccountPage({ legalAcceptance, onSessionRefresh, usuario }) {
               : current.numeroDocumento
             : "",
         };
-      }
-      if (name === "numeroDocumento" && current.tipoDocumento === "RUT") {
-        return { ...current, numeroDocumento: formatChileanRut(value) };
       }
       return { ...current, [name]: value };
     });
@@ -312,7 +310,7 @@ function AccountPage({ legalAcceptance, onSessionRefresh, usuario }) {
                     </label>
                     <label className="settings-field">
                       <span className="settings-field__label">Número de documento <span className="settings-field__optional">Opcional</span></span>
-                      <input name="numeroDocumento" value={form.numeroDocumento} onChange={change} onBlur={() => setDocumentTouched(true)} disabled={!form.tipoDocumento} placeholder={documentContext?.placeholder || "Primero selecciona el tipo"} maxLength="60" aria-invalid={Boolean(documentTouched && documentError)} />
+                      <FiscalIdInput name="numeroDocumento" countryCode={form.tipoDocumento === "RUT" ? "CL" : "OTHER"} value={form.numeroDocumento} onChange={(value) => change({ target: { name: "numeroDocumento", value } })} onBlur={() => setDocumentTouched(true)} disabled={!form.tipoDocumento} placeholder={documentContext?.placeholder || "Primero selecciona el tipo"} maxLength="60" aria-invalid={Boolean(documentTouched && documentError)} />
                       <span className="settings-field__support">{documentTouched && documentError ? <span className="settings-field__error">{documentError}</span> : documentContext ? `${documentContext.label} de la persona titular de esta cuenta.` : "Elige un tipo para habilitar este campo."}</span>
                     </label>
                     <label className="settings-field">

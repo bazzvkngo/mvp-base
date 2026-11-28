@@ -1,4 +1,5 @@
 import {adaptStoredFiscalIdentifier} from "./fiscalIdentifier.mjs";
+import {matchesRutSearch} from "./rut.mjs";
 import {hasMaxDecimals, isMoneyAmount, mulRound, sanitizeDecimals, sumMoney} from "./money.mjs";
 
 export const PURCHASE_MODEL_VERSION = 3;
@@ -295,7 +296,8 @@ export function matchesPurchaseSearch(purchase, search) {
   const normalize = (value) => text(value, 600).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   const query = normalize(search);
   if (!query) return true;
-  return normalize(`${purchase.numero} ${purchase.proveedorSnapshot?.razonSocial} ${purchase.proveedorSnapshot?.rut} ${purchase.numeroDocumentoProveedor} ${purchase.ordenCompraNumero} ${purchase.recepcionNumero}`).includes(query);
+  return normalize(`${purchase.numero} ${purchase.proveedorSnapshot?.razonSocial} ${purchase.proveedorSnapshot?.rut} ${purchase.numeroDocumentoProveedor} ${purchase.ordenCompraNumero} ${purchase.recepcionNumero}`).includes(query)
+    || matchesRutSearch(search, purchase.proveedorSnapshot?.rut, purchase.proveedorSnapshot?.identificadorFiscalValor, purchase.proveedorSnapshot?.identificadorFiscalNormalizado);
 }
 import {adaptDocumentLocalization} from "./localization.mjs";
 import {adaptCompanySnapshot} from "./companySnapshot.mjs";

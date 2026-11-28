@@ -4,6 +4,7 @@ import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
 import LoadingState from "../../components/ui/LoadingState";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
+import {matchesRutSearch} from "../../domain/rut.mjs";
 import {normalizeWorkSearch} from "../../domain/workModel.mjs";
 import {formatMoney} from "../../utils/formatters.js";
 import useBusinessFormat from "../../hooks/useBusinessFormat";
@@ -28,7 +29,8 @@ export function filterWorkQuoteOptions(options, search) {
   const list = Array.isArray(options) ? options : [];
   const query = normalizeWorkSearch(search);
   if (!query) return list;
-  return list.filter((option) => normalizeWorkSearch(getWorkQuoteSearchText(option)).includes(query));
+  return list.filter((option) => normalizeWorkSearch(getWorkQuoteSearchText(option)).includes(query)
+    || matchesRutSearch(search, option.quote?.clienteRut));
 }
 
 export function getWorkQuoteSummaryLabel({quote}, currencyCode, businessLocale) {

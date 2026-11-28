@@ -2,13 +2,12 @@ import React, {useEffect, useMemo, useRef, useState} from "react";
 import {Link} from "react-router-dom";
 import Button from "../../components/ui/Button";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
+import {matchesClientSearch} from "../../domain/clientModel.mjs";
 import {getClientFiscalListLabel} from "../../domain/countryFormCopy.mjs";
 import useBusinessFormat from "../../hooks/useBusinessFormat";
 
 // En el modo en línea se dibujan solo los primeros resultados; el resto se alcanza escribiendo.
 const INLINE_RESULTS_LIMIT = 6;
-
-const searchable = (value) => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
 // Editor de la venta (borrador): el cliente se elige en línea, sin diálogo. Misma lista de
 // clientes activos, mismo filtro y mismo onChange que la versión con diálogo.
@@ -23,7 +22,7 @@ function InlineSaleClientSelector({clients, disabled, onChange, originalSnapshot
   const selected = clients.find((client) => client.clienteId === value);
   const historical = originalSnapshot?.clienteId === value;
   const display = historical ? originalSnapshot : selected;
-  const visible = useMemo(() => clients.filter((client) => client.estado === "activo" && searchable(`${client.nombreRazonSocial} ${client.rut}`).includes(searchable(search))), [clients, search]);
+  const visible = useMemo(() => clients.filter((client) => client.estado === "activo" && matchesClientSearch(client, search)), [clients, search]);
   const activeCount = clients.filter((client) => client.estado === "activo").length;
   const noClients = activeCount === 0;
   // En línea no se dibuja ninguna lista hasta que se escribe: solo el buscador y cuántos clientes hay.
@@ -107,7 +106,7 @@ export default function SaleClientSelector({inline = false, ...props}) {
 // enlace "Ver todos los clientes" del selector en línea: misma lista, mismo filtro.
 function SaleClientDialog({clients, onClose, onPick, open}) {
   const [search, setSearch] = useState("");
-  const visible = useMemo(() => clients.filter((client) => client.estado === "activo" && searchable(`${client.nombreRazonSocial} ${client.rut}`).includes(searchable(search))), [clients, search]);
+  const visible = useMemo(() => clients.filter((client) => client.estado === "activo" && matchesClientSearch(client, search)), [clients, search]);
   const close = () => { onClose(); setSearch(""); };
 
   return (

@@ -138,7 +138,7 @@ assert.doesNotMatch(salePage, /Stock: Stock aplicado/);
 assert.match(saleClient, /sale-context-client__snapshot/);
 // Bloque 1: selector en línea con la misma lista (clientes activos), filtro y onChange; el diálogo sigue para el histórico.
 assert.match(saleClient, /function InlineSaleClientSelector/);
-assert.match(saleClient, /client\.estado === "activo" && searchable\(`\$\{client\.nombreRazonSocial\} \$\{client\.rut\}`\)/, "sólo clientes activos, mismo filtro");
+assert.match(saleClient, /client\.estado === "activo" && matchesClientSearch\(client, search\)/, "sólo clientes activos, mismo filtro compartido (nombre, correo, teléfono y RUT tolerante)");
 assert.match(saleClient, /onChange\(client\.clienteId\); finish\(\)/, "elegir cliente usa el mismo onChange");
 assert.match(saleClient, /function DialogSaleClientSelector/);
 assert.match(saleClient, /<ResponsiveDialog open=\{open\}/);

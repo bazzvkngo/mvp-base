@@ -6,6 +6,7 @@ import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import LoadingState from "../components/ui/LoadingState";
 import {matchesVehicleSearch, getVehicleTypeLabel} from "../domain/vehicleModel.mjs";
+import {matchesRutSearch} from "../domain/rut.mjs";
 import {getClientErrorMessage, listarClientes} from "../services/clientService";
 import {getVehicleErrorMessage, listarVehiculos} from "../services/vehicleService";
 
@@ -50,8 +51,13 @@ function VehiclesPage({businessId, role}) {
   useEffect(() => { load(); }, [load]);
 
   const visibleVehicles = useMemo(
-    () => vehicles.filter((vehicle) => matchesVehicleSearch(vehicle, search)),
-    [search, vehicles],
+    () => vehicles.filter((vehicle) => {
+      if (matchesVehicleSearch(vehicle, search)) return true;
+      // El propietario también se busca por RUT; solo si el perfil puede leer clientes (clientsById vacío si no).
+      const owner = clientsById.get(vehicle.clienteId);
+      return matchesRutSearch(search, owner?.identificadorFiscalValor, owner?.rut, owner?.identificadorFiscalNormalizado);
+    }),
+    [clientsById, search, vehicles],
   );
   const hasSearch = Boolean(search.trim());
 
