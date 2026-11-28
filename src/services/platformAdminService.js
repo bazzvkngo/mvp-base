@@ -92,6 +92,17 @@ export const setPlatformBusinessStatus = ({businessId, estado, motivo, requestId
 export const setPlatformUserStatus = ({uid, estado, motivo, requestId}) =>
   call("cambiarEstadoUsuarioPlataforma", {uid, estado, motivo, requestId});
 
+// Recuperación de cuenta (functions/platformUsersAdmin.js). El enlace de
+// restablecimiento nunca vuelve al navegador: solo lo recibe el usuario.
+export const sendPlatformUserPasswordReset = ({uid, motivo, requestId}) =>
+  call("restablecerContrasenaUsuarioPlataforma", {uid, motivo, requestId});
+
+export const changePlatformUserEmail = ({uid, correoNuevo, motivo, requestId}) =>
+  call("cambiarCorreoUsuarioPlataforma", {uid, correoNuevo, motivo, requestId});
+
+export const editPlatformUser = ({uid, cambios, motivo, requestId}) =>
+  call("editarUsuarioPlataforma", {uid, cambios, motivo, requestId});
+
 export const permanentlyDeletePlatformBusiness = ({
   businessId,
   confirmationName,

@@ -181,6 +181,11 @@ const {
   obtenerResumenPlataformaHandler,
   obtenerUsuarioPlataformaHandler,
 } = require("./platformAdmin");
+const {
+  cambiarCorreoUsuarioPlataformaHandler,
+  editarUsuarioPlataformaHandler,
+  restablecerContrasenaUsuarioPlataformaHandler,
+} = require("./platformUsersAdmin");
 const {VERTICAL_MODULES} = require("./verticalModules");
 const {
   actualizarMembresiaNegocioHandler,
@@ -4346,6 +4351,13 @@ const platformAdminDependencies = {
   HttpsError,
   verticalModules: VERTICAL_MODULES,
 };
+const platformUsersAdminDependencies = {
+  ...platformAdminDependencies,
+  getEmailSender: getQuoteEmailSender,
+  getResendApiKey,
+  isEmulatorEnvironment,
+  sendEmail: sendEmailWithResend,
+};
 const businessMembershipDependencies = {
   db,
   auth: adminAuth,
@@ -4539,6 +4551,39 @@ exports.cambiarEstadoUsuarioPlataforma = onCall(
 exports.cambiarModulosEmpresaPlataforma = onCall(
   {maxInstances: 10, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
   async (request) => cambiarModulosEmpresaPlataformaHandler(request, platformAdminDependencies)
+);
+
+exports.restablecerContrasenaUsuarioPlataforma = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    secrets: [RESEND_API_KEY_SECRET, RESEND_FROM_EMAIL_SECRET],
+    timeoutSeconds: 30,
+  },
+  async (request) => restablecerContrasenaUsuarioPlataformaHandler(
+    request,
+    platformUsersAdminDependencies
+  )
+);
+
+exports.cambiarCorreoUsuarioPlataforma = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    secrets: [RESEND_API_KEY_SECRET, RESEND_FROM_EMAIL_SECRET],
+    timeoutSeconds: 30,
+  },
+  async (request) => cambiarCorreoUsuarioPlataformaHandler(
+    request,
+    platformUsersAdminDependencies
+  )
+);
+
+exports.editarUsuarioPlataforma = onCall(
+  {maxInstances: 10, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => editarUsuarioPlataformaHandler(request, platformUsersAdminDependencies)
 );
 
 exports.eliminarEmpresaPermanentePlataforma = onCall(

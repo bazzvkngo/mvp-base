@@ -291,6 +291,14 @@
 .platform-notice { background: var(--color-surface-hover); border: 1px solid var(--color-brand-200); border-radius: var(--radius-md); color: var(--color-text-brand); margin-bottom: var(--space-4); padding: var(--space-3) var(--space-4); }
 .platform-help { color: var(--color-text-muted); font-size: var(--font-size-xs); margin: var(--space-4) 0 0; }
 .platform-help--flush { margin-top: 0; }
+.platform-recovery-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.platform-recovery-form { display: grid; gap: var(--space-4); }
+.platform-recovery-form p { color: var(--color-text-muted); margin: 0; overflow-wrap: anywhere; }
+.platform-recovery-form label { color: var(--color-text-muted); display: grid; font-size: var(--font-size-xs); gap: var(--space-1); }
+.platform-recovery-form input,
+.platform-recovery-form textarea { background: var(--color-surface-panel); border: 1px solid var(--color-border-control); border-radius: var(--radius-md); color: var(--color-text-strong); font: inherit; padding: var(--space-2) var(--space-3); }
+.platform-recovery-form textarea { resize: vertical; }
+.platform-recovery-notice { margin-bottom: var(--space-4); }
 .platform-danger-zone { align-items: center; border-color: var(--color-danger-200); display: flex; gap: var(--space-5); justify-content: space-between; }
 .platform-danger-zone h2 { color: var(--color-danger-700); }
 .platform-danger-zone p,

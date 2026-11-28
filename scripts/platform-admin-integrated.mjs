@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {createHash} from "node:crypto";
 import {createRequire} from "node:module";
 import {deleteApp, initializeApp} from "firebase/app";
 import {
@@ -37,6 +38,13 @@ const {
   listarEmpresasPlataformaHandler,
   obtenerEmpresaPlataformaHandler,
 } = requireFromFunctions("./platformAdmin");
+const {
+  EMAIL_EVENT: RECOVERY_EMAIL_EVENT,
+  PROFILE_EVENT: RECOVERY_PROFILE_EVENT,
+  RESET_EVENT: RECOVERY_RESET_EVENT,
+  cambiarCorreoUsuarioPlataformaHandler,
+  restablecerContrasenaUsuarioPlataformaHandler,
+} = requireFromFunctions("./platformUsersAdmin");
 const {resolverVerificacionEmpresaHandler} = requireFromFunctions("./businessVerification");
 const {VERTICAL_MODULES} = requireFromFunctions("./verticalModules");
 
@@ -445,6 +453,190 @@ try {
     assert.equal((await adminDb.doc(`platformUserStatusRequests/${operationId}`).get()).exists, false);
   }
   assert.equal((await call(platform, "obtenerUsuarioPlataforma")({uid: secondPlatform.uid})).data.usuario.estado, "activo");
+
+  // --- Recuperacion de cuenta (functions/platformUsersAdmin.js) ---
+  const newAccount = (name, options = {}) => adminAuth.createUser({email: `recovery-${name}-${RUN_ID}@example.test`.toLowerCase(), password: `Recovery-${RUN_ID}-Pass!`, ...options});
+  const recoveryTarget = await newAccount("target");
+  const recoveryOther = await newAccount("other");
+  const recover = (name, data) => call(platform, name)(data);
+  const recoveryOperations = () => adminDb.collection("platformUserRecoveryRequests").get();
+  const recoveryEvents = (uid) => adminDb.collection(`usuarios/${uid}/eventosPlataforma`).get();
+  const operationsBefore = (await recoveryOperations()).size;
+  // Cuenta que entra solo con Google: el emulador de Auth acepta un id_token en JSON.
+  const googleSignIn = await (await fetch(`http://127.0.0.1:${AUTH_EMULATOR_PORT}/identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=demo`, {
+    method: "POST",
+    headers: {"content-type": "application/json"},
+    body: JSON.stringify({
+      postBody: `id_token=${encodeURIComponent(JSON.stringify({sub: `google-${RUN_ID}`, email: `recovery-google-${RUN_ID}@example.test`.toLowerCase(), email_verified: true}))}&providerId=google.com`,
+      requestUri: "http://localhost",
+      returnIdpCredential: true,
+      returnSecureToken: true,
+    }),
+  })).json();
+  const googleUid = googleSignIn.localId;
+  assert.ok(googleUid, `no se pudo crear la cuenta solo Google: ${JSON.stringify(googleSignIn)}`);
+  assert.deepEqual((await adminAuth.getUser(googleUid)).providerData.map((provider) => provider.providerId), ["google.com"]);
+
+  // Bloqueos y validaciones: ninguna accion deja operaciones ni eventos.
+  const blocked = [
+    ["restablecerContrasenaUsuarioPlataforma", {}],
+    ["cambiarCorreoUsuarioPlataforma", {correoNuevo: `bloqueado-${RUN_ID}@example.test`}],
+    ["editarUsuarioPlataforma", {cambios: {nombres: "Bloqueado"}}],
+  ];
+  for (const [name, extra] of blocked) {
+    const data = (uid, patch = {}) => ({uid, motivo: "Prueba de bloqueo", requestId: requestId(`block_${name}`), ...extra, ...patch});
+    await rejected(`${name}: usuario normal`, () => call(owner, name)(data(recoveryTarget.uid)), ["permission-denied"]);
+    await rejected(`${name}: sin motivo`, () => recover(name, data(recoveryTarget.uid, {motivo: "  "})), ["invalid-argument"]);
+    await rejected(`${name}: cuenta propia`, () => recover(name, data(platform.uid)), ["failed-precondition"]);
+    await rejected(`${name}: otro superadmin`, () => recover(name, data(secondPlatform.uid)), ["failed-precondition"]);
+    await rejected(`${name}: cuenta solo Google`, () => recover(name, data(googleUid)), ["failed-precondition"]);
+    await rejected(`${name}: usuario inexistente`, () => recover(name, data("usuarioInexistente123")), ["not-found"]);
+  }
+  for (const uid of [platform.uid, secondPlatform.uid, googleUid]) {
+    assert.equal((await recoveryEvents(uid)).size, 0, "los bloqueos no escriben eventos");
+  }
+  assert.equal((await recoveryOperations()).size, operationsBefore, "los bloqueos no crean operaciones");
+  assert.equal((await adminAuth.getUser(googleUid)).email, `recovery-google-${RUN_ID}@example.test`.toLowerCase());
+
+  // Restablecimiento de contrasena: en emulador el envio se simula y el enlace no vuelve al navegador.
+  const resetId = requestId("recovery_reset");
+  const reset = await recover("restablecerContrasenaUsuarioPlataforma", {uid: recoveryTarget.uid, motivo: "Perdio la contrasena", requestId: resetId});
+  assert.equal(reset.data.enviado, true);
+  assert.equal(reset.data.envio, "simulado");
+  assert.doesNotMatch(JSON.stringify(reset.data), /https?:|oobCode/, "la respuesta no incluye el enlace");
+  assert.equal((await recover("restablecerContrasenaUsuarioPlataforma", {uid: recoveryTarget.uid, motivo: "Perdio la contrasena", requestId: resetId})).data.idempotent, true);
+  await rejected("restablecimiento: requestId reutilizado con otro motivo", () => recover("restablecerContrasenaUsuarioPlataforma", {uid: recoveryTarget.uid, motivo: "Otro motivo", requestId: resetId}), ["already-exists"]);
+  const resetEvent = (await adminDb.doc(`usuarios/${recoveryTarget.uid}/eventosPlataforma/${resetId}`).get()).data();
+  assert.equal(resetEvent.tipo, RECOVERY_RESET_EVENT);
+  assert.equal(resetEvent.motivo, "Perdio la contrasena");
+  assert.equal(resetEvent.creadoPorUid, platform.uid);
+
+  // Cambio de correo.
+  const newEmail = `Recovery-Nuevo-${RUN_ID}@Example.test`;
+  const changeData = (patch = {}) => ({uid: recoveryTarget.uid, correoNuevo: newEmail, motivo: "Perdio acceso al correo", requestId: requestId("recovery_email"), ...patch});
+  await rejected("correo: formato invalido", () => recover("cambiarCorreoUsuarioPlataforma", changeData({correoNuevo: "no-es-un-correo", requestId: requestId("recovery_email_bad")})), ["invalid-argument"]);
+  await rejected("correo: ya esta en uso", () => recover("cambiarCorreoUsuarioPlataforma", changeData({correoNuevo: recoveryOther.email, requestId: requestId("recovery_email_used")})), ["already-exists"]);
+  await rejected("correo: igual al actual", () => recover("cambiarCorreoUsuarioPlataforma", changeData({correoNuevo: recoveryTarget.email, requestId: requestId("recovery_email_same")})), ["failed-precondition"]);
+  assert.equal((await adminAuth.getUser(recoveryTarget.uid)).email, recoveryTarget.email, "los rechazos no cambian el correo");
+  await adminAuth.updateUser(recoveryTarget.uid, {emailVerified: true});
+  const changeStartedAt = Date.now();
+  const changed = await recover("cambiarCorreoUsuarioPlataforma", changeData());
+  assert.equal(changed.data.correo, newEmail.toLowerCase());
+  assert.equal(changed.data.avisoCorreoAnterior, "simulado");
+  const changedAuth = await adminAuth.getUser(recoveryTarget.uid);
+  assert.equal(changedAuth.email, newEmail.toLowerCase());
+  assert.equal(changedAuth.emailVerified, false, "el correo nuevo queda sin verificar");
+  assert.ok(new Date(changedAuth.tokensValidAfterTime).getTime() >= changeStartedAt - 2000, "se revocaron las sesiones");
+  assert.equal((await adminDb.doc(`usuarios/${recoveryTarget.uid}`).get()).data().email, newEmail.toLowerCase());
+  const emailEvent = (await adminDb.doc(`usuarios/${recoveryTarget.uid}/eventosPlataforma/${requestId("recovery_email")}`).get()).data();
+  assert.equal(emailEvent.tipo, RECOVERY_EMAIL_EVENT);
+  assert.equal(emailEvent.correoAnterior, recoveryTarget.email);
+  assert.equal(emailEvent.correoNuevo, newEmail.toLowerCase());
+  assert.equal(emailEvent.motivo, "Perdio acceso al correo");
+  assert.equal((await recover("cambiarCorreoUsuarioPlataforma", changeData())).data.idempotent, true);
+  await rejected("correo: requestId reutilizado con otro correo", () => recover("cambiarCorreoUsuarioPlataforma", changeData({correoNuevo: `otro-${RUN_ID}@example.test`})), ["already-exists"]);
+  assert.equal((await adminAuth.getUser(recoveryTarget.uid)).email, newEmail.toLowerCase(), "el reintento no vuelve a cambiar el correo");
+
+  // Edicion de perfil: lista blanca de campos.
+  const editData = (cambios, patch = {}) => ({uid: recoveryTarget.uid, cambios, motivo: "Datos corregidos", requestId: requestId("recovery_edit"), ...patch});
+  await rejected("edicion: campo fuera de la lista blanca", () => recover("editarUsuarioPlataforma", editData({nombres: "Ana", rol: "OWNER"}, {requestId: requestId("recovery_edit_bad")})), ["invalid-argument"]);
+  await rejected("edicion: sin cambios", () => recover("editarUsuarioPlataforma", editData({}, {requestId: requestId("recovery_edit_empty")})), ["invalid-argument"]);
+  await rejected("edicion: nombre vacio", () => recover("editarUsuarioPlataforma", editData({nombres: "  "}, {requestId: requestId("recovery_edit_name")})), ["invalid-argument"]);
+  const edited = await recover("editarUsuarioPlataforma", editData({nombres: "Ana", telefonoPersonal: "+591 700 00000"}));
+  assert.deepEqual([...edited.data.camposModificados].sort(), ["nombres", "telefonoPersonal"]);
+  const editedProfile = (await adminDb.doc(`usuarios/${recoveryTarget.uid}/cuenta/perfil`).get()).data();
+  assert.equal(editedProfile.nombres, "Ana");
+  assert.equal(editedProfile.telefonoPersonal, "+591 700 00000");
+  assert.equal((await adminDb.doc(`usuarios/${recoveryTarget.uid}/eventosPlataforma/${requestId("recovery_edit")}`).get()).data().tipo, RECOVERY_PROFILE_EVENT);
+  assert.equal((await recover("editarUsuarioPlataforma", editData({nombres: "Ana", telefonoPersonal: "+591 700 00000"}))).data.idempotent, true);
+  await rejected("edicion: sin cambios reales", () => recover("editarUsuarioPlataforma", editData({nombres: "Ana"}, {requestId: requestId("recovery_edit_same")})), ["failed-precondition"]);
+  await recover("editarUsuarioPlataforma", editData({telefonoPersonal: ""}, {requestId: requestId("recovery_edit_clear")}));
+  assert.equal((await adminDb.doc(`usuarios/${recoveryTarget.uid}/cuenta/perfil`).get()).data().telefonoPersonal, undefined);
+
+  // La ficha devuelve proveedores, rol y los campos nuevos de los eventos.
+  const recoveryDetail = (await call(platform, "obtenerUsuarioPlataforma")({uid: recoveryTarget.uid})).data;
+  assert.deepEqual(recoveryDetail.usuario.proveedores, ["password"]);
+  assert.equal(recoveryDetail.usuario.esSuperadmin, false);
+  assert.equal(recoveryDetail.usuario.nombres, "Ana");
+  const detailEmailEvent = recoveryDetail.eventos.find((item) => item.tipo === RECOVERY_EMAIL_EVENT);
+  assert.equal(detailEmailEvent.correoAnterior, recoveryTarget.email);
+  assert.equal(detailEmailEvent.correoNuevo, newEmail.toLowerCase());
+  assert.equal(detailEmailEvent.avisoCorreoAnterior, "simulado");
+  assert.ok(recoveryDetail.eventos.some((item) => item.tipo === RECOVERY_PROFILE_EVENT && item.camposModificados.includes("nombres")));
+  assert.deepEqual((await call(platform, "obtenerUsuarioPlataforma")({uid: googleUid})).data.usuario.proveedores, ["google.com"]);
+  assert.equal((await call(platform, "obtenerUsuarioPlataforma")({uid: secondPlatform.uid})).data.usuario.esSuperadmin, true);
+
+  // Envio real (proveedor inyectado): el enlace va al correo del usuario y el aviso al correo anterior.
+  const sentMail = [];
+  const mailDeps = {
+    auth: adminAuth, db: adminDb, FieldValue, HttpsError,
+    isEmulatorEnvironment: () => false,
+    getResendApiKey: () => "clave-de-prueba",
+    getEmailSender: () => "ValoraCloud <no-reply@example.test>",
+    sendEmail: async (message) => { sentMail.push(message); },
+  };
+  const asPlatform = (data) => ({auth: {uid: platform.uid, token: {}}, data});
+  const mailTarget = await newAccount("mail");
+  const mailResetId = requestId("recovery_mail_reset");
+  const mailReset = await restablecerContrasenaUsuarioPlataformaHandler(asPlatform({uid: mailTarget.uid, motivo: "Prueba de envio", requestId: mailResetId}), mailDeps);
+  assert.equal(mailReset.envio, "enviado");
+  assert.doesNotMatch(JSON.stringify(mailReset), /https?:|oobCode/);
+  assert.equal(sentMail.length, 1);
+  assert.equal(sentMail[0].to, mailTarget.email);
+  assert.match(sentMail[0].text, /https?:\/\/\S+/, "el correo lleva el enlace");
+  assert.equal((await restablecerContrasenaUsuarioPlataformaHandler(asPlatform({uid: mailTarget.uid, motivo: "Prueba de envio", requestId: mailResetId}), mailDeps)).idempotent, true);
+  assert.equal(sentMail.length, 1, "el reintento no reenvia el enlace");
+  await rejected("restablecimiento: envio no configurado", () => restablecerContrasenaUsuarioPlataformaHandler(asPlatform({uid: mailTarget.uid, motivo: "Sin envio", requestId: requestId("recovery_mail_unconfigured")}), {...mailDeps, getResendApiKey: () => ""}), ["failed-precondition"]);
+  const failedResetId = requestId("recovery_mail_failed");
+  await rejected("restablecimiento: falla el proveedor", () => restablecerContrasenaUsuarioPlataformaHandler(asPlatform({uid: mailTarget.uid, motivo: "Proveedor caido", requestId: failedResetId}), {...mailDeps, sendEmail: async () => { throw new Error("proveedor caido"); }}), ["unavailable"]);
+  assert.equal((await adminDb.doc(`platformUserRecoveryRequests/${failedResetId}`).get()).data().estado, "FALLIDA");
+  assert.equal((await restablecerContrasenaUsuarioPlataformaHandler(asPlatform({uid: mailTarget.uid, motivo: "Proveedor caido", requestId: failedResetId}), mailDeps)).envio, "enviado", "tras fallar se puede reintentar");
+
+  sentMail.length = 0;
+  const noticeId = requestId("recovery_mail_notice");
+  const noticeEmail = `recovery-aviso-${RUN_ID}@example.test`.toLowerCase();
+  const notified = await cambiarCorreoUsuarioPlataformaHandler(asPlatform({uid: mailTarget.uid, correoNuevo: noticeEmail, motivo: "Aviso", requestId: noticeId}), mailDeps);
+  assert.equal(notified.avisoCorreoAnterior, "enviado");
+  assert.equal(sentMail.length, 1);
+  assert.equal(sentMail[0].to, mailTarget.email, "el aviso va al correo anterior");
+  assert.ok(!sentMail[0].text.includes(noticeEmail) && !sentMail[0].html.includes(noticeEmail), "el aviso no expone el correo nuevo completo");
+  assert.equal((await cambiarCorreoUsuarioPlataformaHandler(asPlatform({uid: mailTarget.uid, correoNuevo: noticeEmail, motivo: "Aviso", requestId: noticeId}), mailDeps)).idempotent, true);
+  assert.equal(sentMail.length, 1, "el reintento no reenvia el aviso");
+
+  // El aviso al correo anterior puede fallar sin deshacer el cambio, y el resultado se informa.
+  const failedNoticeTarget = await newAccount("notice-failed");
+  const failedNoticeId = requestId("recovery_notice_failed");
+  const failedNotice = await cambiarCorreoUsuarioPlataformaHandler(asPlatform({uid: failedNoticeTarget.uid, correoNuevo: `recovery-fallido-${RUN_ID}@example.test`, motivo: "Aviso fallido", requestId: failedNoticeId}), {...mailDeps, sendEmail: async () => { throw new Error("proveedor caido"); }});
+  assert.equal(failedNotice.avisoCorreoAnterior, "fallido");
+  assert.equal((await adminAuth.getUser(failedNoticeTarget.uid)).email, `recovery-fallido-${RUN_ID}@example.test`);
+  assert.equal((await adminDb.doc(`usuarios/${failedNoticeTarget.uid}/eventosPlataforma/${failedNoticeId}`).get()).data().avisoCorreoAnterior, "fallido");
+  const unconfiguredTarget = await newAccount("notice-unconfigured");
+  const unconfigured = await cambiarCorreoUsuarioPlataformaHandler(asPlatform({uid: unconfiguredTarget.uid, correoNuevo: `recovery-sinconfig-${RUN_ID}@example.test`, motivo: "Sin envio", requestId: requestId("recovery_notice_unconfigured")}), {...mailDeps, getResendApiKey: () => ""});
+  assert.equal(unconfigured.avisoCorreoAnterior, "no_configurado");
+  assert.equal((await adminAuth.getUser(unconfiguredTarget.uid)).email, `recovery-sinconfig-${RUN_ID}@example.test`);
+  const warnedDetail = (await call(platform, "obtenerUsuarioPlataforma")({uid: failedNoticeTarget.uid})).data;
+  assert.equal(warnedDetail.eventos.find((item) => item.tipo === RECOVERY_EMAIL_EVENT).avisoCorreoAnterior, "fallido");
+
+  // Una operacion interrumpida despues de actualizar Auth se reanuda con el mismo requestId y conserva el correo anterior.
+  const resumeTarget = await newAccount("resume");
+  const resumeEmail = `recovery-reanuda-${RUN_ID}@example.test`;
+  const resumeId = requestId("recovery_resume");
+  await adminAuth.updateUser(resumeTarget.uid, {email: resumeEmail});
+  await adminDb.doc(`platformUserRecoveryRequests/${resumeId}`).set({
+    uidUsuario: resumeTarget.uid,
+    accion: "CAMBIAR_CORREO",
+    estado: "EN_PROCESO",
+    creadoPorUid: platform.uid,
+    fingerprint: createHash("sha256").update(JSON.stringify({uid: resumeTarget.uid, action: "CAMBIAR_CORREO", reason: "Reanudar", newEmail: resumeEmail})).digest("hex"),
+    iniciadoEnMs: 1,
+    correoAnterior: resumeTarget.email,
+    correoNuevo: resumeEmail,
+  });
+  const resumed = await cambiarCorreoUsuarioPlataformaHandler(asPlatform({uid: resumeTarget.uid, correoNuevo: resumeEmail, motivo: "Reanudar", requestId: resumeId}), mailDeps);
+  assert.equal(resumed.idempotent, false);
+  assert.equal((await adminDb.doc(`usuarios/${resumeTarget.uid}/eventosPlataforma/${resumeId}`).get()).data().correoAnterior, resumeTarget.email);
+  assert.equal((await adminDb.doc(`platformUserRecoveryRequests/${resumeId}`).get()).data().estado, "COMPLETADA");
+  console.log("OK recuperacion de cuenta: bloqueos, restablecimiento, cambio de correo, aviso y edicion");
 
   await adminDb.doc(`quotePublicTokens/delete-${RUN_ID}`).set({
     negocioId: firstId,

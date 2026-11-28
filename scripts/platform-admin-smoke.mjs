@@ -397,3 +397,91 @@ console.log("OK platform-admin: sin panel Modulos, historial de modulos conserva
   assert.doesNotMatch(newCss, /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/, "el CSS nuevo usa solo tokens");
   console.log("OK platform-admin: filtro por cuenta, pendientes antiguas en el Dashboard y motivos de usuario");
 }
+
+// --- Recuperacion de cuenta: functions/platformUsersAdmin.js y la tarjeta de la ficha del usuario ---
+{
+  const {
+    accountRecoveryBlock,
+    previousEmailNotice,
+    profileChanges,
+    recoveryErrorMessage,
+    userEventSummary,
+  } = await import("../src/platform/accountRecovery.mjs");
+  const recoveryFiles = ["../functions/platformUsersAdmin.js", "../src/platform/AccountRecoveryPanel.jsx", "../src/styles/platform.css", "../functions/package.json", "../firestore.rules"];
+  const [recoverySource, panelSource, cssSource, functionsPackage, rulesSource] = await Promise.all(
+    recoveryFiles.map((path) => readFile(new URL(path, import.meta.url), "utf8"))
+  );
+
+  // Backend: tres Functions, todas tras el guardia unico, con motivo, idempotencia y evento.
+  for (const name of ["restablecerContrasenaUsuarioPlataforma", "cambiarCorreoUsuarioPlataforma", "editarUsuarioPlataforma"]) {
+    assert.match(platformIndexSource, new RegExp(`exports\\.${name} = onCall\\([\\s\\S]*?${name}Handler\\(\\s*request,\\s*platformUsersAdminDependencies`));
+    assert.match(serviceSource, new RegExp(`call\\("${name}"`));
+  }
+  assert.match(platformIndexSource, /const platformUsersAdminDependencies = \{\s*\.\.\.platformAdminDependencies,[\s\S]*?sendEmail: sendEmailWithResend,[\s\S]*?\};/);
+  assert.match(platformIndexSource, /exports\.restablecerContrasenaUsuarioPlataforma = onCall\(\s*\{[^}]*secrets: \[RESEND_API_KEY_SECRET, RESEND_FROM_EMAIL_SECRET\]/);
+  assert.match(platformIndexSource, /exports\.cambiarCorreoUsuarioPlataforma = onCall\(\s*\{[^}]*secrets: \[RESEND_API_KEY_SECRET, RESEND_FROM_EMAIL_SECRET\]/);
+  assert.match(recoverySource, /require\("\.\/platformAccess"\)/);
+  assert.equal((recoverySource.match(/await requirePlatformSuperadmin\(request, dependencies\)/g) || []).length, 1, "un solo guardia compartido por las tres acciones");
+  assert.equal((recoverySource.match(/await prepareRecovery\(request, dependencies\)/g) || []).length, 3);
+  assert.doesNotMatch(recoverySource, /token\?\.platformRole/);
+  assert.match(recoverySource, /Indica el motivo de la accion/);
+  assert.match(recoverySource, /uid === actor\.uid/);
+  assert.match(recoverySource, /customClaims\?\.platformRole === PLATFORM_SUPERADMIN/);
+  assert.match(recoverySource, /providerId === PASSWORD_PROVIDER/);
+  assert.match(recoverySource, /auth\.getUserByEmail\(newEmail\)/);
+  assert.match(recoverySource, /updateUser\(uid, \{email: newEmail, emailVerified: false\}\)/);
+  assert.match(recoverySource, /auth\.revokeRefreshTokens\(uid\)/);
+  assert.match(recoverySource, /correoAnterior: previousEmail,\s*correoNuevo: newEmail/);
+  assert.match(recoverySource, /Object\.hasOwn\(EDITABLE_PROFILE_FIELDS, key\)/);
+  assert.match(recoverySource, /EDITABLE_PROFILE_FIELDS = \{nombres: 120, apellidos: 160, telefonoPersonal: 40\}/);
+  assert.match(recoverySource, /auth\.generatePasswordResetLink\(email\)/);
+  assert.doesNotMatch(recoverySource, /return \{[^}]*\blink\b/, "el enlace de restablecimiento nunca se devuelve");
+  assert.doesNotMatch(recoverySource, /updateUser\([^)]*password/, "no se fijan contrasenas");
+  assert.match(functionsPackage, /platformAdmin\.js platformUsersAdmin\.js/);
+  assert.match(rulesSource, /match \/platformUserRecoveryRequests\/\{requestId\} \{\s*allow read, create, update, delete: if false;/);
+  assert.match(functionsSource, /esSuperadmin: authUser\.customClaims\?\.platformRole === PLATFORM_SUPERADMIN/);
+  assert.match(functionsSource, /proveedores: \(authUser\.providerData \|\| \[\]\)/);
+
+  // Frontend: tarjeta con confirmacion y motivo, reutilizando estilos y servicio.
+  assert.match(pagesSource, /<AccountRecoveryPanel usuario=\{usuario\} isOwnAccount=\{isOwnAccount\} onCompleted=\{recoveryCompleted\} \/>/);
+  assert.match(panelSource, /<h2>Recuperación de cuenta<\/h2>/);
+  assert.match(panelSource, /<ResponsiveDialog/);
+  assert.match(panelSource, /<label>Motivo<textarea/);
+  assert.match(panelSource, /disabled=\{!canConfirm\}/);
+  assert.match(panelSource, /createPlatformRequestId\(`recovery_\$\{action\}`\)/);
+  assert.match(panelSource, /className="platform-help platform-help--flush"/);
+  assert.match(panelSource, /from "\.\.\/services\/platformAdminService"/);
+  assert.match(pagesSource, /USUARIO_CORREO_CAMBIADO: "Correo cambiado"/);
+  assert.match(pagesSource, /userEventSummary\(event, platformStateLabel\)/);
+  assert.match(pagesSource, /\{event\.motivo && <p>Motivo: \{event\.motivo\}<\/p>\}/);
+  // El aviso al correo anterior fallido es visible y persiste hasta que el superadmin lo cierra.
+  assert.match(pagesSource, /<Notice variant="warning" title=\{recoveryWarning\.title\}[^>]*actions=\{<Button variant="secondary" onClick=\{\(\) => setRecoveryWarning\(null\)\}>Entendido<\/Button>\}>\{recoveryWarning\.text\}<\/Notice>/);
+  assert.match(pagesSource, /const recoveryCompleted = \(\{text, warning\}\) => \{ setNotice\(text\); setRecoveryWarning\(warning\); load\(\); \}/);
+  const recoveryCss = cssSource.split("\n").filter((line) => /platform-recovery-/.test(line)).join("\n");
+  assert.ok(recoveryCss.length > 0);
+  assert.doesNotMatch(recoveryCss, /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/, "el CSS nuevo usa solo tokens");
+
+  // Reglas de presentacion.
+  const passwordUser = {uid: "u1", esSuperadmin: false, proveedores: ["password"], nombres: "Ana", apellidos: "Soto", telefonoPersonal: "+591 7"};
+  assert.equal(accountRecoveryBlock({usuario: passwordUser}), "");
+  assert.equal(accountRecoveryBlock({usuario: {...passwordUser, proveedores: ["google.com", "password"]}}), "", "Google y contraseña sí se permite");
+  assert.match(accountRecoveryBlock({usuario: passwordUser, isOwnAccount: true}), /propia cuenta/);
+  assert.match(accountRecoveryBlock({usuario: {...passwordUser, esSuperadmin: true}}), /Administrador/);
+  assert.match(accountRecoveryBlock({usuario: {...passwordUser, proveedores: ["google.com"]}}), /solo con Google/);
+  assert.match(accountRecoveryBlock({usuario: {...passwordUser, proveedores: []}}), /solo con Google/);
+  assert.deepEqual(profileChanges(passwordUser, {nombres: " Ana ", apellidos: "Soto", telefonoPersonal: "+591 7"}), {});
+  assert.deepEqual(profileChanges(passwordUser, {nombres: "Ana María", apellidos: "Soto", telefonoPersonal: ""}), {nombres: "Ana María", telefonoPersonal: ""});
+  assert.equal(previousEmailNotice({avisoCorreoAnterior: "enviado"}, "a@b.test"), null);
+  assert.equal(previousEmailNotice({avisoCorreoAnterior: "simulado"}, "a@b.test"), null);
+  assert.match(previousEmailNotice({avisoCorreoAnterior: "fallido"}, "a@b.test").text, /no se pudo enviar el aviso al correo anterior \(a@b\.test\)/);
+  assert.match(previousEmailNotice({avisoCorreoAnterior: "no_configurado"}, "a@b.test").text, /no está configurado/);
+  assert.ok(previousEmailNotice({avisoCorreoAnterior: "no_enviado"}, "a@b.test"), "un estado desconocido también avisa");
+  assert.equal(previousEmailNotice({}, "a@b.test"), null, "sin dato no se inventa un aviso");
+  assert.equal(userEventSummary({tipo: "USUARIO_CORREO_CAMBIADO", correoAnterior: "a@b.test", correoNuevo: "c@d.test"}), "a@b.test → c@d.test");
+  assert.equal(userEventSummary({tipo: "USUARIO_PERFIL_EDITADO", camposModificados: ["nombres", "telefonoPersonal"]}), "Campos: Nombres, Teléfono");
+  assert.equal(userEventSummary({tipo: "USUARIO_SUSPENDIDO", estadoAnterior: "activo", estadoResultante: "suspendido"}, (value) => value.toUpperCase()), "ACTIVO → SUSPENDIDO");
+  assert.equal(recoveryErrorMessage({code: "functions/permission-denied"}, "x"), "No tienes autorización para esta acción.");
+  assert.equal(recoveryErrorMessage({code: "functions/already-exists", message: "Ese correo ya esta en uso por otra cuenta."}, "x"), "Ese correo ya esta en uso por otra cuenta.");
+  assert.equal(recoveryErrorMessage({code: "functions/internal", message: "boom"}, "Fallback"), "Fallback");
+  console.log("OK platform-admin: recuperación de cuenta (backend, tarjeta y aviso al correo anterior)");
+}

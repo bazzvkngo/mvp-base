@@ -18,8 +18,11 @@ import Button from "../components/ui/Button";
 import LoadingState from "../components/ui/LoadingState";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import Skeleton, {SkeletonRegion} from "../components/ui/Skeleton";
+import Notice from "../components/ui/Notice";
 import StatusBadge from "../components/ui/StatusBadge";
+import AccountRecoveryPanel from "./AccountRecoveryPanel";
 import VerificationDecisionDialog from "./VerificationDecisionDialog";
+import {userEventSummary} from "./accountRecovery.mjs";
 import {INITIAL_DECISION_STATE, confirmDecision, decisionReducer} from "./verificationDecision.mjs";
 import {MODULES_EVENT_TYPE, moduleEventSummary} from "./platformModuleEvents.mjs";
 import {COUNTRIES, getCountryByCode} from "../domain/businessCatalog";
@@ -70,6 +73,9 @@ const PLATFORM_EVENT_LABELS = {
   EMPRESA_REACTIVADA: "Empresa reactivada",
   USUARIO_SUSPENDIDO: "Usuario suspendido",
   USUARIO_REACTIVADO: "Usuario reactivado",
+  USUARIO_RESTABLECIMIENTO_ENVIADO: "Enlace de restablecimiento enviado",
+  USUARIO_CORREO_CAMBIADO: "Correo cambiado",
+  USUARIO_PERFIL_EDITADO: "Datos del usuario editados",
   modulos_actualizados: "Módulos actualizados",
 };
 
@@ -673,18 +679,24 @@ export function PlatformUserDetailPage() {
   const [state, setState] = React.useState({loading: true, data: null, error: ""});
   const [reason, setReason] = React.useState(""); const [working, setWorking] = React.useState(false); const [notice, setNotice] = React.useState("");
   const requestRef = React.useRef("");
+  // Aviso persistente (no se borra al recargar): el superadmin debe verlo hasta cerrarlo o hacer otra acción.
+  const [recoveryWarning, setRecoveryWarning] = React.useState(null);
+  React.useEffect(() => setRecoveryWarning(null), [uid]);
   const load = React.useCallback(() => { setState((current) => ({...current, loading: true, error: ""})); getPlatformUser(uid).then((data) => setState({loading: false, data, error: ""})).catch((error) => setState({loading: false, data: null, error: message(error, "No pudimos cargar el usuario.")})); }, [uid]);
   React.useEffect(load, [load]);
   const changeStatus = async (estado) => { setWorking(true); setNotice(""); try { if (!requestRef.current) requestRef.current = createPlatformRequestId(`${estado}_user`); await setPlatformUserStatus({uid, estado, motivo: estado === "suspendido" ? reason : "", requestId: requestRef.current}); requestRef.current = ""; setReason(""); setNotice("Estado actualizado correctamente."); load(); } catch (error) { setNotice(message(error, "No pudimos actualizar el usuario.")); } finally { setWorking(false); } };
+  const recoveryCompleted = ({text, warning}) => { setNotice(text); setRecoveryWarning(warning); load(); };
   if (state.loading && !state.data) return <Loading />; if (state.error) return <ErrorState error={state.error} retry={load} />;
   const {usuario, membresias, eventos} = state.data;
   const isOwnAccount = Boolean(currentUid) && usuario.uid === currentUid;
   return <><button className="platform-back" type="button" onClick={() => navigate(-1)}><AppIcon icon={ChevronLeft} size={18} />Volver</button><PlatformHeading eyebrow="Usuario" title={personIdentity(usuario.nombre, usuario.correo)} description={usuario.correo} action={<div className="platform-heading-actions"><StatusBadge variant={stateVariant(usuario.estado)}>{platformStateLabel(usuario.estado)}</StatusBadge><Button variant="secondary" icon={Building2} onClick={() => navigate(`/admin/empresas?uid=${encodeURIComponent(usuario.uid)}`)}>Ver empresas</Button></div>} />
     {notice && <div className="platform-notice" role="status">{notice}</div>}
+    {recoveryWarning && <Notice variant="warning" title={recoveryWarning.title} className="platform-recovery-notice" actions={<Button variant="secondary" onClick={() => setRecoveryWarning(null)}>Entendido</Button>}>{recoveryWarning.text}</Notice>}
     <div className="platform-detail-columns"><section className="platform-panel"><h2>Cuenta</h2><DetailGrid items={[{label: "UID", value: usuario.uid}, {label: "Correo", value: usuario.correo}, {label: "Estado", value: platformStateLabel(usuario.estado)}, ...(usuario.motivoSuspension ? [{label: "Motivo de suspensión", value: usuario.motivoSuspension}] : []), {label: "Fecha alta", value: date(usuario.fechaAlta)}, {label: "Último acceso", value: date(usuario.ultimoAcceso)}]} /></section>
       <section className="platform-panel"><h2>Control de acceso</h2>{isOwnAccount ? <p className="platform-help platform-help--flush">Tu propia cuenta de plataforma no se suspende desde aquí.</p> : <>{usuario.estado === "activo" ? <div className="platform-action-form"><label>Motivo de suspensión<textarea rows="2" value={reason} onChange={(event) => {setReason(event.target.value); requestRef.current = "";}} /></label><Button variant="danger" disabled={working || !reason.trim()} onClick={() => changeStatus("suspendido")}>Suspender usuario</Button></div> : <Button disabled={working} onClick={() => changeStatus("activo")}>Reactivar usuario</Button>}<p className="platform-help">La suspensión deshabilita Auth y el acceso ERP sin borrar membresías ni históricos.</p></>}</section></div>
+    <AccountRecoveryPanel usuario={usuario} isOwnAccount={isOwnAccount} onCompleted={recoveryCompleted} />
     <section className="platform-panel"><h2>Membresías ({membresias.length})</h2>{membresias.length ? <div className="platform-table-wrap"><table className="platform-table"><thead><tr><th>Empresa</th><th>Perfil</th><th>Estado</th><th>Ingreso</th></tr></thead><tbody>{membresias.map((membership) => <tr key={membership.negocioId} onClick={() => navigate(`/admin/empresas/${membership.negocioId}`)}><td>{membership.empresa}</td><td>{BUSINESS_ROLE_LABELS[membership.rol] || humanizeToken(membership.rol)}</td><td>{platformStateLabel(membership.estado)}</td><td>{date(membership.fechaIncorporacion)}</td></tr>)}</tbody></table></div> : <div className="platform-empty">El usuario no posee membresías.</div>}</section>
-    <section className="platform-panel"><h2>Eventos de plataforma</h2>{eventos.length ? <ol className="platform-timeline">{eventos.map((event) => <li key={event.id}><span>Usuario</span><strong>{platformEventLabel(event.tipo)}</strong><p>{platformStateLabel(event.estadoAnterior)} → {platformStateLabel(event.estadoResultante)}</p>{event.motivo && <p>Motivo: {event.motivo}</p>}<time>{date(event.creadoEn)}</time></li>)}</ol> : <div className="platform-empty">Sin eventos registrados.</div>}</section>
+    <section className="platform-panel"><h2>Eventos de plataforma</h2>{eventos.length ? <ol className="platform-timeline">{eventos.map((event) => <li key={event.id}><span>Usuario</span><strong>{platformEventLabel(event.tipo)}</strong><p>{userEventSummary(event, platformStateLabel)}</p>{event.motivo && <p>Motivo: {event.motivo}</p>}{["fallido", "no_configurado"].includes(event.avisoCorreoAnterior) && <p>Aviso al correo anterior: no enviado</p>}<time>{date(event.creadoEn)}</time></li>)}</ol> : <div className="platform-empty">Sin eventos registrados.</div>}</section>
   </>;
 }
 

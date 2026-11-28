@@ -1460,6 +1460,10 @@ service cloud.firestore {
       allow read, create, update, delete: if false;
     }
 
+    match /platformUserRecoveryRequests/{requestId} {
+      allow read, create, update, delete: if false;
+    }
+
     match /paises/{countryCode} {
       allow read: if isSignedIn();
       allow create, update, delete: if false;

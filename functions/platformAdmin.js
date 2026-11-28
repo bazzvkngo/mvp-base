@@ -680,6 +680,13 @@ async function obtenerUsuarioPlataformaHandler(request, dependencies) {
         : "",
       fechaAlta: authUser.metadata?.creationTime || timestampToIso(user.creadoEn),
       ultimoAcceso: authUser.metadata?.lastSignInTime || null,
+      esSuperadmin: authUser.customClaims?.platformRole === PLATFORM_SUPERADMIN,
+      proveedores: (authUser.providerData || [])
+        .map((provider) => text(provider?.providerId, 60))
+        .filter(Boolean),
+      telefonoPersonal: text(profile.telefonoPersonal, 40),
+      nombres: text(profile.nombres, 120),
+      apellidos: text(profile.apellidos, 160),
     },
     membresias: memberships.map((membership) => ({
       negocioId: membership.negocioId,
@@ -696,6 +703,15 @@ async function obtenerUsuarioPlataformaHandler(request, dependencies) {
       motivo: text(snapshot.data()?.motivo, 1000),
       creadoPorUid: text(snapshot.data()?.creadoPorUid, 160),
       creadoEn: timestampToIso(snapshot.data()?.creadoEn),
+      ...(snapshot.data()?.correoNuevo ? {
+        correoAnterior: text(snapshot.data()?.correoAnterior, 320),
+        correoNuevo: text(snapshot.data()?.correoNuevo, 320),
+        avisoCorreoAnterior: text(snapshot.data()?.avisoCorreoAnterior, 40),
+      } : {}),
+      ...(Array.isArray(snapshot.data()?.camposModificados) ? {
+        camposModificados: snapshot.data().camposModificados
+          .map((field) => text(field, 40)).filter(Boolean),
+      } : {}),
     })),
   };
 }
