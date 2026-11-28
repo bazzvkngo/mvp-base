@@ -19,6 +19,7 @@ import {buildVeterinaryPatientMutationPayload, formatVeterinaryPatientAge, getVe
 import VeterinaryPhotoMap from "../attention/VeterinaryPhotoMap";
 import MicrochipScanner from "./MicrochipScanner";
 import PatientDetail from "./PatientDetail";
+import PatientSearchField from "./PatientSearchField";
 import VeterinaryPatientDirectory from "./VeterinaryPatientDirectory";
 import VeterinaryPatientPhotoField from "./VeterinaryPatientPhotoField";
 import {getPatientBreedOptions, PATIENT_SEX_OPTIONS, PATIENT_SPECIES_OPTIONS} from "./patientFormOptions.mjs";
@@ -133,7 +134,7 @@ function PatientForm({businessId, countryCode, patient, tutors, onTutorCreated})
   }
 
   const setPatientValue = (name, value) => {
-    const speciesChanged = name === "especie";
+    const speciesChanged = name === "especie" && form.especie !== value;
     setForm((current) => ({...current, [name]: value, ...(speciesChanged ? {raza: ""} : {})}));
     setFieldErrors((current) => ({...current, [name]: undefined, ...(speciesChanged ? {raza: undefined} : {})}));
   };
@@ -218,11 +219,12 @@ function PatientForm({businessId, countryCode, patient, tutors, onTutorCreated})
               <VeterinaryField label="Nombre" required error={fieldErrors.nombre}>
                 <input className="erp-control" name="nombre" placeholder="Ej. Firulais" value={form.nombre ?? ""} onChange={setField} />
               </VeterinaryField>
-              <PatientSelectField label="Especie" name="especie" required value={form.especie}
-                options={PATIENT_SPECIES_OPTIONS} placeholder="Selecciona la especie" onChange={setField} error={fieldErrors.especie} />
-              <PatientSelectField label="Raza" name="raza" value={form.raza} options={breedOptions}
-                placeholder={breedOptions.length ? "Selecciona la raza" : "Selecciona primero la especie"}
-                disabled={!breedOptions.length} onChange={setField} error={fieldErrors.raza} />
+              <PatientSearchField label="Especie" name="especie" required value={form.especie}
+                options={PATIENT_SPECIES_OPTIONS} placeholder="Escribe o selecciona una especie"
+                onSelect={setPatientValue} error={fieldErrors.especie} />
+              <PatientSearchField label="Raza" name="raza" value={form.raza} options={breedOptions}
+                placeholder={breedOptions.length ? "Escribe o selecciona una raza" : "Selecciona primero la especie"}
+                disabled={!breedOptions.length} onSelect={setPatientValue} error={fieldErrors.raza} />
               <PatientSelectField label="Sexo" name="sexo" value={form.sexo}
                 options={PATIENT_SEX_OPTIONS} placeholder="Selecciona el sexo" onChange={setField} error={fieldErrors.sexo} />
             </div>

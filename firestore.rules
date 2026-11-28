@@ -1414,6 +1414,14 @@ service cloud.firestore {
               && resource.data.profesionalUid == request.auth.uid));
         allow write: if false;
       }
+
+      match /boxesVeterinarios/{boxId} {
+        allow read: if isBusinessModuleEnabled(businessId, "veterinaria")
+          && resource.data.negocioId == businessId
+          && hasBusinessRole(businessId, ["OWNER", "ADMIN"]);
+        allow write: if false;
+      }
+
       match /{document=**} {
         allow read, create, update, delete: if false;
       }

@@ -122,6 +122,15 @@ const speciesCatalog = [
 export const PATIENT_SPECIES_OPTIONS = speciesCatalog.map(({label}) => label);
 export const PATIENT_SEX_OPTIONS = ["Macho", "Hembra"];
 
+function normalizeOptionText(text) {
+  return text.trim().toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
+}
+
+export function filterPatientOptions(options, query) {
+  const search = normalizeOptionText(query);
+  return search ? options.filter((option) => normalizeOptionText(option).includes(search)) : options;
+}
+
 export function getPatientBreedOptions(species) {
   const key = String(species ?? "").trim().toLowerCase();
   if (!key) return [];

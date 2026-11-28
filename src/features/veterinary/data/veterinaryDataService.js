@@ -17,6 +17,7 @@ import {
   veterinaryAppointmentsCollectionPath,
   veterinaryAttentionDocPath,
   veterinaryAttentionsCollectionPath,
+  veterinaryBoxesCollectionPath,
   veterinaryPatientDocPath,
   veterinaryPatientsCollectionPath,
 } from "./veterinaryFirestorePaths.mjs";
@@ -176,6 +177,24 @@ export function subscribeToVeterinaryAttentions(
     },
     onError
   );
+}
+
+
+export function subscribeToVeterinaryBoxes(businessId, onItems, onError) {
+  const id = requireBusinessId(businessId);
+  return onSnapshot(
+    veterinaryBusinessQuery(veterinaryBoxesCollectionPath(id), id),
+    (snapshot) => onItems(mapSnapshot(snapshot)),
+    onError
+  );
+}
+
+
+export async function guardarBoxVeterinario(businessId, nombre) {
+  assertClientWriteAllowed("guardar boxes veterinarios");
+  const callable = httpsCallable(getFirebaseFunctions(), "guardarBoxVeterinario");
+  const result = await callable({businessId: requireBusinessId(businessId), nombre});
+  return result.data.boxId;
 }
 
 

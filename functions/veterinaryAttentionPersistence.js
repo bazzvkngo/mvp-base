@@ -3,6 +3,7 @@
 const {createHash} = require("node:crypto");
 const {isDeepStrictEqual} = require("node:util");
 const {importVeterinaryModel} = require("./veterinaryModels");
+const {veterinaryBoxId} = require("./veterinaryBoxPersistence");
 const {deliverVeterinarySale, stageVeterinarySale} = require("./veterinaryAttentionSale");
 const {
   prepareVeterinaryControlAppointment,
@@ -41,12 +42,6 @@ function requireText(value, limit, label, HttpsError, required = true) {
 
 function digest(value) {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
-}
-
-function boxRef(businessRef, value) {
-  if (typeof value !== "string" || !value) return null;
-  const key = value.normalize("NFKC").toLocaleLowerCase("es").trim().replace(/\s+/g, " ");
-  return businessRef.collection("reservasBoxesVeterinarios").doc(digest(key));
 }
 
 function appointmentSlotRef(businessRef, appointment) {
@@ -189,9 +184,9 @@ async function createOrder({atencionId, citaId, atencion}, {db, uid, businessId,
   });
 }
 
-function assignmentPayload(value, HttpsError) {
+function assignmentPayload(value, HttpsError, {normalizeVeterinaryBoxName, VETERINARY_BOX_NAME_LIMIT}) {
   return {
-    box: requireText(value?.box, 80, "Box", HttpsError).replace(/\s+/g, " "),
+    box: requireText(normalizeVeterinaryBoxName(value?.box), VETERINARY_BOX_NAME_LIMIT, "Box", HttpsError),
     tipoAtencion: requireText(value?.tipoAtencion, 100, "Tipo de atención", HttpsError),
     profesionalUid: requireId(value?.profesionalUid, HttpsError, "Selecciona un profesional válido."),
   };
@@ -387,7 +382,9 @@ async function mutateOrder({atencionId, operacion, atencion}, context) {
   const appointmentRef = initial.citaId
     ? businessRef.collection("citasVeterinarias").doc(requireId(initial.citaId, HttpsError))
     : null;
-  const assignment = operacion === "asignarOrden" ? assignmentPayload(atencion, HttpsError) : null;
+  const boxModel = await importVeterinaryModel("boxModel");
+  const {veterinaryBoxKey} = boxModel;
+  const assignment = operacion === "asignarOrden" ? assignmentPayload(atencion, HttpsError, boxModel) : null;
   const prescription = operacion === "emitirReceta" ? prescriptionPayload(atencion, HttpsError) : null;
   const memberRef = assignment ? db.doc("membresias/" + businessId + "__" + assignment.profesionalUid) : null;
   const [actorMembershipRef, actorProfileRef] = getVeterinaryProfessionalGrantRefs(context);
@@ -400,8 +397,13 @@ async function mutateOrder({atencionId, operacion, atencion}, context) {
     assertAssignableVeterinaryProfessional(membership, profile, {businessId, uid: assignment.profesionalUid, HttpsError});
     displayName = await getVeterinaryProfessionalDisplayName(db, assignment.profesionalUid);
   }
-  const currentBox = boxRef(businessRef, initial.box);
-  const nextBox = assignment ? boxRef(businessRef, assignment.box) : null;
+  const currentBoxKey = veterinaryBoxKey(initial.box);
+  const nextBoxKey = assignment ? veterinaryBoxKey(assignment.box) : "";
+  const nextBoxId = assignment ? veterinaryBoxId(nextBoxKey) : null;
+  const reservations = businessRef.collection("reservasBoxesVeterinarios");
+  const currentBox = currentBoxKey ? reservations.doc(veterinaryBoxId(currentBoxKey)) : null;
+  const nextBox = nextBoxId ? reservations.doc(nextBoxId) : null;
+  const configuredBox = nextBoxId ? businessRef.collection("boxesVeterinarios").doc(nextBoxId) : null;
   const slot = appointmentRef && operacion === "cancelarOrden"
     ? appointmentSlotRef(businessRef, (await appointmentRef.get()).data())
     : null;
@@ -409,7 +411,8 @@ async function mutateOrder({atencionId, operacion, atencion}, context) {
     ? await prepareClinicalFollowup(atencion, {...initial, atencionId}, context)
     : null;
   const readRefs = uniqueReferences([
-    orderRef, appointmentRef, currentBox, nextBox, memberRef, profileRef, slot, actorMembershipRef, actorProfileRef,
+    orderRef, appointmentRef, currentBox, nextBox, configuredBox, memberRef, profileRef, slot, actorMembershipRef,
+    actorProfileRef,
     ...(followup?.refs ?? []),
   ]);
 
@@ -439,7 +442,12 @@ async function mutateOrder({atencionId, operacion, atencion}, context) {
       const membership = snapshots.get(memberRef.path).data();
       const profile = profileRef && membership?.profileId === profileRef.id ? snapshots.get(profileRef.path).data() : null;
       assertAssignableVeterinaryProfessional(membership, profile, {businessId, uid: assignment.profesionalUid, HttpsError});
-      assignOrder(tx, orderRef, order, assignment, {
+      const box = snapshots.get(configuredBox.path).data();
+      const configured = box?.negocioId === businessId && veterinaryBoxKey(box.nombre) === nextBoxKey;
+      if (!configured && currentBoxKey !== nextBoxKey) {
+        throw new HttpsError("failed-precondition", "Selecciona un box registrado en la clínica.");
+      }
+      assignOrder(tx, orderRef, order, {...assignment, box: configured ? box.nombre : order.box}, {
         nextBox, currentLock, nextLock: snapshots.get(nextBox.path), displayName,
       }, actor);
       if (appointmentRef &&

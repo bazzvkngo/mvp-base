@@ -3,3 +3,37 @@
   flex-wrap: wrap;
   gap: var(--space-2);
 }
+
+.veterinary-box-board__form {
+  margin-block-end: var(--space-4);
+}
+
+.veterinary-box-board__cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.veterinary-box-board__card {
+  align-content: start;
+  gap: var(--space-3);
+  overflow-wrap: anywhere;
+}
+
+.veterinary-box-board__card-heading {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: space-between;
+}
+
+.veterinary-box-board__card-heading h3,
+.veterinary-box-board__assignment,
+.veterinary-box-board__assignment dd {
+  margin: 0;
+}
+
+.veterinary-box-board__assignment dt:not(:first-child) {
+  margin-block-start: var(--space-2);
+}

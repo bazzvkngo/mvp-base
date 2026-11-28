@@ -21,6 +21,7 @@ const {requireOperationalBusinessAccess} = require("../functions/businessOnboard
 const {confirmarVentaHandler, crearVentaHandler} = require("../functions/salePersistence");
 const {guardarAtencionVeterinariaHandler} = require("../functions/veterinaryAttentionPersistence");
 const {deliverVeterinarySale, VETERINARY_SALE_INTENTS} = require("../functions/veterinaryAttentionSale");
+const {guardarBoxVeterinarioHandler} = require("../functions/veterinaryBoxPersistence");
 const adminApp = admin.initializeApp({projectId});
 const db = admin.firestore();
 const app = initializeApp({projectId, apiKey: "demo-key"});
@@ -86,12 +87,14 @@ try {
 
   const handle = (operacion, atencionId, atencion = {}, uid = veterinarian.uid) =>
     guardarAtencionVeterinariaHandler({auth: {uid}, data: {businessId, operacion, atencionId, atencion}}, dependencies);
+  const box = "Box de consulta";
+  await guardarBoxVeterinarioHandler({auth: {uid: owner.uid}, data: {businessId, nombre: box}}, dependencies);
   const openOrder = async (orderId) => {
     await handle("crearOrden", orderId, {
       origen: "directa", pacienteId: patientId, horaLlegada: "09:00", prioridad: "normal", motivoConsulta: "Consulta ficticia",
     }, owner.uid);
     await handle("asignarOrden", orderId, {
-      box: "Box " + orderId, tipoAtencion: "Consulta", profesionalUid: veterinarian.uid,
+      box, tipoAtencion: "Consulta", profesionalUid: veterinarian.uid,
     }, owner.uid);
     await handle("iniciar", orderId);
   };

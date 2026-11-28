@@ -4219,11 +4219,22 @@ exports.enviarAvisosCitasVeterinarias = onSchedule(
 );
 
 const {guardarAtencionVeterinariaHandler} = require("./veterinaryAttentionPersistence");
+const {guardarBoxVeterinarioHandler} = require("./veterinaryBoxPersistence");
 const {deliverVeterinarySaleFromEvent, VETERINARY_SALE_INTENTS} = require("./veterinaryAttentionSale");
 
 exports.guardarAtencionVeterinaria = onCall(
   {maxInstances: 10, region: DEFAULT_FUNCTION_REGION},
   (request) => guardarAtencionVeterinariaHandler(request, {
+    db,
+    HttpsError,
+    FieldValue,
+    requireBusinessAccess: requireOperationalBusinessAccess,
+  })
+);
+
+exports.guardarBoxVeterinario = onCall(
+  {maxInstances: 10, region: DEFAULT_FUNCTION_REGION},
+  (request) => guardarBoxVeterinarioHandler(request, {
     db,
     HttpsError,
     FieldValue,

@@ -6,8 +6,24 @@ import {
   getVeterinaryPatientFieldErrors,
 } from "../src/features/veterinary/domain/patientModel.mjs";
 import {parseVeterinaryMicrochipScan} from "../src/features/veterinary/patients/microchipScan.mjs";
+import {
+  PATIENT_SPECIES_OPTIONS,
+  filterPatientOptions,
+  getPatientBreedOptions,
+} from "../src/features/veterinary/patients/patientFormOptions.mjs";
 
 const TODAY = new Date(2026, 8, 9);
+
+assert.deepEqual(filterPatientOptions(PATIENT_SPECIES_OPTIONS, "C"), [
+  "Canina", "Conejo", "Cobayo (cuy)", "Chinchilla",
+]);
+assert.deepEqual(filterPatientOptions(PATIENT_SPECIES_OPTIONS, "Ca"), ["Canina"]);
+assert.deepEqual(filterPatientOptions(PATIENT_SPECIES_OPTIONS, "HAM"), ["Hámster"]);
+assert.deepEqual(filterPatientOptions(PATIENT_SPECIES_OPTIONS, "zz"), []);
+assert.deepEqual(filterPatientOptions(getPatientBreedOptions("Canina"), "pelo largo"), ["Collie de pelo largo"]);
+assert.deepEqual(filterPatientOptions(getPatientBreedOptions("Felina"), "pelo largo"), [
+  "Doméstico de pelo largo", "Británico de pelo largo",
+]);
 
 assert.equal(parseVeterinaryMicrochipScan("000123456789012"), "000123456789012");
 assert.equal(parseVeterinaryMicrochipScan(" 000-123456789012\r\n"), "000123456789012");

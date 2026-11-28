@@ -91,6 +91,11 @@ export function veterinaryAttentionsCollectionPath(
 }
 
 
+export function veterinaryBoxesCollectionPath(businessId) {
+  return ["negocios", requireBusinessId(businessId), "boxesVeterinarios"];
+}
+
+
 export function veterinaryAttentionDocPath(
   businessId,
   attentionId

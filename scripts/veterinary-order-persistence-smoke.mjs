@@ -3,7 +3,7 @@ import {randomUUID} from "node:crypto";
 import {createRequire} from "node:module";
 import {deleteApp, initializeApp} from "firebase/app";
 import {connectAuthEmulator, getAuth, signInAnonymously} from "firebase/auth";
-import {connectFirestoreEmulator, doc, getDoc, getFirestore, setDoc} from "firebase/firestore";
+import {collection, connectFirestoreEmulator, doc, getDoc, getDocs, getFirestore, query, setDoc, where} from "firebase/firestore";
 
 const {GCLOUD_PROJECT: projectId, FIREBASE_AUTH_EMULATOR_HOST: authHost, FIRESTORE_EMULATOR_HOST: firestoreHost} = process.env;
 if (!projectId?.startsWith("demo-") || !/^127\.0\.0\.1:\d+$/.test(authHost) || !/^127\.0\.0\.1:\d+$/.test(firestoreHost)) {
@@ -15,15 +15,21 @@ const {HttpsError} = require("firebase-functions/v2/https");
 const {requireOperationalBusinessAccess} = require("../functions/businessOnboarding");
 const {guardarRecepcionVeterinariaHandler} = require("../functions/veterinaryReceptionPersistence");
 const {guardarAtencionVeterinariaHandler} = require("../functions/veterinaryAttentionPersistence");
+const {guardarBoxVeterinarioHandler} = require("../functions/veterinaryBoxPersistence");
 const {guardarCitaVeterinariaHandler} = require("../functions/veterinaryAppointmentPersistence");
 const {listarCatalogoVeterinarioParaAtencionHandler} = require("../functions/veterinaryAssignedCatalog");
 
 const adminApp = admin.initializeApp({projectId});
 const app = initializeApp({projectId, apiKey: "demo-key"});
+const assignedApp = initializeApp({projectId, apiKey: "demo-key"}, "profesional-asignado");
 const auth = getAuth(app);
 const clientDb = getFirestore(app);
+const assignedAuth = getAuth(assignedApp);
+const assignedClientDb = getFirestore(assignedApp);
 connectAuthEmulator(auth, "http://" + authHost, {disableWarnings: true});
 connectFirestoreEmulator(clientDb, "127.0.0.1", Number(firestoreHost.split(":")[1]));
+connectAuthEmulator(assignedAuth, "http://" + authHost, {disableWarnings: true});
+connectFirestoreEmulator(assignedClientDb, "127.0.0.1", Number(firestoreHost.split(":")[1]));
 const db = admin.firestore();
 const dependencies = {
   db, HttpsError, FieldValue: admin.firestore.FieldValue, requireBusinessAccess: requireOperationalBusinessAccess,
@@ -34,7 +40,7 @@ try {
   const professional = await admin.auth().createUser({displayName: "Profesional de prueba"});
   const outsider = await admin.auth().createUser({displayName: "Profesional de otra clínica"});
   const technician = await admin.auth().createUser({displayName: "Técnico de prueba"});
-  const veterinarian = await admin.auth().createUser({displayName: "Veterinaria de prueba"});
+  const {user: veterinarian} = await signInAnonymously(assignedAuth);
   const otherVeterinarian = await admin.auth().createUser({displayName: "Veterinario de prueba"});
   const businessId = "ordenes-" + randomUUID();
   const otherBusinessId = "otra-" + randomUUID();
@@ -71,6 +77,7 @@ try {
     ...[veterinarian, otherVeterinarian].map(({uid}) => db.doc("membresias/" + businessId + "__" + uid)
       .set({uid, negocioId: businessId, estado: "activo", rol: "MEMBER", profileId: vetProfileRef.id})),
     db.doc("usuarios/" + professional.uid + "/cuenta/perfil").set({nombres: "Profesional", apellidos: "de prueba"}),
+    db.doc("usuarios/" + veterinarian.uid + "/cuenta/perfil").set({nombres: "Veterinaria", apellidos: "de prueba"}),
     business.collection("clientes").doc("tutor-ficticio").set({
       negocioId: businessId, estado: "activo", clienteId: "tutor-ficticio", nombreRazonSocial: "Tutor ficticio",
     }),
@@ -89,6 +96,30 @@ try {
 
   const handle = (operacion, data, uid = owner.uid) =>
     guardarAtencionVeterinariaHandler({auth: {uid}, data: {businessId, operacion, ...data}}, dependencies);
+  const saveBox = (nombre, uid = owner.uid, company = businessId) => guardarBoxVeterinarioHandler({
+    auth: {uid}, data: {businessId: company, nombre},
+  }, dependencies);
+  const [{boxId: surgeryBoxId}, {boxId: foreignBoxId}] = await Promise.all([
+    saveBox("  Box   Cirugía  ", professional.uid),
+    saveBox("Box de otra clínica", outsider.uid, otherBusinessId),
+    saveBox("Box 1"),
+    saveBox("Box Emergencia"),
+    saveBox("Box concurrente"),
+  ]);
+  await assert.rejects(saveBox(" box cirugía "), {code: "already-exists"});
+  await assert.rejects(saveBox("   "), {code: "invalid-argument"});
+  await assert.rejects(saveBox("Box sin permisos", veterinarian.uid), {code: "permission-denied"});
+  await assert.rejects(saveBox("Box sin permisos", outsider.uid), {code: "permission-denied"});
+  const surgeryBox = doc(clientDb, "negocios", businessId, "boxesVeterinarios", surgeryBoxId);
+  assert.equal((await getDoc(surgeryBox)).get("nombre"), "Box Cirugía");
+  const boxesQuery = (client, company) => query(collection(client, "negocios", company, "boxesVeterinarios"), where("negocioId", "==", company));
+  assert.deepEqual((await getDocs(boxesQuery(clientDb, businessId))).docs.map((item) => item.get("nombre")).sort(), [
+    "Box 1", "Box Cirugía", "Box Emergencia", "Box concurrente",
+  ]);
+  await assert.rejects(getDoc(doc(clientDb, "negocios", otherBusinessId, "boxesVeterinarios", foreignBoxId)), {code: "permission-denied"});
+  await assert.rejects(getDocs(boxesQuery(assignedClientDb, businessId)), {code: "permission-denied"});
+  await assert.rejects(setDoc(surgeryBox, {nombre: "Box manipulado"}, {merge: true}), {code: "permission-denied"});
+
   const receive = (id, prioridad) => guardarRecepcionVeterinariaHandler({
     auth: {uid: owner.uid}, data: {businessId, citaId: id, recepcion: {horaLlegada: "09:15", prioridad, pesoKg: 5}},
   }, dependencies);
@@ -159,7 +190,14 @@ try {
     atencionId: orderId, atencion: {...assignment, profesionalUid: technician.uid},
   }), {code: "failed-precondition"});
 
-  const vetAssignment = {atencionId: directId, atencion: {...assignment, box: "Box de prueba", profesionalUid: veterinarian.uid}};
+  for (const nonexistentBox of ["Box que no existe", "Box de otra clínica"]) {
+    await assert.rejects(handle("asignarOrden", {
+      atencionId: directId, atencion: {...assignment, box: nonexistentBox},
+    }), {code: "failed-precondition"});
+  }
+  assert.equal((await orders.doc(directId).get()).get("box"), undefined);
+
+  const vetAssignment = {atencionId: directId, atencion: {...assignment, box: " box  cirugía ", profesionalUid: veterinarian.uid}};
   for (const invalidProfile of [
     {...vetProfile, nombre: "Tecnico veterinario", modulos: ["inventario"]},
     {...vetProfile, estado: "inactivo"},
@@ -171,7 +209,9 @@ try {
   await vetProfileRef.set(vetProfile);
   await assert.rejects(handle("asignarOrden", vetAssignment, veterinarian.uid), {code: "permission-denied"});
   assert.deepEqual(await handle("asignarOrden", vetAssignment), {atencionId: directId});
-  assert.equal((await orders.doc(directId).get()).get("profesionalUid"), veterinarian.uid);
+  const assignedSurgery = await orders.doc(directId).get();
+  assert.equal(assignedSurgery.get("profesionalUid"), veterinarian.uid);
+  assert.equal(assignedSurgery.get("box"), "Box Cirugía");
   await assert.rejects(handle("iniciar", {atencionId: directId}, otherVeterinarian.uid), {code: "permission-denied"});
 
   assert.deepEqual(await handle("asignarOrden", {atencionId: orderId, atencion: assignment}), {atencionId: orderId});
@@ -184,6 +224,31 @@ try {
   await assert.rejects(handle("asignarOrden", {
     atencionId: directId, atencion: {...assignment, box: "  box 1  "},
   }), {code: "already-exists"});
+
+  // Una orden de antes del catálogo conserva el box que ya tenía reservado.
+  const oldBoxOrderId = "orden-box-anterior";
+  const {boxId: oldBoxId} = await saveBox("Box anterior");
+  await create(oldBoxOrderId, directData);
+  await handle("asignarOrden", {atencionId: oldBoxOrderId, atencion: {...assignment, box: "Box anterior"}});
+  await business.collection("boxesVeterinarios").doc(oldBoxId).delete();
+  await handle("asignarOrden", {
+    atencionId: oldBoxOrderId, atencion: {...assignment, box: " box anterior ", tipoAtencion: "Control"},
+  });
+  const oldBoxOrder = await orders.doc(oldBoxOrderId).get();
+  assert.equal(oldBoxOrder.get("box"), "Box anterior");
+  assert.equal(oldBoxOrder.get("tipoAtencion"), "Control");
+  await handle("cancelarOrden", {atencionId: oldBoxOrderId});
+
+  const competingOrders = ["primera-orden-box", "segunda-orden-box"];
+  await Promise.all(competingOrders.map((id) => create(id, directData)));
+  const boxAssignments = await Promise.allSettled(competingOrders.map((atencionId) => handle("asignarOrden", {
+    atencionId, atencion: {...assignment, box: "Box concurrente"},
+  })));
+  assert.equal(boxAssignments.filter(({status}) => status === "fulfilled").length, 1);
+  assert.equal(boxAssignments.find(({status}) => status === "rejected").reason.code, "already-exists");
+  const winner = competingOrders[boxAssignments.findIndex(({status}) => status === "fulfilled")];
+  await handle("cancelarOrden", {atencionId: winner});
+
   await assert.rejects(handle("iniciar", {atencionId: orderId}), {code: "permission-denied"});
   const waitingRecipe = {
     recetaId: "receta-antes-de-iniciar",
@@ -319,7 +384,7 @@ try {
   // libera sus reservas, conservando la orden y su vínculo con la cita.
   await receive(cancelCitaId, "normal");
   await create(cancelOrderId, {origen: "cita"}, {citaId: cancelCitaId});
-  const cancelAssignment = {...assignment, box: "Box cancelable"};
+  const cancelAssignment = {...assignment, box: "Box Emergencia"};
   await handle("asignarOrden", {atencionId: cancelOrderId, atencion: cancelAssignment});
   assert.deepEqual(await handle("cancelarOrden", {atencionId: cancelOrderId}), {atencionId: cancelOrderId});
   assert.equal((await orders.doc(cancelOrderId).get()).get("estado"), "cancelada");
@@ -376,5 +441,6 @@ try {
   console.log("VETERINARY_ORDER_PERSISTENCE_SMOKE_OK");
 } finally {
   await deleteApp(app);
+  await deleteApp(assignedApp);
   await adminApp.delete();
 }

@@ -10,7 +10,7 @@
 ## Desde la recepción hasta el cierre
 
 1. La cola de órdenes muestra las recepciones en espera y las consultas en atención.
-2. Abre la orden. Asigna box, tipo de atención y profesional a cargo antes de iniciar.
+2. Abre la orden. Elige un box disponible del catálogo de la clínica y asigna el tipo de atención y el profesional a cargo antes de iniciar.
 3. El profesional asignado inicia la consulta con su cuenta. La pantalla muestra los datos de la orden y hasta tres atenciones anteriores finalizadas del paciente. La ficha conserva el historial completo y las fotos.
 4. Completa el registro clínico y guarda el borrador cuando corresponda. También puedes registrar fotos y marcas.
 5. Desde **Recetas veterinarias**, el profesional asignado puede ingresar los medicamentos, dosis, frecuencia, duración e indicaciones que él determine. La aplicación guarda la receta emitida, su autor y su fecha en el historial. Usa **Imprimir receta** desde la atención o el historial para abrir la hoja A4 con los datos guardados y el espacio de firma y timbre.
@@ -28,7 +28,17 @@ Con ese perfil, cada profesional dispone de **Mis citas** y **Mis órdenes**. Pu
 
 El profesional registra y cierra sus órdenes una vez que administración asigna box y tipo de atención. Desde la consulta puede registrar fotos, emitir recetas y consultar el catálogo de servicios y productos para registrar su uso clínico. La creación del borrador forma parte del cierre. Los permisos de Ventas siguen controlando quién puede revisar y confirmar el documento comercial.
 
-Validar con el equipo los nombres y la configuración de los boxes y tipos de atención y el formato de receta que la clínica quiera entregar. El ingreso de emergencia actual parte de un paciente registrado.
+Valida con el equipo los tipos de atención y el formato de receta que la clínica quiera entregar. El ingreso de emergencia parte de un paciente registrado.
+
+## Boxes de atención
+
+Desde **Órdenes de atención → Boxes de atención**, el Propietario o Administrador puede agregar boxes por nombre, por ejemplo **Box 1**, **Box Cirugía** o **Box Emergencia**. Los nombres distinguen espacios físicos de esa empresa y no se pueden duplicar por cambios de mayúsculas o espacios.
+
+- **Libre.** Está disponible para asignar a una orden.
+- **Reservado.** Tiene una orden en espera. El panel muestra el paciente y el profesional a cargo.
+- **En uso.** El profesional ya inició la atención. El panel enlaza la orden y conserva los datos de la asignación.
+
+Al reasignar, cancelar o cerrar una orden se libera el box anterior. El servidor impide que dos órdenes tomen el mismo box. Las órdenes antiguas conservan su nombre y, si están activas, figuran en el panel hasta que termine su asignación. Para utilizar ese nombre en una orden nueva, agrégalo al catálogo.
 
 ## Confirmación y recordatorio de citas por correo
 
