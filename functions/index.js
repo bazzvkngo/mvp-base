@@ -4330,6 +4330,7 @@ const operationalBusinessSettingsDependencies = {
   requireBusinessAccess: requireOperationalBusinessAccess,
 };
 const businessVerificationDependencies = {
+  auth: adminAuth,
   bucket: adminStorageBucket,
   db,
   HttpsError,

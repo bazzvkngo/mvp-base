@@ -1,13 +1,18 @@
 const {createHash, randomUUID} = require("node:crypto");
 const {VERTICAL_MODULES, normalizeEnabledModules} = require("./verticalModules");
+const {
+  ACTIVE_STATUS,
+  PLATFORM_SUPERADMIN,
+  SUSPENDED_STATUS,
+  platformUserStatus,
+  requirePlatformSuperadmin,
+} = require("./platformAccess");
 
-const PLATFORM_SUPERADMIN = "PLATFORM_SUPERADMIN";
-const ACTIVE_STATUS = "activo";
-const SUSPENDED_STATUS = "suspendido";
 const BUSINESS_SUSPENDED_STATUS = "suspendida";
 const MAX_PAGE_SIZE = 30;
 const BUSINESS_SCAN_SIZE = 60;
 const AUTH_SCAN_SIZE = 100;
+const PENDING_VERIFICATIONS_PREVIEW = 5;
 
 function fail(HttpsError, code, message) {
   throw new HttpsError(code, message);
@@ -88,28 +93,6 @@ function moduleIds(value) {
 
 function verificationState(business = {}) {
   return text(business.verificacionEmpresa?.estado, 30) || "NO_VERIFICADA";
-}
-
-function platformUserStatus(user = {}, authUser = null) {
-  return user.estadoPlataforma === SUSPENDED_STATUS || authUser?.disabled
-    ? SUSPENDED_STATUS
-    : ACTIVE_STATUS;
-}
-
-async function requirePlatformSuperadmin(request, {auth, db, HttpsError}) {
-  const uid = request?.auth?.uid;
-  if (!uid) fail(HttpsError, "unauthenticated", "Debes iniciar sesion.");
-  if (request?.auth?.token?.platformRole !== PLATFORM_SUPERADMIN) {
-    fail(HttpsError, "permission-denied", "Se requiere autoridad de plataforma.");
-  }
-  const [userSnapshot, authUser] = await Promise.all([
-    db.collection("usuarios").doc(uid).get(),
-    auth.getUser(uid),
-  ]);
-  if (platformUserStatus(userSnapshot.data() || {}, authUser) !== ACTIVE_STATUS) {
-    fail(HttpsError, "permission-denied", "La cuenta de plataforma esta suspendida.");
-  }
-  return {uid, authUser};
 }
 
 function chunks(values, size = 30) {
@@ -230,7 +213,20 @@ async function obtenerResumenPlataformaHandler(request, dependencies) {
     pageToken = page.pageToken;
   } while (pageToken);
   const businesses = businessesSnapshot.docs.map((snapshot) => snapshot.data() || {});
+  // Las verificaciones pendientes más antiguas primero; sin fecha de solicitud, al final.
+  const oldestPending = businessesSnapshot.docs
+    .filter((snapshot) => verificationState(snapshot.data() || {}) === "PENDIENTE")
+    .sort((left, right) => {
+      const leftDate = timestampToIso(left.data()?.verificacionEmpresa?.solicitadoEn) || "9999";
+      const rightDate = timestampToIso(right.data()?.verificacionEmpresa?.solicitadoEn) || "9999";
+      return leftDate.localeCompare(rightDate) || left.id.localeCompare(right.id);
+    })
+    .slice(0, PENDING_VERIFICATIONS_PREVIEW);
+  const oldestPendingDtos = oldestPending.length
+    ? await buildBusinessDtos(db, auth, oldestPending)
+    : [];
   return {
+    verificacionesPendientesAntiguas: oldestPendingDtos,
     empresas: {
       total: businesses.length,
       activas: businesses.filter((business) => business.estado === ACTIVE_STATUS && !business.eliminadoEn).length,
@@ -244,6 +240,77 @@ async function obtenerResumenPlataformaHandler(request, dependencies) {
       conMembresiaActiva: new Set(membershipsSnapshot.docs
         .filter((snapshot) => snapshot.data()?.estado === ACTIVE_STATUS)
         .map((snapshot) => snapshot.data()?.uid)).size,
+    },
+  };
+}
+
+function businessMatchesFilters(business, {search, country, state, verification}) {
+  const haystack = searchable([
+    business.nombreComercial,
+    business.razonSocial,
+    business.propietario?.correo,
+    business.id,
+    business.identificadorFiscalValor,
+  ].filter(Boolean).join(" "));
+  const normalizedState = business.estado === "activo" ? "activa" : business.estado;
+  return includesSearch(haystack, search) &&
+    (country === "TODOS" || business.paisCodigo === country) &&
+    (state === "todos" || normalizedState === state) &&
+    (verification === "TODAS" || business.verificacion === verification);
+}
+
+// Empresas donde la cuenta es OWNER, a partir de `membresias`. Misma forma de
+// respuesta que el directorio general, más `cuenta` con la identidad filtrada.
+async function listBusinessesOwnedByAccount(
+  {auth, db, HttpsError},
+  {uid, limit, cursor, filters, byRequestDate}
+) {
+  let authUser;
+  try {
+    authUser = await auth.getUser(uid);
+  } catch (error) {
+    if (String(error?.code || "").includes("user-not-found")) {
+      fail(HttpsError, "not-found", "No se encontro el usuario.");
+    }
+    throw error;
+  }
+  const [membershipsSnapshot, profiles] = await Promise.all([
+    db.collection("membresias").where("uid", "==", uid).where("rol", "==", "OWNER").get(),
+    profilesByUid(db, [uid]),
+  ]);
+  const businessIds = [...new Set(membershipsSnapshot.docs
+    .map((snapshot) => snapshot.data()?.negocioId)
+    .filter(Boolean))];
+  const snapshots = [];
+  for (const batch of chunks(businessIds, 100)) {
+    const found = await db.getAll(...batch.map((businessId) =>
+      db.collection("negocios").doc(businessId)
+    ));
+    snapshots.push(...found.filter((snapshot) => snapshot.exists));
+  }
+  const dtos = snapshots.length ? await buildBusinessDtos(db, auth, snapshots) : [];
+  const sortKey = (business) =>
+    (byRequestDate ? business.fechaSolicitud : business.fechaRegistro) || "";
+  const matches = dtos
+    .filter((business) => businessMatchesFilters(business, filters))
+    .sort((left, right) =>
+      sortKey(right).localeCompare(sortKey(left)) || left.id.localeCompare(right.id)
+    );
+  let start = 0;
+  if (cursor) {
+    id(cursor, "El cursor", HttpsError);
+    const position = matches.findIndex((business) => business.id === cursor);
+    if (position < 0) fail(HttpsError, "invalid-argument", "El cursor ya no esta disponible.");
+    start = position + 1;
+  }
+  const page = matches.slice(start, start + limit);
+  return {
+    empresas: page,
+    cursor: start + limit < matches.length ? page.at(-1)?.id || null : null,
+    cuenta: {
+      uid,
+      nombre: personName(profiles.get(uid), authUser),
+      correo: text(authUser.email, 320),
     },
   };
 }
@@ -274,6 +341,19 @@ async function listarEmpresasPlataformaHandler(request, dependencies) {
   );
   const verificationMode = text(request?.data?.modo, 30).toUpperCase() ===
     "VERIFICACIONES";
+  const filters = {search, country, state, verification};
+  const accountUid = request?.data?.uid
+    ? id(request.data.uid, "La cuenta", HttpsError)
+    : "";
+  if (accountUid) {
+    return listBusinessesOwnedByAccount(dependencies, {
+      uid: accountUid,
+      limit,
+      cursor,
+      filters,
+      byRequestDate: verificationMode && verification === "PENDIENTE",
+    });
+  }
   const collection = db.collection("negocios");
   let query = verificationMode && verification === "PENDIENTE"
     ? collection.orderBy("verificacionEmpresa.solicitadoEn", "desc")
@@ -297,20 +377,7 @@ async function listarEmpresasPlataformaHandler(request, dependencies) {
     if (!snapshot.empty) {
       const dtos = await buildBusinessDtos(db, auth, snapshot.docs);
       dtos.forEach((business, index) => {
-        const haystack = searchable([
-          business.nombreComercial,
-          business.razonSocial,
-          business.propietario?.correo,
-          business.id,
-          business.identificadorFiscalValor,
-        ].filter(Boolean).join(" "));
-        const normalizedState = business.estado === "activo" ? "activa" : business.estado;
-        if (
-          includesSearch(haystack, search) &&
-          (country === "TODOS" || business.paisCodigo === country) &&
-          (state === "todos" || normalizedState === state) &&
-          (verification === "TODAS" || business.verificacion === verification)
-        ) {
+        if (businessMatchesFilters(business, filters)) {
           matches.push({dto: business, snapshot: snapshot.docs[index]});
         }
       });
@@ -608,6 +675,9 @@ async function obtenerUsuarioPlataformaHandler(request, dependencies) {
       nombre: personName(profile, authUser),
       correo: text(authUser.email, 320),
       estado: platformUserStatus(user, authUser),
+      motivoSuspension: platformUserStatus(user, authUser) === SUSPENDED_STATUS
+        ? text(user.motivoSuspensionPlataforma, 1000)
+        : "",
       fechaAlta: authUser.metadata?.creationTime || timestampToIso(user.creadoEn),
       ultimoAcceso: authUser.metadata?.lastSignInTime || null,
     },
@@ -623,6 +693,7 @@ async function obtenerUsuarioPlataformaHandler(request, dependencies) {
       tipo: text(snapshot.data()?.tipo, 80),
       estadoAnterior: text(snapshot.data()?.estadoAnterior, 40),
       estadoResultante: text(snapshot.data()?.estadoResultante, 40),
+      motivo: text(snapshot.data()?.motivo, 1000),
       creadoPorUid: text(snapshot.data()?.creadoPorUid, 160),
       creadoEn: timestampToIso(snapshot.data()?.creadoEn),
     })),

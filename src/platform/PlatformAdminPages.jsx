@@ -245,6 +245,7 @@ export function PlatformDashboardPage() {
   </>;
   if (state.error && !state.data) return <ErrorState error={state.error} retry={load} />;
   const pendingVerifications = state.data.empresas.verificacionesPendientes;
+  const oldestPending = state.data.verificacionesPendientesAntiguas || [];
   const cards = [
     {label: "Empresas", value: state.data.empresas.total, detail: `${state.data.empresas.activas} activas`, icon: Building2, to: "/admin/empresas"},
     {label: "Usuarios", value: state.data.usuarios.total, detail: `${state.data.usuarios.conMembresiaActiva} con membresía activa`, icon: Users, to: "/admin/usuarios"},
@@ -264,6 +265,17 @@ export function PlatformDashboardPage() {
         {pendingVerifications > 0
           ? <p className="platform-pending-action"><Link to="/admin/verificaciones">{pendingVerifications === 1 ? "1 verificación pendiente" : `${pendingVerifications} verificaciones pendientes`}</Link></p>
           : <p className="platform-pending-action">Todo al día</p>}
+        {oldestPending.length > 0 && <>
+          <h3 className="platform-pending-subtitle" id="platform-pending-oldest-title">Las más antiguas primero</h3>
+          <ul className="platform-recent-list platform-recent-list--detailed" aria-labelledby="platform-pending-oldest-title">
+            {oldestPending.map((business) => <li key={business.id}>
+              <Link to={`/admin/empresas/${business.id}`}>
+                <span><strong>{business.nombreComercial}</strong><small>Solicitud {date(business.fechaSolicitud)} · {business.propietario?.correo || "Propietario sin correo"}</small></span>
+                <AppIcon icon={ChevronRight} size={18} />
+              </Link>
+            </li>)}
+          </ul>
+        </>}
       </section>
       <RecentBusinesses />
     </div>
@@ -331,6 +343,9 @@ function PlatformListFilters({
 
 export function PlatformBusinessesPage({verificationOnly = false}) {
   const location = useLocation();
+  // Filtro por cuenta: `?uid=` abre el directorio con las empresas de las que esa cuenta es propietaria.
+  const requestedUid = new URLSearchParams(location.search).get("uid") || "";
+  const accountUid = !verificationOnly && /^[a-zA-Z0-9_-]{1,160}$/.test(requestedUid) ? requestedUid : "";
   const initialFilters = React.useMemo(() => {
     const requestedState = new URLSearchParams(location.search).get("estado");
     return {
@@ -338,11 +353,17 @@ export function PlatformBusinessesPage({verificationOnly = false}) {
       country: "TODOS",
       state: ["ACTIVA", "SUSPENDIDA", "ELIMINADA"].includes(requestedState) ? requestedState : "TODOS",
       verification: verificationOnly ? "PENDIENTE" : "TODAS",
+      uid: accountUid,
     };
-  }, [location.search, verificationOnly]);
+  }, [accountUid, location.search, verificationOnly]);
   const [draft, setDraft] = React.useState(initialFilters);
   const [filters, setFilters] = React.useState(initialFilters);
-  const [state, setState] = React.useState({loading: true, items: [], cursor: null, error: ""});
+  const [state, setState] = React.useState({loading: true, items: [], cursor: null, account: null, error: ""});
+  // Si la URL cambia de cuenta (o la quita) con la página ya abierta, los filtros la siguen.
+  React.useEffect(() => {
+    setDraft((current) => current.uid === accountUid ? current : {...current, uid: accountUid});
+    setFilters((current) => current.uid === accountUid ? current : {...current, uid: accountUid});
+  }, [accountUid]);
   // Refresco silencioso (solo en Verificaciones): `loadSeq` cambia con cada carga manual para descartar
   // una respuesta silenciosa que llegue tarde; `loadedMore` recuerda si hubo "Cargar más".
   const stateRef = React.useRef(state);
@@ -361,9 +382,10 @@ export function PlatformBusinessesPage({verificationOnly = false}) {
         country: filters.country,
         state: filters.state,
         verification: filters.verification,
+        uid: filters.uid,
         mode: verificationOnly ? "VERIFICACIONES" : "EMPRESAS",
       });
-      setState((current) => ({loading: false, items: append ? [...current.items, ...data.empresas] : data.empresas, cursor: data.cursor, error: ""}));
+      setState((current) => ({loading: false, items: append ? [...current.items, ...data.empresas] : data.empresas, cursor: data.cursor, account: data.cuenta || null, error: ""}));
     } catch (error) {
       setState((current) => ({...current, loading: false, error: message(error, "No pudimos cargar las empresas.")}));
     }
@@ -417,10 +439,14 @@ export function PlatformBusinessesPage({verificationOnly = false}) {
   return <>
     <PlatformHeading eyebrow="Clientes de ValoraCloud" title={verificationOnly ? "Verificaciones" : "Empresas"} description={verificationOnly ? "Solicitudes pendientes de revisión por la plataforma." : "Directorio global de empresas registradas."} action={<Button variant="secondary" icon={RefreshCw} onClick={() => load()}>Actualizar</Button>} />
     {location.state?.platformNotice && <div className="platform-notice" role="status">{location.state.platformNotice}</div>}
+    {filters.uid && <div className="platform-account-filter">
+      <p>Empresas de la cuenta <strong>{state.account ? personIdentity(state.account.nombre, state.account.correo) : filters.uid}</strong></p>
+      <Link to="/admin/empresas">Ver todas las empresas</Link>
+    </div>}
     <PlatformListFilters draft={draft} onChange={setDraft} onReset={resetFilters} onSelectorChange={applySelector} onSubmit={applyFilters} type={verificationOnly ? "verifications" : "businesses"} />
     {state.error && <ErrorState error={state.error} retry={() => load()} />}
     {!state.error && state.loading && !state.items.length && <Loading />}
-    {!state.error && Boolean(state.items.length || !state.loading) && <BusinessesTable businesses={state.items} verificationOnly={verificationOnly} emptyText={verificationOnly ? (filters.verification === "PENDIENTE" && !filters.search && filters.country === "TODOS" ? "No hay verificaciones pendientes." : "No hay verificaciones para los filtros seleccionados.") : undefined} />}
+    {!state.error && Boolean(state.items.length || !state.loading) && <BusinessesTable businesses={state.items} verificationOnly={verificationOnly} emptyText={verificationOnly ? (filters.verification === "PENDIENTE" && !filters.search && filters.country === "TODOS" ? "No hay verificaciones pendientes." : "No hay verificaciones para los filtros seleccionados.") : filters.uid ? "Esta cuenta no es propietaria de empresas con los filtros seleccionados." : undefined} />}
     {state.cursor && <div className="platform-load-more"><Button variant="secondary" loading={state.loading} onClick={() => load(state.cursor, true)}>{state.loading ? "Cargando..." : "Cargar más"}</Button></div>}
   </>;
 }
@@ -653,12 +679,12 @@ export function PlatformUserDetailPage() {
   if (state.loading && !state.data) return <Loading />; if (state.error) return <ErrorState error={state.error} retry={load} />;
   const {usuario, membresias, eventos} = state.data;
   const isOwnAccount = Boolean(currentUid) && usuario.uid === currentUid;
-  return <><button className="platform-back" type="button" onClick={() => navigate(-1)}><AppIcon icon={ChevronLeft} size={18} />Volver</button><PlatformHeading eyebrow="Usuario" title={personIdentity(usuario.nombre, usuario.correo)} description={usuario.correo} action={<StatusBadge variant={stateVariant(usuario.estado)}>{platformStateLabel(usuario.estado)}</StatusBadge>} />
+  return <><button className="platform-back" type="button" onClick={() => navigate(-1)}><AppIcon icon={ChevronLeft} size={18} />Volver</button><PlatformHeading eyebrow="Usuario" title={personIdentity(usuario.nombre, usuario.correo)} description={usuario.correo} action={<div className="platform-heading-actions"><StatusBadge variant={stateVariant(usuario.estado)}>{platformStateLabel(usuario.estado)}</StatusBadge><Button variant="secondary" icon={Building2} onClick={() => navigate(`/admin/empresas?uid=${encodeURIComponent(usuario.uid)}`)}>Ver empresas</Button></div>} />
     {notice && <div className="platform-notice" role="status">{notice}</div>}
-    <div className="platform-detail-columns"><section className="platform-panel"><h2>Cuenta</h2><DetailGrid items={[{label: "UID", value: usuario.uid}, {label: "Correo", value: usuario.correo}, {label: "Estado", value: platformStateLabel(usuario.estado)}, {label: "Fecha alta", value: date(usuario.fechaAlta)}, {label: "Último acceso", value: date(usuario.ultimoAcceso)}]} /></section>
+    <div className="platform-detail-columns"><section className="platform-panel"><h2>Cuenta</h2><DetailGrid items={[{label: "UID", value: usuario.uid}, {label: "Correo", value: usuario.correo}, {label: "Estado", value: platformStateLabel(usuario.estado)}, ...(usuario.motivoSuspension ? [{label: "Motivo de suspensión", value: usuario.motivoSuspension}] : []), {label: "Fecha alta", value: date(usuario.fechaAlta)}, {label: "Último acceso", value: date(usuario.ultimoAcceso)}]} /></section>
       <section className="platform-panel"><h2>Control de acceso</h2>{isOwnAccount ? <p className="platform-help platform-help--flush">Tu propia cuenta de plataforma no se suspende desde aquí.</p> : <>{usuario.estado === "activo" ? <div className="platform-action-form"><label>Motivo de suspensión<textarea rows="2" value={reason} onChange={(event) => {setReason(event.target.value); requestRef.current = "";}} /></label><Button variant="danger" disabled={working || !reason.trim()} onClick={() => changeStatus("suspendido")}>Suspender usuario</Button></div> : <Button disabled={working} onClick={() => changeStatus("activo")}>Reactivar usuario</Button>}<p className="platform-help">La suspensión deshabilita Auth y el acceso ERP sin borrar membresías ni históricos.</p></>}</section></div>
     <section className="platform-panel"><h2>Membresías ({membresias.length})</h2>{membresias.length ? <div className="platform-table-wrap"><table className="platform-table"><thead><tr><th>Empresa</th><th>Perfil</th><th>Estado</th><th>Ingreso</th></tr></thead><tbody>{membresias.map((membership) => <tr key={membership.negocioId} onClick={() => navigate(`/admin/empresas/${membership.negocioId}`)}><td>{membership.empresa}</td><td>{BUSINESS_ROLE_LABELS[membership.rol] || humanizeToken(membership.rol)}</td><td>{platformStateLabel(membership.estado)}</td><td>{date(membership.fechaIncorporacion)}</td></tr>)}</tbody></table></div> : <div className="platform-empty">El usuario no posee membresías.</div>}</section>
-    <section className="platform-panel"><h2>Eventos de plataforma</h2>{eventos.length ? <ol className="platform-timeline">{eventos.map((event) => <li key={event.id}><span>Usuario</span><strong>{platformEventLabel(event.tipo)}</strong><p>{platformStateLabel(event.estadoAnterior)} → {platformStateLabel(event.estadoResultante)}</p><time>{date(event.creadoEn)}</time></li>)}</ol> : <div className="platform-empty">Sin eventos registrados.</div>}</section>
+    <section className="platform-panel"><h2>Eventos de plataforma</h2>{eventos.length ? <ol className="platform-timeline">{eventos.map((event) => <li key={event.id}><span>Usuario</span><strong>{platformEventLabel(event.tipo)}</strong><p>{platformStateLabel(event.estadoAnterior)} → {platformStateLabel(event.estadoResultante)}</p>{event.motivo && <p>Motivo: {event.motivo}</p>}<time>{date(event.creadoEn)}</time></li>)}</ol> : <div className="platform-empty">Sin eventos registrados.</div>}</section>
   </>;
 }
 

@@ -98,7 +98,10 @@ assert.match(serviceSource, /eliminarEmpresaPermanentePlataforma/);
 assert.match(functionsSource, /requirePlatformSuperadmin\(request, dependencies\)/);
 assert.match(functionsSource, /db\.recursiveDelete\(businessRef\)/);
 assert.match(functionsSource, /customClaims\?\.platformRole === PLATFORM_SUPERADMIN/);
-assert.match(functionsSource, /const PLATFORM_SUPERADMIN = "PLATFORM_SUPERADMIN"/);
+assert.match(
+  await readFile(new URL("../functions/platformAccess.js", import.meta.url), "utf8"),
+  /const PLATFORM_SUPERADMIN = "PLATFORM_SUPERADMIN"/
+);
 assert.doesNotMatch(functionsSource, /Las cuentas PLATFORM_SUPERADMIN/);
 // Guardas de la Function: autosuspension y destino con claim de plataforma.
 assert.match(functionsSource, /if \(uid === actor\.uid\) fail\(HttpsError, "failed-precondition", "No puedes suspender tu propia cuenta\."\)/);
@@ -301,4 +304,96 @@ console.log("OK platform-admin: sin panel Modulos, historial de modulos conserva
   assert.match(errorCss, /margin-bottom: var\(--space-3\)/);
   assert.doesNotMatch(errorCss, /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/);
   console.log("OK platform-admin: el error de aprobar/rechazar verificación se muestra dentro del modal (mensaje de negocio o genérico) y se limpia al cerrar");
+}
+
+// --- Un único requirePlatformSuperadmin (functions/platformAccess.js) ---
+{
+  const {createRequire} = await import("node:module");
+  const {readdir} = await import("node:fs/promises");
+  const requireFromScripts = createRequire(import.meta.url);
+  const {PLATFORM_SUPERADMIN: ROLE, requirePlatformSuperadmin: guard} = requireFromScripts("../functions/platformAccess.js");
+  assert.equal(ROLE, "PLATFORM_SUPERADMIN");
+
+  class FakeHttpsError extends Error {
+    constructor(code, message) { super(message); this.code = code; }
+  }
+  const makeDeps = ({authUser, userDoc = {}, authError = null}) => ({
+    HttpsError: FakeHttpsError,
+    auth: {getUser: async (uid) => { if (authError) throw authError; return {uid, ...authUser}; }},
+    db: {collection: () => ({doc: () => ({get: async () => ({data: () => userDoc})})})},
+  });
+  const codeOf = async (promise) => { try { await promise; } catch (error) { return `${error.code}: ${error.message}`; } return "ok"; };
+  const claim = {customClaims: {platformRole: ROLE}};
+
+  assert.match(await codeOf(guard({}, makeDeps({authUser: claim}))), /^unauthenticated/);
+  assert.match(await codeOf(guard({auth: {}}, makeDeps({authUser: claim}))), /^unauthenticated/);
+  // El claim del token ya no cuenta: manda el de Auth (revocarlo surte efecto al instante).
+  assert.match(
+    await codeOf(guard({auth: {uid: "u1", token: {platformRole: ROLE}}}, makeDeps({authUser: {customClaims: {}}}))),
+    /^permission-denied: Se requiere autoridad de plataforma/
+  );
+  assert.match(await codeOf(guard({auth: {uid: "u1"}}, makeDeps({authUser: {}}))), /^permission-denied/);
+  assert.match(await codeOf(guard({auth: {uid: "u1"}}, makeDeps({authUser: {customClaims: {platformRole: "OWNER"}}}))), /^permission-denied/);
+  assert.match(
+    await codeOf(guard({auth: {uid: "u1"}}, makeDeps({authError: {code: "auth/user-not-found"}}))),
+    /^permission-denied/
+  );
+  // Cuenta suspendida: Auth deshabilitado o estado de plataforma persistido.
+  assert.match(
+    await codeOf(guard({auth: {uid: "u1"}}, makeDeps({authUser: {...claim, disabled: true}}))),
+    /^permission-denied: La cuenta de plataforma esta suspendida/
+  );
+  assert.match(
+    await codeOf(guard({auth: {uid: "u1"}}, makeDeps({authUser: claim, userDoc: {estadoPlataforma: "suspendido"}}))),
+    /^permission-denied: La cuenta de plataforma esta suspendida/
+  );
+  // Un error inesperado de Auth no se convierte en acceso.
+  assert.match(await codeOf(guard({auth: {uid: "u1"}}, makeDeps({authError: {code: "auth/internal-error"}}))), /internal-error|undefined/);
+  const allowed = await guard({auth: {uid: "u1", token: {}}}, makeDeps({authUser: claim}));
+  assert.equal(allowed.uid, "u1");
+
+  // Una sola definición: ninguna Function de plataforma lee el claim del token ni redefine el guardia.
+  const functionFiles = (await readdir(new URL("../functions/", import.meta.url))).filter((name) => name.endsWith(".js"));
+  const definitions = [];
+  for (const name of functionFiles) {
+    const source = await readFile(new URL(`../functions/${name}`, import.meta.url), "utf8");
+    if (/function requirePlatformSuperadmin\b/.test(source)) definitions.push(name);
+    assert.doesNotMatch(source, /token\?\.platformRole/, `${name} no debe leer el claim del token`);
+  }
+  assert.deepEqual(definitions, ["platformAccess.js"]);
+  const verificationSource = await readFile(new URL("../functions/businessVerification.js", import.meta.url), "utf8");
+  assert.match(verificationSource, /require\("\.\/platformAccess"\)/);
+  assert.match(verificationSource, /await requirePlatformSuperadmin\(request, dependencies\)/);
+  assert.match(platformIndexSource, /const businessVerificationDependencies = \{\s*auth: adminAuth,/);
+  assert.match(functionsSource, /require\("\.\/platformAccess"\)/);
+  console.log("OK platform-admin: un único requirePlatformSuperadmin lee authUser.customClaims y rechaza cuentas suspendidas");
+}
+
+// --- Empresas por cuenta, verificaciones pendientes en el Dashboard y motivos de usuario ---
+{
+  assert.match(functionsSource, /const accountUid = request\?\.data\?\.uid\s*\?\s*id\(request\.data\.uid, "La cuenta", HttpsError\)/);
+  assert.match(functionsSource, /where\("uid", "==", uid\)\.where\("rol", "==", "OWNER"\)/);
+  assert.match(functionsSource, /cuenta: \{\s*uid,\s*nombre: personName/);
+  assert.match(functionsSource, /verificacionesPendientesAntiguas: oldestPendingDtos/);
+  assert.match(functionsSource, /PENDING_VERIFICATIONS_PREVIEW = 5/);
+  assert.match(functionsSource, /motivoSuspension: platformUserStatus\(user, authUser\) === SUSPENDED_STATUS/);
+  assert.match(functionsSource, /motivo: text\(snapshot\.data\(\)\?\.motivo, 1000\),\s*creadoPorUid/);
+  assert.match(serviceSource, /\.\.\.\(uid \? \{uid\} : \{\}\)/);
+  assert.match(pagesSource, /<h3 className="platform-pending-subtitle" id="platform-pending-oldest-title">Las más antiguas primero<\/h3>/);
+  assert.match(pagesSource, /state\.data\.verificacionesPendientesAntiguas \|\| \[\]/);
+  assert.match(pagesSource, /to=\{`\/admin\/empresas\/\$\{business\.id\}`\}[\s\S]{0,260}Solicitud \{date\(business\.fechaSolicitud\)\}/);
+  assert.match(pagesSource, />Ver empresas<\/Button>/);
+  assert.match(pagesSource, /navigate\(`\/admin\/empresas\?uid=\$\{encodeURIComponent\(usuario\.uid\)\}`\)/);
+  assert.match(pagesSource, /uid: filters\.uid,/);
+  assert.match(pagesSource, /Empresas de la cuenta/);
+  assert.match(pagesSource, /Ver todas las empresas/);
+  assert.match(pagesSource, /\{label: "Motivo de suspensión", value: usuario\.motivoSuspension\}/);
+  assert.match(pagesSource, /\{event\.motivo && <p>Motivo: \{event\.motivo\}<\/p>\}/);
+  // El conteo actual de la tarjeta y del panel se conserva.
+  assert.match(pagesSource, /\{pendingVerifications === 1 \? "1 verificación pendiente"/);
+  const newCss = (await readFile(new URL("../src/styles/platform.css", import.meta.url), "utf8"))
+    .split("\n").filter((line) => /platform-(account-filter|pending-subtitle|heading-actions)|recent-list--detailed/.test(line)).join("\n");
+  assert.ok(newCss.length > 0);
+  assert.doesNotMatch(newCss, /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/, "el CSS nuevo usa solo tokens");
+  console.log("OK platform-admin: filtro por cuenta, pendientes antiguas en el Dashboard y motivos de usuario");
 }

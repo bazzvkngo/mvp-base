@@ -29,6 +29,7 @@ export const listPlatformBusinesses = ({
   state = "TODOS",
   verification = "TODAS",
   mode = "EMPRESAS",
+  uid = "",
 } = {}) => call("listarEmpresasPlataforma", {
   cursor: cursor || "",
   limite: limit,
@@ -37,6 +38,7 @@ export const listPlatformBusinesses = ({
   estado: state,
   verificacion: verification,
   modo: mode,
+  ...(uid ? {uid} : {}),
 });
 
 export const getPlatformBusiness = (businessId) =>

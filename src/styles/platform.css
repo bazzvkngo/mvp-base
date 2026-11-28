@@ -143,7 +143,9 @@
 }
 
 .platform-page-heading__eyebrow { color: var(--color-text-brand-accent); font-size: var(--font-size-xs); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
-.platform-page-heading > .ui-status-badge { text-transform: uppercase; }
+.platform-page-heading > .ui-status-badge,
+.platform-heading-actions .ui-status-badge { text-transform: uppercase; }
+.platform-heading-actions { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-3); justify-content: flex-end; }
 .platform-page-heading h1 { color: var(--color-text-strong); font-size: clamp(1.6rem, 4vw, 2.35rem); margin: var(--space-1) 0 0; }
 .platform-page-heading p { color: var(--color-text-muted); margin: var(--space-2) 0 0; }
 .platform-business-heading-meta { display: grid; gap: 2px; }
@@ -211,6 +213,13 @@
 .platform-recent-list a { align-items: center; border-radius: var(--radius-md); color: var(--color-text-strong); display: flex; gap: var(--space-3); justify-content: space-between; padding: var(--space-2) var(--space-3); text-decoration: none; }
 .platform-recent-list a:hover { background: var(--color-surface-hover); }
 .platform-recent-list a:focus-visible { box-shadow: var(--focus-ring); outline: none; }
+.platform-recent-list--detailed a > span { display: grid; gap: var(--space-1); min-width: 0; }
+.platform-recent-list--detailed small { color: var(--color-text-muted); font-size: var(--font-size-xs); overflow-wrap: anywhere; }
+.platform-pending-subtitle { color: var(--color-text-muted); font-size: var(--font-size-sm); font-weight: 600; margin: var(--space-4) 0 var(--space-2); }
+.platform-account-filter { align-items: center; background: var(--color-surface-brand); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); color: var(--color-text-default); display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); justify-content: space-between; margin-bottom: var(--space-4); padding: var(--space-3) var(--space-4); }
+.platform-account-filter p { margin: 0; overflow-wrap: anywhere; }
+.platform-account-filter strong { color: var(--color-text-strong); }
+.platform-account-filter a { color: var(--color-text-brand); font-weight: 600; }
 .platform-filters {
   align-items: end;
   background: var(--color-surface-panel);

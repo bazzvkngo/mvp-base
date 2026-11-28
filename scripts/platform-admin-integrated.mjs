@@ -34,8 +34,10 @@ const {FieldPath, FieldValue} = requireFromFunctions("firebase-admin/firestore")
 const {HttpsError} = requireFromFunctions("firebase-functions/v2/https");
 const {
   cambiarModulosEmpresaPlataformaHandler,
+  listarEmpresasPlataformaHandler,
   obtenerEmpresaPlataformaHandler,
 } = requireFromFunctions("./platformAdmin");
+const {resolverVerificacionEmpresaHandler} = requireFromFunctions("./businessVerification");
 const {VERTICAL_MODULES} = requireFromFunctions("./verticalModules");
 
 function client(name) {
@@ -97,7 +99,8 @@ const platform = await authenticate(client("superadmin"), "superadmin");
 const owner = await authenticate(client("owner"), "owner");
 const secondOwner = await authenticate(client("second-owner"), "second-owner");
 const secondPlatform = await authenticate(client("second-platform"), "second-platform");
-const clients = [platform, owner, secondOwner, secondPlatform];
+const thirdPlatform = await authenticate(client("third-platform"), "third-platform");
+const clients = [platform, owner, secondOwner, secondPlatform, thirdPlatform];
 const adminApp = initializeAdminApp({
   projectId: PROJECT_ID,
   storageBucket: `${PROJECT_ID}.firebasestorage.app`,
@@ -111,6 +114,8 @@ try {
   await platform.user.getIdToken(true);
   await adminAuth.setCustomUserClaims(secondPlatform.uid, {platformRole: "PLATFORM_SUPERADMIN"});
   await secondPlatform.user.getIdToken(true);
+  await adminAuth.setCustomUserClaims(thirdPlatform.uid, {platformRole: "PLATFORM_SUPERADMIN"});
+  await thirdPlatform.user.getIdToken(true);
 
   const first = await call(owner, "createFirstBusiness")(businessInput("Empresa Platform Uno", "one"));
   const second = await call(secondOwner, "createFirstBusiness")(businessInput("Empresa Platform Dos", "two"));
@@ -220,6 +225,47 @@ try {
   assert.equal((await call(platform, "obtenerEmpresaPlataforma")({businessId: firstId})).data.propietario.uid, owner.uid);
   assert.ok((await call(platform, "obtenerUsuarioPlataforma")({uid: owner.uid})).data.membresias.some((item) => item.negocioId === firstId));
 
+  // Dashboard: las verificaciones pendientes más antiguas primero (máximo 5) y el conteo se conserva.
+  const dashboard = (await call(platform, "obtenerResumenPlataforma")({})).data;
+  const oldestPending = dashboard.verificacionesPendientesAntiguas;
+  assert.ok(Array.isArray(oldestPending) && oldestPending.length <= 5);
+  assert.ok(dashboard.empresas.verificacionesPendientes >= 2);
+  assert.ok(oldestPending.some((item) => item.id === firstId) && oldestPending.some((item) => item.id === secondId));
+  assert.ok(oldestPending.findIndex((item) => item.id === firstId) < oldestPending.findIndex((item) => item.id === secondId), "la solicitud más antigua va primero");
+  assert.ok(oldestPending.every((item) => item.verificacion === "PENDIENTE" && item.fechaSolicitud && item.nombreComercial));
+  assert.deepEqual(oldestPending.map((item) => item.fechaSolicitud), [...oldestPending.map((item) => item.fechaSolicitud)].sort());
+  assert.equal(oldestPending.find((item) => item.id === firstId).propietario.correo, owner.email);
+  await rejected("usuario normal no ve el Dashboard", () => call(owner, "obtenerResumenPlataforma")({}), ["permission-denied"]);
+
+  // Filtro por cuenta: solo empresas donde la cuenta es OWNER (membresias).
+  const ownedByOwner = (await call(platform, "listarEmpresasPlataforma")({uid: owner.uid, limite: 20})).data;
+  assert.deepEqual(ownedByOwner.empresas.map((item) => item.id).sort(), [firstId, retainedId].sort());
+  assert.equal(ownedByOwner.cursor, null);
+  assert.deepEqual(ownedByOwner.cuenta, {uid: owner.uid, nombre: ownedByOwner.cuenta.nombre, correo: owner.email});
+  assert.ok(ownedByOwner.empresas.every((item) => item.propietario.uid === owner.uid));
+  const ownedBySecond = (await call(platform, "listarEmpresasPlataforma")({uid: secondOwner.uid, limite: 20})).data;
+  assert.deepEqual(ownedBySecond.empresas.map((item) => item.id), [secondId]);
+  const ownedPage1 = (await call(platform, "listarEmpresasPlataforma")({uid: owner.uid, limite: 1})).data;
+  assert.equal(ownedPage1.empresas.length, 1); assert.ok(ownedPage1.cursor);
+  const ownedPage2 = (await call(platform, "listarEmpresasPlataforma")({uid: owner.uid, limite: 1, cursor: ownedPage1.cursor})).data;
+  assert.equal(ownedPage2.empresas.length, 1); assert.equal(ownedPage2.cursor, null);
+  assert.deepEqual([ownedPage1.empresas[0].id, ownedPage2.empresas[0].id].sort(), [firstId, retainedId].sort());
+  assert.deepEqual((await call(platform, "listarEmpresasPlataforma")({uid: owner.uid, verificacion: "PENDIENTE", limite: 20})).data.empresas.map((item) => item.id), [firstId]);
+  assert.deepEqual((await call(platform, "listarEmpresasPlataforma")({uid: owner.uid, busqueda: "Alterna", limite: 20})).data.empresas.map((item) => item.id), [retainedId]);
+  assert.deepEqual((await call(platform, "listarEmpresasPlataforma")({uid: platform.uid, limite: 20})).data.empresas, []);
+  // Ser miembro (no OWNER) de otra empresa no la lista bajo esa cuenta.
+  const memberOnlyRef = adminDb.doc(`membresias/${firstId}__${secondOwner.uid}`);
+  await memberOnlyRef.set({negocioId: firstId, uid: secondOwner.uid, rol: "ADMIN", estado: "activo", creadoEn: FieldValue.serverTimestamp()});
+  assert.deepEqual((await call(platform, "listarEmpresasPlataforma")({uid: secondOwner.uid, limite: 20})).data.empresas.map((item) => item.id), [secondId]);
+  await memberOnlyRef.delete();
+  await rejected("cuenta inexistente en el filtro", () => call(platform, "listarEmpresasPlataforma")({uid: `no-existe-${RUN_ID}`}), ["not-found"]);
+  await rejected("uid con formato invalido", () => call(platform, "listarEmpresasPlataforma")({uid: "uid con espacios"}), ["invalid-argument"]);
+  await rejected("cursor ajeno a la cuenta", () => call(platform, "listarEmpresasPlataforma")({uid: owner.uid, cursor: secondId}), ["invalid-argument"]);
+  await rejected("usuario normal no filtra por cuenta", () => call(owner, "listarEmpresasPlataforma")({uid: owner.uid}), ["permission-denied"]);
+  // Sin uid el directorio sigue mostrando todas las empresas.
+  assert.ok((await call(platform, "listarEmpresasPlataforma")({limite: 20})).data.empresas.some((item) => item.id === secondId));
+  console.log("OK dashboard con pendientes antiguas y directorio filtrado por cuenta");
+
   // Interruptor de modulos por negocio (Function cambiarModulosEmpresaPlataforma).
   // El emulador valida el registro real de verticales; los escenarios con
   // multiples modulos se prueban invocando el handler real con un registro
@@ -304,6 +350,30 @@ try {
   assert.match(evidence.data.url, /^https?:\/\//);
   assert.ok(new Date(evidence.data.expiraEn).getTime() - Date.now() <= 10 * 60 * 1000);
 
+  // Un único guardia de plataforma: el claim sale de Auth (no del token) y la cuenta debe estar activa,
+  // también en resolverVerificacionEmpresa.
+  const guardResolveData = {businessId: firstId, solicitudId: firstRequest.data.solicitudId, decision: "RECHAZAR", motivo: "Prueba del guardia", razonSocialOficial: "", requestId: requestId("guard_resolve")};
+  await adminAuth.setCustomUserClaims(thirdPlatform.uid, {});
+  await rejected("claim revocado en Auth con token vigente: resolver verificacion", () => call(thirdPlatform, "resolverVerificacionEmpresa")(guardResolveData), ["permission-denied"]);
+  await rejected("claim revocado en Auth con token vigente: directorio", () => call(thirdPlatform, "listarEmpresasPlataforma")({}), ["permission-denied"]);
+  await rejected("handler de plataforma: el claim solo del token no basta", () => listarEmpresasPlataformaHandler(asRequest(thirdPlatform.uid, "PLATFORM_SUPERADMIN", {}), handlerDeps), ["permission-denied"]);
+  await rejected("handler de verificacion: el claim solo del token no basta", () => resolverVerificacionEmpresaHandler(asRequest(thirdPlatform.uid, "PLATFORM_SUPERADMIN", guardResolveData), {...handlerDeps, bucket: adminBucket}), ["permission-denied"]);
+  await adminAuth.setCustomUserClaims(thirdPlatform.uid, {platformRole: "PLATFORM_SUPERADMIN"});
+  await adminAuth.updateUser(thirdPlatform.uid, {disabled: true});
+  await rejected("cuenta de plataforma deshabilitada en Auth: resolver verificacion", () => call(thirdPlatform, "resolverVerificacionEmpresa")(guardResolveData), ["permission-denied"]);
+  await rejected("handler: cuenta de plataforma deshabilitada", () => listarEmpresasPlataformaHandler(asRequest(thirdPlatform.uid, null, {}), handlerDeps), ["permission-denied"]);
+  await rejected("handler de verificacion: cuenta de plataforma deshabilitada", () => resolverVerificacionEmpresaHandler(asRequest(thirdPlatform.uid, null, guardResolveData), {...handlerDeps, bucket: adminBucket}), ["permission-denied"]);
+  await adminAuth.updateUser(thirdPlatform.uid, {disabled: false});
+  await adminDb.doc(`usuarios/${thirdPlatform.uid}`).set({estadoPlataforma: "suspendido"}, {merge: true});
+  await rejected("cuenta de plataforma suspendida (estado persistido): resolver verificacion", () => call(thirdPlatform, "resolverVerificacionEmpresa")(guardResolveData), ["permission-denied"]);
+  await rejected("handler: cuenta de plataforma suspendida", () => listarEmpresasPlataformaHandler(asRequest(thirdPlatform.uid, null, {}), handlerDeps), ["permission-denied"]);
+  await rejected("handler de verificacion: cuenta de plataforma suspendida", () => resolverVerificacionEmpresaHandler(asRequest(thirdPlatform.uid, null, guardResolveData), {...handlerDeps, bucket: adminBucket}), ["permission-denied"]);
+  await adminDb.doc(`usuarios/${thirdPlatform.uid}`).set({estadoPlataforma: "activo"}, {merge: true});
+  assert.equal((await adminDb.doc(`negocios/${firstId}`).get()).data().verificacionEmpresa.estado, "PENDIENTE", "los rechazos no resuelven la solicitud");
+  assert.equal((await adminDb.doc(`negocios/${firstId}/platformVerificationDecisionRequests/${guardResolveData.requestId}`).get()).exists, false);
+  assert.ok((await call(thirdPlatform, "listarEmpresasPlataforma")({limite: 1})).data.empresas.length >= 0, "la cuenta activa con claim en Auth vuelve a operar");
+  console.log("OK guardia unico de plataforma: claim de Auth y cuenta activa en todas las Functions");
+
   await call(platform, "resolverVerificacionEmpresa")({businessId: firstId, solicitudId: firstRequest.data.solicitudId, decision: "APROBAR", motivo: "", razonSocialOficial: "Empresa Platform Uno Oficial SpA", requestId: requestId("approve")});
   await call(platform, "resolverVerificacionEmpresa")({businessId: secondId, solicitudId: secondRequest.data.solicitudId, decision: "RECHAZAR", motivo: "Documentacion insuficiente", razonSocialOficial: "", requestId: requestId("reject")});
   assert.equal((await adminDb.doc(`negocios/${firstId}`).get()).data().verificacionEmpresa.estado, "VERIFICADA");
@@ -335,6 +405,13 @@ try {
   const suspendUserRetry = await call(platform, "cambiarEstadoUsuarioPlataforma")({uid: owner.uid, estado: "suspendido", motivo: "Revision de cuenta", requestId: suspendUserId});
   assert.equal(suspendUserRetry.data.idempotent, true);
   assert.equal((await adminAuth.getUser(owner.uid)).disabled, true);
+  // El detalle devuelve el motivo de la suspensión, en la cuenta y en su evento.
+  const suspendedDetail = (await call(platform, "obtenerUsuarioPlataforma")({uid: owner.uid})).data;
+  assert.equal(suspendedDetail.usuario.estado, "suspendido");
+  assert.equal(suspendedDetail.usuario.motivoSuspension, "Revision de cuenta");
+  assert.equal(suspendedDetail.eventos.length, 1);
+  assert.equal(suspendedDetail.eventos[0].tipo, "USUARIO_SUSPENDIDO");
+  assert.equal(suspendedDetail.eventos[0].motivo, "Revision de cuenta");
   await rejected("usuario suspendido no opera Function", () => call(owner, "getBusinessSession")({}), ["permission-denied", "unauthenticated"]);
   await rejected("usuario suspendido no opera SDK", () => getDoc(doc(owner.db, "negocios", firstId)), ["permission-denied"]);
   assert.equal((await adminDb.doc(`negocios/${firstId}/clientes/historico`).get()).exists, true);
@@ -347,6 +424,12 @@ try {
   const signedIn = await signInWithEmailAndPassword(owner.auth, owner.email, owner.password); owner.user = signedIn.user;
   assert.equal((await call(owner, "getBusinessSession")({})).data.accessState, "active");
   assert.equal((await adminDb.collection(`usuarios/${owner.uid}/eventosPlataforma`).get()).size, 2);
+  const reactivatedDetail = (await call(platform, "obtenerUsuarioPlataforma")({uid: owner.uid})).data;
+  assert.equal(reactivatedDetail.usuario.estado, "activo");
+  assert.equal(reactivatedDetail.usuario.motivoSuspension, "", "una cuenta activa no muestra motivo de suspension");
+  assert.equal(reactivatedDetail.eventos.find((item) => item.tipo === "USUARIO_SUSPENDIDO").motivo, "Revision de cuenta");
+  assert.equal(reactivatedDetail.eventos.find((item) => item.tipo === "USUARIO_REACTIVADO").motivo, "");
+  console.log("OK obtenerUsuarioPlataforma devuelve el motivo de suspension y de sus eventos");
 
   // Las cuentas de plataforma no se suspenden desde el panel: ni la propia ni otra con claim.
   const selfSuspendRequestId = requestId("suspend_self");

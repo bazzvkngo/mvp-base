@@ -10,7 +10,11 @@ const {
   getJurisdictionContract,
 } = require("./businessJurisdiction");
 
-const PLATFORM_SUPERADMIN = "PLATFORM_SUPERADMIN";
+const {
+  PLATFORM_SUPERADMIN,
+  requirePlatformSuperadmin,
+} = require("./platformAccess");
+
 const VERIFICATION_STATES = Object.freeze({
   NOT_VERIFIED: "NO_VERIFICADA",
   PENDING: "PENDIENTE",
@@ -374,18 +378,10 @@ async function solicitarVerificacionEmpresaHandler(request, dependencies) {
   });
 }
 
-function requirePlatformSuperadmin(request, HttpsError) {
-  const uid = request?.auth?.uid;
-  if (!uid) fail(HttpsError, "unauthenticated", "Debes iniciar sesion.");
-  if (request?.auth?.token?.platformRole !== PLATFORM_SUPERADMIN) {
-    fail(HttpsError, "permission-denied", "Se requiere autoridad de plataforma.");
-  }
-  return uid;
-}
-
 async function resolverVerificacionEmpresaHandler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
-  const uid = requirePlatformSuperadmin(request, HttpsError);
+  // Mismo guardia que el resto de Functions de plataforma (platformAccess.js).
+  const {uid} = await requirePlatformSuperadmin(request, dependencies);
   const businessId = documentId(request?.data?.businessId, "El negocio", HttpsError);
   const verificationRequestId = documentId(
     request?.data?.solicitudId,
