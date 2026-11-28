@@ -47,5 +47,6 @@ const legacyCustomer = {...customer, paisCodigo: undefined, identificadorFiscalT
 assert.equal(clientSnapshotFromDocument(snapshot("client-1", legacyCustomer), "business-bo", "client-1", HttpsError).identificadorFiscalTipo, "RUT");
 // El campo de la solicitud de verificación de empresa limita el largo en el cliente (como clientes y proveedores).
 const companyConfigSource = readFileSync(new URL("../src/features/company/CompanyConfig.jsx", import.meta.url), "utf8");
-assert.match(companyConfigSource, /value=\{form\.identificadorFiscalValor\}\s+maxLength=\{form\.paisCodigo === "CL" \? 12 : 20\}/);
+// El campo usa FiscalIdInput: formato de RUT con tope de 9 caracteres solo en Chile; en otros países, hasta 20 sin formato.
+assert.match(companyConfigSource, /<FiscalIdInput\s+countryCode=\{form\.paisCodigo\}\s+value=\{form\.identificadorFiscalValor\}\s+maxLength=\{20\}/);
 console.log("Fiscal identifier smoke OK");

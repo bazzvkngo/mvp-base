@@ -1,4 +1,5 @@
 import {adaptStoredFiscalIdentifier} from "./fiscalIdentifier.mjs";
+import {matchesRutSearch} from "./rut.mjs";
 import {hasMaxDecimals, isMoneyAmount, mulRound, sanitizeDecimals, sumMoney} from "./money.mjs";
 
 export const PURCHASE_ORDER_MODEL_VERSION = 1;
@@ -233,7 +234,12 @@ export function matchesPurchaseOrderSearch(order, search) {
   return normalize(
     `${order?.numero || ""} ${order?.proveedorSnapshot?.razonSocial || ""} ` +
       `${order?.proveedorSnapshot?.rut || ""}`
-  ).includes(query);
+  ).includes(query) || matchesRutSearch(
+    search,
+    order?.proveedorSnapshot?.rut,
+    order?.proveedorSnapshot?.identificadorFiscalValor,
+    order?.proveedorSnapshot?.identificadorFiscalNormalizado
+  );
 }
 
 export function canManagePurchaseOrders(role) {

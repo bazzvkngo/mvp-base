@@ -1,5 +1,6 @@
 import {incrementScannedItem} from "./barcode.mjs";
 import {adaptStoredFiscalIdentifier} from "./fiscalIdentifier.mjs";
+import {matchesRutSearch} from "./rut.mjs";
 import {addInventoryItemToLines} from "./inventoryLineAdd.mjs";
 import {hasMaxDecimals, isMoneyAmount, mulRound, sanitizeDecimals, sumMoney} from "./money.mjs";
 
@@ -332,7 +333,8 @@ export function matchesSaleSearch(sale, search) {
   const normalize = (value) => text(value, 600).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   const query = normalize(search);
   if (!query) return true;
-  return normalize(`${sale.numero} ${sale.clienteSnapshot?.nombreRazonSocial} ${sale.clienteSnapshot?.rut} ${sale.numeroDocumento} ${sale.cotizacionNumero}`).includes(query);
+  return normalize(`${sale.numero} ${sale.clienteSnapshot?.nombreRazonSocial} ${sale.clienteSnapshot?.rut} ${sale.numeroDocumento} ${sale.cotizacionNumero}`).includes(query)
+    || matchesRutSearch(search, sale.clienteSnapshot?.rut, sale.clienteSnapshot?.identificadorFiscalValor, sale.clienteSnapshot?.identificadorFiscalNormalizado);
 }
 import {adaptDocumentLocalization} from "./localization.mjs";
 import {adaptCompanySnapshot} from "./companySnapshot.mjs";

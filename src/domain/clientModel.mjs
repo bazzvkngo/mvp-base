@@ -8,6 +8,7 @@ import {
   normalizeChileanRut,
   normalizeCountryCode,
 } from "./fiscalIdentifier.mjs";
+import {getRutCheckDigitMessage, matchesSearchOrRut} from "./rut.mjs";
 import {getClientFiscalCopy} from "./countryFormCopy.mjs";
 import {
   MAX_CONTACT_PHONE_LENGTH,
@@ -101,7 +102,9 @@ export function getClientFieldErrors(raw = {}, countryCode = raw?.paisCodigo || 
   if (!errors.rut && !fiscalValue) {
     errors.rut = `Ingresa el ${getClientFiscalCopy(country, tipoCliente).label} del cliente.`;
   } else if (!errors.rut && !isValidFiscalIdentifier(country, fiscalValue)) {
-    errors.rut = `Ingresa un ${getClientFiscalCopy(country, tipoCliente).label} válido.`;
+    // RUT completo con dígito verificador incorrecto: mensaje específico; si está incompleto, el genérico.
+    errors.rut = (country === "CL" && getRutCheckDigitMessage(fiscalValue)) ||
+      `Ingresa un ${getClientFiscalCopy(country, tipoCliente).label} válido.`;
   }
   if (!errors.nombreRazonSocial && !nombreRazonSocial) {
     errors.nombreRazonSocial = tipoCliente === "persona"
@@ -210,26 +213,20 @@ export function adaptStoredClient(raw = {}) {
   };
 }
 
-function normalizeSearchText(value) {
-  const safeValue = typeof value === "string" ? value : "";
-  return safeValue
-    .slice(0, 500)
-    .trim()
-    .replace(/\s+/g, " ")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase("es-CL");
-}
-
+// Nombre, correo y teléfono se buscan como texto; el RUT se suma con coincidencia tolerante (sin importar
+// puntos, guion ni cómo esté guardado). Ver rut.mjs.
 export function matchesClientSearch(client, search) {
-  const query = normalizeSearchText(search).replace(/[^a-z0-9k]/g, "");
-  if (!query) return true;
-  const searchable = normalizeSearchText(
-    `${client?.nombreRazonSocial || ""} ${client?.identificadorFiscalValor || client?.rut || ""} ${
-      client?.identificadorFiscalNormalizado || client?.rutNormalizado || ""
-    }`
-  ).replace(/[^a-z0-9k]/g, "");
-  return searchable.includes(query);
+  const fiscalValues = [
+    client?.identificadorFiscalValor,
+    client?.rut,
+    client?.identificadorFiscalNormalizado,
+    client?.rutNormalizado,
+  ];
+  return matchesSearchOrRut(
+    search,
+    [client?.nombreRazonSocial, client?.email, client?.telefono, ...fiscalValues],
+    fiscalValues
+  );
 }
 
 export function filterSelectableClients(clients, businessId, search = "") {

@@ -42,8 +42,10 @@ import {
 import {
   isValidBusinessEmail,
   isValidChileanRut,
-  normalizeChileanRut,
 } from "../../domain/businessForm";
+import {formatFiscalIdentifierForDisplay} from "../../domain/fiscalIdentifier.mjs";
+import {getRutCheckDigitMessage, getRutStatus} from "../../domain/rut.mjs";
+import FiscalIdInput from "../../components/contacts/FiscalIdInput";
 import {
   ALLOWED_COMPANY_LOGO_TYPES,
   DEFAULT_INVENTORY_SETTINGS,
@@ -175,12 +177,6 @@ function isValidOptionalUrl(value) {
   } catch {
     return false;
   }
-}
-
-function formatRutInput(value) {
-  const normalized = normalizeChileanRut(value).replace(/-/g, "");
-  if (normalized.length < 2) return normalized;
-  return `${normalized.slice(0, -1)}-${normalized.slice(-1)}`;
 }
 
 function validateLogo(file) {
@@ -586,7 +582,7 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
                   ? (form.identificadorFiscalTipo || "Identificador fiscal")
                   : `Estado del ${form.identificadorFiscalTipo || "identificador fiscal"}`}
                 targetId="empresa-fiscal"
-                value={form.identificadorFiscalValor}
+                value={formatFiscalIdentifierForDisplay(form.paisCodigo, form.identificadorFiscalValor)}
                 wide
                 accent={isVerified}
                 trailing={isVerified ? (
@@ -838,10 +834,12 @@ function BusinessVerificationSection({
       ...current,
       paisCodigo: value.paisCodigo || "CL",
       identificadorFiscalTipo: value.identificadorFiscalTipo || "Identificación fiscal",
-      identificadorFiscalValor:
+      identificadorFiscalValor: formatFiscalIdentifierForDisplay(
+        value.paisCodigo || "CL",
         value.verificacionEmpresa?.identificadorFiscalDeclaradoValor ||
         value.verificacionEmpresa?.identificadorFiscalValor ||
-        value.identificadorFiscalValor || "",
+        value.identificadorFiscalValor || ""
+      ),
       correoSolicitante: current.correoSolicitante ||
         currentUserEmail || value.email || "",
       telefonoSolicitante: current.telefonoSolicitante ||
@@ -884,6 +882,12 @@ function BusinessVerificationSection({
     requestRef.current = "";
     setError("");
   };
+  // Solo en Chile: al salir del campo se avisa si el RUT está incompleto o su dígito verificador no coincide.
+  const [fiscalIdTouched, setFiscalIdTouched] = React.useState(false);
+  const fiscalIdError = form.paisCodigo === "CL" && fiscalIdTouched
+    ? getRutCheckDigitMessage(form.identificadorFiscalValor) ||
+      (getRutStatus(form.identificadorFiscalValor) === "incomplete" ? "Ingresa el RUT completo. Ejemplo: 12.345.678-5." : "")
+    : "";
   const chooseEvidence = (selected) => {
     setError("");
     requestRef.current = "";
@@ -910,7 +914,7 @@ function BusinessVerificationSection({
     }
     if (form.paisCodigo === "CL" &&
       !isValidChileanRut(form.identificadorFiscalValor)) {
-      setError("Ingresa un RUT válido.");
+      setError(getRutCheckDigitMessage(form.identificadorFiscalValor) || "Ingresa un RUT válido.");
       return;
     }
     if (form.relacionSolicitante.trim().length < 2) {
@@ -963,7 +967,7 @@ function BusinessVerificationSection({
       </div>
       {verification.estado === BUSINESS_VERIFICATION_STATES.NOT_VERIFIED && <p>Aún no se ha enviado una solicitud. Completa los datos y solicita la revisión.</p>}
       {verification.estado === BUSINESS_VERIFICATION_STATES.PENDING && <p>La solicitud está en revisión. Podrás comenzar a operar cuando sea aprobada.</p>}
-      {verification.estado === BUSINESS_VERIFICATION_STATES.VERIFIED && <p><strong>{verification.identificadorFiscalTipo || form.identificadorFiscalTipo}: {verification.identificadorFiscalValor || form.identificadorFiscalValor}</strong> · ✓ Verificado</p>}
+      {verification.estado === BUSINESS_VERIFICATION_STATES.VERIFIED && <p><strong>{verification.identificadorFiscalTipo || form.identificadorFiscalTipo}: {formatFiscalIdentifierForDisplay(form.paisCodigo, verification.identificadorFiscalValor || form.identificadorFiscalValor)}</strong> · ✓ Verificado</p>}
       {verification.estado === BUSINESS_VERIFICATION_STATES.REJECTED && <p><strong>Motivo:</strong> {verification.motivoRechazo || "La plataforma rechazó la solicitud."}</p>}
       {!canRequest && <p className="settings-verification-help">Solo el propietario puede solicitar verificación. Otros perfiles autorizados pueden consultar el estado.</p>}
       {canRequest && !requestBlocked && <Button type="button" icon={ShieldCheck} onClick={() => { setDialogOpen(true); setError(""); }}>Solicitar verificación</Button>}
@@ -1017,25 +1021,19 @@ function BusinessVerificationSection({
       <SettingsField
         label="Identificador fiscal declarado"
         required
+        error={fiscalIdError}
         hint={`Ingresa el ${
           form.identificadorFiscalTipo || "identificador"
         } que será revisado.`}
         wide
       >
-        <input
+        <FiscalIdInput
+          countryCode={form.paisCodigo}
           value={form.identificadorFiscalValor}
-          maxLength={form.paisCodigo === "CL" ? 12 : 20}
+          maxLength={20}
           placeholder={countryCopy.declaredFiscalIdExample || undefined}
-          onChange={(event) =>
-            update("identificadorFiscalValor", event.target.value)
-          }
-          onBlur={() =>
-            form.paisCodigo === "CL" &&
-            update(
-              "identificadorFiscalValor",
-              formatRutInput(form.identificadorFiscalValor)
-            )
-          }
+          onChange={(value) => update("identificadorFiscalValor", value)}
+          onBlur={() => setFiscalIdTouched(true)}
         />
       </SettingsField>
 

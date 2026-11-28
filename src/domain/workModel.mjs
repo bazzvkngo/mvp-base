@@ -1,4 +1,5 @@
 import {getBarcodeLookupCandidates, normalizeBarcode} from "./barcode.mjs";
+import {matchesRutSearch} from "./rut.mjs";
 export const WORK_MODEL_VERSION = 2;
 export const WORK_FILE_MODEL_VERSION = 1;
 export const WORK_TASK_MODEL_VERSION = 2;
@@ -627,7 +628,8 @@ export function matchesWorkFilters(work, filters = {}) {
   if (filters.responsableUid && filters.responsableUid !== "todos" && work.responsableUid !== filters.responsableUid) return false;
   const query = normalizeWorkSearch(filters.query);
   if (!query) return true;
-  return normalizeWorkSearch([work.numero, work.titulo, work.clienteSnapshot?.nombreRazonSocial, work.clienteSnapshot?.rut].filter(Boolean).join(" ")).includes(query);
+  return normalizeWorkSearch([work.numero, work.titulo, work.clienteSnapshot?.nombreRazonSocial, work.clienteSnapshot?.rut].filter(Boolean).join(" ")).includes(query)
+    || matchesRutSearch(filters.query, work.clienteSnapshot?.rut, work.clienteSnapshot?.identificadorFiscalValor, work.clienteSnapshot?.identificadorFiscalNormalizado);
 }
 
 // Reglas reales de visibilidad/operación de tareas (extraídas de TaskSection

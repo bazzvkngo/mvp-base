@@ -1,6 +1,7 @@
 import React, {useEffect, useRef, useState} from "react";
 import {Save} from "lucide-react";
 import ContactTerritoryFields from "../../components/contacts/ContactTerritoryFields";
+import FiscalIdInput from "../../components/contacts/FiscalIdInput";
 import Button from "../../components/ui/Button";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import {
@@ -164,10 +165,8 @@ function ProviderFormDialog({countryCode = "CL", onClose, onSubmit, open, provid
     });
   };
 
-  const handleRutChange = (event) => {
-    const value = isChile ? formatProviderRut(event.target.value) : event.target.value;
-    updateField("rut", value);
-  };
+  // El formato en vivo y el cursor los cuida FiscalIdInput (solo en Chile); aquí llega el valor ya formateado.
+  const handleRutChange = (value) => updateField("rut", value);
 
   const handlePhoneChange = (event) => {
     updateField("telefono", formatContactPhoneInput(event.target.value, country));
@@ -268,13 +267,13 @@ function ProviderFormDialog({countryCode = "CL", onClose, onSubmit, open, provid
             </p>
             <div className="client-form-grid">
               <ProviderField error={errors.rut} field="rut" label={fiscalLabel} required>
-                <input
+                <FiscalIdInput
                   ref={(node) => setFieldRef("rut", node)}
+                  countryCode={country}
                   value={values.rut}
                   onChange={handleRutChange}
                   onBlur={() => validateField("rut")}
-                  inputMode="text"
-                  maxLength={isChile ? 12 : 20}
+                  maxLength={20}
                   placeholder={getFiscalIdentifierHint(country)}
                 />
               </ProviderField>

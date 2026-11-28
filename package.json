@@ -122,6 +122,7 @@
     "test:auto-refresh": "node scripts/auto-refresh-smoke.mjs",
     "test:currency-text": "node scripts/currency-text-smoke.mjs",
     "test:fiscal-identifiers": "node scripts/fiscal-identifier-smoke.mjs",
+    "test:rut": "node scripts/rut-smoke.mjs",
     "test:fiscal-identifiers-integrated": "firebase emulators:exec --only auth,firestore,functions \"node scripts/fiscal-identifiers-integrated-local.mjs\"",
     "test:company-snapshot": "node scripts/company-snapshot-smoke.mjs",
     "test:business-category-selector": "node scripts/business-category-selector-smoke.mjs",

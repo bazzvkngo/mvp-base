@@ -863,7 +863,7 @@ assert.match(companyConfig, /Notas finales/);
   for (const label of ['label="País"', 'label="Moneda nacional"', 'label="Formato regional"', 'label="Identificación fiscal"', 'label="Razón social oficial"']) {
     assert.ok(strip.includes(label), `la franja muestra ${label}`);
   }
-  assert.match(strip, /`Estado del \$\{form\.identificadorFiscalTipo \|\| "identificador fiscal"\}`[\s\S]*?targetId="empresa-fiscal"[\s\S]*?value=\{form\.identificadorFiscalValor\}/, "el RUT (o su estado) sigue en la franja y conserva el objetivo de foco");
+  assert.match(strip, /`Estado del \$\{form\.identificadorFiscalTipo \|\| "identificador fiscal"\}`[\s\S]*?targetId="empresa-fiscal"[\s\S]*?value=\{formatFiscalIdentifierForDisplay\(form\.paisCodigo, form\.identificadorFiscalValor\)\}/, "el RUT (o su estado) sigue en la franja y conserva el objetivo de foco");
   assert.match(strip, /targetId="empresa-configuracion"/, "el objetivo de foco de País se conserva");
   assert.equal(count(strip, /<AppIcon icon=\{Lock\}/g), 1, "un solo candado en la franja");
   assert.doesNotMatch(infoSection, /<LockedSetting|settings-locked-field/, "ya no hay seis campos grises con un candado cada uno");

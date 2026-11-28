@@ -16,6 +16,7 @@ import {
   subscribeToVeterinaryPatients,
 } from "../data/veterinaryDataService";
 import {buildVeterinaryPatientMutationPayload, formatVeterinaryPatientAge, getVeterinaryPatientFieldErrors} from "../domain/patientModel.mjs";
+import {matchesRutSearch} from "../../../domain/rut.mjs";
 import VeterinaryPhotoMap from "../attention/VeterinaryPhotoMap";
 import MicrochipScanner from "./MicrochipScanner";
 import PatientDetail from "./PatientDetail";
@@ -411,7 +412,7 @@ export default function VeterinaryPatients({businessId, countryCode, mode}) {
   const visiblePatients = patients
     .filter((item) => [item.nombre, item.especie, item.microchip, getTutor(item)?.nombreRazonSocial].some(
       (value) => String(value ?? "").toLocaleLowerCase("es-CL").includes(query)
-    ))
+    ) || matchesRutSearch(search, getTutor(item)?.identificadorFiscalValor, getTutor(item)?.rut, getTutor(item)?.identificadorFiscalNormalizado))
     .sort((a, b) => String(a.nombre ?? "").localeCompare(String(b.nombre ?? ""), "es-CL"));
   const registerPatient = () => navigate(patientListPath + "/nuevo");
 
